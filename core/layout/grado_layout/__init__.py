@@ -7,13 +7,15 @@
 
 from .compose import (document_pages_ops, render_document_pdf,
                       render_page_svg)
-from .frames import (LegendFrame, MapFrame, PageBorder, StampFrame,
+from .frames import (CalloutFrame, LegendFrame, MapFrame, PageBorder,
+                     SectionedLegendFrame, SheetHeader, StampFrame,
                      TableFrame, TextFrame)
 from .model import (A3_LANDSCAPE, A3_PORTRAIT, A4_PORTRAIT, Document,
                     Frame, Page)
 
 __all__ = ["Document", "Page", "Frame", "A3_LANDSCAPE", "A3_PORTRAIT",
            "A4_PORTRAIT", "PageBorder", "MapFrame", "LegendFrame",
+           "SectionedLegendFrame", "SheetHeader", "CalloutFrame",
            "TableFrame", "TextFrame", "StampFrame", "document_pages_ops",
            "render_document_pdf", "render_page_svg"]
 __version__ = "0.1.0"

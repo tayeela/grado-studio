@@ -44,16 +44,18 @@ class PageBorder(Frame):
 
 
 class MapFrame(Frame):
-    def __init__(self, rect, scale, center=None, caption=None):
+    def __init__(self, rect, scale, center=None, caption=None, layers=None):
         super().__init__(rect)
         self.scale = scale
         self.center = center
         self.caption = caption
+        self.layers = layers
 
     def ops(self, ctx):
         from grado_render import build_ops
         out = build_ops(ctx["project"], self.rect, self.scale,
-                        center=self.center, styles=ctx["styles"])
+                        center=self.center, styles=ctx["styles"],
+                        only=self.layers)
         out.extend(_rect_ops(*self.rect, width=0.5))
         x, y, w, h = self.rect
         caption = self.caption or f"М 1:{self.scale}"
@@ -146,6 +148,89 @@ class TextFrame(Frame):
         return [_text(ax, y + self.size * (i + 1) * 1.4, self.size, line,
                       anchor=self.anchor)
                 for i, line in enumerate(self.lines)]
+
+
+class SheetHeader(Frame):
+    """Презентационный стиль АГК: заголовок листа справа вверху (до трёх
+    строк) и номер листа в квадратике в правом нижнем углу."""
+
+    def __init__(self, page, title_lines, page_no):
+        super().__init__((0, 0) + page.size)
+        self.title_lines = (title_lines if isinstance(title_lines, list)
+                            else [title_lines])
+        self.page_no = page_no
+
+    def ops(self, ctx):
+        w, h = self.rect[2], self.rect[3]
+        out = []
+        for i, line in enumerate(self.title_lines):
+            out.append(_text(w - 12, 14 + i * 7.5, 5.2, line, anchor="end"))
+        out.extend(_rect_ops(w - 18, h - 14, 8, 8, width=0.4))
+        out.append(_text(w - 14, h - 8.2, 3.5, str(self.page_no),
+                         anchor="middle"))
+        return out
+
+
+class CalloutFrame(Frame):
+    """Выноска: рамка с текстом + пунктирная указка к точке карты."""
+
+    def __init__(self, rect, lines, target):
+        super().__init__(rect)
+        self.lines = lines if isinstance(lines, list) else [lines]
+        self.target = target
+
+    def ops(self, ctx):
+        x, y, w, h = self.rect
+        out = _rect_ops(x, y, w, h, width=0.3, fill=(1, 1, 1))
+        for i, line in enumerate(self.lines):
+            out.append(_text(x + 2, y + 4 + i * 4.2, 2.6, line))
+        tx, ty = self.target
+        sx = x + w if tx > x + w else x
+        sy = min(max(ty, y), y + h)
+        out.append({"op": "path", "closed": False, "fill": None,
+                    "stroke": GRAY, "width": 0.25, "dash": [1.5, 1],
+                    "rings": [[(sx, sy), (tx, ty)]]})
+        return out
+
+
+class SectionedLegendFrame(Frame):
+    """Легенда с разделами: [(заголовок | None, [(swatch_kind, style, текст)])].
+
+    swatch_kind: 'fill' (прямоугольник), 'line' (образец линии),
+    'point' (маркер)."""
+
+    def __init__(self, rect, sections, title="Условные обозначения"):
+        super().__init__(rect)
+        self.sections = sections
+        self.title = title
+
+    def ops(self, ctx):
+        x, y, w, _ = self.rect
+        out = [_text(x, y + 4, 3.6, self.title)]
+        yy = y + 11
+        for header, entries in self.sections:
+            if header:
+                out.append(_text(x, yy, 2.9, header))
+                yy += 5.5
+            for kind, st, label in entries:
+                if kind == "fill":
+                    out.extend(_rect_ops(x + 1, yy - 3.2, 9, 4.5,
+                                         width=max(st.width, 0.2),
+                                         stroke=st.stroke or GRAY,
+                                         fill=st.fill))
+                elif kind == "line":
+                    out.append({"op": "path", "closed": False, "fill": None,
+                                "stroke": st.stroke, "width": st.width,
+                                "dash": st.dash,
+                                "rings": [[(x + 1, yy - 1), (x + 10, yy - 1)]]})
+                else:
+                    out.append({"op": "circle", "x": x + 5.5, "y": yy - 1,
+                                "r": st.marker, "fill": st.fill,
+                                "stroke": st.stroke, "width": st.width})
+                out.append(_text(x + 13, yy, 2.6, label))
+                yy += 6.5
+            yy += 2.5
+        return out
 
 
 class StampFrame(Frame):

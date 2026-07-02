@@ -72,8 +72,11 @@ def _points(geom):
 
 
 def build_ops(project, frame_rect, scale, center=None, styles=None,
-              label_size=2.2):
-    """Операции отрисовки карты проекта в рамке frame_rect (мм), М 1:scale."""
+              label_size=2.2, only=None):
+    """Операции отрисовки карты проекта в рамке frame_rect (мм), М 1:scale.
+
+    only — набор кодов классификатора: рисовать только эти слои
+    (опорный план не показывает проектную застройку)."""
     from .style import StyleSet
     styles = styles or StyleSet()
     if center is None:
@@ -83,6 +86,8 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
 
     layers = sorted(project.layers(),
                     key=lambda i: styles.resolve(i["code"]).z)
+    if only is not None:
+        layers = [i for i in layers if i["code"] in set(only)]
     ops = [{"op": "clip", "rect": tuple(frame_rect)}]
     labels = []
     for info in layers:
