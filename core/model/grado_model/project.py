@@ -34,7 +34,7 @@ class Layer:
         self.cls = project.classifier.get(code)
         self.table = _table_name(code)
 
-    def add_feature(self, geom, attrs=None, source="manual", source_date=None, source_doc=None):
+    def _coerce(self, geom, attrs, source, source_date):
         geometry.validate(geom)
         if geom["type"] != self.cls.geom_type:
             # Polygon в MultiPolygon-слой оборачиваем автоматически, как GDAL
@@ -47,27 +47,60 @@ class Layer:
             raise ProjectError(f"неизвестный источник {source!r}; допустимы {sorted(SOURCES)}")
         attrs = attrs or {}
         self.cls.validate_attrs(attrs)
-        source_date = source_date or date.today().isoformat()
+        return geom, attrs, source_date or date.today().isoformat()
 
+    def _write(self, fid, geom, attrs, source, source_date, source_doc):
         cols = ["geom", "source", "source_date", "source_doc"]
         vals = [geometry.gpkg_blob(geom, self.project.srs_id), source, source_date, source_doc]
         for key, value in attrs.items():
             cols.append(f'"{key}"')
             vals.append(value)
-        cur = self.project.conn.execute(
-            f'INSERT INTO "{self.table}" ({",".join(cols)}) VALUES ({",".join("?" * len(vals))})',
-            vals)
+        if fid is None:
+            cur = self.project.conn.execute(
+                f'INSERT INTO "{self.table}" ({",".join(cols)}) VALUES ({",".join("?" * len(vals))})',
+                vals)
+            fid = cur.lastrowid
+        else:
+            self.project.conn.execute(
+                f'INSERT OR REPLACE INTO "{self.table}" (id, {",".join(cols)}) '
+                f'VALUES ({",".join("?" * (len(vals) + 1))})', [fid] + vals)
         xs = [p[0] for p in _flat_points(geom)]
         ys = [p[1] for p in _flat_points(geom)]
         gpkg.update_bounds(self.project.conn, self.table, min(xs), min(ys), max(xs), max(ys))
         self.project.conn.commit()
-        return cur.lastrowid
+        return fid
 
-    def features(self):
+    def add_feature(self, geom, attrs=None, source="manual", source_date=None, source_doc=None):
+        geom, attrs, source_date = self._coerce(geom, attrs, source, source_date)
+        return self._write(None, geom, attrs, source, source_date, source_doc)
+
+    def set_feature(self, fid, snapshot):
+        """Записывает объект с заданным id (реплей дельт журнала)."""
+        geom, attrs, source_date = self._coerce(
+            snapshot["geom"], snapshot.get("attrs"),
+            snapshot.get("source", "manual"), snapshot.get("source_date"))
+        return self._write(fid, geom, attrs, snapshot.get("source", "manual"),
+                           source_date, snapshot.get("source_doc"))
+
+    def delete_feature(self, fid):
+        cur = self.project.conn.execute(f'DELETE FROM "{self.table}" WHERE id=?', (fid,))
+        self.project.conn.commit()
+        return cur.rowcount > 0
+
+    def get_feature(self, fid):
+        for f in self.features(where_id=fid):
+            return f
+        return None
+
+    def features(self, where_id=None):
         attr_ids = [a["id"] for a in self.cls.attrs]
         cols = ", ".join(f'"{a}"' for a in attr_ids)
         sql = f'SELECT id, geom, source, source_date, source_doc{", " + cols if cols else ""} FROM "{self.table}"'
-        for row in self.project.conn.execute(sql):
+        params = ()
+        if where_id is not None:
+            sql += " WHERE id=?"
+            params = (where_id,)
+        for row in self.project.conn.execute(sql, params):
             geom, _srs = geometry.gpkg_parse(row[1]) if row[1] else (None, None)
             yield {
                 "id": row[0],
