@@ -7,6 +7,8 @@ Undo/redo — реплей обращённых дельт; ветка вари�
 пул; в эталонной реализации пересчёт синхронный).
 """
 
+from contextlib import contextmanager
+
 from . import deltas as D
 from .journal import MAIN, Journal, JournalError
 
@@ -16,6 +18,7 @@ class Session:
         self.project = project
         self.journal = Journal(project.conn)
         self._subscribers = []
+        self._bulk = None
 
     # --- подписка -------------------------------------------------------
 
@@ -30,8 +33,33 @@ class Session:
     # --- команды --------------------------------------------------------
 
     def _commit(self, title, applied_deltas):
+        if self._bulk is not None:
+            self._bulk.extend(applied_deltas)
+            return
         self.journal.append(self.journal.branch, title, applied_deltas)
         self._notify(D.affected_layers(applied_deltas))
+
+    @contextmanager
+    def bulk(self, title):
+        """Собирает команды в одну запись журнала (импорт = один undo).
+
+        При исключении внутри блока уже применённые дельты откатываются —
+        пакет атомарен."""
+        if self._bulk is not None:
+            raise JournalError("пакетный коммит уже открыт")
+        self._bulk = []
+        try:
+            yield
+            deltas = self._bulk
+        except BaseException:
+            for d in reversed(self._bulk):
+                D.apply(self.project, D.invert(d))
+            raise
+        finally:
+            self._bulk = None
+        if deltas:
+            self.journal.append(self.journal.branch, title, deltas)
+            self._notify(D.affected_layers(deltas))
 
     def insert_feature(self, code, geom, attrs=None, source="manual",
                        source_date=None, source_doc=None, title=None):

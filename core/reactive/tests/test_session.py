@@ -91,6 +91,25 @@ class TestSession(SessionBase):
         with self.assertRaises(JournalError):
             self.s.update_feature("terr.restrict", 99, attrs={"kind": "х"})
 
+    def test_bulk_single_entry_and_atomic(self):
+        with self.s.bulk("импорт 3 объектов"):
+            for i in range(3):
+                self.s.insert_feature("terr.restrict", rect(i * 200, 0, 100, 100))
+        self.assertEqual(len(self.s.log()), 1)
+        self.s.undo()
+        self.assertEqual(self.p.layer("terr.restrict").count(), 0)
+
+    def test_bulk_rolls_back_on_error(self):
+        try:
+            with self.s.bulk("сломанный импорт"):
+                self.s.insert_feature("terr.restrict", rect(0, 0, 100, 100))
+                raise RuntimeError("обрыв")
+        except RuntimeError:
+            pass
+        self.assertEqual(self.p.layer("terr.restrict").count(), 0,
+                         "применённые дельты пакета откатились")
+        self.assertEqual(self.s.log(), [], "запись в журнал не попала")
+
     def test_subscribers_notified(self):
         seen = []
         self.s.subscribe(seen.append)

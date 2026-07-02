@@ -11,6 +11,7 @@
 core/compute/    ТЭП-движок (эталонная реализация на Python; метрики — данные, а не код)
 core/model/      проектная БД: .grado = GeoPackage + классификатор + провенанс
 core/reactive/   журнал дельт: undo/redo, ветки вариантов, живой пересчёт ТЭП
+core/connectors/ сервис данных: НСПД, ФГИС ТП, ГИС ОГД Москвы; снимки, диф, подписки
 apps/calc-web/   веб-калькулятор ТЭП поверх того же JSON-пресета
 docs/            архитектура и решения
 ```
@@ -67,10 +68,28 @@ python3 -m unittest discover -s tests                 # тесты
 PYTHONPATH=. python3 -m grado_reactive demo /tmp/д.grado  # сквозной сценарий
 ```
 
+## Модуль connectors
+
+Контракт: `discover` → `fetch` → неизменяемый датированный снимок (sha256,
+фиксация ИРД) → `diff` → импорт в проект одной записью журнала. Подписки:
+`check()` замечает изменения документа на территории. Протоколы сняты с
+работающего GRADO-моста: НСПД (перехват fetch с intersects, EPSG:3857,
+options→opt_*), ФГИС ТП (json_layers_stp_list.jsp + WFS 2.0.0 с CQL по uin
+и mt_classid; транспорт заменяемый — портал отдаёт данные только в сессии),
+ГИС ОГД Москвы (ZIP-в-ZIP, SHP в МСК-50 через ogr2ogr из QGIS-LTR).
+
+```sh
+cd core/connectors
+python3 -m unittest discover -s tests
+python3 -m grado_connectors ingest-nspd захват.json --store снимки/
+python3 -m grado_connectors import <SID> --project п.grado --layer cad.parcel \
+    --map cad_num=opt_cad_num --store снимки/
+```
+
 ## Дорожная карта модулей
 
 1. compute — ТЭП-движок (готов прототип)
 2. model — проектная БД: GeoPackage, классификатор, провенанс, мост в ТЭП (готов прототип)
 3. reactive — журнал дельт: undo/redo, ветки, живой ТЭП (готов прототип)
-4. connectors — сервис данных (НСПД, ФГИС ТП, ГИСОГД Москвы; продуктизация GRADO)
+4. connectors — сервис данных: НСПД/ФГИС ТП/ГИС ОГД, снимки, диф, подписки (готов прототип)
 5. geom / render / layout — по мере готовности
