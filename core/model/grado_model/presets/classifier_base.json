@@ -1,0 +1,50 @@
+{
+  "id": "classifier_base",
+  "title": "Базовый классификатор ГРАДО (опорный план + планировка)",
+  "notes": [
+    "Внутренние коды — семантические; сопоставление с классификатором Минстроя 433/пр заполняется в поле code_433pr по мере верификации",
+    "tep_role связывает слой с входом ТЭП-движка (core/compute): площадь слоя в га подставляется в одноимённый входной параметр"
+  ],
+  "classes": [
+    {"code": "terr.boundary", "title": "Граница проектирования", "group": "Территория",
+     "geom_type": "Polygon", "tep_role": "terr_area", "attrs": [
+       {"id": "name", "title": "Наименование", "type": "string"}]},
+    {"code": "terr.restrict", "title": "Территории, не подлежащие застройке", "group": "Территория",
+     "geom_type": "Polygon", "tep_role": "restrict_area", "attrs": [
+       {"id": "kind", "title": "Вид ограничения", "type": "string"},
+       {"id": "basis", "title": "Основание", "type": "string"}]},
+    {"code": "cad.parcel", "title": "Земельный участок (ЕГРН)", "group": "Кадастр",
+     "geom_type": "MultiPolygon", "attrs": [
+       {"id": "cad_num", "title": "Кадастровый номер", "type": "string"},
+       {"id": "category", "title": "Категория земель", "type": "string"},
+       {"id": "vri", "title": "Вид разрешённого использования", "type": "string"},
+       {"id": "area_doc", "title": "Площадь по документам, м²", "type": "number"}]},
+    {"code": "cad.zouit", "title": "Зона с особыми условиями (ЗОУИТ)", "group": "Кадастр",
+     "geom_type": "MultiPolygon", "attrs": [
+       {"id": "kind", "title": "Вид зоны", "type": "string"},
+       {"id": "reestr_num", "title": "Реестровый номер", "type": "string"}]},
+    {"code": "tp.func_zone", "title": "Функциональная зона", "group": "Терпланирование",
+     "geom_type": "MultiPolygon", "attrs": [
+       {"id": "zone_code", "title": "Код зоны", "type": "string"},
+       {"id": "zone_title", "title": "Наименование зоны", "type": "string"}]},
+    {"code": "pp.red_line", "title": "Красная линия", "group": "Планировка",
+     "geom_type": "LineString", "attrs": [
+       {"id": "status", "title": "Статус (существующая/устанавливаемая/отменяемая)", "type": "string"}]},
+    {"code": "pp.placement_zone", "title": "Зона планируемого размещения ОКС", "group": "Планировка",
+     "geom_type": "MultiPolygon", "attrs": [
+       {"id": "purpose", "title": "Назначение", "type": "string"}]},
+    {"code": "oks.building", "title": "Здание", "group": "ОКС",
+     "geom_type": "Polygon", "attrs": [
+       {"id": "purpose", "title": "Назначение", "type": "string"},
+       {"id": "floors", "title": "Этажность", "type": "integer"},
+       {"id": "gsa", "title": "Поэтажная площадь, м²", "type": "number"}]},
+    {"code": "uds.road_axis", "title": "Ось улично-дорожной сети", "group": "УДС",
+     "geom_type": "LineString", "attrs": [
+       {"id": "category", "title": "Категория улицы", "type": "string"},
+       {"id": "name", "title": "Наименование", "type": "string"}]},
+    {"code": "social.object", "title": "Объект социальной инфраструктуры", "group": "Соцобъекты",
+     "geom_type": "Point", "attrs": [
+       {"id": "kind", "title": "Вид (ДОО/школа/поликлиника)", "type": "string"},
+       {"id": "capacity", "title": "Мощность (мест/посещений)", "type": "integer"}]}
+  ]
+}
