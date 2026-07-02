@@ -1,0 +1,68 @@
+"""Экранный бэкенд: SVG (в C++ ядре его место занимает GPU-рендер).
+
+Исполняет тот же список операций, что и PDF-бэкенд, — один стилевой
+байткод, два вывода.
+"""
+
+_CLIP_COUNTER = [0]
+
+
+def _css(c):
+    if c is None:
+        return "none"
+    return f"rgb({int(c[0] * 255)},{int(c[1] * 255)},{int(c[2] * 255)})"
+
+
+def _pts(ring):
+    return " ".join(f"{x:.3f},{y:.3f}" for x, y in ring)
+
+
+def render_svg(w, h, ops, font_family="Arial, sans-serif"):
+    body = []
+    defs = []
+    open_groups = 0
+    for o in ops:
+        if o["op"] == "clip":
+            _CLIP_COUNTER[0] += 1
+            cid = f"clip{_CLIP_COUNTER[0]}"
+            x, y, cw, ch = o["rect"]
+            defs.append(f'<clipPath id="{cid}">'
+                        f'<rect x="{x}" y="{y}" width="{cw}" height="{ch}"/>'
+                        f"</clipPath>")
+            body.append(f'<g clip-path="url(#{cid})">')
+            open_groups += 1
+        elif o["op"] == "unclip":
+            body.append("</g>")
+            open_groups -= 1
+        elif o["op"] == "path":
+            dash = (f' stroke-dasharray="{",".join(str(d) for d in o["dash"])}"'
+                    if o.get("dash") else "")
+            d = ""
+            for ring in o["rings"]:
+                d += f"M {_pts(ring[:1])} L {_pts(ring[1:])} "
+                if o.get("closed"):
+                    d += "Z "
+            body.append(
+                f'<path d="{d.strip()}" fill="{_css(o.get("fill"))}" '
+                f'stroke="{_css(o.get("stroke"))}" '
+                f'stroke-width="{o.get("width", 0.3)}"{dash}/>')
+        elif o["op"] == "circle":
+            body.append(
+                f'<circle cx="{o["x"]:.3f}" cy="{o["y"]:.3f}" r="{o["r"]}" '
+                f'fill="{_css(o.get("fill"))}" stroke="{_css(o.get("stroke"))}" '
+                f'stroke-width="{o.get("width", 0.3)}"/>')
+        elif o["op"] == "text":
+            anchor = {"middle": "middle", "end": "end"}.get(o.get("anchor"), "start")
+            body.append(
+                f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}" '
+                f'font-size="{o["size"]}" font-family="{font_family}" '
+                f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
+                f'{_esc(o["text"])}</text>')
+    body.extend("</g>" * open_groups)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{w}mm" height="{h}mm" '
+            f'viewBox="0 0 {w} {h}">\n<defs>{"".join(defs)}</defs>\n'
+            + "\n".join(body) + "\n</svg>\n")
+
+
+def _esc(s):
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))

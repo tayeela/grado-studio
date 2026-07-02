@@ -1,0 +1,147 @@
+import re
+import sys
+import tempfile
+import unittest
+import zlib
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[2] / "model"))
+
+from grado_render import (Font, MapTransform, PdfBackend, StyleSet,  # noqa: E402
+                          build_ops, find_font, render_svg)
+from grado_model import Project  # noqa: E402
+
+OPS = [
+    {"op": "clip", "rect": (10, 10, 100, 100)},
+    {"op": "path", "rings": [[(20, 20), (80, 20), (80, 80), (20, 80)]],
+     "closed": True, "fill": (0.9, 0.9, 0.6), "stroke": (0.3, 0.3, 0.2),
+     "width": 0.4, "dash": [2, 1]},
+    {"op": "circle", "x": 50, "y": 50, "r": 2, "fill": (0.2, 0.4, 0.7),
+     "stroke": None, "width": 0.2},
+    {"op": "text", "x": 50, "y": 45, "size": 4, "text": "Москва",
+     "color": (0, 0, 0), "anchor": "middle"},
+    {"op": "unclip"},
+]
+
+
+class TestFont(unittest.TestCase):
+    def setUp(self):
+        self.font = Font(find_font())
+
+    def test_cyrillic_glyphs(self):
+        gid_lat = self.font.gid_for("A")
+        gid_cyr = self.font.gid_for("А")  # U+0410
+        self.assertGreater(gid_lat, 0)
+        self.assertGreater(gid_cyr, 0)
+        self.assertNotEqual(gid_lat, gid_cyr)
+
+    def test_widths(self):
+        self.assertGreater(self.font.width_1000("Ш"), 300)
+        w = self.font.text_width("Москва", 12)
+        self.assertGreater(w, 25)
+        self.assertLess(w, 70)
+
+
+class TestMapTransform(unittest.TestCase):
+    def test_scale_and_flip(self):
+        tr = MapTransform((10, 10, 100, 100), (500, 500), scale=1000)
+        self.assertEqual(tr.to_mm(500, 500), (60.0, 60.0))
+        x, y = tr.to_mm(510, 520)
+        self.assertAlmostEqual(x, 70.0, msg="1 м = 1 мм при М 1:1000")
+        self.assertAlmostEqual(y, 40.0, msg="ось Y листа направлена вниз")
+
+
+class TestSceneFromProject(unittest.TestCase):
+    def test_build_ops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "t.grado", "Сцена")
+            layer = p.add_layer("tp.func_zone")
+            layer.add_feature(
+                {"type": "Polygon", "coordinates": [[
+                    [413000, 6178000], [413200, 6178000], [413200, 6178150],
+                    [413000, 6178150], [413000, 6178000]]]},
+                attrs={"zone_title": "Ж-1"})
+            ops = build_ops(p, (10, 10, 257, 180), scale=2000)
+            p.close()
+        kinds = [o["op"] for o in ops]
+        self.assertEqual(kinds[0], "clip")
+        self.assertEqual(kinds[-1], "unclip")
+        self.assertIn("path", kinds)
+        texts = [o for o in ops if o["op"] == "text"]
+        self.assertEqual(texts[0]["text"], "Ж-1", "подпись из атрибута стиля")
+        path = next(o for o in ops if o["op"] == "path")
+        xs = [x for x, _ in path["rings"][0]]
+        self.assertTrue(all(10 <= x <= 267 for x in xs), "геометрия в рамке")
+        # 200 м при М 1:2000 = 100 мм
+        self.assertAlmostEqual(max(xs) - min(xs), 100.0, places=6)
+
+
+class TestPdfBackend(unittest.TestCase):
+    def setUp(self):
+        self.backend = PdfBackend()
+        self.pdf = self.backend.render([(297, 210, OPS)])
+
+    def test_structure(self):
+        self.assertTrue(self.pdf.startswith(b"%PDF-1.6"))
+        self.assertTrue(self.pdf.rstrip().endswith(b"%%EOF"))
+        self.assertIn(b"/Identity-H", self.pdf)
+        self.assertIn(b"/FontFile2", self.pdf)
+
+    def test_xref_offsets_valid(self):
+        m = re.search(rb"xref\n0 (\d+)\n", self.pdf)
+        n = int(m.group(1))
+        table_at = m.end()
+        for num in range(1, n):
+            entry = self.pdf[table_at + 20 * num: table_at + 20 * num + 20]
+            offset = int(entry[:10])
+            self.assertTrue(
+                self.pdf[offset:].startswith(f"{num} 0 obj".encode()),
+                f"смещение объекта {num} в xref неверно")
+
+    def test_content_stream_draws(self):
+        streams = re.findall(rb"stream\n(.*?)\nendstream", self.pdf, re.S)
+        page = None
+        for s in streams:
+            try:
+                data = zlib.decompress(s)
+            except zlib.error:
+                continue
+            if b"Tj" in data:
+                page = data
+        self.assertIsNotNone(page)
+        self.assertIn(b" W n", page, "клип рамки карты")
+        self.assertIn(b"\nB\n", page, "заливка с обводкой")
+        gid = self.backend.font.gid_for("М")
+        self.assertIn(f"{gid:04X}".encode(), page, "глиф «М» в тексте")
+
+    def test_multipage(self):
+        pdf = PdfBackend().render([(297, 210, OPS), (210, 297, OPS)])
+        self.assertEqual(pdf.count(b"/Type /Page "), 2)
+        self.assertIn(b"/Count 2", pdf)
+
+
+class TestWysiwyg(unittest.TestCase):
+    def test_both_backends_consume_same_ops(self):
+        import copy
+        ops = copy.deepcopy(OPS)
+        svg = render_svg(297, 210, ops)
+        pdf = PdfBackend().render([(297, 210, ops)])
+        self.assertEqual(ops, OPS, "бэкенды не мутируют операции")
+        self.assertIn("Москва", svg)
+        self.assertIn('stroke-dasharray="2,1"', svg)
+        self.assertIn("clip-path", svg)
+        self.assertGreater(len(pdf), 1000)
+
+
+class TestStyleSet(unittest.TestCase):
+    def test_fallback(self):
+        st = StyleSet().resolve("нет.такого")
+        self.assertIsNotNone(st.stroke)
+
+    def test_zoning_below_redlines(self):
+        s = StyleSet()
+        self.assertLess(s.resolve("tp.func_zone").z, s.resolve("pp.red_line").z)
+
+
+if __name__ == "__main__":
+    unittest.main()
