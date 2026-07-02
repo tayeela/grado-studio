@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГРАДО Студия — калькулятор ТЭП</title>
+<style>
+  :root { --border:#d9d5cc; --muted:#6b6a64; --accent:#0c447c; --bg:#faf9f6; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.5 -apple-system,'Segoe UI',sans-serif; background:var(--bg); color:#222; }
+  header { padding:20px 28px 12px; border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:20px; font-weight:600; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns:380px 1fr; gap:24px; padding:24px 28px; max-width:1200px; }
+  @media (max-width:900px){ main { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:18px 20px; }
+  .panel h2 { margin:0 0 14px; font-size:15px; font-weight:600; }
+  .input-row { margin-bottom:14px; }
+  .input-row label { display:block; font-size:13px; margin-bottom:4px; }
+  .input-row .unit { color:var(--muted); }
+  .input-row .controls { display:flex; gap:10px; align-items:center; }
+  .input-row input[type=range] { flex:1; accent-color:var(--accent); }
+  .input-row input[type=number] { width:84px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:14px; }
+  .group { margin-bottom:18px; }
+  .group h3 { margin:0 0 6px; font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .row { display:flex; justify-content:space-between; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); font-size:14px; }
+  .row:last-child { border-bottom:none; }
+  .row .val { font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap; }
+  .row .val .unit { color:var(--muted); font-weight:400; font-size:12px; margin-left:4px; }
+  .row.zero .val { color:var(--muted); font-weight:400; }
+  footer { padding:0 28px 28px; max-width:1200px; }
+  footer ul { margin:6px 0 0; padding-left:18px; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">Калькулятор ТЭП</h1>
+  <p>ГРАДО Студия · модуль compute · метрики — данные, а не код: правится в JSON-пресете</p>
+</header>
+<main>
+  <section class="panel" id="inputs"><h2>Входные параметры</h2></section>
+  <section class="panel" id="results"><h2>Результаты</h2></section>
+</main>
+<footer id="sources"></footer>
+<script src="engine.js"></script>
+<script>
+(async () => {
+  const preset = await (await fetch("/core/compute/grado_compute/presets/moscow_krt.json")).json();
+  const engine = new GradoCompute.MetricEngine(preset);
+  document.getElementById("title").textContent = preset.title;
+
+  const params = new URLSearchParams(location.search);
+  const aliases = { terrArea: "terr_area", restrictArea: "restrict_area" };
+  for (const [key, raw] of params) {
+    const id = aliases[key] || key;
+    if (id in engine.inputs && !isNaN(parseFloat(raw))) engine.setInput(id, parseFloat(raw));
+  }
+
+  const inputsEl = document.getElementById("inputs");
+  for (const spec of preset.inputs) {
+    const row = document.createElement("div");
+    row.className = "input-row";
+    const unit = spec.unit ? ` <span class="unit">(${spec.unit})</span>` : "";
+    row.innerHTML = `<label for="in_${spec.id}">${spec.title}${unit}</label>
+      <div class="controls">
+        <input type="range" id="in_${spec.id}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${engine.values[spec.id]}">
+        <input type="number" id="num_${spec.id}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${engine.values[spec.id]}">
+      </div>`;
+    inputsEl.appendChild(row);
+    const range = row.querySelector("input[type=range]");
+    const num = row.querySelector("input[type=number]");
+    const onChange = (v) => {
+      const val = parseFloat(v);
+      if (isNaN(val)) return;
+      range.value = num.value = val;
+      engine.setInput(spec.id, val);
+      render();
+      const url = new URLSearchParams(location.search);
+      url.set(spec.id, val);
+      history.replaceState(null, "", "?" + url);
+    };
+    range.addEventListener("input", (e) => onChange(e.target.value));
+    num.addEventListener("input", (e) => onChange(e.target.value));
+  }
+
+  const resultsEl = document.getElementById("results");
+  function render() {
+    resultsEl.innerHTML = "<h2>Результаты</h2>";
+    for (const [group, metrics] of engine.groups()) {
+      const g = document.createElement("div");
+      g.className = "group";
+      g.innerHTML = `<h3>${group}</h3>`;
+      for (const m of metrics) {
+        const row = document.createElement("div");
+        row.className = "row" + (engine.values[m.id] === 0 ? " zero" : "");
+        row.id = "metric_" + m.id;
+        row.innerHTML = `<span>${m.title}</span>
+          <span class="val">${engine.display(m)}<span class="unit">${m.unit}</span></span>`;
+        g.appendChild(row);
+      }
+      resultsEl.appendChild(g);
+    }
+  }
+  render();
+
+  const src = document.getElementById("sources");
+  src.innerHTML = "<ul>" + preset.sources.map((s) => `<li>${s}</li>`).join("") + "</ul>";
+})();
+</script>
+</body>
+</html>
