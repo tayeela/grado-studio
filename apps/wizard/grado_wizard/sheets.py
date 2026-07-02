@@ -84,7 +84,50 @@ def base_plan_sheet(doc, project, page_no):
     return page
 
 
-def apo_sheet(doc, project, engine, page_no):
+def _layer_centroid(project, code, bbox_of_all=False):
+    from grado_render.scene import centroid, _polygons, _points
+    pts = []
+    if code not in [i["code"] for i in project.layers()]:
+        return None
+    for f in project.layer(code).features():
+        geom = f["geom"]
+        if not geom:
+            continue
+        for poly in _polygons(geom):
+            pts.append(centroid(poly[0]))
+        for pt in _points(geom):
+            pts.append(tuple(pt))
+    if not pts:
+        return None
+    if bbox_of_all:
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    return pts[0]
+
+
+def default_callouts(project, engine):
+    """Выноски листа АПО из реальных объектов проекта и чисел движка."""
+    d = engine.display
+    out = []
+    target = _layer_centroid(project, "oks.building", bbox_of_all=True)
+    if target:
+        out.append((["Многоквартирная жилая застройка",
+                     f"СПП жилых зданий: {d('spp_zh')} тыс. кв. м",
+                     f"население: {d('population')} чел"], target))
+    target = _layer_centroid(project, "social.object")
+    if target:
+        out.append((["Образовательная организация",
+                     f"потребность: {d('school_norm')} мест ОО,",
+                     f"{d('doo_norm')} мест ДОО"], target))
+    target = _layer_centroid(project, "pp.placement_zone")
+    if target:
+        out.append((["Зона размещения нежилых ОКС",
+                     f"нежилая СПП: {d('spp_nzh')} тыс. кв. м"], target))
+    return out
+
+
+def apo_sheet(doc, project, engine, page_no, callouts=None):
     page = Page(A3_LANDSCAPE)
     st = doc.styles.resolve
     legend = SectionedLegendFrame(
@@ -114,27 +157,18 @@ def apo_sheet(doc, project, engine, page_no):
     scale = fit_scale(project)
     from grado_render import MapTransform
     tr = MapTransform(MAP_RECT, ((x0 + x1) / 2, (y0 + y1) / 2), scale)
-    callouts = [
-        CalloutFrame((18, 18, 62, 14),
-                     ["Многоквартирная жилая застройка",
-                      f"СПП жилых зданий: {d('spp_zh')} тыс. кв. м",
-                      f"население: {d('population')} чел"],
-                     tr.to_mm(x0 + 210, y0 + 310)),
-        CalloutFrame((18, 244, 62, 14),
-                     ["Образовательная организация",
-                      f"потребность: {d('school_norm')} мест ОО,",
-                      f"{d('doo_norm')} мест ДОО"],
-                     tr.to_mm(x0 + 470, y0 + 350)),
-        CalloutFrame((220, 250, 62, 10),
-                     ["Общественный центр",
-                      f"нежилая СПП: {d('spp_nzh')} тыс. кв. м"],
-                     tr.to_mm(x0 + 155, y0 + 85)),
-    ]
+    if callouts is None:
+        callouts = default_callouts(project, engine)
+    slots = [(18, 18), (18, 244), (200, 250)]  # углы карты под рамки выносок
+    frames = []
+    for (lines, target), (cx, cy) in zip(callouts, slots):
+        frames.append(CalloutFrame((cx, cy, 64, 3 + 4.2 * len(lines)),
+                                   lines, tr.to_mm(*target)))
     page.frames = [
         SheetHeader(page, ["Схема архитектурно-планировочной",
                            "организации территории"], page_no),
         MapFrame(MAP_RECT, scale=scale),
-        *callouts, legend, tep]
+        *frames, legend, tep]
     return page
 
 

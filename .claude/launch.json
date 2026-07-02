@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8642", "--directory", "/Users/tayeela/grado-studio"],
       "port": 8642
+    },
+    {
+      "name": "studio",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/tayeela/grado-studio/apps/studio/server.py", "8643"],
+      "port": 8643
     }
   ]
 }
