@@ -42,6 +42,19 @@
       <div id="props-body" class="muted">Ничего не выбрано</div>
     </section>
     <section>
+      <h3>Сетка и привязки</h3>
+      <label>Шаг сетки, м
+        <select id="grid-step">
+          <option value="auto" selected>авто</option>
+          <option value="1">1</option><option value="2">2</option>
+          <option value="5">5</option><option value="10">10</option>
+          <option value="20">20</option><option value="50">50</option>
+        </select></label>
+      <label class="chk"><input type="checkbox" id="grid-show" checked> показывать сетку</label>
+      <label class="chk"><input type="checkbox" id="grid-snap" checked> привязка к сетке (C)</label>
+      <label class="chk"><input type="checkbox" id="obj-snap" checked> привязка к объектам (X)</label>
+    </section>
+    <section>
       <h3>Параметры расчёта</h3>
       <label>Плотность, тыс. м²/га
         <input id="p-density" type="number" value="25" min="1" max="60" step="0.5"></label>
@@ -61,7 +74,7 @@
   <span id="st-snap"></span>
   <span id="st-core">ядро: …</span>
   <span class="spacer"></span>
-  <span id="st-hint">V G Z O B P L S M · колесо — масштаб · правая кнопка — панорама · F — вписать · в режиме выбора тяни вершины и фигуры · Enter — замкнуть · Esc — отмена</span>
+  <span id="st-hint">V G Z O B P L S M · Shift — орто · цифры+Enter — длина · R — поворот · ⌘D — дубликат · стрелки — сдвиг · F — вписать · X/C — привязки · Esc — отмена</span>
 </footer>
 <script src="app.js"></script>
 </body>

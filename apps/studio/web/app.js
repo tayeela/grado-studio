@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -40,13 +40,19 @@ const KIND_NAMES = {
 
 const state = {
   features: [], tool: "select", selected: null,
-  drawing: null, drag: null, snapOn: true, snapHit: null,
+  drawing: null, drag: null, pan: null, edit: null, measure: null,
+  snapHit: null, guides: [], typed: "", mouse: null,
   view: { k: 1.1, tx: 120, ty: 0 },
-  undo: [], redo: [], nextId: 1, mouse: null,
-  edit: null,      // {f, vi | "body", last, moved}
-  measure: null,   // {a, b|null}
+  undo: [], redo: [], nextId: 1,
+  gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
+  _fitted: false, _ix: null,
 };
 
+let shiftDown = false, spaceDown = false;
+
+// ---------- координаты ----------
+function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y * state.view.k]; }
+function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.ty - sy) / state.view.k]; }
 function featurePts(f) { return f.ring || f.line || [f.point]; }
 function selectedFeature() { return state.features.find(x => x.id === state.selected); }
 function vertexAt(f, wx, wy) {
@@ -57,14 +63,10 @@ function vertexAt(f, wx, wy) {
   return null;
 }
 
-// ---------- координаты ----------
-function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y * state.view.k]; }
-function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.ty - sy) / state.view.k]; }
-
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const r = cv.getBoundingClientRect();
-  if (r.width < 2 || r.height < 2) return;  // панель ещё без layout
+  if (r.width < 2 || r.height < 2) return;
   cv.width = r.width * dpr; cv.height = r.height * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.features.length && !state._fitted) {
@@ -77,40 +79,12 @@ function resize() {
 window.addEventListener("resize", resize);
 new ResizeObserver(resize).observe(cv);
 
-// ---------- сетка и привязки ----------
+// ---------- сетка ----------
 function gridStep() {
+  if (state.gridMode !== "auto") return +state.gridMode;
   for (const g of [1, 2, 5, 10, 20, 50, 100, 200, 500])
-    if (g * state.view.k >= 26) return g;
+    if (g * state.view.k >= 22) return g;
   return 1000;
-}
-
-function snapPoints(excludeId) {
-  const pts = [];
-  for (const f of state.features) {
-    if (f.id === excludeId) continue;
-    const chains = f.ring ? [f.ring] : f.line ? [f.line] : [[f.point]];
-    for (const chain of chains) {
-      chain.forEach(p => pts.push({ p, kind: "вершина" }));
-      for (let i = 0; i + 1 < chain.length; i++)
-        pts.push({ p: [(chain[i][0] + chain[i + 1][0]) / 2, (chain[i][1] + chain[i + 1][1]) / 2], kind: "середина" });
-      if (f.ring && chain.length > 2)
-        pts.push({ p: [(chain[0][0] + chain[chain.length - 1][0]) / 2, (chain[0][1] + chain[chain.length - 1][1]) / 2], kind: "середина" });
-    }
-  }
-  return pts;
-}
-
-function snap(wx, wy, excludeId) {
-  if (!state.snapOn) return { p: [wx, wy], kind: null };
-  const tolW = 9 / state.view.k;
-  let best = null;
-  for (const c of snapPoints(excludeId)) {
-    const d = Math.hypot(c.p[0] - wx, c.p[1] - wy);
-    if (d < tolW && (!best || d < best.d)) best = { ...c, d };
-  }
-  if (best) return best;
-  const g = gridStep() / 2;
-  return { p: [Math.round(wx / g) * g, Math.round(wy / g) * g], kind: "сетка" };
 }
 
 // ---------- геометрия ----------
@@ -124,7 +98,8 @@ function ringArea(ring) {
 }
 function lineLen(line) {
   let s = 0;
-  for (let i = 0; i + 1 < line.length; i++) s += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
+  for (let i = 0; i + 1 < line.length; i++)
+    s += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
   return s;
 }
 function pointInRing(x, y, ring) {
@@ -135,56 +110,214 @@ function pointInRing(x, y, ring) {
   }
   return inside;
 }
+function nearestOnSeg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+  return [a[0] + dx * t, a[1] + dy * t];
+}
 function nearChain(x, y, chain, tolW) {
   for (let i = 0; i + 1 < chain.length; i++) {
-    const [ax, ay] = chain[i], [bx, by] = chain[i + 1];
-    const l2 = (bx - ax) ** 2 + (by - ay) ** 2;
-    const t = l2 ? Math.max(0, Math.min(1, ((x - ax) * (bx - ax) + (y - ay) * (by - ay)) / l2)) : 0;
-    if (Math.hypot(x - (ax + t * (bx - ax)), y - (ay + t * (by - ay))) < tolW) return true;
-  }
-  return false;
-}
-
-function hitTest(wx, wy) {
-  const tolW = 7 / state.view.k;
-  for (const kind of [...Z_ORDER].reverse()) {
-    for (let i = state.features.length - 1; i >= 0; i--) {
-      const f = state.features[i];
-      if (f.kind !== kind) continue;
-      if (f.point && Math.hypot(f.point[0] - wx, f.point[1] - wy) < tolW + 4 / state.view.k) return f;
-      if (f.line && nearChain(wx, wy, f.line, tolW)) return f;
-      if (f.ring && (kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW)
-                                         : pointInRing(wx, wy, f.ring))) return f;
-    }
+    const q = nearestOnSeg([x, y], chain[i], chain[i + 1]);
+    if (Math.hypot(x - q[0], y - q[1]) < tolW) return i;
   }
   return null;
+}
+function segIntersect(a0, a1, b0, b1) {
+  const d0 = [a1[0] - a0[0], a1[1] - a0[1]], d1 = [b1[0] - b0[0], b1[1] - b0[1]];
+  const det = d0[0] * d1[1] - d0[1] * d1[0];
+  if (Math.abs(det) < 1e-12) return null;
+  const t = ((b0[0] - a0[0]) * d1[1] - (b0[1] - a0[1]) * d1[0]) / det;
+  const u = ((b0[0] - a0[0]) * d0[1] - (b0[1] - a0[1]) * d0[0]) / det;
+  if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+  return [a0[0] + d0[0] * t, a0[1] + d0[1] * t];
+}
+
+function featureChains(f) {
+  if (f.ring) return [[...f.ring, f.ring[0]]];
+  if (f.line) return [f.line];
+  return [];
+}
+
+// ---------- привязки (уровень CAD) ----------
+const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2, "центр": 3 };
+
+function collectSnapPts(excludeId) {
+  const out = [];
+  for (const f of state.features) {
+    if (f.id === excludeId) continue;
+    if (f.point) { out.push({ p: f.point, kind: "вершина" }); continue; }
+    for (const chain of featureChains(f)) {
+      for (let i = 0; i + 1 < chain.length; i++) {
+        out.push({ p: chain[i], kind: "вершина" });
+        out.push({ p: [(chain[i][0] + chain[i + 1][0]) / 2,
+                       (chain[i][1] + chain[i + 1][1]) / 2], kind: "середина" });
+      }
+    }
+    if (f.ring) {
+      const xs = f.ring.map(p => p[0]), ys = f.ring.map(p => p[1]);
+      out.push({ p: [(Math.min(...xs) + Math.max(...xs)) / 2,
+                     (Math.min(...ys) + Math.max(...ys)) / 2], kind: "центр" });
+    }
+  }
+  return out;
+}
+
+function intersections() {
+  if (state._ix) return state._ix;
+  const segs = [];
+  for (const f of state.features)
+    for (const chain of featureChains(f))
+      for (let i = 0; i + 1 < chain.length; i++)
+        segs.push([chain[i], chain[i + 1]]);
+  const out = [];
+  for (let i = 0; i < segs.length && i < 400; i++)
+    for (let j = i + 1; j < segs.length && j < 400; j++) {
+      const p = segIntersect(segs[i][0], segs[i][1], segs[j][0], segs[j][1]);
+      if (p) out.push(p);
+    }
+  state._ix = out;
+  return out;
+}
+
+function snapPoint(wx, wy, excludeId) {
+  state.guides = [];
+  const tolW = 10 / state.view.k;
+  // 1. объектные привязки по приоритету
+  if (state.osnap) {
+    let best = null;
+    for (const c of collectSnapPts(excludeId)) {
+      const d = Math.hypot(c.p[0] - wx, c.p[1] - wy);
+      if (d > tolW) continue;
+      const key = [SNAP_PRIORITY[c.kind], d];
+      if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1]))
+        best = { p: [...c.p], kind: c.kind, key };
+    }
+    for (const p of intersections()) {
+      const d = Math.hypot(p[0] - wx, p[1] - wy);
+      if (d <= tolW && (!best || best.key[0] > 1 || (best.key[0] === 1 && d < best.key[1])))
+        best = { p: [...p], kind: "пересечение", key: [1, d] };
+    }
+    if (best) return { p: best.p, kind: best.kind };
+    // 2. направляющие выравнивания по вершинам
+    let gx = null, gy = null;
+    for (const c of collectSnapPts(excludeId)) {
+      if (c.kind !== "вершина") continue;
+      if (Math.abs(c.p[0] - wx) < tolW && (!gx || Math.abs(c.p[0] - wx) < Math.abs(gx.p[0] - wx))) gx = c;
+      if (Math.abs(c.p[1] - wy) < tolW && (!gy || Math.abs(c.p[1] - wy) < Math.abs(gy.p[1] - wy))) gy = c;
+    }
+    if (gx || gy) {
+      const p = [gx ? gx.p[0] : wx, gy ? gy.p[1] : wy];
+      if (gx) state.guides.push([gx.p, p]);
+      if (gy) state.guides.push([gy.p, p]);
+      return { p, kind: "выравнивание" };
+    }
+  }
+  // 3. сетка
+  if (state.gridSnap) {
+    const g = gridStep();
+    return { p: [Math.round(wx / g) * g, Math.round(wy / g) * g], kind: "сетка" };
+  }
+  return { p: [wx, wy], kind: null };
+}
+
+function lastDrawingPt() {
+  return state.drawing && state.drawing.pts.length
+    ? state.drawing.pts[state.drawing.pts.length - 1] : null;
+}
+
+function orthoProject(base, wx, wy) {
+  // фиксация направления на 0/45/90° (Shift)
+  const dx = wx - base[0], dy = wy - base[1];
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-9) return [wx, wy];
+  const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+  return [base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)];
+}
+
+function cursorPoint(wx, wy) {
+  const base = lastDrawingPt();
+  if (shiftDown && base) {
+    const [ox, oy] = orthoProject(base, wx, wy);
+    if (state.gridSnap) {
+      // выравниваем длину по шагу сетки вдоль зафиксированного направления
+      const g = gridStep();
+      const d = Math.round(Math.hypot(ox - base[0], oy - base[1]) / g) * g;
+      const a = Math.atan2(oy - base[1], ox - base[0]);
+      return { p: [base[0] + d * Math.cos(a), base[1] + d * Math.sin(a)], kind: "орто" };
+    }
+    return { p: [ox, oy], kind: "орто" };
+  }
+  return snapPoint(wx, wy, state.edit ? state.edit.f.id : undefined);
 }
 
 // ---------- отрисовка ----------
 function drawChain(chain, close) {
   ctx.beginPath();
-  const [sx, sy] = w2s(...chain[0]);
-  ctx.moveTo(sx, sy);
+  ctx.moveTo(...w2s(...chain[0]));
   for (let i = 1; i < chain.length; i++) ctx.lineTo(...w2s(...chain[i]));
   if (close) ctx.closePath();
+}
+
+function drawGrid(w, h) {
+  if (!state.gridShow) return;
+  const g = gridStep();
+  const [wx0, wy1] = s2w(0, 0), [wx1, wy0] = s2w(w, h);
+  const px = g * state.view.k;
+  // крупные линии каждые 5 шагов
+  ctx.lineWidth = 1;
+  for (let x = Math.floor(wx0 / (g * 5)) * g * 5; x <= wx1; x += g * 5) {
+    ctx.strokeStyle = x === 0 ? "#d5d2ca" : "#eceae5";
+    ctx.beginPath(); ctx.moveTo(...w2s(x, wy0)); ctx.lineTo(...w2s(x, wy1)); ctx.stroke();
+  }
+  for (let y = Math.floor(wy0 / (g * 5)) * g * 5; y <= wy1; y += g * 5) {
+    ctx.strokeStyle = y === 0 ? "#d5d2ca" : "#eceae5";
+    ctx.beginPath(); ctx.moveTo(...w2s(wx0, y)); ctx.lineTo(...w2s(wx1, y)); ctx.stroke();
+  }
+  // точки в узлах мелкого шага (как в Rayon)
+  if (px >= 11) {
+    ctx.fillStyle = "#c9c6bd";
+    for (let x = Math.floor(wx0 / g) * g; x <= wx1; x += g)
+      for (let y = Math.floor(wy0 / g) * g; y <= wy1; y += g) {
+        const [sx, sy] = w2s(x, y);
+        ctx.fillRect(sx - 0.75, sy - 0.75, 1.5, 1.5);
+      }
+  }
+  document.getElementById("st-grid").textContent =
+    `сетка ${g} м${state.gridSnap ? "" : " (без привязки)"}`;
+}
+
+function drawSnapMarker() {
+  const s = state.snapHit;
+  if (!s || !s.kind || state.tool === "select") return;
+  const [sx, sy] = w2s(...s.p);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "#12a150";
+  if (s.kind === "вершина") ctx.strokeRect(sx - 5, sy - 5, 10, 10);
+  else if (s.kind === "середина") {
+    ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 6, sy + 5); ctx.lineTo(sx - 6, sy + 5);
+    ctx.closePath(); ctx.stroke();
+  } else if (s.kind === "пересечение") {
+    ctx.beginPath();
+    ctx.moveTo(sx - 5, sy - 5); ctx.lineTo(sx + 5, sy + 5);
+    ctx.moveTo(sx - 5, sy + 5); ctx.lineTo(sx + 5, sy - 5); ctx.stroke();
+  } else if (s.kind === "центр") {
+    ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, 7); ctx.stroke();
+  } else if (s.kind === "выравнивание" || s.kind === "орто") {
+    ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 7); ctx.stroke();
+  } else if (s.kind === "сетка") {
+    ctx.strokeStyle = "#9a978f";
+    ctx.beginPath();
+    ctx.moveTo(sx - 4, sy); ctx.lineTo(sx + 4, sy);
+    ctx.moveTo(sx, sy - 4); ctx.lineTo(sx, sy + 4); ctx.stroke();
+  }
 }
 
 function draw() {
   const w = cv.clientWidth, h = cv.clientHeight;
   ctx.clearRect(0, 0, w, h);
-  // сетка
-  const g = gridStep();
-  const [wx0, wy1] = s2w(0, 0), [wx1, wy0] = s2w(w, h);
-  ctx.lineWidth = 1;
-  for (let x = Math.floor(wx0 / g) * g; x <= wx1; x += g) {
-    ctx.strokeStyle = (Math.round(x / g) % 5 === 0) ? "#e7e5e0" : "#f3f2ee";
-    ctx.beginPath(); ctx.moveTo(...w2s(x, wy0)); ctx.lineTo(...w2s(x, wy1)); ctx.stroke();
-  }
-  for (let y = Math.floor(wy0 / g) * g; y <= wy1; y += g) {
-    ctx.strokeStyle = (Math.round(y / g) % 5 === 0) ? "#e7e5e0" : "#f3f2ee";
-    ctx.beginPath(); ctx.moveTo(...w2s(wx0, y)); ctx.lineTo(...w2s(wx1, y)); ctx.stroke();
-  }
-  // объекты
+  drawGrid(w, h);
+
   for (const kind of Z_ORDER) {
     for (const f of state.features) {
       if (f.kind !== kind) continue;
@@ -196,7 +329,6 @@ function draw() {
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
       } else {
         if (kind === "redline" && (f.props.radius || 0) > 0 && f.line.length > 2) {
-          // сопряжение углов дугами (как Path.fillet_polyline в ядре)
           ctx.beginPath();
           ctx.moveTo(...w2s(...f.line[0]));
           for (let i = 1; i < f.line.length - 1; i++)
@@ -213,7 +345,7 @@ function draw() {
       if (st.label && f.ring) {
         const c = f.ring.reduce((a, p) => [a[0] + p[0] / f.ring.length, a[1] + p[1] / f.ring.length], [0, 0]);
         const v = st.label(f);
-        if (v !== undefined && v !== "") {
+        if (v !== undefined && v !== "" && v !== null) {
           ctx.fillStyle = "#5c5a54"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
           ctx.fillText(String(v), ...w2s(...c));
         }
@@ -223,7 +355,7 @@ function draw() {
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
-        for (const p of (f.ring || f.line || [f.point])) {
+        for (const p of featurePts(f)) {
           const [sx, sy] = w2s(...p);
           ctx.fillStyle = "#fff"; ctx.strokeStyle = "#2f6fde"; ctx.lineWidth = 1.2;
           ctx.fillRect(sx - 3, sy - 3, 6, 6); ctx.strokeRect(sx - 3, sy - 3, 6, 6);
@@ -231,19 +363,54 @@ function draw() {
       }
     }
   }
-  // черчение в процессе
+
+  // направляющие выравнивания
+  if (state.guides.length) {
+    ctx.strokeStyle = "#12a150"; ctx.lineWidth = 0.8; ctx.setLineDash([4, 4]);
+    for (const [a, b] of state.guides) { drawChain([a, b], false); ctx.stroke(); }
+    ctx.setLineDash([]);
+  }
+
+  // черчение в процессе + живой размер
   if (state.drawing && state.drawing.pts.length) {
-    const st = STYLES[state.tool];
-    ctx.strokeStyle = st.stroke || "#000"; ctx.lineWidth = st.width; ctx.setLineDash([5, 4]);
+    const st = STYLES[state.tool] || {};
+    ctx.strokeStyle = st.stroke || "#000"; ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
     const pts = state.mouse ? [...state.drawing.pts, state.mouse] : state.drawing.pts;
     drawChain(pts, false); ctx.stroke(); ctx.setLineDash([]);
+    const base = lastDrawingPt();
+    if (base && state.mouse) {
+      const len = Math.hypot(state.mouse[0] - base[0], state.mouse[1] - base[1]);
+      const [mx, my] = w2s(...state.mouse);
+      ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
+      if (state.typed) {
+        ctx.fillStyle = "#1c1c1a";
+        ctx.fillRect(mx + 10, my - 24, ctx.measureText(state.typed + " м").width + 12, 18);
+        ctx.fillStyle = "#fff";
+        ctx.fillText(state.typed + " м", mx + 16, my - 11);
+      } else {
+        ctx.fillStyle = "#8b8a85";
+        ctx.fillText(len.toFixed(1) + " м", mx + 12, my - 10);
+      }
+    }
+    // замыкание: подсветка первой точки
+    if (state.tool !== "redline" && state.drawing.pts.length > 2 && state.mouse) {
+      const first = state.drawing.pts[0];
+      if (Math.hypot(first[0] - state.mouse[0], first[1] - state.mouse[1]) < 12 / state.view.k) {
+        const [fx, fy] = w2s(...first);
+        ctx.strokeStyle = "#12a150"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(fx, fy, 8, 0, 7); ctx.stroke();
+      }
+    }
   }
   if (state.drag && state.drag.rect) {
     const { a, b } = state.drag;
-    ctx.strokeStyle = STYLES.building.stroke; ctx.fillStyle = STYLES.building.fill + "88";
     const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
+    ctx.strokeStyle = STYLES.building.stroke; ctx.fillStyle = STYLES.building.fill + "88";
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
+    ctx.fillStyle = "#5c5a54"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`${Math.abs(b[0] - a[0]).toFixed(1)} × ${Math.abs(b[1] - a[1]).toFixed(1)} м`,
+                 Math.max(sx1, sx2) + 8, Math.min(sy1, sy2) - 6);
   }
   // измерение
   if (state.measure) {
@@ -258,23 +425,17 @@ function draw() {
       ctx.fillText(dist.toFixed(1) + " м", mx, my - 6);
     }
   }
-  // маркер привязки
-  if (state.snapHit && state.snapHit.kind && state.tool !== "select") {
-    const [sx, sy] = w2s(...state.snapHit.p);
-    ctx.strokeStyle = "#12a150"; ctx.lineWidth = 1.5;
-    ctx.strokeRect(sx - 5, sy - 5, 10, 10);
-  }
-  document.getElementById("st-grid").textContent = `сетка ${g} м`;
+  drawSnapMarker();
 }
 
+// ---------- вид ----------
 function fitView() {
   const pts = [];
-  for (const f of state.features)
-    for (const p of (f.ring || f.line || [f.point])) pts.push(p);
+  for (const f of state.features) for (const p of featurePts(f)) pts.push(p);
   if (!pts.length) return;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const w = cv.clientWidth, h = cv.clientHeight;
   if (w < 2 || h < 2) return;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const dx = Math.max(Math.max(...xs) - Math.min(...xs), 10);
   const dy = Math.max(Math.max(...ys) - Math.min(...ys), 10);
   state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * 0.82));
@@ -283,7 +444,7 @@ function fitView() {
   draw();
 }
 
-// ---------- история ----------
+// ---------- история и сохранение ----------
 function snapshot() {
   state.undo.push(JSON.stringify(state.features));
   if (state.undo.length > 100) state.undo.shift();
@@ -300,6 +461,20 @@ function redo() {
   state.undo.push(JSON.stringify(state.features));
   state.features = JSON.parse(state.redo.pop());
   state.selected = null; afterChange();
+}
+function persist() {
+  try {
+    localStorage.setItem("grado_studio_v1", JSON.stringify({
+      features: state.features, nextId: state.nextId,
+      name: document.getElementById("project-name").value,
+      density: document.getElementById("p-density").value,
+      ratio: document.getElementById("p-ratio").value,
+    }));
+  } catch (e) { /* приватный режим — работаем без сохранения */ }
+}
+function afterChange() {
+  state._ix = null;
+  draw(); renderProps(); refreshTep(); persist();
 }
 
 // ---------- ТЭП ----------
@@ -343,7 +518,7 @@ function renderTep(data) {
 // ---------- свойства ----------
 function renderProps() {
   const el = document.getElementById("props-body");
-  const f = state.features.find(x => x.id === state.selected);
+  const f = selectedFeature();
   if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
   el.className = "";
   let metric = "";
@@ -364,6 +539,7 @@ function renderProps() {
     extra = `<label>Назначение<input type="text" id="f-purpose" value="${f.props.purpose}"></label>`;
   el.innerHTML = `<div class="kind">${KIND_NAMES[f.kind]}</div>
     <div class="metric">${metric}</div>${extra}
+    <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
   const bind = (id, key, cast) => {
     const inp = document.getElementById(id);
@@ -383,19 +559,8 @@ function deleteSelected() {
   state.features = state.features.filter(f => f.id !== state.selected);
   state.selected = null; afterChange();
 }
-function persist() {
-  try {
-    localStorage.setItem("grado_studio_v1", JSON.stringify({
-      features: state.features, nextId: state.nextId,
-      name: document.getElementById("project-name").value,
-      density: document.getElementById("p-density").value,
-      ratio: document.getElementById("p-ratio").value,
-    }));
-  } catch (e) { /* приватный режим — работаем без сохранения */ }
-}
-function afterChange() { draw(); renderProps(); refreshTep(); persist(); }
 
-// ---------- добавление фигур ----------
+// ---------- добавление и правка фигур ----------
 const DEFAULT_PROPS = {
   boundary: () => ({}), restrict: () => ({ kind: "охранная зона" }),
   zone: () => ({ zone_title: "Ж-" + (state.features.filter(f => f.kind === "zone").length + 1) }),
@@ -410,6 +575,7 @@ function addFeature(kind, geom) {
   state.features.push(f);
   state.selected = f.id;
   afterChange();
+  return f;
 }
 function finishDrawing() {
   const d = state.drawing;
@@ -417,7 +583,65 @@ function finishDrawing() {
   const isPoly = state.tool !== "redline";
   if (isPoly && d.pts.length >= 3) addFeature(state.tool, { ring: d.pts });
   else if (!isPoly && d.pts.length >= 2) addFeature("redline", { line: d.pts });
-  state.drawing = null; draw();
+  state.drawing = null; state.typed = "";
+  draw();
+}
+function rotateSelected() {
+  const f = selectedFeature();
+  if (!f || f.point) return;
+  snapshot();
+  const pts = featurePts(f);
+  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
+  const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+  for (const p of pts) {
+    const dx = p[0] - cx, dy = p[1] - cy;
+    p[0] = cx - dy; p[1] = cy + dx;   // 90° против часовой
+  }
+  afterChange();
+}
+function duplicateSelected() {
+  const f = selectedFeature();
+  if (!f) return;
+  const g = gridStep();
+  const copy = JSON.parse(JSON.stringify(f));
+  copy.id = state.nextId++;
+  for (const p of featurePts(copy)) { p[0] += g; p[1] -= g; }
+  snapshot();
+  state.features.push(copy);
+  state.selected = copy.id;
+  afterChange();
+}
+function nudgeSelected(dx, dy) {
+  const f = selectedFeature();
+  if (!f) return;
+  snapshot();
+  for (const p of featurePts(f)) { p[0] += dx; p[1] += dy; }
+  afterChange();
+}
+function placeTypedPoint() {
+  const base = lastDrawingPt();
+  const dist = parseFloat(state.typed.replace(",", "."));
+  if (!base || !state.mouse || !isFinite(dist) || dist <= 0) { state.typed = ""; return; }
+  const a = Math.atan2(state.mouse[1] - base[1], state.mouse[0] - base[0]);
+  state.drawing.pts.push([base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)]);
+  state.typed = "";
+  draw();
+}
+
+// ---------- хит-тест ----------
+function hitTest(wx, wy) {
+  const tolW = 7 / state.view.k;
+  for (const kind of [...Z_ORDER].reverse()) {
+    for (let i = state.features.length - 1; i >= 0; i--) {
+      const f = state.features[i];
+      if (f.kind !== kind) continue;
+      if (f.point && Math.hypot(f.point[0] - wx, f.point[1] - wy) < tolW + 4 / state.view.k) return f;
+      if (f.line && nearChain(wx, wy, f.line, tolW) !== null) return f;
+      if (f.ring && (kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null
+                                         : pointInRing(wx, wy, f.ring))) return f;
+    }
+  }
+  return null;
 }
 
 // ---------- события мыши ----------
@@ -429,12 +653,23 @@ cv.addEventListener("mousedown", e => {
     return;
   }
   if (e.button !== 0) return;
-  const s = snap(wxr, wyr);
+  const s = cursorPoint(wxr, wyr);
   if (state.tool === "select") {
     const cur = selectedFeature();
     if (cur) {
       const vi = vertexAt(cur, wxr, wyr);
-      if (vi != null) { state.edit = { f: cur, vi, moved: false }; return; }
+      if (vi != null) {
+        if (e.altKey) {   // Alt+клик — удалить вершину
+          const pts = featurePts(cur);
+          const min = cur.ring ? 3 : 2;
+          if (!cur.point && pts.length > min) {
+            snapshot(); pts.splice(vi, 1); afterChange();
+          }
+          return;
+        }
+        state.edit = { f: cur, vi, moved: false };
+        return;
+      }
     }
     const f = hitTest(wxr, wyr);
     state.selected = f ? f.id : null;
@@ -449,13 +684,14 @@ cv.addEventListener("mousedown", e => {
   } else if (state.tool === "building") {
     state.drag = { a: s.p, b: s.p, rect: true };
   } else {
-    if (!state.drawing) state.drawing = { pts: [] };
+    if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
     const first = state.drawing.pts[0];
-    if (first && state.tool !== "redline" &&
-        Math.hypot(first[0] - s.p[0], first[1] - s.p[1]) < 9 / state.view.k) {
+    if (first && state.tool !== "redline" && state.drawing.pts.length > 2 &&
+        Math.hypot(first[0] - s.p[0], first[1] - s.p[1]) < 12 / state.view.k) {
       finishDrawing();
     } else {
       state.drawing.pts.push(s.p);
+      state.typed = "";
       draw();
     }
   }
@@ -476,22 +712,24 @@ cv.addEventListener("mousemove", e => {
       ed.last = [wx, wy];
       for (const p of featurePts(ed.f)) { p[0] += dx; p[1] += dy; }
     } else {
-      const s = snap(wx, wy, ed.f.id);
+      const s = snapPoint(wx, wy, ed.f.id);
       state.snapHit = s;
       const pts = featurePts(ed.f);
       pts[ed.vi][0] = s.p[0]; pts[ed.vi][1] = s.p[1];
     }
+    state._ix = null;
     draw(); return;
   }
-  const s = snap(wx, wy);
+  const s = cursorPoint(wx, wy);
   state.snapHit = s;
+  state.mouse = s.p;
   document.getElementById("st-snap").textContent = s.kind ? `привязка: ${s.kind}` : "";
   if (state.drag && state.drag.rect) { state.drag.b = s.p; draw(); return; }
-  state.mouse = s.p;
   if (state.tool === "select") {
     const cur = selectedFeature();
     cv.style.cursor = (cur && vertexAt(cur, wx, wy) != null) ? "move"
       : hitTest(wx, wy) ? "pointer" : "default";
+    if (state.guides.length) draw();
   }
   if (state.drawing || state.tool !== "select") draw();
 });
@@ -511,7 +749,24 @@ cv.addEventListener("mouseup", e => {
     } else draw();
   }
 });
-cv.addEventListener("dblclick", e => { e.preventDefault(); finishDrawing(); });
+cv.addEventListener("dblclick", e => {
+  e.preventDefault();
+  if (state.drawing) { finishDrawing(); return; }
+  // двойной клик по ребру выбранной фигуры — вставка вершины
+  if (state.tool === "select") {
+    const f = selectedFeature();
+    if (!f || f.point) return;
+    const [wx, wy] = s2w(e.offsetX, e.offsetY);
+    const chain = f.ring ? [...f.ring, f.ring[0]] : f.line;
+    const i = nearChain(wx, wy, chain, 7 / state.view.k);
+    if (i !== null) {
+      snapshot();
+      const q = nearestOnSeg([wx, wy], chain[i], chain[i + 1]);
+      featurePts(f).splice(i + 1, 0, q);
+      afterChange();
+    }
+  }
+});
 cv.addEventListener("wheel", e => {
   e.preventDefault();
   const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
@@ -522,33 +777,60 @@ cv.addEventListener("wheel", e => {
   draw();
 }, { passive: false });
 
-// ---------- клавиатура ----------
-let spaceDown = false;
-const TOOL_KEYS = { v: "select", g: "boundary", z: "zone", o: "restrict",
-                    b: "building", p: "public", l: "redline", s: "social",
-                    m: "measure" };
+// ---------- клавиатура (по кодам клавиш — не зависит от раскладки) ----------
+const TOOL_CODES = { KeyV: "select", KeyG: "boundary", KeyZ: "zone", KeyO: "restrict",
+                     KeyB: "building", KeyP: "public", KeyL: "redline", KeyS: "social",
+                     KeyM: "measure" };
 document.addEventListener("keydown", e => {
-  if (e.target.tagName === "INPUT") return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "Shift") { shiftDown = true; if (state.drawing) draw(); return; }
   if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyZ") {
     e.preventDefault(); e.shiftKey ? redo() : undo(); return;
   }
-  if (e.key === "Enter") { finishDrawing(); return; }
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyD") {
+    e.preventDefault(); duplicateSelected(); return;
+  }
+  // набор длины цифрами при рисовании
+  if (state.drawing && /^[0-9.,]$/.test(e.key)) { state.typed += e.key; draw(); return; }
+  if (state.drawing && e.key === "Backspace") {
+    state.typed = state.typed.slice(0, -1); draw(); return;
+  }
+  if (e.key === "Enter") {
+    if (state.drawing && state.typed) placeTypedPoint();
+    else finishDrawing();
+    return;
+  }
   if (e.key === "Escape") {
-    state.drawing = null; state.drag = null; state.measure = null; draw(); return;
+    if (state.typed) { state.typed = ""; draw(); return; }
+    if (state.drawing) { state.drawing = null; draw(); return; }
+    if (state.measure) { state.measure = null; draw(); return; }
+    state.selected = null; draw(); renderProps(); return;
   }
   if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
-  if (e.key.toLowerCase() === "x") { toggleSnap(); return; }
-  if (e.key.toLowerCase() === "f") { fitView(); return; }
-  const tool = TOOL_KEYS[e.key.toLowerCase()];
+  if (e.key.startsWith("Arrow")) {
+    const step = e.shiftKey ? 1 : gridStep();
+    const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
+                ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
+    if (d && state.selected != null) { e.preventDefault(); nudgeSelected(...d); }
+    return;
+  }
+  if (e.code === "KeyX") { setOsnap(!state.osnap); return; }
+  if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { setGridSnap(!state.gridSnap); return; }
+  if (e.code === "KeyF") { fitView(); return; }
+  if (e.code === "KeyR") { rotateSelected(); return; }
+  const tool = TOOL_CODES[e.code];
   if (tool) setTool(tool);
 });
-document.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+document.addEventListener("keyup", e => {
+  if (e.key === "Shift") { shiftDown = false; if (state.drawing) draw(); }
+  if (e.code === "Space") spaceDown = false;
+});
 
-// ---------- инструменты и кнопки ----------
+// ---------- инструменты, сетка, кнопки ----------
 function setTool(tool) {
   state.tool = tool; state.drawing = null; state.drag = null;
-  state.edit = null;
+  state.edit = null; state.typed = "";
   if (tool !== "measure") state.measure = null;
   document.querySelectorAll("#toolbar button[data-tool]").forEach(
     b => b.classList.toggle("active", b.dataset.tool === tool));
@@ -557,11 +839,24 @@ function setTool(tool) {
 }
 document.querySelectorAll("#toolbar button[data-tool]").forEach(
   b => b.addEventListener("click", () => setTool(b.dataset.tool)));
-function toggleSnap() {
-  state.snapOn = !state.snapOn;
-  document.getElementById("btn-snap").classList.toggle("active", state.snapOn);
+
+function setOsnap(v) {
+  state.osnap = v;
+  document.getElementById("btn-snap").classList.toggle("active", v);
+  const chk = document.getElementById("obj-snap");
+  if (chk) chk.checked = v;
 }
-on("btn-snap", "click", toggleSnap);
+function setGridSnap(v) {
+  state.gridSnap = v;
+  const chk = document.getElementById("grid-snap");
+  if (chk) chk.checked = v;
+  draw();
+}
+on("btn-snap", "click", () => setOsnap(!state.osnap));
+on("obj-snap", "change", e => setOsnap(e.target.checked));
+on("grid-snap", "change", e => setGridSnap(e.target.checked));
+on("grid-show", "change", e => { state.gridShow = e.target.checked; draw(); });
+on("grid-step", "change", e => { state.gridMode = e.target.value; draw(); });
 on("btn-undo", "click", undo);
 on("btn-redo", "click", redo);
 on("btn-clear", "click", () => {
@@ -627,7 +922,7 @@ on("btn-demo", "click", () => {
                              [120 + c * 82, 232 + r * 62], [90 + c * 82, 232 + r * 62]] },
         { floors: [9, 12, 14, 12, 9][c] });
   add("public", { ring: [[90, 40], [220, 40], [220, 130], [90, 130]] });
-  add("redline", { line: [[-30, 190], [400, 190], [400, 590]] });
+  add("redline", { line: [[-30, 190], [400, 190], [400, 590]] }, { radius: 60 });
   add("social", { point: [470, 350] });
   state.selected = null;
   afterChange();
@@ -648,7 +943,7 @@ on("btn-demo", "click", () => {
   } catch (e) { /* повреждённое сохранение игнорируем */ }
 })();
 on("project-name", "change", persist);
-window.studio = { state, addFeature, refreshTep, fitView };  // для автотестов
+window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep };
 setTool("select");
 requestAnimationFrame(resize);
 refreshTep();

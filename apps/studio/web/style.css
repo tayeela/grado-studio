@@ -53,10 +53,15 @@ button.primary:hover { opacity: .85; }
 #panel h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
             color: var(--muted); margin-bottom: 8px; font-weight: 600; }
 #panel label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 12px; }
-#panel input[type=number], #panel input[type=text] {
+#panel input[type=number], #panel input[type=text], #panel select {
   display: block; width: 100%; margin-top: 3px; padding: 5px 8px;
   border: 1px solid var(--border); border-radius: 6px; font: inherit; color: var(--text);
+  background: #fff;
 }
+#panel label.chk {
+  display: flex; gap: 7px; align-items: center; color: var(--text); cursor: pointer;
+}
+#panel label.chk input { accent-color: var(--accent); }
 .muted { color: var(--muted); }
 .tep-row { display: flex; justify-content: space-between; gap: 8px;
            padding: 3px 0; border-bottom: 1px dotted var(--border); }
