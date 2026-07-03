@@ -775,7 +775,12 @@ cv.addEventListener("mousemove", e => {
   }
   if (state.drawing || state.tool !== "select") draw();
 });
-cv.addEventListener("mouseup", e => {
+// Слушаем на window, а не на #cv: если отпустить кнопку за пределами
+// холста (над панелью/тулбаром), локальный слушатель #cv это событие
+// не увидит — pan/edit/drag «залипнут», и вид будет произвольно
+// скакать при следующем движении мыши, создавая впечатление, что
+// холст не реагирует на клики.
+window.addEventListener("mouseup", e => {
   if (state.pan) { state.pan = null; return; }
   if (state.edit) {
     const moved = state.edit.moved;
@@ -795,6 +800,13 @@ cv.addEventListener("mouseup", e => {
       draw();
     } else draw();
   }
+});
+// потеря фокуса окна (alt-tab, системный диалог) посреди жеста —
+// та же защита, чтобы состояние не осталось залипшим
+window.addEventListener("blur", () => {
+  state.pan = null;
+  if (state.edit) { state.edit = null; }
+  if (state.drag) { state.drag = null; draw(); }
 });
 cv.addEventListener("dblclick", e => {
   e.preventDefault();
