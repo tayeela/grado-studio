@@ -67,11 +67,23 @@ function vertexAt(f, wx, wy) {
   return null;
 }
 
+// Safari отмечен глюками ResizeObserver + <canvas>: назначение canvas.width
+// сбрасывает битмап, и если наблюдатель перевызывает resize() синхронно
+// в цикле (даже когда CSS-размер элемента фактически не изменился),
+// холст может гаситься быстрее, чем успевает перерисоваться — экран
+// «на секунду показывает точки сетки и белеет». Защита: (1) менять
+// битмап только когда размер реально изменился; (2) события наблюдателя
+// схлопывать через requestAnimationFrame, чтобы разорвать возможный
+// синхронный цикл переисчисления layout.
+let lastBufW = 0, lastBufH = 0;
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const r = cv.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return;
-  cv.width = r.width * dpr; cv.height = r.height * dpr;
+  const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+  if (w === lastBufW && h === lastBufH) { draw(); return; }
+  lastBufW = w; lastBufH = h;
+  cv.width = w; cv.height = h;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (state.features.length && !state._fitted) {
     state._fitted = true;
@@ -81,7 +93,12 @@ function resize() {
   draw();
 }
 window.addEventListener("resize", resize);
-new ResizeObserver(resize).observe(cv);
+let roPending = false;
+new ResizeObserver(() => {
+  if (roPending) return;
+  roPending = true;
+  requestAnimationFrame(() => { roPending = false; resize(); });
+}).observe(cv);
 
 // ---------- сетка ----------
 function gridStep() {
