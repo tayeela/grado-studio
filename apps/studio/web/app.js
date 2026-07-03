@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -65,6 +65,33 @@ function vertexAt(f, wx, wy) {
   for (let i = 0; i < pts.length; i++)
     if (Math.hypot(pts[i][0] - wx, pts[i][1] - wy) < tolW) return i;
   return null;
+}
+
+// Совместное редактирование границ покрытия: вершины других зон,
+// совпадающие с данной, двигаются вместе с ней — общая граница остаётся
+// общей, дырки и нахлёсты не возникают (инвариант coverage ядра).
+const SHARED_KINDS = new Set(["zone"]);
+function sharedCompanions(f, vi) {
+  if (!SHARED_KINDS.has(f.kind)) return [];
+  const [x, y] = featurePts(f)[vi];
+  const out = [];
+  for (const other of state.features) {
+    if (other.id === f.id || !SHARED_KINDS.has(other.kind) || isHidden(other)) continue;
+    const pts = featurePts(other);
+    for (let i = 0; i < pts.length; i++)
+      if (Math.abs(pts[i][0] - x) < 1e-6 && Math.abs(pts[i][1] - y) < 1e-6)
+        out.push({ f: other, vi: i });
+  }
+  return out;
+}
+
+function sharedVertexSet(f) {
+  const shared = new Set();
+  if (!SHARED_KINDS.has(f.kind)) return shared;
+  const pts = featurePts(f);
+  for (let i = 0; i < pts.length; i++)
+    if (sharedCompanions(f, i).length) shared.add(i);
+  return shared;
 }
 
 // Safari отмечен глюками ResizeObserver + <canvas>: назначение canvas.width
@@ -259,10 +286,16 @@ function featureChains(f) {
 // ---------- привязки (уровень CAD) ----------
 const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2, "центр": 3 };
 
-function collectSnapPts(excludeId) {
+function _excludeSet(exclude) {
+  if (exclude == null) return null;
+  return exclude instanceof Set ? exclude : new Set([].concat(exclude));
+}
+
+function collectSnapPts(exclude) {
+  const ex = _excludeSet(exclude);
   const out = [];
   for (const f of state.features) {
-    if (f.id === excludeId || isHidden(f)) continue;
+    if ((ex && ex.has(f.id)) || isHidden(f)) continue;
     if (f.point) { out.push({ p: f.point, kind: "вершина" }); continue; }
     for (const chain of featureChains(f)) {
       for (let i = 0; i + 1 < chain.length; i++) {
@@ -299,13 +332,13 @@ function intersections() {
   return out;
 }
 
-function snapPoint(wx, wy, excludeId) {
+function snapPoint(wx, wy, exclude) {
   state.guides = [];
   const tolW = 10 / state.view.k;
   // 1. объектные привязки по приоритету
   if (state.osnap) {
     let best = null;
-    for (const c of collectSnapPts(excludeId)) {
+    for (const c of collectSnapPts(exclude)) {
       const d = Math.hypot(c.p[0] - wx, c.p[1] - wy);
       if (d > tolW) continue;
       const key = [SNAP_PRIORITY[c.kind], d];
@@ -320,7 +353,7 @@ function snapPoint(wx, wy, excludeId) {
     if (best) return { p: best.p, kind: best.kind };
     // 2. направляющие выравнивания по вершинам
     let gx = null, gy = null;
-    for (const c of collectSnapPts(excludeId)) {
+    for (const c of collectSnapPts(exclude)) {
       if (c.kind !== "вершина") continue;
       if (Math.abs(c.p[0] - wx) < tolW && (!gx || Math.abs(c.p[0] - wx) < Math.abs(gx.p[0] - wx))) gx = c;
       if (Math.abs(c.p[1] - wy) < tolW && (!gy || Math.abs(c.p[1] - wy) < Math.abs(gy.p[1] - wy))) gy = c;
@@ -332,6 +365,7 @@ function snapPoint(wx, wy, excludeId) {
       return { p, kind: "выравнивание" };
     }
   }
+  // (направляющие уже используют тот же exclude через collectSnapPts выше)
   // 3. сетка
   if (state.gridSnap) {
     const g = gridStep();
@@ -476,11 +510,16 @@ function draw() {
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
-        for (const p of featurePts(f)) {
+        const shared = sharedVertexSet(f);
+        featurePts(f).forEach((p, i) => {
           const [sx, sy] = w2s(...p);
-          ctx.fillStyle = "#fff"; ctx.strokeStyle = "#2f6fde"; ctx.lineWidth = 1.2;
+          const isShared = shared.has(i);
+          // зелёная ручка — вершина общая с соседней зоной, тянется совместно
+          ctx.fillStyle = isShared ? "#12a150" : "#fff";
+          ctx.strokeStyle = isShared ? "#0c6b36" : "#2f6fde";
+          ctx.lineWidth = 1.2;
           ctx.fillRect(sx - 3, sy - 3, 6, 6); ctx.strokeRect(sx - 3, sy - 3, 6, 6);
-        }
+        });
       }
     }
   }
@@ -901,7 +940,8 @@ cv.addEventListener("mousedown", e => {
           }
           return;
         }
-        state.edit = { f: cur, vi, moved: false };
+        state.edit = { f: cur, vi, moved: false,
+                       companions: sharedCompanions(cur, vi) };
         return;
       }
     }
@@ -947,10 +987,17 @@ cv.addEventListener("mousemove", e => {
       ed.last = [wx, wy];
       for (const p of featurePts(ed.f)) { p[0] += dx; p[1] += dy; }
     } else {
-      const s = snapPoint(wx, wy, ed.f.id);
+      // исключаем из привязок свою фигуру и всех компаньонов общей вершины
+      const ex = new Set([ed.f.id]);
+      for (const c of (ed.companions || [])) ex.add(c.f.id);
+      const s = snapPoint(wx, wy, ex);
       state.snapHit = s;
       const pts = featurePts(ed.f);
       pts[ed.vi][0] = s.p[0]; pts[ed.vi][1] = s.p[1];
+      for (const c of (ed.companions || [])) {
+        const cpts = featurePts(c.f);
+        cpts[c.vi][0] = s.p[0]; cpts[c.vi][1] = s.p[1];
+      }
     }
     state._ix = null;
     draw(); return;
