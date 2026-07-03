@@ -1,5 +1,22 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
+const VERSION = "0.2.1";
+
+// любая ошибка интерфейса — на экран, а не молча в консоль
+window.addEventListener("error", e => {
+  const el = document.getElementById("errbar");
+  if (el) {
+    el.textContent = `Ошибка интерфейса (${VERSION}): ${e.message} — ${String(e.filename).split("/").pop()}:${e.lineno}`;
+    el.style.display = "block";
+  }
+});
+
+function on(id, event, fn) {
+  const el = document.getElementById(id);
+  if (!el) { console.warn("нет элемента #" + id); return; }
+  el.addEventListener(event, fn);
+}
+
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 
@@ -301,8 +318,10 @@ function refreshTep() {
       const data = await r.json();
       renderTep(data);
       document.getElementById("tep-status").textContent = "";
+      document.getElementById("st-core").textContent = `ядро: ок · v${VERSION}`;
     } catch (e) {
       document.getElementById("tep-status").textContent = "нет связи с ядром";
+      document.getElementById("st-core").textContent = "ядро: НЕДОСТУПНО";
     }
   }, 250);
 }
@@ -542,14 +561,14 @@ function toggleSnap() {
   state.snapOn = !state.snapOn;
   document.getElementById("btn-snap").classList.toggle("active", state.snapOn);
 }
-document.getElementById("btn-snap").addEventListener("click", toggleSnap);
-document.getElementById("btn-undo").addEventListener("click", undo);
-document.getElementById("btn-redo").addEventListener("click", redo);
-document.getElementById("btn-clear").addEventListener("click", () => {
+on("btn-snap", "click", toggleSnap);
+on("btn-undo", "click", undo);
+on("btn-redo", "click", redo);
+on("btn-clear", "click", () => {
   snapshot(); state.features = []; state.selected = null; afterChange();
 });
-document.getElementById("p-density").addEventListener("change", refreshTep);
-document.getElementById("p-ratio").addEventListener("change", refreshTep);
+on("p-density", "change", refreshTep);
+on("p-ratio", "change", refreshTep);
 
 async function download(url, filename) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
@@ -562,15 +581,12 @@ async function download(url, filename) {
   if (filename.endsWith(".pdf")) window.open(a.href, "_blank");
   a.download = filename; a.click();
 }
-document.getElementById("btn-album").addEventListener("click",
-  () => download("/api/album", "grado_agk_album.pdf"));
-document.getElementById("btn-grado").addEventListener("click",
-  () => download("/api/grado", "project.grado"));
+on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
+on("btn-grado", "click", () => download("/api/grado", "project.grado"));
 
 // импорт захвата НСПД (JSON браузерного моста GRADO)
-document.getElementById("btn-nspd").addEventListener("click",
-  () => document.getElementById("nspd-file").click());
-document.getElementById("nspd-file").addEventListener("change", async e => {
+on("btn-nspd", "click", () => document.getElementById("nspd-file").click());
+on("nspd-file", "change", async e => {
   const file = e.target.files[0];
   if (!file) return;
   e.target.value = "";
@@ -594,7 +610,7 @@ document.getElementById("nspd-file").addEventListener("change", async e => {
 });
 
 // ---------- демо-наполнение ----------
-document.getElementById("btn-demo").addEventListener("click", () => {
+on("btn-demo", "click", () => {
   snapshot();
   const B = [[0, 0], [650, 0], [650, 180], [520, 180], [520, 420], [300, 420],
              [300, 560], [60, 560], [60, 300], [0, 300]];
@@ -631,7 +647,7 @@ document.getElementById("btn-demo").addEventListener("click", () => {
     if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
   } catch (e) { /* повреждённое сохранение игнорируем */ }
 })();
-document.getElementById("project-name").addEventListener("change", persist);
+on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView };  // для автотестов
 setTool("select");
 requestAnimationFrame(resize);

@@ -35,6 +35,11 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def end_headers(self):
+        # Safari охотно кэширует статику — интерфейс всегда свежий
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
     def _json_body(self):
         n = int(self.headers.get("Content-Length", 0))
         return json.loads(self.rfile.read(n).decode("utf-8"))
