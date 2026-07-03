@@ -253,5 +253,71 @@ class TestStudioCore(unittest.TestCase):
         self.assertTrue(data.startswith(b"SQLite format 3"))
 
 
+FAKE_JPEG = bytes([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+                   0x00, 0x01, 0x00, 0x02, 0x03])
+
+
+class TestUnderlay(unittest.TestCase):
+    """Подложка листов: тайлы подменены — тесты не ходят в сеть."""
+
+    CENTER = (413250.0, 6178150.0)  # центр FEATURES в UTM
+    RECT = (12, 10, 280, 277)
+
+    def setUp(self):
+        self._orig = studio_core._tile_jpeg
+        studio_core._tile_jpeg = lambda z, x, y: FAKE_JPEG
+
+    def tearDown(self):
+        studio_core._tile_jpeg = self._orig
+
+    def test_tile_math_roundtrip(self):
+        xt, yt = studio_core._tile_xy(37.614292, 55.739888, 17)
+        lon, lat = studio_core._tile_lonlat(xt, yt, 17)
+        self.assertAlmostEqual(lon, 37.614292, places=9)
+        self.assertAlmostEqual(lat, 55.739888, places=9)
+
+    def test_underlay_covers_frame(self):
+        ops = studio_core.tile_underlay(self.CENTER, self.RECT, 2000)
+        self.assertGreater(len(ops), 10)
+        self.assertLessEqual(len(ops), studio_core.MAX_UNDERLAY_TILES)
+        xs = [p[0] for o in ops for p in o["quad"]]
+        ys = [p[1] for o in ops for p in o["quad"]]
+        fx, fy, fw, fh = self.RECT
+        self.assertLess(min(xs), fx)
+        self.assertGreater(max(xs), fx + fw)
+        self.assertLess(min(ys), fy)
+        self.assertGreater(max(ys), fy + fh)
+
+    def test_underlay_rotated_to_utm_grid(self):
+        # Web Mercator повёрнут к сетке UTM на сближение меридианов
+        # (~1.1° под Москвой) — quad обязан это нести
+        import math
+        op = studio_core.tile_underlay(self.CENTER, self.RECT, 2000)[0]
+        (tlx, tly), (trx, tr_y), _ = op["quad"]
+        angle = abs(math.degrees(math.atan2(tr_y - tly, trx - tlx)))
+        self.assertGreater(angle, 0.5)
+        self.assertLess(angle, 2.0)
+
+    def test_album_with_basemap_gets_ortho_sheet(self):
+        pdf = studio_core.make_album(FEATURES, "Тест", basemap=True)
+        self.assertIn(b"/Count 6", pdf, "добавился лист «Ортофотоплан»")
+        self.assertIn(b"/Filter /DCTDecode", pdf)
+        # все тайлы-заглушки одинаковы → в PDF ровно один XObject
+        self.assertEqual(pdf.count(b"/Subtype /Image"), 1)
+
+    def test_album_offline_skips_ortho(self):
+        def fail(z, x, y):
+            raise OSError("нет сети")
+        studio_core._tile_jpeg = fail
+        pdf = studio_core.make_album(FEATURES, "Тест", basemap=True)
+        self.assertIn(b"/Count 5", pdf, "альбом собрался без ортофото")
+        self.assertNotIn(b"/DCTDecode", pdf)
+
+    def test_print_with_basemap(self):
+        pdf, scale = studio_core.make_print(FEATURES, "Печать", basemap=True)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"/Filter /DCTDecode", pdf)
+
+
 if __name__ == "__main__":
     unittest.main()

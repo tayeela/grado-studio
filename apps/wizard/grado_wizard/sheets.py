@@ -84,6 +84,27 @@ def base_plan_sheet(doc, project, page_no):
     return page
 
 
+def ortho_sheet(doc, project, page_no, underlay, attribution=""):
+    """Лист «Ортофотоплан»: снимок-подложка + граница и участки ЕГРН."""
+    page = Page(A3_LANDSCAPE)
+    st = doc.styles.resolve
+    legend = SectionedLegendFrame(
+        (RIGHT_X, 40, RIGHT_W, 60),
+        [("Границы:", [
+            ("line", st("terr.boundary"), "территории разработки"),
+            ("line", st("cad.parcel"), "земельных участков ЕГРН")])])
+    note = TextFrame((RIGHT_X, 110, RIGHT_W, 20),
+                     ["Подложка:", attribution] if attribution else [],
+                     size=2.6)
+    page.frames = [
+        SheetHeader(page, ["Ортофотоплан", "рассматриваемой территории"],
+                    page_no),
+        MapFrame(MAP_RECT, scale=fit_scale(project),
+                 layers=["terr.boundary", "cad.parcel"], underlay=underlay),
+        legend, note]
+    return page
+
+
 def _layer_centroid(project, code, bbox_of_all=False):
     from grado_render.scene import centroid, _polygons, _points
     pts = []

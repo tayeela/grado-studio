@@ -4,6 +4,8 @@
 байткод, два вывода.
 """
 
+import base64
+
 _CLIP_COUNTER = [0]
 
 
@@ -34,6 +36,23 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
         elif o["op"] == "unclip":
             body.append("</g>")
             open_groups -= 1
+        elif o["op"] == "image":
+            b64 = base64.b64encode(o["data"]).decode("ascii")
+            href = f'href="data:image/jpeg;base64,{b64}"'
+            if "quad" in o:
+                # параллелограмм: единичный квадрат → matrix(a b c d e f)
+                (tlx, tly), (trx, tr_y), (blx, bly) = o["quad"]
+                m = (trx - tlx, tr_y - tly, blx - tlx, bly - tly, tlx, tly)
+                body.append(
+                    f'<image x="0" y="0" width="1" height="1" '
+                    f'preserveAspectRatio="none" '
+                    f'transform="matrix({" ".join(f"{v:.5f}" for v in m)})" '
+                    f'{href}/>')
+            else:
+                body.append(
+                    f'<image x="{o["x"]:.3f}" y="{o["y"]:.3f}" '
+                    f'width="{o["w"]:.3f}" height="{o["h"]:.3f}" '
+                    f'preserveAspectRatio="none" {href}/>')
         elif o["op"] == "path":
             dash = (f' stroke-dasharray="{",".join(str(d) for d in o["dash"])}"'
                     if o.get("dash") else "")

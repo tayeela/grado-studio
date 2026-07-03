@@ -44,18 +44,23 @@ class PageBorder(Frame):
 
 
 class MapFrame(Frame):
-    def __init__(self, rect, scale, center=None, caption=None, layers=None):
+    def __init__(self, rect, scale, center=None, caption=None, layers=None,
+                 underlay=None):
         super().__init__(rect)
         self.scale = scale
         self.center = center
         self.caption = caption
         self.layers = layers
+        self.underlay = underlay  # image-операции подложки (уже в мм листа)
 
     def ops(self, ctx):
         from grado_render import build_ops
         out = build_ops(ctx["project"], self.rect, self.scale,
                         center=self.center, styles=ctx["styles"],
                         only=self.layers)
+        if self.underlay:
+            # сразу после клипа рамки — под всеми векторами
+            out[1:1] = list(self.underlay)
         out.extend(_rect_ops(*self.rect, width=0.5))
         x, y, w, h = self.rect
         caption = self.caption or f"М 1:{self.scale}"

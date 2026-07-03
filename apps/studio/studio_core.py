@@ -5,8 +5,12 @@
 альбом собирается листами мастера территории.
 """
 
+import math
+import ssl
+import subprocess
 import sys
 import tempfile
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).parents[2]
@@ -25,12 +29,131 @@ from grado_model import Project  # noqa: E402
 from grado_model import geometry  # noqa: E402
 from grado_model.tep_bridge import apply_to_engine  # noqa: E402
 from grado_render import StyleSet  # noqa: E402
-from grado_wizard.sheets import (apo_sheet, base_plan_sheet,  # noqa: E402
-                                 location_sheet, tep_summary_sheet,
-                                 title_sheet)
+from grado_wizard.sheets import (MAP_RECT, apo_sheet,  # noqa: E402
+                                 base_plan_sheet, fit_scale, location_sheet,
+                                 ortho_sheet, tep_summary_sheet, title_sheet)
 
 ORIGIN = (413000.0, 6178000.0)
 PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.json"
+
+# --- тайловая подложка (кэш общий: холст студии и листы альбома) -----------
+# Локальный однопользовательский инструмент = «лёгкое использование» по
+# Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
+TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+TILE_ATTRIBUTION = "© OpenStreetMap contributors"
+TILE_CACHE = Path(__file__).parent / ".tile_cache"
+TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
+MAX_UNDERLAY_TILES = 130
+
+# Сборки Python.org для macOS не подхватывают системную цепочку доверия —
+# без certifi HTTPS падает с CERTIFICATE_VERIFY_FAILED. Проверка
+# сертификата остаётся включённой — меняется только источник CA.
+try:
+    import certifi
+    TILE_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    TILE_SSL_CTX = ssl.create_default_context()
+
+
+def fetch_tile_png(z, x, y):
+    """Путь к PNG тайла в дисковом кэше (при промахе — загрузка)."""
+    cache_path = TILE_CACHE / str(z) / str(x) / f"{y}.png"
+    if not cache_path.exists():
+        req = urllib.request.Request(TILE_URL.format(z=z, x=x, y=y),
+                                     headers={"User-Agent": TILE_UA})
+        with urllib.request.urlopen(req, timeout=10,
+                                    context=TILE_SSL_CTX) as resp:
+            data = resp.read()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(data)
+    return cache_path
+
+
+def _tile_jpeg(z, x, y):
+    """JPEG тайла для вставки в PDF (DCTDecode кладёт JPEG как есть).
+
+    PNG→JPEG конвертирует системный sips (macOS), результат кэшируется
+    рядом с PNG."""
+    png = fetch_tile_png(z, x, y)
+    jpg = png.with_suffix(".jpg")
+    if not jpg.exists():
+        r = subprocess.run(
+            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85",
+             str(png), "--out", str(jpg)], capture_output=True)
+        if r.returncode != 0 or not jpg.exists():
+            raise RuntimeError("sips: конвертация тайла не удалась")
+    return jpg.read_bytes()
+
+
+def _tile_xy(lon, lat, z):
+    n = 2 ** z
+    xt = (lon + 180.0) / 360.0 * n
+    yt = (1.0 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2.0 * n
+    return xt, yt
+
+
+def _tile_lonlat(xt, yt, z):
+    n = 2 ** z
+    lon = xt / n * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * yt / n))))
+    return lon, lat
+
+
+def tile_underlay(center_utm, map_rect, scale, dpi=150):
+    """Image-операции подложки ОСМ под карто-фрейм листа (мм).
+
+    Точная цепочка: UTM ↔ WGS84 (Snyder), каждый тайл ставится
+    параллелограммом по трём углам — Web Mercator повёрнут к сетке UTM
+    на сближение меридианов (~1.1° в Москве), осевое размещение дало бы
+    швы между тайлами. Сети нет → пустой список, лист без подложки."""
+    from grado_connectors.crs import utm37n_to_wgs84, wgs84_to_utm37n
+
+    fx, fy, fw, fh = map_rect
+    k = 1000.0 / scale                       # мм листа на метр местности
+    cx, cy = center_utm
+    hw, hh = fw / 2.0 / k, fh / 2.0 / k      # полурамка в метрах
+
+    def to_mm(pt_utm):
+        return (fx + fw / 2.0 + (pt_utm[0] - cx) * k,
+                fy + fh / 2.0 - (pt_utm[1] - cy) * k)
+
+    corners = [utm37n_to_wgs84(cx + sx * hw, cy + sy * hh)
+               for sx in (-1, 1) for sy in (-1, 1)]
+    lon0, lon1 = min(c[0] for c in corners), max(c[0] for c in corners)
+    lat0, lat1 = min(c[1] for c in corners), max(c[1] for c in corners)
+    lat_mid = (lat0 + lat1) / 2.0
+    # зум: разрешение местности ≈ dpi точек на дюйм листа
+    m_per_px = scale / 1000.0 * 25.4 / dpi
+    z = min(19, max(3, math.ceil(math.log2(
+        156543.03392804097 * math.cos(math.radians(lat_mid)) / m_per_px))))
+    while True:
+        x0t, y1t = _tile_xy(lon0, lat0, z)   # юг → номер строки больше
+        x1t, y0t = _tile_xy(lon1, lat1, z)
+        if z <= 3 or ((int(x1t) - int(x0t) + 1) * (int(y1t) - int(y0t) + 1)
+                      <= MAX_UNDERLAY_TILES):
+            break
+        z -= 1
+    ops = []
+    for xt in range(int(x0t), int(x1t) + 1):
+        for yt in range(int(y0t), int(y1t) + 1):
+            try:
+                data = _tile_jpeg(z, xt, yt)
+            except Exception:
+                if not ops:
+                    return []   # сети нет — весь лист без подложки
+                continue        # одиночный сбой — дырка в мозаике
+            tl = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt, yt, z)))
+            tr = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt + 1, yt, z)))
+            bl = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt, yt + 1, z)))
+            ops.append({"op": "image", "data": data, "quad": (tl, tr, bl)})
+    return ops
+
+
+def _project_underlay(project, map_rect, scale):
+    """Подложка для карто-фрейма, центрированного по габаритам проекта."""
+    from grado_render import project_extent
+    x0, y0, x1, y1 = project_extent(project)
+    return tile_underlay(((x0 + x1) / 2.0, (y0 + y1) / 2.0), map_rect, scale)
 
 KIND_TO_CODE = {
     "boundary": "terr.boundary",
@@ -137,7 +260,7 @@ def compute_tep(features, params=None):
     }
 
 
-def make_album(features, name, params=None):
+def make_album(features, name, params=None, basemap=False):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features)
         engine = make_engine(features, params)
@@ -147,14 +270,20 @@ def make_album(features, name, params=None):
                 engine.set_input(key, float(params[key]))
         doc = Document(name, meta={"org": "ГРАДО", "stage": "АГК"})
         doc.styles = StyleSet()
-        doc.pages = [
+        pages = [
             title_sheet(doc),
             location_sheet(doc, project, engine.value("terr_area"), 2),
             base_plan_sheet(doc, project, 3),
-            apo_sheet(doc, project, engine, 4),
-            tep_summary_sheet(doc, engine, 5),
         ]
-        doc.sheet_titles = [""] * 5
+        if basemap:
+            underlay = _project_underlay(project, MAP_RECT, fit_scale(project))
+            if underlay:  # сети нет — альбом собирается без ортофото
+                pages.append(ortho_sheet(doc, project, len(pages) + 1,
+                                         underlay, TILE_ATTRIBUTION))
+        pages.append(apo_sheet(doc, project, engine, len(pages) + 1))
+        pages.append(tep_summary_sheet(doc, engine, len(pages) + 1))
+        doc.pages = pages
+        doc.sheet_titles = [""] * len(pages)
         pdf = render_document_pdf(doc, project, styles=doc.styles, engine=engine)
         project.close()
     return pdf
@@ -299,13 +428,12 @@ def make_dxf(features, name):
     return (text[:cut] + extra + text[cut:]).encode("cp1251", errors="replace")
 
 
-def make_print(features, name, scale=None, paper="A2"):
+def make_print(features, name, scale=None, paper="A2", basemap=False):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
                               TextFrame, render_document_pdf)
     from grado_render import StyleSet
-    from grado_wizard.sheets import fit_scale
 
     sizes = {"A3": A3_LANDSCAPE, "A2": A2_LANDSCAPE, "A1": A1_LANDSCAPE}
     size = sizes.get(paper, A2_LANDSCAPE)
@@ -315,13 +443,17 @@ def make_print(features, name, scale=None, paper="A2"):
         ix, iy, iw, ih = page.inner_rect()
         map_rect = (ix + 8, iy + 16, iw - 16, ih - 24)
         used_scale = int(scale) if scale else fit_scale(project, map_rect)
+        underlay = (_project_underlay(project, map_rect, used_scale)
+                    if basemap else None)
+        caption_extra = f" · подложка {TILE_ATTRIBUTION}" if underlay else ""
         import datetime
         page.frames = [
             PageBorder(page),
-            MapFrame(map_rect, scale=used_scale),
+            MapFrame(map_rect, scale=used_scale, underlay=underlay),
             TextFrame((ix + 8, iy + 2, iw - 16, 10),
                       [f"{name} — чертёж, М 1:{used_scale}, "
-                       f"{datetime.date.today().isoformat()}"], size=3.6),
+                       f"{datetime.date.today().isoformat()}{caption_extra}"],
+                      size=3.6),
         ]
         doc = Document(name)
         doc.pages = [page]

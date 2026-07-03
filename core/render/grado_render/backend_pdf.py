@@ -13,6 +13,27 @@ MM2PT = 72.0 / 25.4
 KAPPA = 0.5522847498
 
 
+def jpeg_info(data):
+    """(width, height, компоненты) из SOF-маркера JPEG."""
+    if data[:2] != b"\xff\xd8":
+        raise ValueError("не JPEG (нет SOI)")
+    i = 2
+    while i + 9 < len(data):
+        if data[i] != 0xFF:
+            i += 1
+            continue
+        marker = data[i + 1]
+        if marker in (0xC0, 0xC1, 0xC2, 0xC3):
+            h = int.from_bytes(data[i + 5:i + 7], "big")
+            w = int.from_bytes(data[i + 7:i + 9], "big")
+            return w, h, data[i + 9]
+        if marker == 0xD8 or 0xD0 <= marker <= 0xD7 or marker == 0x01:
+            i += 2
+            continue
+        i += 2 + int.from_bytes(data[i + 2:i + 4], "big")
+    raise ValueError("SOF-маркер не найден")
+
+
 def _f(x):
     return f"{x:.3f}".rstrip("0").rstrip(".")
 
@@ -21,6 +42,7 @@ class PdfBackend:
     def __init__(self, font_path=None):
         self.font = Font(font_path or find_font())
         self.used_gids = {0}
+        self._img_names = {}
 
     # --- операции → поток содержимого страницы ---------------------------
 
@@ -92,7 +114,23 @@ class PdfBackend:
         out = ""
         clip_depth = 0
         for o in ops:
-            if o["op"] == "clip":
+            if o["op"] == "image":
+                name = self._img_names[o["data"]][0]
+                if "quad" in o:
+                    # параллелограмм по трём углам (tl, tr, bl в мм листа):
+                    # единичный квадрат картинки → аффинная матрица cm
+                    (tlx, tly), (trx, tr_y), (blx, bly) = o["quad"]
+                    m = ((trx - tlx) * MM2PT, (tly - tr_y) * MM2PT,
+                         (tlx - blx) * MM2PT, (bly - tly) * MM2PT,
+                         blx * MM2PT, (h - bly) * MM2PT)
+                else:
+                    # осевой случай: x,y — верхний левый угол в мм;
+                    # PDF рисует от нижнего
+                    m = (o["w"] * MM2PT, 0, 0, o["h"] * MM2PT,
+                         o["x"] * MM2PT, (h - o["y"] - o["h"]) * MM2PT)
+                out += (f"q\n{' '.join(_f(v) for v in m)} cm\n"
+                        f"/{name} Do\nQ\n")
+            elif o["op"] == "clip":
                 x, y, cw, ch = o["rect"]
                 out += (f"q\n{_f(x * MM2PT)} {_f((h - y - ch) * MM2PT)} "
                         f"{_f(cw * MM2PT)} {_f(ch * MM2PT)} re W n\n")
@@ -120,10 +158,30 @@ class PdfBackend:
             return (f"<< /Length {len(comp)} /Filter /FlateDecode {extra}>>\n"
                     f"stream\n").encode("latin1") + comp + b"\nendstream"
 
+        # растровые вставки: JPEG кладётся в PDF как есть (DCTDecode,
+        # без перекодирования); одинаковые данные встраиваются один раз
+        self._img_names = {}  # bytes → (имя /ImN, номер объекта)
+        next_num = 7
+        for _, _, ops in pages:
+            for o in ops:
+                if o["op"] == "image" and o["data"] not in self._img_names:
+                    self._img_names[o["data"]] = (
+                        f"Im{len(self._img_names) + 1}", next_num)
+                    next_num += 1
+        for data, (_, num) in self._img_names.items():
+            iw, ih, comps = jpeg_info(data)
+            cs = "/DeviceGray" if comps == 1 else "/DeviceRGB"
+            objs[num] = ((f"<< /Type /XObject /Subtype /Image "
+                          f"/Width {iw} /Height {ih} /ColorSpace {cs} "
+                          f"/BitsPerComponent 8 /Filter /DCTDecode "
+                          f"/Length {len(data)} >>\nstream\n").encode("latin1")
+                         + data + b"\nendstream")
+
         page_streams = [self._page_stream(w, h, ops) for w, h, ops in pages]
 
         # 1 — каталог, 2 — дерево страниц, 3 — шрифт Type0;
-        # 4..6 — CIDFont, дескриптор, файл шрифта; дальше страницы и потоки
+        # 4..6 — CIDFont, дескриптор, файл шрифта;
+        # 7.. — картинки, дальше страницы и потоки
         f = self.font
         scale = 1000.0 / f.units_per_em
         widths = sorted(self.used_gids)
@@ -144,13 +202,18 @@ class PdfBackend:
         objs[6] = stream_obj(f.data, extra=f"/Length1 {len(f.data)} ")
 
         page_nums, kids = [], []
-        next_num = 7
-        for (w, h, _), stream in zip(pages, page_streams):
+        for (w, h, ops), stream in zip(pages, page_streams):
             pnum, snum = next_num, next_num + 1
             next_num += 2
+            used = sorted({self._img_names[o["data"]]
+                           for o in ops if o["op"] == "image"},
+                          key=lambda e: e[1])
+            xobj = ("/XObject << " + " ".join(f"/{nm} {num} 0 R"
+                                              for nm, num in used) + " >> "
+                    if used else "")
             objs[pnum] = (f"<< /Type /Page /Parent 2 0 R "
                           f"/MediaBox [0 0 {_f(w * MM2PT)} {_f(h * MM2PT)}] "
-                          f"/Resources << /Font << /F1 3 0 R >> >> "
+                          f"/Resources << /Font << /F1 3 0 R >> {xobj}>> "
                           f"/Contents {snum} 0 R >>").encode()
             objs[snum] = stream_obj(stream)
             page_nums.append(pnum)

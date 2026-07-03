@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.9.0";
+const VERSION = "0.10.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1231,6 +1231,7 @@ on("p-ratio", "change", refreshTep);
 async function download(url, filename) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ features: state.features, params: params(),
+                           basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
                            name: document.getElementById("project-name").value }) });
   if (!r.ok) { alert("Ошибка сборки: " + (await r.text()).slice(0, 200)); return; }
   const blob = await r.blob();

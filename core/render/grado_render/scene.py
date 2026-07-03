@@ -5,7 +5,10 @@
   {"op": "path", "rings": [[(x,y)...]], "closed", "fill", "stroke", "width", "dash"}
   {"op": "circle", "x", "y", "r", "fill", "stroke", "width"}
   {"op": "text", "x", "y", "size", "text", "color", "anchor"}
+  {"op": "image", "data": bytes JPEG, "x","y","w","h" | "quad": (tl, tr, bl)}
 Начало координат — левый верх листа, ось Y вниз (как на бумаге).
+Картинка с "quad" кладётся параллелограммом по трём углам (подложка
+Web Mercator повёрнута к сетке UTM на сближение меридианов).
 """
 
 

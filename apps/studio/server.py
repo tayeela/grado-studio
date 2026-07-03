@@ -17,25 +17,13 @@
 import json
 import re
 import socket
-import ssl
 import sys
 import tempfile
 import threading
 import traceback
-import urllib.request
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
-
-# Сборки Python.org для macOS не подхватывают системную цепочку доверия —
-# без этого HTTPS к внешним хостам падает с CERTIFICATE_VERIFY_FAILED
-# (тот же класс проблемы, что чинит "Install Certificates.command").
-# Проверка сертификата остаётся включённой — меняется только источник CA.
-try:
-    import certifi
-    TILE_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    TILE_SSL_CTX = ssl.create_default_context()
 
 sys.path.insert(0, str(Path(__file__).parent))
 import studio_core  # noqa: E402
@@ -45,13 +33,8 @@ PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8643
 BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
 
 # Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
-# от повторных запросов — см. Tile Usage Policy OSM). Локальный
-# однопользовательский инструмент = "лёгкое использование" по политике;
-# при промышленной нагрузке источник надо заменить на платный/self-hosted.
-TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-TILE_ATTRIBUTION = "© OpenStreetMap contributors"
-TILE_CACHE = Path(__file__).parent / ".tile_cache"
-TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
+# от повторных запросов). Кэш и загрузка живут в studio_core — их же
+# использует подложка листов альбома и печати.
 TILE_RE = re.compile(r"^/api/tiles/(\d+)/(\d+)/(\d+)\.png$")
 
 INBOX = []          # выгрузки от расширения, ждущие холст
@@ -146,7 +129,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
             self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,
-                                   "attribution": TILE_ATTRIBUTION},
+                                   "attribution": studio_core.TILE_ATTRIBUTION},
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
@@ -160,21 +143,14 @@ class Handler(SimpleHTTPRequestHandler):
         if not (0 <= z <= 19 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
             self.send_error(400, "tile coordinates out of range")
             return
-        cache_path = TILE_CACHE / str(z) / str(x) / f"{y}.png"
-        if not cache_path.exists():
-            try:
-                req = urllib.request.Request(
-                    TILE_URL.format(z=z, x=x, y=y), headers={"User-Agent": TILE_UA})
-                with urllib.request.urlopen(req, timeout=10, context=TILE_SSL_CTX) as resp:
-                    data = resp.read()
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                cache_path.write_bytes(data)
-            except Exception:
-                # send_error кодирует сообщение как latin-1 — никакой кириллицы
-                # и никакого текста исключения (в нём может быть что угодно)
-                traceback.print_exc()
-                self.send_error(502, "tile upstream error")
-                return
+        try:
+            cache_path = studio_core.fetch_tile_png(z, x, y)
+        except Exception:
+            # send_error кодирует сообщение как latin-1 — никакой кириллицы
+            # и никакого текста исключения (в нём может быть что угодно)
+            traceback.print_exc()
+            self.send_error(502, "tile upstream error")
+            return
         self.send_response(200)
         self.send_header("Content-Type", "image/png")
         self.send_header("Cache-Control", "public, max-age=604800")  # свои — год не меняются
@@ -204,7 +180,8 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/album":
-                pdf = studio_core.make_album(features, name, params)
+                pdf = studio_core.make_album(
+                    features, name, params, basemap=bool(body.get("basemap")))
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
                 data = studio_core.make_grado(features, name)
@@ -223,7 +200,8 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
             elif self.path == "/api/print":
                 pdf, used = studio_core.make_print(
-                    features, name, body.get("scale"), body.get("paper", "A2"))
+                    features, name, body.get("scale"), body.get("paper", "A2"),
+                    basemap=bool(body.get("basemap")))
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

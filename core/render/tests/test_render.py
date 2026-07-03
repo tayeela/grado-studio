@@ -161,6 +161,72 @@ class TestHatch(unittest.TestCase):
                 self.assertTrue(-1e-6 <= y <= 10 + 1e-6)
 
 
+# минимальный «JPEG»: SOI + SOF0 (длина 11, точность 8, 1×2, 3 компоненты)
+FAKE_JPEG = bytes([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
+                   0x00, 0x01, 0x00, 0x02, 0x03])
+
+
+class TestImages(unittest.TestCase):
+    def test_jpeg_info(self):
+        from grado_render import jpeg_info
+        self.assertEqual(jpeg_info(FAKE_JPEG), (2, 1, 3))
+        with self.assertRaises(ValueError):
+            jpeg_info(b"\x89PNG\r\n")
+
+    def _ops(self):
+        return [
+            {"op": "image", "data": FAKE_JPEG, "x": 10, "y": 10,
+             "w": 100, "h": 50},
+            {"op": "image", "data": FAKE_JPEG,
+             "quad": ((120, 10), (170, 12), (118, 60))},
+        ] + list(OPS)
+
+    def test_pdf_xobject(self):
+        pdf = PdfBackend().render([(297, 210, self._ops())])
+        self.assertIn(b"/Subtype /Image", pdf)
+        self.assertIn(b"/Filter /DCTDecode", pdf)
+        self.assertIn(b"/Width 2 /Height 1", pdf)
+        self.assertIn(b"/XObject << /Im1", pdf)
+        # два op с одинаковыми данными → один встроенный XObject
+        self.assertEqual(pdf.count(b"/Subtype /Image"), 1)
+        # сам JPEG лежит в потоке без перекодирования
+        self.assertIn(FAKE_JPEG, pdf)
+
+    def test_pdf_xref_still_valid_with_images(self):
+        pdf = PdfBackend().render([(297, 210, self._ops())])
+        m = re.search(rb"xref\n0 (\d+)\n", pdf)
+        n = int(m.group(1))
+        table_at = m.end()
+        for num in range(1, n):
+            entry = pdf[table_at + 20 * num: table_at + 20 * num + 20]
+            self.assertTrue(
+                pdf[int(entry[:10]):].startswith(f"{num} 0 obj".encode()),
+                f"смещение объекта {num} в xref неверно")
+
+    def test_pdf_stream_has_do(self):
+        backend = PdfBackend()
+        pdf = backend.render([(297, 210, self._ops())])
+        streams = re.findall(rb"stream\n(.*?)\nendstream", pdf, re.S)
+        page = None
+        for s in streams:
+            try:
+                data = zlib.decompress(s)
+            except zlib.error:
+                continue
+            if b"Do" in data:
+                page = data
+        self.assertIsNotNone(page)
+        self.assertEqual(page.count(b"/Im1 Do"), 2)
+        # осевой случай: матрица [w 0 0 h x y]
+        self.assertIn(b"283.465 0 0 141.732", page)
+
+    def test_svg_image_data_uri(self):
+        svg = render_svg(297, 210, self._ops())
+        self.assertIn("data:image/jpeg;base64,", svg)
+        self.assertIn("matrix(", svg, "quad → аффинное размещение")
+        self.assertIn('preserveAspectRatio="none"', svg)
+
+
 class TestStyleSet(unittest.TestCase):
     def test_fallback(self):
         st = StyleSet().resolve("нет.такого")
