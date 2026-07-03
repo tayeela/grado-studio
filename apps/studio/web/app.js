@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.3.0";
+const VERSION = "0.3.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -45,8 +45,11 @@ const state = {
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
+  hidden: {},                    // kind -> true (слой выключен)
   _fitted: false, _ix: null,
 };
+
+function isHidden(f) { return !!state.hidden[f.kind]; }
 
 let shiftDown = false, spaceDown = false;
 
@@ -145,7 +148,7 @@ const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "се�
 function collectSnapPts(excludeId) {
   const out = [];
   for (const f of state.features) {
-    if (f.id === excludeId) continue;
+    if (f.id === excludeId || isHidden(f)) continue;
     if (f.point) { out.push({ p: f.point, kind: "вершина" }); continue; }
     for (const chain of featureChains(f)) {
       for (let i = 0; i + 1 < chain.length; i++) {
@@ -166,10 +169,12 @@ function collectSnapPts(excludeId) {
 function intersections() {
   if (state._ix) return state._ix;
   const segs = [];
-  for (const f of state.features)
+  for (const f of state.features) {
+    if (isHidden(f)) continue;
     for (const chain of featureChains(f))
       for (let i = 0; i + 1 < chain.length; i++)
         segs.push([chain[i], chain[i + 1]]);
+  }
   const out = [];
   for (let i = 0; i < segs.length && i < 400; i++)
     for (let j = i + 1; j < segs.length && j < 400; j++) {
@@ -319,6 +324,7 @@ function draw() {
   drawGrid(w, h);
 
   for (const kind of Z_ORDER) {
+    if (state.hidden[kind]) continue;
     for (const f of state.features) {
       if (f.kind !== kind) continue;
       const st = STYLES[kind];
@@ -469,12 +475,13 @@ function persist() {
       name: document.getElementById("project-name").value,
       density: document.getElementById("p-density").value,
       ratio: document.getElementById("p-ratio").value,
+      hidden: state.hidden,
     }));
   } catch (e) { /* приватный режим — работаем без сохранения */ }
 }
 function afterChange() {
   state._ix = null;
-  draw(); renderProps(); refreshTep(); persist();
+  draw(); renderProps(); renderLayers(); refreshTep(); persist();
 }
 
 // ---------- ТЭП ----------
@@ -553,6 +560,33 @@ function renderProps() {
   bind("f-purpose", "purpose");
   document.getElementById("f-del").onclick = deleteSelected;
 }
+function renderLayers() {
+  const el = document.getElementById("layers-body");
+  if (!el) return;
+  el.innerHTML = "";
+  for (const kind of Z_ORDER) {
+    const count = state.features.filter(f => f.kind === kind).length;
+    const st = STYLES[kind];
+    const row = document.createElement("label");
+    row.className = "layer-row";
+    row.innerHTML = `<input type="checkbox" ${state.hidden[kind] ? "" : "checked"}>
+      <span class="sw" style="background:${st.fill || "transparent"};border-color:${st.stroke || "#999"}"></span>
+      <span class="nm">${KIND_NAMES[kind]}</span><span class="cnt">${count || ""}</span>`;
+    row.querySelector("input").addEventListener("change", ev => {
+      state.hidden[kind] = !ev.target.checked;
+      const sel = selectedFeature();
+      if (state.hidden[kind] && sel && sel.kind === kind) {
+        state.selected = null;
+        renderProps();
+      }
+      state._ix = null;
+      persist();
+      draw();
+    });
+    el.appendChild(row);
+  }
+}
+
 function deleteSelected() {
   if (state.selected == null) return;
   snapshot();
@@ -632,6 +666,7 @@ function placeTypedPoint() {
 function hitTest(wx, wy) {
   const tolW = 7 / state.view.k;
   for (const kind of [...Z_ORDER].reverse()) {
+    if (state.hidden[kind]) continue;
     for (let i = state.features.length - 1; i >= 0; i--) {
       const f = state.features[i];
       if (f.kind !== kind) continue;
@@ -681,8 +716,9 @@ cv.addEventListener("mousedown", e => {
     draw();
   } else if (state.tool === "social") {
     addFeature("social", { point: s.p });
-  } else if (state.tool === "building") {
-    state.drag = { a: s.p, b: s.p, rect: true };
+  } else if (state.tool === "building" && !state.drawing) {
+    // протягивание — прямоугольник; одиночный клик — контур по точкам
+    state.drag = { a: s.p, b: s.p, rect: true, moved: false };
   } else {
     if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
     const first = state.drawing.pts[0];
@@ -724,7 +760,12 @@ cv.addEventListener("mousemove", e => {
   state.snapHit = s;
   state.mouse = s.p;
   document.getElementById("st-snap").textContent = s.kind ? `привязка: ${s.kind}` : "";
-  if (state.drag && state.drag.rect) { state.drag.b = s.p; draw(); return; }
+  if (state.drag && state.drag.rect) {
+    state.drag.b = s.p;
+    if (Math.hypot(s.p[0] - state.drag.a[0], s.p[1] - state.drag.a[1]) * state.view.k > 4)
+      state.drag.moved = true;
+    draw(); return;
+  }
   if (state.tool === "select") {
     const cur = selectedFeature();
     cv.style.cursor = (cur && vertexAt(cur, wx, wy) != null) ? "move"
@@ -742,10 +783,15 @@ cv.addEventListener("mouseup", e => {
     return;
   }
   if (state.drag && state.drag.rect) {
-    const { a, b } = state.drag;
+    const { a, b, moved } = state.drag;
     state.drag = null;
-    if (Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1) {
+    if (moved && Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1) {
       addFeature("building", { ring: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] });
+    } else if (!moved) {
+      // клик без протягивания — рисуем произвольный контур здания
+      state.drawing = { pts: [a] };
+      state.typed = "";
+      draw();
     } else draw();
   }
 });
@@ -937,6 +983,7 @@ on("btn-demo", "click", () => {
     const d = JSON.parse(raw);
     state.features = d.features || [];
     state.nextId = d.nextId || 1;
+    state.hidden = d.hidden || {};
     if (d.name) document.getElementById("project-name").value = d.name;
     if (d.density) document.getElementById("p-density").value = d.density;
     if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
@@ -945,5 +992,6 @@ on("btn-demo", "click", () => {
 on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep };
 setTool("select");
+renderLayers();
 requestAnimationFrame(resize);
 refreshTep();
