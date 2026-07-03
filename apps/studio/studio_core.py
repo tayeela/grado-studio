@@ -6,10 +6,12 @@
 """
 
 import math
+import os
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.request
 from pathlib import Path
 
@@ -55,17 +57,49 @@ except ImportError:
     TILE_SSL_CTX = ssl.create_default_context()
 
 
+# Кэш валиден только целиком: «файл существует» — не признак (обрыв записи
+# при убитом процессе оставляет обрезанный файл, который иначе никогда не
+# перекачается и даёт вечную дырку в мозаике).
+_PNG_SIG = b"\x89PNG\r\n\x1a\n"
+_PNG_END = b"IEND\xaeB`\x82"
+
+
+def _valid_png(path):
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return data[:8] == _PNG_SIG and data[-8:] == _PNG_END
+
+
+def _valid_jpeg(data):
+    return data[:2] == b"\xff\xd8" and data[-2:] == b"\xff\xd9"
+
+
+def _tmp_name(path):
+    # уникально на поток: параллельные выгрузки не пишут в один файл
+    return path.with_name(
+        f".{path.stem}-{os.getpid()}-{threading.get_ident()}{path.suffix}")
+
+
 def fetch_tile_png(z, x, y):
-    """Путь к PNG тайла в дисковом кэше (при промахе — загрузка)."""
+    """Путь к PNG тайла в дисковом кэше (при промахе/битом кэше — загрузка).
+
+    Запись атомарна (tmp + os.replace): тайлы читают параллельно холст
+    (ThreadingHTTPServer) и сборка листов."""
     cache_path = TILE_CACHE / str(z) / str(x) / f"{y}.png"
-    if not cache_path.exists():
+    if not _valid_png(cache_path):
         req = urllib.request.Request(TILE_URL.format(z=z, x=x, y=y),
                                      headers={"User-Agent": TILE_UA})
         with urllib.request.urlopen(req, timeout=10,
                                     context=TILE_SSL_CTX) as resp:
             data = resp.read()
+        if data[:8] != _PNG_SIG:
+            raise RuntimeError("tile upstream: not a PNG")
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(data)
+        tmp = _tmp_name(cache_path)
+        tmp.write_bytes(data)
+        os.replace(tmp, cache_path)
     return cache_path
 
 
@@ -73,16 +107,33 @@ def _tile_jpeg(z, x, y):
     """JPEG тайла для вставки в PDF (DCTDecode кладёт JPEG как есть).
 
     PNG→JPEG конвертирует системный sips (macOS), результат кэшируется
-    рядом с PNG."""
+    рядом с PNG. sips пишет в свой tmp атомарно, но два параллельных
+    экспорта с одним --out роняют один из rename'ов — поэтому цель
+    у каждого вызова своя, в кэш её кладёт os.replace."""
     png = fetch_tile_png(z, x, y)
     jpg = png.with_suffix(".jpg")
-    if not jpg.exists():
+    try:
+        data = jpg.read_bytes()
+    except OSError:
+        data = b""
+    if _valid_jpeg(data):
+        return data
+    tmp = _tmp_name(jpg)
+    try:
         r = subprocess.run(
             ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85",
-             str(png), "--out", str(jpg)], capture_output=True)
-        if r.returncode != 0 or not jpg.exists():
+             str(png), "--out", str(tmp)], capture_output=True)
+        data = tmp.read_bytes() if r.returncode == 0 and tmp.exists() else b""
+        if not _valid_jpeg(data):
             raise RuntimeError("sips: конвертация тайла не удалась")
-    return jpg.read_bytes()
+        os.replace(tmp, jpg)
+    finally:
+        if tmp.exists():
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+    return data
 
 
 def _tile_xy(lon, lat, z):
@@ -133,19 +184,35 @@ def tile_underlay(center_utm, map_rect, scale, dpi=150):
                       <= MAX_UNDERLAY_TILES):
             break
         z -= 1
-    ops = []
-    for xt in range(int(x0t), int(x1t) + 1):
-        for yt in range(int(y0t), int(y1t) + 1):
+    # Политика сбоев: одиночный — дырка в мозаике; сетевая ошибка гасит
+    # дальнейшие загрузки (остальное только из кэша, без 10-секундных
+    # таймаутов на каждый тайл); больше половины сбоев — лист без
+    # подложки целиком (полупустой «Ортофотоплан» хуже его отсутствия).
+    xs_range = range(int(x0t), int(x1t) + 1)
+    ys_range = range(int(y0t), int(y1t) + 1)
+    total = len(xs_range) * len(ys_range)
+    ops, failed, net_down = [], 0, False
+    for xt in xs_range:
+        for yt in ys_range:
+            if net_down and not _valid_png(
+                    TILE_CACHE / str(z) / str(xt) / f"{yt}.png"):
+                failed += 1
+                continue
             try:
                 data = _tile_jpeg(z, xt, yt)
+            except OSError:
+                net_down = True
+                failed += 1
+                continue
             except Exception:
-                if not ops:
-                    return []   # сети нет — весь лист без подложки
-                continue        # одиночный сбой — дырка в мозаике
+                failed += 1
+                continue
             tl = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt, yt, z)))
             tr = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt + 1, yt, z)))
             bl = to_mm(wgs84_to_utm37n(*_tile_lonlat(xt, yt + 1, z)))
             ops.append({"op": "image", "data": data, "quad": (tl, tr, bl)})
+    if failed * 2 >= total:
+        return []
     return ops
 
 

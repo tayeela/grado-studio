@@ -318,6 +318,112 @@ class TestUnderlay(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"/Filter /DCTDecode", pdf)
 
+    def test_first_tile_failure_keeps_underlay(self):
+        # одиночный сбой (не сетевой) первого тайла — дырка, не потеря всего
+        calls = {"n": 0}
+
+        def flaky(z, x, y):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("sips сбой")
+            return FAKE_JPEG
+        studio_core._tile_jpeg = flaky
+        ops = studio_core.tile_underlay(self.CENTER, self.RECT, 2000)
+        self.assertGreater(len(ops), 10)
+
+    def test_majority_failure_drops_underlay(self):
+        # полупустая мозаика хуже её отсутствия — лист без подложки
+        calls = {"n": 0}
+
+        def mostly_fail(z, x, y):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                raise RuntimeError("сбой")
+            return FAKE_JPEG
+        studio_core._tile_jpeg = mostly_fail
+        self.assertEqual(studio_core.tile_underlay(self.CENTER, self.RECT,
+                                                   2000), [])
+
+    def test_offline_does_not_retry_every_tile(self):
+        # сетевая ошибка гасит дальнейшие загрузки: без этого офлайн-сборка
+        # ждала бы таймаут на каждом из ~130 тайлов
+        calls = {"n": 0}
+
+        def dead(z, x, y):
+            calls["n"] += 1
+            raise OSError("сеть недоступна")
+        studio_core._tile_jpeg = dead
+        old = studio_core.TILE_CACHE
+        with tempfile.TemporaryDirectory() as tmp:
+            studio_core.TILE_CACHE = Path(tmp)
+            try:
+                ops = studio_core.tile_underlay(self.CENTER, self.RECT, 2000)
+            finally:
+                studio_core.TILE_CACHE = old
+        self.assertEqual(ops, [])
+        self.assertEqual(calls["n"], 1)
+
+
+FAKE_PNG = (b"\x89PNG\r\n\x1a\n" + b"\x00" * 24 + b"IEND\xaeB`\x82")
+
+
+class TestTileCache(unittest.TestCase):
+    """Дисковый кэш тайлов: битый файл (обрыв записи) перекачивается."""
+
+    def setUp(self):
+        self._cache = studio_core.TILE_CACHE
+        self._urlopen = studio_core.urllib.request.urlopen
+        self._tmp = tempfile.TemporaryDirectory()
+        studio_core.TILE_CACHE = Path(self._tmp.name)
+        self.calls = []
+
+        outer = self
+
+        class FakeResp:
+            def read(self):
+                return FAKE_PNG
+
+            def __enter__(self):
+                outer.calls.append(1)
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        studio_core.urllib.request.urlopen = (
+            lambda req, timeout=10, context=None: FakeResp())
+
+    def tearDown(self):
+        studio_core.TILE_CACHE = self._cache
+        studio_core.urllib.request.urlopen = self._urlopen
+        self._tmp.cleanup()
+
+    def test_broken_cache_is_refetched(self):
+        p = studio_core.fetch_tile_png(17, 1, 2)
+        self.assertEqual(p.read_bytes(), FAKE_PNG)
+        self.assertEqual(len(self.calls), 1)
+        # обрыв записи: файл существует, но неполный → перекачка
+        p.write_bytes(FAKE_PNG[:10])
+        studio_core.fetch_tile_png(17, 1, 2)
+        self.assertEqual(p.read_bytes(), FAKE_PNG)
+        self.assertEqual(len(self.calls), 2)
+        # целый кэш сеть не дёргает
+        studio_core.fetch_tile_png(17, 1, 2)
+        self.assertEqual(len(self.calls), 2)
+
+    def test_valid_png_checks_both_ends(self):
+        self.assertTrue(studio_core._valid_jpeg(
+            b"\xff\xd8" + b"\x00" * 5 + b"\xff\xd9"))
+        self.assertFalse(studio_core._valid_jpeg(b"\xff\xd8\x00"))
+        with tempfile.NamedTemporaryFile(suffix=".png") as f:
+            f.write(FAKE_PNG[:20])
+            f.flush()
+            self.assertFalse(studio_core._valid_png(Path(f.name)))
+            f.seek(0)
+            f.write(FAKE_PNG)
+            f.flush()
+            self.assertTrue(studio_core._valid_png(Path(f.name)))
+
 
 if __name__ == "__main__":
     unittest.main()
