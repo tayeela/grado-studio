@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -106,6 +106,102 @@ function gridStep() {
   for (const g of [1, 2, 5, 10, 20, 50, 100, 200, 500])
     if (g * state.view.k >= 22) return g;
   return 1000;
+}
+
+// ---------- подложка (тайлы XYZ) ----------
+// Локальные метры холста → долгота/широта: приближение локальной
+// касательной плоскости вокруг ORIGIN (см. crs.ORIGIN_LON/LAT в ядре).
+// На масштабе территории (км, не сотни км) погрешность на два порядка
+// меньше пиксела тайла — для фоновой подложки этого достаточно; точная
+// проекция (обратный UTM) считается на сервере и используется только
+// для получения самой точки ORIGIN.
+const basemap = {
+  on: false, opacity: 0.85, originLon: null, originLat: null, attribution: "",
+  mPerDegLon: null, mPerDegLat: 111320,
+  cache: new Map(),   // "z/x/y" -> {img, loaded, failed}
+};
+
+async function initBasemap() {
+  try {
+    const r = await fetch("/api/basemap-info");
+    const d = await r.json();
+    basemap.originLon = d.origin_lon;
+    basemap.originLat = d.origin_lat;
+    basemap.attribution = d.attribution;
+    basemap.mPerDegLon = 111320 * Math.cos(d.origin_lat * Math.PI / 180);
+  } catch (e) { /* сервер без /api/basemap-info — подложка недоступна */ }
+}
+
+function localToLonLat(x, y) {
+  return [basemap.originLon + x / basemap.mPerDegLon,
+          basemap.originLat + y / basemap.mPerDegLat];
+}
+function lonLatToLocal(lon, lat) {
+  return [(lon - basemap.originLon) * basemap.mPerDegLon,
+          (lat - basemap.originLat) * basemap.mPerDegLat];
+}
+function lonToTileX(lon, z) { return (lon + 180) / 360 * 2 ** z; }
+function latToTileY(lat, z) {
+  const r = lat * Math.PI / 180;
+  return (1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z;
+}
+function tileXToLon(tx, z) { return tx / 2 ** z * 360 - 180; }
+function tileYToLat(ty, z) {
+  const n = Math.PI - 2 * Math.PI * ty / 2 ** z;
+  return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+function tileImage(z, x, y) {
+  const key = `${z}/${x}/${y}`;
+  let e = basemap.cache.get(key);
+  if (!e) {
+    e = { img: new Image(), loaded: false, failed: false };
+    e.img.onload = () => { e.loaded = true; draw(); };
+    e.img.onerror = () => { e.failed = true; };
+    e.img.src = `/api/tiles/${z}/${x}/${y}.png`;
+    basemap.cache.set(key, e);
+  }
+  return e;
+}
+
+function drawBasemap(w, h) {
+  if (!basemap.on || basemap.originLon == null) return;
+  const [wx0, wy1] = s2w(0, 0), [wx1, wy0] = s2w(w, h);
+  const [lon0, lat0] = localToLonLat(wx0, wy0);
+  const [lon1, lat1] = localToLonLat(wx1, wy1);
+  // подбор зума: метры на тайл-пиксель ≈ метры на экранный пиксель
+  const mppTile0 = 156543.03392804097 * Math.cos(basemap.originLat * Math.PI / 180);
+  let z = Math.round(Math.log2(mppTile0 * state.view.k));
+  z = Math.max(1, Math.min(19, z));
+
+  const txMin = Math.floor(lonToTileX(Math.min(lon0, lon1), z));
+  const txMax = Math.floor(lonToTileX(Math.max(lon0, lon1), z));
+  const tyMin = Math.floor(latToTileY(Math.max(lat0, lat1), z));
+  const tyMax = Math.floor(latToTileY(Math.min(lat0, lat1), z));
+  const maxTiles = 2 ** z;
+  const budget = 300;  // защита от случайного запроса тысяч тайлов при рывке зума
+  let drawn = 0;
+  ctx.save();
+  ctx.globalAlpha = basemap.opacity;
+  for (let ty = tyMin; ty <= tyMax; ty++) {
+    for (let tx = txMin; tx <= txMax; tx++) {
+      if (++drawn > budget) break;
+      const cx = ((tx % maxTiles) + maxTiles) % maxTiles;
+      if (ty < 0 || ty >= maxTiles) continue;
+      const e = tileImage(z, cx, ty);
+      if (!e.loaded) continue;
+      const nw = lonLatToLocal(tileXToLon(tx, z), tileYToLat(ty, z));
+      const se = lonLatToLocal(tileXToLon(tx + 1, z), tileYToLat(ty + 1, z));
+      const [sx0, sy0] = w2s(...nw), [sx1, sy1] = w2s(...se);
+      // расширяем на 0.5px — прячет тонкие щели между соседними тайлами
+      ctx.drawImage(e.img, sx0 - 0.5, sy0 - 0.5, sx1 - sx0 + 1, sy1 - sy0 + 1);
+    }
+  }
+  ctx.restore();
+  ctx.fillStyle = "rgba(255,255,255,.82)";
+  ctx.fillRect(6, h - 18, ctx.measureText(basemap.attribution).width + 14, 14);
+  ctx.fillStyle = "#5c5a54"; ctx.font = "10px sans-serif"; ctx.textAlign = "left";
+  ctx.fillText(basemap.attribution, 10, h - 7);
 }
 
 // ---------- геометрия ----------
@@ -339,6 +435,7 @@ function drawSnapMarker() {
 function draw() {
   const w = cv.clientWidth, h = cv.clientHeight;
   ctx.clearRect(0, 0, w, h);
+  drawBasemap(w, h);
   drawGrid(w, h);
 
   for (const kind of Z_ORDER) {
@@ -928,6 +1025,15 @@ function setGridSnap(v) {
   if (chk) chk.checked = v;
   draw();
 }
+on("basemap-show", "change", e => {
+  basemap.on = e.target.checked;
+  if (basemap.on && basemap.originLon == null) initBasemap().then(draw);
+  draw();
+});
+on("basemap-opacity", "input", e => {
+  basemap.opacity = +e.target.value / 100;
+  draw();
+});
 on("btn-snap", "click", () => setOsnap(!state.osnap));
 on("obj-snap", "change", e => setOsnap(e.target.checked));
 on("grid-snap", "change", e => setGridSnap(e.target.checked));

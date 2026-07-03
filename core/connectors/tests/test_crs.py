@@ -41,6 +41,24 @@ class TestCrs(unittest.TestCase):
         self.assertIn("+ellps=bessel", crs.OGD_PROJ4)
         self.assertIn("+towgs84=", crs.OGD_PROJ4)
 
+    def test_utm37n_to_wgs84_vs_proj(self):
+        for (lon, lat), (x, y) in UTM_CASES:
+            got_lon, got_lat = crs.utm37n_to_wgs84(x, y)
+            self.assertAlmostEqual(got_lon, lon, places=7)
+            self.assertAlmostEqual(got_lat, lat, places=7)
+
+    def test_utm37n_roundtrip(self):
+        for lon, lat in [(37.0, 55.5), (39.5, 56.2), (36.8, 54.9)]:
+            x, y = crs.wgs84_to_utm37n(lon, lat)
+            got_lon, got_lat = crs.utm37n_to_wgs84(x, y)
+            self.assertAlmostEqual(got_lon, lon, places=7)
+            self.assertAlmostEqual(got_lat, lat, places=7)
+
+    def test_origin_lonlat_near_moscow(self):
+        # ORIGIN (413000, 6178000) в демо-данных студии — окрестность Москвы
+        self.assertAlmostEqual(crs.ORIGIN_LON, 37.615, delta=0.05)
+        self.assertAlmostEqual(crs.ORIGIN_LAT, 55.752, delta=0.05)
+
 
 if __name__ == "__main__":
     unittest.main()

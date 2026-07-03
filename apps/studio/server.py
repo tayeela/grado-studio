@@ -3,20 +3,39 @@
     python3 apps/studio/server.py [порт]
 
 Статика: apps/studio/web. API:
-    POST /api/tep    {features, params} → живой ТЭП
-    POST /api/album  {features, params, name} → PDF альбома АГК
-    POST /api/grado  {features, name} → файл проекта .grado (открывается QGIS)
+    POST /api/tep         {features, params} → живой ТЭП
+    POST /api/album       {features, params, name} → PDF альбома АГК
+    POST /api/grado       {features, name} → файл проекта .grado (открывается QGIS)
+    POST /api/open-grado  тело .grado → {name, features} — открыть проект обратно
+    POST /api/import-nspd {payload} → фигуры холста из захвата НСПД
+    GET  /api/inbox       выгрузки браузерного моста, ждущие холст
+    GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
+    GET  /api/tiles/<z>/<x>/<y>.png  тайловая подложка (прокси + дисковый кэш)
+Порт 8081: приёмник браузерного расширения GRADO (совместим с QGIS-плагином).
 """
 
 import json
+import re
 import socket
+import ssl
 import sys
 import tempfile
 import threading
 import traceback
+import urllib.request
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
+
+# Сборки Python.org для macOS не подхватывают системную цепочку доверия —
+# без этого HTTPS к внешним хостам падает с CERTIFICATE_VERIFY_FAILED
+# (тот же класс проблемы, что чинит "Install Certificates.command").
+# Проверка сертификата остаётся включённой — меняется только источник CA.
+try:
+    import certifi
+    TILE_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    TILE_SSL_CTX = ssl.create_default_context()
 
 sys.path.insert(0, str(Path(__file__).parent))
 import studio_core  # noqa: E402
@@ -24,6 +43,16 @@ import studio_core  # noqa: E402
 WEB = Path(__file__).parent / "web"
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8643
 BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
+
+# Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
+# от повторных запросов — см. Tile Usage Policy OSM). Локальный
+# однопользовательский инструмент = "лёгкое использование" по политике;
+# при промышленной нагрузке источник надо заменить на платный/self-hosted.
+TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+TILE_ATTRIBUTION = "© OpenStreetMap contributors"
+TILE_CACHE = Path(__file__).parent / ".tile_cache"
+TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
+TILE_RE = re.compile(r"^/api/tiles/(\d+)/(\d+)/(\d+)\.png$")
 
 INBOX = []          # выгрузки от расширения, ждущие холст
 INBOX_LOCK = threading.Lock()
@@ -86,8 +115,10 @@ class Handler(SimpleHTTPRequestHandler):
         pass
 
     def end_headers(self):
-        # Safari охотно кэширует статику — интерфейс всегда свежий
-        self.send_header("Cache-Control", "no-store")
+        # Safari охотно кэширует статику — интерфейс всегда свежий.
+        # Тайлы подложки — исключение, у них свой Cache-Control (см. _serve_tile).
+        if not self.path.startswith("/api/tiles/"):
+            self.send_header("Cache-Control", "no-store")
         super().end_headers()
 
     def _json_body(self):
@@ -112,7 +143,45 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path == "/api/basemap-info":
+            from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
+            self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,
+                                   "attribution": TILE_ATTRIBUTION},
+                                  ensure_ascii=False).encode(),
+                       "application/json; charset=utf-8")
+            return
+        m = TILE_RE.match(self.path)
+        if m:
+            self._serve_tile(*map(int, m.groups()))
+            return
         super().do_GET()
+
+    def _serve_tile(self, z, x, y):
+        if not (0 <= z <= 19 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+            self.send_error(400, "tile coordinates out of range")
+            return
+        cache_path = TILE_CACHE / str(z) / str(x) / f"{y}.png"
+        if not cache_path.exists():
+            try:
+                req = urllib.request.Request(
+                    TILE_URL.format(z=z, x=x, y=y), headers={"User-Agent": TILE_UA})
+                with urllib.request.urlopen(req, timeout=10, context=TILE_SSL_CTX) as resp:
+                    data = resp.read()
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_path.write_bytes(data)
+            except Exception:
+                # send_error кодирует сообщение как latin-1 — никакой кириллицы
+                # и никакого текста исключения (в нём может быть что угодно)
+                traceback.print_exc()
+                self.send_error(502, "tile upstream error")
+                return
+        self.send_response(200)
+        self.send_header("Content-Type", "image/png")
+        self.send_header("Cache-Control", "public, max-age=604800")  # свои — год не меняются
+        data = cache_path.read_bytes()
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_POST(self):
         try:

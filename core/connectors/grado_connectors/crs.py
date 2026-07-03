@@ -56,8 +56,45 @@ def wgs84_to_utm37n(lon, lat):
     return x, y
 
 
+def utm37n_to_wgs84(x, y):
+    """Обратный ряд Снайдера для UTM 37N. Сверено с PROJ (см. тесты)."""
+    e1 = (1 - math.sqrt(1 - _E2)) / (1 + math.sqrt(1 - _E2))
+    m = y / _K0
+    mu = m / (_A * (1 - _E2 / 4 - 3 * _E2 ** 2 / 64 - 5 * _E2 ** 3 / 256))
+
+    phi1 = (mu
+            + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * math.sin(2 * mu)
+            + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * math.sin(4 * mu)
+            + (151 * e1 ** 3 / 96) * math.sin(6 * mu)
+            + (1097 * e1 ** 4 / 512) * math.sin(8 * mu))
+
+    sin_phi1, cos_phi1, tan_phi1 = math.sin(phi1), math.cos(phi1), math.tan(phi1)
+    c1 = _EP2 * cos_phi1 ** 2
+    t1 = tan_phi1 ** 2
+    n1 = _A / math.sqrt(1 - _E2 * sin_phi1 ** 2)
+    r1 = _A * (1 - _E2) / (1 - _E2 * sin_phi1 ** 2) ** 1.5
+    d = (x - _FE) / (n1 * _K0)
+
+    phi = phi1 - (n1 * tan_phi1 / r1) * (
+        d ** 2 / 2
+        - (5 + 3 * t1 + 10 * c1 - 4 * c1 ** 2 - 9 * _EP2) * d ** 4 / 24
+        + (61 + 90 * t1 + 298 * c1 + 45 * t1 ** 2 - 252 * _EP2 - 3 * c1 ** 2) * d ** 6 / 720)
+    lam = _LON0 + (
+        d
+        - (1 + 2 * t1 + c1) * d ** 3 / 6
+        + (5 - 2 * c1 + 28 * t1 - 3 * c1 ** 2 + 8 * _EP2 + 24 * t1 ** 2) * d ** 5 / 120
+    ) / cos_phi1
+    return math.degrees(lam), math.degrees(phi)
+
+
 def merc_to_utm37n(x, y):
     return wgs84_to_utm37n(*merc_to_wgs84(x, y))
+
+
+# Точка (0,0) локальных метров студии = UTM(413000, 6178000) = ORIGIN
+# в core/model/grado_model/project.py и apps/studio/studio_core.py.
+# Долгота/широта нужны для перевода холста в тайлы XYZ (apps/studio).
+ORIGIN_LON, ORIGIN_LAT = utm37n_to_wgs84(413000.0, 6178000.0)
 
 
 def transform_geom(geom, fn):
