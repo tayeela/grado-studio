@@ -213,6 +213,14 @@ class Handler(SimpleHTTPRequestHandler):
                 out = studio_core.import_nspd(body.get("payload") or body)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
+            elif self.path == "/api/dxf":
+                data = studio_core.make_dxf(features, name)
+                self._send(data, "application/dxf", "project.dxf")
+            elif self.path == "/api/redline-offset":
+                pts = studio_core.redline_offset(
+                    body["line"], body.get("radius", 0), body["dist"])
+                self._send(json.dumps({"line": pts}).encode(),
+                           "application/json; charset=utf-8")
             else:
                 self.send_error(404)
         except Exception as e:

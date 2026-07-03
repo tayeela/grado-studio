@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -654,7 +654,12 @@ function renderProps() {
   if (f.kind === "building")
     extra = `<label>Этажность<input type="number" id="f-floors" value="${f.props.floors}" min="1" max="75"></label>`;
   if (f.kind === "redline")
-    extra = `<label>Радиус сопряжения, м<input type="number" id="f-radius" value="${f.props.radius || 0}" min="0" max="500" step="5"></label>`;
+    extra = `<label>Радиус сопряжения, м<input type="number" id="f-radius" value="${f.props.radius || 0}" min="0" max="500" step="5"></label>
+      <label>Офсет, м<input type="number" id="f-offdist" value="${f.props._offdist || 15}" min="0.5" max="200" step="0.5"></label>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button id="f-offset-l" style="flex:1">⇐ влево</button>
+        <button id="f-offset-r" style="flex:1">вправо ⇒</button>
+      </div>`;
   if (f.kind === "zone")
     extra = `<label>Наименование зоны<input type="text" id="f-zone" value="${f.props.zone_title}"></label>`;
   if (f.kind === "public")
@@ -673,6 +678,35 @@ function renderProps() {
   bind("f-radius", "radius", v => Math.max(0, parseFloat(v) || 0));
   bind("f-zone", "zone_title");
   bind("f-purpose", "purpose");
+  const offset = async sign => {
+    const dist = Math.abs(parseFloat(document.getElementById("f-offdist").value) || 15);
+    f.props._offdist = dist;
+    try {
+      const r = await fetch("/api/redline-offset", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ line: f.line, radius: f.props.radius || 0,
+                               dist: sign * dist }) });
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}));
+        throw new Error(e.error || ("HTTP " + r.status));
+      }
+      const data = await r.json();
+      snapshot();
+      // сопряжение уже вшито в геометрию офсета — radius обнуляем
+      const copy = { id: state.nextId++, kind: "redline",
+                     line: data.line, props: { radius: 0 } };
+      state.features.push(copy);
+      state.selected = copy.id;
+      afterChange();
+    } catch (err) {
+      alert("Офсет не построился: " + String(err).slice(0, 200) +
+            "\n(обычно — радиус/офсет не помещается в геометрию)");
+    }
+  };
+  const offL = document.getElementById("f-offset-l");
+  const offR = document.getElementById("f-offset-r");
+  if (offL) offL.onclick = () => offset(1);
+  if (offR) offR.onclick = () => offset(-1);
   document.getElementById("f-del").onclick = deleteSelected;
 }
 function renderLayers() {
@@ -1060,6 +1094,7 @@ async function download(url, filename) {
 }
 on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
 on("btn-grado", "click", () => download("/api/grado", "project.grado"));
+on("btn-dxf", "click", () => download("/api/dxf", "project.dxf"));
 
 // открытие проекта .grado (round-trip с QGIS)
 on("btn-open", "click", () => document.getElementById("grado-file").click());

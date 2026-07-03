@@ -151,6 +151,30 @@ class TestStudioCore(unittest.TestCase):
         self.assertAlmostEqual(y, 1371, delta=15)
         self.assertTrue(any("пропущено" in n for n in out["notes"]))
 
+    def test_make_dxf(self):
+        data = studio_core.make_dxf(FEATURES, "Тест DXF")
+        text = data.decode("cp1251")
+        self.assertTrue(text.startswith("0\nSECTION"))
+        for layer in ("GRANICA_TERRITORII", "KRASNYE_LINII", "ZDANIYA"):
+            self.assertIn(layer, text)
+        self.assertIn("Ж-1", text)
+
+    def test_redline_offset_with_fillet(self):
+        def length(pts):
+            return sum(((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2) ** 0.5
+                       for a, b in zip(pts, pts[1:]))
+        line = [[0, 0], [100, 0], [100, 100]]
+        import math
+        left = studio_core.redline_offset(line, 20, 10)   # влево: r 20 → 10
+        self.assertAlmostEqual(length(left), 160 + math.pi * 10 / 2, delta=0.05)
+        right = studio_core.redline_offset(line, 20, -10)  # вправо: r 20 → 30
+        self.assertAlmostEqual(length(right), 160 + math.pi * 30 / 2, delta=0.05)
+
+    def test_redline_offset_collapse_raises(self):
+        from grado_geom import CurveError
+        with self.assertRaises(CurveError):
+            studio_core.redline_offset([[0, 0], [100, 0], [100, 100]], 20, 25)
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

@@ -44,7 +44,11 @@ button.primary:hover { opacity: .85; }
 #toolbar button:hover { background: var(--panel); }
 #toolbar button.active { background: var(--accent); color: #fff; }
 #toolbar .divider { width: 22px; border-top: 1px solid var(--border); margin: 4px 0; }
-#cv { flex: 1; display: block; cursor: crosshair; }
+/* flex-basis: 0 обязателен: атрибуты canvas.width/height участвуют в
+   auto-базе flex — resize() умножает их на devicePixelRatio, элемент
+   растёт, ResizeObserver снова зовёт resize() → самораздувающийся цикл
+   (в Safari выглядел как «точки на секунду, потом белый экран») */
+#cv { flex: 1 1 0; min-width: 0; min-height: 0; display: block; cursor: crosshair; }
 #panel {
   width: 272px; border-left: 1px solid var(--border); background: #fff;
   overflow-y: auto; display: flex; flex-direction: column;

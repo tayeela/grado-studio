@@ -269,3 +269,25 @@ def make_grado(features, name):
         path = Path(tmp) / "studio.grado"
         build_project(path, name, features).close()
         return path.read_bytes()
+
+
+def make_dxf(features, name):
+    """Чертёж в DXF R12 (координаты — СК проекта, метры UTM)."""
+    from grado_model.dxf_export import project_to_dxf
+    with tempfile.TemporaryDirectory() as tmp:
+        project = build_project(Path(tmp) / "studio.grado", name, features)
+        data = project_to_dxf(project)
+        project.close()
+    return data
+
+
+def redline_offset(line, radius, dist):
+    """Офсет красной линии через ядро geom (fillet + offset G1-цепи).
+
+    dist > 0 — влево по ходу линии. Возвращает полилинию в тех же
+    локальных координатах; сопряжение уже вшито в геометрию."""
+    pts = [tuple(p) for p in line]
+    path = (GPath.fillet_polyline(pts, float(radius))
+            if radius and float(radius) > 0 and len(pts) >= 3
+            else GPath.polyline(pts))
+    return [list(p) for p in path.offset(float(dist)).linearize(0.05)]
