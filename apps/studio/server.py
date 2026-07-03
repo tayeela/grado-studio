@@ -9,7 +9,9 @@
 """
 
 import json
+import socket
 import sys
+import threading
 import traceback
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -19,6 +21,11 @@ import studio_core  # noqa: E402
 
 WEB = Path(__file__).parent / "web"
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8643
+
+
+class V6Server(ThreadingHTTPServer):
+    # Safari резолвит localhost в ::1 — слушаем оба loopback-стека
+    address_family = socket.AF_INET6
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -75,5 +82,16 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    servers = [ThreadingHTTPServer(("127.0.0.1", PORT), Handler)]
+    try:
+        servers.append(V6Server(("::1", PORT), Handler))
+    except OSError:
+        pass  # система без IPv6 — хватит IPv4
     print(f"ГРАДО Студия: http://localhost:{PORT}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    if "--open" in sys.argv:
+        import webbrowser
+        threading.Timer(0.4, webbrowser.open,
+                        [f"http://localhost:{PORT}"]).start()
+    for s in servers[1:]:
+        threading.Thread(target=s.serve_forever, daemon=True).start()
+    servers[0].serve_forever()
