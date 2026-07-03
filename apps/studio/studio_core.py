@@ -273,13 +273,62 @@ def make_grado(features, name):
 
 
 def make_dxf(features, name):
-    """Чертёж в DXF R12 (координаты — СК проекта, метры UTM)."""
-    from grado_model.dxf_export import project_to_dxf
+    """Чертёж в DXF R12 (координаты — СК проекта, метры UTM).
+
+    Размерные линии — аннотация чертежа: в модель не попадают,
+    в DXF выгружаются слоем RAZMERY (линия + текст длины)."""
+    import math
+    from grado_model.dxf_export import _polyline, _text, project_to_dxf
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features)
         data = project_to_dxf(project)
         project.close()
-    return data
+    dims = [f for f in features if f["kind"] == "dim"]
+    if not dims:
+        return data
+    text = data.decode("cp1251")
+    extra = ""
+    for f in dims:
+        (ax, ay), (bx, by) = f["line"][0], f["line"][1]
+        pts = [[ax + ORIGIN[0], ay + ORIGIN[1]], [bx + ORIGIN[0], by + ORIGIN[1]]]
+        extra += _polyline("RAZMERY", pts, closed=False)
+        length = math.hypot(bx - ax, by - ay)
+        extra += _text("RAZMERY", (pts[0][0] + pts[1][0]) / 2,
+                       (pts[0][1] + pts[1][1]) / 2, f"{length:.1f} м", 2.0)
+    cut = text.rfind("0\nENDSEC")
+    return (text[:cut] + extra + text[cut:]).encode("cp1251", errors="replace")
+
+
+def make_print(features, name, scale=None, paper="A2"):
+    """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
+    from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
+                              Document, MapFrame, Page, PageBorder,
+                              TextFrame, render_document_pdf)
+    from grado_render import StyleSet
+    from grado_wizard.sheets import fit_scale
+
+    sizes = {"A3": A3_LANDSCAPE, "A2": A2_LANDSCAPE, "A1": A1_LANDSCAPE}
+    size = sizes.get(paper, A2_LANDSCAPE)
+    with tempfile.TemporaryDirectory() as tmp:
+        project = build_project(Path(tmp) / "studio.grado", name, features)
+        page = Page(size)
+        ix, iy, iw, ih = page.inner_rect()
+        map_rect = (ix + 8, iy + 16, iw - 16, ih - 24)
+        used_scale = int(scale) if scale else fit_scale(project, map_rect)
+        import datetime
+        page.frames = [
+            PageBorder(page),
+            MapFrame(map_rect, scale=used_scale),
+            TextFrame((ix + 8, iy + 2, iw - 16, 10),
+                      [f"{name} — чертёж, М 1:{used_scale}, "
+                       f"{datetime.date.today().isoformat()}"], size=3.6),
+        ]
+        doc = Document(name)
+        doc.pages = [page]
+        doc.sheet_titles = [""]
+        pdf = render_document_pdf(doc, project, styles=StyleSet())
+        project.close()
+    return pdf, used_scale
 
 
 def redline_stations(line, radius, step):

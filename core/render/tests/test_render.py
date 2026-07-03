@@ -133,6 +133,34 @@ class TestWysiwyg(unittest.TestCase):
         self.assertGreater(len(pdf), 1000)
 
 
+class TestHatch(unittest.TestCase):
+    def test_restrict_gets_hatch_ops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "t.grado", "Штриховка")
+            p.add_layer("terr.restrict").add_feature(
+                {"type": "Polygon", "coordinates": [[
+                    [413000, 6178000], [413100, 6178000], [413100, 6178080],
+                    [413000, 6178080], [413000, 6178000]]]},
+                attrs={"kind": "СЗЗ"})
+            ops = build_ops(p, (10, 10, 200, 160), scale=1000)
+            p.close()
+        hatches = [o for o in ops if o["op"] == "path" and o.get("width") == 0.16]
+        self.assertEqual(len(hatches), 1, "один op штриховки на полигон")
+        segs = hatches[0]["rings"]
+        self.assertGreater(len(segs), 10, "полигон 100×80 мм — десятки линий")
+        for seg in segs:
+            self.assertEqual(len(seg), 2, "штриховка — отрезки")
+
+    def test_hatch_segments_inside_frame(self):
+        from grado_render.scene import hatch_ops
+        square = [[(0, 0), (10, 0), (10, 10), (0, 10)]]
+        ops = hatch_ops(square, spacing=2, stroke=(0, 0, 0))
+        for seg in ops[0]["rings"]:
+            for x, y in seg:
+                self.assertTrue(-1e-6 <= x <= 10 + 1e-6)
+                self.assertTrue(-1e-6 <= y <= 10 + 1e-6)
+
+
 class TestStyleSet(unittest.TestCase):
     def test_fallback(self):
         st = StyleSet().resolve("нет.такого")

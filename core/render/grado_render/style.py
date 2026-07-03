@@ -8,7 +8,7 @@
 
 class Style:
     def __init__(self, fill=None, stroke=None, width=0.3, dash=None,
-                 label=None, marker=1.2, z=0):
+                 label=None, marker=1.2, z=0, hatch=False):
         self.fill = fill          # (r,g,b) 0..1 | None
         self.stroke = stroke      # (r,g,b) | None
         self.width = width        # мм
@@ -16,6 +16,7 @@ class Style:
         self.label = label        # имя атрибута для подписи
         self.marker = marker      # радиус маркера точек, мм
         self.z = z                # порядок отрисовки (меньше — ниже)
+        self.hatch = hatch        # диагональная штриховка 45° (ЗОУИТ и т.п.)
 
 
 # Базовая библиотека к классификатору (продолжение библиотеки QML GRADO)
@@ -23,9 +24,9 @@ DEFAULT_STYLES = {
     "tp.func_zone": Style(fill=(0.98, 0.94, 0.75), stroke=(0.72, 0.62, 0.35),
                           width=0.25, label="zone_title", z=0),
     "cad.zouit": Style(fill=(0.80, 0.88, 0.97), stroke=(0.45, 0.62, 0.80),
-                       width=0.25, dash=[2, 1], z=1),
+                       width=0.25, dash=[2, 1], z=1, hatch=True),
     "terr.restrict": Style(fill=(0.96, 0.86, 0.86), stroke=(0.75, 0.35, 0.35),
-                           width=0.3, dash=[3, 1.5], z=2),
+                           width=0.3, dash=[3, 1.5], z=2, hatch=True),
     "oks.building": Style(fill=(0.96, 0.78, 0.42), stroke=(0.55, 0.40, 0.15),
                           width=0.2, label="floors", z=3),
     "cad.parcel": Style(stroke=(0.35, 0.30, 0.20), width=0.2, z=4),

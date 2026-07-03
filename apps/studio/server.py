@@ -221,6 +221,11 @@ class Handler(SimpleHTTPRequestHandler):
                     body["line"], body.get("radius", 0), body["dist"])
                 self._send(json.dumps({"line": pts}).encode(),
                            "application/json; charset=utf-8")
+            elif self.path == "/api/print":
+                pdf, used = studio_core.make_print(
+                    features, name, body.get("scale"), body.get("paper", "A2"))
+                self._send(pdf, "application/pdf",
+                           f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":
                 out = studio_core.redline_stations(
                     body["line"], body.get("radius", 0), body.get("step", 100))

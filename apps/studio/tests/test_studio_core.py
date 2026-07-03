@@ -230,6 +230,24 @@ class TestStudioCore(unittest.TestCase):
         out = studio_core.compute_tep(FEATURES)
         self.assertIn("zones", out)
 
+    def test_make_print(self):
+        pdf, scale = studio_core.make_print(FEATURES, "Печать")
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"/Count 1", pdf)
+        self.assertIn(scale, [500, 1000, 2000, 2500, 5000, 10000, 20000,
+                              25000, 50000])
+        pdf2, s2 = studio_core.make_print(FEATURES, "Печать", scale=2000, paper="A3")
+        self.assertEqual(s2, 2000)
+
+    def test_dxf_includes_dims(self):
+        feats = FEATURES + [{"kind": "dim", "props": {},
+                             "line": [[0, 0], [120, 0]]}]
+        text = studio_core.make_dxf(feats, "С размерами").decode("cp1251")
+        self.assertIn("RAZMERY", text)
+        self.assertIn("120.0 м", text)
+        self.assertTrue(text.rstrip().endswith("EOF"), "вставка не сломала структуру")
+        self.assertEqual(text.count("0\nENDSEC"), 3)
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

@@ -9,6 +9,8 @@
 A3_LANDSCAPE = (420, 297)
 A3_PORTRAIT = (297, 420)
 A4_PORTRAIT = (210, 297)
+A2_LANDSCAPE = (594, 420)
+A1_LANDSCAPE = (841, 594)
 
 # поля рамки по ГОСТ Р 21.101: слева 20 мм (подшивка), остальные 5 мм
 MARGIN_LEFT, MARGIN = 20, 5

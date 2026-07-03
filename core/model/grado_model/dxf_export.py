@@ -18,6 +18,7 @@ LAYERS = {
     "oks.building": ("ZDANIYA", 30),
     "uds.road_axis": ("UDS_OSI", 8),
     "social.object": ("SOC_OBEKTY", 5),
+    "annot.dim": ("RAZMERY", 3),   # размерные линии студии (аннотация)
 }
 FALLBACK_LAYER = ("PROCHEE", 7)
 

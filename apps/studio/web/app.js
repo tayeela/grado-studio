@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -30,13 +30,15 @@ const STYLES = {
   boundary: { stroke: "#1c1c1a", width: 2.5, dash: [14, 5, 4, 5] },
   social:   { fill: "#2f6fde", stroke: "#1d4a9e", width: 1.2 },
   parcel:   { stroke: "#8a7a5c", width: 0.8, label: f => f.props.cad_num },
+  dim:      { stroke: "#44423c", width: 1 },
 };
-const Z_ORDER = ["zone", "public", "restrict", "parcel", "building", "redline", "boundary", "social"];
+STYLES.restrict.hatch = true;
+const Z_ORDER = ["zone", "public", "restrict", "parcel", "building", "redline", "boundary", "social", "dim"];
 const KIND_NAMES = {
   boundary: "Граница территории", zone: "Функциональная зона",
   restrict: "Ограничение (ЗОУИТ)", building: "Здание", public: "Зона нежилых ОКС",
   redline: "Красная линия", social: "Объект социнфраструктуры",
-  parcel: "Земельный участок (ЕГРН)",
+  parcel: "Земельный участок (ЕГРН)", dim: "Размер",
 };
 
 const state = {
@@ -479,7 +481,28 @@ function draw() {
       const st = STYLES[kind];
       ctx.setLineDash(st.dash || []);
       ctx.lineWidth = st.width; ctx.strokeStyle = st.stroke || "#000";
-      if (f.point) {
+      if (kind === "dim" && f.line) {
+        // размерная линия: засечки 45° на концах + длина вдоль линии
+        const [ax, ay] = w2s(...f.line[0]);
+        const [bx, by] = w2s(...f.line[f.line.length - 1]);
+        const ang = Math.atan2(by - ay, bx - ax);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+        for (const [px, py] of [[ax, ay], [bx, by]]) {
+          ctx.moveTo(px - 5 * Math.cos(ang + Math.PI / 4), py - 5 * Math.sin(ang + Math.PI / 4));
+          ctx.lineTo(px + 5 * Math.cos(ang + Math.PI / 4), py + 5 * Math.sin(ang + Math.PI / 4));
+        }
+        ctx.stroke();
+        const lenM = Math.hypot(f.line[1][0] - f.line[0][0], f.line[1][1] - f.line[0][1]);
+        ctx.save();
+        ctx.translate((ax + bx) / 2, (ay + by) / 2);
+        let ta = ang;
+        if (ta > Math.PI / 2 || ta < -Math.PI / 2) ta += Math.PI;  // текст не вверх ногами
+        ctx.rotate(ta);
+        ctx.fillStyle = st.stroke; ctx.font = "600 11px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(lenM.toFixed(1) + " м", 0, -5);
+        ctx.restore();
+        ctx.setLineDash([]);
+      } else if (f.point) {
         const [sx, sy] = w2s(...f.point);
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
       } else {
@@ -495,6 +518,24 @@ function draw() {
         }
         if (st.fill && f.ring) { ctx.fillStyle = st.fill; ctx.fill(); }
         ctx.stroke();
+        if (st.hatch && f.ring) {
+          // диагональная штриховка 45° в пределах контура
+          ctx.save();
+          drawChain(f.ring, true);
+          ctx.clip();
+          const ss = f.ring.map(p => w2s(...p));
+          const xs = ss.map(p => p[0]), ys = ss.map(p => p[1]);
+          const x0 = Math.min(...xs), x1 = Math.max(...xs);
+          const y0 = Math.min(...ys), y1 = Math.max(...ys);
+          ctx.strokeStyle = st.stroke; ctx.lineWidth = 0.6;
+          ctx.beginPath();
+          for (let c = x0 - (y1 - y0); c < x1; c += 9) {
+            ctx.moveTo(c, y1);
+            ctx.lineTo(c + (y1 - y0), y0);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
       }
       ctx.setLineDash([]);
       if (st.label && f.ring) {
@@ -839,7 +880,7 @@ const DEFAULT_PROPS = {
   building: () => ({ floors: 9, purpose: "МКД" }),
   public: () => ({ purpose: "Общественный центр" }),
   redline: () => ({ radius: 0 }), social: () => ({ kind: "ОО+ДОО", capacity: 750 }),
-  measure: () => ({}), parcel: () => ({}),
+  measure: () => ({}), parcel: () => ({}), dim: () => ({}),
 };
 function addFeature(kind, geom) {
   snapshot();
@@ -960,6 +1001,15 @@ cv.addEventListener("mousedown", e => {
     state.drag = { a: s.p, b: s.p, rect: true, moved: false };
   } else {
     if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
+    if (state.tool === "dim") {
+      state.drawing.pts.push(s.p);
+      if (state.drawing.pts.length === 2) {
+        const pts = state.drawing.pts;
+        state.drawing = null;
+        addFeature("dim", { line: pts });
+      } else draw();
+      return;
+    }
     const first = state.drawing.pts[0];
     if (first && state.tool !== "redline" && state.drawing.pts.length > 2 &&
         Math.hypot(first[0] - s.p[0], first[1] - s.p[1]) < 12 / state.view.k) {
@@ -1084,7 +1134,7 @@ cv.addEventListener("wheel", e => {
 // ---------- клавиатура (по кодам клавиш — не зависит от раскладки) ----------
 const TOOL_CODES = { KeyV: "select", KeyG: "boundary", KeyZ: "zone", KeyO: "restrict",
                      KeyB: "building", KeyP: "public", KeyL: "redline", KeyS: "social",
-                     KeyM: "measure" };
+                     KeyM: "measure", KeyD: "dim" };
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Shift") { shiftDown = true; if (state.drawing) draw(); return; }
@@ -1192,6 +1242,7 @@ async function download(url, filename) {
 on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
 on("btn-grado", "click", () => download("/api/grado", "project.grado"));
 on("btn-dxf", "click", () => download("/api/dxf", "project.dxf"));
+on("btn-print", "click", () => download("/api/print", "chertezh.pdf"));
 
 // открытие проекта .grado (round-trip с QGIS)
 on("btn-open", "click", () => document.getElementById("grado-file").click());

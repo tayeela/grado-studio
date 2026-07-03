@@ -71,6 +71,39 @@ def _points(geom):
     return []
 
 
+def hatch_ops(rings, spacing, stroke, width=0.16):
+    """Диагональная штриховка 45° внутри полигона (мм листа).
+
+    Семейство прямых x+y=c пересекается с рёбрами всех колец; точки
+    сортируются вдоль прямой, чётные пары дают отрезки — even-odd
+    корректно обрабатывает дырки. Один op со многими сегментами."""
+    xs = [p[0] for r in rings for p in r]
+    ys = [p[1] for r in rings for p in r]
+    if not xs:
+        return []
+    segments = []
+    c = (min(xs) + min(ys)) - ((min(xs) + min(ys)) % spacing)
+    c_max = max(xs) + max(ys)
+    while c <= c_max:
+        hits = []
+        for ring in rings:
+            for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+                s1, s2 = x1 + y1 - c, x2 + y2 - c
+                if (s1 > 0) == (s2 > 0):
+                    continue
+                t = s1 / (s1 - s2)
+                px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
+                hits.append((px - py, (px, py)))  # параметр вдоль прямой
+        hits.sort(key=lambda h: h[0])
+        for a, b in zip(hits[::2], hits[1::2]):
+            segments.append([list(a[1]), list(b[1])])
+        c += spacing
+    if not segments:
+        return []
+    return [{"op": "path", "rings": segments, "closed": False,
+             "fill": None, "stroke": stroke, "width": width, "dash": None}]
+
+
 def build_ops(project, frame_rect, scale, center=None, styles=None,
               label_size=2.2, only=None):
     """Операции отрисовки карты проекта в рамке frame_rect (мм), М 1:scale.
@@ -101,6 +134,8 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                 ops.append({"op": "path", "rings": rings, "closed": True,
                             "fill": st.fill, "stroke": st.stroke,
                             "width": st.width, "dash": st.dash})
+                if st.hatch:
+                    ops.extend(hatch_ops(rings, spacing=1.6, stroke=st.stroke))
                 if st.label and f["attrs"].get(st.label) is not None:
                     lx, ly = centroid(rings[0])
                     labels.append({"op": "text", "x": lx, "y": ly,
