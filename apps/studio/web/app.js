@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -21,25 +21,80 @@ function on(id, event, fn) {
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 
-const STYLES = {
-  zone:     { fill: "#faf0bf", stroke: "#b89e59", width: 1,   label: f => f.props.zone_title },
-  public:   { fill: "#f7c2c9", stroke: "#bf596b", width: 1.2, label: f => f.props.purpose },
-  restrict: { fill: "rgba(245,219,219,.85)", stroke: "#bf5959", width: 1.2, dash: [8, 4] },
-  building: { fill: "#f5c76b", stroke: "#8c6626", width: 1,   label: f => f.props.floors },
-  redline:  { stroke: "#d91a1a", width: 2.5 },
-  boundary: { stroke: "#1c1c1a", width: 2.5, dash: [14, 5, 4, 5] },
-  social:   { fill: "#2f6fde", stroke: "#1d4a9e", width: 1.2 },
-  parcel:   { stroke: "#8a7a5c", width: 0.8, label: f => f.props.cad_num },
-  dim:      { stroke: "#44423c", width: 1 },
+// ---------- модель v2: слои и стили (docs/fixes-geometry-layout.md, шаг 1) ----------
+// Стиль — данные (JSON-совместимые): подпись задаётся именем поля, не функцией.
+const STYLES_V2 = {
+  "func_zone.fill":     { fill: "#faf0bf", stroke: "#b89e59", width: 1,   label_field: "zone_title" },
+  "public_zone.fill":   { fill: "#f7c2c9", stroke: "#bf596b", width: 1.2, label_field: "purpose" },
+  "restrict.hatch":     { fill: "rgba(245,219,219,.85)", stroke: "#bf5959", width: 1.2, dash: [8, 4], hatch: true },
+  "parcel.line":        { stroke: "#8a7a5c", width: 0.8, label_field: "cad_num" },
+  "building.fill":      { fill: "#f5c76b", stroke: "#8c6626", width: 1,   label_field: "floors" },
+  "red.line.projected": { stroke: "#d91a1a", width: 2.5 },
+  "boundary.line":      { stroke: "#1c1c1a", width: 2.5, dash: [14, 5, 4, 5] },
+  "social.point":       { fill: "#2f6fde", stroke: "#1d4a9e", width: 1.2 },
+  "dimension.line":     { stroke: "#44423c", width: 1 },
 };
-STYLES.restrict.hatch = true;
-const Z_ORDER = ["zone", "public", "restrict", "parcel", "building", "redline", "boundary", "social", "dim"];
-const KIND_NAMES = {
-  boundary: "Граница территории", zone: "Функциональная зона",
-  restrict: "Ограничение (ЗОУИТ)", building: "Здание", public: "Зона нежилых ОКС",
-  redline: "Красная линия", social: "Объект социнфраструктуры",
-  parcel: "Земельный участок (ЕГРН)", dim: "Размер",
-};
+
+// Слой — главный объект управления. Порядок массива = порядок отрисовки
+// (первый — самый нижний). kind — legacy-мост к API ядра: остаётся на
+// объектах ради бэкенда и уходит на шаге 4 миграции.
+const LAYERS_V2 = [
+  { id: "project.tp.func_zone", title: "Функциональная зона", kind: "zone",
+    geometry_type: "polygon", style_id: "func_zone.fill", topology: "coverage",
+    defaults: () => ({ zone_title: "Ж-" + (featuresOnLayer("project.tp.func_zone").length + 1) }) },
+  { id: "project.apo.public_zones", title: "Зона нежилых ОКС", kind: "public",
+    geometry_type: "polygon", style_id: "public_zone.fill",
+    defaults: () => ({ purpose: "Общественный центр" }) },
+  { id: "source.constraints.restrict", title: "Ограничение (ЗОУИТ)", kind: "restrict",
+    geometry_type: "polygon", style_id: "restrict.hatch",
+    defaults: () => ({ kind: "охранная зона" }) },
+  { id: "source.nspd.parcels", title: "Земельный участок (ЕГРН)", kind: "parcel",
+    geometry_type: "polygon", style_id: "parcel.line", defaults: () => ({}) },
+  { id: "project.apo.buildings", title: "Здание", kind: "building",
+    geometry_type: "polygon", style_id: "building.fill",
+    defaults: () => ({ floors: 9, purpose: "МКД" }) },
+  { id: "project.apo.red_lines", title: "Красная линия", kind: "redline",
+    geometry_type: "polyline", style_id: "red.line.projected",
+    defaults: () => ({ radius: 0 }) },
+  { id: "project.territory.boundary", title: "Граница территории", kind: "boundary",
+    geometry_type: "polygon", style_id: "boundary.line", defaults: () => ({}) },
+  { id: "project.social.objects", title: "Объект социнфраструктуры", kind: "social",
+    geometry_type: "point", style_id: "social.point",
+    defaults: () => ({ kind: "ОО+ДОО", capacity: 750 }) },
+  { id: "annotation.dimensions", title: "Размер", kind: "dim",
+    geometry_type: "polyline", style_id: "dimension.line", defaults: () => ({}) },
+];
+const LAYER_BY_ID = {}, LAYER_BY_KIND = {};
+for (const L of LAYERS_V2) {
+  L.visible = true;
+  LAYER_BY_ID[L.id] = L;
+  LAYER_BY_KIND[L.kind] = L;
+}
+
+function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] || null; }
+function styleOf(f) {
+  const L = layerOf(f);
+  return (f.style_id && STYLES_V2[f.style_id]) || (L && STYLES_V2[L.style_id]) || {};
+}
+function styleForTool(tool) {
+  const L = LAYER_BY_KIND[tool];
+  return (L && STYLES_V2[L.style_id]) || {};
+}
+function labelOf(f) {
+  const st = styleOf(f);
+  return st.label_field ? f.props[st.label_field] : undefined;
+}
+function featuresOnLayer(id) {
+  return state.features.filter(f => (layerOf(f) || {}).id === id);
+}
+// объект → формат v2: слой и тип геометрии явно; kind дописывается
+// обратно для legacy-объектов (мигратор старых сцен и выгрузок ядра)
+function upgradeFeature(f) {
+  const L = layerOf(f);
+  if (L) { f.layer_id = L.id; if (!f.kind) f.kind = L.kind; }
+  f.geometry_type = f.point ? "point" : f.line ? "polyline" : "polygon";
+  return f;
+}
 
 const state = {
   features: [], tool: "select", selected: null,
@@ -48,11 +103,11 @@ const state = {
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
-  hidden: {},                    // kind -> true (слой выключен)
+  layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   _fitted: false, _ix: null,
 };
 
-function isHidden(f) { return !!state.hidden[f.kind]; }
+function isHidden(f) { const L = layerOf(f); return L ? !L.visible : false; }
 
 let shiftDown = false, spaceDown = false;
 
@@ -72,13 +127,17 @@ function vertexAt(f, wx, wy) {
 // Совместное редактирование границ покрытия: вершины других зон,
 // совпадающие с данной, двигаются вместе с ней — общая граница остаётся
 // общей, дырки и нахлёсты не возникают (инвариант coverage ядра).
-const SHARED_KINDS = new Set(["zone"]);
+// Кто участвует — решает флаг слоя topology="coverage", не тип объекта.
+function isCoverageFeature(f) {
+  const L = layerOf(f);
+  return !!L && L.topology === "coverage";
+}
 function sharedCompanions(f, vi) {
-  if (!SHARED_KINDS.has(f.kind)) return [];
+  if (!isCoverageFeature(f)) return [];
   const [x, y] = featurePts(f)[vi];
   const out = [];
   for (const other of state.features) {
-    if (other.id === f.id || !SHARED_KINDS.has(other.kind) || isHidden(other)) continue;
+    if (other.id === f.id || !isCoverageFeature(other) || isHidden(other)) continue;
     const pts = featurePts(other);
     for (let i = 0; i < pts.length; i++)
       if (Math.abs(pts[i][0] - x) < 1e-6 && Math.abs(pts[i][1] - y) < 1e-6)
@@ -89,7 +148,7 @@ function sharedCompanions(f, vi) {
 
 function sharedVertexSet(f) {
   const shared = new Set();
-  if (!SHARED_KINDS.has(f.kind)) return shared;
+  if (!isCoverageFeature(f)) return shared;
   const pts = featurePts(f);
   for (let i = 0; i < pts.length; i++)
     if (sharedCompanions(f, i).length) shared.add(i);
@@ -474,14 +533,14 @@ function draw() {
   drawBasemap(w, h);
   drawGrid(w, h);
 
-  for (const kind of Z_ORDER) {
-    if (state.hidden[kind]) continue;
+  for (const layer of LAYERS_V2) {
+    if (!layer.visible) continue;
     for (const f of state.features) {
-      if (f.kind !== kind) continue;
-      const st = STYLES[kind];
+      if (layerOf(f) !== layer) continue;
+      const st = styleOf(f);
       ctx.setLineDash(st.dash || []);
       ctx.lineWidth = st.width; ctx.strokeStyle = st.stroke || "#000";
-      if (kind === "dim" && f.line) {
+      if (layer.kind === "dim" && f.line) {
         // размерная линия: засечки 45° на концах + длина вдоль линии
         const [ax, ay] = w2s(...f.line[0]);
         const [bx, by] = w2s(...f.line[f.line.length - 1]);
@@ -506,7 +565,7 @@ function draw() {
         const [sx, sy] = w2s(...f.point);
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
       } else {
-        if (kind === "redline" && (f.props.radius || 0) > 0 && f.line.length > 2) {
+        if (layer.kind === "redline" && (f.props.radius || 0) > 0 && f.line.length > 2) {
           ctx.beginPath();
           ctx.moveTo(...w2s(...f.line[0]));
           for (let i = 1; i < f.line.length - 1; i++)
@@ -538,9 +597,9 @@ function draw() {
         }
       }
       ctx.setLineDash([]);
-      if (st.label && f.ring) {
+      if (st.label_field && f.ring) {
         const c = f.ring.reduce((a, p) => [a[0] + p[0] / f.ring.length, a[1] + p[1] / f.ring.length], [0, 0]);
-        const v = st.label(f);
+        const v = labelOf(f);
         if (v !== undefined && v !== "" && v !== null) {
           ctx.fillStyle = "#5c5a54"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
           ctx.fillText(String(v), ...w2s(...c));
@@ -568,7 +627,7 @@ function draw() {
   // пикетаж красных линий: засечки поперёк + подписи ПК
   for (const f of state.features) {
     if (f.kind !== "redline" || !(f.props.pk_step > 0) || !f.props._stations) continue;
-    if (state.hidden.redline) continue;
+    if (isHidden(f)) continue;
     ctx.strokeStyle = "#d91a1a"; ctx.lineWidth = 1;
     ctx.fillStyle = "#8c1414"; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
     for (const st of f.props._stations) {
@@ -592,7 +651,7 @@ function draw() {
 
   // черчение в процессе + живой размер
   if (state.drawing && state.drawing.pts.length) {
-    const st = STYLES[state.tool] || {};
+    const st = styleForTool(state.tool);
     ctx.strokeStyle = st.stroke || "#000"; ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
     const pts = state.mouse ? [...state.drawing.pts, state.mouse] : state.drawing.pts;
     drawChain(pts, false); ctx.stroke(); ctx.setLineDash([]);
@@ -624,7 +683,8 @@ function draw() {
   if (state.drag && state.drag.rect) {
     const { a, b } = state.drag;
     const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
-    ctx.strokeStyle = STYLES.building.stroke; ctx.fillStyle = STYLES.building.fill + "88";
+    const bst = styleForTool("building");
+    ctx.strokeStyle = bst.stroke; ctx.fillStyle = bst.fill + "88";
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.fillStyle = "#5c5a54"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
@@ -688,7 +748,7 @@ function persist() {
       name: document.getElementById("project-name").value,
       density: document.getElementById("p-density").value,
       ratio: document.getElementById("p-ratio").value,
-      hidden: state.hidden,
+      layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
     }));
   } catch (e) { /* приватный режим — работаем без сохранения */ }
 }
@@ -793,7 +853,7 @@ function renderProps() {
     extra = `<label>Наименование зоны<input type="text" id="f-zone" value="${f.props.zone_title}"></label>`;
   if (f.kind === "public")
     extra = `<label>Назначение<input type="text" id="f-purpose" value="${f.props.purpose}"></label>`;
-  el.innerHTML = `<div class="kind">${KIND_NAMES[f.kind]}</div>
+  el.innerHTML = `<div class="kind">${(layerOf(f) || {}).title || f.kind}</div>
     <div class="metric">${metric}</div>${extra}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
@@ -823,8 +883,8 @@ function renderProps() {
       const data = await r.json();
       snapshot();
       // сопряжение уже вшито в геометрию офсета — radius обнуляем
-      const copy = { id: state.nextId++, kind: "redline",
-                     line: data.line, props: { radius: 0 } };
+      const copy = upgradeFeature({ id: state.nextId++, kind: "redline",
+                                    line: data.line, props: { radius: 0 } });
       state.features.push(copy);
       state.selected = copy.id;
       afterChange();
@@ -843,18 +903,18 @@ function renderLayers() {
   const el = document.getElementById("layers-body");
   if (!el) return;
   el.innerHTML = "";
-  for (const kind of Z_ORDER) {
-    const count = state.features.filter(f => f.kind === kind).length;
-    const st = STYLES[kind];
+  for (const layer of LAYERS_V2) {
+    const count = featuresOnLayer(layer.id).length;
+    const st = STYLES_V2[layer.style_id] || {};
     const row = document.createElement("label");
     row.className = "layer-row";
-    row.innerHTML = `<input type="checkbox" ${state.hidden[kind] ? "" : "checked"}>
+    row.innerHTML = `<input type="checkbox" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${st.fill || "transparent"};border-color:${st.stroke || "#999"}"></span>
-      <span class="nm">${KIND_NAMES[kind]}</span><span class="cnt">${count || ""}</span>`;
+      <span class="nm">${layer.title}</span><span class="cnt">${count || ""}</span>`;
     row.querySelector("input").addEventListener("change", ev => {
-      state.hidden[kind] = !ev.target.checked;
+      layer.visible = ev.target.checked;
       const sel = selectedFeature();
-      if (state.hidden[kind] && sel && sel.kind === kind) {
+      if (!layer.visible && sel && layerOf(sel) === layer) {
         state.selected = null;
         renderProps();
       }
@@ -874,17 +934,11 @@ function deleteSelected() {
 }
 
 // ---------- добавление и правка фигур ----------
-const DEFAULT_PROPS = {
-  boundary: () => ({}), restrict: () => ({ kind: "охранная зона" }),
-  zone: () => ({ zone_title: "Ж-" + (state.features.filter(f => f.kind === "zone").length + 1) }),
-  building: () => ({ floors: 9, purpose: "МКД" }),
-  public: () => ({ purpose: "Общественный центр" }),
-  redline: () => ({ radius: 0 }), social: () => ({ kind: "ОО+ДОО", capacity: 750 }),
-  measure: () => ({}), parcel: () => ({}), dim: () => ({}),
-};
 function addFeature(kind, geom) {
   snapshot();
-  const f = { id: state.nextId++, kind, props: DEFAULT_PROPS[kind](), ...geom };
+  const L = LAYER_BY_KIND[kind];
+  const f = { id: state.nextId++, kind, props: L ? L.defaults() : {}, ...geom };
+  upgradeFeature(f);
   state.features.push(f);
   state.selected = f.id;
   afterChange();
@@ -944,15 +998,15 @@ function placeTypedPoint() {
 // ---------- хит-тест ----------
 function hitTest(wx, wy) {
   const tolW = 7 / state.view.k;
-  for (const kind of [...Z_ORDER].reverse()) {
-    if (state.hidden[kind]) continue;
+  for (const layer of [...LAYERS_V2].reverse()) {
+    if (!layer.visible) continue;
     for (let i = state.features.length - 1; i >= 0; i--) {
       const f = state.features[i];
-      if (f.kind !== kind) continue;
+      if (layerOf(f) !== layer) continue;
       if (f.point && Math.hypot(f.point[0] - wx, f.point[1] - wy) < tolW + 4 / state.view.k) return f;
       if (f.line && nearChain(wx, wy, f.line, tolW) !== null) return f;
-      if (f.ring && (kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null
-                                         : pointInRing(wx, wy, f.ring))) return f;
+      if (f.ring && (layer.kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null
+                                               : pointInRing(wx, wy, f.ring))) return f;
     }
   }
   return null;
@@ -1257,7 +1311,7 @@ on("grado-file", "change", async e => {
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
     snapshot();
-    state.features = data.features.map(f => ({ id: state.nextId++, ...f }));
+    state.features = data.features.map(f => upgradeFeature({ id: state.nextId++, ...f }));
     if (data.name) document.getElementById("project-name").value = data.name;
     state.selected = null;
     afterChange();
@@ -1287,7 +1341,7 @@ async function pollInbox() {
       if (!item.features.length) continue;
       if (!added) snapshot();
       for (const f of item.features)
-        state.features.push({ id: state.nextId++, ...f });
+        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
       added += item.features.length;
     }
     if (added) {
@@ -1317,7 +1371,7 @@ on("nspd-file", "change", async e => {
     if (!data.features.length) { alert("В захвате нет полигонов НСПД"); return; }
     snapshot();
     for (const f of data.features)
-      state.features.push({ id: state.nextId++, ...f });
+      state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
     state.selected = null;
     afterChange();
     fitView();
@@ -1333,8 +1387,11 @@ on("btn-demo", "click", () => {
              [300, 560], [60, 560], [60, 300], [0, 300]];
   state.features = [];
   state.nextId = 1;
-  const add = (kind, geom, props = {}) => state.features.push(
-    { id: state.nextId++, kind, props: { ...DEFAULT_PROPS[kind](), ...props }, ...geom });
+  const add = (kind, geom, props = {}) => {
+    const L = LAYER_BY_KIND[kind];
+    state.features.push(upgradeFeature(
+      { id: state.nextId++, kind, props: { ...(L ? L.defaults() : {}), ...props }, ...geom }));
+  };
   add("boundary", { ring: B });
   add("zone", { ring: [[60, 180], [520, 180], [520, 420], [60, 420]] }, { zone_title: "Ж-1" });
   // вершина [60,180] делает границу с Ж-1 повершинно общей (покрытие)
@@ -1358,16 +1415,24 @@ on("btn-demo", "click", () => {
     const raw = localStorage.getItem("grado_studio_v1");
     if (!raw) return;
     const d = JSON.parse(raw);
-    state.features = d.features || [];
+    state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
     state.nextId = d.nextId || 1;
-    state.hidden = d.hidden || {};
+    if (d.layersVisible) {
+      for (const [id, vis] of Object.entries(d.layersVisible))
+        if (LAYER_BY_ID[id]) LAYER_BY_ID[id].visible = !!vis;
+    } else if (d.hidden) {
+      // сохранение старого формата: hidden было по kind
+      for (const [kind, hid] of Object.entries(d.hidden))
+        if (LAYER_BY_KIND[kind]) LAYER_BY_KIND[kind].visible = !hid;
+    }
     if (d.name) document.getElementById("project-name").value = d.name;
     if (d.density) document.getElementById("p-density").value = d.density;
     if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
   } catch (e) { /* повреждённое сохранение игнорируем */ }
 })();
 on("project-name", "change", persist);
-window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep };
+window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
+                  layerOf, styleOf, upgradeFeature, LAYERS_V2, STYLES_V2 };
 setTool("select");
 renderLayers();
 requestAnimationFrame(resize);
