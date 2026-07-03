@@ -159,6 +159,81 @@ def make_album(features, name, params=None):
     return pdf
 
 
+CODE_TO_KIND = {v: k for k, v in KIND_TO_CODE.items()}
+
+
+def _to_local(pts):
+    return [[x - ORIGIN[0], y - ORIGIN[1]] for x, y in pts]
+
+
+def grado_to_features(path):
+    """Открытие .grado обратно в студию: слои проекта → фигуры холста."""
+    project = Project.open(path)
+    name = project.meta("name")
+    out = []
+    for info in project.layers():
+        kind = CODE_TO_KIND.get(info["code"])
+        if kind is None:
+            continue
+        for f in project.layer(info["code"]).features():
+            geom = f["geom"]
+            if not geom:
+                continue
+            props = {k: v for k, v in f["attrs"].items() if v is not None}
+            if geom["type"] == "Point":
+                out.append({"kind": kind, "point": _to_local([geom["coordinates"]])[0],
+                            "props": props})
+            elif geom["type"] == "LineString":
+                out.append({"kind": kind, "line": _to_local(geom["coordinates"]),
+                            "props": props})
+            else:
+                polys = ([geom["coordinates"]] if geom["type"] == "Polygon"
+                         else geom["coordinates"])
+                for poly in polys:
+                    ring = _to_local(poly[0])
+                    if ring[0] == ring[-1]:
+                        ring = ring[:-1]
+                    out.append({"kind": kind, "ring": ring, "props": dict(props)})
+    project.close()
+    return {"name": name, "features": out}
+
+
+def import_fgistp(payload):
+    """Выгрузка ФГИС ТП от браузерного моста → фигуры холста.
+
+    Payload расширения: grado_source=fgis_tp, WGS84, properties с
+    class_name/class_title/uin. Полигоны становятся функциональными
+    зонами; линейные/точечные слои пока пропускаются с пометкой."""
+    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
+
+    features, notes = [], []
+    skipped = 0
+    for f in payload.get("features") or []:
+        geom = f.get("geometry")
+        props = f.get("properties") or {}
+        if not geom:
+            continue
+        if geom["type"] not in ("Polygon", "MultiPolygon"):
+            skipped += 1
+            continue
+        utm = transform_geom(geom, wgs84_to_utm37n)
+        polys = ([utm["coordinates"]] if utm["type"] == "Polygon"
+                 else utm["coordinates"])
+        for poly in polys:
+            ring = _to_local(poly[0])
+            if ring[0] == ring[-1]:
+                ring = ring[:-1]
+            features.append({"kind": "zone", "ring": ring, "props": {
+                "zone_title": props.get("class_name")
+                              or payload.get("grado_layer_name", "ФГИС ТП"),
+                "zone_code": str(props.get("uin") or payload.get("grado_uin") or ""),
+            }})
+    if skipped:
+        notes.append(f"пропущено не-полигонов: {skipped}")
+    return {"features": features, "notes": notes,
+            "source_doc": payload.get("grado_uin")}
+
+
 def import_nspd(payload):
     """Захват НСПД (JSON браузерного моста GRADO) → фигуры холста.
 

@@ -11,9 +11,11 @@
 import json
 import socket
 import sys
+import tempfile
 import threading
 import traceback
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
+                         ThreadingHTTPServer)
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -21,6 +23,54 @@ import studio_core  # noqa: E402
 
 WEB = Path(__file__).parent / "web"
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8643
+BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
+
+INBOX = []          # выгрузки от расширения, ждущие холст
+INBOX_LOCK = threading.Lock()
+BRIDGE_ON = False
+
+
+class BridgeHandler(BaseHTTPRequestHandler):
+    """Приёмник браузерного моста GRADO (как HTTP-сервер QGIS-плагина)."""
+
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
+        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._cors()
+        self.end_headers()
+
+    def do_POST(self):
+        if self.path != "/add_feature":
+            self.send_error(404)
+            return
+        try:
+            n = int(self.headers.get("Content-Length", 0))
+            data = json.loads(self.rfile.read(n).decode("utf-8"))
+            source = data.get("grado_source", "nspd")
+            if source == "nspd":
+                out = studio_core.import_nspd(data)
+            elif source == "fgis_tp":
+                out = studio_core.import_fgistp(data)
+            else:
+                out = {"features": [], "notes": [f"неизвестный источник {source}"]}
+            with INBOX_LOCK:
+                INBOX.append({"source": source, "features": out["features"],
+                              "notes": out.get("notes", []),
+                              "layer": data.get("grado_layer_name")})
+        except Exception:
+            traceback.print_exc()
+        self.send_response(200)
+        self._cors()
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+    def log_message(self, fmt, *args):
+        pass
 
 
 class V6Server(ThreadingHTTPServer):
@@ -54,8 +104,28 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def do_GET(self):
+        if self.path == "/api/inbox":
+            with INBOX_LOCK:
+                items, INBOX[:] = list(INBOX), []
+            self._send(json.dumps({"bridge": BRIDGE_ON, "items": items},
+                                  ensure_ascii=False).encode(),
+                       "application/json; charset=utf-8")
+            return
+        super().do_GET()
+
     def do_POST(self):
         try:
+            if self.path == "/api/open-grado":
+                n = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(n)
+                with tempfile.NamedTemporaryFile(suffix=".grado") as tmp:
+                    tmp.write(raw)
+                    tmp.flush()
+                    out = studio_core.grado_to_features(tmp.name)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
             body = self._json_body()
             features = body.get("features", [])
             params = body.get("params")
@@ -92,6 +162,13 @@ if __name__ == "__main__":
         servers.append(V6Server(("::1", PORT), Handler))
     except OSError:
         pass  # система без IPv6 — хватит IPv4
+    try:
+        servers.append(ThreadingHTTPServer(("127.0.0.1", BRIDGE_PORT), BridgeHandler))
+        BRIDGE_ON = True
+        print(f"Мост расширения GRADO: порт {BRIDGE_PORT}")
+    except OSError:
+        print(f"Порт {BRIDGE_PORT} занят (вероятно, QGIS с плагином GRADO) — "
+              "мост выключен, выгрузки идут в QGIS")
     print(f"ГРАДО Студия: http://localhost:{PORT}")
     if "--open" in sys.argv:
         import webbrowser

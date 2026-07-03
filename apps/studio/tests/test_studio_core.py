@@ -104,6 +104,53 @@ class TestStudioCore(unittest.TestCase):
             self.assertEqual(pf["attrs"]["cad_num"], "77:09:0004021:181")
             p.close()
 
+    def test_grado_roundtrip(self):
+        """Сохранили .grado → открыли обратно: фигуры и свойства на месте."""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rt.grado"
+            studio_core.build_project(path, "Круговой тест", FEATURES).close()
+            out = studio_core.grado_to_features(path)
+        self.assertEqual(out["name"], "Круговой тест")
+        kinds = sorted(f["kind"] for f in out["features"])
+        self.assertEqual(kinds, ["boundary", "building", "redline",
+                                 "restrict", "social", "zone"])
+        boundary = next(f for f in out["features"] if f["kind"] == "boundary")
+        self.assertEqual([[round(x, 6), round(y, 6)] for x, y in boundary["ring"]],
+                         [[0, 0], [500, 0], [500, 300], [0, 300]])
+        bld = next(f for f in out["features"] if f["kind"] == "building")
+        self.assertEqual(bld["props"]["floors"], 10)
+        zone = next(f for f in out["features"] if f["kind"] == "zone")
+        self.assertEqual(zone["props"]["zone_title"], "Ж-1")
+        soc = next(f for f in out["features"] if f["kind"] == "social")
+        self.assertEqual([round(v, 6) for v in soc["point"]], [400, 200])
+        self.assertEqual(soc["props"]["capacity"], 500)
+
+    def test_import_fgistp_polygons_to_zones(self):
+        payload = {
+            "type": "FeatureCollection", "grado_source": "fgis_tp",
+            "grado_layer_name": "ФГИС ТП — Карта функциональных зон",
+            "grado_uin": "7" * 25,
+            "features": [
+                {"type": "Feature",
+                 "geometry": {"type": "Polygon", "coordinates": [[
+                     [37.6155646254, 55.7522242128], [37.617, 55.7522242128],
+                     [37.617, 55.753], [37.6155646254, 55.7522242128]]]},
+                 "properties": {"class_name": "Жилые зоны", "mt_status": 1}},
+                {"type": "Feature",
+                 "geometry": {"type": "LineString",
+                              "coordinates": [[37.6, 55.75], [37.62, 55.75]]},
+                 "properties": {"class_name": "Дороги"}},
+            ]}
+        out = studio_core.import_fgistp(payload)
+        self.assertEqual(len(out["features"]), 1)
+        z = out["features"][0]
+        self.assertEqual(z["kind"], "zone")
+        self.assertEqual(z["props"]["zone_title"], "Жилые зоны")
+        x, y = z["ring"][0]
+        self.assertAlmostEqual(x, 98, delta=15)
+        self.assertAlmostEqual(y, 1371, delta=15)
+        self.assertTrue(any("пропущено" in n for n in out["notes"]))
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

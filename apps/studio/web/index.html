@@ -18,7 +18,9 @@
   <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
   <input id="nspd-file" type="file" accept=".json,application/json" hidden>
   <button id="btn-clear" title="Очистить холст">Очистить</button>
-  <button id="btn-grado" title="Скачать проект (открывается в QGIS)">.grado</button>
+  <button id="btn-open" title="Открыть проект .grado">Открыть…</button>
+  <input id="grado-file" type="file" accept=".grado" hidden>
+  <button id="btn-grado" title="Сохранить проект (открывается в QGIS)">.grado</button>
   <button id="btn-album" class="primary" title="Собрать альбом АГК">Альбом PDF</button>
 </header>
 <div id="main">
@@ -77,6 +79,8 @@
   <span id="st-grid"></span>
   <span id="st-snap"></span>
   <span id="st-core">ядро: …</span>
+  <span id="st-bridge"></span>
+  <span id="st-toast" style="color:#12a150;font-weight:600"></span>
   <span class="spacer"></span>
   <span id="st-hint">V G Z O B P L S M · Shift — орто · цифры+Enter — длина · R — поворот · ⌘D — дубликат · стрелки — сдвиг · F — вписать · X/C — привязки · Esc — отмена</span>
 </footer>

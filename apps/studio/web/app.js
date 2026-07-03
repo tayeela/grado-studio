@@ -1,9 +1,10 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.3.1";
+const VERSION = "0.4.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
+  if (/ResizeObserver loop/.test(e.message || "")) return; // безобидное предупреждение браузера
   const el = document.getElementById("errbar");
   if (el) {
     el.textContent = `Ошибка интерфейса (${VERSION}): ${e.message} — ${String(e.filename).split("/").pop()}:${e.lineno}`;
@@ -924,6 +925,62 @@ async function download(url, filename) {
 }
 on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
 on("btn-grado", "click", () => download("/api/grado", "project.grado"));
+
+// открытие проекта .grado (round-trip с QGIS)
+on("btn-open", "click", () => document.getElementById("grado-file").click());
+on("grado-file", "change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  try {
+    const r = await fetch("/api/open-grado", { method: "POST",
+      headers: { "Content-Type": "application/octet-stream" }, body: file });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    snapshot();
+    state.features = data.features.map(f => ({ id: state.nextId++, ...f }));
+    if (data.name) document.getElementById("project-name").value = data.name;
+    state.selected = null;
+    afterChange();
+    fitView();
+    toast(`Открыт проект: ${data.features.length} объектов`);
+  } catch (err) {
+    alert("Не удалось открыть проект: " + String(err).slice(0, 200));
+  }
+});
+
+// мост браузерного расширения: опрос входящих выгрузок
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById("st-toast");
+  el.textContent = msg;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.textContent = ""; }, 5000);
+}
+async function pollInbox() {
+  try {
+    const r = await fetch("/api/inbox");
+    const data = await r.json();
+    document.getElementById("st-bridge").textContent =
+      data.bridge ? "мост 8081: вкл" : "мост 8081: занят (QGIS)";
+    let added = 0;
+    for (const item of data.items) {
+      if (!item.features.length) continue;
+      if (!added) snapshot();
+      for (const f of item.features)
+        state.features.push({ id: state.nextId++, ...f });
+      added += item.features.length;
+    }
+    if (added) {
+      afterChange();
+      fitView();
+      const src = data.items[0].source === "fgis_tp" ? "ФГИС ТП" : "НСПД";
+      toast(`Мост: +${added} объектов (${src})`);
+    }
+  } catch (e) { /* сервер перезапускается — молча */ }
+}
+setInterval(pollInbox, 2500);
+pollInbox();
 
 // импорт захвата НСПД (JSON браузерного моста GRADO)
 on("btn-nspd", "click", () => document.getElementById("nspd-file").click());
