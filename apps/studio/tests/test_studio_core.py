@@ -79,6 +79,31 @@ class TestStudioCore(unittest.TestCase):
                              "радиус не помещается — ломаная без сопряжения")
             p.close()
 
+    def test_import_nspd_capture(self):
+        merc = [[4187345.5, 7509247.8], [4187445.5, 7509247.8],
+                [4187445.5, 7509347.8], [4187345.5, 7509247.8]]
+        payload = {"type": "FeatureCollection", "grado_source": "nspd",
+                   "features": [{"type": "Feature",
+                                 "geometry": {"type": "Polygon", "coordinates": [merc]},
+                                 "properties": {"options": {
+                                     "cad_num": "77:09:0004021:181",
+                                     "land_record_category_type": "земли нас. пунктов"}}}]}
+        out = studio_core.import_nspd(payload)
+        self.assertEqual(len(out["features"]), 1)
+        f = out["features"][0]
+        self.assertEqual(f["kind"], "parcel")
+        self.assertEqual(f["props"]["cad_num"], "77:09:0004021:181")
+        x, y = f["ring"][0]
+        # локальные метры холста: UTM минус ORIGIN, порядок сотен метров/км
+        self.assertAlmostEqual(x, 98, delta=15)
+        self.assertAlmostEqual(y, 1371, delta=15)
+        # круговой путь: parcel → проект → слой cad.parcel
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "n.grado", "Т", out["features"])
+            pf = next(p.layer("cad.parcel").features())
+            self.assertEqual(pf["attrs"]["cad_num"], "77:09:0004021:181")
+            p.close()
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

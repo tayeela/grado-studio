@@ -40,6 +40,7 @@ KIND_TO_CODE = {
     "redline": "pp.red_line",
     "social": "social.object",
     "public": "pp.placement_zone",
+    "parcel": "cad.parcel",
 }
 
 KIND_ATTRS = {
@@ -53,6 +54,9 @@ KIND_ATTRS = {
     "social": lambda p: {"kind": p.get("kind", "ОО+ДОО"),
                          "capacity": int(p.get("capacity", 0))},
     "public": lambda p: {"purpose": p.get("purpose", "Общественный центр")},
+    "parcel": lambda p: {"cad_num": p.get("cad_num"),
+                         "category": p.get("category"),
+                         "vri": p.get("vri")},
 }
 
 
@@ -153,6 +157,36 @@ def make_album(features, name, params=None):
         pdf = render_document_pdf(doc, project, styles=doc.styles, engine=engine)
         project.close()
     return pdf
+
+
+def import_nspd(payload):
+    """Захват НСПД (JSON браузерного моста GRADO) → фигуры холста.
+
+    Коннектор нормализует (options→opt_*, дедуп, 3857→WGS84), здесь
+    координаты доводятся до локальных метров холста (UTM − ORIGIN)."""
+    from grado_connectors import NspdCapture
+    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
+
+    result = NspdCapture().fetch(payload=payload)
+    features = []
+    for f in result["features"]:
+        geom = transform_geom(f["geometry"], wgs84_to_utm37n)
+        props = f["properties"]
+        attrs = {"cad_num": props.get("opt_cad_num") or props.get("cad_num")
+                 or f["grado_key"],
+                 "category": props.get("opt_land_record_category_type"),
+                 "vri": props.get("opt_permitted_use_established_by_document")}
+        rings = ([geom["coordinates"]] if geom["type"] == "Polygon"
+                 else geom["coordinates"] if geom["type"] == "MultiPolygon"
+                 else [])
+        for ring in rings:
+            local = [[x - ORIGIN[0], y - ORIGIN[1]] for x, y in ring[0]]
+            if local[0] == local[-1]:
+                local = local[:-1]
+            features.append({"kind": "parcel", "ring": local,
+                             "props": {k: v for k, v in attrs.items() if v}})
+    return {"features": features, "notes": result["notes"],
+            "source_doc": result.get("source_doc")}
 
 
 def make_grado(features, name):

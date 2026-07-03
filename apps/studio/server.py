@@ -58,6 +58,10 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/grado":
                 data = studio_core.make_grado(features, name)
                 self._send(data, "application/octet-stream", "project.grado")
+            elif self.path == "/api/import-nspd":
+                out = studio_core.import_nspd(body.get("payload") or body)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
             else:
                 self.send_error(404)
         except Exception as e:

@@ -11,12 +11,14 @@ const STYLES = {
   redline:  { stroke: "#d91a1a", width: 2.5 },
   boundary: { stroke: "#1c1c1a", width: 2.5, dash: [14, 5, 4, 5] },
   social:   { fill: "#2f6fde", stroke: "#1d4a9e", width: 1.2 },
+  parcel:   { stroke: "#8a7a5c", width: 0.8, label: f => f.props.cad_num },
 };
-const Z_ORDER = ["zone", "public", "restrict", "building", "redline", "boundary", "social"];
+const Z_ORDER = ["zone", "public", "restrict", "parcel", "building", "redline", "boundary", "social"];
 const KIND_NAMES = {
   boundary: "Граница территории", zone: "Функциональная зона",
   restrict: "Ограничение (ЗОУИТ)", building: "Здание", public: "Зона нежилых ОКС",
   redline: "Красная линия", social: "Объект социнфраструктуры",
+  parcel: "Земельный участок (ЕГРН)",
 };
 
 const state = {
@@ -381,7 +383,7 @@ const DEFAULT_PROPS = {
   building: () => ({ floors: 9, purpose: "МКД" }),
   public: () => ({ purpose: "Общественный центр" }),
   redline: () => ({ radius: 0 }), social: () => ({ kind: "ОО+ДОО", capacity: 750 }),
-  measure: () => ({}),
+  measure: () => ({}), parcel: () => ({}),
 };
 function addFeature(kind, geom) {
   snapshot();
@@ -564,6 +566,32 @@ document.getElementById("btn-album").addEventListener("click",
   () => download("/api/album", "grado_agk_album.pdf"));
 document.getElementById("btn-grado").addEventListener("click",
   () => download("/api/grado", "project.grado"));
+
+// импорт захвата НСПД (JSON браузерного моста GRADO)
+document.getElementById("btn-nspd").addEventListener("click",
+  () => document.getElementById("nspd-file").click());
+document.getElementById("nspd-file").addEventListener("change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  try {
+    const payload = JSON.parse(await file.text());
+    const r = await fetch("/api/import-nspd", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload }) });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (!data.features.length) { alert("В захвате нет полигонов НСПД"); return; }
+    snapshot();
+    for (const f of data.features)
+      state.features.push({ id: state.nextId++, ...f });
+    state.selected = null;
+    afterChange();
+    fitView();
+  } catch (err) {
+    alert("Не удалось импортировать захват: " + String(err).slice(0, 200));
+  }
+});
 
 // ---------- демо-наполнение ----------
 document.getElementById("btn-demo").addEventListener("click", () => {
