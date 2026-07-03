@@ -24,7 +24,19 @@ const state = {
   drawing: null, drag: null, snapOn: true, snapHit: null,
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1, mouse: null,
+  edit: null,      // {f, vi | "body", last, moved}
+  measure: null,   // {a, b|null}
 };
+
+function featurePts(f) { return f.ring || f.line || [f.point]; }
+function selectedFeature() { return state.features.find(x => x.id === state.selected); }
+function vertexAt(f, wx, wy) {
+  const tolW = 8 / state.view.k;
+  const pts = featurePts(f);
+  for (let i = 0; i < pts.length; i++)
+    if (Math.hypot(pts[i][0] - wx, pts[i][1] - wy) < tolW) return i;
+  return null;
+}
 
 // ---------- координаты ----------
 function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y * state.view.k]; }
@@ -33,11 +45,18 @@ function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   const r = cv.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return;  // панель ещё без layout
   cv.width = r.width * dpr; cv.height = r.height * dpr;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (state.features.length && !state._fitted) {
+    state._fitted = true;
+    fitView();
+    return;
+  }
   draw();
 }
 window.addEventListener("resize", resize);
+new ResizeObserver(resize).observe(cv);
 
 // ---------- сетка и привязки ----------
 function gridStep() {
@@ -46,9 +65,10 @@ function gridStep() {
   return 1000;
 }
 
-function snapPoints() {
+function snapPoints(excludeId) {
   const pts = [];
   for (const f of state.features) {
+    if (f.id === excludeId) continue;
     const chains = f.ring ? [f.ring] : f.line ? [f.line] : [[f.point]];
     for (const chain of chains) {
       chain.forEach(p => pts.push({ p, kind: "вершина" }));
@@ -61,11 +81,11 @@ function snapPoints() {
   return pts;
 }
 
-function snap(wx, wy) {
+function snap(wx, wy, excludeId) {
   if (!state.snapOn) return { p: [wx, wy], kind: null };
   const tolW = 9 / state.view.k;
   let best = null;
-  for (const c of snapPoints()) {
+  for (const c of snapPoints(excludeId)) {
     const d = Math.hypot(c.p[0] - wx, c.p[1] - wy);
     if (d < tolW && (!best || d < best.d)) best = { ...c, d };
   }
@@ -156,7 +176,17 @@ function draw() {
         const [sx, sy] = w2s(...f.point);
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
       } else {
-        drawChain(f.ring || f.line, !!f.ring);
+        if (kind === "redline" && (f.props.radius || 0) > 0 && f.line.length > 2) {
+          // сопряжение углов дугами (как Path.fillet_polyline в ядре)
+          ctx.beginPath();
+          ctx.moveTo(...w2s(...f.line[0]));
+          for (let i = 1; i < f.line.length - 1; i++)
+            ctx.arcTo(...w2s(...f.line[i]), ...w2s(...f.line[i + 1]),
+                      f.props.radius * state.view.k);
+          ctx.lineTo(...w2s(...f.line[f.line.length - 1]));
+        } else {
+          drawChain(f.ring || f.line, !!f.ring);
+        }
         if (st.fill && f.ring) { ctx.fillStyle = st.fill; ctx.fill(); }
         ctx.stroke();
       }
@@ -196,6 +226,19 @@ function draw() {
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
   }
+  // измерение
+  if (state.measure) {
+    const a = state.measure.a;
+    const b = state.measure.b || state.mouse;
+    if (b) {
+      ctx.strokeStyle = "#2f6fde"; ctx.lineWidth = 1.2; ctx.setLineDash([6, 3]);
+      drawChain([a, b], false); ctx.stroke(); ctx.setLineDash([]);
+      const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const [mx, my] = w2s((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      ctx.fillStyle = "#2f6fde"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText(dist.toFixed(1) + " м", mx, my - 6);
+    }
+  }
   // маркер привязки
   if (state.snapHit && state.snapHit.kind && state.tool !== "select") {
     const [sx, sy] = w2s(...state.snapHit.p);
@@ -212,9 +255,10 @@ function fitView() {
   if (!pts.length) return;
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const w = cv.clientWidth, h = cv.clientHeight;
+  if (w < 2 || h < 2) return;
   const dx = Math.max(Math.max(...xs) - Math.min(...xs), 10);
   const dy = Math.max(Math.max(...ys) - Math.min(...ys), 10);
-  state.view.k = Math.min(40, Math.min(w / dx, h / dy) * 0.82);
+  state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * 0.82));
   state.view.tx = w / 2 - (Math.min(...xs) + dx / 2) * state.view.k;
   state.view.ty = h / 2 + (Math.min(...ys) + dy / 2) * state.view.k;
   draw();
@@ -282,11 +326,17 @@ function renderProps() {
   if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
   el.className = "";
   let metric = "";
-  if (f.ring) metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
+  if (f.ring) {
+    metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
+    if (f.kind === "building")
+      metric += ` · СПП: ${(ringArea(f.ring) * (f.props.floors || 1) / 1000).toFixed(1)} тыс. м²`;
+  }
   if (f.line) metric = `длина: ${lineLen(f.line).toFixed(0)} м`;
   let extra = "";
   if (f.kind === "building")
     extra = `<label>Этажность<input type="number" id="f-floors" value="${f.props.floors}" min="1" max="75"></label>`;
+  if (f.kind === "redline")
+    extra = `<label>Радиус сопряжения, м<input type="number" id="f-radius" value="${f.props.radius || 0}" min="0" max="500" step="5"></label>`;
   if (f.kind === "zone")
     extra = `<label>Наименование зоны<input type="text" id="f-zone" value="${f.props.zone_title}"></label>`;
   if (f.kind === "public")
@@ -301,6 +351,7 @@ function renderProps() {
     });
   };
   bind("f-floors", "floors", v => Math.max(1, parseInt(v) || 9));
+  bind("f-radius", "radius", v => Math.max(0, parseFloat(v) || 0));
   bind("f-zone", "zone_title");
   bind("f-purpose", "purpose");
   document.getElementById("f-del").onclick = deleteSelected;
@@ -311,7 +362,17 @@ function deleteSelected() {
   state.features = state.features.filter(f => f.id !== state.selected);
   state.selected = null; afterChange();
 }
-function afterChange() { draw(); renderProps(); refreshTep(); }
+function persist() {
+  try {
+    localStorage.setItem("grado_studio_v1", JSON.stringify({
+      features: state.features, nextId: state.nextId,
+      name: document.getElementById("project-name").value,
+      density: document.getElementById("p-density").value,
+      ratio: document.getElementById("p-ratio").value,
+    }));
+  } catch (e) { /* приватный режим — работаем без сохранения */ }
+}
+function afterChange() { draw(); renderProps(); refreshTep(); persist(); }
 
 // ---------- добавление фигур ----------
 const DEFAULT_PROPS = {
@@ -319,7 +380,8 @@ const DEFAULT_PROPS = {
   zone: () => ({ zone_title: "Ж-" + (state.features.filter(f => f.kind === "zone").length + 1) }),
   building: () => ({ floors: 9, purpose: "МКД" }),
   public: () => ({ purpose: "Общественный центр" }),
-  redline: () => ({}), social: () => ({ kind: "ОО+ДОО", capacity: 750 }),
+  redline: () => ({ radius: 0 }), social: () => ({ kind: "ОО+ДОО", capacity: 750 }),
+  measure: () => ({}),
 };
 function addFeature(kind, geom) {
   snapshot();
@@ -348,9 +410,19 @@ cv.addEventListener("mousedown", e => {
   if (e.button !== 0) return;
   const s = snap(wxr, wyr);
   if (state.tool === "select") {
+    const cur = selectedFeature();
+    if (cur) {
+      const vi = vertexAt(cur, wxr, wyr);
+      if (vi != null) { state.edit = { f: cur, vi, moved: false }; return; }
+    }
     const f = hitTest(wxr, wyr);
     state.selected = f ? f.id : null;
+    if (f) state.edit = { f, vi: "body", last: [wxr, wyr], moved: false };
     draw(); renderProps();
+  } else if (state.tool === "measure") {
+    if (!state.measure || state.measure.b) state.measure = { a: s.p, b: null };
+    else state.measure.b = s.p;
+    draw();
   } else if (state.tool === "social") {
     addFeature("social", { point: s.p });
   } else if (state.tool === "building") {
@@ -375,15 +447,41 @@ cv.addEventListener("mousemove", e => {
     state.view.ty = state.pan.ty + (e.offsetY - state.pan.sy);
     draw(); return;
   }
+  if (state.edit) {
+    const ed = state.edit;
+    if (!ed.moved) { snapshot(); ed.moved = true; }
+    if (ed.vi === "body") {
+      const dx = wx - ed.last[0], dy = wy - ed.last[1];
+      ed.last = [wx, wy];
+      for (const p of featurePts(ed.f)) { p[0] += dx; p[1] += dy; }
+    } else {
+      const s = snap(wx, wy, ed.f.id);
+      state.snapHit = s;
+      const pts = featurePts(ed.f);
+      pts[ed.vi][0] = s.p[0]; pts[ed.vi][1] = s.p[1];
+    }
+    draw(); return;
+  }
   const s = snap(wx, wy);
   state.snapHit = s;
   document.getElementById("st-snap").textContent = s.kind ? `привязка: ${s.kind}` : "";
   if (state.drag && state.drag.rect) { state.drag.b = s.p; draw(); return; }
   state.mouse = s.p;
+  if (state.tool === "select") {
+    const cur = selectedFeature();
+    cv.style.cursor = (cur && vertexAt(cur, wx, wy) != null) ? "move"
+      : hitTest(wx, wy) ? "pointer" : "default";
+  }
   if (state.drawing || state.tool !== "select") draw();
 });
 cv.addEventListener("mouseup", e => {
   if (state.pan) { state.pan = null; return; }
+  if (state.edit) {
+    const moved = state.edit.moved;
+    state.edit = null;
+    if (moved) afterChange();
+    return;
+  }
   if (state.drag && state.drag.rect) {
     const { a, b } = state.drag;
     state.drag = null;
@@ -406,7 +504,8 @@ cv.addEventListener("wheel", e => {
 // ---------- клавиатура ----------
 let spaceDown = false;
 const TOOL_KEYS = { v: "select", g: "boundary", z: "zone", o: "restrict",
-                    b: "building", p: "public", l: "redline", s: "social" };
+                    b: "building", p: "public", l: "redline", s: "social",
+                    m: "measure" };
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT") return;
   if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
@@ -414,7 +513,9 @@ document.addEventListener("keydown", e => {
     e.preventDefault(); e.shiftKey ? redo() : undo(); return;
   }
   if (e.key === "Enter") { finishDrawing(); return; }
-  if (e.key === "Escape") { state.drawing = null; state.drag = null; draw(); return; }
+  if (e.key === "Escape") {
+    state.drawing = null; state.drag = null; state.measure = null; draw(); return;
+  }
   if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
   if (e.key.toLowerCase() === "x") { toggleSnap(); return; }
   if (e.key.toLowerCase() === "f") { fitView(); return; }
@@ -426,6 +527,8 @@ document.addEventListener("keyup", e => { if (e.code === "Space") spaceDown = fa
 // ---------- инструменты и кнопки ----------
 function setTool(tool) {
   state.tool = tool; state.drawing = null; state.drag = null;
+  state.edit = null;
+  if (tool !== "measure") state.measure = null;
   document.querySelectorAll("#toolbar button[data-tool]").forEach(
     b => b.classList.toggle("active", b.dataset.tool === tool));
   cv.style.cursor = tool === "select" ? "default" : "crosshair";
@@ -488,7 +591,20 @@ document.getElementById("btn-demo").addEventListener("click", () => {
 });
 
 // ---------- старт ----------
-window.studio = { state, addFeature, refreshTep };  // для автотестов
-resize();
+(function restore() {
+  try {
+    const raw = localStorage.getItem("grado_studio_v1");
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    state.features = d.features || [];
+    state.nextId = d.nextId || 1;
+    if (d.name) document.getElementById("project-name").value = d.name;
+    if (d.density) document.getElementById("p-density").value = d.density;
+    if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
+  } catch (e) { /* повреждённое сохранение игнорируем */ }
+})();
+document.getElementById("project-name").addEventListener("change", persist);
+window.studio = { state, addFeature, refreshTep, fitView };  // для автотестов
 setTool("select");
+requestAnimationFrame(resize);
 refreshTep();

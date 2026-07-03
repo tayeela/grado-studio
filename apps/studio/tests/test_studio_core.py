@@ -57,6 +57,28 @@ class TestStudioCore(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"/Count 5", pdf)
 
+    def test_redline_fillet_applied(self):
+        feat = [{"kind": "redline", "props": {"radius": 20},
+                 "line": [[0, 0], [100, 0], [100, 100]]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "r.grado", "Т", feat)
+            f = next(p.layer("pp.red_line").features())
+            coords = f["geom"]["coordinates"]
+            self.assertGreater(len(coords), 3, "угол заменён дугой (линеаризация)")
+            self.assertAlmostEqual(p.layer("pp.red_line").length_m(),
+                                   2 * 80 + 3.14159 * 20 / 2, delta=0.1)
+            p.close()
+
+    def test_redline_radius_too_big_falls_back(self):
+        feat = [{"kind": "redline", "props": {"radius": 500},
+                 "line": [[0, 0], [100, 0], [100, 100]]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "r.grado", "Т", feat)
+            f = next(p.layer("pp.red_line").features())
+            self.assertEqual(len(f["geom"]["coordinates"]), 3,
+                             "радиус не помещается — ломаная без сопряжения")
+            p.close()
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

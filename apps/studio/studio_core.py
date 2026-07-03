@@ -18,6 +18,8 @@ for mod in ("model", "compute", "reactive", "render", "geom", "layout",
 sys.path.insert(0, str(ROOT / "apps" / "wizard"))
 
 from grado_compute.engine import Engine  # noqa: E402
+from grado_geom import Path as GPath  # noqa: E402
+from grado_geom import CurveError, PathError  # noqa: E402
 from grado_layout import Document, render_document_pdf  # noqa: E402
 from grado_model import Project  # noqa: E402
 from grado_model import geometry  # noqa: E402
@@ -64,7 +66,15 @@ def _geom_for(feature):
         x, y = feature["point"]
         return {"type": "Point", "coordinates": [x + ORIGIN[0], y + ORIGIN[1]]}
     if kind == "redline":
-        return {"type": "LineString", "coordinates": _shift(feature["line"])}
+        line = [tuple(p) for p in feature["line"]]
+        radius = float(feature.get("props", {}).get("radius") or 0)
+        if radius > 0 and len(line) >= 3:
+            # сопряжение углов тангенциальными дугами (ядро geom)
+            try:
+                line = GPath.fillet_polyline(line, radius).linearize(0.05)
+            except (PathError, CurveError):
+                pass  # радиус не помещается — оставляем ломаную
+        return {"type": "LineString", "coordinates": _shift(line)}
     ring = _shift(feature["ring"])
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
