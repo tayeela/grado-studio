@@ -221,6 +221,11 @@ class Handler(SimpleHTTPRequestHandler):
                     body["line"], body.get("radius", 0), body["dist"])
                 self._send(json.dumps({"line": pts}).encode(),
                            "application/json; charset=utf-8")
+            elif self.path == "/api/redline-stations":
+                out = studio_core.redline_stations(
+                    body["line"], body.get("radius", 0), body.get("step", 100))
+                self._send(json.dumps({"stations": out}).encode(),
+                           "application/json; charset=utf-8")
             else:
                 self.send_error(404)
         except Exception as e:

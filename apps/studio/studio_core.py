@@ -133,6 +133,7 @@ def compute_tep(features, params=None):
             "spp": round(fact_spp, 1),
             "density": round(fact_spp / calc_area, 2) if calc_area > 0 else 0,
         },
+        "zones": zones_report(features),
     }
 
 
@@ -279,6 +280,45 @@ def make_dxf(features, name):
         data = project_to_dxf(project)
         project.close()
     return data
+
+
+def redline_stations(line, radius, step):
+    """Пикетаж вдоль красной линии (по сопряжённой кривой, если задан R)."""
+    pts = [tuple(p) for p in line]
+    path = (GPath.fillet_polyline(pts, float(radius))
+            if radius and float(radius) > 0 and len(pts) >= 3
+            else GPath.polyline(pts))
+    out = []
+    for s, pt in path.stations(float(step)):
+        _, tangent = path.point_at_station(s)
+        out.append({"s": round(s, 3), "x": pt[0], "y": pt[1],
+                    "a": round(tangent, 6)})
+    return out
+
+
+def zones_report(features):
+    """Функциональные зоны как топологическое покрытие (ядро geom).
+
+    Зоны, нарисованные с привязкой повершинно, образуют покрытие: общие
+    границы совпадают, дырок и нахлёстов нет — validate() сверяет сумму
+    площадей с внешним контуром. Любое расхождение — внятный диагноз."""
+    from grado_geom import Coverage, CoverageError
+
+    zones = [f for f in features if f["kind"] == "zone"]
+    if len(zones) < 2:
+        return None
+    polys = {}
+    for i, f in enumerate(zones):
+        title = f.get("props", {}).get("zone_title") or f"зона {i + 1}"
+        polys[f"{title} [{i + 1}]"] = [tuple(p) for p in f["ring"]]
+    try:
+        cov = Coverage.from_polygons(polys)
+        cov.validate()
+        return {"ok": True, "zones": len(zones),
+                "total_ha": round(sum(cov.areas().values()) / 10000.0, 2),
+                "shared_edges": len(cov.shared_edges())}
+    except CoverageError as e:
+        return {"ok": False, "zones": len(zones), "error": str(e)}
 
 
 def redline_offset(line, radius, dist):

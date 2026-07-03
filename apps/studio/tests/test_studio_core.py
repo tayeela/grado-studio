@@ -175,6 +175,61 @@ class TestStudioCore(unittest.TestCase):
         with self.assertRaises(CurveError):
             studio_core.redline_offset([[0, 0], [100, 0], [100, 100]], 20, 25)
 
+    def test_redline_stations(self):
+        import math
+        # fillet R=20: длина 2×80 + π·20/2 ≈ 191.416
+        st = studio_core.redline_stations([[0, 0], [100, 0], [100, 100]], 20, 50)
+        self.assertEqual([round(p["s"]) for p in st], [0, 50, 100, 150, 191])
+        self.assertAlmostEqual(st[-1]["s"], 160 + math.pi * 10, places=2)
+        self.assertAlmostEqual(st[0]["a"], 0, places=6, msg="касательная в начале — вдоль +x")
+        self.assertAlmostEqual(st[-1]["a"], math.pi / 2, places=6,
+                               msg="касательная в конце — вдоль +y")
+        # конечная точка совпадает с концом линии
+        self.assertAlmostEqual(st[-1]["x"], 100, places=6)
+        self.assertAlmostEqual(st[-1]["y"], 100, places=6)
+
+    def test_zones_report_coverage_ok(self):
+        feats = [
+            {"kind": "zone", "props": {"zone_title": "Ж-1"},
+             "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]},
+            {"kind": "zone", "props": {"zone_title": "О-1"},
+             "ring": [[100, 0], [200, 0], [200, 100], [100, 100]]},
+        ]
+        rep = studio_core.zones_report(feats)
+        self.assertTrue(rep["ok"])
+        self.assertEqual(rep["zones"], 2)
+        self.assertAlmostEqual(rep["total_ha"], 2.0)
+        self.assertEqual(rep["shared_edges"], 1)
+
+    def test_zones_report_overlap(self):
+        feats = [
+            {"kind": "zone", "props": {"zone_title": "А"},
+             "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]},
+            {"kind": "zone", "props": {"zone_title": "Б"},
+             "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]},
+        ]
+        rep = studio_core.zones_report(feats)
+        self.assertFalse(rep["ok"])
+        self.assertTrue(rep["error"])
+
+    def test_zones_report_disjoint(self):
+        feats = [
+            {"kind": "zone", "props": {"zone_title": "А"},
+             "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]},
+            {"kind": "zone", "props": {"zone_title": "Б"},
+             "ring": [[300, 0], [400, 0], [400, 100], [300, 100]]},
+        ]
+        rep = studio_core.zones_report(feats)
+        self.assertFalse(rep["ok"], "разорванные зоны — не покрытие")
+
+    def test_zones_report_single_zone_none(self):
+        self.assertIsNone(studio_core.zones_report(
+            [{"kind": "zone", "props": {}, "ring": [[0, 0], [1, 0], [1, 1]]}]))
+
+    def test_tep_includes_zones(self):
+        out = studio_core.compute_tep(FEATURES)
+        self.assertIn("zones", out)
+
     def test_make_grado_is_sqlite(self):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))

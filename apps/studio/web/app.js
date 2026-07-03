@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.6.0";
+const VERSION = "0.7.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -485,6 +485,24 @@ function draw() {
     }
   }
 
+  // пикетаж красных линий: засечки поперёк + подписи ПК
+  for (const f of state.features) {
+    if (f.kind !== "redline" || !(f.props.pk_step > 0) || !f.props._stations) continue;
+    if (state.hidden.redline) continue;
+    ctx.strokeStyle = "#d91a1a"; ctx.lineWidth = 1;
+    ctx.fillStyle = "#8c1414"; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
+    for (const st of f.props._stations) {
+      const [sx, sy] = w2s(st.x, st.y);
+      const nx = -Math.sin(st.a), ny = Math.cos(st.a);   // нормаль к касательной
+      ctx.beginPath();
+      ctx.moveTo(sx - nx * 5, sy + ny * 5);
+      ctx.lineTo(sx + nx * 5, sy - ny * 5);
+      ctx.stroke();
+      const pk = `ПК${Math.floor(st.s / 100)}+${String(Math.round(st.s % 100)).padStart(2, "0")}`;
+      ctx.fillText(pk, sx + nx * 16, sy - ny * 16 + 3);
+    }
+  }
+
   // направляющие выравнивания
   if (state.guides.length) {
     ctx.strokeStyle = "#12a150"; ctx.lineWidth = 0.8; ctx.setLineDash([4, 4]);
@@ -594,9 +612,31 @@ function persist() {
     }));
   } catch (e) { /* приватный режим — работаем без сохранения */ }
 }
+// пикетаж: подтягиваем расчёт ядра, кэш по ключу геометрии
+async function refreshStations(f) {
+  const key = JSON.stringify(f.line) + "|" + (f.props.radius || 0) + "|" + f.props.pk_step;
+  if (f.props._stations_key === key) return;
+  try {
+    const r = await fetch("/api/redline-stations", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line: f.line, radius: f.props.radius || 0,
+                             step: f.props.pk_step }) });
+    if (!r.ok) return;
+    const data = await r.json();
+    f.props._stations = data.stations;
+    f.props._stations_key = key;
+    draw();
+  } catch (e) { /* ядро недоступно — пикетаж просто не обновится */ }
+}
+function maybeRefreshStations() {
+  for (const f of state.features)
+    if (f.kind === "redline" && (f.props.pk_step || 0) > 0) refreshStations(f);
+}
+
 function afterChange() {
   state._ix = null;
   draw(); renderProps(); renderLayers(); refreshTep(); persist();
+  maybeRefreshStations();
 }
 
 // ---------- ТЭП ----------
@@ -624,9 +664,17 @@ function refreshTep() {
 }
 function renderTep(data) {
   const fact = document.getElementById("tep-fact");
+  let zonesHtml = "";
+  if (data.zones) {
+    zonesHtml = data.zones.ok
+      ? `<div class="tep-row" style="color:#0d7a3f"><span>Зонирование: покрытие корректно</span>
+           <span class="v">${data.zones.total_ha} <small>га · общих границ ${data.zones.shared_edges}</small></span></div>`
+      : `<div class="tep-row" style="color:#b3541e"><span>Зонирование: ${data.zones.error}</span><span></span></div>`;
+  }
   fact.innerHTML = `<div class="tep-row"><span>По посадке зданий</span><span></span></div>
     <div class="tep-row"><span>СПП факт</span><span class="v">${data.fact.spp} <small>тыс. м²</small></span></div>
-    <div class="tep-row"><span>Плотность факт</span><span class="v">${data.fact.density} <small>тыс. м²/га</small></span></div>`;
+    <div class="tep-row"><span>Плотность факт</span><span class="v">${data.fact.density} <small>тыс. м²/га</small></span></div>
+    ${zonesHtml}`;
   const body = document.getElementById("tep-body");
   body.classList.remove("muted");
   let html = "", group = null;
@@ -655,6 +703,7 @@ function renderProps() {
     extra = `<label>Этажность<input type="number" id="f-floors" value="${f.props.floors}" min="1" max="75"></label>`;
   if (f.kind === "redline")
     extra = `<label>Радиус сопряжения, м<input type="number" id="f-radius" value="${f.props.radius || 0}" min="0" max="500" step="5"></label>
+      <label>Пикетаж, шаг м (0 — выкл)<input type="number" id="f-pkstep" value="${f.props.pk_step || 0}" min="0" max="500" step="10"></label>
       <label>Офсет, м<input type="number" id="f-offdist" value="${f.props._offdist || 15}" min="0.5" max="200" step="0.5"></label>
       <div style="display:flex;gap:6px;margin-bottom:8px">
         <button id="f-offset-l" style="flex:1">⇐ влево</button>
@@ -676,6 +725,7 @@ function renderProps() {
   };
   bind("f-floors", "floors", v => Math.max(1, parseInt(v) || 9));
   bind("f-radius", "radius", v => Math.max(0, parseFloat(v) || 0));
+  bind("f-pkstep", "pk_step", v => Math.max(0, parseFloat(v) || 0));
   bind("f-zone", "zone_title");
   bind("f-purpose", "purpose");
   const offset = async sign => {
@@ -1188,7 +1238,8 @@ on("btn-demo", "click", () => {
     { id: state.nextId++, kind, props: { ...DEFAULT_PROPS[kind](), ...props }, ...geom });
   add("boundary", { ring: B });
   add("zone", { ring: [[60, 180], [520, 180], [520, 420], [60, 420]] }, { zone_title: "Ж-1" });
-  add("zone", { ring: [[0, 0], [520, 0], [520, 180], [0, 180]] }, { zone_title: "О-1" });
+  // вершина [60,180] делает границу с Ж-1 повершинно общей (покрытие)
+  add("zone", { ring: [[0, 0], [520, 0], [520, 180], [60, 180], [0, 180]] }, { zone_title: "О-1" });
   add("restrict", { ring: [[520, 0], [650, 0], [650, 180], [520, 180]] });
   for (let r = 0; r < 3; r++) for (let c = 0; c < 5; c++)
     add("building", { ring: [[90 + c * 82, 215 + r * 62], [120 + c * 82, 215 + r * 62],
