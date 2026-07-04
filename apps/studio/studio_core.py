@@ -163,6 +163,13 @@ def frontend_styles():
             entry["label_field"] = s["label_field"]
         if s.get("line_label"):
             entry["line_label"] = s["line_label"]
+        lm = s.get("line_marker")
+        if lm:
+            entry["line_marker"] = {"shape": lm["shape"],
+                                    "period": lm.get("period_px", 40),
+                                    "size": lm.get("size_px", 4)}
+        if s.get("double_px"):
+            entry["double"] = s["double_px"]
         if s.get("title"):
             entry["title"] = s["title"]
         if s.get("group"):

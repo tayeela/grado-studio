@@ -340,6 +340,78 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertAlmostEqual(r, 0x06 / 255, places=3)
         self.assertAlmostEqual(b, 0xb2 / 255, places=3)
 
+    def test_line_markers_in_library(self):
+        from grado_render import merged_library
+        lib = merged_library()["styles"]
+        by_code = {s["lgr_code"]: s for sid, s in lib.items()
+                   if sid.startswith("lgr.")}
+        self.assertEqual(len([s for s in by_code.values()
+                              if s.get("line_marker")]), 31,
+                         "31 знак Эталона несёт маркеры-засечки")
+        # выборка по образцам: водоохранная ∨3.5/20, пояс санохраны ⊥2/8,
+        # памятник природы ●3/20, территории ОКН ■1.5/20
+        self.assertEqual(by_code[16]["line_marker"],
+                         {"shape": "chevron", "period_mm": 20.0, "size_mm": 3.5,
+                          "period_px": 40.0, "size_px": 7.0})
+        self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
+        self.assertEqual(by_code[13]["line_marker"]["period_mm"], 8.0)
+        self.assertEqual(by_code[55]["line_marker"]["shape"], "dot")
+        self.assertEqual(by_code[9]["line_marker"]["shape"], "square")
+        self.assertEqual(by_code[20]["double_mm"], 2.0, "защитная зона ОКН — двойная")
+        self.assertEqual(by_code[18]["dash_mm"], None, "граница ПК — сплошная")
+
+    def test_marker_ops_along_ring(self):
+        from grado_render.scene import marker_ops, _inward_sign
+        ring = [(0, 0), (100, 0), (100, 60), (0, 60)]
+        spec = {"shape": "chevron", "period_mm": 20.0, "size_mm": 3.5}
+        ops = marker_ops(ring, spec, (1, 0, 0), closed=True,
+                         inward=_inward_sign(ring))
+        self.assertTrue(ops, "по периметру 320 мм — маркеры есть")
+        segs = [seg for o in ops if o["op"] == "path" for seg in o["rings"]]
+        self.assertGreaterEqual(len(segs), 2 * 10, "~16 галочек по 2 отрезка")
+        # засечки не выходят из кольца дальше size: все точки внутри bbox+eps
+        for seg in segs:
+            for x, y in seg:
+                self.assertTrue(-4 <= x <= 104 and -4 <= y <= 64)
+        # заливные формы: треугольники по периметру
+        tri = marker_ops(ring, {"shape": "triangle", "period_mm": 20,
+                                "size_mm": 2}, (1, 0, 0), closed=True,
+                         inward=_inward_sign(ring))
+        fills = [o for o in tri if o["op"] == "path" and o["fill"]]
+        self.assertGreater(len(fills), 10)
+
+    def test_marker_ops_inward(self):
+        # нормаль засечек направлена внутрь кольца (как в Эталоне)
+        from grado_render.scene import marker_ops, _inward_sign
+        for ring in ([(0, 0), (100, 0), (100, 60), (0, 60)],   # CCW
+                     [(0, 0), (0, 60), (100, 60), (100, 0)]):  # CW
+            ops = marker_ops(ring, {"shape": "tick", "period_mm": 20,
+                                    "size_mm": 3}, (0, 0, 0), closed=True,
+                             inward=_inward_sign(ring))
+            for o in ops:
+                for (x1, y1), (x2, y2) in o["rings"]:
+                    # конец засечки строго внутри прямоугольника
+                    self.assertTrue(0 - 1e-6 <= x2 <= 100 + 1e-6)
+                    self.assertTrue(0 - 1e-6 <= y2 <= 60 + 1e-6)
+
+    def test_per_object_marker_ops_from_style_id(self):
+        # объект со знаком Эталона получает засечки в PDF-сцене
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "t.grado", "ЛГР-маркеры")
+            layer = p.add_layer("cad.zouit")
+            layer.add_feature(
+                {"type": "MultiPolygon", "coordinates": [[[
+                    [413000, 6178000], [413200, 6178000], [413200, 6178150],
+                    [413000, 6178150], [413000, 6178000]]]]},
+                attrs={"kind": "водоохранная"}, style_id="lgr.vodookhr")
+            ops = build_ops(p, (10, 10, 200, 160), scale=1000)
+            p.close()
+        # среди ops есть path-и с width 0.5 без dash (маркеры) помимо контура
+        marker_paths = [o for o in ops if o["op"] == "path"
+                        and o.get("dash") is None and o.get("width") == 0.5
+                        and not o.get("closed")]
+        self.assertTrue(marker_paths, "засечки chevron в сцене")
+
     def test_frontend_styles_passthrough(self):
         import sys as _sys
         _sys.path.insert(0, str(Path(__file__).parents[3] / "apps" / "studio"))
@@ -351,6 +423,9 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(vod["line_label"], "водоохранная")
         self.assertEqual(vod["group"], "ЗОУИТ")
         self.assertEqual(vod["lgr_code"], 16)
+        self.assertEqual(vod["line_marker"],
+                         {"shape": "chevron", "period": 40.0, "size": 7.0})
+        self.assertEqual(fs["lgr.okn.zashchit"]["double"], 4.0)
         # легаси-стили не сломаны: hatch остаётся true
         self.assertIs(fs["restrict.hatch"]["hatch"], True)
 

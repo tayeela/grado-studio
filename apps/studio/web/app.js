@@ -639,6 +639,114 @@ function drawHatch(ring, hatch, strokeColor) {
   ctx.restore();
 }
 
+// Маркеры-засечки Эталона ЛГР вдоль линии/контура: tick ⊢, tee ⊥, corner Г,
+// chevron ∨ (остриём внутрь зоны), chevron_dot ∨., triangle ▼, dot ●,
+// square ■, diamond ◇. mk = {shape, period, size} в px холста.
+function drawLineMarkers(pts, mk, color, closed, inward) {
+  const chain = closed ? [...pts, pts[0]] : pts;
+  const scr = chain.map(p => w2s(...p));
+  const segs = [];
+  let total = 0;
+  for (let i = 1; i < scr.length; i++) {
+    const d = Math.hypot(scr[i][0] - scr[i - 1][0], scr[i][1] - scr[i - 1][1]);
+    if (d > 1e-9) { segs.push([scr[i - 1], scr[i], d]); total += d; }
+  }
+  const period = mk.period || 40, s = mk.size || 4;
+  if (total < period * 0.6) return;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.2;
+  for (let dist = period / 2; dist < total; dist += period) {
+    let acc = 0, i = 0;
+    while (i < segs.length && acc + segs[i][2] < dist) acc += segs[i++][2];
+    if (i >= segs.length) break;
+    const [[x1, y1], [x2, y2], d] = segs[i];
+    const t = (dist - acc) / d;
+    const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+    const tx = (x2 - x1) / d, ty = (y2 - y1) / d;
+    const nx = -ty * inward, ny = tx * inward;
+    ctx.beginPath();
+    switch (mk.shape) {
+      case "tee":
+        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+        ctx.moveTo(px - tx * s * 0.5, py - ty * s * 0.5);
+        ctx.lineTo(px + tx * s * 0.5, py + ty * s * 0.5);
+        ctx.stroke(); break;
+      case "corner":
+        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+        ctx.lineTo(px + nx * s + tx * s, py + ny * s + ty * s);
+        ctx.stroke(); break;
+      case "chevron": case "chevron_dot": {
+        const w2 = s * 0.6;
+        ctx.moveTo(px - tx * w2, py - ty * w2);
+        ctx.lineTo(px + nx * s, py + ny * s);
+        ctx.lineTo(px + tx * w2, py + ty * w2);
+        ctx.stroke();
+        if (mk.shape === "chevron_dot") {
+          ctx.beginPath();
+          ctx.arc(px + tx * period / 2 + nx * s * 0.5,
+                  py + ty * period / 2 + ny * s * 0.5, s * 0.15, 0, 7);
+          ctx.fill();
+        }
+        break;
+      }
+      case "triangle": {
+        const b = s * 0.5;
+        ctx.moveTo(px - tx * b, py - ty * b);
+        ctx.lineTo(px + tx * b, py + ty * b);
+        ctx.lineTo(px + nx * s, py + ny * s);
+        ctx.closePath(); ctx.fill(); break;
+      }
+      case "dot":
+        ctx.arc(px, py, s / 2, 0, 7); ctx.fill(); break;
+      case "square": {
+        const b = s / 2;
+        ctx.fillRect(px - b, py - b, s, s); break;
+      }
+      case "diamond": {
+        const b = s / 2;
+        ctx.moveTo(px - b, py); ctx.lineTo(px, py - b);
+        ctx.lineTo(px + b, py); ctx.lineTo(px, py + b);
+        ctx.closePath(); ctx.stroke(); break;
+      }
+      default:  // tick
+        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+        ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+// Знак засечки направлен внутрь зоны: выясняем сторону по центроиду кольца
+function inwardSign(ring) {
+  const [x1, y1] = ring[0], [x2, y2] = ring[1];
+  const d = Math.hypot(x2 - x1, y2 - y1) || 1;
+  // экранные нормали: w2s инвертирует y, поэтому знак согласован с canvas
+  const [sx1, sy1] = w2s(x1, y1), [sx2, sy2] = w2s(x2, y2);
+  const sd = Math.hypot(sx2 - sx1, sy2 - sy1) || 1;
+  const nx = -(sy2 - sy1) / sd, ny = (sx2 - sx1) / sd;
+  let cx = 0, cy = 0;
+  for (const p of ring) { cx += p[0] / ring.length; cy += p[1] / ring.length; }
+  const [scx, scy] = w2s(cx, cy);
+  const mx = (sx1 + sx2) / 2, my = (sy1 + sy2) / 2;
+  return (scx - mx) * nx + (scy - my) * ny > 0 ? 1 : -1;
+}
+
+// Двойная параллельная линия (защитные зоны ОКН): смещение по нормалям
+function drawDoubleLine(pts, gap, closed) {
+  const chain = closed ? [...pts, pts[0]] : pts;
+  const scr = chain.map(p => w2s(...p));
+  ctx.beginPath();
+  for (let i = 0; i < scr.length; i++) {
+    const prev = scr[Math.max(0, i - 1)], next = scr[Math.min(scr.length - 1, i + 1)];
+    const dx = next[0] - prev[0], dy = next[1] - prev[1];
+    const d = Math.hypot(dx, dy) || 1;
+    const x = scr[i][0] - dy / d * gap, y = scr[i][1] + dx / d * gap;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.stroke();
+}
+
 // Повторяющаяся подпись вдоль линии (условный знак ЛГР: «кл топ» и т.п.)
 function drawLineLabel(pts, text, color) {
   const scr = pts.map(p => w2s(...p));
@@ -718,6 +826,12 @@ function draw() {
         if (st.fill && f.ring) { ctx.fillStyle = st.fill; ctx.fill(); }
         ctx.stroke();
         if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
+        if (st.double) drawDoubleLine(f.ring || f.line, st.double, !!f.ring);
+        if (st.line_marker && (f.ring || f.line)) {
+          const inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
+          drawLineMarkers(f.ring || f.line, st.line_marker,
+                          st.stroke || "#df0024", !!f.ring, inw);
+        }
         if (st.line_label) {
           const pts = f.ring ? [...f.ring, f.ring[0]] : f.line;
           drawLineLabel(pts, st.line_label, st.stroke || "#d91a1a");
@@ -1286,7 +1400,8 @@ function openLayerFormat(layer) {
       const p = STYLES_V2[ref];
       return { style_ref: ref, stroke: p.stroke, width: p.width,
                fill: p.fill || null, dash: p.dash || null,
-               hatch: p.hatch || null, line_label: p.line_label || null };
+               hatch: p.hatch || null, line_label: p.line_label || null,
+               line_marker: p.line_marker || null, double: p.double || null };
     }
     return {
       stroke: $("fmt-stroke").value,
