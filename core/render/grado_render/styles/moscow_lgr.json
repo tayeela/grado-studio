@@ -1479,7 +1479,7 @@
         "color": 2
       },
       "line_marker": {
-        "shape": "corner",
+        "shape": "triangle",
         "period_mm": 20.0,
         "size_mm": 2.0,
         "period_px": 40.0,
@@ -1522,11 +1522,11 @@
         "color": 3
       },
       "line_marker": {
-        "shape": "dot",
+        "shape": "triangle",
         "period_mm": 20.0,
-        "size_mm": 1.5,
+        "size_mm": 2.5,
         "period_px": 40.0,
-        "size_px": 3.0
+        "size_px": 5.0
       },
       "hatch": {
         "angle": 90,
@@ -1567,13 +1567,6 @@
       "dxf": {
         "name": "LGR_41",
         "color": 4
-      },
-      "line_marker": {
-        "shape": "chevron",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0
       },
       "hatch": {
         "angle": 135,
@@ -1975,11 +1968,11 @@
         "color": 4
       },
       "line_marker": {
-        "shape": "corner",
+        "shape": "tee",
         "period_mm": 20.0,
-        "size_mm": 2.5,
+        "size_mm": 2.0,
         "period_px": 40.0,
-        "size_px": 5.0
+        "size_px": 4.0
       },
       "hatch": {
         "angle": 90,

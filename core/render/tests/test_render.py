@@ -346,8 +346,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         by_code = {s["lgr_code"]: s for sid, s in lib.items()
                    if sid.startswith("lgr.")}
         self.assertEqual(len([s for s in by_code.values()
-                              if s.get("line_marker")]), 31,
-                         "31 знак Эталона несёт маркеры-засечки")
+                              if s.get("line_marker")]), 30,
+                         "30 знаков Эталона несут маркеры-засечки")
         # выборка по образцам: водоохранная ∨3.5/20, пояс санохраны ⊥2/8,
         # памятник природы ●3/20, территории ОКН ■1.5/20
         self.assertEqual(by_code[16]["line_marker"],
@@ -359,6 +359,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[9]["line_marker"]["shape"], "square")
         self.assertEqual(by_code[20]["double_mm"], 2.0, "защитная зона ОКН — двойная")
         self.assertEqual(by_code[18]["dash_mm"], None, "граница ПК — сплошная")
+        # сверка с эталоном (приказ ММА №65, стр. 9-10, 13 + приложение 2):
+        self.assertIsNone(by_code[41].get("line_marker"),
+                          "береговая полоса — без маркеров (приложение 2)")
+        self.assertEqual(by_code[47]["line_marker"]["shape"], "triangle",
+                         "ООЗТ — залитые треугольники ▼")
+        self.assertEqual(by_code[46]["line_marker"]["shape"], "triangle",
+                         "Резерв ООПТ — треугольники (семейство ООПТ)")
+        self.assertEqual(by_code[10]["line_marker"]["shape"], "tee",
+                         "охранная зона ОКН — Т-засечки")
 
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign
