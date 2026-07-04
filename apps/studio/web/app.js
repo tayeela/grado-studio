@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -51,7 +51,7 @@ const LAYERS_V2 = [
   { id: "source.nspd.parcels", title: "Земельный участок (ЕГРН)", kind: "parcel",
     geometry_type: "polygon", style_id: "parcel.line", defaults: () => ({}) },
   { id: "project.apo.buildings", title: "Здание", kind: "building",
-    geometry_type: "polygon", style_id: "building.fill",
+    geometry_type: "polygon", style_id: "building.fill", tool: "rect",
     defaults: () => ({ floors: 9, purpose: "МКД" }) },
   { id: "project.apo.red_lines", title: "Красная линия", kind: "redline",
     geometry_type: "polyline", style_id: "red.line.projected",
@@ -62,7 +62,8 @@ const LAYERS_V2 = [
     geometry_type: "point", style_id: "social.point",
     defaults: () => ({ kind: "ОО+ДОО", capacity: 750 }) },
   { id: "annotation.dimensions", title: "Размер", kind: "dim",
-    geometry_type: "polyline", style_id: "dimension.line", defaults: () => ({}) },
+    geometry_type: "polyline", style_id: "dimension.line", annotation: true,
+    tool: "dim", defaults: () => ({}) },
 ];
 const LAYER_BY_ID = {}, LAYER_BY_KIND = {};
 for (const L of LAYERS_V2) {
@@ -76,8 +77,28 @@ function styleOf(f) {
   const L = layerOf(f);
   return (f.style_id && STYLES_V2[f.style_id]) || (L && STYLES_V2[L.style_id]) || {};
 }
-function styleForTool(tool) {
-  const L = LAYER_BY_KIND[tool];
+// ---------- инструменты: геометрия отдельно, слой отдельно (шаг 2) ----------
+// Инструмент создаёт только геометрию; слой и стиль назначает активный слой.
+const GEOM_OF_TOOL = { point: "point", polyline: "polyline",
+                       polygon: "polygon", rect: "polygon" };
+// какую геометрию собирает черчение (rect кликами = контур-полигон, dim — линия)
+const TOOL_GEOM = { ...GEOM_OF_TOOL, dim: "polyline" };
+
+function activeLayer() { return LAYER_BY_ID[state.activeLayerId] || null; }
+
+function toolFitsLayer(tool, L) {
+  const g = GEOM_OF_TOOL[tool];
+  return !g || (!!L && !L.annotation && L.geometry_type === g);
+}
+
+function naturalToolFor(L) {
+  return L.tool ||
+    ({ point: "point", polyline: "polyline", polygon: "polygon" })[L.geometry_type];
+}
+
+function styleForDrawing() {
+  if (state.tool === "dim") return STYLES_V2["dimension.line"];
+  const L = activeLayer();
   return (L && STYLES_V2[L.style_id]) || {};
 }
 function labelOf(f) {
@@ -104,6 +125,7 @@ const state = {
   undo: [], redo: [], nextId: 1,
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
+  activeLayerId: "project.territory.boundary",  // куда чертят геом-инструменты
   _fitted: false, _ix: null,
 };
 
@@ -651,7 +673,7 @@ function draw() {
 
   // черчение в процессе + живой размер
   if (state.drawing && state.drawing.pts.length) {
-    const st = styleForTool(state.tool);
+    const st = styleForDrawing();
     ctx.strokeStyle = st.stroke || "#000"; ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
     const pts = state.mouse ? [...state.drawing.pts, state.mouse] : state.drawing.pts;
     drawChain(pts, false); ctx.stroke(); ctx.setLineDash([]);
@@ -671,7 +693,7 @@ function draw() {
       }
     }
     // замыкание: подсветка первой точки
-    if (state.tool !== "redline" && state.drawing.pts.length > 2 && state.mouse) {
+    if (TOOL_GEOM[state.tool] === "polygon" && state.drawing.pts.length > 2 && state.mouse) {
       const first = state.drawing.pts[0];
       if (Math.hypot(first[0] - state.mouse[0], first[1] - state.mouse[1]) < 12 / state.view.k) {
         const [fx, fy] = w2s(...first);
@@ -683,8 +705,9 @@ function draw() {
   if (state.drag && state.drag.rect) {
     const { a, b } = state.drag;
     const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
-    const bst = styleForTool("building");
-    ctx.strokeStyle = bst.stroke; ctx.fillStyle = bst.fill + "88";
+    const bst = styleForDrawing();
+    ctx.strokeStyle = bst.stroke || "#888";
+    ctx.fillStyle = (bst.fill || "#cccccc") + "88";
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.fillStyle = "#5c5a54"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
@@ -749,6 +772,7 @@ function persist() {
       density: document.getElementById("p-density").value,
       ratio: document.getElementById("p-ratio").value,
       layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
+      activeLayerId: state.activeLayerId,
     }));
   } catch (e) { /* приватный режим — работаем без сохранения */ }
 }
@@ -906,11 +930,11 @@ function renderLayers() {
   for (const layer of LAYERS_V2) {
     const count = featuresOnLayer(layer.id).length;
     const st = STYLES_V2[layer.style_id] || {};
-    const row = document.createElement("label");
-    row.className = "layer-row";
-    row.innerHTML = `<input type="checkbox" ${layer.visible ? "checked" : ""}>
+    const row = document.createElement("div");
+    row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "");
+    row.innerHTML = `<input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${st.fill || "transparent"};border-color:${st.stroke || "#999"}"></span>
-      <span class="nm">${layer.title}</span><span class="cnt">${count || ""}</span>`;
+      <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>`;
     row.querySelector("input").addEventListener("change", ev => {
       layer.visible = ev.target.checked;
       const sel = selectedFeature();
@@ -922,6 +946,9 @@ function renderLayers() {
       persist();
       draw();
     });
+    // клик по имени/образцу — активный слой (чекбокс отвечает только за видимость)
+    row.querySelector(".nm").addEventListener("click", () => setActiveLayer(layer.id));
+    row.querySelector(".sw").addEventListener("click", () => setActiveLayer(layer.id));
     el.appendChild(row);
   }
 }
@@ -946,10 +973,12 @@ function addFeature(kind, geom) {
 }
 function finishDrawing() {
   const d = state.drawing;
-  if (!d) return;
-  const isPoly = state.tool !== "redline";
-  if (isPoly && d.pts.length >= 3) addFeature(state.tool, { ring: d.pts });
-  else if (!isPoly && d.pts.length >= 2) addFeature("redline", { line: d.pts });
+  const L = activeLayer();
+  if (!d || !L) { state.drawing = null; return; }
+  const geom = TOOL_GEOM[state.tool];
+  if (geom === "polygon" && d.pts.length >= 3) addFeature(L.kind, { ring: d.pts });
+  else if (geom === "polyline" && state.tool !== "dim" && d.pts.length >= 2)
+    addFeature(L.kind, { line: d.pts });
   state.drawing = null; state.typed = "";
   draw();
 }
@@ -1048,12 +1077,13 @@ cv.addEventListener("mousedown", e => {
     if (!state.measure || state.measure.b) state.measure = { a: s.p, b: null };
     else state.measure.b = s.p;
     draw();
-  } else if (state.tool === "social") {
-    addFeature("social", { point: s.p });
-  } else if (state.tool === "building" && !state.drawing) {
+  } else if (state.tool === "point") {
+    const L = activeLayer();
+    if (L && L.geometry_type === "point") addFeature(L.kind, { point: s.p });
+  } else if (state.tool === "rect" && !state.drawing) {
     // протягивание — прямоугольник; одиночный клик — контур по точкам
     state.drag = { a: s.p, b: s.p, rect: true, moved: false };
-  } else {
+  } else if (state.tool === "dim" || TOOL_GEOM[state.tool]) {
     if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
     if (state.tool === "dim") {
       state.drawing.pts.push(s.p);
@@ -1065,7 +1095,7 @@ cv.addEventListener("mousedown", e => {
       return;
     }
     const first = state.drawing.pts[0];
-    if (first && state.tool !== "redline" && state.drawing.pts.length > 2 &&
+    if (first && TOOL_GEOM[state.tool] === "polygon" && state.drawing.pts.length > 2 &&
         Math.hypot(first[0] - s.p[0], first[1] - s.p[1]) < 12 / state.view.k) {
       finishDrawing();
     } else {
@@ -1140,10 +1170,12 @@ window.addEventListener("mouseup", e => {
   if (state.drag && state.drag.rect) {
     const { a, b, moved } = state.drag;
     state.drag = null;
+    const L = activeLayer();
     if (moved && Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1) {
-      addFeature("building", { ring: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] });
+      if (L && L.geometry_type === "polygon")
+        addFeature(L.kind, { ring: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] });
     } else if (!moved) {
-      // клик без протягивания — рисуем произвольный контур здания
+      // клик без протягивания — произвольный контур по точкам
       state.drawing = { pts: [a] };
       state.typed = "";
       draw();
@@ -1186,9 +1218,14 @@ cv.addEventListener("wheel", e => {
 }, { passive: false });
 
 // ---------- клавиатура (по кодам клавиш — не зависит от раскладки) ----------
-const TOOL_CODES = { KeyV: "select", KeyG: "boundary", KeyZ: "zone", KeyO: "restrict",
-                     KeyB: "building", KeyP: "public", KeyL: "redline", KeyS: "social",
-                     KeyM: "measure", KeyD: "dim" };
+const TOOL_CODES = { KeyV: "select", KeyM: "measure", KeyD: "dim" };
+// старые предметные клавиши живут как пресеты: слой + естественный инструмент
+const PRESET_CODES = {
+  KeyG: "project.territory.boundary", KeyZ: "project.tp.func_zone",
+  KeyO: "source.constraints.restrict", KeyB: "project.apo.buildings",
+  KeyP: "project.apo.public_zones", KeyL: "project.apo.red_lines",
+  KeyS: "project.social.objects",
+};
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Shift") { shiftDown = true; if (state.drawing) draw(); return; }
@@ -1228,7 +1265,9 @@ document.addEventListener("keydown", e => {
   if (e.code === "KeyF") { fitView(); return; }
   if (e.code === "KeyR") { rotateSelected(); return; }
   const tool = TOOL_CODES[e.code];
-  if (tool) setTool(tool);
+  if (tool) { setTool(tool); return; }
+  const preset = PRESET_CODES[e.code];
+  if (preset) applyPreset(preset);
 });
 document.addEventListener("keyup", e => {
   if (e.key === "Shift") { shiftDown = false; if (state.drawing) draw(); }
@@ -1236,14 +1275,44 @@ document.addEventListener("keyup", e => {
 });
 
 // ---------- инструменты, сетка, кнопки ----------
-function setTool(tool) {
+function updateLayerStatus() {
+  const el = document.getElementById("st-layer");
+  const L = activeLayer();
+  if (el) el.textContent = L ? `слой: ${L.title}` : "";
+}
+function setTool(tool, opts = {}) {
   state.tool = tool; state.drawing = null; state.drag = null;
   state.edit = null; state.typed = "";
   if (tool !== "measure") state.measure = null;
+  // геом-инструмент против несовместимого слоя — слой переключается сам
+  if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
+    const fit = LAYERS_V2.find(l => !l.annotation &&
+                                    l.geometry_type === GEOM_OF_TOOL[tool]);
+    if (fit) { state.activeLayerId = fit.id; renderLayers(); }
+  }
+  updateLayerStatus();
   document.querySelectorAll("#toolbar button[data-tool]").forEach(
     b => b.classList.toggle("active", b.dataset.tool === tool));
   cv.style.cursor = tool === "select" ? "default" : "crosshair";
   draw();
+}
+function setActiveLayer(id) {
+  const L = LAYER_BY_ID[id];
+  if (!L) return;
+  state.activeLayerId = id;
+  state.drawing = null; state.typed = "";
+  // несовместимый инструмент — переключается на естественный для слоя
+  if (GEOM_OF_TOOL[state.tool] && !toolFitsLayer(state.tool, L))
+    setTool(naturalToolFor(L), { keepLayer: true });
+  renderLayers(); updateLayerStatus(); persist(); draw();
+}
+// быстрый пресет: слой + его естественный инструмент (клавиши G Z O B P L S)
+function applyPreset(layerId) {
+  const L = LAYER_BY_ID[layerId];
+  if (!L) return;
+  state.activeLayerId = layerId;
+  setTool(naturalToolFor(L), { keepLayer: true });
+  renderLayers();
 }
 document.querySelectorAll("#toolbar button[data-tool]").forEach(
   b => b.addEventListener("click", () => setTool(b.dataset.tool)));
@@ -1425,6 +1494,8 @@ on("btn-demo", "click", () => {
       for (const [kind, hid] of Object.entries(d.hidden))
         if (LAYER_BY_KIND[kind]) LAYER_BY_KIND[kind].visible = !hid;
     }
+    if (d.activeLayerId && LAYER_BY_ID[d.activeLayerId])
+      state.activeLayerId = d.activeLayerId;
     if (d.name) document.getElementById("project-name").value = d.name;
     if (d.density) document.getElementById("p-density").value = d.density;
     if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
@@ -1432,7 +1503,8 @@ on("btn-demo", "click", () => {
 })();
 on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
-                  layerOf, styleOf, upgradeFeature, LAYERS_V2, STYLES_V2 };
+                  layerOf, styleOf, upgradeFeature, LAYERS_V2, STYLES_V2,
+                  setTool, setActiveLayer, applyPreset, activeLayer };
 setTool("select");
 renderLayers();
 requestAnimationFrame(resize);

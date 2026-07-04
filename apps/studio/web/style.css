@@ -67,12 +67,15 @@ button.primary:hover { opacity: .85; }
 }
 #panel label.chk input { accent-color: var(--accent); }
 .layer-row {
-  display: flex; gap: 8px; align-items: center; padding: 3px 0;
+  display: flex; gap: 8px; align-items: center; padding: 3px 4px;
   cursor: pointer; font-size: 12.5px; color: var(--text);
+  border-radius: 6px; margin: 0 -4px;
 }
+.layer-row.active { background: #eef3fd; box-shadow: inset 2px 0 0 var(--accent); }
+.layer-row.active .nm { font-weight: 600; color: var(--accent); }
 .layer-row input { accent-color: var(--accent); }
-.layer-row .sw { width: 13px; height: 13px; border-radius: 3px; border: 1.4px solid; flex-shrink: 0; }
-.layer-row .nm { flex: 1; }
+.layer-row .sw { width: 13px; height: 13px; border-radius: 3px; border: 1.4px solid; flex-shrink: 0; cursor: pointer; }
+.layer-row .nm { flex: 1; cursor: pointer; }
 .layer-row .cnt { color: var(--muted); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
 .tep-row { display: flex; justify-content: space-between; gap: 8px;
