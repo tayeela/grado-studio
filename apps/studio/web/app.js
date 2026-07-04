@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.25.0";
+const VERSION = "0.25.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -952,9 +952,11 @@ function draw() {
         if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
         if (st.double) drawDoubleLine(f.ring || f.line, st.double, !!f.ring);
         if (st.line_marker && (f.ring || f.line)) {
-          const inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
+          // засечки Эталона — по ВНЕШНЕМУ контуру зоны (наружу от центроида),
+          // не внутрь заливки: −inwardSign даёт наружную нормаль
+          const outw = f.ring && f.ring.length > 2 ? -inwardSign(f.ring) : 1;
           drawLineMarkers(f.ring || f.line, st.line_marker,
-                          st.stroke || cvColor("redline", "#df0024"), !!f.ring, inw);
+                          st.stroke || cvColor("redline", "#df0024"), !!f.ring, outw);
         }
         if (st.line_label) {
           const pts = f.ring ? [...f.ring, f.ring[0]] : f.line;
@@ -1383,7 +1385,7 @@ function renderLayers() {
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
       <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
-      <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-more"/></svg></button>`;
+      <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-menu-dots"/></svg></button>`;
     row.querySelector("input").addEventListener("change", ev => {
       layer.visible = ev.target.checked;
       const sel = selectedFeature();

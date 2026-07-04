@@ -283,9 +283,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                         rings, spacing=h.get("spacing_mm", 1.6), stroke=color,
                         angle=h.get("angle", 45), cross=h.get("cross", False)))
                 if st.line_marker and len(rings[0]) >= 3:
+                    # засечки по ВНЕШНЕМУ контуру зоны (наружу): −_inward_sign
                     ops.extend(marker_ops(
                         rings[0], st.line_marker, st.stroke, width=st.width,
-                        closed=True, inward=_inward_sign(rings[0])))
+                        closed=True, inward=-_inward_sign(rings[0])))
                 if st.double:
                     ops.append({"op": "path", "closed": True, "fill": None,
                                 "stroke": st.stroke, "width": st.width,

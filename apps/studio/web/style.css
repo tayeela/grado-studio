@@ -5,11 +5,11 @@
 * { box-sizing: border-box; margin: 0; }
 html, body { height: 100%; overflow: hidden; }
 
-/* ---- иконки (единый SVG-спрайт, #ic-*) ----------------------------------- */
+/* ---- иконки (единый SVG-спрайт icons.svg, #ic-*) ------------------------- */
+/* fill/stroke/stroke-width заданы на самих <symbol> (дизайн-пакет) —
+   .ic только размер и цвет наследуется от кнопки через currentColor. */
 .ic {
   width: 18px; height: 18px; display: block; flex-shrink: 0;
-  fill: none; stroke: currentColor; stroke-width: 1.8;
-  stroke-linecap: round; stroke-linejoin: round;
   pointer-events: none;   /* клик всегда по кнопке, не по <use> внутри */
 }
 .icon-btn { display: inline-flex; align-items: center; justify-content: center;
@@ -193,7 +193,7 @@ button.primary:active { background: var(--accent-active); }
 .h3-btn { float: right; border: 1px solid var(--field-border); background: var(--field-bg);
           border-radius: var(--r-sm); padding: 3px 5px; cursor: pointer;
           color: var(--muted); display: inline-flex; align-items: center; }
-.h3-btn .ic { width: 14px; height: 14px; stroke-width: 2; }
+.h3-btn .ic { width: 15px; height: 15px; }
 .h3-btn:hover { color: var(--accent); border-color: var(--accent); }
 .src-row { display: flex; justify-content: space-between; gap: var(--sp-2);
            padding: 3px 0; border-bottom: 1px dotted var(--hairline); font-size: var(--fs-12); }
