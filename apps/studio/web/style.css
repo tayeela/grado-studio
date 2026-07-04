@@ -144,6 +144,17 @@ footer {
   display: flex; gap: 18px; padding: 5px 12px; font-size: 12px;
   color: var(--muted); border-top: 1px solid var(--border);
 }
+/* Текст этих полей меняется на каждое движение мыши (координаты, привязка —
+   "сетка"/"выравнивание"/"пересечение"...) и разной длины — без фиксированной
+   ширины вся строка правее скачет вбок при каждой смене значения. */
+footer span { flex-shrink: 0; }
+#st-coords { min-width: 132px; }
+#st-snap { min-width: 150px; }
+#st-grid { min-width: 60px; }
+#st-layer { min-width: 90px; max-width: 200px; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+#st-hint { flex-shrink: 1; overflow: hidden; text-overflow: ellipsis;
+          white-space: nowrap; }
 #props-body .kind { font-weight: 600; margin-bottom: 6px; }
 #props-body .metric { color: var(--muted); margin-bottom: 8px; }
 #props-body button.danger { color: #b3261e; border-color: #eccfcd; margin-top: 6px; }
