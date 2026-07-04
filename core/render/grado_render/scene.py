@@ -128,7 +128,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
     labels = []
     for info in layers:
         st = styles.resolve(info["code"])
-        for f in project.layer(info["code"]).features():
+        for f in project.layer_by_id(info["layer_id"]).features():
             geom = f["geom"]
             if not geom:
                 continue

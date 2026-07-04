@@ -81,7 +81,7 @@ def project_to_dxf(project, label_height=2.5, layers=None, fallback_layer=None):
         layer, _color = layers.get(info["code"], fallback_layer)
         if info["code"] in layers and info["code"] not in [u[0] for u in used]:
             used.append((info["code"], layers[info["code"]]))
-        for f in project.layer(info["code"]).features():
+        for f in project.layer_by_id(info["layer_id"]).features():
             geom = f["geom"]
             if not geom:
                 continue

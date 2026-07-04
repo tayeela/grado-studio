@@ -523,6 +523,61 @@ class TestSourcePipeline(unittest.TestCase):
         self.assertEqual(out["features"][0]["prov"]["source"], "fgistp")
 
 
+class TestModel01Routing(unittest.TestCase):
+    """MODEL-01b: маршрутизация по layer_id, выделенный source-слой, стиль."""
+
+    def test_fgistp_routes_to_dedicated_source_layer(self):
+        payload = {"grado_source": "fgis_tp", "grado_uin": "77:00-1",
+                   "grado_layer_name": "Генплан",
+                   "features": [{"id": "z1", "geometry": {"type": "Polygon",
+                        "coordinates": [[[37.6, 55.7], [37.61, 55.7],
+                                         [37.61, 55.71], [37.6, 55.7]]]},
+                        "properties": {"class_name": "Ж-исх", "uin": "77:00-1"}}]}
+        out = studio_core.import_fgistp(payload)
+        self.assertEqual(out["features"][0]["layer_id"], "source.fgistp.func_zones")
+
+    def test_two_layers_of_one_class_in_grado(self):
+        feats = [
+            {"kind": "boundary", "layer_id": "project.territory.boundary",
+             "ring": [[0, 0], [500, 0], [500, 300], [0, 300]], "props": {}},
+            {"kind": "zone", "layer_id": "project.tp.func_zone",
+             "ring": [[0, 0], [500, 0], [500, 150], [0, 150]],
+             "props": {"zone_title": "Ж-пр"}, "style_id": "func_zone.fill"},
+            {"kind": "zone", "layer_id": "source.fgistp.func_zones",
+             "ring": [[0, 150], [500, 150], [500, 300], [0, 300]],
+             "props": {"zone_title": "Ж-исх"},
+             "prov": {"source": "fgistp", "source_date": "2026-07-04",
+                      "source_doc": "77:00-1"}},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            gp = Path(tmp) / "m.grado"
+            p = studio_core.build_project(gp, "M01", feats)
+            layers = p.layers()
+            classes = [L["semantic_class"] for L in layers]
+            self.assertEqual(classes.count("tp.func_zone"), 2, "два слоя класса")
+            src = p.layer_by_id("source.fgistp.func_zones")
+            self.assertEqual(src.source_kind, "fgistp")
+            self.assertEqual(next(src.features())["source"], "fgistp")
+            proj = p.layer_by_id("project.tp.func_zone")
+            self.assertEqual(next(proj.features())["style_id"], "func_zone.fill")
+            p.close()
+            rt = studio_core.grado_to_features(str(gp))
+        ids = {f["layer_id"] for f in rt["features"]}
+        self.assertIn("source.fgistp.func_zones", ids)
+        self.assertIn("project.tp.func_zone", ids)
+
+    def test_legacy_feature_without_layer_id_routes_by_kind(self):
+        # объект без layer_id (старая сцена) роутится по kind как раньше
+        feats = [{"kind": "building",
+                  "ring": [[0, 0], [30, 0], [30, 20], [0, 20]],
+                  "props": {"floors": 9}}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "l.grado", "Legacy", feats)
+            self.assertEqual([L["layer_id"] for L in p.layers()],
+                             ["project.apo.buildings"])
+            p.close()
+
+
 class TestRolesTep(unittest.TestCase):
     """ТЭП по ролям слоёв, а не по литералам kind (шаг 4)."""
 

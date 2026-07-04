@@ -349,6 +349,37 @@ KIND_TO_CODE = {
     "parcel": "cad.parcel",
 }
 
+# Реестр слоёв (MODEL-01b): layer_id → семантический класс + метаданные.
+# Маршрутизация объекта холста в слой модели идёт по layer_id (не по kind);
+# kind остаётся транспортом СХЕМЫ атрибутов/геометрии (KIND_ATTRS/_geom_for).
+# Два слоя одного класса (source.fgistp.func_zones и project.tp.func_zone)
+# теперь живут раздельно. stage/style_id по умолчанию — из классификатора.
+LAYER_TEMPLATES = {
+    "project.territory.boundary": {"code": "terr.boundary"},
+    "project.tp.func_zone":       {"code": "tp.func_zone"},
+    "project.apo.public_zones":   {"code": "pp.placement_zone"},
+    "source.constraints.restrict": {"code": "terr.restrict"},
+    "source.nspd.parcels":        {"code": "cad.parcel"},
+    "project.apo.buildings":      {"code": "oks.building"},
+    "project.apo.red_lines":      {"code": "pp.red_line"},
+    "project.social.objects":     {"code": "social.object"},
+    "source.fgistp.func_zones":   {"code": "tp.func_zone", "stage": "existing",
+                                   "source_kind": "fgistp",
+                                   "title": "ФГИС ТП: функциональные зоны"},
+}
+# слой по умолчанию для kind (legacy-объекты без layer_id)
+_KIND_TO_LAYER = {"boundary": "project.territory.boundary",
+                  "restrict": "source.constraints.restrict",
+                  "zone": "project.tp.func_zone",
+                  "building": "project.apo.buildings",
+                  "redline": "project.apo.red_lines",
+                  "social": "project.social.objects",
+                  "public": "project.apo.public_zones",
+                  "parcel": "source.nspd.parcels"}
+# semantic_class → layer_id для round-trip (какой слой отдать при открытии)
+_CODE_TO_LAYER = {t["code"]: lid for lid, t in LAYER_TEMPLATES.items()
+                  if lid.startswith("project.")}
+
 KIND_ATTRS = {
     "boundary": lambda p: {"name": p.get("name", "Территория")},
     "restrict": lambda p: {"kind": p.get("kind", "ограничение")},
@@ -391,22 +422,39 @@ def _geom_for(feature):
     return {"type": "Polygon", "coordinates": [ring]}
 
 
+def _route(feature):
+    """(layer_id, template) объекта холста → слой модели.
+
+    По явному layer_id (реестр), иначе legacy по kind. Возвращает
+    (None, None) для объектов без слоя (напр. размеры-аннотации)."""
+    lid = feature.get("layer_id")
+    if lid in LAYER_TEMPLATES:
+        return lid, LAYER_TEMPLATES[lid]
+    lid = _KIND_TO_LAYER.get(feature.get("kind"))
+    return (lid, LAYER_TEMPLATES[lid]) if lid else (None, None)
+
+
 def build_project(path, name, features):
     project = Project.create(path, name)
-    layers = {}
+    made = {}  # layer_id → Layer
     for f in features:
-        code = KIND_TO_CODE.get(f["kind"])
-        if code is None:
+        lid, tmpl = _route(f)
+        if lid is None:
             continue
-        if code not in layers:
-            layers[code] = project.add_layer(code)
+        if lid not in made:
+            made[lid] = project.add_layer(
+                tmpl["code"], layer_id=lid, title=tmpl.get("title"),
+                stage=tmpl.get("stage"), style_id=tmpl.get("style_id"),
+                source_kind=tmpl.get("source_kind"))
         attrs = KIND_ATTRS[f["kind"]](f.get("props", {}))
-        # провенанс из импорта переносится в модель (source/date/doc)
+        # провенанс из импорта переносится в модель (source/date/doc),
+        # per-object стиль — в колонку style_id
         prov = f.get("prov") or {}
         source = prov.get("source") if prov.get("source") in _PROV_SOURCES else "manual"
-        layers[code].add_feature(
+        made[lid].add_feature(
             _geom_for(f), attrs=attrs, source=source,
-            source_date=prov.get("source_date"), source_doc=prov.get("source_doc"))
+            source_date=prov.get("source_date"), source_doc=prov.get("source_doc"),
+            style_id=f.get("style_id"))
     return project
 
 
@@ -523,7 +571,10 @@ def grado_to_features(path):
         kind = CODE_TO_KIND.get(info["code"])
         if kind is None:
             continue
-        for f in project.layer(info["code"]).features():
+        # layer_id из модели → холст; если слой не из реестра, отдаём его id
+        layer_id = info["layer_id"]
+        style_of_layer = info.get("style_id")
+        for f in project.layer_by_id(layer_id).features():
             geom = f["geom"]
             if not geom:
                 continue
@@ -537,7 +588,9 @@ def grado_to_features(path):
                 doc = f.get("source_doc") or ""
                 if doc.count("-") == 2 and doc.split("-")[0] in _PROV_SOURCES:
                     prov["snapshot"] = doc
-            base = {"kind": kind, "props": props}
+            base = {"kind": kind, "layer_id": layer_id, "props": props}
+            if f.get("style_id"):
+                base["style_id"] = f["style_id"]
             if prov:
                 base["prov"] = prov
             if geom["type"] == "Point":
@@ -601,7 +654,11 @@ def import_fgistp(payload):
             ring = _to_local(poly[0])
             if ring[0] == ring[-1]:
                 ring = ring[:-1]
-            features.append({"kind": "zone", "ring": ring, "props": {
+            # ФГИС ТП — исходные данные: в выделенный source-слой, НЕ в
+            # проектные зоны (MODEL-01b; kind zone нужен только для схемы)
+            features.append({"kind": "zone",
+                             "layer_id": "source.fgistp.func_zones",
+                             "ring": ring, "props": {
                 "zone_title": props.get("class_name")
                               or payload.get("grado_layer_name", "ФГИС ТП"),
                 "zone_code": str(props.get("uin") or uin or ""),

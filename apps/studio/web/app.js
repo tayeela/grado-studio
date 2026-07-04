@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.15.0";
+const VERSION = "0.16.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -35,41 +35,58 @@ const STYLES_V2 = {
   "dimension.line":     { stroke: "#44423c", width: 1 },
 };
 
-// Слой — главный объект управления. Порядок массива = порядок отрисовки
-// (первый — самый нижний). kind — legacy-мост к API ядра: остаётся на
-// объектах ради бэкенда и уходит на шаге 4 миграции.
+// Слой — главный объект управления (MODEL-01): id (идентичность) отделён
+// от semantic_class (класс классификатора). Порядок массива = порядок
+// отрисовки (первый — самый нижний). kind — транспорт схемы атрибутов до
+// полного снятия. import_only — слой не выбирается инструментами и не
+// перехватывает kind (объекты попадают в него только импортом по layer_id).
 const LAYERS_V2 = [
   { id: "project.tp.func_zone", title: "Функциональная зона", kind: "zone",
-    geometry_type: "polygon", style_id: "func_zone.fill", topology: "coverage",
+    semantic_class: "tp.func_zone", geometry_type: "polygon",
+    style_id: "func_zone.fill", topology: "coverage", stage: "existing",
     defaults: () => ({ zone_title: "Ж-" + (featuresOnLayer("project.tp.func_zone").length + 1) }) },
+  { id: "source.fgistp.func_zones", title: "ФГИС ТП: функц. зоны", kind: "zone",
+    semantic_class: "tp.func_zone", geometry_type: "polygon",
+    style_id: "func_zone.fill", stage: "existing", source_kind: "fgistp",
+    import_only: true, defaults: () => ({}) },
   { id: "project.apo.public_zones", title: "Зона нежилых ОКС", kind: "public",
-    geometry_type: "polygon", style_id: "public_zone.fill",
+    semantic_class: "pp.placement_zone", geometry_type: "polygon",
+    style_id: "public_zone.fill", stage: "project",
     defaults: () => ({ purpose: "Общественный центр" }) },
   { id: "source.constraints.restrict", title: "Ограничение (ЗОУИТ)", kind: "restrict",
-    geometry_type: "polygon", style_id: "restrict.hatch",
+    semantic_class: "terr.restrict", geometry_type: "polygon",
+    style_id: "restrict.hatch", stage: "existing",
     defaults: () => ({ kind: "охранная зона" }) },
   { id: "source.nspd.parcels", title: "Земельный участок (ЕГРН)", kind: "parcel",
-    geometry_type: "polygon", style_id: "parcel.line", defaults: () => ({}) },
+    semantic_class: "cad.parcel", geometry_type: "polygon",
+    style_id: "parcel.line", stage: "existing", source_kind: "nspd",
+    defaults: () => ({}) },
   { id: "project.apo.buildings", title: "Здание", kind: "building",
-    geometry_type: "polygon", style_id: "building.fill", tool: "rect",
+    semantic_class: "oks.building", geometry_type: "polygon",
+    style_id: "building.fill", stage: "project", tool: "rect",
     defaults: () => ({ floors: 9, purpose: "МКД" }) },
   { id: "project.apo.red_lines", title: "Красная линия", kind: "redline",
-    geometry_type: "polyline", style_id: "red.line.projected",
+    semantic_class: "pp.red_line", geometry_type: "polyline",
+    style_id: "red.line.projected", stage: "project",
     defaults: () => ({ radius: 0 }) },
   { id: "project.territory.boundary", title: "Граница территории", kind: "boundary",
-    geometry_type: "polygon", style_id: "boundary.line", defaults: () => ({}) },
+    semantic_class: "terr.boundary", geometry_type: "polygon",
+    style_id: "boundary.line", stage: "base", defaults: () => ({}) },
   { id: "project.social.objects", title: "Объект социнфраструктуры", kind: "social",
-    geometry_type: "point", style_id: "social.point",
+    semantic_class: "social.object", geometry_type: "point",
+    style_id: "social.point", stage: "project",
     defaults: () => ({ kind: "ОО+ДОО", capacity: 750 }) },
   { id: "annotation.dimensions", title: "Размер", kind: "dim",
-    geometry_type: "polyline", style_id: "dimension.line", annotation: true,
-    tool: "dim", defaults: () => ({}) },
+    semantic_class: null, geometry_type: "polyline", style_id: "dimension.line",
+    annotation: true, tool: "dim", defaults: () => ({}) },
 ];
 const LAYER_BY_ID = {}, LAYER_BY_KIND = {};
 for (const L of LAYERS_V2) {
   L.visible = true;
   LAYER_BY_ID[L.id] = L;
-  LAYER_BY_KIND[L.kind] = L;
+  // import-only слои не становятся дефолтом для kind (иначе нарисованная
+  // вручную зона ушла бы в ФГИС-ТП-слой): первый не-import_only выигрывает
+  if (!L.import_only && !(L.kind in LAYER_BY_KIND)) LAYER_BY_KIND[L.kind] = L;
 }
 
 // Стили выше — встроенный fallback; на старте они переопределяются из
@@ -946,6 +963,8 @@ function renderLayers() {
   el.innerHTML = "";
   for (const layer of LAYERS_V2) {
     const count = featuresOnLayer(layer.id).length;
+    // import-only слой (напр. ФГИС ТП) появляется в панели только с объектами
+    if (layer.import_only && !count) continue;
     const st = STYLES_V2[layer.style_id] || {};
     const row = document.createElement("div");
     row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "");

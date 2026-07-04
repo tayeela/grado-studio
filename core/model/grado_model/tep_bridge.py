@@ -13,7 +13,9 @@ def collect_inputs(project):
         cls = project.classifier.get(info["code"])
         if not cls.tep_role:
             continue
-        layer = project.layer(info["code"])
+        # суммируем по слоям (layer_id), не по коду: несколько слоёв одного
+        # класса не должны схлопываться в один
+        layer = project.layer_by_id(info["layer_id"])
         inputs[cls.tep_role] = inputs.get(cls.tep_role, 0.0) + layer.area_ha()
     return inputs
 
