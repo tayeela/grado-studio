@@ -1,17 +1,20 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ГРАДО Студия</title>
+<link rel="stylesheet" href="tokens.css">
+<script src="canvas-theme.js"></script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="errbar" style="display:none;background:#b3261e;color:#fff;padding:6px 12px;font-size:12px;"></div>
+<div id="errbar" style="display:none;"></div>
 <header>
   <div class="logo">ГРАДО <span>Студия</span></div>
   <input id="project-name" value="Концепция развития территории" spellcheck="false">
   <div class="spacer"></div>
+  <button id="btn-theme" title="Светлая / тёмная тема">◐</button>
   <button id="btn-undo" title="Отменить (Cmd+Z)">↶</button>
   <button id="btn-redo" title="Вернуть (Cmd+Shift+Z)">↷</button>
   <button id="btn-demo" title="Заполнить примером">Демо</button>
@@ -95,7 +98,7 @@
   <span id="st-snap"></span>
   <span id="st-core">ядро: …</span>
   <span id="st-bridge"></span>
-  <span id="st-toast" style="color:#12a150;font-weight:600"></span>
+  <span id="st-toast"></span>
   <span class="spacer"></span>
   <span id="st-hint">V — выбор · G Z O B P L S — быстрые слои · инструмент чертит на активный слой (клик по имени в панели «Слои») · Shift — орто · цифры+Enter — длина · R — поворот · ⌘D — дубликат · F — вписать · X/C — привязки · Esc — отмена</span>
 </footer>

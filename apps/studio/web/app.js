@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.23.1";
+const VERSION = "0.24.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -20,6 +20,13 @@ function on(id, event, fn) {
 
 const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
+
+// Цвет отрисовки холста из палитры темы (canvas-theme.js). Fallback — если
+// tokens/canvas-theme не загрузились (оффлайн-надёжность): прежние значения.
+function cvColor(key, fallback) {
+  const v = (window.CANVAS_THEME || {})[key];
+  return v || fallback;
+}
 
 // ---------- модель v2: слои и стили (docs/fixes-geometry-layout.md, шаг 1) ----------
 // Стиль — данные (JSON-совместимые): подпись задаётся именем поля, не функцией.
@@ -664,17 +671,18 @@ function drawGrid(w, h) {
   const px = g * state.view.k;
   // крупные линии каждые 5 шагов
   ctx.lineWidth = 1;
+  const gridAxis = cvColor("label", "#d5d2ca"), gridLine = cvColor("grid", "#eceae5");
   for (let x = Math.floor(wx0 / (g * 5)) * g * 5; x <= wx1; x += g * 5) {
-    ctx.strokeStyle = x === 0 ? "#d5d2ca" : "#eceae5";
+    ctx.strokeStyle = x === 0 ? gridAxis : gridLine;
     ctx.beginPath(); ctx.moveTo(...w2s(x, wy0)); ctx.lineTo(...w2s(x, wy1)); ctx.stroke();
   }
   for (let y = Math.floor(wy0 / (g * 5)) * g * 5; y <= wy1; y += g * 5) {
-    ctx.strokeStyle = y === 0 ? "#d5d2ca" : "#eceae5";
+    ctx.strokeStyle = y === 0 ? gridAxis : gridLine;
     ctx.beginPath(); ctx.moveTo(...w2s(wx0, y)); ctx.lineTo(...w2s(wx1, y)); ctx.stroke();
   }
   // точки в узлах мелкого шага (как в Rayon)
   if (px >= 11) {
-    ctx.fillStyle = "#c9c6bd";
+    ctx.fillStyle = cvColor("grid", "#c9c6bd");
     for (let x = Math.floor(wx0 / g) * g; x <= wx1; x += g)
       for (let y = Math.floor(wy0 / g) * g; y <= wy1; y += g) {
         const [sx, sy] = w2s(x, y);
@@ -690,7 +698,7 @@ function drawSnapMarker() {
   if (!s || !s.kind || state.tool === "select") return;
   const [sx, sy] = w2s(...s.p);
   ctx.lineWidth = 1.5;
-  ctx.strokeStyle = "#12a150";
+  ctx.strokeStyle = cvColor("shared", "#12a150");
   if (s.kind === "вершина") ctx.strokeRect(sx - 5, sy - 5, 10, 10);
   else if (s.kind === "середина") {
     ctx.beginPath(); ctx.moveTo(sx, sy - 6); ctx.lineTo(sx + 6, sy + 5); ctx.lineTo(sx - 6, sy + 5);
@@ -704,7 +712,7 @@ function drawSnapMarker() {
   } else if (s.kind === "выравнивание" || s.kind === "орто") {
     ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 7); ctx.stroke();
   } else if (s.kind === "сетка") {
-    ctx.strokeStyle = "#9a978f";
+    ctx.strokeStyle = cvColor("label", "#9a978f");
     ctx.beginPath();
     ctx.moveTo(sx - 4, sy); ctx.lineTo(sx + 4, sy);
     ctx.moveTo(sx, sy - 4); ctx.lineTo(sx, sy + 4); ctx.stroke();
@@ -903,7 +911,7 @@ function draw() {
       if (layerOf(f) !== layer) continue;
       const st = styleOf(f);
       ctx.setLineDash(st.dash || []);
-      ctx.lineWidth = st.width; ctx.strokeStyle = st.stroke || "#000";
+      ctx.lineWidth = st.width; ctx.strokeStyle = st.stroke || cvColor("boundary", "#000");
       if (layer.kind === "dim" && f.line) {
         // размерная линия: засечки 45° на концах + длина вдоль линии
         const [ax, ay] = w2s(...f.line[0]);
@@ -946,11 +954,11 @@ function draw() {
         if (st.line_marker && (f.ring || f.line)) {
           const inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
           drawLineMarkers(f.ring || f.line, st.line_marker,
-                          st.stroke || "#df0024", !!f.ring, inw);
+                          st.stroke || cvColor("redline", "#df0024"), !!f.ring, inw);
         }
         if (st.line_label) {
           const pts = f.ring ? [...f.ring, f.ring[0]] : f.line;
-          drawLineLabel(pts, st.line_label, st.stroke || "#d91a1a");
+          drawLineLabel(pts, st.line_label, st.stroke || cvColor("redline", "#d91a1a"));
         }
       }
       ctx.setLineDash([]);
@@ -958,22 +966,24 @@ function draw() {
         const c = f.ring.reduce((a, p) => [a[0] + p[0] / f.ring.length, a[1] + p[1] / f.ring.length], [0, 0]);
         const v = labelOf(f);
         if (v !== undefined && v !== "" && v !== null) {
-          ctx.fillStyle = "#5c5a54"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+          ctx.fillStyle = cvColor("label", "#5c5a54"); ctx.font = "11px sans-serif"; ctx.textAlign = "center";
           ctx.fillText(String(v), ...w2s(...c));
         }
       }
       if (f.id === state.selected) {
-        ctx.strokeStyle = "#2f6fde"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = cvColor("selection", "#2f6fde"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
         const shared = sharedVertexSet(f);
+        const shFill = cvColor("shared", "#12a150"), vxStroke = cvColor("vertex", "#2f6fde");
+        const handleBg = cvColor("bg", "#fff");
         featurePts(f).forEach((p, i) => {
           const [sx, sy] = w2s(...p);
           const isShared = shared.has(i);
           // зелёная ручка — вершина общая с соседней зоной, тянется совместно
-          ctx.fillStyle = isShared ? "#12a150" : "#fff";
-          ctx.strokeStyle = isShared ? "#0c6b36" : "#2f6fde";
+          ctx.fillStyle = isShared ? shFill : handleBg;
+          ctx.strokeStyle = isShared ? shFill : vxStroke;
           ctx.lineWidth = 1.2;
           ctx.fillRect(sx - 3, sy - 3, 6, 6); ctx.strokeRect(sx - 3, sy - 3, 6, 6);
         });
@@ -985,8 +995,8 @@ function draw() {
   for (const f of state.features) {
     if (f.kind !== "redline" || !(f.props.pk_step > 0) || !f.props._stations) continue;
     if (isHidden(f)) continue;
-    ctx.strokeStyle = "#d91a1a"; ctx.lineWidth = 1;
-    ctx.fillStyle = "#8c1414"; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
+    ctx.strokeStyle = cvColor("redline", "#d91a1a"); ctx.lineWidth = 1;
+    ctx.fillStyle = cvColor("redline", "#8c1414"); ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
     for (const st of f.props._stations) {
       const [sx, sy] = w2s(st.x, st.y);
       const nx = -Math.sin(st.a), ny = Math.cos(st.a);   // нормаль к касательной
@@ -1001,7 +1011,7 @@ function draw() {
 
   // направляющие выравнивания
   if (state.guides.length) {
-    ctx.strokeStyle = "#12a150"; ctx.lineWidth = 0.8; ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = cvColor("shared", "#12a150"); ctx.lineWidth = 0.8; ctx.setLineDash([4, 4]);
     for (const [a, b] of state.guides) { drawChain([a, b], false); ctx.stroke(); }
     ctx.setLineDash([]);
   }
@@ -1009,7 +1019,7 @@ function draw() {
   // черчение в процессе + живой размер
   if (state.drawing && state.drawing.pts.length) {
     const st = styleForDrawing();
-    ctx.strokeStyle = st.stroke || "#000"; ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
+    ctx.strokeStyle = st.stroke || cvColor("boundary", "#000"); ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
     const pts = state.mouse ? [...state.drawing.pts, state.mouse] : state.drawing.pts;
     drawChain(pts, false); ctx.stroke(); ctx.setLineDash([]);
     const base = lastDrawingPt();
@@ -1018,12 +1028,12 @@ function draw() {
       const [mx, my] = w2s(...state.mouse);
       ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
       if (state.typed) {
-        ctx.fillStyle = "#1c1c1a";
+        ctx.fillStyle = cvColor("selection", "#1c1c1a");
         ctx.fillRect(mx + 10, my - 24, ctx.measureText(state.typed + " м").width + 12, 18);
         ctx.fillStyle = "#fff";
         ctx.fillText(state.typed + " м", mx + 16, my - 11);
       } else {
-        ctx.fillStyle = "#8b8a85";
+        ctx.fillStyle = cvColor("label", "#8b8a85");
         ctx.fillText(len.toFixed(1) + " м", mx + 12, my - 10);
       }
     }
@@ -1032,7 +1042,7 @@ function draw() {
       const first = state.drawing.pts[0];
       if (Math.hypot(first[0] - state.mouse[0], first[1] - state.mouse[1]) < 12 / state.view.k) {
         const [fx, fy] = w2s(...first);
-        ctx.strokeStyle = "#12a150"; ctx.lineWidth = 2;
+        ctx.strokeStyle = cvColor("shared", "#12a150"); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(fx, fy, 8, 0, 7); ctx.stroke();
       }
     }
@@ -1041,11 +1051,11 @@ function draw() {
     const { a, b } = state.drag;
     const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
     const bst = styleForDrawing();
-    ctx.strokeStyle = bst.stroke || "#888";
-    ctx.fillStyle = (bst.fill || "#cccccc") + "88";
+    ctx.strokeStyle = bst.stroke || cvColor("label", "#888");
+    ctx.fillStyle = (bst.fill || cvColor("zoneB", "#cccccc")) + (bst.fill ? "88" : "");
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
-    ctx.fillStyle = "#5c5a54"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
+    ctx.fillStyle = cvColor("label", "#5c5a54"); ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
     ctx.fillText(`${Math.abs(b[0] - a[0]).toFixed(1)} × ${Math.abs(b[1] - a[1]).toFixed(1)} м`,
                  Math.max(sx1, sx2) + 8, Math.min(sy1, sy2) - 6);
   }
@@ -1054,11 +1064,11 @@ function draw() {
     const a = state.measure.a;
     const b = state.measure.b || state.mouse;
     if (b) {
-      ctx.strokeStyle = "#2f6fde"; ctx.lineWidth = 1.2; ctx.setLineDash([6, 3]);
+      ctx.strokeStyle = cvColor("selection", "#2f6fde"); ctx.lineWidth = 1.2; ctx.setLineDash([6, 3]);
       drawChain([a, b], false); ctx.stroke(); ctx.setLineDash([]);
       const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const [mx, my] = w2s((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
-      ctx.fillStyle = "#2f6fde"; ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
+      ctx.fillStyle = cvColor("selection", "#2f6fde"); ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
       ctx.fillText(dist.toFixed(1) + " м", mx, my - 6);
     }
   }
@@ -1191,9 +1201,9 @@ function renderTep(data) {
   let zonesHtml = "";
   if (data.zones) {
     zonesHtml = data.zones.ok
-      ? `<div class="tep-row" style="color:#0d7a3f"><span>Зонирование: покрытие корректно</span>
+      ? `<div class="tep-row" style="color:var(--success)"><span>Зонирование: покрытие корректно</span>
            <span class="v">${data.zones.total_ha} <small>га · общих границ ${data.zones.shared_edges}</small></span></div>`
-      : `<div class="tep-row" style="color:#b3541e"><span>Зонирование: ${data.zones.error}</span><span></span></div>`;
+      : `<div class="tep-row" style="color:var(--warning)"><span>Зонирование: ${data.zones.error}</span><span></span></div>`;
   }
   fact.innerHTML = `<div class="tep-row"><span>По посадке зданий</span><span></span></div>
     <div class="tep-row"><span>СПП факт</span><span class="v">${data.fact.spp} <small>тыс. м²</small></span></div>
@@ -2345,6 +2355,10 @@ window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
 on("btn-new-layer", "click", openNewLayerDialog);
+// переключатель темы (canvas-theme.js): смена темы → перечитать палитру
+// холста и перерисовать. Тема на <html> уже выставлена до загрузки app.js.
+on("btn-theme", "click", () => { if (window.toggleTheme) window.toggleTheme(); });
+window.onThemeChange = () => { draw(); renderLayers(); };
 setTool("select");
 renderLayers();
 renderSources();
