@@ -1,0 +1,20 @@
+{
+  "_doc": "Декларативные наборы слоёв (LayerSet) для листов альбома АГК (docs/fixes-geometry-layout.md, шаг 5). Лист ссылается на имя набора, не на список кодов. Набор задаётся либо явным списком codes (в нужном порядке), либо фильтром по стадии слоя (exclude_stages/include_stages из классификатора: base/existing/project). Пустой объект — все слои проекта.",
+  "layersets": {
+    "location": {
+      "title": "Расположение территории",
+      "codes": ["terr.boundary"]
+    },
+    "ortho": {
+      "title": "Ортофотоплан",
+      "codes": ["terr.boundary", "cad.parcel"]
+    },
+    "existing_position": {
+      "title": "Существующее положение",
+      "exclude_stages": ["project"]
+    },
+    "apo": {
+      "title": "Архитектурно-планировочная организация"
+    }
+  }
+}

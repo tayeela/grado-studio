@@ -465,6 +465,46 @@ class TestRolesTep(unittest.TestCase):
         self.assertAlmostEqual(more - base, 20.0, places=1)
 
 
+class TestLayerSets(unittest.TestCase):
+    """Наборы слоёв листов (шаг 5): существующее положение без проекта."""
+
+    def test_existing_position_excludes_project_layers(self):
+        from grado_wizard.sheets import layerset_codes
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "ls.grado", "Набор", FEATURES)
+            try:
+                existing = set(layerset_codes(p, "existing_position"))
+                apo = set(layerset_codes(p, "apo"))
+            finally:
+                p.close()
+        # проектные слои не попадают в существующее положение
+        for code in ("oks.building", "pp.red_line"):
+            self.assertNotIn(code, existing)
+            self.assertIn(code, apo)
+        # исходные — попадают
+        self.assertIn("terr.boundary", existing)
+        self.assertIn("tp.func_zone", existing)
+
+    def test_base_plan_draws_no_buildings(self):
+        # критерий шага 5: лист «Существующее положение» из исходных слоёв
+        from grado_render import StyleSet, build_ops, hex_to_rgb
+        from grado_wizard.sheets import (MAP_RECT, fit_scale, layerset_codes)
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "ls.grado", "Набор", FEATURES)
+            try:
+                codes = layerset_codes(p, "existing_position")
+                ops = build_ops(p, MAP_RECT, fit_scale(p),
+                                styles=StyleSet(), only=codes)
+                ops_all = build_ops(p, MAP_RECT, fit_scale(p), styles=StyleSet())
+            finally:
+                p.close()
+        bld = hex_to_rgb("#f5c76b")  # заливка зданий
+        fills = [o.get("fill") for o in ops if o["op"] == "path"]
+        self.assertNotIn(bld, fills, "здание не рисуется на опорном плане")
+        # на полном виде (АПО) здания есть — набор реально фильтрует
+        self.assertIn(bld, [o.get("fill") for o in ops_all if o["op"] == "path"])
+
+
 class TestStyleLibrary(unittest.TestCase):
     """Единая библиотека стилей (шаг 3): один JSON — холст, PDF и DXF."""
 

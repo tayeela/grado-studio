@@ -4,7 +4,9 @@
 внизу, карта слева, правая колонка с легендой/таблицами, выноски.
 """
 
+import json
 import math
+from pathlib import Path
 
 from grado_layout import (A3_LANDSCAPE, CalloutFrame, MapFrame, Page,
                           SectionedLegendFrame, SheetHeader, TableFrame,
@@ -14,6 +16,38 @@ from grado_render import project_extent
 MAP_RECT = (12, 10, 280, 277)
 RIGHT_X, RIGHT_W = 302, 106
 NICE_SCALES = [500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000]
+
+# Наборы слоёв листов — декларативно из JSON (шаг 5): лист ссылается на
+# имя набора, а не на список кодов.
+_TEMPLATES = json.loads(
+    (Path(__file__).parent / "album_templates.json").read_text(encoding="utf-8"))
+
+
+def layerset_codes(project, name):
+    """Коды слоёв набора name, присутствующие в проекте.
+
+    Набор задан явным списком codes или фильтром по стадии слоя
+    (exclude_stages/include_stages из классификатора). Пустой набор — все
+    слои. Возвращает список кодов; порядок отрисовки всё равно задаёт z."""
+    spec = _TEMPLATES["layersets"].get(name, {})
+    present = [i["code"] for i in project.layers()]
+    if "codes" in spec:
+        return [c for c in spec["codes"] if c in present]
+    excl, incl = set(spec.get("exclude_stages", [])), set(spec.get("include_stages", []))
+    if not excl and not incl:
+        return present
+    out = []
+    for code in present:
+        try:
+            stage = project.classifier.get(code).stage
+        except Exception:
+            stage = None
+        if excl and stage in excl:
+            continue
+        if incl and stage not in incl:
+            continue
+        out.append(code)
+    return out
 
 
 def fit_scale(project, rect=MAP_RECT, margin=1.12):
@@ -57,16 +91,36 @@ def location_sheet(doc, project, area_ha, page_no):
          "в границах участков правообладателя"], size=2.8)
     page.frames = [
         SheetHeader(page, ["Расположение рассматриваемой", "территории"], page_no),
-        MapFrame(MAP_RECT, scale=scale, layers=["terr.boundary"]),
+        MapFrame(MAP_RECT, scale=scale, layers=layerset_codes(project, "location")),
         legend, annotation]
     return page
+
+
+def _source_table(project, codes, rect):
+    """Таблица источников листа существующего положения: слой → объектов →
+    стадия. Прообраз провенанса (полная фиксация снимков — шаг 6)."""
+    STAGE_RU = {"base": "основа", "existing": "исходные данные",
+                "project": "проект"}
+    rows = []
+    for code in codes:
+        cls = project.classifier.get(code)
+        cnt = project.layer(code).count()
+        if cnt:
+            rows.append((cls.title, str(cnt), STAGE_RU.get(cls.stage, "—")))
+    if not rows:
+        return None
+    return TableFrame(rect,
+                      [("Слой", 66, "left"), ("Об.", 14, "right"),
+                       ("Источник", 26, "left")],
+                      rows, title="Источники данных")
 
 
 def base_plan_sheet(doc, project, page_no):
     page = Page(A3_LANDSCAPE)
     st = doc.styles.resolve
+    codes = layerset_codes(project, "existing_position")
     legend = SectionedLegendFrame(
-        (RIGHT_X, 40, RIGHT_W, 150),
+        (RIGHT_X, 40, RIGHT_W, 120),
         [("Границы:", [
             ("line", st("terr.boundary"), "территории разработки"),
             ("line", st("cad.parcel"), "земельных участков ЕГРН")]),
@@ -75,12 +129,14 @@ def base_plan_sheet(doc, project, page_no):
             ("fill", st("terr.restrict"), "территории, не подлежащие застройке")]),
          ("Существующее положение:", [
             ("fill", st("tp.func_zone"), "функциональные зоны генплана")])])
-    page.frames = [
+    frames = [
         SheetHeader(page, ["Опорный план.", "Существующее положение"], page_no),
-        MapFrame(MAP_RECT, scale=fit_scale(project),
-                 layers=["terr.boundary", "terr.restrict", "cad.zouit",
-                         "cad.parcel", "tp.func_zone"]),
+        MapFrame(MAP_RECT, scale=fit_scale(project), layers=codes),
         legend]
+    src = _source_table(project, codes, (RIGHT_X, 170, RIGHT_W, 100))
+    if src:
+        frames.append(src)
+    page.frames = frames
     return page
 
 
@@ -100,7 +156,7 @@ def ortho_sheet(doc, project, page_no, underlay, attribution=""):
         SheetHeader(page, ["Ортофотоплан", "рассматриваемой территории"],
                     page_no),
         MapFrame(MAP_RECT, scale=fit_scale(project),
-                 layers=["terr.boundary", "cad.parcel"], underlay=underlay),
+                 layers=layerset_codes(project, "ortho"), underlay=underlay),
         legend, note]
     return page
 
@@ -188,7 +244,7 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
     page.frames = [
         SheetHeader(page, ["Схема архитектурно-планировочной",
                            "организации территории"], page_no),
-        MapFrame(MAP_RECT, scale=scale),
+        MapFrame(MAP_RECT, scale=scale, layers=layerset_codes(project, "apo")),
         *frames, legend, tep]
     return page
 
