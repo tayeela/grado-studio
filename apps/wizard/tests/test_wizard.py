@@ -6,7 +6,71 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from grado_wizard import TerritoryWizard, demo_boundary, ring_area_ha  # noqa: E402
+from grado_wizard.sheets import _source_table, layerset_layers  # noqa: E402
 from grado_layout import document_pages_ops  # noqa: E402
+from grado_model import Project  # noqa: E402
+from grado_render import StyleSet  # noqa: E402
+
+_Z = {"type": "Polygon", "coordinates": [[
+    [413000, 6178000], [413200, 6178000], [413200, 6178150],
+    [413000, 6178150], [413000, 6178000]]]}
+_B = {"type": "Polygon", "coordinates": [[
+    [413000, 6178000], [413500, 6178000], [413500, 6178300],
+    [413000, 6178300], [413000, 6178000]]]}
+
+
+class TestSameClassLayers(unittest.TestCase):
+    """MODEL-01: два слоя одного класса — источники/легенда без дублей,
+    счётчики берутся с нужного слоя (регресс на layer(code) LIMIT 1)."""
+
+    def _project(self, tmp):
+        p = Project.create(Path(tmp) / "sc.grado", "Два слоя")
+        p.add_layer("terr.boundary", layer_id="project.territory.boundary")
+        p.add_layer("tp.func_zone", layer_id="project.tp.func_zone",
+                    title="ФЗ проектные")
+        p.add_layer("tp.func_zone", layer_id="source.fgistp.func_zones",
+                    stage="existing", source_kind="fgistp", title="ФГИС ТП: зоны")
+        p.layer_by_id("project.territory.boundary").add_feature(_B, attrs={"name": "Гр"})
+        p.layer_by_id("project.tp.func_zone").add_feature(_Z, attrs={"zone_title": "Ж-пр"})
+        p.layer_by_id("source.fgistp.func_zones").add_feature(_Z, attrs={"zone_title": "Ж1"})
+        p.layer_by_id("source.fgistp.func_zones").add_feature(_Z, attrs={"zone_title": "Ж2"})
+        return p
+
+    def test_layerset_no_duplicate_layer_ids(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = self._project(tmp)
+            try:
+                lids = layerset_layers(p, "existing_position")
+            finally:
+                p.close()
+        self.assertEqual(len(lids), len(set(lids)), "нет дублей layer_id")
+        self.assertIn("project.tp.func_zone", lids)
+        self.assertIn("source.fgistp.func_zones", lids)
+
+    def test_source_table_per_layer_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = self._project(tmp)
+            try:
+                lids = layerset_layers(p, "existing_position")
+                rows = _source_table(p, lids, (0, 0, 106, 100)).rows
+            finally:
+                p.close()
+        counts = {name: cnt for name, cnt, _ in rows}
+        self.assertEqual(counts.get("ФЗ проектные"), "1", "счётчик проектного слоя")
+        self.assertEqual(counts.get("ФГИС ТП: зоны"), "2", "счётчик исходного слоя")
+        titles = [name for name, _, _ in rows]
+        self.assertEqual(len(titles), len(set(titles)), "нет дублирующих строк")
+
+    def test_legend_entries_both_same_class_layers(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = self._project(tmp)
+            try:
+                titles = [t for _, t, _ in StyleSet().legend_entries(p)]
+            finally:
+                p.close()
+        # оба слоя класса tp.func_zone в легенде, ни один не потерян
+        self.assertIn("ФЗ проектные", titles)
+        self.assertIn("ФГИС ТП: зоны", titles)
 
 
 class TestWizard(unittest.TestCase):

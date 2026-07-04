@@ -622,32 +622,32 @@ class TestLayerSets(unittest.TestCase):
     """Наборы слоёв листов (шаг 5): существующее положение без проекта."""
 
     def test_existing_position_excludes_project_layers(self):
-        from grado_wizard.sheets import layerset_codes
+        from grado_wizard.sheets import layerset_layers
         with tempfile.TemporaryDirectory() as tmp:
             p = studio_core.build_project(Path(tmp) / "ls.grado", "Набор", FEATURES)
             try:
-                existing = set(layerset_codes(p, "existing_position"))
-                apo = set(layerset_codes(p, "apo"))
+                existing = set(layerset_layers(p, "existing_position"))
+                apo = set(layerset_layers(p, "apo"))
             finally:
                 p.close()
-        # проектные слои не попадают в существующее положение
-        for code in ("oks.building", "pp.red_line"):
-            self.assertNotIn(code, existing)
-            self.assertIn(code, apo)
+        # проектные слои (по layer_id) не попадают в существующее положение
+        for lid in ("project.apo.buildings", "project.apo.red_lines"):
+            self.assertNotIn(lid, existing)
+            self.assertIn(lid, apo)
         # исходные — попадают
-        self.assertIn("terr.boundary", existing)
-        self.assertIn("tp.func_zone", existing)
+        self.assertIn("project.territory.boundary", existing)
+        self.assertIn("project.tp.func_zone", existing)
 
     def test_base_plan_draws_no_buildings(self):
         # критерий шага 5: лист «Существующее положение» из исходных слоёв
         from grado_render import StyleSet, build_ops, hex_to_rgb
-        from grado_wizard.sheets import (MAP_RECT, fit_scale, layerset_codes)
+        from grado_wizard.sheets import (MAP_RECT, fit_scale, layerset_layers)
         with tempfile.TemporaryDirectory() as tmp:
             p = studio_core.build_project(Path(tmp) / "ls.grado", "Набор", FEATURES)
             try:
-                codes = layerset_codes(p, "existing_position")
+                layer_ids = layerset_layers(p, "existing_position")
                 ops = build_ops(p, MAP_RECT, fit_scale(p),
-                                styles=StyleSet(), only=codes)
+                                styles=StyleSet(), only=layer_ids)
                 ops_all = build_ops(p, MAP_RECT, fit_scale(p), styles=StyleSet())
             finally:
                 p.close()

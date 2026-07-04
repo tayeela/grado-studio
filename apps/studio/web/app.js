@@ -1378,6 +1378,12 @@ function setTool(tool, opts = {}) {
 function setActiveLayer(id) {
   const L = LAYER_BY_ID[id];
   if (!L) return;
+  // import-only (источник) и аннотационные слои — не цели рисования: иначе
+  // объект молча уходил бы в проектный слой (LAYER_BY_KIND по kind)
+  if (L.import_only || L.annotation) {
+    toast(`Слой «${L.title}» заполняется только импортом — рисовать в него нельзя`);
+    return;
+  }
   state.activeLayerId = id;
   state.drawing = null; state.typed = "";
   // несовместимый инструмент — переключается на естественный для слоя

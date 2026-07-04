@@ -83,10 +83,14 @@ class StyleSet:
         return self.styles.get(code, FALLBACK)
 
     def legend_entries(self, project):
-        """Записи легенды для слоёв, реально присутствующих в проекте."""
+        """Записи легенды для непустых слоёв проекта.
+
+        Считаем по layer_id (не по коду класса): два слоя одного класса —
+        две записи со своими названиями и верными счётчиками, без дублей и
+        обращения к чужому слою."""
         entries = []
         for info in project.layers():
-            if project.layer(info["code"]).count() == 0:
+            if project.layer_by_id(info["layer_id"]).count() == 0:
                 continue
             entries.append((info["code"], info["title"], self.resolve(info["code"])))
         return entries

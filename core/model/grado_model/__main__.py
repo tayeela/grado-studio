@@ -53,7 +53,7 @@ def print_info(p):
     print(f"Файл: {p.path}")
     print("Слои:")
     for info in p.layers():
-        layer = p.layer(info["code"])
+        layer = p.layer_by_id(info["layer_id"])  # по слою, не по коду класса
         cls = p.classifier.get(info["code"])
         extra = ""
         if cls.geom_type in ("Polygon", "MultiPolygon"):
@@ -61,7 +61,8 @@ def print_info(p):
         elif cls.geom_type in ("LineString", "MultiLineString"):
             extra = f", {layer.length_m():.0f} м"
         role = f"  [ТЭП: {cls.tep_role}]" if cls.tep_role else ""
-        print(f"  {info['code']:<18} {info['title']}: {layer.count()} объект(ов){extra}{role}")
+        print(f"  {info['layer_id']:<26} {info['title']}: "
+              f"{layer.count()} объект(ов){extra}{role}")
 
 
 def print_tep(p):
