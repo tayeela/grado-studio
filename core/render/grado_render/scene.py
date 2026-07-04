@@ -141,24 +141,25 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
         lines.append([[px + nx * s, py + ny * s],
                       [px + nx * s + tx * s, py + ny * s + ty * s]])
     elif shape in ("chevron", "chevron_dot"):
-        # вершина «∨» на линии, зубец уходит внутрь зоны на size,
-        # плечи расходятся к линии на ±0.5·size (как в образце Эталона)
+        # острый угол (апекс) НА линии, плечи расходятся наружу на size
+        # (Эталон: зубец остриём на границе, тело — снаружи зоны)
         w2 = s * 0.5
-        apex = (px + nx * s, py + ny * s)
-        lines.append([[px - tx * w2, py - ty * w2], list(apex)])
-        lines.append([list(apex), [px + tx * w2, py + ty * w2]])
+        apex = (px, py)
+        lines.append([[px + nx * s - tx * w2, py + ny * s - ty * w2], list(apex)])
+        lines.append([list(apex), [px + nx * s + tx * w2, py + ny * s + ty * w2]])
         if shape == "chevron_dot":
             hx = px + tx * period / 2 + nx * s * 0.5
             hy = py + ty * period / 2 + ny * s * 0.5
             ops.append({"op": "circle", "x": hx, "y": hy, "r": s * 0.15,
                         "fill": stroke, "stroke": None, "width": width})
     elif shape == "triangle":
+        # острый угол НА линии, основание наружу
         b = s * 0.5
         ops.append({"op": "path", "closed": True, "fill": stroke,
                     "stroke": None, "width": width, "dash": None,
-                    "rings": [[[px - tx * b, py - ty * b],
-                               [px + tx * b, py + ty * b],
-                               [px + nx * s, py + ny * s]]]})
+                    "rings": [[[px, py],
+                               [px + nx * s - tx * b, py + ny * s - ty * b],
+                               [px + nx * s + tx * b, py + ny * s + ty * b]]]})
     elif shape == "dot":
         ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
                     "fill": stroke, "stroke": None, "width": width})

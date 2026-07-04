@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.25.1";
+const VERSION = "0.25.2";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -775,10 +775,11 @@ function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
       ctx.lineTo(px + nx * s + tx * s, py + ny * s + ty * s);
       ctx.stroke(); break;
     case "chevron": case "chevron_dot": {
-      const w2 = s * 0.5;   // вершина на линии, плечи к линии на ±0.5·size
-      ctx.moveTo(px - tx * w2, py - ty * w2);
-      ctx.lineTo(px + nx * s, py + ny * s);
-      ctx.lineTo(px + tx * w2, py + ty * w2);
+      // острый угол (апекс) НА линии, плечи расходятся наружу (Эталон)
+      const w2 = s * 0.5;
+      ctx.moveTo(px + nx * s - tx * w2, py + ny * s - ty * w2);
+      ctx.lineTo(px, py);
+      ctx.lineTo(px + nx * s + tx * w2, py + ny * s + ty * w2);
       ctx.stroke();
       if (shape === "chevron_dot") {
         ctx.beginPath();
@@ -789,10 +790,11 @@ function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
       break;
     }
     case "triangle": {
+      // острый угол НА линии, основание наружу (Эталон)
       const b = s * 0.5;
-      ctx.moveTo(px - tx * b, py - ty * b);
-      ctx.lineTo(px + tx * b, py + ty * b);
-      ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + nx * s - tx * b, py + ny * s - ty * b);
+      ctx.lineTo(px + nx * s + tx * b, py + ny * s + ty * b);
       ctx.closePath(); ctx.fill(); break;
     }
     case "dot":
