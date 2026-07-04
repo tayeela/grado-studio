@@ -787,6 +787,34 @@ class TestGisogdImport(unittest.TestCase):
         self.assertIsNone(out["diff"], "первый импорт — без diff")
         self.assertEqual(len(studio_core.sources_journal()), 1)
 
+    def test_recognized_member_gets_exact_lgr_style(self):
+        # без точного совпадения — общий restrict.hatch (как раньше)
+        poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
+        generic = studio_core.import_gisogd(
+            self._zip_bytes({"zouit_ogr.geojson": _ogd_gj(poly)}))
+        self.assertNotIn("style_id", generic["features"][0])
+
+        # "водоохранная" — распознаётся и routing (по "охран"), и точный
+        # знак Эталона ЛГР (по "водоохран") — вместо общей штриховки ЗОУИТ
+        data = self._zip_bytes({"vodoohrannaya_zona_reki.geojson": _ogd_gj(poly)})
+        out = studio_core.import_gisogd(data)
+        f = out["features"][0]
+        self.assertEqual(f["layer_id"], "source.gisogd.restrict",
+                         "маршрутизация не меняется — тот же слой ЗОУИТ")
+        self.assertEqual(f["style_id"], "lgr.vodookhr")
+        self.assertEqual(f["props"]["kind"], "Водоохранные зоны",
+                         "название атрибута — из Эталона, не общее «ЗОУИТ»")
+
+    def test_lgr_style_survives_grado_roundtrip(self):
+        poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
+        feats = studio_core.import_gisogd(
+            self._zip_bytes({"pribrezhnaya_zona.geojson": _ogd_gj(poly)}))["features"]
+        with tempfile.TemporaryDirectory() as tmp:
+            gp = Path(tmp) / "p.grado"
+            studio_core.build_project(gp, "ЛГР", feats).close()
+            rt = studio_core.grado_to_features(str(gp))
+        self.assertEqual(rt["features"][0]["style_id"], "lgr.pribrezh")
+
 
 class TestUserLayers(unittest.TestCase):
     """Слои, созданные в панели студии («+ слой»): маршрутизация без

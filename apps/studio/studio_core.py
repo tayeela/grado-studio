@@ -769,9 +769,66 @@ def import_nspd(payload):
 _GISOGD_LAYER_RULES = [
     (("функционал", "funkcional"), "zone", "source.gisogd.func_zones"),
     (("красн", "krasn"), "redline", "source.gisogd.red_lines"),
-    (("зоуит", "zouit", "охран", "ohran", "sanit", "санит"), "restrict",
-     "source.gisogd.restrict"),
 ]
+
+# Точное соответствие имени члена архива конкретному знаку Эталона ЛГР
+# (moscow_lgr.json, приказ ММА №65) — используется и для маршрутизации
+# (любое совпадение здесь означает "это ЗОУИТ", см. _gisogd_route), и для
+# per-object style_id: без этого распознанная зона получала бы общий
+# restrict.hatch, хотя в библиотеке уже есть точный знак. Порядок важен:
+# сперва более специфичные пояса/варианты СЗЗ, затем общие.
+_GISOGD_STYLE_RULES = [
+    (("1а пояса", "зона_1а", "zona_1a", "sanokhr_1a"), "lgr.sanokhr.1a"),
+    (("1б пояса", "зона_1б", "zona_1b", "sanokhr_1b"), "lgr.sanokhr.1b"),
+    (("жестк", "zhestk"), "lgr.sanokhr.2hard"),
+    (("1 пояса санитар", "зона_1_пояса", "zona_1_poyasa"), "lgr.sanokhr.1"),
+    (("2 пояса санитар", "зона_2_пояса", "zona_2_poyasa"), "lgr.sanokhr.2"),
+    (("3 пояса санитар", "зона_3_пояса", "zona_3_poyasa"), "lgr.sanokhr.3"),
+    (("водоохран", "vodoohran"), "lgr.vodookhr"),
+    (("прибрежн", "pribrezh"), "lgr.pribrezh"),
+    (("сзз_расчет", "szz_raschet", "расчетн"), "lgr.szz.calc"),
+    (("сзз_ориент", "szz_orient", "ориентировоч"), "lgr.szz.orient"),
+    (("санитарно-защит", "sanitarno_zash", "сзз"), "lgr.szz.set"),
+    (("подтоплен", "podtoplen"), "lgr.podtop.mid"),
+    (("затоплен", "zatoplen"), "lgr.zatop"),
+    (("защитная зона окн", "zashitnaya_zona_okn"), "lgr.okn.zashchit"),
+    (("охранная зона окн", "ohrannaya_zona_okn"), "lgr.okn.okhr"),
+    (("регулирования застройки", "regulirovaniya"), "lgr.okn.reg"),
+    (("охраняемого природного ландшафта", "landshaft"), "lgr.okn.landshaft"),
+    (("территория окн", "ter_okn", "territoriya_okn"), "lgr.okn.terr"),
+    (("охранная зона оопт", "ohrannaya_zona_oopt"), "lgr.oopt.okhr"),
+    (("оопт", "oopt"), "lgr.oopt"),
+    (("лесопарков", "lesopark"), "lgr.lesopark"),
+    (("электроэнерг", "лэп", "elektroenerg"), "lgr.energo"),
+    (("трубопровод", "truboprovod"), "lgr.truboprovod"),
+    (("теплосет", "teplosetey"), "lgr.teplo"),
+    (("связи", "svyazi"), "lgr.svyaz"),
+    (("метрополит", "metro"), "lgr.metro"),
+    (("железных дорог", "пожд", "zhd_"), "lgr.zhd"),
+    (("приаэродром", "priaerodrom"), "lgr.priaero"),
+    (("береговая полоса", "beregovaya"), "lgr.beregovaya"),
+    (("военного объекта", "military"), "lgr.military"),
+    (("радиотехническ", "radio"), "lgr.radio"),
+    (("технич", "инженерных коммуникаций", "tehnicheskaya_zona"), "lgr.tech.zone"),
+]
+# общие ЗОУИТ-термины без точного знака (роутятся в restrict.hatch слоя,
+# но не переопределяют style_id) — напр. просто "зоуит_реестр.geojson"
+_GISOGD_RESTRICT_HINTS = ("зоуит", "zouit", "охран", "ohran", "sanit", "санит")
+
+
+def _gisogd_style_for(member):
+    low = member.lower()
+    for keys, style_id in _GISOGD_STYLE_RULES:
+        if any(k in low for k in keys):
+            return style_id
+    return None
+
+
+def _gisogd_is_restrict(member):
+    low = member.lower()
+    if any(k in low for k in _GISOGD_RESTRICT_HINTS):
+        return True
+    return any(any(k in low for k in keys) for keys, _ in _GISOGD_STYLE_RULES)
 
 
 def _gisogd_route(member):
@@ -779,6 +836,8 @@ def _gisogd_route(member):
     for keys, kind, layer_id in _GISOGD_LAYER_RULES:
         if any(k in low for k in keys):
             return kind, layer_id
+    if _gisogd_is_restrict(member):
+        return "restrict", "source.gisogd.restrict"
     return None, None
 
 
@@ -816,6 +875,10 @@ def import_gisogd(zip_bytes):
                 unknown.add(member)
             continue
         name = f["properties"].get("NAME") or f["properties"].get("name")
+        # точный знак Эталона ЛГР по имени члена архива (поверх грубого kind
+        # выше) — назначается per-object, не меняет layer_id/маршрутизацию
+        style_id = _gisogd_style_for(member) if kind in ("restrict", "zone") else None
+        style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
         try:
             utm = transform_geom(geom, wgs84_to_utm37n)
         except Exception:
@@ -833,10 +896,13 @@ def import_gisogd(zip_bytes):
             ring = _to_local(poly[0])
             if ring[0] == ring[-1]:
                 ring = ring[:-1]
-            props = ({"zone_title": name or "ГИС ОГД"} if kind == "zone"
-                     else {"kind": name or "ЗОУИТ", "basis": "ГИС ОГД"})
-            features.append({"kind": kind, "layer_id": layer_id, "ring": ring,
-                             "props": props, "prov": dict(prov)})
+            props = ({"zone_title": name or style_title or "ГИС ОГД"} if kind == "zone"
+                     else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
+            feat = {"kind": kind, "layer_id": layer_id, "ring": ring,
+                    "props": props, "prov": dict(prov)}
+            if style_id:
+                feat["style_id"] = style_id
+            features.append(feat)
     return {"features": features, "notes": notes,
             "source_doc": result.get("source_doc"),
             "snapshot": manifest, "diff": d}
