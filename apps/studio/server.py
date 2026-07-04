@@ -73,7 +73,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
             with INBOX_LOCK:
                 INBOX.append({"source": source, "features": out["features"],
                               "notes": out.get("notes", []),
-                              "layer": data.get("grado_layer_name")})
+                              "layer": data.get("grado_layer_name"),
+                              "snapshot": out.get("snapshot"),
+                              "diff": out.get("diff")})
         except Exception:
             traceback.print_exc()
         self.send_response(200)
@@ -128,6 +130,11 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if self.path == "/api/styles":
             self._send(json.dumps(studio_core.frontend_styles(),
+                                  ensure_ascii=False).encode(),
+                       "application/json; charset=utf-8")
+            return
+        if self.path == "/api/sources":
+            self._send(json.dumps(studio_core.sources_journal(),
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return

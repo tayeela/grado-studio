@@ -78,6 +78,17 @@ button.primary:hover { opacity: .85; }
 .layer-row .nm { flex: 1; cursor: pointer; }
 .layer-row .cnt { color: var(--muted); font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
+.h3-btn { float: right; border: 1px solid var(--border); background: #fff;
+          border-radius: 5px; padding: 0 6px; font-size: 12px; cursor: pointer;
+          color: var(--muted); line-height: 1.5; }
+.h3-btn:hover { color: var(--accent); border-color: var(--accent); }
+.src-row { display: flex; justify-content: space-between; gap: 8px;
+           padding: 3px 0; border-bottom: 1px dotted var(--border);
+           font-size: 12px; }
+.src-row .src-name { font-weight: 600; color: var(--text); text-transform: uppercase; }
+.src-row .src-meta { color: var(--muted); font-variant-numeric: tabular-nums;
+                     white-space: nowrap; }
+.metric.prov { color: var(--accent); font-size: 11.5px; }
 .tep-row { display: flex; justify-content: space-between; gap: 8px;
            padding: 3px 0; border-bottom: 1px dotted var(--border); }
 .tep-row .v { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }

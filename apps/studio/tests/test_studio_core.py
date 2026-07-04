@@ -425,6 +425,85 @@ class TestTileCache(unittest.TestCase):
             self.assertTrue(studio_core._valid_png(Path(f.name)))
 
 
+def _nspd_payload(cad):
+    # 3857-координаты около Москвы; коннектор переведёт в WGS84
+    return {"grado_source": "nspd", "features": [{"id": cad,
+        "geometry": {"type": "Polygon", "coordinates": [[
+            [4187000, 7509000], [4187100, 7509000], [4187100, 7509100],
+            [4187000, 7509100], [4187000, 7509000]]]},
+        "properties": {"cad_num": cad}}]}
+
+
+class TestSourcePipeline(unittest.TestCase):
+    """Снимки источников + провенанс + журнал + diff (шаг 6)."""
+
+    def setUp(self):
+        from grado_connectors import SnapshotStore
+        self._orig = studio_core.SOURCE_STORE
+        self._tmp = tempfile.TemporaryDirectory()
+        studio_core.SOURCE_STORE = SnapshotStore(Path(self._tmp.name) / "src")
+
+    def tearDown(self):
+        studio_core.SOURCE_STORE = self._orig
+        self._tmp.cleanup()
+
+    def test_import_creates_snapshot_and_provenance(self):
+        out = studio_core.import_nspd(_nspd_payload("77:01:0001"))
+        self.assertTrue(out["snapshot"]["id"].startswith("nspd-"))
+        self.assertEqual(out["snapshot"]["source"], "nspd")
+        self.assertEqual(out["snapshot"]["count"], 1)
+        self.assertEqual(out["features"][0]["prov"]["source"], "nspd")
+        self.assertEqual(out["features"][0]["prov"]["snapshot"], out["snapshot"]["id"])
+        self.assertIsNone(out["diff"], "первый импорт — без diff")
+
+    def test_reimport_idempotent(self):
+        a = studio_core.import_nspd(_nspd_payload("77:01:0001"))
+        b = studio_core.import_nspd(_nspd_payload("77:01:0001"))
+        self.assertEqual(a["snapshot"]["id"], b["snapshot"]["id"])
+        self.assertIsNone(b["diff"])
+        self.assertEqual(len(studio_core.sources_journal()), 1)
+
+    def test_changed_source_diffs(self):
+        studio_core.import_nspd(_nspd_payload("77:01:0001"))
+        out = studio_core.import_nspd(_nspd_payload("77:01:9999"))
+        self.assertIsNotNone(out["diff"])
+        self.assertIn("77:01:9999", out["diff"]["added"])
+        self.assertIn("77:01:0001", out["diff"]["removed"])
+        self.assertEqual(len(studio_core.sources_journal()), 2)
+
+    def test_provenance_flows_to_grado_and_back(self):
+        feats = studio_core.import_nspd(_nspd_payload("77:01:0001"))["features"]
+        with tempfile.TemporaryDirectory() as tmp:
+            gp = Path(tmp) / "p.grado"
+            p = studio_core.build_project(gp, "Провенанс", feats)
+            fr = next(p.layer("cad.parcel").features())
+            self.assertEqual(fr["source"], "nspd")
+            self.assertTrue(fr["source_date"])
+            p.close()
+            rt = studio_core.grado_to_features(str(gp))
+        prov = rt["features"][0].get("prov")
+        self.assertEqual(prov["source"], "nspd")
+
+    def test_manual_features_have_no_provenance(self):
+        # нарисованное вручную остаётся source=manual
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "m.grado", "Ручной", FEATURES)
+            fr = next(p.layer("terr.boundary").features())
+            self.assertEqual(fr["source"], "manual")
+            p.close()
+
+    def test_fgistp_import_snapshots_and_marks_source(self):
+        payload = {"grado_source": "fgis_tp", "grado_uin": "77:00-1",
+                   "grado_layer_name": "Генплан",
+                   "features": [{"id": "z1", "geometry": {"type": "Polygon",
+                        "coordinates": [[[37.6, 55.7], [37.61, 55.7],
+                                         [37.61, 55.71], [37.6, 55.7]]]},
+                        "properties": {"class_name": "Ж-1", "uin": "77:00-1"}}]}
+        out = studio_core.import_fgistp(payload)
+        self.assertEqual(out["snapshot"]["source"], "fgistp")
+        self.assertEqual(out["features"][0]["prov"]["source"], "fgistp")
+
+
 class TestRolesTep(unittest.TestCase):
     """ТЭП по ролям слоёв, а не по литералам kind (шаг 4)."""
 

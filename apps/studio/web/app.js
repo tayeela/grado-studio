@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.14.0";
+const VERSION = "0.15.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -138,6 +138,7 @@ const state = {
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   activeLayerId: "project.territory.boundary",  // куда чертят геом-инструменты
+  sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
   _fitted: false, _ix: null,
 };
 
@@ -785,6 +786,7 @@ function persist() {
       ratio: document.getElementById("p-ratio").value,
       layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
       activeLayerId: state.activeLayerId,
+      sources: state.sources,
     }));
   } catch (e) { /* приватный режим — работаем без сохранения */ }
 }
@@ -889,8 +891,11 @@ function renderProps() {
     extra = `<label>Наименование зоны<input type="text" id="f-zone" value="${f.props.zone_title}"></label>`;
   if (f.kind === "public")
     extra = `<label>Назначение<input type="text" id="f-purpose" value="${f.props.purpose}"></label>`;
+  const prov = f.prov
+    ? `<div class="metric prov">источник: ${f.prov.source}${f.prov.source_date ? " · " + f.prov.source_date : ""}</div>`
+    : "";
   el.innerHTML = `<div class="kind">${(layerOf(f) || {}).title || f.kind}</div>
-    <div class="metric">${metric}</div>${extra}
+    <div class="metric">${metric}</div>${prov}${extra}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
   const bind = (id, key, cast) => {
@@ -963,6 +968,49 @@ function renderLayers() {
     row.querySelector(".sw").addEventListener("click", () => setActiveLayer(layer.id));
     el.appendChild(row);
   }
+}
+
+// ---------- журнал источников (снимки НСПД/ФГИС ТП, шаг 6) ----------
+function renderSources() {
+  const el = document.getElementById("sources-body");
+  if (!el) return;
+  if (!state.sources.length) {
+    el.className = "muted"; el.textContent = "Пока не импортировано"; return;
+  }
+  el.className = "";
+  el.innerHTML = state.sources.map(s => {
+    const sha = s.sha8 || (s.sha256 || "").slice(0, 8);
+    const date = (s.fetched_at || "").slice(0, 10);
+    return `<div class="src-row" title="снимок ${s.id}">
+      <span class="src-name">${s.source}</span>
+      <span class="src-meta">${date} · ${s.count} об. · ${sha}</span></div>`;
+  }).join("");
+}
+
+// снимок из ответа импорта → журнал; diff → тост «источник изменился»
+function recordSource(snapshot, diff) {
+  if (!snapshot) return;
+  if (!state.sources.some(s => s.id === snapshot.id)) {
+    state.sources.unshift(snapshot);
+    if (state.sources.length > 50) state.sources.pop();
+  }
+  renderSources(); persist();
+  if (diff && (diff.added.length || diff.removed.length || diff.changed.length))
+    toast(`Источник изменился: +${diff.added.length} −${diff.removed.length} ~${diff.changed.length}`);
+}
+
+// журнал снимков сервера — источник истины (сливаем с локальным)
+async function fetchSources() {
+  try {
+    const r = await fetch("/api/sources");
+    if (!r.ok) return;
+    const list = await r.json();
+    const byId = new Map(state.sources.map(s => [s.id, s]));
+    for (const s of list) byId.set(s.id, s);
+    state.sources = [...byId.values()]
+      .sort((a, b) => (b.fetched_at || "").localeCompare(a.fetched_at || ""));
+    renderSources();
+  } catch (e) { /* сервер без /api/sources — журнал только локальный */ }
 }
 
 function deleteSelected() {
@@ -1424,6 +1472,7 @@ async function pollInbox() {
       for (const f of item.features)
         state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
       added += item.features.length;
+      recordSource(item.snapshot, item.diff);   // снимок моста → журнал
     }
     if (added) {
       afterChange();
@@ -1454,6 +1503,7 @@ on("nspd-file", "change", async e => {
     for (const f of data.features)
       state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
     state.selected = null;
+    recordSource(data.snapshot, data.diff);   // снимок импорта → журнал
     afterChange();
     fitView();
   } catch (err) {
@@ -1508,6 +1558,7 @@ on("btn-demo", "click", () => {
     }
     if (d.activeLayerId && LAYER_BY_ID[d.activeLayerId])
       state.activeLayerId = d.activeLayerId;
+    if (Array.isArray(d.sources)) state.sources = d.sources;
     if (d.name) document.getElementById("project-name").value = d.name;
     if (d.density) document.getElementById("p-density").value = d.density;
     if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
@@ -1517,8 +1568,11 @@ on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   layerOf, styleOf, upgradeFeature, LAYERS_V2, STYLES_V2,
                   setTool, setActiveLayer, applyPreset, activeLayer };
+on("btn-refresh-src", "click", fetchSources);
 setTool("select");
 renderLayers();
+renderSources();
 requestAnimationFrame(resize);
 refreshTep();
 initStyles();
+fetchSources();

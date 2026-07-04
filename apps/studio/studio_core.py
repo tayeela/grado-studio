@@ -44,6 +44,51 @@ from grado_render import load_library  # noqa: E402
 
 STYLE_LIB = load_library()
 
+# --- источники: снимки (SnapshotStore) + провенанс + журнал (шаг 6) ---------
+# Импорт НСПД/ФГИС ТП фиксирует неизменяемый датированный снимок (sha256),
+# каждый объект несёт провенанс (source/date/doc/snapshot), переимпорт
+# сравнивается с прошлым снимком (diff). Стор — на диске рядом с кэшем
+# тайлов (в .gitignore). Тесты подменяют SOURCE_STORE на временный.
+from grado_connectors import (NspdCapture, SnapshotStore,  # noqa: E402
+                              diff as _snap_diff, has_changes as _has_changes)
+from grado_connectors.contract import make_result  # noqa: E402
+from grado_connectors.fgistp import FgistpConnector  # noqa: E402
+
+SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
+_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "import"}  # допустимые в модели
+
+
+def _snapshot(connector, result):
+    """Сохраняет снимок + diff против прошлого снимка того же источника.
+
+    Возвращает (manifest, diff|None). Идемпотентно: тот же контент за тот
+    же день — тот же снимок, diff пустой → None."""
+    prev = SOURCE_STORE.latest(connector.name, result.get("params"))
+    d = None
+    if prev is not None:
+        d = _snap_diff(SOURCE_STORE.features(prev["id"]), result["features"])
+        if not _has_changes(d):
+            d = None
+    sid = SOURCE_STORE.save(connector, result)
+    return SOURCE_STORE.manifest(sid), d
+
+
+def _prov(manifest):
+    """Провенанс объекта из манифеста снимка (для f['prov'] и .grado)."""
+    return {"source": manifest["source"],
+            "source_date": manifest["fetched_at"][:10],
+            "source_doc": manifest.get("source_doc") or manifest["id"],
+            "snapshot": manifest["id"]}
+
+
+def sources_journal():
+    """Журнал источников: список манифестов снимков (для UI и /api/sources)."""
+    return [{"id": m["id"], "source": m["source"], "connector": m["connector"],
+             "count": m["count"], "fetched_at": m["fetched_at"],
+             "sha8": m["sha256"][:8], "source_doc": m.get("source_doc"),
+             "notes": m.get("notes", [])}
+            for m in SOURCE_STORE.list()]
+
 
 def dxf_layers_from_styles():
     """code классификатора → (имя слоя DXF, цвет ACI) из библиотеки стилей."""
@@ -326,7 +371,12 @@ def build_project(path, name, features):
         if code not in layers:
             layers[code] = project.add_layer(code)
         attrs = KIND_ATTRS[f["kind"]](f.get("props", {}))
-        layers[code].add_feature(_geom_for(f), attrs=attrs)
+        # провенанс из импорта переносится в модель (source/date/doc)
+        prov = f.get("prov") or {}
+        source = prov.get("source") if prov.get("source") in _PROV_SOURCES else "manual"
+        layers[code].add_feature(
+            _geom_for(f), attrs=attrs, source=source,
+            source_date=prov.get("source_date"), source_doc=prov.get("source_doc"))
     return project
 
 
@@ -448,12 +498,18 @@ def grado_to_features(path):
             if not geom:
                 continue
             props = {k: v for k, v in f["attrs"].items() if v is not None}
+            # провенанс из модели → холст (source != manual означает импорт)
+            prov = None
+            if f.get("source") and f["source"] != "manual":
+                prov = {"source": f["source"], "source_date": f.get("source_date"),
+                        "source_doc": f.get("source_doc")}
+            base = {"kind": kind, "props": props}
+            if prov:
+                base["prov"] = prov
             if geom["type"] == "Point":
-                out.append({"kind": kind, "point": _to_local([geom["coordinates"]])[0],
-                            "props": props})
+                out.append({**base, "point": _to_local([geom["coordinates"]])[0]})
             elif geom["type"] == "LineString":
-                out.append({"kind": kind, "line": _to_local(geom["coordinates"]),
-                            "props": props})
+                out.append({**base, "line": _to_local(geom["coordinates"])})
             else:
                 polys = ([geom["coordinates"]] if geom["type"] == "Polygon"
                          else geom["coordinates"])
@@ -461,7 +517,7 @@ def grado_to_features(path):
                     ring = _to_local(poly[0])
                     if ring[0] == ring[-1]:
                         ring = ring[:-1]
-                    out.append({"kind": kind, "ring": ring, "props": dict(props)})
+                    out.append({**base, "ring": ring, "props": dict(props)})
     project.close()
     return {"name": name, "features": out}
 
@@ -473,6 +529,24 @@ def import_fgistp(payload):
     class_name/class_title/uin. Полигоны становятся функциональными
     зонами; линейные/точечные слои пока пропускаются с пометкой."""
     from grado_connectors.crs import transform_geom, wgs84_to_utm37n
+
+    # снимок источника: контрактные объекты WGS84 с grado_key (для diff)
+    uin = payload.get("grado_uin")
+    src_features = []
+    for i, f in enumerate(payload.get("features") or []):
+        if not f.get("geometry"):
+            continue
+        props = f.get("properties") or {}
+        src_features.append({
+            "type": "Feature",
+            "grado_key": str(f.get("id") or props.get("uin") or f"{uin}:{i}"),
+            "geometry": f["geometry"], "properties": props})
+    result = make_result(src_features,
+                         params={"uin": uin,
+                                 "layer": payload.get("grado_layer_name")},
+                         source_doc=uin)
+    manifest, d = _snapshot(FgistpConnector(), result)
+    prov = _prov(manifest)
 
     features, notes = [], []
     skipped = 0
@@ -494,12 +568,12 @@ def import_fgistp(payload):
             features.append({"kind": "zone", "ring": ring, "props": {
                 "zone_title": props.get("class_name")
                               or payload.get("grado_layer_name", "ФГИС ТП"),
-                "zone_code": str(props.get("uin") or payload.get("grado_uin") or ""),
-            }})
+                "zone_code": str(props.get("uin") or uin or ""),
+            }, "prov": dict(prov)})
     if skipped:
         notes.append(f"пропущено не-полигонов: {skipped}")
-    return {"features": features, "notes": notes,
-            "source_doc": payload.get("grado_uin")}
+    return {"features": features, "notes": notes, "source_doc": uin,
+            "snapshot": manifest, "diff": d}
 
 
 def import_nspd(payload):
@@ -510,7 +584,10 @@ def import_nspd(payload):
     from grado_connectors import NspdCapture
     from grado_connectors.crs import transform_geom, wgs84_to_utm37n
 
-    result = NspdCapture().fetch(payload=payload)
+    conn = NspdCapture()
+    result = conn.fetch(payload=payload)
+    manifest, d = _snapshot(conn, result)   # фиксация снимка + diff
+    prov = _prov(manifest)
     features = []
     for f in result["features"]:
         geom = transform_geom(f["geometry"], wgs84_to_utm37n)
@@ -527,9 +604,11 @@ def import_nspd(payload):
             if local[0] == local[-1]:
                 local = local[:-1]
             features.append({"kind": "parcel", "ring": local,
-                             "props": {k: v for k, v in attrs.items() if v}})
+                             "props": {k: v for k, v in attrs.items() if v},
+                             "prov": dict(prov)})
     return {"features": features, "notes": result["notes"],
-            "source_doc": result.get("source_doc")}
+            "source_doc": result.get("source_doc"),
+            "snapshot": manifest, "diff": d}
 
 
 def make_grado(features, name):
