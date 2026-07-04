@@ -126,6 +126,11 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path == "/api/styles":
+            self._send(json.dumps(studio_core.frontend_styles(),
+                                  ensure_ascii=False).encode(),
+                       "application/json; charset=utf-8")
+            return
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
             self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,

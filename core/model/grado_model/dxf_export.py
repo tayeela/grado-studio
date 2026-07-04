@@ -6,7 +6,11 @@ R12 выбран сознательно: его понимает всё, что 
 подписи — TEXT в центроиде, точечные объекты — POINT.
 """
 
-# слой DXF и цвет ACI по коду классификатора
+# Слой DXF и цвет ACI по коду классификатора. Значения по умолчанию
+# синхронны со styles/default.json (единый источник, шаг 3): приложение
+# передаёт актуальную карту слоёв параметром layers= в project_to_dxf,
+# так что правка JSON меняет и DXF; эта константа — автономный дефолт
+# для прямого использования модели (демо/тесты) без пакета render.
 LAYERS = {
     "terr.boundary": ("GRANICA_TERRITORII", 7),
     "terr.restrict": ("OGRANICHENIYA", 1),
@@ -63,14 +67,20 @@ def _label(attrs):
     return None
 
 
-def project_to_dxf(project, label_height=2.5):
-    """DXF R12 из слоёв проекта. Возвращает bytes (cp1251)."""
+def project_to_dxf(project, label_height=2.5, layers=None, fallback_layer=None):
+    """DXF R12 из слоёв проекта. Возвращает bytes (cp1251).
+
+    layers — карта код классификатора → (имя слоя DXF, цвет ACI); если не
+    передана, берётся автономный дефолт LAYERS. Приложение подаёт карту,
+    построенную из styles/default.json, — тогда правка JSON меняет DXF."""
+    layers = LAYERS if layers is None else layers
+    fallback_layer = FALLBACK_LAYER if fallback_layer is None else fallback_layer
     used = []
     entities = ""
     for info in project.layers():
-        layer, _color = LAYERS.get(info["code"], FALLBACK_LAYER)
-        if info["code"] in LAYERS and info["code"] not in [u[0] for u in used]:
-            used.append((info["code"], LAYERS[info["code"]]))
+        layer, _color = layers.get(info["code"], fallback_layer)
+        if info["code"] in layers and info["code"] not in [u[0] for u in used]:
+            used.append((info["code"], layers[info["code"]]))
         for f in project.layer(info["code"]).features():
             geom = f["geom"]
             if not geom:
@@ -96,8 +106,9 @@ def project_to_dxf(project, label_height=2.5):
                         cx, cy = _centroid([tuple(p) for p in ring])
                         entities += _text(layer, cx, cy, label, label_height)
 
-    layer_table = _g(0, "TABLE") + _g(2, "LAYER") + _g(70, len(LAYERS) + 1)
-    for name, color in list(LAYERS.values()) + [FALLBACK_LAYER]:
+    layer_defs = list(dict.fromkeys(list(layers.values()) + [fallback_layer]))
+    layer_table = _g(0, "TABLE") + _g(2, "LAYER") + _g(70, len(layer_defs))
+    for name, color in layer_defs:
         layer_table += (_g(0, "LAYER") + _g(2, name) + _g(70, 0)
                         + _g(62, color) + _g(6, "CONTINUOUS"))
     layer_table += _g(0, "ENDTAB")

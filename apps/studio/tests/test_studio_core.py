@@ -425,5 +425,43 @@ class TestTileCache(unittest.TestCase):
             self.assertTrue(studio_core._valid_png(Path(f.name)))
 
 
+class TestStyleLibrary(unittest.TestCase):
+    """Единая библиотека стилей (шаг 3): один JSON — холст, PDF и DXF."""
+
+    def test_frontend_styles_shape(self):
+        st = studio_core.frontend_styles()
+        self.assertEqual(st["boundary.line"]["width"], 2.5)
+        self.assertEqual(st["func_zone.fill"]["label_field"], "zone_title")
+        # прозрачность заливки свёрнута в rgba() для холста
+        self.assertTrue(st["restrict.hatch"]["fill"].startswith("rgba("))
+        self.assertTrue(st["restrict.hatch"]["hatch"])
+        # у линии заливки нет
+        self.assertNotIn("fill", st["red.line.projected"])
+
+    def test_dxf_layers_from_styles(self):
+        layers, fallback = studio_core.dxf_layers_from_styles()
+        self.assertEqual(layers["terr.boundary"], ("GRANICA_TERRITORII", 7))
+        self.assertEqual(layers["pp.red_line"], ("KRASNYE_LINII", 1))
+        self.assertEqual(fallback, ("PROCHEE", 7))
+
+    def test_editing_json_changes_dxf(self):
+        # критерий шага 3: правка стиля меняет DXF без правки кода
+        import copy
+        feats = FEATURES + [{"kind": "dim", "props": {},
+                             "line": [[0, 0], [120, 0]]}]
+        orig = studio_core.STYLE_LIB
+        patched = copy.deepcopy(orig)
+        patched["styles"]["boundary.line"]["dxf"]["name"] = "TEST_GRANICA"
+        patched["styles"]["dimension.line"]["dxf"]["name"] = "TEST_DIM"
+        studio_core.STYLE_LIB = patched
+        try:
+            dxf = studio_core.make_dxf(feats, "Стиль").decode("cp1251")
+        finally:
+            studio_core.STYLE_LIB = orig
+        self.assertIn("TEST_GRANICA", dxf)
+        self.assertNotIn("GRANICA_TERRITORII", dxf)
+        self.assertIn("TEST_DIM", dxf, "имя слоя размеров тоже из JSON")
+
+
 if __name__ == "__main__":
     unittest.main()

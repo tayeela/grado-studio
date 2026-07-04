@@ -1,9 +1,34 @@
-"""Стилевая машина: стиль — данные, привязанные к коду классификатора.
+"""Стилевая машина: стиль — данные из единой JSON-библиотеки.
 
-Оба бэкенда (экранный SVG и печатный PDF) исполняют один и тот же список
-операций, собранный сценой по этим стилям, — WYSIWYG гарантирован
-отсутствием второй реализации стилизации.
+Один источник (styles/default.json) кормит три вывода: холст студии,
+листы PDF/SVG и DXF (docs/fixes-geometry-layout.md, шаг 3). Здесь стиль
+разрешается по коду классификатора в объект Style (цвета — rgb 0..1,
+ширина — мм листа); тот же JSON фронт забирает для холста (ширина px),
+а DXF-экспорт — для имён слоёв и цветов ACI. Правка одного JSON меняет
+все три вывода без изменения кода.
 """
+
+import json
+from pathlib import Path
+
+STYLE_DIR = Path(__file__).parent / "styles"
+_LIBRARY_CACHE = {}
+
+
+def load_library(name="default"):
+    """Сырая библиотека стилей из JSON (кэш по имени)."""
+    if name not in _LIBRARY_CACHE:
+        with open(STYLE_DIR / f"{name}.json", encoding="utf-8") as fh:
+            _LIBRARY_CACHE[name] = json.load(fh)
+    return _LIBRARY_CACHE[name]
+
+
+def hex_to_rgb(value):
+    """'#rrggbb' → (r, g, b) в 0..1; None → None."""
+    if value is None:
+        return None
+    v = value.lstrip("#")
+    return tuple(int(v[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
 
 
 class Style:
@@ -18,30 +43,34 @@ class Style:
         self.z = z                # порядок отрисовки (меньше — ниже)
         self.hatch = hatch        # диагональная штриховка 45° (ЗОУИТ и т.п.)
 
+    @classmethod
+    def from_json(cls, s):
+        return cls(
+            fill=hex_to_rgb(s.get("fill")),
+            stroke=hex_to_rgb(s.get("stroke")),
+            width=s.get("width_mm", 0.3),
+            dash=s.get("dash_mm"),
+            label=s.get("label_field"),
+            marker=s.get("marker_mm", 1.2),
+            z=s.get("z", 0),
+            hatch=s.get("hatch", False))
 
-# Базовая библиотека к классификатору (продолжение библиотеки QML GRADO)
-DEFAULT_STYLES = {
-    "tp.func_zone": Style(fill=(0.98, 0.94, 0.75), stroke=(0.72, 0.62, 0.35),
-                          width=0.25, label="zone_title", z=0),
-    "cad.zouit": Style(fill=(0.80, 0.88, 0.97), stroke=(0.45, 0.62, 0.80),
-                       width=0.25, dash=[2, 1], z=1, hatch=True),
-    "terr.restrict": Style(fill=(0.96, 0.86, 0.86), stroke=(0.75, 0.35, 0.35),
-                           width=0.3, dash=[3, 1.5], z=2, hatch=True),
-    "oks.building": Style(fill=(0.96, 0.78, 0.42), stroke=(0.55, 0.40, 0.15),
-                          width=0.2, label="floors", z=3),
-    "cad.parcel": Style(stroke=(0.35, 0.30, 0.20), width=0.2, z=4),
-    "uds.road_axis": Style(stroke=(0.40, 0.40, 0.40), width=0.4,
-                           dash=[6, 2], z=5),
-    "pp.red_line": Style(stroke=(0.85, 0.10, 0.10), width=0.6, z=6),
-    "terr.boundary": Style(stroke=(0.10, 0.10, 0.10), width=0.8,
-                           dash=[8, 2, 2, 2], z=7),
-    "pp.placement_zone": Style(fill=(0.97, 0.76, 0.79), stroke=(0.75, 0.35, 0.42),
-                               width=0.35, label="purpose", z=5),
-    "social.object": Style(fill=(0.20, 0.45, 0.75), stroke=(0.10, 0.25, 0.45),
-                           width=0.2, label="kind", marker=1.5, z=8),
-}
 
-FALLBACK = Style(stroke=(0.5, 0.5, 0.5), width=0.3)
+def _build_default_styles(name="default"):
+    """code → Style: разворачиваем codes каждого стиля в индекс по коду."""
+    lib = load_library(name)
+    by_code = {}
+    for s in lib["styles"].values():
+        st = Style.from_json(s)
+        for code in s.get("codes", []):
+            by_code[code] = st
+    return by_code
+
+
+# Базовая библиотека к классификатору (продолжение библиотеки QML GRADO),
+# теперь построенная из styles/default.json
+DEFAULT_STYLES = _build_default_styles()
+FALLBACK = Style.from_json(load_library()["fallback"])
 
 
 class StyleSet:

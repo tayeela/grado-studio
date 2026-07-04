@@ -227,6 +227,34 @@ class TestImages(unittest.TestCase):
         self.assertIn('preserveAspectRatio="none"', svg)
 
 
+class TestStyleLibrary(unittest.TestCase):
+    def test_styles_come_from_json(self):
+        from grado_render import hex_to_rgb, load_library
+        lib = load_library()
+        for sid in ("boundary.line", "func_zone.fill", "restrict.hatch",
+                    "red.line.projected", "social.point"):
+            self.assertIn(sid, lib["styles"])
+        st = StyleSet().resolve("tp.func_zone")
+        self.assertEqual(st.fill, hex_to_rgb("#faf0bf"))
+        self.assertEqual(st.stroke, hex_to_rgb("#b89e59"))
+        self.assertEqual(st.label, "zone_title")
+        self.assertAlmostEqual(st.width, 0.25)
+
+    def test_hex_to_rgb(self):
+        from grado_render import hex_to_rgb
+        self.assertEqual(hex_to_rgb("#ffffff"), (1.0, 1.0, 1.0))
+        self.assertEqual(hex_to_rgb("#000000"), (0.0, 0.0, 0.0))
+        self.assertIsNone(hex_to_rgb(None))
+
+    def test_codes_index(self):
+        # разные коды классификатора разрешаются в свои стили
+        s = StyleSet()
+        self.assertTrue(s.resolve("terr.restrict").hatch)
+        self.assertTrue(s.resolve("cad.zouit").hatch)
+        self.assertFalse(s.resolve("oks.building").hatch)
+        self.assertEqual(s.resolve("social.object").marker, 1.5)
+
+
 class TestStyleSet(unittest.TestCase):
     def test_fallback(self):
         st = StyleSet().resolve("нет.такого")

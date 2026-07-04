@@ -38,6 +38,46 @@ from grado_wizard.sheets import (MAP_RECT, apo_sheet,  # noqa: E402
 ORIGIN = (413000.0, 6178000.0)
 PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.json"
 
+# --- единая библиотека стилей (styles/default.json): холст + PDF + DXF ------
+from grado_render import load_library  # noqa: E402
+
+STYLE_LIB = load_library()
+
+
+def dxf_layers_from_styles():
+    """code классификатора → (имя слоя DXF, цвет ACI) из библиотеки стилей."""
+    layers = {}
+    for s in STYLE_LIB["styles"].values():
+        dxf = s.get("dxf")
+        if dxf:
+            for code in s.get("codes", []):
+                layers[code] = (dxf["name"], dxf["color"])
+    fb = STYLE_LIB["fallback"].get("dxf")
+    fallback = (fb["name"], fb["color"]) if fb else None
+    return layers, fallback
+
+
+def frontend_styles():
+    """Стили для холста студии: style_id → {fill, stroke, width(px), dash(px),
+    hatch, label_field}. Прозрачность заливки свёрнута в rgba()."""
+    out = {}
+    for sid, s in STYLE_LIB["styles"].items():
+        fill, op = s.get("fill"), s.get("fill_opacity")
+        if fill and op is not None and op < 1:
+            r, g, b = (int(fill[i:i + 2], 16) for i in (1, 3, 5))
+            fill = f"rgba({r},{g},{b},{op})"
+        entry = {"stroke": s.get("stroke"), "width": s.get("width_px", 1)}
+        if fill:
+            entry["fill"] = fill
+        if s.get("dash_px"):
+            entry["dash"] = s["dash_px"]
+        if s.get("hatch"):
+            entry["hatch"] = True
+        if s.get("label_field"):
+            entry["label_field"] = s["label_field"]
+        out[sid] = entry
+    return out
+
 # --- тайловая подложка (кэш общий: холст студии и листы альбома) -----------
 # Локальный однопользовательский инструмент = «лёгкое использование» по
 # Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
@@ -475,21 +515,24 @@ def make_dxf(features, name):
     в DXF выгружаются слоем RAZMERY (линия + текст длины)."""
     import math
     from grado_model.dxf_export import _polyline, _text, project_to_dxf
+    dxf_layers, dxf_fallback = dxf_layers_from_styles()
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features)
-        data = project_to_dxf(project)
+        data = project_to_dxf(project, layers=dxf_layers,
+                              fallback_layer=dxf_fallback)
         project.close()
     dims = [f for f in features if f["kind"] == "dim"]
     if not dims:
         return data
+    dim_layer = dxf_layers.get("annot.dim", ("RAZMERY", 3))[0]  # имя из JSON
     text = data.decode("cp1251")
     extra = ""
     for f in dims:
         (ax, ay), (bx, by) = f["line"][0], f["line"][1]
         pts = [[ax + ORIGIN[0], ay + ORIGIN[1]], [bx + ORIGIN[0], by + ORIGIN[1]]]
-        extra += _polyline("RAZMERY", pts, closed=False)
+        extra += _polyline(dim_layer, pts, closed=False)
         length = math.hypot(bx - ax, by - ay)
-        extra += _text("RAZMERY", (pts[0][0] + pts[1][0]) / 2,
+        extra += _text(dim_layer, (pts[0][0] + pts[1][0]) / 2,
                        (pts[0][1] + pts[1][1]) / 2, f"{length:.1f} м", 2.0)
     cut = text.rfind("0\nENDSEC")
     return (text[:cut] + extra + text[cut:]).encode("cp1251", errors="replace")

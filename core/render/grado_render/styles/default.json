@@ -1,0 +1,111 @@
+{
+  "_doc": "Единая библиотека стилей ГРАДО. Один источник для холста студии, листов PDF/SVG и DXF (см. docs/fixes-geometry-layout.md, шаг 3). Цвет — hex (общий); ширина линии задаётся отдельно для листа (width_mm) и экрана (width_px), т.к. связь не линейна и подбиралась вручную. codes — коды классификатора, к которым привязан стиль (для сцены альбома и DXF). dxf — имя слоя и цвет ACI.",
+  "styles": {
+    "boundary.line": {
+      "title": "Граница территории",
+      "fill": null, "stroke": "#1c1c1a",
+      "width_mm": 0.8, "width_px": 2.5,
+      "dash_mm": [8, 2, 2, 2], "dash_px": [14, 5, 4, 5],
+      "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 7,
+      "codes": ["terr.boundary"],
+      "dxf": {"name": "GRANICA_TERRITORII", "color": 7}
+    },
+    "func_zone.fill": {
+      "title": "Функциональная зона",
+      "fill": "#faf0bf", "stroke": "#b89e59",
+      "width_mm": 0.25, "width_px": 1.0,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": "zone_title", "marker_mm": 1.2, "z": 0,
+      "codes": ["tp.func_zone"],
+      "dxf": {"name": "FUNKC_ZONY", "color": 2}
+    },
+    "public_zone.fill": {
+      "title": "Зона нежилых ОКС",
+      "fill": "#f7c2c9", "stroke": "#bf596b",
+      "width_mm": 0.35, "width_px": 1.2,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": "purpose", "marker_mm": 1.2, "z": 5,
+      "codes": ["pp.placement_zone"],
+      "dxf": {"name": "ZONY_OKS", "color": 6}
+    },
+    "restrict.hatch": {
+      "title": "Ограничение (ЗОУИТ)",
+      "fill": "#f5dbdb", "fill_opacity": 0.85, "stroke": "#bf5959",
+      "width_mm": 0.3, "width_px": 1.2,
+      "dash_mm": [3, 1.5], "dash_px": [8, 4],
+      "hatch": true, "label_field": null, "marker_mm": 1.2, "z": 2,
+      "codes": ["terr.restrict"],
+      "dxf": {"name": "OGRANICHENIYA", "color": 1}
+    },
+    "zouit.hatch": {
+      "title": "ЗОУИТ (охранная зона)",
+      "fill": "#cce0f7", "fill_opacity": 0.85, "stroke": "#739ecc",
+      "width_mm": 0.25, "width_px": 1.0,
+      "dash_mm": [2, 1], "dash_px": [4, 2],
+      "hatch": true, "label_field": null, "marker_mm": 1.2, "z": 1,
+      "codes": ["cad.zouit"],
+      "dxf": {"name": "ZOUIT", "color": 5}
+    },
+    "parcel.line": {
+      "title": "Земельный участок (ЕГРН)",
+      "fill": null, "stroke": "#8a7a5c",
+      "width_mm": 0.2, "width_px": 0.8,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": "cad_num", "marker_mm": 1.2, "z": 4,
+      "codes": ["cad.parcel"],
+      "dxf": {"name": "UCHASTKI_EGRN", "color": 8}
+    },
+    "building.fill": {
+      "title": "Здание",
+      "fill": "#f5c76b", "stroke": "#8c6626",
+      "width_mm": 0.2, "width_px": 1.0,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": "floors", "marker_mm": 1.2, "z": 3,
+      "codes": ["oks.building"],
+      "dxf": {"name": "ZDANIYA", "color": 30}
+    },
+    "road.axis": {
+      "title": "Ось УДС",
+      "fill": null, "stroke": "#666666",
+      "width_mm": 0.4, "width_px": 1.4,
+      "dash_mm": [6, 2], "dash_px": [12, 4],
+      "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 5,
+      "codes": ["uds.road_axis"],
+      "dxf": {"name": "UDS_OSI", "color": 8}
+    },
+    "red.line.projected": {
+      "title": "Красная линия",
+      "fill": null, "stroke": "#d91a1a",
+      "width_mm": 0.6, "width_px": 2.5,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 6,
+      "codes": ["pp.red_line"],
+      "dxf": {"name": "KRASNYE_LINII", "color": 1}
+    },
+    "social.point": {
+      "title": "Объект социнфраструктуры",
+      "fill": "#2f6fde", "stroke": "#1d4a9e",
+      "width_mm": 0.2, "width_px": 1.2,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": "kind", "marker_mm": 1.5, "z": 8,
+      "codes": ["social.object"],
+      "dxf": {"name": "SOC_OBEKTY", "color": 5}
+    },
+    "dimension.line": {
+      "title": "Размер",
+      "fill": null, "stroke": "#44423c",
+      "width_mm": 0.3, "width_px": 1.0,
+      "dash_mm": null, "dash_px": null,
+      "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 9,
+      "codes": ["annot.dim"],
+      "dxf": {"name": "RAZMERY", "color": 3}
+    }
+  },
+  "fallback": {
+    "fill": null, "stroke": "#808080",
+    "width_mm": 0.3, "width_px": 1.0,
+    "dash_mm": null, "dash_px": null,
+    "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 0,
+    "dxf": {"name": "PROCHEE", "color": 7}
+  }
+}

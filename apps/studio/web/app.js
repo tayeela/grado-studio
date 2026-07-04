@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -70,6 +70,18 @@ for (const L of LAYERS_V2) {
   L.visible = true;
   LAYER_BY_ID[L.id] = L;
   LAYER_BY_KIND[L.kind] = L;
+}
+
+// Стили выше — встроенный fallback; на старте они переопределяются из
+// /api/styles (единый источник styles/default.json — тот же, что PDF и DXF).
+async function initStyles() {
+  try {
+    const r = await fetch("/api/styles");
+    if (!r.ok) return;
+    const lib = await r.json();
+    for (const id of Object.keys(lib)) STYLES_V2[id] = lib[id];
+    draw(); renderLayers();
+  } catch (e) { /* сервер без /api/styles — холст на встроенных стилях */ }
 }
 
 function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] || null; }
@@ -1509,3 +1521,4 @@ setTool("select");
 renderLayers();
 requestAnimationFrame(resize);
 refreshTep();
+initStyles();
