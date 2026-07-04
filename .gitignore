@@ -4,3 +4,5 @@ __pycache__/
 out/
 apps/studio/.tile_cache/
 apps/studio/.sources/
+apps/studio/.autosave.json
+apps/studio/.autosave.tmp

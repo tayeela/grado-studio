@@ -23,6 +23,24 @@ def load_library(name="default"):
     return _LIBRARY_CACHE[name]
 
 
+def merged_library(names=("default", "moscow_lgr")):
+    """Объединённая библиотека из нескольких JSON (системный уровень).
+
+    Первая — базовая (несёт fallback); стили последующих добавляются к ней.
+    Коллизия id стилей — ошибка данных, а не тихое перекрытие."""
+    base = load_library(names[0])
+    out = {"_doc": base.get("_doc", ""), "styles": dict(base["styles"])}
+    if "fallback" in base:
+        out["fallback"] = base["fallback"]
+    for name in names[1:]:
+        lib = load_library(name)
+        for sid, s in lib["styles"].items():
+            if sid in out["styles"]:
+                raise ValueError(f"конфликт id стиля {sid!r}: {name} против {names[0]}")
+            out["styles"][sid] = s
+    return out
+
+
 def hex_to_rgb(value):
     """'#rrggbb' → (r, g, b) в 0..1; None → None."""
     if value is None:
@@ -71,6 +89,7 @@ def _build_default_styles(name="default"):
 # теперь построенная из styles/default.json
 DEFAULT_STYLES = _build_default_styles()
 FALLBACK = Style.from_json(load_library()["fallback"])
+_BY_ID_CACHE = {}  # style_id → Style (резолв per-object стилей, см. StyleSet)
 
 
 class StyleSet:
@@ -81,6 +100,16 @@ class StyleSet:
 
     def resolve(self, code):
         return self.styles.get(code, FALLBACK)
+
+    def resolve_id(self, style_id):
+        """Style по id системной библиотеки (default + Эталон ЛГР) — для
+        per-object style_id из модели. None, если id неизвестен."""
+        if not style_id:
+            return None
+        if style_id not in _BY_ID_CACHE:
+            s = merged_library()["styles"].get(style_id)
+            _BY_ID_CACHE[style_id] = Style.from_json(s) if s else None
+        return _BY_ID_CACHE[style_id]
 
     def legend_entries(self, project):
         """Записи легенды для непустых слоёв проекта.

@@ -75,8 +75,52 @@ button.primary:hover { opacity: .85; }
 .layer-row.active .nm { font-weight: 600; color: var(--accent); }
 .layer-row input { accent-color: var(--accent); }
 .layer-row .sw { width: 13px; height: 13px; border-radius: 3px; border: 1.4px solid; flex-shrink: 0; cursor: pointer; }
-.layer-row .nm { flex: 1; cursor: pointer; }
+.layer-row .nm { flex: 1; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .layer-row .cnt { color: var(--muted); font-variant-numeric: tabular-nums; }
+.layer-row .grip { color: #c3c1ba; cursor: grab; font-size: 11px; flex-shrink: 0;
+                   user-select: none; }
+.layer-row.dragging { opacity: .4; }
+.layer-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.layer-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.layer-row .lrow-menu { opacity: 0; border: none; background: none; color: var(--muted);
+  cursor: pointer; padding: 0 2px; font-size: 14px; line-height: 1; flex-shrink: 0; }
+.layer-row:hover .lrow-menu { opacity: 1; }
+.layer-row .lrow-menu:hover { color: var(--accent); background: none; }
+/* контекстное меню слоя */
+.ctx-menu { position: fixed; z-index: 100; background: #fff; border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.14); padding: 4px;
+  min-width: 190px; font-size: 13px; }
+.ctx-item { padding: 7px 12px; border-radius: 6px; cursor: pointer; color: var(--text); }
+.ctx-item:hover { background: #eef3fd; color: var(--accent); }
+/* модальные окна (форматирование, таблица атрибутов) */
+.modal-overlay { position: fixed; inset: 0; z-index: 120; background: rgba(20,20,25,.32);
+  display: flex; align-items: center; justify-content: center; }
+.modal { background: #fff; border-radius: 12px; box-shadow: 0 12px 48px rgba(0,0,0,.28);
+  display: flex; flex-direction: column; max-width: 90vw; max-height: 86vh; overflow: hidden; }
+.modal-head { padding: 13px 16px; font-weight: 600; font-size: 14px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px; }
+.modal-head .modal-x { margin-left: auto; border: none; background: none; cursor: pointer;
+  font-size: 15px; color: var(--muted); padding: 0 4px; }
+.modal-head .modal-x:hover { color: var(--text); background: none; }
+.modal-actions { padding: 11px 16px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; align-items: center; }
+.modal-actions .spacer { flex: 1; }
+.fmt-modal { width: 320px; padding-bottom: 0; }
+.fmt-modal label { display: block; margin: 10px 16px 0; color: var(--muted); font-size: 12px; }
+.fmt-modal label.chk { display: flex; gap: 7px; align-items: center; color: var(--text); cursor: pointer; }
+.fmt-modal input[type=color] { width: 100%; height: 32px; margin-top: 4px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.fmt-modal input[type=number] { display: block; width: 100%; margin-top: 4px; padding: 5px 8px;
+  border: 1px solid var(--border); border-radius: 6px; font: inherit; }
+.attr-modal { width: min(760px, 90vw); }
+.attr-scroll { overflow: auto; }
+.attr-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.attr-table th, .attr-table td { padding: 6px 12px; text-align: left; border-bottom: 1px solid var(--border);
+  white-space: nowrap; }
+.attr-table th { position: sticky; top: 0; background: var(--panel); font-weight: 600;
+  color: var(--muted); }
+.attr-table tbody tr { cursor: pointer; }
+.attr-table tbody tr:hover { background: #eef3fd; }
 .muted { color: var(--muted); }
 .h3-btn { float: right; border: 1px solid var(--border); background: #fff;
           border-radius: 5px; padding: 0 6px; font-size: 12px; cursor: pointer;

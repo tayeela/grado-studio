@@ -8,7 +8,9 @@
     POST /api/grado       {features, name} → файл проекта .grado (открывается QGIS)
     POST /api/open-grado  тело .grado → {name, features} — открыть проект обратно
     POST /api/import-nspd {payload} → фигуры холста из захвата НСПД
+    POST /api/import-gisogd  тело ZIP → фигуры холста из выгрузки ГИС ОГД
     GET  /api/inbox       выгрузки браузерного моста, ждущие холст
+    GET/POST /api/autosave  файловый бэкап состояния холста (резерв к localStorage)
     GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
     GET  /api/tiles/<z>/<x>/<y>.png  тайловая подложка (прокси + дисковый кэш)
 Порт 8081: приёмник браузерного расширения GRADO (совместим с QGIS-плагином).
@@ -40,6 +42,11 @@ TILE_RE = re.compile(r"^/api/tiles/(\d+)/(\d+)/(\d+)\.png$")
 INBOX = []          # выгрузки от расширения, ждущие холст
 INBOX_LOCK = threading.Lock()
 BRIDGE_ON = False
+
+# файловый автосейв — резервная копия localStorage браузера на диске:
+# переживает чистку данных сайта/приватный режим/смену браузера
+AUTOSAVE_PATH = Path(__file__).parent / ".autosave.json"
+AUTOSAVE_LOCK = threading.Lock()
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -138,6 +145,10 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path == "/api/autosave":
+            data = AUTOSAVE_PATH.read_bytes() if AUTOSAVE_PATH.exists() else b"null"
+            self._send(data, "application/json; charset=utf-8")
+            return
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
             self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,
@@ -173,6 +184,24 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if self.path == "/api/autosave":
+                n = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(n)
+                json.loads(raw)  # не пишем на диск то, что не распарсится обратно
+                with AUTOSAVE_LOCK:
+                    tmp = AUTOSAVE_PATH.with_suffix(".tmp")
+                    tmp.write_bytes(raw)
+                    tmp.replace(AUTOSAVE_PATH)
+                self.send_response(204)
+                self.end_headers()
+                return
+            if self.path == "/api/import-gisogd":
+                n = int(self.headers.get("Content-Length", 0))
+                raw = self.rfile.read(n)
+                out = studio_core.import_gisogd(raw)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
             if self.path == "/api/open-grado":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)

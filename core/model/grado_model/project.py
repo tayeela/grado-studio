@@ -254,6 +254,13 @@ class Project:
         if exists:
             raise ProjectError(f"слой {layer_id} уже есть в проекте")
         title = title or c.title
+        # identifier в gpkg_contents уникален на уровне GeoPackage — если два
+        # слоя одного класса получат одинаковый заголовок (оба без явного
+        # title), различаем их по layer_id вместо падения сырым
+        # IntegrityError внутри add_feature_table
+        if self.conn.execute(
+                "SELECT 1 FROM grado_layers WHERE title=?", (title,)).fetchone():
+            title = f"{title} ({layer_id})"
         stage = c.stage if stage is None else stage
         style_id = c.style_id if style_id is None else style_id
         columns = [(a["id"], a["type"]) for a in c.attrs]

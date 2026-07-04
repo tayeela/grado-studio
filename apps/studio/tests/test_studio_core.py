@@ -696,5 +696,97 @@ class TestStyleLibrary(unittest.TestCase):
         self.assertIn("TEST_DIM", dxf, "имя слоя размеров тоже из JSON")
 
 
+def _make_ogd_zip(path, inner_files):
+    """Внешний ZIP с вложенным ZIP, как отдаёт портал ОГД (см. коннектор)."""
+    import io
+    import json
+    import zipfile
+    inner = io.BytesIO()
+    with zipfile.ZipFile(inner, "w") as zf:
+        for name, data in inner_files.items():
+            zf.writestr(name, json.dumps(data, ensure_ascii=False))
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("выгрузка/данные.zip", inner.getvalue())
+
+
+def _ogd_gj(coords, geom_type="Polygon", name="Зона 1"):
+    return {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "id": 1,
+         "geometry": {"type": geom_type, "coordinates": coords},
+         "properties": {"NAME": name}}]}
+
+
+class TestGisogdImport(unittest.TestCase):
+    """MODEL-плюс: подключение коннектора ГИС ОГД к студии (Фаза B)."""
+
+    def setUp(self):
+        from grado_connectors import SnapshotStore
+        self._orig = studio_core.SOURCE_STORE
+        self._tmp = tempfile.TemporaryDirectory()
+        studio_core.SOURCE_STORE = SnapshotStore(Path(self._tmp.name) / "src")
+
+    def tearDown(self):
+        studio_core.SOURCE_STORE = self._orig
+        self._tmp.cleanup()
+
+    def _zip_bytes(self, inner_files):
+        with tempfile.TemporaryDirectory() as tmp:
+            zpath = Path(tmp) / "ogd.zip"
+            _make_ogd_zip(zpath, inner_files)
+            return zpath.read_bytes()
+
+    def test_recognized_layer_routes_to_source_layer(self):
+        poly = [[[37.6155646254, 55.7522242128], [37.617, 55.7522242128],
+                 [37.617, 55.753], [37.6155646254, 55.7522242128]]]
+        data = self._zip_bytes({
+            "funkcionalnie_zony.geojson": _ogd_gj(poly, name="Ж-1")})
+        out = studio_core.import_gisogd(data)
+        self.assertEqual(len(out["features"]), 1)
+        f = out["features"][0]
+        self.assertEqual(f["kind"], "zone")
+        self.assertEqual(f["layer_id"], "source.gisogd.func_zones")
+        self.assertEqual(f["props"]["zone_title"], "Ж-1")
+        self.assertEqual(f["prov"]["source"], "gisogd")
+        x, y = f["ring"][0]
+        self.assertAlmostEqual(x, 98, delta=15)
+        self.assertAlmostEqual(y, 1371, delta=15)
+
+    def test_unrecognized_member_noted_not_dropped_silently(self):
+        poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
+        data = self._zip_bytes({"kultobjekty.geojson": _ogd_gj(poly)})
+        out = studio_core.import_gisogd(data)
+        self.assertEqual(out["features"], [])
+        self.assertTrue(any("kultobjekty" in n and "не распознан" in n
+                            for n in out["notes"]))
+
+    def test_multiple_recognized_layers_and_roundtrip(self):
+        poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
+        line = [[37.6, 55.7], [37.62, 55.7]]
+        data = self._zip_bytes({
+            "krasnye_linii.geojson": _ogd_gj(line, geom_type="LineString"),
+            "zouit_sanitarnye.geojson": _ogd_gj(poly, name="СЗЗ предприятия"),
+        })
+        out = studio_core.import_gisogd(data)
+        kinds = sorted(f["kind"] for f in out["features"])
+        self.assertEqual(kinds, ["redline", "restrict"])
+        restrict = next(f for f in out["features"] if f["kind"] == "restrict")
+        self.assertEqual(restrict["layer_id"], "source.gisogd.restrict")
+        self.assertEqual(restrict["props"]["kind"], "СЗЗ предприятия")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "ogd.grado", "ОГД", out["features"])
+            ids = {i["layer_id"] for i in p.layers()}
+            self.assertIn("source.gisogd.red_lines", ids)
+            self.assertIn("source.gisogd.restrict", ids)
+            p.close()
+
+    def test_snapshot_and_provenance_recorded(self):
+        poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
+        data = self._zip_bytes({"funkcionalnie_zony.geojson": _ogd_gj(poly)})
+        out = studio_core.import_gisogd(data)
+        self.assertTrue(out["snapshot"]["id"].startswith("gisogd-"))
+        self.assertIsNone(out["diff"], "первый импорт — без diff")
+        self.assertEqual(len(studio_core.sources_journal()), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,1925 @@
+{
+  "_doc": "Эталон условных картографических знаков линий градостроительного регулирования и зон (М 1:2000). Источник: приказ Москомархитектуры от 10.03.2025 № 65 (заменил приказ от 29.01.2025 № 19). lgr_code — код линии по Эталону; lgr_priority — приоритет визуального отображения при наложении из приложения 2 (1 высший, 27 низший; отсутствует — вне перечня приложения 2); lgr_ppm_item — пункт перечня ЛГР по ППМ от 16.04.2019 № 365-ПП. hatch: angle 0|45|90|135 (градусы от горизонтали), cross — сетка, spacing — шаг штриховки, color — цвет зоны по Эталону (HTML), cmyk — справочно из Эталона. line_label — повторяющаяся подпись вдоль линии по образцу условного знака. Упрощения относительно Эталона: маркеры-засечки на линиях границ зон (флажки, треугольники, точки) не воспроизводятся; подписи линий шрифтом холста.",
+  "styles": {
+    "lgr.kl.uds": {
+      "title": "КЛ УДС (территории общего пользования УДС)",
+      "group": "Красные линии",
+      "lgr_code": 1,
+      "lgr_ppm_item": "1.1",
+      "lgr_priority": 15,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": null,
+      "dash_px": null,
+      "line_label": "красная",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 113,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_1",
+        "color": 1
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#df0024",
+        "cmyk": "0,100,100,0"
+      }
+    },
+    "lgr.kl.top": {
+      "title": "КЛ ТОП (территории общего пользования)",
+      "group": "Красные линии",
+      "lgr_code": 2,
+      "lgr_ppm_item": "1.2",
+      "lgr_priority": 20,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "кл топ",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 108,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_2",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.kl.lo": {
+      "title": "КЛ ЛО (линейные объекты)",
+      "group": "Красные линии",
+      "lgr_code": 3,
+      "lgr_ppm_item": "1.3",
+      "lgr_priority": 21,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "кл ло",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 107,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_3",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.kl.odms": {
+      "title": "КЛ ОДМС (дорожно-мостовое строительство)",
+      "group": "Красные линии",
+      "lgr_code": 4,
+      "lgr_ppm_item": "1.4",
+      "lgr_priority": 16,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "кл одмс",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 112,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_4",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.zone.transport": {
+      "title": "Зоны транспортных сооружений",
+      "group": "Красные линии",
+      "lgr_code": 25,
+      "lgr_ppm_item": "1.4.1",
+      "lgr_priority": 23,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона сооружений транспорта",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 105,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_25",
+        "color": 1
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#df0024",
+        "cmyk": "0,100,100,0"
+      }
+    },
+    "lgr.zatop": {
+      "title": "Зоны затопления",
+      "group": "ЗОУИТ",
+      "lgr_code": 22,
+      "lgr_ppm_item": "2.3.1",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_22",
+        "color": 151
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#8cbeff",
+        "cmyk": "47,14,0,0"
+      }
+    },
+    "lgr.podtop.strong": {
+      "title": "Зоны подтопления (сильного)",
+      "group": "ЗОУИТ",
+      "lgr_code": 64,
+      "lgr_ppm_item": "2.3.2",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_64",
+        "color": 201
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#b18dbe",
+        "cmyk": "24,49,10,0"
+      }
+    },
+    "lgr.podtop.mid": {
+      "title": "Зоны подтопления (умеренного)",
+      "group": "ЗОУИТ",
+      "lgr_code": 65,
+      "lgr_ppm_item": "2.3.3",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_65",
+        "color": 151
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#94c5ff",
+        "cmyk": "54,19,0,0"
+      }
+    },
+    "lgr.podtop.weak": {
+      "title": "Зоны подтопления (слабого)",
+      "group": "ЗОУИТ",
+      "lgr_code": 66,
+      "lgr_ppm_item": "2.3.4",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_66",
+        "color": 121
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#abe6d2",
+        "cmyk": "33,10,18,0"
+      }
+    },
+    "lgr.priaero": {
+      "title": "Приаэродромная территория",
+      "group": "ЗОУИТ",
+      "lgr_code": 50,
+      "lgr_ppm_item": "2.4",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_50",
+        "color": 34
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#694720",
+        "cmyk": "33,58,83,48"
+      }
+    },
+    "lgr.okhr.object": {
+      "title": "Зона охраняемого объекта",
+      "group": "ЗОУИТ",
+      "lgr_code": 44,
+      "lgr_ppm_item": "2.5",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_44",
+        "color": 34
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#694720",
+        "cmyk": "33,58,83,48"
+      }
+    },
+    "lgr.vodookhr": {
+      "title": "Водоохранные зоны",
+      "group": "ЗОУИТ",
+      "lgr_code": 16,
+      "lgr_ppm_item": "2.6",
+      "lgr_priority": 12,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "водоохранная",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 116,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_16",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 5,
+        "spacing_mm": 1.3,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.pribrezh": {
+      "title": "Прибрежные защитные полосы",
+      "group": "ЗОУИТ",
+      "lgr_code": 17,
+      "lgr_ppm_item": "2.7",
+      "lgr_priority": 11,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "прибрежная",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 117,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_17",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 5,
+        "spacing_mm": 1.3,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.1": {
+      "title": "Зона 1 пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 13,
+      "lgr_ppm_item": "2.8.1",
+      "lgr_priority": 1,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона I пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 127,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_13",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.1a": {
+      "title": "Зона 1А пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 59,
+      "lgr_ppm_item": "2.8.1.1",
+      "lgr_priority": 2,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона IА пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 126,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_59",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.1b": {
+      "title": "Зона 1Б пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 60,
+      "lgr_ppm_item": "2.8.1.2",
+      "lgr_priority": 3,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона IБ пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 125,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_60",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.2": {
+      "title": "Зона 2 пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 14,
+      "lgr_ppm_item": "2.8.2",
+      "lgr_priority": 5,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона II пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 123,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_14",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.2hard": {
+      "title": "Жёсткая зона 2 пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 15,
+      "lgr_ppm_item": "2.8.3",
+      "lgr_priority": 4,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "жесткая зона II пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 124,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_15",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.sanokhr.3": {
+      "title": "Зона 3 пояса санитарной охраны",
+      "group": "ЗОУИТ",
+      "lgr_code": 61,
+      "lgr_ppm_item": "2.8.4",
+      "lgr_priority": 6,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        1.5,
+        0.5,
+        1.5
+      ],
+      "dash_px": [
+        12,
+        4,
+        2,
+        4
+      ],
+      "line_label": "зона III пояса санитарной охраны",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 122,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_61",
+        "color": 5
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#0669b2",
+        "cmyk": "100,50,0,0"
+      }
+    },
+    "lgr.szz.set": {
+      "title": "СЗЗ (установленная)",
+      "group": "ЗОУИТ",
+      "lgr_code": 5,
+      "lgr_ppm_item": "2.9.1",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "санитарно-защитная зона",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_5",
+        "color": 61
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#7cc623",
+        "cmyk": "50,0,100,0"
+      }
+    },
+    "lgr.szz.calc": {
+      "title": "СЗЗ (расчётная)",
+      "group": "ЗОУИТ",
+      "lgr_code": 62,
+      "lgr_ppm_item": "2.9.2",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "санитарно-защитная зона",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_62",
+        "color": 61
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#7cc623",
+        "cmyk": "50,0,100,0"
+      }
+    },
+    "lgr.szz.orient": {
+      "title": "СЗЗ (ориентировочная)",
+      "group": "ЗОУИТ",
+      "lgr_code": 63,
+      "lgr_ppm_item": "2.9.3",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "санитарно-защитная зона",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_63",
+        "color": 61
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#7cc623",
+        "cmyk": "50,0,100,0"
+      }
+    },
+    "lgr.military": {
+      "title": "Зоны военных объектов",
+      "group": "ЗОУИТ",
+      "lgr_code": 30,
+      "lgr_ppm_item": "2.10",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона военного О",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_30",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 5,
+        "spacing_mm": 1.3,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.radio": {
+      "title": "Зоны радиотехнических объектов",
+      "group": "ЗОУИТ",
+      "lgr_code": 31,
+      "lgr_ppm_item": "2.11",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона радиотехнического О",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_31",
+        "color": 30
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#eb880e",
+        "cmyk": "0,60,100,0"
+      }
+    },
+    "lgr.oopt.okhr": {
+      "title": "Охранные зоны ООПТ",
+      "group": "ЗОУИТ",
+      "lgr_code": 19,
+      "lgr_ppm_item": "2.12",
+      "lgr_priority": 7,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона ООПТ",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 121,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_19",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.energo": {
+      "title": "Охранные зоны электроэнергетики",
+      "group": "ЗОУИТ",
+      "lgr_code": 32,
+      "lgr_ppm_item": "2.13",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона О электроэнергетики",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_32",
+        "color": 30
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#eb880e",
+        "cmyk": "0,60,100,0"
+      }
+    },
+    "lgr.svyaz": {
+      "title": "Охранные зоны линий связи",
+      "group": "ЗОУИТ",
+      "lgr_code": 34,
+      "lgr_ppm_item": "2.15",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона связи",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_34",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.truboprovod": {
+      "title": "Охранные зоны трубопроводов",
+      "group": "ЗОУИТ",
+      "lgr_code": 35,
+      "lgr_ppm_item": "2.16",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона трубопровода",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_35",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 5,
+        "spacing_mm": 1.3,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.nablud": {
+      "title": "Охранные зоны пунктов наблюдений",
+      "group": "ЗОУИТ",
+      "lgr_code": 37,
+      "lgr_ppm_item": "2.17",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_37",
+        "color": 34
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#694720",
+        "cmyk": "33,58,83,48"
+      }
+    },
+    "lgr.geodez": {
+      "title": "Охранные зоны геодезических пунктов",
+      "group": "ЗОУИТ",
+      "lgr_code": 38,
+      "lgr_ppm_item": "2.18",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_38",
+        "color": 34
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#694720",
+        "cmyk": "33,58,83,48"
+      }
+    },
+    "lgr.trubo.mindist": {
+      "title": "Зоны мин. расстояний до трубопроводов",
+      "group": "ЗОУИТ",
+      "lgr_code": 39,
+      "lgr_ppm_item": "2.19",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона мин расстояний",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_39",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.teplo": {
+      "title": "Охранные зоны тепловых сетей",
+      "group": "ЗОУИТ",
+      "lgr_code": 40,
+      "lgr_ppm_item": "2.20",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона теплосетей",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_40",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.oopt": {
+      "title": "ООПТ (кроме памятников природы)",
+      "group": "Иные территории",
+      "lgr_code": 8,
+      "lgr_ppm_item": "3.2",
+      "lgr_priority": 8,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "ООПТ",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 120,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_8",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.oopt.rezhim": {
+      "title": "Режимы особой охраны ООПТ",
+      "group": "Иные территории",
+      "lgr_code": 7,
+      "lgr_ppm_item": "3.2.1",
+      "lgr_priority": 18,
+      "fill": null,
+      "stroke": "#4caf50",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": null,
+      "dash_px": null,
+      "line_label": "режим",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 110,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_7",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.pamyatnik": {
+      "title": "Памятники природы",
+      "group": "Иные территории",
+      "lgr_code": 55,
+      "lgr_ppm_item": "3.2.2",
+      "lgr_priority": 9,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "памятник природы",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 119,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_55",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.oopt.oks": {
+      "title": "Зоны размещения ОКС на ООПТ",
+      "group": "Иные территории",
+      "lgr_code": 57,
+      "lgr_ppm_item": "3.2.3",
+      "lgr_priority": 19,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "ОКС",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 109,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_57",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.oopt.rezerv": {
+      "title": "Резерв для образования ООПТ",
+      "group": "Иные территории",
+      "lgr_code": 46,
+      "lgr_ppm_item": "3.3",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "Резерв ООПТ",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_46",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    },
+    "lgr.oozt": {
+      "title": "Особо охраняемые зелёные территории",
+      "group": "Иные территории",
+      "lgr_code": 47,
+      "lgr_ppm_item": "3.4",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "ООЗТ",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_47",
+        "color": 3
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#009f3c",
+        "cmyk": "100,0,100,0"
+      }
+    },
+    "lgr.beregovaya": {
+      "title": "Береговые полосы",
+      "group": "Иные территории",
+      "lgr_code": 41,
+      "lgr_ppm_item": "3.5",
+      "lgr_priority": 13,
+      "fill": null,
+      "stroke": "#3d4db2",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "береговая",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 115,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_41",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.pk": {
+      "title": "Объекты природного комплекса",
+      "group": "Иные территории",
+      "lgr_code": 18,
+      "lgr_ppm_item": "3.6",
+      "lgr_priority": 10,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "ПК",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 118,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_18",
+        "color": 3
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#009f3c",
+        "cmyk": "100,0,100,0"
+      }
+    },
+    "lgr.pk.rezhim": {
+      "title": "Режимы на территориях ПК",
+      "group": "Иные территории",
+      "lgr_code": 21,
+      "lgr_ppm_item": "3.6.1",
+      "lgr_priority": 17,
+      "fill": null,
+      "stroke": "#4caf50",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": null,
+      "dash_px": null,
+      "line_label": "режим",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 111,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_21",
+        "color": 3
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#009f3c",
+        "cmyk": "100,0,100,0"
+      }
+    },
+    "lgr.tech.zone": {
+      "title": "Технические зоны инженерных коммуникаций",
+      "group": "Иные территории",
+      "lgr_code": 29,
+      "lgr_ppm_item": "3.7",
+      "lgr_priority": 25,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "техническая зона",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 103,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_29",
+        "color": 207
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 5,
+        "spacing_mm": 1.3,
+        "color": "#3d107b",
+        "cmyk": "10,100,0,0"
+      }
+    },
+    "lgr.metro": {
+      "title": "Технические зоны метрополитена",
+      "group": "Иные территории",
+      "lgr_code": 36,
+      "lgr_ppm_item": "3.8",
+      "lgr_priority": 26,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "техзона метро",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 102,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_36",
+        "color": 30
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#eb880e",
+        "cmyk": "0,60,100,0"
+      }
+    },
+    "lgr.zhd": {
+      "title": "Полосы отвода железных дорог",
+      "group": "Иные территории",
+      "lgr_code": 6,
+      "lgr_ppm_item": "3.9",
+      "lgr_priority": 14,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        1.5,
+        0.5,
+        1.5
+      ],
+      "dash_px": [
+        12,
+        4,
+        2,
+        4
+      ],
+      "line_label": "ПОЖД",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 114,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_6",
+        "color": 30
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#eb880e",
+        "cmyk": "0,60,100,0"
+      }
+    },
+    "lgr.peshekhod": {
+      "title": "Зоны внеуличных пешеходных переходов",
+      "group": "Иные территории",
+      "lgr_code": 45,
+      "lgr_ppm_item": "3.10",
+      "lgr_priority": 27,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона ВПП",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 101,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_45",
+        "color": 7
+      },
+      "hatch": false
+    },
+    "lgr.zastroyka": {
+      "title": "Линии застройки",
+      "group": "Иные территории",
+      "lgr_code": 26,
+      "lgr_ppm_item": "3.11",
+      "lgr_priority": 24,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "линия застройки",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 104,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_26",
+        "color": 7
+      },
+      "hatch": false
+    },
+    "lgr.vozdukh": {
+      "title": "Полосы воздушных подходов аэродромов",
+      "group": "Иные территории",
+      "lgr_code": 51,
+      "lgr_ppm_item": "3.12",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_51",
+        "color": 34
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#694720",
+        "cmyk": "33,58,83,48"
+      }
+    },
+    "lgr.lesopark": {
+      "title": "Лесопарковые зелёные пояса",
+      "group": "Иные территории",
+      "lgr_code": 49,
+      "lgr_ppm_item": "3.13",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "ЛЗП",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_49",
+        "color": 3
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": true,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#009f3c",
+        "cmyk": "100,0,100,0"
+      }
+    },
+    "lgr.transp.comm": {
+      "title": "Зоны транспортных коммуникаций",
+      "group": "Иные территории",
+      "lgr_code": 58,
+      "lgr_ppm_item": "3.14",
+      "lgr_priority": 22,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона транспортных коммуникаций",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 106,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_58",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 135,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.okn.okhr": {
+      "title": "Охранные зоны ОКН",
+      "group": "ОКН",
+      "lgr_code": 10,
+      "lgr_ppm_item": "2.1.1",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "охранная зона ОКН",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_10",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.okn.reg": {
+      "title": "Зоны регулирования застройки (ОКН)",
+      "group": "ОКН",
+      "lgr_code": 23,
+      "lgr_ppm_item": "2.1.2",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона регулирования застройки ОКН",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_23",
+        "color": 6
+      },
+      "hatch": {
+        "angle": 90,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#e3007b",
+        "cmyk": "0,100,0,0"
+      }
+    },
+    "lgr.okn.landshaft": {
+      "title": "Зоны охраняемого природного ландшафта",
+      "group": "ОКН",
+      "lgr_code": 11,
+      "lgr_ppm_item": "2.1.3",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "зона охраняемого природного ландшафта",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_11",
+        "color": 3
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#009f3c",
+        "cmyk": "100,0,100,0"
+      }
+    },
+    "lgr.okn.zashchit": {
+      "title": "Защитные зоны ОКН",
+      "group": "ОКН",
+      "lgr_code": 20,
+      "lgr_ppm_item": "2.2",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "защитная зона ОКН",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_20",
+        "color": 4
+      },
+      "hatch": {
+        "angle": 0,
+        "cross": false,
+        "spacing_px": 14,
+        "spacing_mm": 3.6,
+        "color": "#20e6f2",
+        "cmyk": "50,0,18,0"
+      }
+    },
+    "lgr.okn.terr": {
+      "title": "Территории ОКН",
+      "group": "ОКН",
+      "lgr_code": 9,
+      "lgr_ppm_item": "3.1",
+      "lgr_priority": null,
+      "fill": null,
+      "stroke": "#df0024",
+      "width_mm": 0.5,
+      "width_px": 1.6,
+      "dash_mm": [
+        6.0,
+        2.0
+      ],
+      "dash_px": [
+        12,
+        5
+      ],
+      "line_label": "Тер ОКН",
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 100,
+      "codes": [],
+      "dxf": {
+        "name": "LGR_9",
+        "color": 2
+      },
+      "hatch": {
+        "angle": 45,
+        "cross": false,
+        "spacing_px": 9,
+        "spacing_mm": 2.4,
+        "color": "#f8f400",
+        "cmyk": "0,0,100,0"
+      }
+    }
+  }
+}

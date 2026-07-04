@@ -74,33 +74,43 @@ def _points(geom):
     return []
 
 
-def hatch_ops(rings, spacing, stroke, width=0.16):
-    """Диагональная штриховка 45° внутри полигона (мм листа).
+def hatch_ops(rings, spacing, stroke, width=0.16, angle=45, cross=False):
+    """Штриховка внутри полигона (мм листа): угол 0/45/90/135, cross — сетка.
 
-    Семейство прямых x+y=c пересекается с рёбрами всех колец; точки
-    сортируются вдоль прямой, чётные пары дают отрезки — even-odd
-    корректно обрабатывает дырки. Один op со многими сегментами."""
+    Семейство прямых n·p=c (n — нормаль к штрихам) пересекается с рёбрами
+    всех колец; точки сортируются вдоль прямой, чётные пары дают отрезки —
+    even-odd корректно обрабатывает дырки. Один op со многими сегментами.
+    Углы по Эталону ЛГР (приказ ММА № 65): 0 горизонталь, 90 вертикаль,
+    45 «///», 135 «\\\\»."""
     xs = [p[0] for r in rings for p in r]
     ys = [p[1] for r in rings for p in r]
     if not xs:
         return []
+    # (нормаль, параметр вдоль штриха, шаг по c) для каждого направления
+    axes = {0:   (lambda x, y: y,     lambda x, y: x,     spacing),
+            90:  (lambda x, y: x,     lambda x, y: y,     spacing),
+            45:  (lambda x, y: x + y, lambda x, y: x - y, spacing * 1.41421),
+            135: (lambda x, y: x - y, lambda x, y: x + y, spacing * 1.41421)}
     segments = []
-    c = (min(xs) + min(ys)) - ((min(xs) + min(ys)) % spacing)
-    c_max = max(xs) + max(ys)
-    while c <= c_max:
-        hits = []
-        for ring in rings:
-            for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
-                s1, s2 = x1 + y1 - c, x2 + y2 - c
-                if (s1 > 0) == (s2 > 0):
-                    continue
-                t = s1 / (s1 - s2)
-                px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
-                hits.append((px - py, (px, py)))  # параметр вдоль прямой
-        hits.sort(key=lambda h: h[0])
-        for a, b in zip(hits[::2], hits[1::2]):
-            segments.append([list(a[1]), list(b[1])])
-        c += spacing
+    for a in ([45, 135] if cross else [angle if angle in axes else 45]):
+        n_of, t_of, step = axes[a]
+        values = [n_of(x, y) for x, y in zip(xs, ys)]
+        c = min(values) - (min(values) % step)
+        c_max = max(values)
+        while c <= c_max:
+            hits = []
+            for ring in rings:
+                for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+                    s1, s2 = n_of(x1, y1) - c, n_of(x2, y2) - c
+                    if (s1 > 0) == (s2 > 0):
+                        continue
+                    t = s1 / (s1 - s2)
+                    px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
+                    hits.append((t_of(px, py), (px, py)))
+            hits.sort(key=lambda h: h[0])
+            for a2, b2 in zip(hits[::2], hits[1::2]):
+                segments.append([list(a2[1]), list(b2[1])])
+            c += step
     if not segments:
         return []
     return [{"op": "path", "rings": segments, "closed": False,
@@ -128,18 +138,26 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
     ops = [{"op": "clip", "rect": tuple(frame_rect)}]
     labels = []
     for info in layers:
-        st = styles.resolve(info["code"])
+        layer_st = styles.resolve(info["code"])
         for f in project.layer_by_id(info["layer_id"]).features():
             geom = f["geom"]
             if not geom:
                 continue
+            # per-object стиль (столбец style_id в .grado) важнее стиля слоя:
+            # напр. водоохранная зона со знаком Эталона ЛГР на слое ЗОУИТ
+            st = styles.resolve_id(f.get("style_id")) or layer_st
             for poly in _polygons(geom):
                 rings = [tr.ring(r) for r in poly]
                 ops.append({"op": "path", "rings": rings, "closed": True,
                             "fill": st.fill, "stroke": st.stroke,
                             "width": st.width, "dash": st.dash})
                 if st.hatch:
-                    ops.extend(hatch_ops(rings, spacing=1.6, stroke=st.stroke))
+                    h = st.hatch if isinstance(st.hatch, dict) else {}
+                    from .style import hex_to_rgb
+                    color = hex_to_rgb(h.get("color")) or st.stroke
+                    ops.extend(hatch_ops(
+                        rings, spacing=h.get("spacing_mm", 1.6), stroke=color,
+                        angle=h.get("angle", 45), cross=h.get("cross", False)))
                 if st.label and f["attrs"].get(st.label) is not None:
                     lx, ly = centroid(rings[0])
                     labels.append({"op": "text", "x": lx, "y": ly,

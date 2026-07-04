@@ -8,10 +8,12 @@
 from .backend_pdf import PdfBackend, jpeg_info
 from .backend_svg import render_svg
 from .scene import MapTransform, build_ops, project_extent
-from .style import Style, StyleSet, hex_to_rgb, load_library
+from .style import (Style, StyleSet, hex_to_rgb, load_library,
+                    merged_library)
 from .ttf import Font, FontError, find_font
 
 __all__ = ["PdfBackend", "jpeg_info", "render_svg", "build_ops",
            "project_extent", "MapTransform", "Style", "StyleSet",
-           "hex_to_rgb", "load_library", "Font", "FontError", "find_font"]
+           "hex_to_rgb", "load_library", "merged_library",
+           "Font", "FontError", "find_font"]
 __version__ = "0.1.0"

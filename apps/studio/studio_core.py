@@ -40,16 +40,18 @@ ORIGIN = (413000.0, 6178000.0)
 PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.json"
 
 # --- единая библиотека стилей (styles/default.json): холст + PDF + DXF ------
-from grado_render import load_library  # noqa: E402
+from grado_render import merged_library  # noqa: E402
 
-STYLE_LIB = load_library()
+# default.json (базовые стили ГРАДО) + moscow_lgr.json (Эталон ЛГР,
+# приказ Москомархитектуры от 10.03.2025 № 65) — единая системная библиотека
+STYLE_LIB = merged_library()
 
 # --- источники: снимки (SnapshotStore) + провенанс + журнал (шаг 6) ---------
 # Импорт НСПД/ФГИС ТП фиксирует неизменяемый датированный снимок (sha256),
 # каждый объект несёт провенанс (source/date/doc/snapshot), переимпорт
 # сравнивается с прошлым снимком (diff). Стор — на диске рядом с кэшем
 # тайлов (в .gitignore). Тесты подменяют SOURCE_STORE на временный.
-from grado_connectors import (NspdCapture, SnapshotStore,  # noqa: E402
+from grado_connectors import (GisogdZip, NspdCapture, SnapshotStore,  # noqa: E402
                               diff as _snap_diff, has_changes as _has_changes)
 from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
@@ -135,7 +137,11 @@ def dxf_layers_from_styles():
 
 def frontend_styles():
     """Стили для холста студии: style_id → {fill, stroke, width(px), dash(px),
-    hatch, label_field}. Прозрачность заливки свёрнута в rgba()."""
+    hatch, label_field, ...}. Прозрачность заливки свёрнута в rgba().
+
+    hatch: true (легаси, 45° цветом обводки) ИЛИ объект Эталона ЛГР
+    {angle, cross, spacing_px, color}. Метаданные lgr_* и title/group идут
+    в UI (выбор стиля из библиотеки в панели форматирования/свойств)."""
     out = {}
     for sid, s in STYLE_LIB["styles"].items():
         fill, op = s.get("fill"), s.get("fill_opacity")
@@ -147,10 +153,22 @@ def frontend_styles():
             entry["fill"] = fill
         if s.get("dash_px"):
             entry["dash"] = s["dash_px"]
-        if s.get("hatch"):
+        h = s.get("hatch")
+        if isinstance(h, dict):
+            entry["hatch"] = {k: h[k] for k in
+                              ("angle", "cross", "spacing_px", "color") if k in h}
+        elif h:
             entry["hatch"] = True
         if s.get("label_field"):
             entry["label_field"] = s["label_field"]
+        if s.get("line_label"):
+            entry["line_label"] = s["line_label"]
+        if s.get("title"):
+            entry["title"] = s["title"]
+        if s.get("group"):
+            entry["group"] = s["group"]
+        if s.get("lgr_code") is not None:
+            entry["lgr_code"] = s["lgr_code"]
         out[sid] = entry
     return out
 
@@ -366,6 +384,15 @@ LAYER_TEMPLATES = {
     "source.fgistp.func_zones":   {"code": "tp.func_zone", "stage": "existing",
                                    "source_kind": "fgistp",
                                    "title": "ФГИС ТП: функциональные зоны"},
+    "source.gisogd.func_zones":   {"code": "tp.func_zone", "stage": "existing",
+                                   "source_kind": "gisogd",
+                                   "title": "ГИС ОГД: функциональные зоны"},
+    "source.gisogd.red_lines":    {"code": "pp.red_line", "stage": "existing",
+                                   "source_kind": "gisogd",
+                                   "title": "ГИС ОГД: красные линии"},
+    "source.gisogd.restrict":     {"code": "terr.restrict", "stage": "existing",
+                                   "source_kind": "gisogd",
+                                   "title": "ГИС ОГД: зоны с особыми условиями"},
 }
 # слой по умолчанию для kind (legacy-объекты без layer_id)
 _KIND_TO_LAYER = {"boundary": "project.territory.boundary",
@@ -704,6 +731,86 @@ def import_nspd(payload):
                              "props": {k: v for k, v in attrs.items() if v},
                              "prov": dict(prov)})
     return {"features": features, "notes": result["notes"],
+            "source_doc": result.get("source_doc"),
+            "snapshot": manifest, "diff": d}
+
+
+# ГИС ОГД отдаёт произвольный набор слоёв в одном ZIP (имя = grado_member
+# из имени файла-члена архива, портал не стандартизирует состав выгрузки).
+# Распознаём по подстроке в имени только слои с уже готовой моделью/стилем;
+# остальные не теряются молча — попадают в notes для показа в UI.
+_GISOGD_LAYER_RULES = [
+    (("функционал", "funkcional"), "zone", "source.gisogd.func_zones"),
+    (("красн", "krasn"), "redline", "source.gisogd.red_lines"),
+    (("зоуит", "zouit", "охран", "ohran", "sanit", "санит"), "restrict",
+     "source.gisogd.restrict"),
+]
+
+
+def _gisogd_route(member):
+    low = member.lower()
+    for keys, kind, layer_id in _GISOGD_LAYER_RULES:
+        if any(k in low for k in keys):
+            return kind, layer_id
+    return None, None
+
+
+def import_gisogd(zip_bytes):
+    """Выгрузка ГИС ОГД Москвы (ZIP с портала) → фигуры холста.
+
+    Коннектор распаковывает ZIP-в-ZIP и SHP (МСК-50 → WGS84 через ogr2ogr);
+    здесь координаты доводятся до локальных метров холста, а слои архива
+    маршрутизируются в модель по имени члена (см. _GISOGD_LAYER_RULES)."""
+    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
+
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        tmp.write(zip_bytes)
+        tmp_path = tmp.name
+    try:
+        conn = GisogdZip()
+        result = conn.fetch(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+    result["params"] = {**(result.get("params") or {}),
+                        "extent": _territory_key(result["features"])}
+    manifest, d = _snapshot(conn, result)
+    prov = _prov(manifest)
+
+    features, notes, unknown = [], list(result["notes"]), set()
+    for f in result["features"]:
+        geom = f.get("geometry")
+        if not geom:
+            continue
+        member = (f["properties"] or {}).get("grado_member", "")
+        kind, layer_id = _gisogd_route(member)
+        if kind is None:
+            if member not in unknown:
+                notes.append(f"«{member}»: тип слоя не распознан, объекты пропущены")
+                unknown.add(member)
+            continue
+        name = f["properties"].get("NAME") or f["properties"].get("name")
+        try:
+            utm = transform_geom(geom, wgs84_to_utm37n)
+        except Exception:
+            continue
+        if kind == "redline":
+            if utm["type"] != "LineString":
+                continue
+            features.append({"kind": "redline", "layer_id": layer_id,
+                             "line": _to_local(utm["coordinates"]),
+                             "props": {"status": "существующая"}, "prov": dict(prov)})
+            continue
+        polys = ([utm["coordinates"]] if utm["type"] == "Polygon"
+                 else utm["coordinates"] if utm["type"] == "MultiPolygon" else [])
+        for poly in polys:
+            ring = _to_local(poly[0])
+            if ring[0] == ring[-1]:
+                ring = ring[:-1]
+            props = ({"zone_title": name or "ГИС ОГД"} if kind == "zone"
+                     else {"kind": name or "ЗОУИТ", "basis": "ГИС ОГД"})
+            features.append({"kind": kind, "layer_id": layer_id, "ring": ring,
+                             "props": props, "prov": dict(prov)})
+    return {"features": features, "notes": notes,
             "source_doc": result.get("source_doc"),
             "snapshot": manifest, "diff": d}
 

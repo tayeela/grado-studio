@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.16.0";
+const VERSION = "0.21.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -61,6 +61,18 @@ const LAYERS_V2 = [
     semantic_class: "cad.parcel", geometry_type: "polygon",
     style_id: "parcel.line", stage: "existing", source_kind: "nspd",
     defaults: () => ({}) },
+  { id: "source.gisogd.func_zones", title: "ГИС ОГД: функц. зоны", kind: "zone",
+    semantic_class: "tp.func_zone", geometry_type: "polygon",
+    style_id: "func_zone.fill", stage: "existing", source_kind: "gisogd",
+    import_only: true, defaults: () => ({}) },
+  { id: "source.gisogd.red_lines", title: "ГИС ОГД: красные линии", kind: "redline",
+    semantic_class: "pp.red_line", geometry_type: "polyline",
+    style_id: "red.line.projected", stage: "existing", source_kind: "gisogd",
+    import_only: true, defaults: () => ({}) },
+  { id: "source.gisogd.restrict", title: "ГИС ОГД: зоны с особыми условиями", kind: "restrict",
+    semantic_class: "terr.restrict", geometry_type: "polygon",
+    style_id: "restrict.hatch", stage: "existing", source_kind: "gisogd",
+    import_only: true, defaults: () => ({}) },
   { id: "project.apo.buildings", title: "Здание", kind: "building",
     semantic_class: "oks.building", geometry_type: "polygon",
     style_id: "building.fill", stage: "project", tool: "rect",
@@ -102,9 +114,18 @@ async function initStyles() {
 }
 
 function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] || null; }
+// Эффективный стиль слоя: базовый из библиотеки + пер-слойное переопределение
+// оформления (layer.fmt) — как символика слоя в QGIS. Переопределение живёт
+// на слое и сохраняется; на PDF/DXF (единый источник styles/default.json) не
+// влияет — это оформление именно холста.
+function layerStyle(L) {
+  if (!L) return {};
+  const base = STYLES_V2[L.style_id] || {};
+  return L.fmt ? { ...base, ...L.fmt } : base;
+}
 function styleOf(f) {
   const L = layerOf(f);
-  return (f.style_id && STYLES_V2[f.style_id]) || (L && STYLES_V2[L.style_id]) || {};
+  return (f.style_id && STYLES_V2[f.style_id]) || layerStyle(L) || {};
 }
 // ---------- инструменты: геометрия отдельно, слой отдельно (шаг 2) ----------
 // Инструмент создаёт только геометрию; слой и стиль назначает активный слой.
@@ -127,8 +148,7 @@ function naturalToolFor(L) {
 
 function styleForDrawing() {
   if (state.tool === "dim") return STYLES_V2["dimension.line"];
-  const L = activeLayer();
-  return (L && STYLES_V2[L.style_id]) || {};
+  return layerStyle(activeLayer());
 }
 function labelOf(f) {
   const st = styleOf(f);
@@ -579,6 +599,74 @@ function drawSnapMarker() {
   }
 }
 
+// Штриховка зоны по Эталону ЛГР: hatch = true (легаси 45° цветом обводки)
+// или {angle: 0|45|90|135, cross, spacing_px, color}. Рисуется в клипе контура.
+function drawHatch(ring, hatch, strokeColor) {
+  const spec = hatch === true
+    ? { angle: 45, spacing_px: 9, color: strokeColor }
+    : hatch;
+  ctx.save();
+  drawChain(ring, true);
+  ctx.clip();
+  const ss = ring.map(p => w2s(...p));
+  const xs = ss.map(p => p[0]), ys = ss.map(p => p[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  ctx.strokeStyle = spec.color || strokeColor;
+  ctx.lineWidth = 1.0;
+  ctx.setLineDash([]);
+  const step = Math.max(3, spec.spacing_px || 9);
+  const angles = spec.cross ? [45, 135] : [spec.angle ?? 45];
+  for (const a of angles) {
+    ctx.beginPath();
+    if (a === 0) {                       // горизонтальные
+      for (let y = y0; y <= y1; y += step) { ctx.moveTo(x0, y); ctx.lineTo(x1, y); }
+    } else if (a === 90) {               // вертикальные
+      for (let x = x0; x <= x1; x += step) { ctx.moveTo(x, y0); ctx.lineTo(x, y1); }
+    } else if (a === 45) {               // «///» (вверх слева направо на экране)
+      const d = step * Math.SQRT2;
+      for (let c = x0 - (y1 - y0); c < x1; c += d) {
+        ctx.moveTo(c, y1); ctx.lineTo(c + (y1 - y0), y0);
+      }
+    } else {                             // 135°: «\\\»
+      const d = step * Math.SQRT2;
+      for (let c = x0 - (y1 - y0); c < x1; c += d) {
+        ctx.moveTo(c + (y1 - y0), y1); ctx.lineTo(c, y0);
+      }
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Повторяющаяся подпись вдоль линии (условный знак ЛГР: «кл топ» и т.п.)
+function drawLineLabel(pts, text, color) {
+  const scr = pts.map(p => w2s(...p));
+  let total = 0;
+  const segs = [];
+  for (let i = 1; i < scr.length; i++) {
+    const len = Math.hypot(scr[i][0] - scr[i - 1][0], scr[i][1] - scr[i - 1][1]);
+    segs.push(len); total += len;
+  }
+  if (total < 60) return;                // слишком коротко для подписи
+  ctx.fillStyle = color; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
+  const period = Math.max(180, total / 3);  // подпись каждые ~180px
+  for (let d = period / 2; d < total; d += period) {
+    let acc = 0, i = 0;
+    while (i < segs.length && acc + segs[i] < d) acc += segs[i++];
+    if (i >= segs.length) break;
+    const t = (d - acc) / segs[i];
+    const [ax, ay] = scr[i], [bx, by] = scr[i + 1];
+    const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
+    let ang = Math.atan2(by - ay, bx - ax);
+    if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(ang);
+    ctx.fillText(text, 0, -4);
+    ctx.restore();
+  }
+}
+
 function draw() {
   const w = cv.clientWidth, h = cv.clientHeight;
   ctx.clearRect(0, 0, w, h);
@@ -629,23 +717,10 @@ function draw() {
         }
         if (st.fill && f.ring) { ctx.fillStyle = st.fill; ctx.fill(); }
         ctx.stroke();
-        if (st.hatch && f.ring) {
-          // диагональная штриховка 45° в пределах контура
-          ctx.save();
-          drawChain(f.ring, true);
-          ctx.clip();
-          const ss = f.ring.map(p => w2s(...p));
-          const xs = ss.map(p => p[0]), ys = ss.map(p => p[1]);
-          const x0 = Math.min(...xs), x1 = Math.max(...xs);
-          const y0 = Math.min(...ys), y1 = Math.max(...ys);
-          ctx.strokeStyle = st.stroke; ctx.lineWidth = 0.6;
-          ctx.beginPath();
-          for (let c = x0 - (y1 - y0); c < x1; c += 9) {
-            ctx.moveTo(c, y1);
-            ctx.lineTo(c + (y1 - y0), y0);
-          }
-          ctx.stroke();
-          ctx.restore();
+        if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
+        if (st.line_label) {
+          const pts = f.ring ? [...f.ring, f.ring[0]] : f.line;
+          drawLineLabel(pts, st.line_label, st.stroke || "#d91a1a");
         }
       }
       ctx.setLineDash([]);
@@ -761,20 +836,30 @@ function draw() {
 }
 
 // ---------- вид ----------
-function fitView() {
-  const pts = [];
-  for (const f of state.features) for (const p of featurePts(f)) pts.push(p);
+function fitPoints(pts, pad = 0.82) {
   if (!pts.length) return;
   const w = cv.clientWidth, h = cv.clientHeight;
   if (w < 2 || h < 2) return;
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
   const dx = Math.max(Math.max(...xs) - Math.min(...xs), 10);
   const dy = Math.max(Math.max(...ys) - Math.min(...ys), 10);
-  state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * 0.82));
+  state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * pad));
   state.view.tx = w / 2 - (Math.min(...xs) + dx / 2) * state.view.k;
   state.view.ty = h / 2 + (Math.min(...ys) + dy / 2) * state.view.k;
   draw();
 }
+function fitView() {
+  const pts = [];
+  for (const f of state.features) for (const p of featurePts(f)) pts.push(p);
+  fitPoints(pts);
+}
+function zoomToLayer(id) {
+  const pts = [];
+  for (const f of featuresOnLayer(id)) for (const p of featurePts(f)) pts.push(p);
+  if (!pts.length) { toast("В слое нет объектов"); return; }
+  fitPoints(pts, 0.6);
+}
+function zoomToFeature(f) { fitPoints(featurePts(f), 0.5); }
 
 // ---------- история и сохранение ----------
 function snapshot() {
@@ -794,18 +879,30 @@ function redo() {
   state.features = JSON.parse(state.redo.pop());
   state.selected = null; afterChange();
 }
+let autosaveTimer = null;
 function persist() {
-  try {
-    localStorage.setItem("grado_studio_v1", JSON.stringify({
-      features: state.features, nextId: state.nextId,
-      name: document.getElementById("project-name").value,
-      density: document.getElementById("p-density").value,
-      ratio: document.getElementById("p-ratio").value,
-      layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
-      activeLayerId: state.activeLayerId,
-      sources: state.sources,
-    }));
-  } catch (e) { /* приватный режим — работаем без сохранения */ }
+  const payload = {
+    features: state.features, nextId: state.nextId,
+    name: document.getElementById("project-name").value,
+    density: document.getElementById("p-density").value,
+    ratio: document.getElementById("p-ratio").value,
+    layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
+    layerOrder: LAYERS_V2.map(L => L.id),           // порядок отрисовки (QGIS-панель)
+    layerFmt: Object.fromEntries(                    // пер-слойное оформление холста
+      LAYERS_V2.filter(L => L.fmt).map(L => [L.id, L.fmt])),
+    activeLayerId: state.activeLayerId,
+    sources: state.sources,
+  };
+  try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
+  catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
+  // файловый бэкап на диске сервера: переживает чистку данных сайта и смену
+  // браузера, чего localStorage не гарантирует. Дебаунс — не пишем на диск
+  // на каждое перемещение мыши при afterChange().
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    fetch("/api/autosave", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload) }).catch(() => {});
+  }, 1500);
 }
 // пикетаж: подтягиваем расчёт ядра, кэш по ключу геометрии
 async function refreshStations(f) {
@@ -880,97 +977,169 @@ function renderTep(data) {
   body.innerHTML = html;
 }
 
-// ---------- свойства ----------
+// ---------- свойства (UI-03: поля из схемы semantic_class слоя, не из kind) ----------
+// Поле появляется потому, что у активного слоя такой semantic_class, а не
+// потому, что где-то в коде проверяется f.kind === "building". Добавление
+// атрибута новому слою — правка этой таблицы, а не новая ветка в renderProps.
+const ATTR_FIELDS = {
+  "oks.building": [
+    { key: "floors", title: "Этажность", type: "number", min: 1, max: 75,
+      cast: v => Math.max(1, parseInt(v) || 9) },
+    { type: "computed",
+      compute: f => `СПП: ${(ringArea(f.ring) * (f.props.floors || 1) / 1000).toFixed(1)} тыс. м²` },
+  ],
+  "pp.red_line": [
+    { key: "radius", title: "Радиус сопряжения, м", type: "number", min: 0, max: 500, step: 5,
+      cast: v => Math.max(0, parseFloat(v) || 0) },
+    { key: "pk_step", title: "Пикетаж, шаг м (0 — выкл)", type: "number", min: 0, max: 500, step: 10,
+      cast: v => Math.max(0, parseFloat(v) || 0) },
+    { type: "offset" },
+  ],
+  "tp.func_zone": [
+    { key: "zone_title", title: "Наименование зоны", type: "text" },
+  ],
+  "pp.placement_zone": [
+    { key: "purpose", title: "Назначение", type: "text" },
+  ],
+};
+
+function fieldHtml(field, f) {
+  if (field.type === "offset") {
+    return `<label>Офсет, м<input type="number" id="f-offdist" value="${f.props._offdist || 15}" min="0.5" max="200" step="0.5"></label>
+      <div style="display:flex;gap:6px;margin-bottom:8px">
+        <button id="f-offset-l" style="flex:1">⇐ влево</button>
+        <button id="f-offset-r" style="flex:1">вправо ⇒</button>
+      </div>`;
+  }
+  const val = f.props[field.key] ?? "";
+  return `<label>${field.title}<input type="${field.type}" id="f-${field.key}" value="${val}"${
+    field.min != null ? ` min="${field.min}"` : ""}${
+    field.max != null ? ` max="${field.max}"` : ""}${
+    field.step != null ? ` step="${field.step}"` : ""}></label>`;
+}
+
+async function runOffset(f, sign) {
+  const dist = Math.abs(parseFloat(document.getElementById("f-offdist").value) || 15);
+  f.props._offdist = dist;
+  try {
+    const r = await fetch("/api/redline-offset", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ line: f.line, radius: f.props.radius || 0,
+                             dist: sign * dist }) });
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}));
+      throw new Error(e.error || ("HTTP " + r.status));
+    }
+    const data = await r.json();
+    snapshot();
+    // сопряжение уже вшито в геометрию офсета — radius обнуляем
+    const copy = upgradeFeature({ id: state.nextId++, kind: "redline",
+                                  line: data.line, props: { radius: 0 } });
+    state.features.push(copy);
+    state.selected = copy.id;
+    afterChange();
+  } catch (err) {
+    alert("Офсет не построился: " + String(err).slice(0, 200) +
+          "\n(обычно — радиус/офсет не помещается в геометрию)");
+  }
+}
+
 function renderProps() {
   const el = document.getElementById("props-body");
   const f = selectedFeature();
   if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
   el.className = "";
+  const L = layerOf(f);
+  const fields = (L && ATTR_FIELDS[L.semantic_class]) || [];
   let metric = "";
-  if (f.ring) {
-    metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
-    if (f.kind === "building")
-      metric += ` · СПП: ${(ringArea(f.ring) * (f.props.floors || 1) / 1000).toFixed(1)} тыс. м²`;
-  }
+  if (f.ring) metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
   if (f.line) metric = `длина: ${lineLen(f.line).toFixed(0)} м`;
-  let extra = "";
-  if (f.kind === "building")
-    extra = `<label>Этажность<input type="number" id="f-floors" value="${f.props.floors}" min="1" max="75"></label>`;
-  if (f.kind === "redline")
-    extra = `<label>Радиус сопряжения, м<input type="number" id="f-radius" value="${f.props.radius || 0}" min="0" max="500" step="5"></label>
-      <label>Пикетаж, шаг м (0 — выкл)<input type="number" id="f-pkstep" value="${f.props.pk_step || 0}" min="0" max="500" step="10"></label>
-      <label>Офсет, м<input type="number" id="f-offdist" value="${f.props._offdist || 15}" min="0.5" max="200" step="0.5"></label>
-      <div style="display:flex;gap:6px;margin-bottom:8px">
-        <button id="f-offset-l" style="flex:1">⇐ влево</button>
-        <button id="f-offset-r" style="flex:1">вправо ⇒</button>
-      </div>`;
-  if (f.kind === "zone")
-    extra = `<label>Наименование зоны<input type="text" id="f-zone" value="${f.props.zone_title}"></label>`;
-  if (f.kind === "public")
-    extra = `<label>Назначение<input type="text" id="f-purpose" value="${f.props.purpose}"></label>`;
+  for (const field of fields)
+    if (field.type === "computed") metric += ` · ${field.compute(f)}`;
+  const extra = fields.filter(fl => fl.type !== "computed").map(fl => fieldHtml(fl, f)).join("\n");
   const prov = f.prov
     ? `<div class="metric prov">источник: ${f.prov.source}${f.prov.source_date ? " · " + f.prov.source_date : ""}</div>`
     : "";
-  el.innerHTML = `<div class="kind">${(layerOf(f) || {}).title || f.kind}</div>
-    <div class="metric">${metric}</div>${prov}${extra}
+  // per-object стиль из системной библиотеки (default + Эталон ЛГР);
+  // уезжает в .grado столбцом style_id и в PDF/DXF
+  const stylePick = (L && !L.annotation)
+    ? `<label>Стиль (библиотека)<select id="f-style">${stylePickerOptions(f.style_id)}</select></label>`
+    : "";
+  el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
+    <div class="metric">${metric}</div>${prov}${extra}${stylePick}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
+  const styleSel = document.getElementById("f-style");
+  if (styleSel) styleSel.addEventListener("change", () => {
+    snapshot();
+    if (styleSel.value) f.style_id = styleSel.value;
+    else delete f.style_id;
+    afterChange();
+  });
   const bind = (id, key, cast) => {
     const inp = document.getElementById(id);
     if (inp) inp.addEventListener("change", () => {
       snapshot(); f.props[key] = cast ? cast(inp.value) : inp.value; afterChange();
     });
   };
-  bind("f-floors", "floors", v => Math.max(1, parseInt(v) || 9));
-  bind("f-radius", "radius", v => Math.max(0, parseFloat(v) || 0));
-  bind("f-pkstep", "pk_step", v => Math.max(0, parseFloat(v) || 0));
-  bind("f-zone", "zone_title");
-  bind("f-purpose", "purpose");
-  const offset = async sign => {
-    const dist = Math.abs(parseFloat(document.getElementById("f-offdist").value) || 15);
-    f.props._offdist = dist;
-    try {
-      const r = await fetch("/api/redline-offset", { method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line: f.line, radius: f.props.radius || 0,
-                               dist: sign * dist }) });
-      if (!r.ok) {
-        const e = await r.json().catch(() => ({}));
-        throw new Error(e.error || ("HTTP " + r.status));
-      }
-      const data = await r.json();
-      snapshot();
-      // сопряжение уже вшито в геометрию офсета — radius обнуляем
-      const copy = upgradeFeature({ id: state.nextId++, kind: "redline",
-                                    line: data.line, props: { radius: 0 } });
-      state.features.push(copy);
-      state.selected = copy.id;
-      afterChange();
-    } catch (err) {
-      alert("Офсет не построился: " + String(err).slice(0, 200) +
-            "\n(обычно — радиус/офсет не помещается в геометрию)");
+  for (const field of fields) {
+    if (field.type === "computed") continue;
+    if (field.type === "offset") {
+      const offL = document.getElementById("f-offset-l");
+      const offR = document.getElementById("f-offset-r");
+      if (offL) offL.onclick = () => runOffset(f, 1);
+      if (offR) offR.onclick = () => runOffset(f, -1);
+      continue;
     }
-  };
-  const offL = document.getElementById("f-offset-l");
-  const offR = document.getElementById("f-offset-r");
-  if (offL) offL.onclick = () => offset(1);
-  if (offR) offR.onclick = () => offset(-1);
+    bind(`f-${field.key}`, field.key, field.cast);
+  }
   document.getElementById("f-del").onclick = deleteSelected;
 }
+// Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
+// массив идёт снизу вверх (индекс 0 = низ), поэтому список = обратный массив.
+function layerRowsTopFirst() {
+  return [...LAYERS_V2].reverse()
+    .filter(L => !(L.import_only && !featuresOnLayer(L.id).length));
+}
+
+// Перетаскивание строки src к строке target меняет порядок отрисовки.
+// before=true — встать над target (рисоваться поверх него).
+function reorderLayer(srcId, targetId, before) {
+  if (srcId === targetId) return;
+  const disp = [...LAYERS_V2].reverse();      // порядок показа (сверху вниз)
+  const from = disp.findIndex(L => L.id === srcId);
+  if (from < 0) return;
+  const moved = disp.splice(from, 1)[0];
+  let to = disp.findIndex(L => L.id === targetId);
+  if (to < 0) return;
+  if (!before) to += 1;
+  disp.splice(to, 0, moved);
+  LAYERS_V2.splice(0, LAYERS_V2.length, ...disp.reverse());  // обратно в порядок отрисовки
+  renderLayers(); draw(); persist();
+}
+
 function renderLayers() {
   const el = document.getElementById("layers-body");
   if (!el) return;
   el.innerHTML = "";
-  for (const layer of LAYERS_V2) {
+  for (const layer of layerRowsTopFirst()) {
     const count = featuresOnLayer(layer.id).length;
-    // import-only слой (напр. ФГИС ТП) появляется в панели только с объектами
-    if (layer.import_only && !count) continue;
-    const st = STYLES_V2[layer.style_id] || {};
+    const st = layerStyle(layer);
+    // свотч: заливка, а для стилей ЛГР — мини-штриховка цветом зоны
+    let swBg = st.fill || "transparent";
+    if (!st.fill && st.hatch && st.hatch.color) {
+      const a = st.hatch.cross ? 45 : (st.hatch.angle ?? 45);
+      swBg = `repeating-linear-gradient(${90 - a}deg, ${st.hatch.color} 0 1px, transparent 1px 4px)`;
+    }
     const row = document.createElement("div");
     row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "");
-    row.innerHTML = `<input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
-      <span class="sw" style="background:${st.fill || "transparent"};border-color:${st.stroke || "#999"}"></span>
-      <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>`;
+    row.draggable = true;
+    row.dataset.lid = layer.id;
+    row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки">⠿</span>
+      <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
+      <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
+      <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
+      <button class="lrow-menu" title="действия со слоем">⋯</button>`;
     row.querySelector("input").addEventListener("change", ev => {
       layer.visible = ev.target.checked;
       const sel = selectedFeature();
@@ -985,8 +1154,222 @@ function renderLayers() {
     // клик по имени/образцу — активный слой (чекбокс отвечает только за видимость)
     row.querySelector(".nm").addEventListener("click", () => setActiveLayer(layer.id));
     row.querySelector(".sw").addEventListener("click", () => setActiveLayer(layer.id));
+    const menuBtn = row.querySelector(".lrow-menu");
+    menuBtn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const r = menuBtn.getBoundingClientRect();
+      openLayerMenu(layer, r.right, r.bottom);
+    });
+    row.addEventListener("contextmenu", ev => {
+      ev.preventDefault();
+      openLayerMenu(layer, ev.clientX, ev.clientY);
+    });
+    // перетаскивание для смены порядка отрисовки
+    row.addEventListener("dragstart", ev => {
+      ev.dataTransfer.setData("text/plain", layer.id);
+      ev.dataTransfer.effectAllowed = "move";
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", () => {
+      row.classList.remove("dragging");
+      el.querySelectorAll(".layer-row").forEach(r =>
+        r.classList.remove("drop-before", "drop-after"));
+    });
+    row.addEventListener("dragover", ev => {
+      ev.preventDefault();
+      const rect = row.getBoundingClientRect();
+      const before = (ev.clientY - rect.top) < rect.height / 2;
+      row.classList.toggle("drop-before", before);
+      row.classList.toggle("drop-after", !before);
+    });
+    row.addEventListener("dragleave", () =>
+      row.classList.remove("drop-before", "drop-after"));
+    row.addEventListener("drop", ev => {
+      ev.preventDefault();
+      const src = ev.dataTransfer.getData("text/plain");
+      const rect = row.getBoundingClientRect();
+      const before = (ev.clientY - rect.top) < rect.height / 2;
+      reorderLayer(src, layer.id, before);
+    });
     el.appendChild(row);
   }
+}
+
+// ---------- контекстное меню слоя (логика QGIS) ----------
+function closePopups() {
+  document.querySelectorAll(".ctx-menu, .modal-overlay").forEach(n => n.remove());
+}
+function openLayerMenu(layer, x, y) {
+  closePopups();
+  const menu = document.createElement("div");
+  menu.className = "ctx-menu";
+  const items = [
+    ["Сделать активным", () => setActiveLayer(layer.id)],
+    ["Таблица атрибутов…", () => openAttributeTable(layer)],
+    ["Форматирование…", () => openLayerFormat(layer)],
+    ["Приблизить к слою", () => zoomToLayer(layer.id)],
+  ];
+  for (const [label, fn] of items) {
+    const it = document.createElement("div");
+    it.className = "ctx-item";
+    it.textContent = label;
+    it.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); fn(); });
+    menu.appendChild(it);
+  }
+  document.body.appendChild(menu);
+  // не вылезать за правый/нижний край
+  const mw = menu.offsetWidth, mh = menu.offsetHeight;
+  menu.style.left = Math.min(x, window.innerWidth - mw - 6) + "px";
+  menu.style.top = Math.min(y, window.innerHeight - mh - 6) + "px";
+  setTimeout(() => document.addEventListener("click", closePopups, { once: true }), 0);
+}
+
+// ---------- выбор стиля из системной библиотеки (default + Эталон ЛГР) ----------
+// Опции сгруппированы по group из библиотеки; value = style_id.
+function stylePickerOptions(selectedId) {
+  const groups = new Map();
+  for (const [sid, s] of Object.entries(STYLES_V2)) {
+    if (!s.title) continue;              // безымянные/служебные не предлагаем
+    const g = s.group || "Базовые";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push([sid, s.title]);
+  }
+  let html = `<option value=""${selectedId ? "" : " selected"}>— как у слоя —</option>`;
+  for (const [g, items] of groups) {
+    html += `<optgroup label="${g}">`;
+    for (const [sid, title] of items.sort((a, b) => a[1].localeCompare(b[1], "ru")))
+      html += `<option value="${sid}"${sid === selectedId ? " selected" : ""}>${title}</option>`;
+    html += `</optgroup>`;
+  }
+  return html;
+}
+
+// ---------- форматирование слоя ----------
+function toHexColor(c, fallback) {
+  if (!c) return fallback;
+  if (c[0] === "#") return c.slice(0, 7);
+  const m = c.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const [r, g, b] = m[1].split(",").map(x => parseInt(x.trim()));
+    return "#" + [r, g, b].map(v => (v || 0).toString(16).padStart(2, "0")).join("");
+  }
+  return fallback;
+}
+function openLayerFormat(layer) {
+  closePopups();
+  const origFmt = layer.fmt ? { ...layer.fmt } : null;   // для отмены
+  const cur = layerStyle(layer);
+  const hasFill = cur.fill != null && cur.fill !== "transparent";
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal fmt-modal">
+    <div class="modal-head">Форматирование · ${layer.title}</div>
+    <label>Библиотечный стиль (Эталон ЛГР / базовые)
+      <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
+    <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка</label>
+    <label>Цвет заливки<input type="color" id="fmt-fill" value="${toHexColor(cur.fill, "#faf0bf")}"></label>
+    <label>Цвет обводки<input type="color" id="fmt-stroke" value="${toHexColor(cur.stroke, "#888888")}"></label>
+    <label>Толщина обводки<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
+    <label class="chk"><input type="checkbox" id="fmt-dash" ${cur.dash ? "checked" : ""}> пунктир</label>
+    <div class="modal-actions">
+      <button id="fmt-reset">Сбросить</button>
+      <span class="spacer"></span>
+      <button id="fmt-cancel">Отмена</button>
+      <button id="fmt-apply" class="primary">Применить</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  const $ = id => overlay.querySelector("#" + id);
+  // fmt из полей модалки; выбранный пресет несёт hatch/line_label/dash целиком
+  const collect = () => {
+    const ref = $("fmt-preset").value;
+    if (ref && STYLES_V2[ref]) {
+      const p = STYLES_V2[ref];
+      return { style_ref: ref, stroke: p.stroke, width: p.width,
+               fill: p.fill || null, dash: p.dash || null,
+               hatch: p.hatch || null, line_label: p.line_label || null };
+    }
+    return {
+      stroke: $("fmt-stroke").value,
+      width: Math.max(0.2, parseFloat($("fmt-width").value) || 1),
+      fill: $("fmt-hasfill").checked ? $("fmt-fill").value : null,
+      dash: $("fmt-dash").checked ? [6, 4] : null,
+    };
+  };
+  // выбор пресета заполняет поля его значениями (дальше можно подстроить)
+  $("fmt-preset").addEventListener("change", () => {
+    const ref = $("fmt-preset").value;
+    if (ref && STYLES_V2[ref]) {
+      const p = STYLES_V2[ref];
+      $("fmt-hasfill").checked = !!p.fill;
+      if (p.fill) $("fmt-fill").value = toHexColor(p.fill, "#faf0bf");
+      $("fmt-stroke").value = toHexColor(p.stroke, "#888888");
+      $("fmt-width").value = p.width ?? 1;
+      $("fmt-dash").checked = !!p.dash;
+    }
+    layer.fmt = collect(); draw();
+  });
+  // живой предпросмотр: правка любого поля = ручной режим (сброс пресета)
+  overlay.querySelectorAll("input").forEach(inp =>
+    inp.addEventListener("input", () => {
+      $("fmt-preset").value = "";
+      layer.fmt = collect(); draw();
+    }));
+  const restore = () => {                 // отмена/клик мимо — вернуть как было
+    if (origFmt) layer.fmt = origFmt; else delete layer.fmt;
+    closePopups(); renderLayers(); draw();
+  };
+  $("fmt-apply").addEventListener("click", () => {
+    layer.fmt = collect();
+    closePopups(); renderLayers(); draw(); persist();
+  });
+  $("fmt-cancel").addEventListener("click", restore);
+  $("fmt-reset").addEventListener("click", () => {
+    delete layer.fmt; closePopups(); renderLayers(); draw(); persist();
+  });
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) restore(); });
+}
+
+// ---------- таблица атрибутов слоя (логика QGIS) ----------
+function openAttributeTable(layer) {
+  closePopups();
+  const feats = featuresOnLayer(layer.id);
+  const keys = [];
+  for (const f of feats)
+    for (const k of Object.keys(f.props || {}))
+      if (!k.startsWith("_") && !keys.includes(k)) keys.push(k);
+  const metric = f => {
+    if (f.ring) return (ringArea(f.ring) / 10000).toFixed(2) + " га";
+    if (f.line) return lineLen(f.line).toFixed(0) + " м";
+    return "точка";
+  };
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const head = `<tr><th>#</th>${keys.map(k => `<th>${k}</th>`).join("")}<th>геометрия</th></tr>`;
+  const rows = feats.map((f, i) => {
+    const cells = keys.map(k => `<td>${f.props[k] ?? ""}</td>`).join("");
+    return `<tr data-fid="${f.id}"><td>${i + 1}</td>${cells}<td>${metric(f)}</td></tr>`;
+  }).join("");
+  overlay.innerHTML = `<div class="modal attr-modal">
+    <div class="modal-head">Таблица атрибутов · ${layer.title} <span class="muted">(${feats.length})</span>
+      <button class="modal-x" title="Закрыть">✕</button></div>
+    <div class="attr-scroll">${feats.length
+      ? `<table class="attr-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`
+      : `<div class="muted" style="padding:14px">В слое нет объектов</div>`}</div>
+    <div class="modal-actions"><span class="muted">клик по строке — выделить и приблизить</span></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector(".modal-x").addEventListener("click", closePopups);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
+  overlay.querySelectorAll("tbody tr").forEach(tr =>
+    tr.addEventListener("click", () => {
+      const f = state.features.find(x => x.id === +tr.dataset.fid);
+      if (!f) return;
+      state.selected = f.id;
+      if (!layer.visible) { layer.visible = true; renderLayers(); }
+      closePopups();
+      zoomToFeature(f);
+      renderProps();
+    }));
 }
 
 // ---------- журнал источников (снимки НСПД/ФГИС ТП, шаг 6) ----------
@@ -1484,10 +1867,18 @@ function toast(msg) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.textContent = ""; }, 5000);
 }
+let serverDown = false;
 async function pollInbox() {
   try {
     const r = await fetch("/api/inbox");
     const data = await r.json();
+    if (serverDown) {
+      // сервер был недоступен (перезапуск/сон) и снова ответил — досасываем
+      // то, что могло устареть за это время, без ручного F5
+      serverDown = false;
+      initStyles(); fetchSources(); refreshTep();
+      toast("Связь с сервером восстановлена");
+    }
     document.getElementById("st-bridge").textContent =
       data.bridge ? "мост 8081: вкл" : "мост 8081: занят (QGIS)";
     let added = 0;
@@ -1505,7 +1896,12 @@ async function pollInbox() {
       const src = data.items[0].source === "fgis_tp" ? "ФГИС ТП" : "НСПД";
       toast(`Мост: +${added} объектов (${src})`);
     }
-  } catch (e) { /* сервер перезапускается — молча */ }
+  } catch (e) {
+    if (!serverDown) {
+      serverDown = true;
+      document.getElementById("st-core").textContent = "сервер недоступен — переподключение…";
+    }
+  }
 }
 setInterval(pollInbox, 2500);
 pollInbox();
@@ -1533,6 +1929,38 @@ on("nspd-file", "change", async e => {
     fitView();
   } catch (err) {
     alert("Не удалось импортировать захват: " + String(err).slice(0, 200));
+  }
+});
+
+// импорт выгрузки ГИС ОГД (ZIP с портала, произвольный набор слоёв)
+on("btn-gisogd", "click", () => document.getElementById("gisogd-file").click());
+on("gisogd-file", "change", async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  try {
+    const r = await fetch("/api/import-gisogd", { method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: await file.arrayBuffer() });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (data.features.length) {
+      snapshot();
+      for (const f of data.features)
+        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+      state.selected = null;
+      recordSource(data.snapshot, data.diff);
+      afterChange();
+      fitView();
+    }
+    if (data.notes && data.notes.length)
+      toast(`ОГД: +${data.features.length} объектов · ${data.notes.join("; ")}`);
+    else if (data.features.length)
+      toast(`ОГД: +${data.features.length} объектов`);
+    else
+      alert("В архиве не нашлось распознанных слоёв");
+  } catch (err) {
+    alert("Не удалось импортировать выгрузку ОГД: " + String(err).slice(0, 200));
   }
 });
 
@@ -1566,33 +1994,54 @@ on("btn-demo", "click", () => {
 });
 
 // ---------- старт ----------
+function applyRestoredState(d) {
+  state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
+  state.nextId = d.nextId || 1;
+  if (d.layersVisible) {
+    for (const [id, vis] of Object.entries(d.layersVisible))
+      if (LAYER_BY_ID[id]) LAYER_BY_ID[id].visible = !!vis;
+  } else if (d.hidden) {
+    // сохранение старого формата: hidden было по kind
+    for (const [kind, hid] of Object.entries(d.hidden))
+      if (LAYER_BY_KIND[kind]) LAYER_BY_KIND[kind].visible = !hid;
+  }
+  if (Array.isArray(d.layerOrder)) {
+    // восстановить порядок отрисовки; неизвестные (добавленные позже) — в конец
+    const pos = new Map(d.layerOrder.map((id, i) => [id, i]));
+    LAYERS_V2.sort((a, b) =>
+      (pos.has(a.id) ? pos.get(a.id) : 1e9) - (pos.has(b.id) ? pos.get(b.id) : 1e9));
+  }
+  if (d.layerFmt) {
+    for (const [id, fmt] of Object.entries(d.layerFmt))
+      if (LAYER_BY_ID[id]) LAYER_BY_ID[id].fmt = fmt;
+  }
+  if (d.activeLayerId && LAYER_BY_ID[d.activeLayerId])
+    state.activeLayerId = d.activeLayerId;
+  if (Array.isArray(d.sources)) state.sources = d.sources;
+  if (d.name) document.getElementById("project-name").value = d.name;
+  if (d.density) document.getElementById("p-density").value = d.density;
+  if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
+}
 (function restore() {
   try {
     const raw = localStorage.getItem("grado_studio_v1");
-    if (!raw) return;
-    const d = JSON.parse(raw);
-    state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
-    state.nextId = d.nextId || 1;
-    if (d.layersVisible) {
-      for (const [id, vis] of Object.entries(d.layersVisible))
-        if (LAYER_BY_ID[id]) LAYER_BY_ID[id].visible = !!vis;
-    } else if (d.hidden) {
-      // сохранение старого формата: hidden было по kind
-      for (const [kind, hid] of Object.entries(d.hidden))
-        if (LAYER_BY_KIND[kind]) LAYER_BY_KIND[kind].visible = !hid;
-    }
-    if (d.activeLayerId && LAYER_BY_ID[d.activeLayerId])
-      state.activeLayerId = d.activeLayerId;
-    if (Array.isArray(d.sources)) state.sources = d.sources;
-    if (d.name) document.getElementById("project-name").value = d.name;
-    if (d.density) document.getElementById("p-density").value = d.density;
-    if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
-  } catch (e) { /* повреждённое сохранение игнорируем */ }
+    if (raw) { applyRestoredState(JSON.parse(raw)); return; }
+  } catch (e) { /* повреждённое сохранение игнорируем, пробуем файловый автосейв ниже */ }
+  // localStorage пуст (новый браузер/профиль, приватный режим, чистка данных
+  // сайта) — пробуем резервную копию на диске сервера
+  fetch("/api/autosave").then(r => r.ok ? r.json() : null).then(d => {
+    if (!d || !d.features) return;
+    applyRestoredState(d);
+    draw(); renderProps(); renderLayers(); renderSources(); refreshTep(); fitView();
+    toast("Восстановлено из файлового автосохранения");
+  }).catch(() => {});
 })();
 on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
-                  layerOf, styleOf, upgradeFeature, LAYERS_V2, STYLES_V2,
-                  setTool, setActiveLayer, applyPreset, activeLayer };
+                  layerOf, styleOf, layerStyle, upgradeFeature, LAYERS_V2, STYLES_V2,
+                  setTool, setActiveLayer, applyPreset, activeLayer,
+                  reorderLayer, openLayerMenu, openAttributeTable, openLayerFormat,
+                  zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
 setTool("select");
 renderLayers();

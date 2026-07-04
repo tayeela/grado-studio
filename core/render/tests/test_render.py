@@ -265,5 +265,95 @@ class TestStyleSet(unittest.TestCase):
         self.assertLess(s.resolve("tp.func_zone").z, s.resolve("pp.red_line").z)
 
 
+class TestMoscowLgrLibrary(unittest.TestCase):
+    """Системная библиотека Эталона ЛГР (приказ ММА от 10.03.2025 № 65)."""
+
+    def test_merged_library_valid(self):
+        from grado_render import merged_library
+        lib = merged_library()
+        lgr = {sid: s for sid, s in lib["styles"].items()
+               if sid.startswith("lgr.")}
+        self.assertEqual(len(lgr), 54, "54 знака Эталона (5 КЛ + 27 ЗОУИТ + "
+                                       "17 иных + 5 прил. 1)")
+        codes = [s["lgr_code"] for s in lgr.values()]
+        self.assertEqual(len(codes), len(set(codes)), "коды ЛГР уникальны")
+        # базовые стили default.json не потеряны при мерже
+        self.assertIn("func_zone.fill", lib["styles"])
+        self.assertIn("fallback", lib)
+
+    def test_priorities_of_annex2(self):
+        from grado_render import merged_library
+        by_code = {s["lgr_code"]: s for sid, s in
+                   merged_library()["styles"].items() if sid.startswith("lgr.")}
+        # выборка из приложения 2: 13 — высший (1), 45 — низший (27)
+        self.assertEqual(by_code[13]["lgr_priority"], 1)
+        self.assertEqual(by_code[45]["lgr_priority"], 27)
+        self.assertEqual(by_code[16]["lgr_priority"], 12)
+        # высший приоритет → рисуется поверх (больший z)
+        self.assertGreater(by_code[13]["z"], by_code[45]["z"])
+
+    def test_hatch_shape_and_colors(self):
+        from grado_render import merged_library
+        lib = merged_library()["styles"]
+        vod = lib["lgr.vodookhr"]           # водоохранная: синяя 45° плотная
+        self.assertEqual(vod["hatch"]["angle"], 45)
+        self.assertEqual(vod["hatch"]["color"], "#0669b2")
+        les = lib["lgr.lesopark"]           # лесопарковый пояс: сетка
+        self.assertTrue(les["hatch"]["cross"])
+        self.assertFalse(lib["lgr.zastroyka"]["hatch"],
+                         "линия застройки — ЛГР без зоны")
+
+    def test_hatch_ops_angles(self):
+        from grado_render.scene import hatch_ops
+        square = [[(0, 0), (10, 0), (10, 10), (0, 10)]]
+        for angle in (0, 45, 90, 135):
+            ops = hatch_ops(square, spacing=2, stroke=(0, 0, 0), angle=angle)
+            self.assertTrue(ops, f"угол {angle}: есть штрихи")
+            for seg in ops[0]["rings"]:
+                for x, y in seg:
+                    self.assertTrue(-1e-6 <= x <= 10 + 1e-6)
+                    self.assertTrue(-1e-6 <= y <= 10 + 1e-6)
+        h = hatch_ops(square, spacing=2, stroke=(0, 0, 0), angle=0)[0]["rings"]
+        self.assertTrue(all(abs(a[1] - b[1]) < 1e-9 for a, b in h),
+                        "угол 0 — горизонтальные отрезки")
+        cross = hatch_ops(square, spacing=2, stroke=(0, 0, 0), cross=True)
+        single = hatch_ops(square, spacing=2, stroke=(0, 0, 0), angle=45)
+        self.assertGreater(len(cross[0]["rings"]), len(single[0]["rings"]),
+                           "сетка гуще одиночной диагонали")
+
+    def test_per_object_style_id_in_ops(self):
+        # объект со style_id Эталона рендерится знаком ЛГР, а не стилем слоя
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "t.grado", "ЛГР")
+            layer = p.add_layer("cad.zouit")
+            layer.add_feature(
+                {"type": "MultiPolygon", "coordinates": [[[
+                    [413000, 6178000], [413100, 6178000], [413100, 6178080],
+                    [413000, 6178080], [413000, 6178000]]]]},
+                attrs={"kind": "водоохранная"}, style_id="lgr.vodookhr")
+            ops = build_ops(p, (10, 10, 200, 160), scale=1000)
+            p.close()
+        hatches = [o for o in ops if o["op"] == "path" and o.get("width") == 0.16]
+        self.assertEqual(len(hatches), 1)
+        # цвет штриховки — синий #0669b2 из Эталона, не цвет слоя ЗОУИТ
+        r, g, b = hatches[0]["stroke"]
+        self.assertAlmostEqual(r, 0x06 / 255, places=3)
+        self.assertAlmostEqual(b, 0xb2 / 255, places=3)
+
+    def test_frontend_styles_passthrough(self):
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).parents[3] / "apps" / "studio"))
+        import studio_core
+        fs = studio_core.frontend_styles()
+        vod = fs["lgr.vodookhr"]
+        self.assertEqual(vod["hatch"]["angle"], 45)
+        self.assertEqual(vod["hatch"]["color"], "#0669b2")
+        self.assertEqual(vod["line_label"], "водоохранная")
+        self.assertEqual(vod["group"], "ЗОУИТ")
+        self.assertEqual(vod["lgr_code"], 16)
+        # легаси-стили не сломаны: hatch остаётся true
+        self.assertIs(fs["restrict.hatch"]["hatch"], True)
+
+
 if __name__ == "__main__":
     unittest.main()
