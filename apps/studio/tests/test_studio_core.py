@@ -788,5 +788,71 @@ class TestGisogdImport(unittest.TestCase):
         self.assertEqual(len(studio_core.sources_journal()), 1)
 
 
+class TestUserLayers(unittest.TestCase):
+    """Слои, созданные в панели студии («+ слой»): маршрутизация без
+    хардкода в LAYER_TEMPLATES — шаблон приходит с холста в body.layers."""
+
+    USER_LAYERS = [{"layer_id": "user.ozelenenie", "code": "tp.func_zone",
+                    "title": "Озеленение", "stage": "project",
+                    "style_id": "func_zone.fill"}]
+    FEATS = [
+        {"kind": "boundary", "ring": [[0, 0], [500, 0], [500, 300], [0, 300]],
+         "props": {}},
+        {"kind": "zone", "layer_id": "user.ozelenenie",
+         "ring": [[10, 10], [100, 10], [100, 100], [10, 100]],
+         "props": {"zone_title": "Озеленение-1"}},
+    ]
+
+    def test_build_project_routes_user_layer(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(
+                Path(tmp) / "u.grado", "Т", self.FEATS, self.USER_LAYERS)
+            ids = {i["layer_id"] for i in p.layers()}
+            self.assertIn("user.ozelenenie", ids)
+            layer = p.layer_by_id("user.ozelenenie")
+            self.assertEqual(layer.count(), 1)
+            f = next(layer.features())
+            self.assertEqual(f["attrs"]["zone_title"], "Озеленение-1")
+            p.close()
+
+    def test_without_layers_manifest_unknown_layer_dropped(self):
+        # без body.layers пользовательский layer_id неизвестен — объект
+        # тихо не попадает в проект (не падает), но и не сохраняется
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "u.grado", "Т", self.FEATS)
+            ids = {i["layer_id"] for i in p.layers()}
+            self.assertNotIn("user.ozelenenie", ids)
+            self.assertIn("project.territory.boundary", ids)
+            p.close()
+
+    def test_grado_roundtrip_preserves_user_layer(self):
+        data = studio_core.make_grado(self.FEATS, "Т", layers=self.USER_LAYERS)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "rt.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+        zone = next(f for f in out["features"] if f["kind"] == "zone")
+        self.assertEqual(zone["layer_id"], "user.ozelenenie")
+        self.assertEqual(zone["props"]["zone_title"], "Озеленение-1")
+
+    def test_builtin_template_wins_on_id_collision(self):
+        # пользовательский манифест не может подменить встроенный слой
+        clash = [{"layer_id": "project.territory.boundary",
+                  "code": "tp.func_zone", "title": "ПОДМЕНА", "style_id": "x"}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(
+                Path(tmp) / "u.grado", "Т", self.FEATS, clash)
+            info = next(i for i in p.layers()
+                       if i["layer_id"] == "project.territory.boundary")
+            self.assertEqual(info["code"], "terr.boundary", "встроенный код не подменён")
+            p.close()
+
+    def test_make_album_and_dxf_accept_user_layer(self):
+        pdf = studio_core.make_album(self.FEATS, "Т", layers=self.USER_LAYERS)
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        dxf = studio_core.make_dxf(self.FEATS, "Т", layers=self.USER_LAYERS)
+        self.assertIn("FUNKC_ZONY", dxf.decode("cp1251"))
+
+
 if __name__ == "__main__":
     unittest.main()

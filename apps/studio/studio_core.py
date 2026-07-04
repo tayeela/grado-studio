@@ -456,23 +456,43 @@ def _geom_for(feature):
     return {"type": "Polygon", "coordinates": [ring]}
 
 
-def _route(feature):
+def _route(feature, templates):
     """(layer_id, template) объекта холста → слой модели.
 
-    По явному layer_id (реестр), иначе legacy по kind. Возвращает
-    (None, None) для объектов без слоя (напр. размеры-аннотации)."""
+    По явному layer_id (реестр — встроенный + пользовательские слои из
+    панели студии), иначе legacy по kind. Возвращает (None, None) для
+    объектов без слоя (напр. размеры-аннотации)."""
     lid = feature.get("layer_id")
-    if lid in LAYER_TEMPLATES:
-        return lid, LAYER_TEMPLATES[lid]
+    if lid in templates:
+        return lid, templates[lid]
     lid = _KIND_TO_LAYER.get(feature.get("kind"))
-    return (lid, LAYER_TEMPLATES[lid]) if lid else (None, None)
+    return (lid, templates[lid]) if lid in templates else (None, None)
 
 
-def build_project(path, name, features):
+def _user_layer_templates(layers):
+    """Слои, созданные в панели студии («+ слой»), → шаблоны маршрутизации.
+
+    layers — [{layer_id, code, title, stage, style_id}], присылается с
+    холста при каждом экспорте (там живёт единственная копия). Встроенные
+    LAYER_TEMPLATES не переопределяются: пользовательский layer_id либо
+    новый, либо (при коллизии, не должно случаться) проигрывает builtin."""
+    out = {}
+    for spec in (layers or []):
+        lid = spec.get("layer_id")
+        code = spec.get("code")
+        if not lid or not code or lid in LAYER_TEMPLATES:
+            continue
+        out[lid] = {"code": code, "title": spec.get("title"),
+                    "stage": spec.get("stage"), "style_id": spec.get("style_id")}
+    return out
+
+
+def build_project(path, name, features, layers=None):
     project = Project.create(path, name)
+    templates = {**_user_layer_templates(layers), **LAYER_TEMPLATES}
     made = {}  # layer_id → Layer
     for f in features:
-        lid, tmpl = _route(f)
+        lid, tmpl = _route(f, templates)
         if lid is None:
             continue
         if lid not in made:
@@ -560,9 +580,9 @@ def compute_tep(features, params=None):
     }
 
 
-def make_album(features, name, params=None, basemap=False):
+def make_album(features, name, params=None, basemap=False, layers=None):
     with tempfile.TemporaryDirectory() as tmp:
-        project = build_project(Path(tmp) / "studio.grado", name, features)
+        project = build_project(Path(tmp) / "studio.grado", name, features, layers)
         engine = make_engine(features, params)
         apply_to_engine(project, engine)  # уточнение площадей по слоям проекта
         for key in ("density", "ratio_zh", "percent_vpp"):
@@ -822,14 +842,14 @@ def import_gisogd(zip_bytes):
             "snapshot": manifest, "diff": d}
 
 
-def make_grado(features, name):
+def make_grado(features, name, layers=None):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "studio.grado"
-        build_project(path, name, features).close()
+        build_project(path, name, features, layers).close()
         return path.read_bytes()
 
 
-def make_dxf(features, name):
+def make_dxf(features, name, layers=None):
     """Чертёж в DXF R12 (координаты — СК проекта, метры UTM).
 
     Размерные линии — аннотация чертежа: в модель не попадают,
@@ -838,7 +858,7 @@ def make_dxf(features, name):
     from grado_model.dxf_export import _polyline, _text, project_to_dxf
     dxf_layers, dxf_fallback = dxf_layers_from_styles()
     with tempfile.TemporaryDirectory() as tmp:
-        project = build_project(Path(tmp) / "studio.grado", name, features)
+        project = build_project(Path(tmp) / "studio.grado", name, features, layers)
         data = project_to_dxf(project, layers=dxf_layers,
                               fallback_layer=dxf_fallback)
         project.close()
@@ -859,7 +879,7 @@ def make_dxf(features, name):
     return (text[:cut] + extra + text[cut:]).encode("cp1251", errors="replace")
 
 
-def make_print(features, name, scale=None, paper="A2", basemap=False):
+def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -869,7 +889,7 @@ def make_print(features, name, scale=None, paper="A2", basemap=False):
     sizes = {"A3": A3_LANDSCAPE, "A2": A2_LANDSCAPE, "A1": A1_LANDSCAPE}
     size = sizes.get(paper, A2_LANDSCAPE)
     with tempfile.TemporaryDirectory() as tmp:
-        project = build_project(Path(tmp) / "studio.grado", name, features)
+        project = build_project(Path(tmp) / "studio.grado", name, features, layers)
         page = Page(size)
         ix, iy, iw, ih = page.inner_rect()
         map_rect = (ix + 8, iy + 16, iw - 16, ih - 24)

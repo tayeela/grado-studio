@@ -216,23 +216,27 @@ class Handler(SimpleHTTPRequestHandler):
             features = body.get("features", [])
             params = body.get("params")
             name = body.get("name") or "Концепция развития территории"
+            # слои, созданные в панели студии («+ слой») — их шаблон
+            # маршрутизации не встроен в сервер, приходит с холста
+            layers = body.get("layers")
             if self.path == "/api/tep":
                 out = studio_core.compute_tep(features, params)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/album":
                 pdf = studio_core.make_album(
-                    features, name, params, basemap=bool(body.get("basemap")))
+                    features, name, params, basemap=bool(body.get("basemap")),
+                    layers=layers)
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
-                data = studio_core.make_grado(features, name)
+                data = studio_core.make_grado(features, name, layers=layers)
                 self._send(data, "application/octet-stream", "project.grado")
             elif self.path == "/api/import-nspd":
                 out = studio_core.import_nspd(body.get("payload") or body)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/dxf":
-                data = studio_core.make_dxf(features, name)
+                data = studio_core.make_dxf(features, name, layers=layers)
                 self._send(data, "application/dxf", "project.dxf")
             elif self.path == "/api/redline-offset":
                 pts = studio_core.redline_offset(
@@ -242,7 +246,7 @@ class Handler(SimpleHTTPRequestHandler):
             elif self.path == "/api/print":
                 pdf, used = studio_core.make_print(
                     features, name, body.get("scale"), body.get("paper", "A2"),
-                    basemap=bool(body.get("basemap")))
+                    basemap=bool(body.get("basemap")), layers=layers)
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

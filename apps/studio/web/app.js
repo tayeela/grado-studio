@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.21.0";
+const VERSION = "0.22.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -99,6 +99,118 @@ for (const L of LAYERS_V2) {
   // import-only слои не становятся дефолтом для kind (иначе нарисованная
   // вручную зона ушла бы в ФГИС-ТП-слой): первый не-import_only выигрывает
   if (!L.import_only && !(L.kind in LAYER_BY_KIND)) LAYER_BY_KIND[L.kind] = L;
+}
+
+// ---------- пользовательские слои («+ слой» в панели) ----------
+// Типы, которые можно завести отдельным именованным слоем поверх встроенных
+// (второй слой того же семантического класса — уже штатный сценарий с
+// MODEL-01, см. source.fgistp/source.gisogd рядом с project.*). Границу
+// территории и участки ЕГРН не даём дублировать: первая по смыслу
+// единственная (сумма её площади — вход ТЭП terr_area), вторые — не
+// hand-draw объект, а данные конкретного импорта.
+const BASE_KINDS = [
+  { kind: "zone", semantic_class: "tp.func_zone", geometry_type: "polygon",
+    style_id: "func_zone.fill", label: "Функциональная зона / территория" },
+  { kind: "restrict", semantic_class: "terr.restrict", geometry_type: "polygon",
+    style_id: "restrict.hatch", label: "Ограничение (ЗОУИТ)" },
+  { kind: "building", semantic_class: "oks.building", geometry_type: "polygon",
+    style_id: "building.fill", label: "Здание" },
+  { kind: "redline", semantic_class: "pp.red_line", geometry_type: "polyline",
+    style_id: "red.line.projected", label: "Линия (красная/иная)" },
+  { kind: "public", semantic_class: "pp.placement_zone", geometry_type: "polygon",
+    style_id: "public_zone.fill", label: "Зона размещения ОКС" },
+  { kind: "social", semantic_class: "social.object", geometry_type: "point",
+    style_id: "social.point", label: "Точечный объект" },
+];
+const BASE_KIND_BY_KIND = Object.fromEntries(BASE_KINDS.map(b => [b.kind, b]));
+// semantic_class → kind, для восстановления пользовательских слоёв с диска
+// (манифест для бэкенда несёт code, не kind — см. userLayersManifest)
+const KIND_BY_SEMANTIC_CLASS = Object.fromEntries(BASE_KINDS.map(b => [b.semantic_class, b.kind]));
+
+// prop-дефолты нового объекта — та же логика, что у встроенных слоёв,
+// но переиспользуемая (нужна и при создании слоя, и при восстановлении
+// после перезагрузки, когда defaults() нельзя было сохранить как функцию)
+function defaultsForKind(layerId, kind) {
+  switch (kind) {
+    case "zone": return { zone_title: "З-" + (featuresOnLayer(layerId).length + 1) };
+    case "restrict": return { kind: "ограничение" };
+    case "building": return { floors: 9, purpose: "МКД" };
+    case "redline": return { radius: 0 };
+    case "public": return { purpose: "Общественный центр" };
+    case "social": return { kind: "ОО+ДОО", capacity: 750 };
+    default: return {};
+  }
+}
+
+const RU_TO_LAT = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e",
+  ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o",
+  п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch",
+  ш: "sh", щ: "sch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya" };
+function slugify(s) {
+  const translit = [...s.toLowerCase()].map(ch => RU_TO_LAT[ch] ?? ch).join("");
+  return translit.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "sloi";
+}
+function uniqueLayerId(title) {
+  const base = "user." + slugify(title);
+  if (!LAYER_BY_ID[base]) return base;
+  let n = 2;
+  while (LAYER_BY_ID[`${base}-${n}`]) n++;
+  return `${base}-${n}`;
+}
+
+// создаёт слой в LAYERS_V2/LAYER_BY_ID (id задаётся явно при восстановлении
+// с диска — тогда он уже уникален и известен; при создании из UI — null)
+function createUserLayer({ kind, title, styleId, id = null }) {
+  const base = BASE_KIND_BY_KIND[kind];
+  if (!base) throw new Error("неизвестный тип слоя: " + kind);
+  const layerId = id || uniqueLayerId(title);
+  const L = {
+    id: layerId, title, kind: base.kind, semantic_class: base.semantic_class,
+    geometry_type: base.geometry_type, style_id: styleId || base.style_id,
+    stage: "project", user_created: true, visible: true,
+    defaults: () => defaultsForKind(layerId, base.kind),
+  };
+  LAYERS_V2.push(L);
+  LAYER_BY_ID[L.id] = L;
+  return L;
+}
+
+// манифест пользовательских слоёв для бэкенда (маршрутизация build_project
+// не знает layer_id, придуманный на холсте, без этого списка)
+function userLayersManifest() {
+  return LAYERS_V2.filter(L => L.user_created).map(L => ({
+    layer_id: L.id, code: L.semantic_class, title: L.title,
+    stage: L.stage, style_id: L.style_id,
+  }));
+}
+
+function deleteLayer(layer) {
+  if (!layer.user_created) {
+    alert("Встроенный слой удалить нельзя — можно скрыть (чекбокс) или переименовать");
+    return;
+  }
+  const count = featuresOnLayer(layer.id).length;
+  if (count && !confirm(`В слое «${layer.title}» ${count} объект(ов). Удалить слой вместе с ними?`))
+    return;
+  snapshot();
+  state.features = state.features.filter(f => layerOf(f) !== layer);
+  LAYERS_V2.splice(LAYERS_V2.indexOf(layer), 1);
+  delete LAYER_BY_ID[layer.id];
+  if (state.activeLayerId === layer.id) {
+    const fallback = LAYERS_V2.find(l => !l.annotation && !l.import_only);
+    if (fallback) setActiveLayer(fallback.id);
+  }
+  if (selectedFeature() && layerOf(selectedFeature()) == null) state.selected = null;
+  afterChange();
+}
+
+function renameLayer(layer) {
+  const next = prompt("Новое имя слоя:", layer.title);
+  if (next == null) return;                 // отмена
+  const title = next.trim();
+  if (!title) return;
+  layer.title = title;
+  renderLayers(); renderProps(); persist();
 }
 
 // Стили выше — встроенный fallback; на старте они переопределяются из
@@ -748,31 +860,31 @@ function drawDoubleLine(pts, gap, closed) {
 }
 
 // Повторяющаяся подпись вдоль линии (условный знак ЛГР: «кл топ» и т.п.)
+// Подпись линии (условный знак ЛГР: «кл топ», «водоохранная» и т.п.) —
+// ОДНА на объект, на самом длинном отрезке контура/линии. Раньше подпись
+// повторялась через каждые ~180px по всему периметру, что на компактных
+// прямоугольниках сажало её на 3-4 стороны разом (в т.ч. вертикально на
+// боковые рёбра) — нечитаемо и выглядело как баг. Один подписанный отрезок
+// на самой длинной стороне — то, что реально нужно для типового объекта;
+// для по-настоящему длинных линий (через весь чертёж) метки видно, пока
+// видна сама протяжённая сторона.
 function drawLineLabel(pts, text, color) {
   const scr = pts.map(p => w2s(...p));
-  let total = 0;
-  const segs = [];
+  let best = null;
   for (let i = 1; i < scr.length; i++) {
-    const len = Math.hypot(scr[i][0] - scr[i - 1][0], scr[i][1] - scr[i - 1][1]);
-    segs.push(len); total += len;
+    const [ax, ay] = scr[i - 1], [bx, by] = scr[i];
+    const len = Math.hypot(bx - ax, by - ay);
+    if (!best || len > best.len) best = { ax, ay, bx, by, len };
   }
-  if (total < 60) return;                // слишком коротко для подписи
+  if (!best || best.len < 40) return;      // слишком коротко для подписи
+  const x = (best.ax + best.bx) / 2, y = (best.ay + best.by) / 2;
+  let ang = Math.atan2(best.by - best.ay, best.bx - best.ax);
+  if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;  // не вверх ногами
+  ctx.save();
   ctx.fillStyle = color; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
-  const period = Math.max(180, total / 3);  // подпись каждые ~180px
-  for (let d = period / 2; d < total; d += period) {
-    let acc = 0, i = 0;
-    while (i < segs.length && acc + segs[i] < d) acc += segs[i++];
-    if (i >= segs.length) break;
-    const t = (d - acc) / segs[i];
-    const [ax, ay] = scr[i], [bx, by] = scr[i + 1];
-    const x = ax + (bx - ax) * t, y = ay + (by - ay) * t;
-    let ang = Math.atan2(by - ay, bx - ax);
-    if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(ang);
-    ctx.fillText(text, 0, -4);
-    ctx.restore();
-  }
+  ctx.translate(x, y); ctx.rotate(ang);
+  ctx.fillText(text, 0, -4);
+  ctx.restore();
 }
 
 function draw() {
@@ -1004,6 +1116,8 @@ function persist() {
     layerOrder: LAYERS_V2.map(L => L.id),           // порядок отрисовки (QGIS-панель)
     layerFmt: Object.fromEntries(                    // пер-слойное оформление холста
       LAYERS_V2.filter(L => L.fmt).map(L => [L.id, L.fmt])),
+    layerTitles: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.title])),
+    userLayers: userLayersManifest(),                // созданные в UI слои — пережить перезагрузку
     activeLayerId: state.activeLayerId,
     sources: state.sources,
   };
@@ -1146,8 +1260,10 @@ async function runOffset(f, sign) {
     }
     const data = await r.json();
     snapshot();
-    // сопряжение уже вшито в геометрию офсета — radius обнуляем
-    const copy = upgradeFeature({ id: state.nextId++, kind: "redline",
+    // сопряжение уже вшито в геометрию офсета — radius обнуляем;
+    // офсет остаётся на слое исходной линии, а не «слое по умолчанию» —
+    // иначе на пользовательском слое линий копия тихо ушла бы не туда
+    const copy = upgradeFeature({ id: state.nextId++, layer_id: f.layer_id,
                                   line: data.line, props: { radius: 0 } });
     state.features.push(copy);
     state.selected = copy.id;
@@ -1322,6 +1438,7 @@ function openLayerMenu(layer, x, y) {
     ["Таблица атрибутов…", () => openAttributeTable(layer)],
     ["Форматирование…", () => openLayerFormat(layer)],
     ["Приблизить к слою", () => zoomToLayer(layer.id)],
+    ["Переименовать…", () => renameLayer(layer)],
   ];
   for (const [label, fn] of items) {
     const it = document.createElement("div");
@@ -1330,12 +1447,57 @@ function openLayerMenu(layer, x, y) {
     it.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); fn(); });
     menu.appendChild(it);
   }
+  if (layer.user_created) {
+    const del = document.createElement("div");
+    del.className = "ctx-item danger";
+    del.textContent = "Удалить слой…";
+    del.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); deleteLayer(layer); });
+    menu.appendChild(del);
+  }
   document.body.appendChild(menu);
   // не вылезать за правый/нижний край
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
   menu.style.left = Math.min(x, window.innerWidth - mw - 6) + "px";
   menu.style.top = Math.min(y, window.innerHeight - mh - 6) + "px";
   setTimeout(() => document.addEventListener("click", closePopups, { once: true }), 0);
+}
+
+// ---------- новый слой («+» в панели «Слои») ----------
+function openNewLayerDialog() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const kindOptions = BASE_KINDS.map(b =>
+    `<option value="${b.kind}">${b.label}</option>`).join("");
+  overlay.innerHTML = `<div class="modal fmt-modal">
+    <div class="modal-head">Новый слой</div>
+    <label>Тип объектов<select id="nl-kind">${kindOptions}</select></label>
+    <label>Название слоя<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
+    <label>Стиль (библиотека)<select id="nl-style">${stylePickerOptions()}</select></label>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button id="nl-cancel">Отмена</button>
+      <button id="nl-create" class="primary">Создать</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  const $ = id => overlay.querySelector("#" + id);
+  $("nl-title").focus();
+  const create = () => {
+    const kind = $("nl-kind").value;
+    const title = $("nl-title").value.trim() ||
+      BASE_KIND_BY_KIND[kind].label;
+    const styleRef = $("nl-style").value || null;
+    const L = createUserLayer({ kind, title, styleId: styleRef });
+    closePopups();
+    renderLayers();
+    setActiveLayer(L.id);   // сразу готов чертить — не нужно искать слой в списке
+    persist();
+    toast(`Слой «${title}» создан и стал активным`);
+  };
+  $("nl-title").addEventListener("keydown", ev => { if (ev.key === "Enter") create(); });
+  $("nl-create").addEventListener("click", create);
+  $("nl-cancel").addEventListener("click", closePopups);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
 }
 
 // ---------- выбор стиля из системной библиотеки (default + Эталон ЛГР) ----------
@@ -1538,10 +1700,14 @@ function deleteSelected() {
 }
 
 // ---------- добавление и правка фигур ----------
-function addFeature(kind, geom) {
+// layerId (не kind!) — иначе при двух слоях одного вида (built-in + созданный
+// в панели) объект всегда падал бы в первый слой этого kind, игнорируя
+// реально активный слой (тот же класс бага, что был в MODEL-01 на бэкенде).
+function addFeature(layerId, geom) {
   snapshot();
-  const L = LAYER_BY_KIND[kind];
-  const f = { id: state.nextId++, kind, props: L ? L.defaults() : {}, ...geom };
+  const L = LAYER_BY_ID[layerId];
+  const f = { id: state.nextId++, layer_id: layerId,
+             props: L ? L.defaults() : {}, ...geom };
   upgradeFeature(f);
   state.features.push(f);
   state.selected = f.id;
@@ -1553,9 +1719,9 @@ function finishDrawing() {
   const L = activeLayer();
   if (!d || !L) { state.drawing = null; return; }
   const geom = TOOL_GEOM[state.tool];
-  if (geom === "polygon" && d.pts.length >= 3) addFeature(L.kind, { ring: d.pts });
+  if (geom === "polygon" && d.pts.length >= 3) addFeature(L.id, { ring: d.pts });
   else if (geom === "polyline" && state.tool !== "dim" && d.pts.length >= 2)
-    addFeature(L.kind, { line: d.pts });
+    addFeature(L.id, { line: d.pts });
   state.drawing = null; state.typed = "";
   draw();
 }
@@ -1656,7 +1822,7 @@ cv.addEventListener("mousedown", e => {
     draw();
   } else if (state.tool === "point") {
     const L = activeLayer();
-    if (L && L.geometry_type === "point") addFeature(L.kind, { point: s.p });
+    if (L && L.geometry_type === "point") addFeature(L.id, { point: s.p });
   } else if (state.tool === "rect" && !state.drawing) {
     // протягивание — прямоугольник; одиночный клик — контур по точкам
     state.drag = { a: s.p, b: s.p, rect: true, moved: false };
@@ -1667,7 +1833,7 @@ cv.addEventListener("mousedown", e => {
       if (state.drawing.pts.length === 2) {
         const pts = state.drawing.pts;
         state.drawing = null;
-        addFeature("dim", { line: pts });
+        addFeature(LAYER_BY_KIND["dim"].id, { line: pts });
       } else draw();
       return;
     }
@@ -1750,7 +1916,7 @@ window.addEventListener("mouseup", e => {
     const L = activeLayer();
     if (moved && Math.abs(a[0] - b[0]) > 1 && Math.abs(a[1] - b[1]) > 1) {
       if (L && L.geometry_type === "polygon")
-        addFeature(L.kind, { ring: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] });
+        addFeature(L.id, { ring: [[a[0], a[1]], [b[0], a[1]], [b[0], b[1]], [a[0], b[1]]] });
     } else if (!moved) {
       // клик без протягивания — произвольный контур по точкам
       state.drawing = { pts: [a] };
@@ -1938,7 +2104,8 @@ async function download(url, filename) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ features: state.features, params: params(),
                            basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
-                           name: document.getElementById("project-name").value }) });
+                           name: document.getElementById("project-name").value,
+                           layers: userLayersManifest() }) });
   if (!r.ok) { alert("Ошибка сборки: " + (await r.text()).slice(0, 200)); return; }
   const blob = await r.blob();
   const a = document.createElement("a");
@@ -2110,8 +2277,23 @@ on("btn-demo", "click", () => {
 
 // ---------- старт ----------
 function applyRestoredState(d) {
+  // пользовательские слои — ДО остального восстановления: layersVisible/
+  // layerOrder/layerFmt/activeLayerId ссылаются на их id по значению
+  if (Array.isArray(d.userLayers)) {
+    for (const spec of d.userLayers) {
+      if (LAYER_BY_ID[spec.layer_id]) continue;  // уже есть (повторный restore)
+      const kind = KIND_BY_SEMANTIC_CLASS[spec.code];
+      if (!kind) continue;  // неизвестный класс (снимок из будущей версии) — пропускаем не роняя
+      createUserLayer({ kind, title: spec.title, styleId: spec.style_id,
+                       id: spec.layer_id });
+    }
+  }
   state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
   state.nextId = d.nextId || 1;
+  if (d.layerTitles) {
+    for (const [id, title] of Object.entries(d.layerTitles))
+      if (LAYER_BY_ID[id]) LAYER_BY_ID[id].title = title;
+  }
   if (d.layersVisible) {
     for (const [id, vis] of Object.entries(d.layersVisible))
       if (LAYER_BY_ID[id]) LAYER_BY_ID[id].visible = !!vis;
@@ -2158,6 +2340,7 @@ window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   reorderLayer, openLayerMenu, openAttributeTable, openLayerFormat,
                   zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
+on("btn-new-layer", "click", openNewLayerDialog);
 setTool("select");
 renderLayers();
 renderSources();
