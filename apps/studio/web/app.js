@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.23.0";
+const VERSION = "0.23.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -751,79 +751,83 @@ function drawHatch(ring, hatch, strokeColor) {
   ctx.restore();
 }
 
-// Маркеры-засечки Эталона ЛГР вдоль линии/контура: tick ⊢, tee ⊥, corner Г,
-// chevron ∨ (остриём внутрь зоны), chevron_dot ∨., triangle ▼, dot ●,
-// square ■, diamond ◇. mk = {shape, period, size} в px холста.
+// Одна засечка в экранной точке (px,py): касательная (tx,ty), нормаль
+// внутрь (nx,ny). Формы: tick ⊢, tee ⊥, corner Г, chevron ∨, chevron_dot ∨.,
+// triangle ▼, dot ●, square ■, diamond ◇.
+function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
+  ctx.beginPath();
+  switch (shape) {
+    case "tee":
+      ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.moveTo(px - tx * s * 0.5, py - ty * s * 0.5);
+      ctx.lineTo(px + tx * s * 0.5, py + ty * s * 0.5);
+      ctx.stroke(); break;
+    case "corner":
+      ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.lineTo(px + nx * s + tx * s, py + ny * s + ty * s);
+      ctx.stroke(); break;
+    case "chevron": case "chevron_dot": {
+      const w2 = s * 0.5;   // вершина на линии, плечи к линии на ±0.5·size
+      ctx.moveTo(px - tx * w2, py - ty * w2);
+      ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.lineTo(px + tx * w2, py + ty * w2);
+      ctx.stroke();
+      if (shape === "chevron_dot") {
+        ctx.beginPath();
+        ctx.arc(px + tx * period / 2 + nx * s * 0.5,
+                py + ty * period / 2 + ny * s * 0.5, s * 0.15, 0, 7);
+        ctx.fill();
+      }
+      break;
+    }
+    case "triangle": {
+      const b = s * 0.5;
+      ctx.moveTo(px - tx * b, py - ty * b);
+      ctx.lineTo(px + tx * b, py + ty * b);
+      ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.closePath(); ctx.fill(); break;
+    }
+    case "dot":
+      ctx.arc(px, py, s / 2, 0, 7); ctx.fill(); break;
+    case "square": {
+      const b = s / 2;
+      ctx.fillRect(px - b, py - b, s, s); break;
+    }
+    case "diamond": {
+      const b = s / 2;
+      ctx.moveTo(px - b, py); ctx.lineTo(px, py - b);
+      ctx.lineTo(px + b, py); ctx.lineTo(px, py + b);
+      ctx.closePath(); ctx.stroke(); break;
+    }
+    default:  // tick
+      ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.stroke();
+  }
+}
+
+// Засечки вдоль линии/контура. Размещение ПОСЕГМЕНТНОЕ: на каждом прямом
+// ребре засечки распределяются равномерно с отступом от вершин, а не
+// непрерывно по периметру — иначе на углах засечки соседних рёбер
+// сходятся вплотную (в Эталоне углы свободны). mk={shape,period,size} px.
 function drawLineMarkers(pts, mk, color, closed, inward) {
   const chain = closed ? [...pts, pts[0]] : pts;
   const scr = chain.map(p => w2s(...p));
-  const segs = [];
-  let total = 0;
-  for (let i = 1; i < scr.length; i++) {
-    const d = Math.hypot(scr[i][0] - scr[i - 1][0], scr[i][1] - scr[i - 1][1]);
-    if (d > 1e-9) { segs.push([scr[i - 1], scr[i], d]); total += d; }
-  }
   const period = mk.period || 40, s = mk.size || 4;
-  if (total < period * 0.6) return;
   ctx.save();
   ctx.setLineDash([]);
   ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 1.2;
-  for (let dist = period / 2; dist < total; dist += period) {
-    let acc = 0, i = 0;
-    while (i < segs.length && acc + segs[i][2] < dist) acc += segs[i++][2];
-    if (i >= segs.length) break;
-    const [[x1, y1], [x2, y2], d] = segs[i];
-    const t = (dist - acc) / d;
-    const px = x1 + (x2 - x1) * t, py = y1 + (y2 - y1) * t;
+  for (let i = 1; i < scr.length; i++) {
+    const [x1, y1] = scr[i - 1], [x2, y2] = scr[i];
+    const d = Math.hypot(x2 - x1, y2 - y1);
+    if (d < period * 0.5) continue;      // ребро короче половины периода
     const tx = (x2 - x1) / d, ty = (y2 - y1) / d;
     const nx = -ty * inward, ny = tx * inward;
-    ctx.beginPath();
-    switch (mk.shape) {
-      case "tee":
-        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
-        ctx.moveTo(px - tx * s * 0.5, py - ty * s * 0.5);
-        ctx.lineTo(px + tx * s * 0.5, py + ty * s * 0.5);
-        ctx.stroke(); break;
-      case "corner":
-        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
-        ctx.lineTo(px + nx * s + tx * s, py + ny * s + ty * s);
-        ctx.stroke(); break;
-      case "chevron": case "chevron_dot": {
-        const w2 = s * 0.6;
-        ctx.moveTo(px - tx * w2, py - ty * w2);
-        ctx.lineTo(px + nx * s, py + ny * s);
-        ctx.lineTo(px + tx * w2, py + ty * w2);
-        ctx.stroke();
-        if (mk.shape === "chevron_dot") {
-          ctx.beginPath();
-          ctx.arc(px + tx * period / 2 + nx * s * 0.5,
-                  py + ty * period / 2 + ny * s * 0.5, s * 0.15, 0, 7);
-          ctx.fill();
-        }
-        break;
-      }
-      case "triangle": {
-        const b = s * 0.5;
-        ctx.moveTo(px - tx * b, py - ty * b);
-        ctx.lineTo(px + tx * b, py + ty * b);
-        ctx.lineTo(px + nx * s, py + ny * s);
-        ctx.closePath(); ctx.fill(); break;
-      }
-      case "dot":
-        ctx.arc(px, py, s / 2, 0, 7); ctx.fill(); break;
-      case "square": {
-        const b = s / 2;
-        ctx.fillRect(px - b, py - b, s, s); break;
-      }
-      case "diamond": {
-        const b = s / 2;
-        ctx.moveTo(px - b, py); ctx.lineTo(px, py - b);
-        ctx.lineTo(px + b, py); ctx.lineTo(px, py + b);
-        ctx.closePath(); ctx.stroke(); break;
-      }
-      default:  // tick
-        ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);
-        ctx.stroke();
+    const n = Math.max(1, Math.round(d / period));
+    const gap = d / n;
+    for (let k = 0; k < n; k++) {
+      const t = (gap * (k + 0.5)) / d;
+      drawMarkerGlyph(mk.shape, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t,
+                      tx, ty, nx, ny, s, period);
     }
   }
   ctx.restore();

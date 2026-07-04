@@ -125,85 +125,86 @@ def _ring_ccw(ring):
     return s < 0
 
 
+def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
+                  lines, ops):
+    """Одна засечка в точке (px,py): касательная (tx,ty), нормаль внутрь
+    (nx,ny). Линейные формы кладутся в lines (общий path), заливные — в ops."""
+    s = size
+    if shape == "tick":
+        lines.append([[px, py], [px + nx * s, py + ny * s]])
+    elif shape == "tee":
+        lines.append([[px, py], [px + nx * s, py + ny * s]])
+        b = s * 0.5
+        lines.append([[px - tx * b, py - ty * b], [px + tx * b, py + ty * b]])
+    elif shape == "corner":
+        lines.append([[px, py], [px + nx * s, py + ny * s]])
+        lines.append([[px + nx * s, py + ny * s],
+                      [px + nx * s + tx * s, py + ny * s + ty * s]])
+    elif shape in ("chevron", "chevron_dot"):
+        # вершина «∨» на линии, зубец уходит внутрь зоны на size,
+        # плечи расходятся к линии на ±0.5·size (как в образце Эталона)
+        w2 = s * 0.5
+        apex = (px + nx * s, py + ny * s)
+        lines.append([[px - tx * w2, py - ty * w2], list(apex)])
+        lines.append([list(apex), [px + tx * w2, py + ty * w2]])
+        if shape == "chevron_dot":
+            hx = px + tx * period / 2 + nx * s * 0.5
+            hy = py + ty * period / 2 + ny * s * 0.5
+            ops.append({"op": "circle", "x": hx, "y": hy, "r": s * 0.15,
+                        "fill": stroke, "stroke": None, "width": width})
+    elif shape == "triangle":
+        b = s * 0.5
+        ops.append({"op": "path", "closed": True, "fill": stroke,
+                    "stroke": None, "width": width, "dash": None,
+                    "rings": [[[px - tx * b, py - ty * b],
+                               [px + tx * b, py + ty * b],
+                               [px + nx * s, py + ny * s]]]})
+    elif shape == "dot":
+        ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
+                    "fill": stroke, "stroke": None, "width": width})
+    elif shape == "square":
+        b = s / 2
+        ops.append({"op": "path", "closed": True, "fill": stroke,
+                    "stroke": None, "width": width, "dash": None,
+                    "rings": [[[px - b, py - b], [px + b, py - b],
+                               [px + b, py + b], [px - b, py + b]]]})
+    elif shape == "diamond":
+        b = s / 2
+        ops.append({"op": "path", "closed": True, "fill": None,
+                    "stroke": stroke, "width": width, "dash": None,
+                    "rings": [[[px - b, py], [px, py - b],
+                               [px + b, py], [px, py + b]]]})
+
+
 def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0):
     """Маркеры-засечки Эталона ЛГР вдоль линии/контура (мм листа).
 
     spec: {shape, period_mm, size_mm} из библиотеки. Формы образцов:
     tick ⊢, tee ⊥, corner Г, chevron ∨, chevron_dot ∨., triangle ▼,
-    dot ●, square ■, diamond ◇. Засечка ставится по нормали inward
-    (для полигона — внутрь зоны, как в Эталоне)."""
+    dot ●, square ■, diamond ◇. Засечка — по нормали inward (внутрь зоны).
+
+    Размещение ПОСЕГМЕНТНОЕ: на каждом прямом ребре засечки распределяются
+    равномерно с отступом от вершин, а не непрерывно по периметру — иначе
+    на углах засечки соседних рёбер сходятся вплотную (в Эталоне углы
+    свободны, метки стоят по прямым участкам)."""
     period = spec.get("period_mm", 20.0)
     size = spec.get("size_mm", 2.0)
     shape = spec.get("shape", "tick")
     chain = list(pts) + ([pts[0]] if closed else [])
-    segs, total = [], 0.0
+    ops, lines = [], []
     for (x1, y1), (x2, y2) in zip(chain, chain[1:]):
         d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        if d > 1e-9:
-            segs.append(((x1, y1), (x2, y2), d))
-            total += d
-    if total < period * 0.6:
-        return []
-    ops = []
-    lines = []      # отрезки в общий path-op
-    dist = period / 2
-    while dist < total:
-        acc = 0.0
-        for (x1, y1), (x2, y2), d in segs:
-            if acc + d < dist:
-                acc += d
-                continue
-            t = (dist - acc) / d
+        if d < period * 0.5:            # ребро короче половины периода — без метки
+            continue
+        tx, ty = (x2 - x1) / d, (y2 - y1) / d
+        nx, ny = -ty * inward, tx * inward
+        n = max(1, round(d / period))   # целое число меток, центрированных на ребре
+        gap = d / n                     # отступ gap/2 от каждой вершины
+        for i in range(n):
+            t = (gap * (i + 0.5)) / d
             px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
-            tx, ty = (x2 - x1) / d, (y2 - y1) / d          # касательная
-            nx, ny = -ty * inward, tx * inward             # нормаль внутрь
-            s = size
-            if shape == "tick":
-                lines.append([[px, py], [px + nx * s, py + ny * s]])
-            elif shape == "tee":
-                lines.append([[px, py], [px + nx * s, py + ny * s]])
-                b = s * 0.5
-                lines.append([[px - tx * b, py - ty * b],
-                              [px + tx * b, py + ty * b]])
-            elif shape == "corner":
-                lines.append([[px, py], [px + nx * s, py + ny * s]])
-                lines.append([[px + nx * s, py + ny * s],
-                              [px + nx * s + tx * s, py + ny * s + ty * s]])
-            elif shape in ("chevron", "chevron_dot"):
-                w2 = s * 0.6
-                apex = (px + nx * s, py + ny * s)
-                lines.append([[px - tx * w2, py - ty * w2], list(apex)])
-                lines.append([list(apex), [px + tx * w2, py + ty * w2]])
-                if shape == "chevron_dot":
-                    hx = px + tx * period / 2 + nx * s * 0.5
-                    hy = py + ty * period / 2 + ny * s * 0.5
-                    ops.append({"op": "circle", "x": hx, "y": hy,
-                                "r": s * 0.15, "fill": stroke,
-                                "stroke": None, "width": width})
-            elif shape == "triangle":
-                b = s * 0.5
-                ops.append({"op": "path", "closed": True, "fill": stroke,
-                            "stroke": None, "width": width, "dash": None,
-                            "rings": [[[px - tx * b, py - ty * b],
-                                       [px + tx * b, py + ty * b],
-                                       [px + nx * s, py + ny * s]]]})
-            elif shape == "dot":
-                ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
-                            "fill": stroke, "stroke": None, "width": width})
-            elif shape == "square":
-                b = s / 2
-                ops.append({"op": "path", "closed": True, "fill": stroke,
-                            "stroke": None, "width": width, "dash": None,
-                            "rings": [[[px - b, py - b], [px + b, py - b],
-                                       [px + b, py + b], [px - b, py + b]]]})
-            elif shape == "diamond":
-                b = s / 2
-                ops.append({"op": "path", "closed": True, "fill": None,
-                            "stroke": stroke, "width": width, "dash": None,
-                            "rings": [[[px - b, py], [px, py - b],
-                                       [px + b, py], [px, py + b]]]})
-            break
-        dist += period
+            _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period,
+                          stroke, width, lines, ops)
     if lines:
         ops.append({"op": "path", "rings": lines, "closed": False,
                     "fill": None, "stroke": stroke, "width": width,
