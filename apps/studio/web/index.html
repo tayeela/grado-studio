@@ -9,14 +9,34 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<!-- Иконочный спрайт: единая SVG-система (viewBox 24, stroke=currentColor —
+     наследует цвет и тему). Взамен юникод-глифов. Оффлайн, без сборки/CDN. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="ic-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="ic-undo" viewBox="0 0 24 24"><polyline points="4 5 4 11 10 11"/><path d="M5 13a8 8 0 1 0 2-8.5L4 7"/></symbol>
+  <symbol id="ic-redo" viewBox="0 0 24 24"><polyline points="20 5 20 11 14 11"/><path d="M19 13a8 8 0 1 1-2-8.5L20 7"/></symbol>
+  <symbol id="ic-select" viewBox="0 0 24 24"><path d="M5 3l6 15 2.2-6.3L19.5 9.5z"/><path d="M13 13l6 6"/></symbol>
+  <symbol id="ic-point" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="ic-polyline" viewBox="0 0 24 24"><polyline points="4 17 10 9 14 14 20 6"/><circle cx="4" cy="17" r="1.7" fill="currentColor" stroke="none"/><circle cx="20" cy="6" r="1.7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="ic-polygon" viewBox="0 0 24 24"><polygon points="12 3.5 20.5 10 17 20 7 20 3.5 10"/></symbol>
+  <symbol id="ic-rect" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.2"/></symbol>
+  <symbol id="ic-dim" viewBox="0 0 24 24"><path d="M4 7v10M20 7v10"/><path d="M4 12h16"/><path d="M7.5 9 4.5 12l3 3M16.5 9l3 3-3 3"/></symbol>
+  <symbol id="ic-measure" viewBox="0 0 24 24"><rect x="2.5" y="9" width="19" height="6" rx="1"/><path d="M6 9v2.5M9 9v3.5M12 9v2.5M15 9v3.5M18 9v2.5"/></symbol>
+  <symbol id="ic-snap" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4.5M12 17.5V22M2 12h4.5M17.5 12H22"/></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24"><polyline points="21 5 21 10 16 10"/><polyline points="3 19 3 14 8 14"/><path d="M4.5 9a8 8 0 0 1 13-3L21 10M3 14l3.5 4A8 8 0 0 0 19.5 15"/></symbol>
+  <symbol id="ic-grip" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.35"/><circle cx="15" cy="6" r="1.35"/><circle cx="9" cy="12" r="1.35"/><circle cx="15" cy="12" r="1.35"/><circle cx="9" cy="18" r="1.35"/><circle cx="15" cy="18" r="1.35"/></symbol>
+  <symbol id="ic-more" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></symbol>
+  <symbol id="ic-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+</defs></svg>
 <div id="errbar" style="display:none;"></div>
 <header>
   <div class="logo">ГРАДО <span>Студия</span></div>
   <input id="project-name" value="Концепция развития территории" spellcheck="false">
   <div class="spacer"></div>
-  <button id="btn-theme" title="Светлая / тёмная тема">◐</button>
-  <button id="btn-undo" title="Отменить (Cmd+Z)">↶</button>
-  <button id="btn-redo" title="Вернуть (Cmd+Shift+Z)">↷</button>
+  <button id="btn-theme" class="icon-btn" title="Светлая / тёмная тема"><svg class="ic"><use href="#ic-theme"/></svg></button>
+  <button id="btn-undo" class="icon-btn" title="Отменить (Cmd+Z)"><svg class="ic"><use href="#ic-undo"/></svg></button>
+  <button id="btn-redo" class="icon-btn" title="Вернуть (Cmd+Shift+Z)"><svg class="ic"><use href="#ic-redo"/></svg></button>
   <button id="btn-demo" title="Заполнить примером">Демо</button>
   <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
   <input id="nspd-file" type="file" accept=".json,application/json" hidden>
@@ -32,17 +52,17 @@
 </header>
 <div id="main">
   <nav id="toolbar">
-    <button data-tool="select"   class="active" title="Выбор (V)">➤</button>
+    <button data-tool="select"   class="active" title="Выбор (V)"><svg class="ic"><use href="#ic-select"/></svg></button>
     <div class="divider"></div>
-    <button data-tool="point"    title="Точка — на активный слой">●</button>
-    <button data-tool="polyline" title="Полилиния — на активный слой">╱</button>
-    <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)">▨</button>
-    <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам">▭</button>
+    <button data-tool="point"    title="Точка — на активный слой"><svg class="ic"><use href="#ic-point"/></svg></button>
+    <button data-tool="polyline" title="Полилиния — на активный слой"><svg class="ic"><use href="#ic-polyline"/></svg></button>
+    <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)"><svg class="ic"><use href="#ic-polygon"/></svg></button>
+    <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам"><svg class="ic"><use href="#ic-rect"/></svg></button>
     <div class="divider"></div>
-    <button data-tool="dim"      title="Размерная линия (D)">⊢</button>
-    <button data-tool="measure"  title="Измерение (M)">⟷</button>
+    <button data-tool="dim"      title="Размерная линия (D)"><svg class="ic"><use href="#ic-dim"/></svg></button>
+    <button data-tool="measure"  title="Измерение (M)"><svg class="ic"><use href="#ic-measure"/></svg></button>
     <div class="divider"></div>
-    <button id="btn-snap" class="active" title="Привязки (X)">⌖</button>
+    <button id="btn-snap" class="active" title="Привязки (X)"><svg class="ic"><use href="#ic-snap"/></svg></button>
   </nav>
   <canvas id="cv"></canvas>
   <aside id="panel">
@@ -57,11 +77,11 @@
         <input type="range" id="basemap-opacity" min="10" max="100" value="85"></label>
     </section>
     <section>
-      <h3>Слои <button id="btn-new-layer" class="h3-btn" title="Новый слой">+</button></h3>
+      <h3>Слои <button id="btn-new-layer" class="h3-btn" title="Новый слой"><svg class="ic"><use href="#ic-plus"/></svg></button></h3>
       <div id="layers-body"></div>
     </section>
     <section id="sources">
-      <h3>Источники <button id="btn-refresh-src" class="h3-btn" title="Обновить журнал снимков с сервера">⟳</button></h3>
+      <h3>Источники <button id="btn-refresh-src" class="h3-btn" title="Обновить журнал снимков с сервера"><svg class="ic"><use href="#ic-refresh"/></svg></button></h3>
       <div id="sources-body" class="muted">Пока не импортировано</div>
     </section>
     <section>

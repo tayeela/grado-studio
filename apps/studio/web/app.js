@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.24.0";
+const VERSION = "0.25.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1379,11 +1379,11 @@ function renderLayers() {
     row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "");
     row.draggable = true;
     row.dataset.lid = layer.id;
-    row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки">⠿</span>
+    row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки"><svg class="ic"><use href="#ic-grip"/></svg></span>
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
       <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
-      <button class="lrow-menu" title="действия со слоем">⋯</button>`;
+      <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-more"/></svg></button>`;
     row.querySelector("input").addEventListener("change", ev => {
       layer.visible = ev.target.checked;
       const sel = selectedFeature();
@@ -1642,7 +1642,7 @@ function openAttributeTable(layer) {
   }).join("");
   overlay.innerHTML = `<div class="modal attr-modal">
     <div class="modal-head">Таблица атрибутов · ${layer.title} <span class="muted">(${feats.length})</span>
-      <button class="modal-x" title="Закрыть">✕</button></div>
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="attr-scroll">${feats.length
       ? `<table class="attr-table"><thead>${head}</thead><tbody>${rows}</tbody></table>`
       : `<div class="muted" style="padding:14px">В слое нет объектов</div>`}</div>
