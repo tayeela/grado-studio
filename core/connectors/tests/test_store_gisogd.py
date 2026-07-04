@@ -66,6 +66,29 @@ class TestStore(unittest.TestCase):
         self.assertIsNotNone(m)
         self.assertIsNone(self.store.latest("fgistp"))
 
+    def test_concurrent_identical_save_is_idempotent(self):
+        # ThreadingHTTPServer: два одинаковых импорта параллельно не должны
+        # ронять FileExistsError — контракт save() идемпотентен
+        import threading
+        errors, sids = [], []
+        barrier = threading.Barrier(8)
+
+        def worker():
+            try:
+                barrier.wait()
+                sids.append(self.store.save(self.conn, nspd_result()))
+            except Exception as e:  # noqa: BLE001
+                errors.append(e)
+
+        threads = [threading.Thread(target=worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [], "гонка save() уронила импорт")
+        self.assertEqual(len(set(sids)), 1, "тот же контент — один снимок")
+        self.assertEqual(len(self.store.list()), 1)
+
 
 class TestDiff(unittest.TestCase):
     def test_added_removed_changed(self):

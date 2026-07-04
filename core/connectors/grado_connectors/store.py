@@ -8,6 +8,8 @@
 
 import hashlib
 import json
+import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +24,10 @@ class SnapshotStore:
     def __init__(self, root):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
+        # save() сериализуется: стор — общий синглтон под ThreadingHTTPServer,
+        # без блокировки exists()→mkdir() гонит (FileExistsError на
+        # параллельном идентичном импорте) вместо идемпотентного возврата.
+        self._lock = threading.Lock()
 
     def save(self, connector, result):
         data = json.dumps(
@@ -31,20 +37,26 @@ class SnapshotStore:
         fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sid = f"{connector.name}-{fetched_at[:10].replace('-', '')}-{sha[:8]}"
         target = self.root / sid
-        if target.exists():
-            if json.loads((target / "manifest.json").read_text())["sha256"] == sha:
-                return sid  # идемпотентность: тот же контент — тот же снимок
-            raise StoreError(f"коллизия идентификатора снимка {sid}")
-        target.mkdir()
-        (target / "data.geojson").write_bytes(data)
         manifest = {
             "id": sid, "connector": connector.name, "source": connector.source,
             "params": result["params"], "source_doc": result.get("source_doc"),
             "crs": result.get("crs", "EPSG:4326"), "notes": result.get("notes", []),
             "fetched_at": fetched_at, "count": len(result["features"]), "sha256": sha,
         }
-        (target / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
+        with self._lock:
+            man_path = target / "manifest.json"
+            if man_path.exists():
+                if json.loads(man_path.read_text())["sha256"] == sha:
+                    return sid  # идемпотентность: тот же контент — тот же снимок
+                raise StoreError(f"коллизия идентификатора снимка {sid}")
+            target.mkdir(exist_ok=True)
+            (target / "data.geojson").write_bytes(data)
+            # манифест — последним и атомарно: параллельный list()/latest()
+            # (без блокировки) видит каталог валидным только целиком
+            tmp = target / f".manifest.{os.getpid()}.tmp"
+            tmp.write_text(json.dumps(manifest, ensure_ascii=False, indent=1),
+                           encoding="utf-8")
+            os.replace(tmp, man_path)
         return sid
 
     def manifest(self, sid):

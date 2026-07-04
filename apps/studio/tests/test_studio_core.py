@@ -425,12 +425,12 @@ class TestTileCache(unittest.TestCase):
             self.assertTrue(studio_core._valid_png(Path(f.name)))
 
 
-def _nspd_payload(cad):
+def _nspd_payload(cad, x=4187000, y=7509000):
     # 3857-координаты около Москвы; коннектор переведёт в WGS84
     return {"grado_source": "nspd", "features": [{"id": cad,
         "geometry": {"type": "Polygon", "coordinates": [[
-            [4187000, 7509000], [4187100, 7509000], [4187100, 7509100],
-            [4187000, 7509100], [4187000, 7509000]]]},
+            [x, y], [x + 100, y], [x + 100, y + 100],
+            [x, y + 100], [x, y]]]},
         "properties": {"cad_num": cad}}]}
 
 
@@ -464,12 +464,31 @@ class TestSourcePipeline(unittest.TestCase):
         self.assertEqual(len(studio_core.sources_journal()), 1)
 
     def test_changed_source_diffs(self):
+        # та же территория (те же габариты), заменён участок → diff
         studio_core.import_nspd(_nspd_payload("77:01:0001"))
         out = studio_core.import_nspd(_nspd_payload("77:01:9999"))
         self.assertIsNotNone(out["diff"])
         self.assertIn("77:01:9999", out["diff"]["added"])
         self.assertIn("77:01:0001", out["diff"]["removed"])
         self.assertEqual(len(studio_core.sources_journal()), 2)
+
+    def test_different_territory_no_false_diff(self):
+        # другой квартал (другие габариты) — НЕ сравнивается с прошлым
+        studio_core.import_nspd(_nspd_payload("77:01:0001", x=4187000, y=7509000))
+        out = studio_core.import_nspd(
+            _nspd_payload("77:05:0008", x=4200000, y=7520000))
+        self.assertIsNone(out["diff"], "разные территории не диффятся")
+        self.assertEqual(len(studio_core.sources_journal()), 2)
+
+    def test_snapshot_survives_roundtrip(self):
+        feats = studio_core.import_nspd(_nspd_payload("77:01:0001"))["features"]
+        sid = feats[0]["prov"]["snapshot"]
+        with tempfile.TemporaryDirectory() as tmp:
+            gp = Path(tmp) / "p.grado"
+            studio_core.build_project(gp, "RT", feats).close()
+            rt = studio_core.grado_to_features(str(gp))
+        # source_doc = sid (нет grado_doc) → снимок восстановлен из round-trip
+        self.assertEqual(rt["features"][0]["prov"].get("snapshot"), sid)
 
     def test_provenance_flows_to_grado_and_back(self):
         feats = studio_core.import_nspd(_nspd_payload("77:01:0001"))["features"]

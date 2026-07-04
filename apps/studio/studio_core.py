@@ -58,6 +58,36 @@ SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
 _PROV_SOURCES = {"nspd", "fgistp", "gisogd", "import"}  # допустимые в модели
 
 
+def _iter_lonlat(geom):
+    """Все пары координат геометрии GeoJSON (любой вложенности)."""
+    if not geom:
+        return
+    stack = [geom.get("coordinates")]
+    while stack:
+        c = stack.pop()
+        if not isinstance(c, (list, tuple)) or not c:
+            continue
+        if isinstance(c[0], (int, float)):
+            yield c[0], c[1]
+        else:
+            stack.extend(c)
+
+
+def _territory_key(features):
+    """Ключ территории по габаритам (WGS84, ~100 м): один и тот же для
+    переимпорта той же территории (даже с иным составом объектов),
+    разный — для другой территории. Без него snapshot.latest() сравнивал
+    бы НЕсвязанные захваты (НСПД не несёт различающего ключа в params)."""
+    xs, ys = [], []
+    for f in features:
+        for lon, lat in _iter_lonlat(f.get("geometry")):
+            xs.append(lon)
+            ys.append(lat)
+    if not xs:
+        return None
+    return f"{min(xs):.3f},{min(ys):.3f},{max(xs):.3f},{max(ys):.3f}"
+
+
 def _snapshot(connector, result):
     """Сохраняет снимок + diff против прошлого снимка того же источника.
 
@@ -503,6 +533,10 @@ def grado_to_features(path):
             if f.get("source") and f["source"] != "manual":
                 prov = {"source": f["source"], "source_date": f.get("source_date"),
                         "source_doc": f.get("source_doc")}
+                # если source_doc — это id снимка, восстановим ссылку на снимок
+                doc = f.get("source_doc") or ""
+                if doc.count("-") == 2 and doc.split("-")[0] in _PROV_SOURCES:
+                    prov["snapshot"] = doc
             base = {"kind": kind, "props": props}
             if prov:
                 base["prov"] = prov
@@ -537,9 +571,11 @@ def import_fgistp(payload):
         if not f.get("geometry"):
             continue
         props = f.get("properties") or {}
+        # ключ объекта: id источника, иначе uin+индекс — НЕ голый uin,
+        # иначе все объекты документа схлопнутся в один ключ (потеря diff)
         src_features.append({
             "type": "Feature",
-            "grado_key": str(f.get("id") or props.get("uin") or f"{uin}:{i}"),
+            "grado_key": str(f.get("id") or f"{uin}:{i}"),
             "geometry": f["geometry"], "properties": props})
     result = make_result(src_features,
                          params={"uin": uin,
@@ -586,6 +622,10 @@ def import_nspd(payload):
 
     conn = NspdCapture()
     result = conn.fetch(payload=payload)
+    # НСПД не различает территории в params (всегда path=None) — добавляем
+    # ключ по габаритам, иначе diff сравнит захваты разных территорий
+    result["params"] = {**(result.get("params") or {}),
+                        "extent": _territory_key(result["features"])}
     manifest, d = _snapshot(conn, result)   # фиксация снимка + diff
     prov = _prov(manifest)
     features = []
