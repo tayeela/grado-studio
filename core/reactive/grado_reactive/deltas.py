@@ -4,9 +4,9 @@
     {"op": "insert"|"update"|"delete", "layer": код, "fid": id,
      "before": снимок | None, "after": снимок | None}
 
-Снимок объекта: {"geom", "attrs", "source", "source_date", "source_doc"}.
-Дельта обратима: invert() меняет местами before/after — этого достаточно
-для undo, переключения веток и (позже) синхронизации.
+Снимок объекта: {"geom", "attrs", "source", "source_date", "source_doc",
+"style_id"}. Дельта обратима: invert() меняет местами before/after — этого
+достаточно для undo, переключения веток и (позже) синхронизации.
 """
 
 _INVERT_OP = {"insert": "delete", "delete": "insert", "update": "update"}
@@ -20,6 +20,7 @@ def snapshot(feature):
         "source": feature["source"],
         "source_date": feature["source_date"],
         "source_doc": feature["source_doc"],
+        "style_id": feature.get("style_id"),  # per-object стиль переживает undo/redo
     }
 
 

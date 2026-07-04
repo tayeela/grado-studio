@@ -53,6 +53,23 @@ class TestSession(SessionBase):
         self.s.redo()
         self.assertAlmostEqual(layer.area_ha(), 1.0)
 
+    def test_style_id_survives_undo_redo(self):
+        # per-object style_id должен переживать реплей дельт (MODEL-01)
+        fid = self.s.insert_feature("terr.restrict", rect(0, 0, 200, 100),
+                                    attrs={"kind": "СЗЗ"}, style_id="restrict.accent")
+        layer = self.p.layer("terr.restrict")
+        self.assertEqual(layer.get_feature(fid)["style_id"], "restrict.accent")
+        self.s.update_feature("terr.restrict", fid, geom=rect(0, 0, 100, 100))
+        self.assertEqual(layer.get_feature(fid)["style_id"], "restrict.accent",
+                         "правка геометрии не теряет стиль")
+        self.s.undo()
+        self.assertEqual(layer.get_feature(fid)["style_id"], "restrict.accent")
+        self.s.undo()
+        self.assertIsNone(layer.get_feature(fid))
+        self.s.redo()
+        self.assertEqual(layer.get_feature(fid)["style_id"], "restrict.accent",
+                         "redo вставки восстанавливает стиль")
+
     def test_delete_undo_restores_fid_and_provenance(self):
         fid = self.s.insert_feature("terr.restrict", rect(0, 0, 200, 100),
                                     attrs={"kind": "СЗЗ"}, source="nspd",

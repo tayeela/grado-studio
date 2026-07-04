@@ -28,6 +28,7 @@ class ClassifierClass:
         self.tep_role = spec.get("tep_role")
         self.topology = spec.get("topology")  # "coverage" — слой-покрытие
         self.stage = spec.get("stage")        # "existing" | "project" | "base"
+        self.style_id = spec.get("style_id")  # стиль по умолчанию (styles/*.json)
         self.code_433pr = spec.get("code_433pr")
         self.attrs = spec.get("attrs", [])
         if self.geom_type not in WKB_TYPES:

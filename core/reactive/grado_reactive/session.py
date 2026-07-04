@@ -62,9 +62,11 @@ class Session:
             self._notify(D.affected_layers(deltas))
 
     def insert_feature(self, code, geom, attrs=None, source="manual",
-                       source_date=None, source_doc=None, title=None):
+                       source_date=None, source_doc=None, title=None,
+                       style_id=None):
         layer = self.project.layer(code)
-        fid = layer.add_feature(geom, attrs, source, source_date, source_doc)
+        fid = layer.add_feature(geom, attrs, source, source_date, source_doc,
+                                style_id=style_id)
         after = D.snapshot(layer.get_feature(fid))
         self._commit(title or f"добавление объекта в {code}",
                      [{"op": "insert", "layer": code, "fid": fid,

@@ -23,16 +23,49 @@ class ProjectError(ValueError):
     pass
 
 
-def _table_name(code):
-    return "l_" + code.replace(".", "_")
+# Реестр слоёв v2 (MODEL-01): идентичность (layer_id) отделена от
+# семантического класса (classifier_code); у слоя своя стадия, стиль и
+# вид источника. table_name уникален (от layer_id).
+_GRADO_LAYERS_DDL = """
+    CREATE TABLE grado_layers (
+        layer_id TEXT PRIMARY KEY,
+        table_name TEXT NOT NULL UNIQUE REFERENCES gpkg_contents(table_name),
+        classifier_code TEXT NOT NULL,
+        title TEXT NOT NULL,
+        stage TEXT,
+        style_id TEXT,
+        source_kind TEXT,
+        created TEXT NOT NULL)"""
+
+_LAYER_COLS = ("layer_id, table_name, classifier_code, title, "
+               "stage, style_id, source_kind")
+
+
+def _table_name(layer_id):
+    # имя таблицы — от layer_id (уникального), не от semantic_class:
+    # два слоя одного класса (source.fgistp.func_zones и project.tp.func_zone)
+    # обязаны иметь разные таблицы
+    return "l_" + layer_id.replace(".", "_")
 
 
 class Layer:
-    def __init__(self, project, code):
+    """Слой проекта: идентичность layer_id != семантический класс (code).
+
+    code (=semantic_class) задаёт класс классификатора (схему атрибутов, тип
+    геометрии, роль ТЭП); layer_id уникален. У слоя своя стадия, стиль
+    по умолчанию и вид источника (MODEL-01)."""
+
+    def __init__(self, project, spec):
         self.project = project
-        self.code = code
-        self.cls = project.classifier.get(code)
-        self.table = _table_name(code)
+        self.layer_id = spec["layer_id"]
+        self.code = spec["code"]            # semantic_class (код классификатора)
+        self.semantic_class = spec["code"]
+        self.title = spec.get("title")
+        self.table = spec["table"]
+        self.stage = spec.get("stage")
+        self.style_id = spec.get("style_id")
+        self.source_kind = spec.get("source_kind")
+        self.cls = project.classifier.get(self.code)
 
     def _coerce(self, geom, attrs, source, source_date):
         geometry.validate(geom)
@@ -49,9 +82,10 @@ class Layer:
         self.cls.validate_attrs(attrs)
         return geom, attrs, source_date or date.today().isoformat()
 
-    def _write(self, fid, geom, attrs, source, source_date, source_doc):
-        cols = ["geom", "source", "source_date", "source_doc"]
-        vals = [geometry.gpkg_blob(geom, self.project.srs_id), source, source_date, source_doc]
+    def _write(self, fid, geom, attrs, source, source_date, source_doc, style_id):
+        cols = ["geom", "source", "source_date", "source_doc", "style_id"]
+        vals = [geometry.gpkg_blob(geom, self.project.srs_id), source,
+                source_date, source_doc, style_id]
         for key, value in attrs.items():
             cols.append(f'"{key}"')
             vals.append(value)
@@ -70,9 +104,10 @@ class Layer:
         self.project.conn.commit()
         return fid
 
-    def add_feature(self, geom, attrs=None, source="manual", source_date=None, source_doc=None):
+    def add_feature(self, geom, attrs=None, source="manual", source_date=None,
+                    source_doc=None, style_id=None):
         geom, attrs, source_date = self._coerce(geom, attrs, source, source_date)
-        return self._write(None, geom, attrs, source, source_date, source_doc)
+        return self._write(None, geom, attrs, source, source_date, source_doc, style_id)
 
     def set_feature(self, fid, snapshot):
         """Записывает объект с заданным id (реплей дельт журнала)."""
@@ -80,7 +115,8 @@ class Layer:
             snapshot["geom"], snapshot.get("attrs"),
             snapshot.get("source", "manual"), snapshot.get("source_date"))
         return self._write(fid, geom, attrs, snapshot.get("source", "manual"),
-                           source_date, snapshot.get("source_doc"))
+                           source_date, snapshot.get("source_doc"),
+                           snapshot.get("style_id"))
 
     def delete_feature(self, fid):
         cur = self.project.conn.execute(f'DELETE FROM "{self.table}" WHERE id=?', (fid,))
@@ -95,7 +131,8 @@ class Layer:
     def features(self, where_id=None):
         attr_ids = [a["id"] for a in self.cls.attrs]
         cols = ", ".join(f'"{a}"' for a in attr_ids)
-        sql = f'SELECT id, geom, source, source_date, source_doc{", " + cols if cols else ""} FROM "{self.table}"'
+        sql = (f'SELECT id, geom, source, source_date, source_doc, style_id'
+               f'{", " + cols if cols else ""} FROM "{self.table}"')
         params = ()
         if where_id is not None:
             sql += " WHERE id=?"
@@ -108,7 +145,8 @@ class Layer:
                 "source": row[2],
                 "source_date": row[3],
                 "source_doc": row[4],
-                "attrs": dict(zip(attr_ids, row[5:])),
+                "style_id": row[5],
+                "attrs": dict(zip(attr_ids, row[6:])),
             }
 
     def count(self):
@@ -148,12 +186,7 @@ class Project:
             raise ProjectError(f"файл уже существует: {path}")
         conn = gpkg.create_gpkg(str(path))
         conn.execute("CREATE TABLE grado_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-        conn.execute("""
-            CREATE TABLE grado_layers (
-                table_name TEXT PRIMARY KEY REFERENCES gpkg_contents(table_name),
-                classifier_code TEXT NOT NULL,
-                title TEXT NOT NULL,
-                created TEXT NOT NULL)""")
+        conn.execute(_GRADO_LAYERS_DDL)
         conn.executemany(
             "INSERT INTO grado_meta VALUES (?,?)",
             [("name", name), ("srs_id", str(srs_id)),
@@ -171,39 +204,105 @@ class Project:
             conn.execute("SELECT 1 FROM grado_meta LIMIT 1")
         except sqlite3.OperationalError:
             raise ProjectError(f"{path} — не проект ГРАДО (нет grado_meta)") from None
+        cls._migrate_v2(conn)
         return cls(conn, path)
+
+    @staticmethod
+    def _migrate_v2(conn):
+        """Апгрейд .grado, созданных до MODEL-01: layer_id/stage/style_id/
+        source_kind в grado_layers и колонка style_id в feature-таблицах.
+        Для legacy layer_id = classifier_code (журналы дельт валидны)."""
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(grado_layers)")]
+        if "layer_id" not in cols:
+            classifier = Classifier.load()
+            old = conn.execute(
+                "SELECT table_name, classifier_code, title, created "
+                "FROM grado_layers").fetchall()
+            conn.execute("ALTER TABLE grado_layers RENAME TO grado_layers_v1")
+            conn.execute(_GRADO_LAYERS_DDL)
+            for table_name, code, title, created in old:
+                c = classifier.classes.get(code)
+                conn.execute(
+                    f"INSERT INTO grado_layers ({_LAYER_COLS}, created) "
+                    f"VALUES (?,?,?,?,?,?,?,?)",
+                    (code, table_name, code, title,
+                     c.stage if c else None, c.style_id if c else None,
+                     None, created))
+            conn.execute("DROP TABLE grado_layers_v1")
+        for (table_name,) in conn.execute("SELECT table_name FROM grado_layers"):
+            fcols = [r[1] for r in conn.execute(
+                f'PRAGMA table_info("{table_name}")')]
+            if "style_id" not in fcols:
+                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN style_id TEXT')
+        conn.commit()
 
     def meta(self, key):
         row = self.conn.execute("SELECT value FROM grado_meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
 
-    def add_layer(self, code, title=None):
+    def add_layer(self, code, title=None, layer_id=None, stage=None,
+                  style_id=None, source_kind=None):
+        """Создаёт слой. layer_id по умолчанию = code (legacy 1:1); передав
+        отдельный layer_id, можно завести несколько слоёв одного класса
+        (напр. source.fgistp.func_zones и project.tp.func_zone). stage и
+        style_id по умолчанию берутся из классификатора."""
         c = self.classifier.get(code)
-        table = _table_name(code)
+        layer_id = layer_id or code
+        table = _table_name(layer_id)
         exists = self.conn.execute(
-            "SELECT 1 FROM grado_layers WHERE table_name=?", (table,)).fetchone()
+            "SELECT 1 FROM grado_layers WHERE layer_id=?", (layer_id,)).fetchone()
         if exists:
-            raise ProjectError(f"слой {code} уже есть в проекте")
+            raise ProjectError(f"слой {layer_id} уже есть в проекте")
+        title = title or c.title
+        stage = c.stage if stage is None else stage
+        style_id = c.style_id if style_id is None else style_id
         columns = [(a["id"], a["type"]) for a in c.attrs]
-        gpkg.add_feature_table(self.conn, table, title or c.title, c.geom_type,
+        gpkg.add_feature_table(self.conn, table, title, c.geom_type,
                                self.srs_id, columns, description=f"grado:{code}")
         self.conn.execute(
-            "INSERT INTO grado_layers VALUES (?,?,?,?)",
-            (table, code, title or c.title, gpkg.now_iso()))
+            f"INSERT INTO grado_layers ({_LAYER_COLS}, created) "
+            f"VALUES (?,?,?,?,?,?,?,?)",
+            (layer_id, table, code, title, stage, style_id, source_kind,
+             gpkg.now_iso()))
         self.conn.commit()
-        return Layer(self, code)
+        return Layer(self, {"layer_id": layer_id, "code": code, "title": title,
+                            "table": table, "stage": stage, "style_id": style_id,
+                            "source_kind": source_kind})
 
-    def layer(self, code):
-        row = self.conn.execute(
-            "SELECT 1 FROM grado_layers WHERE classifier_code=?", (code,)).fetchone()
+    def _layer_spec(self, layer_id=None, code=None):
+        if layer_id is not None:
+            row = self.conn.execute(
+                f"SELECT {_LAYER_COLS} FROM grado_layers WHERE layer_id=?",
+                (layer_id,)).fetchone()
+        else:
+            row = self.conn.execute(
+                f"SELECT {_LAYER_COLS} FROM grado_layers WHERE classifier_code=? "
+                f"ORDER BY table_name LIMIT 1", (code,)).fetchone()
         if not row:
-            raise ProjectError(f"в проекте нет слоя {code}")
-        return Layer(self, code)
+            return None
+        return {"layer_id": row[0], "table": row[1], "code": row[2],
+                "title": row[3], "stage": row[4], "style_id": row[5],
+                "source_kind": row[6]}
+
+    def layer(self, ident):
+        """Слой по layer_id или (legacy) по коду класса (первый при 1:1)."""
+        spec = self._layer_spec(layer_id=ident) or self._layer_spec(code=ident)
+        if spec is None:
+            raise ProjectError(f"в проекте нет слоя {ident}")
+        return Layer(self, spec)
+
+    def layer_by_id(self, layer_id):
+        spec = self._layer_spec(layer_id=layer_id)
+        if spec is None:
+            raise ProjectError(f"в проекте нет слоя с id {layer_id}")
+        return Layer(self, spec)
 
     def layers(self):
         rows = self.conn.execute(
-            "SELECT classifier_code, title, table_name FROM grado_layers ORDER BY table_name")
-        return [{"code": r[0], "title": r[1], "table": r[2]} for r in rows]
+            f"SELECT {_LAYER_COLS} FROM grado_layers ORDER BY table_name")
+        return [{"code": r[2], "layer_id": r[0], "semantic_class": r[2],
+                 "title": r[3], "table": r[1], "stage": r[4],
+                 "style_id": r[5], "source_kind": r[6]} for r in rows]
 
     def close(self):
         self.conn.close()
