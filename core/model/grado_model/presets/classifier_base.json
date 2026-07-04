@@ -24,7 +24,7 @@
        {"id": "kind", "title": "Вид зоны", "type": "string"},
        {"id": "reestr_num", "title": "Реестровый номер", "type": "string"}]},
     {"code": "tp.func_zone", "title": "Функциональная зона", "group": "Терпланирование",
-     "geom_type": "MultiPolygon", "attrs": [
+     "geom_type": "MultiPolygon", "topology": "coverage", "attrs": [
        {"id": "zone_code", "title": "Код зоны", "type": "string"},
        {"id": "zone_title", "title": "Наименование зоны", "type": "string"}]},
     {"code": "pp.red_line", "title": "Красная линия", "group": "Планировка",
@@ -34,7 +34,7 @@
      "geom_type": "MultiPolygon", "attrs": [
        {"id": "purpose", "title": "Назначение", "type": "string"}]},
     {"code": "oks.building", "title": "Здание", "group": "ОКС",
-     "geom_type": "Polygon", "attrs": [
+     "geom_type": "Polygon", "tep_role": "building_footprint", "attrs": [
        {"id": "purpose", "title": "Назначение", "type": "string"},
        {"id": "floors", "title": "Этажность", "type": "integer"},
        {"id": "gsa", "title": "Поэтажная площадь, м²", "type": "number"}]},

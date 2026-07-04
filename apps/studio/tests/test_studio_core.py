@@ -425,6 +425,46 @@ class TestTileCache(unittest.TestCase):
             self.assertTrue(studio_core._valid_png(Path(f.name)))
 
 
+class TestRolesTep(unittest.TestCase):
+    """ТЭП по ролям слоёв, а не по литералам kind (шаг 4)."""
+
+    def test_terr_and_restrict_from_roles(self):
+        # площади входов берутся по tep_role, не по kind
+        out = studio_core.compute_tep(FEATURES)
+        self.assertAlmostEqual(out["inputs"]["terr_area"], 15.0, places=2)
+        self.assertGreater(out["inputs"]["restrict_area"], 0)
+
+    def test_fact_spp_from_building_role(self):
+        out = studio_core.compute_tep(FEATURES)
+        # одно здание 30×20 м × 10 этажей = 6.0 тыс. м²
+        self.assertAlmostEqual(out["fact"]["spp"], 6.0, places=1)
+
+    def test_new_building_layer_counts_without_code_change(self):
+        # критерий шага 4: новый слой-здание учитывается в ТЭП без правки
+        # compute_tep — только запись в классификаторе + карту kind→код
+        import copy
+        from grado_model.classifier import ClassifierClass
+        orig_cls, orig_map = studio_core.CLASSIFIER, dict(studio_core.KIND_TO_CODE)
+        cls = copy.deepcopy(orig_cls)
+        cls.classes["oks.pavilion"] = ClassifierClass({
+            "code": "oks.pavilion", "geom_type": "Polygon",
+            "tep_role": "building_footprint",
+            "attrs": [{"id": "floors", "type": "integer"}]})
+        studio_core.CLASSIFIER = cls
+        studio_core.KIND_TO_CODE["pavilion"] = "oks.pavilion"
+        try:
+            base = studio_core.compute_tep(FEATURES)["fact"]["spp"]
+            feats = FEATURES + [{"kind": "pavilion", "props": {"floors": 2},
+                                 "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]}]
+            more = studio_core.compute_tep(feats)["fact"]["spp"]
+        finally:
+            studio_core.CLASSIFIER = orig_cls
+            studio_core.KIND_TO_CODE.clear()
+            studio_core.KIND_TO_CODE.update(orig_map)
+        # 1 га × 2 этажа = 20 тыс. м² добавилось, compute_tep не менялся
+        self.assertAlmostEqual(more - base, 20.0, places=1)
+
+
 class TestStyleLibrary(unittest.TestCase):
     """Единая библиотека стилей (шаг 3): один JSON — холст, PDF и DXF."""
 

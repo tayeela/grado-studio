@@ -29,6 +29,7 @@ from grado_geom import CurveError, PathError  # noqa: E402
 from grado_layout import Document, render_document_pdf  # noqa: E402
 from grado_model import Project  # noqa: E402
 from grado_model import geometry  # noqa: E402
+from grado_model.classifier import Classifier  # noqa: E402
 from grado_model.tep_bridge import apply_to_engine  # noqa: E402
 from grado_render import StyleSet  # noqa: E402
 from grado_wizard.sheets import (MAP_RECT, apo_sheet,  # noqa: E402
@@ -334,12 +335,41 @@ def _ring_area_ha(feature):
                           "coordinates": [feature["ring"]]}) / 10000.0
 
 
+# Классификатор — реестр ролей слоёв (tep_role, topology). ТЭП считается
+# по ролям, а не по литералам kind (docs/fixes-geometry-layout.md, шаг 4):
+# добавление нового слоя-здания = запись в классификаторе, не правка кода.
+CLASSIFIER = Classifier.load()
+
+
+def _class_of(feature):
+    """Класс классификатора объекта холста (через мост kind → код)."""
+    code = KIND_TO_CODE.get(feature.get("kind"))
+    if code is None:
+        return None
+    try:
+        return CLASSIFIER.get(code)
+    except Exception:
+        return None
+
+
+def _role_areas(features):
+    """{tep_role: суммарная площадь в га} по полигональным слоям с ролью."""
+    out = {}
+    for f in features:
+        cls = _class_of(f)
+        if cls and cls.tep_role and "ring" in f:
+            out[cls.tep_role] = out.get(cls.tep_role, 0.0) + _ring_area_ha(f)
+    return out
+
+
 def make_engine(features, params=None):
     engine = Engine.from_file(PRESET)
-    terr = sum(_ring_area_ha(f) for f in features if f["kind"] == "boundary")
-    restrict = sum(_ring_area_ha(f) for f in features if f["kind"] == "restrict")
-    engine.set_inputs(terr_area=round(terr, 4) or engine.value("terr_area"),
-                      restrict_area=round(restrict, 4))
+    # площади входов ТЭП — из ролей слоёв, не из kind
+    areas = _role_areas(features)
+    inputs = {r: round(a, 4) for r, a in areas.items() if r in engine.inputs}
+    if inputs.get("terr_area", 0) == 0:
+        inputs.pop("terr_area", None)  # пустой холст → дефолт пресета
+    engine.set_inputs(**inputs)
     for key in ("density", "ratio_zh", "percent_vpp"):
         if params and params.get(key) is not None:
             engine.set_input(key, float(params[key]))
@@ -351,7 +381,8 @@ def compute_tep(features, params=None):
     engine = make_engine(features, params)
     fact_spp = 0.0
     for f in features:
-        if f["kind"] == "building":
+        cls = _class_of(f)
+        if cls and cls.tep_role == "building_footprint" and "ring" in f:
             floors = int(f.get("props", {}).get("floors", 9))
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
@@ -595,7 +626,10 @@ def zones_report(features):
     площадей с внешним контуром. Любое расхождение — внятный диагноз."""
     from grado_geom import Coverage, CoverageError
 
-    zones = [f for f in features if f["kind"] == "zone"]
+    # покрытие проверяется для слоёв с topology="coverage", не для kind=="zone"
+    zones = [f for f in features
+             if (_class_of(f) and _class_of(f).topology == "coverage"
+                 and "ring" in f)]
     if len(zones) < 2:
         return None
     polys = {}

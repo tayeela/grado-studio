@@ -477,13 +477,24 @@ STYLES_V2), альбомный PDF собирается через StyleSet из
 Проверено e2e: демо визуально без изменений, DXF со слоями из JSON,
 альбом 5 листов.
 
-### Шаг 4. Расчетные роли вместо `kind`
+### Шаг 4. Расчетные роли вместо `kind` — готово (v0.13.1)
 
-- Переписать `compute_tep` на layer roles.
-- Переписать `zones_report` на слои с `topology=coverage`.
-- Факт СПП считать по semantic query, а не по `kind == building`.
+- ~~compute_tep на layer roles~~ — `make_engine` собирает площади входов
+  через `_role_areas` по `tep_role` слоёв (terr_area/restrict_area из
+  классификатора), не по `kind == "boundary"/"restrict"`.
+- ~~zones_report на topology=coverage~~ — покрытие проверяется для слоёв
+  с флагом `topology: "coverage"` (добавлен в классификатор для
+  tp.func_zone и в парсер ClassifierClass).
+- ~~факт СПП по semantic query~~ — сумма по слоям с
+  `tep_role="building_footprint"` (добавлена роль на oks.building), не по
+  `kind == "building"`.
+- Мост: `_class_of` резолвит объект холста в класс классификатора через
+  KIND_TO_CODE (kind — транспорт до шага 6 source pipeline).
 
-Критерий: добавление нового слоя зданий не требует правки `compute_tep`.
+Критерий выполнен: тест `test_new_building_layer_counts_without_code_change`
+добавляет слой-здание только записью в классификатор + карту kind→код,
+и ТЭП его учитывает без правки compute_tep. Проверено e2e по HTTP:
+terr/restrict/факт-СПП/покрытие считаются по ролям.
 
 ### Шаг 5. LayerSet и шаблоны листов
 
