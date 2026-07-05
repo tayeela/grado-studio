@@ -174,6 +174,19 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
                     "stroke": stroke, "width": width, "dash": None,
                     "rings": [[[px - b, py], [px, py - b],
                                [px + b, py], [px, py + b]]]})
+    elif shape == "slashes":
+        # две параллельные косые засечки «⫽» поперёк линии (Эталон: зоны
+        # затопления/подтопления). Наклон по (касательная − нормаль внутрь).
+        import math
+        dx, dy = tx - nx, ty - ny
+        dl = math.hypot(dx, dy) or 1.0
+        ux, uy = dx / dl, dy / dl        # направление штриха ~45° к линии
+        h = s * 0.6                      # полудлина штриха
+        sep = s * 0.45                   # разнос двух штрихов вдоль линии
+        for o in (-sep / 2, sep / 2):
+            cx, cy = px + tx * o, py + ty * o
+            lines.append([[cx - ux * h, cy - uy * h],
+                          [cx + ux * h, cy + uy * h]])
 
 
 def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0):

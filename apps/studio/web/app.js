@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.26.0";
+const VERSION = "0.26.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -808,6 +808,18 @@ function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
       ctx.moveTo(px - b, py); ctx.lineTo(px, py - b);
       ctx.lineTo(px + b, py); ctx.lineTo(px, py + b);
       ctx.closePath(); ctx.stroke(); break;
+    }
+    case "slashes": {
+      // две параллельные косые засечки «⫽» поперёк линии (Эталон: зоны
+      // затопления/подтопления). Наклон по (касательная − нормаль внутрь).
+      const dx = tx - nx, dy = ty - ny, dl = Math.hypot(dx, dy) || 1;
+      const ux = dx / dl, uy = dy / dl, h = s * 0.6, sep = s * 0.45;
+      for (const o of [-sep / 2, sep / 2]) {
+        const cx = px + tx * o, cy = py + ty * o;
+        ctx.moveTo(cx - ux * h, cy - uy * h);
+        ctx.lineTo(cx + ux * h, cy + uy * h);
+      }
+      ctx.stroke(); break;
     }
     default:  // tick
       ctx.moveTo(px, py); ctx.lineTo(px + nx * s, py + ny * s);

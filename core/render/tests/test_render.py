@@ -379,6 +379,9 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                          "береговая — простой штрих 6.0/2.0 (не штрих-пунктир)")
         self.assertEqual(len(by_code[61]["dash_mm"]), 6,
                          "зона 3 пояса — штрих-пунктир с двумя точками")
+        for c in (22, 64, 65, 66):
+            self.assertEqual(by_code[c]["line_marker"]["shape"], "slashes",
+                             f"код {c} затоп/подтоп — двойная косая ⫽ (осн. табл.)")
 
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign
