@@ -245,6 +245,33 @@ button.primary:active { background: var(--accent-active); }
 .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; font-size: var(--fs-11);
   text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: var(--fw-semibold); }
 .fmt-copy-btn { display: block; margin: var(--sp-2) var(--sp-4) 0; }
+
+/* ---- выбор цвета: палитра + HEX + CMYK ------------------------------------ */
+.cfield { position: relative; margin-top: var(--sp-1); }
+.cfield-btn { display: flex; align-items: center; gap: var(--sp-2); width: 100%;
+  padding: 5px var(--sp-2); border: 1px solid var(--field-border); border-radius: var(--r-sm);
+  background: var(--field-bg); color: var(--text); cursor: pointer; font: inherit; }
+.cfield-sw { width: 20px; height: 20px; border-radius: var(--r-sm); flex: 0 0 auto;
+  border: 1px solid var(--hairline); }
+.cfield-hex { flex: 1; text-align: left; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+.cfield-caret { width: 13px; height: 13px; transform: rotate(90deg); opacity: .55; }
+.cfield-btn.open .cfield-caret { transform: rotate(-90deg); }
+.cfield-pop { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+  padding: var(--sp-2); background: var(--glass-strong); backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur); border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm); box-shadow: var(--shadow-md); }
+.cf-grid { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.cf-swatch { width: 100%; aspect-ratio: 1; border: 1px solid var(--hairline); border-radius: 3px;
+  padding: 0; cursor: pointer; }
+.cf-swatch.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cf-row { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2);
+  font-size: var(--fs-11); color: var(--muted); }
+.cf-hexin { flex: 1; padding: 3px var(--sp-2); border: 1px solid var(--field-border);
+  border-radius: var(--r-sm); background: var(--field-bg); color: var(--text); font: inherit;
+  text-transform: uppercase; }
+.cf-cmyk input { flex: 1; min-width: 0; padding: 3px 2px; text-align: center;
+  border: 1px solid var(--field-border); border-radius: var(--r-sm);
+  background: var(--field-bg); color: var(--text); font: inherit; }
 /* встроенные диалоги confirm/prompt (взамен браузерных) */
 .ask-modal { width: 340px; }
 .ask-msg { margin: var(--sp-4) var(--sp-4) 0; font-size: var(--fs-13);

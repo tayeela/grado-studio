@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.30.1";
+const VERSION = "0.31.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1467,8 +1467,8 @@ function renderProps() {
   const objFmt = (L && !L.annotation) ? `
     <div class="prop-sub">Оформление объекта</div>
     <label class="chk"><input type="checkbox" id="f-fmt-on" ${f.fmt ? "checked" : ""}> своё оформление</label>
-    ${f.fmt ? `<label>Заливка<input type="color" id="f-fmt-fill" value="${toHexColor(f.fmt.fill || cur.fill, "#faf0bf")}"></label>
-      <label>Обводка<input type="color" id="f-fmt-stroke" value="${toHexColor(f.fmt.stroke || cur.stroke, "#888888")}"></label>
+    ${f.fmt ? `<label>Заливка<div id="f-fmt-fill"></div></label>
+      <label>Обводка<div id="f-fmt-stroke"></div></label>
       <label>Прозрачность, %<input type="range" id="f-fmt-op" min="10" max="100" step="5" value="${Math.round((f.fmt.fillOpacity ?? cur.fillOpacity ?? 1) * 100)}"></label>` : ""}` : "";
   el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
     <div class="metric">${metric}</div>${prov}${extra}${stylePick}${objFmt}
@@ -1510,19 +1510,20 @@ function renderProps() {
     } else delete f.fmt;
     afterChange(); renderProps();
   });
-  const fmtBind = (id, key) => {
-    const inp = document.getElementById(id);
-    if (!inp) return;
-    inp.addEventListener("input", () => {
-      if (!f.fmt) return;
-      f.fmt[key] = key === "fillOpacity" ? (parseInt(inp.value) || 100) / 100 : inp.value;
-      draw();
-    });
-    inp.addEventListener("change", persist);
-  };
-  fmtBind("f-fmt-fill", "fill");
-  fmtBind("f-fmt-stroke", "stroke");
-  fmtBind("f-fmt-op", "fillOpacity");
+  if (f.fmt) {
+    const host = k => document.getElementById(k);
+    if (host("f-fmt-fill"))
+      makeColorField(host("f-fmt-fill"), toHexColor(f.fmt.fill || cur.fill, "#faf0bf"),
+                     h => { if (f.fmt) { f.fmt.fill = h; draw(); persist(); } });
+    if (host("f-fmt-stroke"))
+      makeColorField(host("f-fmt-stroke"), toHexColor(f.fmt.stroke || cur.stroke, "#888888"),
+                     h => { if (f.fmt) { f.fmt.stroke = h; draw(); persist(); } });
+    const op = host("f-fmt-op");
+    if (op) {
+      op.addEventListener("input", () => { if (f.fmt) { f.fmt.fillOpacity = (parseInt(op.value) || 100) / 100; draw(); } });
+      op.addEventListener("change", persist);
+    }
+  }
   document.getElementById("f-del").onclick = deleteSelected;
 }
 // Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
@@ -1787,6 +1788,98 @@ function toHexColor(c, fallback) {
   }
   return fallback;
 }
+
+// ---------- выбор цвета: палитра + HEX + CMYK (взамен нативного input) ----------
+// кураторская палитра планировочных / ЛГР-цветов (Эталон приказа №65) + базовые
+const COLOR_PALETTE = [
+  ["Красный (КЛ/ЗОУИТ)", "#df0024"], ["Пурпурный", "#e3007b"], ["Сиреневый", "#b18dbe"],
+  ["Синий (вода)", "#0669b2"], ["Голубой", "#20e6f2"], ["Голубой (затоп.)", "#8cbeff"],
+  ["Светло-синий", "#94c5ff"], ["Зелёный (ООЗТ)", "#009f3c"], ["Салатовый (СЗЗ)", "#7cc623"],
+  ["Мятный", "#abe6d2"], ["Жёлтый (ООПТ)", "#f8f400"], ["Бежевый (зона)", "#faf0bf"],
+  ["Оранжевый", "#eb880e"], ["Коричневый", "#694720"], ["Фиолетовый", "#3d107b"],
+  ["Чёрный", "#1c1c1a"], ["Тёмно-серый", "#4a4a4a"], ["Серый", "#888888"],
+  ["Св.-серый", "#c8c8c8"], ["Белый", "#ffffff"],
+];
+function normHex(h) {
+  h = (h || "").trim(); if (h[0] !== "#") h = "#" + h;
+  return /^#[0-9a-fA-F]{6}$/.test(h) ? h.toLowerCase() : null;
+}
+function hexToCmyk(hex) {
+  const h = normHex(hex) || "#000000";
+  const r = parseInt(h.slice(1, 3), 16) / 255, g = parseInt(h.slice(3, 5), 16) / 255,
+        b = parseInt(h.slice(5, 7), 16) / 255;
+  const k = 1 - Math.max(r, g, b);
+  if (k >= 0.9999) return [0, 0, 0, 100];
+  return [(1 - r - k) / (1 - k), (1 - g - k) / (1 - k), (1 - b - k) / (1 - k), k]
+    .map(v => Math.round(v * 100));
+}
+function cmykToHex(c, m, y, k) {
+  c /= 100; m /= 100; y /= 100; k /= 100;
+  const ch = v => Math.max(0, Math.min(255, Math.round(255 * (1 - v) * (1 - k))))
+    .toString(16).padStart(2, "0");
+  return "#" + ch(c) + ch(m) + ch(y);
+}
+// host — контейнер; onChange(hex) при смене. Возвращает {get,set,close}.
+function makeColorField(host, initial, onChange) {
+  let value = normHex(initial) || "#888888", pop = null, onDoc = null;
+  host.classList.add("cfield");
+  host.innerHTML = `<button type="button" class="cfield-btn">
+    <span class="cfield-sw"></span><span class="cfield-hex"></span>
+    <svg class="ic cfield-caret"><use href="#ic-chevron"/></svg></button>`;
+  const btn = host.querySelector(".cfield-btn");
+  const sw = host.querySelector(".cfield-sw"), hexLbl = host.querySelector(".cfield-hex");
+  const paint = () => { sw.style.background = value; hexLbl.textContent = value; };
+  const setValue = (hex, fire = true) => {
+    const h = normHex(hex); if (!h) return;
+    value = h; paint(); if (pop) syncPop(); if (fire) onChange(h);
+  };
+  function syncPop() {
+    if (!pop) return;
+    const [c, m, y, k] = hexToCmyk(value);
+    pop.querySelector(".cf-hexin").value = value;
+    for (const [key, v] of [["c", c], ["m", m], ["y", y], ["k", k]])
+      pop.querySelector(`[data-k="${key}"]`).value = v;
+    pop.querySelectorAll(".cf-swatch").forEach(s =>
+      s.classList.toggle("sel", s.dataset.hex === value));
+  }
+  function close() {
+    if (!pop) return;
+    pop.remove(); pop = null; btn.classList.remove("open");
+    document.removeEventListener("mousedown", onDoc, true);
+  }
+  function open() {
+    if (pop) { close(); return; }
+    pop = document.createElement("div");
+    pop.className = "cfield-pop";
+    pop.innerHTML = `<div class="cf-grid">${COLOR_PALETTE.map(([n, h]) =>
+      `<button type="button" class="cf-swatch" data-hex="${h}" title="${n}" style="background:${h}"></button>`).join("")}</div>
+      <label class="cf-row">HEX<input class="cf-hexin" type="text" maxlength="7" spellcheck="false"></label>
+      <div class="cf-row cf-cmyk">CMYK
+        <input type="number" data-k="c" min="0" max="100" title="Cyan"><input type="number" data-k="m" min="0" max="100" title="Magenta"><input type="number" data-k="y" min="0" max="100" title="Yellow"><input type="number" data-k="k" min="0" max="100" title="Key/чёрный"></div>`;
+    host.appendChild(pop);
+    btn.classList.add("open");
+    pop.querySelectorAll(".cf-swatch").forEach(s =>
+      s.addEventListener("click", () => { setValue(s.dataset.hex); close(); }));
+    pop.querySelector(".cf-hexin").addEventListener("input", e => {
+      const h = normHex(e.target.value); if (h) setValue(h);
+    });
+    pop.querySelectorAll(".cf-cmyk input").forEach(inp =>
+      inp.addEventListener("input", () => {
+        const g = key => Math.max(0, Math.min(100, +pop.querySelector(`[data-k="${key}"]`).value || 0));
+        setValue(cmykToHex(g("c"), g("m"), g("y"), g("k")));
+      }));
+    syncPop();
+    // закрытие по клику вне поля; capture — минует stopPropagation модалки.
+    // Регистрируем сразу: открывающий mousedown кнопки уже прошёл (open() —
+    // из обработчика click), поэтому само-закрытия не будет.
+    onDoc = e => { if (!host.contains(e.target)) close(); };
+    document.addEventListener("mousedown", onDoc, true);
+  }
+  btn.addEventListener("click", e => { e.preventDefault(); open(); });
+  paint();
+  return { get: () => value, set: h => setValue(h, false), close };
+}
+
 function openLayerFormat(layer) {
   closePopups();
   const origFmt = layer.fmt ? { ...layer.fmt } : null;   // для отмены
@@ -1811,10 +1904,10 @@ function openLayerFormat(layer) {
       <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
     <div class="fmt-sub">Заливка</div>
     <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
-    <label>Цвет<input type="color" id="fmt-fill" value="${toHexColor(cur.fill, "#faf0bf")}"></label>
+    <label>Цвет<div id="fmt-fill"></div></label>
     <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
     <div class="fmt-sub">Обводка</div>
-    <label>Цвет<input type="color" id="fmt-stroke" value="${toHexColor(cur.stroke, "#888888")}"></label>
+    <label>Цвет<div id="fmt-stroke"></div></label>
     <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
     <label>Пунктир<select id="fmt-dashp">${
       opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
@@ -1842,12 +1935,16 @@ function openLayerFormat(layer) {
   document.body.appendChild(overlay);
   overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
+  // выбор цвета — компонент с палитрой/CMYK (см. makeColorField)
+  const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); };
+  const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
+  const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
 
   const collect = () => {
     const fmt = {
-      stroke: $("fmt-stroke").value,
+      stroke: strokeCF.get(),
       width: Math.max(0.2, parseFloat($("fmt-width").value) || 1),
-      fill: $("fmt-hasfill").checked ? $("fmt-fill").value : null,
+      fill: $("fmt-hasfill").checked ? fillCF.get() : null,
       fillOpacity: (parseInt($("fmt-opacity").value) || 100) / 100,
       dash: DASH_PRESETS[$("fmt-dashp").value] ?? null,
     };
@@ -1855,7 +1952,7 @@ function openLayerFormat(layer) {
       const av = $("fmt-hangle").value;
       fmt.hatch = { angle: av === "cross" ? 45 : +av, cross: av === "cross",
                     spacing_px: HATCH_DENS[$("fmt-hdens").value] || 9,
-                    color: $("fmt-stroke").value };
+                    color: strokeCF.get() };
     } else fmt.hatch = false;
     if ($("fmt-marker").checked) { if (baseMarker) fmt.line_marker = baseMarker; }
     else fmt.line_marker = null;
@@ -1873,8 +1970,8 @@ function openLayerFormat(layer) {
     if (ref && STYLES_V2[ref]) {
       const p = STYLES_V2[ref];
       $("fmt-hasfill").checked = !!p.fill;
-      if (p.fill) $("fmt-fill").value = toHexColor(p.fill, "#faf0bf");
-      $("fmt-stroke").value = toHexColor(p.stroke, "#888888");
+      if (p.fill) fillCF.set(toHexColor(p.fill, "#faf0bf"));
+      strokeCF.set(toHexColor(p.stroke, "#888888"));
       $("fmt-width").value = p.width ?? 1;
       $("fmt-dashp").value = dashPresetOf(p.dash);
       const ph = p.hatch && typeof p.hatch === "object" ? p.hatch : null;
