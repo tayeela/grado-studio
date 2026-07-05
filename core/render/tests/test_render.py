@@ -368,6 +368,17 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                          "Резерв ООПТ — треугольники (семейство ООПТ)")
         self.assertEqual(by_code[10]["line_marker"]["shape"], "tee",
                          "охранная зона ОКН — Т-засечки")
+        # стиль линии по выноскам размеров осн. таблицы (нет выноски штриха
+        # «6.0» → линия сплошная; знаки-зоны с маркерами рисуются по сплошной)
+        for c in (8, 9, 10, 37, 38, 47, 50, 55):
+            self.assertIsNone(by_code[c]["dash_mm"],
+                              f"код {c} — сплошная линия (эталон, осн. таблица)")
+        self.assertEqual(by_code[17]["line_marker"]["shape"], "chevron",
+                         "прибрежная — шеврон; точки суть штрих-пунктир линии")
+        self.assertEqual(by_code[41]["dash_mm"], [6.0, 2.0],
+                         "береговая — простой штрих 6.0/2.0 (не штрих-пунктир)")
+        self.assertEqual(len(by_code[61]["dash_mm"]), 6,
+                         "зона 3 пояса — штрих-пунктир с двумя точками")
 
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign

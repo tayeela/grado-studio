@@ -357,14 +357,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": null,
       "label_field": null,
       "marker_mm": 1.2,
@@ -512,7 +506,7 @@
         "color": 5
       },
       "line_marker": {
-        "shape": "chevron_dot",
+        "shape": "chevron",
         "period_mm": 21.0,
         "size_mm": 3.5,
         "period_px": 42.0,
@@ -756,10 +750,14 @@
         6.0,
         1.5,
         0.5,
+        1.5,
+        0.5,
         1.5
       ],
       "dash_px": [
         12,
+        4,
+        2,
         4,
         2,
         4
@@ -1151,14 +1149,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": null,
       "label_field": null,
       "marker_mm": 1.2,
@@ -1194,14 +1186,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": null,
       "label_field": null,
       "marker_mm": 1.2,
@@ -1309,14 +1295,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": "ООПТ",
       "label_field": null,
       "marker_mm": 1.2,
@@ -1382,14 +1362,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": "памятник природы",
       "label_field": null,
       "marker_mm": 1.2,
@@ -1504,14 +1478,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": "ООЗТ",
       "label_field": null,
       "marker_mm": 1.2,
@@ -1549,15 +1517,11 @@
       "width_px": 1.6,
       "dash_mm": [
         6.0,
-        1.5,
-        0.5,
-        1.5
+        2.0
       ],
       "dash_px": [
         12,
-        4,
-        2,
-        4
+        5
       ],
       "line_label": "береговая",
       "label_field": null,
@@ -1950,14 +1914,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": "охранная зона ОКН",
       "label_field": null,
       "marker_mm": 1.2,
@@ -2110,14 +2068,8 @@
       "stroke": "#df0024",
       "width_mm": 0.5,
       "width_px": 1.6,
-      "dash_mm": [
-        6.0,
-        2.0
-      ],
-      "dash_px": [
-        12,
-        5
-      ],
+      "dash_mm": null,
+      "dash_px": null,
       "line_label": "Тер ОКН",
       "label_field": null,
       "marker_mm": 1.2,
