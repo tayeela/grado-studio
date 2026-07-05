@@ -286,16 +286,47 @@ button.danger:hover { filter: brightness(1.07); }
 #st-toast.toast-warn { color: var(--warning); font-weight: var(--fw-semibold); }
 #st-toast.toast-ok { color: var(--success); }
 
-.attr-modal { width: min(760px, 90vw); }
-.attr-scroll { overflow: auto; }
+.attr-modal { width: min(820px, 92vw); display: flex; flex-direction: column; max-height: 86vh; }
+.attr-scroll { overflow: auto; flex: 1; }
 .attr-table { border-collapse: collapse; width: 100%; font-size: var(--fs-13); }
 .attr-table th, .attr-table td { padding: var(--sp-1) var(--sp-3); text-align: left;
   border-bottom: 1px solid var(--hairline); white-space: nowrap; }
 .attr-table th { position: sticky; top: 0; background: var(--glass-strong); font-weight: var(--fw-semibold);
-  color: var(--muted); }
+  color: var(--muted); z-index: 1; }
+.attr-table td.at-num, .attr-table th.at-num { color: var(--muted); text-align: right;
+  font-variant-numeric: tabular-nums; user-select: none; }
 .attr-table tbody tr { cursor: pointer; }
 .attr-table tbody tr:nth-child(even) { background: var(--n50); }
 .attr-table tbody tr:hover { background: var(--accent-weak); }
+.attr-table tbody tr.sel { background: var(--accent-weak); box-shadow: inset 2px 0 0 var(--accent); }
+.attr-table td .at-cell, .attr-table td input[type=number], .attr-table td input[type=date],
+.attr-table td input[type=text] { width: 100%; min-width: 70px; padding: 2px 4px; font: inherit;
+  border: 1px solid var(--field-border); border-radius: var(--r-sm); background: var(--field-bg); color: var(--text); }
+.at-delcol { margin-left: 6px; color: var(--danger); cursor: pointer; font-weight: var(--fw-semibold);
+  opacity: .6; }
+.at-delcol:hover { opacity: 1; }
+/* тулбар атрибутивной таблицы */
+.attr-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--hairline); }
+.attr-toolbar button { padding: 5px var(--sp-3); font-size: var(--fs-13); }
+.attr-toolbar button.active { background: var(--accent); color: var(--on-accent); }
+.attr-toolbar .at-filter { display: flex; align-items: center; gap: var(--sp-2);
+  font-size: var(--fs-12); color: var(--muted); margin-bottom: 0; }
+.attr-toolbar .at-filter select { margin-top: 0; width: auto; }
+/* калькулятор полей */
+.fc-expr { display: block; width: auto; margin: var(--sp-1) var(--sp-4) 0; padding: var(--sp-2);
+  border: 1px solid var(--field-border); border-radius: var(--r-sm); background: var(--field-bg);
+  color: var(--text); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: var(--fs-13);
+  resize: vertical; }
+.fc-help { margin: var(--sp-2) var(--sp-4) 0; display: flex; flex-wrap: wrap; gap: 4px;
+  font-size: var(--fs-11); align-items: center; }
+.fc-ins { padding: 1px 7px; font-size: var(--fs-11); font-family: ui-monospace, Menlo, monospace;
+  border: 1px solid var(--field-border); border-radius: var(--r-pill); background: var(--field-bg);
+  color: var(--text-2); cursor: pointer; }
+.fc-ins:hover { background: var(--accent-weak); color: var(--text); }
+.fc-preview { margin: var(--sp-3) var(--sp-4) 0; font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums; }
+.fc-preview.err { color: var(--danger); }
 
 /* ---- служебные ------------------------------------------------------------ */
 .muted { color: var(--muted); }
