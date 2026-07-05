@@ -159,6 +159,17 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
                     "rings": [[[px - tx * b, py - ty * b],
                                [px + tx * b, py + ty * b],
                                [px + nx * s, py + ny * s]]]})
+    elif shape == "triangle2":
+        # два наложенных залитых треугольника остриём внутрь зоны (Эталон ООЗТ):
+        # второй сдвинут по нормали внутрь и перекрывает первый — двойное остриё
+        b = s * 0.5
+        for base, apex in ((0.0, s * 0.85), (s * 0.45, s * 1.3)):
+            bx, by = px + nx * base, py + ny * base
+            ops.append({"op": "path", "closed": True, "fill": stroke,
+                        "stroke": None, "width": width, "dash": None,
+                        "rings": [[[bx - tx * b, by - ty * b],
+                                   [bx + tx * b, by + ty * b],
+                                   [px + nx * apex, py + ny * apex]]]})
     elif shape == "dot":
         ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
                     "fill": stroke, "stroke": None, "width": width})

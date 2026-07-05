@@ -362,8 +362,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # сверка с эталоном (приказ ММА №65, стр. 9-10, 13 + приложение 2):
         self.assertIsNone(by_code[41].get("line_marker"),
                           "береговая полоса — без маркеров (приложение 2)")
-        self.assertEqual(by_code[47]["line_marker"]["shape"], "triangle",
-                         "ООЗТ — залитые треугольники ▼")
+        self.assertEqual(by_code[47]["line_marker"]["shape"], "triangle2",
+                         "ООЗТ — ДВА наложенных треугольника (осн. таблица)")
         self.assertEqual(by_code[46]["line_marker"]["shape"], "triangle",
                          "Резерв ООПТ — треугольники (семейство ООПТ)")
         self.assertEqual(by_code[10]["line_marker"]["shape"], "tee",
