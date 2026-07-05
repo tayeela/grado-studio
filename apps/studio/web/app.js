@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.29.1";
+const VERSION = "0.30.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -209,7 +209,7 @@ async function deleteLayer(layer) {
     const fallback = LAYERS_V2.find(l => !l.annotation && !l.import_only);
     if (fallback) setActiveLayer(fallback.id);
   }
-  if (selectedFeature() && layerOf(selectedFeature()) == null) state.selected = null;
+  if (selectedFeature() && layerOf(selectedFeature()) == null) clearSelection();
   afterChange();
 }
 
@@ -298,7 +298,7 @@ function upgradeFeature(f) {
 }
 
 const state = {
-  features: [], tool: "select", selected: null,
+  features: [], tool: "select", selected: null, selectedIds: new Set(),
   drawing: null, drag: null, pan: null, edit: null, measure: null,
   snapHit: null, guides: [], typed: "", mouse: null,
   view: { k: 1.1, tx: 120, ty: 0 },
@@ -319,6 +319,27 @@ function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y
 function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.ty - sy) / state.view.k]; }
 function featurePts(f) { return f.ring || f.line || [f.point]; }
 function selectedFeature() { return state.features.find(x => x.id === state.selected); }
+// множественное выделение: selectedIds — источник истины, selected — «первичный»
+// (одиночный) объект для правки вершин и детальной панели свойств.
+function selectionIds() { return [...(state.selectedIds || [])]; }
+function selectionFeatures() {
+  const s = state.selectedIds || new Set();
+  return state.features.filter(f => s.has(f.id));
+}
+function selectOne(id) {
+  state.selected = id;
+  state.selectedIds = id == null ? new Set() : new Set([id]);
+}
+function clearSelection() { state.selected = null; state.selectedIds = new Set(); }
+function setSelection(ids) {
+  state.selectedIds = new Set(ids);
+  state.selected = ids.length === 1 ? ids[0] : null;
+}
+function toggleSelection(id) {
+  const s = state.selectedIds = new Set(state.selectedIds || []);
+  if (s.has(id)) s.delete(id); else s.add(id);
+  state.selected = s.size === 1 ? [...s][0] : null;
+}
 function vertexAt(f, wx, wy) {
   const tolW = 8 / state.view.k;
   const pts = featurePts(f);
@@ -1017,11 +1038,14 @@ function draw() {
           ctx.fillText(String(v), ...w2s(...c));
         }
       }
-      if (f.id === state.selected) {
+      if (state.selectedIds.has(f.id)) {
         ctx.strokeStyle = cvColor("selection", "#2f6fde"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
+      }
+      // ручки вершин — только у первичного (одиночного) выбора
+      if (f.id === state.selected) {
         const shared = sharedVertexSet(f);
         const shFill = cvColor("shared", "#12a150"), vxStroke = cvColor("vertex", "#2f6fde");
         const handleBg = cvColor("bg", "#fff");
@@ -1106,6 +1130,19 @@ function draw() {
     ctx.fillText(`${Math.abs(b[0] - a[0]).toFixed(1)} × ${Math.abs(b[1] - a[1]).toFixed(1)} м`,
                  Math.max(sx1, sx2) + 8, Math.min(sy1, sy2) - 6);
   }
+  // рамка выделения (мультивыбор инструментом «Выбор»)
+  if (state.drag && state.drag.marquee) {
+    const { a, b } = state.drag;
+    const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
+    const x = Math.min(sx1, sx2), y = Math.min(sy1, sy2);
+    const w = Math.abs(sx2 - sx1), h = Math.abs(sy2 - sy1);
+    ctx.save();
+    ctx.strokeStyle = cvColor("selection", "#2f6fde");
+    ctx.fillStyle = cvColor("selection", "#2f6fde") + "18";
+    ctx.lineWidth = 1; ctx.setLineDash([5, 3]);
+    ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
   // измерение
   if (state.measure) {
     const a = state.measure.a;
@@ -1188,13 +1225,13 @@ function undo() {
   if (!state.undo.length) return;
   state.redo.push(JSON.stringify(state.features));
   state.features = JSON.parse(state.undo.pop());
-  state.selected = null; afterChange();
+  clearSelection(); afterChange();
 }
 function redo() {
   if (!state.redo.length) return;
   state.undo.push(JSON.stringify(state.features));
   state.features = JSON.parse(state.redo.pop());
-  state.selected = null; afterChange();
+  clearSelection(); afterChange();
 }
 let autosaveTimer = null;
 function persist() {
@@ -1246,6 +1283,13 @@ function maybeRefreshStations() {
 
 function afterChange() {
   state._ix = null;
+  // страховка: убрать из выделения id несуществующих объектов (после
+  // импорта/очистки/undo, где features заменяются целиком)
+  if (state.selectedIds && state.selectedIds.size) {
+    const live = new Set(state.features.map(f => f.id));
+    for (const id of [...state.selectedIds]) if (!live.has(id)) state.selectedIds.delete(id);
+    if (state.selected != null && !live.has(state.selected)) state.selected = null;
+  }
   draw(); renderProps(); renderLayers(); refreshTep(); persist();
   maybeRefreshStations();
 }
@@ -1357,7 +1401,7 @@ async function runOffset(f, sign) {
     const copy = upgradeFeature({ id: state.nextId++, layer_id: f.layer_id,
                                   line: data.line, props: { radius: 0 } });
     state.features.push(copy);
-    state.selected = copy.id;
+    selectOne(copy.id);
     afterChange();
   } catch (err) {
     toast("Офсет не построился: " + String(err).slice(0, 160) +
@@ -1365,8 +1409,40 @@ async function runOffset(f, sign) {
   }
 }
 
+function geomType(f) { return f.ring ? "polygon" : f.line ? "polyline" : "point"; }
+
+// панель для группового выделения (несколько объектов)
+function renderGroupProps(el, ids) {
+  el.className = "";
+  const feats = selectionFeatures();
+  const types = new Set(feats.map(geomType));
+  const gt = types.size === 1 ? [...types][0] : null;
+  const targets = gt ? LAYERS_V2.filter(L => !L.annotation && !L.import_only &&
+                                             L.geometry_type === gt) : [];
+  const moveHtml = targets.length ? `<div class="prop-sub">Групповые операции</div>
+    <label>Переместить на слой<select id="g-layer">${
+      targets.map(L => `<option value="${L.id}">${escHtml(L.title)}</option>`).join("")}</select></label>
+    <button id="g-move" class="fmt-copy-btn" style="margin-left:0">Переместить</button>` : "";
+  el.innerHTML = `<div class="kind">Выделено объектов: ${ids.length}</div>
+    <div class="metric">перетаскивание — двигать группой · Shift+клик — добавить/убрать · Del — удалить</div>
+    ${moveHtml}
+    <button class="danger" id="g-del" style="margin-top:8px">Удалить выделенные (Del)</button>`;
+  const gm = document.getElementById("g-move");
+  if (gm) gm.onclick = () => {
+    const tid = document.getElementById("g-layer").value;
+    const L = LAYER_BY_ID[tid];
+    snapshot();
+    for (const f of selectionFeatures()) { f.layer_id = tid; if (L) f.kind = L.kind; }
+    afterChange();
+    toast(`Перемещено ${ids.length} объект(ов) на «${L.title}»`);
+  };
+  document.getElementById("g-del").onclick = deleteSelected;
+}
+
 function renderProps() {
   const el = document.getElementById("props-body");
+  const selIds = selectionIds();
+  if (selIds.length > 1) { renderGroupProps(el, selIds); return; }
   const f = selectedFeature();
   if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
   el.className = "";
@@ -1877,7 +1953,7 @@ function openAttributeTable(layer) {
     tr.addEventListener("click", () => {
       const f = state.features.find(x => x.id === +tr.dataset.fid);
       if (!f) return;
-      state.selected = f.id;
+      selectOne(f.id);
       if (!layer.visible) { layer.visible = true; renderLayers(); }
       closePopups();
       zoomToFeature(f);
@@ -1929,10 +2005,11 @@ async function fetchSources() {
 }
 
 function deleteSelected() {
-  if (state.selected == null) return;
+  const ids = new Set(selectionIds());
+  if (!ids.size) return;
   snapshot();
-  state.features = state.features.filter(f => f.id !== state.selected);
-  state.selected = null; afterChange();
+  state.features = state.features.filter(f => !ids.has(f.id));
+  clearSelection(); afterChange();
 }
 
 // ---------- добавление и правка фигур ----------
@@ -1946,7 +2023,7 @@ function addFeature(layerId, geom) {
              props: L ? L.defaults() : {}, ...geom };
   upgradeFeature(f);
   state.features.push(f);
-  state.selected = f.id;
+  selectOne(f.id);
   afterChange();
   return f;
 }
@@ -2019,6 +2096,18 @@ function hitTest(wx, wy) {
   }
   return null;
 }
+// объекты, попавшие в рамку выделения [a,b] (любая вершина внутри), видимые слои
+function marqueeHit(a, b) {
+  const x0 = Math.min(a[0], b[0]), x1 = Math.max(a[0], b[0]);
+  const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
+  const ids = [];
+  for (const f of state.features) {
+    if (isHidden(f)) continue;
+    if (featurePts(f).some(p => p && p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1))
+      ids.push(f.id);
+  }
+  return ids;
+}
 
 // ---------- события мыши ----------
 cv.addEventListener("contextmenu", e => e.preventDefault());
@@ -2049,9 +2138,19 @@ cv.addEventListener("mousedown", e => {
       }
     }
     const f = hitTest(wxr, wyr);
-    state.selected = f ? f.id : null;
-    if (f) state.edit = { f, vi: "body", last: [wxr, wyr], moved: false };
-    draw(); renderProps();
+    if (f) {
+      if (e.shiftKey) {                        // Shift+клик — добавить/убрать из выделения
+        toggleSelection(f.id); draw(); renderProps(); return;
+      }
+      if (!state.selectedIds.has(f.id)) selectOne(f.id);   // клик по невыделенному — выбрать один
+      // клик по уже выделенному (в т.ч. в группе) — тянем всю группу
+      state.edit = { vi: "body", ids: selectionIds(), last: [wxr, wyr], moved: false };
+      draw(); renderProps();
+    } else {                                   // пустое место — рамка выделения
+      if (!e.shiftKey) clearSelection();
+      state.drag = { a: [wxr, wyr], b: [wxr, wyr], marquee: true, add: e.shiftKey, moved: false };
+      draw(); renderProps();
+    }
   } else if (state.tool === "measure") {
     if (!state.measure || state.measure.b) state.measure = { a: s.p, b: null };
     else state.measure.b = s.p;
@@ -2092,13 +2191,22 @@ cv.addEventListener("mousemove", e => {
     state.view.ty = state.pan.ty + (e.offsetY - state.pan.sy);
     draw(); return;
   }
+  if (state.drag && state.drag.marquee) {
+    state.drag.b = [wx, wy];
+    if (Math.hypot(wx - state.drag.a[0], wy - state.drag.a[1]) * state.view.k > 3)
+      state.drag.moved = true;
+    draw(); return;
+  }
   if (state.edit) {
     const ed = state.edit;
     if (!ed.moved) { snapshot(); ed.moved = true; }
     if (ed.vi === "body") {
       const dx = wx - ed.last[0], dy = wy - ed.last[1];
       ed.last = [wx, wy];
-      for (const p of featurePts(ed.f)) { p[0] += dx; p[1] += dy; }
+      const feats = ed.ids
+        ? ed.ids.map(id => state.features.find(f => f.id === id)).filter(Boolean)
+        : [ed.f];
+      for (const feat of feats) for (const p of featurePts(feat)) { p[0] += dx; p[1] += dy; }
     } else {
       // исключаем из привязок свою фигуру и всех компаньонов общей вершины
       const ex = new Set([ed.f.id]);
@@ -2145,6 +2253,15 @@ window.addEventListener("mouseup", e => {
     state.edit = null;
     if (moved) afterChange();
     return;
+  }
+  if (state.drag && state.drag.marquee) {
+    const { a, b, add, moved } = state.drag;
+    state.drag = null;
+    if (moved) {
+      const hits = marqueeHit(a, b);
+      setSelection(add ? [...new Set([...selectionIds(), ...hits])] : hits);
+    }
+    draw(); renderProps(); return;
   }
   if (state.drag && state.drag.rect) {
     const { a, b, moved } = state.drag;
@@ -2229,7 +2346,7 @@ document.addEventListener("keydown", e => {
     if (state.typed) { state.typed = ""; draw(); return; }
     if (state.drawing) { state.drawing = null; draw(); return; }
     if (state.measure) { state.measure = null; draw(); return; }
-    state.selected = null; draw(); renderProps(); return;
+    clearSelection(); draw(); renderProps(); return;
   }
   if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
   if (e.key.startsWith("Arrow")) {
