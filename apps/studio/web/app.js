@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.26.2";
+const VERSION = "0.27.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -979,9 +979,10 @@ function draw() {
         if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
         if (st.double) drawDoubleLine(f.ring || f.line, st.double, !!f.ring);
         if (st.line_marker && (f.ring || f.line)) {
-          // засечки Эталона направлены ВНУТРЬ зоны (остриём к центроиду):
-          // ▼ на верхнем ребре вниз, ▲ на нижнем вверх — оба внутрь
-          const inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
+          // направление засечки по знаку Эталона: по умолчанию остриём ВНУТРЬ
+          // зоны, dir "out" — наружу (ООПТ/ПК/водоохранная/прибрежная/ландшафт)
+          let inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
+          if (st.line_marker.dir === "out") inw = -inw;
           drawLineMarkers(f.ring || f.line, st.line_marker,
                           st.stroke || cvColor("redline", "#df0024"), !!f.ring, inw);
         }

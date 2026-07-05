@@ -352,7 +352,7 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # памятник природы ●3/20, территории ОКН ■1.5/20
         self.assertEqual(by_code[16]["line_marker"],
                          {"shape": "chevron", "period_mm": 20.0, "size_mm": 3.5,
-                          "period_px": 40.0, "size_px": 7.0})
+                          "period_px": 40.0, "size_px": 7.0, "dir": "out"})
         self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
         self.assertEqual(by_code[13]["line_marker"]["period_mm"], 8.0)
         self.assertEqual(by_code[55]["line_marker"]["shape"], "dot")
@@ -382,6 +382,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         for c in (22, 64, 65, 66):
             self.assertEqual(by_code[c]["line_marker"]["shape"], "slashes",
                              f"код {c} затоп/подтоп — двойная косая ⫽ (осн. табл.)")
+        # направление засечки per-sign (осн. таблица, образцы-коробки):
+        # остриём НАРУЖУ — ООПТ/ландшафт ОКН/водоохранная/прибрежная/ПК
+        for c in (8, 11, 16, 17, 18):
+            self.assertEqual(by_code[c]["line_marker"]["dir"], "out",
+                             f"код {c} — засечка остриём наружу зоны (эталон)")
+        # остриём ВНУТРЬ — ООЗТ/геодез/резерв ООПТ/приаэродром./возд.подходы
+        for c in (47, 38, 46, 50, 51):
+            self.assertEqual(by_code[c]["line_marker"]["dir"], "in",
+                             f"код {c} — засечка остриём внутрь зоны (эталон)")
 
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign
@@ -447,7 +456,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(vod["group"], "ЗОУИТ")
         self.assertEqual(vod["lgr_code"], 16)
         self.assertEqual(vod["line_marker"],
-                         {"shape": "chevron", "period": 40.0, "size": 7.0})
+                         {"shape": "chevron", "period": 40.0, "size": 7.0,
+                          "dir": "out"})
         self.assertEqual(fs["lgr.okn.zashchit"]["double"], 4.0)
         # легаси-стили не сломаны: hatch остаётся true
         self.assertIs(fs["restrict.hatch"]["hatch"], True)

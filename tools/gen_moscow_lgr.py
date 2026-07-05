@@ -44,6 +44,10 @@ MARKERS = {
     11: ("triangle", 20.0, 2.0),
     9: ("square", 20.0, 1.5),
 }
+# направление засечки-остриё: по умолчанию ВНУТРЬ зоны, но у части знаков
+# Эталон рисует остриё НАРУЖУ (образцы-«коробки» осн. таблицы, маркеры от центра):
+# 8 ООПТ, 11 ландшафт ОКН, 16 водоохранная, 17 прибрежная, 18 ПК.
+OUTWARD = {8, 11, 16, 17, 18}
 # толщина линии не 0.50 мм (подписано на образце)
 WIDTH_MM = {19: 0.62, 49: 0.75}
 # двойная параллельная линия (защитные зоны ОКН): зазор мм
@@ -209,7 +213,8 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
         entry["line_marker"] = {"shape": shape, "period_mm": period,
                                 "size_mm": size,
                                 "period_px": round(period * 2, 1),
-                                "size_px": round(size * 2, 1)}
+                                "size_px": round(size * 2, 1),
+                                "dir": "out" if code in OUTWARD else "in"}
     if code in DOUBLE_MM:
         entry["double_mm"] = DOUBLE_MM[code]
         entry["double_px"] = round(DOUBLE_MM[code] * 2, 1)

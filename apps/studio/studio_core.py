@@ -167,7 +167,8 @@ def frontend_styles():
         if lm:
             entry["line_marker"] = {"shape": lm["shape"],
                                     "period": lm.get("period_px", 40),
-                                    "size": lm.get("size_px", 4)}
+                                    "size": lm.get("size_px", 4),
+                                    "dir": lm.get("dir", "in")}
         if s.get("double_px"):
             entry["double"] = s["double_px"]
         if s.get("title"):
