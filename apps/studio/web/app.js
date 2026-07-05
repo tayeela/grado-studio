@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.30.0";
+const VERSION = "0.30.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1680,6 +1680,7 @@ function openNewLayerDialog() {
       <button id="nl-create" class="primary">Создать</button>
     </div></div>`;
   document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
   $("nl-title").focus();
   const create = () => {
@@ -1718,6 +1719,7 @@ function uiConfirm(msg, { ok = "OK", cancel = "Отмена", danger = false } =
         <button class="ask-ok ${danger ? "danger" : "primary"}">${escHtml(ok)}</button>
       </div></div>`;
     document.body.appendChild(overlay);
+    overlay.addEventListener("click", ev => ev.stopPropagation());
     const done = v => { overlay.remove(); resolve(v); };
     overlay.querySelector(".ask-ok").addEventListener("click", () => done(true));
     overlay.querySelector(".ask-cancel").addEventListener("click", () => done(false));
@@ -1740,6 +1742,7 @@ function uiPrompt(msg, def = "", { ok = "OK", placeholder = "" } = {}) {
         <button class="ask-ok primary">${escHtml(ok)}</button>
       </div></div>`;
     document.body.appendChild(overlay);
+    overlay.addEventListener("click", ev => ev.stopPropagation());
     const inp = overlay.querySelector(".ask-input");
     inp.value = def; inp.focus(); inp.select();
     const done = v => { overlay.remove(); resolve(v); };
@@ -1837,6 +1840,7 @@ function openLayerFormat(layer) {
       <button id="fmt-apply" class="primary">Применить</button>
     </div></div>`;
   document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
 
   const collect = () => {
@@ -1947,6 +1951,7 @@ function openAttributeTable(layer) {
     <div class="modal-actions"><span class="muted">клик по строке — выделить и приблизить</span></div>
   </div>`;
   document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
   overlay.querySelector(".modal-x").addEventListener("click", closePopups);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
   overlay.querySelectorAll("tbody tr").forEach(tr =>
