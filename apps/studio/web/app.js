@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.25.2";
+const VERSION = "0.25.3";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -775,11 +775,11 @@ function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
       ctx.lineTo(px + nx * s + tx * s, py + ny * s + ty * s);
       ctx.stroke(); break;
     case "chevron": case "chevron_dot": {
-      // острый угол (апекс) НА линии, плечи расходятся наружу (Эталон)
+      // остриё внутрь зоны, плечи на линии (Эталон: зубец «▽» остриём в зону)
       const w2 = s * 0.5;
-      ctx.moveTo(px + nx * s - tx * w2, py + ny * s - ty * w2);
-      ctx.lineTo(px, py);
-      ctx.lineTo(px + nx * s + tx * w2, py + ny * s + ty * w2);
+      ctx.moveTo(px - tx * w2, py - ty * w2);
+      ctx.lineTo(px + nx * s, py + ny * s);
+      ctx.lineTo(px + tx * w2, py + ty * w2);
       ctx.stroke();
       if (shape === "chevron_dot") {
         ctx.beginPath();
@@ -790,11 +790,11 @@ function drawMarkerGlyph(shape, px, py, tx, ty, nx, ny, s, period) {
       break;
     }
     case "triangle": {
-      // острый угол НА линии, основание наружу (Эталон)
+      // залитый «▼» остриём внутрь зоны, основание на линии (Эталон)
       const b = s * 0.5;
-      ctx.moveTo(px, py);
-      ctx.lineTo(px + nx * s - tx * b, py + ny * s - ty * b);
-      ctx.lineTo(px + nx * s + tx * b, py + ny * s + ty * b);
+      ctx.moveTo(px - tx * b, py - ty * b);
+      ctx.lineTo(px + tx * b, py + ty * b);
+      ctx.lineTo(px + nx * s, py + ny * s);
       ctx.closePath(); ctx.fill(); break;
     }
     case "dot":
@@ -954,11 +954,11 @@ function draw() {
         if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
         if (st.double) drawDoubleLine(f.ring || f.line, st.double, !!f.ring);
         if (st.line_marker && (f.ring || f.line)) {
-          // засечки Эталона — по ВНЕШНЕМУ контуру зоны (наружу от центроида),
-          // не внутрь заливки: −inwardSign даёт наружную нормаль
-          const outw = f.ring && f.ring.length > 2 ? -inwardSign(f.ring) : 1;
+          // засечки Эталона направлены ВНУТРЬ зоны (остриём к центроиду):
+          // ▼ на верхнем ребре вниз, ▲ на нижнем вверх — оба внутрь
+          const inw = f.ring && f.ring.length > 2 ? inwardSign(f.ring) : 1;
           drawLineMarkers(f.ring || f.line, st.line_marker,
-                          st.stroke || cvColor("redline", "#df0024"), !!f.ring, outw);
+                          st.stroke || cvColor("redline", "#df0024"), !!f.ring, inw);
         }
         if (st.line_label) {
           const pts = f.ring ? [...f.ring, f.ring[0]] : f.line;
