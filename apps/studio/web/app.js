@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.28.0";
+const VERSION = "0.28.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -191,13 +191,15 @@ function userLayersManifest() {
   }));
 }
 
-function deleteLayer(layer) {
+async function deleteLayer(layer) {
   if (!layer.user_created) {
-    alert("Встроенный слой удалить нельзя — можно скрыть (чекбокс) или переименовать");
+    toast("Встроенный слой удалить нельзя — можно скрыть (чекбокс) или переименовать", "warn");
     return;
   }
   const count = featuresOnLayer(layer.id).length;
-  if (count && !confirm(`В слое «${layer.title}» ${count} объект(ов). Удалить слой вместе с ними?`))
+  if (count && !(await uiConfirm(
+        `В слое «${layer.title}» ${count} объект(ов). Удалить слой вместе с ними?`,
+        { ok: "Удалить", danger: true })))
     return;
   snapshot();
   state.features = state.features.filter(f => layerOf(f) !== layer);
@@ -211,8 +213,8 @@ function deleteLayer(layer) {
   afterChange();
 }
 
-function renameLayer(layer) {
-  const next = prompt("Новое имя слоя:", layer.title);
+async function renameLayer(layer) {
+  const next = await uiPrompt("Новое имя слоя:", layer.title, { ok: "Переименовать" });
   if (next == null) return;                 // отмена
   const title = next.trim();
   if (!title) return;
@@ -1343,8 +1345,8 @@ async function runOffset(f, sign) {
     state.selected = copy.id;
     afterChange();
   } catch (err) {
-    alert("Офсет не построился: " + String(err).slice(0, 200) +
-          "\n(обычно — радиус/офсет не помещается в геометрию)");
+    toast("Офсет не построился: " + String(err).slice(0, 160) +
+          " (обычно радиус/офсет не помещается в геометрию)", "error");
   }
 }
 
@@ -1572,6 +1574,59 @@ function openNewLayerDialog() {
   $("nl-create").addEventListener("click", create);
   $("nl-cancel").addEventListener("click", closePopups);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
+}
+
+// ---------- встроенные диалоги (взамен браузерных alert/confirm/prompt) ----------
+function escHtml(s) {
+  return String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+// подтверждение: Promise<bool>. danger — красная кнопка для необратимого.
+function uiConfirm(msg, { ok = "OK", cancel = "Отмена", danger = false } = {}) {
+  return new Promise(resolve => {
+    closePopups();
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `<div class="modal ask-modal">
+      <div class="ask-msg">${escHtml(msg)}</div>
+      <div class="modal-actions"><span class="spacer"></span>
+        <button class="ask-cancel">${escHtml(cancel)}</button>
+        <button class="ask-ok ${danger ? "danger" : "primary"}">${escHtml(ok)}</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    const done = v => { overlay.remove(); resolve(v); };
+    overlay.querySelector(".ask-ok").addEventListener("click", () => done(true));
+    overlay.querySelector(".ask-cancel").addEventListener("click", () => done(false));
+    overlay.addEventListener("click", ev => { if (ev.target === overlay) done(false); });
+    overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") done(false); });
+    overlay.querySelector(".ask-ok").focus();
+  });
+}
+// ввод строки: Promise<string|null> (null — отмена).
+function uiPrompt(msg, def = "", { ok = "OK", placeholder = "" } = {}) {
+  return new Promise(resolve => {
+    closePopups();
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `<div class="modal ask-modal">
+      <div class="ask-msg">${escHtml(msg)}</div>
+      <input type="text" class="ask-input" placeholder="${escHtml(placeholder)}">
+      <div class="modal-actions"><span class="spacer"></span>
+        <button class="ask-cancel">Отмена</button>
+        <button class="ask-ok primary">${escHtml(ok)}</button>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    const inp = overlay.querySelector(".ask-input");
+    inp.value = def; inp.focus(); inp.select();
+    const done = v => { overlay.remove(); resolve(v); };
+    overlay.querySelector(".ask-ok").addEventListener("click", () => done(inp.value));
+    overlay.querySelector(".ask-cancel").addEventListener("click", () => done(null));
+    inp.addEventListener("keydown", ev => {
+      if (ev.key === "Enter") done(inp.value);
+      if (ev.key === "Escape") done(null);
+    });
+    overlay.addEventListener("click", ev => { if (ev.target === overlay) done(null); });
+  });
 }
 
 // ---------- выбор стиля из системной библиотеки (default + Эталон ЛГР) ----------
@@ -2183,7 +2238,7 @@ async function download(url, filename) {
                            basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
                            name: document.getElementById("project-name").value,
                            layers: userLayersManifest() }) });
-  if (!r.ok) { alert("Ошибка сборки: " + (await r.text()).slice(0, 200)); return; }
+  if (!r.ok) { toast("Ошибка сборки: " + (await r.text()).slice(0, 200), "error"); return; }
   const blob = await r.blob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -2214,17 +2269,20 @@ on("grado-file", "change", async e => {
     fitView();
     toast(`Открыт проект: ${data.features.length} объектов`);
   } catch (err) {
-    alert("Не удалось открыть проект: " + String(err).slice(0, 200));
+    toast("Не удалось открыть проект: " + String(err).slice(0, 200), "error");
   }
 });
 
 // мост браузерного расширения: опрос входящих выгрузок
 let toastTimer = null;
-function toast(msg) {
+// kind: ok (зелёный) | warn (янтарный) | error (красный, дольше висит)
+function toast(msg, kind = "ok") {
   const el = document.getElementById("st-toast");
   el.textContent = msg;
+  el.className = "toast-" + kind;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.textContent = ""; }, 5000);
+  toastTimer = setTimeout(() => { el.textContent = ""; el.className = ""; },
+                          kind === "error" ? 8000 : 5000);
 }
 let serverDown = false;
 async function pollInbox() {
@@ -2278,7 +2336,7 @@ on("nspd-file", "change", async e => {
       body: JSON.stringify({ payload }) });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
-    if (!data.features.length) { alert("В захвате нет полигонов НСПД"); return; }
+    if (!data.features.length) { toast("В захвате нет полигонов НСПД", "warn"); return; }
     snapshot();
     for (const f of data.features)
       state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
@@ -2287,7 +2345,7 @@ on("nspd-file", "change", async e => {
     afterChange();
     fitView();
   } catch (err) {
-    alert("Не удалось импортировать захват: " + String(err).slice(0, 200));
+    toast("Не удалось импортировать захват: " + String(err).slice(0, 200), "error");
   }
 });
 
@@ -2317,9 +2375,9 @@ on("gisogd-file", "change", async e => {
     else if (data.features.length)
       toast(`ОГД: +${data.features.length} объектов`);
     else
-      alert("В архиве не нашлось распознанных слоёв");
+      toast("В архиве не нашлось распознанных слоёв", "warn");
   } catch (err) {
-    alert("Не удалось импортировать выгрузку ОГД: " + String(err).slice(0, 200));
+    toast("Не удалось импортировать выгрузку ОГД: " + String(err).slice(0, 200), "error");
   }
 });
 
