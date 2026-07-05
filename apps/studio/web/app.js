@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.29.0";
+const VERSION = "0.29.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1371,6 +1371,7 @@ function renderProps() {
   if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
   el.className = "";
   const L = layerOf(f);
+  const cur = styleOf(f);
   const fields = (L && ATTR_FIELDS[L.semantic_class]) || [];
   let metric = "";
   if (f.ring) metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
@@ -1386,8 +1387,15 @@ function renderProps() {
   const stylePick = (L && !L.annotation)
     ? `<label>Стиль (библиотека)<select id="f-style">${stylePickerOptions(f.style_id)}</select></label>`
     : "";
+  // оформление ОТДЕЛЬНОГО объекта (f.fmt) поверх стиля слоя — только холст
+  const objFmt = (L && !L.annotation) ? `
+    <div class="prop-sub">Оформление объекта</div>
+    <label class="chk"><input type="checkbox" id="f-fmt-on" ${f.fmt ? "checked" : ""}> своё оформление</label>
+    ${f.fmt ? `<label>Заливка<input type="color" id="f-fmt-fill" value="${toHexColor(f.fmt.fill || cur.fill, "#faf0bf")}"></label>
+      <label>Обводка<input type="color" id="f-fmt-stroke" value="${toHexColor(f.fmt.stroke || cur.stroke, "#888888")}"></label>
+      <label>Прозрачность, %<input type="range" id="f-fmt-op" min="10" max="100" step="5" value="${Math.round((f.fmt.fillOpacity ?? cur.fillOpacity ?? 1) * 100)}"></label>` : ""}` : "";
   el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
-    <div class="metric">${metric}</div>${prov}${extra}${stylePick}
+    <div class="metric">${metric}</div>${prov}${extra}${stylePick}${objFmt}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
   const styleSel = document.getElementById("f-style");
@@ -1414,6 +1422,31 @@ function renderProps() {
     }
     bind(`f-${field.key}`, field.key, field.cast);
   }
+  // оформление объекта: тумблер создаёт/снимает f.fmt, поля живо перекрашивают
+  const fmtOn = document.getElementById("f-fmt-on");
+  if (fmtOn) fmtOn.addEventListener("change", () => {
+    snapshot();
+    if (fmtOn.checked) {
+      const c = styleOf(f);
+      f.fmt = { fill: toHexColor(c.fill, "#faf0bf"),
+                stroke: toHexColor(c.stroke, "#888888"),
+                fillOpacity: c.fillOpacity ?? 1 };
+    } else delete f.fmt;
+    afterChange(); renderProps();
+  });
+  const fmtBind = (id, key) => {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    inp.addEventListener("input", () => {
+      if (!f.fmt) return;
+      f.fmt[key] = key === "fillOpacity" ? (parseInt(inp.value) || 100) / 100 : inp.value;
+      draw();
+    });
+    inp.addEventListener("change", persist);
+  };
+  fmtBind("f-fmt-fill", "fill");
+  fmtBind("f-fmt-stroke", "stroke");
+  fmtBind("f-fmt-op", "fillOpacity");
   document.getElementById("f-del").onclick = deleteSelected;
 }
 // Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
