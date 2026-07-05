@@ -235,6 +235,12 @@ button.primary:active { background: var(--accent-active); }
   display: block; width: 100%; margin-top: var(--sp-1); padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--field-border); border-radius: var(--r-sm); font: inherit;
   color: var(--text); background: var(--field-bg); }
+.fmt-modal input[type=range] { display: block; width: 100%; margin-top: var(--sp-1); accent-color: var(--accent); }
+.fmt-modal-lg { max-height: 88vh; overflow-y: auto; }
+.fmt-modal-lg .modal-actions { position: sticky; bottom: 0; background: var(--glass-strong); }
+.fmt-sub { margin: var(--sp-3) var(--sp-4) 0; font-size: var(--fs-11);
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: var(--fw-semibold); }
+.fmt-copy-btn { display: block; margin: var(--sp-2) var(--sp-4) 0; }
 /* встроенные диалоги confirm/prompt (взамен браузерных) */
 .ask-modal { width: 340px; }
 .ask-msg { margin: var(--sp-4) var(--sp-4) 0; font-size: var(--fs-13);

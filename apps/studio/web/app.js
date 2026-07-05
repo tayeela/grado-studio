@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.28.1";
+const VERSION = "0.29.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -246,8 +246,18 @@ function layerStyle(L) {
 }
 function styleOf(f) {
   const L = layerOf(f);
-  return (f.style_id && STYLES_V2[f.style_id]) || layerStyle(L) || {};
+  const base = (f.style_id && STYLES_V2[f.style_id]) || layerStyle(L) || {};
+  return f.fmt ? { ...base, ...f.fmt } : base;   // f.fmt — оформление отдельного объекта
 }
+// пресеты пунктира и плотности штриховки для модалки формата
+const DASH_PRESETS = { solid: null, dash: [6, 4], dashdot: [10, 4, 2, 4],
+                       dashdotdot: [10, 4, 2, 4, 2, 4] };
+function dashPresetOf(dash) {
+  if (!dash) return "solid";
+  return dash.length <= 2 ? "dash" : dash.length <= 4 ? "dashdot" : "dashdotdot";
+}
+const HATCH_DENS = { sparse: 14, normal: 9, dense: 5 };
+function hatchDensOf(px) { return px <= 6 ? "dense" : px >= 13 ? "sparse" : "normal"; }
 // ---------- инструменты: геометрия отдельно, слой отдельно (шаг 2) ----------
 // Инструмент создаёт только геометрию; слой и стиль назначает активный слой.
 const GEOM_OF_TOOL = { point: "point", polyline: "polyline",
@@ -976,7 +986,12 @@ function draw() {
         } else {
           drawChain(f.ring || f.line, !!f.ring);
         }
-        if (st.fill && f.ring) { ctx.fillStyle = st.fill; ctx.fill(); }
+        if (st.fill && f.ring) {
+          ctx.save();
+          if (st.fillOpacity != null) ctx.globalAlpha = st.fillOpacity;
+          ctx.fillStyle = st.fill; ctx.fill();
+          ctx.restore();
+        }
         ctx.stroke();
         if (st.hatch && f.ring) drawHatch(f.ring, st.hatch, st.stroke);
         if (st.double) drawDoubleLine(f.ring || f.line, st.double, !!f.ring);
@@ -1665,17 +1680,47 @@ function openLayerFormat(layer) {
   const origFmt = layer.fmt ? { ...layer.fmt } : null;   // для отмены
   const cur = layerStyle(layer);
   const hasFill = cur.fill != null && cur.fill !== "transparent";
+  const opacity = Math.round((cur.fillOpacity != null ? cur.fillOpacity : 1) * 100);
+  const dp = dashPresetOf(cur.dash);
+  const hObj = cur.hatch && typeof cur.hatch === "object" ? cur.hatch : null;
+  const hAngle = hObj ? (hObj.cross ? "cross" : String(hObj.angle ?? 45)) : "45";
+  const hDens = hObj ? hatchDensOf(hObj.spacing_px || 9) : "normal";
+  // засечки/подписи/двойная линия наследуются от базы/пресета (их редактируем
+  // только тумблером показа); значения храним в замыкании
+  let baseMarker = cur.line_marker || null, baseLabel = cur.line_label || null,
+      baseDouble = cur.double || null;
+  const targets = LAYERS_V2.filter(l => l !== layer && !l.annotation && !l.import_only);
+  const opt = (sel, v, lbl) => `<option value="${v}"${sel === v ? " selected" : ""}>${lbl}</option>`;
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  overlay.innerHTML = `<div class="modal fmt-modal">
-    <div class="modal-head">Форматирование · ${layer.title}</div>
+  overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
+    <div class="modal-head">Форматирование · ${escHtml(layer.title)}</div>
     <label>Библиотечный стиль (Эталон ЛГР / базовые)
       <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
-    <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка</label>
-    <label>Цвет заливки<input type="color" id="fmt-fill" value="${toHexColor(cur.fill, "#faf0bf")}"></label>
-    <label>Цвет обводки<input type="color" id="fmt-stroke" value="${toHexColor(cur.stroke, "#888888")}"></label>
-    <label>Толщина обводки<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
-    <label class="chk"><input type="checkbox" id="fmt-dash" ${cur.dash ? "checked" : ""}> пунктир</label>
+    <div class="fmt-sub">Заливка</div>
+    <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
+    <label>Цвет<input type="color" id="fmt-fill" value="${toHexColor(cur.fill, "#faf0bf")}"></label>
+    <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
+    <div class="fmt-sub">Обводка</div>
+    <label>Цвет<input type="color" id="fmt-stroke" value="${toHexColor(cur.stroke, "#888888")}"></label>
+    <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
+    <label>Пунктир<select id="fmt-dashp">${
+      opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
+      opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки")}</select></label>
+    <div class="fmt-sub">Штриховка зоны</div>
+    <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
+    <label>Угол<select id="fmt-hangle">${
+      opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
+      opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
+    <label>Плотность<select id="fmt-hdens">${
+      opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+    <div class="fmt-sub">Показывать</div>
+    <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
+    <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии</label>
+    ${targets.length ? `<div class="fmt-sub">Копировать оформление</div>
+    <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
+      targets.map(l => `<option value="${l.id}">${escHtml(l.title)}</option>`).join("")}</select></label>
+    <button id="fmt-copy" class="fmt-copy-btn">Скопировать на выбранный</button>` : ""}
     <div class="modal-actions">
       <button id="fmt-reset">Сбросить</button>
       <span class="spacer"></span>
@@ -1684,24 +1729,32 @@ function openLayerFormat(layer) {
     </div></div>`;
   document.body.appendChild(overlay);
   const $ = id => overlay.querySelector("#" + id);
-  // fmt из полей модалки; выбранный пресет несёт hatch/line_label/dash целиком
+
   const collect = () => {
-    const ref = $("fmt-preset").value;
-    if (ref && STYLES_V2[ref]) {
-      const p = STYLES_V2[ref];
-      return { style_ref: ref, stroke: p.stroke, width: p.width,
-               fill: p.fill || null, dash: p.dash || null,
-               hatch: p.hatch || null, line_label: p.line_label || null,
-               line_marker: p.line_marker || null, double: p.double || null };
-    }
-    return {
+    const fmt = {
       stroke: $("fmt-stroke").value,
       width: Math.max(0.2, parseFloat($("fmt-width").value) || 1),
       fill: $("fmt-hasfill").checked ? $("fmt-fill").value : null,
-      dash: $("fmt-dash").checked ? [6, 4] : null,
+      fillOpacity: (parseInt($("fmt-opacity").value) || 100) / 100,
+      dash: DASH_PRESETS[$("fmt-dashp").value] ?? null,
     };
+    if ($("fmt-hatch").checked) {
+      const av = $("fmt-hangle").value;
+      fmt.hatch = { angle: av === "cross" ? 45 : +av, cross: av === "cross",
+                    spacing_px: HATCH_DENS[$("fmt-hdens").value] || 9,
+                    color: $("fmt-stroke").value };
+    } else fmt.hatch = false;
+    if ($("fmt-marker").checked) { if (baseMarker) fmt.line_marker = baseMarker; }
+    else fmt.line_marker = null;
+    if ($("fmt-label").checked) { if (baseLabel) fmt.line_label = baseLabel; }
+    else fmt.line_label = null;
+    if (baseDouble) fmt.double = baseDouble;
+    const ref = $("fmt-preset").value;
+    if (ref) fmt.style_ref = ref;
+    return fmt;
   };
-  // выбор пресета заполняет поля его значениями (дальше можно подстроить)
+
+  // выбор библиотечного пресета — заполняет ВСЕ поля его значениями
   $("fmt-preset").addEventListener("change", () => {
     const ref = $("fmt-preset").value;
     if (ref && STYLES_V2[ref]) {
@@ -1710,16 +1763,37 @@ function openLayerFormat(layer) {
       if (p.fill) $("fmt-fill").value = toHexColor(p.fill, "#faf0bf");
       $("fmt-stroke").value = toHexColor(p.stroke, "#888888");
       $("fmt-width").value = p.width ?? 1;
-      $("fmt-dash").checked = !!p.dash;
+      $("fmt-dashp").value = dashPresetOf(p.dash);
+      const ph = p.hatch && typeof p.hatch === "object" ? p.hatch : null;
+      $("fmt-hatch").checked = !!p.hatch;
+      $("fmt-hangle").value = ph ? (ph.cross ? "cross" : String(ph.angle ?? 45)) : "45";
+      $("fmt-hdens").value = ph ? hatchDensOf(ph.spacing_px || 9) : "normal";
+      baseMarker = p.line_marker || null; baseLabel = p.line_label || null;
+      baseDouble = p.double || null;
+      $("fmt-marker").checked = !!baseMarker;
+      $("fmt-label").checked = !!baseLabel;
     }
     layer.fmt = collect(); draw();
   });
-  // живой предпросмотр: правка любого поля = ручной режим (сброс пресета)
-  overlay.querySelectorAll("input").forEach(inp =>
-    inp.addEventListener("input", () => {
-      $("fmt-preset").value = "";
-      layer.fmt = collect(); draw();
-    }));
+
+  // живой предпросмотр: любая правка поля = ручной режим (сброс пресета)
+  overlay.querySelectorAll("input, select").forEach(el => {
+    if (el.id === "fmt-preset" || el.id === "fmt-copy-to") return;
+    for (const ev of ["input", "change"])
+      el.addEventListener(ev, () => {
+        $("fmt-preset").value = ""; layer.fmt = collect(); draw();
+      });
+  });
+
+  if ($("fmt-copy")) $("fmt-copy").addEventListener("click", () => {
+    const fmt = collect(); layer.fmt = fmt;
+    const to = $("fmt-copy-to").value;
+    const dest = to === "__all__" ? targets : targets.filter(l => l.id === to);
+    for (const l of dest) l.fmt = { ...fmt };
+    renderLayers(); draw(); persist();
+    toast(`Оформление скопировано на ${dest.length} слой(ёв)`);
+  });
+
   const restore = () => {                 // отмена/клик мимо — вернуть как было
     if (origFmt) layer.fmt = origFmt; else delete layer.fmt;
     closePopups(); renderLayers(); draw();
