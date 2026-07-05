@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.27.0";
+const VERSION = "0.28.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1103,9 +1103,39 @@ function draw() {
     }
   }
   drawSnapMarker();
+  updateOverlay();
+}
+
+// масштабная линейка + компас + онбординг поверх холста
+function niceRound(x) {
+  const p = Math.pow(10, Math.floor(Math.log10(x)));
+  const f = x / p;
+  return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * p;
+}
+function updateOverlay() {
+  const ob = document.getElementById("onboard");
+  if (ob) ob.hidden = state.features.length !== 0;
+  const bar = document.getElementById("cv-scale-bar");
+  const lab = document.getElementById("cv-scale-label");
+  if (!bar || !lab) return;
+  const mpp = 1 / state.view.k;              // метров мира на экранный пиксель
+  const bm = niceRound(90 * mpp);            // «круглая» длина ~90 px
+  bar.style.width = Math.round(bm * state.view.k) + "px";
+  const dist = bm >= 1000 ? (bm / 1000) + " км" : bm + " м";
+  // ~1:N — приблизительно (экранный пиксель ≈ 1/96 дюйма), потому с тильдой
+  const denom = Math.round(mpp * 3779.5);
+  lab.textContent = `${dist} · ~1:${denom.toLocaleString("ru-RU")}`;
 }
 
 // ---------- вид ----------
+function zoomBy(factor) {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const [wx, wy] = s2w(w / 2, h / 2);        // мировая точка под центром экрана
+  state.view.k = Math.min(40, Math.max(0.05, state.view.k * factor));
+  state.view.tx = w / 2 - wx * state.view.k;
+  state.view.ty = h / 2 + wy * state.view.k;
+  draw();
+}
 function fitPoints(pts, pad = 0.82) {
   if (!pts.length) return;
   const w = cv.clientWidth, h = cv.clientHeight;
@@ -2132,6 +2162,9 @@ on("basemap-opacity", "input", e => {
   draw();
 });
 on("btn-snap", "click", () => setOsnap(!state.osnap));
+on("btn-zoom-in", "click", () => zoomBy(1.25));
+on("btn-zoom-out", "click", () => zoomBy(0.8));
+on("btn-zoom-fit", "click", fitView);
 on("obj-snap", "change", e => setOsnap(e.target.checked));
 on("grid-snap", "change", e => setGridSnap(e.target.checked));
 on("grid-show", "change", e => { state.gridShow = e.target.checked; draw(); });

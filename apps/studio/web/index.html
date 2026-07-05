@@ -48,6 +48,7 @@
   <symbol id="ic-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M4 12 H20 M12 4 V20"></path></symbol>
   <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 L9.5 17 L19 6.5"></path></symbol>
   <symbol id="ic-north" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 5.5 L14.2 14 L12 12 L9.8 14 Z" fill="currentColor" stroke="none"></path></symbol>
+<symbol id="ic-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"></path></symbol>
 </svg>
 <div id="errbar" style="display:none;"></div>
 <header>
@@ -57,18 +58,27 @@
   <button id="btn-theme" class="icon-btn" title="Светлая / тёмная тема"><svg class="ic"><use href="#ic-theme"/></svg></button>
   <button id="btn-undo" class="icon-btn" title="Отменить (Cmd+Z)"><svg class="ic"><use href="#ic-undo"/></svg></button>
   <button id="btn-redo" class="icon-btn" title="Вернуть (Cmd+Shift+Z)"><svg class="ic"><use href="#ic-redo"/></svg></button>
-  <button id="btn-demo" title="Заполнить примером">Демо</button>
-  <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
-  <input id="nspd-file" type="file" accept=".json,application/json" hidden>
-  <button id="btn-gisogd" title="Импортировать выгрузку ГИС ОГД (ZIP с портала)">ОГД</button>
-  <input id="gisogd-file" type="file" accept=".zip" hidden>
-  <button id="btn-clear" title="Очистить холст">Очистить</button>
-  <button id="btn-open" title="Открыть проект .grado">Открыть…</button>
-  <input id="grado-file" type="file" accept=".grado" hidden>
-  <button id="btn-grado" title="Сохранить проект (открывается в QGIS)">.grado</button>
-  <button id="btn-dxf" title="Экспорт чертежа в DXF (AutoCAD/nanoCAD)">DXF</button>
-  <button id="btn-print" title="Печать чертежа в масштабе (PDF, А2)">Печать</button>
-  <button id="btn-album" class="primary" title="Собрать альбом АГК">Альбом PDF</button>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Получить данные">
+    <button id="btn-demo" title="Заполнить примером">Демо</button>
+    <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
+    <input id="nspd-file" type="file" accept=".json,application/json" hidden>
+    <button id="btn-gisogd" title="Импортировать выгрузку ГИС ОГД (ZIP с портала)">ОГД</button>
+    <input id="gisogd-file" type="file" accept=".zip" hidden>
+  </span>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Проект">
+    <button id="btn-open" title="Открыть проект .grado">Открыть…</button>
+    <input id="grado-file" type="file" accept=".grado" hidden>
+    <button id="btn-grado" title="Сохранить проект (открывается в QGIS)">.grado</button>
+    <button id="btn-clear" title="Очистить холст">Очистить</button>
+  </span>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Выпуск">
+    <button id="btn-dxf" title="Экспорт чертежа в DXF (AutoCAD/nanoCAD)">DXF</button>
+    <button id="btn-print" title="Печать чертежа в масштабе (PDF, А2)">Печать</button>
+    <button id="btn-album" class="primary" title="Собрать альбом АГК">Альбом PDF</button>
+  </span>
 </header>
 <div id="main">
   <nav id="toolbar">
@@ -84,7 +94,27 @@
     <div class="divider"></div>
     <button id="btn-snap" class="active" title="Привязки (X)"><svg class="ic"><use href="#ic-snap"/></svg></button>
   </nav>
-  <canvas id="cv"></canvas>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="onboard" class="onboard" hidden>
+      <div class="onboard-card">
+        <b>Пустой холст</b>
+        <p>Начните концепцию: нажмите <b>Демо</b>, импортируйте данные
+           (<b>НСПД</b>/<b>ОГД</b>) или выберите слой и нарисуйте границу
+           территории инструментом «Полигон».</p>
+      </div>
+    </div>
+    <div class="cv-compass" title="Север — вверх"><svg class="ic"><use href="#ic-north"/></svg></div>
+    <div class="cv-zoom">
+      <button id="btn-zoom-in" title="Приблизить">+</button>
+      <button id="btn-zoom-out" title="Отдалить">−</button>
+      <button id="btn-zoom-fit" title="Вписать всё (F)"><svg class="ic"><use href="#ic-fit"/></svg></button>
+    </div>
+    <div class="cv-scale" id="cv-scale">
+      <div class="cv-scale-bar" id="cv-scale-bar"></div>
+      <span class="cv-scale-label" id="cv-scale-label">—</span>
+    </div>
+  </div>
   <aside id="panel">
     <section id="props">
       <h3>Свойства</h3>
