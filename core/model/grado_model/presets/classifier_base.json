@@ -209,6 +209,33 @@
         }
       ],
       "style_id": "social.point"
+    },
+    {
+      "code": "generic.polygon",
+      "geom_type": "Polygon",
+      "group": "Прочее",
+      "stage": "project",
+      "style_id": "func_zone.fill",
+      "title": "Полигональный слой",
+      "attrs": []
+    },
+    {
+      "code": "generic.line",
+      "geom_type": "LineString",
+      "group": "Прочее",
+      "stage": "project",
+      "style_id": "boundary.line",
+      "title": "Линейный слой",
+      "attrs": []
+    },
+    {
+      "code": "generic.point",
+      "geom_type": "Point",
+      "group": "Прочее",
+      "stage": "project",
+      "style_id": "social.point",
+      "title": "Точечный слой",
+      "attrs": []
     }
   ]
 }

@@ -429,6 +429,9 @@ KIND_ATTRS = {
     "parcel": lambda p: {"cad_num": p.get("cad_num"),
                          "category": p.get("category"),
                          "vri": p.get("vri")},
+    # обычный (generic) слой — создан по геометрии без семантической роли;
+    # атрибуты классификатора пустые (свои поля живут на холсте), в ТЭП не идёт
+    "generic": lambda p: {},
 }
 
 

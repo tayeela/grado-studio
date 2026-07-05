@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.32.0";
+const VERSION = "0.33.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -176,6 +176,25 @@ function createUserLayer({ kind, title, styleId, id = null }) {
     geometry_type: base.geometry_type, style_id: styleId || base.style_id,
     stage: "project", user_created: true, visible: true,
     defaults: () => defaultsForKind(layerId, base.kind),
+  };
+  LAYERS_V2.push(L);
+  LAYER_BY_ID[L.id] = L;
+  return L;
+}
+
+// обычный (generic) слой — задаётся геометрией, без семантической роли.
+// code = generic.<geom> (есть в классификаторе, экспортируется как чистая
+// геометрия), в ТЭП не идёт; свои поля добавляются в атрибутивной таблице.
+const GENERIC_CODE = { point: "generic.point", polyline: "generic.line", polygon: "generic.polygon" };
+const CODE_TO_GEOM = Object.fromEntries(Object.entries(GENERIC_CODE).map(([g, c]) => [c, g]));
+const GENERIC_STYLE = { point: "social.point", polyline: "boundary.line", polygon: "func_zone.fill" };
+function createGenericLayer({ title, geometry_type, styleId, id = null }) {
+  const layerId = id || uniqueLayerId(title);
+  const L = {
+    id: layerId, title, kind: "generic", semantic_class: GENERIC_CODE[geometry_type],
+    geometry_type, style_id: styleId || GENERIC_STYLE[geometry_type],
+    stage: "project", user_created: true, generic: true, visible: true, fields: [],
+    defaults: () => ({}),
   };
   LAYERS_V2.push(L);
   LAYER_BY_ID[L.id] = L;
@@ -1666,16 +1685,23 @@ function openLayerMenu(layer, x, y) {
 }
 
 // ---------- новый слой («+» в панели «Слои») ----------
+const GEOM_LABEL = { point: "точка", polyline: "полилиния", polygon: "полигон" };
+// роли (семантические классы) для выбранной геометрии + «обычный слой»
+function roleOptions(geom) {
+  const roles = BASE_KINDS.filter(b => b.geometry_type === geom);
+  return `<option value="">обычный слой (без роли)</option>` +
+    roles.map(b => `<option value="${b.kind}">${b.label}</option>`).join("");
+}
 function openNewLayerDialog() {
   closePopups();
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  const kindOptions = BASE_KINDS.map(b =>
-    `<option value="${b.kind}">${b.label}</option>`).join("");
   overlay.innerHTML = `<div class="modal fmt-modal">
     <div class="modal-head">Новый слой</div>
-    <label>Тип объектов<select id="nl-kind">${kindOptions}</select></label>
-    <label>Название слоя<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
+    <label>Название<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
+    <label>Геометрия<select id="nl-geom">${
+      Object.entries(GEOM_LABEL).map(([g, l]) => `<option value="${g}"${g === "polygon" ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+    <label>Роль (для ТЭП / автостилей ЛГР)<select id="nl-role">${roleOptions("polygon")}</select></label>
     <label>Стиль (библиотека)<select id="nl-style">${stylePickerOptions()}</select></label>
     <div class="modal-actions">
       <span class="spacer"></span>
@@ -1686,15 +1712,19 @@ function openNewLayerDialog() {
   overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
   $("nl-title").focus();
+  // при смене геометрии — обновить список ролей
+  $("nl-geom").addEventListener("change", () => { $("nl-role").innerHTML = roleOptions($("nl-geom").value); });
   const create = () => {
-    const kind = $("nl-kind").value;
-    const title = $("nl-title").value.trim() ||
-      BASE_KIND_BY_KIND[kind].label;
+    const geom = $("nl-geom").value, role = $("nl-role").value;
     const styleRef = $("nl-style").value || null;
-    const L = createUserLayer({ kind, title, styleId: styleRef });
+    const title = $("nl-title").value.trim() ||
+      (role ? BASE_KIND_BY_KIND[role].label : GEOM_LABEL[geom] + " — слой");
+    const L = role
+      ? createUserLayer({ kind: role, title, styleId: styleRef })
+      : createGenericLayer({ title, geometry_type: geom, styleId: styleRef });
     closePopups();
     renderLayers();
-    setActiveLayer(L.id);   // сразу готов чертить — не нужно искать слой в списке
+    setActiveLayer(L.id);   // сразу готов чертить
     persist();
     toast(`Слой «${title}» создан и стал активным`);
   };
@@ -3018,6 +3048,11 @@ function applyRestoredState(d) {
   if (Array.isArray(d.userLayers)) {
     for (const spec of d.userLayers) {
       if (LAYER_BY_ID[spec.layer_id]) continue;  // уже есть (повторный restore)
+      if (CODE_TO_GEOM[spec.code]) {             // обычный (generic) слой
+        createGenericLayer({ title: spec.title, geometry_type: CODE_TO_GEOM[spec.code],
+                            styleId: spec.style_id, id: spec.layer_id });
+        continue;
+      }
       const kind = KIND_BY_SEMANTIC_CLASS[spec.code];
       if (!kind) continue;  // неизвестный класс (снимок из будущей версии) — пропускаем не роняя
       createUserLayer({ kind, title: spec.title, styleId: spec.style_id,
