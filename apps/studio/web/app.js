@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.35.2";
+const VERSION = "0.35.3";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -2292,6 +2292,7 @@ function openAttributeTable(layer) {
     <div class="attr-toolbar">
       <button id="at-edit" title="Режим правки: редактировать ячейки, добавлять/удалять поля">✎ Правка</button>
       <button id="at-addf" class="at-editonly" hidden>+ поле</button>
+      <button id="at-fields" class="at-editonly" hidden title="Переименование, тип, порядок, значение по умолчанию">⚙ Поля слоя</button>
       <button id="at-calc">∑ Калькулятор полей</button>
       <span class="spacer"></span>
       <label class="at-filter">Показать
@@ -2311,6 +2312,7 @@ function openAttributeTable(layer) {
     const cols = attrColumns(layer), feats = filtered();
     $("at-count").textContent = `(${feats.length})`;
     $("at-addf").hidden = !editMode;
+    $("at-fields").hidden = !editMode;
     $("at-edit").classList.toggle("active", editMode);
     if (!feats.length) {
       $("at-scroll").innerHTML = `<div class="muted" style="padding:14px">Нет объектов${filter === "selected" ? " в выделении" : ""}</div>`;
@@ -2369,6 +2371,7 @@ function openAttributeTable(layer) {
   $("at-edit").addEventListener("click", () => { editMode = !editMode; renderTable(); });
   $("at-flt").addEventListener("change", () => { filter = $("at-flt").value; renderTable(); });
   $("at-addf").addEventListener("click", () => openAddFieldDialog(layer, () => { persist(); renderTable(); }));
+  $("at-fields").addEventListener("click", () => openManageFieldsDialog(layer, () => { draw(); refreshTep(); renderTable(); }));
   $("at-calc").addEventListener("click", () => openFieldCalc(layer, filtered, () => { renderTable(); }));
   overlay.querySelector(".modal-x").addEventListener("click", closePopups);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
@@ -2400,6 +2403,88 @@ function openAddFieldDialog(layer, onDone) {
   q("af-name").addEventListener("keydown", e => { if (e.key === "Enter") create(); });
   q("af-ok").addEventListener("click", create);
   q("af-cancel").addEventListener("click", close);
+  ov.addEventListener("click", e => { if (e.target === ov) close(); });
+}
+
+// управление полями слоя: переименование / тип / порядок / значение по
+// умолчанию / удаление. БЕЗ closePopups (таблица под ним остаётся).
+function openManageFieldsDialog(layer, onDone) {
+  const ov = document.createElement("div");
+  ov.className = "modal-overlay";
+  // рабочая копия; _orig — имя поля до правки (для переноса значений в props)
+  let work = (layer.fields || []).map(f => ({
+    name: f.name, type: f.type,
+    def: f.default != null ? String(f.default) : "", _orig: f.name }));
+  const q = id => ov.querySelector("#" + id);
+  const typeOpts = t => Object.entries(FIELD_TYPES).map(([k, v]) =>
+    `<option value="${k}"${k === t ? " selected" : ""}>${v}</option>`).join("");
+  const rowsHtml = () => work.length ? work.map((f, i) => `<tr>
+      <td><input class="mf-name" data-i="${i}" value="${escHtml(f.name)}"></td>
+      <td><select class="mf-type" data-i="${i}">${typeOpts(f.type)}</select></td>
+      <td><input class="mf-def" data-i="${i}" value="${escHtml(f.def)}" placeholder="—"></td>
+      <td class="mf-ord">
+        <button class="mf-up" data-i="${i}" title="Выше"${i === 0 ? " disabled" : ""}>▲</button>
+        <button class="mf-dn" data-i="${i}" title="Ниже"${i === work.length - 1 ? " disabled" : ""}>▼</button>
+        <button class="mf-del at-delcol" data-i="${i}" title="Удалить поле">✕</button>
+      </td></tr>`).join("")
+    : `<tr><td colspan="4" class="muted" style="padding:10px">Своих полей пока нет — добавьте кнопкой «+ поле» в таблице</td></tr>`;
+  const syncInputs = () => {
+    ov.querySelectorAll(".mf-name").forEach(el => { work[+el.dataset.i].name = el.value; });
+    ov.querySelectorAll(".mf-type").forEach(el => { work[+el.dataset.i].type = el.value; });
+    ov.querySelectorAll(".mf-def").forEach(el => { work[+el.dataset.i].def = el.value; });
+  };
+  const render = () => {
+    q("mf-body").innerHTML = rowsHtml();
+    ov.querySelectorAll(".mf-name").forEach(el => el.onchange = () => { work[+el.dataset.i].name = el.value; });
+    ov.querySelectorAll(".mf-type").forEach(el => el.onchange = () => { work[+el.dataset.i].type = el.value; });
+    ov.querySelectorAll(".mf-def").forEach(el => el.onchange = () => { work[+el.dataset.i].def = el.value; });
+    ov.querySelectorAll(".mf-up").forEach(el => el.onclick = () => { syncInputs(); const i = +el.dataset.i; [work[i - 1], work[i]] = [work[i], work[i - 1]]; render(); });
+    ov.querySelectorAll(".mf-dn").forEach(el => el.onclick = () => { syncInputs(); const i = +el.dataset.i; [work[i + 1], work[i]] = [work[i], work[i + 1]]; render(); });
+    ov.querySelectorAll(".mf-del").forEach(el => el.onclick = () => { syncInputs(); work.splice(+el.dataset.i, 1); render(); });
+  };
+  ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
+    <div class="modal-head">Поля слоя · ${escHtml(layer.title)}</div>
+    <div class="fc-help" style="margin:0 var(--sp-4)">Имя, тип, порядок и значение по умолчанию своих полей. Значение по умолчанию заполняет пустые ячейки и новые объекты.</div>
+    <table class="attr-table mf-table"><thead><tr><th>Имя</th><th>Тип</th><th>По умолчанию</th><th></th></tr></thead><tbody id="mf-body"></tbody></table>
+    <div class="modal-actions"><span class="spacer"></span>
+      <button id="mf-cancel">Отмена</button><button id="mf-ok" class="primary">Применить</button></div></div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener("click", e => e.stopPropagation());
+  render();
+  const close = () => ov.remove();
+  q("mf-ok").addEventListener("click", () => {
+    syncInputs();
+    const names = work.map(f => (f.name || "").trim());
+    if (names.some(n => !n)) { toast("Имя поля не может быть пустым", "warn"); return; }
+    if (new Set(names).size !== names.length) { toast("Имена полей должны быть уникальны", "warn"); return; }
+    const reserved = attrColumns(layer).filter(c => c.virtual || c.semantic).map(c => c.name);
+    if (names.some(n => reserved.includes(n))) { toast("Имя совпадает со встроенной колонкой", "warn"); return; }
+    snapshot();
+    // перестраиваем props каждого объекта: несобственные ключи (семантика)
+    // сохраняем, свои поля переносим по _orig в новое имя/тип, пустые — дефолт.
+    // так корректно отрабатывают переименование, смена типа и удаление разом
+    const managedOld = new Set((layer.fields || []).map(x => x.name));
+    for (const ft of featuresOnLayer(layer.id)) {
+      const old = ft.props || {};
+      const np = {};
+      for (const [k, v] of Object.entries(old)) if (!managedOld.has(k)) np[k] = v;
+      for (const f of work) {
+        const nm = f.name.trim();
+        let v = f._orig != null ? old[f._orig] : undefined;
+        if (v == null || v === "") v = f.def !== "" ? f.def : undefined;
+        if (v != null && v !== "") np[nm] = castField(f.type, v);
+      }
+      ft.props = np;
+    }
+    layer.fields = work.map(f => {
+      const o = { name: f.name.trim(), type: f.type };
+      if (f.def !== "") o.default = castField(f.type, f.def);
+      return o;
+    });
+    close(); persist(); if (onDone) onDone();
+    toast("Поля слоя обновлены");
+  });
+  q("mf-cancel").addEventListener("click", close);
   ov.addEventListener("click", e => { if (e.target === ov) close(); });
 }
 
@@ -2526,6 +2611,9 @@ function addFeature(layerId, geom) {
   const L = LAYER_BY_ID[layerId];
   const f = { id: state.nextId++, layer_id: layerId,
              props: L ? L.defaults() : {}, ...geom };
+  // значения по умолчанию произвольных полей слоя — на новый объект
+  for (const cf of (L && L.fields) || [])
+    if (cf.default != null && f.props[cf.name] == null) f.props[cf.name] = cf.default;
   upgradeFeature(f);
   state.features.push(f);
   selectOne(f.id);

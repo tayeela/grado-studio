@@ -311,6 +311,15 @@ button.danger:hover { filter: brightness(1.07); }
 .at-delcol { margin-left: 6px; color: var(--danger); cursor: pointer; font-weight: var(--fw-semibold);
   opacity: .6; }
 .at-delcol:hover { opacity: 1; }
+/* управление полями слоя */
+.mf-table { margin: var(--sp-2) var(--sp-4) 0; width: auto; min-width: calc(100% - 2 * var(--sp-4)); }
+.mf-table td { padding: 3px var(--sp-2); }
+.mf-table input, .mf-table select { width: 100%; min-width: 80px; padding: 3px 5px; font: inherit;
+  border: 1px solid var(--field-border); border-radius: var(--r-sm); background: var(--field-bg); color: var(--text); }
+.mf-ord { white-space: nowrap; }
+.mf-ord button { padding: 2px 6px; margin-left: 2px; font-size: var(--fs-12); line-height: 1; }
+.mf-ord button:disabled { opacity: .35; cursor: default; }
+.mf-ord .mf-del { color: var(--danger); }
 /* тулбар атрибутивной таблицы */
 .attr-toolbar { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
   padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--hairline); }
