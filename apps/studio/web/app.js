@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.34.0";
+const VERSION = "0.34.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -261,6 +261,15 @@ function dashPresetOf(dash) {
 }
 const HATCH_DENS = { sparse: 14, normal: 9, dense: 5 };
 function hatchDensOf(px) { return px <= 6 ? "dense" : px >= 13 ? "sparse" : "normal"; }
+// маленькое условное обозначение линии: как выглядит выбранный стиль (цвет,
+// толщина, пунктир) — образец рядом с выпадашкой стиля в форматировании слоя
+function lineSampleSVG(dash, color, width) {
+  const w = Math.max(0.8, Math.min(4, (width || 1) * 1.3));
+  const da = (dash && dash.length) ? dash.map(n => (n * 1.6).toFixed(1)).join(",") : "";
+  return `<svg viewBox="0 0 200 18" preserveAspectRatio="none" width="100%" height="18">` +
+    `<line x1="4" y1="9" x2="196" y2="9" stroke="${escHtml(color || "#888")}" ` +
+    `stroke-width="${w}" stroke-linecap="butt"${da ? ` stroke-dasharray="${da}"` : ""}/></svg>`;
+}
 // ---------- инструменты: геометрия отдельно, слой отдельно (шаг 2) ----------
 // Инструмент создаёт только геометрию; слой и стиль назначает активный слой.
 const GEOM_OF_TOOL = { point: "point", polyline: "polyline",
@@ -943,22 +952,49 @@ function drawDoubleLine(pts, gap, closed) {
 // на самой длинной стороне — то, что реально нужно для типового объекта;
 // для по-настоящему длинных линий (через весь чертёж) метки видно, пока
 // видна сама протяжённая сторона.
+// Повторяющаяся подпись линии/контура (красные линии, ЗОУИТ): как в эталоне
+// и в QGIS-символике «line pattern», надпись повторяется вдоль линии с
+// оптимальным шагом. Раньше ставилась ОДНА на самом длинном отрезке — на
+// длинной красной линии терялась, на длинном контуре ЗОУИТ была одинока.
 function drawLineLabel(pts, text, color) {
   const scr = pts.map(p => w2s(...p));
-  let best = null;
+  if (scr.length < 2) return;
+  // отрезки в экранных пикселях + суммарная длина (параметризация по дуге)
+  const segs = [];
+  let total = 0;
   for (let i = 1; i < scr.length; i++) {
     const [ax, ay] = scr[i - 1], [bx, by] = scr[i];
     const len = Math.hypot(bx - ax, by - ay);
-    if (!best || len > best.len) best = { ax, ay, bx, by, len };
+    if (len < 0.5) continue;
+    segs.push({ ax, ay, bx, by, len, s0: total });
+    total += len;
   }
-  if (!best || best.len < 40) return;      // слишком коротко для подписи
-  const x = (best.ax + best.bx) / 2, y = (best.ay + best.by) / 2;
-  let ang = Math.atan2(best.by - best.ay, best.bx - best.ax);
-  if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;  // не вверх ногами
+  if (!segs.length || total < 60) return;    // мелкий объект — одна не влезет
   ctx.save();
-  ctx.fillStyle = color; ctx.font = "600 10px sans-serif"; ctx.textAlign = "center";
-  ctx.translate(x, y); ctx.rotate(ang);
-  ctx.fillText(text, 0, -4);
+  ctx.font = "600 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  const textW = ctx.measureText(text).width;
+  // оптимальный интервал: цель ~300px между центрами подписей, но не гуще, чем
+  // ширина текста + зазор (иначе частокол наезжающих надписей); минимум одна
+  let n = Math.max(1, Math.round(total / 300));
+  while (n > 1 && total / n < textW + 36) n--;
+  const step = total / n;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";   // гало для читаемости поверх штриховки
+  ctx.lineWidth = 3; ctx.lineJoin = "round";
+  for (let k = 0; k < n; k++) {
+    const s = (k + 0.5) * step;                // равномерно, с полуотступом от концов
+    let seg = segs[segs.length - 1];
+    for (const sg of segs) if (s <= sg.s0 + sg.len) { seg = sg; break; }
+    const t = (s - seg.s0) / seg.len;
+    const x = seg.ax + (seg.bx - seg.ax) * t, y = seg.ay + (seg.by - seg.ay) * t;
+    let ang = Math.atan2(seg.by - seg.ay, seg.bx - seg.ax);
+    if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;  // не вверх ногами
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(ang);
+    ctx.strokeText(text, 0, -4);
+    ctx.fillText(text, 0, -4);
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -1930,6 +1966,7 @@ function openLayerFormat(layer) {
     <label>Пунктир<select id="fmt-dashp">${
       opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
       opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки")}</select></label>
+    <div class="line-preview" id="fmt-dash-preview"></div>
     <div class="fmt-sub">Штриховка зоны</div>
     <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
     <label>Угол<select id="fmt-hangle">${
@@ -1954,9 +1991,16 @@ function openLayerFormat(layer) {
   overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
   // выбор цвета — компонент с палитрой/CMYK (см. makeColorField)
-  const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); };
+  const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
   const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
+  // образец выбранного стиля линии (цвет/толщина/пунктир) под выпадашкой
+  const updateDashPreview = () => {
+    const dash = DASH_PRESETS[$("fmt-dashp").value] ?? null;
+    const wv = Math.max(0.2, parseFloat($("fmt-width").value) || 1);
+    $("fmt-dash-preview").innerHTML = lineSampleSVG(dash, strokeCF.get(), wv);
+  };
+  updateDashPreview();
 
   const collect = () => {
     const fmt = {
@@ -2001,7 +2045,7 @@ function openLayerFormat(layer) {
       $("fmt-marker").checked = !!baseMarker;
       $("fmt-label").checked = !!baseLabel;
     }
-    layer.fmt = collect(); draw();
+    layer.fmt = collect(); draw(); updateDashPreview();
   });
 
   // живой предпросмотр: любая правка поля = ручной режим (сброс пресета)
@@ -2009,7 +2053,7 @@ function openLayerFormat(layer) {
     if (el.id === "fmt-preset" || el.id === "fmt-copy-to") return;
     for (const ev of ["input", "change"])
       el.addEventListener(ev, () => {
-        $("fmt-preset").value = ""; layer.fmt = collect(); draw();
+        $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview();
       });
   });
 

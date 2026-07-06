@@ -245,6 +245,12 @@ button.primary:active { background: var(--accent-active); }
 .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; font-size: var(--fs-11);
   text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: var(--fw-semibold); }
 .fmt-copy-btn { display: block; margin: var(--sp-2) var(--sp-4) 0; }
+/* образец линии под выпадашкой стиля пунктира (модалка — flex-колонка,
+   поэтому flex:0 0 auto + min-height, иначе SVG-only блок схлопывается в 0) */
+.line-preview { margin: var(--sp-1) var(--sp-4) 0; flex: 0 0 auto; height: 18px; min-height: 18px;
+  border-radius: var(--r-sm); background: var(--canvas-bg, #fff); border: 1px solid var(--border);
+  overflow: hidden; }
+.line-preview svg { display: block; width: 100%; height: 18px; }
 
 /* ---- выбор цвета: палитра + HEX + CMYK ------------------------------------ */
 .cfield { position: relative; margin-top: var(--sp-1); }
