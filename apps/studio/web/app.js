@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.36.1";
+const VERSION = "0.37.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1735,6 +1735,7 @@ function renderLayers() {
     });
     el.appendChild(row);
   }
+  updateLayerStatus();   // чип «куда я черчу» — синхрон с активным слоем
 }
 
 // ---------- контекстное меню слоя (логика QGIS) ----------
@@ -2974,9 +2975,25 @@ document.addEventListener("keyup", e => {
 
 // ---------- инструменты, сетка, кнопки ----------
 function updateLayerStatus() {
-  const el = document.getElementById("st-layer");
   const L = activeLayer();
+  const el = document.getElementById("st-layer");
   if (el) el.textContent = L ? `слой: ${L.title}` : "";
+  // чип «куда я черчу» поверх холста — главный ориентир активного слоя
+  const chip = document.getElementById("cv-activelayer");
+  if (!chip) return;
+  if (L) {
+    const st = layerStyle(L) || {};
+    const col = st.stroke || st.fill || cvColor("boundary", "#8a8a8a");
+    chip.className = "cv-activelayer";
+    chip.onclick = null;
+    chip.innerHTML = `<span class="al-dot" style="background:${escHtml(col)}"></span>` +
+                     `<span class="al-cap">черчу в:</span>&nbsp;${escHtml(L.title)}`;
+  } else {
+    chip.className = "cv-activelayer empty";
+    chip.onclick = () => openNewLayerDialog();
+    chip.innerHTML = `<span class="al-dot" style="background:var(--warning)"></span>` +
+                     `нет активного слоя — создайте (+)`;
+  }
 }
 function setTool(tool, opts = {}) {
   state.tool = tool; state.drawing = null; state.drag = null;

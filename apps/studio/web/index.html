@@ -82,26 +82,30 @@
 </header>
 <div id="main">
   <nav id="toolbar">
-    <button data-tool="select"   class="active" title="Выбор (V)"><svg class="ic"><use href="#ic-select"/></svg></button>
+    <button data-tool="select"   class="active" title="Выбор и правка объектов (V)"><svg class="ic"><use href="#ic-select"/></svg><span>Выбор</span></button>
     <div class="divider"></div>
-    <button data-tool="point"    title="Точка — на активный слой"><svg class="ic"><use href="#ic-vertex"/></svg></button>
-    <button data-tool="polyline" title="Полилиния — на активный слой"><svg class="ic"><use href="#ic-line"/></svg></button>
-    <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)"><svg class="ic"><use href="#ic-boundary"/></svg></button>
-    <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам"><svg class="ic"><use href="#ic-hatch"/></svg></button>
+    <button data-tool="point"    title="Точка — на активный слой"><svg class="ic"><use href="#ic-vertex"/></svg><span>Точка</span></button>
+    <button data-tool="polyline" title="Полилиния — на активный слой"><svg class="ic"><use href="#ic-line"/></svg><span>Линия</span></button>
+    <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)"><svg class="ic"><use href="#ic-boundary"/></svg><span>Полигон</span></button>
+    <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам"><svg class="ic"><use href="#ic-hatch"/></svg><span>Прямоуг.</span></button>
     <div class="divider"></div>
-    <button data-tool="dim"      title="Размерная линия (D)"><svg class="ic"><use href="#ic-dimension"/></svg></button>
-    <button data-tool="measure"  title="Измерение (M)"><svg class="ic"><use href="#ic-measure"/></svg></button>
+    <button data-tool="dim"      title="Размерная линия (D)"><svg class="ic"><use href="#ic-dimension"/></svg><span>Размер</span></button>
+    <button data-tool="measure"  title="Измерение расстояния (M)"><svg class="ic"><use href="#ic-measure"/></svg><span>Измер.</span></button>
     <div class="divider"></div>
-    <button id="btn-snap" class="active" title="Привязки (X)"><svg class="ic"><use href="#ic-snap"/></svg></button>
+    <button id="btn-snap" class="active" title="Привязки к вершинам/серединам/пересечениям (X)"><svg class="ic"><use href="#ic-snap"/></svg><span>Привязки</span></button>
   </nav>
   <div id="stage">
     <canvas id="cv"></canvas>
+    <div id="cv-activelayer" class="cv-activelayer" title="Куда идёт черчение (активный слой)"></div>
     <div id="onboard" class="onboard" hidden>
       <div class="onboard-card">
-        <b>Пустой холст</b>
-        <p>Начните концепцию: нажмите <b>Демо</b>, импортируйте данные
-           (<b>НСПД</b>/<b>ОГД</b>) или выберите слой и нарисуйте границу
-           территории инструментом «Полигон».</p>
+        <b>С чего начать</b>
+        <ol class="onboard-steps">
+          <li>Создайте слой — кнопка <b>+</b> в панели «Слои» справа (выберите геометрию: точка / линия / полигон).</li>
+          <li>Слева выберите инструмент (<b>Полигон</b>, <b>Линия</b>, <b>Точка</b>).</li>
+          <li>Чертите на холсте — объект идёт в активный слой.</li>
+        </ol>
+        <p class="onboard-alt">Или сразу: <b>Демо</b> — пример проекта · <b>НСПД</b>/<b>ОГД</b> — импорт данных.</p>
       </div>
     </div>
     <div class="cv-compass" title="Север — вверх"><svg class="ic"><use href="#ic-north"/></svg></div>
