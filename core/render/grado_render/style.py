@@ -52,7 +52,7 @@ def hex_to_rgb(value):
 class Style:
     def __init__(self, fill=None, stroke=None, width=0.3, dash=None,
                  label=None, marker=1.2, z=0, hatch=False,
-                 line_marker=None, double=None):
+                 line_marker=None, double=None, line_label=None):
         self.fill = fill          # (r,g,b) 0..1 | None
         self.stroke = stroke      # (r,g,b) | None
         self.width = width        # мм
@@ -63,6 +63,7 @@ class Style:
         self.hatch = hatch        # штриховка: bool (легаси 45°) | dict Эталона
         self.line_marker = line_marker  # засечки Эталона ЛГР: {shape, period_mm, size_mm}
         self.double = double      # двойная параллельная линия: зазор, мм
+        self.line_label = line_label  # повторяющаяся подпись вдоль линии/контура (ЛГР)
 
     @classmethod
     def from_json(cls, s):
@@ -76,7 +77,8 @@ class Style:
             z=s.get("z", 0),
             hatch=s.get("hatch", False),
             line_marker=s.get("line_marker"),
-            double=s.get("double_mm"))
+            double=s.get("double_mm"),
+            line_label=s.get("line_label"))
 
 
 def _build_default_styles(name="default"):

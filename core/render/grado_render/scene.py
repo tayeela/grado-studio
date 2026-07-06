@@ -265,6 +265,62 @@ def _offset_chain(pts, gap, closed=False):
     return out
 
 
+def line_label_ops(chain, text, color, size, closed):
+    """Повторяющаяся подпись вдоль линии/контура (координаты мм листа) — как
+    на холсте студии: равномерно по длине дуги, по касательной, не вверх
+    ногами. Красные линии/ЗОУИТ подписываются с оптимальным шагом, а не один
+    раз, чтобы подпись читалась на всём протяжении знака (Эталон ЛГР)."""
+    import math
+    pts = list(chain)
+    if not pts or not text:
+        return []
+    if closed and pts[0] != pts[-1]:
+        pts = pts + [pts[0]]
+    segs, total = [], 0.0
+    for i in range(1, len(pts)):
+        ax, ay = pts[i - 1]
+        bx, by = pts[i]
+        ln = math.hypot(bx - ax, by - ay)
+        if ln < 0.2:
+            continue
+        segs.append((ax, ay, bx, by, ln, total))
+        total += ln
+    if not segs or total < 8.0:                  # слишком мелкий знак
+        return []
+    text_w = len(text) * size * 0.6              # оценка ширины строки на листе
+    n = max(1, round(total / 45.0))              # цель ~45 мм между центрами
+    while n > 1 and total / n < text_w + 4.0:    # не частокол наезжающих подписей
+        n -= 1
+    step = total / n
+    # центроид замкнутого контура — чтобы выносить подпись НАРУЖУ зоны, прочь
+    # от штриховки (иначе текст тонет в заливке и не читается)
+    cx = sum(p[0] for p in pts[:-1]) / (len(pts) - 1) if closed else 0.0
+    cy = sum(p[1] for p in pts[:-1]) / (len(pts) - 1) if closed else 0.0
+    out = []
+    for k in range(n):
+        s = (k + 0.5) * step
+        seg = segs[-1]
+        for sg in segs:
+            if s <= sg[5] + sg[4]:
+                seg = sg
+                break
+        ax, ay, bx, by, ln, s0 = seg
+        t = (s - s0) / ln
+        x = ax + (bx - ax) * t
+        y = ay + (by - ay) * t
+        ang = math.atan2(by - ay, bx - ax)
+        if ang > math.pi / 2 or ang < -math.pi / 2:
+            ang += math.pi                       # не вверх ногами
+        nx, ny = -math.sin(ang), math.cos(ang)   # нормаль к линии
+        if closed and (x - cx) * nx + (y - cy) * ny < 0:
+            nx, ny = -nx, -ny                    # развернуть наружу зоны
+        off = size * 1.4                         # отступ от линии, чтобы читалось
+        out.append({"op": "text", "x": x + nx * off, "y": y + ny * off,
+                    "size": size, "text": text, "color": color,
+                    "anchor": "middle", "angle": ang})
+    return out
+
+
 def build_ops(project, frame_rect, scale, center=None, styles=None,
               label_size=2.2, only=None):
     """Операции отрисовки карты проекта в рамке frame_rect (мм), М 1:scale.
@@ -328,6 +384,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                    "text": str(f["attrs"][st.label]),
                                    "color": (0.15, 0.15, 0.15),
                                    "anchor": "middle"})
+                if st.line_label:
+                    labels.extend(line_label_ops(
+                        rings[0], st.line_label, st.stroke or (0.85, 0.1, 0.14),
+                        label_size, closed=True))
             for line in _lines(geom):
                 pts = tr.ring(line)
                 ops.append({"op": "path", "rings": [pts],
@@ -342,6 +402,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                 "stroke": st.stroke, "width": st.width,
                                 "dash": st.dash,
                                 "rings": [_offset_chain(pts, st.double)]})
+                if st.line_label and len(pts) >= 2:
+                    labels.extend(line_label_ops(
+                        pts, st.line_label, st.stroke or (0.85, 0.1, 0.14),
+                        label_size, closed=False))
             for pt in _points(geom):
                 x, y = tr.to_mm(*pt)
                 ops.append({"op": "circle", "x": x, "y": y, "r": st.marker,

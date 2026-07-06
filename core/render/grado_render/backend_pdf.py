@@ -96,19 +96,28 @@ class PdfBackend:
         return out + self._paint(o.get("fill"), o.get("stroke"))
 
     def _text_ops(self, o, h):
+        import math
         size = o["size"] * MM2PT  # кегль задаём в мм высоты
         x = o["x"] * MM2PT
         y = (h - o["y"]) * MM2PT
-        if o.get("anchor") == "middle":
-            x -= self.font.text_width(o["text"], size) / 2
-        elif o.get("anchor") == "end":
-            x -= self.font.text_width(o["text"], size)
+        w = self.font.text_width(o["text"], size)
+        off = -w / 2 if o.get("anchor") == "middle" else (
+              -w if o.get("anchor") == "end" else 0.0)
         gids = [self.font.gid_for(ch) for ch in o["text"]]
         self.used_gids.update(gids)
         hexstr = "".join(f"{g:04X}" for g in gids)
         color = self._color(o.get("color", (0, 0, 0)), stroke=False)
+        angle = o.get("angle", 0.0)
+        if angle:
+            # подпись вдоль линии: сцена y-вниз → страница y-вверх, угол
+            # инвертируется; центрирование — вдоль повёрнутой оси текста
+            ca, sa = math.cos(-angle), math.sin(-angle)
+            tm = (f"{_f(ca)} {_f(sa)} {_f(-sa)} {_f(ca)} "
+                  f"{_f(x + off * ca)} {_f(y + off * sa)}")
+        else:
+            tm = f"1 0 0 1 {_f(x + off)} {_f(y)}"  # горизонталь — прежний путь
         return (f"{color}BT\n/F1 {_f(size)} Tf\n"
-                f"1 0 0 1 {_f(x)} {_f(y)} Tm\n<{hexstr}> Tj\nET\n")
+                f"{tm} Tm\n<{hexstr}> Tj\nET\n")
 
     def _page_stream(self, w, h, ops):
         out = ""

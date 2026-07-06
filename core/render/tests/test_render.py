@@ -340,6 +340,38 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertAlmostEqual(r, 0x06 / 255, places=3)
         self.assertAlmostEqual(b, 0xb2 / 255, places=3)
 
+    def test_line_label_repeats_upright(self):
+        # подпись линии/контура повторяется вдоль дуги, по касательной, не
+        # вверх ногами (иначе на длинном ЗОУИТ/красной линии знак не читался)
+        from grado_render.scene import line_label_ops
+        import math
+        ops = line_label_ops([[0, 0], [200, 0]], "прибрежная",
+                             (0.8, 0.1, 0.1), 2.2, closed=False)
+        self.assertGreaterEqual(len(ops), 2, "повторяется, не одна подпись")
+        for o in ops:
+            self.assertEqual(o["op"], "text")
+            self.assertEqual(o["text"], "прибрежная")
+            self.assertLessEqual(abs(o["angle"]), math.pi / 2 + 1e-6)
+        # мелкий знак — подпись пропускается (не влезет)
+        self.assertEqual(line_label_ops([[0, 0], [3, 0]], "x", (0, 0, 0),
+                                        2.2, closed=False), [])
+
+    def test_build_ops_emits_line_label(self):
+        # знак ЛГР с line_label в проекте → повёрнутые text-опы в сцене (PDF/SVG)
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "t.grado", "ЛГР")
+            layer = p.add_layer("cad.zouit")
+            layer.add_feature(
+                {"type": "MultiPolygon", "coordinates": [[[
+                    [413000, 6178000], [413400, 6178000], [413400, 6178300],
+                    [413000, 6178300], [413000, 6178000]]]]},
+                attrs={"kind": "прибрежная"}, style_id="lgr.pribrezh")
+            ops = build_ops(p, (10, 10, 280, 200), scale=1000)
+            p.close()
+        labels = [o for o in ops if o["op"] == "text" and o.get("angle")]
+        self.assertTrue(labels, "line_label знака ЛГР даёт повёрнутые подписи")
+        self.assertTrue(all(o["text"] == "прибрежная" for o in labels))
+
     def test_line_markers_in_library(self):
         from grado_render import merged_library
         lib = merged_library()["styles"]

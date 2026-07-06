@@ -5,6 +5,7 @@
 """
 
 import base64
+import math
 
 _CLIP_COUNTER = [0]
 
@@ -72,8 +73,12 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                 f'stroke-width="{o.get("width", 0.3)}"/>')
         elif o["op"] == "text":
             anchor = {"middle": "middle", "end": "end"}.get(o.get("anchor"), "start")
+            ang = o.get("angle", 0.0)
+            # сцена и SVG обе y-вниз → угол в градусах напрямую (по часовой)
+            tf = (f' transform="rotate({math.degrees(ang):.2f} '
+                  f'{o["x"]:.3f} {o["y"]:.3f})"') if ang else ""
             body.append(
-                f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}" '
+                f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
                 f'font-size="{o["size"]}" font-family="{font_family}" '
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
