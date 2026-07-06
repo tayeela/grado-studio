@@ -478,7 +478,7 @@
         "size_mm": 3.5,
         "period_px": 40.0,
         "size_px": 7.0,
-        "dir": "out"
+        "dir": "in"
       },
       "hatch": {
         "angle": 45,
@@ -1540,7 +1540,7 @@
       "lgr_ppm_item": "3.4",
       "lgr_priority": null,
       "fill": null,
-      "stroke": "#18f61f",
+      "stroke": "#ff0000",
       "width_mm": 1.0,
       "width_px": 3.2,
       "dash_mm": null,
@@ -1912,14 +1912,6 @@
       "dxf": {
         "name": "LGR_49",
         "color": 3
-      },
-      "line_marker": {
-        "shape": "corner",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
-        "dir": "in"
       },
       "hatch": {
         "angle": 45,
