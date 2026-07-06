@@ -273,7 +273,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         lib = merged_library()
         lgr = {sid: s for sid, s in lib["styles"].items()
                if sid.startswith("lgr.")}
-        self.assertEqual(len(lgr), 54, "54 знака Эталона (5 КЛ + 27 ЗОУИТ + "
+        self.assertEqual(len(lgr), 55, "55 знаков (54 Эталона + код 33 из "
+                                       "рабочих QML Москвы: 5 КЛ + 28 ЗОУИТ + "
                                        "17 иных + 5 прил. 1)")
         codes = [s["lgr_code"] for s in lgr.values()]
         self.assertEqual(len(codes), len(set(codes)), "коды ЛГР уникальны")
@@ -424,6 +425,26 @@ class TestMoscowLgrLibrary(unittest.TestCase):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "in",
                              f"код {c} — засечка остриём внутрь зоны (эталон)")
 
+    def test_line_styles_match_moscow_qml(self):
+        # линии ЛГР приведены к рабочим QML Москвы (spritlines): цвет, ширина
+        # 1.0 мм у всех, точные штрихи; перекрывает значения по скану приказа №65
+        from grado_render import merged_library
+        by_code = {s["lgr_code"]: s for sid, s in
+                   merged_library()["styles"].items() if sid.startswith("lgr.")}
+        for c, st in by_code.items():
+            self.assertEqual(st["width_mm"], 1.0, f"код {c} — ширина 1.0 мм (QML)")
+        # цвет по семейству QML
+        self.assertEqual(by_code[1]["stroke"], "#ff0000", "красные линии — чистый красный")
+        self.assertEqual(by_code[2]["stroke"], "#fe0004", "ТОП — «точечный» красный")
+        self.assertEqual(by_code[47]["stroke"], "#18f61f", "ООЗТ — зелёный (не красный)")
+        self.assertEqual(by_code[41]["stroke"], "#0018b8", "береговая — синий")
+        # штрих точно по QML
+        self.assertIsNone(by_code[19]["dash_mm"], "охр. зона ООПТ — сплошная (QML)")
+        self.assertEqual(by_code[16]["dash_mm"], [6.0, 4.0], "водоохранная — 6/4")
+        self.assertEqual(by_code[20]["dash_mm"], [8.0, 2.0], "защитная ОКН — 8/2")
+        self.assertEqual(by_code[49]["dash_mm"], [0.75, 2.0], "лесопарк — точечный 0.75/2")
+        self.assertIn(33, by_code, "код 33 (охранные зоны инфраструктуры) добавлен")
+
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign
         ring = [(0, 0), (100, 0), (100, 60), (0, 60)]
@@ -470,9 +491,10 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                 attrs={"kind": "водоохранная"}, style_id="lgr.vodookhr")
             ops = build_ops(p, (10, 10, 200, 160), scale=1000)
             p.close()
-        # среди ops есть path-и с width 0.5 без dash (маркеры) помимо контура
+        # среди ops есть path-и с width 1.0 (толщина линии по QML) без dash
+        # (маркеры-засечки) помимо контура
         marker_paths = [o for o in ops if o["op"] == "path"
-                        and o.get("dash") is None and o.get("width") == 0.5
+                        and o.get("dash") is None and o.get("width") == 1.0
                         and not o.get("closed")]
         self.assertTrue(marker_paths, "засечки chevron в сцене")
 
