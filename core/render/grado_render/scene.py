@@ -288,24 +288,14 @@ def line_label_ops(chain, text, color, size, closed):
     if not segs or total < 8.0:                  # слишком мелкий знак
         return []
     text_w = len(text) * size * 0.6              # оценка ширины строки на листе
-    n = max(1, round(total / 45.0))              # цель ~45 мм между центрами
-    while n > 1 and total / n < text_w + 4.0:    # не частокол наезжающих подписей
-        n -= 1
-    step = total / n
-    # центроид замкнутого контура — чтобы выносить подпись НАРУЖУ зоны, прочь
-    # от штриховки (иначе текст тонет в заливке и не читается)
+    half = text_w / 2 + size * 0.3
+    step = max(text_w + size * 8, total / max(1, round(total / 45.0)))
     cx = sum(p[0] for p in pts[:-1]) / (len(pts) - 1) if closed else 0.0
     cy = sum(p[1] for p in pts[:-1]) / (len(pts) - 1) if closed else 0.0
-    out = []
-    for k in range(n):
-        s = (k + 0.5) * step
-        seg = segs[-1]
-        for sg in segs:
-            if s <= sg[5] + sg[4]:
-                seg = sg
-                break
+
+    def _place(seg, local):
         ax, ay, bx, by, ln, s0 = seg
-        t = (s - s0) / ln
+        t = local / ln
         x = ax + (bx - ax) * t
         y = ay + (by - ay) * t
         ang = math.atan2(by - ay, bx - ax)
@@ -315,9 +305,26 @@ def line_label_ops(chain, text, color, size, closed):
         if closed and (x - cx) * nx + (y - cy) * ny < 0:
             nx, ny = -nx, -ny                    # развернуть наружу зоны
         off = size * 1.4                         # отступ от линии, чтобы читалось
-        out.append({"op": "text", "x": x + nx * off, "y": y + ny * off,
-                    "size": size, "text": text, "color": color,
-                    "anchor": "middle", "angle": ang})
+        return {"op": "text", "x": x + nx * off, "y": y + ny * off,
+                "size": size, "text": text, "color": color,
+                "anchor": "middle", "angle": ang}
+
+    # подпись ставится ТОЛЬКО там, где целиком помещается на ОДНОМ прямом
+    # отрезке (не заходя за угол) — иначе текст вылезал за контур на изгибах
+    out = []
+    s = step / 2
+    while s < total:
+        for sg in segs:
+            if sg[5] <= s <= sg[5] + sg[4]:
+                local = s - sg[5]
+                if half <= local <= sg[4] - half:
+                    out.append(_place(sg, local))
+                break
+        s += step
+    if not out:                                  # хотя бы одна на самом длинном отрезке
+        seg = max(segs, key=lambda sg: sg[4])
+        if seg[4] >= text_w:
+            out.append(_place(seg, seg[4] / 2))
     return out
 
 

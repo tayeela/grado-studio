@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.38.1";
+const VERSION = "0.38.2";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1021,42 +1021,51 @@ function drawDoubleLine(pts, gap, closed) {
 function drawLineLabel(pts, text, color) {
   const scr = pts.map(p => w2s(...p));
   if (scr.length < 2) return;
+  ctx.save();
+  ctx.font = "600 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  const textW = ctx.measureText(text).width;
+  const half = textW / 2 + 3;                  // полуширина строки + зазор
   // отрезки в экранных пикселях + суммарная длина (параметризация по дуге)
   const segs = [];
   let total = 0;
   for (let i = 1; i < scr.length; i++) {
     const [ax, ay] = scr[i - 1], [bx, by] = scr[i];
     const len = Math.hypot(bx - ax, by - ay);
-    if (len < 0.5) continue;
+    if (len < 1) continue;
     segs.push({ ax, ay, bx, by, len, s0: total });
     total += len;
   }
-  if (!segs.length || total < 60) return;    // мелкий объект — одна не влезет
-  ctx.save();
-  ctx.font = "600 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  const textW = ctx.measureText(text).width;
-  // оптимальный интервал: цель ~300px между центрами подписей, но не гуще, чем
-  // ширина текста + зазор (иначе частокол наезжающих надписей); минимум одна
-  let n = Math.max(1, Math.round(total / 300));
-  while (n > 1 && total / n < textW + 36) n--;
-  const step = total / n;
-  ctx.fillStyle = color;
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";   // гало для читаемости поверх штриховки
-  ctx.lineWidth = 3; ctx.lineJoin = "round";
-  for (let k = 0; k < n; k++) {
-    const s = (k + 0.5) * step;                // равномерно, с полуотступом от концов
-    let seg = segs[segs.length - 1];
-    for (const sg of segs) if (s <= sg.s0 + sg.len) { seg = sg; break; }
-    const t = (s - seg.s0) / seg.len;
-    const x = seg.ax + (seg.bx - seg.ax) * t, y = seg.ay + (seg.by - seg.ay) * t;
+  if (!segs.length || total < textW + 20) { ctx.restore(); return; }
+  const step = Math.max(textW + 60, total / Math.max(1, Math.round(total / 320)));
+  // размещаем подпись ТОЛЬКО там, где строка целиком помещается на ОДНОМ
+  // прямом отрезке (не заходя за угол) — иначе текст вылезал за контур и
+  // ломался на изгибах звёздчатого контура
+  const places = [];
+  for (let s = step / 2; s < total; s += step) {
+    const seg = segs.find(sg => s >= sg.s0 && s <= sg.s0 + sg.len);
+    if (!seg) continue;
+    const local = s - seg.s0;
+    if (local < half || local > seg.len - half) continue;
+    const t = local / seg.len;
     let ang = Math.atan2(seg.by - seg.ay, seg.bx - seg.ax);
-    if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;  // не вверх ногами
-    ctx.save();
-    ctx.translate(x, y); ctx.rotate(ang);
-    ctx.strokeText(text, 0, -4);
-    ctx.fillText(text, 0, -4);
-    ctx.restore();
+    if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+    places.push({ x: seg.ax + (seg.bx - seg.ax) * t, y: seg.ay + (seg.by - seg.ay) * t, ang });
   }
+  if (!places.length) {                        // ни один отрезок не вместил — хотя бы одна на самом длинном
+    const seg = segs.reduce((m, sg) => sg.len > m.len ? sg : m, segs[0]);
+    if (seg.len >= textW + 4) {
+      let ang = Math.atan2(seg.by - seg.ay, seg.bx - seg.ax);
+      if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
+      places.push({ x: (seg.ax + seg.bx) / 2, y: (seg.ay + seg.by) / 2, ang });
+    }
+  }
+  // ДВА ПРОХОДА: сперва все гало, потом все заливки — иначе белое гало
+  // следующей подписи «съедает» буквы предыдущей (пропадали части букв)
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "rgba(255,255,255,0.85)"; ctx.lineWidth = 3;
+  for (const p of places) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.strokeText(text, 0, 0); ctx.restore(); }
+  ctx.fillStyle = color;
+  for (const p of places) { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.ang); ctx.fillText(text, 0, 0); ctx.restore(); }
   ctx.restore();
 }
 
