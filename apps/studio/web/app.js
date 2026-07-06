@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.37.0";
+const VERSION = "0.38.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -582,7 +582,8 @@ function featureChains(f) {
 }
 
 // ---------- привязки (уровень CAD) ----------
-const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2, "центр": 3 };
+const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2,
+                        "перпендикуляр": 2, "центр": 3, "ближайшая": 4 };
 
 function _excludeSet(exclude) {
   if (exclude == null) return null;
@@ -630,7 +631,28 @@ function intersections() {
   return out;
 }
 
-function snapPoint(wx, wy, exclude) {
+// сегменты всех видимых объектов (кроме исключённых) — для привязок
+// «ближайшая точка на ребре» и «перпендикуляр»
+function segmentsOf(exclude) {
+  const ex = _excludeSet(exclude);
+  const segs = [];
+  for (const f of state.features) {
+    if ((ex && ex.has(f.id)) || isHidden(f) || f.point) continue;
+    for (const chain of featureChains(f))
+      for (let i = 0; i + 1 < chain.length; i++) segs.push([chain[i], chain[i + 1]]);
+  }
+  return segs;
+}
+function footOnLine(p, a, b, clamp) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-9;
+  let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2;
+  if (clamp) t = Math.max(0, Math.min(1, t));
+  return [a[0] + t * dx, a[1] + t * dy];
+}
+
+// exclude — id объектов, исключаемых из привязок (свой при правке);
+// from — опорная точка для «перпендикуляр» (последняя точка построения)
+function snapPoint(wx, wy, exclude, from) {
   state.guides = [];
   const tolW = 10 / state.view.k;
   // 1. объектные привязки по приоритету
@@ -648,6 +670,17 @@ function snapPoint(wx, wy, exclude) {
       if (d <= tolW && (!best || best.key[0] > 1 || (best.key[0] === 1 && d < best.key[1])))
         best = { p: [...p], kind: "пересечение", key: [1, d] };
     }
+    // перпендикуляр: основание перпендикуляра из опорной точки на прямую ребра
+    if (from) {
+      for (const [a, b] of segmentsOf(exclude)) {
+        const foot = footOnLine(from, a, b, false);
+        const d = Math.hypot(foot[0] - wx, foot[1] - wy);
+        if (d > tolW) continue;
+        const key = [SNAP_PRIORITY["перпендикуляр"], d];
+        if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1]))
+          best = { p: foot, kind: "перпендикуляр", key };
+      }
+    }
     if (best) return { p: best.p, kind: best.kind };
     // 2. направляющие выравнивания по вершинам
     let gx = null, gy = null;
@@ -662,6 +695,14 @@ function snapPoint(wx, wy, exclude) {
       if (gy) state.guides.push([gy.p, p]);
       return { p, kind: "выравнивание" };
     }
+    // 2b. ближайшая точка на ребре — низший приоритет объектной привязки
+    let near = null;
+    for (const [a, b] of segmentsOf(exclude)) {
+      const foot = footOnLine([wx, wy], a, b, true);
+      const d = Math.hypot(foot[0] - wx, foot[1] - wy);
+      if (d <= tolW && (!near || d < near.d)) near = { p: foot, d };
+    }
+    if (near) return { p: near.p, kind: "ближайшая" };
   }
   // (направляющие уже используют тот же exclude через collectSnapPts выше)
   // 3. сетка
@@ -699,7 +740,8 @@ function cursorPoint(wx, wy) {
     }
     return { p: [ox, oy], kind: "орто" };
   }
-  return snapPoint(wx, wy, state.edit ? state.edit.f.id : undefined);
+  // from=base: во время построения доступна привязка «перпендикуляр»
+  return snapPoint(wx, wy, state.edit && state.edit.f ? state.edit.f.id : undefined, base);
 }
 
 // ---------- отрисовка ----------
@@ -741,7 +783,8 @@ function drawGrid(w, h) {
 
 function drawSnapMarker() {
   const s = state.snapHit;
-  if (!s || !s.kind || state.tool === "select") return;
+  // в «Выборе» маркер нужен при переносе/правке (state.edit), иначе скрыт
+  if (!s || !s.kind || (state.tool === "select" && !state.edit)) return;
   const [sx, sy] = w2s(...s.p);
   ctx.lineWidth = 1.5;
   ctx.strokeStyle = cvColor("shared", "#12a150");
@@ -755,6 +798,14 @@ function drawSnapMarker() {
     ctx.moveTo(sx - 5, sy + 5); ctx.lineTo(sx + 5, sy - 5); ctx.stroke();
   } else if (s.kind === "центр") {
     ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, 7); ctx.stroke();
+  } else if (s.kind === "перпендикуляр") {
+    ctx.beginPath();                          // ⊥ — прямой угол
+    ctx.moveTo(sx - 6, sy - 6); ctx.lineTo(sx - 6, sy + 6); ctx.lineTo(sx + 6, sy + 6);
+    ctx.moveTo(sx - 6, sy); ctx.lineTo(sx, sy); ctx.lineTo(sx, sy + 6); ctx.stroke();
+  } else if (s.kind === "ближайшая") {
+    ctx.beginPath();                          // ◇ — ромб на ребре
+    ctx.moveTo(sx, sy - 5); ctx.lineTo(sx + 5, sy);
+    ctx.lineTo(sx, sy + 5); ctx.lineTo(sx - 5, sy); ctx.closePath(); ctx.stroke();
   } else if (s.kind === "выравнивание" || s.kind === "орто") {
     ctx.beginPath(); ctx.arc(sx, sy, 3, 0, 7); ctx.stroke();
   } else if (s.kind === "сетка") {
@@ -2738,8 +2789,23 @@ cv.addEventListener("mousedown", e => {
         toggleSelection(f.id); draw(); renderProps(); return;
       }
       if (!state.selectedIds.has(f.id)) selectOne(f.id);   // клик по невыделенному — выбрать один
-      // клик по уже выделенному (в т.ч. в группе) — тянем всю группу
-      state.edit = { vi: "body", ids: selectionIds(), last: [wxr, wyr], moved: false };
+      // клик по уже выделенному (в т.ч. в группе) — тянем всю группу.
+      // Опорная точка привязки — ближайшая вершина к месту захвата: при
+      // переносе именно она цепляется за вершину/середину/сетку (как в CAD)
+      const movingIds = selectionIds();
+      const feats = movingIds.map(id => state.features.find(x => x.id === id)).filter(Boolean);
+      const primary = selectedFeature() || feats[0] || f;
+      let refOrig = primary.point ? [...primary.point] : null;
+      if (!refOrig) {
+        let bd = Infinity;
+        for (const p of featurePts(primary)) {
+          const d = Math.hypot(p[0] - wxr, p[1] - wyr);
+          if (d < bd) { bd = d; refOrig = [p[0], p[1]]; }
+        }
+      }
+      const orig = feats.map(ff => featurePts(ff).map(p => [p[0], p[1]]));
+      state.edit = { vi: "body", ids: movingIds, feats, orig, refOrig,
+                     grab: [wxr, wyr], moved: false };
       draw(); renderProps();
     } else {                                   // пустое место — рамка выделения
       if (!e.shiftKey) clearSelection();
@@ -2805,12 +2871,16 @@ cv.addEventListener("mousemove", e => {
     const ed = state.edit;
     if (!ed.moved) { snapshot(); ed.moved = true; }
     if (ed.vi === "body") {
-      const dx = wx - ed.last[0], dy = wy - ed.last[1];
-      ed.last = [wx, wy];
-      const feats = ed.ids
-        ? ed.ids.map(id => state.features.find(f => f.id === id)).filter(Boolean)
-        : [ed.f];
-      for (const feat of feats) for (const p of featurePts(feat)) { p[0] += dx; p[1] += dy; }
+      // куда «хочет» уйти опорная вершина по курсору, затем привязка её к
+      // вершинам/серединам/сетке чужих объектов; всю группу двигаем на тот же офсет
+      const want = [ed.refOrig[0] + (wx - ed.grab[0]), ed.refOrig[1] + (wy - ed.grab[1])];
+      const snapped = snapPoint(want[0], want[1], new Set(ed.ids));
+      state.snapHit = snapped.kind ? snapped : null;
+      const ox = snapped.p[0] - ed.refOrig[0], oy = snapped.p[1] - ed.refOrig[1];
+      ed.feats.forEach((feat, fi) => {
+        const pts = featurePts(feat), o = ed.orig[fi];
+        for (let i = 0; i < pts.length; i++) { pts[i][0] = o[i][0] + ox; pts[i][1] = o[i][1] + oy; }
+      });
     } else {
       // исключаем из привязок свою фигуру и всех компаньонов общей вершины
       const ex = new Set([ed.f.id]);
