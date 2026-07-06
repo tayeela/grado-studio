@@ -444,6 +444,19 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[20]["dash_mm"], [8.0, 2.0], "защитная ОКН — 8/2")
         self.assertEqual(by_code[49]["dash_mm"], [0.75, 2.0], "лесопарк — точечный 0.75/2")
         self.assertIn(33, by_code, "код 33 (охранные зоны инфраструктуры) добавлен")
+        # штриховка зон по рабочим QML (spritzones): цвет/угол/шаг, код 21 — заливка
+        self.assertEqual(by_code[6]["hatch"]["color"], "#27b702", "ж/д — зелёная (QML)")
+        self.assertEqual(by_code[19]["hatch"]["color"], "#e24b29", "охр. ООПТ — красно-оранж. (QML)")
+        self.assertEqual(by_code[16]["hatch"]["spacing_mm"], 2, "шаг штриховки по QML")
+        self.assertEqual(by_code[57]["hatch"]["angle"], 135, "ОКС на ООПТ — угол 135 (QML)")
+        self.assertEqual(by_code[21]["fill"], "#18f61f", "режимы ПК — сплошная заливка (QML)")
+        self.assertFalse(by_code[21]["hatch"], "режимы ПК — без штриховки")
+
+    def test_dimension_line_is_red(self):
+        # выноски/размеры по рабочим QML Москвы (textlines) — красные
+        from grado_render import merged_library
+        dim = merged_library()["styles"]["dimension.line"]
+        self.assertEqual(dim["stroke"], "#ff0000", "размер/выноска — красная (QML)")
 
     def test_marker_ops_along_ring(self):
         from grado_render.scene import marker_ops, _inward_sign

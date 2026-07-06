@@ -93,12 +93,12 @@
     },
     "dimension.line": {
       "title": "Размер",
-      "fill": null, "stroke": "#44423c",
-      "width_mm": 0.3, "width_px": 1.0,
+      "fill": null, "stroke": "#ff0000",
+      "width_mm": 0.25, "width_px": 0.8,
       "dash_mm": null, "dash_px": null,
       "hatch": false, "label_field": null, "marker_mm": 1.2, "z": 9,
       "codes": ["annot.dim"],
-      "dxf": {"name": "RAZMERY", "color": 3}
+      "dxf": {"name": "RAZMERY", "color": 1}
     }
   },
   "fallback": {

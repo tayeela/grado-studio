@@ -86,6 +86,20 @@ DASH_QML = {1: None, 2: [6, 2], 3: [6, 2], 4: [6, 2], 5: [6, 2],
     58: [6, 2], 59: [6, 2], 60: [6, 2], 61: [0.5, 1, 0.5, 1, 6, 1],
     62: [6, 2], 63: [6, 2], 64: [8, 2], 65: [8, 2], 66: [8, 2]}
 
+# Штриховка зон по рабочим QML Москвы (spritzones): код → (цвет, угол°, шаг мм).
+# Есть только у 19 зон с полигональным представлением; цвета в основном
+# совпадают с приказом №65 (подтверждение), но шаг крупнее (×~2) и у 6/19
+# другой цвет, у 57 другой угол. Остальные зоны — штриховка по приказу №65.
+HATCH_QML = {
+    1: ("#df0024", 0, 3), 2: ("#e3007b", 45, 5), 3: ("#e3007b", 135, 5),
+    4: ("#e3007b", 135, 5), 6: ("#27b702", 135, 5), 7: ("#f8f400", 135, 2),
+    8: ("#f8f400", 135, 2), 16: ("#0669b2", 45, 2), 17: ("#0669b2", 135, 2),
+    18: ("#009f3c", 0, 2), 19: ("#e24b29", 0, 2), 29: ("#3d107b", 45, 2),
+    36: ("#eb880e", 90, 2.5), 41: ("#20ebf2", 135, 5), 47: ("#009f3c", 90, 2),
+    55: ("#f8f400", 135, 2), 57: ("#f8f400", 135, 2), 58: ("#e3007b", 135, 5)}
+# в QML часть зон — СПЛОШНАЯ заливка (SimpleFill), а не штриховка
+SOLID_FILL_QML = {21: "#18f61f"}
+
 # ACI-цвет DXF по цвету зоны (грубое соответствие палитре AutoCAD)
 ACI = {"#df0024": 1, "#e3007b": 6, "#8cbeff": 151, "#b18dbe": 201,
        "#94c5ff": 151, "#abe6d2": 121, "#694720": 34, "#0669b2": 5,
@@ -261,7 +275,17 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
     if code in DOUBLE_MM:
         entry["double_mm"] = DOUBLE_MM[code]
         entry["double_px"] = round(DOUBLE_MM[code] * 2, 1)
-    if angle is not None:
+    if code in SOLID_FILL_QML:
+        # QML: сплошная заливка (SimpleFill), а не штриховка — режимы ПК
+        entry["fill"] = SOLID_FILL_QML[code]
+        entry["hatch"] = False
+    elif code in HATCH_QML:
+        # штриховка ровно по рабочим QML (spritzones): цвет/угол/шаг
+        hc, ha, hs = HATCH_QML[code]
+        entry["hatch"] = {"angle": ha, "cross": False,
+                          "spacing_px": round(hs * 3.75, 1), "spacing_mm": hs,
+                          "color": hc, "cmyk": cmyk}
+    elif angle is not None:
         px, mm = SPACING[density]
         entry["hatch"] = {"angle": angle, "cross": density == "cross",
                          "spacing_px": px, "spacing_mm": mm,
