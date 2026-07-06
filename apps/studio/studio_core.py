@@ -504,7 +504,9 @@ def build_project(path, name, features, layers=None):
                 tmpl["code"], layer_id=lid, title=tmpl.get("title"),
                 stage=tmpl.get("stage"), style_id=tmpl.get("style_id"),
                 source_kind=tmpl.get("source_kind"))
-        attrs = KIND_ATTRS[f["kind"]](f.get("props", {}))
+        # неизвестный вид (напр. из будущей версии) не должен ронять экспорт —
+        # пустые атрибуты как у обычного (generic) слоя
+        attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])(f.get("props", {}))
         # провенанс из импорта переносится в модель (source/date/doc),
         # per-object стиль — в колонку style_id
         prov = f.get("prov") or {}
@@ -758,7 +760,8 @@ def import_nspd(payload):
             local = [[x - ORIGIN[0], y - ORIGIN[1]] for x, y in ring[0]]
             if local[0] == local[-1]:
                 local = local[:-1]
-            features.append({"kind": "parcel", "ring": local,
+            features.append({"kind": "parcel",
+                             "layer_id": "source.nspd.parcels", "ring": local,
                              "props": {k: v for k, v in attrs.items() if v},
                              "prov": dict(prov)})
     return {"features": features, "notes": result["notes"],

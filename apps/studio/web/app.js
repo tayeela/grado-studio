@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.33.0";
+const VERSION = "0.34.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -47,27 +47,21 @@ const STYLES_V2 = {
 // отрисовки (первый — самый нижний). kind — транспорт схемы атрибутов до
 // полного снятия. import_only — слой не выбирается инструментами и не
 // перехватывает kind (объекты попадают в него только импортом по layer_id).
+//
+// L2b «пустой старт»: предустановленных РИСУЕМЫХ слоёв больше нет — новый
+// проект открывается с пустой панелью слоёв, пользователь заводит слои сам
+// (кнопка «+», геометрия-first). Здесь остаются только инфраструктурные
+// слои, невидимые в панели пока пусты: приёмники импорта (import_only,
+// бэкенд назначает их layer_id) и аннотационный слой размеров.
 const LAYERS_V2 = [
-  { id: "project.tp.func_zone", title: "Функциональная зона", kind: "zone",
-    semantic_class: "tp.func_zone", geometry_type: "polygon",
-    style_id: "func_zone.fill", topology: "coverage", stage: "existing",
-    defaults: () => ({ zone_title: "Ж-" + (featuresOnLayer("project.tp.func_zone").length + 1) }) },
   { id: "source.fgistp.func_zones", title: "ФГИС ТП: функц. зоны", kind: "zone",
     semantic_class: "tp.func_zone", geometry_type: "polygon",
     style_id: "func_zone.fill", stage: "existing", source_kind: "fgistp",
     import_only: true, defaults: () => ({}) },
-  { id: "project.apo.public_zones", title: "Зона нежилых ОКС", kind: "public",
-    semantic_class: "pp.placement_zone", geometry_type: "polygon",
-    style_id: "public_zone.fill", stage: "project",
-    defaults: () => ({ purpose: "Общественный центр" }) },
-  { id: "source.constraints.restrict", title: "Ограничение (ЗОУИТ)", kind: "restrict",
-    semantic_class: "terr.restrict", geometry_type: "polygon",
-    style_id: "restrict.hatch", stage: "existing",
-    defaults: () => ({ kind: "охранная зона" }) },
   { id: "source.nspd.parcels", title: "Земельный участок (ЕГРН)", kind: "parcel",
     semantic_class: "cad.parcel", geometry_type: "polygon",
     style_id: "parcel.line", stage: "existing", source_kind: "nspd",
-    defaults: () => ({}) },
+    import_only: true, defaults: () => ({}) },
   { id: "source.gisogd.func_zones", title: "ГИС ОГД: функц. зоны", kind: "zone",
     semantic_class: "tp.func_zone", geometry_type: "polygon",
     style_id: "func_zone.fill", stage: "existing", source_kind: "gisogd",
@@ -80,21 +74,6 @@ const LAYERS_V2 = [
     semantic_class: "terr.restrict", geometry_type: "polygon",
     style_id: "restrict.hatch", stage: "existing", source_kind: "gisogd",
     import_only: true, defaults: () => ({}) },
-  { id: "project.apo.buildings", title: "Здание", kind: "building",
-    semantic_class: "oks.building", geometry_type: "polygon",
-    style_id: "building.fill", stage: "project", tool: "rect",
-    defaults: () => ({ floors: 9, purpose: "МКД" }) },
-  { id: "project.apo.red_lines", title: "Красная линия", kind: "redline",
-    semantic_class: "pp.red_line", geometry_type: "polyline",
-    style_id: "red.line.projected", stage: "project",
-    defaults: () => ({ radius: 0 }) },
-  { id: "project.territory.boundary", title: "Граница территории", kind: "boundary",
-    semantic_class: "terr.boundary", geometry_type: "polygon",
-    style_id: "boundary.line", stage: "base", defaults: () => ({}) },
-  { id: "project.social.objects", title: "Объект социнфраструктуры", kind: "social",
-    semantic_class: "social.object", geometry_type: "point",
-    style_id: "social.point", stage: "project",
-    defaults: () => ({ kind: "ОО+ДОО", capacity: 750 }) },
   { id: "annotation.dimensions", title: "Размер", kind: "dim",
     semantic_class: null, geometry_type: "polyline", style_id: "dimension.line",
     annotation: true, tool: "dim", defaults: () => ({}) },
@@ -107,15 +86,19 @@ for (const L of LAYERS_V2) {
   // вручную зона ушла бы в ФГИС-ТП-слой): первый не-import_only выигрывает
   if (!L.import_only && !(L.kind in LAYER_BY_KIND)) LAYER_BY_KIND[L.kind] = L;
 }
+// инструмент «размер» жёстко пишет в этот слой (LAYER_BY_KIND["dim"]) —
+// если он когда-нибудь исчезнет из LAYERS_V2, простановка размеров упадёт
+if (!LAYER_BY_KIND["dim"]) console.error("L2b: слой annotation.dimensions отсутствует — инструмент размеров не будет работать");
 
 // ---------- пользовательские слои («+ слой» в панели) ----------
-// Типы, которые можно завести отдельным именованным слоем поверх встроенных
-// (второй слой того же семантического класса — уже штатный сценарий с
-// MODEL-01, см. source.fgistp/source.gisogd рядом с project.*). Границу
-// территории и участки ЕГРН не даём дублировать: первая по смыслу
-// единственная (сумма её площади — вход ТЭП terr_area), вторые — не
-// hand-draw объект, а данные конкретного импорта.
+// Роли (семантические классы), доступные при заведении именованного слоя.
+// L2b: пресетов больше нет, поэтому «Граница территории» тоже здесь — иначе
+// пользователь не смог бы создать слой границы, а его площадь — главный вход
+// ТЭП (terr_area). Участки ЕГРН по-прежнему не hand-draw роль: они приходят
+// только импортом НСПД в приёмник source.nspd.parcels.
 const BASE_KINDS = [
+  { kind: "boundary", semantic_class: "terr.boundary", geometry_type: "polygon",
+    style_id: "boundary.line", label: "Граница территории" },
   { kind: "zone", semantic_class: "tp.func_zone", geometry_type: "polygon",
     style_id: "func_zone.fill", label: "Функциональная зона / территория" },
   { kind: "restrict", semantic_class: "terr.restrict", geometry_type: "polygon",
@@ -227,6 +210,7 @@ async function deleteLayer(layer) {
   if (state.activeLayerId === layer.id) {
     const fallback = LAYERS_V2.find(l => !l.annotation && !l.import_only);
     if (fallback) setActiveLayer(fallback.id);
+    else { state.activeLayerId = null; updateLayerStatus(); }  // удалили последний слой
   }
   if (selectedFeature() && layerOf(selectedFeature()) == null) clearSelection();
   afterChange();
@@ -324,7 +308,7 @@ const state = {
   undo: [], redo: [], nextId: 1,
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
-  activeLayerId: "project.territory.boundary",  // куда чертят геом-инструменты
+  activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
   sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
   _fitted: false, _ix: null,
 };
@@ -1550,8 +1534,10 @@ function renderProps() {
 // Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
 // массив идёт снизу вверх (индекс 0 = низ), поэтому список = обратный массив.
 function layerRowsTopFirst() {
+  // приёмники импорта и аннотационный слой размеров не засоряют панель, пока
+  // пусты (L2b «пустой старт»): показываются, только когда в них есть объекты
   return [...LAYERS_V2].reverse()
-    .filter(L => !(L.import_only && !featuresOnLayer(L.id).length));
+    .filter(L => !((L.import_only || L.annotation) && !featuresOnLayer(L.id).length));
 }
 
 // Перетаскивание строки src к строке target меняет порядок отрисовки.
@@ -2437,6 +2423,7 @@ function addFeature(layerId, geom) {
 function finishDrawing() {
   const d = state.drawing;
   const L = activeLayer();
+  if (d && !L) toast("Активный слой не найден — создайте или выберите слой", "warn");
   if (!d || !L) { state.drawing = null; return; }
   const geom = TOOL_GEOM[state.tool];
   if (geom === "polygon" && d.pts.length >= 3) addFeature(L.id, { ring: d.pts });
@@ -2564,18 +2551,27 @@ cv.addEventListener("mousedown", e => {
     draw();
   } else if (state.tool === "point") {
     const L = activeLayer();
-    if (L && L.geometry_type === "point") addFeature(L.id, { point: s.p });
+    if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
+    if (L.geometry_type === "point") addFeature(L.id, { point: s.p });
   } else if (state.tool === "rect" && !state.drawing) {
+    if (!activeLayer()) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
     // протягивание — прямоугольник; одиночный клик — контур по точкам
     state.drag = { a: s.p, b: s.p, rect: true, moved: false };
   } else if (state.tool === "dim" || TOOL_GEOM[state.tool]) {
+    // рисование геометрии требует активный слой; размеры пишутся в свой
+    // аннотационный слой и активного слоя не требуют
+    if (state.tool !== "dim" && !activeLayer()) {
+      toast("Создайте слой, чтобы рисовать", "warn"); return;
+    }
     if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
     if (state.tool === "dim") {
       state.drawing.pts.push(s.p);
       if (state.drawing.pts.length === 2) {
         const pts = state.drawing.pts;
         state.drawing = null;
-        addFeature(LAYER_BY_KIND["dim"].id, { line: pts });
+        const dim = LAYER_BY_KIND["dim"];
+        if (!dim) { toast("Слой размеров недоступен", "warn"); return; }
+        addFeature(dim.id, { line: pts });
       } else draw();
       return;
     }
@@ -2722,12 +2718,11 @@ cv.addEventListener("wheel", e => {
 
 // ---------- клавиатура (по кодам клавиш — не зависит от раскладки) ----------
 const TOOL_CODES = { KeyV: "select", KeyM: "measure", KeyD: "dim" };
-// старые предметные клавиши живут как пресеты: слой + естественный инструмент
-const PRESET_CODES = {
-  KeyG: "project.territory.boundary", KeyZ: "project.tp.func_zone",
-  KeyO: "source.constraints.restrict", KeyB: "project.apo.buildings",
-  KeyP: "project.apo.public_zones", KeyL: "project.apo.red_lines",
-  KeyS: "project.social.objects",
+// старые предметные клавиши — теперь «создать-или-выбрать слой этого вида»
+// (L2b: пресетов нет, слой заводится по требованию) + естественный инструмент
+const PRESET_KIND_CODES = {
+  KeyG: "boundary", KeyZ: "zone", KeyO: "restrict", KeyB: "building",
+  KeyP: "public", KeyL: "redline", KeyS: "social",
 };
 document.addEventListener("keydown", e => {
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
@@ -2769,8 +2764,8 @@ document.addEventListener("keydown", e => {
   if (e.code === "KeyR") { rotateSelected(); return; }
   const tool = TOOL_CODES[e.code];
   if (tool) { setTool(tool); return; }
-  const preset = PRESET_CODES[e.code];
-  if (preset) applyPreset(preset);
+  const kind = PRESET_KIND_CODES[e.code];
+  if (kind) quickLayerByKind(kind);
 });
 document.addEventListener("keyup", e => {
   if (e.key === "Shift") { shiftDown = false; if (state.drawing) draw(); }
@@ -2789,9 +2784,11 @@ function setTool(tool, opts = {}) {
   if (tool !== "measure") state.measure = null;
   // геом-инструмент против несовместимого слоя — слой переключается сам
   if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
-    const fit = LAYERS_V2.find(l => !l.annotation &&
+    // подходящий слой рисуемой геометрии — но не приёмник импорта и не аннотация
+    const fit = LAYERS_V2.find(l => !l.annotation && !l.import_only &&
                                     l.geometry_type === GEOM_OF_TOOL[tool]);
     if (fit) { state.activeLayerId = fit.id; renderLayers(); }
+    else if (!activeLayer()) toast("Создайте слой для рисования", "warn");
   }
   updateLayerStatus();
   document.querySelectorAll("#toolbar button[data-tool]").forEach(
@@ -2815,11 +2812,19 @@ function setActiveLayer(id) {
     setTool(naturalToolFor(L), { keepLayer: true });
   renderLayers(); updateLayerStatus(); persist(); draw();
 }
-// быстрый пресет: слой + его естественный инструмент (клавиши G Z O B P L S)
-function applyPreset(layerId) {
-  const L = LAYER_BY_ID[layerId];
-  if (!L) return;
-  state.activeLayerId = layerId;
+// быстрый слой по виду (клавиши G Z O B P L S): выбирает существующий слой
+// этого вида или заводит новый, затем ставит естественный инструмент. L2b:
+// пресетов нет — слой создаётся по требованию, повторное нажатие переиспользует
+function quickLayerByKind(kind) {
+  const base = BASE_KIND_BY_KIND[kind];
+  if (!base) return;
+  let L = LAYERS_V2.find(l => l.kind === kind && !l.import_only && !l.annotation);
+  if (!L) {
+    L = createUserLayer({ kind, title: base.label });
+    renderLayers(); persist();
+    toast(`Слой «${base.label}» создан`);
+  }
+  state.activeLayerId = L.id;
   setTool(naturalToolFor(L), { keepLayer: true });
   renderLayers();
 }
@@ -3019,10 +3024,19 @@ on("btn-demo", "click", () => {
              [300, 560], [60, 560], [60, 300], [0, 300]];
   state.features = [];
   state.nextId = 1;
+  // L2b: пресетов нет — демо само заводит нужные слои (создать-или-переиспользовать
+  // слой этого вида), объекты уходят в них по явному layer_id
+  const demoCache = {};
+  const demoLayer = (kind) => {
+    if (demoCache[kind]) return demoCache[kind];
+    let L = LAYERS_V2.find(l => l.kind === kind && !l.import_only && !l.annotation);
+    if (!L) L = createUserLayer({ kind, title: BASE_KIND_BY_KIND[kind].label });
+    return (demoCache[kind] = L);
+  };
   const add = (kind, geom, props = {}) => {
-    const L = LAYER_BY_KIND[kind];
+    const L = demoLayer(kind);
     state.features.push(upgradeFeature(
-      { id: state.nextId++, kind, props: { ...(L ? L.defaults() : {}), ...props }, ...geom }));
+      { id: state.nextId++, layer_id: L.id, kind, props: { ...L.defaults(), ...props }, ...geom }));
   };
   add("boundary", { ring: B });
   add("zone", { ring: [[60, 180], [520, 180], [520, 420], [60, 420]] }, { zone_title: "Ж-1" });
@@ -3037,6 +3051,9 @@ on("btn-demo", "click", () => {
   add("redline", { line: [[-30, 190], [400, 190], [400, 590]] }, { radius: 60 });
   add("social", { point: [470, 350] });
   state.selected = null;
+  const bd = demoCache["boundary"];
+  if (bd) state.activeLayerId = bd.id;   // после демо можно сразу чертить
+  renderLayers();                        // созданные слои — в панель
   afterChange();
   fitView();
 });
@@ -3060,6 +3077,20 @@ function applyRestoredState(d) {
     }
   }
   state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
+  // L2b-миграция: старые проекты ссылались на удалённые пресет-слои
+  // (project.territory.boundary и т.п.). Осиротевшие объекты переселяем в
+  // воссозданные слои их вида, иначе они молча исчезли бы с холста.
+  const migrated = {};
+  for (const f of state.features) {
+    if (layerOf(f)) continue;                       // слой резолвится (приёмник/пользовательский) — ок
+    const base = BASE_KIND_BY_KIND[f.kind];
+    if (!base) continue;                            // неизвестный вид — оставляем как есть, не роняем
+    let L = migrated[f.kind] ||
+            LAYERS_V2.find(l => l.kind === f.kind && l.user_created);
+    if (!L) L = createUserLayer({ kind: f.kind, title: base.label });
+    migrated[f.kind] = L;
+    f.layer_id = L.id;
+  }
   state.nextId = d.nextId || 1;
   if (d.layerTitles) {
     for (const [id, title] of Object.entries(d.layerTitles))
@@ -3089,6 +3120,11 @@ function applyRestoredState(d) {
   }
   if (d.activeLayerId && LAYER_BY_ID[d.activeLayerId])
     state.activeLayerId = d.activeLayerId;
+  else {
+    // сохранённый активный слой удалён (старый пресет) — берём первый рисуемый
+    const fb = LAYERS_V2.find(l => !l.annotation && !l.import_only);
+    state.activeLayerId = fb ? fb.id : null;
+  }
   if (Array.isArray(d.sources)) state.sources = d.sources;
   if (d.name) document.getElementById("project-name").value = d.name;
   if (d.density) document.getElementById("p-density").value = d.density;
@@ -3111,7 +3147,7 @@ function applyRestoredState(d) {
 on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   layerOf, styleOf, layerStyle, upgradeFeature, LAYERS_V2, STYLES_V2,
-                  setTool, setActiveLayer, applyPreset, activeLayer,
+                  setTool, setActiveLayer, quickLayerByKind, activeLayer,
                   reorderLayer, openLayerMenu, openAttributeTable, openLayerFormat,
                   zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
