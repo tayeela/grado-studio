@@ -203,7 +203,7 @@
         "color": 151
       },
       "line_marker": {
-        "shape": "slashes",
+        "shape": "tick",
         "period_mm": 20.0,
         "size_mm": 2.0,
         "period_px": 40.0,
@@ -247,7 +247,7 @@
         "color": 201
       },
       "line_marker": {
-        "shape": "slashes",
+        "shape": "tick",
         "period_mm": 20.0,
         "size_mm": 2.0,
         "period_px": 40.0,
@@ -291,7 +291,7 @@
         "color": 151
       },
       "line_marker": {
-        "shape": "slashes",
+        "shape": "tick",
         "period_mm": 20.0,
         "size_mm": 2.0,
         "period_px": 40.0,
@@ -335,7 +335,7 @@
         "color": 121
       },
       "line_marker": {
-        "shape": "slashes",
+        "shape": "tick",
         "period_mm": 20.0,
         "size_mm": 2.0,
         "period_px": 40.0,
@@ -429,10 +429,10 @@
         "color": 34
       },
       "line_marker": {
-        "shape": "tee",
-        "period_mm": 21.0,
+        "shape": "tick",
+        "period_mm": 10.0,
         "size_mm": 2.0,
-        "period_px": 42.0,
+        "period_px": 20.0,
         "size_px": 4.0,
         "dir": "in"
       },
@@ -745,7 +745,7 @@
         "color": 5
       },
       "line_marker": {
-        "shape": "tee",
+        "shape": "tick",
         "period_mm": 10.0,
         "size_mm": 2.0,
         "period_px": 20.0,
@@ -797,7 +797,7 @@
         "color": 5
       },
       "line_marker": {
-        "shape": "tee",
+        "shape": "tick",
         "period_mm": 10.0,
         "size_mm": 2.0,
         "period_px": 20.0,
@@ -1041,9 +1041,9 @@
       "line_marker": {
         "shape": "tick",
         "period_mm": 20.0,
-        "size_mm": 2.0,
+        "size_mm": 2.5,
         "period_px": 40.0,
-        "size_px": 4.0,
+        "size_px": 5.0,
         "dir": "in"
       },
       "hatch": {
@@ -1223,9 +1223,9 @@
       "line_marker": {
         "shape": "diamond",
         "period_mm": 20.0,
-        "size_mm": 2.5,
+        "size_mm": 2.83,
         "period_px": 40.0,
-        "size_px": 5.0,
+        "size_px": 5.7,
         "dir": "in"
       },
       "hatch": {
@@ -1261,9 +1261,9 @@
       "line_marker": {
         "shape": "triangle",
         "period_mm": 20.0,
-        "size_mm": 2.5,
+        "size_mm": 2.0,
         "period_px": 40.0,
-        "size_px": 5.0,
+        "size_px": 4.0,
         "dir": "in"
       },
       "hatch": {
@@ -1439,9 +1439,9 @@
       "line_marker": {
         "shape": "dot",
         "period_mm": 20.0,
-        "size_mm": 3.0,
+        "size_mm": 2.0,
         "period_px": 40.0,
-        "size_px": 6.0,
+        "size_px": 4.0,
         "dir": "in"
       },
       "hatch": {
@@ -1631,9 +1631,9 @@
       "line_marker": {
         "shape": "triangle",
         "period_mm": 20.0,
-        "size_mm": 2.5,
+        "size_mm": 2.0,
         "period_px": 40.0,
-        "size_px": 5.0,
+        "size_px": 4.0,
         "dir": "out"
       },
       "hatch": {
@@ -1988,11 +1988,11 @@
         "color": 4
       },
       "line_marker": {
-        "shape": "tee",
+        "shape": "tick",
         "period_mm": 20.0,
-        "size_mm": 2.0,
+        "size_mm": 2.5,
         "period_px": 40.0,
-        "size_px": 4.0,
+        "size_px": 5.0,
         "dir": "in"
       },
       "hatch": {
@@ -2111,8 +2111,14 @@
         "name": "LGR_20",
         "color": 4
       },
-      "double_mm": 2.0,
-      "double_px": 4.0,
+      "line_marker": {
+        "shape": "tick",
+        "period_mm": 20.0,
+        "size_mm": 2.0,
+        "period_px": 40.0,
+        "size_px": 4.0,
+        "dir": "in"
+      },
       "hatch": {
         "angle": 0,
         "cross": false,
@@ -2144,11 +2150,11 @@
         "color": 2
       },
       "line_marker": {
-        "shape": "square",
+        "shape": "tick",
         "period_mm": 20.0,
-        "size_mm": 1.5,
+        "size_mm": 0.5,
         "period_px": 40.0,
-        "size_px": 3.0,
+        "size_px": 1.0,
         "dir": "in"
       },
       "hatch": {

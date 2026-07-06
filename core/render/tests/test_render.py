@@ -379,8 +379,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         by_code = {s["lgr_code"]: s for sid, s in lib.items()
                    if sid.startswith("lgr.")}
         self.assertEqual(len([s for s in by_code.values()
-                              if s.get("line_marker")]), 30,
-                         "30 знаков Эталона несут маркеры-засечки")
+                              if s.get("line_marker")]), 31,
+                         "31 знак несёт маркеры-засечки (по рабочим QML)")
         # выборка по образцам: водоохранная ∨3.5/20, пояс санохраны ⊥2/8,
         # памятник природы ●3/20, территории ОКН ■1.5/20
         self.assertEqual(by_code[16]["line_marker"],
@@ -389,8 +389,10 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
         self.assertEqual(by_code[13]["line_marker"]["period_mm"], 8.0)
         self.assertEqual(by_code[55]["line_marker"]["shape"], "dot")
-        self.assertEqual(by_code[9]["line_marker"]["shape"], "square")
-        self.assertEqual(by_code[20]["double_mm"], 2.0, "защитная зона ОКН — двойная")
+        self.assertEqual(by_code[9]["line_marker"]["shape"], "tick", "QML line=tick, не square")
+        self.assertEqual(by_code[20]["line_marker"]["shape"], "tick",
+                         "защитная зона ОКН — штрих по QML (одиночная линия, не двойная)")
+        self.assertIsNone(by_code[20].get("double_mm"), "в QML код 20 не двойной")
         self.assertEqual(by_code[18]["dash_mm"], None, "граница ПК — сплошная")
         # сверка с эталоном (приказ ММА №65, стр. 9-10, 13 + приложение 2):
         self.assertIsNone(by_code[41].get("line_marker"),
@@ -399,8 +401,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                          "ООЗТ — ДВА наложенных треугольника (осн. таблица)")
         self.assertEqual(by_code[46]["line_marker"]["shape"], "triangle",
                          "Резерв ООПТ — треугольники (семейство ООПТ)")
-        self.assertEqual(by_code[10]["line_marker"]["shape"], "tee",
-                         "охранная зона ОКН — Т-засечки")
+        self.assertEqual(by_code[10]["line_marker"]["shape"], "tick",
+                         "охранная зона ОКН — штрих (QML line, не tee)")
         # стиль линии по выноскам размеров осн. таблицы (нет выноски штриха
         # «6.0» → линия сплошная; знаки-зоны с маркерами рисуются по сплошной)
         for c in (8, 9, 10, 37, 38, 47, 50, 55):
@@ -413,8 +415,8 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(len(by_code[61]["dash_mm"]), 6,
                          "зона 3 пояса — штрих-пунктир с двумя точками")
         for c in (22, 64, 65, 66):
-            self.assertEqual(by_code[c]["line_marker"]["shape"], "slashes",
-                             f"код {c} затоп/подтоп — двойная косая ⫽ (осн. табл.)")
+            self.assertEqual(by_code[c]["line_marker"]["shape"], "tick",
+                             f"код {c} затоп/подтоп — перпенд. штрих (QML line)")
         # направление засечки per-sign (осн. таблица, образцы-коробки):
         # остриём НАРУЖУ — ООПТ/ландшафт ОКН/водоохранная/прибрежная/ПК
         for c in (8, 11, 16, 17, 18):
@@ -525,7 +527,9 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(vod["line_marker"],
                          {"shape": "chevron", "period": 40.0, "size": 7.0,
                           "dir": "out"})
-        self.assertEqual(fs["lgr.okn.zashchit"]["double"], 4.0)
+        # код 20 (защитная ОКН) — по QML одиночная линия со штрихами (не двойная)
+        self.assertEqual(fs["lgr.okn.zashchit"]["line_marker"]["shape"], "tick")
+        self.assertNotIn("double", fs["lgr.okn.zashchit"])
         # легаси-стили не сломаны: hatch остаётся true
         self.assertIs(fs["restrict.hatch"]["hatch"], True)
 
