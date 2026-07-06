@@ -245,6 +245,58 @@ def fetch_tile_png(z, x, y):
     return cache_path
 
 
+# Источники подложки: карта OSM (PNG) и спутник ESRI World Imagery (JPEG).
+# ESRI кладёт координаты в порядке z/y/x. Оба — для лёгкого локального
+# просмотра; при промышленной нагрузке — свой сервер/ключ.
+TILE_SOURCES = {
+    "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "sat": ("https://server.arcgisonline.com/ArcGIS/rest/services/"
+            "World_Imagery/MapServer/tile/{z}/{y}/{x}"),
+}
+TILE_ATTRIBUTIONS = {
+    "osm": "© OpenStreetMap contributors",
+    "sat": "Esri, Maxar, Earthstar Geographics",
+}
+
+
+def _valid_tile(path):
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return False
+    return ((data[:8] == _PNG_SIG and data[-8:] == _PNG_END) or
+            (data[:2] == b"\xff\xd8" and data[-2:] == b"\xff\xd9"))
+
+
+def fetch_tile(z, x, y, source="osm"):
+    """Тайл подложки выбранного источника (карта OSM | спутник ESRI).
+
+    Формат исходника разный (OSM PNG, ESRI JPEG) — кэшируем байты как есть
+    (расширение .img), валидность по сигнатуре обоих форматов. Запись
+    атомарна (tmp + os.replace), кэш раздельный по источнику."""
+    tmpl = TILE_SOURCES.get(source) or TILE_SOURCES["osm"]
+    cache_path = TILE_CACHE / source / str(z) / str(x) / f"{y}.img"
+    if not _valid_tile(cache_path):
+        req = urllib.request.Request(tmpl.format(z=z, x=x, y=y),
+                                     headers={"User-Agent": TILE_UA})
+        with urllib.request.urlopen(req, timeout=10,
+                                    context=TILE_SSL_CTX) as resp:
+            data = resp.read()
+        if not (data[:8] == _PNG_SIG or data[:2] == b"\xff\xd8"):
+            raise RuntimeError("tile upstream: not an image")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _tmp_name(cache_path)
+        tmp.write_bytes(data)
+        os.replace(tmp, cache_path)
+    return cache_path
+
+
+def tile_response(z, x, y, source="osm"):
+    """(байты, content-type) тайла подложки для HTTP-ответа."""
+    data = fetch_tile(z, x, y, source).read_bytes()
+    return data, ("image/png" if data[:8] == _PNG_SIG else "image/jpeg")
+
+
 def _tile_jpeg(z, x, y):
     """JPEG тайла для вставки в PDF (DCTDecode кладёт JPEG как есть).
 

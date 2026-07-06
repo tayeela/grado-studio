@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.38.0";
+const VERSION = "0.38.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -441,9 +441,9 @@ function gridStep() {
 // проекция (обратный UTM) считается на сервере и используется только
 // для получения самой точки ORIGIN.
 const basemap = {
-  on: false, opacity: 0.85, originLon: null, originLat: null, attribution: "",
-  mPerDegLon: null, mPerDegLat: 111320,
-  cache: new Map(),   // "z/x/y" -> {img, loaded, failed}
+  on: false, source: "osm", opacity: 0.85, originLon: null, originLat: null,
+  attribution: "", attributions: {}, mPerDegLon: null, mPerDegLat: 111320,
+  cache: new Map(),   // "src/z/x/y" -> {img, loaded, failed}
 };
 
 async function initBasemap() {
@@ -452,9 +452,19 @@ async function initBasemap() {
     const d = await r.json();
     basemap.originLon = d.origin_lon;
     basemap.originLat = d.origin_lat;
-    basemap.attribution = d.attribution;
+    basemap.attributions = d.attributions || { osm: d.attribution };
+    basemap.attribution = basemap.attributions[basemap.source] || d.attribution;
     basemap.mPerDegLon = 111320 * Math.cos(d.origin_lat * Math.PI / 180);
   } catch (e) { /* сервер без /api/basemap-info — подложка недоступна */ }
+}
+
+// переключение источника подложки (карта OSM ↔ спутник ESRI): чужие тайлы
+// из кэша убираем, подпись — по источнику
+function setBasemapSource(src) {
+  basemap.source = src;
+  basemap.attribution = basemap.attributions[src] || basemap.attribution;
+  basemap.cache.clear();
+  draw();
 }
 
 function localToLonLat(x, y) {
@@ -477,13 +487,13 @@ function tileYToLat(ty, z) {
 }
 
 function tileImage(z, x, y) {
-  const key = `${z}/${x}/${y}`;
+  const key = `${basemap.source}/${z}/${x}/${y}`;
   let e = basemap.cache.get(key);
   if (!e) {
     e = { img: new Image(), loaded: false, failed: false };
     e.img.onload = () => { e.loaded = true; draw(); };
     e.img.onerror = () => { e.failed = true; };
-    e.img.src = `/api/tiles/${z}/${x}/${y}.png`;
+    e.img.src = `/api/tiles/${z}/${x}/${y}.png?src=${basemap.source}`;
     basemap.cache.set(key, e);
   }
   return e;
@@ -3138,6 +3148,10 @@ on("basemap-show", "change", e => {
 on("basemap-opacity", "input", e => {
   basemap.opacity = +e.target.value / 100;
   draw();
+});
+on("basemap-source", "change", e => {
+  setBasemapSource(e.target.value);
+  if (basemap.on && basemap.originLon == null) initBasemap().then(draw);
 });
 on("btn-snap", "click", () => setOsnap(!state.osnap));
 on("btn-zoom-in", "click", () => zoomBy(1.25));

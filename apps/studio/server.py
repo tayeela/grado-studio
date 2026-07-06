@@ -152,22 +152,26 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
             self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,
-                                   "attribution": studio_core.TILE_ATTRIBUTION},
+                                   "attribution": studio_core.TILE_ATTRIBUTION,
+                                   "attributions": studio_core.TILE_ATTRIBUTIONS},
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
-        m = TILE_RE.match(self.path)
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        m = TILE_RE.match(parsed.path)
         if m:
-            self._serve_tile(*map(int, m.groups()))
+            src = (parse_qs(parsed.query).get("src") or ["osm"])[0]
+            self._serve_tile(*map(int, m.groups()), src)
             return
         super().do_GET()
 
-    def _serve_tile(self, z, x, y):
+    def _serve_tile(self, z, x, y, source="osm"):
         if not (0 <= z <= 19 and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
             self.send_error(400, "tile coordinates out of range")
             return
         try:
-            cache_path = studio_core.fetch_tile_png(z, x, y)
+            data, ctype = studio_core.tile_response(z, x, y, source)
         except Exception:
             # send_error кодирует сообщение как latin-1 — никакой кириллицы
             # и никакого текста исключения (в нём может быть что угодно)
@@ -175,9 +179,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(502, "tile upstream error")
             return
         self.send_response(200)
-        self.send_header("Content-Type", "image/png")
+        self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "public, max-age=604800")  # свои — год не меняются
-        data = cache_path.read_bytes()
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)

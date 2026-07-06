@@ -126,8 +126,12 @@
     </section>
     <section>
       <h3>Подложка</h3>
-      <label class="chk"><input type="checkbox" id="basemap-show"> спутник/карта (OSM)</label>
-      <label>Прозрачность
+      <label class="chk"><input type="checkbox" id="basemap-show"> показывать подложку</label>
+      <label>Источник<select id="basemap-source">
+        <option value="osm">Карта (OpenStreetMap)</option>
+        <option value="sat">Спутник (ESRI)</option>
+      </select></label>
+      <label>Прозрачность, %
         <input type="range" id="basemap-opacity" min="10" max="100" value="85"></label>
     </section>
     <section>
