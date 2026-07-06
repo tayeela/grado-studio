@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.35.0";
+const VERSION = "0.35.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1423,6 +1423,20 @@ function fieldHtml(field, f) {
     field.step != null ? ` step="${field.step}"` : ""}></label>`;
 }
 
+// поле произвольного атрибута слоя (из атрибутивной таблицы) в форме объекта —
+// как форма объекта в QGIS: правишь значение прямо в панели «Свойства».
+// id по индексу (имя поля бывает кириллицей/с пробелами — не годится в id)
+function userFieldHtml(cf, f, i) {
+  const id = `fu-${i}`;
+  const v = f.props ? f.props[cf.name] : undefined;
+  if (cf.type === "bool")
+    return `<label class="chk"><input type="checkbox" id="${id}"${v ? " checked" : ""}> ${escHtml(cf.name)}</label>`;
+  const itype = (cf.type === "int" || cf.type === "real") ? "number"
+              : (cf.type === "date" ? "date" : "text");
+  const step = cf.type === "real" ? ' step="any"' : (cf.type === "int" ? ' step="1"' : "");
+  return `<label>${escHtml(cf.name)}<input type="${itype}"${step} id="${id}" value="${escHtml(v ?? "")}"></label>`;
+}
+
 async function runOffset(f, sign) {
   const dist = Math.abs(parseFloat(document.getElementById("f-offdist").value) || 15);
   f.props._offdist = dist;
@@ -1497,6 +1511,12 @@ function renderProps() {
   for (const field of fields)
     if (field.type === "computed") metric += ` · ${field.compute(f)}`;
   const extra = fields.filter(fl => fl.type !== "computed").map(fl => fieldHtml(fl, f)).join("\n");
+  // произвольные поля слоя (атрибутивная таблица) — редактируемы в форме объекта
+  const userFields = (L && L.fields) || [];
+  const userFieldsHtml = userFields.length
+    ? `<div class="prop-sub">Атрибуты</div>` +
+      userFields.map((cf, i) => userFieldHtml(cf, f, i)).join("\n")
+    : "";
   const prov = f.prov
     ? `<div class="metric prov">источник: ${f.prov.source}${f.prov.source_date ? " · " + f.prov.source_date : ""}</div>`
     : "";
@@ -1513,7 +1533,7 @@ function renderProps() {
       <label>Обводка<div id="f-fmt-stroke"></div></label>
       <label>Прозрачность, %<input type="range" id="f-fmt-op" min="10" max="100" step="5" value="${Math.round((f.fmt.fillOpacity ?? cur.fillOpacity ?? 1) * 100)}"></label>` : ""}` : "";
   el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
-    <div class="metric">${metric}</div>${prov}${extra}${stylePick}${objFmt}
+    <div class="metric">${metric}</div>${prov}${extra}${userFieldsHtml}${stylePick}${objFmt}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
     <button class="danger" id="f-del">Удалить (Del)</button>`;
   const styleSel = document.getElementById("f-style");
@@ -1540,6 +1560,18 @@ function renderProps() {
     }
     bind(`f-${field.key}`, field.key, field.cast);
   }
+  // произвольные поля слоя — правка значения прямо в форме объекта
+  userFields.forEach((cf, i) => {
+    const inp = document.getElementById(`fu-${i}`);
+    if (!inp) return;
+    inp.addEventListener("change", () => {
+      snapshot();
+      const v = cf.type === "bool" ? inp.checked : castField(cf.type, inp.value);
+      if (v === "" || v === null || v === undefined) delete f.props[cf.name];
+      else f.props[cf.name] = v;
+      afterChange();
+    });
+  });
   // оформление объекта: тумблер создаёт/снимает f.fmt, поля живо перекрашивают
   const fmtOn = document.getElementById("f-fmt-on");
   if (fmtOn) fmtOn.addEventListener("change", () => {
