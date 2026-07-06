@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.35.1";
+const VERSION = "0.35.2";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1467,6 +1467,17 @@ async function runOffset(f, sign) {
 
 function geomType(f) { return f.ring ? "polygon" : f.line ? "polyline" : "point"; }
 
+// редактируемые атрибуты слоя: семантические (ATTR_FIELDS, без computed/offset)
+// + произвольные поля (атрибутивная таблица) — общий список для формы/масс-правки
+function editableAttrs(L) {
+  if (!L) return [];
+  const sem = (ATTR_FIELDS[L.semantic_class] || [])
+    .filter(fl => fl.type !== "computed" && fl.type !== "offset")
+    .map(fl => ({ key: fl.key, title: fl.title, type: fl.type, cast: fl.cast }));
+  const usr = (L.fields || []).map(cf => ({ key: cf.name, title: cf.name, type: cf.type }));
+  return [...sem, ...usr];
+}
+
 // панель для группового выделения (несколько объектов)
 function renderGroupProps(el, ids) {
   el.className = "";
@@ -1479,9 +1490,19 @@ function renderGroupProps(el, ids) {
     <label>Переместить на слой<select id="g-layer">${
       targets.map(L => `<option value="${L.id}">${escHtml(L.title)}</option>`).join("")}</select></label>
     <button id="g-move" class="fmt-copy-btn" style="margin-left:0">Переместить</button>` : "";
+  // масс-правка атрибута: поля, общие ВСЕМ выделенным (по слоям объектов)
+  const perFeat = feats.map(f => editableAttrs(layerOf(f)));
+  const common = perFeat.length
+    ? perFeat[0].filter(a => perFeat.every(list => list.some(b => b.key === a.key)))
+    : [];
+  const attrHtml = common.length ? `<div class="prop-sub">Массовая правка атрибута</div>
+    <label>Поле<select id="g-attr">${
+      common.map((a, i) => `<option value="${i}">${escHtml(a.title)}</option>`).join("")}</select></label>
+    <label>Значение<input type="text" id="g-attr-val" placeholder="записать во все выделенные"></label>
+    <button id="g-attr-apply" class="fmt-copy-btn" style="margin-left:0">Записать во все ${ids.length}</button>` : "";
   el.innerHTML = `<div class="kind">Выделено объектов: ${ids.length}</div>
     <div class="metric">перетаскивание — двигать группой · Shift+клик — добавить/убрать · Del — удалить</div>
-    ${moveHtml}
+    ${moveHtml}${attrHtml}
     <button class="danger" id="g-del" style="margin-top:8px">Удалить выделенные (Del)</button>`;
   const gm = document.getElementById("g-move");
   if (gm) gm.onclick = () => {
@@ -1491,6 +1512,20 @@ function renderGroupProps(el, ids) {
     for (const f of selectionFeatures()) { f.layer_id = tid; if (L) f.kind = L.kind; }
     afterChange();
     toast(`Перемещено ${ids.length} объект(ов) на «${L.title}»`);
+  };
+  const ga = document.getElementById("g-attr-apply");
+  if (ga) ga.onclick = () => {
+    const a = common[+document.getElementById("g-attr").value];
+    const raw = document.getElementById("g-attr-val").value;
+    snapshot();
+    for (const f of selectionFeatures()) {
+      const v = a.cast ? a.cast(raw)
+                       : castField(a.type === "number" ? "real" : a.type, raw);
+      if (v === "" || v === null || v === undefined) delete f.props[a.key];
+      else f.props[a.key] = v;
+    }
+    afterChange();
+    toast(`Записано «${a.title}» в ${ids.length} объект(ов)`);
   };
   document.getElementById("g-del").onclick = deleteSelected;
 }
