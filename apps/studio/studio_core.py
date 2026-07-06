@@ -473,21 +473,68 @@ def _route(feature, templates):
     return (lid, templates[lid]) if lid in templates else (None, None)
 
 
+# пользовательские поля атрибутивной таблицы студии → колонки .grado.
+# Тип холста (int/real/text/date/bool) отображается в тип gpkg для колонки
+# и используется для приведения значения; дата/булево хранятся как в QGIS
+# (ISO-строка / 0|1).
+_FIELD_GPKG_TYPE = {"int": "integer", "integer": "integer", "real": "number",
+                    "number": "number", "float": "number", "text": "string",
+                    "string": "string", "date": "string", "bool": "integer",
+                    "boolean": "integer"}
+
+
+def _field_col_id(name):
+    """Имя поля холста → безопасное имя колонки gpkg (кавычки/переводы строк
+    убираем, длину ограничиваем; кириллицу оставляем — QGIS её понимает)."""
+    s = str(name or "").replace('"', "").replace("\n", " ").replace("\r", " ").strip()
+    return s[:60] or None
+
+
+def _cast_field(ftype, raw):
+    """Приведение значения поля к его типу (или None, если пусто/не парсится)."""
+    if raw is None or raw == "":
+        return None
+    ft = str(ftype or "text").lower()
+    if ft in ("int", "integer"):
+        try:
+            return int(float(raw)) if not isinstance(raw, bool) else int(raw)
+        except (TypeError, ValueError):
+            return None
+    if ft in ("real", "number", "float"):
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+    if ft in ("bool", "boolean"):
+        return 1 if raw in (True, 1, "1", "true", "True", "да") else 0
+    return str(raw)
+
+
 def _user_layer_templates(layers):
     """Слои, созданные в панели студии («+ слой»), → шаблоны маршрутизации.
 
-    layers — [{layer_id, code, title, stage, style_id}], присылается с
+    layers — [{layer_id, code, title, stage, style_id, fields}], присылается с
     холста при каждом экспорте (там живёт единственная копия). Встроенные
     LAYER_TEMPLATES не переопределяются: пользовательский layer_id либо
-    новый, либо (при коллизии, не должно случаться) проигрывает builtin."""
+    новый, либо (при коллизии, не должно случаться) проигрывает builtin.
+    fields — [{name, type}] произвольных полей атрибутивной таблицы."""
     out = {}
     for spec in (layers or []):
         lid = spec.get("layer_id")
         code = spec.get("code")
         if not lid or not code or lid in LAYER_TEMPLATES:
             continue
+        fields = []
+        for fd in (spec.get("fields") or []):
+            col = _field_col_id(fd.get("name"))
+            if not col:
+                continue
+            ftype = fd.get("type", "text")
+            fields.append({"id": col, "name": fd.get("name"), "ftype": ftype,
+                           "gtype": _FIELD_GPKG_TYPE.get(str(ftype).lower(), "string")})
         out[lid] = {"code": code, "title": spec.get("title"),
-                    "stage": spec.get("stage"), "style_id": spec.get("style_id")}
+                    "stage": spec.get("stage"), "style_id": spec.get("style_id"),
+                    "fields": fields}
     return out
 
 
@@ -499,14 +546,20 @@ def build_project(path, name, features, layers=None):
         lid, tmpl = _route(f, templates)
         if lid is None:
             continue
+        tfields = tmpl.get("fields") or []
         if lid not in made:
             made[lid] = project.add_layer(
                 tmpl["code"], layer_id=lid, title=tmpl.get("title"),
                 stage=tmpl.get("stage"), style_id=tmpl.get("style_id"),
-                source_kind=tmpl.get("source_kind"))
+                source_kind=tmpl.get("source_kind"),
+                fields=[{"id": fd["id"], "type": fd["gtype"]} for fd in tfields])
         # неизвестный вид (напр. из будущей версии) не должен ронять экспорт —
         # пустые атрибуты как у обычного (generic) слоя
-        attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])(f.get("props", {}))
+        props = f.get("props", {})
+        attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])(props)
+        # произвольные поля атрибутивной таблицы студии → колонки .grado
+        for fd in tfields:
+            attrs[fd["id"]] = _cast_field(fd["ftype"], props.get(fd["name"]))
         # провенанс из импорта переносится в модель (source/date/doc),
         # per-object стиль — в колонку style_id
         prov = f.get("prov") or {}

@@ -35,10 +35,16 @@ _GRADO_LAYERS_DDL = """
         stage TEXT,
         style_id TEXT,
         source_kind TEXT,
+        fields TEXT,
         created TEXT NOT NULL)"""
 
 _LAYER_COLS = ("layer_id, table_name, classifier_code, title, "
                "stage, style_id, source_kind")
+# те же поля + пользовательские (per-слой атрибуты сверх классификатора)
+_LAYER_READ = _LAYER_COLS + ", fields"
+
+# служебные колонки feature-таблицы — на них пользовательское поле лечь не может
+_RESERVED_COLS = {"id", "geom", "source", "source_date", "source_doc", "style_id"}
 
 
 def _table_name(layer_id):
@@ -66,6 +72,9 @@ class Layer:
         self.style_id = spec.get("style_id")
         self.source_kind = spec.get("source_kind")
         self.cls = project.classifier.get(self.code)
+        # пользовательские поля слоя (атрибутивная таблица студии) — колонки
+        # сверх схемы классификатора: [{"id", "type"}], type в терминах gpkg
+        self.user_fields = spec.get("fields") or []
 
     def _coerce(self, geom, attrs, source, source_date):
         geometry.validate(geom)
@@ -79,7 +88,11 @@ class Layer:
         if source not in SOURCES:
             raise ProjectError(f"неизвестный источник {source!r}; допустимы {sorted(SOURCES)}")
         attrs = attrs or {}
-        self.cls.validate_attrs(attrs)
+        # классификаторные атрибуты валидируем строго (как прежде), а
+        # пользовательские поля слоя пропускаем — их схема живёт на слое,
+        # значения приводит к типу вызывающий (studio_core при экспорте)
+        user_ids = {f["id"] for f in self.user_fields}
+        self.cls.validate_attrs({k: v for k, v in attrs.items() if k not in user_ids})
         return geom, attrs, source_date or date.today().isoformat()
 
     def _write(self, fid, geom, attrs, source, source_date, source_doc, style_id):
@@ -129,7 +142,8 @@ class Layer:
         return None
 
     def features(self, where_id=None):
-        attr_ids = [a["id"] for a in self.cls.attrs]
+        attr_ids = [a["id"] for a in self.cls.attrs] + \
+                   [f["id"] for f in self.user_fields]
         cols = ", ".join(f'"{a}"' for a in attr_ids)
         sql = (f'SELECT id, geom, source, source_date, source_doc, style_id'
                f'{", " + cols if cols else ""} FROM "{self.table}"')
@@ -229,6 +243,11 @@ class Project:
                      c.stage if c else None, c.style_id if c else None,
                      None, created))
             conn.execute("DROP TABLE grado_layers_v1")
+        # пользовательские поля слоёв (экспорт атрибутивной таблицы студии) —
+        # добавлены позже MODEL-01; на старых v2-файлах колонки ещё нет
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(grado_layers)")]
+        if "fields" not in cols:
+            conn.execute("ALTER TABLE grado_layers ADD COLUMN fields TEXT")
         for (table_name,) in conn.execute("SELECT table_name FROM grado_layers"):
             fcols = [r[1] for r in conn.execute(
                 f'PRAGMA table_info("{table_name}")')]
@@ -241,11 +260,13 @@ class Project:
         return row[0] if row else None
 
     def add_layer(self, code, title=None, layer_id=None, stage=None,
-                  style_id=None, source_kind=None):
+                  style_id=None, source_kind=None, fields=None):
         """Создаёт слой. layer_id по умолчанию = code (legacy 1:1); передав
         отдельный layer_id, можно завести несколько слоёв одного класса
         (напр. source.fgistp.func_zones и project.tp.func_zone). stage и
-        style_id по умолчанию берутся из классификатора."""
+        style_id по умолчанию берутся из классификатора. fields — [{id,type}]
+        пользовательских полей (атрибутивная таблица студии): колонки сверх
+        схемы классификатора, type в терминах gpkg (string|integer|number)."""
         c = self.classifier.get(code)
         layer_id = layer_id or code
         table = _table_name(layer_id)
@@ -263,33 +284,47 @@ class Project:
             title = f"{title} ({layer_id})"
         stage = c.stage if stage is None else stage
         style_id = c.style_id if style_id is None else style_id
-        columns = [(a["id"], a["type"]) for a in c.attrs]
+        # пользовательские поля: пропускаем коллизии с классификатором/служебными
+        # колонками и дубли; тип, неизвестный gpkg, приводим к string
+        cls_ids = {a["id"] for a in c.attrs}
+        user_fields, seen = [], set()
+        for f in (fields or []):
+            fid = f.get("id")
+            if not fid or fid in cls_ids or fid in _RESERVED_COLS or fid in seen:
+                continue
+            ftype = f.get("type") if f.get("type") in gpkg._SQL_TYPES else "string"
+            user_fields.append({"id": fid, "type": ftype})
+            seen.add(fid)
+        columns = [(a["id"], a["type"]) for a in c.attrs] + \
+                  [(f["id"], f["type"]) for f in user_fields]
         gpkg.add_feature_table(self.conn, table, title, c.geom_type,
                                self.srs_id, columns, description=f"grado:{code}")
+        fields_json = json.dumps(user_fields, ensure_ascii=False) if user_fields else None
         self.conn.execute(
-            f"INSERT INTO grado_layers ({_LAYER_COLS}, created) "
-            f"VALUES (?,?,?,?,?,?,?,?)",
+            f"INSERT INTO grado_layers ({_LAYER_COLS}, fields, created) "
+            f"VALUES (?,?,?,?,?,?,?,?,?)",
             (layer_id, table, code, title, stage, style_id, source_kind,
-             gpkg.now_iso()))
+             fields_json, gpkg.now_iso()))
         self.conn.commit()
         return Layer(self, {"layer_id": layer_id, "code": code, "title": title,
                             "table": table, "stage": stage, "style_id": style_id,
-                            "source_kind": source_kind})
+                            "source_kind": source_kind, "fields": user_fields})
 
     def _layer_spec(self, layer_id=None, code=None):
         if layer_id is not None:
             row = self.conn.execute(
-                f"SELECT {_LAYER_COLS} FROM grado_layers WHERE layer_id=?",
+                f"SELECT {_LAYER_READ} FROM grado_layers WHERE layer_id=?",
                 (layer_id,)).fetchone()
         else:
             row = self.conn.execute(
-                f"SELECT {_LAYER_COLS} FROM grado_layers WHERE classifier_code=? "
+                f"SELECT {_LAYER_READ} FROM grado_layers WHERE classifier_code=? "
                 f"ORDER BY table_name LIMIT 1", (code,)).fetchone()
         if not row:
             return None
         return {"layer_id": row[0], "table": row[1], "code": row[2],
                 "title": row[3], "stage": row[4], "style_id": row[5],
-                "source_kind": row[6]}
+                "source_kind": row[6],
+                "fields": json.loads(row[7]) if row[7] else []}
 
     def layer(self, ident):
         """Слой по layer_id или (legacy) по коду класса (первый при 1:1)."""

@@ -577,6 +577,30 @@ class TestModel01Routing(unittest.TestCase):
                              ["project.apo.buildings"])
             p.close()
 
+    def test_user_layer_fields_export_as_columns(self):
+        # произвольные поля атрибутивной таблицы студии уезжают колонками .grado
+        # с приведением типов из манифеста слоя (обмен с QGIS)
+        feats = [{"kind": "generic", "layer_id": "user.trees",
+                  "ring": [[0, 0], [40, 0], [40, 40], [0, 40]],
+                  "props": {"Порода": "липа", "Кол-во": "37", "Пусто": ""}}]
+        manifest = [{"layer_id": "user.trees", "code": "generic.polygon",
+                     "title": "Озеленение", "stage": "project",
+                     "style_id": "func_zone.fill",
+                     "fields": [{"name": "Порода", "type": "text"},
+                                {"name": "Кол-во", "type": "int"},
+                                {"name": "Пусто", "type": "real"}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "f.grado", "Поля",
+                                          feats, layers=manifest)
+            L = p.layer_by_id("user.trees")
+            self.assertEqual([f["id"] for f in L.user_fields],
+                             ["Порода", "Кол-во", "Пусто"])
+            f = next(L.features())
+            self.assertEqual(f["attrs"]["Порода"], "липа")
+            self.assertEqual(f["attrs"]["Кол-во"], 37)     # "37" → int
+            self.assertIsNone(f["attrs"]["Пусто"])         # пустая строка → None
+            p.close()
+
 
 class TestRolesTep(unittest.TestCase):
     """ТЭП по ролям слоёв, а не по литералам kind (шаг 4)."""

@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.34.2";
+const VERSION = "0.35.0";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -190,6 +190,7 @@ function userLayersManifest() {
   return LAYERS_V2.filter(L => L.user_created).map(L => ({
     layer_id: L.id, code: L.semantic_class, title: L.title,
     stage: L.stage, style_id: L.style_id,
+    fields: L.fields || [],   // произвольные поля атрибутивной таблицы → колонки .grado
   }));
 }
 

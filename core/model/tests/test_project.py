@@ -154,6 +154,31 @@ class TestSchemaV2(unittest.TestCase):
         L.add_feature(BOUNDARY)
         self.assertIsNone(next(L.features())["style_id"])
 
+    def test_user_fields_export_and_roundtrip(self):
+        # произвольные поля атрибутивной таблицы студии → реальные колонки
+        # .grado, значения читаются обратно (обмен с QGIS)
+        L = self.p.add_layer("generic.polygon", layer_id="user.trees",
+                             title="Озеленение",
+                             fields=[{"id": "Порода", "type": "string"},
+                                     {"id": "Кол-во", "type": "integer"}])
+        self.assertEqual([f["id"] for f in L.user_fields], ["Порода", "Кол-во"])
+        L.add_feature(BOUNDARY, attrs={"Порода": "липа", "Кол-во": 37})
+        f = next(self.p.layer_by_id("user.trees").features())   # свежий Layer с диска
+        self.assertEqual(f["attrs"]["Порода"], "липа")
+        self.assertEqual(f["attrs"]["Кол-во"], 37)
+        cols = [r[1] for r in self.p.conn.execute(
+            f'PRAGMA table_info("{L.table}")')]
+        self.assertIn("Порода", cols)      # QGIS увидит их полями атрибутов
+        self.assertIn("Кол-во", cols)
+
+    def test_user_field_collision_with_reserved_skipped(self):
+        # поле, конфликтующее со служебной колонкой (style_id), пропускается —
+        # таблица не ломается, остальные поля создаются
+        L = self.p.add_layer("generic.point", layer_id="user.pts",
+                             fields=[{"id": "style_id", "type": "string"},
+                                     {"id": "note", "type": "string"}])
+        self.assertEqual([f["id"] for f in L.user_fields], ["note"])
+
     def test_migration_from_v1_schema(self):
         # старый .grado (grado_layers без layer_id, feature без style_id)
         self.p.close()
