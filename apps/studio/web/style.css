@@ -278,6 +278,14 @@ button.primary:active { background: var(--accent-active); }
 .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; font-size: var(--fs-11);
   text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: var(--fw-semibold); }
 .fmt-copy-btn { display: block; margin: var(--sp-2) var(--sp-4) 0; }
+/* сегментный переключатель режима оформления (единый стиль / по значению) */
+.seg { display: flex; gap: 3px; margin: var(--sp-3) var(--sp-4) 0; padding: 3px;
+  background: var(--field-bg); border: 1px solid var(--field-border); border-radius: var(--r-md); }
+.seg-btn { flex: 1; border: none; background: transparent; color: var(--muted);
+  padding: 5px var(--sp-2); border-radius: var(--r-sm); font: inherit; cursor: pointer; }
+.seg-btn:hover { background: var(--glass-strong); color: var(--text); }
+.seg-btn.active { background: var(--accent); color: var(--on-accent); font-weight: var(--fw-medium); }
+.seg-btn.active:hover { background: var(--accent); color: var(--on-accent); }
 /* образец линии под выпадашкой стиля пунктира (модалка — flex-колонка,
    поэтому flex:0 0 auto + min-height, иначе SVG-only блок схлопывается в 0) */
 .line-preview { margin: var(--sp-1) var(--sp-4) 0; flex: 0 0 auto; height: 18px; min-height: 18px;

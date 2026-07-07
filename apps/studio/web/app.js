@@ -2034,8 +2034,7 @@ function openLayerMenu(layer, x, y) {
   const items = [
     ["Сделать активным", () => setActiveLayer(layer.id)],
     ["Таблица атрибутов…", () => openAttributeTable(layer)],
-    ["Форматирование…", () => openLayerFormat(layer)],
-    ["Условное форматирование…", () => openLayerRules(layer)],
+    ["Оформление слоя…", () => openLayerStyle(layer)],
     ["Приблизить к слою", () => zoomToLayer(layer.id)],
     ["Переименовать…", () => renameLayer(layer)],
     [layer.locked ? "Разблокировать слой" : "Заблокировать слой", () => toggleLayerLock(layer)],
@@ -2290,9 +2289,17 @@ function makeColorField(host, initial, onChange) {
   return { get: () => value, set: h => setValue(h, false), close };
 }
 
-function openLayerFormat(layer) {
+// ---------- оформление слоя: единый стиль ИЛИ по значению поля ------------
+// Объединяет прежние «Форматирование» и «Условное форматирование» в одну
+// модалку с переключателем режима — как символика слоя в QGIS (single symbol
+// / categorized). «Единый стиль» пишет layer.fmt и очищает правила; «По
+// значению поля» сохраняет layer.rules (категории) поверх layer.fmt, который
+// служит стилем по умолчанию для объектов без совпадения.
+function openLayerStyle(layer, opts = {}) {
   closePopups();
   const origFmt = layer.fmt ? { ...layer.fmt } : null;   // для отмены
+  const origRules = layer.rules ? layer.rules.map(r => ({ ...r })) : null;
+  let mode = opts.mode || (origRules && origRules.length ? "rules" : "single");
   const cur = layerStyle(layer);
   const hasFill = cur.fill != null && cur.fill !== "transparent";
   const opacity = Math.round((cur.fillOpacity != null ? cur.fillOpacity : 1) * 100);
@@ -2300,80 +2307,91 @@ function openLayerFormat(layer) {
   const hObj = cur.hatch && typeof cur.hatch === "object" ? cur.hatch : null;
   const hAngle = hObj ? (hObj.cross ? "cross" : String(hObj.angle ?? 45)) : "45";
   const hDens = hObj ? hatchDensOf(hObj.spacing_px || 9) : "normal";
-  // засечки/подписи/двойная линия наследуются от базы/пресета (их редактируем
-  // только тумблером показа); значения храним в замыкании
   let baseMarker = cur.line_marker || null, baseLabel = cur.line_label || null,
       baseDouble = cur.double || null;
   const targets = LAYERS_V2.filter(l => l !== layer && !l.annotation && !l.import_only);
   const opt = (sel, v, lbl) => `<option value="${v}"${sel === v ? " selected" : ""}>${lbl}</option>`;
+  // рабочая копия правил для режима «по значению поля»
+  const fieldCols = attrColumns(layer).filter(c => !c.virtual);
+  let work = (layer.rules || []).map(r => ({ ...r }));
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
-    <div class="modal-head">Форматирование · ${escHtml(layer.title)}</div>
-    <label>Библиотечный стиль (Эталон ЛГР / базовые)
-      <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
-    <div class="fmt-sub">Заливка</div>
-    <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
-    <label>Цвет<div id="fmt-fill"></div></label>
-    <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
-    <div class="fmt-sub">Обводка</div>
-    <label>Цвет<div id="fmt-stroke"></div></label>
-    <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
-    <label>Пунктир<select id="fmt-dashp">${
-      opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
-      opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки") +
-      opt(dp, "custom", "свой…")}</select></label>
-    <label id="fmt-dash-custom-wrap" style="display:${dp === "custom" ? "" : "none"}">Свой пунктир, px (штрих, пробел через запятую)
-      <input type="text" id="fmt-dash-custom" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? cur.dash : null))}"></label>
-    <div class="line-preview" id="fmt-dash-preview"></div>
-    <div class="fmt-sub">Штриховка зоны</div>
-    <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
-    <label>Угол<select id="fmt-hangle">${
-      opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
-      opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
-    <label>Плотность<select id="fmt-hdens">${
-      opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
-    <div class="fmt-sub">Показывать</div>
-    <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
-    <div id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
-      <label>Форма<select id="fmt-marker-shape">${
-        MARKER_SHAPES.map(([v, lbl]) => opt((baseMarker && baseMarker.shape) || "tick", v, lbl)).join("")}</select></label>
-      <label>Шаг, px<input type="number" id="fmt-marker-period" value="${(baseMarker && baseMarker.period) || 40}" min="6" max="200" step="1"></label>
-      <label>Размер, px<input type="number" id="fmt-marker-size" value="${(baseMarker && baseMarker.size) || 4}" min="1" max="40" step="0.5"></label>
-      <label>Остриё<select id="fmt-marker-dir">${
-        opt((baseMarker && baseMarker.dir) || "in", "in", "внутрь зоны") +
-        opt((baseMarker && baseMarker.dir) || "in", "out", "наружу")}</select></label>
+    <div class="modal-head">Оформление слоя · ${escHtml(layer.title)}</div>
+    <div class="seg" id="ls-mode" role="tablist">
+      <button type="button" class="seg-btn${mode === "single" ? " active" : ""}" data-mode="single">Единый стиль</button>
+      <button type="button" class="seg-btn${mode === "rules" ? " active" : ""}" data-mode="rules">По значению поля</button>
     </div>
-    <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии</label>
-    ${targets.length ? `<div class="fmt-sub">Копировать оформление</div>
-    <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
-      targets.map(l => `<option value="${l.id}">${escHtml(l.title)}</option>`).join("")}</select></label>
-    <button id="fmt-copy" class="fmt-copy-btn">Скопировать на выбранный</button>` : ""}
+    <div id="ls-single" style="display:${mode === "single" ? "" : "none"}">
+      <label>Готовый знак (Эталон ЛГР / базовые)
+        <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
+      <div class="fmt-sub">Заливка</div>
+      <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
+      <label>Цвет<div id="fmt-fill"></div></label>
+      <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
+      <div class="fmt-sub">Обводка</div>
+      <label>Цвет<div id="fmt-stroke"></div></label>
+      <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
+      <label>Пунктир<select id="fmt-dashp">${
+        opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
+        opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки") +
+        opt(dp, "custom", "свой…")}</select></label>
+      <label id="fmt-dash-custom-wrap" style="display:${dp === "custom" ? "" : "none"}">Свой пунктир, px (штрих, пробел через запятую)
+        <input type="text" id="fmt-dash-custom" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? cur.dash : null))}"></label>
+      <div class="line-preview" id="fmt-dash-preview"></div>
+      <div class="fmt-sub">Штриховка зоны</div>
+      <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
+      <label>Угол<select id="fmt-hangle">${
+        opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
+        opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
+      <label>Плотность<select id="fmt-hdens">${
+        opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+      <div class="fmt-sub">Показывать</div>
+      <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
+      <div id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
+        <label>Форма<select id="fmt-marker-shape">${
+          MARKER_SHAPES.map(([v, lbl]) => opt((baseMarker && baseMarker.shape) || "tick", v, lbl)).join("")}</select></label>
+        <label>Шаг, px<input type="number" id="fmt-marker-period" value="${(baseMarker && baseMarker.period) || 40}" min="6" max="200" step="1"></label>
+        <label>Размер, px<input type="number" id="fmt-marker-size" value="${(baseMarker && baseMarker.size) || 4}" min="1" max="40" step="0.5"></label>
+        <label>Остриё<select id="fmt-marker-dir">${
+          opt((baseMarker && baseMarker.dir) || "in", "in", "внутрь зоны") +
+          opt((baseMarker && baseMarker.dir) || "in", "out", "наружу")}</select></label>
+      </div>
+      <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии</label>
+      ${targets.length ? `<div class="fmt-sub">Копировать оформление</div>
+      <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
+        targets.map(l => `<option value="${l.id}">${escHtml(l.title)}</option>`).join("")}</select></label>
+      <button id="fmt-copy" class="fmt-copy-btn">Скопировать на выбранный</button>` : ""}
+    </div>
+    <div id="ls-rules" style="display:${mode === "rules" ? "" : "none"}">
+      <div class="fc-help" style="margin:0 var(--sp-4)">Знак объекта выбирается по значению его атрибута.
+        Первое совпавшее правило побеждает; объекты без совпадения рисуются единым стилем слоя (вкладка слева).</div>
+      <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Значение</th><th>Знак</th><th></th></tr></thead>
+        <tbody id="cr-body"></tbody></table>
+      <button id="cr-add" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ правило</button>
+    </div>
     <div class="modal-actions">
-      <button id="fmt-reset">Сбросить</button>
+      <button id="ls-reset">Сбросить</button>
       <span class="spacer"></span>
-      <button id="fmt-cancel">Отмена</button>
-      <button id="fmt-apply" class="primary">Применить</button>
+      <button id="ls-cancel">Отмена</button>
+      <button id="ls-apply" class="primary">Применить</button>
     </div></div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener("click", ev => ev.stopPropagation());
   const $ = id => overlay.querySelector("#" + id);
-  // выбор цвета — компонент с палитрой/CMYK (см. makeColorField)
+
+  // ----- режим «Единый стиль» -----
   const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
   const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
-  // текущий выбранный dash (с учётом «свой…») — используется и превью, и collect
   const currentDash = () => $("fmt-dashp").value === "custom"
     ? parseDashStr($("fmt-dash-custom").value)
     : (DASH_PRESETS[$("fmt-dashp").value] ?? null);
-  // образец выбранного стиля линии (цвет/толщина/пунктир) под выпадашкой
   const updateDashPreview = () => {
     const wv = Math.max(0.2, parseFloat($("fmt-width").value) || 1);
     $("fmt-dash-preview").innerHTML = lineSampleSVG(currentDash(), strokeCF.get(), wv);
   };
   updateDashPreview();
-  // поля пунктира/маркера заполняются либо от объекта стиля (пресет), либо
-  // напрямую (ручной ввод) — общие сеттеры, чтобы не дублировать логику
   const setDashFields = dash => {
     const preset = dashPresetOf(dash);
     $("fmt-dashp").value = preset;
@@ -2395,7 +2413,6 @@ function openLayerFormat(layer) {
   $("fmt-marker").addEventListener("change", () => {
     $("fmt-marker-fields").style.display = $("fmt-marker").checked ? "" : "none";
   });
-
   const collect = () => {
     const fmt = {
       stroke: strokeCF.get(),
@@ -2425,8 +2442,6 @@ function openLayerFormat(layer) {
     if (ref) fmt.style_ref = ref;
     return fmt;
   };
-
-  // выбор библиотечного пресета — заполняет ВСЕ поля его значениями
   $("fmt-preset").addEventListener("change", () => {
     const ref = $("fmt-preset").value;
     if (ref && STYLES_V2[ref]) {
@@ -2446,16 +2461,13 @@ function openLayerFormat(layer) {
     }
     layer.fmt = collect(); draw(); updateDashPreview();
   });
-
-  // живой предпросмотр: любая правка поля = ручной режим (сброс пресета)
-  overlay.querySelectorAll("input, select").forEach(el => {
+  $("ls-single").querySelectorAll("input, select").forEach(el => {
     if (el.id === "fmt-preset" || el.id === "fmt-copy-to") return;
     for (const ev of ["input", "change"])
       el.addEventListener(ev, () => {
         $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview();
       });
   });
-
   if ($("fmt-copy")) $("fmt-copy").addEventListener("click", () => {
     const fmt = collect(); layer.fmt = fmt;
     const to = $("fmt-copy-to").value;
@@ -2465,89 +2477,80 @@ function openLayerFormat(layer) {
     toast(`Оформление скопировано на ${dest.length} слой(ёв)`);
   });
 
-  const restore = () => {                 // отмена/клик мимо — вернуть как было
-    if (origFmt) layer.fmt = origFmt; else delete layer.fmt;
-    closePopups(); renderLayers(); draw();
-  };
-  $("fmt-apply").addEventListener("click", () => {
-    layer.fmt = collect();
-    closePopups(); renderLayers(); draw(); persist();
-  });
-  $("fmt-cancel").addEventListener("click", restore);
-  $("fmt-reset").addEventListener("click", () => {
-    delete layer.fmt; closePopups(); renderLayers(); draw(); persist();
-  });
-  overlay.addEventListener("click", ev => { if (ev.target === overlay) restore(); });
-}
-
-// ---------- условное форматирование слоя: атрибут → библиотечный стиль ----
-// Правило = { field, value, style_id }. Первое совпавшее по значению (строкой)
-// побеждает — см. ruleStyleFor(). Поля — те же, что в таблице атрибутов
-// (attrColumns), кроме вычисляемых $area/$length (равенство по float бессмысленно).
-function openLayerRules(layer) {
-  closePopups();
-  const fieldCols = attrColumns(layer).filter(c => !c.virtual);
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  let work = (layer.rules || []).map(r => ({ ...r }));
-  const q = id => overlay.querySelector("#" + id);
+  // ----- режим «По значению поля» -----
   const fieldOpts = sel => fieldCols.length
     ? fieldCols.map(c => `<option value="${escHtml(c.name)}"${c.name === sel ? " selected" : ""}>${escHtml(c.label)}</option>`).join("")
     : `<option value="">— нет полей —</option>`;
-  const rowsHtml = () => work.length ? work.map((r, i) => `<tr>
+  const rulesRowsHtml = () => work.length ? work.map((r, i) => `<tr>
       <td><select class="cr-field" data-i="${i}">${fieldOpts(r.field)}</select></td>
       <td><input class="cr-value" data-i="${i}" value="${escHtml(r.value ?? "")}" placeholder="значение"></td>
       <td><select class="cr-style" data-i="${i}">${stylePickerOptions(r.style_id)}</select></td>
       <td class="mf-ord"><button class="mf-del cr-del" data-i="${i}" title="Удалить правило">✕</button></td>
     </tr>`).join("")
-    : `<tr><td colspan="4" class="muted" style="padding:10px">Правил пока нет — добавьте кнопкой «+ правило». Первое совпавшее по значению атрибута побеждает.</td></tr>`;
-  const syncInputs = () => {
+    : `<tr><td colspan="4" class="muted" style="padding:10px">Правил пока нет — добавьте кнопкой «+ правило».</td></tr>`;
+  const syncRules = () => {
     overlay.querySelectorAll(".cr-field").forEach(el => { work[+el.dataset.i].field = el.value; });
     overlay.querySelectorAll(".cr-value").forEach(el => { work[+el.dataset.i].value = el.value; });
     overlay.querySelectorAll(".cr-style").forEach(el => { work[+el.dataset.i].style_id = el.value; });
   };
-  const render = () => {
-    q("cr-body").innerHTML = rowsHtml();
-    overlay.querySelectorAll(".cr-field").forEach(el => el.onchange = () => { work[+el.dataset.i].field = el.value; });
-    overlay.querySelectorAll(".cr-value").forEach(el => el.onchange = () => { work[+el.dataset.i].value = el.value; });
-    overlay.querySelectorAll(".cr-style").forEach(el => el.onchange = () => { work[+el.dataset.i].style_id = el.value; });
-    overlay.querySelectorAll(".cr-del").forEach(el => el.onclick = () => { syncInputs(); work.splice(+el.dataset.i, 1); render(); });
-  };
-  overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
-    <div class="modal-head">Условное форматирование · ${escHtml(layer.title)}</div>
-    <div class="fc-help" style="margin:0 var(--sp-4)">Если атрибут объекта равен значению — применяется выбранный
-      библиотечный стиль (перекрывает стиль слоя, как и ручной выбор стиля объекта). Без совпадений — обычный стиль слоя.</div>
-    <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Значение</th><th>Стиль</th><th></th></tr></thead>
-      <tbody id="cr-body"></tbody></table>
-    <button id="cr-add" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ правило</button>
-    <div class="modal-actions">
-      <button id="cr-reset">Сбросить</button>
-      <span class="spacer"></span>
-      <button id="cr-cancel">Отмена</button>
-      <button id="cr-apply" class="primary">Применить</button>
-    </div></div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener("click", ev => ev.stopPropagation());
-  render();
-  const close = () => overlay.remove();
-  q("cr-add").addEventListener("click", () => {
-    syncInputs();
-    work.push({ field: fieldCols[0] ? fieldCols[0].name : "", value: "", style_id: "" });
-    render();
-  });
-  q("cr-apply").addEventListener("click", () => {
-    syncInputs();
+  const liveRules = () => {   // живой предпросмотр правил на холсте
     const clean = work.filter(r => r.field && r.value !== "" && r.style_id);
     if (clean.length) layer.rules = clean; else delete layer.rules;
-    close(); renderLayers(); draw(); persist();
-    toast(clean.length ? `Правил применено: ${clean.length}` : "Условное форматирование отключено");
+    draw();
+  };
+  const renderRules = () => {
+    $("cr-body").innerHTML = rulesRowsHtml();
+    overlay.querySelectorAll(".cr-field").forEach(el => el.onchange = () => { work[+el.dataset.i].field = el.value; liveRules(); });
+    overlay.querySelectorAll(".cr-value").forEach(el => el.oninput = () => { work[+el.dataset.i].value = el.value; liveRules(); });
+    overlay.querySelectorAll(".cr-style").forEach(el => el.onchange = () => { work[+el.dataset.i].style_id = el.value; liveRules(); });
+    overlay.querySelectorAll(".cr-del").forEach(el => el.onclick = () => { syncRules(); work.splice(+el.dataset.i, 1); renderRules(); liveRules(); });
+  };
+  renderRules();
+  $("cr-add").addEventListener("click", () => {
+    syncRules();
+    work.push({ field: fieldCols[0] ? fieldCols[0].name : "", value: "", style_id: "" });
+    renderRules();
   });
-  q("cr-cancel").addEventListener("click", close);
-  q("cr-reset").addEventListener("click", () => {
-    delete layer.rules; close(); renderLayers(); draw(); persist();
-    toast("Условное форматирование сброшено");
+
+  // ----- переключение режима -----
+  const setMode = m => {
+    mode = m;
+    $("ls-single").style.display = m === "single" ? "" : "none";
+    $("ls-rules").style.display = m === "rules" ? "" : "none";
+    overlay.querySelectorAll(".seg-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+    // живой предпросмотр текущего режима
+    if (m === "single") { delete layer.rules; layer.fmt = collect(); }
+    else liveRules();
+    draw();
+  };
+  overlay.querySelectorAll(".seg-btn").forEach(b =>
+    b.addEventListener("click", () => setMode(b.dataset.mode)));
+
+  // ----- применить / отмена / сброс -----
+  const restore = () => {
+    if (origFmt) layer.fmt = origFmt; else delete layer.fmt;
+    if (origRules) layer.rules = origRules; else delete layer.rules;
+    closePopups(); renderLayers(); draw();
+  };
+  $("ls-apply").addEventListener("click", () => {
+    layer.fmt = collect();
+    if (mode === "rules") {
+      syncRules();
+      const clean = work.filter(r => r.field && r.value !== "" && r.style_id);
+      if (clean.length) layer.rules = clean; else delete layer.rules;
+    } else {
+      delete layer.rules;
+    }
+    closePopups(); renderLayers(); draw(); persist();
+    toast(mode === "rules" && layer.rules ? `Оформление по значению поля: ${layer.rules.length} правил(о)` : "Оформление слоя применено");
   });
-  overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
+  $("ls-cancel").addEventListener("click", restore);
+  $("ls-reset").addEventListener("click", () => {
+    delete layer.fmt; delete layer.rules;
+    closePopups(); renderLayers(); draw(); persist();
+    toast("Оформление сброшено к стандартному");
+  });
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) restore(); });
 }
 
 // ---------- таблица атрибутов слоя (логика QGIS) ----------
@@ -3841,7 +3844,7 @@ on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   layerOf, styleOf, layerStyle, upgradeFeature, LAYERS_V2, STYLES_V2,
                   setTool, setActiveLayer, quickLayerByKind, activeLayer,
-                  reorderLayer, openLayerMenu, openAttributeTable, openLayerFormat,
+                  reorderLayer, openLayerMenu, openAttributeTable, openLayerStyle,
                   zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
 on("btn-new-layer", "click", openNewLayerDialog);
