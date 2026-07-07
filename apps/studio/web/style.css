@@ -286,6 +286,18 @@ button.primary:active { background: var(--accent-active); }
 .seg-btn:hover { background: var(--glass-strong); color: var(--text); }
 .seg-btn.active { background: var(--accent); color: var(--on-accent); font-weight: var(--fw-medium); }
 .seg-btn.active:hover { background: var(--accent); color: var(--on-accent); }
+/* окно «Горячие клавиши» — колонки групп, клавиши в kbd */
+.sc-modal { width: min(680px, 92vw); }
+.sc-body { padding: var(--sp-3) var(--sp-4); overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--sp-3) var(--sp-4); }
+.sc-group-title { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); font-weight: var(--fw-semibold); margin-bottom: var(--sp-1); }
+.sc-row { display: flex; align-items: baseline; gap: var(--sp-2); padding: 2px 0; font-size: var(--fs-12); }
+.sc-row kbd { flex: 0 0 auto; min-width: 20px; text-align: center;
+  padding: 2px 6px; border: 1px solid var(--field-border); border-bottom-width: 2px;
+  border-radius: var(--r-sm); background: var(--field-bg); color: var(--text);
+  font: var(--fw-medium) var(--fs-11)/1.4 var(--font-ui); white-space: nowrap; }
+.sc-row span { color: var(--text-2); }
 /* образец линии под выпадашкой стиля пунктира (модалка — flex-колонка,
    поэтому flex:0 0 auto + min-height, иначе SVG-only блок схлопывается в 0) */
 .line-preview { margin: var(--sp-1) var(--sp-4) 0; flex: 0 0 auto; height: 18px; min-height: 18px;
@@ -424,6 +436,9 @@ footer span { flex-shrink: 0; }
 #st-core, #st-bridge { color: var(--faint); font-family: var(--font-mono); font-size: var(--fs-11); }
 #st-toast { color: var(--success); font-weight: var(--fw-semibold); }
 #st-hint { flex-shrink: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-help { flex: none; padding: 1px var(--sp-2); font-size: var(--fs-11); color: var(--text-2);
+  border-color: var(--field-border); background: var(--field-bg); border-radius: var(--r-pill); }
+.st-help:hover { color: var(--accent); border-color: var(--accent-line); }
 
 /* ---- панель свойств ------------------------------------------------------- */
 #props-body .kind { font-weight: var(--fw-semibold); margin-bottom: var(--sp-2); }

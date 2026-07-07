@@ -2023,6 +2023,58 @@ function renderLayers() {
   updateLayerStatus();   // чип «куда я черчу» — синхрон с активным слоем
 }
 
+// ---------- справка «Горячие клавиши» (клавиша ?) -------------------------
+// сгруппированный список — единственное полное место (строка-подсказка внизу
+// физически вмещает лишь часть). Клавиши в <kbd>, ⌘ = Cmd на Mac.
+const SHORTCUTS = [
+  ["Инструменты", [
+    ["V", "Выбор и правка объектов"],
+    ["D", "Размерная линия"], ["M", "Измерение расстояния"],
+    ["T", "Обрезать по границе"], ["E", "Продлить до границы"], ["J", "Склеить линии"],
+  ]],
+  ["Быстрый слой (создать/выбрать + чертить)", [
+    ["G", "Граница территории"], ["Z", "Функциональная зона"], ["O", "Ограничение (ЗОУИТ)"],
+    ["B", "Здание"], ["P", "Общественная зона"], ["L", "Красная линия"], ["S", "Соцобъект"],
+  ]],
+  ["Черчение", [
+    ["Shift", "Прямой угол (орто)"], ["цифры, Enter", "Ввод длины отрезка"],
+    ["Enter", "Завершить фигуру"], ["Esc", "Отменить действие"],
+  ]],
+  ["Правка объекта", [
+    ["R", "Повернуть на 90°"], ["⌘D", "Дубликат"], ["стрелки", "Сдвиг (с Shift — на 1 м)"],
+    ["Delete", "Удалить"], ["двойной клик по ребру", "Добавить вершину"],
+    ["Alt + клик по вершине", "Удалить вершину"],
+  ]],
+  ["Вид и привязки", [
+    ["F", "Вписать всё в экран"], ["колесо мыши", "Масштаб"],
+    ["пробел + тянуть", "Сдвинуть холст"], ["X", "Привязка к объектам"], ["C", "Привязка к сетке"],
+  ]],
+  ["История", [
+    ["⌘Z", "Отменить"], ["⌘⇧Z", "Вернуть"], ["?", "Эта справка"],
+  ]],
+];
+function openShortcuts() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const groups = SHORTCUTS.map(([title, rows]) => `
+    <div class="sc-group"><div class="sc-group-title">${escHtml(title)}</div>
+    ${rows.map(([k, d]) => `<div class="sc-row"><kbd>${escHtml(k)}</kbd><span>${escHtml(d)}</span></div>`).join("")}
+    </div>`).join("");
+  overlay.innerHTML = `<div class="modal fmt-modal-lg sc-modal">
+    <div class="modal-head">Горячие клавиши
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="sc-body">${groups}</div>
+    <div class="modal-actions"><span class="spacer"></span>
+      <button class="primary" id="sc-close">Понятно</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
+  const close = () => overlay.remove();
+  overlay.querySelector(".modal-x").addEventListener("click", close);
+  overlay.querySelector("#sc-close").addEventListener("click", close);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
+}
+
 // ---------- контекстное меню слоя (логика QGIS) ----------
 function closePopups() {
   document.querySelectorAll(".ctx-menu, .modal-overlay").forEach(n => n.remove());
@@ -3406,6 +3458,7 @@ document.addEventListener("keydown", e => {
     if (d && state.selected != null) { e.preventDefault(); nudgeSelected(...d); }
     return;
   }
+  if (e.key === "?" || (e.shiftKey && e.code === "Slash")) { openShortcuts(); return; }
   if (e.code === "KeyX") { setOsnap(!state.osnap); return; }
   if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { setGridSnap(!state.gridSnap); return; }
   if (e.code === "KeyF") { fitView(); return; }
@@ -3847,6 +3900,7 @@ window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   reorderLayer, openLayerMenu, openAttributeTable, openLayerStyle,
                   zoomToLayer, renderLayers };
 on("btn-refresh-src", "click", fetchSources);
+on("btn-shortcuts", "click", openShortcuts);
 on("btn-new-layer", "click", openNewLayerDialog);
 // переключатель темы (canvas-theme.js): смена темы → перечитать палитру
 // холста и перерисовать. Тема на <html> уже выставлена до загрузки app.js.
