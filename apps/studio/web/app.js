@@ -267,9 +267,23 @@ function layerStyle(L) {
   const base = STYLES_V2[L.style_id] || {};
   return L.fmt ? { ...base, ...L.fmt } : base;
 }
+// условное форматирование: первое правило слоя, чьё поле совпадает со
+// значением атрибута объекта (сравнение по строке — типы полей разные),
+// отдаёт свой библиотечный стиль. Как и явный f.style_id, подменяет базу
+// ЦЕЛИКОМ (не мержится с layer.fmt) — тот же прецедент, что у object.style_id.
+function ruleStyleFor(L, f) {
+  if (!L || !Array.isArray(L.rules)) return null;
+  const props = f.props || {};
+  for (const r of L.rules) {
+    if (!r.field || r.value === undefined || r.value === "") continue;
+    if (String(props[r.field] ?? "") === String(r.value))
+      return (r.style_id && STYLES_V2[r.style_id]) || null;
+  }
+  return null;
+}
 function styleOf(f) {
   const L = layerOf(f);
-  const base = (f.style_id && STYLES_V2[f.style_id]) || layerStyle(L) || {};
+  const base = (f.style_id && STYLES_V2[f.style_id]) || ruleStyleFor(L, f) || layerStyle(L) || {};
   return f.fmt ? { ...base, ...f.fmt } : base;   // f.fmt — оформление отдельного объекта
 }
 // пресеты пунктира и плотности штриховки для модалки формата
@@ -1538,6 +1552,8 @@ function persist() {
     layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
     layerLocked: Object.fromEntries(
       LAYERS_V2.filter(L => L.locked).map(L => [L.id, true])),
+    layerRules: Object.fromEntries(               // условное форматирование: атрибут → стиль
+      LAYERS_V2.filter(L => L.rules && L.rules.length).map(L => [L.id, L.rules])),
     layerOrder: LAYERS_V2.map(L => L.id),           // порядок отрисовки (QGIS-панель)
     layerFmt: Object.fromEntries(                    // пер-слойное оформление холста
       LAYERS_V2.filter(L => L.fmt).map(L => [L.id, L.fmt])),
@@ -1939,6 +1955,8 @@ function renderLayers() {
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
       <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
+      ${layer.rules && layer.rules.length ? `<span class="lrow-rules" title="условное форматирование: ${layer.rules.length} правил(о)">
+        <svg class="ic"><use href="#ic-filter"/></svg></span>` : ""}
       <button class="lrow-lock" title="${layer.locked ? "разблокировать слой" : "заблокировать слой (защита от случайной правки)"}">
         <svg class="ic"><use href="#${layer.locked ? "ic-lock" : "ic-unlock"}"/></svg></button>
       <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-menu-dots"/></svg></button>`;
@@ -2015,6 +2033,7 @@ function openLayerMenu(layer, x, y) {
     ["Сделать активным", () => setActiveLayer(layer.id)],
     ["Таблица атрибутов…", () => openAttributeTable(layer)],
     ["Форматирование…", () => openLayerFormat(layer)],
+    ["Условное форматирование…", () => openLayerRules(layer)],
     ["Приблизить к слою", () => zoomToLayer(layer.id)],
     ["Переименовать…", () => renameLayer(layer)],
     [layer.locked ? "Разблокировать слой" : "Заблокировать слой", () => toggleLayerLock(layer)],
@@ -2457,6 +2476,76 @@ function openLayerFormat(layer) {
     delete layer.fmt; closePopups(); renderLayers(); draw(); persist();
   });
   overlay.addEventListener("click", ev => { if (ev.target === overlay) restore(); });
+}
+
+// ---------- условное форматирование слоя: атрибут → библиотечный стиль ----
+// Правило = { field, value, style_id }. Первое совпавшее по значению (строкой)
+// побеждает — см. ruleStyleFor(). Поля — те же, что в таблице атрибутов
+// (attrColumns), кроме вычисляемых $area/$length (равенство по float бессмысленно).
+function openLayerRules(layer) {
+  closePopups();
+  const fieldCols = attrColumns(layer).filter(c => !c.virtual);
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  let work = (layer.rules || []).map(r => ({ ...r }));
+  const q = id => overlay.querySelector("#" + id);
+  const fieldOpts = sel => fieldCols.length
+    ? fieldCols.map(c => `<option value="${escHtml(c.name)}"${c.name === sel ? " selected" : ""}>${escHtml(c.label)}</option>`).join("")
+    : `<option value="">— нет полей —</option>`;
+  const rowsHtml = () => work.length ? work.map((r, i) => `<tr>
+      <td><select class="cr-field" data-i="${i}">${fieldOpts(r.field)}</select></td>
+      <td><input class="cr-value" data-i="${i}" value="${escHtml(r.value ?? "")}" placeholder="значение"></td>
+      <td><select class="cr-style" data-i="${i}">${stylePickerOptions(r.style_id)}</select></td>
+      <td class="mf-ord"><button class="mf-del cr-del" data-i="${i}" title="Удалить правило">✕</button></td>
+    </tr>`).join("")
+    : `<tr><td colspan="4" class="muted" style="padding:10px">Правил пока нет — добавьте кнопкой «+ правило». Первое совпавшее по значению атрибута побеждает.</td></tr>`;
+  const syncInputs = () => {
+    overlay.querySelectorAll(".cr-field").forEach(el => { work[+el.dataset.i].field = el.value; });
+    overlay.querySelectorAll(".cr-value").forEach(el => { work[+el.dataset.i].value = el.value; });
+    overlay.querySelectorAll(".cr-style").forEach(el => { work[+el.dataset.i].style_id = el.value; });
+  };
+  const render = () => {
+    q("cr-body").innerHTML = rowsHtml();
+    overlay.querySelectorAll(".cr-field").forEach(el => el.onchange = () => { work[+el.dataset.i].field = el.value; });
+    overlay.querySelectorAll(".cr-value").forEach(el => el.onchange = () => { work[+el.dataset.i].value = el.value; });
+    overlay.querySelectorAll(".cr-style").forEach(el => el.onchange = () => { work[+el.dataset.i].style_id = el.value; });
+    overlay.querySelectorAll(".cr-del").forEach(el => el.onclick = () => { syncInputs(); work.splice(+el.dataset.i, 1); render(); });
+  };
+  overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
+    <div class="modal-head">Условное форматирование · ${escHtml(layer.title)}</div>
+    <div class="fc-help" style="margin:0 var(--sp-4)">Если атрибут объекта равен значению — применяется выбранный
+      библиотечный стиль (перекрывает стиль слоя, как и ручной выбор стиля объекта). Без совпадений — обычный стиль слоя.</div>
+    <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Значение</th><th>Стиль</th><th></th></tr></thead>
+      <tbody id="cr-body"></tbody></table>
+    <button id="cr-add" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ правило</button>
+    <div class="modal-actions">
+      <button id="cr-reset">Сбросить</button>
+      <span class="spacer"></span>
+      <button id="cr-cancel">Отмена</button>
+      <button id="cr-apply" class="primary">Применить</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
+  render();
+  const close = () => overlay.remove();
+  q("cr-add").addEventListener("click", () => {
+    syncInputs();
+    work.push({ field: fieldCols[0] ? fieldCols[0].name : "", value: "", style_id: "" });
+    render();
+  });
+  q("cr-apply").addEventListener("click", () => {
+    syncInputs();
+    const clean = work.filter(r => r.field && r.value !== "" && r.style_id);
+    if (clean.length) layer.rules = clean; else delete layer.rules;
+    close(); renderLayers(); draw(); persist();
+    toast(clean.length ? `Правил применено: ${clean.length}` : "Условное форматирование отключено");
+  });
+  q("cr-cancel").addEventListener("click", close);
+  q("cr-reset").addEventListener("click", () => {
+    delete layer.rules; close(); renderLayers(); draw(); persist();
+    toast("Условное форматирование сброшено");
+  });
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
 }
 
 // ---------- таблица атрибутов слоя (логика QGIS) ----------
@@ -3691,6 +3780,10 @@ function applyRestoredState(d) {
   if (d.layerLocked) {
     for (const [id, locked] of Object.entries(d.layerLocked))
       if (LAYER_BY_ID[id] && locked) LAYER_BY_ID[id].locked = true;
+  }
+  if (d.layerRules) {
+    for (const [id, rules] of Object.entries(d.layerRules))
+      if (LAYER_BY_ID[id] && Array.isArray(rules) && rules.length) LAYER_BY_ID[id].rules = rules;
   }
   if (d.layerFields) {
     for (const [id, flds] of Object.entries(d.layerFields))
