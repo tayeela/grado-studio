@@ -265,7 +265,7 @@ class TestUnderlay(unittest.TestCase):
 
     def setUp(self):
         self._orig = studio_core._tile_jpeg
-        studio_core._tile_jpeg = lambda z, x, y: FAKE_JPEG
+        studio_core._tile_jpeg = lambda z, x, y, source="osm": FAKE_JPEG
 
     def tearDown(self):
         studio_core._tile_jpeg = self._orig
@@ -306,7 +306,7 @@ class TestUnderlay(unittest.TestCase):
         self.assertEqual(pdf.count(b"/Subtype /Image"), 1)
 
     def test_album_offline_skips_ortho(self):
-        def fail(z, x, y):
+        def fail(z, x, y, source="osm"):
             raise OSError("нет сети")
         studio_core._tile_jpeg = fail
         pdf = studio_core.make_album(FEATURES, "Тест", basemap=True)
@@ -322,7 +322,7 @@ class TestUnderlay(unittest.TestCase):
         # одиночный сбой (не сетевой) первого тайла — дырка, не потеря всего
         calls = {"n": 0}
 
-        def flaky(z, x, y):
+        def flaky(z, x, y, source="osm"):
             calls["n"] += 1
             if calls["n"] == 1:
                 raise RuntimeError("sips сбой")
@@ -335,7 +335,7 @@ class TestUnderlay(unittest.TestCase):
         # полупустая мозаика хуже её отсутствия — лист без подложки
         calls = {"n": 0}
 
-        def mostly_fail(z, x, y):
+        def mostly_fail(z, x, y, source="osm"):
             calls["n"] += 1
             if calls["n"] > 1:
                 raise RuntimeError("сбой")
@@ -349,7 +349,7 @@ class TestUnderlay(unittest.TestCase):
         # ждала бы таймаут на каждом из ~130 тайлов
         calls = {"n": 0}
 
-        def dead(z, x, y):
+        def dead(z, x, y, source="osm"):
             calls["n"] += 1
             raise OSError("сеть недоступна")
         studio_core._tile_jpeg = dead
@@ -399,16 +399,16 @@ class TestTileCache(unittest.TestCase):
         self._tmp.cleanup()
 
     def test_broken_cache_is_refetched(self):
-        p = studio_core.fetch_tile_png(17, 1, 2)
+        p = studio_core.fetch_tile(17, 1, 2, "osm")
         self.assertEqual(p.read_bytes(), FAKE_PNG)
         self.assertEqual(len(self.calls), 1)
         # обрыв записи: файл существует, но неполный → перекачка
         p.write_bytes(FAKE_PNG[:10])
-        studio_core.fetch_tile_png(17, 1, 2)
+        studio_core.fetch_tile(17, 1, 2, "osm")
         self.assertEqual(p.read_bytes(), FAKE_PNG)
         self.assertEqual(len(self.calls), 2)
         # целый кэш сеть не дёргает
-        studio_core.fetch_tile_png(17, 1, 2)
+        studio_core.fetch_tile(17, 1, 2, "osm")
         self.assertEqual(len(self.calls), 2)
 
     def test_valid_png_checks_both_ends(self):

@@ -183,8 +183,6 @@ def frontend_styles():
 # --- тайловая подложка (кэш общий: холст студии и листы альбома) -----------
 # Локальный однопользовательский инструмент = «лёгкое использование» по
 # Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
-TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-TILE_ATTRIBUTION = "© OpenStreetMap contributors"
 TILE_CACHE = Path(__file__).parent / ".tile_cache"
 TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 MAX_UNDERLAY_TILES = 130
@@ -224,27 +222,6 @@ def _tmp_name(path):
         f".{path.stem}-{os.getpid()}-{threading.get_ident()}{path.suffix}")
 
 
-def fetch_tile_png(z, x, y):
-    """Путь к PNG тайла в дисковом кэше (при промахе/битом кэше — загрузка).
-
-    Запись атомарна (tmp + os.replace): тайлы читают параллельно холст
-    (ThreadingHTTPServer) и сборка листов."""
-    cache_path = TILE_CACHE / str(z) / str(x) / f"{y}.png"
-    if not _valid_png(cache_path):
-        req = urllib.request.Request(TILE_URL.format(z=z, x=x, y=y),
-                                     headers={"User-Agent": TILE_UA})
-        with urllib.request.urlopen(req, timeout=10,
-                                    context=TILE_SSL_CTX) as resp:
-            data = resp.read()
-        if data[:8] != _PNG_SIG:
-            raise RuntimeError("tile upstream: not a PNG")
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = _tmp_name(cache_path)
-        tmp.write_bytes(data)
-        os.replace(tmp, cache_path)
-    return cache_path
-
-
 # Источники подложки: карта OSM (PNG) и спутник ESRI World Imagery (JPEG).
 # ESRI кладёт координаты в порядке z/y/x. Оба — для лёгкого локального
 # просмотра; при промышленной нагрузке — свой сервер/ключ.
@@ -268,6 +245,10 @@ def _valid_tile(path):
             (data[:2] == b"\xff\xd8" and data[-2:] == b"\xff\xd9"))
 
 
+def _tile_cache_path(z, x, y, source):
+    return TILE_CACHE / source / str(z) / str(x) / f"{y}.img"
+
+
 def fetch_tile(z, x, y, source="osm"):
     """Тайл подложки выбранного источника (карта OSM | спутник ESRI).
 
@@ -275,7 +256,7 @@ def fetch_tile(z, x, y, source="osm"):
     (расширение .img), валидность по сигнатуре обоих форматов. Запись
     атомарна (tmp + os.replace), кэш раздельный по источнику."""
     tmpl = TILE_SOURCES.get(source) or TILE_SOURCES["osm"]
-    cache_path = TILE_CACHE / source / str(z) / str(x) / f"{y}.img"
+    cache_path = _tile_cache_path(z, x, y, source)
     if not _valid_tile(cache_path):
         req = urllib.request.Request(tmpl.format(z=z, x=x, y=y),
                                      headers={"User-Agent": TILE_UA})
@@ -297,14 +278,19 @@ def tile_response(z, x, y, source="osm"):
     return data, ("image/png" if data[:8] == _PNG_SIG else "image/jpeg")
 
 
-def _tile_jpeg(z, x, y):
+def _tile_jpeg(z, x, y, source="osm"):
     """JPEG тайла для вставки в PDF (DCTDecode кладёт JPEG как есть).
 
-    PNG→JPEG конвертирует системный sips (macOS), результат кэшируется
-    рядом с PNG. sips пишет в свой tmp атомарно, но два параллельных
-    экспорта с одним --out роняют один из rename'ов — поэтому цель
-    у каждого вызова своя, в кэш её кладёт os.replace."""
-    png = fetch_tile_png(z, x, y)
+    ESRI (sat) уже отдаёт JPEG — вставляется как есть. OSM (osm) отдаёт
+    PNG — конвертирует системный sips (macOS), результат кэшируется рядом.
+    sips пишет в свой tmp атомарно, но два параллельных экспорта с одним
+    --out роняют один из rename'ов — поэтому цель у каждого вызова своя,
+    в кэш её кладёт os.replace."""
+    img = fetch_tile(z, x, y, source)
+    data = img.read_bytes()
+    if data[:2] == b"\xff\xd8":            # уже JPEG (ESRI) — как есть
+        return data
+    png = img
     jpg = png.with_suffix(".jpg")
     try:
         data = jpg.read_bytes()
@@ -344,8 +330,9 @@ def _tile_lonlat(xt, yt, z):
     return lon, lat
 
 
-def tile_underlay(center_utm, map_rect, scale, dpi=150):
-    """Image-операции подложки ОСМ под карто-фрейм листа (мм).
+def tile_underlay(center_utm, map_rect, scale, dpi=150, source="osm"):
+    """Image-операции подложки (карта OSM | спутник ESRI) под карто-фрейм
+    листа (мм).
 
     Точная цепочка: UTM ↔ WGS84 (Snyder), каждый тайл ставится
     параллелограммом по трём углам — Web Mercator повёрнут к сетке UTM
@@ -388,12 +375,11 @@ def tile_underlay(center_utm, map_rect, scale, dpi=150):
     ops, failed, net_down = [], 0, False
     for xt in xs_range:
         for yt in ys_range:
-            if net_down and not _valid_png(
-                    TILE_CACHE / str(z) / str(xt) / f"{yt}.png"):
+            if net_down and not _valid_tile(_tile_cache_path(z, xt, yt, source)):
                 failed += 1
                 continue
             try:
-                data = _tile_jpeg(z, xt, yt)
+                data = _tile_jpeg(z, xt, yt, source)
             except OSError:
                 net_down = True
                 failed += 1
@@ -410,11 +396,12 @@ def tile_underlay(center_utm, map_rect, scale, dpi=150):
     return ops
 
 
-def _project_underlay(project, map_rect, scale):
+def _project_underlay(project, map_rect, scale, source="osm"):
     """Подложка для карто-фрейма, центрированного по габаритам проекта."""
     from grado_render import project_extent
     x0, y0, x1, y1 = project_extent(project)
-    return tile_underlay(((x0 + x1) / 2.0, (y0 + y1) / 2.0), map_rect, scale)
+    return tile_underlay(((x0 + x1) / 2.0, (y0 + y1) / 2.0), map_rect, scale,
+                         source=source)
 
 KIND_TO_CODE = {
     "boundary": "terr.boundary",
@@ -691,7 +678,8 @@ def compute_tep(features, params=None):
     }
 
 
-def make_album(features, name, params=None, basemap=False, layers=None):
+def make_album(features, name, params=None, basemap=False, layers=None,
+               basemap_source="osm"):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers)
         engine = make_engine(features, params)
@@ -707,10 +695,12 @@ def make_album(features, name, params=None, basemap=False, layers=None):
             base_plan_sheet(doc, project, 3),
         ]
         if basemap:
-            underlay = _project_underlay(project, MAP_RECT, fit_scale(project))
+            underlay = _project_underlay(project, MAP_RECT, fit_scale(project),
+                                         source=basemap_source)
             if underlay:  # сети нет — альбом собирается без ортофото
+                attribution = TILE_ATTRIBUTIONS.get(basemap_source, TILE_ATTRIBUTIONS["osm"])
                 pages.append(ortho_sheet(doc, project, len(pages) + 1,
-                                         underlay, TILE_ATTRIBUTION))
+                                         underlay, attribution))
         pages.append(apo_sheet(doc, project, engine, len(pages) + 1))
         pages.append(tep_summary_sheet(doc, engine, len(pages) + 1))
         doc.pages = pages
@@ -1057,7 +1047,8 @@ def make_dxf(features, name, layers=None):
     return (text[:cut] + extra + text[cut:]).encode("cp1251", errors="replace")
 
 
-def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None):
+def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None,
+               basemap_source="osm"):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -1072,9 +1063,10 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
         ix, iy, iw, ih = page.inner_rect()
         map_rect = (ix + 8, iy + 16, iw - 16, ih - 24)
         used_scale = int(scale) if scale else fit_scale(project, map_rect)
-        underlay = (_project_underlay(project, map_rect, used_scale)
+        underlay = (_project_underlay(project, map_rect, used_scale, source=basemap_source)
                     if basemap else None)
-        caption_extra = f" · подложка {TILE_ATTRIBUTION}" if underlay else ""
+        attribution = TILE_ATTRIBUTIONS.get(basemap_source, TILE_ATTRIBUTIONS["osm"])
+        caption_extra = f" · подложка {attribution}" if underlay else ""
         import datetime
         page.frames = [
             PageBorder(page),

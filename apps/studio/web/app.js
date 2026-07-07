@@ -1563,6 +1563,7 @@ function persist() {
     userLayers: userLayersManifest(),                // созданные в UI слои — пережить перезагрузку
     activeLayerId: state.activeLayerId,
     sources: state.sources,
+    basemapSource: basemap.source,
   };
   try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
   catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
@@ -3535,6 +3536,7 @@ async function download(url, filename) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ features: state.features, params: params(),
                            basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
+                           basemapSource: basemap.source,  // osm | sat — какую именно вставить
                            name: document.getElementById("project-name").value,
                            layers: userLayersManifest() }) });
   if (!r.ok) { toast("Ошибка сборки: " + (await r.text()).slice(0, 200), "error"); return; }
@@ -3797,6 +3799,11 @@ function applyRestoredState(d) {
     state.activeLayerId = fb ? fb.id : null;
   }
   if (Array.isArray(d.sources)) state.sources = d.sources;
+  if (d.basemapSource && d.basemapSource !== basemap.source) {
+    setBasemapSource(d.basemapSource);
+    const sel = document.getElementById("basemap-source");
+    if (sel) sel.value = d.basemapSource;
+  }
   if (d.name) document.getElementById("project-name").value = d.name;
   if (d.density) document.getElementById("p-density").value = d.density;
   if (d.ratio) document.getElementById("p-ratio").value = d.ratio;

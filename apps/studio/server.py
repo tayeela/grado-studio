@@ -152,7 +152,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
             self._send(json.dumps({"origin_lon": ORIGIN_LON, "origin_lat": ORIGIN_LAT,
-                                   "attribution": studio_core.TILE_ATTRIBUTION,
+                                   "attribution": studio_core.TILE_ATTRIBUTIONS["osm"],
                                    "attributions": studio_core.TILE_ATTRIBUTIONS},
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
@@ -227,9 +227,12 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/album":
+                basemap_source = body.get("basemapSource")
+                if basemap_source not in studio_core.TILE_SOURCES:
+                    basemap_source = "osm"
                 pdf = studio_core.make_album(
                     features, name, params, basemap=bool(body.get("basemap")),
-                    layers=layers)
+                    layers=layers, basemap_source=basemap_source)
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
                 data = studio_core.make_grado(features, name, layers=layers)
@@ -247,9 +250,13 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send(json.dumps({"line": pts}).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/print":
+                basemap_source = body.get("basemapSource")
+                if basemap_source not in studio_core.TILE_SOURCES:
+                    basemap_source = "osm"
                 pdf, used = studio_core.make_print(
                     features, name, body.get("scale"), body.get("paper", "A2"),
-                    basemap=bool(body.get("basemap")), layers=layers)
+                    basemap=bool(body.get("basemap")), layers=layers,
+                    basemap_source=basemap_source)
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":
