@@ -316,6 +316,7 @@ const state = {
   snapHit: null, guides: [], typed: "", mouse: null,
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
+  trimCtx: null,                  // { boundary: Set(id), ready: bool } — режимы «Обрезать»/«Продлить»
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
@@ -583,6 +584,139 @@ function segIntersect(a0, a1, b0, b1) {
   const u = ((b0[0] - a0[0]) * d0[1] - (b0[1] - a0[1]) * d0[0]) / det;
   if (t < -1e-9 || t > 1 + 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
   return [a0[0] + d0[0] * t, a0[1] + d0[1] * t];
+}
+// параметр t точки p на прямой a-b (0 = a, 1 = b), без ограничения диапазона
+function paramOnSeg(p, a, b) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-9;
+  return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2;
+}
+// пересечение луча a→b, продолженного ЗА b (t>=1), с ограниченным отрезком c-d
+// (u в [0,1]) — для продления линии до границы
+function rayIntersect(a, b, c, d) {
+  const d0 = [b[0] - a[0], b[1] - a[1]], d1 = [d[0] - c[0], d[1] - c[1]];
+  const det = d0[0] * d1[1] - d0[1] * d1[0];
+  if (Math.abs(det) < 1e-12) return null;
+  const t = ((c[0] - a[0]) * d1[1] - (c[1] - a[1]) * d1[0]) / det;
+  const u = ((c[0] - a[0]) * d0[1] - (c[1] - a[1]) * d0[0]) / det;
+  if (t < 1 - 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
+  return [a[0] + d0[0] * t, a[1] + d0[1] * t];
+}
+// обрезка: si — сегмент клика на f.line, boundaryIds — выбранные линии-границы.
+// Отсекается та часть сегмента, где был клик, вплоть до ближайшего пересечения.
+function trimLineAt(f, wx, wy, boundaryIds) {
+  const chain = f.line;
+  if (!chain) return false;
+  const tolW = 10 / state.view.k;
+  const si = nearChain(wx, wy, chain, tolW);
+  if (si == null) return false;
+  const a = chain[si], b = chain[si + 1];
+  const tClick = paramOnSeg(nearestOnSeg([wx, wy], a, b), a, b);
+  let best = null;
+  for (const bid of boundaryIds) {
+    const bf = state.features.find(x => x.id === bid);
+    if (!bf) continue;
+    for (const bchain of featureChains(bf))
+      for (let j = 0; j + 1 < bchain.length; j++) {
+        const p = segIntersect(a, b, bchain[j], bchain[j + 1]);
+        if (!p) continue;
+        const t = paramOnSeg(p, a, b);
+        if (!best || Math.abs(t - tClick) < Math.abs(best.t - tClick)) best = { t, p };
+      }
+  }
+  if (!best) return false;
+  const newChain = tClick > best.t
+    ? [...chain.slice(0, si + 1), best.p]     // клик за пересечением — отбросить хвост
+    : [best.p, ...chain.slice(si + 1)];       // клик до пересечения — отбросить начало
+  snapshot();
+  f.line = newChain;
+  afterChange();
+  return true;
+}
+// продление: клик у открытого конца f.line — тянем его до пересечения с
+// ближайшей выбранной границей (не заходя ЗА границу, u в [0,1] на ней)
+function extendLineAt(f, wx, wy, boundaryIds) {
+  const chain = f.line;
+  if (!chain || chain.length < 2) return false;
+  const tolW = 14 / state.view.k, n = chain.length;
+  const dStart = Math.hypot(wx - chain[0][0], wy - chain[0][1]);
+  const dEnd = Math.hypot(wx - chain[n - 1][0], wy - chain[n - 1][1]);
+  if (dStart >= tolW && dEnd >= tolW) return false;
+  const end = dEnd <= dStart;
+  const a = end ? chain[n - 2] : chain[1];
+  const b = end ? chain[n - 1] : chain[0];
+  let best = null;
+  for (const bid of boundaryIds) {
+    const bf = state.features.find(x => x.id === bid);
+    if (!bf) continue;
+    for (const bchain of featureChains(bf))
+      for (let j = 0; j + 1 < bchain.length; j++) {
+        const p = rayIntersect(a, b, bchain[j], bchain[j + 1]);
+        if (!p) continue;
+        const dist = Math.hypot(p[0] - b[0], p[1] - b[1]);
+        if (!best || dist < best.dist) best = { p, dist };
+      }
+  }
+  if (!best) return false;
+  snapshot();
+  if (end) chain[n - 1] = best.p; else chain[0] = best.p;
+  afterChange();
+  return true;
+}
+// клик в режиме trim/extend: пока границы не подтверждены (Enter) — клик по
+// линии переключает её как границу; после подтверждения — клик режет/тянет цель
+function handleTrimExtendClick(wx, wy) {
+  const ctx2 = state.trimCtx;
+  if (!ctx2) return;
+  const f = hitTest(wx, wy);
+  if (!ctx2.ready) {
+    if (!f || (!f.line && !f.ring)) return;
+    if (ctx2.boundary.has(f.id)) ctx2.boundary.delete(f.id); else ctx2.boundary.add(f.id);
+    draw();
+    toast(`Границы: ${ctx2.boundary.size}. Enter — дальше, ${state.tool === "trim" ? "клик по лишнему куску" : "клик у открытого конца"}`);
+    return;
+  }
+  if (!f || !f.line) { toast("Цель должна быть линией (не границей)", "warn"); return; }
+  if (ctx2.boundary.has(f.id)) { toast("Это выбрано как граница", "warn"); return; }
+  const ok = state.tool === "trim" ? trimLineAt(f, wx, wy, ctx2.boundary)
+                                    : extendLineAt(f, wx, wy, ctx2.boundary);
+  if (!ok) toast("Нет пересечения с границей рядом с этой точкой", "warn");
+}
+// склейка выбранных линий в одну — цепочкой по совпадающим (с допуском)
+// концам; конец «подтягивается» к точке уже собранной цепочки (снап впритык)
+function joinSelected() {
+  const feats = selectionFeatures().filter(f => f.line && f.line.length >= 2);
+  if (feats.length < 2) { toast("Выберите минимум 2 линии для склейки", "warn"); return; }
+  const tol = 10 / state.view.k;
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const items = feats.map(f => ({ id: f.id, pts: [...f.line] }));
+  let chainPts = items[0].pts;
+  const mergedIds = new Set([items[0].id]);
+  const remaining = items.slice(1);
+  let progress = true;
+  while (progress && remaining.length) {
+    progress = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const p = remaining[i].pts;
+      const cs = chainPts[0], ce = chainPts[chainPts.length - 1];
+      const ps = p[0], pe = p[p.length - 1];
+      let next = null;
+      if (dist(ce, ps) < tol) next = chainPts.concat(p.slice(1));
+      else if (dist(ce, pe) < tol) next = chainPts.concat([...p].reverse().slice(1));
+      else if (dist(cs, pe) < tol) next = p.slice(0, -1).concat(chainPts);
+      else if (dist(cs, ps) < tol) next = [...p].reverse().slice(0, -1).concat(chainPts);
+      if (next) { chainPts = next; mergedIds.add(remaining[i].id); remaining.splice(i, 1); progress = true; break; }
+    }
+  }
+  if (mergedIds.size < 2) { toast("Концы линий не совпадают в пределах допуска", "warn"); return; }
+  snapshot();
+  const keep = feats.find(f => f.id === items[0].id);
+  keep.line = chainPts;
+  state.features = state.features.filter(f => !mergedIds.has(f.id) || f.id === keep.id);
+  setSelection([keep.id]);
+  afterChange();
+  toast(mergedIds.size < feats.length
+    ? `Склеено ${mergedIds.size} из ${feats.length} линий — остальные не касаются концами`
+    : "Линии склеены");
 }
 
 function featureChains(f) {
@@ -1152,6 +1286,12 @@ function draw() {
         ctx.strokeStyle = cvColor("selection", "#2f6fde"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
+        ctx.setLineDash([]);
+      }
+      // граница для обрезки/продления — выбрана в 1-м шаге инструмента
+      if (state.trimCtx && state.trimCtx.boundary.has(f.id)) {
+        ctx.strokeStyle = cvColor("warning", "#e08a1e"); ctx.lineWidth = 2.4; ctx.setLineDash([2, 3]);
+        drawChain(f.ring || f.line, !!f.ring); ctx.stroke();
         ctx.setLineDash([]);
       }
       // ручки вершин — только у первичного (одиночного) выбора
@@ -2835,6 +2975,8 @@ cv.addEventListener("mousedown", e => {
     if (!state.measure || state.measure.b) state.measure = { a: s.p, b: null };
     else state.measure.b = s.p;
     draw();
+  } else if (state.tool === "trim" || state.tool === "extend") {
+    handleTrimExtendClick(wxr, wyr);
   } else if (state.tool === "point") {
     const L = activeLayer();
     if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
@@ -3007,7 +3149,7 @@ cv.addEventListener("wheel", e => {
 }, { passive: false });
 
 // ---------- клавиатура (по кодам клавиш — не зависит от раскладки) ----------
-const TOOL_CODES = { KeyV: "select", KeyM: "measure", KeyD: "dim" };
+const TOOL_CODES = { KeyV: "select", KeyM: "measure", KeyD: "dim", KeyT: "trim", KeyE: "extend" };
 // старые предметные клавиши — теперь «создать-или-выбрать слой этого вида»
 // (L2b: пресетов нет, слой заводится по требованию) + естественный инструмент
 const PRESET_KIND_CODES = {
@@ -3030,6 +3172,12 @@ document.addEventListener("keydown", e => {
     state.typed = state.typed.slice(0, -1); draw(); return;
   }
   if (e.key === "Enter") {
+    if (state.trimCtx && !state.trimCtx.ready) {
+      if (!state.trimCtx.boundary.size) { toast("Выберите хотя бы одну границу", "warn"); return; }
+      state.trimCtx.ready = true;
+      toast(state.tool === "trim" ? "Кликните лишний кусок линии" : "Кликните открытый конец линии для продления");
+      return;
+    }
     if (state.drawing && state.typed) placeTypedPoint();
     else finishDrawing();
     return;
@@ -3038,6 +3186,11 @@ document.addEventListener("keydown", e => {
     if (state.typed) { state.typed = ""; draw(); return; }
     if (state.drawing) { state.drawing = null; draw(); return; }
     if (state.measure) { state.measure = null; draw(); return; }
+    if (state.trimCtx && (state.trimCtx.boundary.size || state.trimCtx.ready)) {
+      state.trimCtx = { boundary: new Set(), ready: false }; draw();
+      toast("Выбор границ сброшен");
+      return;
+    }
     clearSelection(); draw(); renderProps(); return;
   }
   if (e.key === "Delete" || e.key === "Backspace") { deleteSelected(); return; }
@@ -3052,6 +3205,7 @@ document.addEventListener("keydown", e => {
   if (e.code === "KeyC" && !e.metaKey && !e.ctrlKey) { setGridSnap(!state.gridSnap); return; }
   if (e.code === "KeyF") { fitView(); return; }
   if (e.code === "KeyR") { rotateSelected(); return; }
+  if (e.code === "KeyJ") { joinSelected(); return; }
   const tool = TOOL_CODES[e.code];
   if (tool) { setTool(tool); return; }
   const kind = PRESET_KIND_CODES[e.code];
@@ -3088,6 +3242,12 @@ function setTool(tool, opts = {}) {
   state.tool = tool; state.drawing = null; state.drag = null;
   state.edit = null; state.typed = "";
   if (tool !== "measure") state.measure = null;
+  if (tool === "trim" || tool === "extend") {
+    state.trimCtx = { boundary: new Set(), ready: false };
+    toast("Кликните линии-границы, затем Enter");
+  } else {
+    state.trimCtx = null;
+  }
   // геом-инструмент против несовместимого слоя — слой переключается сам
   if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
     // подходящий слой рисуемой геометрии — но не приёмник импорта и не аннотация
@@ -3136,6 +3296,7 @@ function quickLayerByKind(kind) {
 }
 document.querySelectorAll("#toolbar button[data-tool]").forEach(
   b => b.addEventListener("click", () => setTool(b.dataset.tool)));
+document.getElementById("btn-join").addEventListener("click", () => joinSelected());
 
 function setOsnap(v) {
   state.osnap = v;
