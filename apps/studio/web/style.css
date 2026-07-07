@@ -267,7 +267,9 @@ button.primary:active { background: var(--accent-active); }
 .modal-actions { padding: 11px var(--sp-4); border-top: 1px solid var(--hairline);
   display: flex; gap: var(--sp-2); align-items: center; }
 .modal-actions .spacer { flex: 1; }
-.fmt-modal { width: 320px; padding-bottom: 0; }
+.fmt-modal { width: 440px; padding-bottom: 0; }
+/* окна с таблицами (оформление слоя, поля, калькулятор) — ещё шире */
+.fmt-modal-lg { width: 520px; }
 .fmt-modal label { display: block; margin: var(--sp-3) var(--sp-4) 0; color: var(--muted); font-size: var(--fs-12); }
 .fmt-modal label.chk { display: flex; gap: 7px; align-items: center; color: var(--text); cursor: pointer; }
 .fmt-modal input[type=color] { width: 100%; height: 32px; margin-top: var(--sp-1); padding: 2px;
