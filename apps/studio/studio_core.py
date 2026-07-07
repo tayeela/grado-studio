@@ -689,7 +689,7 @@ def compute_tep(features, params=None):
 
 
 def make_album(features, name, params=None, basemap=False, layers=None,
-               basemap_source="osm"):
+               basemap_source="osm", canvas_styles=None):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers)
         engine = make_engine(features, params)
@@ -698,7 +698,9 @@ def make_album(features, name, params=None, basemap=False, layers=None,
             if params and params.get(key) is not None:
                 engine.set_input(key, float(params[key]))
         doc = Document(name, meta={"org": "ГРАДО", "stage": "АГК"})
-        doc.styles = StyleSet()
+        # canvas_styles — inline-знаки «как на холсте» (режим выпуска студии):
+        # объекты несут синтетический style_id, а сам знак приходит здесь
+        doc.styles = StyleSet(id_styles=canvas_styles)
         pages = [
             title_sheet(doc),
             location_sheet(doc, project, engine.value("terr_area"), 2),
@@ -1058,7 +1060,7 @@ def make_dxf(features, name, layers=None):
 
 
 def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None,
-               basemap_source="osm"):
+               basemap_source="osm", canvas_styles=None):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -1089,7 +1091,8 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
         doc = Document(name)
         doc.pages = [page]
         doc.sheet_titles = [""]
-        pdf = render_document_pdf(doc, project, styles=StyleSet())
+        # canvas_styles — inline-знаки «как на холсте» (иначе стандарт ЛГР)
+        pdf = render_document_pdf(doc, project, styles=StyleSet(id_styles=canvas_styles))
         project.close()
     return pdf, used_scale
 

@@ -169,6 +169,10 @@ button.primary:active { background: var(--accent-active); }
 /* ---- разделители/группы в шапке ------------------------------------------ */
 .hsep { width: 1px; align-self: stretch; margin: 6px 2px; background: var(--hairline); }
 .hgroup { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.hd-select { padding: var(--sp-1) var(--sp-2); border: 1px solid var(--field-border);
+  border-radius: var(--r-sm); background: var(--field-bg); color: var(--text-2); font: inherit;
+  font-size: var(--fs-12); cursor: pointer; }
+.hd-select:hover { color: var(--text); border-color: var(--hairline-2); }
 
 /* ---- правая панель -------------------------------------------------------- */
 #panel {

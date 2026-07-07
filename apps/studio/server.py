@@ -230,9 +230,13 @@ class Handler(SimpleHTTPRequestHandler):
                 basemap_source = body.get("basemapSource")
                 if basemap_source not in studio_core.TILE_SOURCES:
                     basemap_source = "osm"
+                canvas_styles = body.get("canvasStyles")
+                if not isinstance(canvas_styles, dict):
+                    canvas_styles = None
                 pdf = studio_core.make_album(
                     features, name, params, basemap=bool(body.get("basemap")),
-                    layers=layers, basemap_source=basemap_source)
+                    layers=layers, basemap_source=basemap_source,
+                    canvas_styles=canvas_styles)
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
                 data = studio_core.make_grado(features, name, layers=layers)
@@ -253,10 +257,13 @@ class Handler(SimpleHTTPRequestHandler):
                 basemap_source = body.get("basemapSource")
                 if basemap_source not in studio_core.TILE_SOURCES:
                     basemap_source = "osm"
+                canvas_styles = body.get("canvasStyles")
+                if not isinstance(canvas_styles, dict):
+                    canvas_styles = None
                 pdf, used = studio_core.make_print(
                     features, name, body.get("scale"), body.get("paper", "A2"),
                     basemap=bool(body.get("basemap")), layers=layers,
-                    basemap_source=basemap_source)
+                    basemap_source=basemap_source, canvas_styles=canvas_styles)
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

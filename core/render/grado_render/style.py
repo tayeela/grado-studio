@@ -100,19 +100,30 @@ _BY_ID_CACHE = {}  # style_id → Style (резолв per-object стилей, �
 
 
 class StyleSet:
-    def __init__(self, styles=None):
+    def __init__(self, styles=None, id_styles=None):
         self.styles = dict(DEFAULT_STYLES)
         if styles:
             self.styles.update(styles)
+        # inline-стили по id (напр. «как на холсте» из студии): резолвятся
+        # ПЕРЕД системной библиотекой и не идут в глобальный кэш — так один
+        # экспорт со своими знаками не влияет на другие. Значения — Style
+        # или JSON-словарь (тот же формат, что styles/default.json).
+        self.id_styles = {}
+        if id_styles:
+            for sid, s in id_styles.items():
+                self.id_styles[sid] = s if isinstance(s, Style) else Style.from_json(s)
 
     def resolve(self, code):
         return self.styles.get(code, FALLBACK)
 
     def resolve_id(self, style_id):
-        """Style по id системной библиотеки (default + Эталон ЛГР) — для
+        """Style по id: сперва inline-стили этого набора (студийные «как на
+        холсте»), затем системная библиотека (default + Эталон ЛГР) — для
         per-object style_id из модели. None, если id неизвестен."""
         if not style_id:
             return None
+        if style_id in self.id_styles:
+            return self.id_styles[style_id]
         if style_id not in _BY_ID_CACHE:
             s = merged_library()["styles"].get(style_id)
             _BY_ID_CACHE[style_id] = Style.from_json(s) if s else None

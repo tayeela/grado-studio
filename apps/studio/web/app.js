@@ -1564,6 +1564,7 @@ function persist() {
     activeLayerId: state.activeLayerId,
     sources: state.sources,
     basemapSource: basemap.source,
+    exportStyle: exportStyleMode(),
   };
   try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
   catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
@@ -3601,13 +3602,72 @@ on("btn-clear", "click", () => {
 on("p-density", "change", refreshTep);
 on("p-ratio", "change", refreshTep);
 
+// «#rrggbb» из hex/rgba (rgb-часть); alpha игнорируем — прозрачность живёт
+// в fillOpacity/fill_opacity отдельно
+function hexOf(c) { return toHexColor(c, "#000000"); }
+// эффективный стиль объекта (styleOf, экранные px) → знак в формате бэкенда
+// (styles/default.json: мм листа, fill+fill_opacity). Конвенция студии:
+// px = мм × 2 (см. рендер маркеров/пикетажа), поэтому мм = px / 2.
+function canvasStyleToBackend(st) {
+  const out = {};
+  if (st.fill && st.fill !== "transparent") {
+    out.fill = hexOf(st.fill);
+    const op = st.fillOpacity != null ? st.fillOpacity : 1;
+    if (op < 1) out.fill_opacity = op;
+  } else out.fill = null;
+  if (st.stroke) out.stroke = hexOf(st.stroke);
+  out.width_mm = Math.max(0.05, (st.width || 1) / 2);
+  if (st.dash && st.dash.length) out.dash_mm = st.dash.map(v => v / 2);
+  if (st.hatch && typeof st.hatch === "object") {
+    out.hatch = { angle: st.hatch.angle ?? 45, cross: !!st.hatch.cross,
+                  spacing_mm: (st.hatch.spacing_px || 9) / 2,
+                  color: hexOf(st.hatch.color || st.stroke || "#888888") };
+  } else if (st.hatch) out.hatch = true;
+  if (st.line_marker) out.line_marker = {
+    shape: st.line_marker.shape, dir: st.line_marker.dir || "in",
+    period_mm: (st.line_marker.period || 40) / 2,
+    size_mm: (st.line_marker.size || 4) / 2 };
+  if (st.double) out.double_mm = st.double / 2;
+  if (st.line_label) out.line_label = st.line_label;
+  if (st.label_field) out.label_field = st.label_field;
+  return out;
+}
+// клоны объектов с синтетическим style_id + словарь этих знаков — для
+// выпуска «как на холсте». Одинаковые эффективные стили дедуплицируются
+// (много объектов одного слоя → один синтетический знак).
+function canvasStyleExport() {
+  const styles = {}, cache = new Map();
+  let n = 0;
+  const features = state.features.map(f => {
+    const js = JSON.stringify(canvasStyleToBackend(styleOf(f)));
+    let sid = cache.get(js);
+    if (!sid) { sid = "canvas." + (n++); cache.set(js, sid); styles[sid] = JSON.parse(js); }
+    return { ...f, style_id: sid };
+  });
+  return { features, styles };
+}
+// режим выпуска знаков: стандарт ЛГР (по коду слоя) | как на холсте
+function exportStyleMode() {
+  const sel = document.getElementById("export-style");
+  return sel && sel.value === "canvas" ? "canvas" : "standard";
+}
+
 async function download(url, filename) {
+  // «как на холсте» — только для PDF (печать/альбом): DXF и .grado —
+  // обменные форматы, там осмысленные стандартные знаки важнее (QGIS/CAD
+  // не знают наши инлайн-стили)
+  const canvasMode = exportStyleMode() === "canvas" &&
+                     (url === "/api/print" || url === "/api/album");
+  let features = state.features, canvasStyles = null;
+  if (canvasMode) { const ex = canvasStyleExport(); features = ex.features; canvasStyles = ex.styles; }
+  const payload = { features, params: params(),
+                    basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
+                    basemapSource: basemap.source,  // osm | sat — какую именно вставить
+                    name: document.getElementById("project-name").value,
+                    layers: userLayersManifest() };
+  if (canvasStyles) payload.canvasStyles = canvasStyles;
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ features: state.features, params: params(),
-                           basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
-                           basemapSource: basemap.source,  // osm | sat — какую именно вставить
-                           name: document.getElementById("project-name").value,
-                           layers: userLayersManifest() }) });
+    body: JSON.stringify(payload) });
   if (!r.ok) { toast("Ошибка сборки: " + (await r.text()).slice(0, 200), "error"); return; }
   const blob = await r.blob();
   const a = document.createElement("a");
@@ -3615,6 +3675,8 @@ async function download(url, filename) {
   if (filename.endsWith(".pdf")) window.open(a.href, "_blank");
   a.download = filename; a.click();
 }
+on("export-style", "change", () => { persist(); toast(exportStyleMode() === "canvas"
+  ? "Печать и альбом — знаками как на холсте" : "Печать и альбом — по стандарту ЛГР"); });
 on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
 on("btn-grado", "click", () => download("/api/grado", "project.grado"));
 on("btn-dxf", "click", () => download("/api/dxf", "project.dxf"));
@@ -3874,6 +3936,10 @@ function applyRestoredState(d) {
     setBasemapSource(d.basemapSource);
     const sel = document.getElementById("basemap-source");
     if (sel) sel.value = d.basemapSource;
+  }
+  if (d.exportStyle) {
+    const sel = document.getElementById("export-style");
+    if (sel) sel.value = d.exportStyle === "canvas" ? "canvas" : "standard";
   }
   if (d.name) document.getElementById("project-name").value = d.name;
   if (d.density) document.getElementById("p-density").value = d.density;

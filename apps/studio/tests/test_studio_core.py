@@ -332,6 +332,33 @@ class TestUnderlay(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"/Filter /DCTDecode", pdf)
 
+    def test_canvas_style_resolves_inline(self):
+        # inline-знак «как на холсте» резолвится ПЕРЕД библиотекой; #e3007b →
+        # rgb(0.890, 0, 0.482); библиотечные id и дальше работают
+        from grado_render import StyleSet
+        ss = StyleSet(id_styles={"canvas.0": {"fill": "#e3007b", "stroke": "#3d107b",
+                                              "width_mm": 1.4}})
+        st = ss.resolve_id("canvas.0")
+        self.assertAlmostEqual(st.fill[0], 0.8902, places=3)
+        self.assertAlmostEqual(st.fill[2], 0.4824, places=3)
+        self.assertEqual(st.width, 1.4)
+        self.assertIsNotNone(ss.resolve_id("boundary.line"))   # библиотека цела
+        self.assertIsNone(ss.resolve_id("canvas.99"))          # неизвестный inline
+
+    def test_print_canvas_styles_change_output(self):
+        # тот же объект печатается по-разному: со своим знаком (canvas_styles)
+        # и по стандарту (синтетический id неизвестен → стиль слоя)
+        feats = [{"kind": "zone", "layer_id": "project.tp.func_zone",
+                  "geometry_type": "polygon", "style_id": "canvas.0",
+                  "ring": [[0, 0], [400, 0], [400, 300], [0, 300]],
+                  "props": {"zone_title": "Ж-1"}}]
+        cs = {"canvas.0": {"fill": "#e3007b", "stroke": "#3d107b", "width_mm": 1.4}}
+        pdf_canvas, _ = studio_core.make_print(feats, "Тест", canvas_styles=cs)
+        pdf_std, _ = studio_core.make_print(feats, "Тест")
+        self.assertTrue(pdf_canvas.startswith(b"%PDF"))
+        self.assertTrue(pdf_std.startswith(b"%PDF"))
+        self.assertNotEqual(pdf_canvas, pdf_std)   # знак повлиял на вывод
+
     def test_first_tile_failure_keeps_underlay(self):
         # одиночный сбой (не сетевой) первого тайла — дырка, не потеря всего
         calls = {"n": 0}
