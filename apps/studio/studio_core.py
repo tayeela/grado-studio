@@ -603,8 +603,18 @@ def build_project(path, name, features, layers=None):
         # per-object стиль — в колонку style_id
         prov = f.get("prov") or {}
         source = prov.get("source") if prov.get("source") in _PROV_SOURCES else "manual"
+        # один повреждённый объект (напр. kind не совпадает с реальной
+        # геометрией — старый холст-баг мог такое насохранять) не должен
+        # ронять весь экспорт — тот же принцип деградации, что у tile_underlay
+        # при сетевых сбоях: пропускаем объект, продолжаем сборку остальных.
+        try:
+            geom = _geom_for(f)
+        except (KeyError, IndexError, TypeError, ValueError) as e:
+            print(f"build_project: пропущен повреждённый объект id={f.get('id')} "
+                 f"kind={f.get('kind')!r} ({e!r})", file=sys.stderr)
+            continue
         made[lid].add_feature(
-            _geom_for(f), attrs=attrs, source=source,
+            geom, attrs=attrs, source=source,
             source_date=prov.get("source_date"), source_doc=prov.get("source_doc"),
             style_id=f.get("style_id"))
     return project

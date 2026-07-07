@@ -36,6 +36,20 @@ class TestStudioCore(unittest.TestCase):
             self.assertGreater(x, 400000)
             p.close()
 
+    def test_build_project_skips_malformed_feature(self):
+        # объект с kind="zone" (ring-геометрия), но реальная геометрия — line
+        # (напр. старый холст-баг маршрутизации) — не должен ронять весь экспорт
+        broken = {"id": 999, "kind": "zone", "layer_id": "project.tp.func_zone",
+                 "line": [[0, 0], [10, 10]], "props": {"zone_title": "битый"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "s.grado", "Тест",
+                                          FEATURES + [broken])
+            # остальные объекты собрались как обычно, битый — тихо пропущен
+            codes = {i["code"] for i in p.layers()}
+            self.assertIn("tp.func_zone", codes)
+            self.assertEqual(sum(1 for _ in p.layer("tp.func_zone").features()), 1)
+            p.close()
+
     def test_compute_tep(self):
         out = studio_core.compute_tep(FEATURES, {"density": 25, "ratio_zh": 80})
         self.assertAlmostEqual(out["inputs"]["terr_area"], 15.0)
