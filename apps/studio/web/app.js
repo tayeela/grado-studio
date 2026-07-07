@@ -226,6 +226,25 @@ async function renameLayer(layer) {
   renderLayers(); renderProps(); persist();
 }
 
+// блокировка слоя (только просмотр): нельзя выбрать/подвинуть/удалить его
+// объекты и нельзя сделать слой активным для черчения
+function toggleLayerLock(layer) {
+  layer.locked = !layer.locked;
+  if (layer.locked) {
+    // снять выделение с уже выбранных объектов этого слоя — иначе их
+    // можно было бы двигать стрелками/Delete в обход блокировки
+    const stale = selectionIds().filter(id => {
+      const f = state.features.find(x => x.id === id);
+      return f && layerOf(f) === layer;
+    });
+    if (stale.length) {
+      for (const id of stale) state.selectedIds.delete(id);
+      if (state.selected != null && stale.includes(state.selected)) state.selected = null;
+    }
+  }
+  renderLayers(); renderProps(); draw(); persist();
+}
+
 // Стили выше — встроенный fallback; на старте они переопределяются из
 // /api/styles (единый источник styles/default.json — тот же, что PDF и DXF).
 async function initStyles() {
@@ -258,8 +277,23 @@ const DASH_PRESETS = { solid: null, dash: [6, 4], dashdot: [10, 4, 2, 4],
                        dashdotdot: [10, 4, 2, 4, 2, 4] };
 function dashPresetOf(dash) {
   if (!dash) return "solid";
-  return dash.length <= 2 ? "dash" : dash.length <= 4 ? "dashdot" : "dashdotdot";
+  for (const [k, v] of Object.entries(DASH_PRESETS))
+    if (v && v.length === dash.length && v.every((n, i) => n === dash[i])) return k;
+  return "custom";     // точный паттерн (напр. из QML) не совпал ни с одним пресетом
 }
+function dashToStr(dash) { return dash ? dash.join(",") : ""; }
+// «8, 3, 2, 3» → [8,3,2,3]; мусор/пусто — null (сплошная)
+function parseDashStr(s) {
+  const nums = String(s || "").split(/[,\s]+/).map(Number).filter(n => Number.isFinite(n) && n > 0);
+  return nums.length ? nums : null;
+}
+// формы засечек-маркеров линии — см. drawMarkerGlyph (ниже) за геометрией
+const MARKER_SHAPES = [
+  ["tick", "засечка ⊢"], ["tee", "тавр ⊥"], ["corner", "уголок"], ["chevron", "галка ∨"],
+  ["chevron_dot", "галка с точкой"], ["triangle", "треугольник ▼"],
+  ["triangle2", "двойной треугольник"], ["dot", "точка ●"], ["square", "квадрат ■"],
+  ["diamond", "ромб ◇"], ["slashes", "двойной штрих ⫽"],
+];
 const HATCH_DENS = { sparse: 14, normal: 9, dense: 5 };
 function hatchDensOf(px) { return px <= 6 ? "dense" : px >= 13 ? "sparse" : "normal"; }
 // маленькое условное обозначение линии: как выглядит выбранный стиль (цвет,
@@ -317,6 +351,7 @@ const state = {
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
   trimCtx: null,                  // { boundary: Set(id), ready: bool } — режимы «Обрезать»/«Продлить»
+  hoverLayerId: null,             // ховер строки в панели «Слои» — подсветка объектов на холсте
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
@@ -325,6 +360,7 @@ const state = {
 };
 
 function isHidden(f) { const L = layerOf(f); return L ? !L.visible : false; }
+function isLocked(f) { const L = layerOf(f); return !!L && !!L.locked; }
 
 let shiftDown = false, spaceDown = false;
 
@@ -1294,6 +1330,15 @@ function draw() {
         drawChain(f.ring || f.line, !!f.ring); ctx.stroke();
         ctx.setLineDash([]);
       }
+      // ховер строки слоя в панели — мягкая подсветка его объектов на холсте
+      if (state.hoverLayerId === layer.id) {
+        ctx.save();
+        ctx.strokeStyle = cvColor("accent", "#2f6fde"); ctx.lineWidth = 4;
+        ctx.globalAlpha = 0.35; ctx.lineCap = "round"; ctx.lineJoin = "round";
+        if (f.point) { const [sx, sy] = w2s(...f.point); ctx.beginPath(); ctx.arc(sx, sy, 8, 0, 7); ctx.stroke(); }
+        else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
+        ctx.restore();
+      }
       // ручки вершин — только у первичного (одиночного) выбора
       if (f.id === state.selected) {
         const shared = sharedVertexSet(f);
@@ -1491,6 +1536,8 @@ function persist() {
     density: document.getElementById("p-density").value,
     ratio: document.getElementById("p-ratio").value,
     layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
+    layerLocked: Object.fromEntries(
+      LAYERS_V2.filter(L => L.locked).map(L => [L.id, true])),
     layerOrder: LAYERS_V2.map(L => L.id),           // порядок отрисовки (QGIS-панель)
     layerFmt: Object.fromEntries(                    // пер-слойное оформление холста
       LAYERS_V2.filter(L => L.fmt).map(L => [L.id, L.fmt])),
@@ -1884,14 +1931,22 @@ function renderLayers() {
       swBg = `repeating-linear-gradient(${90 - a}deg, ${st.hatch.color} 0 1px, transparent 1px 4px)`;
     }
     const row = document.createElement("div");
-    row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "");
+    row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "") +
+                    (layer.locked ? " locked" : "");
     row.draggable = true;
     row.dataset.lid = layer.id;
     row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки"><svg class="ic"><use href="#ic-grip"/></svg></span>
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
       <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
+      <button class="lrow-lock" title="${layer.locked ? "разблокировать слой" : "заблокировать слой (защита от случайной правки)"}">
+        <svg class="ic"><use href="#${layer.locked ? "ic-lock" : "ic-unlock"}"/></svg></button>
       <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-menu-dots"/></svg></button>`;
+    row.addEventListener("mouseenter", () => { state.hoverLayerId = layer.id; draw(); });
+    row.addEventListener("mouseleave", () => { state.hoverLayerId = null; draw(); });
+    row.querySelector(".lrow-lock").addEventListener("click", ev => {
+      ev.stopPropagation(); toggleLayerLock(layer);
+    });
     row.querySelector("input").addEventListener("change", ev => {
       layer.visible = ev.target.checked;
       const sel = selectedFeature();
@@ -1962,6 +2017,7 @@ function openLayerMenu(layer, x, y) {
     ["Форматирование…", () => openLayerFormat(layer)],
     ["Приблизить к слою", () => zoomToLayer(layer.id)],
     ["Переименовать…", () => renameLayer(layer)],
+    [layer.locked ? "Разблокировать слой" : "Заблокировать слой", () => toggleLayerLock(layer)],
   ];
   for (const [label, fn] of items) {
     const it = document.createElement("div");
@@ -2244,7 +2300,10 @@ function openLayerFormat(layer) {
     <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
     <label>Пунктир<select id="fmt-dashp">${
       opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
-      opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки")}</select></label>
+      opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки") +
+      opt(dp, "custom", "свой…")}</select></label>
+    <label id="fmt-dash-custom-wrap" style="display:${dp === "custom" ? "" : "none"}">Свой пунктир, px (штрих, пробел через запятую)
+      <input type="text" id="fmt-dash-custom" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? cur.dash : null))}"></label>
     <div class="line-preview" id="fmt-dash-preview"></div>
     <div class="fmt-sub">Штриховка зоны</div>
     <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
@@ -2255,6 +2314,15 @@ function openLayerFormat(layer) {
       opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
     <div class="fmt-sub">Показывать</div>
     <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
+    <div id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
+      <label>Форма<select id="fmt-marker-shape">${
+        MARKER_SHAPES.map(([v, lbl]) => opt((baseMarker && baseMarker.shape) || "tick", v, lbl)).join("")}</select></label>
+      <label>Шаг, px<input type="number" id="fmt-marker-period" value="${(baseMarker && baseMarker.period) || 40}" min="6" max="200" step="1"></label>
+      <label>Размер, px<input type="number" id="fmt-marker-size" value="${(baseMarker && baseMarker.size) || 4}" min="1" max="40" step="0.5"></label>
+      <label>Остриё<select id="fmt-marker-dir">${
+        opt((baseMarker && baseMarker.dir) || "in", "in", "внутрь зоны") +
+        opt((baseMarker && baseMarker.dir) || "in", "out", "наружу")}</select></label>
+    </div>
     <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии</label>
     ${targets.length ? `<div class="fmt-sub">Копировать оформление</div>
     <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
@@ -2273,13 +2341,39 @@ function openLayerFormat(layer) {
   const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
   const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
+  // текущий выбранный dash (с учётом «свой…») — используется и превью, и collect
+  const currentDash = () => $("fmt-dashp").value === "custom"
+    ? parseDashStr($("fmt-dash-custom").value)
+    : (DASH_PRESETS[$("fmt-dashp").value] ?? null);
   // образец выбранного стиля линии (цвет/толщина/пунктир) под выпадашкой
   const updateDashPreview = () => {
-    const dash = DASH_PRESETS[$("fmt-dashp").value] ?? null;
     const wv = Math.max(0.2, parseFloat($("fmt-width").value) || 1);
-    $("fmt-dash-preview").innerHTML = lineSampleSVG(dash, strokeCF.get(), wv);
+    $("fmt-dash-preview").innerHTML = lineSampleSVG(currentDash(), strokeCF.get(), wv);
   };
   updateDashPreview();
+  // поля пунктира/маркера заполняются либо от объекта стиля (пресет), либо
+  // напрямую (ручной ввод) — общие сеттеры, чтобы не дублировать логику
+  const setDashFields = dash => {
+    const preset = dashPresetOf(dash);
+    $("fmt-dashp").value = preset;
+    $("fmt-dash-custom").value = preset === "custom" ? dashToStr(dash) : "";
+    $("fmt-dash-custom-wrap").style.display = preset === "custom" ? "" : "none";
+  };
+  const setMarkerFields = m => {
+    baseMarker = m || null;
+    $("fmt-marker").checked = !!m;
+    $("fmt-marker-fields").style.display = m ? "" : "none";
+    $("fmt-marker-shape").value = (m && m.shape) || "tick";
+    $("fmt-marker-period").value = (m && m.period) || 40;
+    $("fmt-marker-size").value = (m && m.size) || 4;
+    $("fmt-marker-dir").value = (m && m.dir) || "in";
+  };
+  $("fmt-dashp").addEventListener("change", () => {
+    $("fmt-dash-custom-wrap").style.display = $("fmt-dashp").value === "custom" ? "" : "none";
+  });
+  $("fmt-marker").addEventListener("change", () => {
+    $("fmt-marker-fields").style.display = $("fmt-marker").checked ? "" : "none";
+  });
 
   const collect = () => {
     const fmt = {
@@ -2287,7 +2381,7 @@ function openLayerFormat(layer) {
       width: Math.max(0.2, parseFloat($("fmt-width").value) || 1),
       fill: $("fmt-hasfill").checked ? fillCF.get() : null,
       fillOpacity: (parseInt($("fmt-opacity").value) || 100) / 100,
-      dash: DASH_PRESETS[$("fmt-dashp").value] ?? null,
+      dash: currentDash(),
     };
     if ($("fmt-hatch").checked) {
       const av = $("fmt-hangle").value;
@@ -2295,8 +2389,14 @@ function openLayerFormat(layer) {
                     spacing_px: HATCH_DENS[$("fmt-hdens").value] || 9,
                     color: strokeCF.get() };
     } else fmt.hatch = false;
-    if ($("fmt-marker").checked) { if (baseMarker) fmt.line_marker = baseMarker; }
-    else fmt.line_marker = null;
+    if ($("fmt-marker").checked) {
+      fmt.line_marker = {
+        shape: $("fmt-marker-shape").value || "tick",
+        period: Math.max(4, parseFloat($("fmt-marker-period").value) || 40),
+        size: Math.max(0.5, parseFloat($("fmt-marker-size").value) || 4),
+        dir: $("fmt-marker-dir").value === "out" ? "out" : "in",
+      };
+    } else fmt.line_marker = null;
     if ($("fmt-label").checked) { if (baseLabel) fmt.line_label = baseLabel; }
     else fmt.line_label = null;
     if (baseDouble) fmt.double = baseDouble;
@@ -2314,14 +2414,13 @@ function openLayerFormat(layer) {
       if (p.fill) fillCF.set(toHexColor(p.fill, "#faf0bf"));
       strokeCF.set(toHexColor(p.stroke, "#888888"));
       $("fmt-width").value = p.width ?? 1;
-      $("fmt-dashp").value = dashPresetOf(p.dash);
+      setDashFields(p.dash);
       const ph = p.hatch && typeof p.hatch === "object" ? p.hatch : null;
       $("fmt-hatch").checked = !!p.hatch;
       $("fmt-hangle").value = ph ? (ph.cross ? "cross" : String(ph.angle ?? 45)) : "45";
       $("fmt-hdens").value = ph ? hatchDensOf(ph.spacing_px || 9) : "normal";
-      baseMarker = p.line_marker || null; baseLabel = p.line_label || null;
-      baseDouble = p.double || null;
-      $("fmt-marker").checked = !!baseMarker;
+      setMarkerFields(p.line_marker || null);
+      baseLabel = p.line_label || null; baseDouble = p.double || null;
       $("fmt-label").checked = !!baseLabel;
     }
     layer.fmt = collect(); draw(); updateDashPreview();
@@ -2889,7 +2988,7 @@ function placeTypedPoint() {
 function hitTest(wx, wy) {
   const tolW = 7 / state.view.k;
   for (const layer of [...LAYERS_V2].reverse()) {
-    if (!layer.visible) continue;
+    if (!layer.visible || layer.locked) continue;
     for (let i = state.features.length - 1; i >= 0; i--) {
       const f = state.features[i];
       if (layerOf(f) !== layer) continue;
@@ -2907,7 +3006,7 @@ function marqueeHit(a, b) {
   const y0 = Math.min(a[1], b[1]), y1 = Math.max(a[1], b[1]);
   const ids = [];
   for (const f of state.features) {
-    if (isHidden(f)) continue;
+    if (isHidden(f) || isLocked(f)) continue;
     if (featurePts(f).some(p => p && p[0] >= x0 && p[0] <= x1 && p[1] >= y0 && p[1] <= y1))
       ids.push(f.id);
   }
@@ -3271,6 +3370,10 @@ function setActiveLayer(id) {
     toast(`Слой «${L.title}» заполняется только импортом — рисовать в него нельзя`);
     return;
   }
+  if (L.locked) {
+    toast(`Слой «${L.title}» заблокирован — снимите блокировку, чтобы рисовать`, "warn");
+    return;
+  }
   state.activeLayerId = id;
   state.drawing = null; state.typed = "";
   // несовместимый инструмент — переключается на естественный для слоя
@@ -3584,6 +3687,10 @@ function applyRestoredState(d) {
   if (d.layerFmt) {
     for (const [id, fmt] of Object.entries(d.layerFmt))
       if (LAYER_BY_ID[id]) LAYER_BY_ID[id].fmt = fmt;
+  }
+  if (d.layerLocked) {
+    for (const [id, locked] of Object.entries(d.layerLocked))
+      if (LAYER_BY_ID[id] && locked) LAYER_BY_ID[id].locked = true;
   }
   if (d.layerFields) {
     for (const [id, flds] of Object.entries(d.layerFields))
