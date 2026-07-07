@@ -22,19 +22,23 @@ body {
 }
 
 /* ---- шапка ---------------------------------------------------------------- */
+/* flex-wrap — страховка от обрезки: на узком экране (ноутбук) группы кнопок
+   переносятся на вторую строку, а не уходят за правый край недоступными.
+   Имя проекта сжимаемо (flex-shrink), чтобы освобождать место кнопкам. */
 header {
-  display: flex; align-items: center; gap: var(--sp-2);
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-2) var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
   background: var(--glass); backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--glass-border);
   box-shadow: var(--glass-hi); z-index: var(--z-header);
 }
-.logo { font-weight: var(--fw-bold); letter-spacing: .02em; }
+.logo { font-weight: var(--fw-bold); letter-spacing: .02em; flex: none; }
 .logo span { font-weight: var(--fw-regular); color: var(--muted); }
 #project-name {
   border: 1px solid transparent; border-radius: var(--r-sm);
-  padding: var(--sp-1) var(--sp-2); font: inherit; width: 320px; color: var(--muted);
+  padding: var(--sp-1) var(--sp-2); font: inherit;
+  flex: 1 1 160px; min-width: 110px; max-width: 320px; color: var(--muted);
   background: transparent;
 }
 #project-name:hover { border-color: var(--field-border); color: var(--text); }
@@ -381,7 +385,7 @@ button.danger:hover { filter: brightness(1.07); }
 .h3-btn:hover { color: var(--accent); border-color: var(--accent); }
 .src-row { display: flex; justify-content: space-between; gap: var(--sp-2);
            padding: 3px 0; border-bottom: 1px dotted var(--hairline); font-size: var(--fs-12); }
-.src-row .src-name { font-weight: var(--fw-semibold); color: var(--text); text-transform: uppercase; }
+.src-row .src-name { font-weight: var(--fw-semibold); color: var(--text); }
 .src-row .src-meta { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .metric.prov { color: var(--accent); font-size: 11.5px; }
 .tep-row { display: flex; justify-content: space-between; gap: var(--sp-2);

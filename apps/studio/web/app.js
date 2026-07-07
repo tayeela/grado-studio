@@ -1,6 +1,6 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.38.4";
+const VERSION = "0.42.1";
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -1626,10 +1626,11 @@ function refreshTep() {
       const data = await r.json();
       renderTep(data);
       document.getElementById("tep-status").textContent = "";
-      document.getElementById("st-core").textContent = `ядро: ок · v${VERSION}`;
+      // в норме статус чистый — техническое «ядро: ок» пользователю не нужно
+      document.getElementById("st-core").textContent = "";
     } catch (e) {
-      document.getElementById("tep-status").textContent = "нет связи с ядром";
-      document.getElementById("st-core").textContent = "ядро: НЕДОСТУПНО";
+      document.getElementById("tep-status").textContent = "нет связи с расчётом";
+      document.getElementById("st-core").textContent = "⚠ расчёт недоступен";
     }
   }, 250);
 }
@@ -1955,7 +1956,7 @@ function renderLayers() {
     row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки"><svg class="ic"><use href="#ic-grip"/></svg></span>
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
-      <span class="nm" title="сделать активным (сюда чертят инструменты)">${layer.title}</span><span class="cnt">${count || ""}</span>
+      <span class="nm" title="${escHtml(layer.title)} — клик делает слой активным (сюда чертят инструменты)">${escHtml(layer.title)}</span><span class="cnt">${count || ""}</span>
       ${layer.rules && layer.rules.length ? `<span class="lrow-rules" title="условное форматирование: ${layer.rules.length} правил(о)">
         <svg class="ic"><use href="#ic-filter"/></svg></span>` : ""}
       <button class="lrow-lock" title="${layer.locked ? "разблокировать слой" : "заблокировать слой (защита от случайной правки)"}">
@@ -2952,6 +2953,15 @@ function openFieldCalc(layer, getFeats, onDone) {
 }
 
 // ---------- журнал источников (снимки НСПД/ФГИС ТП, шаг 6) ----------
+// человекочитаемые имена источников (в данных — короткие коды коннекторов)
+const SOURCE_LABELS = { fgistp: "ФГИС ТП", nspd: "НСПД", gisogd: "ГИС ОГД" };
+// объектов → «N объектов» с правильным русским склонением
+function plObjects(n) {
+  const t = n % 10, h = n % 100;
+  const w = (t === 1 && h !== 11) ? "объект"
+          : (t >= 2 && t <= 4 && (h < 12 || h > 14)) ? "объекта" : "объектов";
+  return `${n} ${w}`;
+}
 function renderSources() {
   const el = document.getElementById("sources-body");
   if (!el) return;
@@ -2960,11 +2970,14 @@ function renderSources() {
   }
   el.className = "";
   el.innerHTML = state.sources.map(s => {
+    // технический хеш снимка (670c6316) пользователю не нужен — прячем
+    // в подсказку для диагностики, показываем дату и число объектов
     const sha = s.sha8 || (s.sha256 || "").slice(0, 8);
     const date = (s.fetched_at || "").slice(0, 10);
-    return `<div class="src-row" title="снимок ${s.id}">
-      <span class="src-name">${s.source}</span>
-      <span class="src-meta">${date} · ${s.count} об. · ${sha}</span></div>`;
+    const name = SOURCE_LABELS[s.source] || (s.source || "").toUpperCase();
+    return `<div class="src-row" title="снимок ${escHtml(s.id)} · версия ${escHtml(sha)}">
+      <span class="src-name">${escHtml(name)}</span>
+      <span class="src-meta">${date} · ${plObjects(s.count)}</span></div>`;
   }).join("");
 }
 
@@ -3597,8 +3610,10 @@ async function pollInbox() {
       initStyles(); fetchSources(); refreshTep();
       toast("Связь с сервером восстановлена");
     }
+    // приём данных от браузерного расширения GRADO: в норме молчим,
+    // сообщаем только когда канал занят (в QGIS открыт тот же порт)
     document.getElementById("st-bridge").textContent =
-      data.bridge ? "мост 8081: вкл" : "мост 8081: занят (QGIS)";
+      data.bridge ? "" : "приём данных из браузера занят (закрыт в QGIS?)";
     let added = 0;
     for (const item of data.items) {
       if (!item.features.length) continue;
@@ -3612,12 +3627,12 @@ async function pollInbox() {
       afterChange();
       fitView();
       const src = data.items[0].source === "fgis_tp" ? "ФГИС ТП" : "НСПД";
-      toast(`Мост: +${added} объектов (${src})`);
+      toast(`Получено из браузера: +${plObjects(added)} (${src})`);
     }
   } catch (e) {
     if (!serverDown) {
       serverDown = true;
-      document.getElementById("st-core").textContent = "сервер недоступен — переподключение…";
+      document.getElementById("st-core").textContent = "⚠ нет связи с сервером — переподключение…";
     }
   }
 }
@@ -3841,3 +3856,5 @@ requestAnimationFrame(resize);
 refreshTep();
 initStyles();
 fetchSources();
+// версия — в подсказке логотипа (для связи с поддержкой), не в статус-строке
+{ const lg = document.getElementById("logo"); if (lg) lg.title = `ГРАДО Студия · v${VERSION}`; }
