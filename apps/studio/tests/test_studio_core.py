@@ -65,6 +65,21 @@ class TestStudioCore(unittest.TestCase):
         self.assertGreater(out["inputs"]["terr_area"], 0)
         self.assertEqual(out["fact"]["spp"], 0)
 
+    def test_style_overrides_affect_all_outputs(self):
+        # правка эталонного знака видна на холсте (frontend_styles, px), в
+        # библиотеке по id и в стиле слоя по коду (PDF, мм); сброс — эталон
+        import grado_render.style as S
+        try:
+            studio_core.apply_style_overrides(
+                {"boundary.line": {"width_px": 6, "width_mm": 3, "stroke": "#00ff00"}})
+            self.assertEqual(studio_core.frontend_styles()["boundary.line"]["width"], 6)
+            self.assertEqual(S.StyleSet().resolve_id("boundary.line").width, 3)
+            self.assertEqual(S.StyleSet().resolve("terr.boundary").width, 3)  # слой по коду
+            self.assertAlmostEqual(S.StyleSet().resolve_id("boundary.line").stroke[1], 1.0)
+        finally:
+            studio_core.apply_style_overrides({})
+        self.assertNotEqual(studio_core.frontend_styles()["boundary.line"]["width"], 6)
+
     def test_make_album(self):
         pdf = studio_core.make_album(FEATURES, "Тестовая концепция",
                                      {"density": 25, "ratio_zh": 80})

@@ -41,9 +41,47 @@ PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.j
 
 # --- единая библиотека стилей (styles/default.json): холст + PDF + DXF ------
 from grado_render import merged_library  # noqa: E402
+from grado_render import style as _render_style  # noqa: E402
+import json as _json  # noqa: E402
+
+# Пользовательские правки эталонных знаков (глобальные для студии) — отдельный
+# файл-оверрайд рядом с автосейвом; сам генератор ЛГР и его JSON не трогаем.
+STYLE_OVERRIDES_PATH = Path(__file__).parent / "style_overrides.json"
+
+
+def load_style_overrides():
+    """Правки знаков с диска (пусто, если файла нет или он битый)."""
+    try:
+        with open(STYLE_OVERRIDES_PATH, encoding="utf-8") as fh:
+            data = _json.load(fh)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def apply_style_overrides(overrides):
+    """Применить правки знаков ко всей библиотеке (холст + PDF + DXF) и
+    обновить снимок STYLE_LIB. Не пишет на диск — только в память."""
+    global STYLE_LIB
+    _render_style.set_style_overrides(overrides)
+    STYLE_LIB = merged_library()
+
+
+def save_style_overrides(overrides):
+    """Сохранить правки знаков на диск (атомарно) и применить."""
+    if not isinstance(overrides, dict):
+        overrides = {}
+    tmp = STYLE_OVERRIDES_PATH.with_suffix(".tmp")
+    tmp.write_text(_json.dumps(overrides, ensure_ascii=False, indent=1),
+                   encoding="utf-8")
+    tmp.replace(STYLE_OVERRIDES_PATH)
+    apply_style_overrides(overrides)
+
 
 # default.json (базовые стили ГРАДО) + moscow_lgr.json (Эталон ЛГР,
-# приказ Москомархитектуры от 10.03.2025 № 65) — единая системная библиотека
+# приказ Москомархитектуры от 10.03.2025 № 65) — единая системная библиотека;
+# поверх — пользовательские правки знаков (если есть)
+apply_style_overrides(load_style_overrides())
 STYLE_LIB = merged_library()
 
 # --- источники: снимки (SnapshotStore) + провенанс + журнал (шаг 6) ---------

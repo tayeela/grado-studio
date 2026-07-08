@@ -370,6 +370,7 @@ const state = {
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
   sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
+  styleOverrides: {},             // правки эталонных знаков (глобальные, с сервера)
   _fitted: false, _ix: null,
 };
 
@@ -2606,6 +2607,213 @@ function openLayerStyle(layer, opts = {}) {
   overlay.addEventListener("click", ev => { if (ev.target === overlay) restore(); });
 }
 
+// ---------- библиотека знаков: редактор эталонных знаков ЛГР/базовых -------
+// Правит САМ знак в библиотеке (глобально, во всех проектах, и на холсте, и
+// на печати) — в отличие от «Оформление слоя», которое кладёт правку только
+// на конкретный слой. Хранится в style_overrides.json на сервере поверх
+// сгенерированного эталона (генератор ЛГР не трогается). Правки применяются
+// на «Сохранить» (перечитывается вся библиотека — initStyles).
+async function loadStyleOverrides() {
+  try {
+    const r = await fetch("/api/style-overrides");
+    if (r.ok) state.styleOverrides = await r.json() || {};
+  } catch (e) { /* сервер без endpoint — правок нет */ }
+}
+// текущие px-поля знака из STYLES_V2 (уже с применёнными правками) → объект
+// для редактора; правка кладётся обратно в STYLES_V2 через canvasStyleToBackend
+function openStyleLibrary() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  // знаки с названием, сгруппированы (как в пикере)
+  const groups = new Map();
+  for (const [sid, s] of Object.entries(STYLES_V2)) {
+    if (!s.title) continue;
+    const g = s.group || "Базовые";
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g).push(sid);
+  }
+  for (const arr of groups.values())
+    arr.sort((a, b) => (STYLES_V2[a].title || "").localeCompare(STYLES_V2[b].title || "", "ru"));
+  // изменённые в этой сессии (px-стиль) и помеченные на сброс к эталону
+  const edited = {}, resetSet = new Set();
+  const overridden = new Set(Object.keys(state.styleOverrides || {}));
+  let sel = null;
+  const listHtml = [...groups.entries()].map(([g, ids]) => `<div class="lib-group">
+    <div class="lib-group-title">${escHtml(g)}</div>
+    ${ids.map(sid => `<div class="lib-item" data-sid="${escHtml(sid)}">
+      <span class="lib-sw" style="background:${swatchOf(sid)};border-color:${STYLES_V2[sid].stroke || "#999"}"></span>
+      <span class="lib-nm">${escHtml(STYLES_V2[sid].title)}</span>
+      <span class="lib-dot${overridden.has(sid) ? " on" : ""}" title="изменён"></span></div>`).join("")}
+  </div>`).join("");
+  overlay.innerHTML = `<div class="modal lib-modal">
+    <div class="modal-head">Библиотека знаков
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="lib-hint">Правка меняет сам эталонный знак — во всех проектах, на холсте и на печати. Синяя точка — знак изменён.</div>
+    <div class="lib-body">
+      <div class="lib-list">${listHtml}</div>
+      <div class="lib-edit" id="lib-edit"><div class="muted" style="padding:var(--sp-4)">Выберите знак слева</div></div>
+    </div>
+    <div class="modal-actions">
+      <button id="lib-reset-all">Сбросить все к эталону</button>
+      <span class="spacer"></span>
+      <button id="lib-cancel">Отмена</button>
+      <button id="lib-save" class="primary">Сохранить</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
+  const $ = id => overlay.querySelector("#" + id);
+
+  function swatchOf(sid) {
+    const st = STYLES_V2[sid];
+    if (st.fill) return st.fill;
+    if (st.hatch && st.hatch.color) {
+      const a = st.hatch.cross ? 45 : (st.hatch.angle ?? 45);
+      return `repeating-linear-gradient(${90 - a}deg, ${st.hatch.color} 0 1px, transparent 1px 4px)`;
+    }
+    return "transparent";
+  }
+  const opt = (sel, v, lbl) => `<option value="${v}"${sel === v ? " selected" : ""}>${lbl}</option>`;
+  function renderEditor(sid) {
+    sel = sid;
+    overlay.querySelectorAll(".lib-item").forEach(el =>
+      el.classList.toggle("active", el.dataset.sid === sid));
+    const st = edited[sid] || STYLES_V2[sid];
+    const hasFill = st.fill != null && st.fill !== "transparent";
+    const op = Math.round((st.fillOpacity != null ? st.fillOpacity : 1) * 100);
+    const dp = dashPresetOf(st.dash);
+    const hObj = st.hatch && typeof st.hatch === "object" ? st.hatch : null;
+    const hAngle = hObj ? (hObj.cross ? "cross" : String(hObj.angle ?? 45)) : "45";
+    const hDens = hObj ? hatchDensOf(hObj.spacing_px || 9) : "normal";
+    const mk = st.line_marker || null;
+    const ed = $("lib-edit");
+    ed.innerHTML = `<div class="lib-edit-head">${escHtml(STYLES_V2[sid].title)}
+      <button class="lib-reset-one" title="Сбросить этот знак к эталону">↺ эталон</button></div>
+      <div class="line-preview" id="lib-prev"></div>
+      <div class="fmt-sub">Заливка</div>
+      <label class="chk"><input type="checkbox" id="lib-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
+      <label>Цвет<div id="lib-fill"></div></label>
+      <label>Прозрачность, %<input type="range" id="lib-op" min="10" max="100" step="5" value="${op}"></label>
+      <div class="fmt-sub">Линия</div>
+      <label>Цвет<div id="lib-stroke"></div></label>
+      <label>Толщина<input type="number" id="lib-width" value="${st.width ?? 1}" min="0.2" max="8" step="0.1"></label>
+      <label>Пунктир<select id="lib-dashp">${
+        opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") + opt(dp, "dashdot", "штрих-пунктир") +
+        opt(dp, "dashdotdot", "штрих-2 точки") + opt(dp, "custom", "свой…")}</select></label>
+      <label id="lib-dashcw" style="display:${dp === "custom" ? "" : "none"}">Свой пунктир, px
+        <input type="text" id="lib-dashc" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? st.dash : null))}"></label>
+      <div class="fmt-sub">Штриховка</div>
+      <label class="chk"><input type="checkbox" id="lib-hatch" ${st.hatch ? "checked" : ""}> штриховка</label>
+      <label>Угол<select id="lib-hangle">${
+        opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
+        opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
+      <label>Плотность<select id="lib-hdens">${
+        opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+      <div class="fmt-sub">Засечки-маркеры</div>
+      <label class="chk"><input type="checkbox" id="lib-marker" ${mk ? "checked" : ""}> маркеры</label>
+      <div id="lib-mfields" style="display:${mk ? "" : "none"}">
+        <label>Форма<select id="lib-mshape">${MARKER_SHAPES.map(([v, l]) => opt((mk && mk.shape) || "tick", v, l)).join("")}</select></label>
+        <label>Шаг, px<input type="number" id="lib-mperiod" value="${(mk && mk.period) || 40}" min="6" max="200"></label>
+        <label>Размер, px<input type="number" id="lib-msize" value="${(mk && mk.size) || 4}" min="1" max="40" step="0.5"></label>
+        <label>Остриё<select id="lib-mdir">${opt((mk && mk.dir) || "in", "in", "внутрь") + opt((mk && mk.dir) || "in", "out", "наружу")}</select></label>
+      </div>`;
+    const fillCF = makeColorField($("lib-fill"), toHexColor(st.fill, "#faf0bf"), onEdit);
+    const strokeCF = makeColorField($("lib-stroke"), toHexColor(st.stroke, "#888888"), onEdit);
+    ed._fillCF = fillCF; ed._strokeCF = strokeCF;
+    $("lib-dashp").addEventListener("change", () => {
+      $("lib-dashcw").style.display = $("lib-dashp").value === "custom" ? "" : "none"; onEdit();
+    });
+    $("lib-marker").addEventListener("change", () => {
+      $("lib-mfields").style.display = $("lib-marker").checked ? "" : "none"; onEdit();
+    });
+    ed.querySelectorAll("input, select").forEach(el => {
+      if (el.id === "lib-dashp" || el.id === "lib-marker") return;
+      for (const e of ["input", "change"]) el.addEventListener(e, onEdit);
+    });
+    overlay.querySelector(".lib-reset-one").addEventListener("click", () => {
+      resetSet.add(sid); delete edited[sid]; overridden.delete(sid);
+      const dot = overlay.querySelector(`.lib-item[data-sid="${CSS.escape(sid)}"] .lib-dot`);
+      if (dot) dot.classList.remove("on");
+      toast("Знак помечен на сброс к эталону — «Сохранить», чтобы применить");
+      renderEditor(sid);
+    });
+    updatePreview();
+  }
+  function collectPx() {
+    const ed = $("lib-edit");
+    const dash = $("lib-dashp").value === "custom" ? parseDashStr($("lib-dashc").value)
+                 : (DASH_PRESETS[$("lib-dashp").value] ?? null);
+    const st = {
+      stroke: ed._strokeCF.get(), width: Math.max(0.2, parseFloat($("lib-width").value) || 1),
+      fill: $("lib-hasfill").checked ? ed._fillCF.get() : null,
+      fillOpacity: (parseInt($("lib-op").value) || 100) / 100, dash,
+    };
+    if ($("lib-hatch").checked) {
+      const av = $("lib-hangle").value;
+      st.hatch = { angle: av === "cross" ? 45 : +av, cross: av === "cross",
+                   spacing_px: HATCH_DENS[$("lib-hdens").value] || 9, color: ed._strokeCF.get() };
+    }
+    if ($("lib-marker").checked) st.line_marker = {
+      shape: $("lib-mshape").value, period: Math.max(4, parseFloat($("lib-mperiod").value) || 40),
+      size: Math.max(0.5, parseFloat($("lib-msize").value) || 4),
+      dir: $("lib-mdir").value === "out" ? "out" : "in" };
+    if (STYLES_V2[sel].line_label) st.line_label = STYLES_V2[sel].line_label;
+    if (STYLES_V2[sel].label_field) st.label_field = STYLES_V2[sel].label_field;
+    return st;
+  }
+  function updatePreview() {
+    const st = edited[sel] || STYLES_V2[sel];
+    const p = $("lib-prev");
+    if (p) p.innerHTML = lineSampleSVG(st.dash, st.stroke, st.width || 1);
+  }
+  function onEdit() {
+    const px = collectPx();
+    edited[sel] = px; resetSet.delete(sel);
+    STYLES_V2[sel] = { ...STYLES_V2[sel], ...px };   // живой предпросмотр в списке/на холсте
+    const dot = overlay.querySelector(`.lib-item[data-sid="${CSS.escape(sel)}"] .lib-dot`);
+    if (dot) dot.classList.add("on");
+    const sw = overlay.querySelector(`.lib-item[data-sid="${CSS.escape(sel)}"] .lib-sw`);
+    if (sw) { sw.style.background = swatchOf(sel); sw.style.borderColor = STYLES_V2[sel].stroke || "#999"; }
+    updatePreview(); draw();
+  }
+  overlay.querySelectorAll(".lib-item").forEach(el =>
+    el.addEventListener("click", () => renderEditor(el.dataset.sid)));
+
+  const close = () => { overlay.remove(); initStyles(); };   // отмена → перечитать эталон+сохранённое
+  overlay.querySelector(".modal-x").addEventListener("click", close);
+  $("lib-cancel").addEventListener("click", close);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
+  $("lib-reset-all").addEventListener("click", async () => {
+    if (!(await uiConfirm("Сбросить ВСЕ знаки к эталону? Ваши правки библиотеки удалятся.",
+                          { ok: "Сбросить", danger: true }))) return;
+    await saveOverrides({});
+    overlay.remove();
+    toast("Все знаки сброшены к эталону");
+  });
+  $("lib-save").addEventListener("click", async () => {
+    // новый словарь правок: прежние + отредактированные − сброшенные
+    const ov = { ...(state.styleOverrides || {}) };
+    for (const [sid, px] of Object.entries(edited)) ov[sid] = signOverridePatch(px);
+    for (const sid of resetSet) delete ov[sid];
+    await saveOverrides(ov);
+    overlay.remove();
+    const n = Object.keys(edited).length + resetSet.size;
+    toast(`Библиотека знаков обновлена (${n} знак(ов))`);
+  });
+  async function saveOverrides(ov) {
+    try {
+      const r = await fetch("/api/style-overrides", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify(ov) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      state.styleOverrides = ov;
+      await initStyles();   // перечитать всю библиотеку с применёнными правками
+      renderLayers(); draw();
+    } catch (e) {
+      toast("Не удалось сохранить знаки: " + String(e).slice(0, 120), "error");
+    }
+  }
+}
+
 // ---------- таблица атрибутов слоя (логика QGIS) ----------
 // ---------- поля слоя: произвольная схема поверх семантической ------------
 const FIELD_TYPES = { int: "целое", real: "дробное", text: "текст", date: "дата", bool: "лог." };
@@ -3632,6 +3840,34 @@ function canvasStyleToBackend(st) {
   if (st.label_field) out.label_field = st.label_field;
   return out;
 }
+// правка эталонного знака в библиотеке (глобальный оверрайд) → патч с ОБОИМИ
+// единицами: _px читает холст (frontend_styles), _mm — рендер PDF. Без пары
+// правка применилась бы только к одному из выводов (рассинхрон холст/печать).
+function signOverridePatch(st) {
+  const out = {};
+  if (st.fill && st.fill !== "transparent") {
+    out.fill = hexOf(st.fill);
+    out.fill_opacity = st.fillOpacity != null ? st.fillOpacity : 1;
+  } else out.fill = null;
+  if (st.stroke) out.stroke = hexOf(st.stroke);
+  const wpx = Math.max(0.2, st.width || 1);
+  out.width_px = wpx; out.width_mm = wpx / 2;
+  if (st.dash && st.dash.length) { out.dash_px = st.dash.slice(); out.dash_mm = st.dash.map(v => v / 2); }
+  else { out.dash_px = null; out.dash_mm = null; }
+  if (st.hatch && typeof st.hatch === "object") {
+    const sp = st.hatch.spacing_px || 9;
+    out.hatch = { angle: st.hatch.angle ?? 45, cross: !!st.hatch.cross,
+                  spacing_px: sp, spacing_mm: sp / 2, color: hexOf(st.hatch.color || st.stroke || "#888888") };
+  } else out.hatch = false;
+  if (st.line_marker) {
+    const pp = st.line_marker.period || 40, sz = st.line_marker.size || 4;
+    out.line_marker = { shape: st.line_marker.shape, dir: st.line_marker.dir || "in",
+                        period_px: pp, period_mm: pp / 2, size_px: sz, size_mm: sz / 2 };
+  } else out.line_marker = null;
+  if (st.line_label) out.line_label = st.line_label;
+  if (st.label_field) out.label_field = st.label_field;
+  return out;
+}
 // клоны объектов с синтетическим style_id + словарь этих знаков — для
 // выпуска «как на холсте». Одинаковые эффективные стили дедуплицируются
 // (много объектов одного слоя → один синтетический знак).
@@ -3968,6 +4204,7 @@ window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
 on("btn-refresh-src", "click", fetchSources);
 on("btn-shortcuts", "click", openShortcuts);
 on("btn-new-layer", "click", openNewLayerDialog);
+on("btn-style-lib", "click", openStyleLibrary);
 // переключатель темы (canvas-theme.js): смена темы → перечитать палитру
 // холста и перерисовать. Тема на <html> уже выставлена до загрузки app.js.
 on("btn-theme", "click", () => { if (window.toggleTheme) window.toggleTheme(); });
@@ -3979,5 +4216,6 @@ requestAnimationFrame(resize);
 refreshTep();
 initStyles();
 fetchSources();
+loadStyleOverrides();
 // версия — в подсказке логотипа (для связи с поддержкой), не в статус-строке
 { const lg = document.getElementById("logo"); if (lg) lg.title = `ГРАДО Студия · v${VERSION}`; }

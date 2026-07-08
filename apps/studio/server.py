@@ -140,6 +140,11 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path == "/api/style-overrides":
+            self._send(json.dumps(studio_core.load_style_overrides(),
+                                  ensure_ascii=False).encode(),
+                       "application/json; charset=utf-8")
+            return
         if self.path == "/api/sources":
             self._send(json.dumps(studio_core.sources_journal(),
                                   ensure_ascii=False).encode(),
@@ -195,6 +200,16 @@ class Handler(SimpleHTTPRequestHandler):
                     tmp = AUTOSAVE_PATH.with_suffix(".tmp")
                     tmp.write_bytes(raw)
                     tmp.replace(AUTOSAVE_PATH)
+                self.send_response(204)
+                self.end_headers()
+                return
+            if self.path == "/api/style-overrides":
+                n = int(self.headers.get("Content-Length", 0))
+                overrides = json.loads(self.rfile.read(n))
+                if not isinstance(overrides, dict):
+                    self.send_error(400, "expected object")
+                    return
+                studio_core.save_style_overrides(overrides)
                 self.send_response(204)
                 self.end_headers()
                 return

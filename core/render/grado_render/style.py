@@ -14,6 +14,29 @@ from pathlib import Path
 STYLE_DIR = Path(__file__).parent / "styles"
 _LIBRARY_CACHE = {}
 
+# Пользовательские правки эталонных знаков (глобальные для студии). Накладываются
+# ПОВЕРХ сгенерированной библиотеки (default + moscow_lgr) — сам генератор
+# tools/gen_moscow_lgr.py и его JSON не трогаются (правило 2 CLAUDE.md). Каждая
+# запись — частичный патч знака в формате библиотеки: {style_id: {ключ: значение}}.
+# Пусто по умолчанию; заполняется set_style_overrides из style_overrides.json.
+_OVERRIDES = {}
+
+
+def set_style_overrides(overrides):
+    """Заменить набор пользовательских правок знаков и пересобрать зависимое.
+
+    Влияет ВЕЗДЕ через один источник: merged_library (per-id стиль → PDF-объекты
+    и холст) и DEFAULT_STYLES (стиль слоя по коду → PDF-слои). Кэш резолва по id
+    чистим — иначе старый знак застрянет."""
+    global _OVERRIDES, DEFAULT_STYLES
+    _OVERRIDES = dict(overrides or {})
+    _BY_ID_CACHE.clear()
+    DEFAULT_STYLES = _build_default_styles()
+
+
+def style_overrides():
+    return dict(_OVERRIDES)
+
 
 def load_library(name="default"):
     """Сырая библиотека стилей из JSON (кэш по имени)."""
@@ -24,7 +47,8 @@ def load_library(name="default"):
 
 
 def merged_library(names=("default", "moscow_lgr")):
-    """Объединённая библиотека из нескольких JSON (системный уровень).
+    """Объединённая библиотека из нескольких JSON (системный уровень) +
+    пользовательские правки знаков поверх.
 
     Первая — базовая (несёт fallback); стили последующих добавляются к ней.
     Коллизия id стилей — ошибка данных, а не тихое перекрытие."""
@@ -38,6 +62,11 @@ def merged_library(names=("default", "moscow_lgr")):
             if sid in out["styles"]:
                 raise ValueError(f"конфликт id стиля {sid!r}: {name} против {names[0]}")
             out["styles"][sid] = s
+    # правки эталонных знаков — частичный мердж поверх; новый id (не из
+    # библиотеки) не добавляем как знак (правки — только существующих)
+    for sid, patch in _OVERRIDES.items():
+        if sid in out["styles"] and isinstance(patch, dict):
+            out["styles"][sid] = {**out["styles"][sid], **patch}
     return out
 
 
@@ -82,8 +111,11 @@ class Style:
 
 
 def _build_default_styles(name="default"):
-    """code → Style: разворачиваем codes каждого стиля в индекс по коду."""
-    lib = load_library(name)
+    """code → Style: разворачиваем codes каждого стиля в индекс по коду.
+
+    Источник — merged_library (с правками знаков), чтобы правка эталонного
+    знака отражалась и на слоях, рисуемых по коду классификатора."""
+    lib = merged_library()
     by_code = {}
     for s in lib["styles"].values():
         st = Style.from_json(s)
