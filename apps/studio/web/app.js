@@ -599,6 +599,7 @@ const state = {
   trimCtx: null,                  // { boundary: Set(id), ready: bool } — режимы «Обрезать»/«Продлить»
   hoverLayerId: null,             // ховер строки в панели «Слои» — подсветка объектов на холсте
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
+  accessRadii: { on: false, r: 300 },        // радиусы доступности соцобъектов (визуальная помощь)
   layers: LAYER_BY_ID, styles: STYLES_V2,   // модель v2 (видимость — layer.visible)
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
   sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
@@ -2061,15 +2062,21 @@ function draw() {
       } else if (f.point) {
         const [sx, sy] = w2s(...f.point);
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
-        // визуальные радиусы доступности для соцобъектов (демо правил ТЭП/фаза 6)
-        // реальные радиусы — из пресета/правил; здесь фиксированный референс 300 м
-        if (f.kind === "social") {
-          const rr = 300 * state.view.k;
+        // радиус доступности соцобъекта (визуальная помощь, вкл/выкл + настройка
+        // радиуса в «Сетка и привязки»); радиус на объекте (props.access_r)
+        // перекрывает общий — у разных служб он разный (ДОО/школа/поликлиника)
+        if (f.kind === "social" && state.accessRadii && state.accessRadii.on) {
+          const rMeters = f.props && f.props.access_r > 0 ? f.props.access_r : (state.accessRadii.r || 300);
+          const rr = rMeters * state.view.k;
           ctx.save();
-          ctx.setLineDash([3, 2]);
-          ctx.strokeStyle = "#2f6fde";
-          ctx.globalAlpha = 0.18;
+          ctx.setLineDash([4, 3]);
+          ctx.strokeStyle = cvColor("accent", "#2f6fde");
+          ctx.globalAlpha = 0.22;
           ctx.beginPath(); ctx.arc(sx, sy, rr, 0, 7); ctx.stroke();
+          ctx.globalAlpha = 0.5; ctx.setLineDash([]);
+          ctx.font = "10px sans-serif"; ctx.textAlign = "center";
+          ctx.fillStyle = cvColor("accent", "#2f6fde");
+          ctx.fillText(`R ${rMeters} м`, sx, sy - rr - 3);
           ctx.restore();
         }
       } else if (f.arc) {
@@ -2509,6 +2516,7 @@ function collectState() {
     redo: state.redo || [],
     projectCustomKinds: state.projectCustomKinds || [],
     variants: state.variants || [],
+    accessRadii: state.accessRadii,
   };
 }
 // личное (не отправляется коллегам): вид/выделение здесь не хранятся в payload
@@ -5544,6 +5552,16 @@ on("btn-zoom-fit", "click", fitView);
 on("obj-snap", "change", e => setOsnap(e.target.checked));
 on("grid-snap", "change", e => setGridSnap(e.target.checked));
 on("grid-show", "change", e => { state.gridShow = e.target.checked; draw(); });
+on("access-show", "change", e => {
+  state.accessRadii.on = e.target.checked;
+  const w = document.getElementById("access-r-wrap");
+  if (w) w.style.display = e.target.checked ? "" : "none";
+  draw(); persist();
+});
+on("access-r", "change", e => {
+  state.accessRadii.r = Math.max(50, parseFloat(e.target.value) || 300);
+  draw(); persist();
+});
 on("grid-step", "change", e => { state.gridMode = e.target.value; draw(); });
 on("btn-undo", "click", undo);
 on("btn-redo", "click", redo);
@@ -5665,6 +5683,7 @@ async function download(url, filename) {
                     projectStyles: state.projectStyles || {},
                     projectCustomKinds: state.projectCustomKinds || [],
     variants: state.variants || [],
+    accessRadii: state.accessRadii,
                     undo_stack: state.undo || [],
                     redo_stack: state.redo || [],
                     albumConfig: state.albumConfig || null };
@@ -5712,6 +5731,7 @@ on("grado-file", "change", async e => {
       }
     }
     if (Array.isArray(data.variants)) state.variants = data.variants;
+    if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
     if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
     if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
     if (data.albumConfig && typeof data.albumConfig === 'object') {
@@ -5743,6 +5763,7 @@ function loadProjectData(data) {
     }
   }
   if (Array.isArray(data.variants)) state.variants = data.variants;
+  if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
   if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
   if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
   if (data.albumConfig && typeof data.albumConfig === 'object') {
@@ -6258,6 +6279,7 @@ function applyRestoredState(d) {
     }
   }
   if (Array.isArray(d.variants)) state.variants = d.variants;
+  if (d.accessRadii && typeof d.accessRadii === "object") state.accessRadii = d.accessRadii;
   if (d.albumConfig && typeof d.albumConfig === 'object') {
     state.albumConfig = d.albumConfig;
   }
@@ -6328,6 +6350,10 @@ fetchSources();
 loadStyleOverrides();
 initCollapsiblePanel();
 initPanelResizer();
+// синхронизировать UI радиусов доступности с восстановленным состоянием
+{ const c = document.getElementById("access-show"), r = document.getElementById("access-r"),
+      w = document.getElementById("access-r-wrap"), a = state.accessRadii || { on: false, r: 300 };
+  if (c) c.checked = !!a.on; if (r) r.value = a.r || 300; if (w) w.style.display = a.on ? "" : "none"; }
 // версия — в подсказке логотипа (для связи с поддержкой), не в статус-строке
 { const lg = document.getElementById("logo"); if (lg) lg.title = `ГРАДО Студия · v${VERSION}`; }
 
