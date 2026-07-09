@@ -715,6 +715,16 @@ function sharedCompanions(f, vi) {
   return out;
 }
 
+// тянем ребро целиком (общая граница): оба конца на общий офсет от захвата +
+// совпадающие вершины соседних coverage-зон (companions) следом
+function applyEdgeDrag(ed, wx, wy) {
+  const raw = ed.f.ring || ed.f.line;
+  const ox = wx - ed.grab[0], oy = wy - ed.grab[1];
+  raw[ed.i0][0] = ed.orig0[0] + ox; raw[ed.i0][1] = ed.orig0[1] + oy;
+  raw[ed.i1][0] = ed.orig1[0] + ox; raw[ed.i1][1] = ed.orig1[1] + oy;
+  for (const c of ed.comps0) { const cp = featurePts(c.f); cp[c.vi][0] = raw[ed.i0][0]; cp[c.vi][1] = raw[ed.i0][1]; }
+  for (const c of ed.comps1) { const cp = featurePts(c.f); cp[c.vi][0] = raw[ed.i1][0]; cp[c.vi][1] = raw[ed.i1][1]; }
+}
 function sharedVertexSet(f) {
   const shared = new Set();
   if (!isCoverageFeature(f)) return shared;
@@ -4913,6 +4923,22 @@ cv.addEventListener("mousedown", e => {
                        companions: sharedCompanions(cur, vi) };
         return;
       }
+      // перетаскивание ОБЩЕЙ ГРАНИЦЫ ребром: у выбранной coverage-зоны клик по
+      // ребру (не по вершине) тянет оба его конца + совпадающие вершины соседей
+      // — общая граница остаётся общей, правится одной операцией
+      if (isCoverageFeature(cur) && (cur.ring || cur.line)) {
+        const raw = cur.ring || cur.line;
+        const chain = cur.ring ? [...cur.ring, cur.ring[0]] : cur.line;
+        const si = nearChain(wxr, wyr, chain, 7 / state.view.k);
+        if (si != null) {
+          const i0 = si % raw.length, i1 = (si + 1) % raw.length;
+          state.edit = { edgeDrag: true, f: cur, i0, i1,
+                         orig0: [...raw[i0]], orig1: [...raw[i1]],
+                         comps0: sharedCompanions(cur, i0), comps1: sharedCompanions(cur, i1),
+                         grab: [wxr, wyr], moved: false };
+          return;
+        }
+      }
     }
     const f = hitTest(wxr, wyr);
     if (f) {
@@ -5021,6 +5047,10 @@ cv.addEventListener("mousemove", e => {
   if (state.edit) {
     const ed = state.edit;
     if (!ed.moved) { snapshot(); ed.moved = true; }
+    if (ed.edgeDrag) {
+      applyEdgeDrag(ed, wx, wy);
+      state._ix = null; draw(); return;
+    }
     if (ed.vi === "body") {
       // куда «хочет» уйти опорная вершина по курсору, затем привязка её к
       // вершинам/серединам/сетке чужих объектов; всю группу двигаем на тот же офсет
@@ -5102,7 +5132,10 @@ cv.addEventListener("mousemove", e => {
   }
   if (state.tool === "select") {
     const cur = selectedFeature();
+    const onCovEdge = cur && isCoverageFeature(cur) && (cur.ring || cur.line) &&
+      nearChain(wx, wy, cur.ring ? [...cur.ring, cur.ring[0]] : cur.line, 7 / state.view.k) != null;
     cv.style.cursor = (cur && vertexAt(cur, wx, wy) != null) ? "move"
+      : onCovEdge ? "move"
       : hitTest(wx, wy) ? "pointer" : "default";
     if (state.guides.length) draw();
   }
