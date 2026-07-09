@@ -266,7 +266,21 @@ class TestStyleSet(unittest.TestCase):
 
 
 class TestMoscowLgrLibrary(unittest.TestCase):
-    """Системная библиотека Эталона ЛГР (приказ ММА от 10.03.2025 № 65)."""
+    """Системная библиотека Эталона ЛГР (приказ ММА от 10.03.2025 № 65).
+
+    Соответствие проверяется на ЧИСТОЙ библиотеке: если какой-то тест в этом
+    же процессе импортировал studio_core, тот применяет личные правки знаков
+    пользователя (style_overrides.json) глобально — и тесты эталона начинали
+    зависеть от пользовательских данных на машине."""
+
+    def setUp(self):
+        from grado_render import style
+        self._saved_overrides = style.style_overrides()
+        style.set_style_overrides({})
+
+    def tearDown(self):
+        from grado_render import style
+        style.set_style_overrides(self._saved_overrides)
 
     def test_merged_library_valid(self):
         from grado_render import merged_library

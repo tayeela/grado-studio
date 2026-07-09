@@ -34,7 +34,8 @@ from grado_model.tep_bridge import apply_to_engine  # noqa: E402
 from grado_render import StyleSet  # noqa: E402
 from grado_wizard.sheets import (MAP_RECT, apo_sheet,  # noqa: E402
                                  base_plan_sheet, fit_scale, location_sheet,
-                                 ortho_sheet, tep_summary_sheet, title_sheet)
+                                 ortho_sheet, tep_summary_sheet, title_sheet,
+                                 SheetHeader, TextFrame)  # for stubs
 
 ORIGIN = (413000.0, 6178000.0)
 PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.json"
@@ -95,7 +96,7 @@ from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
 
 SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
-_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "import"}  # допустимые в модели
+_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "import"}  # допустимые в модели
 
 
 def _iter_lonlat(geom):
@@ -478,6 +479,28 @@ LAYER_TEMPLATES = {
     "source.gisogd.restrict":     {"code": "terr.restrict", "stage": "existing",
                                    "source_kind": "gisogd",
                                    "title": "ГИС ОГД: зоны с особыми условиями"},
+    # приёмники «Данных по области» (прямые открытые источники, fetch_extent)
+    "source.nspd.buildings":      {"code": "oks.building", "stage": "existing",
+                                   "source_kind": "nspd",
+                                   "title": "НСПД: здания"},
+    "source.nspd.constructions":  {"code": "generic.line", "stage": "existing",
+                                   "source_kind": "nspd",
+                                   "title": "НСПД: сооружения"},
+    "source.nspd.zouit":          {"code": "terr.restrict", "stage": "existing",
+                                   "source_kind": "nspd",
+                                   "title": "НСПД: ЗОУИТ"},
+    "source.osm.roads":           {"code": "generic.line", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: дороги и улицы"},
+    "source.osm.buildings":       {"code": "oks.building", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: здания"},
+    "source.osm.landuse":         {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: землепользование"},
+    "source.osm.water":           {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: вода"},
 }
 # слой по умолчанию для kind (legacy-объекты без layer_id)
 _KIND_TO_LAYER = {"boundary": "project.territory.boundary",
@@ -531,6 +554,39 @@ def _geom_for(feature):
             except (PathError, CurveError):
                 pass  # радиус не помещается — оставляем ломаную
         return {"type": "LineString", "coordinates": _shift(line)}
+    if "arc" in feature:
+        a = feature["arc"]
+        import math
+        n = 16
+        pts = []
+        for i in range(n+1):
+            ang = a.get("a0", 0) + a.get("sweep", 0) * i / n
+            x = a["cx"] + a["r"] * math.cos(ang)
+            y = a["cy"] + a["r"] * math.sin(ang)
+            pts.append((x, y))
+        return {"type": "LineString", "coordinates": _shift(pts)}
+    if "circle" in feature:
+        c = feature["circle"]
+        import math
+        n = 32
+        pts = []
+        for i in range(n + 1):
+            ang = i * 2 * math.pi / n
+            x = c["cx"] + c["r"] * math.cos(ang)
+            y = c["cy"] + c["r"] * math.sin(ang)
+            pts.append((x, y))
+        # closed for ring-like use, but as LineString for generic
+        return {"type": "LineString", "coordinates": _shift(pts)}
+    # generic/неизвестные виды несут геометрию в самом объекте: линия/точка
+    # без этих веток падала KeyError 'ring' и молча выпадала из экспорта.
+    # Семантические полигональные виды (zone/building/…) сюда не пускаем:
+    # зона с line-геометрией — повреждённый объект (v0.42.1), а не линия
+    if kind not in KIND_TO_CODE:
+        if "line" in feature:
+            return {"type": "LineString", "coordinates": _shift(feature["line"])}
+        if "point" in feature:
+            x, y = feature["point"]
+            return {"type": "Point", "coordinates": [x + ORIGIN[0], y + ORIGIN[1]]}
     ring = _shift(feature["ring"])
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
@@ -615,8 +671,34 @@ def _user_layer_templates(layers):
     return out
 
 
-def build_project(path, name, features, layers=None):
+def build_project(path, name, features, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
     project = Project.create(path, name)
+    if project_styles:
+        try:
+            project.set_meta("project_styles", _json.dumps(project_styles))
+        except Exception:
+            pass
+    if project_custom_kinds:
+        try:
+            project.set_meta("project_custom_kinds", _json.dumps(project_custom_kinds))
+        except Exception:
+            pass
+    if undo_stack is not None:
+        try:
+            project.set_meta("studio_undo_stack", _json.dumps(undo_stack))
+        except Exception:
+            pass
+    if redo_stack is not None:
+        try:
+            project.set_meta("studio_redo_stack", _json.dumps(redo_stack))
+        except Exception:
+            pass
+    # ensure journal tables for reactive
+    try:
+        from grado_reactive import Journal
+        Journal(project.conn)
+    except Exception:
+        pass
     templates = {**_user_layer_templates(layers), **LAYER_TEMPLATES}
     made = {}  # layer_id → Layer
     for f in features:
@@ -651,6 +733,17 @@ def build_project(path, name, features, layers=None):
             print(f"build_project: пропущен повреждённый объект id={f.get('id')} "
                  f"kind={f.get('kind')!r} ({e!r})", file=sys.stderr)
             continue
+        # arc / circle params for roundtrip (single JSON attr)
+        if "arc" in f:
+            try:
+                attrs["arc"] = _json.dumps(f["arc"])
+            except Exception:
+                pass
+        if "circle" in f:
+            try:
+                attrs["circle"] = _json.dumps(f["circle"])
+            except Exception:
+                pass
         made[lid].add_feature(
             geom, attrs=attrs, source=source,
             source_date=prov.get("source_date"), source_doc=prov.get("source_doc"),
@@ -714,22 +807,44 @@ def compute_tep(features, params=None):
             floors = int(f.get("props", {}).get("floors", 9))
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
+    results = engine.results()
+    # basic rule engine checks (фаза 4)
+    checks = []
+    dens = round(fact_spp / calc_area, 2) if calc_area > 0 else 0
+    if dens > 40:
+        checks.append({"title": "Плотность", "ok": False, "msg": f"Высокая {dens} >40 — проверить МНГП и комфорт"})
+    if dens < 10:
+        checks.append({"title": "Плотность", "ok": False, "msg": f"Низкая {dens} — возможно неэффективно"})
+    # пример из констант пресета
+    pop = next((r["value"] for r in results if r["id"] == "population"), 0)
+    if pop > 0:
+        doo_need = round(44 * pop / 1000)
+        if doo_need > 0:
+            checks.append({"title": "ДОО", "ok": True, "msg": f"Потребность ~{doo_need} мест (порог 100)"})
+    # radii thresholds example
+    for r in results:
+        if r["id"] == "doo_places" and r["value"] == 0 and pop > 1000:
+            checks.append({"title": "Радиусы ДОО", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
+        if r["id"] == "school_places" and r["value"] == 0 and pop > 2000:
+            checks.append({"title": "Радиусы школ", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
     return {
         "inputs": {"terr_area": engine.value("terr_area"),
                    "restrict_area": engine.value("restrict_area")},
-        "results": engine.results(),
+        "results": results,
         "fact": {
             "spp": round(fact_spp, 1),
-            "density": round(fact_spp / calc_area, 2) if calc_area > 0 else 0,
+            "density": dens,
         },
         "zones": zones_report(features),
+        "checks": checks,
     }
 
 
 def make_album(features, name, params=None, basemap=False, layers=None,
-               basemap_source="osm", canvas_styles=None):
+               basemap_source="osm", canvas_styles=None, project_styles=None,
+               album_config=None):
     with tempfile.TemporaryDirectory() as tmp:
-        project = build_project(Path(tmp) / "studio.grado", name, features, layers)
+        project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
         engine = make_engine(features, params)
         apply_to_engine(project, engine)  # уточнение площадей по слоям проекта
         for key in ("density", "ratio_zh", "percent_vpp"):
@@ -738,26 +853,84 @@ def make_album(features, name, params=None, basemap=False, layers=None,
         doc = Document(name, meta={"org": "ГРАДО", "stage": "АГК"})
         # canvas_styles — inline-знаки «как на холсте» (режим выпуска студии):
         # объекты несут синтетический style_id, а сам знак приходит здесь
-        doc.styles = StyleSet(id_styles=canvas_styles)
-        pages = [
-            title_sheet(doc),
-            location_sheet(doc, project, engine.value("terr_area"), 2),
-            base_plan_sheet(doc, project, 3),
-        ]
+        # project_styles — кастомные стили проекта, доступны и в стандартном режиме
+        id_styles = {}
+        if project_styles:
+            id_styles.update(project_styles)
+        if canvas_styles:
+            id_styles.update(canvas_styles)
+        doc.styles = StyleSet(id_styles=id_styles)
+
+        cfg = album_config or {}
+        sheet_list = cfg.get('sheets') or ['title', 'location', 'base', 'apo', 'tep']
+        title_p = cfg.get('title') or {'org': 'ГРАДО', 'city_year': 'Москва / 2026'}
+
+        page_builders = {
+            'title': lambda pno: title_sheet(doc, org=title_p.get('org', 'ГРАДО'), city_year=title_p.get('city_year', 'Москва / 2026')),
+            'location': lambda pno: location_sheet(doc, project, engine.value("terr_area"), pno),
+            'base': lambda pno: base_plan_sheet(doc, project, pno),
+            'apo': lambda pno: apo_sheet(doc, project, engine, pno),
+            'tep': lambda pno: tep_summary_sheet(doc, engine, pno),
+            'ortho': lambda pno: ortho_sheet(doc, project, pno, underlay, TILE_ATTRIBUTIONS.get(basemap_source, TILE_ATTRIBUTIONS["osm"])) if underlay else None,
+            'photo': lambda pno: _photo_sheet(doc, pno),
+            'parking': lambda pno: _parking_sheet(doc, pno),
+            'greenery': lambda pno: _greenery_sheet(doc, pno),
+        }
+
+        pages = []
+        underlay = None
         if basemap:
-            underlay = _project_underlay(project, MAP_RECT, fit_scale(project),
-                                         source=basemap_source)
-            if underlay:  # сети нет — альбом собирается без ортофото
-                attribution = TILE_ATTRIBUTIONS.get(basemap_source, TILE_ATTRIBUTIONS["osm"])
-                pages.append(ortho_sheet(doc, project, len(pages) + 1,
-                                         underlay, attribution))
-        pages.append(apo_sheet(doc, project, engine, len(pages) + 1))
-        pages.append(tep_summary_sheet(doc, engine, len(pages) + 1))
+            underlay = _project_underlay(project, MAP_RECT, fit_scale(project), source=basemap_source)
+        for s in sheet_list:
+            builder = page_builders.get(s)
+            if builder:
+                p = builder(len(pages) + 1)
+                if p:
+                    pages.append(p)
+
+        # fallback if empty
+        if not pages:
+            pages = [
+                title_sheet(doc, org=title_p.get('org', 'ГРАДО'), city_year=title_p.get('city_year', 'Москва / 2026')),
+                location_sheet(doc, project, engine.value("terr_area"), 2),
+                base_plan_sheet(doc, project, 3),
+                apo_sheet(doc, project, engine, 4),
+                tep_summary_sheet(doc, engine, 5),
+            ]
+
         doc.pages = pages
-        doc.sheet_titles = [""] * len(pages)
+        doc.sheet_titles = [s for s in sheet_list if page_builders.get(s)]
         pdf = render_document_pdf(doc, project, styles=doc.styles, engine=engine)
         project.close()
     return pdf
+
+# Stub sheets for Phase 3 (extend as needed)
+def _photo_sheet(doc, page_no):
+    page = Page(A3_LANDSCAPE)
+    page.frames = [
+        SheetHeader(page, ["Фотофиксация"], page_no),
+        TextFrame((28, 80, 350, 180), [
+            "Фотофиксация существующих объектов и видовых точек.",
+            "(Добавить изображения через редактор альбома или расширения.)"
+        ], size=3)
+    ]
+    return page
+
+def _parking_sheet(doc, page_no):
+    page = Page(A3_LANDSCAPE)
+    page.frames = [
+        SheetHeader(page, ["Схема парковок"], page_no),
+        TextFrame((28, 80, 350, 100), ["Парковки и подъезды (данные из слоёв проекта)"], size=3)
+    ]
+    return page
+
+def _greenery_sheet(doc, page_no):
+    page = Page(A3_LANDSCAPE)
+    page.frames = [
+        SheetHeader(page, ["Озеленение и благоустройство"], page_no),
+        TextFrame((28, 80, 350, 100), ["Озеленение, насаждения (из слоёв проекта)"], size=3)
+    ]
+    return page
 
 
 CODE_TO_KIND = {v: k for k, v in KIND_TO_CODE.items()}
@@ -771,11 +944,21 @@ def grado_to_features(path):
     """Открытие .grado обратно в студию: слои проекта → фигуры холста."""
     project = Project.open(path)
     name = project.meta("name")
+    # ensure journal for reactive undo etc.
+    try:
+        from grado_reactive import Journal
+        Journal(project.conn)
+    except Exception:
+        pass
     out = []
     for info in project.layers():
         kind = CODE_TO_KIND.get(info["code"])
         if kind is None:
-            continue
+            code = info["code"]
+            if code.startswith("generic."):
+                kind = code.split(".")[-1]  # "point" etc, or keep generic
+            else:
+                continue
         # layer_id из модели → холст; если слой не из реестра, отдаём его id
         layer_id = info["layer_id"]
         style_of_layer = info.get("style_id")
@@ -798,7 +981,32 @@ def grado_to_features(path):
                 base["style_id"] = f["style_id"]
             if prov:
                 base["prov"] = prov
-            if geom["type"] == "Point":
+            # reconstruct arc / circle if params were stored in attrs (for roundtrip)
+            arc = None
+            if "arc" in props:
+                val = props["arc"]
+                try:
+                    arc = _json.loads(val) if isinstance(val, (str, bytes)) else val
+                except Exception:
+                    arc = None
+            if not arc and "arc_cx" in props:
+                # legacy multi-key storage
+                arc = {"cx": props["arc_cx"], "cy": props["arc_cy"], "r": props["arc_r"],
+                       "a0": props.get("arc_a0", 0), "sweep": props.get("arc_sweep", 0)}
+            if arc:
+                out.append({**base, "arc": arc, "props": {k:v for k,v in props.items() if k != "arc" and not k.startswith("arc_") }})
+                continue
+            circ = None
+            if "circle" in props:
+                val = props["circle"]
+                try:
+                    circ = _json.loads(val) if isinstance(val, (str, bytes)) else val
+                except Exception:
+                    circ = None
+            if circ:
+                out.append({**base, "circle": circ, "props": {k:v for k,v in props.items() if k != "circle" }})
+                continue
+            elif geom["type"] == "Point":
                 out.append({**base, "point": _to_local([geom["coordinates"]])[0]})
             elif geom["type"] == "LineString":
                 out.append({**base, "line": _to_local(geom["coordinates"])})
@@ -810,8 +1018,36 @@ def grado_to_features(path):
                     if ring[0] == ring[-1]:
                         ring = ring[:-1]
                     out.append({**base, "ring": ring, "props": dict(props)})
+    ps = project.meta("project_styles")
+    project_styles = {}
+    if ps:
+        try:
+            project_styles = _json.loads(ps)
+        except Exception:
+            pass
+    pk = project.meta("project_custom_kinds")
+    project_kinds = []
+    if pk:
+        try:
+            project_kinds = _json.loads(pk)
+        except Exception:
+            pass
+    undo = project.meta("studio_undo_stack")
+    redo = project.meta("studio_redo_stack")
+    undo_stack = []
+    if undo:
+        try:
+            undo_stack = _json.loads(undo)
+        except Exception:
+            pass
+    redo_stack = []
+    if redo:
+        try:
+            redo_stack = _json.loads(redo)
+        except Exception:
+            pass
     project.close()
-    return {"name": name, "features": out}
+    return {"name": name, "features": out, "projectStyles": project_styles, "projectCustomKinds": project_kinds, "undo_stack": undo_stack, "redo_stack": redo_stack}
 
 
 def import_fgistp(payload):
@@ -1060,10 +1296,216 @@ def import_gisogd(zip_bytes):
             "snapshot": manifest, "diff": d}
 
 
-def make_grado(features, name, layers=None):
+# --- «Данные по области»: прямые открытые источники по экстенту холста ------
+# Без браузерного моста, без портала и без скачивания файлов: сервер сам
+# ходит в OSM (Overpass) и НСПД (intersects-API геопортала), а фигуры
+# раскладываются по слоям-приёмникам source.* по явному layer_id (правило 7).
+# ГИС ОГД Москвы здесь нет намеренно: его API за SSO mos.ru (проверено
+# 07.2026) — остаётся импорт ZIP/по ссылке.
+
+EXTENT_SOURCES = {
+    "osm.roads": {
+        "conn": "osm", "sets": ["roads"], "kind": "generic",
+        "layer_id": "source.osm.roads", "title": "Дороги и улицы"},
+    "osm.buildings": {
+        "conn": "osm", "sets": ["buildings"], "kind": "building",
+        "layer_id": "source.osm.buildings", "title": "Здания (OSM)"},
+    "osm.landuse": {
+        "conn": "osm", "sets": ["landuse"], "kind": "generic",
+        "layer_id": "source.osm.landuse", "title": "Землепользование"},
+    "osm.water": {
+        "conn": "osm", "sets": ["water"], "kind": "generic",
+        "layer_id": "source.osm.water", "title": "Вода"},
+    "nspd.parcels": {
+        "conn": "nspd", "categories": [36368], "kind": "parcel",
+        "layer_id": "source.nspd.parcels", "title": "Участки ЕГРН"},
+    "nspd.buildings": {
+        "conn": "nspd", "categories": [36369], "kind": "building",
+        "layer_id": "source.nspd.buildings", "title": "Здания (ЕГРН)"},
+    "nspd.constructions": {
+        "conn": "nspd", "categories": [36383], "kind": "generic",
+        "layer_id": "source.nspd.constructions", "title": "Сооружения (ЕГРН)"},
+    "nspd.zouit": {
+        "conn": "nspd", "categories": [469038, 469039, 469040, 469041, 469042],
+        "kind": "restrict",
+        "layer_id": "source.nspd.zouit", "title": "ЗОУИТ"},
+}
+
+# Пределы площади запроса, км² (фронт блокирует раньше, сервер — страховка):
+# НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее.
+EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0}
+
+
+def bbox_km2(bbox):
+    west, south, east, north = map(float, bbox)
+    lat_mid = math.radians((south + north) / 2.0)
+    return abs(north - south) * 111.32 * abs(east - west) * 111.32 * math.cos(lat_mid)
+
+
+def _int_or_none(v):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _extent_props(src_key, p):
+    """Свойства источника → атрибуты объекта холста (по виду слоя)."""
+    if src_key == "nspd.parcels":
+        return {k: v for k, v in {
+            "cad_num": p.get("opt_cad_num") or p.get("cad_num"),
+            "category": p.get("opt_land_record_category_type"),
+            "vri": p.get("opt_permitted_use_established_by_document"),
+            "address": p.get("opt_readable_address")}.items() if v}
+    if src_key == "nspd.buildings":
+        return {k: v for k, v in {
+            "purpose": p.get("opt_building_name") or p.get("opt_purpose") or "здание",
+            "floors": _int_or_none(p.get("opt_floors")),
+            "cad_num": p.get("opt_cad_num"),
+            "address": p.get("opt_readable_address")}.items() if v}
+    if src_key == "nspd.constructions":
+        return {k: v for k, v in {
+            "name": p.get("opt_building_name") or p.get("label") or "сооружение",
+            "cad_num": p.get("opt_cad_num")}.items() if v}
+    if src_key == "nspd.zouit":
+        # categoryName вида «ЗОУИТ природных территорий_» (хвост «_» —
+        # артефакт геопортала), label — реестровый номер зоны
+        return {k: v for k, v in {
+            "kind": (p.get("categoryName") or "ЗОУИТ").rstrip("_ "),
+            "number": p.get("label"), "basis": "НСПД"}.items() if v}
+    if src_key == "osm.buildings":
+        purpose = p.get("building")
+        return {k: v for k, v in {
+            "purpose": ("здание" if purpose in (True, "yes") else purpose),
+            "floors": _int_or_none(p.get("building:levels")),
+            "name": p.get("name")}.items() if v}
+    # osm.roads / osm.landuse / osm.water / прочее — свои поля generic-слоя
+    keep = ("name", "highway", "surface", "lanes", "landuse", "leisure",
+            "natural", "water", "waterway")
+    return {k: p[k] for k in keep if p.get(k)}
+
+
+def _wgs_geom_to_canvas(geom):
+    """Геометрия WGS84 → части фигуры холста [{'ring'|'line'|'point': ...}]."""
+    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
+    utm = transform_geom(geom, wgs84_to_utm37n)
+    t = utm["type"]
+    if t == "Point":
+        return [{"point": _to_local([utm["coordinates"]])[0]}]
+    if t in ("LineString", "MultiLineString"):
+        lines = [utm["coordinates"]] if t == "LineString" else utm["coordinates"]
+        return [{"line": _to_local(ln)} for ln in lines if len(ln) >= 2]
+    polys = ([utm["coordinates"]] if t == "Polygon"
+             else utm["coordinates"] if t == "MultiPolygon" else [])
+    out = []
+    for poly in polys:
+        ring = _to_local(poly[0])
+        if len(ring) >= 2 and ring[0] == ring[-1]:
+            ring = ring[:-1]
+        if len(ring) >= 3:
+            out.append({"ring": ring})
+    return out
+
+
+def fetch_extent(bbox, sources):
+    """Выгрузка выбранных источников по экстенту → группы фигур холста.
+
+    bbox = [west, south, east, north] (WGS84); sources ⊆ EXTENT_SOURCES.
+    Возвращает {"groups": [{source, title, layer_id, kind, count, features}],
+    "notes": [...], "snapshots": [манифесты для журнала источников]}."""
+    from grado_connectors import NspdDirect, OsmOverpass
+
+    keys = [k for k in sources if k in EXTENT_SOURCES]
+    unknown = [k for k in sources if k not in EXTENT_SOURCES]
+    notes = [f"неизвестный источник: {k}" for k in unknown]
+    if not keys:
+        return {"groups": [], "notes": notes or ["не выбраны источники"],
+                "snapshots": []}
+    area = bbox_km2(bbox)
+    for conn_name in {EXTENT_SOURCES[k]["conn"] for k in keys}:
+        limit = EXTENT_LIMITS_KM2[conn_name]
+        if area > limit:
+            raise ValueError(
+                f"область {area:.1f} км² больше предела {limit:.0f} км² "
+                f"для источника {conn_name.upper()} — приблизьте вид")
+
+    groups = {k: {"source": k, "title": EXTENT_SOURCES[k]["title"],
+                  "layer_id": EXTENT_SOURCES[k]["layer_id"],
+                  "kind": EXTENT_SOURCES[k]["kind"], "features": []}
+              for k in keys}
+    snapshots = []
+
+    def _emit(src_key, wgs_features, prov):
+        spec = EXTENT_SOURCES[src_key]
+        for f in wgs_features:
+            geom = f.get("geometry")
+            if not geom:
+                continue
+            props = _extent_props(src_key, f.get("properties") or {})
+            for part in _wgs_geom_to_canvas(geom):
+                groups[src_key]["features"].append({
+                    "kind": spec["kind"], "layer_id": spec["layer_id"],
+                    **part, "props": dict(props), "prov": dict(prov)})
+
+    # --- OSM: один запрос Overpass на все выбранные наборы ------------------
+    osm_keys = [k for k in keys if EXTENT_SOURCES[k]["conn"] == "osm"]
+    if osm_keys:
+        sets = sorted({s for k in osm_keys for s in EXTENT_SOURCES[k]["sets"]})
+        conn = OsmOverpass()
+        try:
+            result = conn.fetch(bbox, sets)
+            manifest, d = _snapshot(conn, result)
+            if d:
+                notes.append(f"OSM изменился с прошлого снимка: "
+                             f"+{len(d['added'])} −{len(d['removed'])} "
+                             f"~{len(d['changed'])}")
+            snapshots.append(manifest)
+            prov = _prov(manifest)
+            by_set = {}
+            for f in result["features"]:
+                by_set.setdefault(
+                    (f.get("properties") or {}).get("grado_set"), []).append(f)
+            for k in osm_keys:
+                for s in EXTENT_SOURCES[k]["sets"]:
+                    _emit(k, by_set.get(s, []), prov)
+            notes.extend(result.get("notes") or [])
+        except Exception as e:
+            notes.append(f"OSM: {e}")
+
+    # --- НСПД: отдельный запрос на источник (свой снимок и провенанс) -------
+    nspd_keys = [k for k in keys if EXTENT_SOURCES[k]["conn"] == "nspd"]
+    for i, k in enumerate(nspd_keys):
+        if i:
+            import time
+            time.sleep(0.5)   # бережём лимит частоты геопортала
+        conn = NspdDirect()
+        try:
+            result = conn.fetch(bbox, EXTENT_SOURCES[k]["categories"])
+            result["params"]["source"] = k   # разные источники ≠ один снимок
+            manifest, d = _snapshot(conn, result)
+            if d:
+                notes.append(f"{EXTENT_SOURCES[k]['title']}: изменения с "
+                             f"прошлого снимка +{len(d['added'])} "
+                             f"−{len(d['removed'])} ~{len(d['changed'])}")
+            snapshots.append(manifest)
+            _emit(k, result["features"], _prov(manifest))
+            notes.extend(n for n in (result.get("notes") or [])
+                         if not n.endswith("отброшено: 0"))   # шум нормализации
+        except Exception as e:
+            notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+
+    out_groups = []
+    for k in keys:
+        g = groups[k]
+        g["count"] = len(g["features"])
+        out_groups.append(g)
+    return {"groups": out_groups, "notes": notes, "snapshots": snapshots}
+
+
+def make_grado(features, name, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "studio.grado"
-        build_project(path, name, features, layers).close()
+        build_project(path, name, features, layers, project_styles=project_styles, project_custom_kinds=project_custom_kinds, undo_stack=undo_stack, redo_stack=redo_stack).close()
         return path.read_bytes()
 
 
@@ -1098,7 +1540,7 @@ def make_dxf(features, name, layers=None):
 
 
 def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None,
-               basemap_source="osm", canvas_styles=None):
+               basemap_source="osm", canvas_styles=None, project_styles=None):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -1108,7 +1550,7 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
     sizes = {"A3": A3_LANDSCAPE, "A2": A2_LANDSCAPE, "A1": A1_LANDSCAPE}
     size = sizes.get(paper, A2_LANDSCAPE)
     with tempfile.TemporaryDirectory() as tmp:
-        project = build_project(Path(tmp) / "studio.grado", name, features, layers)
+        project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
         page = Page(size)
         ix, iy, iw, ih = page.inner_rect()
         map_rect = (ix + 8, iy + 16, iw - 16, ih - 24)
@@ -1129,8 +1571,13 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
         doc = Document(name)
         doc.pages = [page]
         doc.sheet_titles = [""]
+        id_styles = {}
+        if project_styles:
+            id_styles.update(project_styles)
+        if canvas_styles:
+            id_styles.update(canvas_styles)
         # canvas_styles — inline-знаки «как на холсте» (иначе стандарт ЛГР)
-        pdf = render_document_pdf(doc, project, styles=StyleSet(id_styles=canvas_styles))
+        pdf = render_document_pdf(doc, project, styles=StyleSet(id_styles=id_styles))
         project.close()
     return pdf, used_scale
 
@@ -1187,3 +1634,101 @@ def redline_offset(line, radius, dist):
             if radius and float(radius) > 0 and len(pts) >= 3
             else GPath.polyline(pts))
     return [list(p) for p in path.offset(float(dist)).linearize(0.05)]
+
+
+def make_buffer(features, dist, fillet=0.0, sides="both"):
+    """Генерация буферов вокруг объектов.
+
+    dist — расстояние в метрах (положительное).
+    fillet — радиус сопряжения на углах (для линий).
+    sides — "left" | "right" | "both" | "outer" | "inner" (для полигонов outer=внешний).
+    Возвращает список новых фичей (circle для точек, line/ring для остальных).
+    """
+    import math
+    out = []
+    d = float(dist)
+    if d == 0:
+        return out
+    fil = float(fillet or 0)
+
+    for f in features or []:
+        props = dict(f.get("props") or {})
+        kind = f.get("kind", "generic")
+        layer_id = f.get("layer_id")
+        prov = f.get("prov")
+
+        if f.get("point"):
+            # точка → окружность-буфер (используем circle примитив)
+            x, y = f["point"]
+            circ = {"cx": x, "cy": y, "r": abs(d)}
+            newf = {"circle": circ, "props": props, "kind": kind}
+            if layer_id:
+                newf["layer_id"] = layer_id
+            if prov:
+                newf["prov"] = prov
+            out.append(newf)
+            continue
+        if f.get("circle"):
+            # окружность → концентрический буфер
+            c = f["circle"]
+            new_r = max(0.1, abs(c["r"] + d)) if sides != "inner" else max(0.1, abs(c["r"] - d))
+            circ = {"cx": c["cx"], "cy": c["cy"], "r": new_r}
+            newf = {"circle": circ, "props": {**props, "_buffer_dist": d}, "kind": kind}
+            if layer_id:
+                newf["layer_id"] = layer_id
+            if prov:
+                newf["prov"] = prov
+            out.append(newf)
+            continue
+
+        # линии, дуги, полигоны → офсет
+        pts = None
+        is_ring = False
+        if f.get("ring"):
+            pts = [tuple(p) for p in f["ring"]]
+            is_ring = True
+        elif f.get("line"):
+            pts = [tuple(p) for p in f["line"]]
+        elif f.get("arc"):
+            # sample arc to pts
+            a = f["arc"]
+            n = 24
+            pts = []
+            for i in range(n + 1):
+                ang = a.get("a0", 0) + a.get("sweep", 0) * i / n
+                pts.append((a["cx"] + a["r"] * math.cos(ang), a["cy"] + a["r"] * math.sin(ang)))
+        if not pts or len(pts) < 2:
+            continue
+
+        closed = is_ring or (pts[0] == pts[-1])
+        path = (GPath.fillet_polyline(pts, fil) if fil > 0 and len(pts) >= 3 else GPath.polyline(pts, closed=closed))
+
+        sides_list = []
+        if sides in ("both", "left", "outer"):
+            sides_list.append(("left", d))
+        if sides in ("both", "right", "inner"):
+            sides_list.append(("right", -d))
+        if sides == "outer" and is_ring:
+            sides_list = [("outer", d)]
+        if sides == "inner" and is_ring:
+            sides_list = [("inner", -d)]
+
+        for side_name, sign_d in sides_list:
+            try:
+                off_pts = [list(p) for p in path.offset(sign_d).linearize(0.05)]
+                if closed and not (off_pts[0] == off_pts[-1]):
+                    off_pts.append(off_pts[0][:])
+                newf = {
+                    "ring" if (closed or is_ring) else "line": off_pts,
+                    "props": {**props, "_buffer_dist": d, "_buffer_side": side_name},
+                    "kind": kind
+                }
+                if layer_id:
+                    newf["layer_id"] = layer_id
+                if prov:
+                    newf["prov"] = prov
+                out.append(newf)
+            except Exception:
+                # если офсет схлопывается — пропускаем
+                continue
+    return out

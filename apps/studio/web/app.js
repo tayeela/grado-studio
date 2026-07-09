@@ -61,7 +61,11 @@ const LAYERS_V2 = [
   { id: "source.nspd.parcels", title: "Земельный участок (ЕГРН)", kind: "parcel",
     semantic_class: "cad.parcel", geometry_type: "polygon",
     style_id: "parcel.line", stage: "existing", source_kind: "nspd",
-    import_only: true, defaults: () => ({}) },
+    import_only: true,
+    // выгрузка по области даёт сотни участков — подписи кадномеров по
+    // умолчанию выключены (каша на холсте); включаются «Оформлением слоя»
+    fmt: { label_field: null },
+    defaults: () => ({}) },
   { id: "source.gisogd.func_zones", title: "ГИС ОГД: функц. зоны", kind: "zone",
     semantic_class: "tp.func_zone", geometry_type: "polygon",
     style_id: "func_zone.fill", stage: "existing", source_kind: "gisogd",
@@ -74,6 +78,47 @@ const LAYERS_V2 = [
     semantic_class: "terr.restrict", geometry_type: "polygon",
     style_id: "restrict.hatch", stage: "existing", source_kind: "gisogd",
     import_only: true, defaults: () => ({}) },
+  // приёмники «Данных по области» (кнопка «Данные»: OSM + НСПД по экстенту).
+  // fmt — мягкие подложечные цвета, чтобы контекст не спорил с проектом;
+  // это layer.fmt (пер-слойное оформление), эталонные знаки не трогаются.
+  { id: "source.nspd.buildings", title: "Здания (ЕГРН)", kind: "building",
+    semantic_class: "oks.building", geometry_type: "polygon",
+    style_id: "building.fill", stage: "existing", source_kind: "nspd",
+    import_only: true, defaults: () => ({}) },
+  { id: "source.nspd.constructions", title: "Сооружения (ЕГРН)", kind: "generic",
+    semantic_class: "generic.line", geometry_type: "polyline",
+    style_id: "boundary.line", stage: "existing", source_kind: "nspd",
+    import_only: true, generic: true, fields: [],
+    fmt: { stroke: "#8c7a5e", width: 1.2, dash: [6, 3] },
+    defaults: () => ({}) },
+  { id: "source.nspd.zouit", title: "ЗОУИТ (НСПД)", kind: "restrict",
+    semantic_class: "terr.restrict", geometry_type: "polygon",
+    style_id: "restrict.hatch", stage: "existing", source_kind: "nspd",
+    import_only: true, defaults: () => ({}) },
+  { id: "source.osm.roads", title: "Дороги и улицы (OSM)", kind: "generic",
+    semantic_class: "generic.line", geometry_type: "polyline",
+    style_id: "boundary.line", stage: "existing", source_kind: "osm",
+    import_only: true, generic: true, fields: [],
+    fmt: { stroke: "#9a938a", width: 1, dash: null },
+    defaults: () => ({}) },
+  { id: "source.osm.buildings", title: "Здания (OSM)", kind: "building",
+    semantic_class: "oks.building", geometry_type: "polygon",
+    style_id: "building.fill", stage: "existing", source_kind: "osm",
+    import_only: true,
+    fmt: { fill: "rgba(176,170,160,0.35)", stroke: "#8f887e", width: 0.8 },
+    defaults: () => ({}) },
+  { id: "source.osm.landuse", title: "Землепользование (OSM)", kind: "generic",
+    semantic_class: "generic.polygon", geometry_type: "polygon",
+    style_id: "func_zone.fill", stage: "existing", source_kind: "osm",
+    import_only: true, generic: true, fields: [],
+    fmt: { fill: "rgba(140,180,120,0.18)", stroke: "#94ac84", width: 0.7 },
+    defaults: () => ({}) },
+  { id: "source.osm.water", title: "Вода (OSM)", kind: "generic",
+    semantic_class: "generic.polygon", geometry_type: "polygon",
+    style_id: "func_zone.fill", stage: "existing", source_kind: "osm",
+    import_only: true, generic: true, fields: [],
+    fmt: { fill: "rgba(120,160,205,0.30)", stroke: "#7fa3c8", width: 0.7 },
+    defaults: () => ({}) },
   { id: "annotation.dimensions", title: "Размер", kind: "dim",
     semantic_class: null, geometry_type: "polyline", style_id: "dimension.line",
     annotation: true, tool: "dim", defaults: () => ({}) },
@@ -160,6 +205,8 @@ function createUserLayer({ kind, title, styleId, id = null }) {
     stage: "project", user_created: true, visible: true,
     defaults: () => defaultsForKind(layerId, base.kind),
   };
+  // set coverage topology for standard layers that share boundaries (per fixes-geometry-layout and roadmap Etap 2)
+  if (["boundary", "restrict", "zone"].includes(base.kind)) L.topology = "coverage";
   LAYERS_V2.push(L);
   LAYER_BY_ID[L.id] = L;
   return L;
@@ -168,9 +215,9 @@ function createUserLayer({ kind, title, styleId, id = null }) {
 // обычный (generic) слой — задаётся геометрией, без семантической роли.
 // code = generic.<geom> (есть в классификаторе, экспортируется как чистая
 // геометрия), в ТЭП не идёт; свои поля добавляются в атрибутивной таблице.
-const GENERIC_CODE = { point: "generic.point", polyline: "generic.line", polygon: "generic.polygon" };
+const GENERIC_CODE = { point: "generic.point", polyline: "generic.line", polygon: "generic.polygon", arc: "generic.arc", circle: "generic.circle" };
 const CODE_TO_GEOM = Object.fromEntries(Object.entries(GENERIC_CODE).map(([g, c]) => [c, g]));
-const GENERIC_STYLE = { point: "social.point", polyline: "boundary.line", polygon: "func_zone.fill" };
+const GENERIC_STYLE = { point: "social.point", polyline: "boundary.line", polygon: "func_zone.fill", arc: "red.line.projected", circle: "red.line.projected" };
 function createGenericLayer({ title, geometry_type, styleId, id = null }) {
   const layerId = id || uniqueLayerId(title);
   const L = {
@@ -195,15 +242,16 @@ function userLayersManifest() {
 }
 
 async function deleteLayer(layer) {
-  if (!layer.user_created) {
-    toast("Встроенный слой удалить нельзя — можно скрыть (чекбокс) или переименовать", "warn");
-    return;
-  }
+  // Гибкость: теперь можно удалять и импортные/встроенные слои (с подтверждением).
+  // Это позволяет пользователю убирать ненужные приёмники данных (НСПД/ФГИС ТП и т.д.).
+  // Если слой важен для провенанса — лучше просто скрыть чекбоксом.
+  const isBuiltin = !layer.user_created;
   const count = featuresOnLayer(layer.id).length;
-  if (count && !(await uiConfirm(
-        `В слое «${layer.title}» ${count} объект(ов). Удалить слой вместе с ними?`,
-        { ok: "Удалить", danger: true })))
-    return;
+  const msg = count
+    ? `В слое «${layer.title}» ${count} объект(ов).${isBuiltin ? " Это встроенный/импортный слой." : ""} Удалить вместе с объектами?`
+    : `Удалить слой «${layer.title}»?${isBuiltin ? " (встроенный/импортный)" : ""}`;
+  if (count && !(await uiConfirm(msg, { ok: "Удалить", danger: true }))) return;
+  if (!count && isBuiltin && !(await uiConfirm(`Удалить встроенный слой «${layer.title}»?`, { ok: "Удалить", danger: true }))) return;
   snapshot();
   state.features = state.features.filter(f => layerOf(f) !== layer);
   LAYERS_V2.splice(LAYERS_V2.indexOf(layer), 1);
@@ -258,33 +306,192 @@ async function initStyles() {
 }
 
 function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] || null; }
-// Эффективный стиль слоя: базовый из библиотеки + пер-слойное переопределение
-// оформления (layer.fmt) — как символика слоя в QGIS. Переопределение живёт
-// на слое и сохраняется; на PDF/DXF (единый источник styles/default.json) не
-// влияет — это оформление именно холста.
+
+/*
+ * === ЛОГИКА СЛОЁВ И ФОРМАТИРОВАНИЯ (цель: логично + гибко) ===
+ *
+ * Слой (L) = контекст рисования + семантика (для ТЭП) + визуальные правила по умолчанию.
+ *   - role / semantic_class / kind — для расчёта ТЭП, классификации, импорта.
+ *   - style_id + layer.fmt — базовый знак + переопределения отображения для всего слоя.
+ *   - layer.rules — условное: по значению атрибута объекта выбирается другой знак (или патч).
+ *
+ * Объект (f) наследует от слоя.
+ *   - f.style_id — явный выбор знака из библиотеки (перекрывает layer + rules; уходит в .grado / стандартный PDF).
+ *   - f.fmt — локальные правки отображения (только холст + режим «как на холсте» в альбоме).
+ *
+ * Порядок разрешения styleOf(f):
+ *   1. f.style_id (если есть) → библиотека
+ *   2. ruleStyleFor (первое совпадение rules слоя) → библиотека
+ *   3. layerStyle (base style_id слоя + layer.fmt)
+ *   4. + f.fmt (поверх всего)
+ *
+ * «Библиотека знаков» правит глобальные эталоны (через style_overrides.json).
+ * «Оформление слоя» — это кастомизация именно для данного слоя/проекта.
+ *
+ * Гибкость:
+ *   - Можно переопределять стиль импортированных слоёв через fmt/rules, не трогая данные.
+ *   - Правила позволяют категории иметь разный вид без новых style_id.
+ *   - «как на холсте» позволяет вынести все кастомизации в PDF.
+ *
+ * Упрощение в UI (объект + слой): избегаем двух отдельных «стиль» и «оформление» в свойствах объекта.
+ */
+
 function layerStyle(L) {
   if (!L) return {};
-  const base = STYLES_V2[L.style_id] || {};
+  const sid = L.style_id;
+  const base = (sid && (state.projectStyles[sid] || STYLES_V2[sid])) || {};
   return L.fmt ? { ...base, ...L.fmt } : base;
 }
+
 // условное форматирование: первое правило слоя, чьё поле совпадает со
-// значением атрибута объекта (сравнение по строке — типы полей разные),
-// отдаёт свой библиотечный стиль. Как и явный f.style_id, подменяет базу
-// ЦЕЛИКОМ (не мержится с layer.fmt) — тот же прецедент, что у object.style_id.
+// значением атрибута объекта, отдаёт свой библиотечный стиль.
+// Поддержка ops для более мощных правил (fmt-патчи): = > < >= <= contains starts
 function ruleStyleFor(L, f) {
   if (!L || !Array.isArray(L.rules)) return null;
   const props = f.props || {};
   for (const r of L.rules) {
     if (!r.field || r.value === undefined || r.value === "") continue;
-    if (String(props[r.field] ?? "") === String(r.value))
-      return (r.style_id && STYLES_V2[r.style_id]) || null;
+    const v = props[r.field] ?? "";
+    const rv = r.value;
+    const op = r.op || "=";
+    let match = false;
+    if (op === "=") match = String(v) === String(rv);
+    else if (op === ">") match = parseFloat(v) > parseFloat(rv);
+    else if (op === "<") match = parseFloat(v) < parseFloat(rv);
+    else if (op === ">=") match = parseFloat(v) >= parseFloat(rv);
+    else if (op === "<=") match = parseFloat(v) <= parseFloat(rv);
+    else if (op === "contains") match = String(v).toLowerCase().includes(String(rv).toLowerCase());
+    else if (op === "starts") match = String(v).toLowerCase().startsWith(String(rv).toLowerCase());
+    if (match) return (r.style_id && (state.projectStyles[r.style_id] || STYLES_V2[r.style_id])) || null;
   }
   return null;
 }
 function styleOf(f) {
   const L = layerOf(f);
-  const base = (f.style_id && STYLES_V2[f.style_id]) || ruleStyleFor(L, f) || layerStyle(L) || {};
+  const sid = f.style_id;
+  const base = (sid && (state.projectStyles[sid] || STYLES_V2[sid])) || ruleStyleFor(L, f) || layerStyle(L) || {};
   return f.fmt ? { ...base, ...f.fmt } : base;   // f.fmt — оформление отдельного объекта
+}
+
+async function createProjectStyle() {
+  const id = await uiPrompt("ID нового стиля проекта (латиница, уникальный, напр. my_fence):", "", { placeholder: "my_custom" });
+  if (!id) return null;
+  const cleanId = id.trim().replace(/\s+/g, "_");
+  if (!cleanId || state.projectStyles[cleanId] || STYLES_V2[cleanId]) {
+    toast("ID уже занят в библиотеке или проекте, или пустой", "warn");
+    return null;
+  }
+  const title = await uiPrompt("Название (для выбора и легенды):", cleanId) || cleanId;
+  // Базовый стиль по умолчанию (пользователь может сразу использовать и править через слой/объект)
+  state.projectStyles[cleanId] = {
+    title: title,
+    fill: "#f0e8d8",
+    stroke: "#5c4630",
+    width: 1.5
+  };
+  persist();
+  draw();
+  renderLayers();
+  toast(`Создан проектный стиль «${title}» (${cleanId}). Теперь доступен в списках стилей.`);
+  return cleanId;
+}
+
+// менеджер своих стилей проекта (по плану: "свои стили в проекте")
+function openProjectStyles() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal fmt-modal">
+    <div class="modal-head">Стили проекта
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body">
+      <div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Кастомные стили для этого проекта. Доступны в выборе знака для слоёв и объектов. Можно переопределять через fmt на объекте.</div>
+      <div id="ps-list" style="max-height:180px;overflow:auto;border:1px solid var(--field-border);padding:4px;margin-bottom:8px;font-size:12px;"></div>
+      <button id="ps-create" class="fmt-copy-btn">+ Создать новый стиль проекта</button>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button id="ps-close">Закрыть</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const $ = id => overlay.querySelector("#" + id);
+  function renderList() {
+    const cont = $("ps-list");
+    cont.innerHTML = "";
+    const ps = state.projectStyles || {};
+    if (Object.keys(ps).length === 0) {
+      cont.innerHTML = '<div class="muted">Нет своих стилей. Создайте первый.</div>';
+      return;
+    }
+    Object.entries(ps).forEach(([id, st]) => {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;align-items:center;gap:6px;margin:3px 0;";
+      const sw = document.createElement("span");
+      sw.style.cssText = `width:14px;height:14px;background:${st.fill || "#f0e8d8"};border:1px solid ${st.stroke || "#5c4630"};border-radius:2px;flex:none;`;
+      const nm = document.createElement("span");
+      nm.textContent = `${st.title || id} (${id})`;
+      nm.style.flex = "1";
+      nm.style.overflow = "hidden";
+      nm.style.textOverflow = "ellipsis";
+      const ed = document.createElement("button");
+      ed.textContent = "✎";
+      ed.title = "Редактировать";
+      ed.onclick = () => editPS(id, st, renderList);
+      const dl = document.createElement("button");
+      dl.textContent = "✕";
+      dl.title = "Удалить";
+      dl.onclick = async () => {
+        if (await uiConfirm(`Удалить стиль проекта «${id}»?`)) {
+          delete state.projectStyles[id];
+          renderList();
+          afterChange();
+        }
+      };
+      row.append(sw, nm, ed, dl);
+      cont.append(row);
+    });
+  }
+  async function editPS(id, st, onDone) {
+    const ed = document.createElement("div");
+    ed.className = "modal-overlay";
+    const f = (st.fill && st.fill[0] === "#") ? st.fill : "#f0e8d8";
+    const s = (st.stroke && st.stroke[0] === "#") ? st.stroke : "#5c4630";
+    ed.innerHTML = `<div class="modal ask-modal" style="width:280px">
+      <div class="modal-head">Редактировать «${id}»</div>
+      <div class="modal-body">
+        <label>Название<input id="ps-t" value="${st.title || id}"></label>
+        <label>Заливка<input type="color" id="ps-f" value="${f}"></label>
+        <label>Обводка<input type="color" id="ps-s" value="${s}"></label>
+        <label>Толщина<input type="number" id="ps-w" value="${st.width || 1.5}" step="0.1" min="0.1"></label>
+      </div>
+      <div class="modal-actions">
+        <button id="ps-ok">Сохранить</button>
+        <span class="spacer"></span>
+        <button id="ps-cancel">Отмена</button>
+      </div>
+    </div>`;
+    document.body.appendChild(ed);
+    const $e = id => ed.querySelector("#" + id);
+    $e("ps-ok").onclick = () => {
+      st.title = $e("ps-t").value.trim() || id;
+      st.fill = $e("ps-f").value;
+      st.stroke = $e("ps-s").value;
+      st.width = parseFloat($e("ps-w").value) || 1.5;
+      ed.remove();
+      onDone();
+      afterChange();
+    };
+    $e("ps-cancel").onclick = () => ed.remove();
+    ed.onclick = e => { if (e.target === ed) ed.remove(); };
+  }
+  $("ps-create").onclick = async () => {
+    const nid = await createProjectStyle();
+    if (nid) renderList();
+  };
+  $("ps-close").onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  renderList();
 }
 // пресеты пунктира и плотности штриховки для модалки формата
 const DASH_PRESETS = { solid: null, dash: [6, 4], dashdot: [10, 4, 2, 4],
@@ -322,7 +529,7 @@ function lineSampleSVG(dash, color, width) {
 // ---------- инструменты: геометрия отдельно, слой отдельно (шаг 2) ----------
 // Инструмент создаёт только геометрию; слой и стиль назначает активный слой.
 const GEOM_OF_TOOL = { point: "point", polyline: "polyline",
-                       polygon: "polygon", rect: "polygon" };
+                       polygon: "polygon", rect: "polygon", arc: "arc", circle: "circle" };
 // какую геометрию собирает черчение (rect кликами = контур-полигон, dim — линия)
 const TOOL_GEOM = { ...GEOM_OF_TOOL, dim: "polyline" };
 
@@ -330,12 +537,15 @@ function activeLayer() { return LAYER_BY_ID[state.activeLayerId] || null; }
 
 function toolFitsLayer(tool, L) {
   const g = GEOM_OF_TOOL[tool];
-  return !g || (!!L && !L.annotation && L.geometry_type === g);
+  if (!g) return true;
+  if (!L || L.annotation || L.import_only) return false;
+  if (g === 'circle') return true; // все слои теперь поддерживают окружности
+  return L.geometry_type === g;
 }
 
 function naturalToolFor(L) {
   return L.tool ||
-    ({ point: "point", polyline: "polyline", polygon: "polygon" })[L.geometry_type];
+    ({ point: "point", polyline: "polyline", polygon: "polygon", arc: "arc", circle: "circle" })[L.geometry_type];
 }
 
 function styleForDrawing() {
@@ -354,7 +564,7 @@ function featuresOnLayer(id) {
 function upgradeFeature(f) {
   const L = layerOf(f);
   if (L) { f.layer_id = L.id; if (!f.kind) f.kind = L.kind; }
-  f.geometry_type = f.point ? "point" : f.line ? "polyline" : "polygon";
+  f.geometry_type = f.point ? "point" : f.line ? "polyline" : f.arc ? "arc" : f.circle ? "circle" : "polygon";
   return f;
 }
 
@@ -371,6 +581,12 @@ const state = {
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
   sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
   styleOverrides: {},             // правки эталонных знаков (глобальные, с сервера)
+  projectStyles: {},              // свои стили проекта: { "my_id": {fill, stroke, width, ... , title? } }
+  projectCustomKinds: [],         // пользовательские роли/типы слоёв для этого проекта
+  albumConfig: {                  // конфигурация состава альбома (фаза 3)
+    sheets: ['title', 'location', 'base', 'apo', 'tep'],
+    title: {org: 'ГРАДО', city_year: 'Москва / 2026'}
+  },
   _fitted: false, _ix: null,
 };
 
@@ -382,7 +598,26 @@ let shiftDown = false, spaceDown = false;
 // ---------- координаты ----------
 function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y * state.view.k]; }
 function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.ty - sy) / state.view.k]; }
-function featurePts(f) { return f.ring || f.line || [f.point]; }
+function featurePts(f) { 
+  if (f.ring || f.line) return f.ring || f.line;
+  if (f.arc) {
+    const a = f.arc; const n=8; const pts=[];
+    for(let i=0;i<=n;i++){ const ang=a.a0 + a.sweep*i/n; pts.push([a.cx + a.r*Math.cos(ang), a.cy + a.r*Math.sin(ang)]); }
+    return pts;
+  }
+  if (f.circle) {
+    const c = f.circle;
+    // center + cardinal points for handles (esp east for radius)
+    return [
+      [c.cx, c.cy],
+      [c.cx + c.r, c.cy],
+      [c.cx, c.cy + c.r],
+      [c.cx - c.r, c.cy],
+      [c.cx, c.cy - c.r]
+    ];
+  }
+  return f.point ? [f.point] : [];
+}
 function selectedFeature() { return state.features.find(x => x.id === state.selected); }
 // множественное выделение: selectedIds — источник истины, selected — «первичный»
 // (одиночный) объект для правки вершин и детальной панели свойств.
@@ -407,6 +642,29 @@ function toggleSelection(id) {
 }
 function vertexAt(f, wx, wy) {
   const tolW = 8 / state.view.k;
+  if (f.arc) {
+    const a = f.arc;
+    const s = [a.cx + a.r * Math.cos(a.a0), a.cy + a.r * Math.sin(a.a0)];
+    const e = [a.cx + a.r * Math.cos(a.a0 + a.sweep), a.cy + a.r * Math.sin(a.a0 + a.sweep)];
+    if (Math.hypot(s[0] - wx, s[1] - wy) < tolW) return 0; // start
+    if (Math.hypot(e[0] - wx, e[1] - wy) < tolW) return 1; // end
+    // center
+    if (Math.hypot(a.cx - wx, a.cy - wy) < tolW) return 2;
+    // любая точка на дуге — редактирование радиуса (логика редактирования дуг)
+    const pts = featurePts(f);
+    for (let i = 0; i < pts.length; i++) {
+      if (Math.hypot(pts[i][0] - wx, pts[i][1] - wy) < tolW) return 3;
+    }
+    return null;
+  }
+  if (f.circle) {
+    const c = f.circle;
+    if (Math.hypot(c.cx - wx, c.cy - wy) < tolW) return 0; // center
+    // radius handle point (east)
+    const rp = [c.cx + c.r, c.cy];
+    if (Math.hypot(rp[0] - wx, rp[1] - wy) < tolW) return 1;
+    return null;
+  }
   const pts = featurePts(f);
   for (let i = 0; i < pts.length; i++)
     if (Math.hypot(pts[i][0] - wx, pts[i][1] - wy) < tolW) return i;
@@ -652,11 +910,231 @@ function rayIntersect(a, b, c, d) {
   if (t < 1 - 1e-9 || u < -1e-9 || u > 1 + 1e-9) return null;
   return [a[0] + d0[0] * t, a[1] + d0[1] * t];
 }
+
+// пересечение отрезка a-b с окружностью (c,r) — возвращает точки на отрезке
+function circleIntersect(a, b, c, r) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const fx = a[0] - c[0], fy = a[1] - c[1];
+  const aa = dx*dx + dy*dy;
+  const bb = 2 * (fx*dx + fy*dy);
+  const cc = fx*fx + fy*fy - r*r;
+  const disc = bb*bb - 4*aa*cc;
+  if (disc < 0) return [];
+  const sd = Math.sqrt(disc);
+  const t1 = (-bb - sd) / (2*aa);
+  const t2 = (-bb + sd) / (2*aa);
+  const res = [];
+  if (t1 >= 0 && t1 <= 1) res.push([a[0] + t1*dx, a[1] + t1*dy]);
+  if (t2 >= 0 && t2 <= 1 && Math.abs(t2-t1) > 1e-9) res.push([a[0] + t2*dx, a[1] + t2*dy]);
+  return res;
+}
+
+// Доп. утилиты для точной работы окружностей как границ (trim/extend)
+function circleCircleIntersections(cx1, cy1, r1, cx2, cy2, r2) {
+  const dx = cx2 - cx1, dy = cy2 - cy1;
+  const d = Math.hypot(dx, dy);
+  if (d > r1 + r2 + 1e-9 || d + 1e-9 < Math.abs(r1 - r2) || d < 1e-12) return [];
+  const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+  const hh = r1 * r1 - a * a;
+  if (hh < 0) return [];
+  const h = Math.sqrt(hh);
+  const xm = cx1 + a * dx / d;
+  const ym = cy1 + a * dy / d;
+  const res = [[xm + h * dy / d, ym - h * dx / d]];
+  if (h > 1e-9) res.push([xm - h * dy / d, ym + h * dx / d]);
+  return res;
+}
+function isAngleInSweep(ang, a0, sweep) {
+  if (Math.abs(sweep) < 1e-9) return false;
+  const PI2 = 2 * Math.PI;
+  let d = ((ang - a0) % PI2 + PI2) % PI2;
+  if (sweep > 0) {
+    return d >= -1e-9 && d <= sweep + 1e-9;
+  } else {
+    let dd = ((a0 - ang) % PI2 + PI2) % PI2;
+    return dd >= -1e-9 && dd <= (-sweep) + 1e-9;
+  }
+}
+function locateOnChain(chain, q) {
+  if (!chain || chain.length < 2) return { i: -1, t: 0, d: 1e9 };
+  let best = { i: 0, t: 0, d: 1e9 };
+  for (let i = 0; i + 1 < chain.length; i++) {
+    const proj = nearestOnSeg(q, chain[i], chain[i + 1]);
+    const d = Math.hypot(proj[0] - q[0], proj[1] - q[1]);
+    if (d < best.d) {
+      const t = paramOnSeg(proj, chain[i], chain[i + 1]);
+      best = { i, t, d };
+    }
+  }
+  return best;
+}
+
+// Полноценный trim/ extend для дуг с сохранением arc-параметров (cx,cy,r,a0,sweep)
+function trimArcAt(f, wx, wy, boundaryIds) {
+  const arc = f.arc;
+  const chain = featurePts(f);
+  const tolW = 10 / state.view.k;
+  const si = nearChain(wx, wy, chain, tolW);
+  if (si == null) return false;
+  const sa = chain[si], sb = chain[si+1];
+  const tClick = paramOnSeg(nearestOnSeg([wx, wy], sa, sb), sa, sb);
+  let bestP = null;
+  let bestT = 1e9;
+  let bestDistCircle = null;
+  for (const bid of boundaryIds) {
+    const bf = state.features.find(x => x.id === bid);
+    if (!bf) continue;
+    if (bf.circle) {
+      const cs = bf.circle;
+      let cands = [];
+      // точные пересечения двух окружностей + фильтр по дуге
+      try {
+        const ints = circleCircleIntersections(arc.cx, arc.cy, arc.r, cs.cx, cs.cy, cs.r);
+        for (let pt of ints) {
+          const ang = Math.atan2(pt[1] - arc.cy, pt[0] - arc.cx);
+          if (isAngleInSweep(ang, arc.a0, arc.sweep)) cands.push(pt);
+        }
+      } catch (e) {}
+      if (cands.length === 0) {
+        // fallback: по всем сегментам сэмпла
+        for (let j = 0; j + 1 < chain.length; j++) {
+          const ps = circleIntersect(chain[j], chain[j + 1], [cs.cx, cs.cy], cs.r);
+          cands.push(...ps);
+        }
+      }
+      for (let p of cands) {
+        const d = Math.hypot(p[0] - wx, p[1] - wy);
+        if (bestP == null || d < bestDistCircle) {
+          bestDistCircle = d;
+          bestP = p;
+        }
+      }
+      continue;
+    }
+    for (const bchain of featureChains(bf)) {
+      for (let j = 0; j + 1 < bchain.length; j++) {
+        const p = segIntersect(sa, sb, bchain[j], bchain[j+1]);
+        if (!p) continue;
+        const t = paramOnSeg(p, sa, sb);
+        if (Math.abs(t - tClick) < Math.abs(bestT - tClick)) {
+          bestP = p;
+          bestT = t;
+        }
+      }
+    }
+  }
+  if (!bestP) return false;
+  snapshot();
+  const pAng = Math.atan2(bestP[1] - arc.cy, bestP[0] - arc.cx);
+  const a0 = arc.a0;
+  const sw = arc.sweep;
+  const eAng = a0 + sw;
+  // для circle-boundary используем closest к клику + проверка углов для выбора стороны
+  // (глобальный поиск позволяет кликать не точно на сэмпл-сегменте)
+  if (bestDistCircle != null) {
+    const cAng = Math.atan2(wy - arc.cy, wx - arc.cx);
+    const cand1 = { a0: a0, sw: pAng - a0 }; // keep start..p
+    const cand2 = { a0: pAng, sw: eAng - pAng }; // keep p..end
+    const n1 = (cand1.sw > Math.PI ? cand1.sw - 2*Math.PI : (cand1.sw < -Math.PI ? cand1.sw + 2*Math.PI : cand1.sw));
+    const n2 = (cand2.sw > Math.PI ? cand2.sw - 2*Math.PI : (cand2.sw < -Math.PI ? cand2.sw + 2*Math.PI : cand2.sw));
+    const in1 = isAngleInSweep(cAng, cand1.a0, n1);
+    const in2 = isAngleInSweep(cAng, cand2.a0, n2);
+    if (in1 && !in2) {
+      arc.a0 = pAng; arc.sweep = eAng - pAng;
+    } else if (in2 && !in1) {
+      arc.a0 = a0; arc.sweep = pAng - a0;
+    } else {
+      // fallback по углам
+      if ((cAng - a0) > (pAng - a0)) arc.sweep = pAng - a0; else { arc.a0 = pAng; arc.sweep = eAng - pAng; }
+    }
+  } else if (tClick > bestT) {
+    arc.sweep = pAng - a0;
+  } else {
+    arc.a0 = pAng;
+    arc.sweep = eAng - pAng;
+  }
+  // normalize
+  if (arc.sweep > Math.PI) arc.sweep -= 2 * Math.PI;
+  if (arc.sweep < -Math.PI) arc.sweep += 2 * Math.PI;
+  afterChange();
+  return true;
+}
+
+function extendArcAt(f, wx, wy, boundaryIds) {
+  const arc = f.arc;
+  const chain = featurePts(f);
+  const tolW = 14 / state.view.k;
+  const n = chain.length;
+  const dStart = Math.hypot(wx - chain[0][0], wy - chain[0][1]);
+  const dEnd = Math.hypot(wx - chain[n-1][0], wy - chain[n-1][1]);
+  if (dStart >= tolW && dEnd >= tolW) return false;
+  const extEnd = dEnd <= dStart;
+  const idxA = extEnd ? n-2 : 1;
+  const idxB = extEnd ? n-1 : 0;
+  const aa = chain[idxA], bb = chain[idxB];
+  let bestP = null;
+  let minDist = 1e9;
+  for (const bid of boundaryIds) {
+    const bf = state.features.find(x => x.id === bid);
+    if (!bf) continue;
+    if (bf.circle) {
+      const cs = bf.circle; const cc = [cs.cx, cs.cy]; const rr = cs.r;
+      const dx = bb[0]-aa[0], dy = bb[1]-aa[1];
+      const fx = aa[0]-cc[0], fy = aa[1]-cc[1];
+      const aa_ = dx*dx + dy*dy;
+      const bb_ = 2*(fx*dx + fy*dy);
+      const cc_ = fx*fx + fy*fy - rr*rr;
+      const disc = bb_*bb_ - 4*aa_*cc_;
+      if (disc >= 0) {
+        const sd = Math.sqrt(disc);
+        const t1 = (-bb_ - sd)/(2*aa_);
+        const t2 = (-bb_ + sd)/(2*aa_);
+        for (let t of [t1, t2]) {
+          if (t >= 1 - 1e-9) {
+            const p = [aa[0] + t*dx, aa[1] + t*dy];
+            const dist = Math.hypot(p[0] - bb[0], p[1] - bb[1]);
+            if (dist < minDist) {
+              minDist = dist;
+              bestP = p;
+            }
+          }
+        }
+      }
+      continue;
+    }
+    for (const bchain of featureChains(bf)) {
+      for (let j = 0; j + 1 < bchain.length; j++) {
+        const p = rayIntersect(aa, bb, bchain[j], bchain[j+1]);
+        if (!p) continue;
+        const dist = Math.hypot(p[0] - bb[0], p[1] - bb[1]);
+        if (dist < minDist) {
+          minDist = dist;
+          bestP = p;
+        }
+      }
+    }
+  }
+  if (!bestP) return false;
+  snapshot();
+  const pAng = Math.atan2(bestP[1] - arc.cy, bestP[0] - arc.cx);
+  if (extEnd) {
+    arc.sweep = pAng - arc.a0;
+  } else {
+    const eAng = arc.a0 + arc.sweep;
+    arc.a0 = pAng;
+    arc.sweep = eAng - pAng;
+  }
+  if (arc.sweep > Math.PI) arc.sweep -= 2 * Math.PI;
+  if (arc.sweep < -Math.PI) arc.sweep += 2 * Math.PI;
+  afterChange();
+  return true;
+}
+
 // обрезка: si — сегмент клика на f.line, boundaryIds — выбранные линии-границы.
 // Отсекается та часть сегмента, где был клик, вплоть до ближайшего пересечения.
 function trimLineAt(f, wx, wy, boundaryIds) {
-  const chain = f.line;
-  if (!chain) return false;
+  let chain = f.line;
+  if (!chain || chain.length < 2) return false;
   const tolW = 10 / state.view.k;
   const si = nearChain(wx, wy, chain, tolW);
   if (si == null) return false;
@@ -666,6 +1144,20 @@ function trimLineAt(f, wx, wy, boundaryIds) {
   for (const bid of boundaryIds) {
     const bf = state.features.find(x => x.id === bid);
     if (!bf) continue;
+    if (bf.circle) {
+      const cs = bf.circle; const cc = [cs.cx, cs.cy]; const rr = cs.r;
+      // глобальный поиск по всей линии (не только клик-сегмент) — клик в "лишний кусок" находит ближайшее пересечение с окружностью
+      for (let j = 0; j + 1 < chain.length; j++) {
+        const ps = circleIntersect(chain[j], chain[j + 1], cc, rr);
+        for (let p of ps) {
+          const dd = Math.hypot(p[0] - wx, p[1] - wy);
+          if (!best || (best.dd != null ? dd < best.dd : true)) {
+            best = { p, dd, fromCircle: true };
+          }
+        }
+      }
+      continue;
+    }
     for (const bchain of featureChains(bf))
       for (let j = 0; j + 1 < bchain.length; j++) {
         const p = segIntersect(a, b, bchain[j], bchain[j + 1]);
@@ -675,19 +1167,30 @@ function trimLineAt(f, wx, wy, boundaryIds) {
       }
   }
   if (!best) return false;
-  const newChain = tClick > best.t
-    ? [...chain.slice(0, si + 1), best.p]     // клик за пересечением — отбросить хвост
-    : [best.p, ...chain.slice(si + 1)];       // клик до пересечения — отбросить начало
   snapshot();
-  f.line = newChain;
+  if (best.fromCircle || best.dd != null) {
+    // обобщённое решение стороны по позиции клика и p на всей цепочке
+    const locC = locateOnChain(chain, [wx, wy]);
+    const locP = locateOnChain(chain, best.p);
+    const clickAfter = (locC.i > locP.i) || (locC.i === locP.i && locC.t > locP.t + 1e-9);
+    const k = locP.i >= 0 ? locP.i : si;
+    f.line = clickAfter
+      ? [...chain.slice(0, k + 1), best.p]
+      : [best.p, ...chain.slice(k + 1)];
+  } else {
+    const newChain = tClick > best.t
+      ? [...chain.slice(0, si + 1), best.p]
+      : [best.p, ...chain.slice(si + 1)];
+    f.line = newChain;
+  }
   afterChange();
   return true;
 }
 // продление: клик у открытого конца f.line — тянем его до пересечения с
 // ближайшей выбранной границей (не заходя ЗА границу, u в [0,1] на ней)
 function extendLineAt(f, wx, wy, boundaryIds) {
-  const chain = f.line;
-  if (!chain || chain.length < 2) return false;
+  let chain = f.line;
+  if (!chain || chain.length < 2 || !chain[0] || !chain[chain.length-1]) return false;
   const tolW = 14 / state.view.k, n = chain.length;
   const dStart = Math.hypot(wx - chain[0][0], wy - chain[0][1]);
   const dEnd = Math.hypot(wx - chain[n - 1][0], wy - chain[n - 1][1]);
@@ -699,6 +1202,28 @@ function extendLineAt(f, wx, wy, boundaryIds) {
   for (const bid of boundaryIds) {
     const bf = state.features.find(x => x.id === bid);
     if (!bf) continue;
+    if (bf.circle) {
+      const cs = bf.circle; const cc = [cs.cx, cs.cy]; const rr = cs.r;
+      const dx = b[0]-a[0], dy = b[1]-a[1];
+      const fx = a[0]-cc[0], fy = a[1]-cc[1];
+      const aa = dx*dx + dy*dy;
+      const bb = 2*(fx*dx + fy*dy);
+      const cc_ = fx*fx + fy*fy - rr*rr;
+      const disc = bb*bb - 4*aa*cc_;
+      if (disc < 0) { /* no */ } else {
+        const sd = Math.sqrt(disc);
+        const t1 = (-bb - sd)/(2*aa);
+        const t2 = (-bb + sd)/(2*aa);
+        for (let t of [t1,t2]) {
+          if (t >= 1 - 1e-9) {
+            const p = [a[0] + t*dx, a[1] + t*dy];
+            const dist = Math.hypot(p[0] - b[0], p[1] - b[1]);
+            if (!best || dist < best.dist) best = { p, dist };
+          }
+        }
+      }
+      continue;
+    }
     for (const bchain of featureChains(bf))
       for (let j = 0; j + 1 < bchain.length; j++) {
         const p = rayIntersect(a, b, bchain[j], bchain[j + 1]);
@@ -720,23 +1245,32 @@ function handleTrimExtendClick(wx, wy) {
   if (!ctx2) return;
   const f = hitTest(wx, wy);
   if (!ctx2.ready) {
-    if (!f || (!f.line && !f.ring)) return;
+    if (!f || (!f.line && !f.ring && !f.arc && !f.circle)) return;
     if (ctx2.boundary.has(f.id)) ctx2.boundary.delete(f.id); else ctx2.boundary.add(f.id);
     draw();
     toast(`Границы: ${ctx2.boundary.size}. Enter — дальше, ${state.tool === "trim" ? "клик по лишнему куску" : "клик у открытого конца"}`);
     return;
   }
-  if (!f || !f.line) { toast("Цель должна быть линией (не границей)", "warn"); return; }
+  if (!f || (!f.line && !f.arc)) { toast("Цель должна быть полилинией или дугой (не границей)", "warn"); return; }
   if (ctx2.boundary.has(f.id)) { toast("Это выбрано как граница", "warn"); return; }
-  const ok = state.tool === "trim" ? trimLineAt(f, wx, wy, ctx2.boundary)
-                                    : extendLineAt(f, wx, wy, ctx2.boundary);
-  if (!ok) toast("Нет пересечения с границей рядом с этой точкой", "warn");
+  const ok = f.arc 
+    ? (state.tool === "trim" ? trimArcAt(f, wx, wy, ctx2.boundary) : extendArcAt(f, wx, wy, ctx2.boundary))
+    : (state.tool === "trim" ? trimLineAt(f, wx, wy, ctx2.boundary) : extendLineAt(f, wx, wy, ctx2.boundary));
+  if (ok) {
+    setSelection([f.id]);
+    draw();
+    renderProps();
+  } else {
+    toast("Нет пересечения с границей рядом с этой точкой", "warn");
+  }
 }
 // склейка выбранных линий в одну — цепочкой по совпадающим (с допуском)
 // концам; конец «подтягивается» к точке уже собранной цепочки (снап впритык)
 function joinSelected() {
-  const feats = selectionFeatures().filter(f => f.line && f.line.length >= 2);
-  if (feats.length < 2) { toast("Выберите минимум 2 линии для склейки", "warn"); return; }
+  const feats = selectionFeatures().filter(f => (f.line && f.line.length >= 2) || f.arc);
+  if (feats.length < 2) { toast("Выберите минимум 2 линии/дуги для склейки", "warn"); return; }
+  // для дуг пока аппроксимируем (улучшить позже)
+  feats.forEach(f => { if (f.arc && !f.line) { f._wasArc = true; f.line = featurePts(f); } });
   const tol = 10 / state.view.k;
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const items = feats.map(f => ({ id: f.id, pts: [...f.line] }));
@@ -758,10 +1292,18 @@ function joinSelected() {
       if (next) { chainPts = next; mergedIds.add(remaining[i].id); remaining.splice(i, 1); progress = true; break; }
     }
   }
-  if (mergedIds.size < 2) { toast("Концы линий не совпадают в пределах допуска", "warn"); return; }
+  if (mergedIds.size < 2) { toast("Концы линий/дуг не совпадают в пределах допуска", "warn"); return; }
   snapshot();
   const keep = feats.find(f => f.id === items[0].id);
   keep.line = chainPts;
+  delete keep.arc;
+  if (keep._wasArc) delete keep._wasArc;
+  // improve join per plan: carry over radius (fillet) from originals so new join corner gets filleted in draw (generalized now)
+  const maxR = Math.max(0, ...feats.map(f => (f.props && f.props.radius) || 0));
+  if (maxR > 0) {
+    if (!keep.props) keep.props = {};
+    keep.props.radius = maxR;
+  }
   state.features = state.features.filter(f => !mergedIds.has(f.id) || f.id === keep.id);
   setSelection([keep.id]);
   afterChange();
@@ -770,15 +1312,86 @@ function joinSelected() {
     : "Линии склеены");
 }
 
+// fillet polyline at corners with radius r, sampling arcs. For "полные сопряжения"
+function filletLine(pts, r) {
+  if (!pts || pts.length < 3 || !(r > 0)) return pts;
+  const res = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i-1], p1 = pts[i], p2 = pts[i+1];
+    const v1 = [p1[0] - p0[0], p1[1] - p0[1]];
+    const v2 = [p2[0] - p1[0], p2[1] - p1[1]];
+    const l1 = Math.hypot(v1[0], v1[1]);
+    const l2 = Math.hypot(v2[0], v2[1]);
+    if (l1 < 1e-6 || l2 < 1e-6) { res.push(p1); continue; }
+    const u1 = [v1[0]/l1, v1[1]/l1];
+    const u2 = [v2[0]/l2, v2[1]/l2];
+    let dot = u1[0]*u2[0] + u1[1]*u2[1];
+    dot = Math.max(-1, Math.min(1, dot));
+    let ang = Math.acos(dot);
+    if (ang < 1e-4 || ang > Math.PI - 1e-4) { res.push(p1); continue; }
+    const d = r / Math.tan(ang / 2);
+    if (d > l1 || d > l2) { res.push(p1); continue; }
+    const q1 = [p1[0] - u1[0]*d, p1[1] - u1[1]*d];
+    const q2 = [p1[0] - u2[0]*d, p1[1] - u2[1]*d];
+    res.push(q1);
+    // center using perps
+    const perp1 = [-u1[1], u1[0]];
+    const perp2 = [-u2[1], u2[0]];
+    const dx = q2[0] - q1[0], dy = q2[1] - q1[1];
+    const det = perp1[0]*perp2[1] - perp1[1]*perp2[0];
+    if (Math.abs(det) < 1e-9) { res.push(q2); continue; }
+    const t = (dx * perp2[1] - dy * perp2[0]) / det;
+    const cx = q1[0] + t * perp1[0];
+    const cy = q1[1] + t * perp1[1];
+    let a0 = Math.atan2(q1[1] - cy, q1[0] - cx);
+    let a1 = Math.atan2(q2[1] - cy, q2[0] - cx);
+    let sw = a1 - a0;
+    const cross = v1[0]*v2[1] - v1[1]*v2[0];
+    if (cross < 0) {
+      if (sw > 0) sw -= 2 * Math.PI;
+    } else {
+      if (sw < 0) sw += 2 * Math.PI;
+    }
+    const n = 6;
+    for (let k = 1; k < n; k++) {
+      const aa = a0 + sw * (k / n);
+      res.push([cx + r * Math.cos(aa), cy + r * Math.sin(aa)]);
+    }
+    res.push(q2);
+  }
+  res.push(pts[pts.length - 1]);
+  return res;
+}
+
+function applyFillet(f) {
+  if (!f || !f.line || !(f.props.radius > 0)) return;
+  snapshot();
+  f.line = filletLine(f.line, f.props.radius);
+  f.props.radius = 0;
+  afterChange();
+  renderProps();
+}
+
 function featureChains(f) {
   if (f.ring) return [[...f.ring, f.ring[0]]];
   if (f.line) return [f.line];
+  if (f.arc) {
+    // approx for hit/snap: sample arc
+    const a = f.arc; const n=12; const pts=[];
+    for(let i=0;i<=n;i++){ const ang=a.a0 + a.sweep*i/n; pts.push([a.cx + a.r*Math.cos(ang), a.cy + a.r*Math.sin(ang)]); }
+    return [pts];
+  }
+  if (f.circle) {
+    const c = f.circle; const n=24; const pts=[];
+    for(let i=0;i<=n;i++){ const ang = i/n * 2*Math.PI; pts.push([c.cx + c.r*Math.cos(ang), c.cy + c.r*Math.sin(ang)]); }
+    return [pts];
+  }
   return [];
 }
 
 // ---------- привязки (уровень CAD) ----------
 const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2,
-                        "перпендикуляр": 2, "центр": 3, "ближайшая": 4 };
+                        "перпендикуляр": 2, "касательная": 2, "центр": 3, "ближайшая": 4 };
 
 function _excludeSet(exclude) {
   if (exclude == null) return null;
@@ -791,6 +1404,7 @@ function collectSnapPts(exclude) {
   for (const f of state.features) {
     if ((ex && ex.has(f.id)) || isHidden(f)) continue;
     if (f.point) { out.push({ p: f.point, kind: "вершина" }); continue; }
+    if (f.circle) { out.push({ p: [f.circle.cx, f.circle.cy], kind: "центр" }); }
     for (const chain of featureChains(f)) {
       for (let i = 0; i + 1 < chain.length; i++) {
         out.push({ p: chain[i], kind: "вершина" });
@@ -802,6 +1416,15 @@ function collectSnapPts(exclude) {
       const xs = f.ring.map(p => p[0]), ys = f.ring.map(p => p[1]);
       out.push({ p: [(Math.min(...xs) + Math.max(...xs)) / 2,
                      (Math.min(...ys) + Math.max(...ys)) / 2], kind: "центр" });
+    }
+    if (f.arc) {
+      out.push({ p: [f.arc.cx, f.arc.cy], kind: "центр" });
+      // sample some points on arc for vertex-like
+      const n = 4;
+      for (let i=0; i<=n; i++) {
+        const ang = f.arc.a0 + f.arc.sweep * i / n;
+        out.push({ p: [f.arc.cx + f.arc.r * Math.cos(ang), f.arc.cy + f.arc.r * Math.sin(ang)], kind: "вершина" });
+      }
     }
   }
   return out;
@@ -845,11 +1468,27 @@ function footOnLine(p, a, b, clamp) {
   return [a[0] + t * dx, a[1] + t * dy];
 }
 
+function tangentPointsToArc(from, arc) {
+  const dx = arc.cx - from[0], dy = arc.cy - from[1];
+  const dist = Math.hypot(dx, dy);
+  if (dist < arc.r + 1e-9) return [];
+  const leg = Math.sqrt(dist * dist - arc.r * arc.r);
+  const ang = Math.atan2(dy, dx);
+  const delta = Math.asin(arc.r / dist);
+  const pts = [];
+  for (const sign of [1, -1]) {
+    const tAng = ang + sign * delta;
+    pts.push([arc.cx + arc.r * Math.cos(tAng), arc.cy + arc.r * Math.sin(tAng)]);
+  }
+  return pts;
+}
+
 // exclude — id объектов, исключаемых из привязок (свой при правке);
 // from — опорная точка для «перпендикуляр» (последняя точка построения)
 function snapPoint(wx, wy, exclude, from) {
   state.guides = [];
   const tolW = 10 / state.view.k;
+  const ex = _excludeSet(exclude);
   // 1. объектные привязки по приоритету
   if (state.osnap) {
     let best = null;
@@ -874,6 +1513,19 @@ function snapPoint(wx, wy, exclude, from) {
         const key = [SNAP_PRIORITY["перпендикуляр"], d];
         if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1]))
           best = { p: foot, kind: "перпендикуляр", key };
+      }
+      // касательные к дугам и окружностям от опорной точки
+      for (const f of state.features) {
+        if ((ex && ex.has(f.id)) || isHidden(f)) continue;
+        const carc = f.arc || f.circle;
+        if (!carc) continue;
+        for (const tp of tangentPointsToArc(from, carc)) {
+          const d = Math.hypot(tp[0] - wx, tp[1] - wy);
+          if (d > tolW) continue;
+          const key = [SNAP_PRIORITY["касательная"], d];
+          if (!best || key[0] < best.key[0] || (key[0] === best.key[0] && key[1] < best.key[1]))
+            best = { p: tp, kind: "касательная", key };
+        }
       }
     }
     if (best) return { p: best.p, kind: best.kind };
@@ -909,8 +1561,15 @@ function snapPoint(wx, wy, exclude, from) {
 }
 
 function lastDrawingPt() {
-  return state.drawing && state.drawing.pts.length
-    ? state.drawing.pts[state.drawing.pts.length - 1] : null;
+  if (!state.drawing) return null;
+  const pts = state.drawing.pts;
+  if (Array.isArray(pts) && pts.length > 0) {
+    return pts[pts.length - 1];
+  }
+  if (state.drawing.center) {
+    return state.drawing.center;
+  }
+  return null;
 }
 
 function orthoProject(base, wx, wy) {
@@ -941,6 +1600,7 @@ function cursorPoint(wx, wy) {
 
 // ---------- отрисовка ----------
 function drawChain(chain, close) {
+  if (!chain || !chain.length || !chain[0]) return;
   ctx.beginPath();
   ctx.moveTo(...w2s(...chain[0]));
   for (let i = 1; i < chain.length; i++) ctx.lineTo(...w2s(...chain[i]));
@@ -1291,8 +1951,36 @@ function draw() {
       } else if (f.point) {
         const [sx, sy] = w2s(...f.point);
         ctx.beginPath(); ctx.arc(sx, sy, 6, 0, 7); ctx.fillStyle = st.fill; ctx.fill(); ctx.stroke();
+        // визуальные радиусы доступности для соцобъектов (демо правил ТЭП/фаза 6)
+        // реальные радиусы — из пресета/правил; здесь фиксированный референс 300 м
+        if (f.kind === "social") {
+          const rr = 300 * state.view.k;
+          ctx.save();
+          ctx.setLineDash([3, 2]);
+          ctx.strokeStyle = "#2f6fde";
+          ctx.globalAlpha = 0.18;
+          ctx.beginPath(); ctx.arc(sx, sy, rr, 0, 7); ctx.stroke();
+          ctx.restore();
+        }
+      } else if (f.arc) {
+        const a = f.arc;
+        const k = state.view.k;
+        const cx = state.view.tx + a.cx * k;
+        const cy = state.view.ty - a.cy * k;
+        const r = a.r * k;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, a.a0, a.a0 + a.sweep);
+        ctx.stroke();
+      } else if (f.circle) {
+        const c = f.circle;
+        const k = state.view.k;
+        const cx = state.view.tx + c.cx * k;
+        const cy = state.view.ty - c.cy * k;
+        ctx.beginPath();
+        ctx.arc(cx, cy, c.r * k, 0, 2 * Math.PI);
+        ctx.stroke();
       } else {
-        if (layer.kind === "redline" && (f.props.radius || 0) > 0 && f.line.length > 2) {
+        if ((f.props.radius || 0) > 0 && f.line && f.line.length > 2) {
           ctx.beginPath();
           ctx.moveTo(...w2s(...f.line[0]));
           for (let i = 1; i < f.line.length - 1; i++)
@@ -1334,16 +2022,62 @@ function draw() {
         }
       }
       if (state.selectedIds.has(f.id)) {
-        ctx.strokeStyle = cvColor("selection", "#2f6fde"); ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+        ctx.strokeStyle = cvColor("selection", "#2f6fde");
+        ctx.lineWidth = state.trimCtx ? 2.8 : 1.5;
+        ctx.setLineDash([4, 3]);
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.strokeRect(sx - 9, sy - 9, 18, 18); }
-        else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
+        else if (f.circle) {
+          const [sx, sy] = w2s(f.circle.cx, f.circle.cy);
+          ctx.beginPath(); ctx.arc(sx, sy, f.circle.r * state.view.k, 0, 2 * Math.PI); ctx.stroke();
+        }
+        else if (f.arc) {
+          const a = f.arc;
+          const k = state.view.k;
+          const cx = state.view.tx + a.cx * k;
+          const cy = state.view.ty - a.cy * k;
+          ctx.beginPath();
+          ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep);
+          ctx.stroke();
+        } else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
       }
       // граница для обрезки/продления — выбрана в 1-м шаге инструмента
       if (state.trimCtx && state.trimCtx.boundary.has(f.id)) {
-        ctx.strokeStyle = cvColor("warning", "#e08a1e"); ctx.lineWidth = 2.4; ctx.setLineDash([2, 3]);
-        drawChain(f.ring || f.line, !!f.ring); ctx.stroke();
+        // сильный визуал: halo + толстая пунктирная
+        ctx.save();
+        ctx.strokeStyle = "rgba(224, 138, 30, 0.3)";
+        ctx.lineWidth = 7;
         ctx.setLineDash([]);
+        if (f.circle) {
+          const [sx, sy] = w2s(f.circle.cx, f.circle.cy);
+          ctx.beginPath(); ctx.arc(sx, sy, f.circle.r * state.view.k, 0, 2 * Math.PI); ctx.stroke();
+        } else {
+          const ch = f.ring || f.line || (f.arc ? featurePts(f) : null);
+          if (ch) { drawChain(ch, !!f.ring); ctx.stroke(); }
+        }
+        ctx.restore();
+        ctx.strokeStyle = cvColor("warning", "#e08a1e"); ctx.lineWidth = 4; ctx.setLineDash([2, 3]);
+        if (f.circle) {
+          const [sx, sy] = w2s(f.circle.cx, f.circle.cy);
+          ctx.beginPath(); ctx.arc(sx, sy, f.circle.r * state.view.k, 0, 2 * Math.PI); ctx.stroke();
+        } else {
+          const ch = f.ring || f.line || (f.arc ? featurePts(f) : null);
+          if (ch) { drawChain(ch, !!f.ring); ctx.stroke(); }
+        }
+        ctx.setLineDash([]);
+      }
+      // когда готов к обрезке, подсвечиваем возможные цели (не границы)
+      if (state.trimCtx && state.trimCtx.ready && !state.trimCtx.boundary.has(f.id) && (f.line || f.arc)) {
+        ctx.save();
+        ctx.strokeStyle = cvColor("accent", "#3b63f6"); ctx.lineWidth = 2.0; ctx.setLineDash([2, 2]);
+        if (f.line) {
+          drawChain(f.line, false); ctx.stroke();
+        } else if (f.arc) {
+          const a = f.arc; const k = state.view.k;
+          const cx = state.view.tx + a.cx * k; const cy = state.view.ty - a.cy * k;
+          ctx.beginPath(); ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep); ctx.stroke();
+        }
+        ctx.restore();
       }
       // ховер строки слоя в панели — мягкая подсветка его объектов на холсте
       if (state.hoverLayerId === layer.id) {
@@ -1351,6 +2085,7 @@ function draw() {
         ctx.strokeStyle = cvColor("accent", "#2f6fde"); ctx.lineWidth = 4;
         ctx.globalAlpha = 0.35; ctx.lineCap = "round"; ctx.lineJoin = "round";
         if (f.point) { const [sx, sy] = w2s(...f.point); ctx.beginPath(); ctx.arc(sx, sy, 8, 0, 7); ctx.stroke(); }
+        else if (f.circle) { const [sx, sy] = w2s(f.circle.cx, f.circle.cy); ctx.beginPath(); ctx.arc(sx, sy, f.circle.r * state.view.k, 0, 2*Math.PI); ctx.stroke(); }
         else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.restore();
       }
@@ -1397,8 +2132,37 @@ function draw() {
     ctx.setLineDash([]);
   }
 
+  // наглядность для склейки: пунктир между близкими концами выбранных
+  if (!state.trimCtx && state.selectedIds.size > 1) {
+    const sels = selectionFeatures().filter(f => f.line || f.arc);
+    if (sels.length > 1) {
+      const tol = 15 / state.view.k;
+      ctx.strokeStyle = cvColor("accent", "#2f6fde");
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3,2]);
+      for (let i=0; i<sels.length; i++) {
+        for (let j=i+1; j<sels.length; j++) {
+          const c1 = sels[i].line || (sels[i].arc ? featurePts(sels[i]) : null);
+          const c2 = sels[j].line || (sels[j].arc ? featurePts(sels[j]) : null);
+          if (!c1 || !c2 || c1.length<2 || c2.length<2) continue;
+          const ends1 = [c1[0], c1[c1.length-1]];
+          const ends2 = [c2[0], c2[c2.length-1]];
+          for (let e1 of ends1) for (let e2 of ends2) {
+            if (Math.hypot(e1[0]-e2[0], e1[1]-e2[1]) < tol) {
+              ctx.beginPath();
+              ctx.moveTo(...w2s(...e1));
+              ctx.lineTo(...w2s(...e2));
+              ctx.stroke();
+            }
+          }
+        }
+      }
+      ctx.setLineDash([]);
+    }
+  }
+
   // черчение в процессе + живой размер
-  if (state.drawing && state.drawing.pts.length) {
+  if (state.drawing && Array.isArray(state.drawing.pts) && state.drawing.pts.length) {
     const st = styleForDrawing();
     ctx.strokeStyle = st.stroke || cvColor("boundary", "#000"); ctx.lineWidth = st.width || 1; ctx.setLineDash([5, 4]);
     const pts = state.mouse ? [...state.drawing.pts, state.mouse] : state.drawing.pts;
@@ -1419,15 +2183,76 @@ function draw() {
       }
     }
     // замыкание: подсветка первой точки
-    if (TOOL_GEOM[state.tool] === "polygon" && state.drawing.pts.length > 2 && state.mouse) {
-      const first = state.drawing.pts[0];
+    const drawingPts = state.drawing.pts;
+    if (TOOL_GEOM[state.tool] === "polygon" && Array.isArray(drawingPts) && drawingPts.length > 2 && state.mouse) {
+      const first = drawingPts[0];
       if (Math.hypot(first[0] - state.mouse[0], first[1] - state.mouse[1]) < 12 / state.view.k) {
         const [fx, fy] = w2s(...first);
         ctx.strokeStyle = cvColor("shared", "#12a150"); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(fx, fy, 8, 0, 7); ctx.stroke();
       }
     }
+    // превью дуги
+    if (state.tool === "arc" && Array.isArray(drawingPts) && drawingPts.length >= 2 && state.mouse) {
+      const pts = [...drawingPts, state.mouse];
+      if (pts.length >= 3) {
+        const a = arcFrom3Pts(pts[0], pts[1], pts[2]);
+        if (a) {
+          const k = state.view.k;
+          const cx = state.view.tx + a.cx * k;
+          const cy = state.view.ty - a.cy * k;
+          ctx.beginPath();
+          ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep);
+          ctx.stroke();
+          // visual center cross for arc
+          ctx.beginPath();
+          ctx.moveTo(cx - 4, cy); ctx.lineTo(cx + 4, cy);
+          ctx.moveTo(cx, cy - 4); ctx.lineTo(cx, cy + 4);
+          ctx.stroke();
+          // больше визуалов: показываем радиус 3-point дуги
+          ctx.fillStyle = cvColor("label", "#8b8a85");
+          ctx.fillText(`r=${a.r.toFixed(1)} м`, cx + 8, cy - 8);
+        }
+      } else {
+        drawChain(pts, false); ctx.stroke();
+      }
+    }
   }
+
+  // превью окружности вне блока pts (отдельное состояние drawing для circle)
+  if (state.tool === "circle" && state.drawing && state.drawing.center) {
+    const st = styleForDrawing();
+    ctx.strokeStyle = st.stroke || cvColor("boundary", "#000"); ctx.lineWidth = st.width || 1;
+    const k = state.view.k;
+    const cx = state.view.tx + state.drawing.center[0] * k;
+    const cy = state.view.ty - state.drawing.center[1] * k;
+    let r;
+    if (state.typed) {
+      const tr = parseFloat(state.typed.replace(",", "."));
+      if (isFinite(tr) && tr > 0) r = tr * k;
+    }
+    if (!r && state.mouse) {
+      r = Math.hypot(state.mouse[0] - state.drawing.center[0], state.mouse[1] - state.drawing.center[1]) * k;
+    }
+    if (r && r > 2) {
+      ctx.save();
+      ctx.setLineDash([4, 2]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.restore();
+      const [mx, my] = state.mouse ? w2s(...state.mouse) : [cx + r, cy];
+      ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
+      ctx.fillStyle = state.typed ? cvColor("selection", "#1c1c1a") : cvColor("label", "#8b8a85");
+      const txt = (state.typed || (r/k).toFixed(1)) + " м";
+      if (state.typed) {
+        ctx.fillRect(mx + 10, my - 24, ctx.measureText(txt).width + 12, 18);
+        ctx.fillStyle = "#fff";
+      }
+      ctx.fillText(txt, mx + 16, my - 11);
+    }
+  }
+
   if (state.drag && state.drag.rect) {
     const { a, b } = state.drag;
     const [sx1, sy1] = w2s(...a), [sx2, sy2] = w2s(...b);
@@ -1477,8 +2302,6 @@ function niceRound(x) {
   return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * p;
 }
 function updateOverlay() {
-  const ob = document.getElementById("onboard");
-  if (ob) ob.hidden = state.features.length !== 0;
   const bar = document.getElementById("cv-scale-bar");
   const lab = document.getElementById("cv-scale-label");
   if (!bar || !lab) return;
@@ -1550,6 +2373,8 @@ function persist() {
     name: document.getElementById("project-name").value,
     density: document.getElementById("p-density").value,
     ratio: document.getElementById("p-ratio").value,
+    krail: document.getElementById("p-krail").value,
+    kba: document.getElementById("p-kba").value,
     layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
     layerLocked: Object.fromEntries(
       LAYERS_V2.filter(L => L.locked).map(L => [L.id, true])),
@@ -1566,6 +2391,10 @@ function persist() {
     sources: state.sources,
     basemapSource: basemap.source,
     exportStyle: exportStyleMode(),
+    projectStyles: state.projectStyles || {},
+    undo: state.undo || [],
+    redo: state.redo || [],
+    projectCustomKinds: state.projectCustomKinds || [],
   };
   try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
   catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
@@ -1616,7 +2445,9 @@ function afterChange() {
 let tepTimer = null;
 function params() {
   return { density: +document.getElementById("p-density").value || 25,
-           ratio_zh: +document.getElementById("p-ratio").value || 80 };
+           ratio_zh: +document.getElementById("p-ratio").value || 80,
+           k_rail: +document.getElementById("p-krail").value || 1,
+           k_ba: +document.getElementById("p-kba").value || 0.5 };
 }
 function refreshTep() {
   clearTimeout(tepTimer);
@@ -1627,12 +2458,16 @@ function refreshTep() {
         body: JSON.stringify({ features: state.features, params: params() }) });
       const data = await r.json();
       renderTep(data);
+      window.lastTepData = data;
       document.getElementById("tep-status").textContent = "";
       // в норме статус чистый — техническое «ядро: ок» пользователю не нужно
       document.getElementById("st-core").textContent = "";
     } catch (e) {
       document.getElementById("tep-status").textContent = "нет связи с расчётом";
-      document.getElementById("st-core").textContent = "⚠ расчёт недоступен";
+      document.getElementById("st-core").textContent = "⚠ расчёт недоступен (клик для reconnect)";
+      if (window.lastTepData) {
+        renderTep(window.lastTepData);
+      }
     }
   }, 250);
 }
@@ -1655,6 +2490,13 @@ function renderTep(data) {
   for (const r of data.results) {
     if (r.group !== group) { group = r.group; html += `<div class="tep-group">${group}</div>`; }
     html += `<div class="tep-row"><span>${r.title}</span><span class="v">${r.value} <small>${r.unit}</small></span></div>`;
+  }
+  if (data.checks && data.checks.length) {
+    html += `<div class="tep-group">Проверки</div>`;
+    for (const c of data.checks) {
+      const col = c.ok ? "var(--success)" : "var(--warning)";
+      html += `<div class="tep-row" style="color:${col}"><span>${c.title}</span><span class="v">${c.msg}</span></div>`;
+    }
   }
   body.innerHTML = html;
 }
@@ -1693,7 +2535,7 @@ function fieldHtml(field, f) {
         <button id="f-offset-r" style="flex:1">вправо ⇒</button>
       </div>`;
   }
-  const val = f.props[field.key] ?? "";
+  const val = f.props[field.key] ?? (field.key === "radius" ? 0 : "");
   return `<label>${field.title}<input type="${field.type}" id="f-${field.key}" value="${val}"${
     field.min != null ? ` min="${field.min}"` : ""}${
     field.max != null ? ` max="${field.max}"` : ""}${
@@ -1739,6 +2581,46 @@ async function runOffset(f, sign) {
   } catch (err) {
     toast("Офсет не построился: " + String(err).slice(0, 160) +
           " (обычно радиус/офсет не помещается в геометрию)", "error");
+  }
+}
+
+async function generateBuffers(selectedIds, dist, sides = "both") {
+  if (!selectedIds || !selectedIds.length) {
+    const s = selectionIds();
+    if (!s.length) { toast("Выберите объекты для буфера", "warn"); return; }
+    selectedIds = s;
+  }
+  dist = Math.abs(parseFloat(dist) || 15);
+  const selFeats = state.features.filter(f => selectedIds.includes(f.id));
+  if (!selFeats.length) return;
+
+  try {
+    const r = await fetch("/api/buffer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        features: selFeats.map(f => ({ ...f, point: f.point, line: f.line, ring: f.ring, arc: f.arc, circle: f.circle, props: f.props, kind: f.kind, layer_id: f.layer_id })),
+        dist,
+        sides,
+        fillet: 0
+      })
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    if (!data.features || !data.features.length) {
+      toast("Буфер пуст (возможно слишком большой радиус)", "warn");
+      return;
+    }
+    snapshot();
+    const L = activeLayer();
+    for (const bf of data.features) {
+      const nf = upgradeFeature({ id: state.nextId++, ...(bf), layer_id: (L && L.id) || bf.layer_id });
+      state.features.push(nf);
+    }
+    afterChange();
+    toast(`Создано буферов: ${data.features.length}`);
+  } catch (err) {
+    toast("Не удалось сгенерировать буфер: " + String(err).slice(0, 150), "error");
   }
 }
 
@@ -1812,11 +2694,30 @@ function renderProps() {
   const selIds = selectionIds();
   if (selIds.length > 1) { renderGroupProps(el, selIds); return; }
   const f = selectedFeature();
-  if (!f) { el.className = "muted"; el.textContent = "Ничего не выбрано"; return; }
+  if (!f) {
+    el.className = "muted";
+    const L = activeLayer();
+    if (L) {
+      el.innerHTML = `Активный слой: <b>${escHtml(L.title)}</b><br>Выберите инструмент слева и чертите — объекты попадут сюда.<br>` +
+        `<button class="small" style="margin-top:6px" id="props-goto-layer">Оформление слоя…</button>`;
+      const btn = el.querySelector("#props-goto-layer");
+      if (btn) btn.onclick = () => openLayerStyle(L);
+    } else {
+      el.textContent = "Нет активного слоя. Создайте слой в панели «Слои» справа.";
+    }
+    return;
+  }
   el.className = "";
   const L = layerOf(f);
   const cur = styleOf(f);
-  const fields = (L && ATTR_FIELDS[L.semantic_class]) || [];
+  let fields = (L && ATTR_FIELDS[L.semantic_class]) || [];
+  // generalize fillet (radius) to any polyline, not only redline kind — per Etap 2 roadmap "сопряжения на любых линиях"
+  if (f.line && !f.arc && !f.ring && fields.length === 0) {
+    fields = [
+      { key: "radius", title: "Радиус сопряжения, м", type: "number", min: 0, max: 500, step: 5,
+        cast: v => Math.max(0, parseFloat(v) || 0) }
+    ];
+  }
   let metric = "";
   if (f.ring) metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
   if (f.line) metric = `длина: ${lineLen(f.line).toFixed(0)} м`;
@@ -1832,28 +2733,58 @@ function renderProps() {
   const prov = f.prov
     ? `<div class="metric prov">источник: ${f.prov.source}${f.prov.source_date ? " · " + f.prov.source_date : ""}</div>`
     : "";
-  // per-object стиль из системной библиотеки (default + Эталон ЛГР);
-  // уезжает в .grado столбцом style_id и в PDF/DXF
-  const stylePick = (L && !L.annotation)
-    ? `<label>Стиль (библиотека)<select id="f-style">${stylePickerOptions(f.style_id)}</select></label>`
-    : "";
-  // оформление ОТДЕЛЬНОГО объекта (f.fmt) поверх стиля слоя — только холст
-  const objFmt = (L && !L.annotation) ? `
-    <div class="prop-sub">Оформление объекта</div>
-    <label class="chk"><input type="checkbox" id="f-fmt-on" ${f.fmt ? "checked" : ""}> своё оформление</label>
+  // === Унифицированный блок "Стиль и оформление объекта" ===
+  // Цель: одна понятная секция вместо двух дублирующих ("Стиль (библиотека)" + "Оформление объекта").
+  // - Выбор знака из библиотеки (влияет на .grado и стандартный экспорт).
+  // - Дополнительные правки только для отображения (холст + режим "как на холсте").
+  // "Как у слоя" = не переопределять f.style_id.
+  let styleHtml = "";
+  if (L && !L.annotation) {
+    const curStyle = f.style_id || "";
+    const opts = stylePickerOptions(curStyle);
+    styleHtml = `
+    <div class="prop-sub">Стиль и оформление</div>
+    <label>Знак из библиотеки
+      <select id="f-style">
+        <option value="">как у слоя</option>
+        ${opts}
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" id="f-fmt-on" ${f.fmt ? "checked" : ""}> дополнительные правки отображения (холст)</label>
     ${f.fmt ? `<label>Заливка<div id="f-fmt-fill"></div></label>
       <label>Обводка<div id="f-fmt-stroke"></div></label>
-      <label>Прозрачность, %<input type="range" id="f-fmt-op" min="10" max="100" step="5" value="${Math.round((f.fmt.fillOpacity ?? cur.fillOpacity ?? 1) * 100)}"></label>` : ""}` : "";
+      <label>Прозрачность, %<input type="range" id="f-fmt-op" min="10" max="100" step="5" value="${Math.round((f.fmt.fillOpacity ?? cur.fillOpacity ?? 1) * 100)}"></label>` : ""}
+    <div class="metric" style="font-size:11px;color:var(--muted);margin-top:2px">Правки влияют только на экран и «знаки: как на холсте». Для стандартного PDF — используйте «Знак из библиотеки» или правила слоя.</div>`;
+  }
   el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
-    <div class="metric">${metric}</div>${prov}${extra}${userFieldsHtml}${stylePick}${objFmt}
+    <div class="metric">${metric}</div>${prov}${extra}${userFieldsHtml}${styleHtml}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
-    <button class="danger" id="f-del">Удалить (Del)</button>`;
+    <button class="danger" id="f-del">Удалить (Del)</button>`; 
+  if (f.line && (f.props.radius || 0) > 0) {
+    const b = document.createElement("button");
+    b.textContent = "Применить сопряжение";
+    b.title = "Bake fillet into geometry points (set radius=0)";
+    b.style.marginTop = "4px";
+    b.onclick = () => applyFillet(f);
+    el.appendChild(b);
+  }
+  // Обработчики унифицированного блока стиля/оформления объекта
   const styleSel = document.getElementById("f-style");
-  if (styleSel) styleSel.addEventListener("change", () => {
+  if (styleSel) styleSel.addEventListener("change", async () => {
+    if (styleSel.value === "__create_project_style__") {
+      const newId = await createProjectStyle();
+      if (newId) {
+        f.style_id = newId;
+        renderProps(); // refresh to show new
+      } else {
+        styleSel.value = f.style_id || "";
+      }
+      return;
+    }
     snapshot();
     if (styleSel.value) f.style_id = styleSel.value;
     else delete f.style_id;
-    afterChange();
+    afterChange(); draw();
   });
   const bind = (id, key, cast) => {
     const inp = document.getElementById(id);
@@ -1884,7 +2815,7 @@ function renderProps() {
       afterChange();
     });
   });
-  // оформление объекта: тумблер создаёт/снимает f.fmt, поля живо перекрашивают
+  // Дополнительные правки отображения (f.fmt)
   const fmtOn = document.getElementById("f-fmt-on");
   if (fmtOn) fmtOn.addEventListener("change", () => {
     snapshot();
@@ -1915,8 +2846,9 @@ function renderProps() {
 // Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
 // массив идёт снизу вверх (индекс 0 = низ), поэтому список = обратный массив.
 function layerRowsTopFirst() {
-  // приёмники импорта и аннотационный слой размеров не засоряют панель, пока
-  // пусты (L2b «пустой старт»): показываются, только когда в них есть объекты
+  // Приёмники импорта и размеры показываем только если в них уже есть объекты
+  // (меньше захламления). Но теперь их можно явно удалить или переоформить —
+  // система стала гибче (см. resetLayerFormatting и deleteLayer).
   return [...LAYERS_V2].reverse()
     .filter(L => !((L.import_only || L.annotation) && !featuresOnLayer(L.id).length));
 }
@@ -1955,12 +2887,19 @@ function renderLayers() {
                     (layer.locked ? " locked" : "");
     row.draggable = true;
     row.dataset.lid = layer.id;
+    // Индикаторы кастомизации — чтобы сразу видеть, где нестандартное оформление
+    let badges = "";
+    if (layer.rules && layer.rules.length) {
+      badges += `<span class="lrow-badge" title="условное форматирование: ${layer.rules.length} правил">правила</span>`;
+    }
+    if (layer.fmt && Object.keys(layer.fmt).length > 0) {
+      badges += `<span class="lrow-badge" title="есть переопределения оформления слоя">fmt</span>`;
+    }
     row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки"><svg class="ic"><use href="#ic-grip"/></svg></span>
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
       <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
       <span class="nm" title="${escHtml(layer.title)} — клик делает слой активным (сюда чертят инструменты)">${escHtml(layer.title)}</span><span class="cnt">${count || ""}</span>
-      ${layer.rules && layer.rules.length ? `<span class="lrow-rules" title="условное форматирование: ${layer.rules.length} правил(о)">
-        <svg class="ic"><use href="#ic-filter"/></svg></span>` : ""}
+      ${badges}
       <button class="lrow-lock" title="${layer.locked ? "разблокировать слой" : "заблокировать слой (защита от случайной правки)"}">
         <svg class="ic"><use href="#${layer.locked ? "ic-lock" : "ic-unlock"}"/></svg></button>
       <button class="lrow-menu" title="действия со слоем"><svg class="ic"><use href="#ic-menu-dots"/></svg></button>`;
@@ -2025,12 +2964,41 @@ function renderLayers() {
   updateLayerStatus();   // чип «куда я черчу» — синхрон с активным слоем
 }
 
+function initCollapsiblePanel() {
+  const panel = document.getElementById("panel");
+  if (!panel) return;
+  const sections = panel.querySelectorAll("section");
+  // Восстанавливаем состояние из localStorage (простой ключ)
+  let collapsed = {};
+  try { collapsed = JSON.parse(localStorage.getItem("grado_panel_collapsed") || "{}"); } catch(e){}
+
+  // Разумные дефолты при первом запуске: фокус на черчении и ТЭП
+  const defaultsCollapsed = ["Источники", "Параметры расчёта"];
+  sections.forEach(sec => {
+    const h = sec.querySelector("h3");
+    if (!h) return;
+    const key = h.textContent.trim();
+    if (collapsed[key] === undefined && defaultsCollapsed.includes(key)) {
+      collapsed[key] = true;
+    }
+    if (collapsed[key]) sec.classList.add("collapsed");
+
+    h.addEventListener("click", (e) => {
+      // не сворачивать если клик по кнопке внутри h3 (типа + или библиотека)
+      if (e.target.closest("button")) return;
+      sec.classList.toggle("collapsed");
+      collapsed[key] = sec.classList.contains("collapsed");
+      try { localStorage.setItem("grado_panel_collapsed", JSON.stringify(collapsed)); } catch(e){}
+    });
+  });
+}
+
 // ---------- справка «Горячие клавиши» (клавиша ?) -------------------------
 // сгруппированный список — единственное полное место (строка-подсказка внизу
 // физически вмещает лишь часть). Клавиши в <kbd>, ⌘ = Cmd на Mac.
 const SHORTCUTS = [
   ["Инструменты", [
-    ["V", "Выбор и правка объектов"],
+    ["V", "Выбор и правка объектов"], ["A", "Дуга"],
     ["D", "Размерная линия"], ["M", "Измерение расстояния"],
     ["T", "Обрезать по границе"], ["E", "Продлить до границы"], ["J", "Склеить линии"],
   ]],
@@ -2039,6 +3007,7 @@ const SHORTCUTS = [
     ["B", "Здание"], ["P", "Общественная зона"], ["L", "Красная линия"], ["S", "Соцобъект"],
   ]],
   ["Черчение", [
+    ["A", "Дуга (3 точки)"],
     ["Shift", "Прямой угол (орто)"], ["цифры, Enter", "Ввод длины отрезка"],
     ["Enter", "Завершить фигуру"], ["Esc", "Отменить действие"],
   ]],
@@ -2066,7 +3035,7 @@ function openShortcuts() {
   overlay.innerHTML = `<div class="modal fmt-modal-lg sc-modal">
     <div class="modal-head">Горячие клавиши
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
-    <div class="sc-body">${groups}</div>
+    <div class="modal-body sc-body">${groups}</div>
     <div class="modal-actions"><span class="spacer"></span>
       <button class="primary" id="sc-close">Понятно</button></div></div>`;
   document.body.appendChild(overlay);
@@ -2092,6 +3061,8 @@ function openLayerMenu(layer, x, y) {
     ["Приблизить к слою", () => zoomToLayer(layer.id)],
     ["Переименовать…", () => renameLayer(layer)],
     [layer.locked ? "Разблокировать слой" : "Заблокировать слой", () => toggleLayerLock(layer)],
+    ["Сбросить оформление слоя", () => resetLayerFormatting(layer)],
+    ["Применить стиль слоя ко всем объектам", () => applyLayerStyleToObjects(layer)],
   ];
   for (const [label, fn] of items) {
     const it = document.createElement("div");
@@ -2100,13 +3071,11 @@ function openLayerMenu(layer, x, y) {
     it.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); fn(); });
     menu.appendChild(it);
   }
-  if (layer.user_created) {
-    const del = document.createElement("div");
-    del.className = "ctx-item danger";
-    del.textContent = "Удалить слой…";
-    del.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); deleteLayer(layer); });
-    menu.appendChild(del);
-  }
+  const del = document.createElement("div");
+  del.className = "ctx-item danger";
+  del.textContent = "Удалить слой…";
+  del.addEventListener("click", ev => { ev.stopPropagation(); closePopups(); deleteLayer(layer); });
+  menu.appendChild(del);
   document.body.appendChild(menu);
   // не вылезать за правый/нижний край
   const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -2115,8 +3084,36 @@ function openLayerMenu(layer, x, y) {
   setTimeout(() => document.addEventListener("click", closePopups, { once: true }), 0);
 }
 
+function resetLayerFormatting(layer) {
+  closePopups();
+  snapshot();
+  delete layer.fmt;
+  delete layer.rules;
+  // также сбрасываем per-object fmt на объектах этого слоя (style_id оставляем — это может быть классификация)
+  const objs = featuresOnLayer(layer.id);
+  for (const f of objs) {
+    delete f.fmt;
+  }
+  renderLayers(); draw(); persist();
+  toast(`Оформление слоя «${layer.title}» сброшено`);
+}
+
+function applyLayerStyleToObjects(layer) {
+  // Гибкость: быстро привести все объекты слоя к текущему стилю слоя (очищает per-object переопределения)
+  closePopups();
+  const objs = featuresOnLayer(layer.id);
+  if (!objs.length) { toast("В слое нет объектов"); return; }
+  snapshot();
+  for (const f of objs) {
+    delete f.style_id;
+    delete f.fmt;
+  }
+  renderLayers(); draw(); persist();
+  toast(`Стиль слоя применён к ${objs.length} объектам`);
+}
+
 // ---------- новый слой («+» в панели «Слои») ----------
-const GEOM_LABEL = { point: "точка", polyline: "полилиния", polygon: "полигон" };
+const GEOM_LABEL = { point: "точка", polyline: "полилиния", polygon: "полигон", arc: "дуга", circle: "окружность" };
 // роли (семантические классы) для выбранной геометрии + «обычный слой»
 function roleOptions(geom) {
   const roles = BASE_KINDS.filter(b => b.geometry_type === geom);
@@ -2129,11 +3126,13 @@ function openNewLayerDialog() {
   overlay.className = "modal-overlay";
   overlay.innerHTML = `<div class="modal fmt-modal">
     <div class="modal-head">Новый слой</div>
-    <label>Название<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
-    <label>Геометрия<select id="nl-geom">${
-      Object.entries(GEOM_LABEL).map(([g, l]) => `<option value="${g}"${g === "polygon" ? " selected" : ""}>${l}</option>`).join("")}</select></label>
-    <label>Роль (для ТЭП / автостилей ЛГР)<select id="nl-role">${roleOptions("polygon")}</select></label>
-    <label>Стиль (библиотека)<select id="nl-style">${stylePickerOptions()}</select></label>
+    <div class="modal-body compact">
+      <label>Название<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
+      <label>Геометрия<select id="nl-geom">${
+        Object.entries(GEOM_LABEL).map(([g, l]) => `<option value="${g}"${g === "polygon" ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label>Роль (для ТЭП / автостилей ЛГР)<select id="nl-role">${roleOptions("polygon")}</select></label>
+      <label>Стиль (библиотека)<select id="nl-style">${stylePickerOptions()}</select></label>
+    </div>
     <div class="modal-actions">
       <span class="spacer"></span>
       <button id="nl-cancel">Отмена</button>
@@ -2145,9 +3144,12 @@ function openNewLayerDialog() {
   $("nl-title").focus();
   // при смене геометрии — обновить список ролей
   $("nl-geom").addEventListener("change", () => { $("nl-role").innerHTML = roleOptions($("nl-geom").value); });
-  const create = () => {
+  const create = async () => {
     const geom = $("nl-geom").value, role = $("nl-role").value;
-    const styleRef = $("nl-style").value || null;
+    let styleRef = $("nl-style").value || null;
+    if (styleRef === "__create_project_style__") {
+      styleRef = await createProjectStyle();
+    }
     const title = $("nl-title").value.trim() ||
       (role ? BASE_KIND_BY_KIND[role].label : GEOM_LABEL[geom] + " — слой");
     const L = role
@@ -2160,9 +3162,148 @@ function openNewLayerDialog() {
     toast(`Слой «${title}» создан и стал активным`);
   };
   $("nl-title").addEventListener("keydown", ev => { if (ev.key === "Enter") create(); });
-  $("nl-create").addEventListener("click", create);
+  $("nl-create").addEventListener("click", () => create());
   $("nl-cancel").addEventListener("click", closePopups);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
+}
+
+function openManageKinds() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const kindsHtml = BASE_KINDS.map(k => `<div>${k.label || k.kind} (${k.geometry_type})</div>`).join("");
+  overlay.innerHTML = `<div class="modal fmt-modal-lg">
+    <div class="modal-head">Типы слоёв (BASE_KINDS + проектные)</div>
+    <div class="modal-body compact">
+      <div class="kinds-list">${kindsHtml || 'стандартные'}</div>
+      <div class="mk-row">
+        <label>Kind (id)<input id="mk-kind" placeholder="my_zone"></label>
+        <label>Label<input id="mk-label" placeholder="Моя зона"></label>
+        <label>Geom<select id="mk-geom"><option>polygon</option><option>polyline</option><option>point</option><option>arc</option><option>circle</option></select></label>
+        <label>Style id<input id="mk-style" placeholder="func_zone.fill"></label>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button id="mk-add">Добавить</button>
+      <span class="spacer"></span>
+      <button id="mk-close">Закрыть</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const $ = id => overlay.querySelector("#" + id);
+  $("mk-add").onclick = () => {
+    const kind = $("mk-kind").value.trim();
+    const label = $("mk-label").value.trim() || kind;
+    const geom = $("mk-geom").value;
+    const style = $("mk-style").value.trim() || (geom === "point" ? "social.point" : geom === "circle" ? "red.line.projected" : "func_zone.fill");
+    if (!kind) return;
+    const spec = { kind, semantic_class: `custom.${kind}`, geometry_type: geom, style_id: style, label };
+    if (!BASE_KIND_BY_KIND[kind]) {
+      BASE_KINDS.push(spec);
+      BASE_KIND_BY_KIND[kind] = spec;
+      KIND_BY_SEMANTIC_CLASS[spec.semantic_class] = kind;
+      state.projectCustomKinds = state.projectCustomKinds || [];
+      if (!state.projectCustomKinds.find(x => x.kind === kind)) state.projectCustomKinds.push(spec);
+      persist();
+      renderLayers();
+      toast(`Добавлен тип слоя ${kind}`);
+      // refresh dialog
+      overlay.remove();
+      openManageKinds();
+    } else {
+      toast("Такой kind уже есть");
+    }
+  };
+  $("mk-close").onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+function openAlbumConfig() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const cfg = state.albumConfig || {sheets: ['title','location','base','apo','tep'], title:{org:'ГРАДО',city_year:'Москва / 2026'}};
+  let sheets = [...(cfg.sheets || ['title','location','base','apo','tep'])];
+  const allSheets = ['title','location','base','apo','tep','ortho','photo','parking','greenery'];
+  let html = `<div class="modal fmt-modal">
+    <div class="modal-head">Состав альбома</div>
+    <div class="modal-body compact">
+      <div>Порядок листов (перемещайте кнопками):</div>
+      <div id="album-list"></div>
+      <div>Добавить: <select id="add-sheet">${allSheets.map(s=>`<option>${s}</option>`).join('')}</select> <button id="add-btn">+ Добавить</button></div>
+      <div style="margin-top:8px">Титул:</div>
+      <label>Организация <input id="title-org" value="${cfg.title && cfg.title.org || 'ГРАДО'}"></label>
+      <label>Город/год <input id="title-year" value="${cfg.title && cfg.title.city_year || 'Москва / 2026'}"></label>
+    </div>
+    <div class="modal-actions">
+      <button id="album-apply">Применить</button>
+      <span class="spacer"></span>
+      <button id="album-cancel">Отмена</button>
+    </div>
+  </div>`;
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+  const listEl = overlay.querySelector('#album-list');
+  function renderList() {
+    listEl.innerHTML = sheets.map((s,i) => `<div>${s} <button data-i="${i}" class="up">↑</button><button data-i="${i}" class="down">↓</button> <button data-i="${i}" class="rem">x</button></div>`).join('');
+    listEl.querySelectorAll('.up').forEach(b => b.onclick = () => { const i=+b.dataset.i; if(i>0){ [sheets[i-1],sheets[i]]=[sheets[i],sheets[i-1]]; renderList(); }});
+    listEl.querySelectorAll('.down').forEach(b => b.onclick = () => { const i=+b.dataset.i; if(i<sheets.length-1){ [sheets[i],sheets[i+1]]=[sheets[i+1],sheets[i]]; renderList(); }});
+    listEl.querySelectorAll('.rem').forEach(b => b.onclick = () => { sheets.splice(+b.dataset.i,1); renderList(); });
+  }
+  renderList();
+  overlay.querySelector('#add-btn').onclick = () => {
+    const s = overlay.querySelector('#add-sheet').value;
+    if (!sheets.includes(s)) { sheets.push(s); renderList(); }
+  };
+  overlay.querySelector('#album-apply').onclick = () => {
+    state.albumConfig = {
+      sheets: sheets,
+      title: {org: overlay.querySelector('#title-org').value, city_year: overlay.querySelector('#title-year').value}
+    };
+    persist();
+    overlay.remove();
+    toast('Конфигурация альбома сохранена');
+  };
+  overlay.querySelector('#album-cancel').onclick = () => overlay.remove();
+  overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
+}
+
+function openTepPresetEditor() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const d = document.getElementById("p-density").value;
+  const r = document.getElementById("p-ratio").value;
+  const kr = document.getElementById("p-krail").value;
+  const kb = document.getElementById("p-kba").value;
+  overlay.innerHTML = `<div class="modal fmt-modal">
+    <div class="modal-head">Редактор параметров ТЭП (пресет moscow_krt)</div>
+    <div class="modal-body compact">
+      <label>Плотность (density) <input id="ed-d" type="number" value="${d}" step="0.5"></label>
+      <label>Доля жилья % (ratio_zh) <input id="ed-r" type="number" value="${r}" step="1"></label>
+      <label>k_rail (ж/д) <input id="ed-kr" type="number" value="${kr}" step="0.05"></label>
+      <label>k_ba (дел.акт.) <input id="ed-kb" type="number" value="${kb}" step="0.05"></label>
+      <div style="font-size:11px;margin:8px 0;color:var(--muted)">Редактируйте константы в core/compute/presets/moscow_krt.json для полного пресета. Здесь — быстрые входы. После Apply — refreshTep. Базовые проверки норм (фаза 4) показываются ниже ТЭП.</div>
+    </div>
+    <div class="modal-actions">
+      <button id="ed-apply">Применить</button>
+      <span class="spacer"></span>
+      <button id="ed-close">Закрыть</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector("#ed-apply").onclick = () => {
+    document.getElementById("p-density").value = overlay.querySelector("#ed-d").value;
+    document.getElementById("p-ratio").value = overlay.querySelector("#ed-r").value;
+    document.getElementById("p-krail").value = overlay.querySelector("#ed-kr").value;
+    document.getElementById("p-kba").value = overlay.querySelector("#ed-kb").value;
+    persist();
+    refreshTep();
+    overlay.remove();
+    toast("Параметры ТЭП обновлены");
+  };
+  overlay.querySelector("#ed-close").onclick = () => overlay.remove();
+  overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
 }
 
 // ---------- встроенные диалоги (взамен браузерных alert/confirm/prompt) ----------
@@ -2173,7 +3314,7 @@ function escHtml(s) {
 // подтверждение: Promise<bool>. danger — красная кнопка для необратимого.
 function uiConfirm(msg, { ok = "OK", cancel = "Отмена", danger = false } = {}) {
   return new Promise(resolve => {
-    closePopups();
+    // do not close other modals — allow nested (e.g. create project style from inside layer style dialog)
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal ask-modal">
@@ -2195,7 +3336,7 @@ function uiConfirm(msg, { ok = "OK", cancel = "Отмена", danger = false } =
 // ввод строки: Promise<string|null> (null — отмена).
 function uiPrompt(msg, def = "", { ok = "OK", placeholder = "" } = {}) {
   return new Promise(resolve => {
-    closePopups();
+    // do not close other modals — allow nested (e.g. create project style from inside layer style dialog)
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay";
     overlay.innerHTML = `<div class="modal ask-modal">
@@ -2230,13 +3371,24 @@ function stylePickerOptions(selectedId) {
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push([sid, s.title]);
   }
-  let html = `<option value=""${selectedId ? "" : " selected"}>— как у слоя —</option>`;
+  // Стили проекта — своя группа, полностью кастомные внутри проекта
+  const proj = state.projectStyles || {};
+  if (Object.keys(proj).length) {
+    const items = [];
+    for (const [sid, s] of Object.entries(proj)) {
+      items.push([sid, s.title || sid]);
+    }
+    if (items.length) groups.set("Стили этого проекта", items);
+  }
+  let html = `<option value=""${!selectedId ? " selected" : ""}>— по умолчанию —</option>`;
   for (const [g, items] of groups) {
     html += `<optgroup label="${g}">`;
     for (const [sid, title] of items.sort((a, b) => a[1].localeCompare(b[1], "ru")))
       html += `<option value="${sid}"${sid === selectedId ? " selected" : ""}>${title}</option>`;
     html += `</optgroup>`;
   }
+  // опция создания нового (будет обработана в onchange если нужно)
+  html += `<option value="__create_project_style__">+ Создать свой стиль…</option>`;
   return html;
 }
 
@@ -2367,11 +3519,12 @@ function openLayerStyle(layer, opts = {}) {
   const opt = (sel, v, lbl) => `<option value="${v}"${sel === v ? " selected" : ""}>${lbl}</option>`;
   // рабочая копия правил для режима «по значению поля»
   const fieldCols = attrColumns(layer).filter(c => !c.virtual);
-  let work = (layer.rules || []).map(r => ({ ...r }));
+  let work = (layer.rules || []).map(r => ({ op: "=", ...r }));
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
     <div class="modal-head">Оформление слоя · ${escHtml(layer.title)}</div>
+    <div class="modal-body compact">
     <div class="seg" id="ls-mode" role="tablist">
       <button type="button" class="seg-btn${mode === "single" ? " active" : ""}" data-mode="single">Единый стиль</button>
       <button type="button" class="seg-btn${mode === "rules" ? " active" : ""}" data-mode="rules">По значению поля</button>
@@ -2420,9 +3573,10 @@ function openLayerStyle(layer, opts = {}) {
     <div id="ls-rules" style="display:${mode === "rules" ? "" : "none"}">
       <div class="fc-help" style="margin:0 var(--sp-4)">Знак объекта выбирается по значению его атрибута.
         Первое совпавшее правило побеждает; объекты без совпадения рисуются единым стилем слоя (вкладка слева).</div>
-      <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Значение</th><th>Знак</th><th></th></tr></thead>
+      <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Оп</th><th>Значение</th><th>Знак</th><th></th></tr></thead>
         <tbody id="cr-body"></tbody></table>
       <button id="cr-add" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ правило</button>
+    </div>
     </div>
     <div class="modal-actions">
       <button id="ls-reset">Сбросить</button>
@@ -2496,10 +3650,24 @@ function openLayerStyle(layer, opts = {}) {
     if (ref) fmt.style_ref = ref;
     return fmt;
   };
-  $("fmt-preset").addEventListener("change", () => {
+  $("fmt-preset").addEventListener("change", async () => {
     const ref = $("fmt-preset").value;
-    if (ref && STYLES_V2[ref]) {
-      const p = STYLES_V2[ref];
+    if (ref === "__create_project_style__") {
+      const newId = await createProjectStyle();
+      if (newId) {
+        const sel = $("fmt-preset");
+        sel.innerHTML = stylePickerOptions(newId);
+        sel.value = newId;
+        if (!layer.fmt) layer.fmt = {};
+        layer.fmt.style_ref = newId;
+        draw();
+      } else {
+        $("fmt-preset").value = (layer.fmt && layer.fmt.style_ref) || "";
+      }
+      return;
+    }
+    if (ref && (state.projectStyles[ref] || STYLES_V2[ref])) {
+      const p = state.projectStyles[ref] || STYLES_V2[ref];
       $("fmt-hasfill").checked = !!p.fill;
       if (p.fill) fillCF.set(toHexColor(p.fill, "#faf0bf"));
       strokeCF.set(toHexColor(p.stroke, "#888888"));
@@ -2535,15 +3703,19 @@ function openLayerStyle(layer, opts = {}) {
   const fieldOpts = sel => fieldCols.length
     ? fieldCols.map(c => `<option value="${escHtml(c.name)}"${c.name === sel ? " selected" : ""}>${escHtml(c.label)}</option>`).join("")
     : `<option value="">— нет полей —</option>`;
+  const ops = ["=", ">", "<", ">=", "<=", "contains", "starts"];
+  const opOpts = (cur) => ops.map(o => `<option value="${o}"${o === (cur || "=") ? " selected" : ""}>${o}</option>`).join("");
   const rulesRowsHtml = () => work.length ? work.map((r, i) => `<tr>
       <td><select class="cr-field" data-i="${i}">${fieldOpts(r.field)}</select></td>
+      <td><select class="cr-op" data-i="${i}">${opOpts(r.op)}</select></td>
       <td><input class="cr-value" data-i="${i}" value="${escHtml(r.value ?? "")}" placeholder="значение"></td>
       <td><select class="cr-style" data-i="${i}">${stylePickerOptions(r.style_id)}</select></td>
       <td class="mf-ord"><button class="mf-del cr-del" data-i="${i}" title="Удалить правило">✕</button></td>
     </tr>`).join("")
-    : `<tr><td colspan="4" class="muted" style="padding:10px">Правил пока нет — добавьте кнопкой «+ правило».</td></tr>`;
+    : `<tr><td colspan="5" class="muted" style="padding:10px">Правил пока нет — добавьте кнопкой «+ правило».</td></tr>`;
   const syncRules = () => {
     overlay.querySelectorAll(".cr-field").forEach(el => { work[+el.dataset.i].field = el.value; });
+    overlay.querySelectorAll(".cr-op").forEach(el => { work[+el.dataset.i].op = el.value; });
     overlay.querySelectorAll(".cr-value").forEach(el => { work[+el.dataset.i].value = el.value; });
     overlay.querySelectorAll(".cr-style").forEach(el => { work[+el.dataset.i].style_id = el.value; });
   };
@@ -2556,13 +3728,28 @@ function openLayerStyle(layer, opts = {}) {
     $("cr-body").innerHTML = rulesRowsHtml();
     overlay.querySelectorAll(".cr-field").forEach(el => el.onchange = () => { work[+el.dataset.i].field = el.value; liveRules(); });
     overlay.querySelectorAll(".cr-value").forEach(el => el.oninput = () => { work[+el.dataset.i].value = el.value; liveRules(); });
-    overlay.querySelectorAll(".cr-style").forEach(el => el.onchange = () => { work[+el.dataset.i].style_id = el.value; liveRules(); });
+    overlay.querySelectorAll(".cr-style").forEach(el => el.onchange = async () => {
+      let val = el.value;
+      if (val === "__create_project_style__") {
+        const newId = await createProjectStyle();
+        if (newId) {
+          val = newId;
+          el.innerHTML = stylePickerOptions(newId);
+          el.value = newId;
+        } else {
+          val = work[+el.dataset.i].style_id || "";
+          el.value = val;
+        }
+      }
+      work[+el.dataset.i].style_id = val;
+      liveRules();
+    });
     overlay.querySelectorAll(".cr-del").forEach(el => el.onclick = () => { syncRules(); work.splice(+el.dataset.i, 1); renderRules(); liveRules(); });
   };
   renderRules();
   $("cr-add").addEventListener("click", () => {
     syncRules();
-    work.push({ field: fieldCols[0] ? fieldCols[0].name : "", value: "", style_id: "" });
+    work.push({ field: fieldCols[0] ? fieldCols[0].name : "", op: "=", value: "", style_id: "" });
     renderRules();
   });
 
@@ -2649,10 +3836,12 @@ function openStyleLibrary() {
   overlay.innerHTML = `<div class="modal lib-modal">
     <div class="modal-head">Библиотека знаков
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
-    <div class="lib-hint">Правка меняет сам эталонный знак — во всех проектах, на холсте и на печати. Синяя точка — знак изменён.</div>
-    <div class="lib-body">
-      <div class="lib-list">${listHtml}</div>
-      <div class="lib-edit" id="lib-edit"><div class="muted" style="padding:var(--sp-4)">Выберите знак слева</div></div>
+    <div class="modal-body compact">
+      <div class="lib-hint">Правка меняет сам эталонный знак — во всех проектах, на холсте и на печати. Синяя точка — знак изменён.</div>
+      <div class="lib-body">
+        <div class="lib-list">${listHtml}</div>
+        <div class="lib-edit" id="lib-edit"><div class="muted" style="padding:var(--sp-4)">Выберите знак слева</div></div>
+      </div>
     </div>
     <div class="modal-actions">
       <button id="lib-reset-all">Сбросить все к эталону</button>
@@ -2963,7 +4152,7 @@ function openAttributeTable(layer) {
       <label class="at-filter">Показать
         <select id="at-flt"><option value="all">все</option><option value="selected">выделенные</option></select></label>
     </div>
-    <div class="attr-scroll" id="at-scroll"></div>
+    <div class="modal-body compact" style="padding:0"><div class="attr-scroll" id="at-scroll"></div></div>
     <div class="modal-actions"><span class="muted">клик — выделить (Shift/Ctrl — несколько) · двойной клик — приблизить</span></div>
   </div>`;
   document.body.appendChild(overlay);
@@ -3160,6 +4349,7 @@ function openFieldCalc(layer, getFeats, onDone) {
   ov.className = "modal-overlay";
   ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
     <div class="modal-head">Калькулятор полей · ${escHtml(layer.title)}</div>
+    <div class="modal-body compact">
     <div class="fmt-sub">Куда записать</div>
     <label class="chk"><input type="radio" name="fc-mode" id="fc-new" checked> новое поле</label>
     <label>Имя<input type="text" id="fc-name" value="расчёт"></label>
@@ -3172,6 +4362,7 @@ function openFieldCalc(layer, getFeats, onDone) {
     <div class="fc-help muted">round(x[,n]) · abs · min · max · sqrt · upper · lower · concat · if(усл,а,б)</div>
     <label class="chk"><input type="checkbox" id="fc-selonly"> только для выделенных</label>
     <div id="fc-preview" class="fc-preview muted"></div>
+    </div>
     <div class="modal-actions"><span class="spacer"></span>
       <button id="fc-cancel">Отмена</button><button id="fc-ok" class="primary">Вычислить</button></div></div>`;
   document.body.appendChild(ov);
@@ -3303,15 +4494,46 @@ function finishDrawing() {
   if (d && !L) toast("Активный слой не найден — создайте или выберите слой", "warn");
   if (!d || !L) { state.drawing = null; return; }
   const geom = TOOL_GEOM[state.tool];
-  if (geom === "polygon" && d.pts.length >= 3) addFeature(L.id, { ring: d.pts });
-  else if (geom === "polyline" && state.tool !== "dim" && d.pts.length >= 2)
-    addFeature(L.id, { line: d.pts });
+  const pts = Array.isArray(d.pts) ? d.pts : null;
+  if (geom === "polygon" && pts && pts.length >= 3) addFeature(L.id, { ring: pts });
+  else if (geom === "polyline" && state.tool !== "dim" && pts && pts.length >= 2)
+    addFeature(L.id, { line: pts });
+  else if (state.tool === "arc" && pts && pts.length >= 3) {
+    const a = arcFrom3Pts(pts[0], pts[1], pts[2]);
+    if (a) addFeature(L.id, { arc: a });
+  } else if (state.tool === "circle" && d.center) {
+    const r = d.r || (state.mouse ? Math.hypot(state.mouse[0] - d.center[0], state.mouse[1] - d.center[1]) : 0);
+    if (r > 0.5) addFeature(L.id, { circle: { cx: d.center[0], cy: d.center[1], r } });
+  }
   state.drawing = null; state.typed = "";
   draw();
 }
+
+// Простой порт Arc.from_3pts для фронтенда (храним параметры + для рендера)
+function arcFrom3Pts(p0, pm, p1) {
+  const [x0,y0] = p0, [x1,y1] = pm, [x2,y2] = p1;
+  const d1 = (x0-x1)*(x0-x2) + (y0-y1)*(y0-y2);
+  const d2 = (x1-x0)*(x1-x2) + (y1-y0)*(y1-y2);
+  const d3 = (x2-x0)*(x2-x1) + (y2-y0)*(y2-y1);
+  const c = 2 * (x0*(y1-y2) + x1*(y2-y0) + x2*(y0-y1));
+  if (Math.abs(c) < 1e-6) return null; // коллинеарны
+  const cx = ((x0*x0 + y0*y0)*(y1-y2) + (x1*x1 + y1*y1)*(y2-y0) + (x2*x2 + y2*y2)*(y0-y1)) / c;
+  const cy = ((x0*x0 + y0*y0)*(x2-x1) + (x1*x1 + y1*y1)*(x0-x2) + (x2*x2 + y2*y2)*(x1-x0)) / c;
+  const r = Math.hypot(cx-x0, cy-y0);
+  // углы
+  let a0 = Math.atan2(y0-cy, x0-cx);
+  let a1 = Math.atan2(y2-cy, x2-cx);
+  let sweep = a1 - a0;
+  // mid point sign to decide direction
+  const ma = Math.atan2(y1-cy, x1-cx);
+  // ensure sweep goes through mid
+  if (sweep > Math.PI) sweep -= 2*Math.PI;
+  if (sweep < -Math.PI) sweep += 2*Math.PI;
+  return { cx, cy, r, a0, sweep };
+}
 function rotateSelected() {
   const f = selectedFeature();
-  if (!f || f.point) return;
+  if (!f || f.point || f.arc || f.circle) return;  // arc/circle rotate later (circle is symmetric)
   snapshot();
   const pts = featurePts(f);
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
@@ -3324,11 +4546,15 @@ function rotateSelected() {
 }
 function duplicateSelected() {
   const f = selectedFeature();
-  if (!f) return;
+  if (!f || f.arc) return;  // TODO arc support
   const g = gridStep();
   const copy = JSON.parse(JSON.stringify(f));
   copy.id = state.nextId++;
-  for (const p of featurePts(copy)) { p[0] += g; p[1] -= g; }
+  if (copy.circle) {
+    copy.circle.cx += g; copy.circle.cy -= g;
+  } else {
+    for (const p of featurePts(copy)) { p[0] += g; p[1] -= g; }
+  }
   snapshot();
   state.features.push(copy);
   state.selected = copy.id;
@@ -3338,15 +4564,69 @@ function nudgeSelected(dx, dy) {
   const f = selectedFeature();
   if (!f) return;
   snapshot();
-  for (const p of featurePts(f)) { p[0] += dx; p[1] += dy; }
+  if (f.circle) {
+    f.circle.cx += dx; f.circle.cy += dy;
+  } else {
+    for (const p of featurePts(f)) { p[0] += dx; p[1] += dy; }
+  }
   afterChange();
 }
 function placeTypedPoint() {
+  if (state.drawing && state.drawing.center != null) {
+    // typed radius for circle
+    const r = parseFloat(state.typed.replace(",", "."));
+    if (isFinite(r) && r > 0) {
+      const c = state.drawing.center;
+      const L = activeLayer();
+      if (L) addFeature(L.id, { circle: { cx: c[0], cy: c[1], r } });
+      state.drawing = null;
+    }
+    state.typed = "";
+    draw();
+    return;
+  }
+  // 3-point радиус для дуг при рисовании: при 2 точках (start, mid) typed = r, mouse как end
+  if (state.drawing && state.drawing.pts && state.drawing.pts.length === 2 && state.tool === "arc") {
+    const r = parseFloat(state.typed.replace(",", "."));
+    if (isFinite(r) && r > 0) {
+      const p0 = state.drawing.pts[0];
+      const p2 = state.mouse;
+      if (p2) {
+        const d = Math.hypot(p2[0]-p0[0], p2[1]-p0[1]);
+        if (d > 0 && d < 2 * r) {
+          const mx = (p0[0] + p2[0]) / 2, my = (p0[1] + p2[1]) / 2;
+          const vx = (p2[0] - p0[0]) / d, vy = (p2[1] - p0[1]) / d;
+          const h = Math.sqrt(r * r - (d / 2) * (d / 2));
+          const px = -vy, py = vx;
+          const c1 = [mx + h * px, my + h * py];
+          const c2 = [mx - h * px, my - h * py];
+          const mid = state.drawing.pts[1];
+          const d1 = Math.hypot(mid[0] - c1[0], mid[1] - c1[1]);
+          const d2 = Math.hypot(mid[0] - c2[0], mid[1] - c2[1]);
+          const c = d1 < d2 ? c1 : c2;
+          const aa0 = Math.atan2(p0[1] - c[1], p0[0] - c[0]);
+          const aa2 = Math.atan2(p2[1] - c[1], p2[0] - c[0]);
+          let sw = aa2 - aa0;
+          if (sw > Math.PI) sw -= 2 * Math.PI;
+          if (sw < -Math.PI) sw += 2 * Math.PI;
+          snapshot();
+          const L = activeLayer();
+          if (L) addFeature(L.id, { arc: { cx: c[0], cy: c[1], r, a0: aa0, sweep: sw } });
+          state.drawing = null;
+          state.typed = "";
+          draw();
+          return;
+        }
+      }
+    }
+  }
   const base = lastDrawingPt();
   const dist = parseFloat(state.typed.replace(",", "."));
   if (!base || !state.mouse || !isFinite(dist) || dist <= 0) { state.typed = ""; return; }
   const a = Math.atan2(state.mouse[1] - base[1], state.mouse[0] - base[0]);
-  state.drawing.pts.push([base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)]);
+  if (Array.isArray(state.drawing.pts)) {
+    state.drawing.pts.push([base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)]);
+  }
   state.typed = "";
   draw();
 }
@@ -3363,6 +4643,14 @@ function hitTest(wx, wy) {
       if (f.line && nearChain(wx, wy, f.line, tolW) !== null) return f;
       if (f.ring && (layer.kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null
                                                : pointInRing(wx, wy, f.ring))) return f;
+      if (f.arc) {
+        const aa = f.arc; const dd = Math.hypot(aa.cx - wx, aa.cy - wy);
+        if (Math.abs(dd - aa.r) < tolW) return f;
+      }
+      if (f.circle) {
+        const cc = f.circle; const dd = Math.hypot(cc.cx - wx, cc.cy - wy);
+        if (Math.abs(dd - cc.r) < tolW) return f;
+      }
     }
   }
   return null;
@@ -3451,6 +4739,16 @@ cv.addEventListener("mousedown", e => {
     if (!activeLayer()) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
     // протягивание — прямоугольник; одиночный клик — контур по точкам
     state.drag = { a: s.p, b: s.p, rect: true, moved: false };
+  } else if (state.tool === "circle") {
+    const L = activeLayer();
+    if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
+    if (!toolFitsLayer("circle", L)) {
+      toast("Этот слой не поддерживает окружности (выберите/создайте слой с геометрией окружность)", "warn");
+      return;
+    }
+    state.drawing = { center: s.p, r: 0 };
+    state.typed = "";
+    draw();
   } else if (state.tool === "dim" || TOOL_GEOM[state.tool]) {
     // рисование геометрии требует активный слой; размеры пишутся в свой
     // аннотационный слой и активного слоя не требуют
@@ -3459,8 +4757,8 @@ cv.addEventListener("mousedown", e => {
     }
     if (!state.drawing) { state.drawing = { pts: [] }; state.typed = ""; }
     if (state.tool === "dim") {
-      state.drawing.pts.push(s.p);
-      if (state.drawing.pts.length === 2) {
+      if (Array.isArray(state.drawing.pts)) state.drawing.pts.push(s.p);
+      if (Array.isArray(state.drawing.pts) && state.drawing.pts.length === 2) {
         const pts = state.drawing.pts;
         state.drawing = null;
         const dim = LAYER_BY_KIND["dim"];
@@ -3469,14 +4767,20 @@ cv.addEventListener("mousedown", e => {
       } else draw();
       return;
     }
-    const first = state.drawing.pts[0];
-    if (first && TOOL_GEOM[state.tool] === "polygon" && state.drawing.pts.length > 2 &&
+    const ptsArr = state.drawing.pts;
+    const first = Array.isArray(ptsArr) ? ptsArr[0] : null;
+    if (first && TOOL_GEOM[state.tool] === "polygon" && Array.isArray(ptsArr) && ptsArr.length > 2 &&
         Math.hypot(first[0] - s.p[0], first[1] - s.p[1]) < 12 / state.view.k) {
       finishDrawing();
     } else {
-      state.drawing.pts.push(s.p);
-      state.typed = "";
-      draw();
+      if (Array.isArray(ptsArr)) {
+        ptsArr.push(s.p);
+        state.typed = "";
+        draw();
+        if (state.tool === "arc" && ptsArr.length >= 3) {
+          finishDrawing();
+        }
+      }
     }
   }
 });
@@ -3508,17 +4812,56 @@ cv.addEventListener("mousemove", e => {
         const pts = featurePts(feat), o = ed.orig[fi];
         for (let i = 0; i < pts.length; i++) { pts[i][0] = o[i][0] + ox; pts[i][1] = o[i][1] + oy; }
       });
+      // joint edit for shared boundaries on coverage layers — one operation for common edge
+      ed.feats.forEach(feat => {
+        if (!isCoverageFeature(feat)) return;
+        const pts = featurePts(feat);
+        for (let vi = 0; vi < pts.length; vi++) {
+          const comps = sharedCompanions(feat, vi);
+          for (const c of comps) {
+            const cpts = featurePts(c.f);
+            cpts[c.vi][0] = pts[vi][0];
+            cpts[c.vi][1] = pts[vi][1];
+          }
+        }
+      });
     } else {
       // исключаем из привязок свою фигуру и всех компаньонов общей вершины
       const ex = new Set([ed.f.id]);
       for (const c of (ed.companions || [])) ex.add(c.f.id);
       const s = snapPoint(wx, wy, ex);
       state.snapHit = s;
-      const pts = featurePts(ed.f);
-      pts[ed.vi][0] = s.p[0]; pts[ed.vi][1] = s.p[1];
-      for (const c of (ed.companions || [])) {
-        const cpts = featurePts(c.f);
-        cpts[c.vi][0] = s.p[0]; cpts[c.vi][1] = s.p[1];
+      if (ed.f.arc) {
+        const a = ed.f.arc;
+        if (ed.vi === 0) { // start
+          const dx = s.p[0] - a.cx, dy = s.p[1] - a.cy;
+          a.a0 = Math.atan2(dy, dx);
+        } else if (ed.vi === 1) { // end
+          const dx = s.p[0] - a.cx, dy = s.p[1] - a.cy;
+          const newAng = Math.atan2(dy, dx);
+          a.sweep = newAng - a.a0;
+        } else if (ed.vi === 2) { // center
+          a.cx = s.p[0]; a.cy = s.p[1];
+        } else if (ed.vi === 3) { // radius (логика редактирования)
+          const dx = s.p[0] - a.cx, dy = s.p[1] - a.cy;
+          a.r = Math.hypot(dx, dy);
+          if (a.r < 0.1) a.r = 0.1;
+        }
+      } else if (ed.f.circle) {
+        const c = ed.f.circle;
+        if (ed.vi === 0) { // center
+          c.cx = s.p[0]; c.cy = s.p[1];
+        } else if (ed.vi === 1) { // radius handle
+          c.r = Math.hypot(s.p[0] - c.cx, s.p[1] - c.cy);
+          if (c.r < 0.1) c.r = 0.1;
+        }
+      } else {
+        const pts = featurePts(ed.f);
+        pts[ed.vi][0] = s.p[0]; pts[ed.vi][1] = s.p[1];
+        for (const c of (ed.companions || [])) {
+          const cpts = featurePts(c.f);
+          cpts[c.vi][0] = s.p[0]; cpts[c.vi][1] = s.p[1];
+        }
       }
     }
     state._ix = null;
@@ -3532,6 +4875,9 @@ cv.addEventListener("mousemove", e => {
     state.drag.b = s.p;
     if (Math.hypot(s.p[0] - state.drag.a[0], s.p[1] - state.drag.a[1]) * state.view.k > 4)
       state.drag.moved = true;
+    draw(); return;
+  }
+  if (state.drawing && state.drawing.center != null && state.tool === "circle") {
     draw(); return;
   }
   if (state.tool === "select") {
@@ -3577,6 +4923,17 @@ window.addEventListener("mouseup", e => {
       state.typed = "";
       draw();
     } else draw();
+  } else if (state.drawing && state.drawing.center != null && state.tool === "circle") {
+    const c = state.drawing.center;
+    const mp = state.mouse || [c[0], c[1]];
+    const r = Math.hypot(mp[0] - c[0], mp[1] - c[1]);
+    state.drawing = null;
+    const L = activeLayer();
+    if (L && r > 0.5) {
+      addFeature(L.id, { circle: { cx: c[0], cy: c[1], r } });
+    } else {
+      draw();
+    }
   }
 });
 // потеря фокуса окна (alt-tab, системный диалог) посреди жеста —
@@ -3584,7 +4941,8 @@ window.addEventListener("mouseup", e => {
 window.addEventListener("blur", () => {
   state.pan = null;
   if (state.edit) { state.edit = null; }
-  if (state.drag) { state.drag = null; draw(); }
+  if (state.drag) { state.drag = null; }
+  if (state.drawing) { state.drawing = null; draw(); }
 });
 cv.addEventListener("dblclick", e => {
   e.preventDefault();
@@ -3592,7 +4950,7 @@ cv.addEventListener("dblclick", e => {
   // двойной клик по ребру выбранной фигуры — вставка вершины
   if (state.tool === "select") {
     const f = selectedFeature();
-    if (!f || f.point) return;
+    if (!f || f.point || f.arc || f.circle) return;
     const [wx, wy] = s2w(e.offsetX, e.offsetY);
     const chain = f.ring ? [...f.ring, f.ring[0]] : f.line;
     const i = nearChain(wx, wy, chain, 7 / state.view.k);
@@ -3711,7 +5069,8 @@ function setTool(tool, opts = {}) {
   if (tool !== "measure") state.measure = null;
   if (tool === "trim" || tool === "extend") {
     state.trimCtx = { boundary: new Set(), ready: false };
-    toast("Кликните линии-границы, затем Enter");
+    toast(`Режим ${tool}: клик по границам (Enter), затем по цели для ${tool==='trim'?'обрезки':'продления'}. Границы подсвечены.`);
+    document.getElementById('st-hint').textContent = `Режим ${tool}: выберите границы, Enter — готово, клик по цели`;
   } else {
     state.trimCtx = null;
   }
@@ -3809,6 +5168,24 @@ on("btn-clear", "click", () => {
 });
 on("p-density", "change", refreshTep);
 on("p-ratio", "change", refreshTep);
+on("p-krail", "change", refreshTep);
+on("p-kba", "change", refreshTep);
+on("btn-tep-editor", "click", openTepPresetEditor);
+
+on("btn-buffer", "click", () => {
+  const dist = document.getElementById("buf-dist").value;
+  const sideEl = document.querySelector('input[name="buf-side"]:checked');
+  const sides = sideEl ? sideEl.value : "both";
+  generateBuffers(null, dist, sides);
+});
+
+// wire TEP radius presets
+const bufDoo = document.getElementById("buf-doo-preset");
+if (bufDoo) bufDoo.onclick = () => { document.getElementById("buf-dist").value = 300; document.getElementById("btn-buffer").click(); };
+const bufSch = document.getElementById("buf-school-preset");
+if (bufSch) bufSch.onclick = () => { document.getElementById("buf-dist").value = 500; document.getElementById("btn-buffer").click(); };
+
+// (presets wired directly via getElementById above to avoid ID mismatch)
 
 // «#rrggbb» из hex/rgba (rgb-часть); alpha игнорируем — прозрачность живёт
 // в fillOpacity/fill_opacity отдельно
@@ -3897,10 +5274,15 @@ async function download(url, filename) {
   let features = state.features, canvasStyles = null;
   if (canvasMode) { const ex = canvasStyleExport(); features = ex.features; canvasStyles = ex.styles; }
   const payload = { features, params: params(),
-                    basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печати
+                    basemap: basemap.on,  // подложка включена → ортофото в альбоме и на печити
                     basemapSource: basemap.source,  // osm | sat — какую именно вставить
                     name: document.getElementById("project-name").value,
-                    layers: userLayersManifest() };
+                    layers: userLayersManifest(),
+                    projectStyles: state.projectStyles || {},
+                    projectCustomKinds: state.projectCustomKinds || [],
+                    undo_stack: state.undo || [],
+                    redo_stack: state.redo || [],
+                    albumConfig: state.albumConfig || null };
   if (canvasStyles) payload.canvasStyles = canvasStyles;
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload) });
@@ -3914,6 +5296,7 @@ async function download(url, filename) {
 on("export-style", "change", () => { persist(); toast(exportStyleMode() === "canvas"
   ? "Печать и альбом — знаками как на холсте" : "Печать и альбом — по стандарту ЛГР"); });
 on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
+on("btn-album-config", "click", openAlbumConfig);
 on("btn-grado", "click", () => download("/api/grado", "project.grado"));
 on("btn-dxf", "click", () => download("/api/dxf", "project.dxf"));
 on("btn-print", "click", () => download("/api/print", "chertezh.pdf"));
@@ -3932,14 +5315,57 @@ on("grado-file", "change", async e => {
     snapshot();
     state.features = data.features.map(f => upgradeFeature({ id: state.nextId++, ...f }));
     if (data.name) document.getElementById("project-name").value = data.name;
+    if (data.projectStyles) state.projectStyles = data.projectStyles;
+    if (Array.isArray(data.projectCustomKinds)) {
+      state.projectCustomKinds = data.projectCustomKinds;
+      for (const k of data.projectCustomKinds) {
+        if (!BASE_KIND_BY_KIND[k.kind]) {
+          BASE_KINDS.push(k);
+          BASE_KIND_BY_KIND[k.kind] = k;
+          if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
+        }
+      }
+    }
+    if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
+    if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
+    if (data.albumConfig && typeof data.albumConfig === 'object') {
+      state.albumConfig = data.albumConfig;
+    }
     state.selected = null;
     afterChange();
     fitView();
-    toast(`Открыт проект: ${data.features.length} объектов`);
+    loadProjectData(data);
   } catch (err) {
     toast("Не удалось открыть проект: " + String(err).slice(0, 200), "error");
   }
 });
+
+function loadProjectData(data) {
+  if (!data || !Array.isArray(data.features)) return;
+  snapshot();
+  state.features = data.features.map(f => upgradeFeature({ id: state.nextId++, ...f }));
+  if (data.name) document.getElementById("project-name").value = data.name;
+  if (data.projectStyles) state.projectStyles = data.projectStyles;
+  if (Array.isArray(data.projectCustomKinds)) {
+    state.projectCustomKinds = data.projectCustomKinds;
+    for (const k of data.projectCustomKinds) {
+      if (!BASE_KIND_BY_KIND[k.kind]) {
+        BASE_KINDS.push(k);
+        BASE_KIND_BY_KIND[k.kind] = k;
+        if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
+      }
+    }
+  }
+  if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
+  if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
+  if (data.albumConfig && typeof data.albumConfig === 'object') {
+    state.albumConfig = data.albumConfig;
+  }
+  state.selected = null;
+  afterChange();
+  fitView();
+  toast(`Открыт проект: ${data.features.length} объектов`);
+}
 
 // мост браузерного расширения: опрос входящих выгрузок
 let toastTimer = null;
@@ -3992,6 +5418,13 @@ async function pollInbox() {
 }
 setInterval(pollInbox, 2500);
 pollInbox();
+document.getElementById("st-core").onclick = () => {
+  serverDown = false;
+  document.getElementById("st-core").textContent = "";
+  pollInbox();
+  refreshTep();
+  toast("Переподключение к серверу...");
+};
 
 // импорт захвата НСПД (JSON браузерного моста GRADO)
 on("btn-nspd", "click", () => document.getElementById("nspd-file").click());
@@ -4020,7 +5453,51 @@ on("nspd-file", "change", async e => {
 });
 
 // импорт выгрузки ГИС ОГД (ZIP с портала, произвольный набор слоёв)
-on("btn-gisogd", "click", () => document.getElementById("gisogd-file").click());
+// теперь поддерживает прямую ссылку на выгрузку (сгенерируй на портале и вставь ссылку) — без сохранения файла на диск
+on("btn-gisogd", "click", async () => {
+  const useFile = await uiConfirm("Загрузить ГИС ОГД:\n- Файл (скачанный ZIP с портала)\n- По прямой ссылке (сгенерированной на gisogd.mos.ru)", { ok: "Файл", cancel: "По ссылке" });
+  if (useFile) {
+    document.getElementById("gisogd-file").click();
+  } else {
+    const url = await uiPrompt(
+      "Прямая ссылка на ZIP-выгрузку ГИС ОГД\n(на gisogd.mos.ru выберите слои, сгенерируйте выгрузку и скопируйте ссылку скачивания):",
+      "", { ok: "Загрузить", placeholder: "https://gisogd.mos.ru/…" });
+    if (!url || !url.trim()) return;
+    try {
+      const r = await fetch("/api/import-gisogd-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: url.trim() })
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json();
+      if (!data.features || !data.features.length) {
+        toast("В выгрузке не нашлось распознанных слоёв", "warn");
+        return;
+      }
+      const summary = data.notes && data.notes.length ? data.notes.join("; ") : "слои распознаны";
+      const ok = await uiConfirm(`Импортировать ГИС ОГД по ссылке? +${data.features.length} объектов.\n${summary}\n(Данные добавятся к текущему проекту.)`, { ok: "Импортировать", cancel: "Отмена" });
+      if (!ok) return;
+      snapshot();
+      for (const f of data.features)
+        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+      state.selected = null;
+      recordSource(data.snapshot, data.diff);
+      ["source.nspd.parcels", "source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
+        const L = LAYER_BY_ID[id]; if (L) L.visible = true;
+      });
+      afterChange();
+      fitView();
+      renderLayers();
+      if (data.notes && data.notes.length)
+        toast(`ОГД: +${data.features.length} объектов · ${data.notes.join("; ")}`);
+      else
+        toast(`ОГД: +${data.features.length} объектов`);
+    } catch (err) {
+      toast("Не удалось импортировать по ссылке: " + String(err).slice(0, 200), "error");
+    }
+  }
+});
 on("gisogd-file", "change", async e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -4031,25 +5508,169 @@ on("gisogd-file", "change", async e => {
       body: await file.arrayBuffer() });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
-    if (data.features.length) {
-      snapshot();
-      for (const f of data.features)
-        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
-      state.selected = null;
-      recordSource(data.snapshot, data.diff);
-      afterChange();
-      fitView();
+    if (!data.features || !data.features.length) {
+      toast("В архиве не нашлось распознанных слоёв", "warn");
+      return;
     }
+    const summary = data.notes && data.notes.length ? data.notes.join("; ") : "слои распознаны";
+    const ok = await uiConfirm(`Импортировать выгрузку с ГИС ОГД Москвы?\n+${data.features.length} объектов.\n${summary}\n\n(Сначала скачайте ZIP с gisogd.mos.ru, затем выберите файл здесь. Данные добавятся к текущему проекту.)`, { ok: "Импортировать", cancel: "Отмена" });
+    if (!ok) return;
+    snapshot();
+    for (const f of data.features)
+      state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+    state.selected = null;
+    recordSource(data.snapshot, data.diff);
+    // force visibility of import layers so data appears
+    ["source.nspd.parcels", "source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
+      const L = LAYER_BY_ID[id]; if (L) L.visible = true;
+    });
+    afterChange();
+    fitView();
+    renderLayers();
     if (data.notes && data.notes.length)
       toast(`ОГД: +${data.features.length} объектов · ${data.notes.join("; ")}`);
-    else if (data.features.length)
-      toast(`ОГД: +${data.features.length} объектов`);
     else
-      toast("В архиве не нашлось распознанных слоёв", "warn");
+      toast(`ОГД: +${data.features.length} объектов`);
   } catch (err) {
     toast("Не удалось импортировать выгрузку ОГД: " + String(err).slice(0, 200), "error");
   }
 });
+
+// ---------- «Данные» — прямые открытые источники по видимой области ----------
+// Без браузерного моста и без порталов: сервер сам ходит в OSM (Overpass)
+// и НСПД (intersects-API геопортала), объекты раскладываются по слоям-
+// приёмникам source.* строго по layer_id (правило 7) — слои появляются
+// в панели автоматически, как только в них попадают данные.
+const DATA_SOURCE_GROUPS = [
+  { title: "OpenStreetMap", hint: "справочный контекст",
+    maxKm2: 60, items: [
+      { key: "osm.roads", label: "Дороги и улицы", def: true },
+      { key: "osm.buildings", label: "Здания", def: true },
+      { key: "osm.landuse", label: "Землепользование (парки, лес…)", def: false },
+      { key: "osm.water", label: "Вода", def: false },
+    ]},
+  { title: "НСПД — Росреестр", hint: "официальные границы ЕГРН",
+    maxKm2: 12, items: [
+      { key: "nspd.parcels", label: "Земельные участки", def: true },
+      { key: "nspd.buildings", label: "Здания (ОКС)", def: false },
+      { key: "nspd.constructions", label: "Сооружения", def: false },
+      { key: "nspd.zouit", label: "ЗОУИТ (все виды)", def: false },
+    ]},
+];
+
+function viewExtentBbox() {
+  // текущий видимый прямоугольник холста → [west, south, east, north] WGS84
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const p0 = s2w(0, h), p1 = s2w(w, 0);
+  const [lon0, lat0] = localToLonLat(p0[0], p0[1]);
+  const [lon1, lat1] = localToLonLat(p1[0], p1[1]);
+  return [Math.min(lon0, lon1), Math.min(lat0, lat1),
+          Math.max(lon0, lon1), Math.max(lat0, lat1)];
+}
+function bboxKm2([west, south, east, north]) {
+  const latMid = (south + north) / 2 * Math.PI / 180;
+  return (north - south) * 111.32 * (east - west) * 111.32 * Math.cos(latMid);
+}
+
+async function openDataFetch() {
+  if (!basemap.originLon) { try { await initBasemap(); } catch (e) {} }
+  if (!basemap.originLon) { toast("Нет системы координат — включите подложку", "warn"); return; }
+  closePopups();
+  const bbox = viewExtentBbox();
+  const km2 = bboxKm2(bbox);
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem("grado_data_sources") || "{}"); } catch (e) {}
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const groupsHtml = DATA_SOURCE_GROUPS.map(g => {
+    const over = km2 > g.maxKm2;
+    const rows = g.items.map(it => {
+      const checked = (saved[it.key] ?? it.def) && !over;
+      return `<label class="data-src${over ? " disabled" : ""}">
+        <input type="checkbox" data-src="${it.key}"${checked ? " checked" : ""}${over ? " disabled" : ""}>
+        <span>${escHtml(it.label)}</span></label>`;
+    }).join("");
+    return `<div class="data-group">
+      <div class="data-group-title">${escHtml(g.title)}
+        <span class="muted">${over
+          ? `приблизьте вид — область больше ${g.maxKm2} км²`
+          : escHtml(g.hint)}</span></div>
+      ${rows}</div>`;
+  }).join("");
+  overlay.innerHTML = `<div class="modal fmt-modal data-modal">
+    <div class="modal-head">Данные по видимой области
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body compact">
+      <div class="data-area">Видимая область: ~${km2 < 1 ? km2.toFixed(2) : km2.toFixed(1)} км²</div>
+      ${groupsHtml}
+      <div class="data-note muted">Объекты добавятся в слои-источники (появятся в панели
+      «Слои») и не смешаются с вашим проектом. ГИС ОГД Москвы — кнопкой «ОГД»
+      (портал требует авторизации mos.ru).</div>
+    </div>
+    <div class="modal-actions"><span class="data-status muted"></span><span class="spacer"></span>
+      <button class="data-cancel">Отмена</button>
+      <button class="data-load primary">Загрузить</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
+  const close = () => overlay.remove();
+  overlay.querySelector(".modal-x").addEventListener("click", close);
+  overlay.querySelector(".data-cancel").addEventListener("click", close);
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
+  overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") close(); });
+
+  const loadBtn = overlay.querySelector(".data-load");
+  const status = overlay.querySelector(".data-status");
+  loadBtn.addEventListener("click", async () => {
+    const boxes = [...overlay.querySelectorAll("input[data-src]")];
+    const sources = boxes.filter(b => b.checked).map(b => b.dataset.src);
+    // выбор запоминается (и невыбор тоже) — в следующий раз диалог как оставили
+    const sel = {};
+    boxes.forEach(b => { if (!b.disabled) sel[b.dataset.src] = b.checked; });
+    try { localStorage.setItem("grado_data_sources", JSON.stringify(sel)); } catch (e) {}
+    if (!sources.length) { status.textContent = "Выберите хотя бы один источник"; return; }
+    loadBtn.disabled = true;
+    boxes.forEach(b => b.disabled = true);
+    status.textContent = "Загрузка… (НСПД может занять ~10 с)";
+    try {
+      const r = await fetch("/api/fetch-extent", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bbox, sources }) });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+      const groups = (data.groups || []).filter(g => g.count > 0);
+      const total = groups.reduce((s, g) => s + g.count, 0);
+      if (!total) {
+        status.textContent = "В видимой области ничего не нашлось";
+        if (data.notes && data.notes.length) toast(data.notes.join(" · "), "warn");
+        loadBtn.disabled = false;
+        boxes.forEach(b => b.disabled = false);
+        return;
+      }
+      snapshot();
+      for (const g of groups) {
+        for (const f of g.features)
+          state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+        const L = LAYER_BY_ID[g.layer_id];
+        if (L) L.visible = true;   // слой-приёмник сразу виден в панели
+      }
+      (data.snapshots || []).forEach(m => recordSource(m));
+      state.selected = null;
+      afterChange();               // вид не трогаем: данные пришли по нему же
+      close();
+      const parts = groups.map(g => `${g.title} ${g.count}`).join(" · ");
+      toast(`Данные: +${plObjects(total)} (${parts})`);
+      if (data.notes && data.notes.length)
+        console.info("Данные по области:", data.notes.join("\n"));
+    } catch (err) {
+      status.textContent = "";
+      loadBtn.disabled = false;
+      boxes.forEach(b => b.disabled = false);
+      toast("Не удалось загрузить: " + String(err.message || err).slice(0, 180), "error");
+    }
+  });
+}
+on("btn-data", "click", openDataFetch);
 
 // ---------- демо-наполнение ----------
 on("btn-demo", "click", () => {
@@ -4111,6 +5732,8 @@ function applyRestoredState(d) {
     }
   }
   state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
+  if (Array.isArray(d.undo)) state.undo = d.undo;
+  if (Array.isArray(d.redo)) state.redo = d.redo;
   // L2b-миграция: старые проекты ссылались на удалённые пресет-слои
   // (project.territory.boundary и т.п.). Осиротевшие объекты переселяем в
   // воссозданные слои их вида, иначе они молча исчезли бы с холста.
@@ -4177,9 +5800,27 @@ function applyRestoredState(d) {
     const sel = document.getElementById("export-style");
     if (sel) sel.value = d.exportStyle === "canvas" ? "canvas" : "standard";
   }
+  if (d.projectStyles && typeof d.projectStyles === "object") {
+    state.projectStyles = d.projectStyles;
+  }
+  if (Array.isArray(d.projectCustomKinds)) {
+    state.projectCustomKinds = d.projectCustomKinds;
+    for (const k of d.projectCustomKinds) {
+      if (!BASE_KIND_BY_KIND[k.kind]) {
+        BASE_KINDS.push(k);
+        BASE_KIND_BY_KIND[k.kind] = k;
+        if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
+      }
+    }
+  }
+  if (d.albumConfig && typeof d.albumConfig === 'object') {
+    state.albumConfig = d.albumConfig;
+  }
   if (d.name) document.getElementById("project-name").value = d.name;
   if (d.density) document.getElementById("p-density").value = d.density;
   if (d.ratio) document.getElementById("p-ratio").value = d.ratio;
+  if (d.krail) document.getElementById("p-krail").value = d.krail;
+  if (d.kba) document.getElementById("p-kba").value = d.kba;
 }
 (function restore() {
   try {
@@ -4195,6 +5836,14 @@ function applyRestoredState(d) {
     toast("Восстановлено из файлового автосохранения");
   }).catch(() => {});
 })();
+
+// Авто-открытие .grado при запуске сервера с путём к файлу (packaging, двойной клик на проекте, file assoc).
+// Выполняется после возможного restore из local/autosave; явный .grado arg имеет приоритет.
+fetch("/api/initial-grado").then(r => r.ok ? r.json() : null).then(data => {
+  if (data && Array.isArray(data.features) && data.features.length > 0) {
+    loadProjectData(data);
+  }
+}).catch(() => {});
 on("project-name", "change", persist);
 window.studio = { state, addFeature, refreshTep, fitView, snapPoint, gridStep,
                   layerOf, styleOf, layerStyle, upgradeFeature, LAYERS_V2, STYLES_V2,
@@ -4205,6 +5854,8 @@ on("btn-refresh-src", "click", fetchSources);
 on("btn-shortcuts", "click", openShortcuts);
 on("btn-new-layer", "click", openNewLayerDialog);
 on("btn-style-lib", "click", openStyleLibrary);
+on("btn-project-styles", "click", openProjectStyles);
+on("btn-manage-kinds", "click", openManageKinds);
 // переключатель темы (canvas-theme.js): смена темы → перечитать палитру
 // холста и перерисовать. Тема на <html> уже выставлена до загрузки app.js.
 on("btn-theme", "click", () => { if (window.toggleTheme) window.toggleTheme(); });
@@ -4217,5 +5868,43 @@ refreshTep();
 initStyles();
 fetchSources();
 loadStyleOverrides();
+initCollapsiblePanel();
+initPanelResizer();
 // версия — в подсказке логотипа (для связи с поддержкой), не в статус-строке
 { const lg = document.getElementById("logo"); if (lg) lg.title = `ГРАДО Студия · v${VERSION}`; }
+
+function initPanelResizer() {
+  const resizer = document.getElementById('panel-resizer');
+  const panel = document.getElementById('panel');
+  if (!resizer || !panel) return;
+  // restore saved width
+  try {
+    const saved = localStorage.getItem('grado_panel_width');
+    if (saved) panel.style.flexBasis = saved + 'px';
+  } catch (e) {}
+  let startX = 0, startW = 0;
+  resizer.addEventListener('mousedown', e => {
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const move = ev => {
+      const dx = ev.clientX - startX;
+      // panel on the right: drag resizer right (dx>0) → narrower panel
+      let w = Math.max(180, Math.min(600, startW - dx));
+      panel.style.flexBasis = w + 'px';
+      // live canvas resize
+      resize();
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try { localStorage.setItem('grado_panel_width', parseInt(panel.style.flexBasis) || 268); } catch (e) {}
+      resize();
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up, { once: true });
+  });
+}

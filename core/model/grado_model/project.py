@@ -16,7 +16,7 @@ from .classifier import Classifier
 GRADO_VERSION = "0.1.0"
 DEFAULT_SRS_ID = 32637
 
-SOURCES = {"manual", "nspd", "fgistp", "gisogd", "import"}
+SOURCES = {"manual", "nspd", "fgistp", "gisogd", "osm", "import"}
 
 
 class ProjectError(ValueError):
@@ -92,7 +92,8 @@ class Layer:
         # пользовательские поля слоя пропускаем — их схема живёт на слое,
         # значения приводит к типу вызывающий (studio_core при экспорте)
         user_ids = {f["id"] for f in self.user_fields}
-        self.cls.validate_attrs({k: v for k, v in attrs.items() if k not in user_ids})
+        # "arc"/"circle" internal CAD (parametric as JSON); not validated as classifier attr
+        self.cls.validate_attrs({k: v for k, v in attrs.items() if k not in user_ids and k not in ("arc", "circle")})
         return geom, attrs, source_date or date.today().isoformat()
 
     def _write(self, fid, geom, attrs, source, source_date, source_doc, style_id):
@@ -144,6 +145,15 @@ class Layer:
     def features(self, where_id=None):
         attr_ids = [a["id"] for a in self.cls.attrs] + \
                    [f["id"] for f in self.user_fields]
+        # include internal CAD "arc"/"circle" columns (parametric for arcs, circles/radii/buffers) if present
+        try:
+            pragma = self.project.conn.execute(f'PRAGMA table_info("{self.table}")').fetchall()
+            have = {r[1] for r in pragma}
+            for ic in ("arc", "circle"):
+                if ic in have and ic not in attr_ids:
+                    attr_ids.append(ic)
+        except Exception:
+            pass
         cols = ", ".join(f'"{a}"' for a in attr_ids)
         sql = (f'SELECT id, geom, source, source_date, source_doc, style_id'
                f'{", " + cols if cols else ""} FROM "{self.table}"')
@@ -259,6 +269,14 @@ class Project:
         row = self.conn.execute("SELECT value FROM grado_meta WHERE key=?", (key,)).fetchone()
         return row[0] if row else None
 
+    def set_meta(self, key, value):
+        """Сохранить метаданные проекта (в т.ч. project_styles)."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO grado_meta (key, value) VALUES (?, ?)",
+            (key, str(value) if value is not None else "")
+        )
+        self.conn.commit()
+
     def add_layer(self, code, title=None, layer_id=None, stage=None,
                   style_id=None, source_kind=None, fields=None):
         """Создаёт слой. layer_id по умолчанию = code (legacy 1:1); передав
@@ -297,6 +315,10 @@ class Project:
             seen.add(fid)
         columns = [(a["id"], a["type"]) for a in c.attrs] + \
                   [(f["id"], f["type"]) for f in user_fields]
+        # internal columns for CAD arcs/circles (parametric for roundtrip, radii, buffers; not user attrs)
+        for internal in ("arc", "circle"):
+            if not any(col[0] == internal for col in columns):
+                columns.append((internal, "string"))
         gpkg.add_feature_table(self.conn, table, title, c.geom_type,
                                self.srs_id, columns, description=f"grado:{code}")
         fields_json = json.dumps(user_fields, ensure_ascii=False) if user_fields else None

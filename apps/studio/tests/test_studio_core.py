@@ -59,6 +59,9 @@ class TestStudioCore(unittest.TestCase):
         # факт по посадке: 30×20 м × 10 этажей = 6 тыс. м²
         self.assertAlmostEqual(out["fact"]["spp"], 6.0)
         self.assertAlmostEqual(out["fact"]["density"], round(6.0 / 13.0, 2))
+        # phase 4 basic rule checks
+        self.assertIn("checks", out)
+        self.assertTrue(any("Плотность" in c["title"] for c in out.get("checks", [])))
 
     def test_empty_features_defaults(self):
         out = studio_core.compute_tep([])
@@ -153,6 +156,84 @@ class TestStudioCore(unittest.TestCase):
         soc = next(f for f in out["features"] if f["kind"] == "social")
         self.assertEqual([round(v, 6) for v in soc["point"]], [400, 200])
         self.assertEqual(soc["props"]["capacity"], 500)
+
+    def test_arc_roundtrip(self):
+        """Дуга (parametric arc) сохраняется в .grado через attrs и восстанавливается при открытии."""
+        arc_feat = [{
+            "kind": "redline",
+            "layer_id": "project.apo.red_lines",
+            "line": [[0, 0], [100, 0]],
+            "arc": {"cx": 50, "cy": 0, "r": 50, "a0": 0, "sweep": 1.5708},
+            "props": {}
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "arc.grado"
+            studio_core.build_project(path, "Дуга тест", arc_feat).close()
+            out = studio_core.grado_to_features(path)
+        arcs = [f for f in out["features"] if f.get("arc")]
+        self.assertEqual(len(arcs), 1, "arc должен вернуться как parametric")
+        a = arcs[0]["arc"]
+        self.assertAlmostEqual(a["cx"], 50, delta=0.1)
+        self.assertAlmostEqual(a["r"], 50, delta=0.1)
+        self.assertGreater(a.get("sweep", 0), 1.0)
+        # props не должны тащить arc_*
+        self.assertNotIn("arc_cx", arcs[0].get("props", {}))
+
+    def test_circle_roundtrip_and_buffer(self):
+        """Окружность для радиусов/буферов: roundtrip + можно создать как буфер точки."""
+        circ_feat = [{
+            "kind": "social",
+            "layer_id": "project.social.objects",
+            "point": [100, 50],
+            "circle": {"cx": 100, "cy": 50, "r": 300},
+            "props": {"capacity": 200}
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "circ.grado"
+            studio_core.build_project(path, "Окружность тест", circ_feat).close()
+            out = studio_core.grado_to_features(path)
+        circs = [f for f in out["features"] if f.get("circle")]
+        self.assertEqual(len(circs), 1)
+        c = circs[0]["circle"]
+        self.assertAlmostEqual(c["cx"], 100, delta=0.1)
+        self.assertAlmostEqual(c["r"], 300, delta=0.1)
+        self.assertNotIn("circle", circs[0].get("props", {}))  # не в props
+        # buffer-like: точка + радиус даёт окружность
+        self.assertEqual(circs[0]["props"].get("capacity"), 200)
+
+    def test_make_buffer(self):
+        """Генерация буферов: точка → circle, линия → офсет."""
+        feats = [
+            {"kind": "social", "point": [0, 0], "props": {}},
+            {"kind": "redline", "line": [[0, 0], [100, 0]], "props": {}}
+        ]
+        bufs = studio_core.make_buffer(feats, 50, fillet=0, sides="both")
+        circles = [b for b in bufs if b.get("circle")]
+        lines = [b for b in bufs if b.get("line")]
+        self.assertEqual(len(circles), 1)
+        self.assertAlmostEqual(circles[0]["circle"]["r"], 50)
+        self.assertGreaterEqual(len(lines), 1)  # at least one offset line
+        # check props carry over
+        self.assertIn("_buffer_dist", lines[0].get("props", {}))
+
+    def test_arc_trim_preserve(self):
+        """Тест логики: arc features сохраняют параметры после roundtrip (trim симулируется в UI, здесь проверка roundtrip)."""
+        arc_feat = [{
+            "kind": "redline",
+            "layer_id": "project.apo.red_lines",
+            "line": [[0,0],[100,0]],
+            "arc": {"cx": 50, "cy": 0, "r": 50, "a0": 0, "sweep": 1.57},
+            "props": {}
+        }]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "arc.grado"
+            studio_core.build_project(path, "Arc test", arc_feat).close()
+            out = studio_core.grado_to_features(path)
+        arcs = [f for f in out["features"] if f.get("arc")]
+        self.assertEqual(len(arcs), 1)
+        a = arcs[0]["arc"]
+        self.assertAlmostEqual(a["r"], 50, delta=0.1)
+        self.assertGreater(a.get("sweep", 0), 1.0)
 
     def test_import_fgistp_polygons_to_zones(self):
         payload = {
@@ -281,6 +362,23 @@ class TestStudioCore(unittest.TestCase):
         data = studio_core.make_grado(FEATURES, "Тест")
         self.assertTrue(data.startswith(b"SQLite format 3"))
 
+    def test_circle_as_potential_trim_boundary_roundtrip(self):
+        """Окружности должны roundtrip'иться и быть доступны как границы обрезки/продления
+        (логика trim — в UI на клик+circleIntersect; здесь проверяем что circle + line сожительствуют и сохраняются)."""
+        feats = [
+            {"kind": "redline", "layer_id": "project.apo.red_lines", "line": [[0, 0], [300, 0]], "props": {}},
+            {"kind": "circle", "layer_id": "project.apo.red_lines", "circle": {"cx": 150, "cy": 0, "r": 80}, "props": {}}
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "c4b.grado"
+            studio_core.build_project(path, "Circle boundary test", feats).close()
+            out = studio_core.grado_to_features(path)
+        circs = [f for f in out["features"] if f.get("circle")]
+        lines = [f for f in out["features"] if f.get("line")]
+        self.assertEqual(len(circs), 1)
+        self.assertEqual(len(lines), 1)
+        self.assertAlmostEqual(circs[0]["circle"]["r"], 80, delta=0.1)
+
 
 FAKE_JPEG = bytes([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
                    0x00, 0x01, 0x00, 0x02, 0x03])
@@ -328,7 +426,12 @@ class TestUnderlay(unittest.TestCase):
         self.assertLess(angle, 2.0)
 
     def test_album_with_basemap_gets_ortho_sheet(self):
-        pdf = studio_core.make_album(FEATURES, "Тест", basemap=True)
+        # ortho добавляется только если явно в album_config['sheets'] (управляется юзером)
+        # + basemap=True даёт underlay
+        pdf = studio_core.make_album(
+            FEATURES, "Тест", basemap=True,
+            album_config={"sheets": ["title", "location", "base", "apo", "tep", "ortho"]}
+        )
         self.assertIn(b"/Count 6", pdf, "добавился лист «Ортофотоплан»")
         self.assertIn(b"/Filter /DCTDecode", pdf)
         # все тайлы-заглушки одинаковы → в PDF ровно один XObject
@@ -338,8 +441,12 @@ class TestUnderlay(unittest.TestCase):
         def fail(z, x, y, source="osm"):
             raise OSError("нет сети")
         studio_core._tile_jpeg = fail
-        pdf = studio_core.make_album(FEATURES, "Тест", basemap=True)
-        self.assertIn(b"/Count 5", pdf, "альбом собрался без ортофото")
+        # запрашиваем ortho в конфиге, но подложка падает → builder вернёт None, лист не добавится
+        pdf = studio_core.make_album(
+            FEATURES, "Тест", basemap=True,
+            album_config={"sheets": ["title", "location", "base", "apo", "tep", "ortho"]}
+        )
+        self.assertIn(b"/Count 5", pdf, "орто-лист пропущен при сбое подложки")
         self.assertNotIn(b"/DCTDecode", pdf)
 
     def test_print_with_basemap(self):
@@ -960,6 +1067,171 @@ class TestUserLayers(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         dxf = studio_core.make_dxf(self.FEATS, "Т", layers=self.USER_LAYERS)
         self.assertIn("FUNKC_ZONY", dxf.decode("cp1251"))
+
+
+class TestGenericGeomExport(unittest.TestCase):
+    """generic-слои: линия/точка живут в самом объекте (не только ring)."""
+
+    def test_geom_for_generic_line_and_point(self):
+        line = studio_core._geom_for(
+            {"kind": "generic", "line": [[0, 0], [10, 5]], "props": {}})
+        self.assertEqual(line["type"], "LineString")
+        pt = studio_core._geom_for(
+            {"kind": "generic", "point": [3, 4], "props": {}})
+        self.assertEqual(pt["type"], "Point")
+
+    def test_generic_line_survives_grado_roundtrip(self):
+        layers = [{"layer_id": "user.seti", "code": "generic.line",
+                   "title": "Сети", "style_id": "boundary.line"}]
+        feats = [{"kind": "generic", "layer_id": "user.seti",
+                  "line": [[0, 0], [50, 50]], "props": {}}]
+        data = studio_core.make_grado(feats, "Т", layers=layers)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "g.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+        lines = [f for f in out["features"] if f.get("line")]
+        self.assertEqual(len(lines), 1, "линия generic-слоя потерялась в roundtrip")
+        self.assertEqual(lines[0]["layer_id"], "user.seti")
+
+
+def _fake_nspd_transport(cad="77:01:0001013:19"):
+    """Ответ intersects-API: один участок EPSG:3857 (как отдаёт геопортал)."""
+    def transport(url, body):
+        assert "intersects" in url
+        assert body["categories"] and "id" in body["categories"][0]
+        return {"type": "FeatureCollection", "features": [{
+            "id": 1, "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [[
+                [4187300, 7508800], [4187400, 7508800],
+                [4187400, 7508900], [4187300, 7508800]]]},
+            "properties": {"category": body["categories"][0]["id"],
+                           "categoryName": "Земельные участки ЕГРН",
+                           "options": {"cad_num": cad,
+                                       "readable_address": "Москва"}}}]}
+    return transport
+
+
+def _fake_overpass_transport(query):
+    assert "way" in query
+    return {"elements": [
+        {"type": "way", "id": 1, "tags": {"highway": "residential",
+                                          "name": "Тестовая"},
+         "geometry": [{"lon": 37.615, "lat": 55.75},
+                      {"lon": 37.617, "lat": 55.751}]},
+        {"type": "way", "id": 2, "tags": {"building": "yes",
+                                          "building:levels": "5"},
+         "geometry": [{"lon": 37.615, "lat": 55.75},
+                      {"lon": 37.616, "lat": 55.75},
+                      {"lon": 37.616, "lat": 55.751},
+                      {"lon": 37.615, "lat": 55.75}]},
+    ]}
+
+
+class TestFetchExtent(unittest.TestCase):
+    """«Данные по области»: прямые источники → слои-приёмники по layer_id."""
+
+    def setUp(self):
+        from grado_connectors import SnapshotStore
+        self._orig = studio_core.SOURCE_STORE
+        self._tmp = tempfile.TemporaryDirectory()
+        studio_core.SOURCE_STORE = SnapshotStore(Path(self._tmp.name) / "src")
+
+    def tearDown(self):
+        studio_core.SOURCE_STORE = self._orig
+        self._tmp.cleanup()
+
+    BBOX = [37.61, 55.749, 37.62, 55.752]
+
+    def test_nspd_direct_normalizes_like_capture(self):
+        from grado_connectors import NspdDirect
+        conn = NspdDirect(transport=_fake_nspd_transport())
+        result = conn.fetch(self.BBOX, [36368])
+        self.assertEqual(len(result["features"]), 1)
+        f = result["features"][0]
+        self.assertEqual(f["properties"]["opt_cad_num"], "77:01:0001013:19")
+        lon, lat = f["geometry"]["coordinates"][0][0]
+        self.assertAlmostEqual(lon, 37.615, delta=0.01)   # 3857 → WGS84
+
+    def test_osm_sets_split_and_close_rings(self):
+        from grado_connectors import OsmOverpass
+        conn = OsmOverpass(transport=_fake_overpass_transport)
+        result = conn.fetch(self.BBOX, ["roads", "buildings"])
+        sets = {f["properties"]["grado_set"] for f in result["features"]}
+        self.assertEqual(sets, {"roads", "buildings"})
+        bld = next(f for f in result["features"]
+                   if f["properties"]["grado_set"] == "buildings")
+        self.assertEqual(bld["geometry"]["type"], "Polygon")
+
+    def test_fetch_extent_routes_by_layer_id(self):
+        import grado_connectors
+        orig_nspd = grado_connectors.NspdDirect
+        orig_osm = grado_connectors.OsmOverpass
+        fake_n = _fake_nspd_transport()
+
+        class FakeNspd(orig_nspd):
+            def __init__(self):
+                super().__init__(transport=fake_n)
+
+        class FakeOsm(orig_osm):
+            def __init__(self):
+                super().__init__(transport=_fake_overpass_transport)
+
+        grado_connectors.NspdDirect = FakeNspd
+        grado_connectors.OsmOverpass = FakeOsm
+        try:
+            out = studio_core.fetch_extent(
+                self.BBOX, ["osm.roads", "osm.buildings", "nspd.parcels"])
+        finally:
+            grado_connectors.NspdDirect = orig_nspd
+            grado_connectors.OsmOverpass = orig_osm
+        by_src = {g["source"]: g for g in out["groups"]}
+        road = by_src["osm.roads"]["features"][0]
+        self.assertEqual(road["layer_id"], "source.osm.roads")
+        self.assertIn("line", road)
+        self.assertEqual(road["prov"]["source"], "osm")
+        bld = by_src["osm.buildings"]["features"][0]
+        self.assertEqual(bld["layer_id"], "source.osm.buildings")
+        self.assertIn("ring", bld)
+        parcel = by_src["nspd.parcels"]["features"][0]
+        self.assertEqual(parcel["layer_id"], "source.nspd.parcels")
+        self.assertEqual(parcel["props"]["cad_num"], "77:01:0001013:19")
+        self.assertEqual(parcel["prov"]["source"], "nspd")
+        self.assertEqual(len(out["snapshots"]), 2, "снимок OSM + снимок НСПД")
+
+    def test_fetch_extent_features_export_to_grado(self):
+        import grado_connectors
+        orig = grado_connectors.OsmOverpass
+
+        class FakeOsm(orig):
+            def __init__(self):
+                super().__init__(transport=_fake_overpass_transport)
+
+        grado_connectors.OsmOverpass = FakeOsm
+        try:
+            out = studio_core.fetch_extent(self.BBOX, ["osm.roads", "osm.buildings"])
+        finally:
+            grado_connectors.OsmOverpass = orig
+        feats = [f for g in out["groups"] for f in g["features"]]
+        with tempfile.TemporaryDirectory() as tmp:
+            gp = Path(tmp) / "e.grado"
+            p = studio_core.build_project(gp, "Экстент", feats)
+            ids = [i["layer_id"] for i in p.layers()]
+            self.assertIn("source.osm.roads", ids)
+            self.assertIn("source.osm.buildings", ids)
+            road_layer = p.layer_by_id("source.osm.roads")
+            self.assertEqual(len(list(road_layer.features())), 1,
+                             "линия OSM-дороги не должна выпадать из экспорта")
+            p.close()
+
+    def test_area_limit_guards(self):
+        with self.assertRaises(ValueError):
+            studio_core.fetch_extent([37.0, 55.0, 38.0, 56.0], ["nspd.parcels"])
+
+    def test_unknown_source_noted(self):
+        out = studio_core.fetch_extent(self.BBOX, ["чушь"])
+        self.assertFalse(out["groups"])
+        self.assertTrue(any("неизвестный" in n for n in out["notes"]))
 
 
 if __name__ == "__main__":

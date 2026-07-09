@@ -12,6 +12,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["/Users/tayeela/grado-studio/apps/studio/server.py", "8643"],
       "port": 8643
+    },
+    {
+      "name": "studio-alt",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/tayeela/grado-studio/apps/studio/server.py", "8653"],
+      "port": 8653
     }
   ]
 }

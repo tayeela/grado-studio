@@ -32,6 +32,10 @@ def merc_to_wgs84(x, y):
     return math.degrees(x / _R), math.degrees(math.atan(math.sinh(y / _R)))
 
 
+def wgs84_to_merc(lon, lat):
+    return math.radians(lon) * _R, math.asinh(math.tan(math.radians(lat))) * _R
+
+
 def wgs84_to_utm37n(lon, lat):
     phi = math.radians(lat)
     lam = math.radians(lon)

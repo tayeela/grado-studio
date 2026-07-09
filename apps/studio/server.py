@@ -1,12 +1,13 @@
 """ГРАДО Студия — локальный сервер рабочей программы.
 
-    python3 apps/studio/server.py [порт]
+    python3 apps/studio/server.py [порт] [/path/to/project.grado] [--open]
 
 Статика: apps/studio/web. API:
     POST /api/tep         {features, params} → живой ТЭП
     POST /api/album       {features, params, name} → PDF альбома АГК
     POST /api/grado       {features, name} → файл проекта .grado (открывается QGIS)
     POST /api/open-grado  тело .grado → {name, features} — открыть проект обратно
+    GET  /api/initial-grado  (если сервер запущен с .grado arg) → JSON проекта для авто-открытия (packaging / двойной клик)
     POST /api/import-nspd {payload} → фигуры холста из захвата НСПД
     POST /api/import-gisogd  тело ZIP → фигуры холста из выгрузки ГИС ОГД
     GET  /api/inbox       выгрузки браузерного моста, ждущие холст
@@ -31,7 +32,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 import studio_core  # noqa: E402
 
 WEB = Path(__file__).parent / "web"
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8643
+PORT = 8643
+INITIAL_GRADO = None
+for a in sys.argv[1:]:
+    if a.isdigit():
+        PORT = int(a)
+    else:
+        p = Path(a)
+        if p.suffix.lower() == ".grado" and p.exists():
+            INITIAL_GRADO = p
 BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
 
 # Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
@@ -162,6 +171,18 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path == "/api/initial-grado":
+            if INITIAL_GRADO and INITIAL_GRADO.exists():
+                try:
+                    out = studio_core.grado_to_features(str(INITIAL_GRADO))
+                    self._send(json.dumps(out, ensure_ascii=False).encode(),
+                               "application/json; charset=utf-8")
+                    return
+                except Exception:
+                    traceback.print_exc()
+            self.send_response(404)
+            self.end_headers()
+            return
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
         m = TILE_RE.match(parsed.path)
@@ -220,6 +241,63 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return
+            if self.path == "/api/import-gisogd-url":
+                body = self._json_body()
+                url = body.get("url")
+                if not url:
+                    self.send_error(400, "url required")
+                    return
+                # ZIP по прямой ссылке (пользователь генерирует на портале).
+                # SSLContext c certifi обязателен (правило 6: сборка Python.org
+                # не видит системные CA); текст ошибки — в JSON-теле, не в
+                # send_error (правило 5: заголовки — строго ASCII).
+                import urllib.request
+                try:
+                    req = urllib.request.Request(
+                        url, headers={"User-Agent": "grado-studio/0.1"})
+                    with urllib.request.urlopen(
+                            req, timeout=60,
+                            context=studio_core.TILE_SSL_CTX) as resp:
+                        raw = resp.read()
+                except Exception as e:
+                    msg = json.dumps({"error": f"не удалось скачать по ссылке: {e}"},
+                                     ensure_ascii=False).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Type",
+                                     "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(msg)))
+                    self.end_headers()
+                    self.wfile.write(msg)
+                    return
+                out = studio_core.import_gisogd(raw)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
+            if self.path == "/api/fetch-extent":
+                # «Данные по области»: прямые открытые источники (OSM/НСПД)
+                # по прямоугольнику WGS84, без моста и без портала
+                body = self._json_body()
+                bbox = body.get("bbox")
+                sources = body.get("sources") or []
+                if (not isinstance(bbox, (list, tuple)) or len(bbox) != 4
+                        or not isinstance(sources, list)):
+                    self.send_error(400, "bbox[4] and sources[] required")
+                    return
+                try:
+                    out = studio_core.fetch_extent(bbox, sources)
+                except ValueError as e:   # область больше предела источника
+                    msg = json.dumps({"error": str(e)},
+                                     ensure_ascii=False).encode()
+                    self.send_response(400)
+                    self.send_header("Content-Type",
+                                     "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(msg)))
+                    self.end_headers()
+                    self.wfile.write(msg)
+                    return
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
             if self.path == "/api/open-grado":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)
@@ -248,13 +326,20 @@ class Handler(SimpleHTTPRequestHandler):
                 canvas_styles = body.get("canvasStyles")
                 if not isinstance(canvas_styles, dict):
                     canvas_styles = None
+                project_styles = body.get("projectStyles")
+                album_config = body.get("albumConfig")
                 pdf = studio_core.make_album(
                     features, name, params, basemap=bool(body.get("basemap")),
                     layers=layers, basemap_source=basemap_source,
-                    canvas_styles=canvas_styles)
+                    canvas_styles=canvas_styles, project_styles=project_styles,
+                    album_config=album_config)
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
-                data = studio_core.make_grado(features, name, layers=layers)
+                project_styles = body.get("projectStyles")
+                project_kinds = body.get("projectCustomKinds")
+                undo_stack = body.get("undo_stack")
+                redo_stack = body.get("redo_stack")
+                data = studio_core.make_grado(features, name, layers=layers, project_styles=project_styles, project_custom_kinds=project_kinds, undo_stack=undo_stack, redo_stack=redo_stack)
                 self._send(data, "application/octet-stream", "project.grado")
             elif self.path == "/api/import-nspd":
                 out = studio_core.import_nspd(body.get("payload") or body)
@@ -268,6 +353,16 @@ class Handler(SimpleHTTPRequestHandler):
                     body["line"], body.get("radius", 0), body["dist"])
                 self._send(json.dumps({"line": pts}).encode(),
                            "application/json; charset=utf-8")
+            elif self.path == "/api/buffer":
+                # общая генерация буферов: точки → circle, линии/дуги/полигоны → офсеты
+                dist = float(body.get("dist", 0))
+                fillet = float(body.get("fillet", body.get("radius", 0)))
+                sides = body.get("sides", "both")
+                feats = body.get("features") or []
+                # если передали selection-like, используем как есть
+                bufs = studio_core.make_buffer(feats, dist, fillet=fillet, sides=sides)
+                self._send(json.dumps({"features": bufs}).encode(),
+                           "application/json; charset=utf-8")
             elif self.path == "/api/print":
                 basemap_source = body.get("basemapSource")
                 if basemap_source not in studio_core.TILE_SOURCES:
@@ -275,10 +370,12 @@ class Handler(SimpleHTTPRequestHandler):
                 canvas_styles = body.get("canvasStyles")
                 if not isinstance(canvas_styles, dict):
                     canvas_styles = None
+                project_styles = body.get("projectStyles")
                 pdf, used = studio_core.make_print(
                     features, name, body.get("scale"), body.get("paper", "A2"),
                     basemap=bool(body.get("basemap")), layers=layers,
-                    basemap_source=basemap_source, canvas_styles=canvas_styles)
+                    basemap_source=basemap_source, canvas_styles=canvas_styles,
+                    project_styles=project_styles)
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

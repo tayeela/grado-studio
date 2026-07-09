@@ -52,6 +52,8 @@
   <symbol id="ic-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 V20"></path><path d="M3 12 H10.5"></path><path d="M13.5 12 H21" stroke-dasharray="2 2" opacity="0.45"></path><path d="M10 10 L14 14 M14 10 L10 14"></path></symbol>
   <symbol id="ic-extend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4 V20"></path><path d="M3 12 H13"></path><path d="M13 12 H19" stroke-dasharray="2 2" opacity="0.45"></path><path d="M16.5 9.5 L19.5 12 L16.5 14.5"></path></symbol>
   <symbol id="ic-join" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 L9.5 13"></path><path d="M14.5 11 L20 17"></path><path d="M9.5 13 L14.5 11" stroke-dasharray="1.6 2.2"></path><circle cx="9.5" cy="13" r="1.6" fill="currentColor" stroke="none"></circle><circle cx="14.5" cy="11" r="1.6" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-arc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 A 8 8 0 0 1 19 5"></path><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="20" cy="12" r="1.2" fill="currentColor" stroke="none"></circle></symbol>
   <symbol id="ic-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 8 0 V11"></path></symbol>
   <symbol id="ic-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 7.6 -1.7"></path></symbol>
 </svg>
@@ -68,8 +70,9 @@
     <button id="btn-demo" title="Заполнить примером">Демо</button>
     <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
     <input id="nspd-file" type="file" accept=".json,application/json" hidden>
-    <button id="btn-gisogd" title="Импортировать выгрузку ГИС ОГД (ZIP с портала)">ОГД</button>
+    <button id="btn-gisogd" title="Импортировать ГИС ОГД: файл ZIP или по прямой ссылке (сгенерируй на gisogd.mos.ru и вставь ссылку — без локального скачивания)">ОГД</button>
     <input id="gisogd-file" type="file" accept=".zip" hidden>
+    <button id="btn-data" title="Данные по видимой области: OSM и НСПД (Росреестр) напрямую, без порталов и расширений">Данные</button>
   </span>
   <span class="hsep" role="separator"></span>
   <span class="hgroup" title="Проект">
@@ -86,6 +89,7 @@
     </select>
     <button id="btn-dxf" title="Экспорт чертежа в DXF (AutoCAD/nanoCAD)">DXF</button>
     <button id="btn-print" title="Печать чертежа в масштабе (PDF, А2)">Печать</button>
+    <button id="btn-album-config" title="Настройка состава альбома (порядок листов, титул)">⚙ Альбом</button>
     <button id="btn-album" class="primary" title="Собрать альбом АГК">Альбом PDF</button>
   </span>
 </header>
@@ -97,6 +101,8 @@
     <button data-tool="polyline" title="Полилиния — на активный слой"><svg class="ic"><use href="#ic-line"/></svg><span>Линия</span></button>
     <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)"><svg class="ic"><use href="#ic-boundary"/></svg><span>Полигон</span></button>
     <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам"><svg class="ic"><use href="#ic-hatch"/></svg><span>Прямоуг.</span></button>
+    <button data-tool="arc"      title="Дуга по трём точкам (или радиусу) — на активный слой"><svg class="ic"><use href="#ic-arc"/></svg><span>Дуга</span></button>
+    <button data-tool="circle"   title="Окружность (центр + радиус) — буферы, радиусы ДОО/школ, покрытия"><svg class="ic"><use href="#ic-circle"/></svg><span>Окружн.</span></button>
     <div class="divider"></div>
     <button data-tool="dim"      title="Размерная линия (D)"><svg class="ic"><use href="#ic-dimension"/></svg><span>Размер</span></button>
     <button data-tool="measure"  title="Измерение расстояния (M)"><svg class="ic"><use href="#ic-measure"/></svg><span>Измер.</span></button>
@@ -110,17 +116,7 @@
   <div id="stage">
     <canvas id="cv"></canvas>
     <div id="cv-activelayer" class="cv-activelayer" title="Куда идёт черчение (активный слой)"></div>
-    <div id="onboard" class="onboard" hidden>
-      <div class="onboard-card">
-        <b>С чего начать</b>
-        <ol class="onboard-steps">
-          <li>Создайте слой — кнопка <b>+</b> в панели «Слои» справа (выберите геометрию: точка / линия / полигон).</li>
-          <li>Слева выберите инструмент (<b>Полигон</b>, <b>Линия</b>, <b>Точка</b>).</li>
-          <li>Чертите на холсте — объект идёт в активный слой.</li>
-        </ol>
-        <p class="onboard-alt">Или сразу: <b>Демо</b> — пример проекта · <b>НСПД</b>/<b>ОГД</b> — импорт данных.</p>
-      </div>
-    </div>
+
     <div class="cv-compass" title="Север — вверх"><svg class="ic"><use href="#ic-north"/></svg></div>
     <div class="cv-zoom">
       <button id="btn-zoom-in" title="Приблизить">+</button>
@@ -132,6 +128,7 @@
       <span class="cv-scale-label" id="cv-scale-label">—</span>
     </div>
   </div>
+  <div id="panel-resizer" title="Перетащите, чтобы изменить ширину правой панели"></div>
   <aside id="panel">
     <section id="props">
       <h3>Свойства</h3>
@@ -150,7 +147,9 @@
     <section>
       <h3>Слои
         <button id="btn-style-lib" class="h3-btn" title="Библиотека знаков — редактор эталонных знаков ЛГР и базовых"><svg class="ic"><use href="#ic-format"/></svg></button>
-        <button id="btn-new-layer" class="h3-btn" title="Новый слой"><svg class="ic"><use href="#ic-plus"/></svg></button></h3>
+        <button id="btn-new-layer" class="h3-btn" title="Новый слой"><svg class="ic"><use href="#ic-plus"/></svg></button>
+        <button id="btn-project-styles" class="h3-btn" title="Стили проекта — создавать свои кастомные стили внутри этого проекта"><svg class="ic"><use href="#ic-label"/></svg></button>
+        <button id="btn-manage-kinds" class="h3-btn" title="Управление типами слоёв (BASE_KINDS) — добавлять свои роли для ТЭП и автостилей">⚙</button></h3>
       <div id="layers-body"></div>
     </section>
     <section id="sources">
@@ -176,6 +175,26 @@
         <input id="p-density" type="number" value="25" min="1" max="60" step="0.5"></label>
       <label>Доля жилья в СПП, %
         <input id="p-ratio" type="number" value="80" min="0" max="100" step="1"></label>
+      <label>Коэфф. ж/д (k_rail)
+        <input id="p-krail" type="number" value="1" min="0.5" max="1" step="0.05"></label>
+      <label>Коэфф. дел. акт. (k_ba)
+        <input id="p-kba" type="number" value="0.5" min="0.1" max="1" step="0.05"></label>
+      <button id="btn-tep-editor" class="small">Редактор пресета ТЭП</button>
+
+      <div id="buffer-ctrl">
+        <b>Генерация буферов</b><br>
+        <label>Радиус <input id="buf-dist" type="number" value="300" min="1" max="2000" step="5" class="buf-num"> м</label>
+        <div>
+          <label><input type="radio" name="buf-side" value="both" checked> оба</label>
+          <label><input type="radio" name="buf-side" value="outer"> наружу</label>
+          <label><input type="radio" name="buf-side" value="inner"> внутрь</label>
+        </div>
+        <button id="btn-buffer">Создать буфер вокруг выбранного</button>
+        <div>
+          <button id="buf-doo-preset" class="small" type="button">ДОО ~300м</button>
+          <button id="buf-school-preset" class="small" type="button">Школа ~500м</button>
+        </div>
+      </div>
     </section>
     <section id="tep">
       <h3>ТЭП <span id="tep-status" class="muted"></span></h3>
