@@ -61,6 +61,13 @@
 <header>
   <div class="logo" id="logo" title="ГРАДО Студия">ГРАДО <span>Студия</span></div>
   <input id="project-name" value="Концепция развития территории" spellcheck="false">
+  <!-- панель совместной работы (видна только в веб-режиме --hub) -->
+  <span id="collab-bar" style="display:none">
+    <button id="collab-back" title="К списку проектов">☰</button>
+    <span id="collab-projname" class="collab-projname"></span>
+    <span id="collab-online" class="collab-online"></span>
+    <span id="collab-sync" class="collab-badge"></span>
+  </span>
   <div class="spacer"></div>
   <button id="btn-theme" class="icon-btn" title="Светлая / тёмная тема"><svg class="ic"><use href="#ic-theme"/></svg></button>
   <button id="btn-undo" class="icon-btn" title="Отменить (Cmd+Z)"><svg class="ic"><use href="#ic-undo"/></svg></button>
@@ -216,5 +223,6 @@
   <span id="st-hint">V — выбор · чертите на активный слой (клик по имени в «Слои») · Shift — прямой угол · Esc — отмена</span>
 </footer>
 <script src="app.js"></script>
+<script src="collab.js"></script>
 </body>
 </html>

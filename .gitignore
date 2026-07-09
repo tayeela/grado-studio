@@ -10,3 +10,4 @@ apps/studio/.autosave.json
 apps/studio/.autosave.tmp
 apps/studio/style_overrides.json
 apps/studio/style_overrides.tmp
+apps/studio/.hub/

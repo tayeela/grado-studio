@@ -1,6 +1,12 @@
 """ГРАДО Студия — локальный сервер рабочей программы.
 
     python3 apps/studio/server.py [порт] [/path/to/project.grado] [--open]
+    python3 apps/studio/server.py [порт] --hub     ← веб-режим (совместная работа)
+
+Веб-режим (--hub): аккаунты по инвайт-кодам, проекты на сервере с живой
+синхронизацией (см. webhub.py). Все /api/* кроме /api/auth/* и /api/hub
+требуют сессию; статика открыта (на ней форма входа). Без --hub — локальный
+однопользовательский режим, как раньше (авторизации нет).
 
 Статика: apps/studio/web. API:
     POST /api/tep         {features, params} → живой ТЭП
@@ -42,6 +48,17 @@ for a in sys.argv[1:]:
         if p.suffix.lower() == ".grado" and p.exists():
             INITIAL_GRADO = p
 BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
+
+# --- веб-режим (совместная работа): --hub ----------------------------------
+HUB = None
+if "--hub" in sys.argv:
+    from webhub import Hub, HubError, SESSION_COOKIE
+    HUB = Hub(Path(__file__).parent / ".hub")
+else:
+    from webhub import HubError, SESSION_COOKIE  # noqa: F401 (единый except)
+# в hub-режиме без сессии доступны только эти /api/-пути (вход + статика)
+HUB_PUBLIC_API = {"/api/hub", "/api/auth/login", "/api/auth/register",
+                  "/api/auth/logout"}
 
 # Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
 # от повторных запросов). Кэш и загрузка живут в studio_core — их же
@@ -108,12 +125,58 @@ class V6Server(ThreadingHTTPServer):
     address_family = socket.AF_INET6
 
 
+PROJ_STATE_RE = re.compile(r"^/api/projects/([a-z0-9]{12})/state$")
+PROJ_SHARE_RE = re.compile(r"^/api/projects/([a-z0-9]{12})/share$")
+PROJ_DELETE_RE = re.compile(r"^/api/projects/([a-z0-9]{12})/delete$")
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
 
     def log_message(self, fmt, *args):
         pass
+
+    # ---------- веб-режим: сессии и JSON-ответы ----------
+
+    def _cookie_token(self):
+        from http.cookies import SimpleCookie
+        c = SimpleCookie(self.headers.get("Cookie", ""))
+        morsel = c.get(SESSION_COOKIE)
+        return morsel.value if morsel else None
+
+    def _hub_user(self):
+        return HUB.session_user(self._cookie_token()) if HUB else None
+
+    def _json(self, obj, status=200, set_cookie=None):
+        data = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        if set_cookie is not None:
+            self.send_header("Set-Cookie", set_cookie)
+        self.end_headers()
+        self.wfile.write(data)
+
+    @staticmethod
+    def _session_cookie(token, clear=False):
+        # Secure не ставим: локально HTTP; на VPS добавит reverse-proxy
+        if clear:
+            return f"{SESSION_COOKIE}=; Path=/; HttpOnly; Max-Age=0"
+        return (f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; "
+                f"SameSite=Lax; Max-Age={30 * 24 * 3600}")
+
+    def _hub_gate(self, path):
+        """Гейт hub-режима: /api/* без сессии → 401 (кроме входа).
+
+        Возвращает (allowed, login). В локальном режиме всегда allowed."""
+        if not HUB or not path.startswith("/api/") or path in HUB_PUBLIC_API:
+            return True, self._hub_user() if HUB else None
+        login = self._hub_user()
+        if not login:
+            self._json({"error": "нужен вход"}, 401)
+            return False, None
+        return True, login
 
     def end_headers(self):
         # Safari охотно кэширует статику — интерфейс всегда свежий.
@@ -137,6 +200,45 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
+        from urllib.parse import urlparse, parse_qs
+        parsed0 = urlparse(self.path)
+        allowed, hub_login = self._hub_gate(parsed0.path)
+        if not allowed:
+            return
+        if parsed0.path == "/api/hub":
+            info = {"hub": bool(HUB)}
+            if HUB and hub_login:
+                info.update(HUB.user_info(hub_login))
+            self._json(info)
+            return
+        if HUB and parsed0.path == "/api/projects":
+            self._json({"projects": HUB.list_projects(hub_login)})
+            return
+        m = PROJ_STATE_RE.match(parsed0.path) if HUB else None
+        if m:
+            q = parse_qs(parsed0.query)
+            since = (q.get("since") or [None])[0]
+            try:
+                out = HUB.get_state(m.group(1), hub_login,
+                                    since=since if since is not None else None)
+            except HubError as e:
+                self._json({"error": str(e)}, e.status)
+                return
+            except ValueError:
+                self._json({"error": "bad since"}, 400)
+                return
+            if out.get("unchanged"):
+                # 204 нельзя с телом; онлайн-список нужен каждому поллу —
+                # отдаём лёгкий 200 без state
+                self._json({"rev": out["rev"], "online": out["online"]})
+            else:
+                self._json(out)
+            return
+        if HUB and self.path == "/api/autosave":
+            # в hub-режиме файловый автосейв не используется (общий файл
+            # затирали бы разные пользователи) — проекты живут в .hub/
+            self._send(b"null", "application/json; charset=utf-8")
+            return
         if self.path == "/api/inbox":
             with INBOX_LOCK:
                 items, INBOX[:] = list(INBOX), []
@@ -235,6 +337,72 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            allowed, hub_login = self._hub_gate(self.path)
+            if not allowed:
+                return
+            # ---------- веб-режим: вход/регистрация/проекты ----------
+            if HUB and self.path.startswith("/api/auth/"):
+                try:
+                    if self.path == "/api/auth/register":
+                        b = self._json_body()
+                        token = HUB.register(b.get("invite"), b.get("login"),
+                                             b.get("password"))
+                        self._json(HUB.user_info(HUB.session_user(token)),
+                                   set_cookie=self._session_cookie(token))
+                    elif self.path == "/api/auth/login":
+                        b = self._json_body()
+                        token = HUB.login(b.get("login"), b.get("password"))
+                        self._json(HUB.user_info(HUB.session_user(token)),
+                                   set_cookie=self._session_cookie(token))
+                    elif self.path == "/api/auth/logout":
+                        HUB.logout(self._cookie_token())
+                        self._json({"ok": True},
+                                   set_cookie=self._session_cookie("", clear=True))
+                    else:
+                        self.send_error(404)
+                except HubError as e:
+                    self._json({"error": str(e)}, e.status)
+                return
+            if HUB and self.path == "/api/invites":
+                try:
+                    self._json({"invite": HUB.create_invite(hub_login)})
+                except HubError as e:
+                    self._json({"error": str(e)}, e.status)
+                return
+            if HUB and self.path == "/api/projects":
+                b = self._json_body()
+                self._json(HUB.create_project(hub_login, b.get("name")))
+                return
+            if HUB:
+                m = (PROJ_STATE_RE.match(self.path)
+                     or PROJ_SHARE_RE.match(self.path)
+                     or PROJ_DELETE_RE.match(self.path))
+                if m:
+                    pid = m.group(1)
+                    try:
+                        if self.path.endswith("/state"):
+                            b = self._json_body()
+                            out = HUB.put_state(pid, hub_login,
+                                                b.get("base_rev", -1),
+                                                b.get("state"))
+                            self._json(out, 409 if out.get("conflict") else 200)
+                        elif self.path.endswith("/share"):
+                            b = self._json_body()
+                            members = HUB.share_project(pid, hub_login,
+                                                        (b.get("login") or "").strip())
+                            self._json({"members": members})
+                        else:                       # /delete
+                            HUB.delete_project(pid, hub_login)
+                            self._json({"ok": True})
+                    except HubError as e:
+                        self._json({"error": str(e)}, e.status)
+                    except (TypeError, ValueError):
+                        self._json({"error": "bad request"}, 400)
+                    return
+            if HUB and self.path == "/api/autosave":
+                self.send_response(204)   # без записи: проекты живут в .hub/
+                self.end_headers()
+                return
             if self.path == "/api/autosave":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)

@@ -2370,8 +2370,11 @@ function redo() {
   clearSelection(); afterChange();
 }
 let autosaveTimer = null;
-function persist() {
-  const payload = {
+// полный снимок состояния студии (общий проектный + личный вид). Один
+// источник и для localStorage/autosave, и для веб-синхронизации (collab.js
+// берёт из него только «общие» ключи проекта).
+function collectState() {
+  return {
     features: state.features, nextId: state.nextId,
     name: document.getElementById("project-name").value,
     density: document.getElementById("p-density").value,
@@ -2399,8 +2402,29 @@ function persist() {
     redo: state.redo || [],
     projectCustomKinds: state.projectCustomKinds || [],
   };
+}
+// личное (не отправляется коллегам): вид/выделение здесь не хранятся в payload
+// вовсе, а активный слой/подложка/undo — да; collab.js накладывает их поверх
+// общего состояния при приёме чужих правок, чтобы у каждого свой вид.
+function collectPersonal() {
+  return {
+    activeLayerId: state.activeLayerId, basemapSource: basemap.source,
+    exportStyle: exportStyleMode(), undo: state.undo || [], redo: state.redo || [],
+    layersVisible: Object.fromEntries(LAYERS_V2.map(L => [L.id, L.visible])),
+  };
+}
+window.collectState = collectState;
+window.collectPersonal = collectPersonal;
+function persist() {
+  const payload = collectState();
   try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
   catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
+  // веб-режим совместной работы: правки уходят на сервер (collab.js),
+  // общий файловый autosave не используем (его затирали бы разные юзеры)
+  if (window.Collab && window.Collab.active) {
+    if (window.hubSchedulePush) window.hubSchedulePush();
+    return;
+  }
   // файловый бэкап на диске сервера: переживает чистку данных сайта и смену
   // браузера, чего localStorage не гарантирует. Дебаунс — не пишем на диск
   // на каждое перемещение мыши при afterChange().
@@ -5879,7 +5903,19 @@ function applyRestoredState(d) {
   if (d.krail) document.getElementById("p-krail").value = d.krail;
   if (d.kba) document.getElementById("p-kba").value = d.kba;
 }
+// применить состояние, пришедшее извне (веб-синхронизация): пересобрать
+// сцену/панели, сохранив вид. В отличие от restore() — без fitView (у
+// каждого свой вид) и без записи (иначе эхо-цикл персиста).
+window.applyRestoredState = applyRestoredState;
+window.afterExternalApply = function () {
+  state._ix = null;
+  draw(); renderProps(); renderLayers(); renderSources(); refreshTep();
+  updateLayerStatus();
+};
 (function restore() {
+  // веб-режим совместной работы: состояние приходит с сервера (collab.js),
+  // локальные localStorage/autosave не восстанавливаем (это чужой/старый проект)
+  if (document.body.classList.contains("hub-mode")) return;
   try {
     const raw = localStorage.getItem("grado_studio_v1");
     if (raw) { applyRestoredState(JSON.parse(raw)); return; }

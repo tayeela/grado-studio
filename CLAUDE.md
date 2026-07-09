@@ -203,11 +203,31 @@ python3 apps/studio/server.py        # http://localhost:8643
   (OSM-подложка в PDF без Pillow не рендерится, спутник ESRI работает); `find_ogr2ogr` (gisogd) —
   Windows-пути `C:\Program Files\QGIS*\bin\ogr2ogr.exe`. Зависимости: только `certifi` (опц.),
   плюс `Pillow` (опц., OSM-в-PDF на Windows) — см. `requirements.txt`, `docs/INSTALL.md`.
-- **Веб-версия с авторизацией — отложена** (юзер: «сейчас локально, веб позже»). Когда
-  понадобится: ОТДЕЛЬНЫЙ VPS (не VPN-овый `77.110.115.66`), логин/пароль + HTTPS через
-  reverse-proxy. Сервер сейчас слушает только `127.0.0.1`/`::1` — для веба менять на 0.0.0.0
-  за прокси + гейт на все endpoint'ы (особо: `import-gisogd-path` читает файлы, `fetch-extent`/
-  тайлы ходят наружу).
+- **Веб-версия совместной работы — СДЕЛАНА (флаг `--hub`).** Решения юзера: живая
+  синхронизация, инвайт-коды, пока собрано локально (деплой на VPS — отдельным шагом).
+  - **`apps/studio/webhub.py`** (`Hub`): файловое хранилище `.hub/` (users scrypt, invites
+    одноразовые, sessions, projects/<pid>.json c `rev`), thread-safe (RLock), presence в памяти.
+    Первый зарегистрировавшийся = админ (выдаёт инвайты). Стартовый инвайт печатается при пустом
+    хабе. 13 тестов `test_webhub.py`.
+  - **Модель синка:** проект хранится целиком с номером `rev`. Клиент шлёт state + `base_rev`;
+    совпало → `rev+1`, отстал → **409 + актуальный state**, клиент делает 3-way merge по id
+    объектов и повторяет. Чужие правки — поллингом `GET state?since=rev`. Сервер НЕ сливает
+    (только сериализует записи), слияние клиентское. На сервер идёт только SHARED
+    (`SHARED_STATE_KEYS`: features/слои/стили), личное (вид/активный слой/undo/подложка) —
+    у каждого своё, накладывается поверх при приёме.
+  - **`server.py --hub`:** `Hub` создаётся, гейт `_hub_gate` — все `/api/*` кроме
+    `/api/auth/*`+`/api/hub` требуют сессию (кука `grado_session`, HttpOnly). Роуты:
+    `/api/auth/{register,login,logout}`, `/api/invites`, `/api/projects[/<pid>/{state,share,delete}]`.
+    БЕЗ `--hub` — локальный режим ровно как раньше (гейт пропускает всё, HUB=None).
+  - **Фронт `web/collab.js`** (грузится после app.js, спит без hub): оверлеи входа/регистрации
+    и списка проектов, панель в шапке (проект · кто онлайн · индикатор синка), движок
+    `mergeShared`/`mergeFeatures` (3-way), 409-retry, поллинг 2.5с. app.js: вынесен
+    `collectState`/`collectPersonal`, `persist()` в hub-режиме шлёт на сервер (не autosave),
+    `applyRestoredState`/`afterExternalApply` экспортированы. Проверено вживую: 2 юзера,
+    правка boris прилетела к anna на холст; слияние — 3 сценария; локальный режим не сломан.
+  - **Деплой (когда захочет юзер):** ОТДЕЛЬНЫЙ VPS (не VPN-овый `77.110.115.66`), `--hub` за
+    reverse-proxy с HTTPS (пароли по HTTP — открыто). Launch-конфиг превью: `studio-hub` (8666).
+    Осторожно с мощными endpoint'ами наружу (`import-gisogd-path` читает файлы из ~/Downloads).
 
 ## Структура репозитория
 ```
