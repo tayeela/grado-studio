@@ -902,6 +902,12 @@ function lineLen(line) {
     s += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
   return s;
 }
+// единые форматтеры отображения — одна точность везде (длины/координаты 1 знак,
+// площади в гектарах 2 знака). Возвращают строку без хвостовой единицы там,
+// где единица дописывается на месте (fmtCoord), и с единицей — где удобно.
+function fmtLen(m) { return (+m).toFixed(1) + " м"; }
+function fmtCoord(m) { return (+m).toFixed(1); }
+function fmtAreaHa(m2) { return (m2 / 10000).toFixed(2) + " га"; }
 function pointInRing(x, y, ring) {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -2125,7 +2131,7 @@ function draw() {
         if (ta > Math.PI / 2 || ta < -Math.PI / 2) ta += Math.PI;  // текст не вверх ногами
         ctx.rotate(ta);
         ctx.fillStyle = st.stroke; ctx.font = "600 11px sans-serif"; ctx.textAlign = "center";
-        ctx.fillText(lenM.toFixed(1) + " м", 0, -5);
+        ctx.fillText(fmtLen(lenM), 0, -5);
         ctx.restore();
         ctx.setLineDash([]);
       } else if (f.point) {
@@ -2369,7 +2375,7 @@ function draw() {
         ctx.fillText(label, mx + 16, my - 11);
       } else {
         ctx.fillStyle = cvColor("label", "#8b8a85");
-        ctx.fillText(len.toFixed(1) + " м", mx + 12, my - 10);
+        ctx.fillText(fmtLen(len), mx + 12, my - 10);
       }
     }
     // замыкание: подсветка первой точки
@@ -2401,7 +2407,7 @@ function draw() {
           ctx.stroke();
           // больше визуалов: показываем радиус 3-point дуги
           ctx.fillStyle = cvColor("label", "#8b8a85");
-          ctx.fillText(`r=${a.r.toFixed(1)} м`, cx + 8, cy - 8);
+          ctx.fillText(`r=${fmtLen(a.r)}`, cx + 8, cy - 8);
         }
       } else {
         drawChain(pts, false); ctx.stroke();
@@ -2452,7 +2458,7 @@ function draw() {
     ctx.fillRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.strokeRect(Math.min(sx1, sx2), Math.min(sy1, sy2), Math.abs(sx2 - sx1), Math.abs(sy2 - sy1));
     ctx.fillStyle = cvColor("label", "#5c5a54"); ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
-    ctx.fillText(`${Math.abs(b[0] - a[0]).toFixed(1)} × ${Math.abs(b[1] - a[1]).toFixed(1)} м`,
+    ctx.fillText(`${fmtCoord(Math.abs(b[0] - a[0]))} × ${fmtCoord(Math.abs(b[1] - a[1]))} м`,
                  Math.max(sx1, sx2) + 8, Math.min(sy1, sy2) - 6);
   }
   // рамка выделения (мультивыбор инструментом «Выбор»)
@@ -2478,7 +2484,7 @@ function draw() {
       const dist = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const [mx, my] = w2s((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
       ctx.fillStyle = cvColor("selection", "#2f6fde"); ctx.font = "600 12px sans-serif"; ctx.textAlign = "center";
-      ctx.fillText(dist.toFixed(1) + " м", mx, my - 6);
+      ctx.fillText(fmtLen(dist), mx, my - 6);
     }
   }
   drawSnapMarker();
@@ -2937,8 +2943,10 @@ function renderProps() {
     ];
   }
   let metric = "";
-  if (f.ring) metric = `площадь: ${(ringArea(f.ring) / 10000).toFixed(2)} га`;
-  if (f.line) metric = `длина: ${lineLen(f.line).toFixed(0)} м`;
+  if (f.ring) metric = `площадь: ${fmtAreaHa(ringArea(f.ring))}`;
+  if (f.line) metric = `длина: ${fmtLen(lineLen(f.line))}`;
+  if (f.arc) metric = `дуга: R ${fmtLen(f.arc.r)}, длина ${fmtLen(Math.abs(f.arc.sweep) * f.arc.r)}`;
+  if (f.circle) metric = `окружность: R ${fmtLen(f.circle.r)}`;
   for (const field of fields)
     if (field.type === "computed") metric += ` · ${field.compute(f)}`;
   const extra = fields.filter(fl => fl.type !== "computed").map(fl => fieldHtml(fl, f)).join("\n");
@@ -5351,7 +5359,7 @@ cv.addEventListener("mousedown", e => {
 });
 cv.addEventListener("mousemove", e => {
   const [wx, wy] = s2w(e.offsetX, e.offsetY);
-  document.getElementById("st-coords").textContent = `x: ${wx.toFixed(1)}  y: ${wy.toFixed(1)} м`;
+  document.getElementById("st-coords").textContent = `x: ${fmtCoord(wx)}  y: ${fmtCoord(wy)} м`;
   if (state.pan) {
     state.view.tx = state.pan.tx + (e.offsetX - state.pan.sx);
     state.view.ty = state.pan.ty + (e.offsetY - state.pan.sy);
