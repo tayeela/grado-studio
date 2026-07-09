@@ -1177,14 +1177,16 @@ def import_nspd(payload):
         rings = ([geom["coordinates"]] if geom["type"] == "Polygon"
                  else geom["coordinates"] if geom["type"] == "MultiPolygon"
                  else [])
-        for ring in rings:
+        okey = f["grado_key"]                 # кадномер/устойчивый ключ объекта
+        for i, ring in enumerate(rings):
             local = [[x - ORIGIN[0], y - ORIGIN[1]] for x, y in ring[0]]
             if local[0] == local[-1]:
                 local = local[:-1]
             features.append({"kind": "parcel",
                              "layer_id": "source.nspd.parcels", "ring": local,
                              "props": {k: v for k, v in attrs.items() if v},
-                             "prov": dict(prov)})
+                             "prov": dict(prov),
+                             "srcKey": f"source.nspd.parcels:{okey}#{i}"})
     return {"features": features, "notes": result["notes"],
             "source_doc": result.get("source_doc"),
             "snapshot": manifest, "diff": d}
@@ -1307,6 +1309,9 @@ def import_gisogd(zip_bytes):
         # выше) — назначается per-object, не меняет layer_id/маршрутизацию
         style_id = _gisogd_style_for(member) if kind in ("restrict", "zone") else None
         style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
+        # стабильный ключ источника (член архива + id объекта) → фронт
+        # дедуплицирует повторный импорт того же ZIP
+        okey = f.get("grado_key")
         try:
             utm = transform_geom(geom, wgs84_to_utm37n)
         except Exception:
@@ -1314,13 +1319,16 @@ def import_gisogd(zip_bytes):
         if kind == "redline":
             if utm["type"] != "LineString":
                 continue
-            features.append({"kind": "redline", "layer_id": layer_id,
-                             "line": _to_local(utm["coordinates"]),
-                             "props": {"status": "существующая"}, "prov": dict(prov)})
+            feat = {"kind": "redline", "layer_id": layer_id,
+                    "line": _to_local(utm["coordinates"]),
+                    "props": {"status": "существующая"}, "prov": dict(prov)}
+            if okey is not None:
+                feat["srcKey"] = f"{layer_id}:{okey}"
+            features.append(feat)
             continue
         polys = ([utm["coordinates"]] if utm["type"] == "Polygon"
                  else utm["coordinates"] if utm["type"] == "MultiPolygon" else [])
-        for poly in polys:
+        for i, poly in enumerate(polys):
             ring = _to_local(poly[0])
             if ring[0] == ring[-1]:
                 ring = ring[:-1]
@@ -1330,6 +1338,8 @@ def import_gisogd(zip_bytes):
                     "props": props, "prov": dict(prov)}
             if style_id:
                 feat["style_id"] = style_id
+            if okey is not None:
+                feat["srcKey"] = f"{layer_id}:{okey}#{i}"
             features.append(feat)
     return {"features": features, "notes": notes,
             "source_doc": result.get("source_doc"),
@@ -1611,10 +1621,15 @@ def fetch_extent(bbox, sources):
                 if fd["name"] not in seen_fields:
                     g["fields"].append(fd)
                     seen_fields.add(fd["name"])
-            for part in _wgs_geom_to_canvas(geom):
-                g["features"].append({
-                    "kind": spec["kind"], "layer_id": spec["layer_id"],
-                    **part, "props": dict(props), "prov": dict(prov)})
+            # стабильный ключ источника → фронт дедуплицирует повторную
+            # выгрузку той же территории (не плодит дубликаты)
+            key = f.get("grado_key")
+            for i, part in enumerate(_wgs_geom_to_canvas(geom)):
+                feat = {"kind": spec["kind"], "layer_id": spec["layer_id"],
+                        **part, "props": dict(props), "prov": dict(prov)}
+                if key is not None:
+                    feat["srcKey"] = f"{spec['layer_id']}:{key}#{i}"
+                g["features"].append(feat)
 
     # --- OSM: один запрос Overpass на все выбранные наборы ------------------
     osm_keys = [k for k in keys if EXTENT_SOURCES[k]["conn"] == "osm"]

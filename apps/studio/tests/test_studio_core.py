@@ -922,6 +922,19 @@ class TestGisogdImport(unittest.TestCase):
             _make_ogd_zip(zpath, inner_files)
             return zpath.read_bytes()
 
+    def test_reimport_carries_same_srckey_no_dup(self):
+        # повторный импорт того же ZIP даёт те же srcKey → фронт отсеет дубли
+        poly = [[[37.6155646254, 55.7522242128], [37.617, 55.7522242128],
+                 [37.617, 55.753], [37.6155646254, 55.7522242128]]]
+        data = self._zip_bytes({
+            "funkcionalnie_zony.geojson": _ogd_gj(poly, name="Ж-1")})
+        a = studio_core.import_gisogd(data)
+        b = studio_core.import_gisogd(data)
+        ka = [f["srcKey"] for f in a["features"] if "srcKey" in f]
+        kb = [f["srcKey"] for f in b["features"] if "srcKey" in f]
+        self.assertEqual(len(ka), len(a["features"]), "srcKey у каждого объекта")
+        self.assertEqual(ka, kb, "повторный импорт → те же srcKey")
+
     def test_recognized_layer_routes_to_source_layer(self):
         poly = [[[37.6155646254, 55.7522242128], [37.617, 55.7522242128],
                  [37.617, 55.753], [37.6155646254, 55.7522242128]]]
@@ -1294,6 +1307,35 @@ class TestFetchExtent(unittest.TestCase):
         out = studio_core.fetch_extent(self.BBOX, ["чушь"])
         self.assertFalse(out["groups"])
         self.assertTrue(any("неизвестный" in n for n in out["notes"]))
+
+    def test_features_carry_stable_srckey_for_dedup(self):
+        # каждый объект несёт стабильный srcKey → повторная выгрузка той же
+        # территории даёт ТЕ ЖЕ ключи (фронт по ним отсеивает дубликаты)
+        import grado_connectors
+        oN, oO = grado_connectors.NspdDirect, grado_connectors.OsmOverpass
+        fn = _fake_nspd_transport()
+
+        class FN(oN):
+            def __init__(self): super().__init__(transport=fn)
+
+        class FO(oO):
+            def __init__(self): super().__init__(transport=_fake_overpass_transport)
+
+        grado_connectors.NspdDirect, grado_connectors.OsmOverpass = FN, FO
+        try:
+            a = studio_core.fetch_extent(self.BBOX, ["osm.roads", "nspd.parcels"])
+            b = studio_core.fetch_extent(self.BBOX, ["osm.roads", "nspd.parcels"])
+        finally:
+            grado_connectors.NspdDirect, grado_connectors.OsmOverpass = oN, oO
+        keys = lambda out: sorted(f["srcKey"] for g in out["groups"]
+                                  for f in g["features"] if "srcKey" in f)
+        ka, kb = keys(a), keys(b)
+        self.assertTrue(ka, "srcKey должен присутствовать")
+        # все объекты имеют ключ
+        total = sum(len(g["features"]) for g in a["groups"])
+        self.assertEqual(len(ka), total, "srcKey у каждого объекта")
+        self.assertEqual(ka, kb, "повторная выгрузка → те же srcKey")
+        self.assertEqual(len(ka), len(set(ka)), "srcKey уникальны в одной выгрузке")
 
 
 if __name__ == "__main__":

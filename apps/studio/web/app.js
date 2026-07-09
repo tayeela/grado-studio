@@ -571,6 +571,23 @@ function upgradeFeature(f) {
   return f;
 }
 
+// импорт объектов из источника (НСПД / OSM / ГИС ОГД) с дедупликацией:
+// каждый объект-источник несёт стабильный srcKey; повторная выгрузка той же
+// территории пропускает уже присутствующие (не плодит дубликаты). Возвращает
+// {added, dup}. Объекты без srcKey (напр. ручной импорт) добавляются всегда.
+function importSourceFeatures(features) {
+  const seen = new Set();
+  for (const f of state.features) if (f.srcKey) seen.add(f.srcKey);
+  let added = 0, dup = 0;
+  for (const f of features) {
+    if (f.srcKey && seen.has(f.srcKey)) { dup++; continue; }
+    if (f.srcKey) seen.add(f.srcKey);
+    state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+    added++;
+  }
+  return { added, dup };
+}
+
 const state = {
   features: [], tool: "select", selected: null, selectedIds: new Set(),
   drawing: null, drag: null, pan: null, edit: null, measure: null,
@@ -5421,20 +5438,19 @@ async function pollInbox() {
     // сообщаем только когда канал занят (в QGIS открыт тот же порт)
     document.getElementById("st-bridge").textContent =
       data.bridge ? "" : "приём данных из браузера занят (закрыт в QGIS?)";
-    let added = 0;
+    let added = 0, dup = 0, snapped = false;
     for (const item of data.items) {
       if (!item.features.length) continue;
-      if (!added) snapshot();
-      for (const f of item.features)
-        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
-      added += item.features.length;
+      if (!snapped) { snapshot(); snapped = true; }
+      const r = importSourceFeatures(item.features);
+      added += r.added; dup += r.dup;
       recordSource(item.snapshot, item.diff);   // снимок моста → журнал
     }
-    if (added) {
+    if (added || dup) {
       afterChange();
       fitView();
       const src = data.items[0].source === "fgis_tp" ? "ФГИС ТП" : "НСПД";
-      toast(`Получено из браузера: +${plObjects(added)} (${src})`);
+      toast(`Получено из браузера: +${plObjects(added)} (${src})` + (dup ? ` · ${dup} уже были` : ""));
     }
   } catch (e) {
     if (!serverDown) {
@@ -5468,12 +5484,12 @@ on("nspd-file", "change", async e => {
     const data = await r.json();
     if (!data.features.length) { toast("В захвате нет полигонов НСПД", "warn"); return; }
     snapshot();
-    for (const f of data.features)
-      state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+    const { added, dup } = importSourceFeatures(data.features);
     state.selected = null;
     recordSource(data.snapshot, data.diff);   // снимок импорта → журнал
     afterChange();
     fitView();
+    if (dup) toast(`НСПД: +${added} · ${dup} уже были (пропущены)`);
   } catch (err) {
     toast("Не удалось импортировать захват: " + String(err).slice(0, 200), "error");
   }
@@ -5494,8 +5510,7 @@ async function applyGisogdData(data, askText) {
     { ok: "Импортировать", cancel: "Отмена" });
   if (!ok) return false;
   snapshot();
-  for (const f of data.features)
-    state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+  const { added, dup } = importSourceFeatures(data.features);
   state.selected = null;
   recordSource(data.snapshot, data.diff);
   ["source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
@@ -5504,7 +5519,8 @@ async function applyGisogdData(data, askText) {
   afterChange();
   fitView();
   renderLayers();
-  toast(`ОГД: +${data.features.length} объектов` +
+  const dupNote = dup ? ` · ${dup} уже были (пропущены)` : "";
+  toast(`ОГД: +${added} объектов${dupNote}` +
         (data.notes && data.notes.length ? ` · ${data.notes.join("; ")}` : ""));
   return true;
 }
@@ -5720,9 +5736,12 @@ async function openDataFetch() {
         return;
       }
       snapshot();
+      let addedAll = 0, dupAll = 0;
+      const parts = [];
       for (const g of groups) {
-        for (const f of g.features)
-          state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+        const { added, dup } = importSourceFeatures(g.features);  // дедуп повторной выгрузки
+        addedAll += added; dupAll += dup;
+        parts.push(`${g.title} ${added}`);
         const L = LAYER_BY_ID[g.layer_id];
         if (!L) continue;
         L.visible = true;          // слой-приёмник сразу виден в панели
@@ -5739,8 +5758,9 @@ async function openDataFetch() {
       state.selected = null;
       afterChange();               // вид не трогаем: данные пришли по нему же
       close();
-      const parts = groups.map(g => `${g.title} ${g.count}`).join(" · ");
-      toast(`Данные: +${plObjects(total)} (${parts})`);
+      if (!addedAll && dupAll) { toast(`Данные: всё уже загружено (${dupAll} объектов — без дубликатов)`); return; }
+      const dupNote = dupAll ? ` · ${dupAll} уже были` : "";
+      toast(`Данные: +${plObjects(addedAll)} (${parts.join(" · ")})${dupNote}`);
       if (data.notes && data.notes.length)
         console.info("Данные по области:", data.notes.join("\n"));
     } catch (err) {
