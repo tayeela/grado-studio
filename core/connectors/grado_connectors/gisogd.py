@@ -18,11 +18,35 @@ from pathlib import Path
 from .contract import Connector, ConnectorError, make_result
 from .crs import OGD_PROJ4
 
-QGIS_OGR2OGR = "/Applications/QGIS-LTR.app/Contents/MacOS/bin/ogr2ogr"
+# Запасные расположения ogr2ogr (GDAL), если его нет в PATH. Основной путь —
+# shutil.which; здесь — типовые установки QGIS по ОС (macOS + Windows).
+_OGR2OGR_FALLBACKS = [
+    "/Applications/QGIS-LTR.app/Contents/MacOS/bin/ogr2ogr",
+    "/Applications/QGIS.app/Contents/MacOS/bin/ogr2ogr",
+]
+
+
+def _windows_ogr2ogr_candidates():
+    """ogr2ogr.exe в стандартных установках QGIS на Windows (любая версия)."""
+    import glob
+    cands = []
+    for base in (os.environ.get("ProgramFiles", r"C:\Program Files"),
+                 os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")):
+        if not base:
+            continue
+        cands += glob.glob(os.path.join(base, "QGIS*", "bin", "ogr2ogr.exe"))
+        cands += glob.glob(os.path.join(base, "QGIS*", "apps", "*", "bin", "ogr2ogr.exe"))
+    return cands
 
 
 def find_ogr2ogr():
-    return shutil.which("ogr2ogr") or (QGIS_OGR2OGR if os.path.exists(QGIS_OGR2OGR) else None)
+    found = shutil.which("ogr2ogr")
+    if found:
+        return found
+    for path in _OGR2OGR_FALLBACKS + _windows_ogr2ogr_candidates():
+        if os.path.exists(path):
+            return path
+    return None
 
 
 def _extract_recursive(zip_path, dest):

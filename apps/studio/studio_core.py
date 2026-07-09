@@ -317,14 +317,43 @@ def tile_response(z, x, y, source="osm"):
     return data, ("image/png" if data[:8] == _PNG_SIG else "image/jpeg")
 
 
+def _png_to_jpeg(png_path, out_path):
+    """PNG→JPEG кросс-платформенно: Pillow (если есть) → sips (macOS).
+
+    Возвращает True при успехе. Оба пути опциональны: на Windows без Pillow
+    OSM-подложка в PDF просто не появится (спутник ESRI уже JPEG и работает),
+    экспорт не падает — вызывающий tile_underlay деградирует по OSError."""
+    # 1) Pillow — кросс-платформенно (Windows/Linux/macOS), если установлен
+    try:
+        from PIL import Image
+        with Image.open(png_path) as im:
+            im.convert("RGB").save(out_path, "JPEG", quality=85)
+        return True
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    # 2) sips — системный конвертер macOS
+    try:
+        r = subprocess.run(
+            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85",
+             str(png_path), "--out", str(out_path)], capture_output=True)
+        return r.returncode == 0 and Path(out_path).exists()
+    except FileNotFoundError:
+        # нет ни Pillow, ни sips (типично для Windows без Pillow) —
+        # сигналим как «тайл недоступен», tile_underlay это ловит (OSError)
+        raise OSError("нет конвертера PNG→JPEG (Pillow или sips) для растровой "
+                      "подложки в PDF; поставьте Pillow или используйте спутник")
+
+
 def _tile_jpeg(z, x, y, source="osm"):
     """JPEG тайла для вставки в PDF (DCTDecode кладёт JPEG как есть).
 
-    ESRI (sat) уже отдаёт JPEG — вставляется как есть. OSM (osm) отдаёт
-    PNG — конвертирует системный sips (macOS), результат кэшируется рядом.
-    sips пишет в свой tmp атомарно, но два параллельных экспорта с одним
-    --out роняют один из rename'ов — поэтому цель у каждого вызова своя,
-    в кэш её кладёт os.replace."""
+    ESRI (sat) уже отдаёт JPEG — вставляется как есть. OSM (osm) отдаёт PNG —
+    конвертирует Pillow или sips (см. _png_to_jpeg), результат кэшируется
+    рядом. Запись во временный файл атомарна: два параллельных экспорта с
+    одним --out роняли бы один из rename'ов — поэтому цель у каждого вызова
+    своя, в кэш её кладёт os.replace."""
     img = fetch_tile(z, x, y, source)
     data = img.read_bytes()
     if data[:2] == b"\xff\xd8":            # уже JPEG (ESRI) — как есть
@@ -339,12 +368,10 @@ def _tile_jpeg(z, x, y, source="osm"):
         return data
     tmp = _tmp_name(jpg)
     try:
-        r = subprocess.run(
-            ["sips", "-s", "format", "jpeg", "-s", "formatOptions", "85",
-             str(png), "--out", str(tmp)], capture_output=True)
-        data = tmp.read_bytes() if r.returncode == 0 and tmp.exists() else b""
+        ok = _png_to_jpeg(png, tmp)
+        data = tmp.read_bytes() if ok and tmp.exists() else b""
         if not _valid_jpeg(data):
-            raise RuntimeError("sips: конвертация тайла не удалась")
+            raise RuntimeError("конвертация тайла PNG→JPEG не удалась")
         os.replace(tmp, jpg)
     finally:
         if tmp.exists():

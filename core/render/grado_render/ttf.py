@@ -5,13 +5,26 @@ BBox), maxp (число глифов). Файл шрифта встраивае�
 (FontFile2), поэтому таблицы глифов не разбираются.
 """
 
+import os
 import struct
 from pathlib import Path
 
+# кириллические TTF по ОС: macOS, Linux (DejaVu), Windows (%WINDIR%\Fonts).
+# Порядок — от предпочтительных к запасным; берётся первый существующий.
+_WINDIR = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
+_WIN_FONTS = os.path.join(_WINDIR, "Fonts")
 CANDIDATES = [
+    # macOS
     "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/System/Library/Fonts/Supplemental/Verdana.ttf",
+    # Linux
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    # Windows (все с кириллицей)
+    os.path.join(_WIN_FONTS, "arial.ttf"),
+    os.path.join(_WIN_FONTS, "tahoma.ttf"),
+    os.path.join(_WIN_FONTS, "verdana.ttf"),
+    os.path.join(_WIN_FONTS, "segoeui.ttf"),
+    os.path.join(_WIN_FONTS, "calibri.ttf"),
 ]
 
 

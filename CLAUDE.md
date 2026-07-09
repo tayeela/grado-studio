@@ -192,6 +192,23 @@ python3 apps/studio/server.py        # http://localhost:8643
   у `tile_underlay` при сетевых сбоях) — на случай повторения с другим объектом.
 - Полная история версий с деталями по багам и решениям — `docs/roadmap.md` + `git log`.
 
+## Запуск и платформы
+- **macOS:** `ГРАДО Студия.command` (двойной клик) или `.app` (`packaging/py2app_setup.py`).
+- **Windows:** `ГРАДО Студия.bat` (двойной клик; нужен Python 3.8+ с «Add to PATH»).
+  Оба лаунчера: детект Python → авто-`certifi` → старт `server.py --open` (браузер открывает
+  кросс-платформенный `webbrowser`). `.gitattributes` держит `.bat`=CRLF, `.command`=LF.
+- **Кросс-платформенность кода** (правки для Windows): `ttf.py` — шрифты Windows
+  (`%WINDIR%\Fonts\arial|tahoma|segoeui`), иначе PDF-экспорт падал `FontError`; `_tile_jpeg`
+  (studio_core) — PNG→JPEG через Pillow (опц., кросс-платформенно) → `sips` (macOS) → деградация
+  (OSM-подложка в PDF без Pillow не рендерится, спутник ESRI работает); `find_ogr2ogr` (gisogd) —
+  Windows-пути `C:\Program Files\QGIS*\bin\ogr2ogr.exe`. Зависимости: только `certifi` (опц.),
+  плюс `Pillow` (опц., OSM-в-PDF на Windows) — см. `requirements.txt`, `docs/INSTALL.md`.
+- **Веб-версия с авторизацией — отложена** (юзер: «сейчас локально, веб позже»). Когда
+  понадобится: ОТДЕЛЬНЫЙ VPS (не VPN-овый `77.110.115.66`), логин/пароль + HTTPS через
+  reverse-proxy. Сервер сейчас слушает только `127.0.0.1`/`::1` — для веба менять на 0.0.0.0
+  за прокси + гейт на все endpoint'ы (особо: `import-gisogd-path` читает файлы, `fetch-extent`/
+  тайлы ходят наружу).
+
 ## Структура репозитория
 ```
 core/compute/    ТЭП-движок (декларативные метрики, JSON-пресет)

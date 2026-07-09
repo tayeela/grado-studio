@@ -1,0 +1,14 @@
+# Фиксируем переводы строк, чтобы лаунчеры работали независимо от ОС клонера.
+# .bat требует CRLF (старый cmd.exe спотыкается на LF); shell-скрипты — LF.
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.command    text eol=lf
+*.sh         text eol=lf
+
+# Прочий текст — по умолчанию (без принудительной конвертации бинарников).
+*.py         text
+*.js         text
+*.css        text
+*.html       text
+*.md         text
+*.json       text
