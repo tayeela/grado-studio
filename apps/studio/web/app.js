@@ -5097,18 +5097,11 @@ function duplicateSelected() {
   state.selected = copy.id;
   afterChange();
 }
-function nudgeSelected(dx, dy) {
-  const f = selectedFeature();
-  if (!f) return;
-  snapshot();
-  if (f.circle) {
-    f.circle.cx += dx; f.circle.cy += dy;
-  } else if (f.arc) {           // дуга хранится параметрами — двигаем центр
-    f.arc.cx += dx; f.arc.cy += dy;
-  } else {
-    for (const p of featurePts(f)) { p[0] += dx; p[1] += dy; }
-  }
-  afterChange();
+function nudgeSelected(dx, dy) {   // стрелки — сдвиг ВСЕГО выделения (группа тоже)
+  transformSelection(
+    ([x, y]) => [x + dx, y + dy],
+    a => { a.cx += dx; a.cy += dy; },
+    cc => { cc.cx += dx; cc.cy += dy; });
 }
 function placeTypedPoint() {
   if (state.drawing && state.drawing.center != null) {
@@ -5609,7 +5602,7 @@ document.addEventListener("keydown", e => {
     const step = e.shiftKey ? 1 : gridStep();
     const d = { ArrowLeft: [-step, 0], ArrowRight: [step, 0],
                 ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
-    if (d && state.selected != null) { e.preventDefault(); nudgeSelected(...d); }
+    if (d && selectionFeatures().length) { e.preventDefault(); nudgeSelected(...d); }
     return;
   }
   if (e.key === "?" || (e.shiftKey && e.code === "Slash")) { openShortcuts(); return; }
