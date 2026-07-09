@@ -642,6 +642,10 @@ function featurePts(f) {
   }
   return f.point ? [f.point] : [];
 }
+// экранные углы дуги для ctx.arc: мир Y-вверх, canvas Y-вниз → углы негируются,
+// направление обхода инвертируется (мировой sweep>0 = anticlockwise на экране).
+// Без этого дуга рисовалась зеркально (выгибалась не туда, мимо средней точки).
+function arcScreenArgs(a) { return [-a.a0, -(a.a0 + a.sweep), a.sweep > 0]; }
 function selectedFeature() { return state.features.find(x => x.id === state.selected); }
 // множественное выделение: selectedIds — источник истины, selected — «первичный»
 // (одиночный) объект для правки вершин и детальной панели свойств.
@@ -2086,7 +2090,7 @@ function draw() {
         const cy = state.view.ty - a.cy * k;
         const r = a.r * k;
         ctx.beginPath();
-        ctx.arc(cx, cy, r, a.a0, a.a0 + a.sweep);
+        ctx.arc(cx, cy, r, ...arcScreenArgs(a));
         ctx.stroke();
       } else if (f.circle) {
         const c = f.circle;
@@ -2153,7 +2157,7 @@ function draw() {
           const cx = state.view.tx + a.cx * k;
           const cy = state.view.ty - a.cy * k;
           ctx.beginPath();
-          ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep);
+          ctx.arc(cx, cy, a.r * k, ...arcScreenArgs(a));
           ctx.stroke();
         } else { drawChain(f.ring || f.line, !!f.ring); ctx.stroke(); }
         ctx.setLineDash([]);
@@ -2192,7 +2196,7 @@ function draw() {
         } else if (f.arc) {
           const a = f.arc; const k = state.view.k;
           const cx = state.view.tx + a.cx * k; const cy = state.view.ty - a.cy * k;
-          ctx.beginPath(); ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep); ctx.stroke();
+          ctx.beginPath(); ctx.arc(cx, cy, a.r * k, ...arcScreenArgs(a)); ctx.stroke();
         }
         ctx.restore();
       }
@@ -2319,7 +2323,7 @@ function draw() {
           const cx = state.view.tx + a.cx * k;
           const cy = state.view.ty - a.cy * k;
           ctx.beginPath();
-          ctx.arc(cx, cy, a.r * k, a.a0, a.a0 + a.sweep);
+          ctx.arc(cx, cy, a.r * k, ...arcScreenArgs(a));
           ctx.stroke();
           // visual center cross for arc
           ctx.beginPath();
