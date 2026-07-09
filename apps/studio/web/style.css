@@ -373,6 +373,9 @@ button.primary:active { background: var(--accent-active); }
 .data-src input { accent-color: var(--accent); }
 .data-note { font-size: var(--fs-11); line-height: 1.45; margin-top: var(--sp-2); }
 .data-status { font-size: var(--fs-11); }
+.data-ogd-row { display: flex; align-items: center; gap: var(--sp-2); padding: 2px var(--sp-1); }
+.data-ogd-row button { flex: 0 0 auto; }
+.data-watch-status { font-size: var(--fs-11); line-height: 1.35; }
 /* акцентная (но не главная) кнопка шапки — вход в «Данные» */
 #btn-data { border-color: var(--accent); color: var(--accent); font-weight: var(--fw-medium); }
 #btn-data:hover { background: var(--accent); color: var(--on-accent); }

@@ -232,13 +232,16 @@ function createGenericLayer({ title, geometry_type, styleId, id = null }) {
 }
 
 // манифест пользовательских слоёв для бэкенда (маршрутизация build_project
-// не знает layer_id, придуманный на холсте, без этого списка)
+// не знает layer_id, придуманный на холсте, без этого списка). Встроенные
+// слои-приёмники с СВОИМИ полями (полная атрибуция НСПД из «Данных») тоже
+// идут в манифест — бэкенд мержит из него только fields, code/title builtin
 function userLayersManifest() {
-  return LAYERS_V2.filter(L => L.user_created).map(L => ({
-    layer_id: L.id, code: L.semantic_class, title: L.title,
-    stage: L.stage, style_id: L.style_id,
-    fields: L.fields || [],   // произвольные поля атрибутивной таблицы → колонки .grado
-  }));
+  return LAYERS_V2.filter(L => L.user_created || (L.fields && L.fields.length))
+    .map(L => ({
+      layer_id: L.id, code: L.semantic_class, title: L.title,
+      stage: L.stage, style_id: L.style_id,
+      fields: L.fields || [],   // произвольные поля атрибутивной таблицы → колонки .grado
+    }));
 }
 
 async function deleteLayer(layer) {
@@ -4017,7 +4020,7 @@ function attrColumns(layer) {
     if (fl.key) cols.push({ name: fl.key, label: fl.title, semantic: true,
                             type: fl.type === "number" ? "real" : "text" });
   for (const cf of (layer.fields || []))
-    cols.push({ name: cf.name, label: cf.name, type: cf.type });
+    cols.push({ name: cf.name, label: cf.label || cf.name, type: cf.type });
   return cols;
 }
 function attrValue(f, col) {
@@ -5452,8 +5455,50 @@ on("nspd-file", "change", async e => {
   }
 });
 
-// импорт выгрузки ГИС ОГД (ZIP с портала, произвольный набор слоёв)
-// теперь поддерживает прямую ссылку на выгрузку (сгенерируй на портале и вставь ссылку) — без сохранения файла на диск
+// ---------- импорт выгрузки ГИС ОГД (ZIP с портала) ----------
+// Три пути к одному результату: файл с диска, прямая ссылка, автоподхват
+// из «Загрузок» (см. вахту watchDownloads ниже). Разбор и раскладка по
+// слоям общие — applyGisogdData.
+async function applyGisogdData(data, askText) {
+  if (!data.features || !data.features.length) {
+    toast("В выгрузке не нашлось распознанных слоёв", "warn");
+    return false;
+  }
+  const summary = data.notes && data.notes.length ? data.notes.join("; ") : "слои распознаны";
+  const ok = await uiConfirm(
+    `${askText}\n+${data.features.length} объектов.\n${summary}\n(Данные добавятся к текущему проекту.)`,
+    { ok: "Импортировать", cancel: "Отмена" });
+  if (!ok) return false;
+  snapshot();
+  for (const f of data.features)
+    state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
+  state.selected = null;
+  recordSource(data.snapshot, data.diff);
+  ["source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
+    const L = LAYER_BY_ID[id]; if (L) L.visible = true;
+  });
+  afterChange();
+  fitView();
+  renderLayers();
+  toast(`ОГД: +${data.features.length} объектов` +
+        (data.notes && data.notes.length ? ` · ${data.notes.join("; ")}` : ""));
+  return true;
+}
+async function importGisogd(fetchArgs, askText, errText) {
+  try {
+    const r = await fetch(...fetchArgs);
+    if (!r.ok) {
+      let msg = await r.text();
+      try { msg = JSON.parse(msg).error || msg; } catch (e) {}
+      throw new Error(msg);
+    }
+    return await applyGisogdData(await r.json(), askText);
+  } catch (err) {
+    toast(errText + ": " + String(err.message || err).slice(0, 200), "error");
+    return false;
+  }
+}
+
 on("btn-gisogd", "click", async () => {
   const useFile = await uiConfirm("Загрузить ГИС ОГД:\n- Файл (скачанный ZIP с портала)\n- По прямой ссылке (сгенерированной на gisogd.mos.ru)", { ok: "Файл", cancel: "По ссылке" });
   if (useFile) {
@@ -5463,78 +5508,64 @@ on("btn-gisogd", "click", async () => {
       "Прямая ссылка на ZIP-выгрузку ГИС ОГД\n(на gisogd.mos.ru выберите слои, сгенерируйте выгрузку и скопируйте ссылку скачивания):",
       "", { ok: "Загрузить", placeholder: "https://gisogd.mos.ru/…" });
     if (!url || !url.trim()) return;
-    try {
-      const r = await fetch("/api/import-gisogd-url", {
-        method: "POST",
+    await importGisogd(
+      ["/api/import-gisogd-url", { method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim() })
-      });
-      if (!r.ok) throw new Error(await r.text());
-      const data = await r.json();
-      if (!data.features || !data.features.length) {
-        toast("В выгрузке не нашлось распознанных слоёв", "warn");
-        return;
-      }
-      const summary = data.notes && data.notes.length ? data.notes.join("; ") : "слои распознаны";
-      const ok = await uiConfirm(`Импортировать ГИС ОГД по ссылке? +${data.features.length} объектов.\n${summary}\n(Данные добавятся к текущему проекту.)`, { ok: "Импортировать", cancel: "Отмена" });
-      if (!ok) return;
-      snapshot();
-      for (const f of data.features)
-        state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
-      state.selected = null;
-      recordSource(data.snapshot, data.diff);
-      ["source.nspd.parcels", "source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
-        const L = LAYER_BY_ID[id]; if (L) L.visible = true;
-      });
-      afterChange();
-      fitView();
-      renderLayers();
-      if (data.notes && data.notes.length)
-        toast(`ОГД: +${data.features.length} объектов · ${data.notes.join("; ")}`);
-      else
-        toast(`ОГД: +${data.features.length} объектов`);
-    } catch (err) {
-      toast("Не удалось импортировать по ссылке: " + String(err).slice(0, 200), "error");
-    }
+        body: JSON.stringify({ url: url.trim() }) }],
+      "Импортировать ГИС ОГД по ссылке?",
+      "Не удалось импортировать по ссылке");
   }
 });
 on("gisogd-file", "change", async e => {
   const file = e.target.files[0];
   if (!file) return;
   e.target.value = "";
-  try {
-    const r = await fetch("/api/import-gisogd", { method: "POST",
+  await importGisogd(
+    ["/api/import-gisogd", { method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
-      body: await file.arrayBuffer() });
-    if (!r.ok) throw new Error(await r.text());
-    const data = await r.json();
-    if (!data.features || !data.features.length) {
-      toast("В архиве не нашлось распознанных слоёв", "warn");
+      body: await file.arrayBuffer() }],
+    "Импортировать выгрузку с ГИС ОГД Москвы?",
+    "Не удалось импортировать выгрузку ОГД");
+});
+
+// ---------- вахта за «Загрузками»: автоподхват выгрузки ГИС ОГД ----------
+// «Открыть портал» в окне «Данные» открывает gisogd.mos.ru и армирует
+// слежение: как только в ~/Downloads появляется свежий ZIP — студия сама
+// предлагает импорт. Никаких «сохранить, найти файл, выбрать в диалоге».
+const downloadsWatch = { timer: null, since: 0, until: 0, offered: new Set() };
+function stopDownloadsWatch(msg) {
+  if (downloadsWatch.timer) { clearInterval(downloadsWatch.timer); downloadsWatch.timer = null; }
+  const el = document.querySelector(".data-watch-status");
+  if (el && msg) el.textContent = msg;
+}
+function startDownloadsWatch() {
+  stopDownloadsWatch();
+  downloadsWatch.since = Date.now() / 1000;
+  downloadsWatch.until = Date.now() + 15 * 60 * 1000;   // вахта 15 минут
+  downloadsWatch.timer = setInterval(async () => {
+    if (Date.now() > downloadsWatch.until) { stopDownloadsWatch("время вышло — нажмите ещё раз"); return; }
+    let files;
+    try {
+      const r = await fetch(`/api/downloads-scan?since=${downloadsWatch.since}`);
+      if (!r.ok) return;
+      files = (await r.json()).files || [];
+    } catch (e) { return; }
+    for (const f of files) {
+      if (downloadsWatch.offered.has(f.path)) continue;
+      downloadsWatch.offered.add(f.path);
+      stopDownloadsWatch();
+      const mb = (f.size / 1048576).toFixed(1);
+      const imported = await importGisogd(
+        ["/api/import-gisogd-path", { method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: f.path }) }],
+        `В «Загрузках» появилась выгрузка «${f.name}» (${mb} МБ). Импортировать?`,
+        "Не удалось импортировать " + f.name);
+      if (!imported) startDownloadsWatch();   // не тот файл — ждём дальше
       return;
     }
-    const summary = data.notes && data.notes.length ? data.notes.join("; ") : "слои распознаны";
-    const ok = await uiConfirm(`Импортировать выгрузку с ГИС ОГД Москвы?\n+${data.features.length} объектов.\n${summary}\n\n(Сначала скачайте ZIP с gisogd.mos.ru, затем выберите файл здесь. Данные добавятся к текущему проекту.)`, { ok: "Импортировать", cancel: "Отмена" });
-    if (!ok) return;
-    snapshot();
-    for (const f of data.features)
-      state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
-    state.selected = null;
-    recordSource(data.snapshot, data.diff);
-    // force visibility of import layers so data appears
-    ["source.nspd.parcels", "source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
-      const L = LAYER_BY_ID[id]; if (L) L.visible = true;
-    });
-    afterChange();
-    fitView();
-    renderLayers();
-    if (data.notes && data.notes.length)
-      toast(`ОГД: +${data.features.length} объектов · ${data.notes.join("; ")}`);
-    else
-      toast(`ОГД: +${data.features.length} объектов`);
-  } catch (err) {
-    toast("Не удалось импортировать выгрузку ОГД: " + String(err).slice(0, 200), "error");
-  }
-});
+  }, 3000);
+}
 
 // ---------- «Данные» — прямые открытые источники по видимой области ----------
 // Без браузерного моста и без порталов: сервер сам ходит в OSM (Overpass)
@@ -5604,9 +5635,16 @@ async function openDataFetch() {
     <div class="modal-body compact">
       <div class="data-area">Видимая область: ~${km2 < 1 ? km2.toFixed(2) : km2.toFixed(1)} км²</div>
       ${groupsHtml}
+      <div class="data-group">
+        <div class="data-group-title">ГИС ОГД Москвы <span class="muted">портал с авторизацией mos.ru</span></div>
+        <div class="data-ogd-row">
+          <button class="data-ogd-portal">Открыть портал</button>
+          <span class="data-watch-status muted">скачайте там выгрузку —
+            студия подхватит её из «Загрузок» сама</span>
+        </div>
+      </div>
       <div class="data-note muted">Объекты добавятся в слои-источники (появятся в панели
-      «Слои») и не смешаются с вашим проектом. ГИС ОГД Москвы — кнопкой «ОГД»
-      (портал требует авторизации mos.ru).</div>
+      «Слои») и не смешаются с вашим проектом.</div>
     </div>
     <div class="modal-actions"><span class="data-status muted"></span><span class="spacer"></span>
       <button class="data-cancel">Отмена</button>
@@ -5618,6 +5656,16 @@ async function openDataFetch() {
   overlay.querySelector(".data-cancel").addEventListener("click", close);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
   overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") close(); });
+
+  // ГИС ОГД: открыть портал + армировать вахту за «Загрузками» (работает
+  // и после закрытия окна — пока пользователь выбирает слои на портале)
+  overlay.querySelector(".data-ogd-portal").addEventListener("click", () => {
+    window.open("https://gisogd.mos.ru/", "_blank");
+    startDownloadsWatch();
+    overlay.querySelector(".data-watch-status").textContent =
+      "жду выгрузку в «Загрузках»… (15 мин)";
+    toast("Скачайте выгрузку на портале — студия предложит импорт сама");
+  });
 
   const loadBtn = overlay.querySelector(".data-load");
   const status = overlay.querySelector(".data-status");
@@ -5652,7 +5700,16 @@ async function openDataFetch() {
         for (const f of g.features)
           state.features.push(upgradeFeature({ id: state.nextId++, ...f }));
         const L = LAYER_BY_ID[g.layer_id];
-        if (L) L.visible = true;   // слой-приёмник сразу виден в панели
+        if (!L) continue;
+        L.visible = true;          // слой-приёмник сразу виден в панели
+        // полная атрибуция источника → колонки таблицы атрибутов
+        // (и .grado через манифест); существующие поля не трогаем
+        if (g.fields && g.fields.length) {
+          L.fields = L.fields || [];
+          const taken = new Set(attrColumns(L).map(c => c.name));
+          for (const fd of g.fields)
+            if (!taken.has(fd.name)) { L.fields.push(fd); taken.add(fd.name); }
+        }
       }
       (data.snapshots || []).forEach(m => recordSource(m));
       state.selected = null;

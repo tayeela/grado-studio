@@ -127,7 +127,12 @@ python3 apps/studio/server.py        # http://localhost:8643
   - **OSM серверный** (Overpass POST + зеркала maps.mail.ru/kumi на 429/504): дороги/здания/
     землепользование/вода — наборы в `grado_connectors/osm.py`.
   - **ГИС ОГД прямо НЕ доступен** (проверено: /api/gisogd/* за SSO mos.ru отдаёт SPA-HTML) —
-    остаётся ZIP/ссылка кнопкой «ОГД».
+    остаётся ZIP/ссылка кнопкой «ОГД». **Но подгрузка удобная (v0.48.1):** в окне «Данные» —
+    группа «ГИС ОГД Москвы» с кнопкой «Открыть портал» → открывает gisogd.mos.ru + армирует
+    **вахту за ~/Downloads** (`GET /api/downloads-scan?since=`, поллинг 3с, окно 15 мин): как
+    только юзер скачал ZIP-выгрузку, студия сама предлагает импорт (`POST /api/import-gisogd-path`,
+    строгая проверка: только *.zip ВНУТРИ ~/Downloads). Три пути к импорту ОГД теперь общие
+    (`applyGisogdData`/`importGisogd`): файл, ссылка, автоподхват.
   - Архитектура: коннекторы `NspdDirect`/`OsmOverpass` (норм-ция через NspdCapture, снимки/diff
     в журнал источников) → `studio_core.fetch_extent` (реестр EXTENT_SOURCES, лимиты км²,
     конвертация WGS84→UTM→локальные) → `POST /api/fetch-extent` → модал «Данные по видимой
@@ -135,6 +140,14 @@ python3 apps/studio/server.py        # http://localhost:8643
     слои-приёмники `source.osm.*`/`source.nspd.*` (import_only, мягкие fmt-цвета подложки,
     подписи кадномеров у участков по умолчанию выключены — 650 подписей = каша). Вид после
     загрузки НЕ прыгает (fitView убран: данные пришли по текущему виду).
+  - **Полная атрибуция НСПД (v0.48.1):** ВСЕ options-поля геопортала → props с русскими
+    подписями (NSPD_EXTENT_FIELDS в studio_core: кад.стоимость, УПКС, материал стен, год
+    постройки, ОКН, форма собственности и т.д. — у участков ~22 столбца, у зданий ~23),
+    неизвестные ключи не теряются (падают как text). fetch_extent отдаёт по группе union
+    столбцов (`fields:[{name,label,type}]`); фронт доливает их в `L.fields` слоя-приёмника →
+    таблица атрибутов + .grado. Встроенные приёмники теперь тоже идут в userLayersManifest
+    (только ради fields); `_user_layer_templates` мержит fields В КОПИЮ builtin-шаблона
+    (code/title/stage builtin неприкосновенны, порядок в build_project: builtin ⊕ augmented).
   - **Исправлены косяки прошлой сессии:** OSM-выгрузка валила дороги/здания в ЧУЖИЕ слои
     ГИС ОГД (`source.gisogd.red_lines/func_zones`) — теперь свои приёмники; native `prompt()`
     в ОГД-по-ссылке → uiPrompt; `/api/import-gisogd-url` без certifi-SSLContext (правило 6) и

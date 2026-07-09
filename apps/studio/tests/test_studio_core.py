@@ -1224,6 +1224,68 @@ class TestFetchExtent(unittest.TestCase):
                              "линия OSM-дороги не должна выпадать из экспорта")
             p.close()
 
+    def test_full_nspd_attribution_and_fields(self):
+        # ВСЕ options-поля НСПД → props с русскими именами + список столбцов
+        def transport(url, body):
+            return {"type": "FeatureCollection", "features": [{
+                "id": 1, "type": "Feature",
+                "geometry": {"type": "Polygon", "coordinates": [[
+                    [4187300, 7508800], [4187400, 7508800],
+                    [4187400, 7508900], [4187300, 7508800]]]},
+                "properties": {"category": 36368, "options": {
+                    "cad_num": "77:01:1", "cost_value": 100.5,
+                    "ownership_type": "Частная",
+                    "какой_то_новый_ключ": "значение"}}}]}
+        import grado_connectors
+        orig = grado_connectors.NspdDirect
+
+        class Fake(orig):
+            def __init__(self):
+                super().__init__(transport=transport)
+
+        grado_connectors.NspdDirect = Fake
+        try:
+            out = studio_core.fetch_extent(self.BBOX, ["nspd.parcels"])
+        finally:
+            grado_connectors.NspdDirect = orig
+        g = out["groups"][0]
+        p = g["features"][0]["props"]
+        self.assertEqual(p["cad_num"], "77:01:1")
+        self.assertEqual(p["кадастровая стоимость, ₽"], 100.5)
+        self.assertEqual(p["форма собственности"], "Частная")
+        self.assertEqual(p["какой_то_новый_ключ"], "значение",
+                         "неизвестные ключи геопортала не теряются")
+        names = {fd["name"] for fd in g["fields"]}
+        self.assertIn("cad_num", names)          # базовые — с русским label
+        self.assertIn("кадастровая стоимость, ₽", names)
+        cad = next(fd for fd in g["fields"] if fd["name"] == "cad_num")
+        self.assertEqual(cad["label"], "кадастровый номер")
+        cost = next(fd for fd in g["fields"]
+                    if fd["name"] == "кадастровая стоимость, ₽")
+        self.assertEqual(cost["type"], "real")
+
+    def test_builtin_receiver_gets_fields_from_manifest(self):
+        # манифест с fields для ВСТРОЕННОГО слоя-приёмника: колонки мержатся,
+        # code/title встроенного не подменяются
+        manifest = [{"layer_id": "source.nspd.parcels", "code": "ПОДМЕНА",
+                     "title": "ПОДМЕНА",
+                     "fields": [{"name": "кадастровая стоимость, ₽",
+                                 "type": "real"}]}]
+        feats = [{"kind": "parcel", "layer_id": "source.nspd.parcels",
+                  "ring": [[0, 0], [50, 0], [50, 50]],
+                  "props": {"cad_num": "77:01:1",
+                            "кадастровая стоимость, ₽": 100.5}}]
+        with tempfile.TemporaryDirectory() as tmp:
+            p = studio_core.build_project(Path(tmp) / "f.grado", "Т",
+                                          feats, manifest)
+            info = next(i for i in p.layers()
+                        if i["layer_id"] == "source.nspd.parcels")
+            self.assertEqual(info["code"], "cad.parcel", "code не подменён")
+            fr = next(p.layer_by_id("source.nspd.parcels").features())
+            self.assertEqual(fr["attrs"]["кадастровая стоимость, ₽"], 100.5)
+            self.assertEqual(fr["attrs"]["cad_num"], "77:01:1")
+            p.close()
+
     def test_area_limit_guards(self):
         with self.assertRaises(ValueError):
             studio_core.fetch_extent([37.0, 55.0, 38.0, 56.0], ["nspd.parcels"])

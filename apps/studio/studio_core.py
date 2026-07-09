@@ -643,31 +643,42 @@ def _cast_field(ftype, raw):
     return str(raw)
 
 
+def _manifest_fields(spec):
+    """fields манифеста слоя [{name, type}] → внутренний формат колонок."""
+    fields = []
+    for fd in (spec.get("fields") or []):
+        col = _field_col_id(fd.get("name"))
+        if not col:
+            continue
+        ftype = fd.get("type", "text")
+        fields.append({"id": col, "name": fd.get("name"), "ftype": ftype,
+                       "gtype": _FIELD_GPKG_TYPE.get(str(ftype).lower(), "string")})
+    return fields
+
+
 def _user_layer_templates(layers):
     """Слои, созданные в панели студии («+ слой»), → шаблоны маршрутизации.
 
     layers — [{layer_id, code, title, stage, style_id, fields}], присылается с
     холста при каждом экспорте (там живёт единственная копия). Встроенные
-    LAYER_TEMPLATES не переопределяются: пользовательский layer_id либо
-    новый, либо (при коллизии, не должно случаться) проигрывает builtin.
+    LAYER_TEMPLATES не переопределяются (code/title/stage builtin — закон);
+    исключение — fields: у слоёв-приёмников «Данных по области» появляются
+    свои столбцы (полная атрибуция НСПД), они мержатся В КОПИЮ builtin-шаблона.
     fields — [{name, type}] произвольных полей атрибутивной таблицы."""
     out = {}
     for spec in (layers or []):
         lid = spec.get("layer_id")
         code = spec.get("code")
-        if not lid or not code or lid in LAYER_TEMPLATES:
+        if not lid or not code:
             continue
-        fields = []
-        for fd in (spec.get("fields") or []):
-            col = _field_col_id(fd.get("name"))
-            if not col:
-                continue
-            ftype = fd.get("type", "text")
-            fields.append({"id": col, "name": fd.get("name"), "ftype": ftype,
-                           "gtype": _FIELD_GPKG_TYPE.get(str(ftype).lower(), "string")})
+        if lid in LAYER_TEMPLATES:
+            fields = _manifest_fields(spec)
+            if fields:
+                out[lid] = {**LAYER_TEMPLATES[lid], "fields": fields}
+            continue
         out[lid] = {"code": code, "title": spec.get("title"),
                     "stage": spec.get("stage"), "style_id": spec.get("style_id"),
-                    "fields": fields}
+                    "fields": _manifest_fields(spec)}
     return out
 
 
@@ -699,7 +710,9 @@ def build_project(path, name, features, layers=None, project_styles=None, projec
         Journal(project.conn)
     except Exception:
         pass
-    templates = {**_user_layer_templates(layers), **LAYER_TEMPLATES}
+    # порядок: augmented-копии builtin (builtin+fields) должны победить голый
+    # builtin; подмена code/title невозможна — санация в _user_layer_templates
+    templates = {**LAYER_TEMPLATES, **_user_layer_templates(layers)}
     made = {}  # layer_id → Layer
     for f in features:
         lid, tmpl = _route(f, templates)
@@ -1349,40 +1362,162 @@ def _int_or_none(v):
         return None
 
 
+# Полная атрибуция НСПД: options-ключ геопортала → (русское имя поля, тип).
+# Ключи с латинскими именами (cad_num, category, vri, purpose, floors, name,
+# address) остаются семантикой холста (их ждут KIND_ATTRS/ТЭП) и в этот
+# словарь не входят — здесь ДОПОЛНИТЕЛЬНЫЕ столбцы. Неизвестные ключи
+# добавляются как есть (text): состав options у геопортала меняется.
+NSPD_EXTENT_FIELDS = {
+    "area": ("площадь (ЕГРН), м²", "real"),
+    "declared_area": ("декларированная площадь, м²", "real"),
+    "land_record_area": ("площадь по документам, м²", "real"),
+    "build_record_area": ("площадь застройки, м²", "real"),
+    "area_value": ("площадь, м²", "real"),
+    "cost_value": ("кадастровая стоимость, ₽", "real"),
+    "cost_index": ("УПКС, ₽/м²", "real"),
+    "cost_application_date": ("стоимость: дата применения", "text"),
+    "cost_determination_date": ("стоимость: дата определения", "text"),
+    "cost_registration_date": ("стоимость: дата внесения", "text"),
+    "cost_approvement_date": ("стоимость: дата утверждения", "text"),
+    "determination_couse": ("основание определения стоимости", "text"),
+    "land_record_type": ("вид объекта", "text"),
+    "land_record_subtype": ("вид участка", "text"),
+    "land_record_reg_date": ("дата постановки на учёт", "text"),
+    "build_record_registration_date": ("дата постановки на учёт", "text"),
+    "build_record_type_value": ("вид ОКС", "text"),
+    "building_name": ("наименование", "text"),
+    "materials": ("материал стен", "text"),
+    "year_built": ("год постройки", "int"),
+    "year_commisioning": ("год ввода", "int"),
+    "floors": ("этажность", "text"),
+    "underground_floors": ("подземных этажей", "text"),
+    "purpose": ("назначение", "text"),
+    "permitted_use_name": ("разрешённое использование", "text"),
+    "permitted_use_established_by_document": ("ВРИ по документу", "text"),
+    "ownership_type": ("форма собственности", "text"),
+    "right_type": ("вид права", "text"),
+    "status": ("статус", "text"),
+    "previously_posted": ("ранее учтённый", "text"),
+    "quarter_cad_number": ("кадастровый квартал", "text"),
+    "readable_address": ("адрес", "text"),
+    "cultural_heritage_val": ("объект культурного наследия", "text"),
+    "facility_cad_number": ("кадастровый номер сооружения", "text"),
+    "specified_area": ("уточнённая площадь, м²", "real"),
+    "depth": ("глубина, м", "real"),
+    "height": ("высота, м", "real"),
+    "extension": ("протяжённость, м", "real"),
+    "zone_kind": ("вид зоны", "text"),
+    "content_restrictions": ("ограничения использования", "text"),
+    "registration_date": ("дата внесения", "text"),
+    "number": ("реестровый номер", "text"),
+}
+# семантические ключи, уже занятые схемой холста (не дублировать столбцами)
+_NSPD_SEMANTIC = {
+    "nspd.parcels": {"cad_num", "land_record_category_type",
+                     "permitted_use_established_by_document",
+                     "readable_address"},
+    "nspd.buildings": {"cad_num", "building_name", "floors",
+                       "readable_address"},
+    "nspd.constructions": {"cad_num", "building_name"},
+    "nspd.zouit": set(),
+}
+
+
+def _nspd_extra_fields(src_key, p, props):
+    """Все прочие options-поля НСПД → props с русскими именами.
+
+    Возвращает [{name, type}] реально добавленных полей (для колонок)."""
+    fields = []
+    for key, val in p.items():
+        if not key.startswith("opt_") or val in (None, ""):
+            continue
+        okey = key[4:]
+        if okey in _NSPD_SEMANTIC.get(src_key, ()):
+            continue
+        label, ftype = NSPD_EXTENT_FIELDS.get(okey, (okey, "text"))
+        if ftype == "real":
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                ftype = "text"
+        elif ftype == "int":
+            iv = _int_or_none(val)
+            if iv is None:
+                ftype = "text"
+            else:
+                val = iv
+        if label not in props:
+            props[label] = val
+            fields.append({"name": label, "type": ftype})
+    return fields
+
+
+# базовые (семантические) ключи каждого источника: как показать их колонками
+# в таблице атрибутов (label — русская подпись, name — ключ props).
+# floors у зданий не колонка — его уже показывает семантика oks.building.
+_EXTENT_BASE_FIELDS = {
+    "nspd.parcels": [
+        {"name": "cad_num", "label": "кадастровый номер", "type": "text"},
+        {"name": "category", "label": "категория земель", "type": "text"},
+        {"name": "vri", "label": "ВРИ", "type": "text"},
+        {"name": "address", "label": "адрес", "type": "text"}],
+    "nspd.buildings": [
+        {"name": "purpose", "label": "наименование/назначение", "type": "text"},
+        {"name": "cad_num", "label": "кадастровый номер", "type": "text"},
+        {"name": "address", "label": "адрес", "type": "text"}],
+    "nspd.constructions": [
+        {"name": "name", "label": "наименование", "type": "text"},
+        {"name": "cad_num", "label": "кадастровый номер", "type": "text"}],
+    "nspd.zouit": [
+        {"name": "kind", "label": "вид ЗОУИТ", "type": "text"},
+        {"name": "number", "label": "реестровый номер", "type": "text"},
+        {"name": "basis", "label": "источник", "type": "text"}],
+    "osm.buildings": [
+        {"name": "purpose", "label": "назначение", "type": "text"},
+        {"name": "name", "label": "название", "type": "text"}],
+}
+
+
 def _extent_props(src_key, p):
-    """Свойства источника → атрибуты объекта холста (по виду слоя)."""
+    """Свойства источника → (атрибуты объекта холста, доп. поля-столбцы)."""
+    base = [dict(fd) for fd in _EXTENT_BASE_FIELDS.get(src_key, [])]
     if src_key == "nspd.parcels":
-        return {k: v for k, v in {
+        props = {k: v for k, v in {
             "cad_num": p.get("opt_cad_num") or p.get("cad_num"),
             "category": p.get("opt_land_record_category_type"),
             "vri": p.get("opt_permitted_use_established_by_document"),
             "address": p.get("opt_readable_address")}.items() if v}
+        return props, base + _nspd_extra_fields(src_key, p, props)
     if src_key == "nspd.buildings":
-        return {k: v for k, v in {
+        props = {k: v for k, v in {
             "purpose": p.get("opt_building_name") or p.get("opt_purpose") or "здание",
             "floors": _int_or_none(p.get("opt_floors")),
             "cad_num": p.get("opt_cad_num"),
             "address": p.get("opt_readable_address")}.items() if v}
+        return props, base + _nspd_extra_fields(src_key, p, props)
     if src_key == "nspd.constructions":
-        return {k: v for k, v in {
+        props = {k: v for k, v in {
             "name": p.get("opt_building_name") or p.get("label") or "сооружение",
             "cad_num": p.get("opt_cad_num")}.items() if v}
+        return props, base + _nspd_extra_fields(src_key, p, props)
     if src_key == "nspd.zouit":
         # categoryName вида «ЗОУИТ природных территорий_» (хвост «_» —
         # артефакт геопортала), label — реестровый номер зоны
-        return {k: v for k, v in {
+        props = {k: v for k, v in {
             "kind": (p.get("categoryName") or "ЗОУИТ").rstrip("_ "),
             "number": p.get("label"), "basis": "НСПД"}.items() if v}
+        return props, base + _nspd_extra_fields(src_key, p, props)
     if src_key == "osm.buildings":
         purpose = p.get("building")
         return {k: v for k, v in {
             "purpose": ("здание" if purpose in (True, "yes") else purpose),
             "floors": _int_or_none(p.get("building:levels")),
-            "name": p.get("name")}.items() if v}
+            "name": p.get("name")}.items() if v}, base
     # osm.roads / osm.landuse / osm.water / прочее — свои поля generic-слоя
     keep = ("name", "highway", "surface", "lanes", "landuse", "leisure",
             "natural", "water", "waterway")
-    return {k: p[k] for k in keep if p.get(k)}
+    props = {k: p[k] for k in keep if p.get(k)}
+    return props, [{"name": k, "type": "text"} for k in props]
 
 
 def _wgs_geom_to_canvas(geom):
@@ -1431,19 +1566,26 @@ def fetch_extent(bbox, sources):
 
     groups = {k: {"source": k, "title": EXTENT_SOURCES[k]["title"],
                   "layer_id": EXTENT_SOURCES[k]["layer_id"],
-                  "kind": EXTENT_SOURCES[k]["kind"], "features": []}
+                  "kind": EXTENT_SOURCES[k]["kind"], "features": [],
+                  "fields": []}
               for k in keys}
     snapshots = []
 
     def _emit(src_key, wgs_features, prov):
         spec = EXTENT_SOURCES[src_key]
+        g = groups[src_key]
+        seen_fields = {fd["name"] for fd in g["fields"]}
         for f in wgs_features:
             geom = f.get("geometry")
             if not geom:
                 continue
-            props = _extent_props(src_key, f.get("properties") or {})
+            props, fields = _extent_props(src_key, f.get("properties") or {})
+            for fd in fields:              # union столбцов по группе
+                if fd["name"] not in seen_fields:
+                    g["fields"].append(fd)
+                    seen_fields.add(fd["name"])
             for part in _wgs_geom_to_canvas(geom):
-                groups[src_key]["features"].append({
+                g["features"].append({
                     "kind": spec["kind"], "layer_id": spec["layer_id"],
                     **part, "props": dict(props), "prov": dict(prov)})
 

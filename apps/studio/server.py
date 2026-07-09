@@ -185,6 +185,28 @@ class Handler(SimpleHTTPRequestHandler):
             return
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
+        if parsed.path == "/api/downloads-scan":
+            # вахта за ~/Downloads: свежие ZIP (выгрузки ГИС ОГД и т.п.),
+            # появившиеся после отметки since (unix-секунды). Только чтение
+            # списка — сам импорт идёт отдельным подтверждённым запросом.
+            try:
+                since = float((parse_qs(parsed.query).get("since") or ["0"])[0])
+            except ValueError:
+                since = 0.0
+            files = []
+            dl = Path.home() / "Downloads"
+            try:
+                for p in dl.glob("*.zip"):
+                    st = p.stat()
+                    if st.st_mtime > since and st.st_size > 0:
+                        files.append({"name": p.name, "path": str(p),
+                                      "size": st.st_size, "mtime": st.st_mtime})
+            except OSError:
+                pass
+            files.sort(key=lambda f: -f["mtime"])
+            self._send(json.dumps({"files": files[:5]}, ensure_ascii=False)
+                       .encode(), "application/json; charset=utf-8")
+            return
         m = TILE_RE.match(parsed.path)
         if m:
             src = (parse_qs(parsed.query).get("src") or ["osm"])[0]
@@ -270,6 +292,21 @@ class Handler(SimpleHTTPRequestHandler):
                     self.wfile.write(msg)
                     return
                 out = studio_core.import_gisogd(raw)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
+            if self.path == "/api/import-gisogd-path":
+                # импорт выгрузки ГИС ОГД по пути файла (автоподхват из
+                # «Загрузок»). Строго: только *.zip внутри ~/Downloads —
+                # произвольные пути с холста не читаем
+                body = self._json_body()
+                p = Path(str(body.get("path") or "")).resolve()
+                dl = (Path.home() / "Downloads").resolve()
+                if p.suffix.lower() != ".zip" or not p.is_file() \
+                        or dl not in p.parents:
+                    self.send_error(400, "expected a zip inside Downloads")
+                    return
+                out = studio_core.import_gisogd(p.read_bytes())
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return
