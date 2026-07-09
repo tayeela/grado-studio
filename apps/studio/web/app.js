@@ -4848,6 +4848,19 @@ function addFeature(layerId, geom) {
   afterChange();
   return f;
 }
+// убрать подряд совпадающие точки (в пределах допуска) — защита от вырожденной
+// геометрии: кольцо нулевой площади, линия из одинаковых точек, дубль конца/начала
+function dedupePts(pts, closed) {
+  const eps = 1e-6, out = [];
+  for (const p of pts) {
+    const last = out[out.length - 1];
+    if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > eps) out.push([p[0], p[1]]);
+  }
+  if (closed && out.length > 1 &&
+      Math.hypot(out[0][0] - out[out.length - 1][0], out[0][1] - out[out.length - 1][1]) <= eps)
+    out.pop();
+  return out;
+}
 function finishDrawing() {
   const d = state.drawing;
   const L = activeLayer();
@@ -4855,10 +4868,15 @@ function finishDrawing() {
   if (!d || !L) { state.drawing = null; return; }
   const geom = TOOL_GEOM[state.tool];
   const pts = Array.isArray(d.pts) ? d.pts : null;
-  if (geom === "polygon" && pts && pts.length >= 3) addFeature(L.id, { ring: pts });
-  else if (geom === "polyline" && state.tool !== "dim" && pts && pts.length >= 2)
-    addFeature(L.id, { line: pts });
-  else if (state.tool === "arc" && pts && pts.length >= 3) {
+  if (geom === "polygon" && pts) {
+    const r = dedupePts(pts, true);
+    if (r.length >= 3 && Math.abs(ringArea(r)) > 1e-6) addFeature(L.id, { ring: r });
+    else { toast("Слишком мало различных точек для полигона", "warn"); state.drawing = null; draw(); return; }
+  } else if (geom === "polyline" && state.tool !== "dim" && pts) {
+    const ln = dedupePts(pts, false);
+    if (ln.length >= 2) addFeature(L.id, { line: ln });
+    else { toast("Линия из совпадающих точек — не создана", "warn"); state.drawing = null; draw(); return; }
+  } else if (state.tool === "arc" && pts && pts.length >= 3) {
     const a = arcFrom3Pts(pts[0], pts[1], pts[2]);
     if (a) addFeature(L.id, { arc: a });
   } else if (state.tool === "circle" && d.center) {
