@@ -364,6 +364,20 @@ button.primary:active { background: var(--accent-active); }
   padding: var(--sp-1) var(--sp-2); border: 1px solid var(--field-border); border-radius: var(--r-sm);
   font: inherit; color: var(--text); background: var(--field-bg); }
 .mk-form .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; }
+/* окно «Варианты концепции» — список снимков + таблица сравнения ТЭП */
+.var-modal { width: min(640px, 94vw); }
+.var-list { max-height: 34vh; overflow-y: auto; border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline); padding: var(--sp-1) 0; }
+.var-item { display: flex; align-items: center; gap: var(--sp-2); padding: 4px var(--sp-4); font-size: var(--fs-13); }
+.var-item:hover { background: var(--glass-strong); }
+.var-nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: var(--fw-medium); }
+.var-meta { color: var(--muted); font-size: var(--fs-11); white-space: nowrap; }
+.var-load { padding: 2px var(--sp-2); font-size: var(--fs-11); }
+.var-del { border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; }
+.var-del:hover { color: var(--danger); background: none; }
+.var-cmp-wrap { max-height: 30vh; overflow: auto; margin: var(--sp-2) var(--sp-4) 0; }
+.var-cmp-table th, .var-cmp-table td { white-space: nowrap; }
+.var-cmp-table .var-v { text-align: right; font-variant-numeric: tabular-nums; }
 /* окно «Горячие клавиши» — колонки групп, клавиши в kbd */
 .sc-modal { width: min(660px, 92vw); }
 .sc-body { padding: var(--sp-2) var(--sp-3); overflow-y: auto; max-height: 58vh;

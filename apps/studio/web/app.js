@@ -603,6 +603,7 @@ const state = {
   activeLayerId: null,            // куда чертят геом-инструменты (L2b: пусто до создания слоя)
   sources: [],                    // журнал источников (снимки НСПД/ФГИС ТП)
   styleOverrides: {},             // правки эталонных знаков (глобальные, с сервера)
+  variants: [],                   // варианты концепции: снимки {id,name,features,params,createdAt}
   projectStyles: {},              // свои стили проекта: { "my_id": {fill, stroke, width, ... , title? } }
   projectCustomKinds: [],         // пользовательские роли/типы слоёв для этого проекта
   albumConfig: {                  // конфигурация состава альбома (фаза 3)
@@ -2507,6 +2508,7 @@ function collectState() {
     undo: state.undo || [],
     redo: state.redo || [],
     projectCustomKinds: state.projectCustomKinds || [],
+    variants: state.variants || [],
   };
 }
 // личное (не отправляется коллегам): вид/выделение здесь не хранятся в payload
@@ -3437,6 +3439,131 @@ function openManageKinds() {
   $("mk-close").onclick = () => overlay.remove();
   overlay.querySelector(".modal-x").onclick = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+// ---------- варианты концепции: снимки проекта + сравнение ТЭП -------------
+// Вариант — именованный снимок state.features + параметров. Хранится в проекте
+// (persist). Позволяет пробовать альтернативы посадки/зонирования и сравнивать
+// их ТЭП рядом, не теряя рабочее состояние.
+let _variantSeq = 0;
+function saveCurrentAsVariant(name) {
+  state.variants = state.variants || [];
+  const v = { id: "var" + (Date.now ? Date.now() : ++_variantSeq),
+    name, features: JSON.parse(JSON.stringify(state.features)),
+    params: params(), createdAt: new Date().toISOString().slice(0, 16).replace("T", " ") };
+  state.variants.push(v);
+  persist();
+  return v;
+}
+function setParamInputs(p) {
+  if (!p) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+  set("p-density", p.density); set("p-ratio", p.ratio_zh); set("p-krail", p.k_rail); set("p-kba", p.k_ba);
+}
+async function tepForVariant(features, prms) {
+  try {
+    const r = await fetch("/api/tep", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features, params: prms }) });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+function openVariants() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const $ = id => overlay.querySelector("#" + id);
+  const sel = new Set();   // id вариантов, отмеченных для сравнения
+  function rowsHtml() {
+    const vs = state.variants || [];
+    if (!vs.length) return `<div class="muted" style="padding:var(--sp-3) var(--sp-4)">Вариантов пока нет. Сохраните текущее состояние как вариант, попробуйте другую посадку — и сравните ТЭП.</div>`;
+    return vs.map(v => `<div class="var-item" data-id="${escHtml(v.id)}">
+      <input type="checkbox" class="var-cmp" data-id="${escHtml(v.id)}" ${sel.has(v.id) ? "checked" : ""} title="сравнить ТЭП">
+      <span class="var-nm">${escHtml(v.name)}</span>
+      <span class="var-meta">${v.features.length} об. · ${escHtml(v.createdAt || "")}</span>
+      <button class="var-load" data-id="${escHtml(v.id)}" title="Загрузить этот вариант">Загрузить</button>
+      <button class="var-del" data-id="${escHtml(v.id)}" title="Удалить вариант">✕</button>
+    </div>`).join("");
+  }
+  function render() {
+    $("var-list").innerHTML = rowsHtml();
+    overlay.querySelectorAll(".var-cmp").forEach(el => el.onchange = () => {
+      if (el.checked) sel.add(el.dataset.id); else sel.delete(el.dataset.id);
+    });
+    overlay.querySelectorAll(".var-load").forEach(el => el.onclick = () => loadVariant(el.dataset.id));
+    overlay.querySelectorAll(".var-del").forEach(el => el.onclick = () => delVariant(el.dataset.id));
+  }
+  async function loadVariant(id) {
+    const v = (state.variants || []).find(x => x.id === id);
+    if (!v) return;
+    if (!(await uiConfirm(`Загрузить вариант «${v.name}»? Текущее состояние заменится. Сохраните его как вариант заранее, если нужно.`,
+                          { ok: "Загрузить" }))) return;
+    snapshot();
+    state.features = JSON.parse(JSON.stringify(v.features)).map(upgradeFeature);
+    setParamInputs(v.params);
+    clearSelection(); afterChange(); fitView();
+    overlay.remove();
+    toast(`Загружен вариант «${v.name}»`);
+  }
+  async function delVariant(id) {
+    const v = (state.variants || []).find(x => x.id === id);
+    if (!v) return;
+    if (!(await uiConfirm(`Удалить вариант «${v.name}»?`, { ok: "Удалить", danger: true }))) return;
+    state.variants = state.variants.filter(x => x.id !== id);
+    sel.delete(id); persist(); render();
+    toast("Вариант удалён");
+  }
+  overlay.innerHTML = `<div class="modal fmt-modal-lg var-modal">
+    <div class="modal-head">Варианты концепции
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="lib-hint">Снимок текущего проекта: попробуйте другую посадку/зонирование в новом варианте, сравните их ТЭП рядом. Загрузка заменяет рабочее состояние.</div>
+    <div id="var-list" class="var-list"></div>
+    <button id="var-save" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ Сохранить текущее как вариант</button>
+    <div id="var-cmp-out"></div>
+    <div class="modal-actions">
+      <button id="var-compare">Сравнить ТЭП отмеченных</button>
+      <span class="spacer"></span>
+      <button id="var-close" class="primary">Закрыть</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", ev => ev.stopPropagation());
+  render();
+  $("var-save").onclick = async () => {
+    const name = await uiPrompt("Название варианта:", `Вариант ${(state.variants || []).length + 1}`, { ok: "Сохранить" });
+    if (name == null) return;
+    saveCurrentAsVariant(name.trim() || `Вариант ${(state.variants || []).length + 1}`);
+    render();
+    toast("Вариант сохранён");
+  };
+  $("var-compare").onclick = async () => {
+    const chosen = (state.variants || []).filter(v => sel.has(v.id));
+    if (!chosen.length) { toast("Отметьте галочками варианты для сравнения", "warn"); return; }
+    $("var-cmp-out").innerHTML = `<div class="muted" style="padding:0 var(--sp-4)">Считаю ТЭП…</div>`;
+    // колонки: текущее (рабочее) + выбранные варианты
+    const cols = [{ name: "Текущее", features: state.features, params: params() },
+                  ...chosen.map(v => ({ name: v.name, features: v.features, params: v.params }))];
+    const teps = await Promise.all(cols.map(c => tepForVariant(c.features, c.params)));
+    // строки сравнения: факт СПП/плотность + результаты (по title)
+    const rowKeys = [];
+    const add = (title, unit, vals) => rowKeys.push({ title, unit, vals });
+    add("СПП факт", "тыс. м²", teps.map(t => t && t.fact ? t.fact.spp : "—"));
+    add("Плотность факт", "тыс. м²/га", teps.map(t => t && t.fact ? t.fact.density : "—"));
+    // результаты — по объединению title (население, площади и т.п.)
+    const resultTitles = [];
+    for (const t of teps) if (t && t.results) for (const r of t.results)
+      if (!resultTitles.find(x => x.title === r.title)) resultTitles.push({ title: r.title, unit: r.unit });
+    for (const rt of resultTitles)
+      add(rt.title, rt.unit, teps.map(t => {
+        const r = t && t.results && t.results.find(x => x.title === rt.title);
+        return r ? r.value : "—";
+      }));
+    const head = `<tr><th>Показатель</th>${cols.map(c => `<th>${escHtml(c.name)}</th>`).join("")}</tr>`;
+    const body = rowKeys.map(rk => `<tr><td>${escHtml(rk.title)} <small class="muted">${escHtml(rk.unit || "")}</small></td>${
+      rk.vals.map(v => `<td class="var-v">${escHtml(String(v))}</td>`).join("")}</tr>`).join("");
+    $("var-cmp-out").innerHTML = `<div class="var-cmp-wrap"><table class="attr-table var-cmp-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  };
+  $("var-close").onclick = () => overlay.remove();
+  overlay.querySelector(".modal-x").onclick = () => overlay.remove();
+  overlay.addEventListener("click", ev => { if (ev.target === overlay) overlay.remove(); });
 }
 
 function openAlbumConfig() {
@@ -5537,6 +5664,7 @@ async function download(url, filename) {
                     layers: userLayersManifest(),
                     projectStyles: state.projectStyles || {},
                     projectCustomKinds: state.projectCustomKinds || [],
+    variants: state.variants || [],
                     undo_stack: state.undo || [],
                     redo_stack: state.redo || [],
                     albumConfig: state.albumConfig || null };
@@ -5583,6 +5711,7 @@ on("grado-file", "change", async e => {
         }
       }
     }
+    if (Array.isArray(data.variants)) state.variants = data.variants;
     if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
     if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
     if (data.albumConfig && typeof data.albumConfig === 'object') {
@@ -5613,6 +5742,7 @@ function loadProjectData(data) {
       }
     }
   }
+  if (Array.isArray(data.variants)) state.variants = data.variants;
   if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
   if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
   if (data.albumConfig && typeof data.albumConfig === 'object') {
@@ -6127,6 +6257,7 @@ function applyRestoredState(d) {
       }
     }
   }
+  if (Array.isArray(d.variants)) state.variants = d.variants;
   if (d.albumConfig && typeof d.albumConfig === 'object') {
     state.albumConfig = d.albumConfig;
   }
@@ -6182,6 +6313,7 @@ on("btn-new-layer", "click", openNewLayerDialog);
 on("btn-style-lib", "click", openStyleLibrary);
 on("btn-project-styles", "click", openProjectStyles);
 on("btn-manage-kinds", "click", openManageKinds);
+on("btn-variants", "click", openVariants);
 // переключатель темы (canvas-theme.js): смена темы → перечитать палитру
 // холста и перерисовать. Тема на <html> уже выставлена до загрузки app.js.
 on("btn-theme", "click", () => { if (window.toggleTheme) window.toggleTheme(); });
