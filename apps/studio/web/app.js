@@ -982,6 +982,21 @@ function circleCircleIntersections(cx1, cy1, r1, cx2, cy2, r2) {
   if (h > 1e-9) res.push([xm - h * dy / d, ym + h * dx / d]);
   return res;
 }
+// пересечения отрезка [a,b] с окружностью (cx,cy,r) — точки в пределах отрезка
+function segCircleIntersections(a, b, cx, cy, r) {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const fx = a[0] - cx, fy = a[1] - cy;
+  const A = dx * dx + dy * dy;
+  if (A < 1e-12) return [];
+  const B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - r * r;
+  let disc = B * B - 4 * A * C;
+  if (disc < 0) return [];
+  disc = Math.sqrt(disc);
+  const out = [];
+  for (const t of [(-B - disc) / (2 * A), (-B + disc) / (2 * A)])
+    if (t >= -1e-9 && t <= 1 + 1e-9) out.push([a[0] + t * dx, a[1] + t * dy]);
+  return out;
+}
 function isAngleInSweep(ang, a0, sweep) {
   if (Math.abs(sweep) < 1e-9) return false;
   const PI2 = 2 * Math.PI;
@@ -1505,7 +1520,7 @@ function featureChains(f) {
 }
 
 // ---------- привязки (уровень CAD) ----------
-const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "середина": 2,
+const SNAP_PRIORITY = { "вершина": 0, "пересечение": 1, "квадрант": 1, "середина": 2,
                         "перпендикуляр": 2, "касательная": 2, "центр": 3, "ближайшая": 4 };
 
 function _excludeSet(exclude) {
@@ -1519,7 +1534,15 @@ function collectSnapPts(exclude) {
   for (const f of state.features) {
     if ((ex && ex.has(f.id)) || isHidden(f)) continue;
     if (f.point) { out.push({ p: f.point, kind: "вершина" }); continue; }
-    if (f.circle) { out.push({ p: [f.circle.cx, f.circle.cy], kind: "центр" }); }
+    if (f.circle) {
+      const c = f.circle;
+      out.push({ p: [c.cx, c.cy], kind: "центр" });
+      // квадранты — привязки CAD (север/восток/юг/запад окружности)
+      out.push({ p: [c.cx + c.r, c.cy], kind: "квадрант" });
+      out.push({ p: [c.cx - c.r, c.cy], kind: "квадрант" });
+      out.push({ p: [c.cx, c.cy + c.r], kind: "квадрант" });
+      out.push({ p: [c.cx, c.cy - c.r], kind: "квадрант" });
+    }
     for (const chain of featureChains(f)) {
       for (let i = 0; i + 1 < chain.length; i++) {
         out.push({ p: chain[i], kind: "вершина" });
@@ -1533,13 +1556,12 @@ function collectSnapPts(exclude) {
                      (Math.min(...ys) + Math.max(...ys)) / 2], kind: "центр" });
     }
     if (f.arc) {
-      out.push({ p: [f.arc.cx, f.arc.cy], kind: "центр" });
-      // sample some points on arc for vertex-like
-      const n = 4;
-      for (let i=0; i<=n; i++) {
-        const ang = f.arc.a0 + f.arc.sweep * i / n;
-        out.push({ p: [f.arc.cx + f.arc.r * Math.cos(ang), f.arc.cy + f.arc.r * Math.sin(ang)], kind: "вершина" });
-      }
+      const a = f.arc;
+      out.push({ p: [a.cx, a.cy], kind: "центр" });
+      // точные концы (вершины) и середина дуги — вместо грубых 5 сэмплов
+      out.push({ p: [a.cx + a.r * Math.cos(a.a0), a.cy + a.r * Math.sin(a.a0)], kind: "вершина" });
+      out.push({ p: [a.cx + a.r * Math.cos(a.a0 + a.sweep), a.cy + a.r * Math.sin(a.a0 + a.sweep)], kind: "вершина" });
+      out.push({ p: [a.cx + a.r * Math.cos(a.a0 + a.sweep / 2), a.cy + a.r * Math.sin(a.a0 + a.sweep / 2)], kind: "середина" });
     }
   }
   return out;
@@ -1560,6 +1582,28 @@ function intersections() {
       const p = segIntersect(segs[i][0], segs[i][1], segs[j][0], segs[j][1]);
       if (p) out.push(p);
     }
+  // точные пересечения с окружностями/дугами (по параметрам, не по сэмплам):
+  // линия×окружность, окружность×окружность; для дуг — фильтр по развёртке
+  const curves = [];
+  const realSegs = [];   // настоящие прямые сегменты (без сэмплов дуг)
+  for (const f of state.features) {
+    if (isHidden(f)) continue;
+    if (f.circle) curves.push({ cx: f.circle.cx, cy: f.circle.cy, r: f.circle.r, full: true });
+    else if (f.arc) curves.push({ cx: f.arc.cx, cy: f.arc.cy, r: f.arc.r, a0: f.arc.a0, sweep: f.arc.sweep, full: false });
+    else for (const ch of (f.ring ? [[...f.ring, f.ring[0]]] : f.line ? [f.line] : []))
+      for (let i = 0; i + 1 < ch.length; i++) realSegs.push([ch[i], ch[i + 1]]);
+  }
+  const onCurve = (p, cv) => cv.full || isAngleInSweep(Math.atan2(p[1] - cv.cy, p[0] - cv.cx), cv.a0, cv.sweep);
+  if (curves.length) {
+    for (let s = 0; s < realSegs.length && s < 600; s++)
+      for (const cv of curves)
+        for (const p of segCircleIntersections(realSegs[s][0], realSegs[s][1], cv.cx, cv.cy, cv.r))
+          if (onCurve(p, cv)) out.push(p);
+    for (let i = 0; i < curves.length; i++)
+      for (let j = i + 1; j < curves.length; j++)
+        for (const p of circleCircleIntersections(curves[i].cx, curves[i].cy, curves[i].r, curves[j].cx, curves[j].cy, curves[j].r))
+          if (onCurve(p, curves[i]) && onCurve(p, curves[j])) out.push(p);
+  }
   state._ix = out;
   return out;
 }
@@ -1663,6 +1707,27 @@ function snapPoint(wx, wy, exclude, from) {
       const foot = footOnLine([wx, wy], a, b, true);
       const d = Math.hypot(foot[0] - wx, foot[1] - wy);
       if (d <= tolW && (!near || d < near.d)) near = { p: foot, d };
+    }
+    // ближайшая точка на окружности/дуге (проекция курсора на кривую)
+    for (const f of state.features) {
+      if ((ex && ex.has(f.id)) || isHidden(f)) continue;
+      if (f.circle) {
+        const c = f.circle, dx = wx - c.cx, dy = wy - c.cy, dl = Math.hypot(dx, dy) || 1e-9;
+        const p = [c.cx + c.r * dx / dl, c.cy + c.r * dy / dl];
+        const d = Math.hypot(p[0] - wx, p[1] - wy);
+        if (d <= tolW && (!near || d < near.d)) near = { p, d };
+      } else if (f.arc) {
+        const a = f.arc, dx = wx - a.cx, dy = wy - a.cy;
+        let ang = Math.atan2(dy, dx);
+        if (!isAngleInSweep(ang, a.a0, a.sweep)) {   // вне дуги — прижать к ближнему концу
+          const e0 = a.a0, e1 = a.a0 + a.sweep;
+          const dst = t => Math.abs(((ang - t + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI);
+          ang = dst(e0) < dst(e1) ? e0 : e1;
+        }
+        const p = [a.cx + a.r * Math.cos(ang), a.cy + a.r * Math.sin(ang)];
+        const d = Math.hypot(p[0] - wx, p[1] - wy);
+        if (d <= tolW && (!near || d < near.d)) near = { p, d };
+      }
     }
     if (near) return { p: near.p, kind: "ближайшая" };
   }
