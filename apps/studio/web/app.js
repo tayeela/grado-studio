@@ -2878,6 +2878,7 @@ function renderGroupProps(el, ids) {
   el.innerHTML = `<div class="kind">Выделено объектов: ${ids.length}</div>
     <div class="metric">перетаскивание — двигать группой · Shift+клик — добавить/убрать · Del — удалить</div>
     ${moveHtml}${attrHtml}
+    ${transformControlsHtml()}
     <button class="danger" id="g-del" style="margin-top:8px">Удалить выделенные (Del)</button>`;
   const gm = document.getElementById("g-move");
   if (gm) gm.onclick = () => {
@@ -2903,6 +2904,7 @@ function renderGroupProps(el, ids) {
     toast(`Записано «${a.title}» в ${ids.length} объект(ов)`);
   };
   document.getElementById("g-del").onclick = deleteSelected;
+  bindTransformControls();
 }
 
 function renderProps() {
@@ -2974,8 +2976,9 @@ function renderProps() {
   }
   el.innerHTML = `<div class="kind">${(L || {}).title || f.kind}</div>
     <div class="metric">${metric}</div>${prov}${extra}${userFieldsHtml}${styleHtml}
+    ${f.point ? "" : transformControlsHtml()}
     <div class="metric" style="margin-top:6px">двойной клик по ребру — вершина,<br>Alt+клик по вершине — удалить,<br>R — поворот, ⌘D — дубликат</div>
-    <button class="danger" id="f-del">Удалить (Del)</button>`; 
+    <button class="danger" id="f-del">Удалить (Del)</button>`;
   if (f.line && (f.props.radius || 0) > 0) {
     const b = document.createElement("button");
     b.textContent = "Применить сопряжение";
@@ -3058,6 +3061,7 @@ function renderProps() {
     }
   }
   document.getElementById("f-del").onclick = deleteSelected;
+  bindTransformControls();
 }
 // Порядок панели — как в QGIS: верхняя строка рисуется ПОВЕРХ. В draw()
 // массив идёт снизу вверх (индекс 0 = низ), поэтому список = обратный массив.
@@ -4981,21 +4985,89 @@ function arcFrom3Pts(p0, pm, p1) {
   if (sweep < -Math.PI) sweep += 2*Math.PI;
   return { cx, cy, r, a0, sweep };
 }
-function rotateSelected() {
-  const f = selectedFeature();
-  if (!f || f.point || f.circle) return;   // круг симметричен — вращать нечего
-  if (f.arc) {                              // дуга: поворот 90° вокруг своего центра
-    snapshot(); f.arc.a0 += Math.PI / 2; afterChange(); return;
+// ---------- трансформации выделения (подобия: дуги/окружности сохраняются) --
+// центр (пивот) трансформаций — центр габаритов выделения
+function selectionPivot() {
+  const pts = [];
+  for (const f of selectionFeatures()) {
+    if (f.circle) { const c = f.circle; pts.push([c.cx - c.r, c.cy - c.r], [c.cx + c.r, c.cy + c.r]); }
+    else if (f.arc) { for (const p of featurePts(f)) pts.push(p); pts.push([f.arc.cx, f.arc.cy]); }
+    else for (const p of featurePts(f)) pts.push(p);
   }
+  if (!pts.length) return null;
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+}
+// применить преобразование к выделению: pt — маппер точки, arcFn/circleFn —
+// правка параметров дуги/окружности (центр, радиус, углы). snapshot один раз.
+function transformSelection(pt, arcFn, circleFn) {
+  const feats = selectionFeatures();
+  if (!feats.length) return false;
   snapshot();
-  const pts = featurePts(f);
-  const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
-  const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
-  for (const p of pts) {
-    const dx = p[0] - cx, dy = p[1] - cy;
-    p[0] = cx - dy; p[1] = cy + dx;   // 90° против часовой
+  for (const f of feats) {
+    if (f.circle) circleFn(f.circle);
+    else if (f.arc) arcFn(f.arc);
+    else for (const p of featurePts(f)) { const q = pt(p); p[0] = q[0]; p[1] = q[1]; }
   }
   afterChange();
+  return true;
+}
+function rotateSelectionBy(deg) {
+  const P = selectionPivot(); if (!P) return;
+  const th = deg * Math.PI / 180, c = Math.cos(th), s = Math.sin(th);
+  const rp = ([x, y]) => { const dx = x - P[0], dy = y - P[1]; return [P[0] + dx * c - dy * s, P[1] + dx * s + dy * c]; };
+  transformSelection(rp,
+    a => { const nc = rp([a.cx, a.cy]); a.cx = nc[0]; a.cy = nc[1]; a.a0 += th; },
+    cc => { const nc = rp([cc.cx, cc.cy]); cc.cx = nc[0]; cc.cy = nc[1]; });
+}
+function scaleSelectionBy(fac) {
+  if (!(fac > 0) || Math.abs(fac - 1) < 1e-9) return;
+  const P = selectionPivot(); if (!P) return;
+  const sp = ([x, y]) => [P[0] + (x - P[0]) * fac, P[1] + (y - P[1]) * fac];
+  transformSelection(sp,
+    a => { const nc = sp([a.cx, a.cy]); a.cx = nc[0]; a.cy = nc[1]; a.r *= fac; },
+    cc => { const nc = sp([cc.cx, cc.cy]); cc.cx = nc[0]; cc.cy = nc[1]; cc.r *= fac; });
+}
+function mirrorSelection(axis) {   // 'h' — лево/право (ось вертикальна), 'v' — верх/низ
+  const P = selectionPivot(); if (!P) return;
+  if (axis === "h") {
+    transformSelection(([x, y]) => [2 * P[0] - x, y],
+      a => { a.cx = 2 * P[0] - a.cx; a.a0 = Math.PI - a.a0; a.sweep = -a.sweep; },
+      cc => { cc.cx = 2 * P[0] - cc.cx; });
+  } else {
+    transformSelection(([x, y]) => [x, 2 * P[1] - y],
+      a => { a.cy = 2 * P[1] - a.cy; a.a0 = -a.a0; a.sweep = -a.sweep; },
+      cc => { cc.cy = 2 * P[1] - cc.cy; });
+  }
+}
+function rotateSelected() { rotateSelectionBy(90); }   // R — быстрый поворот 90° (теперь и группа)
+async function promptRotate() {
+  const v = await uiPrompt("Повернуть на угол, ° (против часовой):", "90");
+  if (v == null) return;
+  const d = parseFloat(String(v).replace(",", ".")); if (isFinite(d)) rotateSelectionBy(d);
+}
+async function promptScale() {
+  const v = await uiPrompt("Масштаб (коэффициент, напр. 1.5 или 0.5):", "1");
+  if (v == null) return;
+  const f = parseFloat(String(v).replace(",", ".")); if (isFinite(f) && f > 0) scaleSelectionBy(f);
+  else toast("Коэффициент должен быть больше 0", "warn");
+}
+// кнопки преобразований для панели свойств (одиночной и групповой)
+function transformControlsHtml() {
+  return `<div class="prop-sub">Преобразовать</div>
+    <div class="xf-row">
+      <button id="xf-rot" title="Повернуть на угол вокруг центра выделения">↻ Повернуть…</button>
+      <button id="xf-scale" title="Масштабировать вокруг центра выделения">⤢ Масштаб…</button>
+    </div>
+    <div class="xf-row">
+      <button id="xf-mh" title="Отразить лево ↔ право">↔ Отразить</button>
+      <button id="xf-mv" title="Отразить верх ↕ низ">↕ Отразить</button>
+    </div>`;
+}
+function bindTransformControls() {
+  const g = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
+  g("xf-rot", promptRotate); g("xf-scale", promptScale);
+  g("xf-mh", () => mirrorSelection("h")); g("xf-mv", () => mirrorSelection("v"));
 }
 function duplicateSelected() {
   const f = selectedFeature();

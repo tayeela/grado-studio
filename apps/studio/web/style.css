@@ -344,6 +344,9 @@ button.primary:active { background: var(--accent-active); }
 .lib-edit input[type=range] { display: block; width: 100%; margin-top: var(--sp-1); accent-color: var(--accent); }
 .lib-edit .line-preview { margin: var(--sp-2) var(--sp-4) 0; }
 .lib-edit .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; }
+/* кнопки преобразований в панели свойств */
+.xf-row { display: flex; gap: var(--sp-1); margin: var(--sp-1) 0 0; }
+.xf-row button { flex: 1; padding: var(--sp-1) var(--sp-1); font-size: var(--fs-12); }
 /* окно «Типы слоёв» — список видов + форма добавления/правки */
 .mk-modal { width: min(520px, 94vw); }
 .mk-list { max-height: 40vh; overflow-y: auto; padding: var(--sp-1) 0;
