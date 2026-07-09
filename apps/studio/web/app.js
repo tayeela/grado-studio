@@ -4982,15 +4982,17 @@ function arcFrom3Pts(p0, pm, p1) {
   const cx = ((x0*x0 + y0*y0)*(y1-y2) + (x1*x1 + y1*y1)*(y2-y0) + (x2*x2 + y2*y2)*(y0-y1)) / c;
   const cy = ((x0*x0 + y0*y0)*(x2-x1) + (x1*x1 + y1*y1)*(x0-x2) + (x2*x2 + y2*y2)*(x1-x0)) / c;
   const r = Math.hypot(cx-x0, cy-y0);
-  // углы
-  let a0 = Math.atan2(y0-cy, x0-cx);
-  let a1 = Math.atan2(y2-cy, x2-cx);
-  let sweep = a1 - a0;
-  // mid point sign to decide direction
-  const ma = Math.atan2(y1-cy, x1-cx);
-  // ensure sweep goes through mid
-  if (sweep > Math.PI) sweep -= 2*Math.PI;
-  if (sweep < -Math.PI) sweep += 2*Math.PI;
+  // направление развёртки — ЧЕРЕЗ среднюю точку (как в ядре Arc.from_3pts):
+  // если середина в пределах CCW-развёртки к концу — идём против часовой,
+  // иначе по часовой (длинная дуга). Раньше JS брал короткую дугу, игнорируя
+  // середину — дуга >180° строилась неверно (короткой стороной).
+  const a0 = Math.atan2(y0-cy, x0-cx);
+  const a1 = Math.atan2(y2-cy, x2-cx);
+  const am = Math.atan2(y1-cy, x1-cx);
+  const TAU = 2*Math.PI;
+  const ccwSweep = ((a1 - a0) % TAU + TAU) % TAU;
+  const ccwMid = ((am - a0) % TAU + TAU) % TAU;
+  const sweep = ccwMid <= ccwSweep ? ccwSweep : ccwSweep - TAU;
   return { cx, cy, r, a0, sweep };
 }
 // ---------- трансформации выделения (подобия: дуги/окружности сохраняются) --
