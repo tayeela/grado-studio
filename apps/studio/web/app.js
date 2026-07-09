@@ -5222,13 +5222,17 @@ cv.addEventListener("mousemove", e => {
       state.snapHit = s;
       if (ed.f.arc) {
         const a = ed.f.arc;
-        if (ed.vi === 0) { // start
-          const dx = s.p[0] - a.cx, dy = s.p[1] - a.cy;
-          a.a0 = Math.atan2(dy, dx);
-        } else if (ed.vi === 1) { // end
-          const dx = s.p[0] - a.cx, dy = s.p[1] - a.cy;
-          const newAng = Math.atan2(dy, dx);
-          a.sweep = newAng - a.a0;
+        // нормализация приращения угла в (−π,π] — движение конца следует за
+        // курсором плавно, без скачка развёртки на ±2π при переходе границы
+        const wrap = d => { while (d > Math.PI) d -= 2 * Math.PI; while (d <= -Math.PI) d += 2 * Math.PI; return d; };
+        if (ed.vi === 0) { // начало: двигаем начало, КОНЕЦ фиксируем (не вращаем всю дугу)
+          const newA0 = Math.atan2(s.p[1] - a.cy, s.p[0] - a.cx);
+          const end = a.a0 + a.sweep;       // текущий конец — держим на месте
+          a.a0 += wrap(newA0 - a.a0);
+          a.sweep = end - a.a0;
+        } else if (ed.vi === 1) { // конец: плавно, начало фиксируем
+          const newAng = Math.atan2(s.p[1] - a.cy, s.p[0] - a.cx);
+          a.sweep += wrap(newAng - (a.a0 + a.sweep));
         } else if (ed.vi === 2) { // center
           a.cx = s.p[0]; a.cy = s.p[1];
         } else if (ed.vi === 3) { // radius (логика редактирования)
