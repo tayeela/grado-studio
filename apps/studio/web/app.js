@@ -2359,10 +2359,14 @@ function draw() {
       const [mx, my] = w2s(...state.mouse);
       ctx.font = "600 12px sans-serif"; ctx.textAlign = "left";
       if (state.typed) {
+        // подпись по формату ввода: длина «N м», абсолют «X,Y», полярно «L<A°»
+        const label = /[<>]/.test(state.typed) ? state.typed.replace(/[<>]/, " < ") + "°"
+          : /[;\s]/.test(state.typed) ? "X,Y: " + state.typed.trim()
+          : state.typed + " м";
         ctx.fillStyle = cvColor("selection", "#1c1c1a");
-        ctx.fillRect(mx + 10, my - 24, ctx.measureText(state.typed + " м").width + 12, 18);
+        ctx.fillRect(mx + 10, my - 24, ctx.measureText(label).width + 12, 18);
         ctx.fillStyle = "#fff";
-        ctx.fillText(state.typed + " м", mx + 16, my - 11);
+        ctx.fillText(label, mx + 16, my - 11);
       } else {
         ctx.fillStyle = cvColor("label", "#8b8a85");
         ctx.fillText(len.toFixed(1) + " м", mx + 12, my - 10);
@@ -3220,7 +3224,10 @@ const SHORTCUTS = [
   ]],
   ["Черчение", [
     ["A", "Дуга (3 точки)"],
-    ["Shift", "Прямой угол (орто)"], ["цифры, Enter", "Ввод длины отрезка"],
+    ["Shift", "Прямой угол (орто)"],
+    ["50 ↵", "Длина отрезка вдоль курсора"],
+    ["100 200 ↵", "Абсолютные координаты X Y"],
+    ["50<30 ↵", "Полярно: длина < угол°"],
     ["Enter", "Завершить фигуру"], ["Esc", "Отменить действие"],
   ]],
   ["Правка объекта", [
@@ -5070,13 +5077,31 @@ function placeTypedPoint() {
       }
     }
   }
+  // ввод вершины числами: 3 формата
+  //   «50»        — длина вдоль направления на курсор (как в CAD относительный);
+  //   «100 200»   — абсолютные координаты X Y (разделитель — пробел или ;);
+  //   «50<30»     — полярно: длина 50 под углом 30° (ПЧС от +X) от предыдущей точки.
   const base = lastDrawingPt();
-  const dist = parseFloat(state.typed.replace(",", "."));
-  if (!base || !state.mouse || !isFinite(dist) || dist <= 0) { state.typed = ""; return; }
-  const a = Math.atan2(state.mouse[1] - base[1], state.mouse[0] - base[0]);
-  if (Array.isArray(state.drawing.pts)) {
-    state.drawing.pts.push([base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)]);
+  const t = state.typed.trim();
+  const num = s => parseFloat(String(s).replace(",", "."));
+  let pt = null;
+  if (/[<>]/.test(t)) {                       // полярно
+    const [ls, as] = t.split(/[<>]/);
+    const len = num(ls), ang = num(as) * Math.PI / 180;
+    if (base && isFinite(len) && len > 0 && isFinite(ang))
+      pt = [base[0] + len * Math.cos(ang), base[1] + len * Math.sin(ang)];
+  } else if (/[;\s]/.test(t)) {               // абсолют X Y
+    const [xs, ys] = t.split(/[;\s]+/);
+    const x = num(xs), y = num(ys);
+    if (isFinite(x) && isFinite(y)) pt = [x, y];
+  } else {                                    // длина вдоль курсора
+    const dist = num(t);
+    if (base && state.mouse && isFinite(dist) && dist > 0) {
+      const a = Math.atan2(state.mouse[1] - base[1], state.mouse[0] - base[0]);
+      pt = [base[0] + dist * Math.cos(a), base[1] + dist * Math.sin(a)];
+    }
   }
+  if (pt && Array.isArray(state.drawing.pts)) state.drawing.pts.push(pt);
   state.typed = "";
   draw();
 }
@@ -5469,8 +5494,9 @@ document.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.code === "KeyD") {
     e.preventDefault(); duplicateSelected(); return;
   }
-  // набор длины цифрами при рисовании
-  if (state.drawing && /^[0-9.,]$/.test(e.key)) { state.typed += e.key; draw(); return; }
+  // набор при рисовании: длина (50), абсолют X Y (100 200 или 100;200),
+  // полярно (длина<угол°). Разрешены цифры, разделители, знак, угол
+  if (state.drawing && /^[0-9.,;<> -]$/.test(e.key)) { state.typed += e.key; draw(); return; }
   if (state.drawing && e.key === "Backspace") {
     state.typed = state.typed.slice(0, -1); draw(); return;
   }
