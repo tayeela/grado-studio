@@ -1354,7 +1354,7 @@ function filletLine(pts, r) {
     const d = r / Math.tan(ang / 2);
     if (d > l1 || d > l2) { res.push(p1); continue; }
     const q1 = [p1[0] - u1[0]*d, p1[1] - u1[1]*d];
-    const q2 = [p1[0] - u2[0]*d, p1[1] - u2[1]*d];
+    const q2 = [p1[0] + u2[0]*d, p1[1] + u2[1]*d];   // вперёд по исходящему ребру (был баг знака)
     res.push(q1);
     // center using perps
     const perp1 = [-u1[1], u1[0]];
@@ -1392,6 +1392,82 @@ function applyFillet(f) {
   f.props.radius = 0;
   afterChange();
   renderProps();
+}
+
+// дуга скругления ОДНОГО угла p0-p1-p2 радиусом r: массив точек, заменяющих
+// вершину p1 (без неё самой). null — угол прямой/вырожденный. Радиус ужимается,
+// если не помещается в короткое ребро. Число сегментов адаптивно к длине дуги.
+function cornerArcPoints(p0, p1, p2, r) {
+  const v1 = [p1[0] - p0[0], p1[1] - p0[1]], v2 = [p2[0] - p1[0], p2[1] - p1[1]];
+  const l1 = Math.hypot(v1[0], v1[1]), l2 = Math.hypot(v2[0], v2[1]);
+  if (l1 < 1e-6 || l2 < 1e-6) return null;
+  const u1 = [v1[0] / l1, v1[1] / l1], u2 = [v2[0] / l2, v2[1] / l2];
+  const dot = Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1]));
+  const ang = Math.acos(dot);
+  if (ang < 1e-3 || ang > Math.PI - 1e-3) return null;   // прямая — скруглять нечего
+  let d = r / Math.tan(ang / 2);
+  d = Math.min(d, l1 * 0.999, l2 * 0.999);               // не длиннее рёбер
+  const rEff = d * Math.tan(ang / 2);                    // реальный радиус (если ужали)
+  // касательные точки: q1 назад по входящему ребру (к p0), q2 вперёд по
+  // исходящему (к p2). Оба на расстоянии d от угла p1.
+  const q1 = [p1[0] - u1[0] * d, p1[1] - u1[1] * d], q2 = [p1[0] + u2[0] * d, p1[1] + u2[1] * d];
+  const perp1 = [-u1[1], u1[0]], perp2 = [-u2[1], u2[0]];
+  const det = perp1[0] * perp2[1] - perp1[1] * perp2[0];
+  if (Math.abs(det) < 1e-9) return null;
+  const dx = q2[0] - q1[0], dy = q2[1] - q1[1];
+  const t = (dx * perp2[1] - dy * perp2[0]) / det;
+  const cx = q1[0] + t * perp1[0], cy = q1[1] + t * perp1[1];
+  const a0 = Math.atan2(q1[1] - cy, q1[0] - cx), a1 = Math.atan2(q2[1] - cy, q2[0] - cx);
+  let sw = a1 - a0;
+  const cross = v1[0] * v2[1] - v1[1] * v2[0];
+  if (cross < 0) { if (sw > 0) sw -= 2 * Math.PI; } else { if (sw < 0) sw += 2 * Math.PI; }
+  const n = Math.max(4, Math.min(48, Math.ceil(Math.abs(sw) * rEff / 2)));
+  const out = [q1];
+  for (let k = 1; k < n; k++) {
+    const aa = a0 + sw * (k / n);
+    out.push([cx + rEff * Math.cos(aa), cy + rEff * Math.sin(aa)]);
+  }
+  out.push(q2);
+  return out;
+}
+// сопрячь угол, ближайший к (wx,wy), у линии/кольца f радиусом r
+function filletCornerAt(f, wx, wy, r) {
+  const closed = !!f.ring;
+  const chain = f.ring || f.line;
+  if (!chain || chain.length < 3) return false;
+  const tolW = 14 / state.view.k;
+  // eligible corners: для линии — внутренние (1..n-2); для кольца — все (wrap)
+  let best = null;
+  const n = chain.length;
+  const lo = closed ? 0 : 1, hi = closed ? n : n - 1;
+  for (let i = lo; i < hi; i++) {
+    const d = Math.hypot(chain[i][0] - wx, chain[i][1] - wy);
+    if (d < tolW && (!best || d < best.d)) best = { i, d };
+  }
+  if (!best) return false;
+  const i = best.i;
+  const p0 = chain[(i - 1 + n) % n], p1 = chain[i], p2 = chain[(i + 1) % n];
+  const arc = cornerArcPoints(p0, p1, p2, r);
+  if (!arc) { toast("Этот угол не скруглить (прямой или радиус слишком мал)", "warn"); return false; }
+  snapshot();
+  chain.splice(i, 1, ...arc);   // заменить вершину дугой
+  afterChange();
+  return true;
+}
+function handleFilletClick(wx, wy) {
+  const f = hitTest(wx, wy);
+  if (!f || !(f.line || f.ring)) { toast("Кликните по углу линии или контура", "warn"); return; }
+  const r = state.filletRadius > 0 ? state.filletRadius : 10;
+  if (!filletCornerAt(f, wx, wy, r))
+    toast("Наведите точнее на угол (вершину) линии/контура", "warn");
+}
+async function promptFilletRadius() {
+  const cur = state.filletRadius > 0 ? state.filletRadius : 10;
+  const v = await uiPrompt("Радиус сопряжения, м:", String(cur), { ok: "OK", placeholder: "10" });
+  if (v == null) return;
+  const r = Math.max(0.1, parseFloat(String(v).replace(",", ".")) || cur);
+  state.filletRadius = r;
+  toast(`Сопряжение R=${r} м — кликайте по углам линий`);
 }
 
 function featureChains(f) {
@@ -4865,6 +4941,8 @@ cv.addEventListener("mousedown", e => {
     draw();
   } else if (state.tool === "trim" || state.tool === "extend") {
     handleTrimExtendClick(wxr, wyr);
+  } else if (state.tool === "fillet") {
+    handleFilletClick(wxr, wyr);
   } else if (state.tool === "point") {
     const L = activeLayer();
     if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
@@ -5207,6 +5285,10 @@ function setTool(tool, opts = {}) {
     document.getElementById('st-hint').textContent = `Режим ${tool}: выберите границы, Enter — готово, клик по цели`;
   } else {
     state.trimCtx = null;
+  }
+  if (tool === "fillet") {
+    promptFilletRadius();   // задать радиус при входе в инструмент
+    document.getElementById('st-hint').textContent = "Сопряжение: клик по углу линии/контура — скругляется дугой";
   }
   // геом-инструмент против несовместимого слоя — слой переключается сам
   if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
