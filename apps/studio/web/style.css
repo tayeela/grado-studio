@@ -344,6 +344,26 @@ button.primary:active { background: var(--accent-active); }
 .lib-edit input[type=range] { display: block; width: 100%; margin-top: var(--sp-1); accent-color: var(--accent); }
 .lib-edit .line-preview { margin: var(--sp-2) var(--sp-4) 0; }
 .lib-edit .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; }
+/* окно «Типы слоёв» — список видов + форма добавления/правки */
+.mk-modal { width: min(520px, 94vw); }
+.mk-list { max-height: 40vh; overflow-y: auto; padding: var(--sp-1) 0;
+  border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); }
+.mk-group-title { padding: var(--sp-2) var(--sp-4) 2px; font-size: var(--fs-11); text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted); font-weight: var(--fw-semibold); }
+.mk-item { display: flex; align-items: center; gap: var(--sp-2); padding: 3px var(--sp-4); font-size: var(--fs-13); }
+.mk-item:hover { background: var(--glass-strong); }
+.mk-sw { width: 14px; height: 14px; border-radius: 3px; border: 1.4px solid var(--hairline); flex: none; }
+.mk-nm { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mk-meta { color: var(--muted); font-size: var(--fs-12); }
+.mk-builtin { color: var(--faint); font-size: var(--fs-11); }
+.mk-edit, .mk-del { border: none; background: none; cursor: pointer; padding: 0 4px; color: var(--muted); font-size: var(--fs-13); }
+.mk-edit:hover { color: var(--accent); background: none; }
+.mk-del:hover { color: var(--danger); background: none; }
+.mk-form label { display: block; margin: var(--sp-2) var(--sp-4) 0; color: var(--muted); font-size: var(--fs-12); }
+.mk-form input, .mk-form select { display: block; width: 100%; margin-top: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2); border: 1px solid var(--field-border); border-radius: var(--r-sm);
+  font: inherit; color: var(--text); background: var(--field-bg); }
+.mk-form .fmt-sub { margin: var(--sp-3) var(--sp-4) 0; }
 /* окно «Горячие клавиши» — колонки групп, клавиши в kbd */
 .sc-modal { width: min(660px, 92vw); }
 .sc-body { padding: var(--sp-2) var(--sp-3); overflow-y: auto; max-height: 58vh;

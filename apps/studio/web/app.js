@@ -205,8 +205,10 @@ function createUserLayer({ kind, title, styleId, id = null }) {
     stage: "project", user_created: true, visible: true,
     defaults: () => defaultsForKind(layerId, base.kind),
   };
-  // set coverage topology for standard layers that share boundaries (per fixes-geometry-layout and roadmap Etap 2)
-  if (["boundary", "restrict", "zone"].includes(base.kind)) L.topology = "coverage";
+  // топология покрытия (общие границы, Etap 2): у кастомного вида берётся из
+  // его спецификации, у встроенных — по фикс-списку зон/ограничений/границ
+  if (base.topology) L.topology = base.topology;
+  else if (["boundary", "restrict", "zone"].includes(base.kind)) L.topology = "coverage";
   LAYERS_V2.push(L);
   LAYER_BY_ID[L.id] = L;
   return L;
@@ -3211,54 +3213,142 @@ function openNewLayerDialog() {
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
 }
 
+// kind (внутренний id) из названия: латиница/цифры, иначе type_N. Уникален
+// в BASE_KIND_BY_KIND (свои + встроенные)
+function kindIdFromLabel(label) {
+  let s = String(label || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!s) s = "type";
+  let id = s, n = 2;
+  while (BASE_KIND_BY_KIND[id]) id = `${s}_${n++}`;
+  return id;
+}
+function isCustomKind(k) {
+  return !!(state.projectCustomKinds || []).find(x => x.kind === k.kind);
+}
+// применить кастомные виды из projectCustomKinds к живым индексам (после
+// правки/удаления) — BASE_KINDS/BY_KIND/BY_SEMANTIC пересобираются из
+// встроенных (первые 7) + текущего списка своих
+const _BUILTIN_KINDS = BASE_KINDS.slice();
+function rebuildKinds() {
+  const custom = state.projectCustomKinds || [];
+  BASE_KINDS.length = 0;
+  BASE_KINDS.push(..._BUILTIN_KINDS, ...custom);
+  for (const k of Object.keys(BASE_KIND_BY_KIND)) delete BASE_KIND_BY_KIND[k];
+  for (const b of BASE_KINDS) BASE_KIND_BY_KIND[b.kind] = b;
+  for (const k of Object.keys(KIND_BY_SEMANTIC_CLASS)) delete KIND_BY_SEMANTIC_CLASS[k];
+  for (const b of BASE_KINDS) KIND_BY_SEMANTIC_CLASS[b.semantic_class] = b.kind;
+}
+
 function openManageKinds() {
   closePopups();
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  const kindsHtml = BASE_KINDS.map(k => `<div>${k.label || k.kind} (${k.geometry_type})</div>`).join("");
-  overlay.innerHTML = `<div class="modal fmt-modal-lg">
-    <div class="modal-head">Типы слоёв (BASE_KINDS + проектные)</div>
-    <div class="modal-body compact">
-      <div class="kinds-list">${kindsHtml || 'стандартные'}</div>
-      <div class="mk-row">
-        <label>Kind (id)<input id="mk-kind" placeholder="my_zone"></label>
-        <label>Label<input id="mk-label" placeholder="Моя зона"></label>
-        <label>Geom<select id="mk-geom"><option>polygon</option><option>polyline</option><option>point</option><option>arc</option><option>circle</option></select></label>
-        <label>Style id<input id="mk-style" placeholder="func_zone.fill"></label>
-      </div>
+  let editing = null;   // kind, который правим (null — режим добавления)
+  const $ = id => overlay.querySelector("#" + id);
+  const swatchOf = sid => {
+    const st = (state.projectStyles && state.projectStyles[sid]) || STYLES_V2[sid] || {};
+    if (st.fill) return st.fill;
+    if (st.hatch && st.hatch.color) return `repeating-linear-gradient(45deg, ${st.hatch.color} 0 1px, transparent 1px 4px)`;
+    return "transparent";
+  };
+  function rowHtml(k) {
+    const custom = isCustomKind(k);
+    const cov = k.topology === "coverage" ? ` · покрытие` : "";
+    return `<div class="mk-item" data-kind="${escHtml(k.kind)}">
+      <span class="mk-sw" style="background:${swatchOf(k.style_id)}"></span>
+      <span class="mk-nm">${escHtml(k.label || k.kind)}</span>
+      <span class="mk-meta">${GEOM_LABEL[k.geometry_type] || k.geometry_type}${cov}</span>
+      ${custom ? `<button class="mk-edit" data-kind="${escHtml(k.kind)}" title="Изменить">✎</button>
+        <button class="mk-del" data-kind="${escHtml(k.kind)}" title="Удалить">✕</button>`
+      : `<span class="mk-builtin" title="встроенный тип — изменить нельзя">встроенный</span>`}
+    </div>`;
+  }
+  function renderList() {
+    const builtins = BASE_KINDS.filter(k => !isCustomKind(k));
+    const customs = BASE_KINDS.filter(isCustomKind);
+    $("mk-list").innerHTML =
+      `<div class="mk-group-title">Встроенные</div>${builtins.map(rowHtml).join("")}` +
+      (customs.length ? `<div class="mk-group-title">Свои типы</div>${customs.map(rowHtml).join("")}`
+        : `<div class="mk-group-title">Свои типы</div><div class="muted" style="padding:4px var(--sp-4)">Пока нет — заполните форму ниже и «Добавить».</div>`);
+    overlay.querySelectorAll(".mk-edit").forEach(b => b.onclick = () => startEdit(b.dataset.kind));
+    overlay.querySelectorAll(".mk-del").forEach(b => b.onclick = () => delKind(b.dataset.kind));
+  }
+  function fillForm(spec) {
+    $("mk-label").value = spec ? (spec.label || "") : "";
+    $("mk-geom").value = spec ? spec.geometry_type : "polygon";
+    $("mk-geom").disabled = !!spec;   // геометрию у существующего не меняем
+    $("mk-topo").value = spec && spec.topology === "coverage" ? "coverage" : "flat";
+    $("mk-style").innerHTML = stylePickerOptions(spec ? spec.style_id : "");
+    $("mk-form-title").textContent = spec ? `Изменить: ${spec.label || spec.kind}` : "Новый тип слоя";
+    $("mk-save").textContent = spec ? "Сохранить" : "Добавить";
+    $("mk-cancel-edit").style.display = spec ? "" : "none";
+  }
+  function startEdit(kind) {
+    editing = kind;
+    fillForm(BASE_KIND_BY_KIND[kind]);
+    $("mk-label").focus();
+  }
+  function resetForm() { editing = null; fillForm(null); }
+  async function delKind(kind) {
+    const inUse = LAYERS_V2.filter(l => l.kind === kind).length;
+    const msg = inUse
+      ? `Тип «${BASE_KIND_BY_KIND[kind].label}» используют ${inUse} слой(ёв). Удалить тип? Слои останутся, но новые слои этого типа создать будет нельзя.`
+      : `Удалить тип «${BASE_KIND_BY_KIND[kind].label}»?`;
+    if (!(await uiConfirm(msg, { ok: "Удалить", danger: true }))) return;
+    state.projectCustomKinds = (state.projectCustomKinds || []).filter(x => x.kind !== kind);
+    rebuildKinds();
+    if (editing === kind) resetForm();
+    persist(); renderList();
+    toast("Тип слоя удалён");
+  }
+  function saveKind() {
+    const label = $("mk-label").value.trim();
+    if (!label) { toast("Введите название типа", "warn"); return; }
+    const geom = $("mk-geom").value;
+    const topo = $("mk-topo").value === "coverage" ? "coverage" : undefined;
+    const styleId = $("mk-style").value ||
+      (geom === "point" ? "social.point" : geom === "polyline" ? "boundary.line" : "func_zone.fill");
+    state.projectCustomKinds = state.projectCustomKinds || [];
+    if (editing) {
+      const spec = state.projectCustomKinds.find(x => x.kind === editing);
+      if (spec) { spec.label = label; spec.style_id = styleId; spec.topology = topo; }
+    } else {
+      const kind = kindIdFromLabel(label);
+      state.projectCustomKinds.push({ kind, semantic_class: `custom.${kind}`,
+        geometry_type: geom, style_id: styleId, label, topology: topo });
+    }
+    rebuildKinds();
+    persist(); renderList(); resetForm();
+    toast(editing ? "Тип слоя изменён" : "Тип слоя добавлен");
+  }
+  overlay.innerHTML = `<div class="modal fmt-modal-lg mk-modal">
+    <div class="modal-head">Типы слоёв
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="lib-hint">«Роль» нового слоя — считается в ТЭП и подхватывает знак. Встроенные типы менять нельзя, свои — добавляйте/правьте/удаляйте.</div>
+    <div id="mk-list" class="mk-list"></div>
+    <div class="mk-form">
+      <div class="fmt-sub" id="mk-form-title">Новый тип слоя</div>
+      <label>Название<input type="text" id="mk-label" placeholder="напр. Озеленение"></label>
+      <label>Геометрия<select id="mk-geom">
+        <option value="polygon">полигон</option><option value="polyline">линия</option>
+        <option value="point">точка</option><option value="arc">дуга</option><option value="circle">круг</option></select></label>
+      <label>Общие границы<select id="mk-topo">
+        <option value="flat">обычный слой</option>
+        <option value="coverage">покрытие (общие границы редактируются вместе)</option></select></label>
+      <label>Знак по умолчанию<select id="mk-style"></select></label>
     </div>
     <div class="modal-actions">
-      <button id="mk-add">Добавить</button>
+      <button id="mk-cancel-edit" style="display:none">Отмена правки</button>
+      <button id="mk-save" class="primary">Добавить</button>
       <span class="spacer"></span>
       <button id="mk-close">Закрыть</button>
-    </div>
-  </div>`;
+    </div></div>`;
   document.body.appendChild(overlay);
-  const $ = id => overlay.querySelector("#" + id);
-  $("mk-add").onclick = () => {
-    const kind = $("mk-kind").value.trim();
-    const label = $("mk-label").value.trim() || kind;
-    const geom = $("mk-geom").value;
-    const style = $("mk-style").value.trim() || (geom === "point" ? "social.point" : geom === "circle" ? "red.line.projected" : "func_zone.fill");
-    if (!kind) return;
-    const spec = { kind, semantic_class: `custom.${kind}`, geometry_type: geom, style_id: style, label };
-    if (!BASE_KIND_BY_KIND[kind]) {
-      BASE_KINDS.push(spec);
-      BASE_KIND_BY_KIND[kind] = spec;
-      KIND_BY_SEMANTIC_CLASS[spec.semantic_class] = kind;
-      state.projectCustomKinds = state.projectCustomKinds || [];
-      if (!state.projectCustomKinds.find(x => x.kind === kind)) state.projectCustomKinds.push(spec);
-      persist();
-      renderLayers();
-      toast(`Добавлен тип слоя ${kind}`);
-      // refresh dialog
-      overlay.remove();
-      openManageKinds();
-    } else {
-      toast("Такой kind уже есть");
-    }
-  };
+  renderList(); fillForm(null);
+  $("mk-save").onclick = saveKind;
+  $("mk-cancel-edit").onclick = resetForm;
   $("mk-close").onclick = () => overlay.remove();
+  overlay.querySelector(".modal-x").onclick = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
 }
 
