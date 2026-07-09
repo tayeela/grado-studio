@@ -1291,11 +1291,12 @@ function handleTrimExtendClick(wx, wy) {
 function joinSelected() {
   const feats = selectionFeatures().filter(f => (f.line && f.line.length >= 2) || f.arc);
   if (feats.length < 2) { toast("Выберите минимум 2 линии/дуги для склейки", "warn"); return; }
-  // для дуг пока аппроксимируем (улучшить позже)
-  feats.forEach(f => { if (f.arc && !f.line) { f._wasArc = true; f.line = featurePts(f); } });
+  // дугу аппроксимируем точками БЕЗ мутации оригинала — иначе при неудачной
+  // склейке (ранний выход ниже) у дуги остался бы паразитный f.line + флаг
   const tol = 10 / state.view.k;
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
-  const items = feats.map(f => ({ id: f.id, pts: [...f.line] }));
+  const ptsOf = f => (f.line && f.line.length) ? f.line.map(p => [...p]) : featurePts(f).map(p => [...p]);
+  const items = feats.map(f => ({ id: f.id, pts: ptsOf(f) }));
   let chainPts = items[0].pts;
   const mergedIds = new Set([items[0].id]);
   const remaining = items.slice(1);
@@ -1319,7 +1320,7 @@ function joinSelected() {
   const keep = feats.find(f => f.id === items[0].id);
   keep.line = chainPts;
   delete keep.arc;
-  if (keep._wasArc) delete keep._wasArc;
+  keep.geometry_type = "polyline";   // дуга склеилась в полилинию
   // improve join per plan: carry over radius (fillet) from originals so new join corner gets filleted in draw (generalized now)
   const maxR = Math.max(0, ...feats.map(f => (f.props && f.props.radius) || 0));
   if (maxR > 0) {
@@ -4743,7 +4744,10 @@ function arcFrom3Pts(p0, pm, p1) {
 }
 function rotateSelected() {
   const f = selectedFeature();
-  if (!f || f.point || f.arc || f.circle) return;  // arc/circle rotate later (circle is symmetric)
+  if (!f || f.point || f.circle) return;   // круг симметричен — вращать нечего
+  if (f.arc) {                              // дуга: поворот 90° вокруг своего центра
+    snapshot(); f.arc.a0 += Math.PI / 2; afterChange(); return;
+  }
   snapshot();
   const pts = featurePts(f);
   const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
@@ -4756,12 +4760,14 @@ function rotateSelected() {
 }
 function duplicateSelected() {
   const f = selectedFeature();
-  if (!f || f.arc) return;  // TODO arc support
+  if (!f) return;
   const g = gridStep();
   const copy = JSON.parse(JSON.stringify(f));
   copy.id = state.nextId++;
   if (copy.circle) {
     copy.circle.cx += g; copy.circle.cy -= g;
+  } else if (copy.arc) {
+    copy.arc.cx += g; copy.arc.cy -= g;
   } else {
     for (const p of featurePts(copy)) { p[0] += g; p[1] -= g; }
   }
@@ -4776,6 +4782,8 @@ function nudgeSelected(dx, dy) {
   snapshot();
   if (f.circle) {
     f.circle.cx += dx; f.circle.cy += dy;
+  } else if (f.arc) {           // дуга хранится параметрами — двигаем центр
+    f.arc.cx += dx; f.arc.cy += dy;
   } else {
     for (const p of featurePts(f)) { p[0] += dx; p[1] += dy; }
   }
