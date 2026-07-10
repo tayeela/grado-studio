@@ -2362,7 +2362,7 @@ function maybeRefreshStations() {
 }
 
 function afterChange() {
-  state._ix = null;
+  state._ix = null; state._snapIndex = null;
   // страховка: убрать из выделения id несуществующих объектов (после
   // импорта/очистки/undo, где features заменяются целиком)
   if (state.selectedIds && state.selectedIds.size) {
@@ -2854,7 +2854,7 @@ function renderLayers() {
         state.selected = null;
         renderProps();
       }
-      state._ix = null;
+      state._ix = null; state._snapIndex = null;
       persist();
       draw();
     });
@@ -4061,7 +4061,7 @@ cv.addEventListener("mousemove", e => {
     if (!ed.moved) { snapshot(); ed.moved = true; }
     if (ed.edgeDrag) {
       applyEdgeDrag(ed, wx, wy);
-      state._ix = null; draw(); return;
+      state._ix = null; state._snapIndex = null; draw(); return;
     }
     if (ed.vi === "body") {
       // куда «хочет» уйти опорная вершина по курсору, затем привязка её к
@@ -4130,7 +4130,7 @@ cv.addEventListener("mousemove", e => {
         }
       }
     }
-    state._ix = null;
+    state._ix = null; state._snapIndex = null;
     draw(); return;
   }
   const s = cursorPoint(wx, wy);
@@ -4839,7 +4839,7 @@ function applyRestoredState(d) {
 // каждого свой вид) и без записи (иначе эхо-цикл персиста).
 window.applyRestoredState = applyRestoredState;
 window.afterExternalApply = function () {
-  state._ix = null;
+  state._ix = null; state._snapIndex = null;
   draw(); renderProps(); renderLayers(); renderSources(); refreshTep();
   updateLayerStatus();
 };
