@@ -5038,14 +5038,6 @@ function rotateSelectionBy(deg) {
     a => { const nc = rp([a.cx, a.cy]); a.cx = nc[0]; a.cy = nc[1]; a.a0 += th; },
     cc => { const nc = rp([cc.cx, cc.cy]); cc.cx = nc[0]; cc.cy = nc[1]; });
 }
-function scaleSelectionBy(fac) {
-  if (!(fac > 0) || Math.abs(fac - 1) < 1e-9) return;
-  const P = selectionPivot(); if (!P) return;
-  const sp = ([x, y]) => [P[0] + (x - P[0]) * fac, P[1] + (y - P[1]) * fac];
-  transformSelection(sp,
-    a => { const nc = sp([a.cx, a.cy]); a.cx = nc[0]; a.cy = nc[1]; a.r *= fac; },
-    cc => { const nc = sp([cc.cx, cc.cy]); cc.cx = nc[0]; cc.cy = nc[1]; cc.r *= fac; });
-}
 function mirrorSelection(axis) {   // 'h' — лево/право (ось вертикальна), 'v' — верх/низ
   const P = selectionPivot(); if (!P) return;
   if (axis === "h") {
@@ -5059,17 +5051,6 @@ function mirrorSelection(axis) {   // 'h' — лево/право (ось вер
   }
 }
 function rotateSelected() { rotateSelectionBy(90); }   // R — быстрый поворот 90° (теперь и группа)
-async function promptRotate() {
-  const v = await uiPrompt("Повернуть на угол, ° (против часовой):", "90");
-  if (v == null) return;
-  const d = parseFloat(String(v).replace(",", ".")); if (isFinite(d)) rotateSelectionBy(d);
-}
-async function promptScale() {
-  const v = await uiPrompt("Масштаб (коэффициент, напр. 1.5 или 0.5):", "1");
-  if (v == null) return;
-  const f = parseFloat(String(v).replace(",", ".")); if (isFinite(f) && f > 0) scaleSelectionBy(f);
-  else toast("Коэффициент должен быть больше 0", "warn");
-}
 
 // ---------- интерактивные инструменты преобразования (Поворот/Масштаб/Зеркало) ----------
 // единый CAD-поток: выделить объекты (V) → инструмент → клик опорной точки →
