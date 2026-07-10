@@ -6449,37 +6449,44 @@ async function openDataFetch() {
 
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  const groupsHtml = DATA_SOURCE_GROUPS.map(g => {
+  const areaTxt = km2 < 1 ? km2.toFixed(2) : km2.toFixed(1);
+  const cardsHtml = DATA_SOURCE_GROUPS.map((g, gi) => {
     const over = km2 > g.maxKm2;
     const rows = g.items.map(it => {
       const checked = (saved[it.key] ?? it.def) && !over;
       return `<label class="data-src${over ? " disabled" : ""}">
-        <input type="checkbox" data-src="${it.key}"${checked ? " checked" : ""}${over ? " disabled" : ""}>
+        <input type="checkbox" data-src="${it.key}" data-gi="${gi}"${checked ? " checked" : ""}${over ? " disabled" : ""}>
         <span>${escHtml(it.label)}</span></label>`;
     }).join("");
-    return `<div class="data-group">
-      <div class="data-group-title">${escHtml(g.title)}
-        <span class="muted">${over
-          ? `приблизьте вид — область больше ${g.maxKm2} км²`
-          : escHtml(g.hint)}</span></div>
-      ${rows}</div>`;
+    return `<div class="data-card" data-gi="${gi}">
+      <div class="data-card-head">
+        <div class="data-card-title">${escHtml(g.title)}
+          <span class="data-card-sub">${escHtml(g.hint)} · до ${g.maxKm2} км²</span></div>
+        <button class="data-all" data-gi="${gi}"${over ? " disabled" : ""}>все</button>
+      </div>
+      ${over ? `<div class="data-over">Область ${areaTxt} км² больше лимита ${g.maxKm2} км²
+        <button class="data-zoom" data-target="${g.maxKm2}">Приблизить</button></div>` : ""}
+      <div class="data-rows">${rows}</div>
+    </div>`;
   }).join("");
   overlay.innerHTML = `<div class="modal fmt-modal data-modal">
-    <div class="modal-head">Данные по видимой области
+    <div class="modal-head">Данные по области
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
-      <div class="data-area">Видимая область: ~${km2 < 1 ? km2.toFixed(2) : km2.toFixed(1)} км²</div>
-      ${groupsHtml}
-      <div class="data-group">
-        <div class="data-group-title">ГИС ОГД Москвы <span class="muted">портал с авторизацией mos.ru</span></div>
+      <div class="data-area-bar"><span>Видимая область</span><b>${areaTxt} км²</b></div>
+      ${cardsHtml}
+      <div class="data-card data-card-ogd">
+        <div class="data-card-head">
+          <div class="data-card-title">ГИС ОГД Москвы
+            <span class="data-card-sub">официальные слои · портал mos.ru</span></div>
+        </div>
         <div class="data-ogd-row">
           <button class="data-ogd-portal">Открыть портал</button>
-          <span class="data-watch-status muted">скачайте там выгрузку —
-            студия подхватит её из «Загрузок» сама</span>
+          <span class="data-watch-status muted">скачайте выгрузку — студия подхватит её из «Загрузок» сама</span>
         </div>
       </div>
-      <div class="data-note muted">Объекты добавятся в слои-источники (появятся в панели
-      «Слои») и не смешаются с вашим проектом.</div>
+      <div class="data-note muted">Объекты лягут в отдельные слои-источники (появятся в «Слоях»)
+      и не смешаются с вашим проектом. Повторная загрузка той же области не создаёт дубликатов.</div>
     </div>
     <div class="modal-actions"><span class="data-status muted"></span><span class="spacer"></span>
       <button class="data-cancel">Отмена</button>
@@ -6492,6 +6499,38 @@ async function openDataFetch() {
   overlay.addEventListener("click", ev => { if (ev.target === overlay) close(); });
   overlay.addEventListener("keydown", ev => { if (ev.key === "Escape") close(); });
 
+  const loadBtn = overlay.querySelector(".data-load");
+  const status = overlay.querySelector(".data-status");
+  const allBoxes = () => [...overlay.querySelectorAll("input[data-src]")];
+  // счётчик выбранного на кнопке + подпись «все/ничего» по каждой карточке
+  function refreshUI() {
+    const n = allBoxes().filter(b => b.checked).length;
+    loadBtn.textContent = n ? `Загрузить (${n})` : "Загрузить";
+    loadBtn.disabled = !n;
+    overlay.querySelectorAll(".data-all").forEach(btn => {
+      const boxes = allBoxes().filter(b => b.dataset.gi === btn.dataset.gi && !b.disabled);
+      btn.textContent = (boxes.length && boxes.every(b => b.checked)) ? "ничего" : "все";
+    });
+  }
+  overlay.addEventListener("change", ev => { if (ev.target.matches("input[data-src]")) refreshUI(); });
+  overlay.querySelectorAll(".data-all").forEach(btn => btn.addEventListener("click", () => {
+    const boxes = allBoxes().filter(b => b.dataset.gi === btn.dataset.gi && !b.disabled);
+    const turnOn = !(boxes.length && boxes.every(b => b.checked));
+    boxes.forEach(b => b.checked = turnOn);
+    refreshUI();
+  }));
+  // «Приблизить»: вписать вид под лимит источника и переоткрыть диалог по новой
+  // области (агентность/прощение — не «идите сами зумьте», а один клик)
+  overlay.querySelectorAll(".data-zoom").forEach(btn => btn.addEventListener("click", () => {
+    const target = parseFloat(btn.dataset.target);
+    const sel = {};
+    allBoxes().forEach(b => { if (!b.disabled) sel[b.dataset.src] = b.checked; });
+    try { localStorage.setItem("grado_data_sources", JSON.stringify(sel)); } catch (e) {}
+    if (km2 > target) zoomBy(Math.sqrt(km2 / (target * 0.9)));   // с запасом под лимит
+    close();
+    openDataFetch();
+  }));
+
   // ГИС ОГД: открыть портал + армировать вахту за «Загрузками» (работает
   // и после закрытия окна — пока пользователь выбирает слои на портале)
   overlay.querySelector(".data-ogd-portal").addEventListener("click", () => {
@@ -6502,19 +6541,19 @@ async function openDataFetch() {
     toast("Скачайте выгрузку на портале — студия предложит импорт сама");
   });
 
-  const loadBtn = overlay.querySelector(".data-load");
-  const status = overlay.querySelector(".data-status");
+  refreshUI();
+
   loadBtn.addEventListener("click", async () => {
-    const boxes = [...overlay.querySelectorAll("input[data-src]")];
+    const boxes = allBoxes();
     const sources = boxes.filter(b => b.checked).map(b => b.dataset.src);
     // выбор запоминается (и невыбор тоже) — в следующий раз диалог как оставили
     const sel = {};
     boxes.forEach(b => { if (!b.disabled) sel[b.dataset.src] = b.checked; });
     try { localStorage.setItem("grado_data_sources", JSON.stringify(sel)); } catch (e) {}
     if (!sources.length) { status.textContent = "Выберите хотя бы один источник"; return; }
-    loadBtn.disabled = true;
+    loadBtn.disabled = true; loadBtn.classList.add("loading");
     boxes.forEach(b => b.disabled = true);
-    status.textContent = "Загрузка… (НСПД может занять ~10 с)";
+    status.textContent = "Загрузка… НСПД может занять ~10 с";
     try {
       const r = await fetch("/api/fetch-extent", { method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -6524,10 +6563,11 @@ async function openDataFetch() {
       const groups = (data.groups || []).filter(g => g.count > 0);
       const total = groups.reduce((s, g) => s + g.count, 0);
       if (!total) {
-        status.textContent = "В видимой области ничего не нашлось";
+        status.textContent = "В этой области выбранных данных нет — сместите вид или добавьте источник";
         if (data.notes && data.notes.length) toast(data.notes.join(" · "), "warn");
-        loadBtn.disabled = false;
+        loadBtn.classList.remove("loading");
         boxes.forEach(b => b.disabled = false);
+        refreshUI();
         return;
       }
       snapshot();
@@ -6560,8 +6600,9 @@ async function openDataFetch() {
         console.info("Данные по области:", data.notes.join("\n"));
     } catch (err) {
       status.textContent = "";
-      loadBtn.disabled = false;
+      loadBtn.classList.remove("loading");
       boxes.forEach(b => b.disabled = false);
+      refreshUI();
       toast("Не удалось загрузить: " + String(err.message || err).slice(0, 180), "error");
     }
   });
