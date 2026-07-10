@@ -597,6 +597,7 @@ const state = {
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
   trimCtx: null,                  // { boundary: Set(id), ready: bool } — режимы «Обрезать»/«Продлить»
+  rotateCtx: null,                // { phase:'base'|'angle', pivot:[x,y], orig, ref, angle } — инструмент «Поворот»
   hoverLayerId: null,             // ховер строки в панели «Слои» — подсветка объектов на холсте
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   accessRadii: { on: false, r: 300 },        // радиусы доступности соцобъектов (визуальная помощь)
@@ -2487,6 +2488,7 @@ function draw() {
       ctx.fillText(fmtLen(dist), mx, my - 6);
     }
   }
+  drawRotateOverlay(ctx);
   drawSnapMarker();
   updateOverlay();
 }
@@ -5062,11 +5064,161 @@ async function promptScale() {
   const f = parseFloat(String(v).replace(",", ".")); if (isFinite(f) && f > 0) scaleSelectionBy(f);
   else toast("Коэффициент должен быть больше 0", "warn");
 }
+
+// ---------- интерактивный инструмент «Поворот» (CAD-стиль) ----------
+// поток: выделить объекты (V) → инструмент «Поворот» → клик опорной точки →
+// крутить мышью (угол от точки первого движения) или ввести число градусов
+// прямо на холсте (без всплывающего окна), Enter — применить, Esc — отмена.
+function rotResetCtx() {
+  state.rotateCtx = { phase: "base", pivot: null, orig: null, ref: null, angle: 0 };
+  state.typed = "";
+}
+function rotHint(t) { const el = document.getElementById("st-hint"); if (el) el.textContent = t; }
+function startRotateTool() {
+  rotResetCtx();
+  if (!selectionFeatures().length) {
+    toast("Поворот: сначала выделите объекты инструментом «Выбор» (V)", "warn");
+    rotHint("Поворот: сначала выделите объекты (V)");
+  } else {
+    toast("Поворот: кликните опорную точку, затем крутите мышью или введите угол");
+    rotHint("Поворот: кликните опорную точку");
+  }
+}
+// снимок исходной геометрии выделения — превью считается от него без накопления
+function rotCaptureOrig() {
+  const o = {};
+  for (const f of selectionFeatures()) {
+    o[f.id] = {
+      point: f.point ? [f.point[0], f.point[1]] : null,
+      line: f.line ? f.line.map(p => [p[0], p[1]]) : null,
+      ring: f.ring ? f.ring.map(p => [p[0], p[1]]) : null,
+      arc: f.arc ? { cx: f.arc.cx, cy: f.arc.cy, r: f.arc.r, a0: f.arc.a0, sweep: f.arc.sweep } : null,
+      circle: f.circle ? { cx: f.circle.cx, cy: f.circle.cy, r: f.circle.r } : null,
+    };
+  }
+  return o;
+}
+// применить поворот к геометрии из снимка orig (ang — радианы, против часовой)
+function rotApplyFromOrig(rc, ang) {
+  const P = rc.pivot; if (!P || !rc.orig) return;
+  const c = Math.cos(ang), s = Math.sin(ang);
+  const rp = ([x, y]) => { const dx = x - P[0], dy = y - P[1]; return [P[0] + dx * c - dy * s, P[1] + dx * s + dy * c]; };
+  for (const f of selectionFeatures()) {
+    const o = rc.orig[f.id]; if (!o) continue;
+    if (o.point) { const q = rp(o.point); f.point[0] = q[0]; f.point[1] = q[1]; }
+    if (o.line)  { for (let i = 0; i < o.line.length; i++) { const q = rp(o.line[i]); f.line[i][0] = q[0]; f.line[i][1] = q[1]; } }
+    if (o.ring)  { for (let i = 0; i < o.ring.length; i++) { const q = rp(o.ring[i]); f.ring[i][0] = q[0]; f.ring[i][1] = q[1]; } }
+    if (o.arc)   { const q = rp([o.arc.cx, o.arc.cy]); f.arc.cx = q[0]; f.arc.cy = q[1]; f.arc.r = o.arc.r; f.arc.a0 = o.arc.a0 + ang; f.arc.sweep = o.arc.sweep; }
+    if (o.circle){ const q = rp([o.circle.cx, o.circle.cy]); f.circle.cx = q[0]; f.circle.cy = q[1]; f.circle.r = o.circle.r; }
+  }
+}
+function rotTypedAngle() {   // введённый угол (град) → радианы, либо null
+  if (!state.typed) return null;
+  const v = parseFloat(state.typed.replace(",", "."));
+  return isFinite(v) ? v * Math.PI / 180 : null;
+}
+function updateRotatePreview() {
+  const rc = state.rotateCtx;
+  if (!rc || rc.phase !== "angle") return;
+  let ang;
+  const typed = rotTypedAngle();
+  if (typed != null) {
+    ang = typed;
+  } else {
+    const m = state.mouse || rc.pivot;
+    const cur = Math.atan2(m[1] - rc.pivot[1], m[0] - rc.pivot[0]);
+    if (rc.ref == null) rc.ref = cur;         // точка отсчёта — первое движение
+    ang = cur - rc.ref;
+    if (shiftDown) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);  // Shift — шаг 15°
+  }
+  rc.angle = ang;
+  rotApplyFromOrig(rc, ang);
+}
+function handleRotateClick(pt) {
+  const rc = state.rotateCtx;
+  if (!rc) return;
+  if (rc.phase === "base") {
+    if (!selectionFeatures().length) { toast("Сначала выделите объекты (V)", "warn"); return; }
+    rc.pivot = [pt[0], pt[1]];
+    rc.orig = rotCaptureOrig();
+    rc.ref = null; rc.angle = 0; state.typed = "";
+    rc.phase = "angle";
+    rotHint("Поворот: двигайте мышь или введите угол · Enter — применить · Esc — отмена");
+    draw();
+  } else {
+    commitRotate();
+  }
+}
+function commitRotate() {
+  const rc = state.rotateCtx;
+  if (!rc || rc.phase !== "angle") return;
+  const ang = rc.angle || 0;
+  rotApplyFromOrig(rc, 0);           // вернуть к исходному, чтобы undo взял «до поворота»
+  if (Math.abs(ang) > 1e-9) {
+    snapshot();
+    rotApplyFromOrig(rc, ang);
+    afterChange();
+    toast(`Повёрнуто на ${(ang * 180 / Math.PI).toFixed(1)}°`);
+  }
+  rotResetCtx();                     // остаёмся в инструменте — можно крутить снова
+  rotHint("Поворот: кликните опорную точку");
+  draw();
+}
+function cancelRotate() {
+  const rc = state.rotateCtx;
+  if (rc && rc.phase === "angle") rotApplyFromOrig(rc, 0);
+  rotResetCtx();
+  rotHint("Поворот: кликните опорную точку");
+  draw();
+}
+function normDeg(rad) { let d = rad * 180 / Math.PI; d = ((d + 180) % 360 + 360) % 360 - 180; return d; }
+// оверлей: опорная точка, линия отсчёта, активная линия, сектор, подпись угла
+function drawRotateOverlay(ctx) {
+  const rc = state.rotateCtx;
+  if (!rc || rc.phase !== "angle" || !rc.pivot) return;
+  ctx.save();
+  const accent = cvColor("selection", "#e8a33d");
+  const [px, py] = w2s(rc.pivot[0], rc.pivot[1]);
+  // крест опорной точки
+  ctx.strokeStyle = accent; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px - 10, py); ctx.lineTo(px + 10, py);
+  ctx.moveTo(px, py - 10); ctx.lineTo(px, py + 10); ctx.stroke();
+  const m = state.mouse || rc.pivot;
+  const [mx, my] = w2s(m[0], m[1]);
+  const R = Math.max(30, Math.min(90, Math.hypot(mx - px, my - py)));
+  const usingMouse = rotTypedAngle() == null && rc.ref != null;
+  const baseDir = usingMouse ? rc.ref : 0;   // экранная Y вниз → берём -угол при отрисовке
+  // линия отсчёта (пунктир)
+  if (usingMouse) {
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = cvColor("label", "#8b8a85"); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(baseDir) * R, py - Math.sin(baseDir) * R); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // активная линия
+  const actDir = baseDir + rc.angle;
+  ctx.strokeStyle = accent; ctx.lineWidth = 1.8;
+  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(actDir) * R, py - Math.sin(actDir) * R); ctx.stroke();
+  // сектор угла (экран Y вниз → отрицательные углы, направление обхода инвертируется)
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(px, py, Math.min(R, 36), -baseDir, -actDir, rc.angle > 0); ctx.stroke();
+  // подпись угла в рамке возле курсора
+  const label = ((rc.angle >= 0 ? "+" : "") + normDeg(rc.angle).toFixed(1) + "°");
+  ctx.font = "600 13px sans-serif"; ctx.textAlign = "left";
+  const tw = ctx.measureText(label).width + 14;
+  const bx = mx + 14, by = my - 30;
+  ctx.fillStyle = cvColor("selection", "#1c1c1a");
+  ctx.fillRect(bx, by, tw, 20);
+  ctx.fillStyle = "#fff"; ctx.fillText(label, bx + 7, by + 14);
+  ctx.restore();
+}
+
 // кнопки преобразований для панели свойств (одиночной и групповой)
 function transformControlsHtml() {
   return `<div class="prop-sub">Преобразовать</div>
     <div class="xf-row">
-      <button id="xf-rot" title="Повернуть на угол вокруг центра выделения">↻ Повернуть…</button>
+      <button id="xf-rot" title="Инструмент «Поворот»: опорная точка, затем мышь или ввод угла на холсте">↻ Повернуть</button>
       <button id="xf-scale" title="Масштабировать вокруг центра выделения">⤢ Масштаб…</button>
     </div>
     <div class="xf-row">
@@ -5076,7 +5228,7 @@ function transformControlsHtml() {
 }
 function bindTransformControls() {
   const g = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
-  g("xf-rot", promptRotate); g("xf-scale", promptScale);
+  g("xf-rot", () => setTool("rotate")); g("xf-scale", promptScale);
   g("xf-mh", () => mirrorSelection("h")); g("xf-mv", () => mirrorSelection("v"));
 }
 function duplicateSelected() {
@@ -5299,6 +5451,8 @@ cv.addEventListener("mousedown", e => {
     handleTrimExtendClick(wxr, wyr);
   } else if (state.tool === "fillet") {
     handleFilletClick(wxr, wyr);
+  } else if (state.tool === "rotate") {
+    handleRotateClick(s.p);
   } else if (state.tool === "point") {
     const L = activeLayer();
     if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
@@ -5447,6 +5601,9 @@ cv.addEventListener("mousemove", e => {
   state.snapHit = s;
   state.mouse = s.p;
   document.getElementById("st-snap").textContent = s.kind ? `привязка: ${s.kind}` : "";
+  if (state.tool === "rotate" && state.rotateCtx && state.rotateCtx.phase === "angle") {
+    updateRotatePreview(); draw(); return;
+  }
   if (state.drag && state.drag.rect) {
     state.drag.b = s.p;
     if (Math.hypot(s.p[0] - state.drag.a[0], s.p[1] - state.drag.a[1]) * state.view.k > 4)
@@ -5569,6 +5726,11 @@ document.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.code === "KeyD") {
     e.preventDefault(); duplicateSelected(); return;
   }
+  // ввод угла поворота прямо на холсте (без всплывающего окна)
+  if (state.rotateCtx && state.rotateCtx.phase === "angle") {
+    if (/^[0-9.,-]$/.test(e.key)) { state.typed += e.key; updateRotatePreview(); draw(); return; }
+    if (e.key === "Backspace") { state.typed = state.typed.slice(0, -1); updateRotatePreview(); draw(); return; }
+  }
   // набор при рисовании: длина (50), абсолют X Y (100 200 или 100;200),
   // полярно (длина<угол°). Разрешены цифры, разделители, знак, угол
   if (state.drawing && /^[0-9.,;<> -]$/.test(e.key)) { state.typed += e.key; draw(); return; }
@@ -5576,6 +5738,7 @@ document.addEventListener("keydown", e => {
     state.typed = state.typed.slice(0, -1); draw(); return;
   }
   if (e.key === "Enter") {
+    if (state.rotateCtx && state.rotateCtx.phase === "angle") { commitRotate(); return; }
     if (state.trimCtx && !state.trimCtx.ready) {
       if (!state.trimCtx.boundary.size) { toast("Выберите хотя бы одну границу", "warn"); return; }
       state.trimCtx.ready = true;
@@ -5587,6 +5750,7 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (e.key === "Escape") {
+    if (state.rotateCtx && state.rotateCtx.phase === "angle") { cancelRotate(); return; }
     if (state.typed) { state.typed = ""; draw(); return; }
     if (state.drawing) { state.drawing = null; draw(); return; }
     if (state.measure) { state.measure = null; draw(); return; }
@@ -5658,6 +5822,8 @@ function setTool(tool, opts = {}) {
     promptFilletRadius();   // задать радиус при входе в инструмент
     document.getElementById('st-hint').textContent = "Сопряжение: клик по углу линии/контура — скругляется дугой";
   }
+  if (tool === "rotate") startRotateTool();
+  else state.rotateCtx = null;
   // геом-инструмент против несовместимого слоя — слой переключается сам
   if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
     // подходящий слой рисуемой геометрии — но не приёмник импорта и не аннотация
