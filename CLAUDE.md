@@ -22,8 +22,8 @@ python3 apps/studio/server.py        # http://localhost:8643
 репо — используй `preview_start "studio"`. **Backend-изменения (server.py/studio_core.py/styles/*.json)
 требуют restart превью** (нет хот-релоада); фронтенд (app.js/**app-transform.js**/index.html/
 style.css/tokens.css) подхватывается обычным reload. Скрипты в index.html грузятся по порядку в
-общем global-scope: `canvas-theme.js` → `app-transform.js` → `app-snap.js` → `app.js` → `collab.js`
-(P0-разрез монолита, см. ЛОГ внизу).
+общем global-scope: `canvas-theme.js` → `app-transform.js` → `app-snap.js` → `app-data.js` →
+`app.js` → `collab.js` (P0-разрез монолита, см. ЛОГ внизу).
 
 ## ЖЕЛЕЗНЫЕ ПРАВИЛА
 
@@ -388,8 +388,13 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
   - **`app-snap.js`** (движок привязок osnap: snapPoint/collectSnapPts/intersections/cursorPoint/
     drawSnapMarker/SNAP_PRIORITY, 302 стр) — коммит 21e5277. Общие гео-примитивы (nearChain/
     pointInRing/circleCircleIntersections…) и рендер (drawChain/drawGrid) ОСТАЛИСЬ в app.js (общие).
+  - **`app-data.js`** (диалог «Данные по области»: DATA_SOURCE_GROUPS/viewExtentBbox/bboxKm2/
+    openDataFetch, 205 стр) — коммит 49af6c1. Только определения; биндинг on("btn-data") и остальной
+    импорт (мост/inbox pollInbox, ГИС ОГД-ZIP, NSPD-file, панель источников renderSources,
+    importSourceFeatures) ОСТАЛИСЬ в app.js — сцеплены с top-level init, отдельный заход.
   - Все — классические скрипты, грузятся ПЕРЕД app.js (порядок важен: draw зовёт xfDrawOverlay/
-    drawSnapMarker на init). Дальше тем же паттерном: data-import → ui-modals. app.js: 6875→6362.
+    drawSnapMarker на init; on-биндинги ссылаются на функции модулей). Дальше: ui-modals /
+    остаток data-import. **app.js: 6875 → 6157** (вынесено 3 модуля, ~720 стр).
   - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
     правкой app.js глянь `git log --oneline` на предмет свежих `refactor(P0)`.
 - **⚠️ Напоминание (сам нарушил и поймал):** при тестах на синтетике ВСЕГДА заглушай `persist`
