@@ -2254,10 +2254,17 @@ function zoomBy(factor) {
   state.view.ty = h / 2 + wy * state.view.k;
   draw();
 }
-function fitPoints(pts, pad = 0.82) {
-  if (!pts.length) return;
+function fitBox(x0, y0, x1, y1, pad = 0.82) {
   const w = cv.clientWidth, h = cv.clientHeight;
   if (w < 2 || h < 2) return;
+  const dx = Math.max(x1 - x0, 10), dy = Math.max(y1 - y0, 10);
+  state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * pad));
+  state.view.tx = w / 2 - (x0 + dx / 2) * state.view.k;
+  state.view.ty = h / 2 + (y0 + dy / 2) * state.view.k;
+  draw();
+}
+function fitPoints(pts, pad = 0.82) {
+  if (!pts.length) return;
   // однопроходный bbox: спред Math.max(...xs) переполняет стек на больших
   // проектах (>~125k точек — лимит числа аргументов V8; у юзера 600k+ → краш)
   let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
@@ -2265,16 +2272,32 @@ function fitPoints(pts, pad = 0.82) {
     if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
     if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
   }
-  const dx = Math.max(maxx - minx, 10), dy = Math.max(maxy - miny, 10);
-  state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * pad));
-  state.view.tx = w / 2 - (minx + dx / 2) * state.view.k;
-  state.view.ty = h / 2 + (miny + dy / 2) * state.view.k;
-  draw();
+  fitBox(minx, miny, maxx, maxy, pad);
 }
+// вписывание ВСЕГО проекта — УСТОЙЧИВОЕ к выбросам: по перцентилям центроидов
+// объектов. Region-wide ЗОУИТ и межрегиональные сооружения (до 122 км) растягивали
+// габариты → локаль выглядела точкой. Данные НЕ удаляются, просто не диктуют
+// масштаб; их видно при отдалении. Точное вписывание слоя/объекта — fitPoints.
 function fitView() {
-  const pts = [];
-  for (const f of state.features) for (const p of featurePts(f)) pts.push(p);
-  fitPoints(pts);
+  const cxs = [], cys = [];
+  for (const f of state.features) {
+    let cx, cy;
+    if (f.circle) { cx = f.circle.cx; cy = f.circle.cy; }
+    else if (f.arc) { cx = f.arc.cx; cy = f.arc.cy; }
+    else {
+      const pts = f.ring || f.line || (f.point ? [f.point] : null);
+      if (!pts || !pts.length) continue;
+      let sx = 0, sy = 0; for (const p of pts) { sx += p[0]; sy += p[1]; }
+      cx = sx / pts.length; cy = sy / pts.length;
+    }
+    cxs.push(cx); cys.push(cy);
+  }
+  if (!cxs.length) return;
+  cxs.sort((a, b) => a - b); cys.sort((a, b) => a - b);
+  const q = (a, t) => a[Math.min(a.length - 1, Math.max(0, Math.round(t * (a.length - 1))))];
+  // центральные 90% центроидов (5..95 перцентиль) — отсекает крайние выбросы,
+  // вписывает плотное ядро проекта
+  fitBox(q(cxs, 0.05), q(cys, 0.05), q(cxs, 0.95), q(cys, 0.95));
 }
 function zoomToLayer(id) {
   const pts = [];
