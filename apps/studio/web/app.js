@@ -597,7 +597,7 @@ const state = {
   view: { k: 1.1, tx: 120, ty: 0 },
   undo: [], redo: [], nextId: 1,
   trimCtx: null,                  // { boundary: Set(id), ready: bool } — режимы «Обрезать»/«Продлить»
-  rotateCtx: null,                // { phase:'base'|'angle', pivot:[x,y], orig, ref, angle } — инструмент «Поворот»
+  xf: null,                       // { kind:'rotate'|'scale'|'mirror', phase:'base'|'act', pivot, orig, ref, val, p2 } — интерактивные преобразования
   hoverLayerId: null,             // ховер строки в панели «Слои» — подсветка объектов на холсте
   gridShow: true, gridSnap: true, osnap: true, gridMode: "auto",
   accessRadii: { on: false, r: 300 },        // радиусы доступности соцобъектов (визуальная помощь)
@@ -2488,7 +2488,7 @@ function draw() {
       ctx.fillText(fmtLen(dist), mx, my - 6);
     }
   }
-  drawRotateOverlay(ctx);
+  xfDrawOverlay(ctx);
   drawSnapMarker();
   updateOverlay();
 }
@@ -5065,27 +5065,33 @@ async function promptScale() {
   else toast("Коэффициент должен быть больше 0", "warn");
 }
 
-// ---------- интерактивный инструмент «Поворот» (CAD-стиль) ----------
-// поток: выделить объекты (V) → инструмент «Поворот» → клик опорной точки →
-// крутить мышью (угол от точки первого движения) или ввести число градусов
-// прямо на холсте (без всплывающего окна), Enter — применить, Esc — отмена.
-function rotResetCtx() {
-  state.rotateCtx = { phase: "base", pivot: null, orig: null, ref: null, angle: 0 };
+// ---------- интерактивные инструменты преобразования (Поворот/Масштаб/Зеркало) ----------
+// единый CAD-поток: выделить объекты (V) → инструмент → клик опорной точки →
+// тяга мышью или ввод числа ПРЯМО НА ХОЛСТЕ (без всплывашки) → клик/Enter применить,
+// Esc отмена. Превью считается от снимка orig (не накапливается). Общий контекст state.xf.
+const XF_META = {
+  rotate: { label: "Поворот", base: "кликните опорную точку", act: "двигайте мышь или введите угол (Shift — шаг 15°)" },
+  scale:  { label: "Масштаб", base: "кликните опорную точку", act: "двигайте мышь или введите коэффициент" },
+  mirror: { label: "Зеркало", base: "кликните первую точку оси", act: "кликните вторую точку оси (двигайте — предпросмотр)" },
+};
+function xfHint(t) { const el = document.getElementById("st-hint"); if (el) el.textContent = t; }
+function xfReset(kind) {
+  state.xf = { kind, phase: "base", pivot: null, orig: null, ref: null, val: (kind === "scale" ? 1 : 0), p2: null };
   state.typed = "";
 }
-function rotHint(t) { const el = document.getElementById("st-hint"); if (el) el.textContent = t; }
-function startRotateTool() {
-  rotResetCtx();
+function xfStart(kind) {
+  xfReset(kind);
+  const m = XF_META[kind];
   if (!selectionFeatures().length) {
-    toast("Поворот: сначала выделите объекты инструментом «Выбор» (V)", "warn");
-    rotHint("Поворот: сначала выделите объекты (V)");
+    toast(`${m.label}: сначала выделите объекты инструментом «Выбор» (V)`, "warn");
+    xfHint(`${m.label}: сначала выделите объекты (V)`);
   } else {
-    toast("Поворот: кликните опорную точку, затем крутите мышью или введите угол");
-    rotHint("Поворот: кликните опорную точку");
+    toast(`${m.label}: ${m.base}`);
+    xfHint(`${m.label}: ${m.base}`);
   }
 }
 // снимок исходной геометрии выделения — превью считается от него без накопления
-function rotCaptureOrig() {
+function xfCaptureOrig() {
   const o = {};
   for (const f of selectionFeatures()) {
     o[f.id] = {
@@ -5098,119 +5104,176 @@ function rotCaptureOrig() {
   }
   return o;
 }
-// применить поворот к геометрии из снимка orig (ang — радианы, против часовой)
-function rotApplyFromOrig(rc, ang) {
-  const P = rc.pivot; if (!P || !rc.orig) return;
-  const c = Math.cos(ang), s = Math.sin(ang);
-  const rp = ([x, y]) => { const dx = x - P[0], dy = y - P[1]; return [P[0] + dx * c - dy * s, P[1] + dx * s + dy * c]; };
+function xfTypedNum() { if (!state.typed) return null; const v = parseFloat(state.typed.replace(",", ".")); return isFinite(v) ? v : null; }
+// мапперы точки/дуги/окружности для текущего преобразования (все — подобия/отражение,
+// поэтому дуги и окружности сохраняются: центр преобразуется, r масштабируется, углы правятся)
+function xfMappers(x) {
+  const P = x.pivot;
+  if (x.kind === "rotate") {
+    const c = Math.cos(x.val), s = Math.sin(x.val);
+    const pt = ([px, py]) => { const dx = px - P[0], dy = py - P[1]; return [P[0] + dx * c - dy * s, P[1] + dx * s + dy * c]; };
+    return { pt, arc: o => ({ ...pt2arc(pt, o), r: o.r, a0: o.a0 + x.val, sweep: o.sweep }),
+             circle: o => ({ ...pt2c(pt, o), r: o.r }) };
+  }
+  if (x.kind === "scale") {
+    const f = x.val, af = Math.abs(f);
+    const pt = ([px, py]) => [P[0] + (px - P[0]) * f, P[1] + (py - P[1]) * f];
+    return { pt, arc: o => ({ ...pt2arc(pt, o), r: o.r * af, a0: o.a0, sweep: o.sweep }),
+             circle: o => ({ ...pt2c(pt, o), r: o.r * af }) };
+  }
+  // mirror: отражение относительно прямой через P с направлением на p2
+  const p2 = x.p2 || state.mouse || [P[0] + 1, P[1]];
+  let dx = p2[0] - P[0], dy = p2[1] - P[1]; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+  const phi = Math.atan2(dy, dx);
+  const pt = ([px, py]) => { const vx = px - P[0], vy = py - P[1], d = vx * dx + vy * dy; return [P[0] + 2 * d * dx - vx, P[1] + 2 * d * dy - vy]; };
+  return { pt, arc: o => ({ ...pt2arc(pt, o), r: o.r, a0: 2 * phi - o.a0, sweep: -o.sweep }),
+           circle: o => ({ ...pt2c(pt, o), r: o.r }) };
+}
+function pt2arc(pt, o) { const q = pt([o.cx, o.cy]); return { cx: q[0], cy: q[1] }; }
+function pt2c(pt, o) { const q = pt([o.cx, o.cy]); return { cx: q[0], cy: q[1] }; }
+function xfApplyFromOrig(x) {
+  if (!x.pivot || !x.orig) return;
+  const M = xfMappers(x);
   for (const f of selectionFeatures()) {
-    const o = rc.orig[f.id]; if (!o) continue;
-    if (o.point) { const q = rp(o.point); f.point[0] = q[0]; f.point[1] = q[1]; }
-    if (o.line)  { for (let i = 0; i < o.line.length; i++) { const q = rp(o.line[i]); f.line[i][0] = q[0]; f.line[i][1] = q[1]; } }
-    if (o.ring)  { for (let i = 0; i < o.ring.length; i++) { const q = rp(o.ring[i]); f.ring[i][0] = q[0]; f.ring[i][1] = q[1]; } }
-    if (o.arc)   { const q = rp([o.arc.cx, o.arc.cy]); f.arc.cx = q[0]; f.arc.cy = q[1]; f.arc.r = o.arc.r; f.arc.a0 = o.arc.a0 + ang; f.arc.sweep = o.arc.sweep; }
-    if (o.circle){ const q = rp([o.circle.cx, o.circle.cy]); f.circle.cx = q[0]; f.circle.cy = q[1]; f.circle.r = o.circle.r; }
+    const o = x.orig[f.id]; if (!o) continue;
+    if (o.point) { const q = M.pt(o.point); f.point[0] = q[0]; f.point[1] = q[1]; }
+    if (o.line)  { for (let i = 0; i < o.line.length; i++) { const q = M.pt(o.line[i]); f.line[i][0] = q[0]; f.line[i][1] = q[1]; } }
+    if (o.ring)  { for (let i = 0; i < o.ring.length; i++) { const q = M.pt(o.ring[i]); f.ring[i][0] = q[0]; f.ring[i][1] = q[1]; } }
+    if (o.arc)   { const a = M.arc(o.arc); f.arc.cx = a.cx; f.arc.cy = a.cy; f.arc.r = a.r; f.arc.a0 = a.a0; f.arc.sweep = a.sweep; }
+    if (o.circle){ const c = M.circle(o.circle); f.circle.cx = c.cx; f.circle.cy = c.cy; f.circle.r = c.r; }
   }
 }
-function rotTypedAngle() {   // введённый угол (град) → радианы, либо null
-  if (!state.typed) return null;
-  const v = parseFloat(state.typed.replace(",", "."));
-  return isFinite(v) ? v * Math.PI / 180 : null;
-}
-function updateRotatePreview() {
-  const rc = state.rotateCtx;
-  if (!rc || rc.phase !== "angle") return;
-  let ang;
-  const typed = rotTypedAngle();
-  if (typed != null) {
-    ang = typed;
-  } else {
-    const m = state.mouse || rc.pivot;
-    const cur = Math.atan2(m[1] - rc.pivot[1], m[0] - rc.pivot[0]);
-    if (rc.ref == null) rc.ref = cur;         // точка отсчёта — первое движение
-    ang = cur - rc.ref;
-    if (shiftDown) ang = Math.round(ang / (Math.PI / 12)) * (Math.PI / 12);  // Shift — шаг 15°
+// вернуть геометрию к снимку orig (для отмены и «чистого» undo перед коммитом)
+function xfRestore(x) {
+  if (!x.orig) return;
+  for (const f of selectionFeatures()) {
+    const o = x.orig[f.id]; if (!o) continue;
+    if (o.point) { f.point[0] = o.point[0]; f.point[1] = o.point[1]; }
+    if (o.line)  { for (let i = 0; i < o.line.length; i++) { f.line[i][0] = o.line[i][0]; f.line[i][1] = o.line[i][1]; } }
+    if (o.ring)  { for (let i = 0; i < o.ring.length; i++) { f.ring[i][0] = o.ring[i][0]; f.ring[i][1] = o.ring[i][1]; } }
+    if (o.arc)   { f.arc.cx = o.arc.cx; f.arc.cy = o.arc.cy; f.arc.r = o.arc.r; f.arc.a0 = o.arc.a0; f.arc.sweep = o.arc.sweep; }
+    if (o.circle){ f.circle.cx = o.circle.cx; f.circle.cy = o.circle.cy; f.circle.r = o.circle.r; }
   }
-  rc.angle = ang;
-  rotApplyFromOrig(rc, ang);
 }
-function handleRotateClick(pt) {
-  const rc = state.rotateCtx;
-  if (!rc) return;
-  if (rc.phase === "base") {
+function xfUpdatePreview() {
+  const x = state.xf;
+  if (!x || x.phase !== "act") return;
+  const m = state.mouse || x.pivot;
+  if (x.kind === "rotate") {
+    const t = xfTypedNum();
+    if (t != null) x.val = t * Math.PI / 180;
+    else {
+      const cur = Math.atan2(m[1] - x.pivot[1], m[0] - x.pivot[0]);
+      if (x.ref == null) x.ref = cur;                     // отсчёт — первое движение
+      x.val = cur - x.ref;
+      if (shiftDown) x.val = Math.round(x.val / (Math.PI / 12)) * (Math.PI / 12);
+    }
+  } else if (x.kind === "scale") {
+    const t = xfTypedNum();
+    if (t != null) x.val = t;
+    else {
+      const dist = Math.hypot(m[0] - x.pivot[0], m[1] - x.pivot[1]);
+      if (x.ref == null) { if (dist > 1e-6) x.ref = dist; x.val = 1; }  // эталон-дистанция — первое движение
+      else { x.val = dist / x.ref; if (shiftDown) x.val = Math.round(x.val * 10) / 10; }
+    }
+  } else {                                                 // mirror
+    x.p2 = [m[0], m[1]];
+  }
+  xfApplyFromOrig(x);
+}
+function xfClickBase(pt) {
+  const x = state.xf;
+  if (!x) return;
+  if (x.phase === "base") {
     if (!selectionFeatures().length) { toast("Сначала выделите объекты (V)", "warn"); return; }
-    rc.pivot = [pt[0], pt[1]];
-    rc.orig = rotCaptureOrig();
-    rc.ref = null; rc.angle = 0; state.typed = "";
-    rc.phase = "angle";
-    rotHint("Поворот: двигайте мышь или введите угол · Enter — применить · Esc — отмена");
+    x.pivot = [pt[0], pt[1]];
+    x.orig = xfCaptureOrig();
+    x.ref = null; x.val = (x.kind === "scale" ? 1 : 0); x.p2 = null; state.typed = "";
+    x.phase = "act";
+    xfHint(`${XF_META[x.kind].label}: ${XF_META[x.kind].act} · Enter — применить · Esc — отмена`);
     draw();
   } else {
-    commitRotate();
+    xfCommit();
   }
 }
-function commitRotate() {
-  const rc = state.rotateCtx;
-  if (!rc || rc.phase !== "angle") return;
-  const ang = rc.angle || 0;
-  rotApplyFromOrig(rc, 0);           // вернуть к исходному, чтобы undo взял «до поворота»
-  if (Math.abs(ang) > 1e-9) {
-    snapshot();
-    rotApplyFromOrig(rc, ang);
-    afterChange();
-    toast(`Повёрнуто на ${(ang * 180 / Math.PI).toFixed(1)}°`);
+function xfCommit() {
+  const x = state.xf;
+  if (!x || x.phase !== "act") return;
+  if (x.kind === "scale" && !(Math.abs(x.val) > 1e-6)) { toast("Коэффициент не может быть 0", "warn"); return; }
+  if (x.kind === "mirror") {
+    const p2 = x.p2 || state.mouse;
+    if (!p2 || Math.hypot(p2[0] - x.pivot[0], p2[1] - x.pivot[1]) < 1e-6) { toast("Отметьте вторую точку оси", "warn"); return; }
   }
-  rotResetCtx();                     // остаёмся в инструменте — можно крутить снова
-  rotHint("Поворот: кликните опорную точку");
+  const noop = (x.kind === "rotate" && Math.abs(x.val) < 1e-9) || (x.kind === "scale" && Math.abs(x.val - 1) < 1e-9);
+  xfRestore(x);                       // к исходному — undo возьмёт состояние «до»
+  if (!noop) {
+    snapshot();
+    xfApplyFromOrig(x);
+    afterChange();
+    toast(x.kind === "rotate" ? `Повёрнуто на ${(x.val * 180 / Math.PI).toFixed(1)}°`
+        : x.kind === "scale" ? `Масштаб ×${x.val.toFixed(3)}`
+        : "Отражено по оси");
+  } else { draw(); }
+  const kind = x.kind; xfReset(kind);
+  xfHint(`${XF_META[kind].label}: ${XF_META[kind].base}`);   // остаёмся в инструменте
   draw();
 }
-function cancelRotate() {
-  const rc = state.rotateCtx;
-  if (rc && rc.phase === "angle") rotApplyFromOrig(rc, 0);
-  rotResetCtx();
-  rotHint("Поворот: кликните опорную точку");
+function xfCancel() {
+  const x = state.xf;
+  if (x && x.phase === "act") xfRestore(x);
+  const kind = x ? x.kind : "rotate"; xfReset(kind);
+  xfHint(`${XF_META[kind].label}: ${XF_META[kind].base}`);
   draw();
 }
 function normDeg(rad) { let d = rad * 180 / Math.PI; d = ((d + 180) % 360 + 360) % 360 - 180; return d; }
-// оверлей: опорная точка, линия отсчёта, активная линия, сектор, подпись угла
-function drawRotateOverlay(ctx) {
-  const rc = state.rotateCtx;
-  if (!rc || rc.phase !== "angle" || !rc.pivot) return;
+// оверлей: опора + вспомогательная геометрия + подпись значения возле курсора
+function xfDrawOverlay(ctx) {
+  const x = state.xf;
+  if (!x || x.phase !== "act" || !x.pivot) return;
   ctx.save();
   const accent = cvColor("selection", "#e8a33d");
-  const [px, py] = w2s(rc.pivot[0], rc.pivot[1]);
-  // крест опорной точки
-  ctx.strokeStyle = accent; ctx.lineWidth = 1.5;
+  const [px, py] = w2s(x.pivot[0], x.pivot[1]);
+  ctx.strokeStyle = accent; ctx.fillStyle = accent; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(px, py, 4, 0, 7); ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(px - 10, py); ctx.lineTo(px + 10, py);
-  ctx.moveTo(px, py - 10); ctx.lineTo(px, py + 10); ctx.stroke();
-  const m = state.mouse || rc.pivot;
+  ctx.beginPath(); ctx.moveTo(px - 10, py); ctx.lineTo(px + 10, py); ctx.moveTo(px, py - 10); ctx.lineTo(px, py + 10); ctx.stroke();
+  const m = state.mouse || x.pivot;
   const [mx, my] = w2s(m[0], m[1]);
-  const R = Math.max(30, Math.min(90, Math.hypot(mx - px, my - py)));
-  const usingMouse = rotTypedAngle() == null && rc.ref != null;
-  const baseDir = usingMouse ? rc.ref : 0;   // экранная Y вниз → берём -угол при отрисовке
-  // линия отсчёта (пунктир)
-  if (usingMouse) {
-    ctx.setLineDash([3, 3]); ctx.strokeStyle = cvColor("label", "#8b8a85"); ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(baseDir) * R, py - Math.sin(baseDir) * R); ctx.stroke();
+  let label = "";
+  if (x.kind === "rotate") {
+    const R = Math.max(30, Math.min(90, Math.hypot(mx - px, my - py)));
+    const usingMouse = xfTypedNum() == null && x.ref != null;
+    const baseDir = usingMouse ? x.ref : 0;              // экран Y вниз → рисуем -угол
+    if (usingMouse) {
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = cvColor("label", "#8b8a85"); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(baseDir) * R, py - Math.sin(baseDir) * R); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    const actDir = baseDir + x.val;
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.8;
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(actDir) * R, py - Math.sin(actDir) * R); ctx.stroke();
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(px, py, Math.min(R, 36), -baseDir, -actDir, x.val > 0); ctx.stroke();
+    label = (x.val >= 0 ? "+" : "") + normDeg(x.val).toFixed(1) + "°";
+  } else if (x.kind === "scale") {
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(mx, my); ctx.stroke(); ctx.setLineDash([]);
+    label = "×" + x.val.toFixed(3);
+  } else {                                               // mirror — ось симметрии на весь экран
+    const p2 = x.p2 || m; const [ax, ay] = w2s(p2[0], p2[1]);
+    let vx = ax - px, vy = ay - py; const L = Math.hypot(vx, vy) || 1; vx /= L; vy /= L;
+    const big = 5000;
+    ctx.strokeStyle = accent; ctx.lineWidth = 1.6; ctx.setLineDash([9, 5]);
+    ctx.beginPath(); ctx.moveTo(px - vx * big, py - vy * big); ctx.lineTo(px + vx * big, py + vy * big); ctx.stroke();
     ctx.setLineDash([]);
+    ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 7); ctx.fill();
+    label = "ось " + normDeg(Math.atan2(-(ay - py), ax - px)).toFixed(1) + "°";
   }
-  // активная линия
-  const actDir = baseDir + rc.angle;
-  ctx.strokeStyle = accent; ctx.lineWidth = 1.8;
-  ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + Math.cos(actDir) * R, py - Math.sin(actDir) * R); ctx.stroke();
-  // сектор угла (экран Y вниз → отрицательные углы, направление обхода инвертируется)
-  ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(px, py, Math.min(R, 36), -baseDir, -actDir, rc.angle > 0); ctx.stroke();
-  // подпись угла в рамке возле курсора
-  const label = ((rc.angle >= 0 ? "+" : "") + normDeg(rc.angle).toFixed(1) + "°");
-  ctx.font = "600 13px sans-serif"; ctx.textAlign = "left";
-  const tw = ctx.measureText(label).width + 14;
-  const bx = mx + 14, by = my - 30;
-  ctx.fillStyle = cvColor("selection", "#1c1c1a");
-  ctx.fillRect(bx, by, tw, 20);
-  ctx.fillStyle = "#fff"; ctx.fillText(label, bx + 7, by + 14);
+  if (label) {
+    ctx.font = "600 13px sans-serif"; ctx.textAlign = "left";
+    const tw = ctx.measureText(label).width + 14, bx = mx + 14, by = my - 30;
+    ctx.fillStyle = cvColor("selection", "#1c1c1a"); ctx.fillRect(bx, by, tw, 20);
+    ctx.fillStyle = "#fff"; ctx.fillText(label, bx + 7, by + 14);
+  }
   ctx.restore();
 }
 
@@ -5219,16 +5282,20 @@ function transformControlsHtml() {
   return `<div class="prop-sub">Преобразовать</div>
     <div class="xf-row">
       <button id="xf-rot" title="Инструмент «Поворот»: опорная точка, затем мышь или ввод угла на холсте">↻ Повернуть</button>
-      <button id="xf-scale" title="Масштабировать вокруг центра выделения">⤢ Масштаб…</button>
+      <button id="xf-scale" title="Инструмент «Масштаб»: опорная точка, затем мышь или ввод коэффициента на холсте">⤢ Масштаб</button>
     </div>
     <div class="xf-row">
-      <button id="xf-mh" title="Отразить лево ↔ право">↔ Отразить</button>
-      <button id="xf-mv" title="Отразить верх ↕ низ">↕ Отразить</button>
+      <button id="xf-mirror" title="Инструмент «Зеркало»: две точки оси симметрии на холсте">⇋ Отразить осью</button>
+    </div>
+    <div class="xf-row">
+      <button id="xf-mh" title="Быстро отразить лево ↔ право (вокруг центра)">↔ Л/П</button>
+      <button id="xf-mv" title="Быстро отразить верх ↕ низ (вокруг центра)">↕ В/Н</button>
     </div>`;
 }
 function bindTransformControls() {
   const g = (id, fn) => { const b = document.getElementById(id); if (b) b.onclick = fn; };
-  g("xf-rot", () => setTool("rotate")); g("xf-scale", promptScale);
+  g("xf-rot", () => setTool("rotate")); g("xf-scale", () => setTool("scale"));
+  g("xf-mirror", () => setTool("mirror"));
   g("xf-mh", () => mirrorSelection("h")); g("xf-mv", () => mirrorSelection("v"));
 }
 function duplicateSelected() {
@@ -5451,8 +5518,8 @@ cv.addEventListener("mousedown", e => {
     handleTrimExtendClick(wxr, wyr);
   } else if (state.tool === "fillet") {
     handleFilletClick(wxr, wyr);
-  } else if (state.tool === "rotate") {
-    handleRotateClick(s.p);
+  } else if (state.tool === "rotate" || state.tool === "scale" || state.tool === "mirror") {
+    xfClickBase(s.p);
   } else if (state.tool === "point") {
     const L = activeLayer();
     if (!L) { toast("Создайте слой, чтобы рисовать", "warn"); return; }
@@ -5601,8 +5668,8 @@ cv.addEventListener("mousemove", e => {
   state.snapHit = s;
   state.mouse = s.p;
   document.getElementById("st-snap").textContent = s.kind ? `привязка: ${s.kind}` : "";
-  if (state.tool === "rotate" && state.rotateCtx && state.rotateCtx.phase === "angle") {
-    updateRotatePreview(); draw(); return;
+  if (state.xf && state.xf.phase === "act") {
+    xfUpdatePreview(); draw(); return;
   }
   if (state.drag && state.drag.rect) {
     state.drag.b = s.p;
@@ -5726,10 +5793,10 @@ document.addEventListener("keydown", e => {
   if ((e.metaKey || e.ctrlKey) && e.code === "KeyD") {
     e.preventDefault(); duplicateSelected(); return;
   }
-  // ввод угла поворота прямо на холсте (без всплывающего окна)
-  if (state.rotateCtx && state.rotateCtx.phase === "angle") {
-    if (/^[0-9.,-]$/.test(e.key)) { state.typed += e.key; updateRotatePreview(); draw(); return; }
-    if (e.key === "Backspace") { state.typed = state.typed.slice(0, -1); updateRotatePreview(); draw(); return; }
+  // ввод значения (угол/коэффициент) прямо на холсте (без всплывающего окна); зеркало — без ввода
+  if (state.xf && state.xf.phase === "act" && state.xf.kind !== "mirror") {
+    if (/^[0-9.,-]$/.test(e.key)) { state.typed += e.key; xfUpdatePreview(); draw(); return; }
+    if (e.key === "Backspace") { state.typed = state.typed.slice(0, -1); xfUpdatePreview(); draw(); return; }
   }
   // набор при рисовании: длина (50), абсолют X Y (100 200 или 100;200),
   // полярно (длина<угол°). Разрешены цифры, разделители, знак, угол
@@ -5738,7 +5805,7 @@ document.addEventListener("keydown", e => {
     state.typed = state.typed.slice(0, -1); draw(); return;
   }
   if (e.key === "Enter") {
-    if (state.rotateCtx && state.rotateCtx.phase === "angle") { commitRotate(); return; }
+    if (state.xf && state.xf.phase === "act") { xfCommit(); return; }
     if (state.trimCtx && !state.trimCtx.ready) {
       if (!state.trimCtx.boundary.size) { toast("Выберите хотя бы одну границу", "warn"); return; }
       state.trimCtx.ready = true;
@@ -5750,7 +5817,7 @@ document.addEventListener("keydown", e => {
     return;
   }
   if (e.key === "Escape") {
-    if (state.rotateCtx && state.rotateCtx.phase === "angle") { cancelRotate(); return; }
+    if (state.xf && state.xf.phase === "act") { xfCancel(); return; }
     if (state.typed) { state.typed = ""; draw(); return; }
     if (state.drawing) { state.drawing = null; draw(); return; }
     if (state.measure) { state.measure = null; draw(); return; }
@@ -5822,8 +5889,8 @@ function setTool(tool, opts = {}) {
     promptFilletRadius();   // задать радиус при входе в инструмент
     document.getElementById('st-hint').textContent = "Сопряжение: клик по углу линии/контура — скругляется дугой";
   }
-  if (tool === "rotate") startRotateTool();
-  else state.rotateCtx = null;
+  if (tool === "rotate" || tool === "scale" || tool === "mirror") xfStart(tool);
+  else state.xf = null;
   // геом-инструмент против несовместимого слоя — слой переключается сам
   if (!opts.keepLayer && GEOM_OF_TOOL[tool] && !toolFitsLayer(tool, activeLayer())) {
     // подходящий слой рисуемой геометрии — но не приёмник импорта и не аннотация
