@@ -1572,9 +1572,16 @@ function drawHatch(ring, hatch, strokeColor) {
   drawChain(ring, true);
   ctx.clip();
   const ss = ring.map(p => w2s(...p));
-  const xs = ss.map(p => p[0]), ys = ss.map(p => p[1]);
-  const x0 = Math.min(...xs), x1 = Math.max(...xs);
-  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  // экранный bbox кольца ОДНИМ проходом (без Math.min(...spread) — медленно/краш
+  // на больших кольцах), ЗАЖАТЫЙ по видимому холсту: штрих-линии за экраном
+  // невидимы под clip, а без зажима крупный полигон при зуме давал миллионы
+  // итераций цикла ниже → полный фриз интерфейса на большом проекте.
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const p of ss) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  const _m = (spec.spacing_px || 9) * 2;
+  x0 = Math.max(x0, -_m); x1 = Math.min(x1, cv.clientWidth + _m);
+  y0 = Math.max(y0, -_m); y1 = Math.min(y1, cv.clientHeight + _m);
+  if (x1 <= x0 || y1 <= y0) { ctx.restore(); return; }
   ctx.strokeStyle = spec.color || strokeColor;
   ctx.lineWidth = 1.0;
   ctx.setLineDash([]);
@@ -1811,10 +1818,32 @@ function draw() {
   drawBasemap(w, h);
   drawGrid(w, h);
 
+  // видимый мировой прямоугольник (+ поле) для отсечения объектов за экраном
+  const _vpad = 40 / state.view.k;
+  const _p0 = s2w(0, h), _p1 = s2w(w, 0);
+  const vMinX = Math.min(_p0[0], _p1[0]) - _vpad, vMaxX = Math.max(_p0[0], _p1[0]) + _vpad;
+  const vMinY = Math.min(_p0[1], _p1[1]) - _vpad, vMaxY = Math.max(_p0[1], _p1[1]) + _vpad;
+  const _cull = f => {
+    if (f.point) return f.point[0] < vMinX || f.point[0] > vMaxX || f.point[1] < vMinY || f.point[1] > vMaxY;
+    if (f.circle) { const c = f.circle; return c.cx + c.r < vMinX || c.cx - c.r > vMaxX || c.cy + c.r < vMinY || c.cy - c.r > vMaxY; }
+    if (f.arc) { const a = f.arc; return a.cx + a.r < vMinX || a.cx - a.r > vMaxX || a.cy + a.r < vMinY || a.cy - a.r > vMaxY; }
+    const pts = f.ring || f.line; if (!pts || !pts.length) return false;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const p of pts) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+    return x1 < vMinX || x0 > vMaxX || y1 < vMinY || y0 > vMaxY;
+  };
+  // бакет объектов по слою ОДИН раз (было O(слои×объекты): каждый объект
+  // перебирался заново на каждый слой) + отсечение по видимой области.
+  const _byLayer = new Map();
+  for (const f of state.features) {
+    const L = layerOf(f);
+    if (!L || !L.visible || _cull(f)) continue;
+    let arr = _byLayer.get(L); if (!arr) _byLayer.set(L, arr = []); arr.push(f);
+  }
   for (const layer of LAYERS_V2) {
     if (!layer.visible) continue;
-    for (const f of state.features) {
-      if (layerOf(f) !== layer) continue;
+    const _feats = _byLayer.get(layer); if (!_feats) continue;
+    for (const f of _feats) {
       const st = styleOf(f);
       ctx.setLineDash(st.dash || []);
       ctx.lineWidth = st.width; ctx.strokeStyle = st.stroke || cvColor("boundary", "#000");
