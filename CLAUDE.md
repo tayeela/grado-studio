@@ -20,8 +20,10 @@ python3 apps/studio/server.py        # http://localhost:8643
 ```
 Превью-конфиг **studio** (порт 8643) прописан и в `~/.claude/launch.json`, и в `.claude/launch.json`
 репо — используй `preview_start "studio"`. **Backend-изменения (server.py/studio_core.py/styles/*.json)
-требуют restart превью** (нет хот-релоада); фронтенд (app.js/index.html/style.css) подхватывается
-обычным reload.
+требуют restart превью** (нет хот-релоада); фронтенд (app.js/**app-transform.js**/index.html/
+style.css/tokens.css) подхватывается обычным reload. Скрипты в index.html грузятся по порядку в
+общем global-scope: `canvas-theme.js` → `app-transform.js` → `app.js` → `collab.js` (P0-разрез
+монолита, см. ЛОГ внизу).
 
 ## ЖЕЛЕЗНЫЕ ПРАВИЛА
 
@@ -377,3 +379,16 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 - **UI-полировка по Apple/Emil (ранее):** press-scale(.97), кривые --ease-out/--ease-in-out,
   prefers-reduced-transparency/contrast, font-optical-sizing. Инструменты Поворот/Масштаб/Зеркало
   интерактивные (state.xf), привязка опоры/оси к вершинам.
+- **fix hit-test:** незалитый полигон выбирается кликом по ОБВОДКЕ даже под другим сверху
+  (два прохода: контур незалитых → площадь; `isFilled(f)`). Коммит 98d6fbf.
+- **P0-рефактор монолита (в процессе, координация!):** app.js (6875 стр.) начали резать на модули.
+  - ponytail-аудит: dead code почти нет (удалены promptRotate/promptScale/scaleSelectionBy — 8143698).
+    Реальный «вес» — размер + дублирование геометрии JS↔ядро (path.py/curves.py), это P0-unify.
+  - **Новый файл `app-transform.js`** (инструменты Поворот/Масштаб/Зеркало, xf*) — классический скрипт
+    в общем global-scope, грузится **ПЕРЕД app.js** в index.html (порядок важен: draw→xfDrawOverlay).
+    Коммит 15259b1. Паттерн для дальнейшего разреза (snapping/data/ui-modals) — тот же.
+  - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
+    правкой app.js глянь `git log --oneline` на предмет свежих `refactor(P0)`.
+- **⚠️ Напоминание (сам нарушил и поймал):** при тестах на синтетике ВСЕГДА заглушай `persist`
+  (`window.persist=()=>{}`), т.к. afterChange→persist пишет СИНХРОННО в localStorage + POST на диск.
+  Забыл один раз → форс-восстановил корректный проект (13943 объекта целы). Правило 1 в силе.
