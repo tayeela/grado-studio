@@ -17,6 +17,8 @@ html, body { height: 100%; overflow: hidden; }
 .icon-btn .ic { width: 17px; height: 17px; }
 body {
   font: var(--fs-13)/var(--lh-base) var(--font-ui);
+  font-optical-sizing: auto; text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
   color: var(--text); background: var(--app-bg);
   display: flex; flex-direction: column;
   /* interface text should not be selectable by mouse (except inputs/editable) */
@@ -611,7 +613,8 @@ footer span { flex-shrink: 0; }
 .collab-overlay { z-index: 2000; }
 .collab-auth { width: min(380px, 94vw); padding: var(--sp-6); display: flex; flex-direction: column;
   gap: var(--sp-2); }
-.collab-brand { font-size: var(--fs-20, 20px); font-weight: 700; text-align: center; color: var(--text); }
+.collab-brand { font-size: var(--fs-20, 20px); font-weight: 700; text-align: center; color: var(--text);
+  line-height: var(--lh-tight); letter-spacing: -.01em; }
 .collab-brand span { color: var(--accent); }
 .collab-sub { text-align: center; color: var(--muted); font-size: var(--fs-13); margin-bottom: var(--sp-2); }
 .collab-auth label { display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-12);
