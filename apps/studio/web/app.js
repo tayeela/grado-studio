@@ -1782,7 +1782,13 @@ function cursorPoint(wx, wy) {
     return { p: [ox, oy], kind: "орто" };
   }
   // from=base: во время построения доступна привязка «перпендикуляр»
-  return snapPoint(wx, wy, state.edit && state.edit.f ? state.edit.f.id : undefined, base);
+  let exclude = state.edit && state.edit.f ? state.edit.f.id : undefined;
+  // инструменты преобразования в фазе «act»: выделение движется вместе с превью,
+  // поэтому реф/ось/масштаб привязываем к ФИКСИРОВАННЫМ объектам, исключая само
+  // выделение (иначе привязка цепляется за ползущую геометрию). Опорная точка
+  // (фаза «base») привязывается ко всему — в т.ч. к вершинам самого объекта.
+  if (state.xf && state.xf.phase === "act") exclude = new Set(selectionIds());
+  return snapPoint(wx, wy, exclude, base);
 }
 
 // ---------- отрисовка ----------
