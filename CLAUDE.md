@@ -23,7 +23,7 @@ python3 apps/studio/server.py        # http://localhost:8643
 требуют restart превью** (нет хот-релоада); фронтенд (app.js/**app-transform.js**/index.html/
 style.css/tokens.css) подхватывается обычным reload. Скрипты в index.html грузятся по порядку в
 общем global-scope: `canvas-theme.js` → `app-transform.js` → `app-snap.js` → `app-data.js` →
-`app.js` → `collab.js` (P0-разрез монолита, см. ЛОГ внизу).
+`app-style-ui.js` → `app.js` → `collab.js` (P0-разрез монолита, см. ЛОГ внизу).
 
 ## ЖЕЛЕЗНЫЕ ПРАВИЛА
 
@@ -392,9 +392,15 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
     openDataFetch, 205 стр) — коммит 49af6c1. Только определения; биндинг on("btn-data") и остальной
     импорт (мост/inbox pollInbox, ГИС ОГД-ZIP, NSPD-file, панель источников renderSources,
     importSourceFeatures) ОСТАЛИСЬ в app.js — сцеплены с top-level init, отдельный заход.
+  - **`app-style-ui.js`** (UI оформления слоя: openLayerStyle/openStyleLibrary/stylePickerOptions/
+    цвет-хелперы/makeColorField, 641 стр) — коммит bbead33. Общие escHtml/uiPrompt/uiConfirm и
+    таблица атрибутов остались в app.js.
   - Все — классические скрипты, грузятся ПЕРЕД app.js (порядок важен: draw зовёт xfDrawOverlay/
-    drawSnapMarker на init; on-биндинги ссылаются на функции модулей). Дальше: ui-modals /
-    остаток data-import. **app.js: 6875 → 6157** (вынесено 3 модуля, ~720 стр).
+    drawSnapMarker на init; on-биндинги ссылаются на функции модулей). Дальше: остаток модалок
+    (kinds/variants/album/tep/fields — есть мина `_BUILTIN_KINDS=BASE_KINDS.slice()` top-level, аккуратно) /
+    остаток data-import. **app.js: 6875 → 5516** (вынесено 4 модуля, ~1360 стр, ~20%).
+  - **fix попутно (787d018):** краш `fitPoints`/`selectionPivot` — `Math.max(...xs)` спред 607k точек
+    переполнял стек V8. Заменено на однопроходный min/max. Предсущ. баг, всплыл из-за роста проекта.
   - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
     правкой app.js глянь `git log --oneline` на предмет свежих `refactor(P0)`.
 - **⚠️ Напоминание (сам нарушил и поймал):** при тестах на синтетике ВСЕГДА заглушай `persist`
