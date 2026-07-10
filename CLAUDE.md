@@ -22,8 +22,8 @@ python3 apps/studio/server.py        # http://localhost:8643
 репо — используй `preview_start "studio"`. **Backend-изменения (server.py/studio_core.py/styles/*.json)
 требуют restart превью** (нет хот-релоада); фронтенд (app.js/**app-transform.js**/index.html/
 style.css/tokens.css) подхватывается обычным reload. Скрипты в index.html грузятся по порядку в
-общем global-scope: `canvas-theme.js` → `app-transform.js` → `app.js` → `collab.js` (P0-разрез
-монолита, см. ЛОГ внизу).
+общем global-scope: `canvas-theme.js` → `app-transform.js` → `app-snap.js` → `app.js` → `collab.js`
+(P0-разрез монолита, см. ЛОГ внизу).
 
 ## ЖЕЛЕЗНЫЕ ПРАВИЛА
 
@@ -384,9 +384,12 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 - **P0-рефактор монолита (в процессе, координация!):** app.js (6875 стр.) начали резать на модули.
   - ponytail-аудит: dead code почти нет (удалены promptRotate/promptScale/scaleSelectionBy — 8143698).
     Реальный «вес» — размер + дублирование геометрии JS↔ядро (path.py/curves.py), это P0-unify.
-  - **Новый файл `app-transform.js`** (инструменты Поворот/Масштаб/Зеркало, xf*) — классический скрипт
-    в общем global-scope, грузится **ПЕРЕД app.js** в index.html (порядок важен: draw→xfDrawOverlay).
-    Коммит 15259b1. Паттерн для дальнейшего разреза (snapping/data/ui-modals) — тот же.
+  - **`app-transform.js`** (инструменты Поворот/Масштаб/Зеркало, xf*) — коммит 15259b1.
+  - **`app-snap.js`** (движок привязок osnap: snapPoint/collectSnapPts/intersections/cursorPoint/
+    drawSnapMarker/SNAP_PRIORITY, 302 стр) — коммит 21e5277. Общие гео-примитивы (nearChain/
+    pointInRing/circleCircleIntersections…) и рендер (drawChain/drawGrid) ОСТАЛИСЬ в app.js (общие).
+  - Все — классические скрипты, грузятся ПЕРЕД app.js (порядок важен: draw зовёт xfDrawOverlay/
+    drawSnapMarker на init). Дальше тем же паттерном: data-import → ui-modals. app.js: 6875→6362.
   - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
     правкой app.js глянь `git log --oneline` на предмет свежих `refactor(P0)`.
 - **⚠️ Напоминание (сам нарушил и поймал):** при тестах на синтетике ВСЕГДА заглушай `persist`
