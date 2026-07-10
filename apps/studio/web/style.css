@@ -60,10 +60,10 @@ header {
 button {
   font: inherit; border: 1px solid var(--field-border); background: var(--field-bg);
   border-radius: var(--r-sm); padding: var(--sp-1) 11px; cursor: pointer; color: var(--text);
-  transition: background .12s, border-color .12s, color .12s;
+  transition: background .12s, border-color .12s, color .12s, transform .12s var(--ease-out);
 }
 button:hover { background: var(--glass-strong); border-color: var(--hairline-2); }
-button:active { transform: translateY(.5px); }
+button:active { transform: scale(.97); }
 button:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
 button.primary {
   background: var(--accent); color: var(--on-accent); border-color: transparent;
@@ -190,7 +190,7 @@ button.primary:active { background: var(--accent-active); }
 #panel h3::after {
   content: "▾";
   font-size: 10px;
-  transition: transform .12s ease;
+  transition: transform .12s var(--ease-in-out);
   margin-left: auto;
   opacity: .6;
 }
@@ -644,3 +644,10 @@ footer span { flex-shrink: 0; }
 .collab-share { padding: 3px 10px; font-size: var(--fs-12); }
 .collab-del { padding: 3px 8px; font-size: var(--fs-12); color: var(--danger, #c62828); }
 .collab-empty { text-align: center; color: var(--muted); padding: var(--sp-6); font-size: var(--fs-13); }
+
+/* ---- Доступность: меньше движения (цветовые переходы сохраняем — помогают
+   пониманию; убираем только transform-движение) --------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  button:active { transform: none; }
+  #panel h3::after { transition: none; }
+}
