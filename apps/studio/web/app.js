@@ -5407,17 +5407,32 @@ function placeTypedPoint() {
 }
 
 // ---------- хит-тест ----------
+// есть ли у полигона видимая заливка (иначе он выбирается только по обводке).
+// границы (kind=boundary) — всегда по обводке, у них нет «тела».
+function isFilled(f) {
+  if (!f.ring) return false;
+  const L = layerOf(f);
+  if (L && L.kind === "boundary") return false;
+  const st = styleOf(f) || {};
+  if (!st.fill || st.fill === "transparent" || st.fill === "none") return false;
+  if (st.fillOpacity != null && st.fillOpacity <= 0) return false;
+  return true;
+}
 function hitTest(wx, wy) {
   const tolW = 7 / state.view.k;
-  for (const layer of [...LAYERS_V2].reverse()) {
+  const layers = [...LAYERS_V2].reverse();
+  // Проход 1 — по ОБВОДКЕ (штрихам): точки, линии, дуги, окружности и
+  // полигоны БЕЗ заливки. Клик точно по контуру выбирает именно его объект,
+  // даже если сверху лежит другой полигон — у незалитого нет «тела», ловим
+  // за обводку (и она видна, т.к. заливкой сверху не перекрыта).
+  for (const layer of layers) {
     if (!layer.visible || layer.locked) continue;
     for (let i = state.features.length - 1; i >= 0; i--) {
       const f = state.features[i];
       if (layerOf(f) !== layer) continue;
       if (f.point && Math.hypot(f.point[0] - wx, f.point[1] - wy) < tolW + 4 / state.view.k) return f;
       if (f.line && nearChain(wx, wy, f.line, tolW) !== null) return f;
-      if (f.ring && (layer.kind === "boundary" ? nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null
-                                               : pointInRing(wx, wy, f.ring))) return f;
+      if (f.ring && !isFilled(f) && nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null) return f;
       if (f.arc) {
         const aa = f.arc; const dd = Math.hypot(aa.cx - wx, aa.cy - wy);
         if (Math.abs(dd - aa.r) < tolW) return f;
@@ -5426,6 +5441,19 @@ function hitTest(wx, wy) {
         const cc = f.circle; const dd = Math.hypot(cc.cx - wx, cc.cy - wy);
         if (Math.abs(dd - cc.r) < tolW) return f;
       }
+    }
+  }
+  // Проход 2 — по ПЛОЩАДИ/контуру: полигон, содержащий точку ИЛИ задетый за
+  // обводку (верхний побеждает). Залитый полигон ловится телом; допуск по
+  // контуру даёт клик по самой границе (pointInRing ровно на грани неустойчив),
+  // но порядок «сверху вниз» защищает от выбора скрытого под заливкой контура.
+  for (const layer of layers) {
+    if (!layer.visible || layer.locked) continue;
+    for (let i = state.features.length - 1; i >= 0; i--) {
+      const f = state.features[i];
+      if (layerOf(f) !== layer) continue;
+      if (f.ring && (pointInRing(wx, wy, f.ring)
+                     || nearChain(wx, wy, [...f.ring, f.ring[0]], tolW) !== null)) return f;
     }
   }
   return null;
