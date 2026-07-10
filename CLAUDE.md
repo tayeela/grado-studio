@@ -23,7 +23,7 @@ python3 apps/studio/server.py        # http://localhost:8643
 требуют restart превью** (нет хот-релоада); фронтенд (app.js/**app-transform.js**/index.html/
 style.css/tokens.css) подхватывается обычным reload. Скрипты в index.html грузятся по порядку в
 общем global-scope: `canvas-theme.js` → `app-transform.js` → `app-snap.js` → `app-data.js` →
-`app-style-ui.js` → `app.js` → **`app-import.js`** → `collab.js`. Первые 4 модуля ПЕРЕД app.js
+`app-style-ui.js` → `app-attr.js` → `app.js` → **`app-import.js`** → `collab.js`. Модули ПЕРЕД app.js
 (их функции нужны на init), а `app-import.js` — ПОСЛЕ (в нём top-level execs: setInterval/on-биндинги,
 которым нужны on/state из app.js). P0-разрез монолита, см. ЛОГ внизу.
 
@@ -406,8 +406,10 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
     importSourceFeatures и журнал recordSource/fetchSources/renderSources остались в app.js.
   - **fix попутно (787d018):** краш `fitPoints`/`selectionPivot` — `Math.max(...xs)` спред 607k точек
     переполнял стек V8. Заменено на однопроходный min/max. Предсущ. баг, всплыл из-за роста проекта.
-  - **Итог P0-разреза: app.js 6875 → 5342 (−22%), 5 модулей.** Остаток монолита: модалки
-    (kinds/variants/album/tep/fields — мина `_BUILTIN_KINDS=BASE_KINDS.slice()` top-level) и app-geom
+  - **`app-attr.js`** (таблица атрибутов + схема полей + калькулятор: openAttributeTable/openFieldCalc/
+    attrColumns/EXPR_FUNCS…, 403 стр) — коммит cbbbc06. attrColumns зовут app-data/app-style-ui (runtime).
+  - **Итог P0-разреза: app.js 6875 → 4939 (−28%), 6 модулей.** Остаток: модалки
+    (kinds/variants/album/tep/newlayer — мина `_BUILTIN_KINDS=BASE_KINDS.slice()` top-level) и app-geom
     (общие примитивы pointInRing/nearChain/…). Кеш браузера: сервер шлёт no-store, но старую вкладку
     надо перезагрузить (Cmd+R) после правок JS.
   - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
