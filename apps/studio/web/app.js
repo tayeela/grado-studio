@@ -2229,12 +2229,17 @@ function fitPoints(pts, pad = 0.82) {
   if (!pts.length) return;
   const w = cv.clientWidth, h = cv.clientHeight;
   if (w < 2 || h < 2) return;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  const dx = Math.max(Math.max(...xs) - Math.min(...xs), 10);
-  const dy = Math.max(Math.max(...ys) - Math.min(...ys), 10);
+  // однопроходный bbox: спред Math.max(...xs) переполняет стек на больших
+  // проектах (>~125k точек — лимит числа аргументов V8; у юзера 600k+ → краш)
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  for (const p of pts) {
+    if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+    if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+  }
+  const dx = Math.max(maxx - minx, 10), dy = Math.max(maxy - miny, 10);
   state.view.k = Math.max(0.05, Math.min(40, Math.min(w / dx, h / dy) * pad));
-  state.view.tx = w / 2 - (Math.min(...xs) + dx / 2) * state.view.k;
-  state.view.ty = h / 2 + (Math.min(...ys) + dy / 2) * state.view.k;
+  state.view.tx = w / 2 - (minx + dx / 2) * state.view.k;
+  state.view.ty = h / 2 + (miny + dy / 2) * state.view.k;
   draw();
 }
 function fitView() {
@@ -4070,8 +4075,14 @@ function selectionPivot() {
     else for (const p of featurePts(f)) pts.push(p);
   }
   if (!pts.length) return null;
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  return [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  // однопроходный центр bbox (без Math.min(...spread) — краш при выделении
+  // многих тысяч объектов, тот же лимит аргументов V8, что в fitPoints)
+  let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+  for (const p of pts) {
+    if (p[0] < minx) minx = p[0]; if (p[0] > maxx) maxx = p[0];
+    if (p[1] < miny) miny = p[1]; if (p[1] > maxy) maxy = p[1];
+  }
+  return [(minx + maxx) / 2, (miny + maxy) / 2];
 }
 // применить преобразование к выделению: pt — маппер точки, arcFn/circleFn —
 // правка параметров дуги/окружности (центр, радиус, углы). snapshot один раз.
