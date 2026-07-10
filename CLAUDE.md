@@ -412,6 +412,12 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
     (kinds/variants/album/tep/newlayer — мина `_BUILTIN_KINDS=BASE_KINDS.slice()` top-level) и app-geom
     (общие примитивы pointInRing/nearChain/…). Кеш браузера: сервер шлёт no-store, но старую вкладку
     надо перезагрузить (Cmd+R) после правок JS.
+  - **P1: пространственный индекс привязок (7a6f0a9)** — в `app-snap.js`. Раньше osnap перебирал ВСЕ
+    объекты дважды за кадр (O(N)) + тихий срез 400 сегментов в пересечениях. Теперь грид-индекс
+    (`snapIndex()`/`snapQuery()`/`nearIntersections()`, кеш `state._snapIndex`, инвалидация вместе с
+    `state._ix` — 5 мест app.js + afterChange). Привязка 4.6 мс/движение (было O(607k)), срез снят,
+    поведение 1:1. Индекс строится 344 мс лениво на изменение геометрии (при рисовании — не на каждую
+    точку, т.к. afterChange только на finishDrawing).
   - **NB второму аккаунту:** правки app.js теперь могут конфликтовать с разрезом — перед крупной
     правкой app.js глянь `git log --oneline` на предмет свежих `refactor(P0)`.
 - **⚠️ Напоминание (сам нарушил и поймал):** при тестах на синтетике ВСЕГДА заглушай `persist`
