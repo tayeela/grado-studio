@@ -31,7 +31,13 @@ OSM_SETS = {
     "buildings": ['way["building"]'],
     "landuse": ['way["landuse"]',
                 'way["leisure"~"^(park|garden|pitch|playground)$"]',
-                'way["natural"~"^(wood|scrub|grassland|heath)$"]'],
+                'way["natural"~"^(wood|scrub|grassland|heath)$"]',
+                # крупные парки/леса/промзоны в OSM — мультиполигон-relation
+                # (часто с вырезами-островами), а не way; без этих строк они
+                # терялись (та же причина, что у воды выше)
+                'relation["landuse"]',
+                'relation["leisure"~"^(park|garden|pitch|playground)$"]',
+                'relation["natural"~"^(wood|scrub|grassland|heath)$"]'],
     "water": ['way["natural"="water"]',
               'way["water"]',
               'way["waterway"~"^(riverbank|dock|canal)$"]',
