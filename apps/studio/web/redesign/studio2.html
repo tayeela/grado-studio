@@ -137,8 +137,16 @@
           <button class="addlayer" id="btn-new-layer" style="margin-top:6px"><svg class="ic" style="width:15px;height:15px"><use href="#i-plus"/></svg>Добавить слой</button>
         </div>
       </div>
-      <div class="panel-wip" style="padding:var(--sp-4)">
-        ТЭП — подключается на следующем шаге Фазы 2.
+      <div class="card" id="tep-card">
+        <div class="card-h"><svg class="ic" style="width:15px;height:15px"><use href="#i-chart"/></svg>ТЭП
+          <span class="tep-status-badge" id="tep-status"></span>
+          <span class="tep-live">живой расчёт</span>
+          <button class="h3-btn" id="btn-variants" title="Варианты концепции — снимки проекта и сравнение ТЭП" style="margin-left:6px">⎇</button>
+        </div>
+        <div class="card-b">
+          <div id="tep-fact"></div>
+          <div id="tep-body" class="muted">Начертите границу территории</div>
+        </div>
       </div>
     </div>
   </aside>
@@ -182,12 +190,11 @@
      ошибок; переносятся в видимый вид по секциям на следующих шагах.
      ================================================================ -->
 <div id="engine-slots">
-  <div id="tep-fact"></div><div id="tep-body"></div><span id="tep-status"></span>
   <input id="p-density" type="number" value="25"><input id="p-ratio" type="number" value="80"><input id="p-krail" type="number" value="1"><input id="p-kba" type="number" value="0.5">
   <input id="buf-dist" type="number" value="300">
   <label><input type="radio" name="buf-side" value="both" checked>оба</label><label><input type="radio" name="buf-side" value="outer">наружу</label><label><input type="radio" name="buf-side" value="inner">внутрь</label>
   <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
-  <button id="btn-tep-editor"></button><button id="btn-variants"></button><button id="btn-shortcuts"></button>
+  <button id="btn-tep-editor"></button><button id="btn-shortcuts"></button>
   <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
   <span id="collab-bar" style="display:none"><button id="collab-back"></button><span id="collab-projname"></span><span id="collab-online"></span><span id="collab-sync"></span></span>
 </div>
@@ -240,6 +247,7 @@
   <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 10h16M4 15h16M10 4v16M15 4v16"/></symbol>
   <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8V6"/><path d="M5 12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4v5h-5"/><path d="M4 20v-5h5"/><path d="M19.5 9a7.5 7.5 0 0 0-13-2.5L4 9m0 6 2.5 2.5A7.5 7.5 0 0 0 19.5 15"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10.5M10 20V4M16 20v-6.5"/><path d="M3 20h18"/></symbol>
 </svg>
 
 <!-- реальный движок (тот же порядок, что в index.html) -->

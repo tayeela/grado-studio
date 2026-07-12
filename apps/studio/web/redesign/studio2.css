@@ -5,6 +5,22 @@
    к новому дизайну. Наполняется по секциям Фазы 2.
    ============================================================================= */
 
+/* ---- ТЭП (#tep-fact / #tep-body) ---- */
+#tep-card .card-b{gap:0}
+.tep-status-badge{font-size:10px;color:var(--muted);font-weight:400}
+.tep-live{margin-left:auto;font-size:10px;font-weight:600;color:var(--success);
+  display:inline-flex;align-items:center;gap:5px}
+.tep-live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--success)}
+.tep-group{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  margin-top:10px;padding-top:8px;border-top:1px solid var(--hairline)}
+.tep-group:first-child{margin-top:0;padding-top:0;border-top:none}
+.tep-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:4px 0;
+  font-size:var(--fs-12);color:var(--text-2)}
+.tep-row>span:first-child{min-width:0}
+.tep-row .v{color:var(--text);font-weight:600;font-family:var(--font-mono);white-space:nowrap;flex:0 0 auto}
+.tep-row .v small{font-weight:400;color:var(--muted);font-family:var(--font-ui);font-size:10px;margin-left:3px}
+#tep-body.muted{color:var(--muted);font-size:var(--fs-12);padding:4px 0}
+
 /* ---- Свойства объекта (#props-body, контекстно) ---- */
 #props-body{display:flex;flex-direction:column;gap:9px;font-size:var(--fs-12)}
 #props-body.muted{color:var(--muted);line-height:1.55;gap:6px}
