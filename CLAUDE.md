@@ -369,6 +369,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 
 ## Правки этой сессии (сверх снимка выше)
+- **feat: импорт ГИС ОГД без ZIP (папка / одиночный GeoJSON).** Продолжение доработки ОГД.
+  Коннектор `gisogd.py`: `fetch(source)` теперь принимает не только ZIP, но и **папку** с распакованными
+  слоями и **одиночный файл** `.geojson/.json/.shp` (напр. экспорт из QGIS) — общий `_collect(base, only)`,
+  `only` ограничивает одним stem; попутно **починена утечка** temp-каталога (был `mkdtemp` без удаления →
+  теперь `try/finally rmtree`). `studio_core`: маршрутизация вынесена в `_gisogd_process(conn, result)`;
+  `import_gisogd(data_bytes, filename)` определяет ZIP vs GeoJSON по сигнатуре (`PK`), для одиночного
+  GeoJSON **сохраняет исходное имя** (`_safe_stem`) — по нему идёт маршрутизация в слой (temp пишется
+  как `<имя>.geojson`); добавлен `import_gisogd_path(path)` для папок/файлов. `server.py`:
+  `/api/import-gisogd` читает имя из заголовка **`X-Grado-Filename`** (URL-энкод — правило 5, кириллица
+  ASCII-safe); `/api/import-gisogd-path` расширен — принимает zip/geojson/json/shp/**папку** в пределах
+  ~/Downloads (безопасный корень сохранён), зовёт `import_gisogd_path`. Фронт: пикер `accept=.zip,.geojson,.json`,
+  change-handler шлёт `X-Grado-Filename=encodeURIComponent(file.name)`, текст меню обновлён. **Backend →
+  рестарт.** Проверено standalone (папка=2 слоя, одиночный файл, ZIP-регрессия, name-routing: `Красные_линии.geojson`
+  → `red_lines`, без имени → «прочие») И вживую через реальный `/api/import-gisogd` (кириллич. имя в заголовке
+  дошло, слой red_lines, атрибуты NAME/STATUS сохранены, проект не тронут). Тесты 98 studio + 27 connectors OK
+  (обновил `test_empty_archive_noted` под новую формулировку notes). Осталось: SHP без GDAL (pure-python
+  reader + МСК-50), UX выбора папки в браузере (пока папка — через путь в ~/Downloads).
 - **feat: импорт ГИС ОГД — «ничего не теряется» (юзер выбрал улучшать ОГД вместо data.mos.ru).**
   Разбор выбора: московские слои. `data.mos.ru`/`ehd.moscow` из этой среды **недоступны** — TLS-соединение
   рвётся на syscall сразу после connect (гео/IP-фильтр `mos.ru`; НСПД — тоже РФ-гос — при этом отвечает 200,

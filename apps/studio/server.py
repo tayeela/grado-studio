@@ -427,7 +427,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/import-gisogd":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)
-                out = studio_core.import_gisogd(raw)
+                # имя файла (для маршрутизации одиночного GeoJSON) — URL-энкод
+                # в заголовке (правило 5: заголовки строго ASCII, кириллица
+                # едет процент-кодированной)
+                fn = self.headers.get("X-Grado-Filename")
+                if fn:
+                    from urllib.parse import unquote
+                    fn = unquote(fn)
+                out = studio_core.import_gisogd(raw, filename=fn or None)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return
@@ -464,17 +471,22 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             if self.path == "/api/import-gisogd-path":
-                # импорт выгрузки ГИС ОГД по пути файла (автоподхват из
-                # «Загрузок»). Строго: только *.zip внутри ~/Downloads —
-                # произвольные пути с холста не читаем
+                # импорт ГИС ОГД по пути: ZIP (автоподхват из «Загрузок»),
+                # распакованная папка или одиночный файл (.geojson/.json/.shp).
+                # Безопасность: только внутри ~/Downloads — произвольные пути
+                # с холста не читаем (тот же принцип, что был для *.zip)
                 body = self._json_body()
                 p = Path(str(body.get("path") or "")).resolve()
                 dl = (Path.home() / "Downloads").resolve()
-                if p.suffix.lower() != ".zip" or not p.is_file() \
-                        or dl not in p.parents:
-                    self.send_error(400, "expected a zip inside Downloads")
+                inside = p == dl or dl in p.parents
+                ok_kind = (p.is_dir() or
+                           (p.is_file() and p.suffix.lower() in
+                            (".zip", ".geojson", ".json", ".shp")))
+                if not inside or not ok_kind:
+                    self.send_error(400, "expected a zip/geojson/shp or folder "
+                                         "inside Downloads")
                     return
-                out = studio_core.import_gisogd(p.read_bytes())
+                out = studio_core.import_gisogd_path(str(p))
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return

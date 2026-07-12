@@ -138,7 +138,7 @@ async function importGisogd(fetchArgs, askText, errText) {
 }
 
 on("btn-gisogd", "click", async () => {
-  const useFile = await uiConfirm("Загрузить ГИС ОГД:\n- Файл (скачанный ZIP с портала)\n- По прямой ссылке (сгенерированной на gisogd.mos.ru)", { ok: "Файл", cancel: "По ссылке" });
+  const useFile = await uiConfirm("Загрузить ГИС ОГД:\n- Файл (ZIP с портала или отдельный GeoJSON, напр. экспорт из QGIS)\n- По прямой ссылке (сгенерированной на gisogd.mos.ru)", { ok: "Файл", cancel: "По ссылке" });
   if (useFile) {
     document.getElementById("gisogd-file").click();
   } else {
@@ -160,9 +160,12 @@ on("gisogd-file", "change", async e => {
   e.target.value = "";
   await importGisogd(
     ["/api/import-gisogd", { method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
+      headers: { "Content-Type": "application/octet-stream",
+        // имя файла — для маршрутизации одиночного GeoJSON в нужный слой
+        // (URL-энкод: заголовок обязан быть ASCII); ZIP имя игнорирует
+        "X-Grado-Filename": encodeURIComponent(file.name) },
       body: await file.arrayBuffer() }],
-    "Импортировать выгрузку с ГИС ОГД Москвы?",
+    "Импортировать выгрузку ГИС ОГД (ZIP или GeoJSON)?",
     "Не удалось импортировать выгрузку ОГД");
 });
 

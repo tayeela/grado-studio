@@ -1306,21 +1306,47 @@ def _gisogd_clean_props(raw):
     return props, fields
 
 
-def import_gisogd(zip_bytes):
-    """Выгрузка ГИС ОГД Москвы (ZIP с портала) → фигуры холста.
+def _safe_stem(name):
+    """Имя файла-слоя → безопасный stem для temp (сохраняем кириллицу — по
+    имени идёт маршрутизация ОГД, но убираем разделители пути/расширение)."""
+    stem = Path(str(name or "layer")).stem
+    stem = "".join(c for c in stem if c not in '/\\:*?"<>|').strip()
+    return stem or "layer"
 
-    Коннектор распаковывает ZIP-в-ZIP и SHP (МСК-50 → WGS84 через ogr2ogr);
-    здесь координаты доводятся до локальных метров холста (_wgs_geom_to_canvas),
-    а слои архива маршрутизируются в модель по имени члена (_GISOGD_LAYER_RULES);
-    нераспознанные слои не теряются — идут в source.gisogd.other."""
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        tmp.write(zip_bytes)
-        tmp_path = tmp.name
-    try:
+
+def import_gisogd(data_bytes, filename=None):
+    """Выгрузка ГИС ОГД → фигуры холста. Принимает ZIP (портал) ИЛИ одиночный
+    GeoJSON (напр. экспорт из QGIS) по сигнатуре байтов.
+
+    Для GeoJSON важно исходное имя файла (filename) — по нему идёт
+    маршрутизация в слой; сохраняем его в имени temp-файла."""
+    is_zip = data_bytes[:2] == b"PK"
+    with tempfile.TemporaryDirectory(prefix="grado_ogd_") as td:
+        if is_zip:
+            p = Path(td) / "vygruzka.zip"
+        else:
+            # одиночный GeoJSON/JSON — имя определяет слой (маршрутизацию)
+            p = Path(td) / f"{_safe_stem(filename)}.geojson"
+        p.write_bytes(data_bytes)
         conn = GisogdZip()
-        result = conn.fetch(tmp_path)
-    finally:
-        os.unlink(tmp_path)
+        result = conn.fetch(str(p))
+    return _gisogd_process(conn, result)
+
+
+def import_gisogd_path(path):
+    """Импорт ОГД по пути: ZIP, папка с распакованными слоями или одиночный
+    файл. Сервер отвечает за проверку безопасности пути (см. server.py)."""
+    conn = GisogdZip()
+    result = conn.fetch(str(path))
+    return _gisogd_process(conn, result)
+
+
+def _gisogd_process(conn, result):
+    """Общая раскладка результата коннектора ГИС ОГД по слоям модели.
+
+    Координаты доводятся до локальных метров холста (_wgs_geom_to_canvas), слои
+    маршрутизируются по имени члена (_GISOGD_LAYER_RULES); нераспознанные слои
+    не теряются — идут в source.gisogd.other; атрибуты сохраняются как поля."""
     result["params"] = {**(result.get("params") or {}),
                         "extent": _territory_key(result["features"])}
     manifest, d = _snapshot(conn, result)
