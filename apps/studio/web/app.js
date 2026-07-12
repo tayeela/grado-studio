@@ -2339,9 +2339,17 @@ function zoomToLayer(id) {
 function zoomToFeature(f) { fitPoints(featurePts(f), 0.5); }
 
 // ---------- история и сохранение ----------
+// глубина истории отмены адаптивна к размеру: снимок = JSON всего проекта, у
+// больших выгрузок это десятки МБ на уровень — 100 уровней съели бы гигабайты
+// памяти и раздували автосейв. Малые проекты — как прежде (100).
+function undoDepth() {
+  const n = state.features.length;
+  return n > 20000 ? 5 : n > 8000 ? 15 : 100;
+}
 function snapshot() {
   state.undo.push(JSON.stringify(state.features));
-  if (state.undo.length > 100) state.undo.shift();
+  const max = undoDepth();
+  while (state.undo.length > max) state.undo.shift();
   state.redo = [];
 }
 function undo() {
@@ -2385,8 +2393,11 @@ function collectState() {
     basemapSource: basemap.source,
     exportStyle: exportStyleMode(),
     projectStyles: state.projectStyles || {},
-    undo: state.undo || [],
-    redo: state.redo || [],
+    // undo/redo — снимки всего проекта; у больших выгрузок их сериализация в
+    // автосейв = главный фриз. Для них историю не персистим (в сессии undo
+    // работает, после перезагрузки — сбрасывается). Малые — как прежде.
+    undo: state.features.length > 8000 ? [] : (state.undo || []),
+    redo: state.features.length > 8000 ? [] : (state.redo || []),
     projectCustomKinds: state.projectCustomKinds || [],
     variants: state.variants || [],
     accessRadii: state.accessRadii,
@@ -2404,10 +2415,19 @@ function collectPersonal() {
 }
 window.collectState = collectState;
 window.collectPersonal = collectPersonal;
+let _lsOverflow = false;   // большой проект не влезает в localStorage (~5 МБ):
+                           // после первого QuotaExceeded НЕ стрингифаем впустую
+                           // 100 МБ на каждую правку (главный источник фризов)
 function persist() {
   const payload = collectState();
-  try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
-  catch (e) { /* приватный режим — localStorage недоступен, но файловый автосейв ниже всё равно сработает */ }
+  if (!_lsOverflow) {
+    try { localStorage.setItem("grado_studio_v1", JSON.stringify(payload)); }
+    catch (e) {
+      // QuotaExceeded (проект > лимита) → больше не пытаемся; приватный режим —
+      // тоже деградация. Файловый автосейв ниже всё равно сохранит.
+      if (e && (e.name === "QuotaExceededError" || e.code === 22)) _lsOverflow = true;
+    }
+  }
   // веб-режим совместной работы: правки уходят на сервер (collab.js),
   // общий файловый autosave не используем (его затирали бы разные юзеры)
   if (window.Collab && window.Collab.active) {
@@ -2465,9 +2485,21 @@ function params() {
            k_rail: +document.getElementById("p-krail").value || 1,
            k_ba: +document.getElementById("p-kba").value || 0.5 };
 }
-function refreshTep() {
+const TEP_AUTO_MAX = 8000;   // выше — авто-ТЭП выключен: иначе на КАЖДУЮ правку
+                             // стрингуется и уходит на сервер весь проект (десятки
+                             // МБ) → фриз. Для больших выгрузок пересчёт по кнопке.
+function refreshTep(force) {
   clearTimeout(tepTimer);
-  document.getElementById("tep-status").textContent = "…";
+  const st = document.getElementById("tep-status");
+  if (state.features.length > TEP_AUTO_MAX && !force) {
+    if (st) {
+      st.innerHTML = 'большой проект · <a href="#" id="tep-manual">пересчитать</a>';
+      const a = document.getElementById("tep-manual");
+      if (a) a.onclick = ev => { ev.preventDefault(); refreshTep(true); };
+    }
+    return;
+  }
+  if (st) st.textContent = "…";
   tepTimer = setTimeout(async () => {
     try {
       const r = await fetch("/api/tep", { method: "POST", headers: { "Content-Type": "application/json" },
@@ -4709,8 +4741,8 @@ on("grado-file", "change", async e => {
     }
     if (Array.isArray(data.variants)) state.variants = data.variants;
     if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
-    if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
-    if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
+    if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack.slice(-undoDepth());
+    if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack.slice(-undoDepth());
     if (data.albumConfig && typeof data.albumConfig === 'object') {
       state.albumConfig = data.albumConfig;
     }
@@ -4741,8 +4773,8 @@ function loadProjectData(data) {
   }
   if (Array.isArray(data.variants)) state.variants = data.variants;
   if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
-  if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack;
-  if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack;
+  if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack.slice(-undoDepth());
+  if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack.slice(-undoDepth());
   if (data.albumConfig && typeof data.albumConfig === 'object') {
     state.albumConfig = data.albumConfig;
   }
@@ -4825,8 +4857,10 @@ function applyRestoredState(d) {
     }
   }
   state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
-  if (Array.isArray(d.undo)) state.undo = d.undo;
-  if (Array.isArray(d.redo)) state.redo = d.redo;
+  // ограничиваем восстанавливаемую историю (старые автосейвы больших выгрузок
+  // держали до 100 снимков всего проекта ≈ гигабайты в памяти)
+  if (Array.isArray(d.undo)) state.undo = d.undo.slice(-undoDepth());
+  if (Array.isArray(d.redo)) state.redo = d.redo.slice(-undoDepth());
   // L2b-миграция: старые проекты ссылались на удалённые пресет-слои
   // (project.territory.boundary и т.п.). Осиротевшие объекты переселяем в
   // воссозданные слои их вида, иначе они молча исчезли бы с холста.
