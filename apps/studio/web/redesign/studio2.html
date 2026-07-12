@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/tokens.css">
 <script src="/canvas-theme.js"></script>
 <link rel="stylesheet" href="/redesign/shell.css">
+<link rel="stylesheet" href="/redesign/studio2.css">
 <style>
   /* адаптер Фазы 2 (временный): скрыть служебные слоты движка, пока их
      внутренности не перенесены в новый вид; заголовок-группы в шапке */
@@ -110,14 +111,26 @@
 
   <div id="panel-resizer" style="display:none"></div>
 
-  <!-- ПРАВАЯ ПАНЕЛЬ: пока заглушка (внутренности — следующие шаги Фазы 2) -->
+  <!-- ПРАВАЯ ПАНЕЛЬ: Слои — реальный #layers-body движка в новом виде.
+       Свойства/Данные/ТЭП — следующие шаги. -->
   <aside id="panel">
     <div class="panel-head"><span class="title">Слои и объект</span></div>
     <div class="panel-scroll">
-      <div class="panel-wip">
-        <svg class="ic"><use href="#i-layers"/></svg>
-        Панели (Свойства, Слои, Данные, ТЭП) подключаются к движку<br>на следующих шагах Фазы 2.<br><br>
-        Сейчас проверяем главное — <b>реальный холст</b> в новой раскладке:<br>чертёж, панорама, зум, тема, инструменты.
+      <div class="card">
+        <div class="card-h">Слои <span class="lcount" id="lcount"></span>
+          <span style="margin-left:auto;display:flex;gap:2px">
+            <button class="h3-btn" id="btn-style-lib" title="Библиотека знаков — редактор эталонных знаков"><svg class="ic"><use href="#ic-format"/></svg></button>
+            <button class="h3-btn" id="btn-project-styles" title="Стили проекта"><svg class="ic"><use href="#ic-label"/></svg></button>
+            <button class="h3-btn" id="btn-manage-kinds" title="Типы слоёв">⚙</button>
+          </span>
+        </div>
+        <div class="card-b" style="padding-bottom:9px">
+          <div id="layers-body"></div>
+          <button class="addlayer" id="btn-new-layer" style="margin-top:6px"><svg class="ic" style="width:15px;height:15px"><use href="#i-plus"/></svg>Добавить слой</button>
+        </div>
+      </div>
+      <div class="panel-wip" style="padding:var(--sp-4)">
+        Свойства объекта, Данные, ТЭП — подключаются на следующих шагах Фазы 2.
       </div>
     </div>
   </aside>
@@ -130,7 +143,6 @@
      ================================================================ -->
 <div id="engine-slots">
   <div id="props-body"></div>
-  <div id="layers-body"></div>
   <div id="sources-body"></div>
   <div id="tep-fact"></div><div id="tep-body"></div><span id="tep-status"></span>
   <input type="checkbox" id="basemap-show">
@@ -143,11 +155,28 @@
   <input id="buf-dist" type="number" value="300">
   <label><input type="radio" name="buf-side" value="both" checked>оба</label><label><input type="radio" name="buf-side" value="outer">наружу</label><label><input type="radio" name="buf-side" value="inner">внутрь</label>
   <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
-  <button id="btn-style-lib"></button><button id="btn-new-layer"></button><button id="btn-project-styles"></button><button id="btn-manage-kinds"></button>
   <button id="btn-refresh-src"></button><button id="btn-tep-editor"></button><button id="btn-variants"></button><button id="btn-shortcuts"></button>
   <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
   <span id="collab-bar" style="display:none"><button id="collab-back"></button><span id="collab-projname"></span><span id="collab-online"></span><span id="collab-sync"></span></span>
 </div>
+
+<!-- иконки движка (ic-*): используются в разметке, которую генерирует app.js
+     (строки слоёв: grip/lock/menu; заголовок: format/label; далее — панели/меню) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-grip" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.4"></circle><circle cx="15" cy="6" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="9" cy="18" r="1.4"></circle><circle cx="15" cy="18" r="1.4"></circle></symbol>
+  <symbol id="ic-menu-dots" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 8 0 V11"></path></symbol>
+  <symbol id="ic-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 7.6 -1.7"></path></symbol>
+  <symbol id="ic-format" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 12 l8 -8 a2.5 2.5 0 0 1 3.5 3.5 l-8 8"></path><path d="M7.2 14.6 a3 3 0 0 0 -3 3 c0 1.4 -2.2 1.6 -1.6 2.1 1 1.1 2.6 2 4.1 2 a4 4 0 0 0 4 -4 3 3 0 0 0 -3.5 -3.1 z"></path></symbol>
+  <symbol id="ic-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6 A2 2 0 0 0 11.2 2 H4 a2 2 0 0 0 -2 2 v7.2 a2 2 0 0 0 .6 1.4 l8.7 8.7 a2.4 2.4 0 0 0 3.4 0 l6.6 -6.6 a2.4 2.4 0 0 0 0 -3.4 Z"></path><circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12 s3.8 -7 9.5 -7 9.5 7 9.5 7 -3.8 7 -9.5 7 -9.5 -7 -9.5 -7 Z"></path><circle cx="12" cy="12" r="3"></circle></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 H20"></path><path d="M9 7 V4.5 a1.5 1.5 0 0 1 1.5 -1.5 h3 a1.5 1.5 0 0 1 1.5 1.5 V7"></path><path d="M6.5 7 l.8 12 a2 2 0 0 0 2 1.9 h5.4 a2 2 0 0 0 2 -1.9 l.8 -12"></path></symbol>
+  <symbol id="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6 L18 18 M18 6 L6 18"></path></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 L9.5 17 L19 6.5"></path></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 V19 M5 12 H19"></path></symbol>
+  <symbol id="ic-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6 L15.5 12 L9.5 18"></path></symbol>
+  <symbol id="ic-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M4 10 H20 M12 5 V19"></path></symbol>
+</svg>
 
 <!-- иконки нового набора -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -186,5 +215,15 @@
 <script src="/app.js"></script>
 <script src="/app-import.js"></script>
 <script src="/collab.js"></script>
+<script>
+  // счётчик слоёв в заголовке карточки — следит за #layers-body (app.js не трогаем)
+  (function () {
+    const body = document.getElementById('layers-body'), c = document.getElementById('lcount');
+    if (!body || !c) return;
+    const upd = () => { const n = body.querySelectorAll('.layer-row').length; c.textContent = n || ''; };
+    new MutationObserver(upd).observe(body, { childList: true });
+    upd();
+  })();
+</script>
 </body>
 </html>
