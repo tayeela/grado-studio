@@ -96,7 +96,7 @@ from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
 
 SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
-_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "import"}  # допустимые в модели
+_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "terrain", "import"}  # допустимые в модели
 
 
 def _iter_lonlat(geom):
@@ -539,6 +539,9 @@ LAYER_TEMPLATES = {
     "source.osm.water":           {"code": "generic.polygon", "stage": "existing",
                                    "source_kind": "osm",
                                    "title": "OSM: вода"},
+    "source.terrain.contours":    {"code": "generic.line", "stage": "existing",
+                                   "source_kind": "terrain",
+                                   "title": "Рельеф: горизонтали"},
 }
 # слой по умолчанию для kind (legacy-объекты без layer_id)
 _KIND_TO_LAYER = {"boundary": "project.territory.boundary",
@@ -1390,11 +1393,15 @@ EXTENT_SOURCES = {
         "conn": "nspd", "categories": [469038, 469039, 469040, 469041, 469042],
         "kind": "restrict",
         "layer_id": "source.nspd.zouit", "title": "ЗОУИТ"},
+    "terrain.contours": {
+        "conn": "terrain", "kind": "generic",
+        "layer_id": "source.terrain.contours", "title": "Рельеф: горизонтали"},
 }
 
 # Пределы площади запроса, км² (фронт блокирует раньше, сервер — страховка):
-# НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее.
-EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0}
+# НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее,
+# рельеф — тайловый DEM (число тайлов ограничено внутри коннектора).
+EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0, "terrain": 80.0}
 
 
 def bbox_km2(bbox):
@@ -1523,6 +1530,8 @@ _EXTENT_BASE_FIELDS = {
     "osm.buildings": [
         {"name": "purpose", "label": "назначение", "type": "text"},
         {"name": "name", "label": "название", "type": "text"}],
+    "terrain.contours": [
+        {"name": "elev", "label": "высота, м", "type": "real"}],
 }
 
 
@@ -1555,6 +1564,10 @@ def _extent_props(src_key, p):
             "kind": (p.get("categoryName") or "ЗОУИТ").rstrip("_ "),
             "number": p.get("label"), "basis": "НСПД"}.items() if v}
         return props, base + _nspd_extra_fields(src_key, p, props)
+    if src_key == "terrain.contours":
+        elev = p.get("elev")
+        props = {"elev": elev} if elev is not None else {}
+        return props, base
     if src_key == "osm.buildings":
         purpose = p.get("building")
         return {k: v for k, v in {
@@ -1596,7 +1609,7 @@ def fetch_extent(bbox, sources):
     bbox = [west, south, east, north] (WGS84); sources ⊆ EXTENT_SOURCES.
     Возвращает {"groups": [{source, title, layer_id, kind, count, features}],
     "notes": [...], "snapshots": [манифесты для журнала источников]}."""
-    from grado_connectors import NspdDirect, OsmOverpass
+    from grado_connectors import NspdDirect, OsmOverpass, TerrainContours
 
     keys = [k for k in sources if k in EXTENT_SOURCES]
     unknown = [k for k in sources if k not in EXTENT_SOURCES]
@@ -1686,6 +1699,18 @@ def fetch_extent(bbox, sources):
             _emit(k, result["features"], _prov(manifest))
             notes.extend(n for n in (result.get("notes") or [])
                          if not n.endswith("отброшено: 0"))   # шум нормализации
+        except Exception as e:
+            notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+
+    # --- Рельеф: горизонтали из тайлового DEM (свой снимок и провенанс) ------
+    for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "terrain"]:
+        conn = TerrainContours()
+        try:
+            result = conn.fetch(bbox)
+            manifest, _ = _snapshot(conn, result)
+            snapshots.append(manifest)
+            _emit(k, result["features"], _prov(manifest))
+            notes.extend(result.get("notes") or [])
         except Exception as e:
             notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
 

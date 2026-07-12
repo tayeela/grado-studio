@@ -30,6 +30,10 @@ const DATA_SOURCE_GROUPS = [
       { key: "nspd.constructions", label: "Сооружения", def: false },
       { key: "nspd.zouit", label: "ЗОУИТ (все виды)", def: false },
     ]},
+  { title: "Рельеф", hint: "горизонтали из открытого DEM (SRTM)",
+    maxKm2: 80, items: [
+      { key: "terrain.contours", label: "Горизонтали (сечение авто)", def: false },
+    ]},
 ];
 
 function viewExtentBbox() {

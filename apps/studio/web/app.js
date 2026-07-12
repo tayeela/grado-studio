@@ -119,6 +119,17 @@ const LAYERS_V2 = [
     import_only: true, generic: true, fields: [],
     fmt: { fill: "rgba(120,160,205,0.30)", stroke: "#7fa3c8", width: 0.7 },
     defaults: () => ({}) },
+  // Рельеф: горизонтали (изолинии высот) по видимой области — из открытого
+  // тайлового DEM (AWS Terrain Tiles / SRTM). Тонкая коричневая линия «как на
+  // топооснове»; подписи высот по умолчанию выключены (сотни линий = каша),
+  // включаются «Оформлением слоя». Поле elev несёт высоту в метрах.
+  { id: "source.terrain.contours", title: "Рельеф: горизонтали", kind: "generic",
+    semantic_class: "generic.line", geometry_type: "polyline",
+    style_id: "boundary.line", stage: "existing", source_kind: "terrain",
+    import_only: true, generic: true,
+    fields: [{ name: "elev", label: "высота, м", type: "real" }],
+    fmt: { stroke: "#a9784e", width: 0.7, dash: null, label_field: null },
+    defaults: () => ({}) },
   { id: "annotation.dimensions", title: "Размер", kind: "dim",
     semantic_class: null, geometry_type: "polyline", style_id: "dimension.line",
     annotation: true, tool: "dim", defaults: () => ({}) },
