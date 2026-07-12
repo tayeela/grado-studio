@@ -74,11 +74,29 @@ class GisogdZip(Connector):
         self.ogr2ogr = ogr2ogr or find_ogr2ogr()
 
     def _shp_to_geojson(self, shp):
+        """SHP (МСК-50) → GeoJSON (WGS84), путь к результату. С ogr2ogr —
+        доверенный путь PROJ; без GDAL — свой ридер + пересчёт МСК-50→WGS84
+        (сверено с PROJ, расхождение < 1 м)."""
         out = shp[:-4] + ".converted.geojson"
-        subprocess.run(
-            [self.ogr2ogr, "-f", "GeoJSON", out, shp,
-             "-s_srs", OGD_PROJ4, "-t_srs", "EPSG:4326"],
-            check=True, capture_output=True, timeout=300)
+        if self.ogr2ogr:
+            subprocess.run(
+                [self.ogr2ogr, "-f", "GeoJSON", out, shp,
+                 "-s_srs", OGD_PROJ4, "-t_srs", "EPSG:4326"],
+                check=True, capture_output=True, timeout=300)
+            return out
+        from .crs import msk50_to_wgs84, transform_geom
+        from .shp_reader import read_shp
+        feats = []
+        for f in read_shp(shp):
+            g = f.get("geometry")
+            if not g:
+                continue
+            feats.append({"type": "Feature",
+                          "geometry": transform_geom(g, msk50_to_wgs84),
+                          "properties": f.get("properties") or {}})
+        Path(out).write_text(
+            json.dumps({"type": "FeatureCollection", "features": feats}),
+            encoding="utf-8")
         return out
 
     def _collect(self, base, only=None):
@@ -95,15 +113,13 @@ class GisogdZip(Connector):
         for gj in gjs:
             members[Path(gj).stem] = gj
         for shp in shps:
-            if self.ogr2ogr:
-                try:
-                    members[Path(shp).stem] = self._shp_to_geojson(shp)
-                except subprocess.CalledProcessError as e:
-                    notes.append(f"{Path(shp).name}: ogr2ogr не смог "
-                                 f"({e.stderr.decode(errors='replace')[:200]})")
-            else:
-                notes.append(f"{Path(shp).name}: пропущен — нет ogr2ogr "
-                             "(нужен GDAL/QGIS)")
+            try:
+                members[Path(shp).stem] = self._shp_to_geojson(shp)
+            except subprocess.CalledProcessError as e:
+                notes.append(f"{Path(shp).name}: ogr2ogr не смог "
+                             f"({e.stderr.decode(errors='replace')[:200]})")
+            except Exception as e:
+                notes.append(f"{Path(shp).name}: не удалось прочитать SHP ({e})")
         if not members and not shps:
             notes.append("не найдено ни shp, ни geojson")
         return members, notes
