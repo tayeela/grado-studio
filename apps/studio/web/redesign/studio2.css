@@ -127,6 +127,16 @@
 .modal-actions{display:flex;align-items:center;gap:10px;padding:13px 18px;box-shadow:0 -1px 0 var(--hairline);flex:0 0 auto}
 .modal-actions .spacer{flex:1}
 
+/* компактные диалоги подтверждения/ввода (uiConfirm/uiPrompt) */
+.modal.ask-modal{width:min(430px,92vw)}
+.ask-msg{padding:18px 18px 2px;font-size:var(--fs-13);line-height:1.5;color:var(--text);white-space:pre-line}
+.ask-input{margin:12px 18px 2px;width:calc(100% - 36px);height:36px;border-radius:var(--r-sm);
+  border:1px solid var(--field-border);background:var(--field-bg);color:var(--text);font:inherit;
+  font-size:var(--fs-13);padding:0 11px}
+.ask-modal .modal-actions{margin-top:6px}
+/* модалка «Данные» — чуть шире, чтобы длинные подписи умещались */
+.modal.data-modal{width:min(524px,92vw)}
+
 /* сегмент-переключатель режима */
 .modal-overlay .seg{display:flex;background:var(--field-bg);border:1px solid var(--field-border);
   border-radius:var(--r-sm);padding:3px;gap:3px}

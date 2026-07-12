@@ -843,8 +843,81 @@ def _role_areas(features):
     return out
 
 
+# --- клип объектов по границе территории разработки (ТЭП считается ВНУТРИ
+# границы, а не по всей карте) -------------------------------------------------
+def _is_territory(f):
+    cls = _class_of(f)
+    return bool(cls and cls.tep_role == "terr_area" and "ring" in f)
+
+
+def _ring_centroid(ring):
+    a = cx = cy = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % n]
+        cr = x0 * y1 - x1 * y0
+        a += cr
+        cx += (x0 + x1) * cr
+        cy += (y0 + y1) * cr
+    if abs(a) < 1e-9:                      # вырожденное кольцо → среднее вершин
+        return [sum(p[0] for p in ring) / n, sum(p[1] for p in ring) / n]
+    a *= 0.5
+    return [cx / (6 * a), cy / (6 * a)]
+
+
+def _point_in_ring(pt, ring):
+    x, y = pt
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i]
+        xj, yj = ring[j]
+        if ((yi > y) != (yj > y)) and \
+                (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _rep_point(f):
+    """Представительная точка объекта для теста «внутри территории»."""
+    if "ring" in f and f["ring"]:
+        return _ring_centroid(f["ring"])
+    if "point" in f:
+        return f["point"]
+    if "line" in f and f["line"]:
+        return f["line"][len(f["line"]) // 2]
+    if "circle" in f:
+        return [f["circle"]["cx"], f["circle"]["cy"]]
+    if "arc" in f:
+        return [f["arc"]["cx"], f["arc"]["cy"]]
+    return None
+
+
+def _clip_to_territory(features):
+    """Оставить только объекты, чья представительная точка внутри границ
+    территории разработки (роль terr_area) + сами границы. Территория не
+    задана → все объекты (поведение как раньше)."""
+    terr_rings = [f["ring"] for f in features if _is_territory(f)]
+    if not terr_rings:
+        return features
+    kept = []
+    for f in features:
+        if _is_territory(f):
+            kept.append(f)
+            continue
+        pt = _rep_point(f)
+        if pt is None or any(_point_in_ring(pt, r) for r in terr_rings):
+            kept.append(f)
+    return kept
+
+
 def make_engine(features, params=None):
     engine = Engine.from_file(PRESET)
+    # ТЭП считается ВНУТРИ границы территории разработки, а не по всей карте
+    features = _clip_to_territory(features)
     # площади входов ТЭП — из ролей слоёв, не из kind
     areas = _role_areas(features)
     inputs = {r: round(a, 4) for r, a in areas.items() if r in engine.inputs}
@@ -858,8 +931,13 @@ def make_engine(features, params=None):
 
 
 def compute_tep(features, params=None):
-    """Живой ТЭП: нормативный расчёт + факт по посадке зданий."""
-    engine = make_engine(features, params)
+    """Живой ТЭП: нормативный расчёт + факт по посадке зданий.
+
+    Все показатели считаются ВНУТРИ границы территории разработки (роль
+    terr_area): здания/зоны вне границы в ТЭП не входят."""
+    has_territory = any(_is_territory(f) for f in features)
+    features = _clip_to_territory(features)
+    engine = make_engine(features, params)   # clip идемпотентен
     fact_spp = 0.0
     for f in features:
         cls = _class_of(f)
@@ -887,6 +965,12 @@ def compute_tep(features, params=None):
             checks.append({"title": "Радиусы ДОО", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
         if r["id"] == "school_places" and r["value"] == 0 and pop > 2000:
             checks.append({"title": "Радиусы школ", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
+    # без границы территории ТЭП считается по ВСЕМ объектам карты (площадь —
+    # дефолт пресета) → честно предупреждаем: цифры не привязаны к территории
+    if not has_territory and any("ring" in f for f in features):
+        checks.insert(0, {"title": "Граница территории", "ok": False,
+                          "msg": "не задана — ТЭП по всем объектам карты; начертите "
+                                 "границу, чтобы считать внутри территории разработки"})
     return {
         "inputs": {"terr_area": engine.value("terr_area"),
                    "restrict_area": engine.value("restrict_area")},
@@ -897,6 +981,7 @@ def compute_tep(features, params=None):
         },
         "zones": zones_report(features),
         "checks": checks,
+        "has_territory": has_territory,
     }
 
 
