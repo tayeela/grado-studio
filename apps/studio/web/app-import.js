@@ -100,7 +100,18 @@ async function applyGisogdData(data, askText) {
   const { added, dup } = importSourceFeatures(data.features);
   state.selected = null;
   recordSource(data.snapshot, data.diff);
-  ["source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict"].forEach(id => {
+  // атрибуты ОГД → колонки таблицы соответствующих слоёв (как в «Данных»)
+  if (data.fields) {
+    for (const [lid, flds] of Object.entries(data.fields)) {
+      const L = LAYER_BY_ID[lid]; if (!L) continue;
+      L.fields = L.fields || [];
+      const taken = new Set(L.fields.map(fd => fd.name));
+      for (const fd of flds)
+        if (!taken.has(fd.name)) { L.fields.push(fd); taken.add(fd.name); }
+    }
+  }
+  ["source.gisogd.func_zones", "source.gisogd.red_lines", "source.gisogd.restrict",
+   "source.gisogd.other"].forEach(id => {
     const L = LAYER_BY_ID[id]; if (L) L.visible = true;
   });
   afterChange();

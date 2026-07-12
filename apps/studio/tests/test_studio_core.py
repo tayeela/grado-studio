@@ -951,13 +951,26 @@ class TestGisogdImport(unittest.TestCase):
         self.assertAlmostEqual(x, 98, delta=15)
         self.assertAlmostEqual(y, 1371, delta=15)
 
-    def test_unrecognized_member_noted_not_dropped_silently(self):
+    def test_unrecognized_member_routed_to_other_not_dropped(self):
+        # нераспознанный слой не теряется — идёт в source.gisogd.other,
+        # его атрибуты становятся полями, о нём есть заметка
         poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
         data = self._zip_bytes({"kultobjekty.geojson": _ogd_gj(poly)})
         out = studio_core.import_gisogd(data)
-        self.assertEqual(out["features"], [])
+        self.assertEqual(len(out["features"]), 1)
+        self.assertEqual(out["features"][0]["layer_id"], "source.gisogd.other")
+        self.assertIn("source.gisogd.other", out["fields"])
         self.assertTrue(any("kultobjekty" in n and "не распознан" in n
                             for n in out["notes"]))
+
+    def test_point_layer_preserved(self):
+        # точечные слои ОГД раньше молча выпадали (обрабатывались только
+        # линии/полигоны) — теперь сохраняются
+        pt = [37.605, 55.752]
+        data = self._zip_bytes({"opory.geojson": _ogd_gj(pt, geom_type="Point")})
+        out = studio_core.import_gisogd(data)
+        self.assertEqual(len(out["features"]), 1)
+        self.assertIn("point", out["features"][0])
 
     def test_multiple_recognized_layers_and_roundtrip(self):
         poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]

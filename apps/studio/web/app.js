@@ -78,6 +78,15 @@ const LAYERS_V2 = [
     semantic_class: "terr.restrict", geometry_type: "polygon",
     style_id: "restrict.hatch", stage: "existing", source_kind: "gisogd",
     import_only: true, defaults: () => ({}) },
+  // «Прочие слои» ОГД: всё, что портал отдал сверх зон/красных линий/ЗОУИТ
+  // (кадастр, ОКС, инженерия, транспорт, смежные территории) — чтобы ничего
+  // из выгрузки не терялось; нейтральный серый, любая геометрия.
+  { id: "source.gisogd.other", title: "ГИС ОГД: прочие слои", kind: "generic",
+    semantic_class: "generic.polygon", geometry_type: "polygon",
+    style_id: "boundary.line", stage: "existing", source_kind: "gisogd",
+    import_only: true, generic: true, fields: [],
+    fmt: { fill: "rgba(150,150,160,0.14)", stroke: "#8a8a94", width: 0.8 },
+    defaults: () => ({}) },
   // приёмники «Данных по области» (кнопка «Данные»: OSM + НСПД по экстенту).
   // fmt — мягкие подложечные цвета, чтобы контекст не спорил с проектом;
   // это layer.fmt (пер-слойное оформление), эталонные знаки не трогаются.

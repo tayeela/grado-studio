@@ -517,6 +517,9 @@ LAYER_TEMPLATES = {
     "source.gisogd.restrict":     {"code": "terr.restrict", "stage": "existing",
                                    "source_kind": "gisogd",
                                    "title": "ГИС ОГД: зоны с особыми условиями"},
+    "source.gisogd.other":        {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "gisogd",
+                                   "title": "ГИС ОГД: прочие слои"},
     # приёмники «Данных по области» (прямые открытые источники, fetch_extent)
     "source.nspd.buildings":      {"code": "oks.building", "stage": "existing",
                                    "source_kind": "nspd",
@@ -1285,14 +1288,31 @@ def _gisogd_route(member):
     return None, None
 
 
+# внутренние ключи, не показываемые как атрибуты объекта
+_GISOGD_SKIP_KEYS = {"grado_member"}
+
+
+def _gisogd_clean_props(raw):
+    """Атрибуты объекта ОГД (кроме внутренних/пустых) → (props, [поля-столбцы]).
+
+    Имена берём как есть (в SHP-выгрузке портала это транслит DBF, ≤10 симв.) —
+    без потери исходных ключей; тип text, чтобы ничего не отбрасывать."""
+    props, fields = {}, []
+    for k, v in raw.items():
+        if k in _GISOGD_SKIP_KEYS or v in (None, ""):
+            continue
+        props[k] = v
+        fields.append({"name": k, "type": "text"})
+    return props, fields
+
+
 def import_gisogd(zip_bytes):
     """Выгрузка ГИС ОГД Москвы (ZIP с портала) → фигуры холста.
 
     Коннектор распаковывает ZIP-в-ZIP и SHP (МСК-50 → WGS84 через ogr2ogr);
-    здесь координаты доводятся до локальных метров холста, а слои архива
-    маршрутизируются в модель по имени члена (см. _GISOGD_LAYER_RULES)."""
-    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
-
+    здесь координаты доводятся до локальных метров холста (_wgs_geom_to_canvas),
+    а слои архива маршрутизируются в модель по имени члена (_GISOGD_LAYER_RULES);
+    нераспознанные слои не теряются — идут в source.gisogd.other."""
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
         tmp.write(zip_bytes)
         tmp_path = tmp.name
@@ -1307,55 +1327,85 @@ def import_gisogd(zip_bytes):
     prov = _prov(manifest)
 
     features, notes, unknown = [], list(result["notes"]), set()
+    layer_fields = {}          # layer_id → [{name,type}] (объединение для таблицы)
+
+    def _add_fields(lid, flds):
+        acc = layer_fields.setdefault(lid, [])
+        have = {fd["name"] for fd in acc}
+        for fd in flds:
+            if fd["name"] not in have:
+                acc.append(fd)
+                have.add(fd["name"])
+
     for f in result["features"]:
         geom = f.get("geometry")
         if not geom:
             continue
-        member = (f["properties"] or {}).get("grado_member", "")
+        raw = f["properties"] or {}
+        member = raw.get("grado_member", "")
         kind, layer_id = _gisogd_route(member)
-        if kind is None:
-            if member not in unknown:
-                notes.append(f"«{member}»: тип слоя не распознан, объекты пропущены")
-                unknown.add(member)
-            continue
-        name = f["properties"].get("NAME") or f["properties"].get("name")
-        # точный знак Эталона ЛГР по имени члена архива (поверх грубого kind
-        # выше) — назначается per-object, не меняет layer_id/маршрутизацию
-        style_id = _gisogd_style_for(member) if kind in ("restrict", "zone") else None
-        style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
-        # стабильный ключ источника (член архива + id объекта) → фронт
-        # дедуплицирует повторный импорт того же ZIP
-        okey = f.get("grado_key")
+        name = raw.get("NAME") or raw.get("name")
+        okey = f.get("grado_key")      # стабильный ключ → дедуп повторного ZIP
+        extra_props, extra_fields = _gisogd_clean_props(raw)
+        # WGS84 → части фигуры холста (точки/линии/кольца) единым путём —
+        # не теряем ни точечные слои, ни мультигеометрию
         try:
-            utm = transform_geom(geom, wgs84_to_utm37n)
+            parts = _wgs_geom_to_canvas(geom)
         except Exception:
             continue
-        if kind == "redline":
-            if utm["type"] != "LineString":
-                continue
-            feat = {"kind": "redline", "layer_id": layer_id,
-                    "line": _to_local(utm["coordinates"]),
-                    "props": {"status": "существующая"}, "prov": dict(prov)}
-            if okey is not None:
-                feat["srcKey"] = f"{layer_id}:{okey}"
-            features.append(feat)
+        if not parts:
             continue
-        polys = ([utm["coordinates"]] if utm["type"] == "Polygon"
-                 else utm["coordinates"] if utm["type"] == "MultiPolygon" else [])
-        for i, poly in enumerate(polys):
-            ring = _to_local(poly[0])
-            if ring[0] == ring[-1]:
-                ring = ring[:-1]
-            props = ({"zone_title": name or style_title or "ГИС ОГД"} if kind == "zone"
-                     else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
-            feat = {"kind": kind, "layer_id": layer_id, "ring": ring,
-                    "props": props, "prov": dict(prov)}
-            if style_id:
-                feat["style_id"] = style_id
+
+        if kind == "redline":
+            emitted = 0
+            for i, part in enumerate(p for p in parts if "line" in p):
+                feat = {"kind": "redline", "layer_id": layer_id, "line": part["line"],
+                        "props": {"status": "существующая", **extra_props},
+                        "prov": dict(prov)}
+                if okey is not None:
+                    feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                features.append(feat)
+                emitted += 1
+            if emitted:
+                _add_fields(layer_id, extra_fields)
+            continue
+
+        if kind in ("zone", "restrict"):
+            # точный знак Эталона ЛГР по имени члена архива (per-object)
+            style_id = _gisogd_style_for(member)
+            style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
+            emitted = 0
+            for i, part in enumerate(p for p in parts if "ring" in p):
+                sem = ({"zone_title": name or style_title or "ГИС ОГД"}
+                       if kind == "zone"
+                       else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
+                feat = {"kind": kind, "layer_id": layer_id, "ring": part["ring"],
+                        "props": {**sem, **extra_props}, "prov": dict(prov)}
+                if style_id:
+                    feat["style_id"] = style_id
+                if okey is not None:
+                    feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                features.append(feat)
+                emitted += 1
+            if emitted:
+                _add_fields(layer_id, extra_fields)
+            continue
+
+        # тип слоя не распознан — НЕ теряем: кладём в «прочие» как есть
+        # (любая геометрия), с полной атрибутикой
+        lid = "source.gisogd.other"
+        for i, part in enumerate(parts):
+            feat = {"kind": "generic", "layer_id": lid, **part,
+                    "props": dict(extra_props), "prov": dict(prov)}
             if okey is not None:
-                feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                feat["srcKey"] = f"{lid}:{okey}#{i}"
             features.append(feat)
-    return {"features": features, "notes": notes,
+        _add_fields(lid, extra_fields)
+        if member not in unknown:
+            notes.append(f"«{member}»: тип не распознан — в слой «прочие»")
+            unknown.add(member)
+
+    return {"features": features, "notes": notes, "fields": layer_fields,
             "source_doc": result.get("source_doc"),
             "snapshot": manifest, "diff": d}
 
