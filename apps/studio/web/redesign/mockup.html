@@ -242,6 +242,67 @@ header{
 .cmdk-row.sel .ic{color:var(--accent)}
 .cmdk-row .hint{margin-left:auto;font-size:10px;color:var(--faint);font-family:var(--font-mono)}
 .cmdk-sec{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:9px 11px 4px}
+
+/* ==== модалки / поповеры / меню (общий язык) ==== */
+.scrim{position:absolute;inset:0;z-index:90;background:rgba(16,22,42,.34);backdrop-filter:blur(4px);
+  display:grid;place-items:start center;padding-top:9vh}
+.modal{width:min(548px,86vw);max-height:80vh;display:flex;flex-direction:column;
+  background:var(--glass-strong);backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);
+  border-radius:var(--r-lg);box-shadow:var(--shadow-lg),var(--glass-hi);overflow:hidden}
+.modal-h{display:flex;align-items:center;gap:10px;padding:15px 18px;box-shadow:0 1px 0 var(--hairline)}
+.modal-h .t{font-size:var(--fs-15);font-weight:600;flex:1;letter-spacing:-.01em}
+.modal-h .x{width:30px;height:30px;border-radius:var(--r-sm);display:grid;place-items:center;color:var(--muted)}
+.modal-h .x:hover{background:var(--field-bg);color:var(--text)}
+.modal-b{padding:16px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.modal-f{display:flex;align-items:center;gap:10px;padding:13px 18px;box-shadow:0 -1px 0 var(--hairline)}
+.modal-f .push{flex:1}
+.areabar{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;
+  background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--r-md);font-size:var(--fs-12);color:var(--muted)}
+.areabar .v{font-family:var(--font-mono);font-weight:600;color:var(--text);font-size:var(--fs-13)}
+.srcgroup{border:1px solid var(--hairline);border-radius:var(--r-md);overflow:hidden;background:var(--panel)}
+.srcgroup-h{display:flex;align-items:center;gap:8px;padding:10px 13px;font-weight:600;font-size:var(--fs-12)}
+.srcgroup-h .hint{font-weight:400;color:var(--muted);font-size:11px}
+.srcgroup-h .all{margin-left:auto;font-size:11px;color:var(--accent);font-weight:500;padding:3px 9px;border-radius:var(--r-pill);background:var(--accent-weak)}
+.srcitem{display:flex;align-items:center;gap:11px;padding:9px 13px;box-shadow:0 -1px 0 var(--hairline);font-size:var(--fs-13);color:var(--text-2)}
+.srcitem.on{color:var(--text)}
+.chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--field-border);flex:0 0 auto;display:grid;place-items:center;color:transparent}
+.chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chk .ic{width:12px;height:12px;stroke-width:2.6}
+
+/* поповер */
+.pop{position:absolute;z-index:60;width:262px;background:var(--glass-strong);backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border);border-radius:var(--r-md);box-shadow:var(--shadow-md),var(--glass-hi);
+  padding:13px;display:flex;flex-direction:column;gap:12px}
+.pop .ph{font-size:var(--fs-12);font-weight:600;color:var(--text)}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:11px;color:var(--muted)}
+.select,.range{width:100%;height:32px;border-radius:var(--r-sm);border:1px solid var(--field-border);
+  background:var(--field-bg);color:var(--text);font:inherit;font-size:var(--fs-12);padding:0 10px}
+.switch{display:flex;align-items:center;gap:9px;font-size:var(--fs-13)}
+.switch .tg{width:38px;height:22px;border-radius:var(--r-pill);background:var(--accent);position:relative;flex:0 0 auto}
+.switch .tg::after{content:"";position:absolute;top:2px;left:18px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:var(--shadow-sm)}
+.switch .tg.off{background:var(--field-border)}
+.switch .tg.off::after{left:2px}
+input[type=range]{-webkit-appearance:none;height:6px;border-radius:3px;background:var(--field-border);padding:0}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:var(--accent);box-shadow:var(--shadow-sm)}
+
+/* меню */
+.menu{position:absolute;z-index:60;min-width:220px;background:var(--glass-strong);backdrop-filter:var(--glass-blur);
+  border:1px solid var(--glass-border);border-radius:var(--r-md);box-shadow:var(--shadow-md),var(--glass-hi);padding:6px}
+.menu-row{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:var(--r-sm);font-size:var(--fs-13);color:var(--text)}
+.menu-row:hover{background:var(--accent-weak);color:var(--accent)}
+.menu-row .ic{width:16px;height:16px;color:var(--muted)}
+.menu-row:hover .ic{color:var(--accent)}
+.menu-row .sub{margin-left:auto;font-size:11px;color:var(--faint);font-family:var(--font-mono)}
+.menu-sep{height:1px;background:var(--hairline);margin:5px 4px}
+
+/* сегмент-переключатель (режим оформления) */
+.seg{display:flex;background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--r-sm);padding:3px;gap:3px}
+.seg button{flex:1;height:28px;border-radius:6px;font-size:var(--fs-12);font-weight:500;color:var(--text-2)}
+.seg button.on{background:var(--panel);color:var(--text);box-shadow:var(--shadow-sm)}
+.preview-row{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--hairline);border-radius:var(--r-md);background:var(--canvas-bg)}
+.swrow{display:flex;align-items:center;gap:10px}
+.dotc{width:26px;height:26px;border-radius:6px;flex:0 0 auto}
 </style>
 </head>
 <body>
@@ -451,8 +512,89 @@ header{
   </aside>
 </div>
 
+<!-- ==== ДИАЛОГ «Данные по области» ==== -->
+<div class="scrim" id="m-data" style="display:none">
+  <div class="modal">
+    <div class="modal-h"><span class="t">Данные по видимой области</span><button class="x"><svg class="ic" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+    <div class="modal-b">
+      <div class="areabar"><span>Видимая область</span><span class="v">3.4 км²</span></div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">OpenStreetMap <span class="hint">· справочный контекст</span><span class="all">все</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Дороги и улицы</div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Здания</div>
+        <div class="srcitem"><span class="chk"></span>Землепользование (парки, лес…)</div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Административные границы (районы/поселения)</div>
+      </div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">НСПД — Росреестр <span class="hint">· официальные границы ЕГРН</span><span class="all">все</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Земельные участки</div>
+        <div class="srcitem"><span class="chk"></span>ЗОУИТ (все виды)</div>
+      </div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">Рельеф <span class="hint">· горизонтали из открытого DEM</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Горизонтали (сечение авто)</div>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn">Приблизить под лимит</button><span class="push"></span><button class="btn">Отмена</button><button class="btn primary">Загрузить (5)</button></div>
+  </div>
+</div>
+
+<!-- ==== ДИАЛОГ «Оформление слоя» ==== -->
+<div class="scrim" id="m-style" style="display:none">
+  <div class="modal" style="width:min(468px,86vw)">
+    <div class="modal-h"><span class="t">Оформление слоя · Функциональная зона Ж</span><button class="x"><svg class="ic" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+    <div class="modal-b">
+      <div class="seg"><button class="on">Единый стиль</button><button>По значению поля</button></div>
+      <div class="preview-row">
+        <span class="dotc" style="background:var(--zone-a);box-shadow:inset 0 0 0 2px var(--zone-a-line)"></span>
+        <div><div style="font-weight:600;font-size:var(--fs-13)">Предпросмотр</div><div style="font-size:11px;color:var(--muted)">так знак выглядит на холсте и в печати</div></div>
+      </div>
+      <div class="field"><label>Заливка</label>
+        <div class="swrow"><span class="dotc" style="background:var(--zone-a)"></span><input class="select" style="flex:1" value="rgba(232,161,60,.24)"></div></div>
+      <div class="field"><label>Обводка</label>
+        <div class="swrow"><span class="dotc" style="background:var(--zone-a-line)"></span><input class="select" style="flex:1" value="#d98e2b"></div></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Толщина, мм</label><input class="select" value="0.5"></div>
+        <div class="field" style="flex:1"><label>Пунктир</label><select class="select"><option>сплошная</option><option>штрих</option><option>штрих-пунктир</option></select></div>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn">Сбросить</button><span class="push"></span><button class="btn">Отмена</button><button class="btn primary">Применить</button></div>
+  </div>
+</div>
+
+<!-- ==== ПОПОВЕР «Подложка» (от иконки в шапке панели) ==== -->
+<div class="pop" id="p-basemap" style="display:none;top:98px;right:14px">
+  <div class="ph">Подложка</div>
+  <div class="switch"><span class="tg"></span>Показывать подложку</div>
+  <div class="field"><label>Источник</label>
+    <select class="select"><option>Карта (OpenStreetMap)</option><option>Спутник (ESRI, высокое разрешение)</option><option selected>Спутник Sentinel-2 (Copernicus, 10 м)</option></select></div>
+  <div class="field"><label>Прозрачность — 85 %</label><input type="range" min="10" max="100" value="85"></div>
+</div>
+
+<!-- ==== МЕНЮ «Данные ▾» (от кнопки в шапке) ==== -->
+<div class="menu" id="menu-data" style="display:none;top:50px;right:326px">
+  <div class="menu-row"><svg class="ic"><use href="#i-download"/></svg>Данные по видимой области…<span class="sub">⌘D</span></div>
+  <div class="menu-sep"></div>
+  <div class="menu-row"><svg class="ic"><use href="#i-db"/></svg>Импорт НСПД (файл расширения)</div>
+  <div class="menu-row"><svg class="ic"><use href="#i-folder"/></svg>ГИС ОГД — ZIP, GeoJSON или папка</div>
+  <div class="menu-row"><svg class="ic"><use href="#i-layers"/></svg>Заполнить примером (демо)</div>
+</div>
+
+<script>
+// переключение состояний макета для съёмки: ?view=data|style|basemap|menu|palette
+(function(){
+  const v=new URLSearchParams(location.search).get('view');
+  const cfg={data:['m-data','grid'],style:['m-style','grid'],basemap:['p-basemap','flex'],
+             menu:['menu-data','block'],palette:['cmdk','grid']};
+  const c=cfg[v];
+  if(c) document.getElementById(c[0]).style.display=c[1];
+})();
+</script>
+
 <!-- набор иконок -->
 <svg width="0" height="0" style="position:absolute">
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 6"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></symbol>
   <symbol id="i-theme" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></symbol>
   <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h11a5 5 0 0 1 0 10h-1"/></symbol>
