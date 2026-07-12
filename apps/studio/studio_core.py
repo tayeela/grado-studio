@@ -542,6 +542,9 @@ LAYER_TEMPLATES = {
     "source.osm.water":           {"code": "generic.polygon", "stage": "existing",
                                    "source_kind": "osm",
                                    "title": "OSM: вода"},
+    "source.osm.boundaries":      {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: административные границы"},
     "source.terrain.contours":    {"code": "generic.line", "stage": "existing",
                                    "source_kind": "terrain",
                                    "title": "Рельеф: горизонтали"},
@@ -1456,6 +1459,10 @@ EXTENT_SOURCES = {
     "osm.water": {
         "conn": "osm", "sets": ["water"], "kind": "generic",
         "layer_id": "source.osm.water", "title": "Вода"},
+    "osm.boundaries": {
+        "conn": "osm", "sets": ["boundaries"], "kind": "generic",
+        "layer_id": "source.osm.boundaries",
+        "title": "Административные границы"},
     "nspd.parcels": {
         "conn": "nspd", "categories": [36368], "kind": "parcel",
         "layer_id": "source.nspd.parcels", "title": "Участки ЕГРН"},
@@ -1650,6 +1657,17 @@ def _extent_props(src_key, p):
             "purpose": ("здание" if purpose in (True, "yes") else purpose),
             "floors": _int_or_none(p.get("building:levels")),
             "name": p.get("name")}.items() if v}, base
+    if src_key == "osm.boundaries":
+        levels = {"4": "субъект РФ", "5": "административный округ",
+                  "6": "район области / городской округ",
+                  "8": "район / поселение / город"}
+        lvl = str(p.get("admin_level") or "")
+        props = {k: v for k, v in {
+            "name": p.get("name"),
+            "level": levels.get(lvl, f"уровень {lvl}" if lvl else None),
+        }.items() if v}
+        return props, [{"name": "name", "label": "наименование", "type": "text"},
+                       {"name": "level", "label": "уровень", "type": "text"}]
     # osm.roads / osm.landuse / osm.water / прочее — свои поля generic-слоя
     keep = ("name", "highway", "surface", "lanes", "landuse", "leisure",
             "natural", "water", "waterway")

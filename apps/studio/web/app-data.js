@@ -22,6 +22,7 @@ const DATA_SOURCE_GROUPS = [
       { key: "osm.buildings", label: "Здания", def: true },
       { key: "osm.landuse", label: "Землепользование (парки, лес…)", def: false },
       { key: "osm.water", label: "Вода", def: false },
+      { key: "osm.boundaries", label: "Административные границы (районы/поселения)", def: false },
     ]},
   { title: "НСПД — Росреестр", hint: "официальные границы ЕГРН",
     maxKm2: 12, items: [

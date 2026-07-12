@@ -46,10 +46,18 @@ OSM_SETS = {
               'relation["natural"="water"]',
               'relation["water"]',
               'relation["waterway"="riverbank"]'],
+    # админ-границы — только relation (границы в OSM = отношения из ways-
+    # сегментов). Уровни 6 (районы области / городские округа) и 8 (районы
+    # Москвы / поселения / города) — рабочий масштаб градпроектирования;
+    # уровень 4 (весь субъект) намеренно исключён — гигантская геометрия,
+    # вешает Overpass.
+    "boundaries": ['relation["boundary"="administrative"]'
+                   '["admin_level"~"^(6|8)$"]'],
 }
 
-# Замкнутые наборы становятся полигонами; дороги остаются линиями.
-_RING_SETS = {"buildings", "landuse", "water"}
+# Замкнутые наборы становятся полигонами; дороги остаются линиями. Границы —
+# кольца (контур адм. единицы), но на холсте рисуются без заливки.
+_RING_SETS = {"buildings", "landuse", "water", "boundaries"}
 
 
 def _assemble_rings(segments):
@@ -79,10 +87,13 @@ def _assemble_rings(segments):
 
 # Теги, уходящие в атрибуты холста (шум вроде source=* отбрасывается).
 _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
-              "leisure", "natural", "water", "waterway", "surface", "lanes")
+              "leisure", "natural", "water", "waterway", "surface", "lanes",
+              "boundary", "admin_level")
 
 
 def _which_set(tags):
+    if tags.get("boundary") == "administrative" and "admin_level" in tags:
+        return "boundaries"
     if "building" in tags:
         return "buildings"
     if "highway" in tags:

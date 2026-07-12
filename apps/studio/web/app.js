@@ -128,6 +128,17 @@ const LAYERS_V2 = [
     import_only: true, generic: true, fields: [],
     fmt: { fill: "rgba(120,160,205,0.30)", stroke: "#7fa3c8", width: 0.7 },
     defaults: () => ({}) },
+  // Административные границы (районы/поселения) из OSM. Приходят кольцами, но
+  // рисуются БЕЗ заливки — пунктирный контур как знак адм. границы (незалитый
+  // полигон выбирается по обводке). Поля: наименование + уровень.
+  { id: "source.osm.boundaries", title: "Адм. границы (OSM)", kind: "generic",
+    semantic_class: "generic.polygon", geometry_type: "polygon",
+    style_id: "boundary.line", stage: "existing", source_kind: "osm",
+    import_only: true, generic: true,
+    fields: [{ name: "name", label: "наименование", type: "text" },
+             { name: "level", label: "уровень", type: "text" }],
+    fmt: { stroke: "#b0674f", width: 1.3, dash: [7, 4] },
+    defaults: () => ({}) },
   // Рельеф: горизонтали (изолинии высот) по видимой области — из открытого
   // тайлового DEM (AWS Terrain Tiles / SRTM). Тонкая коричневая линия «как на
   // топооснове»; подписи высот по умолчанию выключены (сотни линий = каша),
