@@ -27,6 +27,7 @@
   <div class="logo" id="logo" title="ГРАДО Студия">ГРАДО <span>Студия</span></div>
   <input class="projname" id="project-name" value="Концепция развития территории" spellcheck="false">
   <div class="spacer"></div>
+  <button class="kbar" id="open-cmdk" title="Командная палитра"><svg class="ic" style="width:14px;height:14px"><use href="#i-search"/></svg>Найти инструмент, слой, действие<kbd>⌘K</kbd></button>
   <button class="iconbtn" id="btn-theme" title="Светлая / тёмная тема"><svg class="ic"><use href="#i-theme"/></svg></button>
   <button class="iconbtn" id="btn-undo" title="Отменить (⌘Z)"><svg class="ic"><use href="#i-undo"/></svg></button>
   <button class="iconbtn" id="btn-redo" title="Вернуть (⌘⇧Z)"><svg class="ic"><use href="#i-redo"/></svg></button>
@@ -152,6 +153,14 @@
   </aside>
 </div>
 
+<!-- КОМАНДНАЯ ПАЛИТРА ⌘K (логика — cmdk.js, после движка) -->
+<div class="cmdk" id="cmdk" hidden>
+  <div class="cmdk-box">
+    <div class="cmdk-input"><svg class="ic"><use href="#i-search"/></svg><input id="cmdk-q" placeholder="Найти инструмент, слой, действие…" autocomplete="off" spellcheck="false"></div>
+    <div class="cmdk-list" id="cmdk-list"></div>
+  </div>
+</div>
+
 <!-- ПОПОВЕРЫ ПАНЕЛИ (реальные контролы движка; открываются иконками в шапке панели) -->
 <div class="pop" id="p-basemap" hidden style="position:fixed;top:100px;right:16px">
   <div class="ph">Подложка</div>
@@ -248,6 +257,7 @@
   <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8V6"/><path d="M5 12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4v5h-5"/><path d="M4 20v-5h5"/><path d="M19.5 9a7.5 7.5 0 0 0-13-2.5L4 9m0 6 2.5 2.5A7.5 7.5 0 0 0 19.5 15"/></symbol>
   <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10.5M10 20V4M16 20v-6.5"/><path d="M3 20h18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20.5 20.5l-5-5"/></symbol>
 </svg>
 
 <!-- реальный движок (тот же порядок, что в index.html) -->
@@ -259,6 +269,7 @@
 <script src="/app.js"></script>
 <script src="/app-import.js"></script>
 <script src="/collab.js"></script>
+<script src="/redesign/cmdk.js"></script>
 <script>
   // счётчик слоёв в заголовке карточки — следит за #layers-body (app.js не трогаем)
   (function () {
