@@ -2533,6 +2533,16 @@ function refreshTep(force) {
 }
 function renderTep(data) {
   const fact = document.getElementById("tep-fact");
+  const bodyEl = document.getElementById("tep-body");
+  // Без границы территории разработки ТЭП не считается: цифры «по всей карте»
+  // вводят в заблуждение (площадь = дефолт пресета). Показываем призыв начертить.
+  if (data && data.has_territory === false) {
+    fact.innerHTML = "";
+    bodyEl.classList.add("muted");
+    bodyEl.innerHTML = `<div class="tep-empty">Граница территории разработки не задана.<br>` +
+      `Начертите границу — ТЭП считается внутри неё.</div>`;
+    return;
+  }
   let zonesHtml = "";
   if (data.zones) {
     zonesHtml = data.zones.ok

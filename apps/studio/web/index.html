@@ -102,12 +102,12 @@
       <button class="phbtn" data-pop="p-src" title="Источники данных"><svg class="ic" style="width:17px;height:17px"><use href="#i-db"/></svg></button>
     </div>
     <div class="panel-scroll">
-      <div class="card">
-        <div class="card-h">Свойства</div>
+      <div class="card" id="card-props">
+        <div class="card-h"><svg class="ic cc"><use href="#i-caret"/></svg>Свойства</div>
         <div class="card-b"><div id="props-body" class="muted"></div></div>
       </div>
-      <div class="card">
-        <div class="card-h">Слои <span class="lcount" id="lcount"></span>
+      <div class="card" id="card-layers">
+        <div class="card-h"><svg class="ic cc"><use href="#i-caret"/></svg>Слои <span class="lcount" id="lcount"></span>
           <span style="margin-left:auto;display:flex;gap:2px">
             <button class="h3-btn" id="btn-style-lib" title="Библиотека знаков — редактор эталонных знаков"><svg class="ic"><use href="#ic-format"/></svg></button>
             <button class="h3-btn" id="btn-project-styles" title="Стили проекта"><svg class="ic"><use href="#ic-label"/></svg></button>
@@ -120,7 +120,7 @@
         </div>
       </div>
       <div class="card" id="tep-card">
-        <div class="card-h"><svg class="ic" style="width:15px;height:15px"><use href="#i-chart"/></svg>ТЭП
+        <div class="card-h"><svg class="ic cc"><use href="#i-caret"/></svg><svg class="ic" style="width:15px;height:15px"><use href="#i-chart"/></svg>ТЭП
           <span class="tep-status-badge" id="tep-status"></span>
           <span class="tep-live">живой расчёт</span>
           <button class="h3-btn" id="btn-variants" title="Варианты концепции — снимки проекта и сравнение ТЭП" style="margin-left:6px">⎇</button>
@@ -336,6 +336,25 @@
       if (sel) { sel.value = row.dataset.setexport; sel.dispatchEvent(new Event('change', { bubbles: true })); }
     }));
     document.addEventListener('click', closeAll);
+  })();
+
+  // Сворачивание карточек правой панели (Свойства / Слои / ТЭП). Состояние — в
+  // localStorage; клик по заголовку сворачивает, кроме кликов по кнопкам заголовка.
+  (function () {
+    let collapsed = {};
+    try { collapsed = JSON.parse(localStorage.getItem('grado_cards_collapsed') || '{}'); } catch (e) {}
+    document.querySelectorAll('#panel .card[id]').forEach(card => {
+      const head = card.querySelector('.card-h');
+      if (!head) return;
+      if (collapsed[card.id]) card.classList.add('collapsed');
+      head.addEventListener('click', e => {
+        // не сворачиваем, если кликнули по управляющему элементу в заголовке
+        if (e.target.closest('button,select,input,a')) return;
+        card.classList.toggle('collapsed');
+        collapsed[card.id] = card.classList.contains('collapsed');
+        try { localStorage.setItem('grado_cards_collapsed', JSON.stringify(collapsed)); } catch (e) {}
+      });
+    });
   })();
 </script>
 </body>

@@ -20,6 +20,7 @@
 .tep-row .v{color:var(--text);font-weight:600;font-family:var(--font-mono);white-space:nowrap;flex:0 0 auto}
 .tep-row .v small{font-weight:400;color:var(--muted);font-family:var(--font-ui);font-size:10px;margin-left:3px}
 #tep-body.muted{color:var(--muted);font-size:var(--fs-12);padding:4px 0}
+.tep-empty{color:var(--muted);font-size:var(--fs-12);line-height:1.5;padding:6px 0 2px}
 
 /* ---- Свойства объекта (#props-body, контекстно) ---- */
 #props-body{display:flex;flex-direction:column;gap:9px;font-size:var(--fs-12)}
