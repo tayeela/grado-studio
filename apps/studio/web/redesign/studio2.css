@@ -89,10 +89,18 @@
 
 /* кнопки заголовка карточки «Слои» */
 .card-h .lcount{font-weight:400;color:var(--muted);font-size:11px}
-.card-h .h3-btn{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;
-  color:var(--muted);transition:background .12s,color .12s;font-size:14px}
+.card-h .h3-btn{width:30px;height:30px;border-radius:var(--r-sm);display:grid;place-items:center;
+  color:var(--muted);transition:background .12s,color .12s;font-size:18px}
 .card-h .h3-btn:hover{background:var(--field-bg);color:var(--text)}
-.card-h .h3-btn .ic{width:16px;height:16px}
+.card-h .h3-btn .ic{width:19px;height:19px}
+/* иконки-поповеры в шапке панели (Подложка/Сетка/Источники) — тоже крупнее */
+.panel-head .phbtn{width:34px;height:34px}
+.panel-head .phbtn .ic{width:20px!important;height:20px!important}
+
+/* значок слоя: линия / полигон без заливки → полоска (класс sw-line из renderLayers) */
+.layer-row .sw.sw-line{background:transparent!important;box-shadow:none!important;border:none!important;position:relative}
+.layer-row .sw.sw-line::before{content:"";position:absolute;left:0;right:0;top:50%;height:3px;
+  transform:translateY(-50%);background:var(--c);border-radius:2px}
 
 /* ---- контекстное меню слоя (.ctx-menu / .ctx-item) ---- */
 .ctx-menu{position:fixed;z-index:var(--z-menu);min-width:230px;background:var(--glass-strong);

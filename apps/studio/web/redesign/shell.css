@@ -23,10 +23,11 @@ button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
 
 /* ==== ШАПКА ==== */
 header{
-  height:52px;flex:0 0 auto;display:flex;align-items:center;gap:var(--sp-3);
-  padding:0 var(--sp-4);background:var(--glass-strong);backdrop-filter:var(--glass-blur);
+  flex:0 0 auto;display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2) var(--sp-3);
+  min-height:52px;padding:7px var(--sp-4);background:var(--glass-strong);backdrop-filter:var(--glass-blur);
   box-shadow:var(--glass-hi),0 1px 0 var(--hairline);z-index:var(--z-header);position:relative;
 }
+.hgroup{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}
 .logo{font-size:var(--fs-15);font-weight:700;letter-spacing:-.01em;white-space:nowrap}
 .logo span{font-weight:500;color:var(--muted)}
 .projname{
@@ -117,6 +118,13 @@ header{
 .scalebar{display:inline-flex;align-items:center;gap:7px}
 .scalebar .bar{width:64px;height:6px;border:1px solid var(--text-2);border-top:none;position:relative}
 .scalebar .bar::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--text-2)}
+
+/* ==== РЕСАЙЗЕР ПРАВОЙ ПАНЕЛИ (движок тянет ширину, 180–600) ==== */
+#panel-resizer{flex:0 0 auto;width:7px;cursor:col-resize;z-index:var(--z-panel);position:relative;
+  background:transparent;transition:background .12s}
+#panel-resizer::after{content:"";position:absolute;top:0;bottom:0;left:3px;width:1px;background:var(--hairline)}
+#panel-resizer:hover{background:var(--accent-weak)}
+#panel-resizer:hover::after{background:var(--accent-line);width:2px;left:2.5px}
 
 /* ==== ПРАВАЯ ПАНЕЛЬ ==== */
 #panel{

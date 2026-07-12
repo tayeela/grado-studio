@@ -597,11 +597,23 @@ function featuresOnLayer(id) {
 }
 // объект → формат v2: слой и тип геометрии явно; kind дописывается
 // обратно для legacy-объектов (мигратор старых сцен и выгрузок ядра)
+// координаты хранились с ~13 знаками после запятой (шум float-арифметики
+// UTM−ORIGIN); реальная точность ≤ мм. Округляем до 4 знаков (0.1 мм) —
+// геометрически lossless, но проект ужимается ~вдвое (меньше памяти, снимков
+// отмены, автосейва). Применяется на всех загрузках/импортах через upgradeFeature.
+function roundCoords(f) {
+  const r = n => Math.round(n * 1e4) / 1e4;
+  const pts = f.ring || f.line || (f.point ? [f.point] : null);
+  if (pts) for (const p of pts) { p[0] = r(p[0]); p[1] = r(p[1]); }
+  if (f.arc) { f.arc.cx = r(f.arc.cx); f.arc.cy = r(f.arc.cy); f.arc.r = r(f.arc.r); }
+  if (f.circle) { f.circle.cx = r(f.circle.cx); f.circle.cy = r(f.circle.cy); f.circle.r = r(f.circle.r); }
+  return f;
+}
 function upgradeFeature(f) {
   const L = layerOf(f);
   if (L) { f.layer_id = L.id; if (!f.kind) f.kind = L.kind; }
   f.geometry_type = f.point ? "point" : f.line ? "polyline" : f.arc ? "arc" : f.circle ? "circle" : "polygon";
-  return f;
+  return roundCoords(f);
 }
 
 // импорт объектов из источника (НСПД / OSM / ГИС ОГД) с дедупликацией:
@@ -2932,10 +2944,19 @@ function renderLayers() {
     const st = layerStyle(layer);
     // свотч: заливка, а для стилей ЛГР — мини-штриховка цветом зоны
     let swBg = st.fill || "transparent";
-    if (!st.fill && st.hatch && st.hatch.color) {
+    const _filled = st.fill != null && st.fill !== "transparent";
+    const _hatched = !_filled && st.hatch && st.hatch.color;
+    if (_hatched) {
       const a = st.hatch.cross ? 45 : (st.hatch.angle ?? 45);
       swBg = `repeating-linear-gradient(${90 - a}deg, ${st.hatch.color} 0 1px, transparent 1px 4px)`;
     }
+    // значок наглядно показывает геометрию: линия или полигон БЕЗ заливки →
+    // полоска (класс sw-line), заливка/штриховка → квадрат
+    const _lineLike = !_filled && !_hatched;
+    const swCls = _lineLike ? "sw sw-line" : "sw";
+    const swStyle = _lineLike
+      ? `--c:${st.stroke || "#999"};background:transparent;border-color:${st.stroke || "#999"}`
+      : `background:${swBg};border-color:${st.stroke || "#999"}`;
     const row = document.createElement("div");
     row.className = "layer-row" + (layer.id === state.activeLayerId ? " active" : "") +
                     (layer.locked ? " locked" : "");
@@ -2951,7 +2972,7 @@ function renderLayers() {
     }
     row.innerHTML = `<span class="grip" title="перетащить — порядок отрисовки"><svg class="ic"><use href="#ic-grip"/></svg></span>
       <input type="checkbox" title="видимость" ${layer.visible ? "checked" : ""}>
-      <span class="sw" style="background:${swBg};border-color:${st.stroke || "#999"}"></span>
+      <span class="${swCls}" style="${swStyle}"></span>
       <span class="nm" title="${escHtml(layer.title)} — клик делает слой активным (сюда чертят инструменты)">${escHtml(layer.title)}</span><span class="cnt">${count || ""}</span>
       ${badges}
       <button class="lrow-lock" title="${layer.locked ? "разблокировать слой" : "заблокировать слой (защита от случайной правки)"}">
