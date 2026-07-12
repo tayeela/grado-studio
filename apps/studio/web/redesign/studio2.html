@@ -114,7 +114,11 @@
   <!-- ПРАВАЯ ПАНЕЛЬ: Слои — реальный #layers-body движка в новом виде.
        Свойства/Данные/ТЭП — следующие шаги. -->
   <aside id="panel">
-    <div class="panel-head"><span class="title">Слои и объект</span></div>
+    <div class="panel-head"><span class="title">Слои и объект</span>
+      <button class="phbtn" data-pop="p-basemap" title="Подложка"><svg class="ic" style="width:17px;height:17px"><use href="#i-map"/></svg></button>
+      <button class="phbtn" data-pop="p-grid" title="Сетка и привязки"><svg class="ic" style="width:17px;height:17px"><use href="#i-grid"/></svg></button>
+      <button class="phbtn" data-pop="p-src" title="Источники данных"><svg class="ic" style="width:17px;height:17px"><use href="#i-db"/></svg></button>
+    </div>
     <div class="panel-scroll">
       <div class="card">
         <div class="card-h">Свойства</div>
@@ -134,10 +138,42 @@
         </div>
       </div>
       <div class="panel-wip" style="padding:var(--sp-4)">
-        Данные, ТЭП — подключаются на следующих шагах Фазы 2.
+        ТЭП — подключается на следующем шаге Фазы 2.
       </div>
     </div>
   </aside>
+</div>
+
+<!-- ПОПОВЕРЫ ПАНЕЛИ (реальные контролы движка; открываются иконками в шапке панели) -->
+<div class="pop" id="p-basemap" hidden style="position:fixed;top:100px;right:16px">
+  <div class="ph">Подложка</div>
+  <label class="chk"><input type="checkbox" id="basemap-show"> показывать подложку</label>
+  <div class="field"><label>Источник</label>
+    <select class="select" id="basemap-source">
+      <option value="osm">Карта (OpenStreetMap)</option>
+      <option value="sat">Спутник (ESRI, высокое разрешение)</option>
+      <option value="s2">Спутник Sentinel-2 (Copernicus, 10 м, 2023)</option>
+    </select></div>
+  <div class="field"><label>Прозрачность, %</label><input type="range" id="basemap-opacity" min="10" max="100" value="85"></div>
+</div>
+<div class="pop" id="p-grid" hidden style="position:fixed;top:100px;right:16px;width:280px">
+  <div class="ph">Сетка и привязки</div>
+  <div class="field"><label>Шаг сетки, м</label>
+    <select class="select" id="grid-step">
+      <option value="auto" selected>авто</option><option value="1">1</option><option value="2">2</option>
+      <option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="50">50</option>
+    </select></div>
+  <label class="chk"><input type="checkbox" id="grid-show" checked> показывать сетку</label>
+  <label class="chk"><input type="checkbox" id="grid-snap" checked> привязка к сетке (C)</label>
+  <label class="chk"><input type="checkbox" id="obj-snap" checked> привязка к объектам (X)</label>
+  <label class="chk"><input type="checkbox" id="access-show"> радиусы доступности соцобъектов</label>
+  <div class="field" id="access-r-wrap" style="display:none"><label>Радиус доступности, м</label>
+    <input id="access-r" type="number" value="300" min="50" max="3000" step="50"></div>
+</div>
+<div class="pop" id="p-src" hidden style="position:fixed;top:100px;right:16px;width:290px">
+  <div class="ph">Источники данных
+    <button class="h3-btn" id="btn-refresh-src" title="Обновить журнал снимков с сервера"><svg class="ic" style="width:15px;height:15px"><use href="#i-refresh"/></svg></button></div>
+  <div id="sources-body" class="muted">Пока не импортировано</div>
 </div>
 
 <!-- ================================================================
@@ -146,19 +182,12 @@
      ошибок; переносятся в видимый вид по секциям на следующих шагах.
      ================================================================ -->
 <div id="engine-slots">
-  <div id="sources-body"></div>
   <div id="tep-fact"></div><div id="tep-body"></div><span id="tep-status"></span>
-  <input type="checkbox" id="basemap-show">
-  <select id="basemap-source"><option value="osm">OSM</option><option value="sat">ESRI</option><option value="s2">Sentinel-2</option></select>
-  <input type="range" id="basemap-opacity" min="10" max="100" value="85">
-  <select id="grid-step"><option value="auto" selected>авто</option><option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="50">50</option></select>
-  <input type="checkbox" id="grid-show" checked><input type="checkbox" id="grid-snap" checked><input type="checkbox" id="obj-snap" checked>
-  <input type="checkbox" id="access-show"><label id="access-r-wrap"><input id="access-r" type="number" value="300"></label>
   <input id="p-density" type="number" value="25"><input id="p-ratio" type="number" value="80"><input id="p-krail" type="number" value="1"><input id="p-kba" type="number" value="0.5">
   <input id="buf-dist" type="number" value="300">
   <label><input type="radio" name="buf-side" value="both" checked>оба</label><label><input type="radio" name="buf-side" value="outer">наружу</label><label><input type="radio" name="buf-side" value="inner">внутрь</label>
   <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
-  <button id="btn-refresh-src"></button><button id="btn-tep-editor"></button><button id="btn-variants"></button><button id="btn-shortcuts"></button>
+  <button id="btn-tep-editor"></button><button id="btn-variants"></button><button id="btn-shortcuts"></button>
   <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
   <span id="collab-bar" style="display:none"><button id="collab-back"></button><span id="collab-projname"></span><span id="collab-online"></span><span id="collab-sync"></span></span>
 </div>
@@ -207,6 +236,10 @@
   <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"/></symbol>
   <symbol id="i-north" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 15.5 12 12 10 8.5 12Z" fill="currentColor" stroke="currentColor" stroke-width="1"/><path d="M12 12v8" opacity=".35"/></symbol>
   <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 20.5 8 12 12.5 3.5 8z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16l8 4.5 8-4.5"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5 3.5 7v11.5l5.5-2 6 2 5.5-2V5l-5.5 2z"/><path d="M9 5v11.5M15 7v11.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 10h16M4 15h16M10 4v16M15 4v16"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8V6"/><path d="M5 12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4v5h-5"/><path d="M4 20v-5h5"/><path d="M19.5 9a7.5 7.5 0 0 0-13-2.5L4 9m0 6 2.5 2.5A7.5 7.5 0 0 0 19.5 15"/></symbol>
 </svg>
 
 <!-- реальный движок (тот же порядок, что в index.html) -->
@@ -226,6 +259,24 @@
     const upd = () => { const n = body.querySelectorAll('.layer-row').length; c.textContent = n || ''; };
     new MutationObserver(upd).observe(body, { childList: true });
     upd();
+  })();
+  // поповеры панели (Подложка/Сетка/Источники) — открытие/закрытие
+  (function () {
+    const pops = ['p-basemap', 'p-grid', 'p-src'];
+    const btns = [...document.querySelectorAll('.phbtn[data-pop]')];
+    const closeAll = except => {
+      pops.forEach(id => { if (id !== except) document.getElementById(id).hidden = true; });
+      btns.forEach(b => b.classList.toggle('on', b.dataset.pop === except));
+    };
+    pops.forEach(id => document.getElementById(id).addEventListener('click', e => e.stopPropagation()));
+    btns.forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const p = document.getElementById(btn.dataset.pop);
+      const willOpen = p.hidden;
+      closeAll(willOpen ? btn.dataset.pop : null);
+      p.hidden = !willOpen;
+    }));
+    document.addEventListener('click', () => closeAll(null));
   })();
 </script>
 </body>
