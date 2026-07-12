@@ -317,3 +317,43 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .mk-del:hover{color:var(--danger)!important;background:var(--danger-weak)!important}
 .mk-form{display:flex;flex-direction:column;gap:9px;padding:12px 18px 4px}
 .mk-form>label{margin:0}
+
+/* ---- Варианты концепции (openVariants, .var-*) ---- */
+.modal-overlay .modal.var-modal{width:min(648px,94vw)}
+.var-list{max-height:34vh;overflow-y:auto;box-shadow:0 1px 0 var(--hairline);padding:4px 0}
+.var-item{display:flex;align-items:center;gap:9px;padding:6px 18px;font-size:var(--fs-12);
+  transition:background .12s var(--ease-out)}
+.var-item:hover{background:var(--field-bg)}
+.var-nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.var-meta{color:var(--muted);font-size:var(--fs-11);white-space:nowrap;flex:0 0 auto}
+.var-load{height:26px!important;padding:0 10px!important;font-size:var(--fs-11)!important;flex:0 0 auto}
+.var-del{width:26px!important;height:26px!important;padding:0!important;border:none!important;
+  background:none!important;color:var(--muted)!important;flex:0 0 auto;border-radius:var(--r-sm)}
+.var-del:hover{color:var(--danger)!important;background:var(--danger-weak)!important}
+.var-cmp{width:16px;height:16px;accent-color:var(--accent);flex:0 0 auto}
+.var-cmp-wrap{max-height:30vh;overflow:auto;margin:10px 18px 0;border:1px solid var(--hairline);
+  border-radius:var(--r-md)}
+.var-cmp-table .var-v{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--font-mono)}
+.var-cmp-table th,.var-cmp-table td{white-space:nowrap}
+
+/* ---- Горячие клавиши (openShortcuts, .sc-*) ---- */
+.modal-overlay .modal.sc-modal{width:min(664px,92vw)}
+.modal-body.sc-body{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:14px 20px;padding:16px 18px}
+.sc-group-title{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+  font-weight:600;margin-bottom:6px}
+.sc-row{display:flex;align-items:baseline;gap:8px;padding:2px 0;font-size:var(--fs-12)}
+.sc-row kbd{flex:0 0 auto;min-width:20px;text-align:center;padding:2px 7px;border:1px solid var(--field-border);
+  border-bottom-width:2px;border-radius:var(--r-sm);background:var(--field-bg);color:var(--text);
+  font-family:var(--font-mono);font-size:10px;font-weight:500;line-height:1.4;white-space:nowrap}
+.sc-row span{color:var(--text-2)}
+
+/* ---- Управление полями (openManageFieldsDialog, .mf-*) ---- */
+.mf-table{margin:8px 18px 0;width:auto;min-width:calc(100% - 36px);border-collapse:collapse}
+.mf-table td{padding:4px 6px;border-bottom:1px solid var(--hairline)}
+.mf-table input,.mf-table select{width:100%;min-width:80px;height:28px;padding:0 6px}
+.mf-ord{white-space:nowrap}
+.mf-ord button{width:26px!important;height:26px!important;padding:0!important;margin-left:2px;
+  font-size:var(--fs-12)!important;line-height:1}
+.mf-ord button:disabled{opacity:.35;cursor:default}
+.mf-ord .mf-del{color:var(--danger)!important}
