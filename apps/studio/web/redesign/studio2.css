@@ -125,6 +125,10 @@
 .modal-head{font-size:var(--fs-15);font-weight:600;letter-spacing:-.01em;padding:15px 18px;
   box-shadow:0 1px 0 var(--hairline);flex:0 0 auto}
 .modal-body{padding:16px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1 1 auto}
+/* прокручиваемое тело диалога НЕ должно ужимать свои карточки/строки — иначе
+   overflow:hidden внутри карточки срезает содержимое (как было в панели).
+   Контент держит натуральную высоту, тело прокручивается. */
+.modal-overlay .modal-body>*{flex-shrink:0}
 .modal-actions{display:flex;align-items:center;gap:10px;padding:13px 18px;box-shadow:0 -1px 0 var(--hairline);flex:0 0 auto}
 .modal-actions .spacer{flex:1}
 
@@ -357,3 +361,18 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
   font-size:var(--fs-12)!important;line-height:1}
 .mf-ord button:disabled{opacity:.35;cursor:default}
 .mf-ord .mf-del{color:var(--danger)!important}
+
+/* ---- Калькулятор полей (openFieldCalc, .fc-*) ---- */
+.modal-overlay textarea{width:100%;font:inherit;font-size:var(--fs-12);color:var(--text);
+  background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--r-sm);
+  padding:8px 10px;resize:vertical;line-height:1.45}
+.modal-overlay textarea:focus{outline:none;border-color:var(--accent-line);background:var(--panel)}
+.fc-expr{font-family:var(--font-mono)!important;min-height:52px}
+.fc-help{display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.fc-help.muted{font-size:10px}
+.fc-ins{height:24px!important;padding:0 8px!important;font-family:var(--font-mono)!important;
+  font-size:var(--fs-11)!important;color:var(--text-2)!important;background:var(--field-bg)!important;
+  border:1px solid var(--field-border)!important;border-radius:var(--r-sm)!important}
+.fc-ins:hover{background:var(--accent-weak)!important;color:var(--accent)!important;border-color:transparent!important}
+.fc-preview{font-size:var(--fs-12);color:var(--muted)}
+.fc-preview.err{color:var(--danger)}
