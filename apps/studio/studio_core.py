@@ -261,17 +261,28 @@ def _tmp_name(path):
         f".{path.stem}-{os.getpid()}-{threading.get_ident()}{path.suffix}")
 
 
-# Источники подложки: карта OSM (PNG) и спутник ESRI World Imagery (JPEG).
-# ESRI кладёт координаты в порядке z/y/x. Оба — для лёгкого локального
-# просмотра; при промышленной нагрузке — свой сервер/ключ.
+# Источники подложки (все XYZ/WMTS без авторизации, порядок осей z/y/x у
+# растровых спутников, z/x/y у OSM):
+#   osm — карта OpenStreetMap (PNG);
+#   sat — спутник ESRI World Imagery (JPEG), высокое разрешение (Maxar);
+#   s2  — Sentinel-2 cloudless от EOX, программа Copernicus (JPEG): 10 м,
+#         безоблачная мозаика 2023 г., свежее ESRI на многих территориях.
+#         Тайлы EOX WMTS (GoogleMapsCompatible = EPSG:3857), выше z13 мягко
+#         апсемплятся (10 м — предел детализации Sentinel-2).
+# Все — для лёгкого локального просмотра; при промышленной нагрузке — свой
+# сервер/ключ. Источники добавлены из каталога открытых геоданных
+# (bella-mir.github.io/openSpData, раздел «Спутниковые снимки»).
 TILE_SOURCES = {
     "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     "sat": ("https://server.arcgisonline.com/ArcGIS/rest/services/"
             "World_Imagery/MapServer/tile/{z}/{y}/{x}"),
+    "s2": ("https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/"
+           "default/GoogleMapsCompatible/{z}/{y}/{x}.jpg"),
 }
 TILE_ATTRIBUTIONS = {
     "osm": "© OpenStreetMap contributors",
     "sat": "Esri, Maxar, Earthstar Geographics",
+    "s2": "Sentinel-2 cloudless by EOX (Copernicus 2023)",
 }
 
 
