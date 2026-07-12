@@ -117,6 +117,10 @@
     <div class="panel-head"><span class="title">Слои и объект</span></div>
     <div class="panel-scroll">
       <div class="card">
+        <div class="card-h">Свойства</div>
+        <div class="card-b"><div id="props-body" class="muted"></div></div>
+      </div>
+      <div class="card">
         <div class="card-h">Слои <span class="lcount" id="lcount"></span>
           <span style="margin-left:auto;display:flex;gap:2px">
             <button class="h3-btn" id="btn-style-lib" title="Библиотека знаков — редактор эталонных знаков"><svg class="ic"><use href="#ic-format"/></svg></button>
@@ -130,7 +134,7 @@
         </div>
       </div>
       <div class="panel-wip" style="padding:var(--sp-4)">
-        Свойства объекта, Данные, ТЭП — подключаются на следующих шагах Фазы 2.
+        Данные, ТЭП — подключаются на следующих шагах Фазы 2.
       </div>
     </div>
   </aside>
@@ -142,7 +146,6 @@
      ошибок; переносятся в видимый вид по секциям на следующих шагах.
      ================================================================ -->
 <div id="engine-slots">
-  <div id="props-body"></div>
   <div id="sources-body"></div>
   <div id="tep-fact"></div><div id="tep-body"></div><span id="tep-status"></span>
   <input type="checkbox" id="basemap-show">
