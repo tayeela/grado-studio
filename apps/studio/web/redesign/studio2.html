@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГРАДО Студия — Фаза 2 (новый интерфейс + реальный движок)</title>
+<link rel="stylesheet" href="/tokens.css">
+<script src="/canvas-theme.js"></script>
+<link rel="stylesheet" href="/redesign/shell.css">
+<style>
+  /* адаптер Фазы 2 (временный): скрыть служебные слоты движка, пока их
+     внутренности не перенесены в новый вид; заголовок-группы в шапке */
+  #engine-slots{display:none!important}
+  .hgroup{display:inline-flex;align-items:center;gap:6px}
+  .hgroup .btn svg{width:15px;height:15px}
+  .panel-wip{margin:auto;text-align:center;color:var(--muted);font-size:var(--fs-12);line-height:1.6;padding:var(--sp-6)}
+  .panel-wip .ic{width:26px;height:26px;margin:0 auto 10px;color:var(--faint)}
+  .cv-zoom button svg{width:17px;height:17px}
+</style>
+</head>
+<body>
+<div id="errbar" hidden></div>
+
+<!-- ШАПКА (новый стиль, реальные кнопки движка) -->
+<header>
+  <div class="logo" id="logo" title="ГРАДО Студия">ГРАДО <span>Студия</span></div>
+  <input class="projname" id="project-name" value="Концепция развития территории" spellcheck="false">
+  <div class="spacer"></div>
+  <button class="iconbtn" id="btn-theme" title="Светлая / тёмная тема"><svg class="ic"><use href="#i-theme"/></svg></button>
+  <button class="iconbtn" id="btn-undo" title="Отменить (⌘Z)"><svg class="ic"><use href="#i-undo"/></svg></button>
+  <button class="iconbtn" id="btn-redo" title="Вернуть (⌘⇧Z)"><svg class="ic"><use href="#i-redo"/></svg></button>
+  <span class="hsep"></span>
+  <span class="hgroup" title="Данные">
+    <button class="btn" id="btn-demo">Демо</button>
+    <button class="btn" id="btn-nspd">НСПД</button>
+    <button class="btn" id="btn-gisogd">ОГД</button>
+    <button class="btn" id="btn-data"><svg class="ic"><use href="#i-download"/></svg>Данные</button>
+  </span>
+  <span class="hsep"></span>
+  <span class="hgroup" title="Проект">
+    <button class="btn" id="btn-open">Открыть…</button>
+    <button class="btn" id="btn-grado">.grado</button>
+    <button class="btn" id="btn-clear">Очистить</button>
+  </span>
+  <span class="hsep"></span>
+  <span class="hgroup" title="Выпуск">
+    <select class="select" id="export-style" style="width:auto;height:32px">
+      <option value="standard">знаки: стандарт ЛГР</option>
+      <option value="canvas">знаки: как на холсте</option>
+    </select>
+    <button class="btn" id="btn-dxf">DXF</button>
+    <button class="btn" id="btn-print">Печать</button>
+    <button class="btn" id="btn-album-config" title="Настройка альбома">⚙</button>
+    <button class="btn primary" id="btn-album">Альбом PDF</button>
+  </span>
+</header>
+
+<div id="main">
+  <!-- ЛЕВЫЙ ТУЛБАР (id=toolbar — контракт движка; новые иконки) -->
+  <nav id="toolbar">
+    <button class="tool active" data-tool="select" title="Выбор и правка (V)"><svg class="ic"><use href="#i-cursor"/></svg>Выбор</button>
+    <div class="rail-group">Рисование</div>
+    <button class="tool" data-tool="point" title="Точка"><svg class="ic"><use href="#i-dot"/></svg>Точка</button>
+    <button class="tool" data-tool="polyline" title="Линия"><svg class="ic"><use href="#i-line"/></svg>Линия</button>
+    <button class="tool" data-tool="polygon" title="Полигон"><svg class="ic"><use href="#i-poly"/></svg>Полигон</button>
+    <button class="tool" data-tool="rect" title="Прямоугольник"><svg class="ic"><use href="#i-rect"/></svg>Прямоуг.</button>
+    <button class="tool" data-tool="arc" title="Дуга по 3 точкам"><svg class="ic"><use href="#i-arc"/></svg>Дуга</button>
+    <button class="tool" data-tool="circle" title="Окружность"><svg class="ic"><use href="#i-circle"/></svg>Окружн.</button>
+    <div class="rail-group">Правка</div>
+    <button class="tool" data-tool="trim" title="Обрезать (T)"><svg class="ic"><use href="#i-trim"/></svg>Обрезать</button>
+    <button class="tool" data-tool="extend" title="Продлить (E)"><svg class="ic"><use href="#i-extend"/></svg>Продлить</button>
+    <button class="tool" id="btn-join" title="Склеить (J)"><svg class="ic"><use href="#i-join"/></svg>Склеить</button>
+    <button class="tool" data-tool="fillet" title="Сопрячь"><svg class="ic"><use href="#i-fillet"/></svg>Сопрячь</button>
+    <button class="tool" data-tool="rotate" title="Поворот"><svg class="ic"><use href="#i-rotate"/></svg>Поворот</button>
+    <button class="tool" data-tool="scale" title="Масштаб"><svg class="ic"><use href="#i-scale"/></svg>Масштаб</button>
+    <button class="tool" data-tool="mirror" title="Зеркало"><svg class="ic"><use href="#i-mirror"/></svg>Зеркало</button>
+    <div class="rail-group">Мера</div>
+    <button class="tool" data-tool="dim" title="Размер (D)"><svg class="ic"><use href="#i-dim"/></svg>Размер</button>
+    <button class="tool" data-tool="measure" title="Измерение (M)"><svg class="ic"><use href="#i-ruler"/></svg>Измер.</button>
+    <div class="rail-group">Привязки</div>
+    <button class="tool active" id="btn-snap" title="Привязки (X)"><svg class="ic"><use href="#i-snap"/></svg>Привязки</button>
+  </nav>
+
+  <!-- ХОЛСТ: реальный canvas движка -->
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="cv-activelayer" class="cv-float" style="top:16px;left:16px;padding:6px 12px;font-size:var(--fs-12);font-weight:500"></div>
+    <div class="cv-float cv-compass"><svg class="ic" style="width:20px;height:20px"><use href="#i-north"/></svg></div>
+    <div class="cv-float cv-zoom">
+      <button id="btn-zoom-in" title="Приблизить">+</button>
+      <button id="btn-zoom-out" title="Отдалить">−</button>
+      <button id="btn-zoom-fit" title="Вписать всё (F)"><svg class="ic"><use href="#i-fit"/></svg></button>
+    </div>
+    <!-- статус-строка (реальные st-* id движка) -->
+    <div class="statusbar">
+      <span class="st-active" id="st-layer"></span>
+      <span class="mono" id="st-coords">x: — y: —</span>
+      <span id="st-grid"></span>
+      <span id="st-snap"></span>
+      <span class="push"></span>
+      <span id="st-toast"></span>
+      <span class="cv-scale" id="cv-scale" style="display:inline-flex;align-items:center;gap:7px">
+        <span class="cv-scale-bar" id="cv-scale-bar" style="width:64px;height:6px;border:1px solid var(--text-2);border-top:none"></span>
+        <span class="cv-scale-label" id="cv-scale-label">—</span>
+      </span>
+      <span id="st-core" style="display:none"></span><span id="st-bridge" style="display:none"></span>
+      <span id="st-hint" style="display:none"></span>
+    </div>
+  </div>
+
+  <div id="panel-resizer" style="display:none"></div>
+
+  <!-- ПРАВАЯ ПАНЕЛЬ: пока заглушка (внутренности — следующие шаги Фазы 2) -->
+  <aside id="panel">
+    <div class="panel-head"><span class="title">Слои и объект</span></div>
+    <div class="panel-scroll">
+      <div class="panel-wip">
+        <svg class="ic"><use href="#i-layers"/></svg>
+        Панели (Свойства, Слои, Данные, ТЭП) подключаются к движку<br>на следующих шагах Фазы 2.<br><br>
+        Сейчас проверяем главное — <b>реальный холст</b> в новой раскладке:<br>чертёж, панорама, зум, тема, инструменты.
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ================================================================
+     СЛОТЫ ДВИЖКА (скрыты): контейнеры/поля, в которые app.js рендерит
+     и которые читает напрямую. Присутствуют в DOM → движок стартует без
+     ошибок; переносятся в видимый вид по секциям на следующих шагах.
+     ================================================================ -->
+<div id="engine-slots">
+  <div id="props-body"></div>
+  <div id="layers-body"></div>
+  <div id="sources-body"></div>
+  <div id="tep-fact"></div><div id="tep-body"></div><span id="tep-status"></span>
+  <input type="checkbox" id="basemap-show">
+  <select id="basemap-source"><option value="osm">OSM</option><option value="sat">ESRI</option><option value="s2">Sentinel-2</option></select>
+  <input type="range" id="basemap-opacity" min="10" max="100" value="85">
+  <select id="grid-step"><option value="auto" selected>авто</option><option value="1">1</option><option value="5">5</option><option value="10">10</option><option value="50">50</option></select>
+  <input type="checkbox" id="grid-show" checked><input type="checkbox" id="grid-snap" checked><input type="checkbox" id="obj-snap" checked>
+  <input type="checkbox" id="access-show"><label id="access-r-wrap"><input id="access-r" type="number" value="300"></label>
+  <input id="p-density" type="number" value="25"><input id="p-ratio" type="number" value="80"><input id="p-krail" type="number" value="1"><input id="p-kba" type="number" value="0.5">
+  <input id="buf-dist" type="number" value="300">
+  <label><input type="radio" name="buf-side" value="both" checked>оба</label><label><input type="radio" name="buf-side" value="outer">наружу</label><label><input type="radio" name="buf-side" value="inner">внутрь</label>
+  <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
+  <button id="btn-style-lib"></button><button id="btn-new-layer"></button><button id="btn-project-styles"></button><button id="btn-manage-kinds"></button>
+  <button id="btn-refresh-src"></button><button id="btn-tep-editor"></button><button id="btn-variants"></button><button id="btn-shortcuts"></button>
+  <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
+  <span id="collab-bar" style="display:none"><button id="collab-back"></button><span id="collab-projname"></span><span id="collab-online"></span><span id="collab-sync"></span></span>
+</div>
+
+<!-- иконки нового набора -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13a8 8 0 1 1-9-9 6.5 6.5 0 0 0 9 9z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 7 4 11.5 8.5 16"/><path d="M4 11.5h10.5a6 6 0 0 1 0 12H13"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 7 20 11.5 15.5 16"/><path d="M20 11.5H9.5a6 6 0 0 0 0 12H11"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v10"/><path d="M8 9.5l4 4 4-4"/><path d="M4.5 20h15"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5.5 3.5 5.5 18.5 9.6 14.5 12.2 20 14.2 19.1 11.6 13.7 16.8 13.7Z" fill="currentColor" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v3.6M12 16.9v3.6M3.5 12h3.6M16.9 12h3.6"/><rect x="10.35" y="10.35" width="3.3" height="3.3" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><rect x="4.4" y="14.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="16.4" y="4.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-poly" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 18.5 9.7 16 18 8 18 5.5 9.7Z"/><rect x="10.4" y="3.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="3.9" y="8.1" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="16.9" y="8.1" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-rect" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="6.5" width="14" height="11" rx="1.5"/><rect x="3.4" y="4.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="17.4" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-arc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 17.5a11.5 11.5 0 0 1 15 0"/><rect x="2.9" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="17.9" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="10.4" y="6.7" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7.5"/><rect x="10.7" y="10.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3.5v17"/><path d="M4 12h9"/><path d="M16 10l3.5 3.5M19.5 10 16 13.5"/></symbol>
+  <symbol id="i-extend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 3.5v17"/><path d="M3.5 12H15.5"/><path d="M13 9l3.2 3-3.2 3"/></symbol>
+  <symbol id="i-join" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 9.5 13"/><path d="M14.5 11 20 17"/><path d="M9.5 13 14.5 11" stroke-dasharray="1.6 2.2"/><rect x="8.2" y="11.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/><rect x="13.2" y="9.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-fillet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19.5V11.5a5.5 5.5 0 0 1 5.5-5.5H19.5"/><rect x="4.7" y="4.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none" opacity=".55"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.6 5v4.2h-4.2"/><rect x="10.8" y="10.8" width="2.4" height="2.4" rx=".5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 19.5V15M4.5 19.5H9"/><path d="M19.5 4.5V10M19.5 4.5H14"/><path d="M7.5 16.5 16.5 7.5"/></symbol>
+  <symbol id="i-mirror" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5V20.5" stroke-dasharray="2.4 2.4"/><path d="M9 8.5 5 12 9 15.5Z"/><path d="M15 8.5 19 12 15 15.5Z"/></symbol>
+  <symbol id="i-dim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5v7M20 8.5v7"/><path d="M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="8.5" width="17" height="7" rx="1"/><path d="M7.5 8.5v3M11.5 8.5v4M15.5 8.5v3"/></symbol>
+  <symbol id="i-snap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5V6.5M12 17.5V21.5M2.5 12H6.5M17.5 12H21.5"/><circle cx="12" cy="12" r="3.4"/><rect x="10.9" y="10.9" width="2.2" height="2.2" rx=".4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"/></symbol>
+  <symbol id="i-north" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 15.5 12 12 10 8.5 12Z" fill="currentColor" stroke="currentColor" stroke-width="1"/><path d="M12 12v8" opacity=".35"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 20.5 8 12 12.5 3.5 8z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16l8 4.5 8-4.5"/></symbol>
+</svg>
+
+<!-- реальный движок (тот же порядок, что в index.html) -->
+<script src="/app-transform.js"></script>
+<script src="/app-snap.js"></script>
+<script src="/app-data.js"></script>
+<script src="/app-style-ui.js"></script>
+<script src="/app-attr.js"></script>
+<script src="/app.js"></script>
+<script src="/app-import.js"></script>
+<script src="/collab.js"></script>
+</body>
+</html>
