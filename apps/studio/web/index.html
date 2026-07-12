@@ -32,29 +32,10 @@
   <button class="iconbtn" id="btn-undo" title="Отменить (⌘Z)"><svg class="ic"><use href="#i-undo"/></svg></button>
   <button class="iconbtn" id="btn-redo" title="Вернуть (⌘⇧Z)"><svg class="ic"><use href="#i-redo"/></svg></button>
   <span class="hsep"></span>
-  <span class="hgroup" title="Данные">
-    <button class="btn" id="btn-demo">Демо</button>
-    <button class="btn" id="btn-nspd">НСПД</button>
-    <button class="btn" id="btn-gisogd">ОГД</button>
-    <button class="btn" id="btn-data"><svg class="ic"><use href="#i-download"/></svg>Данные</button>
-  </span>
-  <span class="hsep"></span>
-  <span class="hgroup" title="Проект">
-    <button class="btn" id="btn-open">Открыть…</button>
-    <button class="btn" id="btn-grado">.grado</button>
-    <button class="btn" id="btn-clear">Очистить</button>
-  </span>
-  <span class="hsep"></span>
-  <span class="hgroup" title="Выпуск">
-    <select class="select" id="export-style" style="width:auto;height:32px">
-      <option value="standard">знаки: стандарт ЛГР</option>
-      <option value="canvas">знаки: как на холсте</option>
-    </select>
-    <button class="btn" id="btn-dxf">DXF</button>
-    <button class="btn" id="btn-print">Печать</button>
-    <button class="btn" id="btn-album-config" title="Настройка альбома">⚙</button>
-    <button class="btn primary" id="btn-album">Альбом PDF</button>
-  </span>
+  <button class="btn" data-menu="menu-data"><svg class="ic" style="width:15px;height:15px"><use href="#i-download"/></svg>Данные<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-proj"><svg class="ic" style="width:15px;height:15px"><use href="#i-folder"/></svg>Проект<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-out">Выпуск<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn primary" id="btn-album">Собрать альбом</button>
 </header>
 
 <div id="main">
@@ -161,6 +142,29 @@
   </div>
 </div>
 
+<!-- МЕНЮ ШАПКИ (кликают реальные скрытые кнопки движка) -->
+<div class="menu" id="menu-data" hidden>
+  <div class="menu-row" data-click="btn-data">Данные по видимой области…<span class="sub">⌘D</span></div>
+  <div class="menu-sep"></div>
+  <div class="menu-row" data-click="btn-nspd">Импорт НСПД (файл расширения)</div>
+  <div class="menu-row" data-click="btn-gisogd">ГИС ОГД — ZIP / GeoJSON / папка</div>
+  <div class="menu-row" data-click="btn-demo">Заполнить примером (демо)</div>
+</div>
+<div class="menu" id="menu-proj" hidden>
+  <div class="menu-row" data-click="btn-open">Открыть проект…</div>
+  <div class="menu-row" data-click="btn-grado">Сохранить .grado</div>
+  <div class="menu-sep"></div>
+  <div class="menu-row" data-click="btn-clear">Очистить холст</div>
+</div>
+<div class="menu" id="menu-out" hidden>
+  <div class="menu-row" data-click="btn-dxf">Экспорт чертежа (DXF)</div>
+  <div class="menu-row" data-click="btn-print">Печать в масштабе (PDF)</div>
+  <div class="menu-row" data-click="btn-album-config">Настройка состава альбома…</div>
+  <div class="menu-sep"></div>
+  <div class="menu-row" data-setexport="standard">Знаки: стандарт ЛГР</div>
+  <div class="menu-row" data-setexport="canvas">Знаки: как на холсте</div>
+</div>
+
 <!-- ПОПОВЕРЫ ПАНЕЛИ (реальные контролы движка; открываются иконками в шапке панели) -->
 <div class="pop" id="p-basemap" hidden style="position:fixed;top:100px;right:16px">
   <div class="ph">Подложка</div>
@@ -205,6 +209,11 @@
   <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
   <button id="btn-tep-editor"></button><button id="btn-shortcuts"></button>
   <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
+  <!-- реальные кнопки движка шапки (видимые — меню Данные/Проект/Выпуск ниже их кликают) -->
+  <button id="btn-demo"></button><button id="btn-nspd"></button><button id="btn-gisogd"></button><button id="btn-data"></button>
+  <button id="btn-open"></button><button id="btn-grado"></button><button id="btn-clear"></button>
+  <button id="btn-dxf"></button><button id="btn-print"></button><button id="btn-album-config"></button>
+  <select id="export-style"><option value="standard">стандарт</option><option value="canvas">холст</option></select>
   <span id="collab-bar" style="display:none"><button id="collab-back"></button><span id="collab-projname"></span><span id="collab-online"></span><span id="collab-sync"></span></span>
 </div>
 
@@ -232,6 +241,8 @@
   <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 7 4 11.5 8.5 16"/><path d="M4 11.5h10.5a6 6 0 0 1 0 12H13"/></symbol>
   <symbol id="i-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 7 20 11.5 15.5 16"/><path d="M20 11.5H9.5a6 6 0 0 0 0 12H11"/></symbol>
   <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v10"/><path d="M8 9.5l4 4 4-4"/><path d="M4.5 20h15"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6a2 2 0 0 1 1.5.7l1 1.1a2 2 0 0 0 1.5.7h5.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9.5l6 6 6-6"/></symbol>
   <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5.5 3.5 5.5 18.5 9.6 14.5 12.2 20 14.2 19.1 11.6 13.7 16.8 13.7Z" fill="currentColor" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></symbol>
   <symbol id="i-dot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v3.6M12 16.9v3.6M3.5 12h3.6M16.9 12h3.6"/><rect x="10.35" y="10.35" width="3.3" height="3.3" rx=".7" fill="currentColor" stroke="none"/></symbol>
   <symbol id="i-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><rect x="4.4" y="14.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="16.4" y="4.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
@@ -296,6 +307,35 @@
       p.hidden = !willOpen;
     }));
     document.addEventListener('click', () => closeAll(null));
+  })();
+  // меню шапки (Данные/Проект/Выпуск) — открытие под кнопкой + клик по реальным
+  // скрытым кнопкам движка (app.js не меняется)
+  (function () {
+    const menus = ['menu-data', 'menu-proj', 'menu-out'];
+    const closeAll = () => menus.forEach(id => { const m = document.getElementById(id); if (m) m.hidden = true; });
+    menus.forEach(id => { const m = document.getElementById(id); if (m) m.addEventListener('click', e => e.stopPropagation()); });
+    document.querySelectorAll('header [data-menu]').forEach(btn => btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const m = document.getElementById(btn.dataset.menu);
+      const willOpen = m.hidden;
+      closeAll();
+      if (!willOpen) return;
+      const r = btn.getBoundingClientRect();
+      m.style.left = Math.min(r.left, innerWidth - 260) + 'px';
+      m.style.top = r.bottom + 6 + 'px';
+      m.hidden = false;
+    }));
+    document.querySelectorAll('.menu [data-click]').forEach(row => row.addEventListener('click', () => {
+      closeAll();
+      const b = document.getElementById(row.dataset.click);
+      if (b) b.click();
+    }));
+    document.querySelectorAll('.menu [data-setexport]').forEach(row => row.addEventListener('click', () => {
+      closeAll();
+      const sel = document.getElementById('export-style');
+      if (sel) { sel.value = row.dataset.setexport; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    }));
+    document.addEventListener('click', closeAll);
   })();
 </script>
 </body>
