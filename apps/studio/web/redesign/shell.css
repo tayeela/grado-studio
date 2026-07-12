@@ -234,11 +234,16 @@ header{
 .srcgroup-h .all{margin-left:auto;font-size:11px;color:var(--accent);font-weight:500;padding:3px 9px;border-radius:var(--r-pill);background:var(--accent-weak);cursor:pointer}
 .srcitem{display:flex;align-items:center;gap:11px;padding:9px 13px;box-shadow:0 -1px 0 var(--hairline);font-size:var(--fs-13);color:var(--text-2);cursor:pointer}
 .srcitem.on{color:var(--text)}
-.chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--field-border);flex:0 0 auto;display:grid;place-items:center;color:transparent}
-.chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
-.chk .ic{width:12px;height:12px;stroke-width:2.6}
+/* фейковый чекбокс МАКЕТА (span.chk в shell.html). Строго span: движок рендерит
+   label.chk с настоящим input — рамка 18×18 на label давала «коробки» вокруг
+   подписей чекбоксов во всех поповерах и диалогах. */
+span.chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--field-border);flex:0 0 auto;display:grid;place-items:center;color:transparent}
+span.chk.on{background:var(--accent);border-color:var(--accent);color:#fff}
+span.chk .ic{width:12px;height:12px;stroke-width:2.6}
 
-.pop{position:absolute;z-index:var(--z-menu);width:262px;background:var(--glass-strong);backdrop-filter:var(--glass-blur);
+/* поповер лежит ПОВЕРХ стеклянной панели с текстом → материал тяжелее обычного
+   стекла (90% плотности), иначе просвечивающие подписи панели рушат читаемость */
+.pop{position:absolute;z-index:var(--z-menu);width:262px;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border);border-radius:var(--r-md);box-shadow:var(--shadow-md),var(--glass-hi);
   padding:13px;display:flex;flex-direction:column;gap:12px;animation:pop .16s var(--ease-out)}
 .pop .ph{font-size:var(--fs-12);font-weight:600;color:var(--text)}
@@ -261,6 +266,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .menu-row:hover .ic{color:var(--accent)}
 .menu-row .sub{margin-left:auto;font-size:11px;color:var(--faint);font-family:var(--font-mono)}
 .menu-sep{height:1px;background:var(--hairline);margin:5px 4px}
+/* отметка активного пункта во взаимоисключающей группе (Знаки: стандарт/холст) */
+.menu-row.on::after{content:"✓";margin-left:auto;font-size:var(--fs-12);color:var(--accent);font-weight:600}
+.menu-row.on{color:var(--text);font-weight:500}
 
 .seg{display:flex;background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--r-sm);padding:3px;gap:3px}
 .seg button{flex:1;height:28px;border-radius:6px;font-size:var(--fs-12);font-weight:500;color:var(--text-2);transition:background .12s,color .12s}
