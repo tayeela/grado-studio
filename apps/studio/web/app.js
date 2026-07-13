@@ -931,7 +931,9 @@ function tileImage(z, x, y) {
     e = { img: new Image(), loaded: false, failed: false };
     e.img.onload = () => { e.loaded = true; draw(); };
     e.img.onerror = () => { e.failed = true; };
-    e.img.src = `/api/tiles/${z}/${x}/${y}.png?src=${basemap.source}`;
+    e.img.src = window.gradoTileUrl
+      ? window.gradoTileUrl(z, x, y, basemap.source)
+      : `/api/tiles/${z}/${x}/${y}.png?src=${basemap.source}`;
     basemap.cache.set(key, e);
   }
   return e;
@@ -5126,7 +5128,8 @@ on("export-style", "change", () => { persist(); toast(exportStyleMode() === "can
   ? "Печать и альбом — знаками как на холсте" : "Печать и альбом — по стандарту ЛГР"); });
 on("btn-album", "click", () => download("/api/album", "-album.pdf"));
 on("btn-album-config", "click", openAlbumConfig);
-on("btn-grado", "click", () => download("/api/grado", ".grado"));
+on("btn-grado", "click", () => download(
+  "/api/grado", window.GRADO_STATIC ? ".grado-web.json" : ".grado"));
 on("btn-dxf", "click", () => download("/api/dxf", ".dxf"));
 on("btn-print", "click", () => download("/api/print", "-print.pdf"));
 

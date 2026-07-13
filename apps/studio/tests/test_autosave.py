@@ -100,7 +100,7 @@ class ReleaseManifestTests(unittest.TestCase):
         manifest = json.loads((root / "apps/studio/web/version.json").read_text())
         packaging = (root / "packaging/py2app_setup.py").read_text()
 
-        self.assertEqual("0.9.0-beta.5", manifest["version"])
+        self.assertEqual("0.9.0-beta.6", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
