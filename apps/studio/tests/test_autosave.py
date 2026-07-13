@@ -84,6 +84,16 @@ class AutosaveTests(unittest.TestCase):
 
         self.assertEqual(before, self.path.read_bytes())
 
+    def test_rejects_non_object_features_before_touching_current_file(self):
+        original = self.state("Надёжная", 1)
+        server.save_autosave(original, path=self.path)
+        before = self.path.read_bytes()
+
+        with self.assertRaises(ValueError):
+            server.save_autosave({"features": [None, "сломано"]}, path=self.path)
+
+        self.assertEqual(before, self.path.read_bytes())
+
     def test_preserves_damaged_current_file_and_continues_saving(self):
         damaged = b'{"features": ['
         self.path.write_bytes(damaged)

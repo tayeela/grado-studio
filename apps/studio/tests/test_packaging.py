@@ -102,6 +102,31 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("background:var(--panel)", compact)
         self.assertIn("backdrop-filter:none", compact)
 
+    def test_browser_menus_skip_unavailable_desktop_actions(self):
+        root = Path(__file__).parents[3]
+        adapter = (root / "apps/studio/web/pages-adapter.js").read_text(
+            encoding="utf-8")
+        a11y = (root / "apps/studio/web/redesign/a11y.js").read_text(
+            encoding="utf-8")
+
+        self.assertIn('setAttribute("aria-disabled", "true")', adapter)
+        self.assertIn('row.matches(".menu-row")', adapter)
+        self.assertIn('addMenuNote("menu-data"', adapter)
+        self.assertIn('addMenuNote("menu-out"', adapter)
+        self.assertIn("function enabledMenuItems", a11y)
+        self.assertIn("item.getAttribute('aria-disabled') !== 'true'", a11y)
+
+    def test_frontend_defensively_restores_projects_and_async_errors(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        styles = (root / "apps/studio/web/style.css").read_text(encoding="utf-8")
+
+        self.assertIn("function normalizeRestoredState", app)
+        self.assertIn("hasValidGeometry(feature)", app)
+        self.assertIn("Object.create(null)", app)
+        self.assertIn('window.addEventListener("unhandledrejection"', app)
+        self.assertIn("position: fixed", styles.split("#errbar", 1)[1].split("}", 1)[0])
+
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]
         release_version = json.loads(

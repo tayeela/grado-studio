@@ -20,7 +20,7 @@
 </style>
 </head>
 <body>
-<div id="errbar" hidden></div>
+<div id="errbar" role="alert" aria-live="assertive" hidden></div>
 
 <!-- ШАПКА (новый стиль, реальные кнопки движка) -->
 <header>
@@ -452,7 +452,7 @@
         row.classList.toggle('on', row.dataset.setexport === sel.value));
       m.hidden = false;
       btn.setAttribute('aria-expanded', 'true');
-      setTimeout(() => m.querySelector('[role^="menuitem"]')?.focus(), 0);
+      setTimeout(() => m.querySelector('[role^="menuitem"]:not([aria-disabled="true"])')?.focus(), 0);
     }));
     document.querySelectorAll('.menu [data-click]').forEach(row => row.addEventListener('click', () => {
       closeAll();

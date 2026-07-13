@@ -146,6 +146,8 @@ def _autosave_state(payload):
     state = payload.get("state") if isinstance(payload.get("state"), dict) else payload
     if not isinstance(state.get("features"), list):
         raise ValueError("autosave features must be an array")
+    if any(not isinstance(feature, dict) for feature in state["features"]):
+        raise ValueError("autosave features must contain objects")
     return state
 
 
