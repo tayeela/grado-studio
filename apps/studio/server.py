@@ -21,6 +21,7 @@
     GET/POST /api/autosave  файловый автосейв (резерв к localStorage)
     GET  /api/autosave/backups[/N]  список/чтение предыдущих снимков
     GET  /api/version      единая версия приложения и схемы состояния
+    GET  /api/health       готовность ресурсов и каталога рабочих данных
     GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
     GET  /api/tiles/<z>/<x>/<y>.png  тайловая подложка (прокси + дисковый кэш)
 Порт 8081: приёмник браузерного расширения GRADO (совместим с QGIS-плагином).
@@ -35,6 +36,8 @@ import sys
 import tempfile
 import threading
 import traceback
+import urllib.request
+import webbrowser
 from datetime import datetime, timezone
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
@@ -80,7 +83,7 @@ if "--hub" in sys.argv:
 else:
     from webhub import HubError, SESSION_COOKIE  # noqa: F401 (единый except)
 # в hub-режиме без сессии доступны только эти /api/-пути (вход + статика)
-HUB_PUBLIC_API = {"/api/hub", "/api/auth/login", "/api/auth/register",
+HUB_PUBLIC_API = {"/api/hub", "/api/health", "/api/auth/login", "/api/auth/register",
                   "/api/auth/logout"}
 
 # Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
@@ -331,6 +334,17 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if parsed0.path == "/api/version":
             self._json(VERSION_INFO)
+            return
+        if parsed0.path == "/api/health":
+            checks = {
+                "web": (WEB / "index.html").is_file(),
+                "preset": studio_core.PRESET.is_file(),
+                "data_writable": DATA_DIR.is_dir() and os.access(DATA_DIR, os.W_OK),
+            }
+            ok = all(checks.values())
+            self._json({"ok": ok, "version": VERSION_INFO["version"],
+                        "packaged": bool(getattr(sys, "frozen", False)),
+                        "checks": checks}, 200 if ok else 503)
             return
         if HUB and parsed0.path == "/api/projects":
             self._json({"projects": HUB.list_projects(hub_login)})
@@ -762,8 +776,53 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(msg)
 
 
-if __name__ == "__main__":
-    servers = [ThreadingHTTPServer(("127.0.0.1", PORT), Handler)]
+def _should_open_browser():
+    return ("--open" in sys.argv or bool(getattr(sys, "frozen", False))) and \
+           os.environ.get("GRADO_NO_BROWSER") != "1"
+
+
+def _running_studio_version(port):
+    """Версия уже работающей Студии на порту или None для чужого сервиса."""
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/version", timeout=0.35) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        version = payload.get("version") if isinstance(payload, dict) else None
+        return version if isinstance(version, str) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _port_candidates(port):
+    """В приложении Finder ищем свободный порт; dev-запуск остаётся строгим."""
+    if getattr(sys, "frozen", False):
+        return range(port, port + 10)
+    return (port,)
+
+
+def main():
+    global PORT, BRIDGE_ON
+    servers = []
+    original_port = PORT
+    for candidate in _port_candidates(original_port):
+        try:
+            servers = [ThreadingHTTPServer(("127.0.0.1", candidate), Handler)]
+            PORT = candidate
+            break
+        except OSError:
+            # Повторный двойной клик без файла просто возвращает пользователя
+            # в уже открытую Студию. Проект .grado запускаем на новом порту,
+            # чтобы переданный файл не потерялся.
+            if (candidate == original_port and INITIAL_GRADO is None and
+                    _running_studio_version(candidate)):
+                if _should_open_browser():
+                    webbrowser.open(f"http://localhost:{candidate}")
+                print(f"ГРАДО Студия уже работает: http://localhost:{candidate}")
+                return 0
+            if not getattr(sys, "frozen", False):
+                raise
+    if not servers:
+        raise OSError("no free local port for GRADO Studio")
     try:
         servers.append(V6Server(("::1", PORT), Handler))
     except OSError:
@@ -776,10 +835,20 @@ if __name__ == "__main__":
         print(f"Порт {BRIDGE_PORT} занят (вероятно, QGIS с плагином GRADO) — "
               "мост выключен, выгрузки идут в QGIS")
     print(f"ГРАДО Студия: http://localhost:{PORT}")
-    if "--open" in sys.argv:
-        import webbrowser
+    if _should_open_browser():
         threading.Timer(0.4, webbrowser.open,
                         [f"http://localhost:{PORT}"]).start()
     for s in servers[1:]:
         threading.Thread(target=s.serve_forever, daemon=True).start()
-    servers[0].serve_forever()
+    try:
+        servers[0].serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for server in servers:
+            server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
