@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГРАДО Студия — новый интерфейс (Фаза 1, каркас)</title>
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/redesign/shell.css">
+</head>
+<body>
+
+<!-- ШАПКА -->
+<header>
+  <div class="logo">ГРАДО <span>Студия</span></div>
+  <input class="projname" value="Концепция развития территории — кв. 14" spellcheck="false">
+  <div class="spacer"></div>
+  <button class="kbar" id="open-cmdk"><svg class="ic" style="width:14px;height:14px"><use href="#i-search"/></svg>Найти инструмент, слой, действие<kbd>⌘K</kbd></button>
+  <button class="iconbtn" id="btn-theme" title="Светлая / тёмная тема"><svg class="ic"><use href="#i-theme"/></svg></button>
+  <button class="iconbtn" title="Отменить"><svg class="ic"><use href="#i-undo"/></svg></button>
+  <button class="iconbtn" title="Вернуть"><svg class="ic"><use href="#i-redo"/></svg></button>
+  <span class="hsep"></span>
+  <button class="btn" data-menu="menu-data"><svg class="ic" style="width:15px;height:15px"><use href="#i-download"/></svg>Данные<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-proj"><svg class="ic" style="width:15px;height:15px"><use href="#i-folder"/></svg>Проект<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <span class="split">
+    <button class="btn primary" data-toast="Сборка альбома АГК…">Собрать альбом</button>
+    <button class="btn primary" data-menu="menu-out"><svg class="ic caret" style="opacity:.85"><use href="#i-caret"/></svg></button>
+  </span>
+</header>
+
+<div id="main">
+  <!-- ЛЕВЫЙ ТУЛБАР -->
+  <nav id="rail">
+    <button class="tool active" data-tool="Выбор"><svg class="ic"><use href="#i-cursor"/></svg>Выбор</button>
+    <div class="rail-group">Рисование</div>
+    <button class="tool" data-tool="Точка"><svg class="ic"><use href="#i-dot"/></svg>Точка</button>
+    <button class="tool" data-tool="Линия"><svg class="ic"><use href="#i-line"/></svg>Линия</button>
+    <button class="tool" data-tool="Полигон"><svg class="ic"><use href="#i-poly"/></svg>Полигон</button>
+    <button class="tool" data-tool="Прямоугольник"><svg class="ic"><use href="#i-rect"/></svg>Прямоуг.</button>
+    <button class="tool" data-tool="Дуга"><svg class="ic"><use href="#i-arc"/></svg>Дуга</button>
+    <button class="tool" data-tool="Окружность"><svg class="ic"><use href="#i-circle"/></svg>Окружн.</button>
+    <div class="rail-group">Правка</div>
+    <button class="tool" data-tool="Обрезать"><svg class="ic"><use href="#i-trim"/></svg>Обрезать</button>
+    <button class="tool" data-tool="Продлить"><svg class="ic"><use href="#i-extend"/></svg>Продлить</button>
+    <button class="tool" data-tool="Сопрячь"><svg class="ic"><use href="#i-fillet"/></svg>Сопрячь</button>
+    <button class="tool" data-tool="Поворот"><svg class="ic"><use href="#i-rotate"/></svg>Поворот</button>
+    <button class="tool" data-tool="Масштаб"><svg class="ic"><use href="#i-scale"/></svg>Масштаб</button>
+    <button class="tool" data-tool="Зеркало"><svg class="ic"><use href="#i-mirror"/></svg>Зеркало</button>
+    <div class="rail-group">Мера</div>
+    <button class="tool" data-tool="Размер"><svg class="ic"><use href="#i-dim"/></svg>Размер</button>
+    <button class="tool" data-tool="Измерение"><svg class="ic"><use href="#i-ruler"/></svg>Измер.</button>
+  </nav>
+
+  <!-- ХОЛСТ (заглушка) -->
+  <div id="stage">
+    <svg id="scene" viewBox="0 0 900 640" preserveAspectRatio="xMidYMid slice">
+      <defs><pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+        <path d="M40 0H0V40" fill="none" stroke="var(--canvas-grid)" stroke-width="1"/></pattern></defs>
+      <rect id="bg-empty" width="900" height="640" fill="url(#grid)"/>
+      <path d="M-10 470 C160 430 250 520 430 500 C620 480 760 540 910 500 L910 660 L-10 660 Z" fill="var(--water)" stroke="var(--water-line)" stroke-width="1.5"/>
+      <g fill="none" stroke="var(--contour)" stroke-width="1" opacity=".7">
+        <path d="M120 120 C260 90 380 150 520 120 C640 95 720 140 820 120"/>
+        <path d="M110 170 C250 140 380 200 520 170 C650 145 730 190 830 175"/>
+        <path d="M130 225 C260 200 390 250 520 228 C650 205 740 245 830 235"/></g>
+      <path d="M600 150 L780 150 L800 300 L620 320 Z" fill="var(--zone-green)" stroke="var(--zone-green-line)" stroke-width="1.4"/>
+      <path id="zone-zh" class="pick" d="M150 250 L430 240 L450 430 L170 445 Z" fill="var(--zone-a)" stroke="var(--zone-a-line)" stroke-width="2"/>
+      <path class="pick" d="M470 250 L590 245 L600 360 L480 370 Z" fill="var(--zone-b)" stroke="var(--zone-b-line)" stroke-width="1.4"/>
+      <g fill="rgba(150,143,132,.5)" stroke="#8f887e" stroke-width="1">
+        <rect x="200" y="285" width="70" height="46" rx="2"/><rect x="300" y="290" width="52" height="60" rx="2"/>
+        <rect x="215" y="360" width="90" height="40" rx="2"/><rect x="500" y="285" width="60" height="55" rx="2"/></g>
+      <path d="M120 235 L860 210" fill="none" stroke="var(--redline)" stroke-width="2"/>
+      <path d="M455 235 L470 460" fill="none" stroke="var(--redline)" stroke-width="2"/>
+      <path d="M100 100 L840 90 L860 470 L120 490 Z" fill="none" stroke="var(--text)" stroke-width="2.4" opacity=".55"/>
+      <g id="handles" fill="var(--accent)" stroke="#fff" stroke-width="1.5" hidden>
+        <rect x="144" y="244" width="9" height="9" rx="2"/><rect x="424" y="234" width="9" height="9" rx="2"/>
+        <rect x="444" y="424" width="9" height="9" rx="2"/><rect x="164" y="439" width="9" height="9" rx="2"/></g>
+    </svg>
+
+    <div class="cv-float cv-compass"><svg class="ic" style="width:20px;height:20px"><use href="#i-north"/></svg></div>
+    <div class="cv-float cv-zoom"><button data-toast="Приблизить">+</button><button data-toast="Отдалить">−</button></div>
+
+    <div class="statusbar">
+      <span class="st-active" id="st-active"><span class="dot" style="background:var(--zone-a);box-shadow:inset 0 0 0 1px var(--zone-a-line)"></span>Черчу в: Функц. зона Ж</span>
+      <span class="mono" id="st-coords">X 43 218.6&nbsp;&nbsp;Y 6 179 044.2</span>
+      <span class="push"></span>
+      <span id="st-tool">Инструмент: Выбор</span>
+      <span>сетка 500 м</span>
+      <span class="scalebar"><span class="bar"></span>1 : 2 000</span>
+    </div>
+
+    <div id="toast" hidden></div>
+  </div>
+
+  <!-- ПРАВАЯ ПАНЕЛЬ -->
+  <aside id="panel">
+    <div class="panel-head">
+      <span class="title">Слои и объект</span>
+      <button class="phbtn" data-pop="p-basemap" title="Подложка"><svg class="ic" style="width:17px;height:17px"><use href="#i-map"/></svg></button>
+      <button class="phbtn" data-pop="p-grid" title="Сетка и привязки"><svg class="ic" style="width:17px;height:17px"><use href="#i-grid"/></svg></button>
+      <button class="phbtn" data-pop="p-src" title="Источники данных"><svg class="ic" style="width:17px;height:17px"><use href="#i-db"/></svg></button>
+    </div>
+
+    <div class="panel-scroll">
+      <!-- СВОЙСТВА (контекстно) -->
+      <div class="card" id="prop-card" hidden>
+        <div class="prop-title">
+          <span class="swatch"></span>
+          <div style="flex:1;min-width:0"><div class="nm">Функциональная зона Ж</div><div class="kind">многоугольник · 4 вершины</div></div>
+        </div>
+        <div class="card-b" style="padding-top:11px">
+          <div class="prow"><span class="k">Площадь</span><span class="v">4.62 га</span></div>
+          <div class="prow"><span class="k">Периметр</span><span class="v">918.4 м</span></div>
+          <div class="prow"><span class="k">Индекс зоны</span><span class="v">Ж-3</span></div>
+          <div class="mini-tools">
+            <button class="chip" data-tool-chip="Поворот"><svg class="ic" style="width:14px;height:14px"><use href="#i-rotate"/></svg>Повернуть</button>
+            <button class="chip" data-tool-chip="Масштаб"><svg class="ic" style="width:14px;height:14px"><use href="#i-scale"/></svg>Масштаб</button>
+            <button class="chip" data-tool-chip="Зеркало"><svg class="ic" style="width:14px;height:14px"><use href="#i-mirror"/></svg>Отразить</button>
+            <button class="chip" data-modal="m-style"><svg class="ic" style="width:14px;height:14px"><use href="#i-paint"/></svg>Оформление…</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- СВОЙСТВА: пусто -->
+      <div class="card" id="prop-empty">
+        <div class="prop-empty"><svg class="ic"><use href="#i-cursor"/></svg>Ничего не выделено.<br>Кликните объект на холсте, чтобы увидеть его свойства и быстрые действия.</div>
+      </div>
+
+      <!-- СЛОИ -->
+      <div class="card">
+        <div class="card-h">Слои <span class="sub">8</span></div>
+        <div class="card-b" style="gap:2px;padding-bottom:9px" id="layers">
+          <div class="layer active" data-layer="Функциональная зона Ж"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:var(--zone-a);box-shadow:inset 0 0 0 1px var(--zone-a-line)"></span><span class="ln">Функциональная зона Ж</span><span class="cnt">6</span></div>
+          <div class="layer" data-layer="Функциональная зона О"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:var(--zone-b);box-shadow:inset 0 0 0 1px var(--zone-b-line)"></span><span class="ln">Функциональная зона О</span><span class="badge">правила</span></div>
+          <div class="layer" data-layer="Красные линии"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 1.5px var(--redline)"></span><span class="ln">Красные линии</span><span class="cnt">12</span></div>
+          <div class="layer" data-layer="Здания (ЕГРН)"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:rgba(150,143,132,.5);box-shadow:inset 0 0 0 1px #8f887e"></span><span class="ln">Здания (ЕГРН)</span><span class="cnt">96</span></div>
+          <div class="layer hidden-lyr" data-layer="ЗОУИТ (НСПД)"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye-off"/></svg></button><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 1px #e11d48"></span><span class="ln">ЗОУИТ (НСПД)</span><span class="cnt">901</span></div>
+          <div class="layer" data-layer="Вода (OSM)"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:var(--water);box-shadow:inset 0 0 0 1px var(--water-line)"></span><span class="ln">Вода (OSM)</span><span class="cnt">9</span></div>
+          <div class="layer" data-layer="Рельеф: горизонтали"><button class="eye"><svg class="ic" style="width:16px;height:16px"><use href="#i-eye"/></svg></button><span class="sw" style="background:transparent;box-shadow:inset 0 0 0 1.5px var(--contour)"></span><span class="ln">Рельеф: горизонтали</span><span class="cnt">148</span></div>
+          <button class="addlayer" data-toast="Новый слой…"><svg class="ic" style="width:15px;height:15px"><use href="#i-plus"/></svg>Добавить слой</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ТЭП -->
+    <div class="tep">
+      <div class="tep-h"><svg class="ic" style="width:15px;height:15px"><use href="#i-chart"/></svg>ТЭП<span class="live">живой расчёт</span></div>
+      <div class="tep-grid">
+        <div class="metric"><div class="mv">12.4 га</div><div class="ml">площадь территории</div></div>
+        <div class="metric"><div class="mv">8 240</div><div class="ml">население, чел.</div></div>
+        <div class="metric"><div class="mv">665 чел/га</div><div class="ml">плотность</div></div>
+        <div class="metric"><div class="mv">4</div><div class="ml">этажность средн.</div></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- ===== ОВЕРЛЕИ (по умолчанию скрыты) ===== -->
+<!-- командная палитра -->
+<div class="cmdk" id="cmdk" hidden>
+  <div class="cmdk-box">
+    <div class="cmdk-input"><svg class="ic"><use href="#i-search"/></svg><input id="cmdk-q" placeholder="Найти инструмент, слой, действие…" autocomplete="off"></div>
+    <div class="cmdk-list" id="cmdk-list"></div>
+  </div>
+</div>
+
+<!-- диалог Данные -->
+<div class="scrim" id="m-data" hidden>
+  <div class="modal">
+    <div class="modal-h"><span class="t">Данные по видимой области</span><button class="x" data-close><svg class="ic" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+    <div class="modal-b">
+      <div class="areabar"><span>Видимая область</span><span class="v">3.4 км²</span></div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">OpenStreetMap <span class="hint">· справочный контекст</span><span class="all">все</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Дороги и улицы</div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Здания</div>
+        <div class="srcitem"><span class="chk"></span>Землепользование (парки, лес…)</div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Административные границы (районы/поселения)</div>
+      </div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">НСПД — Росреестр <span class="hint">· официальные границы ЕГРН</span><span class="all">все</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Земельные участки</div>
+        <div class="srcitem"><span class="chk"></span>ЗОУИТ (все виды)</div>
+      </div>
+      <div class="srcgroup">
+        <div class="srcgroup-h">Рельеф <span class="hint">· горизонтали из открытого DEM</span></div>
+        <div class="srcitem on"><span class="chk on"><svg class="ic"><use href="#i-check"/></svg></span>Горизонтали (сечение авто)</div>
+      </div>
+    </div>
+    <div class="modal-f"><button class="btn">Приблизить под лимит</button><span class="push"></span><button class="btn" data-close>Отмена</button><button class="btn primary" data-close data-toast="Загрузка данных по области…">Загрузить (5)</button></div>
+  </div>
+</div>
+
+<!-- диалог Оформление слоя -->
+<div class="scrim" id="m-style" hidden>
+  <div class="modal" style="width:min(468px,86vw)">
+    <div class="modal-h"><span class="t">Оформление слоя · Функциональная зона Ж</span><button class="x" data-close><svg class="ic" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+    <div class="modal-b">
+      <div class="seg" id="style-seg"><button class="on">Единый стиль</button><button>По значению поля</button></div>
+      <div class="preview-row"><span class="dotc" style="background:var(--zone-a);box-shadow:inset 0 0 0 2px var(--zone-a-line)"></span>
+        <div><div style="font-weight:600;font-size:var(--fs-13)">Предпросмотр</div><div style="font-size:11px;color:var(--muted)">так знак выглядит на холсте и в печати</div></div></div>
+      <div class="field"><label>Заливка</label><div class="swrow"><span class="dotc" style="background:var(--zone-a)"></span><input class="select" style="flex:1" value="rgba(232,161,60,.24)"></div></div>
+      <div class="field"><label>Обводка</label><div class="swrow"><span class="dotc" style="background:var(--zone-a-line)"></span><input class="select" style="flex:1" value="#d98e2b"></div></div>
+      <div style="display:flex;gap:12px">
+        <div class="field" style="flex:1"><label>Толщина, мм</label><input class="select" value="0.5"></div>
+        <div class="field" style="flex:1"><label>Пунктир</label><select class="select"><option>сплошная</option><option>штрих</option><option>штрих-пунктир</option></select></div></div>
+    </div>
+    <div class="modal-f"><button class="btn">Сбросить</button><span class="push"></span><button class="btn" data-close>Отмена</button><button class="btn primary" data-close data-toast="Оформление применено">Применить</button></div>
+  </div>
+</div>
+
+<!-- поповер Подложка -->
+<div class="pop" id="p-basemap" hidden style="top:98px;right:14px">
+  <div class="ph">Подложка</div>
+  <label class="switch" id="bm-switch"><span class="tg"></span>Показывать подложку</label>
+  <div class="field"><label>Источник</label><select class="select"><option>Карта (OpenStreetMap)</option><option>Спутник (ESRI, высокое разрешение)</option><option selected>Спутник Sentinel-2 (Copernicus, 10 м)</option></select></div>
+  <div class="field"><label>Прозрачность — 85 %</label><input type="range" min="10" max="100" value="85"></div>
+</div>
+<!-- поповер Сетка -->
+<div class="pop" id="p-grid" hidden style="top:98px;right:14px">
+  <div class="ph">Сетка и привязки</div>
+  <label class="switch"><span class="tg"></span>Показывать сетку</label>
+  <div class="field"><label>Шаг сетки, м</label><input class="select" value="500"></div>
+  <label class="switch"><span class="tg"></span>Привязки (вершины, середины, пересечения)</label>
+</div>
+<!-- поповер Источники -->
+<div class="pop" id="p-src" hidden style="top:98px;right:14px;width:288px">
+  <div class="ph">Источники данных · журнал снимков</div>
+  <div style="font-size:11px;color:var(--muted);line-height:1.5">НСПД · 07.07.2026 · 58 объектов<br>OSM (Overpass) · 07.07.2026 · 214 объектов<br>Рельеф (SRTM) · 07.07.2026 · 148 горизонталей</div>
+</div>
+
+<!-- меню Данные -->
+<div class="menu" id="menu-data" hidden>
+  <div class="menu-row" data-modal="m-data">Данные по видимой области…<span class="sub">⌘D</span></div>
+  <div class="menu-sep"></div>
+  <div class="menu-row" data-toast="Импорт НСПД (файл)">Импорт НСПД (файл расширения)</div>
+  <div class="menu-row" data-toast="Импорт ГИС ОГД">ГИС ОГД — ZIP, GeoJSON или папка</div>
+  <div class="menu-row" data-toast="Заполнено примером">Заполнить примером (демо)</div>
+</div>
+<!-- меню Проект -->
+<div class="menu" id="menu-proj" hidden>
+  <div class="menu-row" data-toast="Открыть .grado">Открыть проект…<span class="sub">⌘O</span></div>
+  <div class="menu-row" data-toast="Сохранение .grado">Сохранить .grado<span class="sub">⌘S</span></div>
+  <div class="menu-sep"></div>
+  <div class="menu-row" data-toast="Очистить холст">Очистить холст</div>
+</div>
+<!-- меню Выпуск -->
+<div class="menu" id="menu-out" hidden>
+  <div class="menu-row" data-toast="Экспорт DXF">Экспорт чертежа (DXF)</div>
+  <div class="menu-row" data-toast="Печать PDF">Печать в масштабе (PDF)</div>
+  <div class="menu-row" data-toast="Настройка альбома">Настройка состава альбома…</div>
+</div>
+
+<!-- ================================================================
+     Набор иконок ГРАДО Студии — единый стиль:
+     viewBox 24, обводка 1.7 (из .ic), круглые концы; узловые квадраты
+     (ручки вершин) — общий CAD-мотив у инструментов черчения/правки.
+     ================================================================ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20.5 20.5l-5-5"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><path d="M20 13a8 8 0 1 1-9-9 6.5 6.5 0 0 0 9 9z"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8.5 7 4 11.5 8.5 16"/><path d="M4 11.5h10.5a6 6 0 0 1 0 12H13"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15.5 7 20 11.5 15.5 16"/><path d="M20 11.5H9.5a6 6 0 0 0 0 12H11"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v10"/><path d="M8 9.5l4 4 4-4"/><path d="M4.5 20h15"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.6a2 2 0 0 1 1.5.7l1 1.1a2 2 0 0 0 1.5.7h5.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-caret" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5.5 3.5 5.5 18.5 9.6 14.5 12.2 20 14.2 19.1 11.6 13.7 16.8 13.7Z" fill="currentColor" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><path d="M12 3.5v3.6M12 16.9v3.6M3.5 12h3.6M16.9 12h3.6"/><rect x="10.35" y="10.35" width="3.3" height="3.3" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-line" viewBox="0 0 24 24"><path d="M7 17 17 7"/><rect x="4.4" y="14.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="16.4" y="4.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-poly" viewBox="0 0 24 24"><path d="M12 5 18.5 9.7 16 18 8 18 5.5 9.7Z"/><rect x="10.4" y="3.4" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="3.9" y="8.1" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="16.9" y="8.1" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-rect" viewBox="0 0 24 24"><rect x="5" y="6.5" width="14" height="11" rx="1.5"/><rect x="3.4" y="4.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="17.4" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-arc" viewBox="0 0 24 24"><path d="M4.5 17.5a11.5 11.5 0 0 1 15 0"/><rect x="2.9" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="17.9" y="15.9" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/><rect x="10.4" y="6.7" width="3.2" height="3.2" rx=".7" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/><rect x="10.7" y="10.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-trim" viewBox="0 0 24 24"><path d="M13 3.5v17"/><path d="M4 12h9"/><path d="M16 10l3.5 3.5M19.5 10 16 13.5"/></symbol>
+  <symbol id="i-extend" viewBox="0 0 24 24"><path d="M20 3.5v17"/><path d="M3.5 12H15.5"/><path d="M13 9l3.2 3-3.2 3"/></symbol>
+  <symbol id="i-fillet" viewBox="0 0 24 24"><path d="M6 19.5V11.5a5.5 5.5 0 0 1 5.5-5.5H19.5"/><rect x="4.7" y="4.7" width="2.6" height="2.6" rx=".6" fill="currentColor" stroke="none" opacity=".55"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.6 5v4.2h-4.2"/><rect x="10.8" y="10.8" width="2.4" height="2.4" rx=".5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M4.5 19.5V15M4.5 19.5H9"/><path d="M19.5 4.5V10M19.5 4.5H14"/><path d="M7.5 16.5 16.5 7.5"/></symbol>
+  <symbol id="i-mirror" viewBox="0 0 24 24"><path d="M12 3.5V20.5" stroke-dasharray="2.4 2.4"/><path d="M9 8.5 5 12 9 15.5Z"/><path d="M15 8.5 19 12 15 15.5Z"/></symbol>
+  <symbol id="i-dim" viewBox="0 0 24 24"><path d="M4 8.5v7M20 8.5v7"/><path d="M4 12h16"/><path d="M7 10l-3 2 3 2M17 10l3 2-3 2"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><rect x="3.5" y="8.5" width="17" height="7" rx="1"/><path d="M7.5 8.5v3M11.5 8.5v4M15.5 8.5v3"/></symbol>
+  <symbol id="i-north" viewBox="0 0 24 24"><path d="M12 3 15.5 12 12 10 8.5 12Z" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/><path d="M12 12v8" opacity=".35"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 5 3.5 7v11.5l5.5-2 6 2 5.5-2V5l-5.5 2z"/><path d="M9 5v11.5M15 7v11.5"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1.5"/><path d="M4 10h16M4 15h16M10 4v16M15 4v16"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="2.8"/><path d="M5 6v12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8V6"/><path d="M5 12c0 1.55 3.13 2.8 7 2.8s7-1.25 7-2.8"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M4 4l16 16"/><path d="M9.6 5.3A11.3 11.3 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17.6 17.6 0 0 1-2.3 3.1M6.4 6.9C3.6 8.6 2.5 12 2.5 12S6 18.5 12 18.5a10.4 10.4 0 0 0 4.2-.9"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-paint" viewBox="0 0 24 24"><path d="M12 3.8c3 3.9 5 6.3 5 8.9a5 5 0 0 1-10 0c0-2.6 2-5 5-8.9z"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10.5M10 20V4M16 20v-6.5"/><path d="M3 20h18"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3.5 20.5 8 12 12.5 3.5 8z"/><path d="M4 12l8 4.5 8-4.5"/><path d="M4 16l8 4.5 8-4.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 6"/></symbol>
+</svg>
+
+<script src="/redesign/shell.js"></script>
+</body>
+</html>

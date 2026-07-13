@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГРАДО Студия</title>
+<link rel="stylesheet" href="tokens.css">
+<script src="canvas-theme.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!-- Иконочный спрайт дизайн-этапа (icons.svg), инлайн: внешний
+     <use href="icons.svg#id"> не работает в Safari (наш целевой браузер).
+     stroke=currentColor — иконки наследуют цвет и тему. ic-theme добавлен
+     сверх набора (переключатель тем дизайнер не поставлял). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="ic-select" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3 L11.5 20 L13.9 13.9 L20 11.5 Z"></path></symbol>
+  <symbol id="ic-boundary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8 L12 4 L19 8 L16.8 17.5 L7.2 17.5 Z"></path><circle cx="5" cy="8" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="4" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="19" cy="8" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="16.8" cy="17.5" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="7.2" cy="17.5" r="1.5" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-line" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 18.5 L18.5 5.5"></path><circle cx="5.5" cy="18.5" r="2" fill="currentColor" stroke="none"></circle><circle cx="18.5" cy="5.5" r="2" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 L20.5 8.25 L12 13 L3.5 8.25 Z"></path><path d="M3.5 8.25 V15.75 L12 20.5 L20.5 15.75 V8.25"></path><path d="M12 13 V20.5"></path></symbol>
+  <symbol id="ic-hatch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="4.5" width="15" height="15" rx="1.6"></rect><path d="M6 17 L17 6 M10.5 19 L19 10.5 M5 12.5 L12.5 5"></path></symbol>
+  <symbol id="ic-redline" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L20 4"></path><path d="M4 15.5 V20 H8.5"></path><path d="M15.5 4 H20 V8.5"></path></symbol>
+  <symbol id="ic-dimension" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 V17 M20 7 V17 M4 12 H20"></path><path d="M8 8.5 L4.5 12 L8 15.5 M16 8.5 L19.5 12 L16 15.5"></path></symbol>
+  <symbol id="ic-measure" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15 L15 3 L21 9 L9 21 Z"></path><path d="M7 11 l2 2 M10.5 7.5 l2.5 2.5 M14 4 l2 2"></path></symbol>
+  <symbol id="ic-snap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 V6.5 M12 17.5 V21.5 M2.5 12 H6.5 M17.5 12 H21.5"></path><circle cx="12" cy="12" r="3.5"></circle><circle cx="12" cy="12" r="0.8" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-vertex" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6.5"></circle><circle cx="12" cy="12" r="2.3" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-label" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6 A2 2 0 0 0 11.2 2 H4 a2 2 0 0 0 -2 2 v7.2 a2 2 0 0 0 .6 1.4 l8.7 8.7 a2.4 2.4 0 0 0 3.4 0 l6.6 -6.6 a2.4 2.4 0 0 0 0 -3.4 Z"></path><circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12 H14.5 a5 5 0 1 1 -5 5"></path><path d="M8 8 L4 12 L8 16"></path></symbol>
+  <symbol id="ic-redo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12 H9.5 a5 5 0 1 0 5 5"></path><path d="M16 8 L20 12 L16 16"></path></symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 v6 h-6"></path><path d="M3 12 a9 9 0 0 1 15 -6.7 L21 9"></path><path d="M3 21 v-6 h6"></path><path d="M21 12 a9 9 0 0 1 -15 6.7 L3 15"></path></symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5 V19 M5 12 H19"></path></symbol>
+  <symbol id="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6 L18 18 M18 6 L6 18"></path></symbol>
+  <symbol id="ic-grip" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="9" cy="6" r="1.4"></circle><circle cx="15" cy="6" r="1.4"></circle><circle cx="9" cy="12" r="1.4"></circle><circle cx="15" cy="12" r="1.4"></circle><circle cx="9" cy="18" r="1.4"></circle><circle cx="15" cy="18" r="1.4"></circle></symbol>
+  <symbol id="ic-menu-dots" viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="5" cy="12" r="1.7"></circle><circle cx="12" cy="12" r="1.7"></circle><circle cx="19" cy="12" r="1.7"></circle></symbol>
+  <symbol id="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 12 s3.8 -7 9.5 -7 9.5 7 9.5 7 -3.8 7 -9.5 7 -9.5 -7 -9.5 -7 Z"></path><circle cx="12" cy="12" r="3"></circle></symbol>
+  <symbol id="ic-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.73 5.08 a10.7 10.7 0 0 1 11.2 6.57 1 1 0 0 1 0 .7 10.7 10.7 0 0 1 -1.44 2.49"></path><path d="M14.08 14.16 a3 3 0 0 1 -4.24 -4.24"></path><path d="M17.48 17.5 a10.75 10.75 0 0 1 -15.42 -5.15 1 1 0 0 1 0 -.7 10.75 10.75 0 0 1 4.45 -5.14"></path><path d="M2 2 L22 22"></path></symbol>
+  <symbol id="ic-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 L21 7 L12 11.5 L3 7 Z"></path><path d="M3 12 l9 4.5 9 -4.5"></path><path d="M3 17 l9 4.5 9 -4.5"></path></symbol>
+  <symbol id="ic-table" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"></rect><path d="M4 10 H20 M12 5 V19"></path></symbol>
+  <symbol id="ic-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6 L15.5 12 L9.5 18"></path></symbol>
+  <symbol id="ic-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3 H7 a2 2 0 0 0 -2 2 V19 a2 2 0 0 0 2 2 H17 a2 2 0 0 0 2 -2 V8 Z"></path><path d="M14 3 V8 H19"></path></symbol>
+  <symbol id="ic-pdf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3 H7 a2 2 0 0 0 -2 2 V19 a2 2 0 0 0 2 2 H17 a2 2 0 0 0 2 -2 V8 Z"></path><path d="M14 3 V8 H19"></path><path d="M8.5 12.5 H15.5 M8.5 16 H13"></path></symbol>
+  <symbol id="ic-import" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 V14"></path><path d="M7.5 10 L12 14.5 L16.5 10"></path><path d="M4.5 16 V18 a2 2 0 0 0 2 2 H17.5 a2 2 0 0 0 2 -2 V16"></path></symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 H20"></path><path d="M9 7 V4.5 a1.5 1.5 0 0 1 1.5 -1.5 h3 a1.5 1.5 0 0 1 1.5 1.5 V7"></path><path d="M6.5 7 l.8 12 a2 2 0 0 0 2 1.9 h5.4 a2 2 0 0 0 2 -1.9 l.8 -12"></path><path d="M10.5 11 V17 M13.5 11 V17"></path></symbol>
+  <symbol id="ic-format" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 12 l8 -8 a2.5 2.5 0 0 1 3.5 3.5 l-8 8"></path><path d="M7.2 14.6 a3 3 0 0 0 -3 3 c0 1.4 -2.2 1.6 -1.6 2.1 1 1.1 2.6 2 4.1 2 a4 4 0 0 0 4 -4 3 3 0 0 0 -3.5 -3.1 z"></path></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6.5"></circle><path d="M20 20 L16 16"></path></symbol>
+  <symbol id="ic-filter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5 H20 L14 12 V19 L10 21 V12 Z"></path></symbol>
+  <symbol id="ic-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M4 12 H20 M12 4 V20"></path></symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 L9.5 17 L19 6.5"></path></symbol>
+  <symbol id="ic-north" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 5.5 L14.2 14 L12 12 L9.8 14 Z" fill="currentColor" stroke="none"></path></symbol>
+<symbol id="ic-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V5a1 1 0 0 1 1-1h4M20 9V5a1 1 0 0 0-1-1h-4M4 15v4a1 1 0 0 0 1 1h4M20 15v4a1 1 0 0 1-1 1h-4"></path></symbol>
+  <symbol id="ic-scale" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"></path><path d="M10 20H4v-6"></path><path d="M20 4 4 20"></path></symbol>
+  <symbol id="ic-mirror" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18" stroke-dasharray="2 2.2"></path><path d="M9 7 4 12l5 5z"></path><path d="M15 7l5 5-5 5z"></path></symbol>
+  <symbol id="ic-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 V20"></path><path d="M3 12 H10.5"></path><path d="M13.5 12 H21" stroke-dasharray="2 2" opacity="0.45"></path><path d="M10 10 L14 14 M14 10 L10 14"></path></symbol>
+  <symbol id="ic-extend" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 4 V20"></path><path d="M3 12 H13"></path><path d="M13 12 H19" stroke-dasharray="2 2" opacity="0.45"></path><path d="M16.5 9.5 L19.5 12 L16.5 14.5"></path></symbol>
+  <symbol id="ic-join" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7 L9.5 13"></path><path d="M14.5 11 L20 17"></path><path d="M9.5 13 L14.5 11" stroke-dasharray="1.6 2.2"></path><circle cx="9.5" cy="13" r="1.6" fill="currentColor" stroke="none"></circle><circle cx="14.5" cy="11" r="1.6" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-fillet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20 V13 A8 8 0 0 1 13 5 H20"></path><path d="M5 20 V9 M5 20 H16" stroke-dasharray="2 2.5" opacity="0.4"></path></symbol>
+  <symbol id="ic-arc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 A 8 8 0 0 1 19 5"></path><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle><circle cx="20" cy="12" r="1.2" fill="currentColor" stroke="none"></circle></symbol>
+  <symbol id="ic-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 8 0 V11"></path></symbol>
+  <symbol id="ic-unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="1.8"></rect><path d="M8 11 V7.5 a4 4 0 0 1 7.6 -1.7"></path></symbol>
+</svg>
+<div id="errbar" style="display:none;"></div>
+<header>
+  <div class="logo" id="logo" title="ГРАДО Студия">ГРАДО <span>Студия</span></div>
+  <input id="project-name" value="Концепция развития территории" spellcheck="false">
+  <!-- панель совместной работы (видна только в веб-режиме --hub) -->
+  <span id="collab-bar" style="display:none">
+    <button id="collab-back" title="К списку проектов">☰</button>
+    <span id="collab-projname" class="collab-projname"></span>
+    <span id="collab-online" class="collab-online"></span>
+    <span id="collab-sync" class="collab-badge"></span>
+  </span>
+  <div class="spacer"></div>
+  <button id="btn-theme" class="icon-btn" title="Светлая / тёмная тема"><svg class="ic"><use href="#ic-theme"/></svg></button>
+  <button id="btn-undo" class="icon-btn" title="Отменить (Cmd+Z)"><svg class="ic"><use href="#ic-undo"/></svg></button>
+  <button id="btn-redo" class="icon-btn" title="Вернуть (Cmd+Shift+Z)"><svg class="ic"><use href="#ic-redo"/></svg></button>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Получить данные">
+    <button id="btn-demo" title="Заполнить примером">Демо</button>
+    <button id="btn-nspd" title="Импортировать захват НСПД (JSON от расширения GRADO)">НСПД</button>
+    <input id="nspd-file" type="file" accept=".json,application/json" hidden>
+    <button id="btn-gisogd" title="Импортировать ГИС ОГД: файл ZIP или по прямой ссылке (сгенерируй на gisogd.mos.ru и вставь ссылку — без локального скачивания)">ОГД</button>
+    <input id="gisogd-file" type="file" accept=".zip,.geojson,.json" hidden>
+    <button id="btn-data" title="Данные по видимой области: OSM и НСПД (Росреестр) напрямую, без порталов и расширений">Данные</button>
+  </span>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Проект">
+    <button id="btn-open" title="Открыть проект .grado">Открыть…</button>
+    <input id="grado-file" type="file" accept=".grado" hidden>
+    <button id="btn-grado" title="Сохранить проект (открывается в QGIS)">.grado</button>
+    <button id="btn-clear" title="Очистить холст">Очистить</button>
+  </span>
+  <span class="hsep" role="separator"></span>
+  <span class="hgroup" title="Выпуск">
+    <select id="export-style" class="hd-select" title="Какими знаками оформлять печать и альбом (PDF)">
+      <option value="standard">знаки: стандарт ЛГР</option>
+      <option value="canvas">знаки: как на холсте</option>
+    </select>
+    <button id="btn-dxf" title="Экспорт чертежа в DXF (AutoCAD/nanoCAD)">DXF</button>
+    <button id="btn-print" title="Печать чертежа в масштабе (PDF, А2)">Печать</button>
+    <button id="btn-album-config" title="Настройка состава альбома (порядок листов, титул)">⚙ Альбом</button>
+    <button id="btn-album" class="primary" title="Собрать альбом АГК">Альбом PDF</button>
+  </span>
+</header>
+<div id="main">
+  <nav id="toolbar">
+    <button data-tool="select"   class="active" title="Выбор и правка объектов (V)"><svg class="ic"><use href="#ic-select"/></svg><span>Выбор</span></button>
+    <div class="divider"></div>
+    <button data-tool="point"    title="Точка — на активный слой"><svg class="ic"><use href="#ic-vertex"/></svg><span>Точка</span></button>
+    <button data-tool="polyline" title="Полилиния — на активный слой"><svg class="ic"><use href="#ic-line"/></svg><span>Линия</span></button>
+    <button data-tool="polygon"  title="Полигон — на активный слой (замыкание кликом в первую точку)"><svg class="ic"><use href="#ic-boundary"/></svg><span>Полигон</span></button>
+    <button data-tool="rect"     title="Прямоугольник: протянуть; одиночный клик — контур по точкам"><svg class="ic"><use href="#ic-hatch"/></svg><span>Прямоуг.</span></button>
+    <button data-tool="arc"      title="Дуга по трём точкам (или радиусу) — на активный слой"><svg class="ic"><use href="#ic-arc"/></svg><span>Дуга</span></button>
+    <button data-tool="circle"   title="Окружность (центр + радиус) — буферы, радиусы ДОО/школ, покрытия"><svg class="ic"><use href="#ic-circle"/></svg><span>Окружн.</span></button>
+    <div class="divider"></div>
+    <button data-tool="dim"      title="Размерная линия (D)"><svg class="ic"><use href="#ic-dimension"/></svg><span>Размер</span></button>
+    <button data-tool="measure"  title="Измерение расстояния (M)"><svg class="ic"><use href="#ic-measure"/></svg><span>Измер.</span></button>
+    <div class="divider"></div>
+    <button data-tool="trim"     title="Обрезать по границе: клик границ, Enter, клик лишнего куска (T)"><svg class="ic"><use href="#ic-trim"/></svg><span>Обрезать</span></button>
+    <button data-tool="extend"   title="Продлить до границы: клик границ, Enter, клик открытого конца (E)"><svg class="ic"><use href="#ic-extend"/></svg><span>Продлить</span></button>
+    <button id="btn-join"        title="Склеить выбранные линии по совпадающим концам (J)"><svg class="ic"><use href="#ic-join"/></svg><span>Склеить</span></button>
+    <button data-tool="fillet"   title="Сопрячь угол: задать радиус, затем клик по углу линии — скругляется дугой"><svg class="ic"><use href="#ic-fillet"/></svg><span>Сопрячь</span></button>
+    <button data-tool="rotate"   title="Поворот: выделите объекты (V), кликните опорную точку, крутите мышью или введите угол — Enter применить, Esc отмена"><svg class="ic"><use href="#ic-refresh"/></svg><span>Поворот</span></button>
+    <button data-tool="scale"    title="Масштаб: выделите объекты (V), кликните опорную точку, тяните мышью или введите коэффициент — Enter применить, Esc отмена"><svg class="ic"><use href="#ic-scale"/></svg><span>Масштаб</span></button>
+    <button data-tool="mirror"   title="Зеркало: выделите объекты (V), кликните две точки оси симметрии — Esc отмена"><svg class="ic"><use href="#ic-mirror"/></svg><span>Зеркало</span></button>
+    <div class="divider"></div>
+    <button id="btn-snap" class="active" title="Привязки к вершинам/серединам/пересечениям (X)"><svg class="ic"><use href="#ic-snap"/></svg><span>Привязки</span></button>
+  </nav>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="cv-activelayer" class="cv-activelayer" title="Куда идёт черчение (активный слой)"></div>
+
+    <div class="cv-compass" title="Север — вверх"><svg class="ic"><use href="#ic-north"/></svg></div>
+    <div class="cv-zoom">
+      <button id="btn-zoom-in" title="Приблизить">+</button>
+      <button id="btn-zoom-out" title="Отдалить">−</button>
+      <button id="btn-zoom-fit" title="Вписать всё (F)"><svg class="ic"><use href="#ic-fit"/></svg></button>
+    </div>
+    <div class="cv-scale" id="cv-scale">
+      <div class="cv-scale-bar" id="cv-scale-bar"></div>
+      <span class="cv-scale-label" id="cv-scale-label">—</span>
+    </div>
+  </div>
+  <div id="panel-resizer" title="Перетащите, чтобы изменить ширину правой панели"></div>
+  <aside id="panel">
+    <section id="props">
+      <h3>Свойства</h3>
+      <div id="props-body" class="muted">Ничего не выбрано</div>
+    </section>
+    <section>
+      <h3>Подложка</h3>
+      <label class="chk"><input type="checkbox" id="basemap-show"> показывать подложку</label>
+      <label>Источник<select id="basemap-source">
+        <option value="osm">Карта (OpenStreetMap)</option>
+        <option value="sat">Спутник (ESRI, высокое разрешение)</option>
+        <option value="s2">Спутник Sentinel-2 (Copernicus, 10 м, 2023)</option>
+      </select></label>
+      <label>Прозрачность, %
+        <input type="range" id="basemap-opacity" min="10" max="100" value="85"></label>
+    </section>
+    <section>
+      <h3>Слои
+        <button id="btn-style-lib" class="h3-btn" title="Библиотека знаков — редактор эталонных знаков ЛГР и базовых"><svg class="ic"><use href="#ic-format"/></svg></button>
+        <button id="btn-new-layer" class="h3-btn" title="Новый слой"><svg class="ic"><use href="#ic-plus"/></svg></button>
+        <button id="btn-project-styles" class="h3-btn" title="Стили проекта — создавать свои кастомные стили внутри этого проекта"><svg class="ic"><use href="#ic-label"/></svg></button>
+        <button id="btn-manage-kinds" class="h3-btn" title="Управление типами слоёв (BASE_KINDS) — добавлять свои роли для ТЭП и автостилей">⚙</button></h3>
+      <div id="layers-body"></div>
+    </section>
+    <section id="sources">
+      <h3>Источники <button id="btn-refresh-src" class="h3-btn" title="Обновить журнал снимков с сервера"><svg class="ic"><use href="#ic-refresh"/></svg></button></h3>
+      <div id="sources-body" class="muted">Пока не импортировано</div>
+    </section>
+    <section>
+      <h3>Сетка и привязки</h3>
+      <label>Шаг сетки, м
+        <select id="grid-step">
+          <option value="auto" selected>авто</option>
+          <option value="1">1</option><option value="2">2</option>
+          <option value="5">5</option><option value="10">10</option>
+          <option value="20">20</option><option value="50">50</option>
+        </select></label>
+      <label class="chk"><input type="checkbox" id="grid-show" checked> показывать сетку</label>
+      <label class="chk"><input type="checkbox" id="grid-snap" checked> привязка к сетке (C)</label>
+      <label class="chk"><input type="checkbox" id="obj-snap" checked> привязка к объектам (X)</label>
+      <label class="chk"><input type="checkbox" id="access-show"> радиусы доступности соцобъектов</label>
+      <label id="access-r-wrap" style="display:none">Радиус доступности, м
+        <input id="access-r" type="number" value="300" min="50" max="3000" step="50"></label>
+    </section>
+    <section>
+      <h3>Параметры расчёта</h3>
+      <label>Плотность, тыс. м²/га
+        <input id="p-density" type="number" value="25" min="1" max="60" step="0.5"></label>
+      <label>Доля жилья в СПП, %
+        <input id="p-ratio" type="number" value="80" min="0" max="100" step="1"></label>
+      <label>Коэфф. ж/д (k_rail)
+        <input id="p-krail" type="number" value="1" min="0.5" max="1" step="0.05"></label>
+      <label>Коэфф. дел. акт. (k_ba)
+        <input id="p-kba" type="number" value="0.5" min="0.1" max="1" step="0.05"></label>
+      <button id="btn-tep-editor" class="small">Редактор пресета ТЭП</button>
+
+      <div id="buffer-ctrl">
+        <b>Генерация буферов</b><br>
+        <label>Радиус <input id="buf-dist" type="number" value="300" min="1" max="2000" step="5" class="buf-num"> м</label>
+        <div>
+          <label><input type="radio" name="buf-side" value="both" checked> оба</label>
+          <label><input type="radio" name="buf-side" value="outer"> наружу</label>
+          <label><input type="radio" name="buf-side" value="inner"> внутрь</label>
+        </div>
+        <button id="btn-buffer">Создать буфер вокруг выбранного</button>
+        <div>
+          <button id="buf-doo-preset" class="small" type="button">ДОО ~300м</button>
+          <button id="buf-school-preset" class="small" type="button">Школа ~500м</button>
+        </div>
+      </div>
+    </section>
+    <section id="tep">
+      <h3>ТЭП <span id="tep-status" class="muted"></span>
+        <button id="btn-variants" class="h3-btn" title="Варианты концепции — сохранять снимки проекта и сравнивать их ТЭП">⎇</button></h3>
+      <div id="tep-fact"></div>
+      <div id="tep-body" class="muted">Начертите границу территории</div>
+    </section>
+  </aside>
+</div>
+<footer>
+  <span id="st-coords">x: — y: —</span>
+  <span id="st-layer"></span>
+  <span id="st-grid"></span>
+  <span id="st-snap"></span>
+  <span id="st-core"></span>
+  <span id="st-bridge"></span>
+  <span id="st-toast"></span>
+  <span class="spacer"></span>
+  <button id="btn-shortcuts" class="st-help" title="Горячие клавиши (?)">? Горячие клавиши</button>
+  <span id="st-hint">V — выбор · чертите на активный слой (клик по имени в «Слои») · Shift — прямой угол · Esc — отмена</span>
+</footer>
+<script src="app-transform.js"></script>
+<script src="app-snap.js"></script>
+<script src="app-data.js"></script>
+<script src="app-style-ui.js"></script>
+<script src="app-attr.js"></script>
+<script src="app.js"></script>
+<script src="app-import.js"></script>
+<script src="collab.js"></script>
+</body>
+</html>

@@ -74,55 +74,99 @@ class GisogdZip(Connector):
         self.ogr2ogr = ogr2ogr or find_ogr2ogr()
 
     def _shp_to_geojson(self, shp):
+        """SHP (МСК-50) → GeoJSON (WGS84), путь к результату. С ogr2ogr —
+        доверенный путь PROJ; без GDAL — свой ридер + пересчёт МСК-50→WGS84
+        (сверено с PROJ, расхождение < 1 м)."""
         out = shp[:-4] + ".converted.geojson"
-        subprocess.run(
-            [self.ogr2ogr, "-f", "GeoJSON", out, shp,
-             "-s_srs", OGD_PROJ4, "-t_srs", "EPSG:4326"],
-            check=True, capture_output=True, timeout=300)
+        if self.ogr2ogr:
+            subprocess.run(
+                [self.ogr2ogr, "-f", "GeoJSON", out, shp,
+                 "-s_srs", OGD_PROJ4, "-t_srs", "EPSG:4326"],
+                check=True, capture_output=True, timeout=300)
+            return out
+        from .crs import msk50_to_wgs84, transform_geom
+        from .shp_reader import read_shp
+        feats = []
+        for f in read_shp(shp):
+            g = f.get("geometry")
+            if not g:
+                continue
+            feats.append({"type": "Feature",
+                          "geometry": transform_geom(g, msk50_to_wgs84),
+                          "properties": f.get("properties") or {}})
+        Path(out).write_text(
+            json.dumps({"type": "FeatureCollection", "features": feats}),
+            encoding="utf-8")
         return out
 
-    def fetch(self, zip_path):
-        zip_path = Path(zip_path)
-        if not zip_path.exists():
-            raise ConnectorError(f"нет файла {zip_path}")
-        tmp = tempfile.mkdtemp(prefix="grado_ogd_")
-        _extract_recursive(zip_path, tmp)
-
-        members = {}   # имя члена → путь GeoJSON
-        notes = []
-        for gj in glob.glob(os.path.join(tmp, "**", "*.geojson"), recursive=True) + \
-                glob.glob(os.path.join(tmp, "**", "*.json"), recursive=True):
+    def _collect(self, base, only=None):
+        """Собрать члены (имя → путь GeoJSON) под каталогом base. only —
+        ограничить одним stem (импорт одиночного файла). SHP конвертируются
+        МСК-50 → WGS84 через ogr2ogr (если найден)."""
+        members, notes = {}, []
+        gjs = (glob.glob(os.path.join(base, "**", "*.geojson"), recursive=True) +
+               glob.glob(os.path.join(base, "**", "*.json"), recursive=True))
+        shps = glob.glob(os.path.join(base, "**", "*.shp"), recursive=True)
+        if only is not None:
+            gjs = [p for p in gjs if Path(p).stem == only]
+            shps = [p for p in shps if Path(p).stem == only]
+        for gj in gjs:
             members[Path(gj).stem] = gj
-        shps = glob.glob(os.path.join(tmp, "**", "*.shp"), recursive=True)
         for shp in shps:
-            if self.ogr2ogr:
-                try:
-                    members[Path(shp).stem] = self._shp_to_geojson(shp)
-                except subprocess.CalledProcessError as e:
-                    notes.append(f"{Path(shp).name}: ogr2ogr не смог ({e.stderr.decode(errors='replace')[:200]})")
-            else:
-                notes.append(f"{Path(shp).name}: пропущен — нет ogr2ogr (нужен GDAL/QGIS)")
-        if not members and not shps:
-            notes.append("в архиве нет ни shp, ни geojson")
-
-        features = []
-        for member, path in sorted(members.items()):
             try:
-                gj = json.loads(Path(path).read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                notes.append(f"{member}: не GeoJSON")
-                continue
-            for i, f in enumerate(gj.get("features") or []):
-                props = dict(f.get("properties") or {})
-                props["grado_member"] = member
-                features.append({
-                    "type": "Feature",
-                    "grado_key": f"{member}:{f.get('id', i)}",
-                    "geometry": f.get("geometry"),
-                    "properties": props,
-                })
-        return make_result(
-            features,
-            params={"zip": zip_path.name},
-            source_doc=f"ГИС ОГД Москвы, выгрузка {zip_path.name}",
-            notes=notes)
+                members[Path(shp).stem] = self._shp_to_geojson(shp)
+            except subprocess.CalledProcessError as e:
+                notes.append(f"{Path(shp).name}: ogr2ogr не смог "
+                             f"({e.stderr.decode(errors='replace')[:200]})")
+            except Exception as e:
+                notes.append(f"{Path(shp).name}: не удалось прочитать SHP ({e})")
+        if not members and not shps:
+            notes.append("не найдено ни shp, ни geojson")
+        return members, notes
+
+    def fetch(self, source):
+        """Приём выгрузки ГИС ОГД: ZIP (в т.ч. ZIP-в-ZIP), папка с распакованными
+        слоями или одиночный файл (.geojson/.json/.shp). SHP считаются в МСК-50,
+        GeoJSON — уже WGS84; имя члена (для маршрутизации) = имя файла-слоя."""
+        source = Path(source)
+        if not source.exists():
+            raise ConnectorError(f"нет файла {source}")
+        tmp = None
+        try:
+            if source.is_dir():
+                base, only, label = str(source), None, source.name
+            elif source.suffix.lower() == ".zip":
+                tmp = tempfile.mkdtemp(prefix="grado_ogd_")
+                _extract_recursive(str(source), tmp)
+                base, only, label = tmp, None, source.name
+            elif source.suffix.lower() in (".geojson", ".json", ".shp"):
+                base, only, label = str(source.parent), source.stem, source.name
+            else:
+                raise ConnectorError(
+                    f"неподдерживаемый формат: {source.suffix} — нужен "
+                    ".zip, .geojson, .json, .shp или папка")
+            members, notes = self._collect(base, only)
+            features = []
+            for member, path in sorted(members.items()):
+                try:
+                    gj = json.loads(Path(path).read_text(encoding="utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    notes.append(f"{member}: не GeoJSON")
+                    continue
+                for i, f in enumerate(gj.get("features") or []):
+                    props = dict(f.get("properties") or {})
+                    props["grado_member"] = member
+                    features.append({
+                        "type": "Feature",
+                        "grado_key": f"{member}:{f.get('id', i)}",
+                        "geometry": f.get("geometry"),
+                        "properties": props,
+                    })
+            return make_result(
+                features,
+                params={"source": label},
+                source_doc=f"ГИС ОГД Москвы, выгрузка {label}",
+                notes=notes)
+        finally:
+            if tmp:
+                shutil.rmtree(tmp, ignore_errors=True)

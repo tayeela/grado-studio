@@ -9,33 +9,58 @@ import os
 import struct
 from pathlib import Path
 
-# кириллические TTF по ОС: macOS, Linux (DejaVu), Windows (%WINDIR%\Fonts).
-# Порядок — от предпочтительных к запасным; берётся первый существующий.
+# Кириллические TTF по ОС: macOS, Linux (DejaVu), Windows (%WINDIR%\Fonts).
+# PDF поддерживает те же три семейства, что и холст: ui / serif / mono.
+# TTC намеренно не используем: минимальный парсер ниже читает только TTF.
 _WINDIR = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
 _WIN_FONTS = os.path.join(_WINDIR, "Fonts")
-CANDIDATES = [
-    # macOS
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/System/Library/Fonts/Supplemental/Verdana.ttf",
-    # Linux
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-    # Windows (все с кириллицей)
-    os.path.join(_WIN_FONTS, "arial.ttf"),
-    os.path.join(_WIN_FONTS, "tahoma.ttf"),
-    os.path.join(_WIN_FONTS, "verdana.ttf"),
-    os.path.join(_WIN_FONTS, "segoeui.ttf"),
-    os.path.join(_WIN_FONTS, "calibri.ttf"),
-]
+CANDIDATES = {
+    "ui": [
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Verdana.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        os.path.join(_WIN_FONTS, "arial.ttf"),
+        os.path.join(_WIN_FONTS, "tahoma.ttf"),
+        os.path.join(_WIN_FONTS, "verdana.ttf"),
+        os.path.join(_WIN_FONTS, "segoeui.ttf"),
+        os.path.join(_WIN_FONTS, "calibri.ttf"),
+    ],
+    "serif": [
+        "/System/Library/Fonts/Supplemental/Georgia.ttf",
+        "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+        os.path.join(_WIN_FONTS, "georgia.ttf"),
+        os.path.join(_WIN_FONTS, "times.ttf"),
+        os.path.join(_WIN_FONTS, "timesnewroman.ttf"),
+    ],
+    "mono": [
+        "/System/Library/Fonts/Supplemental/Courier New.ttf",
+        "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+        "/System/Library/Fonts/SFNSMono.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        os.path.join(_WIN_FONTS, "cour.ttf"),
+        os.path.join(_WIN_FONTS, "consola.ttf"),
+    ],
+}
 
 
 class FontError(ValueError):
     pass
 
 
-def find_font():
-    for path in CANDIDATES:
+def find_font(family="ui"):
+    """Найти TTF с кириллицей для ui / serif / mono.
+
+    Если специального семейства в ОС нет, возвращает системный шрифт: печать
+    остаётся рабочей, а неизвестное значение из старого/внешнего проекта не
+    приводит к падению.
+    """
+    family = family if family in CANDIDATES else "ui"
+    for path in CANDIDATES[family]:
         if Path(path).exists():
             return path
+    if family != "ui":
+        return find_font("ui")
     raise FontError("не найден TTF с кириллицей; укажите путь явно")
 
 

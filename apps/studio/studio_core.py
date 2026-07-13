@@ -15,7 +15,10 @@ import threading
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).parents[2]
+ROOT = (Path(os.environ["RESOURCEPATH"])
+        if getattr(sys, "frozen", False) and os.environ.get("RESOURCEPATH")
+        else Path(__file__).parents[2])
+DATA_DIR = Path(os.environ.get("GRADO_STUDIO_DATA_DIR", Path(__file__).parent))
 for mod in ("model", "compute", "reactive", "render", "geom", "layout",
             "connectors"):
     p = str(ROOT / "core" / mod)
@@ -47,7 +50,7 @@ import json as _json  # noqa: E402
 
 # Пользовательские правки эталонных знаков (глобальные для студии) — отдельный
 # файл-оверрайд рядом с автосейвом; сам генератор ЛГР и его JSON не трогаем.
-STYLE_OVERRIDES_PATH = Path(__file__).parent / "style_overrides.json"
+STYLE_OVERRIDES_PATH = DATA_DIR / "style_overrides.json"
 
 
 def load_style_overrides():
@@ -95,8 +98,8 @@ from grado_connectors import (GisogdZip, NspdCapture, SnapshotStore,  # noqa: E4
 from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
 
-SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
-_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "import"}  # допустимые в модели
+SOURCE_STORE = SnapshotStore(DATA_DIR / ".sources")
+_PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "terrain", "import"}  # допустимые в модели
 
 
 def _iter_lonlat(geom):
@@ -222,7 +225,7 @@ def frontend_styles():
 # --- тайловая подложка (кэш общий: холст студии и листы альбома) -----------
 # Локальный однопользовательский инструмент = «лёгкое использование» по
 # Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
-TILE_CACHE = Path(__file__).parent / ".tile_cache"
+TILE_CACHE = DATA_DIR / ".tile_cache"
 TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 MAX_UNDERLAY_TILES = 130
 
@@ -261,17 +264,28 @@ def _tmp_name(path):
         f".{path.stem}-{os.getpid()}-{threading.get_ident()}{path.suffix}")
 
 
-# Источники подложки: карта OSM (PNG) и спутник ESRI World Imagery (JPEG).
-# ESRI кладёт координаты в порядке z/y/x. Оба — для лёгкого локального
-# просмотра; при промышленной нагрузке — свой сервер/ключ.
+# Источники подложки (все XYZ/WMTS без авторизации, порядок осей z/y/x у
+# растровых спутников, z/x/y у OSM):
+#   osm — карта OpenStreetMap (PNG);
+#   sat — спутник ESRI World Imagery (JPEG), высокое разрешение (Maxar);
+#   s2  — Sentinel-2 cloudless от EOX, программа Copernicus (JPEG): 10 м,
+#         безоблачная мозаика 2023 г., свежее ESRI на многих территориях.
+#         Тайлы EOX WMTS (GoogleMapsCompatible = EPSG:3857), выше z13 мягко
+#         апсемплятся (10 м — предел детализации Sentinel-2).
+# Все — для лёгкого локального просмотра; при промышленной нагрузке — свой
+# сервер/ключ. Источники добавлены из каталога открытых геоданных
+# (bella-mir.github.io/openSpData, раздел «Спутниковые снимки»).
 TILE_SOURCES = {
     "osm": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
     "sat": ("https://server.arcgisonline.com/ArcGIS/rest/services/"
             "World_Imagery/MapServer/tile/{z}/{y}/{x}"),
+    "s2": ("https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2023_3857/"
+           "default/GoogleMapsCompatible/{z}/{y}/{x}.jpg"),
 }
 TILE_ATTRIBUTIONS = {
     "osm": "© OpenStreetMap contributors",
     "sat": "Esri, Maxar, Earthstar Geographics",
+    "s2": "Sentinel-2 cloudless by EOX (Copernicus 2023)",
 }
 
 
@@ -506,6 +520,9 @@ LAYER_TEMPLATES = {
     "source.gisogd.restrict":     {"code": "terr.restrict", "stage": "existing",
                                    "source_kind": "gisogd",
                                    "title": "ГИС ОГД: зоны с особыми условиями"},
+    "source.gisogd.other":        {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "gisogd",
+                                   "title": "ГИС ОГД: прочие слои"},
     # приёмники «Данных по области» (прямые открытые источники, fetch_extent)
     "source.nspd.buildings":      {"code": "oks.building", "stage": "existing",
                                    "source_kind": "nspd",
@@ -528,6 +545,12 @@ LAYER_TEMPLATES = {
     "source.osm.water":           {"code": "generic.polygon", "stage": "existing",
                                    "source_kind": "osm",
                                    "title": "OSM: вода"},
+    "source.osm.boundaries":      {"code": "generic.polygon", "stage": "existing",
+                                   "source_kind": "osm",
+                                   "title": "OSM: административные границы"},
+    "source.terrain.contours":    {"code": "generic.line", "stage": "existing",
+                                   "source_kind": "terrain",
+                                   "title": "Рельеф: горизонтали"},
 }
 # слой по умолчанию для kind (legacy-объекты без layer_id)
 _KIND_TO_LAYER = {"boundary": "project.territory.boundary",
@@ -709,8 +732,134 @@ def _user_layer_templates(layers):
     return out
 
 
-def build_project(path, name, features, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
+def preflight_project(features, layers=None, target="grado"):
+    """Проверить, что выпуск не потеряет объекты молча.
+
+    Возвращает структурированный отчёт для интерфейса. Проверка намеренно
+    использует ту же маршрутизацию, геометрию и схему атрибутов, что и
+    ``build_project``: успешный preflight означает, что все рабочие объекты
+    смогут попасть в .grado/PDF/DXF. Размеры — аннотации холста, поэтому в
+    модель не экспортируются и показываются только в сводке.
+    """
+    target = target if isinstance(target, str) and target in {
+        "grado", "album", "print", "dxf"
+    } else "grado"
+    errors, warnings = [], []
+    features = features if isinstance(features, list) else []
+    layers = layers if isinstance(layers, list) else []
+    templates = {**LAYER_TEMPLATES, **_user_layer_templates(layers)}
+    broken, unrouted, duplicate_ids = [], [], []
+    seen_ids = set()
+    exportable = annotations = 0
+    has_boundary = False
+
+    def feature_label(feature, index):
+        fid = feature.get("id") if isinstance(feature, dict) else None
+        return str(fid) if fid not in (None, "") else f"№{index + 1}"
+
+    for index, feature in enumerate(features):
+        label = feature_label(feature, index)
+        if not isinstance(feature, dict):
+            broken.append(label)
+            continue
+        fid = feature.get("id")
+        if fid not in (None, ""):
+            fid_key = str(fid)
+            if fid_key in seen_ids:
+                duplicate_ids.append(fid_key)
+            seen_ids.add(fid_key)
+        if feature.get("kind") == "dim" or feature.get("layer_id") == "annotation.dimensions":
+            annotations += 1
+            continue
+        explicit_layer = feature.get("layer_id")
+        if explicit_layer and (not isinstance(explicit_layer, str) or
+                               explicit_layer not in templates):
+            unrouted.append(label)
+            continue
+        try:
+            lid, _tmpl = _route(feature, templates)
+        except TypeError:
+            lid = None
+        if lid is None:
+            unrouted.append(label)
+            continue
+        try:
+            props = feature.get("props") or {}
+            KIND_ATTRS.get(feature.get("kind"), KIND_ATTRS["generic"])(props)
+            geom = _geom_for(feature)
+            coords = geom.get("coordinates")
+            if geom.get("type") == "Point":
+                valid = isinstance(coords, list) and len(coords) >= 2
+            elif geom.get("type") == "LineString":
+                valid = isinstance(coords, list) and len(coords) >= 2
+            elif geom.get("type") == "Polygon":
+                valid = (isinstance(coords, list) and coords and
+                         isinstance(coords[0], list) and len(coords[0]) >= 4)
+            else:
+                valid = False
+            if not valid:
+                raise ValueError("недостаточно точек")
+        except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+            broken.append(label)
+            continue
+        exportable += 1
+        if feature.get("kind") == "boundary":
+            has_boundary = True
+
+    if not features and target != "grado":
+        errors.append({"code": "empty_project", "title": "В проекте нет объектов",
+                       "detail": "Добавьте объекты перед выпуском файла."})
+    if unrouted:
+        errors.append({
+            "code": "unrouted_features", "title": "Не найден слой для объектов",
+            "detail": "Проверьте, что пользовательские слои проекта не удалены.",
+            "feature_ids": unrouted[:12], "count": len(unrouted),
+        })
+    if broken:
+        errors.append({
+            "code": "invalid_geometry", "title": "Есть повреждённые объекты",
+            "detail": "Исправьте геометрию или атрибуты отмеченных объектов.",
+            "feature_ids": broken[:12], "count": len(broken),
+        })
+    if duplicate_ids:
+        warnings.append({
+            "code": "duplicate_ids", "title": "Повторяются идентификаторы объектов",
+            "detail": "Файл соберётся, но выбор и история изменений могут работать неоднозначно.",
+            "feature_ids": duplicate_ids[:12], "count": len(duplicate_ids),
+        })
+    if target in {"album", "print"} and exportable and not has_boundary:
+        warnings.append({
+            "code": "missing_boundary", "title": "Не задана граница территории",
+            "detail": "Листы будут собраны по общему охвату объектов; ТЭП и компоновка могут быть неточными.",
+        })
+    if exportable > 8000:
+        warnings.append({
+            "code": "large_project", "title": "Очень большой проект",
+            "detail": "Сборка файла может занять несколько минут.",
+        })
+    return {
+        "target": target, "can_export": not errors,
+        "errors": errors, "warnings": warnings,
+        "summary": {"total": len(features), "exportable": exportable,
+                    "annotations": annotations,
+                    "blocked": len(broken) + len(unrouted)},
+    }
+
+
+def build_project(path, name, features, layers=None, project_styles=None,
+                  project_custom_kinds=None, undo_stack=None, redo_stack=None,
+                  studio_state=None):
     project = Project.create(path, name)
+    if layers is not None:
+        try:
+            project.set_meta("studio_layers", _json.dumps(layers))
+        except Exception:
+            pass
+    if isinstance(studio_state, dict):
+        try:
+            project.set_meta("studio_state", _json.dumps(studio_state))
+        except Exception:
+            pass
     if project_styles:
         try:
             project.set_meta("project_styles", _json.dumps(project_styles))
@@ -823,8 +972,81 @@ def _role_areas(features):
     return out
 
 
+# --- клип объектов по границе территории разработки (ТЭП считается ВНУТРИ
+# границы, а не по всей карте) -------------------------------------------------
+def _is_territory(f):
+    cls = _class_of(f)
+    return bool(cls and cls.tep_role == "terr_area" and "ring" in f)
+
+
+def _ring_centroid(ring):
+    a = cx = cy = 0.0
+    n = len(ring)
+    for i in range(n):
+        x0, y0 = ring[i]
+        x1, y1 = ring[(i + 1) % n]
+        cr = x0 * y1 - x1 * y0
+        a += cr
+        cx += (x0 + x1) * cr
+        cy += (y0 + y1) * cr
+    if abs(a) < 1e-9:                      # вырожденное кольцо → среднее вершин
+        return [sum(p[0] for p in ring) / n, sum(p[1] for p in ring) / n]
+    a *= 0.5
+    return [cx / (6 * a), cy / (6 * a)]
+
+
+def _point_in_ring(pt, ring):
+    x, y = pt
+    inside = False
+    n = len(ring)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i]
+        xj, yj = ring[j]
+        if ((yi > y) != (yj > y)) and \
+                (x < (xj - xi) * (y - yi) / (yj - yi + 1e-12) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _rep_point(f):
+    """Представительная точка объекта для теста «внутри территории»."""
+    if "ring" in f and f["ring"]:
+        return _ring_centroid(f["ring"])
+    if "point" in f:
+        return f["point"]
+    if "line" in f and f["line"]:
+        return f["line"][len(f["line"]) // 2]
+    if "circle" in f:
+        return [f["circle"]["cx"], f["circle"]["cy"]]
+    if "arc" in f:
+        return [f["arc"]["cx"], f["arc"]["cy"]]
+    return None
+
+
+def _clip_to_territory(features):
+    """Оставить только объекты, чья представительная точка внутри границ
+    территории разработки (роль terr_area) + сами границы. Территория не
+    задана → все объекты (поведение как раньше)."""
+    terr_rings = [f["ring"] for f in features if _is_territory(f)]
+    if not terr_rings:
+        return features
+    kept = []
+    for f in features:
+        if _is_territory(f):
+            kept.append(f)
+            continue
+        pt = _rep_point(f)
+        if pt is None or any(_point_in_ring(pt, r) for r in terr_rings):
+            kept.append(f)
+    return kept
+
+
 def make_engine(features, params=None):
     engine = Engine.from_file(PRESET)
+    # ТЭП считается ВНУТРИ границы территории разработки, а не по всей карте
+    features = _clip_to_territory(features)
     # площади входов ТЭП — из ролей слоёв, не из kind
     areas = _role_areas(features)
     inputs = {r: round(a, 4) for r, a in areas.items() if r in engine.inputs}
@@ -838,8 +1060,13 @@ def make_engine(features, params=None):
 
 
 def compute_tep(features, params=None):
-    """Живой ТЭП: нормативный расчёт + факт по посадке зданий."""
-    engine = make_engine(features, params)
+    """Живой ТЭП: нормативный расчёт + факт по посадке зданий.
+
+    Все показатели считаются ВНУТРИ границы территории разработки (роль
+    terr_area): здания/зоны вне границы в ТЭП не входят."""
+    has_territory = any(_is_territory(f) for f in features)
+    features = _clip_to_territory(features)
+    engine = make_engine(features, params)   # clip идемпотентен
     fact_spp = 0.0
     for f in features:
         cls = _class_of(f)
@@ -867,6 +1094,12 @@ def compute_tep(features, params=None):
             checks.append({"title": "Радиусы ДОО", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
         if r["id"] == "school_places" and r["value"] == 0 and pop > 2000:
             checks.append({"title": "Радиусы школ", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
+    # без границы территории ТЭП считается по ВСЕМ объектам карты (площадь —
+    # дефолт пресета) → честно предупреждаем: цифры не привязаны к территории
+    if not has_territory and any("ring" in f for f in features):
+        checks.insert(0, {"title": "Граница территории", "ok": False,
+                          "msg": "не задана — ТЭП по всем объектам карты; начертите "
+                                 "границу, чтобы считать внутри территории разработки"})
     return {
         "inputs": {"terr_area": engine.value("terr_area"),
                    "restrict_area": engine.value("restrict_area")},
@@ -877,6 +1110,7 @@ def compute_tep(features, params=None):
         },
         "zones": zones_report(features),
         "checks": checks,
+        "has_territory": has_territory,
     }
 
 
@@ -984,19 +1218,44 @@ def grado_to_features(path):
     """Открытие .grado обратно в студию: слои проекта → фигуры холста."""
     project = Project.open(path)
     name = project.meta("name")
+    stored_layers = project.meta("studio_layers")
+    user_layers = None
+    if stored_layers:
+        try:
+            user_layers = _json.loads(stored_layers)
+        except Exception:
+            pass
+    pk = project.meta("project_custom_kinds")
+    project_kinds = []
+    if pk:
+        try:
+            project_kinds = _json.loads(pk)
+        except Exception:
+            pass
+    custom_kind_by_code = {
+        item.get("semantic_class"): item.get("kind")
+        for item in project_kinds if isinstance(item, dict)
+    }
+    studio_code_by_layer = {
+        item.get("layer_id"): item.get("studio_code")
+        for item in (user_layers or []) if isinstance(item, dict)
+        and item.get("studio_code")
+    }
     # ensure journal for reactive undo etc.
     try:
         from grado_reactive import Journal
         Journal(project.conn)
     except Exception:
         pass
+    layer_infos = project.layers()
     out = []
-    for info in project.layers():
-        kind = CODE_TO_KIND.get(info["code"])
+    for info in layer_infos:
+        studio_code = studio_code_by_layer.get(info["layer_id"], info["code"])
+        kind = CODE_TO_KIND.get(studio_code) or custom_kind_by_code.get(studio_code)
         if kind is None:
             code = info["code"]
             if code.startswith("generic."):
-                kind = code.split(".")[-1]  # "point" etc, or keep generic
+                kind = "generic"
             else:
                 continue
         # layer_id из модели → холст; если слой не из реестра, отдаём его id
@@ -1058,18 +1317,32 @@ def grado_to_features(path):
                     if ring[0] == ring[-1]:
                         ring = ring[:-1]
                     out.append({**base, "ring": ring, "props": dict(props)})
+    if not isinstance(user_layers, list):
+        # Старые .grado не содержали точный манифест интерфейса. Собираем
+        # достаточно данных из таблиц, чтобы два слоя одного класса снова
+        # открылись как два слоя, а не слились в первый попавшийся.
+        type_map = {"string": "text", "integer": "int", "number": "real"}
+        user_layers = []
+        for info in layer_infos:
+            fields = [{"name": f["id"], "type": type_map.get(f["type"], "text")}
+                      for f in project.layer_by_id(info["layer_id"]).user_fields]
+            user_layers.append({
+                "layer_id": info["layer_id"], "code": info["code"],
+                "title": info["title"], "stage": info.get("stage"),
+                "style_id": info.get("style_id"), "fields": fields,
+            })
+    saved_studio_state = project.meta("studio_state")
+    studio_state = {}
+    if saved_studio_state:
+        try:
+            studio_state = _json.loads(saved_studio_state)
+        except Exception:
+            pass
     ps = project.meta("project_styles")
     project_styles = {}
     if ps:
         try:
             project_styles = _json.loads(ps)
-        except Exception:
-            pass
-    pk = project.meta("project_custom_kinds")
-    project_kinds = []
-    if pk:
-        try:
-            project_kinds = _json.loads(pk)
         except Exception:
             pass
     undo = project.meta("studio_undo_stack")
@@ -1087,7 +1360,10 @@ def grado_to_features(path):
         except Exception:
             pass
     project.close()
-    return {"name": name, "features": out, "projectStyles": project_styles, "projectCustomKinds": project_kinds, "undo_stack": undo_stack, "redo_stack": redo_stack}
+    return {"name": name, "features": out, "userLayers": user_layers,
+            "studioState": studio_state, "projectStyles": project_styles,
+            "projectCustomKinds": project_kinds, "undo_stack": undo_stack,
+            "redo_stack": redo_stack}
 
 
 def import_fgistp(payload):
@@ -1271,77 +1547,150 @@ def _gisogd_route(member):
     return None, None
 
 
-def import_gisogd(zip_bytes):
-    """Выгрузка ГИС ОГД Москвы (ZIP с портала) → фигуры холста.
+# внутренние ключи, не показываемые как атрибуты объекта
+_GISOGD_SKIP_KEYS = {"grado_member"}
 
-    Коннектор распаковывает ZIP-в-ZIP и SHP (МСК-50 → WGS84 через ogr2ogr);
-    здесь координаты доводятся до локальных метров холста, а слои архива
-    маршрутизируются в модель по имени члена (см. _GISOGD_LAYER_RULES)."""
-    from grado_connectors.crs import transform_geom, wgs84_to_utm37n
 
-    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-        tmp.write(zip_bytes)
-        tmp_path = tmp.name
-    try:
+def _gisogd_clean_props(raw):
+    """Атрибуты объекта ОГД (кроме внутренних/пустых) → (props, [поля-столбцы]).
+
+    Имена берём как есть (в SHP-выгрузке портала это транслит DBF, ≤10 симв.) —
+    без потери исходных ключей; тип text, чтобы ничего не отбрасывать."""
+    props, fields = {}, []
+    for k, v in raw.items():
+        if k in _GISOGD_SKIP_KEYS or v in (None, ""):
+            continue
+        props[k] = v
+        fields.append({"name": k, "type": "text"})
+    return props, fields
+
+
+def _safe_stem(name):
+    """Имя файла-слоя → безопасный stem для temp (сохраняем кириллицу — по
+    имени идёт маршрутизация ОГД, но убираем разделители пути/расширение)."""
+    stem = Path(str(name or "layer")).stem
+    stem = "".join(c for c in stem if c not in '/\\:*?"<>|').strip()
+    return stem or "layer"
+
+
+def import_gisogd(data_bytes, filename=None):
+    """Выгрузка ГИС ОГД → фигуры холста. Принимает ZIP (портал) ИЛИ одиночный
+    GeoJSON (напр. экспорт из QGIS) по сигнатуре байтов.
+
+    Для GeoJSON важно исходное имя файла (filename) — по нему идёт
+    маршрутизация в слой; сохраняем его в имени temp-файла."""
+    is_zip = data_bytes[:2] == b"PK"
+    with tempfile.TemporaryDirectory(prefix="grado_ogd_") as td:
+        if is_zip:
+            p = Path(td) / "vygruzka.zip"
+        else:
+            # одиночный GeoJSON/JSON — имя определяет слой (маршрутизацию)
+            p = Path(td) / f"{_safe_stem(filename)}.geojson"
+        p.write_bytes(data_bytes)
         conn = GisogdZip()
-        result = conn.fetch(tmp_path)
-    finally:
-        os.unlink(tmp_path)
+        result = conn.fetch(str(p))
+    return _gisogd_process(conn, result)
+
+
+def import_gisogd_path(path):
+    """Импорт ОГД по пути: ZIP, папка с распакованными слоями или одиночный
+    файл. Сервер отвечает за проверку безопасности пути (см. server.py)."""
+    conn = GisogdZip()
+    result = conn.fetch(str(path))
+    return _gisogd_process(conn, result)
+
+
+def _gisogd_process(conn, result):
+    """Общая раскладка результата коннектора ГИС ОГД по слоям модели.
+
+    Координаты доводятся до локальных метров холста (_wgs_geom_to_canvas), слои
+    маршрутизируются по имени члена (_GISOGD_LAYER_RULES); нераспознанные слои
+    не теряются — идут в source.gisogd.other; атрибуты сохраняются как поля."""
     result["params"] = {**(result.get("params") or {}),
                         "extent": _territory_key(result["features"])}
     manifest, d = _snapshot(conn, result)
     prov = _prov(manifest)
 
     features, notes, unknown = [], list(result["notes"]), set()
+    layer_fields = {}          # layer_id → [{name,type}] (объединение для таблицы)
+
+    def _add_fields(lid, flds):
+        acc = layer_fields.setdefault(lid, [])
+        have = {fd["name"] for fd in acc}
+        for fd in flds:
+            if fd["name"] not in have:
+                acc.append(fd)
+                have.add(fd["name"])
+
     for f in result["features"]:
         geom = f.get("geometry")
         if not geom:
             continue
-        member = (f["properties"] or {}).get("grado_member", "")
+        raw = f["properties"] or {}
+        member = raw.get("grado_member", "")
         kind, layer_id = _gisogd_route(member)
-        if kind is None:
-            if member not in unknown:
-                notes.append(f"«{member}»: тип слоя не распознан, объекты пропущены")
-                unknown.add(member)
-            continue
-        name = f["properties"].get("NAME") or f["properties"].get("name")
-        # точный знак Эталона ЛГР по имени члена архива (поверх грубого kind
-        # выше) — назначается per-object, не меняет layer_id/маршрутизацию
-        style_id = _gisogd_style_for(member) if kind in ("restrict", "zone") else None
-        style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
-        # стабильный ключ источника (член архива + id объекта) → фронт
-        # дедуплицирует повторный импорт того же ZIP
-        okey = f.get("grado_key")
+        name = raw.get("NAME") or raw.get("name")
+        okey = f.get("grado_key")      # стабильный ключ → дедуп повторного ZIP
+        extra_props, extra_fields = _gisogd_clean_props(raw)
+        # WGS84 → части фигуры холста (точки/линии/кольца) единым путём —
+        # не теряем ни точечные слои, ни мультигеометрию
         try:
-            utm = transform_geom(geom, wgs84_to_utm37n)
+            parts = _wgs_geom_to_canvas(geom)
         except Exception:
             continue
-        if kind == "redline":
-            if utm["type"] != "LineString":
-                continue
-            feat = {"kind": "redline", "layer_id": layer_id,
-                    "line": _to_local(utm["coordinates"]),
-                    "props": {"status": "существующая"}, "prov": dict(prov)}
-            if okey is not None:
-                feat["srcKey"] = f"{layer_id}:{okey}"
-            features.append(feat)
+        if not parts:
             continue
-        polys = ([utm["coordinates"]] if utm["type"] == "Polygon"
-                 else utm["coordinates"] if utm["type"] == "MultiPolygon" else [])
-        for i, poly in enumerate(polys):
-            ring = _to_local(poly[0])
-            if ring[0] == ring[-1]:
-                ring = ring[:-1]
-            props = ({"zone_title": name or style_title or "ГИС ОГД"} if kind == "zone"
-                     else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
-            feat = {"kind": kind, "layer_id": layer_id, "ring": ring,
-                    "props": props, "prov": dict(prov)}
-            if style_id:
-                feat["style_id"] = style_id
+
+        if kind == "redline":
+            emitted = 0
+            for i, part in enumerate(p for p in parts if "line" in p):
+                feat = {"kind": "redline", "layer_id": layer_id, "line": part["line"],
+                        "props": {"status": "существующая", **extra_props},
+                        "prov": dict(prov)}
+                if okey is not None:
+                    feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                features.append(feat)
+                emitted += 1
+            if emitted:
+                _add_fields(layer_id, extra_fields)
+            continue
+
+        if kind in ("zone", "restrict"):
+            # точный знак Эталона ЛГР по имени члена архива (per-object)
+            style_id = _gisogd_style_for(member)
+            style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
+            emitted = 0
+            for i, part in enumerate(p for p in parts if "ring" in p):
+                sem = ({"zone_title": name or style_title or "ГИС ОГД"}
+                       if kind == "zone"
+                       else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
+                feat = {"kind": kind, "layer_id": layer_id, "ring": part["ring"],
+                        "props": {**sem, **extra_props}, "prov": dict(prov)}
+                if style_id:
+                    feat["style_id"] = style_id
+                if okey is not None:
+                    feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                features.append(feat)
+                emitted += 1
+            if emitted:
+                _add_fields(layer_id, extra_fields)
+            continue
+
+        # тип слоя не распознан — НЕ теряем: кладём в «прочие» как есть
+        # (любая геометрия), с полной атрибутикой
+        lid = "source.gisogd.other"
+        for i, part in enumerate(parts):
+            feat = {"kind": "generic", "layer_id": lid, **part,
+                    "props": dict(extra_props), "prov": dict(prov)}
             if okey is not None:
-                feat["srcKey"] = f"{layer_id}:{okey}#{i}"
+                feat["srcKey"] = f"{lid}:{okey}#{i}"
             features.append(feat)
-    return {"features": features, "notes": notes,
+        _add_fields(lid, extra_fields)
+        if member not in unknown:
+            notes.append(f"«{member}»: тип не распознан — в слой «прочие»")
+            unknown.add(member)
+
+    return {"features": features, "notes": notes, "fields": layer_fields,
             "source_doc": result.get("source_doc"),
             "snapshot": manifest, "diff": d}
 
@@ -1366,6 +1715,10 @@ EXTENT_SOURCES = {
     "osm.water": {
         "conn": "osm", "sets": ["water"], "kind": "generic",
         "layer_id": "source.osm.water", "title": "Вода"},
+    "osm.boundaries": {
+        "conn": "osm", "sets": ["boundaries"], "kind": "generic",
+        "layer_id": "source.osm.boundaries",
+        "title": "Административные границы"},
     "nspd.parcels": {
         "conn": "nspd", "categories": [36368], "kind": "parcel",
         "layer_id": "source.nspd.parcels", "title": "Участки ЕГРН"},
@@ -1379,11 +1732,15 @@ EXTENT_SOURCES = {
         "conn": "nspd", "categories": [469038, 469039, 469040, 469041, 469042],
         "kind": "restrict",
         "layer_id": "source.nspd.zouit", "title": "ЗОУИТ"},
+    "terrain.contours": {
+        "conn": "terrain", "kind": "generic",
+        "layer_id": "source.terrain.contours", "title": "Рельеф: горизонтали"},
 }
 
 # Пределы площади запроса, км² (фронт блокирует раньше, сервер — страховка):
-# НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее.
-EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0}
+# НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее,
+# рельеф — тайловый DEM (число тайлов ограничено внутри коннектора).
+EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0, "terrain": 80.0}
 
 
 def bbox_km2(bbox):
@@ -1512,6 +1869,8 @@ _EXTENT_BASE_FIELDS = {
     "osm.buildings": [
         {"name": "purpose", "label": "назначение", "type": "text"},
         {"name": "name", "label": "название", "type": "text"}],
+    "terrain.contours": [
+        {"name": "elev", "label": "высота, м", "type": "real"}],
 }
 
 
@@ -1544,12 +1903,27 @@ def _extent_props(src_key, p):
             "kind": (p.get("categoryName") or "ЗОУИТ").rstrip("_ "),
             "number": p.get("label"), "basis": "НСПД"}.items() if v}
         return props, base + _nspd_extra_fields(src_key, p, props)
+    if src_key == "terrain.contours":
+        elev = p.get("elev")
+        props = {"elev": elev} if elev is not None else {}
+        return props, base
     if src_key == "osm.buildings":
         purpose = p.get("building")
         return {k: v for k, v in {
             "purpose": ("здание" if purpose in (True, "yes") else purpose),
             "floors": _int_or_none(p.get("building:levels")),
             "name": p.get("name")}.items() if v}, base
+    if src_key == "osm.boundaries":
+        levels = {"4": "субъект РФ", "5": "административный округ",
+                  "6": "район области / городской округ",
+                  "8": "район / поселение / город"}
+        lvl = str(p.get("admin_level") or "")
+        props = {k: v for k, v in {
+            "name": p.get("name"),
+            "level": levels.get(lvl, f"уровень {lvl}" if lvl else None),
+        }.items() if v}
+        return props, [{"name": "name", "label": "наименование", "type": "text"},
+                       {"name": "level", "label": "уровень", "type": "text"}]
     # osm.roads / osm.landuse / osm.water / прочее — свои поля generic-слоя
     keep = ("name", "highway", "surface", "lanes", "landuse", "leisure",
             "natural", "water", "waterway")
@@ -1585,7 +1959,7 @@ def fetch_extent(bbox, sources):
     bbox = [west, south, east, north] (WGS84); sources ⊆ EXTENT_SOURCES.
     Возвращает {"groups": [{source, title, layer_id, kind, count, features}],
     "notes": [...], "snapshots": [манифесты для журнала источников]}."""
-    from grado_connectors import NspdDirect, OsmOverpass
+    from grado_connectors import NspdDirect, OsmOverpass, TerrainContours
 
     keys = [k for k in sources if k in EXTENT_SOURCES]
     unknown = [k for k in sources if k not in EXTENT_SOURCES]
@@ -1678,6 +2052,18 @@ def fetch_extent(bbox, sources):
         except Exception as e:
             notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
 
+    # --- Рельеф: горизонтали из тайлового DEM (свой снимок и провенанс) ------
+    for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "terrain"]:
+        conn = TerrainContours()
+        try:
+            result = conn.fetch(bbox)
+            manifest, _ = _snapshot(conn, result)
+            snapshots.append(manifest)
+            _emit(k, result["features"], _prov(manifest))
+            notes.extend(result.get("notes") or [])
+        except Exception as e:
+            notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+
     out_groups = []
     for k in keys:
         g = groups[k]
@@ -1686,10 +2072,15 @@ def fetch_extent(bbox, sources):
     return {"groups": out_groups, "notes": notes, "snapshots": snapshots}
 
 
-def make_grado(features, name, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
+def make_grado(features, name, layers=None, project_styles=None,
+               project_custom_kinds=None, undo_stack=None, redo_stack=None,
+               studio_state=None):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "studio.grado"
-        build_project(path, name, features, layers, project_styles=project_styles, project_custom_kinds=project_custom_kinds, undo_stack=undo_stack, redo_stack=redo_stack).close()
+        build_project(path, name, features, layers, project_styles=project_styles,
+                      project_custom_kinds=project_custom_kinds,
+                      undo_stack=undo_stack, redo_stack=redo_stack,
+                      studio_state=studio_state).close()
         return path.read_bytes()
 
 

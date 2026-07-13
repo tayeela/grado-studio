@@ -10,6 +10,7 @@
 
 Статика: apps/studio/web. API:
     POST /api/tep         {features, params} → живой ТЭП
+    POST /api/preflight   {features, layers, target} → проверка перед выпуском
     POST /api/album       {features, params, name} → PDF альбома АГК
     POST /api/grado       {features, name} → файл проекта .grado (открывается QGIS)
     POST /api/open-grado  тело .grado → {name, features} — открыть проект обратно
@@ -17,27 +18,52 @@
     POST /api/import-nspd {payload} → фигуры холста из захвата НСПД
     POST /api/import-gisogd  тело ZIP → фигуры холста из выгрузки ГИС ОГД
     GET  /api/inbox       выгрузки браузерного моста, ждущие холст
-    GET/POST /api/autosave  файловый бэкап состояния холста (резерв к localStorage)
+    GET/POST /api/autosave  файловый автосейв (резерв к localStorage)
+    GET  /api/autosave/backups[/N]  список/чтение предыдущих снимков
+    GET  /api/version      единая версия приложения и схемы состояния
+    GET  /api/health       готовность ресурсов и каталога рабочих данных
     GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
     GET  /api/tiles/<z>/<x>/<y>.png  тайловая подложка (прокси + дисковый кэш)
 Порт 8081: приёмник браузерного расширения GRADO (совместим с QGIS-плагином).
 """
 
+import hashlib
 import json
+import os
 import re
 import socket
 import sys
 import tempfile
 import threading
 import traceback
+import urllib.request
+import webbrowser
+from datetime import datetime, timezone
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def _studio_data_dir():
+    explicit = os.environ.get("GRADO_STUDIO_DATA_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "ГРАДО Студия"
+    return Path(__file__).parent
+
+
+DATA_DIR = _studio_data_dir()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("GRADO_STUDIO_DATA_DIR", str(DATA_DIR))
 import studio_core  # noqa: E402
 
-WEB = Path(__file__).parent / "web"
+RESOURCE_ROOT = Path(os.environ.get("RESOURCEPATH", Path(__file__).parent))
+WEB = RESOURCE_ROOT / "web"
+VERSION_PATH = WEB / "version.json"
+VERSION_INFO = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
 PORT = 8643
 INITIAL_GRADO = None
 for a in sys.argv[1:]:
@@ -53,11 +79,11 @@ BRIDGE_PORT = 8081  # совместимость с браузерным рас�
 HUB = None
 if "--hub" in sys.argv:
     from webhub import Hub, HubError, SESSION_COOKIE
-    HUB = Hub(Path(__file__).parent / ".hub")
+    HUB = Hub(DATA_DIR / ".hub")
 else:
     from webhub import HubError, SESSION_COOKIE  # noqa: F401 (единый except)
 # в hub-режиме без сессии доступны только эти /api/-пути (вход + статика)
-HUB_PUBLIC_API = {"/api/hub", "/api/auth/login", "/api/auth/register",
+HUB_PUBLIC_API = {"/api/hub", "/api/health", "/api/auth/login", "/api/auth/register",
                   "/api/auth/logout"}
 
 # Тайловая подложка: прокси + дисковый кэш (снимает CORS, бережёт источник
@@ -71,8 +97,97 @@ BRIDGE_ON = False
 
 # файловый автосейв — резервная копия localStorage браузера на диске:
 # переживает чистку данных сайта/приватный режим/смену браузера
-AUTOSAVE_PATH = Path(__file__).parent / ".autosave.json"
+AUTOSAVE_PATH = DATA_DIR / ".autosave.json"
 AUTOSAVE_LOCK = threading.Lock()
+AUTOSAVE_BACKUPS = 10
+AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
+
+
+def _autosave_backup_path(path, index):
+    return path.with_name(f"{path.stem}.{index}{path.suffix}")
+
+
+def _autosave_corrupt_path(path):
+    return path.with_name(f"{path.stem}.corrupt{path.suffix}")
+
+
+def _autosave_state(payload):
+    """Return state from current envelope or a legacy raw-state autosave."""
+    if not isinstance(payload, dict):
+        raise ValueError("autosave must be an object")
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else payload
+    if not isinstance(state.get("features"), list):
+        raise ValueError("autosave features must be an array")
+    return state
+
+
+def _autosave_envelope(state, raw=None):
+    state = _autosave_state(state)
+    canonical = raw if raw is not None else json.dumps(
+        state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return {
+        "schema_version": VERSION_INFO["state_schema_version"],
+        "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "checksum": hashlib.sha256(canonical).hexdigest(),
+        "state": state,
+    }
+
+
+def _read_autosave(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _autosave_meta(payload, index=None, path=None):
+    state = _autosave_state(payload)
+    return {
+        "id": index,
+        "saved_at": payload.get("saved_at") if payload is not state else None,
+        "checksum": payload.get("checksum") if payload is not state else None,
+        "name": state.get("name") or "Без названия",
+        "feature_count": len(state["features"]),
+        "size": path.stat().st_size if path and path.exists() else None,
+    }
+
+
+def save_autosave(state, raw=None, path=None, backups=AUTOSAVE_BACKUPS):
+    """Atomically save state and rotate changed snapshots for recovery."""
+    path = path or AUTOSAVE_PATH
+    envelope = _autosave_envelope(state, raw=raw)
+    data = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    if path.exists():
+        try:
+            current = _read_autosave(path)
+            if _autosave_state(current) == envelope["state"]:
+                tmp.unlink(missing_ok=True)
+                return _autosave_meta(current, path=path), False
+            for index in range(backups, 1, -1):
+                older = _autosave_backup_path(path, index - 1)
+                if older.exists():
+                    older.replace(_autosave_backup_path(path, index))
+            path.replace(_autosave_backup_path(path, 1))
+        except ValueError:
+            # Повреждённый текущий файл не должен навсегда остановить новые
+            # сохранения. Оставляем его отдельно для ручной диагностики.
+            path.replace(_autosave_corrupt_path(path))
+    tmp.replace(path)
+    return _autosave_meta(envelope, path=path), True
+
+
+def list_autosave_backups(path=None, backups=AUTOSAVE_BACKUPS):
+    path = path or AUTOSAVE_PATH
+    result = []
+    for index in range(1, backups + 1):
+        backup = _autosave_backup_path(path, index)
+        if not backup.exists():
+            continue
+        try:
+            result.append(_autosave_meta(_read_autosave(backup), index, backup))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return result
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -205,11 +320,31 @@ class Handler(SimpleHTTPRequestHandler):
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
             return
+        if parsed0.path == "/favicon.ico":
+            # У приложения пока нет отдельного значка; пустой штатный ответ
+            # не создаёт ложную 404-ошибку в консоли браузера.
+            self.send_response(204)
+            self.end_headers()
+            return
         if parsed0.path == "/api/hub":
             info = {"hub": bool(HUB)}
             if HUB and hub_login:
                 info.update(HUB.user_info(hub_login))
             self._json(info)
+            return
+        if parsed0.path == "/api/version":
+            self._json(VERSION_INFO)
+            return
+        if parsed0.path == "/api/health":
+            checks = {
+                "web": (WEB / "index.html").is_file(),
+                "preset": studio_core.PRESET.is_file(),
+                "data_writable": DATA_DIR.is_dir() and os.access(DATA_DIR, os.W_OK),
+            }
+            ok = all(checks.values())
+            self._json({"ok": ok, "version": VERSION_INFO["version"],
+                        "packaged": bool(getattr(sys, "frozen", False)),
+                        "checks": checks}, 200 if ok else 503)
             return
         if HUB and parsed0.path == "/api/projects":
             self._json({"projects": HUB.list_projects(hub_login)})
@@ -234,10 +369,26 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self._json(out)
             return
-        if HUB and self.path == "/api/autosave":
+        if HUB and parsed0.path.startswith("/api/autosave"):
             # в hub-режиме файловый автосейв не используется (общий файл
             # затирали бы разные пользователи) — проекты живут в .hub/
             self._send(b"null", "application/json; charset=utf-8")
+            return
+        if parsed0.path == "/api/autosave/backups":
+            with AUTOSAVE_LOCK:
+                self._json({"backups": list_autosave_backups()})
+            return
+        backup_match = AUTOSAVE_BACKUP_RE.match(parsed0.path)
+        if backup_match:
+            backup = _autosave_backup_path(AUTOSAVE_PATH, int(backup_match.group(1)))
+            if not backup.exists():
+                self._json({"error": "backup not found"}, 404)
+                return
+            try:
+                with AUTOSAVE_LOCK:
+                    self._json(_read_autosave(backup))
+            except (OSError, ValueError, json.JSONDecodeError):
+                self._json({"error": "backup is damaged"}, 500)
             return
         if self.path == "/api/inbox":
             with INBOX_LOCK:
@@ -282,8 +433,9 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 except Exception:
                     traceback.print_exc()
-            self.send_response(404)
-            self.end_headers()
+            # Обычный запуск без переданного .grado — штатный пустой ответ.
+            # 200 + null не засоряет консоль браузера ложной ошибкой 404.
+            self._send(b"null", "application/json; charset=utf-8")
             return
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
@@ -406,13 +558,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/autosave":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)
-                json.loads(raw)  # не пишем на диск то, что не распарсится обратно
-                with AUTOSAVE_LOCK:
-                    tmp = AUTOSAVE_PATH.with_suffix(".tmp")
-                    tmp.write_bytes(raw)
-                    tmp.replace(AUTOSAVE_PATH)
-                self.send_response(204)
-                self.end_headers()
+                try:
+                    state = json.loads(raw)
+                    with AUTOSAVE_LOCK:
+                        meta, changed = save_autosave(state, raw=raw)
+                except (json.JSONDecodeError, ValueError):
+                    self._json({"error": "bad autosave state"}, 400)
+                    return
+                self._json({"saved": changed, **meta})
                 return
             if self.path == "/api/style-overrides":
                 n = int(self.headers.get("Content-Length", 0))
@@ -427,7 +580,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/import-gisogd":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)
-                out = studio_core.import_gisogd(raw)
+                # имя файла (для маршрутизации одиночного GeoJSON) — URL-энкод
+                # в заголовке (правило 5: заголовки строго ASCII, кириллица
+                # едет процент-кодированной)
+                fn = self.headers.get("X-Grado-Filename")
+                if fn:
+                    from urllib.parse import unquote
+                    fn = unquote(fn)
+                out = studio_core.import_gisogd(raw, filename=fn or None)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return
@@ -464,17 +624,22 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             if self.path == "/api/import-gisogd-path":
-                # импорт выгрузки ГИС ОГД по пути файла (автоподхват из
-                # «Загрузок»). Строго: только *.zip внутри ~/Downloads —
-                # произвольные пути с холста не читаем
+                # импорт ГИС ОГД по пути: ZIP (автоподхват из «Загрузок»),
+                # распакованная папка или одиночный файл (.geojson/.json/.shp).
+                # Безопасность: только внутри ~/Downloads — произвольные пути
+                # с холста не читаем (тот же принцип, что был для *.zip)
                 body = self._json_body()
                 p = Path(str(body.get("path") or "")).resolve()
                 dl = (Path.home() / "Downloads").resolve()
-                if p.suffix.lower() != ".zip" or not p.is_file() \
-                        or dl not in p.parents:
-                    self.send_error(400, "expected a zip inside Downloads")
+                inside = p == dl or dl in p.parents
+                ok_kind = (p.is_dir() or
+                           (p.is_file() and p.suffix.lower() in
+                            (".zip", ".geojson", ".json", ".shp")))
+                if not inside or not ok_kind:
+                    self.send_error(400, "expected a zip/geojson/shp or folder "
+                                         "inside Downloads")
                     return
-                out = studio_core.import_gisogd(p.read_bytes())
+                out = studio_core.import_gisogd_path(str(p))
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return
@@ -520,7 +685,12 @@ class Handler(SimpleHTTPRequestHandler):
             # слои, созданные в панели студии («+ слой») — их шаблон
             # маршрутизации не встроен в сервер, приходит с холста
             layers = body.get("layers")
-            if self.path == "/api/tep":
+            if self.path == "/api/preflight":
+                out = studio_core.preflight_project(
+                    features, layers=layers, target=body.get("target", "grado"))
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+            elif self.path == "/api/tep":
                 out = studio_core.compute_tep(features, params)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
@@ -544,7 +714,13 @@ class Handler(SimpleHTTPRequestHandler):
                 project_kinds = body.get("projectCustomKinds")
                 undo_stack = body.get("undo_stack")
                 redo_stack = body.get("redo_stack")
-                data = studio_core.make_grado(features, name, layers=layers, project_styles=project_styles, project_custom_kinds=project_kinds, undo_stack=undo_stack, redo_stack=redo_stack)
+                studio_state = body.get("studioState")
+                data = studio_core.make_grado(
+                    features, name, layers=layers,
+                    project_styles=project_styles,
+                    project_custom_kinds=project_kinds,
+                    undo_stack=undo_stack, redo_stack=redo_stack,
+                    studio_state=studio_state)
                 self._send(data, "application/octet-stream", "project.grado")
             elif self.path == "/api/import-nspd":
                 out = studio_core.import_nspd(body.get("payload") or body)
@@ -600,8 +776,53 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(msg)
 
 
-if __name__ == "__main__":
-    servers = [ThreadingHTTPServer(("127.0.0.1", PORT), Handler)]
+def _should_open_browser():
+    return ("--open" in sys.argv or bool(getattr(sys, "frozen", False))) and \
+           os.environ.get("GRADO_NO_BROWSER") != "1"
+
+
+def _running_studio_version(port):
+    """Версия уже работающей Студии на порту или None для чужого сервиса."""
+    try:
+        with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/api/version", timeout=0.35) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        version = payload.get("version") if isinstance(payload, dict) else None
+        return version if isinstance(version, str) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _port_candidates(port):
+    """В приложении Finder ищем свободный порт; dev-запуск остаётся строгим."""
+    if getattr(sys, "frozen", False):
+        return range(port, port + 10)
+    return (port,)
+
+
+def main():
+    global PORT, BRIDGE_ON
+    servers = []
+    original_port = PORT
+    for candidate in _port_candidates(original_port):
+        try:
+            servers = [ThreadingHTTPServer(("127.0.0.1", candidate), Handler)]
+            PORT = candidate
+            break
+        except OSError:
+            # Повторный двойной клик без файла просто возвращает пользователя
+            # в уже открытую Студию. Проект .grado запускаем на новом порту,
+            # чтобы переданный файл не потерялся.
+            if (candidate == original_port and INITIAL_GRADO is None and
+                    _running_studio_version(candidate)):
+                if _should_open_browser():
+                    webbrowser.open(f"http://localhost:{candidate}")
+                print(f"ГРАДО Студия уже работает: http://localhost:{candidate}")
+                return 0
+            if not getattr(sys, "frozen", False):
+                raise
+    if not servers:
+        raise OSError("no free local port for GRADO Studio")
     try:
         servers.append(V6Server(("::1", PORT), Handler))
     except OSError:
@@ -614,10 +835,20 @@ if __name__ == "__main__":
         print(f"Порт {BRIDGE_PORT} занят (вероятно, QGIS с плагином GRADO) — "
               "мост выключен, выгрузки идут в QGIS")
     print(f"ГРАДО Студия: http://localhost:{PORT}")
-    if "--open" in sys.argv:
-        import webbrowser
+    if _should_open_browser():
         threading.Timer(0.4, webbrowser.open,
                         [f"http://localhost:{PORT}"]).start()
     for s in servers[1:]:
         threading.Thread(target=s.serve_forever, daemon=True).start()
-    servers[0].serve_forever()
+    try:
+        servers[0].serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        for server in servers:
+            server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

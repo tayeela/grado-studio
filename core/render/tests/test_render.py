@@ -41,6 +41,11 @@ class TestFont(unittest.TestCase):
         self.assertGreater(w, 25)
         self.assertLess(w, 70)
 
+    def test_three_ui_families_have_cyrillic(self):
+        for family in ("ui", "serif", "mono"):
+            font = Font(find_font(family))
+            self.assertGreater(font.gid_for("Я"), 0, family)
+
 
 class TestMapTransform(unittest.TestCase):
     def test_scale_and_flip(self):
@@ -74,6 +79,23 @@ class TestSceneFromProject(unittest.TestCase):
         self.assertTrue(all(10 <= x <= 267 for x in xs), "геометрия в рамке")
         # 200 м при М 1:2000 = 100 мм
         self.assertAlmostEqual(max(xs) - min(xs), 100.0, places=6)
+
+    def test_inline_style_passes_label_font_family(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "font.grado", "Шрифт")
+            layer = p.add_layer("tp.func_zone")
+            layer.add_feature(
+                {"type": "Polygon", "coordinates": [[
+                    [413000, 6178000], [413100, 6178000], [413100, 6178100],
+                    [413000, 6178100], [413000, 6178000]]]},
+                attrs={"zone_title": "Ж-1"}, style_id="canvas.font")
+            styles = StyleSet(id_styles={"canvas.font": {
+                "fill": "#eeeeee", "stroke": "#333333",
+                "label_field": "zone_title", "label_font_family": "serif"}})
+            ops = build_ops(p, (10, 10, 200, 160), scale=1000, styles=styles)
+            p.close()
+        label = next(o for o in ops if o["op"] == "text")
+        self.assertEqual(label["font_family"], "serif")
 
 
 class TestPdfBackend(unittest.TestCase):
@@ -118,6 +140,30 @@ class TestPdfBackend(unittest.TestCase):
         pdf = PdfBackend().render([(297, 210, OPS), (210, 297, OPS)])
         self.assertEqual(pdf.count(b"/Type /Page "), 2)
         self.assertIn(b"/Count 2", pdf)
+
+    def test_embeds_and_selects_three_font_families(self):
+        ops = [
+            {"op": "text", "x": 20, "y": 30, "size": 5,
+             "text": "Системный", "font_family": "ui"},
+            {"op": "text", "x": 20, "y": 50, "size": 5,
+             "text": "С засечками", "font_family": "serif"},
+            {"op": "text", "x": 20, "y": 70, "size": 5,
+             "text": "Моноширинный", "font_family": "mono"},
+        ]
+        pdf = PdfBackend().render([(160, 100, ops)])
+        self.assertEqual(pdf.count(b"/FontFile2"), 3)
+        streams = re.findall(rb"stream\n(.*?)\nendstream", pdf, re.S)
+        page = b""
+        for stream in streams:
+            try:
+                data = zlib.decompress(stream)
+            except zlib.error:
+                continue
+            if b" Tj" in data:
+                page = data
+        self.assertIn(b"/F1 ", page)
+        self.assertIn(b"/F2 ", page)
+        self.assertIn(b"/F3 ", page)
 
 
 class TestWysiwyg(unittest.TestCase):

@@ -133,7 +133,7 @@ class TestGisogd(unittest.TestCase):
         make_ogd_zip(zpath, {"readme.txt": "пусто"})
         result = GisogdZip().fetch(zpath)
         self.assertEqual(result["features"], [])
-        self.assertTrue(any("нет ни shp" in n for n in result["notes"]))
+        self.assertTrue(any("ни shp" in n for n in result["notes"]))
 
     @unittest.skipUnless(find_ogr2ogr(), "нет ogr2ogr (GDAL/QGIS)")
     def test_shp_msk50_roundtrip(self):

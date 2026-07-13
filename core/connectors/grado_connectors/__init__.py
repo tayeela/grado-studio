@@ -13,10 +13,11 @@ from .importer import import_snapshot
 from .nspd import NSPD_CATEGORIES, NspdCapture, NspdDirect
 from .osm import OSM_SETS, OsmOverpass
 from .store import SnapshotStore, StoreError, Subscriptions
+from .terrain import TerrainContours
 
 __all__ = ["Connector", "ConnectorError", "FgistpConnector", "GisogdZip",
            "NSPD_CATEGORIES", "NspdCapture", "NspdDirect",
-           "OSM_SETS", "OsmOverpass",
+           "OSM_SETS", "OsmOverpass", "TerrainContours",
            "SnapshotStore", "StoreError", "Subscriptions",
            "diff", "has_changes", "import_snapshot"]
 __version__ = "0.1.0"

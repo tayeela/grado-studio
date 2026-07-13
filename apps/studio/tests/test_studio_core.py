@@ -21,6 +21,50 @@ FEATURES = [
 
 
 class TestStudioCore(unittest.TestCase):
+    def test_preflight_clean_project(self):
+        report = studio_core.preflight_project(FEATURES, target="album")
+        self.assertTrue(report["can_export"])
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual(report["summary"]["exportable"], len(FEATURES))
+
+    def test_preflight_reports_broken_geometry(self):
+        broken = {"id": 999, "kind": "zone", "layer_id": "project.tp.func_zone",
+                  "line": [[0, 0], [10, 10]], "props": {}}
+        report = studio_core.preflight_project(FEATURES + [broken], target="grado")
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
+        self.assertEqual(report["errors"][0]["feature_ids"], ["999"])
+
+    def test_preflight_reports_missing_user_layer(self):
+        feature = {"id": "custom-1", "kind": "generic", "layer_id": "user.gone",
+                   "line": [[0, 0], [10, 10]], "props": {}}
+        report = studio_core.preflight_project([feature], target="dxf")
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "unrouted_features")
+
+    def test_preflight_warns_without_boundary_and_ignores_dimensions(self):
+        features = [
+            {"id": 1, "kind": "redline", "line": [[0, 0], [10, 10]], "props": {}},
+            {"id": 2, "kind": "dim", "layer_id": "annotation.dimensions",
+             "line": [[0, 0], [1, 1]], "props": {}},
+        ]
+        report = studio_core.preflight_project(features, target="print")
+        self.assertTrue(report["can_export"])
+        self.assertEqual(report["warnings"][0]["code"], "missing_boundary")
+        self.assertEqual(report["summary"]["annotations"], 1)
+
+    def test_preflight_allows_empty_grado_but_blocks_empty_output(self):
+        self.assertTrue(studio_core.preflight_project([], target="grado")["can_export"])
+        self.assertFalse(studio_core.preflight_project([], target="album")["can_export"])
+
+    def test_preflight_never_crashes_on_malformed_transport_fields(self):
+        report = studio_core.preflight_project(
+            [{"id": [1], "kind": {"future": True}, "layer_id": ["bad"]}],
+            layers={"not": "a list"}, target={"bad": True})
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "unrouted_features")
+
     def test_build_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = studio_core.build_project(Path(tmp) / "s.grado", "Тест", FEATURES)
@@ -459,11 +503,13 @@ class TestUnderlay(unittest.TestCase):
         # rgb(0.890, 0, 0.482); библиотечные id и дальше работают
         from grado_render import StyleSet
         ss = StyleSet(id_styles={"canvas.0": {"fill": "#e3007b", "stroke": "#3d107b",
-                                              "width_mm": 1.4}})
+                                              "width_mm": 1.4,
+                                              "label_font_family": "serif"}})
         st = ss.resolve_id("canvas.0")
         self.assertAlmostEqual(st.fill[0], 0.8902, places=3)
         self.assertAlmostEqual(st.fill[2], 0.4824, places=3)
         self.assertEqual(st.width, 1.4)
+        self.assertEqual(st.label_font_family, "serif")
         self.assertIsNotNone(ss.resolve_id("boundary.line"))   # библиотека цела
         self.assertIsNone(ss.resolve_id("canvas.99"))          # неизвестный inline
 
@@ -951,13 +997,26 @@ class TestGisogdImport(unittest.TestCase):
         self.assertAlmostEqual(x, 98, delta=15)
         self.assertAlmostEqual(y, 1371, delta=15)
 
-    def test_unrecognized_member_noted_not_dropped_silently(self):
+    def test_unrecognized_member_routed_to_other_not_dropped(self):
+        # нераспознанный слой не теряется — идёт в source.gisogd.other,
+        # его атрибуты становятся полями, о нём есть заметка
         poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
         data = self._zip_bytes({"kultobjekty.geojson": _ogd_gj(poly)})
         out = studio_core.import_gisogd(data)
-        self.assertEqual(out["features"], [])
+        self.assertEqual(len(out["features"]), 1)
+        self.assertEqual(out["features"][0]["layer_id"], "source.gisogd.other")
+        self.assertIn("source.gisogd.other", out["fields"])
         self.assertTrue(any("kultobjekty" in n and "не распознан" in n
                             for n in out["notes"]))
+
+    def test_point_layer_preserved(self):
+        # точечные слои ОГД раньше молча выпадали (обрабатывались только
+        # линии/полигоны) — теперь сохраняются
+        pt = [37.605, 55.752]
+        data = self._zip_bytes({"opory.geojson": _ogd_gj(pt, geom_type="Point")})
+        out = studio_core.import_gisogd(data)
+        self.assertEqual(len(out["features"]), 1)
+        self.assertIn("point", out["features"][0])
 
     def test_multiple_recognized_layers_and_roundtrip(self):
         poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
@@ -1063,6 +1122,52 @@ class TestUserLayers(unittest.TestCase):
         self.assertEqual(zone["layer_id"], "user.ozelenenie")
         self.assertEqual(zone["props"]["zone_title"], "Озеленение-1")
 
+    def test_grado_roundtrip_preserves_studio_settings_and_layer_manifest(self):
+        layers = [{**self.USER_LAYERS[0],
+                   "fields": [{"name": "Очередь", "type": "int"}]}]
+        studio_state = {
+            "albumConfig": {"sheets": ["title", "tep"]},
+            "variants": [{"id": "v1", "name": "Базовый"}],
+            "layerFmt": {"user.ozelenenie": {"fill": "#00aa55"}},
+            "exportStyle": "canvas",
+        }
+        data = studio_core.make_grado(
+            self.FEATS, "Т", layers=layers, studio_state=studio_state)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+
+        self.assertEqual(studio_state, out["studioState"])
+        self.assertEqual(layers, out["userLayers"])
+
+    def test_custom_layer_kind_uses_generic_storage_and_returns_to_studio(self):
+        custom_kinds = [{
+            "kind": "green", "semantic_class": "custom.green",
+            "geometry_type": "polygon", "style_id": "func_zone.fill",
+            "label": "Озеленение",
+        }]
+        layers = [{
+            "layer_id": "user.green", "code": "generic.polygon",
+            "studio_code": "custom.green", "title": "Озеленение",
+            "style_id": "func_zone.fill", "fields": [],
+        }]
+        features = [{
+            "kind": "green", "layer_id": "user.green",
+            "ring": [[0, 0], [20, 0], [20, 20], [0, 20]], "props": {},
+        }]
+        data = studio_core.make_grado(
+            features, "Свои типы", layers=layers,
+            project_custom_kinds=custom_kinds)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "custom.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+
+        self.assertEqual("green", out["features"][0]["kind"])
+        self.assertEqual("user.green", out["features"][0]["layer_id"])
+        self.assertEqual("custom.green", out["userLayers"][0]["studio_code"])
+
     def test_builtin_template_wins_on_id_collision(self):
         # пользовательский манифест не может подменить встроенный слой
         clash = [{"layer_id": "project.territory.boundary",
@@ -1106,6 +1211,7 @@ class TestGenericGeomExport(unittest.TestCase):
         lines = [f for f in out["features"] if f.get("line")]
         self.assertEqual(len(lines), 1, "линия generic-слоя потерялась в roundtrip")
         self.assertEqual(lines[0]["layer_id"], "user.seti")
+        self.assertEqual(lines[0]["kind"], "generic")
 
 
 def _fake_nspd_transport(cad="77:01:0001013:19"):

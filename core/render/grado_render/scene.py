@@ -387,9 +387,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                 if st.label and f["attrs"].get(st.label) is not None:
                     lx, ly = centroid(rings[0])
                     labels.append({"op": "text", "x": lx, "y": ly,
-                                   "size": label_size,
+                                   "size": st.label_size or label_size,
                                    "text": str(f["attrs"][st.label]),
-                                   "color": (0.15, 0.15, 0.15),
+                                   "color": st.label_color or (0.15, 0.15, 0.15),
+                                   "font_family": st.label_font_family or "ui",
                                    "anchor": "middle"})
                 if st.line_label:
                     labels.extend(line_label_ops(
@@ -420,9 +421,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                             "width": st.width})
                 if st.label and f["attrs"].get(st.label) is not None:
                     labels.append({"op": "text", "x": x, "y": y - st.marker - 1,
-                                   "size": label_size,
+                                   "size": st.label_size or label_size,
                                    "text": str(f["attrs"][st.label]),
-                                   "color": (0.1, 0.1, 0.1),
+                                   "color": st.label_color or (0.1, 0.1, 0.1),
+                                   "font_family": st.label_font_family or "ui",
                                    "anchor": "middle"})
     ops.extend(labels)
     ops.append({"op": "unclip"})

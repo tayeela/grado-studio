@@ -31,21 +31,69 @@ OSM_SETS = {
     "buildings": ['way["building"]'],
     "landuse": ['way["landuse"]',
                 'way["leisure"~"^(park|garden|pitch|playground)$"]',
-                'way["natural"~"^(wood|scrub|grassland|heath)$"]'],
+                'way["natural"~"^(wood|scrub|grassland|heath)$"]',
+                # крупные парки/леса/промзоны в OSM — мультиполигон-relation
+                # (часто с вырезами-островами), а не way; без этих строк они
+                # терялись (та же причина, что у воды выше)
+                'relation["landuse"]',
+                'relation["leisure"~"^(park|garden|pitch|playground)$"]',
+                'relation["natural"~"^(wood|scrub|grassland|heath)$"]'],
     "water": ['way["natural"="water"]',
               'way["water"]',
-              'way["waterway"~"^(riverbank|dock|canal)$"]'],
+              'way["waterway"~"^(riverbank|dock|canal)$"]',
+              # крупная вода (реки/пруды с островами) в OSM — мультиполигон-
+              # relation, а не way; без этих строк Москва-река и т.п. терялись
+              'relation["natural"="water"]',
+              'relation["water"]',
+              'relation["waterway"="riverbank"]'],
+    # админ-границы — только relation (границы в OSM = отношения из ways-
+    # сегментов). Уровни 6 (районы области / городские округа) и 8 (районы
+    # Москвы / поселения / города) — рабочий масштаб градпроектирования;
+    # уровень 4 (весь субъект) намеренно исключён — гигантская геометрия,
+    # вешает Overpass.
+    "boundaries": ['relation["boundary"="administrative"]'
+                   '["admin_level"~"^(6|8)$"]'],
 }
 
-# Замкнутые наборы становятся полигонами; дороги остаются линиями.
-_RING_SETS = {"buildings", "landuse", "water"}
+# Замкнутые наборы становятся полигонами; дороги остаются линиями. Границы —
+# кольца (контур адм. единицы), но на холсте рисуются без заливки.
+_RING_SETS = {"buildings", "landuse", "water", "boundaries"}
+
+
+def _assemble_rings(segments):
+    """Сшить member-way мультиполигона в замкнутые кольца по совпадающим
+    концам (общие узлы OSM в ответе имеют идентичные координаты). Внешняя
+    граница мультиполигона часто разбита на десятки way — их надо соединить
+    в замкнутые контуры, иначе каждый кусок стал бы мусорным полигоном."""
+    segs = [list(s) for s in segments if s and len(s) >= 2]
+    rings = []
+    while segs:
+        ring = segs.pop(0)
+        changed = True
+        while ring[0] != ring[-1] and changed:
+            changed = False
+            for i, s in enumerate(segs):
+                if s[0] == ring[-1]:
+                    ring += s[1:]; segs.pop(i); changed = True; break
+                if s[-1] == ring[-1]:
+                    ring += s[-2::-1]; segs.pop(i); changed = True; break
+                if s[-1] == ring[0]:
+                    ring = s[:-1] + ring; segs.pop(i); changed = True; break
+                if s[0] == ring[0]:
+                    ring = s[::-1][:-1] + ring; segs.pop(i); changed = True; break
+        if ring[0] == ring[-1] and len(ring) >= 4:
+            rings.append(ring)
+    return rings
 
 # Теги, уходящие в атрибуты холста (шум вроде source=* отбрасывается).
 _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
-              "leisure", "natural", "water", "waterway", "surface", "lanes")
+              "leisure", "natural", "water", "waterway", "surface", "lanes",
+              "boundary", "admin_level")
 
 
 def _which_set(tags):
+    if tags.get("boundary") == "administrative" and "admin_level" in tags:
+        return "boundaries"
     if "building" in tags:
         return "buildings"
     if "highway" in tags:
@@ -105,11 +153,8 @@ class OsmOverpass(Connector):
 
         features, skipped = [], 0
         for el in data.get("elements") or []:
-            if el.get("type") != "way" or not el.get("geometry"):
-                continue
-            pts = [[g["lon"], g["lat"]] for g in el["geometry"]]
-            if len(pts) < 2:
-                skipped += 1
+            etype = el.get("type")
+            if etype not in ("way", "relation"):
                 continue
             tags = el.get("tags") or {}
             set_key = _which_set(tags)
@@ -117,18 +162,46 @@ class OsmOverpass(Connector):
                 continue
             props = {k: tags[k] for k in _KEEP_TAGS if k in tags}
             props["grado_set"] = set_key
-            if set_key in _RING_SETS:
-                if pts[0] != pts[-1]:
-                    pts = pts + [pts[0]]
-                if len(pts) < 4:      # вырожденное «кольцо» из двух точек
+
+            if etype == "way":
+                if not el.get("geometry"):
+                    continue
+                pts = [[g["lon"], g["lat"]] for g in el["geometry"]]
+                if len(pts) < 2:
                     skipped += 1
                     continue
-                geometry = {"type": "Polygon", "coordinates": [pts]}
-            else:
-                geometry = {"type": "LineString", "coordinates": pts}
-            features.append({"type": "Feature",
-                             "grado_key": f"way/{el.get('id')}",
-                             "geometry": geometry, "properties": props})
+                if set_key in _RING_SETS:
+                    # площадной набор: полигон ТОЛЬКО из замкнутого way.
+                    # открытый линейный way (канал/река-центр) в площадном
+                    # слое не нужен — раньше он силой замыкался в мусорный
+                    # полигон «туда-обратно»; его площадь придёт из relation
+                    if pts[0] != pts[-1] or len(pts) < 4:
+                        skipped += 1
+                        continue
+                    geometry = {"type": "Polygon", "coordinates": [pts]}
+                else:
+                    geometry = {"type": "LineString", "coordinates": pts}
+                features.append({"type": "Feature",
+                                 "grado_key": f"way/{el.get('id')}",
+                                 "geometry": geometry, "properties": props})
+
+            elif set_key in _RING_SETS:      # relation — мультиполигон
+                outers = []
+                for m in el.get("members") or []:
+                    if m.get("type") != "way" or not m.get("geometry"):
+                        continue
+                    if m.get("role") not in ("outer", "", None):
+                        continue          # inner (острова) модель не хранит
+                    outers.append([[p["lon"], p["lat"]] for p in m["geometry"]])
+                rings = _assemble_rings(outers)
+                if not rings:
+                    skipped += 1
+                    continue
+                geometry = {"type": "MultiPolygon",
+                            "coordinates": [[r] for r in rings]}
+                features.append({"type": "Feature",
+                                 "grado_key": f"rel/{el.get('id')}",
+                                 "geometry": geometry, "properties": props})
         notes = []
         if skipped:
             notes.append(f"пропущено вырожденных геометрий: {skipped}")
