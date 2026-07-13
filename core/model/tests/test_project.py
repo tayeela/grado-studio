@@ -90,7 +90,12 @@ class TestProject(unittest.TestCase):
 
     def test_open_non_project(self):
         other = Path(self.tmp.name) / "other.sqlite"
-        sqlite3.connect(other).execute("CREATE TABLE t (x)")
+        conn = sqlite3.connect(other)
+        try:
+            conn.execute("CREATE TABLE t (x)")
+            conn.commit()
+        finally:
+            conn.close()
         with self.assertRaises(ProjectError):
             Project.open(other)
 
