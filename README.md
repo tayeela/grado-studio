@@ -18,8 +18,10 @@
 
 ## Запуск рабочей программы
 
-На Windows дважды кликните `ГРАДО Студия.bat`, на macOS —
-`ГРАДО Студия.command`. Подробная инструкция: [docs/INSTALL.md](docs/INSTALL.md).
+На Windows установите готовое приложение со страницы
+[выпусков](https://github.com/tayeela/grado-studio-pages/releases/latest) — Python не нужен.
+На macOS используйте `ГРАДО Студия.command`. Подробная инструкция:
+[docs/INSTALL.md](docs/INSTALL.md).
 
 ```sh
 python3 apps/studio/server.py
