@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 import sys
@@ -51,11 +52,14 @@ class TestPackagingResources(unittest.TestCase):
 
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]
+        release_version = json.loads(
+            (root / "apps/studio/web/version.json").read_text(encoding="utf-8")
+        )["version"]
         with tempfile.TemporaryDirectory() as tmp:
             version_file = build_version_file(Path(tmp) / "version.txt")
             version_text = version_file.read_text(encoding="utf-8")
 
-        self.assertIn("0.9.0-beta.8", version_text)
+        self.assertIn(release_version, version_text)
         self.assertTrue((root / "packaging/AppIcon.ico").is_file())
         self.assertTrue((root / "packaging/windows.spec").is_file())
         spec = (root / "packaging/windows.spec").read_text(encoding="utf-8")

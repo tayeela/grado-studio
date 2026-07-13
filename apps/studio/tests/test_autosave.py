@@ -103,7 +103,7 @@ class ReleaseManifestTests(unittest.TestCase):
         packaging = (root / "packaging/py2app_setup.py").read_text(
             encoding="utf-8")
 
-        self.assertEqual("0.9.0-beta.8", manifest["version"])
+        self.assertRegex(manifest["version"], r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
