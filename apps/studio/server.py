@@ -126,6 +126,10 @@ class RequestBodyTooLarge(ValueError):
     pass
 
 
+class BadRequest(ValueError):
+    """Запрос клиента нельзя разобрать или он не соответствует API-контракту."""
+
+
 def _autosave_backup_path(path, index):
     return path.with_name(f"{path.stem}.{index}{path.suffix}")
 
@@ -340,7 +344,13 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _json_body(self):
-        return json.loads(self._read_body(MAX_JSON_BODY).decode("utf-8"))
+        try:
+            payload = json.loads(self._read_body(MAX_JSON_BODY).decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise BadRequest("invalid JSON body") from exc
+        if not isinstance(payload, dict):
+            raise BadRequest("JSON body must be an object")
+        return payload
 
     def _read_body(self, limit):
         try:
@@ -620,10 +630,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"saved": changed, **meta})
                 return
             if self.path == "/api/style-overrides":
-                overrides = json.loads(self._read_body(MAX_JSON_BODY))
-                if not isinstance(overrides, dict):
-                    self.send_error(400, "expected object")
-                    return
+                overrides = self._json_body()
                 studio_core.save_style_overrides(overrides)
                 self.send_response(204)
                 self.end_headers()
@@ -662,9 +669,11 @@ class Handler(SimpleHTTPRequestHandler):
                             req, timeout=60,
                             context=studio_core.TILE_SSL_CTX) as resp:
                         raw = resp.read()
-                except Exception as e:
-                    msg = json.dumps({"error": f"не удалось скачать по ссылке: {e}"},
-                                     ensure_ascii=False).encode()
+                except Exception:
+                    traceback.print_exc()
+                    msg = json.dumps(
+                        {"error": "не удалось скачать файл по указанной ссылке"},
+                        ensure_ascii=False).encode()
                     self.send_response(400)
                     self.send_header("Content-Type",
                                      "application/json; charset=utf-8")
@@ -822,15 +831,15 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self.send_error(404)
         except RequestBodyTooLarge:
-            self.send_error(413, "request body too large")
-        except Exception as e:
+            self._json({"error": "request body too large"}, 413)
+        except (BadRequest, json.JSONDecodeError, UnicodeDecodeError,
+                TypeError, ValueError, KeyError):
+            self._json({"error": "invalid request body"}, 400)
+        except Exception:
             traceback.print_exc()
-            msg = json.dumps({"error": str(e)}, ensure_ascii=False).encode()
-            self.send_response(500)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(msg)))
-            self.end_headers()
-            self.wfile.write(msg)
+            # Детали остаются в локальном журнале, но не покидают сервер:
+            # пути, URL источников и содержимое исключений могут быть приватными.
+            self._json({"error": "internal server error"}, 500)
 
 
 def _should_open_browser():

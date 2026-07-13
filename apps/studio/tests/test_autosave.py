@@ -174,6 +174,54 @@ class ReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(server.RequestBodyTooLarge):
             handler._read_body(server.MAX_FILE_UPLOAD)
 
+    @staticmethod
+    def api_handler(path, body):
+        handler = object.__new__(server.Handler)
+        handler.path = path
+        handler.headers = {"Content-Length": str(len(body))}
+        handler.rfile = io.BytesIO(body)
+        handler._json = mock.Mock()
+        return handler
+
+    def test_json_body_rejects_malformed_and_non_object_payloads(self):
+        malformed = self.api_handler("/api/tep", b'{"features": [')
+        array_body = self.api_handler("/api/tep", b"[]")
+
+        with self.assertRaises(server.BadRequest):
+            malformed._json_body()
+        with self.assertRaises(server.BadRequest):
+            array_body._json_body()
+
+    def test_api_reports_bad_json_as_400_json(self):
+        handler = self.api_handler("/api/tep", b'{"features": [')
+
+        handler.do_POST()
+
+        handler._json.assert_called_once_with(
+            {"error": "invalid request body"}, 400)
+
+    def test_api_reports_oversized_body_as_413_json(self):
+        handler = self.api_handler("/api/tep", b"")
+        handler.headers["Content-Length"] = str(server.MAX_JSON_BODY + 1)
+
+        handler.do_POST()
+
+        handler._json.assert_called_once_with(
+            {"error": "request body too large"}, 413)
+
+    def test_api_does_not_expose_internal_exception_details(self):
+        body = json.dumps({"features": [], "params": {}}).encode()
+        handler = self.api_handler("/api/tep", body)
+
+        with mock.patch.object(
+                server.studio_core, "compute_tep",
+                side_effect=RuntimeError("/private/project/customer.grado")), \
+                mock.patch.object(server.traceback, "print_exc"):
+            handler.do_POST()
+
+        handler._json.assert_called_once_with(
+            {"error": "internal server error"}, 500)
+
     def test_packaged_app_has_fallback_ports_but_dev_is_strict(self):
         with mock.patch.object(server.sys, "frozen", "macosx_app", create=True):
             self.assertEqual(list(range(8643, 8653)), list(server._port_candidates(8643)))

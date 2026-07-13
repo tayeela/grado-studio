@@ -55,6 +55,30 @@ class TestPackagingResources(unittest.TestCase):
             self.assertIn(f'src="./app.js?v={release}"', html)
             self.assertIn(f'href="./redesign/studio2.css?v={release}"', html)
 
+    def test_accessibility_layer_replaces_native_browser_tooltips(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/redesign/a11y.js").read_text(
+            encoding="utf-8")
+        styles = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn("node.removeAttribute('title')", source)
+        self.assertIn("tooltip.setAttribute('role', 'tooltip')", source)
+        self.assertIn("setAttribute('aria-describedby', tooltip.id)", source)
+        self.assertIn(".ui-tooltip", styles)
+
+    def test_panel_resizer_prevents_selection_and_always_cleans_up(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        styles = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn("e.preventDefault()", app)
+        self.assertIn("lostpointercapture", app)
+        self.assertIn("window.addEventListener('blur', finish", app)
+        self.assertIn("body.panel-resizing *", styles)
+        self.assertIn("user-select:none!important", styles)
+
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]
         release_version = json.loads(
