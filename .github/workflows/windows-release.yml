@@ -55,18 +55,25 @@ jobs:
           $env:GRADO_STUDIO_DATA_DIR = $data
           $env:GRADO_NO_BROWSER = "1"
           $env:GRADO_DISABLE_BRIDGE = "1"
+          $env:GRADO_NO_DIALOG = "1"
           $env:PORT = "8874"
           $process = Start-Process -FilePath "dist/ГРАДО Студия/ГРАДО Студия.exe" -PassThru
           try {
             $ready = $false
-            1..30 | ForEach-Object {
+            1..45 | ForEach-Object {
+              if ($process.HasExited) { return }
               try {
                 $health = Invoke-RestMethod -Uri "http://127.0.0.1:8874/api/health" -TimeoutSec 2
                 if ($health.ok -and $health.checks.web -and $health.checks.preset -and $health.checks.data_writable) { $ready = $true }
               } catch {}
               if (-not $ready) { Start-Sleep -Seconds 1 }
             }
-            if (-not $ready) { throw "Packaged application did not become healthy" }
+            if (-not $ready) {
+              Write-Host "Process exited: $($process.HasExited); code: $($process.ExitCode)"
+              $errorLog = Join-Path $data "startup-error.log"
+              if (Test-Path $errorLog) { Get-Content $errorLog }
+              throw "Packaged application did not become healthy"
+            }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
           }

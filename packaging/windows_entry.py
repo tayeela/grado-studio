@@ -13,6 +13,9 @@ def _resource_root():
 
 
 def _data_dir():
+    explicit = os.environ.get("GRADO_STUDIO_DATA_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
     return Path(base or Path.home() / "AppData" / "Local") / "GRADO Studio"
 
@@ -22,7 +25,7 @@ def _report_crash(error):
     data.mkdir(parents=True, exist_ok=True)
     log = data / "startup-error.log"
     log.write_text(traceback.format_exc(), encoding="utf-8")
-    if sys.platform == "win32":
+    if sys.platform == "win32" and os.environ.get("GRADO_NO_DIALOG") != "1":
         try:
             import ctypes
             ctypes.windll.user32.MessageBoxW(

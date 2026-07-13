@@ -2,11 +2,13 @@ import tempfile
 import unittest
 import sys
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "packaging"))
 from build_support import data_files_for_tree  # noqa: E402
 from build_pages import build_pages  # noqa: E402
 from windows_version import build_version_file  # noqa: E402
+from windows_entry import _data_dir  # noqa: E402
 
 
 class TestPackagingResources(unittest.TestCase):
@@ -59,6 +61,12 @@ class TestPackagingResources(unittest.TestCase):
         installer = (root / "packaging/windows-installer.iss").read_text(encoding="utf-8")
         self.assertIn("GradoStudio.Project", installer)
         self.assertIn("PrivilegesRequired=lowest", installer)
+
+    def test_windows_entry_honors_explicit_data_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.dict(
+                    "os.environ", {"GRADO_STUDIO_DATA_DIR": tmp}, clear=True):
+                self.assertEqual(_data_dir(), Path(tmp))
 
     def test_frontend_escapes_imported_titles_and_provenance(self):
         root = Path(__file__).parents[3]
