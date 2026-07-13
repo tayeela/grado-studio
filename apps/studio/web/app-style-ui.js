@@ -189,55 +189,75 @@ function openLayerStyle(layer, opts = {}) {
     <div id="ls-single" style="display:${mode === "single" ? "" : "none"}">
       <label>Готовый знак (Эталон ЛГР / базовые)
         <select id="fmt-preset">${stylePickerOptions(layer.fmt && layer.fmt.style_ref)}</select></label>
-      <div class="fmt-sub">Заливка</div>
-      <label class="chk"><input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
-      <label>Цвет<div id="fmt-fill"></div></label>
-      <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
+      <div class="fmt-sub fmt-tgl"><span>Заливка</span>
+        <input type="checkbox" id="fmt-hasfill" ${hasFill ? "checked" : ""} title="заливка цветом"></div>
+      <div class="fmt-body" id="fmt-fill-body" style="display:${hasFill ? "" : "none"}">
+        <div class="fmt-row">
+          <label>Цвет<div id="fmt-fill"></div></label>
+          <label>Прозрачность, %<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
+        </div>
+      </div>
       <div class="fmt-sub">Обводка</div>
-      <label>Цвет<div id="fmt-stroke"></div></label>
-      <label>Толщина<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
-      <label>Пунктир<select id="fmt-dashp">${
-        opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
-        opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки") +
-        opt(dp, "custom", "свой…")}</select></label>
-      <label id="fmt-dash-custom-wrap" style="display:${dp === "custom" ? "" : "none"}">Свой пунктир, px (штрих, пробел через запятую)
-        <input type="text" id="fmt-dash-custom" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? cur.dash : null))}"></label>
+      <div class="fmt-row">
+        <label>Цвет<div id="fmt-stroke"></div></label>
+        <label>Толщина, px<input type="number" id="fmt-width" value="${cur.width ?? 1}" min="0.2" max="8" step="0.1"></label>
+      </div>
+      <div class="fmt-row">
+        <label>Пунктир<select id="fmt-dashp">${
+          opt(dp, "solid", "сплошная") + opt(dp, "dash", "штрих") +
+          opt(dp, "dashdot", "штрих-пунктир") + opt(dp, "dashdotdot", "штрих-2 точки") +
+          opt(dp, "custom", "свой…")}</select></label>
+        <label id="fmt-dash-custom-wrap" style="display:${dp === "custom" ? "" : "none"}">Свой, px через запятую
+          <input type="text" id="fmt-dash-custom" placeholder="8, 3, 2, 3" value="${escHtml(dashToStr(dp === "custom" ? cur.dash : null))}"></label>
+      </div>
       <div class="line-preview" id="fmt-dash-preview"></div>
-      <div class="fmt-sub">Штриховка зоны</div>
-      <label class="chk"><input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""}> штриховка</label>
-      <label>Угол<select id="fmt-hangle">${
-        opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
-        opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
-      <label>Плотность<select id="fmt-hdens">${
-        opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+      <div class="fmt-sub fmt-tgl"><span>Штриховка зоны</span>
+        <input type="checkbox" id="fmt-hatch" ${cur.hatch ? "checked" : ""} title="штриховка"></div>
+      <div class="fmt-body" id="fmt-hatch-body" style="display:${cur.hatch ? "" : "none"}">
+        <div class="fmt-row">
+          <label>Угол<select id="fmt-hangle">${
+            opt(hAngle, "0", "0° —") + opt(hAngle, "45", "45° ╱") + opt(hAngle, "90", "90° │") +
+            opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
+          <label>Плотность<select id="fmt-hdens">${
+            opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+        </div>
+      </div>
+      <div class="fmt-sub fmt-tgl"><span>Засечки-маркеры</span>
+        <input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""} title="засечки-маркеры"></div>
+      <div class="fmt-body" id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
+        <div class="fmt-row">
+          <label>Форма<select id="fmt-marker-shape">${
+            MARKER_SHAPES.map(([v, lbl]) => opt((baseMarker && baseMarker.shape) || "tick", v, lbl)).join("")}</select></label>
+          <label>Остриё<select id="fmt-marker-dir">${
+            opt((baseMarker && baseMarker.dir) || "in", "in", "внутрь зоны") +
+            opt((baseMarker && baseMarker.dir) || "in", "out", "наружу")}</select></label>
+        </div>
+        <div class="fmt-row">
+          <label>Шаг, px<input type="number" id="fmt-marker-period" value="${(baseMarker && baseMarker.period) || 40}" min="6" max="200" step="1"></label>
+          <label>Размер, px<input type="number" id="fmt-marker-size" value="${(baseMarker && baseMarker.size) || 4}" min="1" max="40" step="0.5"></label>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии (знак ЛГР)</label>
       ${isPoly ? `<div class="fmt-sub">Подпись объектов</div>
       <label>Поле подписи<select id="fmt-labelf">
         <option value="">— без подписи —</option>${
         labelCols.map(c => opt(curLF, c.name, c.label || c.name)).join("")}</select></label>
-      <div id="fmt-labelf-fields" style="display:${curLF ? "" : "none"}">
-        <label>Кегль, px<input type="number" id="fmt-lsize" value="${lfFont.size || 11}" min="6" max="72" step="0.5"></label>
+      <div class="fmt-body" id="fmt-labelf-fields" style="display:${curLF ? "" : "none"}">
+        <div class="fmt-row">
+          <label>Кегль, px<input type="number" id="fmt-lsize" value="${lfFont.size || 11}" min="6" max="72" step="0.5"></label>
+          <label>Шрифт<select id="fmt-lfamily">${
+            opt(lfFont.family || "ui", "ui", "системный") +
+            opt(lfFont.family || "ui", "serif", "с засечками") +
+            opt(lfFont.family || "ui", "mono", "моноширинный")}</select></label>
+        </div>
         <label>Цвет<div id="fmt-lcolor"></div></label>
-        <label>Шрифт<select id="fmt-lfamily">${
-          opt(lfFont.family || "ui", "ui", "системный") +
-          opt(lfFont.family || "ui", "serif", "с засечками") +
-          opt(lfFont.family || "ui", "mono", "моноширинный")}</select></label>
       </div>` : ""}
-      <div class="fmt-sub">Показывать</div>
-      <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
-      <div id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
-        <label>Форма<select id="fmt-marker-shape">${
-          MARKER_SHAPES.map(([v, lbl]) => opt((baseMarker && baseMarker.shape) || "tick", v, lbl)).join("")}</select></label>
-        <label>Шаг, px<input type="number" id="fmt-marker-period" value="${(baseMarker && baseMarker.period) || 40}" min="6" max="200" step="1"></label>
-        <label>Размер, px<input type="number" id="fmt-marker-size" value="${(baseMarker && baseMarker.size) || 4}" min="1" max="40" step="0.5"></label>
-        <label>Остриё<select id="fmt-marker-dir">${
-          opt((baseMarker && baseMarker.dir) || "in", "in", "внутрь зоны") +
-          opt((baseMarker && baseMarker.dir) || "in", "out", "наружу")}</select></label>
-      </div>
-      <label class="chk"><input type="checkbox" id="fmt-label" ${baseLabel ? "checked" : ""}> подпись линии</label>
       ${targets.length ? `<div class="fmt-sub">Копировать оформление</div>
-      <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
-        targets.map(l => `<option value="${l.id}">${escHtml(l.title)}</option>`).join("")}</select></label>
-      <button id="fmt-copy" class="fmt-copy-btn">Скопировать на выбранный</button>` : ""}
+      <div class="fmt-row fmt-copy-row">
+        <label>На слой<select id="fmt-copy-to"><option value="__all__">— все слои —</option>${
+          targets.map(l => `<option value="${l.id}">${escHtml(l.title)}</option>`).join("")}</select></label>
+        <button id="fmt-copy" class="fmt-copy-btn">Скопировать</button>
+      </div>` : ""}
     </div>
     <div id="ls-rules" style="display:${mode === "rules" ? "" : "none"}">
       <div class="fc-help" style="margin:0 var(--sp-4)">Знак объекта выбирается по значению его атрибута.
@@ -295,6 +315,13 @@ function openLayerStyle(layer, opts = {}) {
   $("fmt-marker").addEventListener("change", () => {
     $("fmt-marker-fields").style.display = $("fmt-marker").checked ? "" : "none";
   });
+  // тумблеры секций: тело показывается только когда секция включена
+  const syncBodies = () => {
+    $("fmt-fill-body").style.display = $("fmt-hasfill").checked ? "" : "none";
+    $("fmt-hatch-body").style.display = $("fmt-hatch").checked ? "" : "none";
+  };
+  $("fmt-hasfill").addEventListener("change", syncBodies);
+  $("fmt-hatch").addEventListener("change", syncBodies);
   const collect = () => {
     const fmt = {
       stroke: strokeCF.get(),
@@ -375,6 +402,7 @@ function openLayerStyle(layer, opts = {}) {
         $("fmt-lsize").value = 11; $("fmt-lfamily").value = "ui";
         lcolorCF.set("#5c5a54");
       }
+      syncBodies();
     }
     layer.fmt = collect(); draw(); updateDashPreview();
   });

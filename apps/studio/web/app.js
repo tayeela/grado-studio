@@ -4665,7 +4665,13 @@ function canvasStyleToBackend(st) {
     size_mm: (st.line_marker.size || 4) / 2 };
   if (st.double) out.double_mm = st.double / 2;
   if (st.line_label) out.line_label = st.line_label;
-  if (st.label_field) out.label_field = st.label_field;
+  if (st.label_field) {
+    out.label_field = st.label_field;
+    if (st.label_font) {   // кегль/цвет подписи в PDF (px→мм ÷2, как толщины)
+      if (st.label_font.size) out.label_size_mm = st.label_font.size / 2;
+      if (st.label_font.color) out.label_color = hexOf(st.label_font.color);
+    }
+  }
   return out;
 }
 // правка эталонного знака в библиотеке (глобальный оверрайд) → патч с ОБОИМИ
