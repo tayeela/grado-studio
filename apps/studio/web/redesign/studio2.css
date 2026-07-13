@@ -267,6 +267,14 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 /* ---- Настройки расчёта ТЭП ---- */
 .tep-editor-hint{font-size:var(--fs-12);color:var(--muted);line-height:1.5;margin-bottom:2px}
 
+/* ---- Буфер вокруг выбранных объектов ---- */
+.buffer-hint{font-size:var(--fs-12);color:var(--muted);line-height:1.5}
+.buffer-presets{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.buffer-presets button{height:auto;min-height:36px;white-space:normal;line-height:1.25}
+.buffer-sides{border:1px solid var(--field-border);border-radius:var(--r-md);padding:10px 12px 11px;
+  display:flex;flex-direction:column;gap:8px}
+.buffer-sides legend{padding:0 5px;font-size:var(--fs-11);color:var(--muted)}
+
 /* ---- Собственные стили проекта ---- */
 .ps-note{font-size:var(--fs-12);color:var(--muted);line-height:1.5}
 .ps-list{max-height:220px;overflow:auto;font-size:var(--fs-12)}

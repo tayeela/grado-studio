@@ -3639,6 +3639,52 @@ function openTepPresetEditor() {
   overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
 }
 
+function openBufferDialog() {
+  closePopups();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const currentDist = document.getElementById("buf-dist").value || "300";
+  const currentSide = document.querySelector('input[name="buf-side"]:checked')?.value || "both";
+  const sideOptions = [
+    ["both", "С обеих сторон"], ["outer", "Снаружи"], ["inner", "Внутри"]
+  ];
+  overlay.innerHTML = `<div class="modal fmt-modal buffer-modal">
+    <div class="modal-head">Создать буфер
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body">
+      <div class="buffer-hint">Буфер строится вокруг выбранных объектов и добавляется в активный слой.</div>
+      <div class="buffer-presets">
+        <button type="button" data-dist="300">Детский сад · 300 м</button>
+        <button type="button" data-dist="500">Школа · 500 м</button>
+      </div>
+      <label>Расстояние, м<input id="buffer-distance" type="number" min="1" max="2000" step="5" value="${escHtml(currentDist)}"></label>
+      <fieldset class="buffer-sides">
+        <legend>Направление</legend>
+        ${sideOptions.map(([value, label]) => `<label class="chk"><input type="radio" name="buffer-dialog-side" value="${value}"${value === currentSide ? " checked" : ""}>${label}</label>`).join("")}
+      </fieldset>
+    </div>
+    <div class="modal-actions"><span class="spacer"></span>
+      <button id="buffer-cancel">Отмена</button>
+      <button id="buffer-create" class="primary">Создать</button>
+    </div></div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelectorAll("[data-dist]").forEach(button => button.onclick = () => {
+    overlay.querySelector("#buffer-distance").value = button.dataset.dist;
+  });
+  overlay.querySelector("#buffer-create").onclick = () => {
+    document.getElementById("buf-dist").value = overlay.querySelector("#buffer-distance").value;
+    const side = overlay.querySelector('input[name="buffer-dialog-side"]:checked')?.value || "both";
+    const hiddenSide = document.querySelector(`input[name="buf-side"][value="${side}"]`);
+    if (hiddenSide) hiddenSide.checked = true;
+    close();
+    document.getElementById("btn-buffer").click();
+  };
+  overlay.querySelector("#buffer-cancel").onclick = close;
+  overlay.querySelector(".modal-x").onclick = close;
+  overlay.onclick = event => { if (event.target === overlay) close(); };
+}
+
 // ---------- встроенные диалоги (взамен браузерных alert/confirm/prompt) ----------
 function escHtml(s) {
   return String(s).replace(/[&<>"]/g, c =>
@@ -4645,6 +4691,8 @@ on("p-ratio", "change", refreshTep);
 on("p-krail", "change", refreshTep);
 on("p-kba", "change", refreshTep);
 on("btn-tep-editor", "click", openTepPresetEditor);
+const bufferOpen = document.getElementById("btn-buffer-open");
+if (bufferOpen) bufferOpen.addEventListener("click", openBufferDialog);
 
 on("btn-buffer", "click", () => {
   const dist = document.getElementById("buf-dist").value;

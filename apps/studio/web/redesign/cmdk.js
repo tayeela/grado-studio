@@ -35,6 +35,7 @@
       { t: "Обрезать по границе", k: "T", run: tool("trim") },
       { t: "Продлить до границы", k: "E", run: tool("extend") },
       { t: "Сопрячь угол (fillet)", run: tool("fillet") },
+      { t: "Буфер вокруг выбранных объектов…", run: () => click("btn-buffer-open") },
       { t: "Поворот выделения", k: "R", run: tool("rotate") },
       { t: "Масштаб выделения", run: tool("scale") },
       { t: "Зеркало", run: tool("mirror") },
