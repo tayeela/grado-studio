@@ -82,7 +82,7 @@ class Style:
     def __init__(self, fill=None, stroke=None, width=0.3, dash=None,
                  label=None, marker=1.2, z=0, hatch=False,
                  line_marker=None, double=None, line_label=None,
-                 label_size=None, label_color=None):
+                 label_size=None, label_color=None, label_font_family=None):
         self.fill = fill          # (r,g,b) 0..1 | None
         self.stroke = stroke      # (r,g,b) | None
         self.width = width        # мм
@@ -96,6 +96,7 @@ class Style:
         self.line_label = line_label  # повторяющаяся подпись вдоль линии/контура (ЛГР)
         self.label_size = label_size    # кегль подписи, мм (None → label_size сцены)
         self.label_color = label_color  # цвет подписи (r,g,b) | None → дефолт сцены
+        self.label_font_family = label_font_family  # ui | serif | mono
 
     @classmethod
     def from_json(cls, s):
@@ -112,7 +113,8 @@ class Style:
             double=s.get("double_mm"),
             line_label=s.get("line_label"),
             label_size=s.get("label_size_mm"),
-            label_color=hex_to_rgb(s.get("label_color")))
+            label_color=hex_to_rgb(s.get("label_color")),
+            label_font_family=s.get("label_font_family"))
 
 
 def _build_default_styles(name="default"):

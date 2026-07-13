@@ -459,11 +459,13 @@ class TestUnderlay(unittest.TestCase):
         # rgb(0.890, 0, 0.482); библиотечные id и дальше работают
         from grado_render import StyleSet
         ss = StyleSet(id_styles={"canvas.0": {"fill": "#e3007b", "stroke": "#3d107b",
-                                              "width_mm": 1.4}})
+                                              "width_mm": 1.4,
+                                              "label_font_family": "serif"}})
         st = ss.resolve_id("canvas.0")
         self.assertAlmostEqual(st.fill[0], 0.8902, places=3)
         self.assertAlmostEqual(st.fill[2], 0.4824, places=3)
         self.assertEqual(st.width, 1.4)
+        self.assertEqual(st.label_font_family, "serif")
         self.assertIsNotNone(ss.resolve_id("boundary.line"))   # библиотека цела
         self.assertIsNone(ss.resolve_id("canvas.99"))          # неизвестный inline
 

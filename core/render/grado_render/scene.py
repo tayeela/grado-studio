@@ -390,6 +390,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                    "size": st.label_size or label_size,
                                    "text": str(f["attrs"][st.label]),
                                    "color": st.label_color or (0.15, 0.15, 0.15),
+                                   "font_family": st.label_font_family or "ui",
                                    "anchor": "middle"})
                 if st.line_label:
                     labels.extend(line_label_ops(
@@ -423,6 +424,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                    "size": st.label_size or label_size,
                                    "text": str(f["attrs"][st.label]),
                                    "color": st.label_color or (0.1, 0.1, 0.1),
+                                   "font_family": st.label_font_family or "ui",
                                    "anchor": "middle"})
     ops.extend(labels)
     ops.append({"op": "unclip"})

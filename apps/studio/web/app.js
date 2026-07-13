@@ -4667,9 +4667,11 @@ function canvasStyleToBackend(st) {
   if (st.line_label) out.line_label = st.line_label;
   if (st.label_field) {
     out.label_field = st.label_field;
-    if (st.label_font) {   // кегль/цвет подписи в PDF (px→мм ÷2, как толщины)
+    if (st.label_font) {   // кегль/цвет/семейство подписи в PDF
       if (st.label_font.size) out.label_size_mm = st.label_font.size / 2;
       if (st.label_font.color) out.label_color = hexOf(st.label_font.color);
+      if (["ui", "serif", "mono"].includes(st.label_font.family))
+        out.label_font_family = st.label_font.family;
     }
   }
   return out;
