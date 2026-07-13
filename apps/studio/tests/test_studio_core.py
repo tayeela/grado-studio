@@ -21,6 +21,50 @@ FEATURES = [
 
 
 class TestStudioCore(unittest.TestCase):
+    def test_preflight_clean_project(self):
+        report = studio_core.preflight_project(FEATURES, target="album")
+        self.assertTrue(report["can_export"])
+        self.assertEqual(report["errors"], [])
+        self.assertEqual(report["warnings"], [])
+        self.assertEqual(report["summary"]["exportable"], len(FEATURES))
+
+    def test_preflight_reports_broken_geometry(self):
+        broken = {"id": 999, "kind": "zone", "layer_id": "project.tp.func_zone",
+                  "line": [[0, 0], [10, 10]], "props": {}}
+        report = studio_core.preflight_project(FEATURES + [broken], target="grado")
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
+        self.assertEqual(report["errors"][0]["feature_ids"], ["999"])
+
+    def test_preflight_reports_missing_user_layer(self):
+        feature = {"id": "custom-1", "kind": "generic", "layer_id": "user.gone",
+                   "line": [[0, 0], [10, 10]], "props": {}}
+        report = studio_core.preflight_project([feature], target="dxf")
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "unrouted_features")
+
+    def test_preflight_warns_without_boundary_and_ignores_dimensions(self):
+        features = [
+            {"id": 1, "kind": "redline", "line": [[0, 0], [10, 10]], "props": {}},
+            {"id": 2, "kind": "dim", "layer_id": "annotation.dimensions",
+             "line": [[0, 0], [1, 1]], "props": {}},
+        ]
+        report = studio_core.preflight_project(features, target="print")
+        self.assertTrue(report["can_export"])
+        self.assertEqual(report["warnings"][0]["code"], "missing_boundary")
+        self.assertEqual(report["summary"]["annotations"], 1)
+
+    def test_preflight_allows_empty_grado_but_blocks_empty_output(self):
+        self.assertTrue(studio_core.preflight_project([], target="grado")["can_export"])
+        self.assertFalse(studio_core.preflight_project([], target="album")["can_export"])
+
+    def test_preflight_never_crashes_on_malformed_transport_fields(self):
+        report = studio_core.preflight_project(
+            [{"id": [1], "kind": {"future": True}, "layer_id": ["bad"]}],
+            layers={"not": "a list"}, target={"bad": True})
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "unrouted_features")
+
     def test_build_project(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = studio_core.build_project(Path(tmp) / "s.grado", "Тест", FEATURES)

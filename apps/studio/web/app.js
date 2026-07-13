@@ -5020,6 +5020,42 @@ function projectFileName(suffix) {
   const name = document.getElementById("project-name").value.trim() || "grado-project";
   return `${slugify(name)}${suffix}`;
 }
+function showPreflightReport(report) {
+  if (!report.errors.length && !report.warnings.length) return Promise.resolve(true);
+  return new Promise(resolve => {
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    const rows = [
+      ...report.errors.map(item => ({ ...item, level: "error" })),
+      ...report.warnings.map(item => ({ ...item, level: "warning" })),
+    ].map(item => {
+      const ids = item.feature_ids && item.feature_ids.length
+        ? `<div class="preflight-ids">Объекты: ${item.feature_ids.map(escHtml).join(", ")}${item.count > item.feature_ids.length ? ` и ещё ${item.count - item.feature_ids.length}` : ""}</div>` : "";
+      return `<div class="preflight-item ${item.level}">
+        <div class="preflight-mark" aria-hidden="true">${item.level === "error" ? "!" : "i"}</div>
+        <div><b>${escHtml(item.title)}</b><p>${escHtml(item.detail || "")}</p>${ids}</div>
+      </div>`;
+    }).join("");
+    const blocked = report.errors.length > 0;
+    overlay.innerHTML = `<div class="modal preflight-modal" role="dialog" aria-modal="true" aria-label="Проверка проекта перед выпуском">
+      <div class="modal-head"><span>Проверка перед выпуском</span></div>
+      <div class="modal-body">
+        <div class="preflight-summary">Готово объектов: <b>${report.summary.exportable}</b> из ${report.summary.total}${report.summary.annotations ? ` · аннотаций на холсте: ${report.summary.annotations}` : ""}</div>
+        <div class="preflight-list">${rows}</div>
+      </div>
+      <div class="modal-actions"><span class="spacer"></span>
+        <button class="preflight-cancel">${blocked ? "Вернуться к проекту" : "Отмена"}</button>
+        ${blocked ? "" : '<button class="preflight-continue primary">Продолжить выпуск</button>'}
+      </div></div>`;
+    document.body.appendChild(overlay);
+    const done = value => { overlay.remove(); resolve(value); };
+    overlay.querySelector(".preflight-cancel").onclick = () => done(false);
+    overlay.querySelector(".preflight-continue")?.addEventListener("click", () => done(true));
+    overlay.onclick = event => { if (event.target === overlay) done(false); };
+    overlay.addEventListener("keydown", event => { if (event.key === "Escape") done(false); });
+    overlay.querySelector(blocked ? ".preflight-cancel" : ".preflight-continue").focus();
+  });
+}
 async function download(url, suffix) {
   if (downloadInProgress) { toast("Дождитесь завершения текущего файла", "warn"); return; }
   if (url !== "/api/grado" && !state.features.length) {
@@ -5052,8 +5088,21 @@ async function download(url, suffix) {
     .map(id => document.getElementById(id)).filter(Boolean);
   downloadInProgress = true;
   exportButtons.forEach(button => { button.disabled = true; });
-  toast(action);
+  toast("Проверяю проект перед выпуском…");
   try {
+    const target = url.replace("/api/", "");
+    const checkResponse = await fetch("/api/preflight", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features, layers: payload.layers, target }),
+    });
+    if (!checkResponse.ok) throw new Error("не удалось проверить проект");
+    const report = await checkResponse.json();
+    if (!(await showPreflightReport(report))) {
+      if (report.errors.length) toast("Исправьте замечания перед выпуском", "warn");
+      else toast("Выпуск отменён");
+      return;
+    }
+    toast(action);
     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload) });
     if (!r.ok) throw new Error((await r.text()).slice(0, 200));

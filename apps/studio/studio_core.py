@@ -15,7 +15,10 @@ import threading
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).parents[2]
+ROOT = (Path(os.environ["RESOURCEPATH"])
+        if getattr(sys, "frozen", False) and os.environ.get("RESOURCEPATH")
+        else Path(__file__).parents[2])
+DATA_DIR = Path(os.environ.get("GRADO_STUDIO_DATA_DIR", Path(__file__).parent))
 for mod in ("model", "compute", "reactive", "render", "geom", "layout",
             "connectors"):
     p = str(ROOT / "core" / mod)
@@ -47,7 +50,7 @@ import json as _json  # noqa: E402
 
 # Пользовательские правки эталонных знаков (глобальные для студии) — отдельный
 # файл-оверрайд рядом с автосейвом; сам генератор ЛГР и его JSON не трогаем.
-STYLE_OVERRIDES_PATH = Path(__file__).parent / "style_overrides.json"
+STYLE_OVERRIDES_PATH = DATA_DIR / "style_overrides.json"
 
 
 def load_style_overrides():
@@ -95,7 +98,7 @@ from grado_connectors import (GisogdZip, NspdCapture, SnapshotStore,  # noqa: E4
 from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
 
-SOURCE_STORE = SnapshotStore(Path(__file__).parent / ".sources")
+SOURCE_STORE = SnapshotStore(DATA_DIR / ".sources")
 _PROV_SOURCES = {"nspd", "fgistp", "gisogd", "osm", "terrain", "import"}  # допустимые в модели
 
 
@@ -222,7 +225,7 @@ def frontend_styles():
 # --- тайловая подложка (кэш общий: холст студии и листы альбома) -----------
 # Локальный однопользовательский инструмент = «лёгкое использование» по
 # Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
-TILE_CACHE = Path(__file__).parent / ".tile_cache"
+TILE_CACHE = DATA_DIR / ".tile_cache"
 TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 MAX_UNDERLAY_TILES = 130
 
@@ -727,6 +730,120 @@ def _user_layer_templates(layers):
                     "stage": spec.get("stage"), "style_id": spec.get("style_id"),
                     "fields": _manifest_fields(spec)}
     return out
+
+
+def preflight_project(features, layers=None, target="grado"):
+    """Проверить, что выпуск не потеряет объекты молча.
+
+    Возвращает структурированный отчёт для интерфейса. Проверка намеренно
+    использует ту же маршрутизацию, геометрию и схему атрибутов, что и
+    ``build_project``: успешный preflight означает, что все рабочие объекты
+    смогут попасть в .grado/PDF/DXF. Размеры — аннотации холста, поэтому в
+    модель не экспортируются и показываются только в сводке.
+    """
+    target = target if isinstance(target, str) and target in {
+        "grado", "album", "print", "dxf"
+    } else "grado"
+    errors, warnings = [], []
+    features = features if isinstance(features, list) else []
+    layers = layers if isinstance(layers, list) else []
+    templates = {**LAYER_TEMPLATES, **_user_layer_templates(layers)}
+    broken, unrouted, duplicate_ids = [], [], []
+    seen_ids = set()
+    exportable = annotations = 0
+    has_boundary = False
+
+    def feature_label(feature, index):
+        fid = feature.get("id") if isinstance(feature, dict) else None
+        return str(fid) if fid not in (None, "") else f"№{index + 1}"
+
+    for index, feature in enumerate(features):
+        label = feature_label(feature, index)
+        if not isinstance(feature, dict):
+            broken.append(label)
+            continue
+        fid = feature.get("id")
+        if fid not in (None, ""):
+            fid_key = str(fid)
+            if fid_key in seen_ids:
+                duplicate_ids.append(fid_key)
+            seen_ids.add(fid_key)
+        if feature.get("kind") == "dim" or feature.get("layer_id") == "annotation.dimensions":
+            annotations += 1
+            continue
+        explicit_layer = feature.get("layer_id")
+        if explicit_layer and (not isinstance(explicit_layer, str) or
+                               explicit_layer not in templates):
+            unrouted.append(label)
+            continue
+        try:
+            lid, _tmpl = _route(feature, templates)
+        except TypeError:
+            lid = None
+        if lid is None:
+            unrouted.append(label)
+            continue
+        try:
+            props = feature.get("props") or {}
+            KIND_ATTRS.get(feature.get("kind"), KIND_ATTRS["generic"])(props)
+            geom = _geom_for(feature)
+            coords = geom.get("coordinates")
+            if geom.get("type") == "Point":
+                valid = isinstance(coords, list) and len(coords) >= 2
+            elif geom.get("type") == "LineString":
+                valid = isinstance(coords, list) and len(coords) >= 2
+            elif geom.get("type") == "Polygon":
+                valid = (isinstance(coords, list) and coords and
+                         isinstance(coords[0], list) and len(coords[0]) >= 4)
+            else:
+                valid = False
+            if not valid:
+                raise ValueError("недостаточно точек")
+        except (KeyError, IndexError, TypeError, ValueError, OverflowError):
+            broken.append(label)
+            continue
+        exportable += 1
+        if feature.get("kind") == "boundary":
+            has_boundary = True
+
+    if not features and target != "grado":
+        errors.append({"code": "empty_project", "title": "В проекте нет объектов",
+                       "detail": "Добавьте объекты перед выпуском файла."})
+    if unrouted:
+        errors.append({
+            "code": "unrouted_features", "title": "Не найден слой для объектов",
+            "detail": "Проверьте, что пользовательские слои проекта не удалены.",
+            "feature_ids": unrouted[:12], "count": len(unrouted),
+        })
+    if broken:
+        errors.append({
+            "code": "invalid_geometry", "title": "Есть повреждённые объекты",
+            "detail": "Исправьте геометрию или атрибуты отмеченных объектов.",
+            "feature_ids": broken[:12], "count": len(broken),
+        })
+    if duplicate_ids:
+        warnings.append({
+            "code": "duplicate_ids", "title": "Повторяются идентификаторы объектов",
+            "detail": "Файл соберётся, но выбор и история изменений могут работать неоднозначно.",
+            "feature_ids": duplicate_ids[:12], "count": len(duplicate_ids),
+        })
+    if target in {"album", "print"} and exportable and not has_boundary:
+        warnings.append({
+            "code": "missing_boundary", "title": "Не задана граница территории",
+            "detail": "Листы будут собраны по общему охвату объектов; ТЭП и компоновка могут быть неточными.",
+        })
+    if exportable > 8000:
+        warnings.append({
+            "code": "large_project", "title": "Очень большой проект",
+            "detail": "Сборка файла может занять несколько минут.",
+        })
+    return {
+        "target": target, "can_export": not errors,
+        "errors": errors, "warnings": warnings,
+        "summary": {"total": len(features), "exportable": exportable,
+                    "annotations": annotations,
+                    "blocked": len(broken) + len(unrouted)},
+    }
 
 
 def build_project(path, name, features, layers=None, project_styles=None,

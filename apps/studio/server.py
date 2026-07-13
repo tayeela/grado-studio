@@ -10,6 +10,7 @@
 
 Статика: apps/studio/web. API:
     POST /api/tep         {features, params} → живой ТЭП
+    POST /api/preflight   {features, layers, target} → проверка перед выпуском
     POST /api/album       {features, params, name} → PDF альбома АГК
     POST /api/grado       {features, name} → файл проекта .grado (открывается QGIS)
     POST /api/open-grado  тело .grado → {name, features} — открыть проект обратно
@@ -27,6 +28,7 @@
 
 import hashlib
 import json
+import os
 import re
 import socket
 import sys
@@ -39,9 +41,24 @@ from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+
+def _studio_data_dir():
+    explicit = os.environ.get("GRADO_STUDIO_DATA_DIR")
+    if explicit:
+        return Path(explicit).expanduser()
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "ГРАДО Студия"
+    return Path(__file__).parent
+
+
+DATA_DIR = _studio_data_dir()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("GRADO_STUDIO_DATA_DIR", str(DATA_DIR))
 import studio_core  # noqa: E402
 
-WEB = Path(__file__).parent / "web"
+RESOURCE_ROOT = Path(os.environ.get("RESOURCEPATH", Path(__file__).parent))
+WEB = RESOURCE_ROOT / "web"
 VERSION_PATH = WEB / "version.json"
 VERSION_INFO = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
 PORT = 8643
@@ -59,7 +76,7 @@ BRIDGE_PORT = 8081  # совместимость с браузерным рас�
 HUB = None
 if "--hub" in sys.argv:
     from webhub import Hub, HubError, SESSION_COOKIE
-    HUB = Hub(Path(__file__).parent / ".hub")
+    HUB = Hub(DATA_DIR / ".hub")
 else:
     from webhub import HubError, SESSION_COOKIE  # noqa: F401 (единый except)
 # в hub-режиме без сессии доступны только эти /api/-пути (вход + статика)
@@ -77,7 +94,7 @@ BRIDGE_ON = False
 
 # файловый автосейв — резервная копия localStorage браузера на диске:
 # переживает чистку данных сайта/приватный режим/смену браузера
-AUTOSAVE_PATH = Path(__file__).parent / ".autosave.json"
+AUTOSAVE_PATH = DATA_DIR / ".autosave.json"
 AUTOSAVE_LOCK = threading.Lock()
 AUTOSAVE_BACKUPS = 10
 AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
@@ -654,7 +671,12 @@ class Handler(SimpleHTTPRequestHandler):
             # слои, созданные в панели студии («+ слой») — их шаблон
             # маршрутизации не встроен в сервер, приходит с холста
             layers = body.get("layers")
-            if self.path == "/api/tep":
+            if self.path == "/api/preflight":
+                out = studio_core.preflight_project(
+                    features, layers=layers, target=body.get("target", "grado"))
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+            elif self.path == "/api/tep":
                 out = studio_core.compute_tep(features, params)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
