@@ -244,6 +244,32 @@ class ReleaseManifestTests(unittest.TestCase):
         handler._json.assert_called_once_with(
             {"error": "request body too large"}, 413)
 
+    def test_api_rejects_invalid_project_payload_types(self):
+        for path, payload in (
+            ("/api/tep", {"features": {}}),
+            ("/api/grado", {"features": [], "layers": {}}),
+            ("/api/album", {"features": [], "projectStyles": []}),
+        ):
+            with self.subTest(path=path):
+                handler = self.api_handler(path, json.dumps(payload).encode())
+                handler.do_POST()
+                handler._json.assert_called_once_with(
+                    {"error": "invalid request body"}, 400)
+
+    def test_output_api_runs_preflight_before_building(self):
+        body = json.dumps({"features": [{
+            "id": "bad", "kind": "zone",
+            "layer_id": "project.tp.func_zone",
+            "line": [[0, 0], [10, 10]], "props": {},
+        }]}).encode()
+        handler = self.api_handler("/api/grado", body)
+        handler.do_POST()
+        payload, status = handler._json.call_args.args
+        self.assertEqual(status, 400)
+        self.assertEqual(payload["error"], "project preflight failed")
+        self.assertEqual(payload["report"]["errors"][0]["code"],
+                         "invalid_geometry")
+
     def test_api_does_not_expose_internal_exception_details(self):
         body = json.dumps({"features": [], "params": {}}).encode()
         handler = self.api_handler("/api/tep", body)

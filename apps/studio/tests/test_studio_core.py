@@ -125,6 +125,43 @@ class TestStudioCore(unittest.TestCase):
         self.assertGreater(out["inputs"]["terr_area"], 0)
         self.assertEqual(out["fact"]["spp"], 0)
 
+    def test_compute_tep_sanitizes_malformed_external_values(self):
+        baseline = studio_core.compute_tep([])
+        for features, params in (
+            (None, {}), ([None, "bad"], {}), ([], ["bad"]),
+            ([], {"density": "bad", "k_rail": float("inf")}),
+            ([{"kind": "boundary", "ring": [
+                [1e308, 0], [0, 1e308], [0, 0]], "props": {}}], {}),
+        ):
+            out = studio_core.compute_tep(features, params)
+            self.assertEqual(out["inputs"], baseline["inputs"])
+            self.assertEqual(out["fact"], baseline["fact"])
+
+        numeric_strings = [{"kind": "boundary", "ring": [
+            ["0", "0"], ["100", "0"], ["100", "100"], ["0", "100"],
+        ], "props": {}}]
+        out = studio_core.compute_tep(numeric_strings, {"density": "25"})
+        self.assertEqual(out["inputs"]["terr_area"], 1.0)
+
+    def test_compute_tep_clamps_invalid_floor_counts(self):
+        boundary = {"kind": "boundary", "ring": [
+            [0, 0], [100, 0], [100, 100], [0, 100]], "props": {}}
+        building = {"kind": "building", "ring": [
+            [0, 0], [10, 0], [10, 10], [0, 10]],
+            "props": {"floors": 10_000},
+        }
+        out = studio_core.compute_tep([boundary, building])
+        self.assertEqual(out["fact"]["spp"], 0.9)
+
+    def test_preflight_rejects_non_finite_or_extreme_coordinates(self):
+        for coordinate in (float("nan"), float("inf"), 1e308):
+            feature = {"id": "bad", "kind": "boundary",
+                       "layer_id": "project.territory.boundary",
+                       "ring": [[0, 0], [coordinate, 0], [0, 10]], "props": {}}
+            report = studio_core.preflight_project([feature], target="grado")
+            self.assertFalse(report["can_export"])
+            self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
+
     def test_style_overrides_affect_all_outputs(self):
         # правка эталонного знака видна на холсте (frontend_styles, px), в
         # библиотеке по id и в стиле слоя по коду (PDF, мм); сброс — эталон

@@ -780,6 +780,30 @@ class Handler(SimpleHTTPRequestHandler):
             # слои, созданные в панели студии («+ слой») — их шаблон
             # маршрутизации не встроен в сервер, приходит с холста
             layers = body.get("layers")
+            if not isinstance(features, list):
+                raise BadRequest("features must be an array")
+            if params is not None and not isinstance(params, dict):
+                raise BadRequest("params must be an object")
+            if layers is not None and (not isinstance(layers, list)
+                                       or any(not isinstance(item, dict)
+                                              for item in layers)):
+                raise BadRequest("layers must be an array of objects")
+            for key, expected in (("projectStyles", dict),
+                                  ("projectCustomKinds", list),
+                                  ("albumConfig", dict)):
+                if body.get(key) is not None and not isinstance(body[key], expected):
+                    raise BadRequest(f"{key} has invalid type")
+            output_targets = {
+                "/api/album": "album", "/api/grado": "grado",
+                "/api/dxf": "dxf", "/api/print": "print",
+            }
+            if self.path in output_targets:
+                report = studio_core.preflight_project(
+                    features, layers=layers, target=output_targets[self.path])
+                if report["errors"]:
+                    self._json({"error": "project preflight failed",
+                                "report": report}, 400)
+                    return
             if self.path == "/api/preflight":
                 out = studio_core.preflight_project(
                     features, layers=layers, target=body.get("target", "grado"))

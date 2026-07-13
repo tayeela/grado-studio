@@ -578,13 +578,19 @@ def _integer(value, default=0):
     except (TypeError, ValueError, OverflowError):
         return default
 
+
+def _floor_count(value, default=9):
+    """Этажность из внешних данных в тех же пределах, что и поле Студии."""
+    floors = _integer(value, default)
+    return floors if 1 <= floors <= 75 else default
+
 KIND_ATTRS = {
     "boundary": lambda p: {"name": p.get("name", "Территория")},
     "restrict": lambda p: {"kind": p.get("kind", "ограничение")},
     "zone": lambda p: {"zone_code": p.get("zone_title", "Ж"),
                        "zone_title": p.get("zone_title", "Ж-1")},
     "building": lambda p: {"purpose": p.get("purpose", "МКД"),
-                           "floors": _integer(p.get("floors"), 9)},
+                           "floors": _floor_count(p.get("floors"), 9)},
     "redline": lambda p: {"status": "устанавливаемая"},
     "social": lambda p: {"kind": p.get("kind", "ОО+ДОО"),
                          "capacity": _integer(p.get("capacity"), 0)},
@@ -745,6 +751,17 @@ def _user_layer_templates(layers):
     return out
 
 
+MAX_TEP_COORDINATE = 1_000_000_000.0
+
+
+def _finite_geometry_coordinates(value):
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(_finite_geometry_coordinates(item) for item in value)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    return math.isfinite(value) and abs(value) <= MAX_TEP_COORDINATE
+
+
 def preflight_project(features, layers=None, target="grado"):
     """Проверить, что выпуск не потеряет объекты молча.
 
@@ -810,7 +827,7 @@ def preflight_project(features, layers=None, target="grado"):
                          isinstance(coords[0], list) and len(coords[0]) >= 4)
             else:
                 valid = False
-            if not valid:
+            if not valid or not _finite_geometry_coordinates(coords):
                 raise ValueError("недостаточно точек")
         except (KeyError, IndexError, TypeError, ValueError, OverflowError):
             broken.append(label)
@@ -958,6 +975,88 @@ def _ring_area_ha(feature):
                           "coordinates": [feature["ring"]]}) / 10000.0
 
 
+def _tep_number(value):
+    number = float(value)
+    if not math.isfinite(number) or abs(number) > MAX_TEP_COORDINATE:
+        raise ValueError("coordinate outside supported range")
+    return number
+
+
+def _tep_points(value, minimum):
+    if not isinstance(value, (list, tuple)) or len(value) < minimum:
+        raise ValueError("invalid point sequence")
+    points = []
+    for point in value:
+        if not isinstance(point, (list, tuple)) or len(point) < 2:
+            raise ValueError("invalid point")
+        points.append([_tep_number(point[0]), _tep_number(point[1])])
+    return points
+
+
+def _normalize_tep_features(features):
+    """Безопасный числовой снимок геометрии для живого расчёта.
+
+    UI уже санирует проект, но ядро также вызывается напрямую из API и тестов.
+    Повреждённые объекты не должны ронять весь расчёт или протаскивать NaN.
+    """
+    if not isinstance(features, (list, tuple)):
+        return []
+    normalized = []
+    for feature in features:
+        if not isinstance(feature, dict) or not isinstance(feature.get("kind"), str):
+            continue
+        clean = dict(feature)
+        clean["props"] = (dict(feature["props"])
+                          if isinstance(feature.get("props"), dict) else {})
+        try:
+            if "ring" in clean:
+                clean["ring"] = _tep_points(clean["ring"], 3)
+            if "line" in clean:
+                clean["line"] = _tep_points(clean["line"], 2)
+            if "point" in clean:
+                clean["point"] = _tep_points([clean["point"]], 1)[0]
+            for key in ("circle", "arc"):
+                if key not in clean:
+                    continue
+                raw = clean[key]
+                if not isinstance(raw, dict):
+                    raise ValueError("invalid curve")
+                curve = dict(raw)
+                for field in ("cx", "cy", "r"):
+                    curve[field] = _tep_number(curve[field])
+                if curve["r"] <= 0:
+                    raise ValueError("invalid radius")
+                if key == "arc":
+                    curve["a0"] = _tep_number(curve.get("a0", 0))
+                    curve["sweep"] = _tep_number(curve.get("sweep", 0))
+                clean[key] = curve
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+        normalized.append(clean)
+    return normalized
+
+
+def _normalized_tep_params(params):
+    if not isinstance(params, dict):
+        return {}
+    limits = {
+        "density": (0, 1000), "ratio_zh": (0, 100),
+        "percent_vpp": (0, 100), "education_zone": (1, 2),
+        "territory_mode": (1, 2), "k_rail": (0, 10), "k_ba": (0, 10),
+    }
+    result = {}
+    for key, (minimum, maximum) in limits.items():
+        try:
+            value = float(params.get(key))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if key in {"education_zone", "territory_mode"} and value not in {1.0, 2.0}:
+            continue
+        if math.isfinite(value) and minimum <= value <= maximum:
+            result[key] = value
+    return result
+
+
 # Классификатор — реестр ролей слоёв (tep_role, topology). ТЭП считается
 # по ролям, а не по литералам kind (docs/fixes-geometry-layout.md, шаг 4):
 # добавление нового слоя-здания = запись в классификаторе, не правка кода.
@@ -1056,7 +1155,7 @@ def _clip_to_territory(features):
     return kept
 
 
-def make_engine(features, params=None):
+def _make_engine_from_normalized(features, params):
     engine = Engine.from_file(PRESET)
     # ТЭП считается ВНУТРИ границы территории разработки, а не по всей карте
     features = _clip_to_territory(features)
@@ -1066,11 +1165,14 @@ def make_engine(features, params=None):
     if inputs.get("terr_area", 0) == 0:
         inputs.pop("terr_area", None)  # пустой холст → дефолт пресета
     engine.set_inputs(**inputs)
-    for key in ("density", "ratio_zh", "percent_vpp", "education_zone",
-                "territory_mode", "k_rail", "k_ba"):
-        if params and params.get(key) is not None:
-            engine.set_input(key, float(params[key]))
+    for key, value in params.items():
+        engine.set_input(key, value)
     return engine
+
+
+def make_engine(features, params=None):
+    return _make_engine_from_normalized(
+        _normalize_tep_features(features), _normalized_tep_params(params))
 
 
 def compute_tep(features, params=None):
@@ -1078,14 +1180,16 @@ def compute_tep(features, params=None):
 
     Все показатели считаются ВНУТРИ границы территории разработки (роль
     terr_area): здания/зоны вне границы в ТЭП не входят."""
+    features = _normalize_tep_features(features)
+    params = _normalized_tep_params(params)
     has_territory = any(_is_territory(f) for f in features)
     features = _clip_to_territory(features)
-    engine = make_engine(features, params)   # clip идемпотентен
+    engine = _make_engine_from_normalized(features, params)  # clip идемпотентен
     fact_spp = 0.0
     for f in features:
         cls = _class_of(f)
         if cls and cls.tep_role == "building_footprint" and "ring" in f:
-            floors = _integer(f.get("props", {}).get("floors"), 9)
+            floors = _floor_count(f.get("props", {}).get("floors"), 9)
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
     results = engine.results()

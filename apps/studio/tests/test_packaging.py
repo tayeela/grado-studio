@@ -214,6 +214,8 @@ process.stdout.write(JSON.stringify({
             (123.45, 177.7, "2.5", 33.3, 99.5),
             (50, 60, "invalid", 1, 0),
             (250, 100, 0, 60, 100),
+            (100, 100, "1000000000000", "invalid", "invalid"),
+            (100, 100, None, None, ""),
         ):
             scenarios.append({
                 "features": [
@@ -307,6 +309,19 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         self.assertTrue(report["can_export"])
         self.assertEqual(report["summary"]["exportable"], 3)
 
+        payload["features"][0] = {
+            "id": 1, "kind": "boundary",
+            "layer_id": "project.territory.boundary",
+            "ring": [[0, 0], [1e308, 0], [0, 10]],
+        }
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
+             json.dumps(payload)], check=True, capture_output=True, text=True,
+        )
+        report = json.loads(completed.stdout)
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
+
     def test_frontend_defensively_restores_projects_and_async_errors(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
@@ -317,6 +332,31 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         self.assertIn("Object.create(null)", app)
         self.assertIn('window.addEventListener("unhandledrejection"', app)
         self.assertIn("position: fixed", styles.split("#errbar", 1)[1].split("}", 1)[0])
+
+    def test_tep_requests_cannot_overwrite_newer_project_state(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("let tepRequestVersion = 0", app)
+        self.assertIn("tepAbortController?.abort()", app)
+        self.assertIn("requestVersion !== tepRequestVersion", app)
+        self.assertIn("window.lastTepSignature === requestBody", app)
+        self.assertIn("function renderTepUnavailable", app)
+        self.assertIn('new Set(["doo_places", "school_places", "policlinic_places"])', app)
+
+    def test_source_import_skips_broken_objects_without_aborting_batch(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        imports = (root / "apps/studio/web/app-import.js").read_text(encoding="utf-8")
+        data = (root / "apps/studio/web/app-data.js").read_text(encoding="utf-8")
+
+        importer = app.split("function importSourceFeatures(features)", 1)[1].split(
+            "const DEFAULT_ALBUM_CONFIG", 1)[0]
+        self.assertIn("try {", importer)
+        self.assertIn("invalid++", importer)
+        self.assertIn("return { added, dup, invalid }", importer)
+        self.assertIn("поврежд. пропущено", imports)
+        self.assertIn("invalidAll", data)
 
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]
