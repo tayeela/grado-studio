@@ -22,6 +22,10 @@ for source, destination in (
 ):
     for target, files in data_files_for_tree(ROOT, source, destination):
         datas.extend((path, target) for path in files)
+datas.append((
+    str(ROOT / "apps/wizard/grado_wizard/album_templates.json"),
+    "grado_wizard",
+))
 
 hiddenimports = ["server", "studio_core", "webhub"]
 for package in (

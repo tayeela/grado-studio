@@ -58,6 +58,8 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("0.9.0-beta.8", version_text)
         self.assertTrue((root / "packaging/AppIcon.ico").is_file())
         self.assertTrue((root / "packaging/windows.spec").is_file())
+        spec = (root / "packaging/windows.spec").read_text(encoding="utf-8")
+        self.assertIn("grado_wizard/album_templates.json", spec)
         installer = (root / "packaging/windows-installer.iss").read_text(encoding="utf-8")
         self.assertIn("GradoStudio.Project", installer)
         self.assertIn("PrivilegesRequired=lowest", installer)
