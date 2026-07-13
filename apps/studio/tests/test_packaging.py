@@ -49,6 +49,11 @@ class TestPackagingResources(unittest.TestCase):
             self.assertNotIn('href="/', html)
             self.assertLess(html.index("pages-adapter.js"), html.index("app.js"))
             self.assertNotIn("презентационная страница", html.lower())
+            release = json.loads((output / "version.json").read_text(
+                encoding="utf-8"))["bundle_version"]
+            self.assertIn(f'window.__GRADO_ASSET_VERSION__="{release}"', html)
+            self.assertIn(f'src="./app.js?v={release}"', html)
+            self.assertIn(f'href="./redesign/studio2.css?v={release}"', html)
 
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]

@@ -1,6 +1,8 @@
 """Собрать статическую браузерную редакцию Студии для GitHub Pages."""
 
 import argparse
+import json
+import re
 import shutil
 from pathlib import Path
 
@@ -35,8 +37,20 @@ def build_pages(destination):
 
     html = (WEB / "index.html").read_text(encoding="utf-8")
     html = html.replace('href="/', 'href="./').replace('src="/', 'src="./')
+    release = json.loads((WEB / "version.json").read_text(encoding="utf-8"))[
+        "bundle_version"
+    ]
     marker = '<script src="./canvas-theme.js"></script>'
-    html = html.replace(marker, '<script src="./pages-adapter.js"></script>\n' + marker)
+    html = html.replace(
+        marker,
+        f'<script>window.__GRADO_ASSET_VERSION__="{release}";</script>\n'
+        '<script src="./pages-adapter.js"></script>\n' + marker,
+    )
+    html = re.sub(
+        r'((?:href|src)="\./[^"?#]+)(")',
+        rf'\1?v={release}\2',
+        html,
+    )
     (destination / "index.html").write_text(html, encoding="utf-8")
     return destination
 
