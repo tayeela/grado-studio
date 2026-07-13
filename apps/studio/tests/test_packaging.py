@@ -64,6 +64,27 @@ class TestPackagingResources(unittest.TestCase):
             adapter = (output / "pages-adapter.js").read_text(encoding="utf-8")
             self.assertIn('new URL("./styles.json"', adapter)
 
+    def test_pages_build_does_not_reset_active_desktop_styles(self):
+        root = Path(__file__).parents[3]
+        sys.path.insert(0, str(root / "apps/studio"))
+        import studio_core
+        original = studio_core.current_style_overrides()
+        override = {"boundary.line": {"stroke": "#abcdef"}}
+        try:
+            studio_core.apply_style_overrides(override)
+            with tempfile.TemporaryDirectory() as tmp:
+                output = build_pages(tmp)
+                packaged = json.loads((output / "styles.json").read_text(
+                    encoding="utf-8"))
+            self.assertEqual(studio_core.current_style_overrides(), override)
+            self.assertEqual(
+                studio_core.frontend_styles()["boundary.line"]["stroke"],
+                "#abcdef",
+            )
+            self.assertNotEqual(packaged["boundary.line"]["stroke"], "#abcdef")
+        finally:
+            studio_core.apply_style_overrides(original)
+
     def test_accessibility_layer_replaces_native_browser_tooltips(self):
         root = Path(__file__).parents[3]
         source = (root / "apps/studio/web/redesign/a11y.js").read_text(
@@ -89,7 +110,10 @@ class TestPackagingResources(unittest.TestCase):
         self.assertNotIn('class="modal-x" title=', modal_sources)
         self.assertIn(".modal-x, .panel-close, .errbar-close", a11y)
         self.assertIn('id="start-draw"', html)
+        self.assertIn('id="start-unlock"', html)
         self.assertIn('title.textContent = "Начертите первый объект"', app)
+        self.assertIn("function isDrawableLayer", app)
+        self.assertIn("!layer.annotation && !layer.import_only && !layer.locked", app)
         self.assertIn('document.getElementById("cv")?.focus()', app)
 
     def test_panel_resizer_prevents_selection_and_always_cleans_up(self):
@@ -181,6 +205,62 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(browser["fact"], desktop["fact"])
         self.assertEqual(browser["rows"], desktop_rows)
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine parity")
+    def test_browser_tep_matches_desktop_engine_at_numeric_edges(self):
+        root = Path(__file__).parents[3]
+        scenarios = []
+        for width, height, floors, density, ratio in (
+            (17.3, 19.1, 2.5, 7.5, 17),
+            (123.45, 177.7, "2.5", 33.3, 99.5),
+            (50, 60, "invalid", 1, 0),
+            (250, 100, 0, 60, 100),
+        ):
+            scenarios.append({
+                "features": [
+                    {"kind": "boundary", "ring": [
+                        [0, 0], [width, 0], [width, height], [0, height],
+                    ], "props": {}},
+                    {"kind": "restrict", "ring": [
+                        [0, 0], [width / 3, 0],
+                        [width / 3, height / 4], [0, height / 4],
+                    ], "props": {}},
+                    {"kind": "building", "ring": [
+                        [width * .2, height * .2], [width * .55, height * .2],
+                        [width * .55, height * .5], [width * .2, height * .5],
+                    ], "props": {"floors": floors}},
+                ],
+                "params": {
+                    "density": density, "ratio_zh": ratio,
+                    "percent_vpp": 13.5, "education_zone": 2,
+                    "territory_mode": 2, "k_rail": .5, "k_ba": .25,
+                },
+            })
+        script = r"""
+const core = require(process.argv[1]);
+const scenarios = JSON.parse(process.argv[2]);
+process.stdout.write(JSON.stringify(scenarios.map(payload => {
+  const out = core.computeTep(payload);
+  return {inputs: out.inputs, fact: out.fact,
+    rows: Object.fromEntries(out.results.map(row => [row.id, row.value]))};
+})));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
+             json.dumps(scenarios)],
+            check=True, capture_output=True, text=True,
+        )
+        browser_results = json.loads(completed.stdout)
+        sys.path.insert(0, str(root / "apps/studio"))
+        import studio_core
+        for scenario, browser in zip(scenarios, browser_results):
+            desktop = studio_core.compute_tep(
+                scenario["features"], scenario["params"])
+            expected = {
+                "inputs": desktop["inputs"], "fact": desktop["fact"],
+                "rows": {row["id"]: row["value"] for row in desktop["results"]},
+            }
+            self.assertEqual(browser, expected)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser preflight")
     def test_browser_preflight_rejects_invalid_geometry(self):
         root = Path(__file__).parents[3]
@@ -202,6 +282,30 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         self.assertFalse(report["can_export"])
         self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
         self.assertEqual(report["errors"][0]["feature_ids"], ["2"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser preflight")
+    def test_browser_preflight_accepts_supported_import_layers_and_curves(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.argv[2]))));
+"""
+        payload = {"target": "grado", "features": [
+            {"id": 1, "kind": "boundary",
+             "layer_id": "project.territory.boundary",
+             "circle": {"cx": 0, "cy": 0, "r": 100}},
+            {"id": 2, "kind": "generic", "layer_id": "source.osm.roads",
+             "line": [[0, 0], [10, 10]]},
+            {"id": 3, "kind": "generic", "layer_id": "source.nspd.buildings",
+             "ring": [[0, 0], [10, 0], [10, 10], [0, 10]]},
+        ]}
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
+             json.dumps(payload)], check=True, capture_output=True, text=True,
+        )
+        report = json.loads(completed.stdout)
+        self.assertTrue(report["can_export"])
+        self.assertEqual(report["summary"]["exportable"], 3)
 
     def test_frontend_defensively_restores_projects_and_async_errors(self):
         root = Path(__file__).parents[3]

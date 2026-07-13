@@ -36,10 +36,14 @@ def build_pages(destination):
     if studio_path not in sys.path:
         sys.path.insert(0, studio_path)
     import studio_core
-    studio_core.apply_style_overrides({})
+    active_overrides = studio_core.current_style_overrides()
+    try:
+        studio_core.apply_style_overrides({})
+        base_styles = studio_core.frontend_styles()
+    finally:
+        studio_core.apply_style_overrides(active_overrides)
     (destination / "styles.json").write_text(
-        json.dumps(studio_core.frontend_styles(), ensure_ascii=False,
-                   separators=(",", ":")),
+        json.dumps(base_styles, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
     redesign.mkdir()

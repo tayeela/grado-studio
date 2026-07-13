@@ -71,6 +71,11 @@ def apply_style_overrides(overrides):
     STYLE_LIB = merged_library()
 
 
+def current_style_overrides():
+    """Текущие правки в памяти — для временных операций без потери сессии."""
+    return _render_style.style_overrides()
+
+
 def save_style_overrides(overrides):
     """Сохранить правки знаков на диск (атомарно) и применить."""
     if not isinstance(overrides, dict):
@@ -565,16 +570,24 @@ _KIND_TO_LAYER = {"boundary": "project.territory.boundary",
 _CODE_TO_LAYER = {t["code"]: lid for lid, t in LAYER_TEMPLATES.items()
                   if lid.startswith("project.")}
 
+
+def _integer(value, default=0):
+    """Безопасное приведение чисел из JSON/HTML к целому без падения API."""
+    try:
+        return int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
 KIND_ATTRS = {
     "boundary": lambda p: {"name": p.get("name", "Территория")},
     "restrict": lambda p: {"kind": p.get("kind", "ограничение")},
     "zone": lambda p: {"zone_code": p.get("zone_title", "Ж"),
                        "zone_title": p.get("zone_title", "Ж-1")},
     "building": lambda p: {"purpose": p.get("purpose", "МКД"),
-                           "floors": int(p.get("floors", 9))},
+                           "floors": _integer(p.get("floors"), 9)},
     "redline": lambda p: {"status": "устанавливаемая"},
     "social": lambda p: {"kind": p.get("kind", "ОО+ДОО"),
-                         "capacity": int(p.get("capacity", 0))},
+                         "capacity": _integer(p.get("capacity"), 0)},
     "public": lambda p: {"purpose": p.get("purpose", "Общественный центр")},
     "parcel": lambda p: {"cad_num": p.get("cad_num"),
                          "category": p.get("category"),
@@ -1072,7 +1085,7 @@ def compute_tep(features, params=None):
     for f in features:
         cls = _class_of(f)
         if cls and cls.tep_role == "building_footprint" and "ring" in f:
-            floors = int(f.get("props", {}).get("floors", 9))
+            floors = _integer(f.get("props", {}).get("floors"), 9)
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
     results = engine.results()
