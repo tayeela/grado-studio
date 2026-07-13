@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -21,7 +22,7 @@ REDESIGN = ("shell.css", "studio2.css", "cmdk.js", "a11y.js")
 def build_pages(destination):
     destination = Path(destination)
     destination.mkdir(parents=True, exist_ok=True)
-    for name in TOP_LEVEL + ("index.html", "site.css", "site.js"):
+    for name in TOP_LEVEL + ("index.html", "site.css", "site.js", "styles.json"):
         path = destination / name
         if path.exists():
             path.unlink()
@@ -31,6 +32,16 @@ def build_pages(destination):
 
     for name in TOP_LEVEL:
         shutil.copy2(WEB / name, destination / name)
+    studio_path = str(ROOT / "apps" / "studio")
+    if studio_path not in sys.path:
+        sys.path.insert(0, studio_path)
+    import studio_core
+    studio_core.apply_style_overrides({})
+    (destination / "styles.json").write_text(
+        json.dumps(studio_core.frontend_styles(), ensure_ascii=False,
+                   separators=(",", ":")),
+        encoding="utf-8",
+    )
     redesign.mkdir()
     for name in REDESIGN:
         shutil.copy2(WEB / "redesign" / name, redesign / name)
