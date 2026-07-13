@@ -1,8 +1,11 @@
 """
 py2app setup for macOS app bundle (ГРАДО Студия).
 
-Usage (requires py2app installed):
-  python3 packaging/py2app_setup.py py2app
+Supported release build (requires py2app installed):
+  python3 packaging/build_macos.py
+
+The release builder applies the current-macOS argv-emulation compatibility
+fix, signs and verifies the bundle, and creates a universal2 DMG.
 
 This bundles the Python studio + server + cores. Produces dist/ГРАДО Студия.app
 Supports opening .grado files (via CLI arg and Info.plist).
@@ -64,6 +67,8 @@ if ICON.exists():
     PLIST['CFBundleIconFile'] = 'AppIcon'
     PLIST['CFBundleDocumentTypes'][0]['CFBundleTypeIconFile'] = 'AppIcon'
 OPTIONS = {
+    # build_macos.py keeps this enabled and patches py2app's obsolete Carbon
+    # compatibility path so Finder can still deliver .grado open events.
     'argv_emulation': True,
     'packages': ['grado_compute', 'grado_geom', 'grado_model', 'grado_render', 'grado_layout', 'grado_reactive', 'grado_connectors', 'grado_wizard'],
     'includes': ['studio_core'],

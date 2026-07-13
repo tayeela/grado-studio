@@ -20,7 +20,8 @@
 
 На Windows установите готовое приложение со страницы
 [выпусков](https://github.com/tayeela/grado-studio-pages/releases/latest) — Python не нужен.
-На macOS используйте `ГРАДО Студия.command`. Подробная инструкция:
+На macOS установите universal2-приложение из DMG; для запуска из исходников
+остаётся `ГРАДО Студия.command`. Подробная инструкция:
 [docs/INSTALL.md](docs/INSTALL.md).
 
 ```sh
