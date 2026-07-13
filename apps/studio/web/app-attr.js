@@ -158,7 +158,7 @@ function openAttributeTable(layer) {
       <label class="at-filter">Показать
         <select id="at-flt"><option value="all">все</option><option value="selected">выделенные</option></select></label>
     </div>
-    <div class="modal-body compact" style="padding:0"><div class="attr-scroll" id="at-scroll"></div></div>
+    <div class="modal-body compact"><div class="attr-scroll" id="at-scroll"></div></div>
     <div class="modal-actions"><span class="muted">клик — выделить (Shift/Ctrl — несколько) · двойной клик — приблизить</span></div>
   </div>`;
   document.body.appendChild(overlay);
@@ -243,9 +243,12 @@ function openAddFieldDialog(layer, onDone) {
   const ov = document.createElement("div");
   ov.className = "modal-overlay";
   ov.innerHTML = `<div class="modal fmt-modal ask-modal">
-    <div class="modal-head">Новое поле · ${escHtml(layer.title)}</div>
-    <label>Имя поля<input type="text" id="af-name" placeholder="напр. население"></label>
-    <label>Тип<select id="af-type">${Object.entries(FIELD_TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
+    <div class="modal-head">Новое поле · ${escHtml(layer.title)}
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body">
+      <label>Имя поля<input type="text" id="af-name" placeholder="напр. население"></label>
+      <label>Тип<select id="af-type">${Object.entries(FIELD_TYPES).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select></label>
+    </div>
     <div class="modal-actions"><span class="spacer"></span>
       <button id="af-cancel">Отмена</button><button id="af-ok" class="primary">Создать</button></div></div>`;
   document.body.appendChild(ov);
@@ -263,6 +266,7 @@ function openAddFieldDialog(layer, onDone) {
   q("af-name").addEventListener("keydown", e => { if (e.key === "Enter") create(); });
   q("af-ok").addEventListener("click", create);
   q("af-cancel").addEventListener("click", close);
+  ov.querySelector(".modal-x").addEventListener("click", close);
   ov.addEventListener("click", e => { if (e.target === ov) close(); });
 }
 
@@ -303,9 +307,12 @@ function openManageFieldsDialog(layer, onDone) {
     ov.querySelectorAll(".mf-del").forEach(el => el.onclick = () => { syncInputs(); work.splice(+el.dataset.i, 1); render(); });
   };
   ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
-    <div class="modal-head">Поля слоя · ${escHtml(layer.title)}</div>
-    <div class="fc-help" style="margin:0 var(--sp-4)">Имя, тип, порядок и значение по умолчанию своих полей. Значение по умолчанию заполняет пустые ячейки и новые объекты.</div>
-    <table class="attr-table mf-table"><thead><tr><th>Имя</th><th>Тип</th><th>По умолчанию</th><th></th></tr></thead><tbody id="mf-body"></tbody></table>
+    <div class="modal-head">Поля слоя · ${escHtml(layer.title)}
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body compact">
+      <div class="fc-help">Имя, тип, порядок и значение по умолчанию своих полей. Значение по умолчанию заполняет пустые ячейки и новые объекты.</div>
+      <div class="mf-table-wrap"><table class="attr-table mf-table"><thead><tr><th>Имя</th><th>Тип</th><th>По умолчанию</th><th></th></tr></thead><tbody id="mf-body"></tbody></table></div>
+    </div>
     <div class="modal-actions"><span class="spacer"></span>
       <button id="mf-cancel">Отмена</button><button id="mf-ok" class="primary">Применить</button></div></div>`;
   document.body.appendChild(ov);
@@ -345,6 +352,7 @@ function openManageFieldsDialog(layer, onDone) {
     toast("Поля слоя обновлены");
   });
   q("mf-cancel").addEventListener("click", close);
+  ov.querySelector(".modal-x").addEventListener("click", close);
   ov.addEventListener("click", e => { if (e.target === ov) close(); });
 }
 
@@ -354,7 +362,8 @@ function openFieldCalc(layer, getFeats, onDone) {
   const ov = document.createElement("div");
   ov.className = "modal-overlay";
   ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg fc-modal">
-    <div class="modal-head">Калькулятор полей · ${escHtml(layer.title)}</div>
+    <div class="modal-head">Калькулятор полей · ${escHtml(layer.title)}
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
     <div class="fmt-sub">Куда записать</div>
     <label class="chk"><input type="radio" name="fc-mode" id="fc-new" checked> новое поле</label>
@@ -409,6 +418,7 @@ function openFieldCalc(layer, getFeats, onDone) {
     toast(`Вычислено: ${ok} объект(ов) → «${out}»${bad ? `, пропущено ${bad}` : ""}`);
   });
   q("fc-cancel").addEventListener("click", close);
+  ov.querySelector(".modal-x").addEventListener("click", close);
   ov.addEventListener("click", e => { if (e.target === ov) close(); });
   preview();
 }

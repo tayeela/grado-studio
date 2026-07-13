@@ -180,7 +180,8 @@ function openLayerStyle(layer, opts = {}) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
-    <div class="modal-head">Оформление слоя · ${escHtml(layer.title)}</div>
+    <div class="modal-head">Оформление слоя · ${escHtml(layer.title)}
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
     <div class="seg" id="ls-mode" role="tablist">
       <button type="button" class="seg-btn${mode === "single" ? " active" : ""}" data-mode="single">Единый стиль</button>
@@ -260,11 +261,11 @@ function openLayerStyle(layer, opts = {}) {
       </div>` : ""}
     </div>
     <div id="ls-rules" style="display:${mode === "rules" ? "" : "none"}">
-      <div class="fc-help" style="margin:0 var(--sp-4)">Знак объекта выбирается по значению его атрибута.
+      <div class="fc-help">Знак объекта выбирается по значению его атрибута.
         Первое совпавшее правило побеждает; объекты без совпадения рисуются единым стилем слоя (вкладка слева).</div>
-      <table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Оп</th><th>Значение</th><th>Знак</th><th></th></tr></thead>
-        <tbody id="cr-body"></tbody></table>
-      <button id="cr-add" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ правило</button>
+      <div class="mf-table-wrap"><table class="attr-table mf-table"><thead><tr><th>Поле</th><th>Оп</th><th>Значение</th><th>Знак</th><th></th></tr></thead>
+        <tbody id="cr-body"></tbody></table></div>
+      <button id="cr-add" class="fmt-copy-btn">+ правило</button>
     </div>
     </div>
     <div class="modal-actions">
@@ -509,6 +510,7 @@ function openLayerStyle(layer, opts = {}) {
     toast(mode === "rules" && layer.rules ? `Оформление по значению поля: ${layer.rules.length} правил(о)` : "Оформление слоя применено");
   });
   $("ls-cancel").addEventListener("click", restore);
+  overlay.querySelector(".modal-x").addEventListener("click", restore);
   $("ls-reset").addEventListener("click", () => {
     delete layer.fmt; delete layer.rules;
     closePopups(); renderLayers(); draw(); persist();

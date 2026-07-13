@@ -462,20 +462,21 @@ function openProjectStyles() {
     }
     Object.entries(ps).forEach(([id, st]) => {
       const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;gap:6px;margin:3px 0;";
+      row.className = "ps-row";
       const sw = document.createElement("span");
-      sw.style.cssText = `width:14px;height:14px;background:${st.fill || "#f0e8d8"};border:1px solid ${st.stroke || "#5c4630"};border-radius:2px;flex:none;`;
+      sw.className = "ps-swatch";
+      sw.style.cssText = `background:${st.fill || "#f0e8d8"};border-color:${st.stroke || "#5c4630"}`;
       const nm = document.createElement("span");
       nm.textContent = `${st.title || id} (${id})`;
-      nm.style.flex = "1";
-      nm.style.overflow = "hidden";
-      nm.style.textOverflow = "ellipsis";
+      nm.className = "ps-name";
       const ed = document.createElement("button");
-      ed.textContent = "✎";
+      ed.className = "ps-icon";
+      ed.innerHTML = '<svg class="ic"><use href="#ic-format"/></svg>';
       ed.title = "Редактировать";
       ed.onclick = () => editPS(id, st, renderList);
       const dl = document.createElement("button");
-      dl.textContent = "✕";
+      dl.className = "ps-icon danger";
+      dl.innerHTML = '<svg class="ic"><use href="#ic-trash"/></svg>';
       dl.title = "Удалить";
       dl.onclick = async () => {
         if (await uiConfirm(`Удалить стиль проекта «${id}»?`)) {
@@ -494,7 +495,8 @@ function openProjectStyles() {
     const f = (st.fill && st.fill[0] === "#") ? st.fill : "#f0e8d8";
     const s = (st.stroke && st.stroke[0] === "#") ? st.stroke : "#5c4630";
     ed.innerHTML = `<div class="modal ask-modal" style="width:280px">
-      <div class="modal-head">Редактировать «${id}»</div>
+      <div class="modal-head">Редактировать «${id}»
+        <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
       <div class="modal-body">
         <label>Название<input id="ps-t" value="${st.title || id}"></label>
         <label>Заливка<input type="color" id="ps-f" value="${f}"></label>
@@ -519,6 +521,7 @@ function openProjectStyles() {
       afterChange();
     };
     $e("ps-cancel").onclick = () => ed.remove();
+    ed.querySelector(".modal-x").onclick = () => ed.remove();
     ed.onclick = e => { if (e.target === ed) ed.remove(); };
   }
   $("ps-create").onclick = async () => {
@@ -3222,7 +3225,8 @@ function openNewLayerDialog() {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.innerHTML = `<div class="modal fmt-modal">
-    <div class="modal-head">Новый слой</div>
+    <div class="modal-head">Новый слой
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
       <label>Название<input type="text" id="nl-title" placeholder="напр. Озеленение" autofocus></label>
       <label>Геометрия<select id="nl-geom">${
@@ -3261,6 +3265,7 @@ function openNewLayerDialog() {
   $("nl-title").addEventListener("keydown", ev => { if (ev.key === "Enter") create(); });
   $("nl-create").addEventListener("click", () => create());
   $("nl-cancel").addEventListener("click", closePopups);
+  overlay.querySelector(".modal-x").addEventListener("click", closePopups);
   overlay.addEventListener("click", ev => { if (ev.target === overlay) closePopups(); });
 }
 
@@ -3309,8 +3314,8 @@ function openManageKinds() {
       <span class="mk-sw" style="background:${swatchOf(k.style_id)}"></span>
       <span class="mk-nm">${escHtml(k.label || k.kind)}</span>
       <span class="mk-meta">${GEOM_LABEL[k.geometry_type] || k.geometry_type}${cov}</span>
-      ${custom ? `<button class="mk-edit" data-kind="${escHtml(k.kind)}" title="Изменить">✎</button>
-        <button class="mk-del" data-kind="${escHtml(k.kind)}" title="Удалить">✕</button>`
+      ${custom ? `<button class="mk-edit" data-kind="${escHtml(k.kind)}" title="Изменить"><svg class="ic"><use href="#ic-format"/></svg></button>
+        <button class="mk-del" data-kind="${escHtml(k.kind)}" title="Удалить"><svg class="ic"><use href="#ic-trash"/></svg></button>`
       : `<span class="mk-builtin" title="встроенный тип — изменить нельзя">встроенный</span>`}
     </div>`;
   }
@@ -3375,18 +3380,20 @@ function openManageKinds() {
   overlay.innerHTML = `<div class="modal fmt-modal-lg mk-modal">
     <div class="modal-head">Типы слоёв
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
-    <div class="lib-hint">«Роль» нового слоя — считается в ТЭП и подхватывает знак. Встроенные типы менять нельзя, свои — добавляйте/правьте/удаляйте.</div>
-    <div id="mk-list" class="mk-list"></div>
-    <div class="mk-form">
-      <div class="fmt-sub" id="mk-form-title">Новый тип слоя</div>
-      <label>Название<input type="text" id="mk-label" placeholder="напр. Озеленение"></label>
-      <label>Геометрия<select id="mk-geom">
-        <option value="polygon">полигон</option><option value="polyline">линия</option>
-        <option value="point">точка</option><option value="arc">дуга</option><option value="circle">круг</option></select></label>
-      <label>Общие границы<select id="mk-topo">
-        <option value="flat">обычный слой</option>
-        <option value="coverage">покрытие (общие границы редактируются вместе)</option></select></label>
-      <label>Знак по умолчанию<select id="mk-style"></select></label>
+    <div class="modal-body compact">
+      <div class="lib-hint">«Роль» нового слоя — считается в ТЭП и подхватывает знак. Встроенные типы менять нельзя, свои — добавляйте/правьте/удаляйте.</div>
+      <div id="mk-list" class="mk-list"></div>
+      <div class="mk-form">
+        <div class="fmt-sub" id="mk-form-title">Новый тип слоя</div>
+        <label>Название<input type="text" id="mk-label" placeholder="напр. Озеленение"></label>
+        <label>Геометрия<select id="mk-geom">
+          <option value="polygon">полигон</option><option value="polyline">линия</option>
+          <option value="point">точка</option><option value="arc">дуга</option><option value="circle">круг</option></select></label>
+        <label>Общие границы<select id="mk-topo">
+          <option value="flat">обычный слой</option>
+          <option value="coverage">покрытие (общие границы редактируются вместе)</option></select></label>
+        <label>Знак по умолчанию<select id="mk-style"></select></label>
+      </div>
     </div>
     <div class="modal-actions">
       <button id="mk-cancel-edit" style="display:none">Отмена правки</button>
@@ -3443,7 +3450,7 @@ function openVariants() {
       <span class="var-nm">${escHtml(v.name)}</span>
       <span class="var-meta">${v.features.length} об. · ${escHtml(v.createdAt || "")}</span>
       <button class="var-load" data-id="${escHtml(v.id)}" title="Загрузить этот вариант">Загрузить</button>
-      <button class="var-del" data-id="${escHtml(v.id)}" title="Удалить вариант">✕</button>
+      <button class="var-del" data-id="${escHtml(v.id)}" title="Удалить вариант"><svg class="ic"><use href="#ic-trash"/></svg></button>
     </div>`).join("");
   }
   function render() {
@@ -3483,10 +3490,12 @@ function openVariants() {
   overlay.innerHTML = `<div class="modal fmt-modal-lg var-modal">
     <div class="modal-head">Варианты концепции
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
-    <div class="lib-hint">Снимок текущего проекта: попробуйте другую посадку/зонирование в новом варианте, сравните их ТЭП рядом. Загрузка заменяет рабочее состояние.</div>
-    <div id="var-list" class="var-list"></div>
-    <button id="var-save" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ Сохранить текущее как вариант</button>
-    <div id="var-cmp-out"></div>
+    <div class="modal-body compact">
+      <div class="lib-hint">Снимок текущего проекта: попробуйте другую посадку/зонирование в новом варианте, сравните их ТЭП рядом. Загрузка заменяет рабочее состояние.</div>
+      <div id="var-list" class="var-list"></div>
+      <button id="var-save" class="fmt-copy-btn">+ Сохранить текущее как вариант</button>
+      <div id="var-cmp-out"></div>
+    </div>
     <div class="modal-actions">
       <button id="var-compare" disabled>Сравнить с текущим</button>
       <span class="spacer"></span>
