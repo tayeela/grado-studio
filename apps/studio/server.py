@@ -1,6 +1,7 @@
 """ГРАДО Студия — локальный сервер рабочей программы.
 
     python3 apps/studio/server.py [порт] [/path/to/project.grado] [--open]
+    python3 apps/studio/server.py [порт] [/path/to/project.grado] [--desktop]
     python3 apps/studio/server.py [порт] --hub     ← веб-режим (совместная работа)
 
 Веб-режим (--hub): аккаунты по инвайт-кодам, проекты на сервере с живой
@@ -46,10 +47,19 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+def _desktop_mode():
+    """Запуск пользователем через приложение или системный лаунчер."""
+    return "--desktop" in sys.argv or bool(getattr(sys, "frozen", False))
+
+
 def _studio_data_dir():
     explicit = os.environ.get("GRADO_STUDIO_DATA_DIR")
     if explicit:
         return Path(explicit).expanduser()
+    if sys.platform == "win32" and _desktop_mode():
+        base = (os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or
+                str(Path.home() / "AppData" / "Local"))
+        return Path(base) / "GRADO Studio"
     if getattr(sys, "frozen", False) and sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "ГРАДО Студия"
     return Path(__file__).parent
@@ -777,7 +787,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def _should_open_browser():
-    return ("--open" in sys.argv or bool(getattr(sys, "frozen", False))) and \
+    return ("--open" in sys.argv or _desktop_mode()) and \
            os.environ.get("GRADO_NO_BROWSER") != "1"
 
 
@@ -794,8 +804,8 @@ def _running_studio_version(port):
 
 
 def _port_candidates(port):
-    """В приложении Finder ищем свободный порт; dev-запуск остаётся строгим."""
-    if getattr(sys, "frozen", False):
+    """В настольном запуске ищем свободный порт; dev-запуск остаётся строгим."""
+    if _desktop_mode():
         return range(port, port + 10)
     return (port,)
 
@@ -819,7 +829,7 @@ def main():
                     webbrowser.open(f"http://localhost:{candidate}")
                 print(f"ГРАДО Студия уже работает: http://localhost:{candidate}")
                 return 0
-            if not getattr(sys, "frozen", False):
+            if not _desktop_mode():
                 raise
     if not servers:
         raise OSError("no free local port for GRADO Studio")
