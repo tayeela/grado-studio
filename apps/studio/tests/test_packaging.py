@@ -165,6 +165,69 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("function enabledMenuItems", a11y)
         self.assertIn("item.getAttribute('aria-disabled') !== 'true'", a11y)
 
+    def test_command_palette_matches_web_and_current_ui_availability(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/redesign/cmdk.js").read_text(
+            encoding="utf-8")
+
+        self.assertIn("const isWeb = !!window.GRADO_STATIC", source)
+        self.assertIn("(!isWeb || !i.desktop)", source)
+        self.assertIn("(!i.available || i.available())", source)
+        self.assertIn('isWeb ? "Сохранить проект (.grado-web.json)"', source)
+        self.assertIn('available: () => toolEnabled("polygon")', source)
+        self.assertIn('desktop: true', source)
+
+    def test_layer_and_style_controls_have_specific_accessible_names(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        style_ui = (root / "apps/studio/web/app-style-ui.js").read_text(
+            encoding="utf-8")
+        styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn('aria-label="Показывать слой «${layerTitle}»"', app)
+        self.assertIn('aria-label="Действия со слоем «${layerTitle}»"', app)
+        self.assertIn('"Переместить выше"', app)
+        self.assertIn('"Переместить ниже"', app)
+        self.assertIn('aria-label="Включить заливку"', style_ui)
+        self.assertIn('aria-label="Удалить правило ${i + 1}"', style_ui)
+        self.assertIn('fieldCols.length ? "" : " disabled"', style_ui)
+        self.assertIn(".style-preview-canvas::before", styles)
+        self.assertIn("linear-gradient(90deg,#f8fafc 0 50%,#202938 50% 100%)", styles)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_adapter_validates_api_and_storage_failures(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], head: {appendChild: () => {}}, createElement: () => ({})};
+global.localStorage = {getItem: () => null, setItem: () => { throw new Error('quota'); }};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  const tep = await window.fetch('/api/tep', {method:'POST', body:'{"features":{}}'});
+  const grado = await window.fetch('/api/grado', {method:'POST', body:JSON.stringify({
+    features:[{id:1,kind:'boundary',layer_id:'project.territory.boundary',ring:[[0,0],[1e308,0],[0,1]]}]
+  })});
+  const autosave = await window.fetch('/api/autosave', {method:'POST', body:JSON.stringify({features:[]})});
+  process.stdout.write(JSON.stringify({tep:tep.status, grado:grado.status, autosave:autosave.status}));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(
+            {"tep": 400, "grado": 400, "autosave": 507},
+            json.loads(completed.stdout),
+        )
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine parity")
     def test_browser_tep_matches_desktop_engine_for_release_fixture(self):
         root = Path(__file__).parents[3]

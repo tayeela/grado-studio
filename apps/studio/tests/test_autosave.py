@@ -209,6 +209,80 @@ class ReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(server.RequestBodyTooLarge):
             handler._read_body(server.MAX_FILE_UPLOAD)
 
+    def test_browser_posts_require_same_origin(self):
+        handler = object.__new__(server.Handler)
+        handler.path = "/api/tep"
+        handler.headers = {
+            "Content-Length": "0",
+            "Host": "127.0.0.1:8643",
+            "Origin": "https://example.invalid",
+        }
+        handler._json = mock.Mock()
+
+        handler.do_POST()
+
+        handler._json.assert_called_once_with(
+            {"error": "cross-origin request rejected"}, 403)
+
+    def test_same_origin_and_native_posts_are_allowed(self):
+        handler = object.__new__(server.Handler)
+        handler.headers = {
+            "Host": "localhost:8643",
+            "Origin": "http://localhost:8643",
+        }
+        self.assertTrue(handler._same_origin_post())
+        handler.headers = {"Host": "localhost:8643"}
+        self.assertTrue(handler._same_origin_post())
+
+    def test_url_import_rejects_declared_oversized_download(self):
+        body = json.dumps({"url": "https://example.test/data.zip"}).encode()
+        handler = self.api_handler("/api/import-gisogd-url", body)
+        response = mock.MagicMock()
+        response.headers = {"Content-Length": str(server.MAX_FILE_UPLOAD + 1)}
+        context = mock.MagicMock()
+        context.__enter__.return_value = response
+        context.__exit__.return_value = False
+
+        with mock.patch.object(server.urllib.request, "urlopen", return_value=context):
+            handler.do_POST()
+
+        handler._json.assert_called_once_with(
+            {"error": "скачиваемый файл слишком большой"}, 413)
+
+    def test_url_import_rejects_local_file_scheme(self):
+        body = json.dumps({"url": "file:///etc/passwd"}).encode()
+        handler = self.api_handler("/api/import-gisogd-url", body)
+
+        with mock.patch.object(server.urllib.request, "urlopen") as urlopen:
+            handler.do_POST()
+
+        urlopen.assert_not_called()
+        handler._json.assert_called_once_with(
+            {"error": "допустимы только ссылки http и https"}, 400)
+
+    def test_bridge_rejects_oversized_and_non_object_bodies(self):
+        oversized = object.__new__(server.BridgeHandler)
+        oversized.path = "/add_feature"
+        oversized.headers = {"Content-Length": str(server.MAX_JSON_BODY + 1)}
+        oversized.rfile = io.BytesIO()
+        oversized._reply = mock.Mock()
+
+        oversized.do_POST()
+
+        oversized._reply.assert_called_once_with(
+            413, {"error": "request body is too large"})
+
+        invalid = object.__new__(server.BridgeHandler)
+        payload = b"[]"
+        invalid.path = "/add_feature"
+        invalid.headers = {"Content-Length": str(len(payload))}
+        invalid.rfile = io.BytesIO(payload)
+        invalid._reply = mock.Mock()
+
+        invalid.do_POST()
+
+        self.assertEqual(400, invalid._reply.call_args.args[0])
+
     @staticmethod
     def api_handler(path, body):
         handler = object.__new__(server.Handler)

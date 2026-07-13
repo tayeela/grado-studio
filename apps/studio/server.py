@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
+from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -236,6 +237,15 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
 
+    def _reply(self, status, payload):
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_OPTIONS(self):
         self.send_response(200)
         self._cors()
@@ -247,7 +257,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
             return
         try:
             n = int(self.headers.get("Content-Length", 0))
+            if n < 0:
+                raise BadRequest("invalid content length")
+            if n > MAX_JSON_BODY:
+                self._reply(413, {"error": "request body is too large"})
+                return
             data = json.loads(self.rfile.read(n).decode("utf-8"))
+            if not isinstance(data, dict):
+                raise BadRequest("JSON body must be an object")
             source = data.get("grado_source", "nspd")
             if source == "nspd":
                 out = studio_core.import_nspd(data)
@@ -261,12 +278,14 @@ class BridgeHandler(BaseHTTPRequestHandler):
                               "layer": data.get("grado_layer_name"),
                               "snapshot": out.get("snapshot"),
                               "diff": out.get("diff")})
+        except (TypeError, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self._reply(400, {"error": str(exc) or "invalid request"})
+            return
         except Exception:
             traceback.print_exc()
-        self.send_response(200)
-        self._cors()
-        self.end_headers()
-        self.wfile.write(b"OK")
+            self._reply(500, {"error": "bridge import failed"})
+            return
+        self._reply(200, {"ok": True})
 
     def log_message(self, fmt, *args):
         pass
@@ -343,6 +362,24 @@ class Handler(SimpleHTTPRequestHandler):
             self._json({"error": "нужен вход"}, 401)
             return False, None
         return True, login
+
+    def _same_origin_post(self):
+        """Браузерные POST принимаются только со страницы этого сервера.
+
+        У CLI и нативных интеграций Origin отсутствует — их не блокируем.
+        Проверка защищает локальные файловые и сетевые API от фонового вызова
+        произвольным сайтом, открытым в браузере пользователя.
+        """
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        try:
+            parsed = urlsplit(origin)
+        except ValueError:
+            return False
+        return parsed.scheme in {"http", "https"} and bool(host) and \
+            parsed.netloc.lower() == host
 
     def end_headers(self):
         # Safari охотно кэширует статику — интерфейс всегда свежий.
@@ -583,6 +620,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         try:
+            if not self._same_origin_post():
+                self._json({"error": "cross-origin request rejected"}, 403)
+                return
             allowed, hub_login = self._hub_gate(self.path)
             if not allowed:
                 return
@@ -688,6 +728,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if not url:
                     self.send_error(400, "url required")
                     return
+                parsed_url = urlsplit(url) if isinstance(url, str) else None
+                if not parsed_url or parsed_url.scheme not in {"http", "https"}:
+                    self._json({"error": "допустимы только ссылки http и https"}, 400)
+                    return
                 # ZIP по прямой ссылке (пользователь генерирует на портале).
                 # SSLContext c certifi обязателен (правило 6: сборка Python.org
                 # не видит системные CA); текст ошибки — в JSON-теле, не в
@@ -699,7 +743,14 @@ class Handler(SimpleHTTPRequestHandler):
                     with urllib.request.urlopen(
                             req, timeout=60,
                             context=studio_core.TILE_SSL_CTX) as resp:
-                        raw = resp.read()
+                        declared = resp.headers.get("Content-Length")
+                        if declared is not None and int(declared) > MAX_FILE_UPLOAD:
+                            self._json({"error": "скачиваемый файл слишком большой"}, 413)
+                            return
+                        raw = resp.read(MAX_FILE_UPLOAD + 1)
+                        if len(raw) > MAX_FILE_UPLOAD:
+                            self._json({"error": "скачиваемый файл слишком большой"}, 413)
+                            return
                 except Exception:
                     traceback.print_exc()
                     msg = json.dumps(
