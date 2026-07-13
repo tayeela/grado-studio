@@ -61,6 +61,7 @@
     { sec: "Вид и проект", items: [
       { t: "Вписать всё в экран", k: "F", run: fitAll },
       { t: "Переключить тему (свет / тёмная)", run: () => click("btn-theme") },
+      { t: "Параметры расчёта ТЭП…", run: () => click("btn-tep-editor") },
       { t: "Отменить", k: "⌘Z", run: () => click("btn-undo") },
       { t: "Вернуть", k: "⌘⇧Z", run: () => click("btn-redo") },
       { t: "Открыть проект…", run: () => click("btn-open") },
@@ -77,7 +78,7 @@
 
   const cmdk = $("cmdk"), q = $("cmdk-q"), list = $("cmdk-list");
   if (!cmdk || !q || !list) return;
-  let flat = [], sel = 0;
+  let flat = [], sel = 0, previousFocus = null;
 
   function render(query) {
     query = (query || "").trim().toLowerCase();
@@ -88,7 +89,7 @@
       html += `<div class="cmdk-sec">${g.sec}</div>`;
       for (const i of items) {
         const idx = flat.push(i) - 1;
-        html += `<div class="cmdk-row" data-i="${idx}"><svg class="ic"><use href="#i-search"/></svg>${i.t}${i.k ? `<span class="hint">${i.k}</span>` : ""}</div>`;
+        html += `<div class="cmdk-row" role="option" aria-selected="false" data-i="${idx}"><svg class="ic"><use href="#i-search"/></svg>${i.t}${i.k ? `<span class="hint">${i.k}</span>` : ""}</div>`;
       }
     }
     list.innerHTML = html || '<div class="cmdk-empty">Ничего не найдено</div>';
@@ -98,11 +99,21 @@
       r.addEventListener("click", () => run(+r.dataset.i));
     });
   }
-  function hi() { list.querySelectorAll(".cmdk-row").forEach(r => r.classList.toggle("sel", +r.dataset.i === sel)); }
+  function hi() {
+    list.querySelectorAll(".cmdk-row").forEach(r => {
+      const selected = +r.dataset.i === sel;
+      r.classList.toggle("sel", selected);
+      r.setAttribute("aria-selected", String(selected));
+      if (selected) {
+        if (!r.id) r.id = `cmdk-option-${r.dataset.i}`;
+        q.setAttribute("aria-activedescendant", r.id);
+      }
+    });
+  }
   function scrollSel() { const r = list.querySelector(`.cmdk-row[data-i="${sel}"]`); if (r) r.scrollIntoView({ block: "nearest" }); }
   function run(i) { const c = flat[i]; close(); if (c) setTimeout(() => c.run(), 0); }
-  function open() { cmdk.hidden = false; q.value = ""; render(""); q.focus(); }
-  function close() { cmdk.hidden = true; }
+  function open() { previousFocus = document.activeElement; cmdk.hidden = false; q.value = ""; render(""); q.focus(); }
+  function close() { cmdk.hidden = true; q.removeAttribute("aria-activedescendant"); if (previousFocus && previousFocus.isConnected) previousFocus.focus(); }
 
   $("open-cmdk") && $("open-cmdk").addEventListener("click", open);
   q.addEventListener("input", () => render(q.value));

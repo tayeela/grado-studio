@@ -205,6 +205,12 @@ class Handler(SimpleHTTPRequestHandler):
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
             return
+        if parsed0.path == "/favicon.ico":
+            # У приложения пока нет отдельного значка; пустой штатный ответ
+            # не создаёт ложную 404-ошибку в консоли браузера.
+            self.send_response(204)
+            self.end_headers()
+            return
         if parsed0.path == "/api/hub":
             info = {"hub": bool(HUB)}
             if HUB and hub_login:
@@ -282,8 +288,9 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 except Exception:
                     traceback.print_exc()
-            self.send_response(404)
-            self.end_headers()
+            # Обычный запуск без переданного .grado — штатный пустой ответ.
+            # 200 + null не засоряет консоль браузера ложной ошибкой 404.
+            self._send(b"null", "application/json; charset=utf-8")
             return
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)

@@ -108,7 +108,7 @@
   backdrop-filter:var(--glass-blur);border:1px solid var(--glass-border);border-radius:var(--r-md);
   box-shadow:var(--shadow-md),var(--glass-hi);padding:6px;animation:pop .16s var(--ease-out)}
 .ctx-item{padding:8px 11px;border-radius:var(--r-sm);font-size:var(--fs-13);color:var(--text);cursor:pointer}
-.ctx-item:hover{background:var(--accent-weak);color:var(--accent)}
+.ctx-item:hover,.ctx-item:focus{background:var(--accent-weak);color:var(--accent);outline:none}
 .ctx-item.danger{color:var(--danger)}
 .ctx-item.danger:hover{background:var(--danger-weak);color:var(--danger)}
 
@@ -122,6 +122,7 @@
   border-radius:var(--r-lg);box-shadow:var(--shadow-lg),var(--glass-hi);overflow:hidden;padding:0;min-width:0;
   animation:pop .18s var(--ease-out)}
 .modal-overlay .modal.fmt-modal-lg,.modal-overlay .modal.wide{width:min(560px,92vw)}
+.modal-overlay .modal.attr-modal{width:min(860px,96vw)}
 .modal-head{font-size:var(--fs-15);font-weight:600;letter-spacing:-.01em;padding:15px 18px;
   box-shadow:0 1px 0 var(--hairline);flex:0 0 auto}
 .modal-body{padding:16px 18px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;flex:1 1 auto}
@@ -157,7 +158,7 @@
   background:var(--canvas-bg);display:flex;align-items:center;padding:0 8px}
 
 /* поля диалога */
-.modal-overlay label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);margin:0}
+.modal-overlay label{display:flex;flex-direction:column;gap:4px;font-size:var(--fs-12);color:var(--muted);margin:0}
 .modal-overlay label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--text-2);
   font-size:var(--fs-12);width:100%;white-space:nowrap}
 .modal-overlay input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:0 0 auto}
@@ -172,6 +173,8 @@
   cursor:pointer;transition:background .12s,color .12s,transform .1s}
 .modal-overlay button:hover{color:var(--text);border-color:var(--hairline-2)}
 .modal-overlay button:active{transform:scale(.97)}
+.modal-overlay button:disabled{opacity:.38;cursor:not-allowed;transform:none}
+.modal-overlay button:disabled:hover{color:var(--text-2);border-color:var(--field-border)}
 .modal-overlay button.primary{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
 .modal-overlay button.primary:hover{background:var(--accent-hover)}
 .modal-overlay button.danger{color:var(--danger);border-color:transparent;background:var(--danger-weak)}
@@ -220,7 +223,7 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .data-status{font-size:11px;color:var(--muted)}
 
 /* ---- Журнал источников (#sources-body → .src-row) ---- */
-#sources-body{display:flex;flex-direction:column;gap:6px;font-size:var(--fs-12)}
+#sources-body{display:flex;flex-direction:column;gap:6px;font-size:var(--fs-12);max-height:min(58vh,520px);overflow-y:auto;padding-right:2px}
 #sources-body.muted{color:var(--muted)}
 .src-row{display:flex;flex-direction:column;gap:1px;padding:7px 9px;border-radius:var(--r-sm);background:var(--field-bg)}
 .src-name{font-weight:600;font-size:var(--fs-12);color:var(--text)}
@@ -238,17 +241,37 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
   background:var(--field-bg);color:var(--text);font:inherit;font-size:var(--fs-12);padding:0 10px}
 
 /* ---- Диалог «Состав альбома» (openAlbumConfig) ---- */
-#album-list{display:flex;flex-direction:column;gap:5px;margin:2px 0}
-#album-list>div{display:flex;align-items:center;gap:6px;padding:7px 11px;background:var(--field-bg);
-  border:1px solid var(--field-border);border-radius:var(--r-sm);font-size:var(--fs-12);color:var(--text)}
-#album-list>div button{width:26px;height:26px;padding:0;font-size:13px;flex:0 0 auto}
-#album-list>div .up{margin-left:auto}
-#album-list>div .rem{color:var(--danger);background:var(--danger-weak);border-color:transparent}
-#album-list>div .rem:hover{background:var(--danger);color:#fff}
-#add-sheet{width:auto;max-width:200px;display:inline-block;vertical-align:middle}
-#add-btn{width:auto;display:inline-flex;vertical-align:middle;margin-left:6px}
+.modal-overlay .modal.album-modal{width:min(560px,94vw)}
+.album-body{gap:8px}
+.album-section-title{font-size:var(--fs-12);font-weight:600;color:var(--text);margin-top:5px}
+.album-section-title:first-child{margin-top:0}
+.album-hint{font-size:var(--fs-11);color:var(--muted);line-height:1.45}
+#album-list{display:flex;flex-direction:column;gap:6px;margin:2px 0 4px}
+.album-sheet{display:flex;align-items:center;gap:5px;min-height:40px;padding:6px 8px 6px 11px;
+  background:var(--field-bg);border:1px solid var(--field-border);border-radius:var(--r-sm);color:var(--text)}
+.album-sheet-name{flex:1;min-width:0;font-size:var(--fs-12);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.album-sheet button{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:0 0 auto}
+.album-sheet button .ic{width:14px;height:14px}
+.album-up-icon{transform:rotate(-90deg)}
+.album-down-icon{transform:rotate(90deg)}
+.album-sheet .rem{color:var(--danger);background:var(--danger-weak);border-color:transparent}
+.album-sheet .rem:hover{background:var(--danger);color:#fff}
+.album-add-row{display:flex;align-items:flex-end;gap:8px;margin-bottom:8px}
+.album-add-row label{flex:1}
+#add-sheet{width:100%}
+#add-btn{flex:0 0 auto}
+.album-title-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .modal-overlay #album-apply{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
 .modal-overlay #album-apply:hover{background:var(--accent-hover)}
+
+/* ---- Настройки расчёта ТЭП ---- */
+.tep-editor-hint{font-size:var(--fs-12);color:var(--muted);line-height:1.5;margin-bottom:2px}
+
+/* ---- Собственные стили проекта ---- */
+.ps-note{font-size:var(--fs-12);color:var(--muted);line-height:1.5}
+.ps-list{max-height:220px;overflow:auto;font-size:var(--fs-12)}
+.ps-empty{padding:18px;text-align:center;color:var(--muted);line-height:1.55;background:var(--field-bg);
+  border:1px dashed var(--field-border);border-radius:var(--r-md)}
 
 /* цветовое поле (makeColorField) */
 .cfield{position:relative}
@@ -376,6 +399,14 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .fc-ins:hover{background:var(--accent-weak)!important;color:var(--accent)!important;border-color:transparent!important}
 .fc-preview{font-size:var(--fs-12);color:var(--muted)}
 .fc-preview.err{color:var(--danger)}
+.modal-overlay .fc-modal .modal-body.compact{padding:16px 18px;gap:9px}
+.fc-modal .fmt-sub{margin-top:3px}
+.fc-modal .fc-expr,.fc-modal .fc-help,.fc-modal .fc-preview{margin:0}
+.fc-modal .fc-help.muted{font-size:var(--fs-11);line-height:1.5}
+
+@media (max-width:560px){
+  .album-title-fields{grid-template-columns:1fr}
+}
 
 /* ---- Оформление слоя: переработка (секции-тумблеры, поля парами) ----
    .modal-body.compact обнулил боковые отступы (введён для Библиотеки) —

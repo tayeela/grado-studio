@@ -353,7 +353,7 @@ function openFieldCalc(layer, getFeats, onDone) {
   const cols = attrColumns(layer), existing = cols.filter(c => !c.virtual);
   const ov = document.createElement("div");
   ov.className = "modal-overlay";
-  ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg">
+  ov.innerHTML = `<div class="modal fmt-modal fmt-modal-lg fc-modal">
     <div class="modal-head">Калькулятор полей · ${escHtml(layer.title)}</div>
     <div class="modal-body compact">
     <div class="fmt-sub">Куда записать</div>

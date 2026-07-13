@@ -441,8 +441,8 @@ function openProjectStyles() {
     <div class="modal-head">Стили проекта
       <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body">
-      <div style="margin-bottom:8px;font-size:11px;color:var(--muted)">Кастомные стили для этого проекта. Доступны в выборе знака для слоёв и объектов. Можно переопределять через fmt на объекте.</div>
-      <div id="ps-list" style="max-height:180px;overflow:auto;border:1px solid var(--field-border);padding:4px;margin-bottom:8px;font-size:12px;"></div>
+      <div class="ps-note">Собственные знаки хранятся вместе с проектом и доступны при оформлении слоёв и объектов.</div>
+      <div id="ps-list" class="ps-list"></div>
       <button id="ps-create" class="fmt-copy-btn">+ Создать новый стиль проекта</button>
     </div>
     <div class="modal-actions">
@@ -457,7 +457,7 @@ function openProjectStyles() {
     cont.innerHTML = "";
     const ps = state.projectStyles || {};
     if (Object.keys(ps).length === 0) {
-      cont.innerHTML = '<div class="muted">Нет своих стилей. Создайте первый.</div>';
+      cont.innerHTML = '<div class="ps-empty">Собственных знаков пока нет.<br>Создайте первый знак для этого проекта.</div>';
       return;
     }
     Object.entries(ps).forEach(([id, st]) => {
@@ -3450,9 +3450,15 @@ function openVariants() {
     $("var-list").innerHTML = rowsHtml();
     overlay.querySelectorAll(".var-cmp").forEach(el => el.onchange = () => {
       if (el.checked) sel.add(el.dataset.id); else sel.delete(el.dataset.id);
+      updateCompareButton();
     });
     overlay.querySelectorAll(".var-load").forEach(el => el.onclick = () => loadVariant(el.dataset.id));
     overlay.querySelectorAll(".var-del").forEach(el => el.onclick = () => delVariant(el.dataset.id));
+    updateCompareButton();
+  }
+  function updateCompareButton() {
+    const button = $("var-compare");
+    if (button) button.disabled = sel.size === 0;
   }
   async function loadVariant(id) {
     const v = (state.variants || []).find(x => x.id === id);
@@ -3482,7 +3488,7 @@ function openVariants() {
     <button id="var-save" class="fmt-copy-btn" style="margin:var(--sp-2) var(--sp-4) 0">+ Сохранить текущее как вариант</button>
     <div id="var-cmp-out"></div>
     <div class="modal-actions">
-      <button id="var-compare">Сравнить ТЭП отмеченных</button>
+      <button id="var-compare" disabled>Сравнить с текущим</button>
       <span class="spacer"></span>
       <button id="var-close" class="primary">Закрыть</button>
     </div></div>`;
@@ -3498,7 +3504,7 @@ function openVariants() {
   };
   $("var-compare").onclick = async () => {
     const chosen = (state.variants || []).filter(v => sel.has(v.id));
-    if (!chosen.length) { toast("Отметьте галочками варианты для сравнения", "warn"); return; }
+    if (!chosen.length) { toast("Отметьте вариант для сравнения", "warn"); return; }
     $("var-cmp-out").innerHTML = `<div class="muted" style="padding:0 var(--sp-4)">Считаю ТЭП…</div>`;
     // колонки: текущее (рабочее) + выбранные варианты
     const cols = [{ name: "Текущее", features: state.features, params: params() },
@@ -3535,27 +3541,41 @@ function openAlbumConfig() {
   const cfg = state.albumConfig || {sheets: ['title','location','base','apo','tep'], title:{org:'ГРАДО',city_year:'Москва / 2026'}};
   let sheets = [...(cfg.sheets || ['title','location','base','apo','tep'])];
   const allSheets = ['title','location','base','apo','tep','ortho','photo','parking','greenery'];
-  let html = `<div class="modal fmt-modal">
-    <div class="modal-head">Состав альбома</div>
-    <div class="modal-body compact">
-      <div>Порядок листов (перемещайте кнопками):</div>
+  const sheetLabels = {
+    title: 'Титульный лист', location: 'Ситуационный план', base: 'Существующее положение',
+    apo: 'Архитектурно-планировочная организация', tep: 'Технико-экономические показатели',
+    ortho: 'Ортофотоплан', photo: 'Фотофиксация', parking: 'Парковки', greenery: 'Озеленение'
+  };
+  let html = `<div class="modal fmt-modal album-modal">
+    <div class="modal-head">Состав альбома
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body album-body">
+      <div class="album-section-title">Листы и порядок</div>
+      <div class="album-hint">Расположите листы в нужной последовательности.</div>
       <div id="album-list"></div>
-      <div>Добавить: <select id="add-sheet">${allSheets.map(s=>`<option>${s}</option>`).join('')}</select> <button id="add-btn">+ Добавить</button></div>
-      <div style="margin-top:8px">Титул:</div>
-      <label>Организация <input id="title-org" value="${cfg.title && cfg.title.org || 'ГРАДО'}"></label>
-      <label>Город/год <input id="title-year" value="${cfg.title && cfg.title.city_year || 'Москва / 2026'}"></label>
+      <div class="album-add-row"><label>Добавить лист<select id="add-sheet">${allSheets.map(s=>`<option value="${s}">${sheetLabels[s]}</option>`).join('')}</select></label><button id="add-btn">Добавить</button></div>
+      <div class="album-section-title">Титульный лист</div>
+      <div class="album-title-fields">
+        <label>Организация<input id="title-org" value="${escHtml(cfg.title && cfg.title.org || 'ГРАДО')}"></label>
+        <label>Город и год<input id="title-year" value="${escHtml(cfg.title && cfg.title.city_year || 'Москва / 2026')}"></label>
+      </div>
     </div>
     <div class="modal-actions">
-      <button id="album-apply">Применить</button>
       <span class="spacer"></span>
       <button id="album-cancel">Отмена</button>
+      <button id="album-apply" class="primary">Применить</button>
     </div>
   </div>`;
   overlay.innerHTML = html;
   document.body.appendChild(overlay);
   const listEl = overlay.querySelector('#album-list');
   function renderList() {
-    listEl.innerHTML = sheets.map((s,i) => `<div>${s} <button data-i="${i}" class="up">↑</button><button data-i="${i}" class="down">↓</button> <button data-i="${i}" class="rem">x</button></div>`).join('');
+    listEl.innerHTML = sheets.map((s,i) => `<div class="album-sheet">
+      <span class="album-sheet-name">${escHtml(sheetLabels[s] || s)}</span>
+      <button data-i="${i}" class="up" title="Переместить выше" aria-label="Переместить «${escHtml(sheetLabels[s] || s)}» выше"${i === 0 ? ' disabled' : ''}><svg class="ic album-up-icon"><use href="#ic-chevron"/></svg></button>
+      <button data-i="${i}" class="down" title="Переместить ниже" aria-label="Переместить «${escHtml(sheetLabels[s] || s)}» ниже"${i === sheets.length - 1 ? ' disabled' : ''}><svg class="ic album-down-icon"><use href="#ic-chevron"/></svg></button>
+      <button data-i="${i}" class="rem" title="Убрать лист" aria-label="Убрать лист «${escHtml(sheetLabels[s] || s)}»"><svg class="ic"><use href="#ic-trash"/></svg></button>
+    </div>`).join('');
     listEl.querySelectorAll('.up').forEach(b => b.onclick = () => { const i=+b.dataset.i; if(i>0){ [sheets[i-1],sheets[i]]=[sheets[i],sheets[i-1]]; renderList(); }});
     listEl.querySelectorAll('.down').forEach(b => b.onclick = () => { const i=+b.dataset.i; if(i<sheets.length-1){ [sheets[i],sheets[i+1]]=[sheets[i+1],sheets[i]]; renderList(); }});
     listEl.querySelectorAll('.rem').forEach(b => b.onclick = () => { sheets.splice(+b.dataset.i,1); renderList(); });
@@ -3575,6 +3595,7 @@ function openAlbumConfig() {
     toast('Конфигурация альбома сохранена');
   };
   overlay.querySelector('#album-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('.modal-x').onclick = () => overlay.remove();
   overlay.onclick = e => { if(e.target===overlay) overlay.remove(); };
 }
 
@@ -3586,19 +3607,20 @@ function openTepPresetEditor() {
   const r = document.getElementById("p-ratio").value;
   const kr = document.getElementById("p-krail").value;
   const kb = document.getElementById("p-kba").value;
-  overlay.innerHTML = `<div class="modal fmt-modal">
-    <div class="modal-head">Редактор параметров ТЭП (пресет moscow_krt)</div>
-    <div class="modal-body compact">
-      <label>Плотность (density) <input id="ed-d" type="number" value="${d}" step="0.5"></label>
-      <label>Доля жилья % (ratio_zh) <input id="ed-r" type="number" value="${r}" step="1"></label>
-      <label>k_rail (ж/д) <input id="ed-kr" type="number" value="${kr}" step="0.05"></label>
-      <label>k_ba (дел.акт.) <input id="ed-kb" type="number" value="${kb}" step="0.05"></label>
-      <div style="font-size:11px;margin:8px 0;color:var(--muted)">Редактируйте константы в core/compute/presets/moscow_krt.json для полного пресета. Здесь — быстрые входы. После Apply — refreshTep. Базовые проверки норм (фаза 4) показываются ниже ТЭП.</div>
+  overlay.innerHTML = `<div class="modal fmt-modal tep-editor-modal">
+    <div class="modal-head">Параметры расчёта ТЭП
+      <button class="modal-x" title="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body">
+      <div class="tep-editor-hint">Эти значения используются при расчёте технико-экономических показателей проекта.</div>
+      <label>Плотность застройки<input id="ed-d" type="number" value="${d}" step="0.5"></label>
+      <label>Доля жилья, %<input id="ed-r" type="number" value="${r}" step="1"></label>
+      <label>Коэффициент влияния железной дороги<input id="ed-kr" type="number" value="${kr}" step="0.05"></label>
+      <label>Коэффициент деловой активности<input id="ed-kb" type="number" value="${kb}" step="0.05"></label>
     </div>
     <div class="modal-actions">
-      <button id="ed-apply">Применить</button>
       <span class="spacer"></span>
       <button id="ed-close">Закрыть</button>
+      <button id="ed-apply" class="primary">Применить</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
@@ -3613,6 +3635,7 @@ function openTepPresetEditor() {
     toast("Параметры ТЭП обновлены");
   };
   overlay.querySelector("#ed-close").onclick = () => overlay.remove();
+  overlay.querySelector(".modal-x").onclick = () => overlay.remove();
   overlay.onclick = e => { if(e.target === overlay) overlay.remove(); };
 }
 

@@ -28,13 +28,13 @@
   <input class="projname" id="project-name" value="Концепция развития территории" spellcheck="false">
   <div class="spacer"></div>
   <button class="kbar" id="open-cmdk" title="Командная палитра"><svg class="ic" style="width:14px;height:14px"><use href="#i-search"/></svg>Найти инструмент, слой, действие<kbd>⌘K</kbd></button>
-  <button class="iconbtn" id="btn-theme" title="Светлая / тёмная тема"><svg class="ic"><use href="#i-theme"/></svg></button>
-  <button class="iconbtn" id="btn-undo" title="Отменить (⌘Z)"><svg class="ic"><use href="#i-undo"/></svg></button>
-  <button class="iconbtn" id="btn-redo" title="Вернуть (⌘⇧Z)"><svg class="ic"><use href="#i-redo"/></svg></button>
+  <button class="iconbtn" id="btn-theme" title="Светлая / тёмная тема" aria-label="Переключить светлую и тёмную тему"><svg class="ic"><use href="#i-theme"/></svg></button>
+  <button class="iconbtn" id="btn-undo" title="Отменить (⌘Z)" aria-label="Отменить"><svg class="ic"><use href="#i-undo"/></svg></button>
+  <button class="iconbtn" id="btn-redo" title="Вернуть (⌘⇧Z)" aria-label="Вернуть"><svg class="ic"><use href="#i-redo"/></svg></button>
   <span class="hsep"></span>
-  <button class="btn" data-menu="menu-data"><svg class="ic" style="width:15px;height:15px"><use href="#i-download"/></svg>Данные<svg class="ic caret"><use href="#i-caret"/></svg></button>
-  <button class="btn" data-menu="menu-proj"><svg class="ic" style="width:15px;height:15px"><use href="#i-folder"/></svg>Проект<svg class="ic caret"><use href="#i-caret"/></svg></button>
-  <button class="btn" data-menu="menu-out">Выпуск<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-data" aria-haspopup="menu" aria-controls="menu-data" aria-expanded="false"><svg class="ic" style="width:15px;height:15px"><use href="#i-download"/></svg>Данные<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-proj" aria-haspopup="menu" aria-controls="menu-proj" aria-expanded="false"><svg class="ic" style="width:15px;height:15px"><use href="#i-folder"/></svg>Проект<svg class="ic caret"><use href="#i-caret"/></svg></button>
+  <button class="btn" data-menu="menu-out" aria-haspopup="menu" aria-controls="menu-out" aria-expanded="false">Выпуск<svg class="ic caret"><use href="#i-caret"/></svg></button>
   <button class="btn primary" id="btn-album">Собрать альбом</button>
 </header>
 
@@ -97,9 +97,9 @@
        Свойства/Данные/ТЭП — следующие шаги. -->
   <aside id="panel">
     <div class="panel-head"><span class="title">Слои и объект</span>
-      <button class="phbtn" data-pop="p-basemap" title="Подложка"><svg class="ic" style="width:17px;height:17px"><use href="#i-map"/></svg></button>
-      <button class="phbtn" data-pop="p-grid" title="Сетка и привязки"><svg class="ic" style="width:17px;height:17px"><use href="#i-grid"/></svg></button>
-      <button class="phbtn" data-pop="p-src" title="Источники данных"><svg class="ic" style="width:17px;height:17px"><use href="#i-db"/></svg></button>
+      <button class="phbtn" data-pop="p-basemap" title="Подложка" aria-label="Настроить подложку" aria-controls="p-basemap" aria-expanded="false"><svg class="ic" style="width:17px;height:17px"><use href="#i-map"/></svg></button>
+      <button class="phbtn" data-pop="p-grid" title="Сетка и привязки" aria-label="Настроить сетку и привязки" aria-controls="p-grid" aria-expanded="false"><svg class="ic" style="width:17px;height:17px"><use href="#i-grid"/></svg></button>
+      <button class="phbtn" data-pop="p-src" title="Источники данных" aria-label="Показать источники данных" aria-controls="p-src" aria-expanded="false"><svg class="ic" style="width:17px;height:17px"><use href="#i-db"/></svg></button>
     </div>
     <div class="panel-scroll">
       <div class="card" id="card-props">
@@ -123,7 +123,8 @@
         <div class="card-h"><svg class="ic cc"><use href="#i-caret"/></svg><svg class="ic" style="width:15px;height:15px"><use href="#i-chart"/></svg>ТЭП
           <span class="tep-status-badge" id="tep-status"></span>
           <span class="tep-live">живой расчёт</span>
-          <button class="h3-btn" id="btn-variants" title="Варианты концепции — снимки проекта и сравнение ТЭП" style="margin-left:6px">⎇</button>
+          <button class="h3-btn" id="btn-tep-editor" title="Параметры расчёта ТЭП" aria-label="Параметры расчёта ТЭП" style="margin-left:6px"><svg class="ic"><use href="#ic-format"/></svg></button>
+          <button class="h3-btn" id="btn-variants" title="Варианты концепции — снимки проекта и сравнение ТЭП" aria-label="Варианты концепции"><svg class="ic"><use href="#i-chart"/></svg></button>
         </div>
         <div class="card-b">
           <div id="tep-fact"></div>
@@ -135,34 +136,34 @@
 </div>
 
 <!-- КОМАНДНАЯ ПАЛИТРА ⌘K (логика — cmdk.js, после движка) -->
-<div class="cmdk" id="cmdk" hidden>
+<div class="cmdk" id="cmdk" role="dialog" aria-modal="true" aria-label="Командная палитра" hidden>
   <div class="cmdk-box">
-    <div class="cmdk-input"><svg class="ic"><use href="#i-search"/></svg><input id="cmdk-q" placeholder="Найти инструмент, слой, действие…" autocomplete="off" spellcheck="false"></div>
-    <div class="cmdk-list" id="cmdk-list"></div>
+    <div class="cmdk-input"><svg class="ic"><use href="#i-search"/></svg><input id="cmdk-q" role="combobox" aria-controls="cmdk-list" aria-expanded="true" aria-autocomplete="list" placeholder="Найти инструмент, слой, действие…" autocomplete="off" spellcheck="false"></div>
+    <div class="cmdk-list" id="cmdk-list" role="listbox"></div>
   </div>
 </div>
 
 <!-- МЕНЮ ШАПКИ (кликают реальные скрытые кнопки движка) -->
-<div class="menu" id="menu-data" hidden>
-  <div class="menu-row" data-click="btn-data">Данные по видимой области…</div>
+<div class="menu" id="menu-data" role="menu" hidden>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-data">Данные по видимой области…</div>
   <div class="menu-sep"></div>
-  <div class="menu-row" data-click="btn-nspd">Импорт НСПД (файл расширения)</div>
-  <div class="menu-row" data-click="btn-gisogd">ГИС ОГД — ZIP / GeoJSON / папка</div>
-  <div class="menu-row" data-click="btn-demo">Заполнить примером (демо)</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-nspd">Импорт НСПД (файл расширения)</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-gisogd">ГИС ОГД — ZIP / GeoJSON / папка</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-demo">Заполнить примером (демо)</div>
 </div>
-<div class="menu" id="menu-proj" hidden>
-  <div class="menu-row" data-click="btn-open">Открыть проект…</div>
-  <div class="menu-row" data-click="btn-grado">Сохранить .grado</div>
+<div class="menu" id="menu-proj" role="menu" hidden>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-open">Открыть проект…</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-grado">Сохранить .grado</div>
   <div class="menu-sep"></div>
-  <div class="menu-row" data-click="btn-clear">Очистить холст</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-clear">Очистить холст</div>
 </div>
-<div class="menu" id="menu-out" hidden>
-  <div class="menu-row" data-click="btn-dxf">Экспорт чертежа (DXF)</div>
-  <div class="menu-row" data-click="btn-print">Печать в масштабе (PDF)</div>
-  <div class="menu-row" data-click="btn-album-config">Настройка состава альбома…</div>
+<div class="menu" id="menu-out" role="menu" hidden>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-dxf">Экспорт чертежа (DXF)</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-print">Печать в масштабе (PDF)</div>
+  <div class="menu-row" role="menuitem" tabindex="-1" data-click="btn-album-config">Настройка состава альбома…</div>
   <div class="menu-sep"></div>
-  <div class="menu-row" data-setexport="standard">Знаки: стандарт ЛГР</div>
-  <div class="menu-row" data-setexport="canvas">Знаки: как на холсте</div>
+  <div class="menu-row" role="menuitemradio" tabindex="-1" data-setexport="standard">Знаки: стандарт ЛГР</div>
+  <div class="menu-row" role="menuitemradio" tabindex="-1" data-setexport="canvas">Знаки: как на холсте</div>
 </div>
 
 <!-- ПОПОВЕРЫ ПАНЕЛИ (реальные контролы движка; открываются иконками в шапке панели) -->
@@ -207,7 +208,7 @@
   <input id="buf-dist" type="number" value="300">
   <label><input type="radio" name="buf-side" value="both" checked>оба</label><label><input type="radio" name="buf-side" value="outer">наружу</label><label><input type="radio" name="buf-side" value="inner">внутрь</label>
   <button id="btn-buffer"></button><button id="buf-doo-preset"></button><button id="buf-school-preset"></button>
-  <button id="btn-tep-editor"></button><button id="btn-shortcuts"></button>
+  <button id="btn-shortcuts"></button>
   <input type="file" id="nspd-file"><input type="file" id="gisogd-file"><input type="file" id="grado-file">
   <!-- реальные кнопки движка шапки (видимые — меню Данные/Проект/Выпуск ниже их кликают) -->
   <button id="btn-demo"></button><button id="btn-nspd"></button><button id="btn-gisogd"></button><button id="btn-data"></button>
@@ -281,6 +282,7 @@
 <script src="/app-import.js"></script>
 <script src="/collab.js"></script>
 <script src="/redesign/cmdk.js"></script>
+<script src="/redesign/a11y.js"></script>
 <script>
   // счётчик слоёв в заголовке карточки — следит за #layers-body (app.js не трогаем)
   (function () {
@@ -296,7 +298,11 @@
     const btns = [...document.querySelectorAll('.phbtn[data-pop]')];
     const closeAll = except => {
       pops.forEach(id => { if (id !== except) document.getElementById(id).hidden = true; });
-      btns.forEach(b => b.classList.toggle('on', b.dataset.pop === except));
+      btns.forEach(b => {
+        const open = b.dataset.pop === except;
+        b.classList.toggle('on', open);
+        b.setAttribute('aria-expanded', String(open));
+      });
     };
     pops.forEach(id => document.getElementById(id).addEventListener('click', e => e.stopPropagation()));
     btns.forEach(btn => btn.addEventListener('click', e => {
@@ -305,6 +311,7 @@
       const willOpen = p.hidden;
       closeAll(willOpen ? btn.dataset.pop : null);
       p.hidden = !willOpen;
+      if (willOpen) setTimeout(() => p.querySelector('input,select,button')?.focus(), 0);
     }));
     document.addEventListener('click', () => closeAll(null));
   })();
@@ -312,9 +319,13 @@
   // скрытым кнопкам движка (app.js не меняется)
   (function () {
     const menus = ['menu-data', 'menu-proj', 'menu-out'];
-    const closeAll = () => menus.forEach(id => { const m = document.getElementById(id); if (m) m.hidden = true; });
+    const triggers = [...document.querySelectorAll('header [data-menu]')];
+    const closeAll = () => {
+      menus.forEach(id => { const m = document.getElementById(id); if (m) m.hidden = true; });
+      triggers.forEach(button => button.setAttribute('aria-expanded', 'false'));
+    };
     menus.forEach(id => { const m = document.getElementById(id); if (m) m.addEventListener('click', e => e.stopPropagation()); });
-    document.querySelectorAll('header [data-menu]').forEach(btn => btn.addEventListener('click', e => {
+    triggers.forEach(btn => btn.addEventListener('click', e => {
       e.stopPropagation();
       const m = document.getElementById(btn.dataset.menu);
       const willOpen = m.hidden;
@@ -328,6 +339,8 @@
       if (sel) m.querySelectorAll('[data-setexport]').forEach(row =>
         row.classList.toggle('on', row.dataset.setexport === sel.value));
       m.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      setTimeout(() => m.querySelector('[role^="menuitem"]')?.focus(), 0);
     }));
     document.querySelectorAll('.menu [data-click]').forEach(row => row.addEventListener('click', () => {
       closeAll();

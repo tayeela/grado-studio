@@ -18,6 +18,12 @@ body{
 }
 [hidden]{display:none!important}
 button{font:inherit;color:inherit;cursor:pointer;border:none;background:none}
+button:focus-visible,.menu-row:focus-visible,.ctx-item:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px
+}
+input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:2px solid var(--accent-line);outline-offset:1px
+}
 .ic{width:17px;height:17px;stroke:currentColor;stroke-width:1.7;fill:none;
   stroke-linecap:round;stroke-linejoin:round;display:block}
 
@@ -261,7 +267,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;heigh
 .menu{position:absolute;z-index:var(--z-menu);min-width:230px;background:var(--glass-strong);backdrop-filter:var(--glass-blur);
   border:1px solid var(--glass-border);border-radius:var(--r-md);box-shadow:var(--shadow-md),var(--glass-hi);padding:6px;animation:pop .16s var(--ease-out)}
 .menu-row{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:var(--r-sm);font-size:var(--fs-13);color:var(--text);cursor:pointer}
-.menu-row:hover{background:var(--accent-weak);color:var(--accent)}
+.menu-row:hover,.menu-row:focus{background:var(--accent-weak);color:var(--accent)}
 .menu-row .ic{width:16px;height:16px;color:var(--muted)}
 .menu-row:hover .ic{color:var(--accent)}
 .menu-row .sub{margin-left:auto;font-size:11px;color:var(--faint);font-family:var(--font-mono)}
