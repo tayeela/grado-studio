@@ -712,7 +712,7 @@ let shiftDown = false, spaceDown = false;
 // ---------- координаты ----------
 function w2s(x, y) { return [state.view.tx + x * state.view.k, state.view.ty - y * state.view.k]; }
 function s2w(sx, sy) { return [(sx - state.view.tx) / state.view.k, (state.view.ty - sy) / state.view.k]; }
-function featurePts(f) { 
+function featurePts(f) {
   if (f.ring || f.line) return f.ring || f.line;
   if (f.arc) {
     const a = f.arc; const n=8; const pts=[];
@@ -1404,7 +1404,7 @@ function handleTrimExtendClick(wx, wy) {
   }
   if (!f || (!f.line && !f.arc)) { toast("Цель должна быть полилинией или дугой (не границей)", "warn"); return; }
   if (ctx2.boundary.has(f.id)) { toast("Это выбрано как граница", "warn"); return; }
-  const ok = f.arc 
+  const ok = f.arc
     ? (state.tool === "trim" ? trimArcAt(f, wx, wy, ctx2.boundary) : extendArcAt(f, wx, wy, ctx2.boundary))
     : (state.tool === "trim" ? trimLineAt(f, wx, wy, ctx2.boundary) : extendLineAt(f, wx, wy, ctx2.boundary));
   if (ok) {
