@@ -17,12 +17,15 @@
     POST /api/import-nspd {payload} → фигуры холста из захвата НСПД
     POST /api/import-gisogd  тело ZIP → фигуры холста из выгрузки ГИС ОГД
     GET  /api/inbox       выгрузки браузерного моста, ждущие холст
-    GET/POST /api/autosave  файловый бэкап состояния холста (резерв к localStorage)
+    GET/POST /api/autosave  файловый автосейв (резерв к localStorage)
+    GET  /api/autosave/backups[/N]  список/чтение предыдущих снимков
+    GET  /api/version      единая версия приложения и схемы состояния
     GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
     GET  /api/tiles/<z>/<x>/<y>.png  тайловая подложка (прокси + дисковый кэш)
 Порт 8081: приёмник браузерного расширения GRADO (совместим с QGIS-плагином).
 """
 
+import hashlib
 import json
 import re
 import socket
@@ -30,6 +33,7 @@ import sys
 import tempfile
 import threading
 import traceback
+from datetime import datetime, timezone
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
@@ -38,6 +42,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 import studio_core  # noqa: E402
 
 WEB = Path(__file__).parent / "web"
+VERSION_PATH = WEB / "version.json"
+VERSION_INFO = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
 PORT = 8643
 INITIAL_GRADO = None
 for a in sys.argv[1:]:
@@ -73,6 +79,95 @@ BRIDGE_ON = False
 # переживает чистку данных сайта/приватный режим/смену браузера
 AUTOSAVE_PATH = Path(__file__).parent / ".autosave.json"
 AUTOSAVE_LOCK = threading.Lock()
+AUTOSAVE_BACKUPS = 10
+AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
+
+
+def _autosave_backup_path(path, index):
+    return path.with_name(f"{path.stem}.{index}{path.suffix}")
+
+
+def _autosave_corrupt_path(path):
+    return path.with_name(f"{path.stem}.corrupt{path.suffix}")
+
+
+def _autosave_state(payload):
+    """Return state from current envelope or a legacy raw-state autosave."""
+    if not isinstance(payload, dict):
+        raise ValueError("autosave must be an object")
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else payload
+    if not isinstance(state.get("features"), list):
+        raise ValueError("autosave features must be an array")
+    return state
+
+
+def _autosave_envelope(state, raw=None):
+    state = _autosave_state(state)
+    canonical = raw if raw is not None else json.dumps(
+        state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return {
+        "schema_version": VERSION_INFO["state_schema_version"],
+        "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "checksum": hashlib.sha256(canonical).hexdigest(),
+        "state": state,
+    }
+
+
+def _read_autosave(path):
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _autosave_meta(payload, index=None, path=None):
+    state = _autosave_state(payload)
+    return {
+        "id": index,
+        "saved_at": payload.get("saved_at") if payload is not state else None,
+        "checksum": payload.get("checksum") if payload is not state else None,
+        "name": state.get("name") or "Без названия",
+        "feature_count": len(state["features"]),
+        "size": path.stat().st_size if path and path.exists() else None,
+    }
+
+
+def save_autosave(state, raw=None, path=None, backups=AUTOSAVE_BACKUPS):
+    """Atomically save state and rotate changed snapshots for recovery."""
+    path = path or AUTOSAVE_PATH
+    envelope = _autosave_envelope(state, raw=raw)
+    data = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    if path.exists():
+        try:
+            current = _read_autosave(path)
+            if _autosave_state(current) == envelope["state"]:
+                tmp.unlink(missing_ok=True)
+                return _autosave_meta(current, path=path), False
+            for index in range(backups, 1, -1):
+                older = _autosave_backup_path(path, index - 1)
+                if older.exists():
+                    older.replace(_autosave_backup_path(path, index))
+            path.replace(_autosave_backup_path(path, 1))
+        except ValueError:
+            # Повреждённый текущий файл не должен навсегда остановить новые
+            # сохранения. Оставляем его отдельно для ручной диагностики.
+            path.replace(_autosave_corrupt_path(path))
+    tmp.replace(path)
+    return _autosave_meta(envelope, path=path), True
+
+
+def list_autosave_backups(path=None, backups=AUTOSAVE_BACKUPS):
+    path = path or AUTOSAVE_PATH
+    result = []
+    for index in range(1, backups + 1):
+        backup = _autosave_backup_path(path, index)
+        if not backup.exists():
+            continue
+        try:
+            result.append(_autosave_meta(_read_autosave(backup), index, backup))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return result
 
 
 class BridgeHandler(BaseHTTPRequestHandler):
@@ -217,6 +312,9 @@ class Handler(SimpleHTTPRequestHandler):
                 info.update(HUB.user_info(hub_login))
             self._json(info)
             return
+        if parsed0.path == "/api/version":
+            self._json(VERSION_INFO)
+            return
         if HUB and parsed0.path == "/api/projects":
             self._json({"projects": HUB.list_projects(hub_login)})
             return
@@ -240,10 +338,26 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 self._json(out)
             return
-        if HUB and self.path == "/api/autosave":
+        if HUB and parsed0.path.startswith("/api/autosave"):
             # в hub-режиме файловый автосейв не используется (общий файл
             # затирали бы разные пользователи) — проекты живут в .hub/
             self._send(b"null", "application/json; charset=utf-8")
+            return
+        if parsed0.path == "/api/autosave/backups":
+            with AUTOSAVE_LOCK:
+                self._json({"backups": list_autosave_backups()})
+            return
+        backup_match = AUTOSAVE_BACKUP_RE.match(parsed0.path)
+        if backup_match:
+            backup = _autosave_backup_path(AUTOSAVE_PATH, int(backup_match.group(1)))
+            if not backup.exists():
+                self._json({"error": "backup not found"}, 404)
+                return
+            try:
+                with AUTOSAVE_LOCK:
+                    self._json(_read_autosave(backup))
+            except (OSError, ValueError, json.JSONDecodeError):
+                self._json({"error": "backup is damaged"}, 500)
             return
         if self.path == "/api/inbox":
             with INBOX_LOCK:
@@ -413,13 +527,14 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/autosave":
                 n = int(self.headers.get("Content-Length", 0))
                 raw = self.rfile.read(n)
-                json.loads(raw)  # не пишем на диск то, что не распарсится обратно
-                with AUTOSAVE_LOCK:
-                    tmp = AUTOSAVE_PATH.with_suffix(".tmp")
-                    tmp.write_bytes(raw)
-                    tmp.replace(AUTOSAVE_PATH)
-                self.send_response(204)
-                self.end_headers()
+                try:
+                    state = json.loads(raw)
+                    with AUTOSAVE_LOCK:
+                        meta, changed = save_autosave(state, raw=raw)
+                except (json.JSONDecodeError, ValueError):
+                    self._json({"error": "bad autosave state"}, 400)
+                    return
+                self._json({"saved": changed, **meta})
                 return
             if self.path == "/api/style-overrides":
                 n = int(self.headers.get("Content-Length", 0))

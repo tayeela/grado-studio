@@ -11,7 +11,12 @@ To build icon: use iconutil or sips to make AppIcon.icns from PNG, place in Reso
 Run the .app or from terminal: open dist/ГРАДО\ Студия.app --args /path/to/project.grado
 """
 
+import json
+from pathlib import Path
+
 from setuptools import setup
+
+VERSION = json.loads((Path(__file__).parents[1] / 'apps/studio/web/version.json').read_text())
 
 APP = ['apps/studio/server.py']
 DATA_FILES = [
@@ -31,8 +36,8 @@ OPTIONS = {
         'CFBundleName': 'ГРАДО Студия',
         'CFBundleDisplayName': 'ГРАДО Студия',
         'CFBundleIdentifier': 'tech.tailink.grado-studio',
-        'CFBundleVersion': '0.49',
-        'CFBundleShortVersionString': '0.49',
+        'CFBundleVersion': VERSION['bundle_version'],
+        'CFBundleShortVersionString': VERSION['bundle_short_version'],
         'NSHumanReadableCopyright': '© 2026 ГРАДО',
         'CFBundleIconFile': 'AppIcon',  # place grado.icns as AppIcon.icns in Resources
         'CFBundleDocumentTypes': [

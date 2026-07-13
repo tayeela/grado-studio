@@ -1,6 +1,14 @@
 // ГРАДО Студия — холст черчения. Мир: метры, ось Y вверх.
 
-const VERSION = "0.42.1";
+let VERSION = "—";
+let STATE_SCHEMA_VERSION = 1;
+fetch("/version.json").then(r => r.ok ? r.json() : null).then(info => {
+  if (!info) return;
+  VERSION = info.version || VERSION;
+  STATE_SCHEMA_VERSION = info.state_schema_version || STATE_SCHEMA_VERSION;
+  const logo = document.getElementById("logo");
+  if (logo) logo.title = `ГРАДО Студия · v${VERSION}`;
+}).catch(() => {});
 
 // любая ошибка интерфейса — на экран, а не молча в консоль
 window.addEventListener("error", e => {
@@ -2394,6 +2402,7 @@ let autosaveTimer = null;
 // берёт из него только «общие» ключи проекта).
 function collectState() {
   return {
+    schema_version: STATE_SCHEMA_VERSION,
     features: state.features, nextId: state.nextId,
     name: document.getElementById("project-name").value,
     density: document.getElementById("p-density").value,
@@ -2425,6 +2434,7 @@ function collectState() {
     projectCustomKinds: state.projectCustomKinds || [],
     variants: state.variants || [],
     accessRadii: state.accessRadii,
+    albumConfig: state.albumConfig,
   };
 }
 // личное (не отправляется коллегам): вид/выделение здесь не хранятся в payload
@@ -2442,6 +2452,31 @@ window.collectPersonal = collectPersonal;
 let _lsOverflow = false;   // большой проект не влезает в localStorage (~5 МБ):
                            // после первого QuotaExceeded НЕ стрингифаем впустую
                            // 100 МБ на каждую правку (главный источник фризов)
+function setSaveStatus(text, kind = "") {
+  const el = document.getElementById("st-save");
+  if (!el) return;
+  el.textContent = text;
+  el.className = kind ? `save-${kind}` : "";
+}
+async function saveStateNow(payload) {
+  setSaveStatus("Сохранение…", "busy");
+  try {
+    const response = await fetch("/api/autosave", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    const savedAt = result && result.saved_at ? new Date(result.saved_at) : new Date();
+    const time = Number.isNaN(savedAt.getTime()) ? "" :
+      ` ${savedAt.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
+    setSaveStatus(`Сохранено${time}`, "ok");
+    return result;
+  } catch (error) {
+    setSaveStatus("Не сохранено", "error");
+    throw error;
+  }
+}
 function persist() {
   const payload = collectState();
   if (!_lsOverflow) {
@@ -2455,6 +2490,7 @@ function persist() {
   // веб-режим совместной работы: правки уходят на сервер (collab.js),
   // общий файловый autosave не используем (его затирали бы разные юзеры)
   if (window.Collab && window.Collab.active) {
+    setSaveStatus("");
     if (window.hubSchedulePush) window.hubSchedulePush();
     return;
   }
@@ -2462,9 +2498,9 @@ function persist() {
   // браузера, чего localStorage не гарантирует. Дебаунс — не пишем на диск
   // на каждое перемещение мыши при afterChange().
   clearTimeout(autosaveTimer);
+  setSaveStatus("Есть изменения", "busy");
   autosaveTimer = setTimeout(() => {
-    fetch("/api/autosave", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload) }).catch(() => {});
+    saveStateNow(payload).catch(() => {});
   }, 1500);
 }
 // пикетаж: подтягиваем расчёт ядра, кэш по ключу геометрии
@@ -3749,6 +3785,70 @@ function uiPrompt(msg, def = "", { ok = "OK", placeholder = "" } = {}) {
   });
 }
 
+async function openAutosaveRecovery() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal recovery-modal" role="dialog" aria-modal="true" aria-label="Восстановление автосохранения">
+    <div class="modal-head">Восстановление автосохранения
+      <button class="modal-x" aria-label="Закрыть"><svg class="ic"><use href="#ic-close"/></svg></button>
+    </div>
+    <div class="modal-body recovery-body"><div class="recovery-empty">Загрузка копий…</div></div>
+    <div class="modal-actions"><span class="muted">Перед восстановлением текущее состояние будет сохранено.</span><span class="spacer"></span><button class="recovery-close">Закрыть</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector(".modal-x").onclick = close;
+  overlay.querySelector(".recovery-close").onclick = close;
+  overlay.onclick = event => { if (event.target === overlay) close(); };
+  overlay.onkeydown = event => { if (event.key === "Escape") close(); };
+  overlay.querySelector(".modal-x").focus();
+  const body = overlay.querySelector(".recovery-body");
+  try {
+    const response = await fetch("/api/autosave/backups");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const backups = Array.isArray(data.backups) ? data.backups : [];
+    if (!backups.length) {
+      body.innerHTML = `<div class="recovery-empty">Предыдущих копий пока нет. Они появятся после нескольких изменений проекта.</div>`;
+      return;
+    }
+    body.innerHTML = backups.map(item => {
+      const date = item.saved_at ? new Date(item.saved_at).toLocaleString("ru-RU", {
+        dateStyle: "medium", timeStyle: "short",
+      }) : "Старая копия";
+      return `<div class="recovery-item">
+        <div class="recovery-main"><strong>${escHtml(item.name)}</strong><span>${escHtml(date)} · ${item.feature_count} объект(ов)</span></div>
+        <button data-recover="${item.id}">Восстановить</button>
+      </div>`;
+    }).join("");
+    body.querySelectorAll("[data-recover]").forEach(button => {
+      button.onclick = async () => {
+        const item = backups.find(x => String(x.id) === button.dataset.recover);
+        if (!item || !(await uiConfirm(
+          `Восстановить копию «${item.name}»? Текущее состояние останется в резервных копиях.`,
+          { ok: "Восстановить" }))) return;
+        button.disabled = true;
+        try {
+          const backupResponse = await fetch(`/api/autosave/backups/${item.id}`);
+          if (!backupResponse.ok) throw new Error(`HTTP ${backupResponse.status}`);
+          const saved = await backupResponse.json();
+          clearTimeout(autosaveTimer);
+          await saveStateNow(collectState());
+          applyRestoredState(saved);
+          close();
+          afterChange(); fitView();
+          toast(`Восстановлена копия «${item.name}»`);
+        } catch (error) {
+          button.disabled = false;
+          toast("Не удалось восстановить копию", "error");
+        }
+      };
+    });
+  } catch (error) {
+    body.innerHTML = `<div class="recovery-empty error">Не удалось получить резервные копии.</div>`;
+  }
+}
+
 
 
 // ---------- журнал источников (снимки НСПД/ФГИС ТП, шаг 6) ----------
@@ -4692,7 +4792,12 @@ on("access-r", "change", e => {
 on("grid-step", "change", e => { state.gridMode = e.target.value; draw(); });
 on("btn-undo", "click", undo);
 on("btn-redo", "click", redo);
-on("btn-clear", "click", () => {
+on("btn-clear", "click", async () => {
+  if (!state.features.length) { toast("Холст уже пуст"); return; }
+  const count = state.features.length;
+  if (!(await uiConfirm(
+    `Очистить холст и удалить ${count} объект(ов)? Действие можно отменить сразу после очистки.`,
+    { ok: "Очистить", danger: true }))) return;
   snapshot(); state.features = []; state.selected = null; afterChange();
 });
 on("p-density", "change", refreshTep);
@@ -4968,6 +5073,10 @@ on("btn-demo", "click", () => {
 
 // ---------- старт ----------
 function applyRestoredState(d) {
+  // Автосейв v1 хранится в проверяемой оболочке; старые снимки остаются
+  // сырым состоянием и по-прежнему открываются без миграции на диске.
+  if (d && d.state && typeof d.state === "object") d = d.state;
+  if (!d || typeof d !== "object") return;
   // пользовательские слои — ДО остального восстановления: layersVisible/
   // layerOrder/layerFmt/activeLayerId ссылаются на их id по значению
   if (Array.isArray(d.userLayers)) {
@@ -5099,7 +5208,8 @@ window.afterExternalApply = function () {
   // localStorage пуст (новый браузер/профиль, приватный режим, чистка данных
   // сайта) — пробуем резервную копию на диске сервера
   fetch("/api/autosave").then(r => r.ok ? r.json() : null).then(d => {
-    if (!d || !d.features) return;
+    const saved = d && d.state && typeof d.state === "object" ? d.state : d;
+    if (!saved || !saved.features) return;
     applyRestoredState(d);
     draw(); renderProps(); renderLayers(); renderSources(); refreshTep(); fitView();
     toast("Восстановлено из файлового автосохранения");
@@ -5124,6 +5234,7 @@ on("btn-shortcuts", "click", openShortcuts);
 on("btn-new-layer", "click", openNewLayerDialog);
 on("btn-style-lib", "click", openStyleLibrary);
 on("btn-project-styles", "click", openProjectStyles);
+on("btn-recover", "click", openAutosaveRecovery);
 on("btn-manage-kinds", "click", openManageKinds);
 on("btn-variants", "click", openVariants);
 // переключатель темы (canvas-theme.js): смена темы → перечитать палитру

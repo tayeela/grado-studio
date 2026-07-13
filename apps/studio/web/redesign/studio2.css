@@ -491,3 +491,20 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .collab-proj-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto}
 .collab-empty{text-align:center;color:var(--muted);padding:24px;font-size:var(--fs-13);
   border:1px dashed var(--hairline);border-radius:var(--r-md)}
+
+/* ---- Восстановление и состояние автосохранения ---- */
+#st-save{white-space:nowrap;font-size:var(--fs-11)}
+#st-save.save-ok{color:var(--success)}
+#st-save.save-busy{color:var(--muted)}
+#st-save.save-error{color:var(--danger);font-weight:600}
+.menu-row.danger{color:var(--danger)}
+.modal-overlay .modal.recovery-modal{width:min(620px,94vw)}
+.recovery-body{display:flex;flex-direction:column;gap:8px;padding:4px}
+.recovery-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border:1px solid var(--hairline);
+  border-radius:var(--r-md);background:var(--panel)}
+.recovery-main{display:flex;flex:1;min-width:0;flex-direction:column;gap:3px}
+.recovery-main strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--fs-13)}
+.recovery-main span{color:var(--muted);font-size:var(--fs-11)}
+.recovery-empty{padding:24px;border:1px dashed var(--hairline);border-radius:var(--r-md);
+  text-align:center;color:var(--muted);font-size:var(--fs-12)}
+.recovery-empty.error{color:var(--danger)}
