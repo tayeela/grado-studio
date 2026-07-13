@@ -588,6 +588,12 @@ function styleForDrawing() {
   if (state.tool === "dim") return STYLES_V2["dimension.line"];
   return layerStyle(activeLayer());
 }
+// семейства для подписи объектов (label_font.family слоя/объекта)
+const LABEL_FONTS = {
+  ui: "system-ui, sans-serif",
+  serif: "Georgia, 'Times New Roman', serif",
+  mono: "ui-monospace, Menlo, monospace",
+};
 function labelOf(f) {
   const st = styleOf(f);
   return st.label_field ? f.props[st.label_field] : undefined;
@@ -1986,7 +1992,10 @@ function draw() {
         const c = f.ring.reduce((a, p) => [a[0] + p[0] / f.ring.length, a[1] + p[1] / f.ring.length], [0, 0]);
         const v = labelOf(f);
         if (v !== undefined && v !== "" && v !== null) {
-          ctx.fillStyle = cvColor("label", "#5c5a54"); ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+          const lf = st.label_font || {};
+          ctx.fillStyle = lf.color || cvColor("label", "#5c5a54");
+          ctx.font = `${Math.min(72, Math.max(6, lf.size || 11))}px ${LABEL_FONTS[lf.family] || "sans-serif"}`;
+          ctx.textAlign = "center";
           ctx.fillText(String(v), ...w2s(...c));
         }
       }

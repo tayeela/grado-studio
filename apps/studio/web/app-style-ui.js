@@ -168,6 +168,14 @@ function openLayerStyle(layer, opts = {}) {
   const opt = (sel, v, lbl) => `<option value="${v}"${sel === v ? " selected" : ""}>${lbl}</option>`;
   // рабочая копия правил для режима «по значению поля»
   const fieldCols = attrColumns(layer).filter(c => !c.virtual);
+  // подпись объектов: поле + шрифт (кегль/цвет/семейство). Холст подписывает
+  // полигоны по центроиду (label_field), поэтому секция только для них.
+  const isPoly = layer.geometry_type === "polygon";
+  const curLF = cur.label_field || "";
+  const lfFont = cur.label_font || {};
+  const labelCols = fieldCols.slice();
+  if (curLF && !labelCols.some(c => c.name === curLF))
+    labelCols.push({ name: curLF, label: curLF });
   let work = (layer.rules || []).map(r => ({ op: "=", ...r }));
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
@@ -202,6 +210,18 @@ function openLayerStyle(layer, opts = {}) {
         opt(hAngle, "135", "135° ╲") + opt(hAngle, "cross", "сетка ✕")}</select></label>
       <label>Плотность<select id="fmt-hdens">${
         opt(hDens, "sparse", "реже") + opt(hDens, "normal", "обычно") + opt(hDens, "dense", "чаще")}</select></label>
+      ${isPoly ? `<div class="fmt-sub">Подпись объектов</div>
+      <label>Поле подписи<select id="fmt-labelf">
+        <option value="">— без подписи —</option>${
+        labelCols.map(c => opt(curLF, c.name, c.label || c.name)).join("")}</select></label>
+      <div id="fmt-labelf-fields" style="display:${curLF ? "" : "none"}">
+        <label>Кегль, px<input type="number" id="fmt-lsize" value="${lfFont.size || 11}" min="6" max="72" step="0.5"></label>
+        <label>Цвет<div id="fmt-lcolor"></div></label>
+        <label>Шрифт<select id="fmt-lfamily">${
+          opt(lfFont.family || "ui", "ui", "системный") +
+          opt(lfFont.family || "ui", "serif", "с засечками") +
+          opt(lfFont.family || "ui", "mono", "моноширинный")}</select></label>
+      </div>` : ""}
       <div class="fmt-sub">Показывать</div>
       <label class="chk"><input type="checkbox" id="fmt-marker" ${baseMarker ? "checked" : ""}> засечки-маркеры</label>
       <div id="fmt-marker-fields" style="display:${baseMarker ? "" : "none"}">
@@ -241,6 +261,11 @@ function openLayerStyle(layer, opts = {}) {
   const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
   const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
+  const lcolorCF = $("fmt-lcolor")
+    ? makeColorField($("fmt-lcolor"), toHexColor(lfFont.color, "#5c5a54"), onColor) : null;
+  if ($("fmt-labelf")) $("fmt-labelf").addEventListener("change", () => {
+    $("fmt-labelf-fields").style.display = $("fmt-labelf").value ? "" : "none";
+  });
   const currentDash = () => $("fmt-dashp").value === "custom"
     ? parseDashStr($("fmt-dash-custom").value)
     : (DASH_PRESETS[$("fmt-dashp").value] ?? null);
@@ -294,6 +319,15 @@ function openLayerStyle(layer, opts = {}) {
     } else fmt.line_marker = null;
     if ($("fmt-label").checked) { if (baseLabel) fmt.line_label = baseLabel; }
     else fmt.line_label = null;
+    if ($("fmt-labelf")) {
+      const lff = $("fmt-labelf").value;
+      fmt.label_field = lff || null;   // null явно глушит подпись знака (напр. этажность)
+      fmt.label_font = lff ? {
+        size: Math.min(72, Math.max(6, parseFloat($("fmt-lsize").value) || 11)),
+        color: lcolorCF.get(),
+        family: $("fmt-lfamily").value || "ui",
+      } : null;
+    }
     if (baseDouble) fmt.double = baseDouble;
     const ref = $("fmt-preset").value;
     if (ref) fmt.style_ref = ref;
@@ -329,6 +363,18 @@ function openLayerStyle(layer, opts = {}) {
       setMarkerFields(p.line_marker || null);
       baseLabel = p.line_label || null; baseDouble = p.double || null;
       $("fmt-label").checked = !!baseLabel;
+      if ($("fmt-labelf")) {   // подпись — из знака-пресета, шрифт к дефолту
+        const plf = p.label_field || "";
+        if (plf && ![...$("fmt-labelf").options].some(o => o.value === plf)) {
+          const o = document.createElement("option");
+          o.value = plf; o.textContent = plf;
+          $("fmt-labelf").appendChild(o);
+        }
+        $("fmt-labelf").value = plf;
+        $("fmt-labelf-fields").style.display = plf ? "" : "none";
+        $("fmt-lsize").value = 11; $("fmt-lfamily").value = "ui";
+        lcolorCF.set("#5c5a54");
+      }
     }
     layer.fmt = collect(); draw(); updateDashPreview();
   });
