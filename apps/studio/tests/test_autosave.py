@@ -100,7 +100,7 @@ class ReleaseManifestTests(unittest.TestCase):
         manifest = json.loads((root / "apps/studio/web/version.json").read_text())
         packaging = (root / "packaging/py2app_setup.py").read_text()
 
-        self.assertEqual("0.9.0-beta.6", manifest["version"])
+        self.assertEqual("0.9.0-beta.7", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
@@ -144,6 +144,24 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertEqual(
                 Path(r"C:\Users\Test\AppData\Local") / "GRADO Studio",
                 server._studio_data_dir())
+
+    def test_cloud_mode_binds_publicly_and_disables_local_bridge(self):
+        with mock.patch.object(server.sys, "argv", ["studio", "--cloud"]), \
+                mock.patch.dict(server.os.environ, {}, clear=True):
+            self.assertTrue(server._cloud_mode())
+            self.assertEqual("0.0.0.0", server._server_host())
+            self.assertFalse(server._bridge_enabled())
+            self.assertFalse(server._server_side_import_enabled())
+
+    def test_cloud_session_cookie_is_https_only(self):
+        with mock.patch.object(server.sys, "argv", ["studio", "--cloud"]), \
+                mock.patch.dict(server.os.environ, {}, clear=True):
+            cookie = server.Handler._session_cookie("token")
+            cleared = server.Handler._session_cookie("", clear=True)
+        for value in (cookie, cleared):
+            self.assertIn("HttpOnly", value)
+            self.assertIn("SameSite=Lax", value)
+            self.assertIn("Secure", value)
 
     def test_packaged_app_has_fallback_ports_but_dev_is_strict(self):
         with mock.patch.object(server.sys, "frozen", "macosx_app", create=True):

@@ -47,6 +47,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+def _cloud_mode():
+    return "--cloud" in sys.argv or os.environ.get("GRADO_CLOUD") == "1"
+
+
 def _desktop_mode():
     """Запуск пользователем через приложение или системный лаунчер."""
     return "--desktop" in sys.argv or bool(getattr(sys, "frozen", False))
@@ -74,7 +78,10 @@ RESOURCE_ROOT = Path(os.environ.get("RESOURCEPATH", Path(__file__).parent))
 WEB = RESOURCE_ROOT / "web"
 VERSION_PATH = WEB / "version.json"
 VERSION_INFO = json.loads(VERSION_PATH.read_text(encoding="utf-8"))
-PORT = 8643
+try:
+    PORT = int(os.environ.get("PORT", "8643"))
+except ValueError:
+    PORT = 8643
 INITIAL_GRADO = None
 for a in sys.argv[1:]:
     if a.isdigit():
@@ -85,9 +92,9 @@ for a in sys.argv[1:]:
             INITIAL_GRADO = p
 BRIDGE_PORT = 8081  # совместимость с браузерным расширением GRADO
 
-# --- веб-режим (совместная работа): --hub ----------------------------------
+# --- веб-режим (совместная работа): --hub / --cloud -------------------------
 HUB = None
-if "--hub" in sys.argv:
+if "--hub" in sys.argv or _cloud_mode():
     from webhub import Hub, HubError, SESSION_COOKIE
     HUB = Hub(DATA_DIR / ".hub")
 else:
@@ -285,11 +292,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     @staticmethod
     def _session_cookie(token, clear=False):
-        # Secure не ставим: локально HTTP; на VPS добавит reverse-proxy
+        secure = "; Secure" if _cloud_mode() or os.environ.get(
+            "GRADO_SECURE_COOKIES") == "1" else ""
         if clear:
-            return f"{SESSION_COOKIE}=; Path=/; HttpOnly; Max-Age=0"
+            return (f"{SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; "
+                    f"Max-Age=0{secure}")
         return (f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; "
-                f"SameSite=Lax; Max-Age={30 * 24 * 3600}")
+                f"SameSite=Lax; Max-Age={30 * 24 * 3600}{secure}")
 
     def _hub_gate(self, path):
         """Гейт hub-режима: /api/* без сессии → 401 (кроме входа).
@@ -308,6 +317,20 @@ class Handler(SimpleHTTPRequestHandler):
         # Тайлы подложки — исключение, у них свой Cache-Control (см. _serve_tile).
         if not self.path.startswith("/api/tiles/"):
             self.send_header("Cache-Control", "no-store")
+        if _cloud_mode():
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "same-origin")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Permissions-Policy",
+                             "camera=(), microphone=(), geolocation=()")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'self'; img-src 'self' data: blob:; "
+                "style-src 'self' 'unsafe-inline'; "
+                "script-src 'self' 'unsafe-inline'; connect-src 'self'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.send_header("Strict-Transport-Security",
+                             "max-age=31536000; includeSubDomains")
         super().end_headers()
 
     def _json_body(self):
@@ -450,6 +473,10 @@ class Handler(SimpleHTTPRequestHandler):
         from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
         if parsed.path == "/api/downloads-scan":
+            if not _server_side_import_enabled():
+                self._send(b'{"files": []}',
+                           "application/json; charset=utf-8")
+                return
             # вахта за ~/Downloads: свежие ZIP (выгрузки ГИС ОГД и т.п.),
             # появившиеся после отметки since (unix-секунды). Только чтение
             # списка — сам импорт идёт отдельным подтверждённым запросом.
@@ -602,6 +629,9 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             if self.path == "/api/import-gisogd-url":
+                if not _server_side_import_enabled():
+                    self.send_error(403, "URL import disabled in cloud mode")
+                    return
                 body = self._json_body()
                 url = body.get("url")
                 if not url:
@@ -634,6 +664,9 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             if self.path == "/api/import-gisogd-path":
+                if not _server_side_import_enabled():
+                    self.send_error(403, "path import disabled in cloud mode")
+                    return
                 # импорт ГИС ОГД по пути: ZIP (автоподхват из «Загрузок»),
                 # распакованная папка или одиночный файл (.geojson/.json/.shp).
                 # Безопасность: только внутри ~/Downloads — произвольные пути
@@ -810,13 +843,30 @@ def _port_candidates(port):
     return (port,)
 
 
+def _server_host():
+    explicit = os.environ.get("GRADO_HOST")
+    if explicit:
+        return explicit
+    return "0.0.0.0" if _cloud_mode() else "127.0.0.1"
+
+
+def _bridge_enabled():
+    return not _cloud_mode() and os.environ.get("GRADO_DISABLE_BRIDGE") != "1"
+
+
+def _server_side_import_enabled():
+    """Не превращать облачный сервер в файловый или сетевой прокси."""
+    return not _cloud_mode()
+
+
 def main():
     global PORT, BRIDGE_ON
     servers = []
     original_port = PORT
+    host = _server_host()
     for candidate in _port_candidates(original_port):
         try:
-            servers = [ThreadingHTTPServer(("127.0.0.1", candidate), Handler)]
+            servers = [ThreadingHTTPServer((host, candidate), Handler)]
             PORT = candidate
             break
         except OSError:
@@ -833,18 +883,21 @@ def main():
                 raise
     if not servers:
         raise OSError("no free local port for GRADO Studio")
-    try:
-        servers.append(V6Server(("::1", PORT), Handler))
-    except OSError:
-        pass  # система без IPv6 — хватит IPv4
-    try:
-        servers.append(ThreadingHTTPServer(("127.0.0.1", BRIDGE_PORT), BridgeHandler))
-        BRIDGE_ON = True
-        print(f"Мост расширения GRADO: порт {BRIDGE_PORT}")
-    except OSError:
-        print(f"Порт {BRIDGE_PORT} занят (вероятно, QGIS с плагином GRADO) — "
-              "мост выключен, выгрузки идут в QGIS")
-    print(f"ГРАДО Студия: http://localhost:{PORT}")
+    if host in ("127.0.0.1", "localhost"):
+        try:
+            servers.append(V6Server(("::1", PORT), Handler))
+        except OSError:
+            pass  # система без IPv6 — хватит IPv4
+    if _bridge_enabled():
+        try:
+            servers.append(ThreadingHTTPServer(("127.0.0.1", BRIDGE_PORT), BridgeHandler))
+            BRIDGE_ON = True
+            print(f"Мост расширения GRADO: порт {BRIDGE_PORT}")
+        except OSError:
+            print(f"Порт {BRIDGE_PORT} занят (вероятно, QGIS с плагином GRADO) — "
+                  "мост выключен, выгрузки идут в QGIS")
+    shown_host = "localhost" if host in ("0.0.0.0", "127.0.0.1") else host
+    print(f"ГРАДО Студия: http://{shown_host}:{PORT}")
     if _should_open_browser():
         threading.Timer(0.4, webbrowser.open,
                         [f"http://localhost:{PORT}"]).start()
