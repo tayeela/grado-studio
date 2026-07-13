@@ -100,7 +100,7 @@ class ReleaseManifestTests(unittest.TestCase):
         manifest = json.loads((root / "apps/studio/web/version.json").read_text())
         packaging = (root / "packaging/py2app_setup.py").read_text()
 
-        self.assertEqual("0.9.0-beta.4", manifest["version"])
+        self.assertEqual("0.9.0-beta.5", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
@@ -133,11 +133,27 @@ class ReleaseManifestTests(unittest.TestCase):
                 mock.patch.dict(server.os.environ, {"GRADO_NO_BROWSER": "1"}, clear=True):
             self.assertFalse(server._should_open_browser())
 
+    def test_windows_launcher_uses_desktop_mode_and_user_data_dir(self):
+        with mock.patch.object(server.sys, "frozen", False, create=True), \
+                mock.patch.object(server.sys, "platform", "win32"), \
+                mock.patch.object(server.sys, "argv", ["studio", "--desktop"]), \
+                mock.patch.dict(server.os.environ,
+                                {"LOCALAPPDATA": r"C:\Users\Test\AppData\Local"},
+                                clear=True):
+            self.assertTrue(server._should_open_browser())
+            self.assertEqual(
+                Path(r"C:\Users\Test\AppData\Local") / "GRADO Studio",
+                server._studio_data_dir())
+
     def test_packaged_app_has_fallback_ports_but_dev_is_strict(self):
         with mock.patch.object(server.sys, "frozen", "macosx_app", create=True):
             self.assertEqual(list(range(8643, 8653)), list(server._port_candidates(8643)))
         with mock.patch.object(server.sys, "frozen", False, create=True):
             self.assertEqual([8643], list(server._port_candidates(8643)))
+        with mock.patch.object(server.sys, "frozen", False, create=True), \
+                mock.patch.object(server.sys, "argv", ["studio", "--desktop"]):
+            self.assertEqual(list(range(8643, 8653)),
+                             list(server._port_candidates(8643)))
 
 
 if __name__ == "__main__":
