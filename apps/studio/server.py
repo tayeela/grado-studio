@@ -557,6 +557,9 @@ class Handler(SimpleHTTPRequestHandler):
             src = (parse_qs(parsed.query).get("src") or ["osm"])[0]
             self._serve_tile(*map(int, m.groups()), src)
             return
+        if parsed.path.startswith("/api/"):
+            self._json({"error": "api endpoint not found"}, 404)
+            return
         super().do_GET()
 
     def _serve_tile(self, z, x, y, source="osm"):
@@ -602,7 +605,7 @@ class Handler(SimpleHTTPRequestHandler):
                         self._json({"ok": True},
                                    set_cookie=self._session_cookie("", clear=True))
                     else:
-                        self.send_error(404)
+                        self._json({"error": "api endpoint not found"}, 404)
                 except HubError as e:
                     self._json({"error": str(e)}, e.status)
                 return
@@ -857,7 +860,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._send(json.dumps({"stations": out}).encode(),
                            "application/json; charset=utf-8")
             else:
-                self.send_error(404)
+                self._json({"error": "api endpoint not found"}, 404)
         except RequestBodyTooLarge:
             self._json({"error": "request body too large"}, 413)
         except (BadRequest, json.JSONDecodeError, UnicodeDecodeError,

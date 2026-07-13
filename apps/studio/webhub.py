@@ -23,6 +23,7 @@ GET state?since=rev (204 — без изменений). Сервер конфл
 
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -38,10 +39,50 @@ LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 # ключи state, общие для всех участников проекта; личные (вид, активный
 # слой, подложка, undo/redo) на сервер не попадают — каждый смотрит своё
 SHARED_STATE_KEYS = (
-    "features", "nextId", "name", "density", "ratio", "krail", "kba",
+    "features", "nextId", "name", "density", "ratio", "educationZone",
+    "territoryMode", "krail", "kba",
     "layersVisible", "layerLocked", "layerRules", "layerOrder", "layerFmt",
     "layerFields", "layerTitles", "userLayers", "projectStyles",
     "projectCustomKinds", "sources", "albumConfig")
+
+_SHARED_MAP_KEYS = {
+    "layersVisible", "layerLocked", "layerRules", "layerFmt", "layerFields",
+    "layerTitles", "projectStyles", "albumConfig",
+}
+_SHARED_OBJECT_LIST_KEYS = {"features", "userLayers", "projectCustomKinds", "sources"}
+
+
+def _validated_shared_state(state):
+    """Оставить разрешённые ключи и отклонить заведомо повреждённый payload."""
+    if not isinstance(state, dict):
+        raise HubError(400, "state должен быть объектом")
+    shared = {key: state[key] for key in SHARED_STATE_KEYS if key in state}
+    for key in _SHARED_MAP_KEYS:
+        if key in shared and not isinstance(shared[key], dict):
+            raise HubError(400, f"{key} должен быть объектом")
+    for key in _SHARED_OBJECT_LIST_KEYS:
+        if key in shared and (not isinstance(shared[key], list)
+                              or not all(isinstance(item, dict) for item in shared[key])):
+            raise HubError(400, f"{key} должен быть массивом объектов")
+    if "layerOrder" in shared and (not isinstance(shared["layerOrder"], list)
+                                    or not all(isinstance(item, str)
+                                               for item in shared["layerOrder"])):
+        raise HubError(400, "layerOrder должен быть массивом строк")
+    if "name" in shared and not isinstance(shared["name"], str):
+        raise HubError(400, "name должен быть строкой")
+    if "nextId" in shared and (not isinstance(shared["nextId"], int)
+                                or isinstance(shared["nextId"], bool)
+                                or shared["nextId"] < 1):
+        raise HubError(400, "nextId должен быть положительным целым числом")
+    for key in ("density", "ratio", "educationZone", "territoryMode", "krail", "kba"):
+        value = shared.get(key)
+        try:
+            valid_number = not isinstance(value, bool) and math.isfinite(float(value))
+        except (TypeError, ValueError):
+            valid_number = False
+        if key in shared and not valid_number:
+            raise HubError(400, f"{key} должен быть числом")
+    return shared
 
 
 class HubError(ValueError):
@@ -132,8 +173,10 @@ class Hub:
     def login(self, login, password):
         with self.lock:
             user = self.users.get(login or "")
-            if not user or _scrypt(password or "",
-                                   bytes.fromhex(user["salt"])) != user["pw"]:
+            candidate = (_scrypt(password or "", bytes.fromhex(user["salt"]))
+                         if user else "")
+            expected = user["pw"] if user else "-"
+            if not user or not secrets.compare_digest(candidate, expected):
                 raise HubError(401, "неверный логин или пароль")
             return self._new_session_locked(login)
 
@@ -273,9 +316,7 @@ class Hub:
 
         Сервер не сливает — только сериализует: проигравший 409-клиент
         мержит у себя и повторяет с новым base_rev."""
-        if not isinstance(state, dict):
-            raise HubError(400, "state должен быть объектом")
-        shared = {k: state[k] for k in SHARED_STATE_KEYS if k in state}
+        shared = _validated_shared_state(state)
         with self.lock:
             proj = self._read_project(pid)
             self._check_access(proj, login)

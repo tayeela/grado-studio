@@ -150,6 +150,32 @@ class TestSync(HubBase):
             self.assertNotIn(key, st)
         self.assertIn("features", st)
 
+    def test_rejects_malformed_shared_state(self):
+        bad_payloads = (
+            {"features": "not-a-list"},
+            {"features": ["not-an-object"]},
+            {"features": [], "layerOrder": [1, 2]},
+            {"features": [], "layersVisible": []},
+            {"features": [], "nextId": 0},
+            {"features": [], "density": "not-a-number"},
+        )
+        for payload in bad_payloads:
+            with self.subTest(payload=payload), self.assertRaises(HubError) as caught:
+                self.hub.put_state(self.pid, "anna", 0, payload)
+            self.assertEqual(caught.exception.status, 400)
+        self.assertEqual(self.hub.get_state(self.pid, "anna")["rev"], 0)
+
+    def test_accepts_empty_project_state(self):
+        out = self.hub.put_state(self.pid, "anna", 0, {
+            "features": [], "nextId": 1, "layerOrder": [],
+            "layersVisible": {}, "projectStyles": {}, "density": "25",
+            "educationZone": "2", "territoryMode": "1",
+        })
+        self.assertEqual(out["rev"], 1)
+        state = self.hub.get_state(self.pid, "anna")["state"]
+        self.assertEqual(state["features"], [])
+        self.assertEqual(state["educationZone"], "2")
+
     def test_presence_online(self):
         self.hub.get_state(self.pid, "anna")
         out = self.hub.get_state(self.pid, "boris")
