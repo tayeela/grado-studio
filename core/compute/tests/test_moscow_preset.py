@@ -36,8 +36,27 @@ class TestMoscowPreset(unittest.TestCase):
         self.assertEqual(self.e.value("school_norm"), 500)
         self.assertEqual(self.e.value("school_places"), 500)
         self.assertEqual(self.e.value("policlinic_norm"), 106)
-        self.assertEqual(self.e.value("policlinic_places"), 0,
-                         "ниже порога 320 посещений — объект не размещается")
+        self.assertEqual(self.e.value("policlinic_places"), 106)
+        self.assertEqual(self.e.value("retail_nnp_required"), 1500)
+        self.assertEqual(self.e.value("services_nnp_required"), 555)
+
+    def test_education_zone_2(self):
+        e = Engine.from_file(PRESET)
+        e.set_inputs(terr_area=15, restrict_area=0, density=25,
+                     ratio_zh=80, percent_vpp=6, education_zone=2,
+                     k_rail=1, k_ba=0.5)
+        self.assertEqual(e.value("doo_norm"), 350)
+        self.assertEqual(e.value("school_norm"), 689)
+
+    def test_2152_territory_modes(self):
+        self.assertEqual(self.e.value("green_area_required"), 27773)
+        self.assertEqual(self.e.value("playground_area_required"), 0)
+        e = Engine.from_file(PRESET)
+        e.set_inputs(terr_area=15, restrict_area=0, density=25,
+                     ratio_zh=80, percent_vpp=6, territory_mode=2)
+        self.assertEqual(e.value("green_area_required"), 37500)
+        self.assertEqual(e.value("playground_area_required"), 2777)
+        self.assertEqual(e.value("adult_recreation_area_required"), 555)
 
     def test_parking(self):
         self.assertEqual(self.e.value("parking_perm"), 714)
@@ -46,12 +65,12 @@ class TestMoscowPreset(unittest.TestCase):
         self.assertEqual(rows["parking_perm"]["unit"], "м/м")
         self.assertEqual(rows["parking_guest"]["unit"], "м/м")
 
-    def test_social_thresholds_small_territory(self):
+    def test_social_need_is_not_hidden_on_small_territory(self):
         e = Engine.from_file(PRESET)
         e.set_inputs(terr_area=1, restrict_area=0, density=10,
                      ratio_zh=80, percent_vpp=6, k_rail=1, k_ba=0.5)
-        self.assertEqual(e.value("doo_places"), 0, "потребность ниже порога 100 мест")
-        self.assertEqual(e.value("school_places"), 0, "потребность ниже порога 150 мест")
+        self.assertGreater(e.value("doo_places"), 0)
+        self.assertGreater(e.value("school_places"), 0)
 
     def test_restrict_area_reduces_everything(self):
         e = Engine.from_file(PRESET)

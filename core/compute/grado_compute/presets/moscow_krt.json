@@ -1,11 +1,20 @@
 {
   "id": "moscow_krt_tep",
-  "title": "ТЭП жилой застройки — Москва (методика КРТ)",
+  "title": "ТЭП жилой застройки — Москва (НГП, предварительная проверка)",
+  "regulatory_profile": {
+    "id": "moscow_urban_planning_2026_07",
+    "jurisdiction": "Москва",
+    "checked_at": "2026-07-13",
+    "automated_acts": ["2151-ПП", "2152-ПП"],
+    "screening_acts": ["945-ПП", "2150-ПП", "120-ПП"],
+    "notice": "Расчёт предназначен для предпроектной проверки. Соответствие ПЗЗ, ГПЗУ, ППТ, санитарным, пожарным и отраслевым требованиям подтверждается по исходным данным проекта."
+  },
   "sources": [
-    "Константы восстановлены из калькулятора genplan.tech/calc (реверс бандла, 2026-07-02)",
-    "Соцнормативы: 44 места ДОО и 90 мест школ на 1 тыс. жителей — зона 1 по районам Москвы; поликлиники 13.2 взр. + 5.8 дет. посещений в смену на 1 тыс. жителей",
-    "Парковка: 257 м/м на 1 тыс. жителей с коэфф. ж/д доступности и деловой активности (методика на базе 945-ПП)",
-    "Перед использованием в проектной документации сверить значения с действующей редакцией МНГП Москвы"
+    "2152-ПП в ред. 2579-ПП: население МКД — 33 м² площади квартир на человека; торговля — 270 и бытовое обслуживание — 100 м² ННП на 1000 жителей",
+    "2151-ПП: зона 1 — 44 места ДОО и 90 мест школ; зона 2 — 63 и 124 места на 1000 жителей",
+    "2150-ПП: амбулаторная помощь — 13,2 взросл. + 5,8 дет. посещения в смену на 1000 жителей",
+    "945-ПП: транспортный расчёт в текущей версии является предпроектным скринингом и требует проверки по назначению объектов и территориальной зоне",
+    "Реестр и границы автоматизации: docs/regulations-moscow.md"
   ],
   "inputs": [
     {"id": "terr_area", "title": "Площадь территории", "unit": "га", "default": 15, "min": 0.1, "max": 500, "step": 0.1},
@@ -13,6 +22,8 @@
     {"id": "density", "title": "Плотность застройки по СПП", "unit": "тыс. м²/га", "default": 25, "min": 1, "max": 60, "step": 0.5},
     {"id": "ratio_zh", "title": "Доля жилых зданий в СПП", "unit": "%", "default": 80, "min": 0, "max": 100, "step": 1},
     {"id": "percent_vpp", "title": "Встроенные нежилые помещения (ВПП) в жилых домах", "unit": "%", "default": 6, "min": 0, "max": 30, "step": 1},
+    {"id": "education_zone", "title": "Образовательная зона по 2151-ПП (1 или 2)", "unit": "", "default": 1, "min": 1, "max": 2, "step": 1},
+    {"id": "territory_mode", "title": "Режим территории по 2152-ПП (1 — преобразование, 2 — реконструкция)", "unit": "", "default": 1, "min": 1, "max": 2, "step": 1},
     {"id": "k_rail", "title": "Коэфф. ж/д доступности (0.75 — до 1200 м от станции)", "unit": "", "default": 1, "min": 0.5, "max": 1, "step": 0.05},
     {"id": "k_ba", "title": "Коэфф. деловой активности (0.2 — внутри ТТК, 0.5 — вне)", "unit": "", "default": 0.5, "min": 0.1, "max": 1, "step": 0.05}
   ],
@@ -21,14 +32,19 @@
     "coeff_zh_to_flats": 0.65,
     "sq_flats_per_person": 33,
     "residents_per_flat": 2.1,
-    "doo_per_ths": 44,
-    "school_per_ths": 90,
+    "doo_zone1_per_ths": 44,
+    "doo_zone2_per_ths": 63,
+    "school_zone1_per_ths": 90,
+    "school_zone2_per_ths": 124,
     "policlinic_adult_per_ths": 13.2,
     "policlinic_child_per_ths": 5.8,
     "parking_mm_per_ths": 257,
-    "min_doo_places": 100,
-    "min_school_places": 150,
-    "min_policlinic_visits": 320
+    "retail_nnp_per_ths": 270,
+    "services_nnp_per_ths": 100,
+    "green_sqm_per_person": 5,
+    "reconstruction_green_share": 0.25,
+    "reconstruction_playground_sqm_per_person": 0.5,
+    "reconstruction_adult_recreation_sqm_per_person": 0.1
   },
   "metrics": [
     {"id": "calc_area", "title": "Расчётная площадь территории", "unit": "га", "expr": "terr_area - restrict_area", "precision": 2, "group": "Территория"},
@@ -42,13 +58,20 @@
     {"id": "population_ths", "title": "Население (тыс. чел)", "unit": "тыс. чел", "expr": "sq_flats / sq_flats_per_person", "hidden": true, "group": "Жильё и население"},
     {"id": "population", "title": "Расчётное население", "unit": "чел", "expr": "round(population_ths * 1000)", "precision": 0, "group": "Жильё и население"},
     {"id": "flats", "title": "Количество квартир", "unit": "кв.", "expr": "round(population_ths * 1000 / residents_per_flat)", "precision": 0, "group": "Жильё и население"},
-    {"id": "doo_norm", "title": "Потребность в местах ДОО", "unit": "мест", "expr": "round(doo_per_ths * population_ths)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "doo_places", "title": "ДОО к размещению (порог 100 мест)", "unit": "мест", "expr": "where(doo_norm >= min_doo_places, doo_norm, 0)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "school_norm", "title": "Потребность в местах школ", "unit": "мест", "expr": "round(school_per_ths * population_ths)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "school_places", "title": "Школы к размещению (порог 150 мест)", "unit": "мест", "expr": "where(school_norm >= min_school_places, school_norm, 0)", "precision": 0, "group": "Социальные объекты"},
+    {"id": "doo_per_ths", "title": "Норматив ДОО по выбранной зоне", "unit": "мест/1000 чел", "expr": "where(education_zone == 2, doo_zone2_per_ths, doo_zone1_per_ths)", "hidden": true, "group": "Социальные объекты"},
+    {"id": "school_per_ths", "title": "Норматив школ по выбранной зоне", "unit": "мест/1000 чел", "expr": "where(education_zone == 2, school_zone2_per_ths, school_zone1_per_ths)", "hidden": true, "group": "Социальные объекты"},
+    {"id": "doo_norm", "title": "Потребность в местах ДОО (2151-ПП)", "unit": "мест", "expr": "round(doo_per_ths * population_ths)", "precision": 0, "group": "Социальные объекты"},
+    {"id": "doo_places", "title": "Расчётная потребность ДОО", "unit": "мест", "expr": "doo_norm", "precision": 0, "group": "Социальные объекты"},
+    {"id": "school_norm", "title": "Потребность в местах школ (2151-ПП)", "unit": "мест", "expr": "round(school_per_ths * population_ths)", "precision": 0, "group": "Социальные объекты"},
+    {"id": "school_places", "title": "Расчётная потребность школ", "unit": "мест", "expr": "school_norm", "precision": 0, "group": "Социальные объекты"},
     {"id": "policlinic_norm", "title": "Потребность в поликлиниках", "unit": "посещ./смену", "expr": "round((policlinic_adult_per_ths + policlinic_child_per_ths) * population_ths)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "policlinic_places", "title": "Поликлиника к размещению (порог 320 посещ.)", "unit": "посещ./смену", "expr": "where(policlinic_norm >= min_policlinic_visits, policlinic_norm, 0)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "parking_perm", "title": "Машино-места постоянного хранения", "unit": "м/м", "expr": "round(population_ths * parking_mm_per_ths * k_rail * k_ba)", "precision": 0, "group": "Транспорт"},
-    {"id": "parking_guest", "title": "Гостевые машино-места", "unit": "м/м", "expr": "round(parking_perm / 10)", "precision": 0, "group": "Транспорт"}
+    {"id": "policlinic_places", "title": "Расчётная потребность поликлиник", "unit": "посещ./смену", "expr": "policlinic_norm", "precision": 0, "group": "Социальные объекты"},
+    {"id": "retail_nnp_required", "title": "Торговля к размещению (2152-ПП)", "unit": "м² ННП", "expr": "round(population_ths * retail_nnp_per_ths)", "precision": 0, "group": "Обслуживание"},
+    {"id": "services_nnp_required", "title": "Бытовое обслуживание (2152-ПП)", "unit": "м² ННП", "expr": "round(population_ths * services_nnp_per_ths)", "precision": 0, "group": "Обслуживание"},
+    {"id": "green_area_required", "title": "Озеленённая территория по режиму 2152-ПП", "unit": "м²", "expr": "round(where(territory_mode == 2, calc_area * 10000 * reconstruction_green_share, population_ths * 1000 * green_sqm_per_person))", "precision": 0, "group": "Жилые территории"},
+    {"id": "playground_area_required", "title": "Детские площадки при реконструкции", "unit": "м²", "expr": "round(where(territory_mode == 2, population_ths * 1000 * reconstruction_playground_sqm_per_person, 0))", "precision": 0, "group": "Жилые территории"},
+    {"id": "adult_recreation_area_required", "title": "Площадки отдыха взрослых при реконструкции", "unit": "м²", "expr": "round(where(territory_mode == 2, population_ths * 1000 * reconstruction_adult_recreation_sqm_per_person, 0))", "precision": 0, "group": "Жилые территории"},
+    {"id": "parking_perm", "title": "Машино-места — предварительный расчёт", "unit": "м/м", "expr": "round(population_ths * parking_mm_per_ths * k_rail * k_ba)", "precision": 0, "group": "Транспорт"},
+    {"id": "parking_guest", "title": "Гостевые машино-места — предварительно", "unit": "м/м", "expr": "round(parking_perm / 10)", "precision": 0, "group": "Транспорт"}
   ]
 }

@@ -107,6 +107,19 @@ class TestStudioCore(unittest.TestCase):
         self.assertIn("checks", out)
         self.assertTrue(any("Плотность" in c["title"] for c in out.get("checks", [])))
 
+    def test_compute_tep_passes_moscow_profile_inputs(self):
+        out = studio_core.compute_tep(
+            FEATURES,
+            {"density": 25, "ratio_zh": 80, "education_zone": 2,
+             "k_rail": 0.75, "k_ba": 0.2},
+        )
+        rows = {row["id"]: row["value"] for row in out["results"]}
+        self.assertEqual(rows["doo_norm"], 303)
+        self.assertEqual(rows["school_norm"], 597)
+        self.assertEqual(rows["parking_perm"], 186)
+        self.assertEqual(out["regulatory_profile"]["id"],
+                         "moscow_urban_planning_2026_07")
+
     def test_empty_features_defaults(self):
         out = studio_core.compute_tep([])
         self.assertGreater(out["inputs"]["terr_area"], 0)

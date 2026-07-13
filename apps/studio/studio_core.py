@@ -1053,7 +1053,8 @@ def make_engine(features, params=None):
     if inputs.get("terr_area", 0) == 0:
         inputs.pop("terr_area", None)  # пустой холст → дефолт пресета
     engine.set_inputs(**inputs)
-    for key in ("density", "ratio_zh", "percent_vpp"):
+    for key in ("density", "ratio_zh", "percent_vpp", "education_zone",
+                "territory_mode", "k_rail", "k_ba"):
         if params and params.get(key) is not None:
             engine.set_input(key, float(params[key]))
     return engine
@@ -1075,25 +1076,25 @@ def compute_tep(features, params=None):
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
     results = engine.results()
-    # basic rule engine checks (фаза 4)
+    # Нормативные проверки. Не выдаём эвристические пороги за требования НГП:
+    # допустимая плотность определяется ПЗЗ/ГПЗУ и документами участка.
     checks = []
     dens = round(fact_spp / calc_area, 2) if calc_area > 0 else 0
-    if dens > 40:
-        checks.append({"title": "Плотность", "ok": False, "msg": f"Высокая {dens} >40 — проверить МНГП и комфорт"})
-    if dens < 10:
-        checks.append({"title": "Плотность", "ok": False, "msg": f"Низкая {dens} — возможно неэффективно"})
-    # пример из констант пресета
+    if dens > 0:
+        checks.append({"title": "Плотность по ПЗЗ/ГПЗУ", "ok": False,
+                       "msg": f"Факт {dens} тыс. м²/га — требуется сверка с предельными параметрами участка"})
     pop = next((r["value"] for r in results if r["id"] == "population"), 0)
     if pop > 0:
-        doo_need = round(44 * pop / 1000)
+        doo_need = engine.display("doo_norm")
         if doo_need > 0:
-            checks.append({"title": "ДОО", "ok": True, "msg": f"Потребность ~{doo_need} мест (порог 100)"})
-    # radii thresholds example
-    for r in results:
-        if r["id"] == "doo_places" and r["value"] == 0 and pop > 1000:
-            checks.append({"title": "Радиусы ДОО", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
-        if r["id"] == "school_places" and r["value"] == 0 and pop > 2000:
-            checks.append({"title": "Радиусы школ", "ok": False, "msg": "Потребность ниже порога — проверить размещение"})
+            zone = int(engine.value("education_zone"))
+            checks.append({"title": "Образование · 2151-ПП", "ok": True,
+                           "msg": f"Зона {zone}: потребность ДОО {doo_need} мест, школа {engine.display('school_norm')} мест"})
+        checks.append({"title": "Транспорт · 945-ПП", "ok": False,
+                       "msg": "Машино-места рассчитаны предварительно; требуется уточнение по ВРИ, территориальной зоне и типам объектов"})
+    if pop > 0:
+        checks.append({"title": "Территориальная доступность", "ok": False,
+                       "msg": "Потребность рассчитана; существующую ёмкость и нормативные радиусы объектов необходимо проверить по окружению"})
     # без границы территории ТЭП считается по ВСЕМ объектам карты (площадь —
     # дефолт пресета) → честно предупреждаем: цифры не привязаны к территории
     if not has_territory and any("ring" in f for f in features):
@@ -1110,6 +1111,7 @@ def compute_tep(features, params=None):
         },
         "zones": zones_report(features),
         "checks": checks,
+        "regulatory_profile": engine.preset.get("regulatory_profile", {}),
         "has_territory": has_territory,
     }
 
