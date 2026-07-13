@@ -1,13 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from pathlib import Path
+import sys
 
 from PyInstaller.utils.hooks import collect_submodules
 
+ROOT = Path(SPEC).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "packaging"))
 from build_support import data_files_for_tree
 
 
-ROOT = Path(SPEC).resolve().parents[1]
 MODULE_DIRS = ("model", "compute", "reactive", "render", "geom", "layout", "connectors")
 PATHEX = [str(ROOT / "apps/studio"), str(ROOT / "apps/wizard")]
 PATHEX += [str(ROOT / "core" / module) for module in MODULE_DIRS]
