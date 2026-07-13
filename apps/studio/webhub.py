@@ -35,6 +35,8 @@ SESSION_COOKIE = "grado_session"
 SESSION_TTL = 30 * 24 * 3600          # 30 дней
 PRESENCE_TTL = 15                     # секунд с последнего поллинга = «онлайн»
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+PASSWORD_MIN_LENGTH = 8
+_DUMMY_SALT = bytes.fromhex("4a3f10b9b3e24815bd62a804674b0f2c")
 
 # ключи state, общие для всех участников проекта; личные (вид, активный
 # слой, подложка, undo/redo) на сервер не попадают — каждый смотрит своё
@@ -103,6 +105,8 @@ class Hub:
         self.root = Path(root)
         self.projects_dir = self.root / "projects"
         self.projects_dir.mkdir(parents=True, exist_ok=True)
+        self._secure_permissions(self.root, 0o700)
+        self._secure_permissions(self.projects_dir, 0o700)
         self.lock = threading.RLock()
         self.users = self._load("users.json")
         self.invites = self._load("invites.json")
@@ -119,6 +123,16 @@ class Hub:
 
     # ---------- файлы ----------
 
+    @staticmethod
+    def _secure_permissions(path, mode):
+        """Закрыть локальные аккаунты и проекты от других пользователей ОС."""
+        try:
+            Path(path).chmod(mode)
+        except OSError:
+            # На Windows ACL управляются системой; chmod может быть недоступен
+            # или иметь ограниченную семантику, поэтому запуск не блокируем.
+            pass
+
     def _load(self, name):
         try:
             with open(self.root / name, encoding="utf-8") as fh:
@@ -131,7 +145,9 @@ class Hub:
         tmp = self.root / (name + ".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
                        encoding="utf-8")
-        tmp.replace(self.root / name)
+        path = self.root / name
+        tmp.replace(path)
+        self._secure_permissions(path, 0o600)
 
     # ---------- инвайты и аккаунты ----------
 
@@ -158,8 +174,8 @@ class Hub:
                 raise HubError(400, "логин: 3-32 символа, латиница/цифры/._-")
             if login in self.users:
                 raise HubError(409, "такой логин уже занят")
-            if len(password or "") < 6:
-                raise HubError(400, "пароль слишком короткий (минимум 6)")
+            if not isinstance(password, str) or len(password) < PASSWORD_MIN_LENGTH:
+                raise HubError(400, f"пароль слишком короткий (минимум {PASSWORD_MIN_LENGTH})")
             salt = os.urandom(16)
             self.users[login] = {
                 "pw": _scrypt(password, salt), "salt": salt.hex(),
@@ -172,10 +188,17 @@ class Hub:
 
     def login(self, login, password):
         with self.lock:
-            user = self.users.get(login or "")
-            candidate = (_scrypt(password or "", bytes.fromhex(user["salt"]))
-                         if user else "")
-            expected = user["pw"] if user else "-"
+            user = self.users.get(login or "") if isinstance(login, str) else None
+            try:
+                salt = bytes.fromhex(user["salt"]) if user else _DUMMY_SALT
+                expected = user["pw"] if user else "-"
+            except (KeyError, TypeError, ValueError):
+                user = None
+                salt = _DUMMY_SALT
+                expected = "-"
+            # Неизвестный логин проходит тот же дорогой scrypt, что и
+            # существующий: ответ по времени не должен выдавать аккаунты.
+            candidate = _scrypt(password if isinstance(password, str) else "", salt)
             if not user or not secrets.compare_digest(candidate, expected):
                 raise HubError(401, "неверный логин или пароль")
             return self._new_session_locked(login)
@@ -230,6 +253,7 @@ class Hub:
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(proj, ensure_ascii=False), encoding="utf-8")
         tmp.replace(path)
+        self._secure_permissions(path, 0o600)
 
     def _check_access(self, proj, login):
         if login != proj["owner"] and login not in proj.get("members", []):

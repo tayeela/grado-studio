@@ -1,11 +1,14 @@
 """Веб-хаб: аккаунты по инвайтам, сессии, проекты, ревизии/409."""
 
 import sys
+import stat
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
+import webhub  # noqa: E402
 from webhub import Hub, HubError  # noqa: E402
 
 
@@ -54,6 +57,28 @@ class TestAuth(HubBase):
             self.hub.register(self.invite0, "а б", "пароль99")   # кириллица/пробел
         with self.assertRaises(HubError):
             self.hub.register(self.invite0, "anna", "123")       # короткий
+        with self.assertRaises(HubError):
+            self.hub.register(self.invite0, "anna", "1234567")   # всё ещё короткий
+
+    def test_unknown_login_still_runs_password_hash(self):
+        with mock.patch.object(webhub, "_scrypt", return_value="not-a-match") as hasher:
+            with self.assertRaises(HubError):
+                self.hub.login("missing-user", "password")
+        hasher.assert_called_once()
+
+    @unittest.skipIf(sys.platform == "win32", "POSIX permissions are not portable to Windows")
+    def test_hub_secrets_and_projects_are_private_to_current_os_user(self):
+        self._user("anna")
+        pid = self.hub.create_project("anna", "Закрытый")['id']
+
+        self.assertEqual(0o700, stat.S_IMODE(self.hub.root.stat().st_mode))
+        self.assertEqual(0o700, stat.S_IMODE(self.hub.projects_dir.stat().st_mode))
+        for name in ("users.json", "invites.json", "sessions.json"):
+            self.assertEqual(0o600, stat.S_IMODE((self.hub.root / name).stat().st_mode))
+        self.assertEqual(
+            0o600,
+            stat.S_IMODE((self.hub.projects_dir / f"{pid}.json").stat().st_mode),
+        )
 
     def test_logout_kills_session(self):
         token = self._user("anna")

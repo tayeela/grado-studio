@@ -195,6 +195,74 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn(".style-preview-canvas::before", styles)
         self.assertIn("linear-gradient(90deg,#f8fafc 0 50%,#202938 50% 100%)", styles)
 
+    def test_first_project_steps_and_tep_explain_actual_vs_normative(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn("Слой границы готов. Поставьте первую точку", app)
+        self.assertIn('aria-label="Следующий шаг проекта"', app)
+        self.assertIn("Добавить здание", app)
+        self.assertIn("Фактическая посадка", app)
+        self.assertIn("Расчётный потенциал", app)
+        self.assertIn("Контрольная копия появится перед созданием или открытием другого проекта", app)
+        self.assertIn(".props-next-step", styles)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_autosave_has_one_primary_and_checkpoint_recovery(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], head: {appendChild: () => {}}, createElement: () => ({})};
+const store = new Map([['grado_studio_v1', JSON.stringify({name:'Старый',features:[]})]]);
+global.localStorage = {
+  getItem: key => store.has(key) ? store.get(key) : null,
+  setItem: (key, value) => store.set(key, String(value)),
+  removeItem: key => store.delete(key),
+};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  const current = {name:'Текущий',features:[{id:1}]};
+  await window.fetch('/api/autosave', {method:'POST', body:JSON.stringify(current)});
+  const before = await (await window.fetch('/api/autosave/backups')).json();
+  await window.fetch('/api/autosave', {method:'POST',
+    headers:{'X-Grado-Checkpoint':'1'}, body:JSON.stringify(current)});
+  await window.fetch('/api/autosave', {method:'POST', body:JSON.stringify({name:'Новый',features:[]})});
+  const after = await (await window.fetch('/api/autosave/backups')).json();
+  const backup = await (await window.fetch('/api/autosave/backups/1')).json();
+  process.stdout.write(JSON.stringify({
+    before: before.backups.length,
+    after: after.backups.length,
+    backupName: backup.state.name,
+    backupCount: backup.state.features.length,
+    legacy: store.has('grado_studio_v1'),
+    keys: [...store.keys()].sort(),
+  }));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(0, result["before"])
+        self.assertEqual(1, result["after"])
+        self.assertEqual("Текущий", result["backupName"])
+        self.assertEqual(1, result["backupCount"])
+        self.assertFalse(result["legacy"])
+        self.assertEqual(
+            ["grado_pages_autosave_checkpoint_v1", "grado_pages_autosave_v1"],
+            result["keys"],
+        )
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
     def test_pages_adapter_validates_api_and_storage_failures(self):
         root = Path(__file__).parents[3]

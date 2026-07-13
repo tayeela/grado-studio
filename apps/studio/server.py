@@ -122,6 +122,8 @@ AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
 MAX_JSON_BODY = 64 * 1024 * 1024
 MAX_FILE_UPLOAD = 256 * 1024 * 1024
 REQUEST_TIMEOUT = 60
+MAX_PROJECT_NAME = 240
+PREFLIGHT_TARGETS = {"album", "grado", "dxf", "print", "tep"}
 
 
 class RequestBodyTooLarge(ValueError):
@@ -236,6 +238,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "*")
         self.send_header("Access-Control-Allow-Private-Network", "true")
+
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(REQUEST_TIMEOUT)
 
     def _reply(self, status, payload):
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -827,12 +833,18 @@ class Handler(SimpleHTTPRequestHandler):
             body = self._json_body()
             features = body.get("features", [])
             params = body.get("params")
-            name = body.get("name") or "Концепция развития территории"
+            raw_name = body.get("name")
+            if raw_name is not None and not isinstance(raw_name, str):
+                raise BadRequest("name must be a string")
+            name = (raw_name or "Концепция развития территории").strip()
+            name = (name or "Концепция развития территории")[:MAX_PROJECT_NAME]
             # слои, созданные в панели студии («+ слой») — их шаблон
             # маршрутизации не встроен в сервер, приходит с холста
             layers = body.get("layers")
             if not isinstance(features, list):
                 raise BadRequest("features must be an array")
+            if any(not isinstance(item, dict) for item in features):
+                raise BadRequest("features must contain objects")
             if params is not None and not isinstance(params, dict):
                 raise BadRequest("params must be an object")
             if layers is not None and (not isinstance(layers, list)
@@ -841,9 +853,19 @@ class Handler(SimpleHTTPRequestHandler):
                 raise BadRequest("layers must be an array of objects")
             for key, expected in (("projectStyles", dict),
                                   ("projectCustomKinds", list),
-                                  ("albumConfig", dict)):
+                                  ("albumConfig", dict),
+                                  ("studioState", dict),
+                                  ("undo_stack", list),
+                                  ("redo_stack", list)):
                 if body.get(key) is not None and not isinstance(body[key], expected):
                     raise BadRequest(f"{key} has invalid type")
+            if body.get("projectCustomKinds") is not None and any(
+                    not isinstance(item, dict) for item in body["projectCustomKinds"]):
+                raise BadRequest("projectCustomKinds must contain objects")
+            for key in ("undo_stack", "redo_stack"):
+                if body.get(key) is not None and any(
+                        not isinstance(item, str) for item in body[key]):
+                    raise BadRequest(f"{key} must contain strings")
             output_targets = {
                 "/api/album": "album", "/api/grado": "grado",
                 "/api/dxf": "dxf", "/api/print": "print",
@@ -856,8 +878,11 @@ class Handler(SimpleHTTPRequestHandler):
                                 "report": report}, 400)
                     return
             if self.path == "/api/preflight":
+                target = body.get("target", "grado")
+                if target not in PREFLIGHT_TARGETS:
+                    raise BadRequest("unsupported preflight target")
                 out = studio_core.preflight_project(
-                    features, layers=layers, target=body.get("target", "grado"))
+                    features, layers=layers, target=target)
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
             elif self.path == "/api/tep":

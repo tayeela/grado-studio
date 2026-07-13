@@ -2,10 +2,12 @@ import json
 import tempfile
 import unittest
 import io
+import sys
 from unittest import mock
 from pathlib import Path
 
-import server
+sys.path.insert(0, str(Path(__file__).parents[1]))
+import server  # noqa: E402
 
 
 class AutosaveTests(unittest.TestCase):
@@ -282,6 +284,22 @@ class ReleaseManifestTests(unittest.TestCase):
         invalid.do_POST()
 
         self.assertEqual(400, invalid._reply.call_args.args[0])
+
+    def test_api_rejects_non_object_features_and_invalid_metadata(self):
+        bad_payloads = (
+            {"features": [None]},
+            {"features": [], "name": ["not", "a", "string"]},
+            {"features": [], "projectCustomKinds": ["bad"]},
+            {"features": [], "undo_stack": [42]},
+            {"features": [], "target": "unknown-output"},
+        )
+        for payload in bad_payloads:
+            with self.subTest(payload=payload):
+                body = json.dumps(payload).encode()
+                handler = self.api_handler("/api/preflight", body)
+                handler.do_POST()
+                handler._json.assert_called_once_with(
+                    {"error": "invalid request body"}, 400)
 
     @staticmethod
     def api_handler(path, body):
