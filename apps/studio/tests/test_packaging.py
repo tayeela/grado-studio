@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 import tempfile
 import unittest
 import sys
@@ -44,9 +46,11 @@ class TestPackagingResources(unittest.TestCase):
             html = (output / "index.html").read_text(encoding="utf-8")
 
             self.assertTrue((output / "app.js").is_file())
+            self.assertTrue((output / "pages-core.js").is_file())
             self.assertTrue((output / "redesign" / "studio2.css").is_file())
             self.assertNotIn('src="/', html)
             self.assertNotIn('href="/', html)
+            self.assertLess(html.index("pages-core.js"), html.index("pages-adapter.js"))
             self.assertLess(html.index("pages-adapter.js"), html.index("app.js"))
             self.assertNotIn("презентационная страница", html.lower())
             release = json.loads((output / "version.json").read_text(
@@ -66,6 +70,22 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("tooltip.setAttribute('role', 'tooltip')", source)
         self.assertIn("setAttribute('aria-describedby', tooltip.id)", source)
         self.assertIn(".ui-tooltip", styles)
+
+    def test_close_controls_stay_quiet_and_empty_layers_have_guidance(self):
+        root = Path(__file__).parents[3]
+        web = root / "apps/studio/web"
+        modal_sources = "\n".join((web / name).read_text(encoding="utf-8") for name in (
+            "app.js", "app-style-ui.js", "app-attr.js", "app-data.js",
+        ))
+        html = (web / "index.html").read_text(encoding="utf-8")
+        app = (web / "app.js").read_text(encoding="utf-8")
+        a11y = (web / "redesign/a11y.js").read_text(encoding="utf-8")
+
+        self.assertNotIn('class="modal-x" title=', modal_sources)
+        self.assertIn(".modal-x, .panel-close, .errbar-close", a11y)
+        self.assertIn('id="start-draw"', html)
+        self.assertIn('title.textContent = "Начертите первый объект"', app)
+        self.assertIn('document.getElementById("cv")?.focus()', app)
 
     def test_panel_resizer_prevents_selection_and_always_cleans_up(self):
         root = Path(__file__).parents[3]
@@ -115,6 +135,68 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn('addMenuNote("menu-out"', adapter)
         self.assertIn("function enabledMenuItems", a11y)
         self.assertIn("item.getAttribute('aria-disabled') !== 'true'", a11y)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine parity")
+    def test_browser_tep_matches_desktop_engine_for_release_fixture(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+const features = JSON.parse(process.argv[2]);
+const params = JSON.parse(process.argv[3]);
+const out = core.computeTep({features, params});
+process.stdout.write(JSON.stringify({
+  inputs: out.inputs,
+  fact: out.fact,
+  rows: Object.fromEntries(out.results.map(row => [row.id, row.value])),
+}));
+"""
+        features = [
+            {"kind": "boundary", "ring": [[0, 0], [500, 0], [500, 300], [0, 300]], "props": {}},
+            {"kind": "restrict", "ring": [[0, 0], [200, 0], [200, 100], [0, 100]], "props": {}},
+            {"kind": "zone", "ring": [[0, 100], [500, 100], [500, 300], [0, 300]], "props": {"zone_title": "Ж-1"}},
+            {"kind": "building", "ring": [[50, 150], [80, 150], [80, 170], [50, 170]], "props": {"floors": 10}},
+            {"kind": "redline", "line": [[0, 120], [500, 120]], "props": {}},
+            {"kind": "social", "point": [400, 200], "props": {"capacity": 500}},
+        ]
+        params = {"density": 25, "ratio_zh": 80, "education_zone": 2,
+                  "k_rail": 0.75, "k_ba": 0.2}
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
+             json.dumps(features), json.dumps(params)],
+            check=True, capture_output=True, text=True,
+        )
+        browser = json.loads(completed.stdout)
+
+        sys.path.insert(0, str(root / "apps/studio"))
+        import studio_core
+        desktop = studio_core.compute_tep(features, params)
+        desktop_rows = {row["id"]: row["value"] for row in desktop["results"]}
+
+        self.assertEqual(browser["inputs"], desktop["inputs"])
+        self.assertEqual(browser["fact"], desktop["fact"])
+        self.assertEqual(browser["rows"], desktop_rows)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser preflight")
+    def test_browser_preflight_rejects_invalid_geometry(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.argv[2]))));
+"""
+        payload = {"target": "grado", "features": [
+            {"id": 1, "kind": "boundary", "layer_id": "project.territory.boundary",
+             "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]},
+            {"id": 2, "kind": "zone", "layer_id": "project.tp.func_zone",
+             "line": [[0, 0], [10, 10]]},
+        ]}
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
+             json.dumps(payload)], check=True, capture_output=True, text=True,
+        )
+        report = json.loads(completed.stdout)
+        self.assertFalse(report["can_export"])
+        self.assertEqual(report["errors"][0]["code"], "invalid_geometry")
+        self.assertEqual(report["errors"][0]["feature_ids"], ["2"])
 
     def test_frontend_defensively_restores_projects_and_async_errors(self):
         root = Path(__file__).parents[3]

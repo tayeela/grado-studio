@@ -71,19 +71,20 @@
   <div id="stage">
     <canvas id="cv" tabindex="0" aria-label="Холст чертежа. Выберите инструмент на панели слева; Enter завершает фигуру, Escape отменяет действие.">Интерактивный холст чертежа ГРАДО Студии.</canvas>
     <section id="start-guide" class="start-guide" aria-labelledby="start-guide-title" hidden>
-      <div class="start-guide-kicker">Новый проект</div>
+      <div class="start-guide-kicker" id="start-guide-kicker">Новый проект</div>
       <h1 id="start-guide-title">Начните с границы территории</h1>
-      <p>Она задаёт расчётную площадь. После этого ТЭП будет обновляться автоматически по мере работы.</p>
-      <ol>
+      <p id="start-guide-copy">Она задаёт расчётную площадь. После этого ТЭП будет обновляться автоматически по мере работы.</p>
+      <ol id="start-guide-steps">
         <li><b>Создайте границу</b><span>Мы сразу включим инструмент «Полигон».</span></li>
         <li><b>Добавьте здания и зоны</b><span>Каждый тип попадёт в свой слой.</span></li>
         <li><b>Проверьте ТЭП</b><span>Расчёты и замечания появятся справа.</span></li>
       </ol>
       <div class="start-guide-actions">
         <button class="btn primary" id="start-boundary">Создать границу</button>
+        <button class="btn primary" id="start-draw" hidden>Начать рисовать</button>
         <button class="btn" id="start-demo">Открыть пример</button>
       </div>
-      <small>Подсказка: клавиша G создаёт или выбирает слой границы.</small>
+      <small id="start-guide-hint">Подсказка: клавиша G создаёт или выбирает слой границы.</small>
     </section>
     <div id="cv-activelayer" class="cv-float" style="top:16px;left:16px;padding:6px 12px;font-size:var(--fs-12);font-weight:500"></div>
     <div class="cv-float cv-compass"><svg class="ic" style="width:20px;height:20px"><use href="#i-north"/></svg></div>
