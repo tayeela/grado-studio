@@ -79,6 +79,29 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("body.panel-resizing *", styles)
         self.assertIn("user-select:none!important", styles)
 
+    def test_ui_copy_uses_normal_project_names_and_russian_plurals(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        adapter = (root / "apps/studio/web/pages-adapter.js").read_text(
+            encoding="utf-8")
+        html = (root / "apps/studio/web/index.html").read_text(encoding="utf-8")
+
+        self.assertNotIn("объект(ов)", app)
+        self.assertNotIn("проект браузера", adapter)
+        self.assertIn("Сохранить проект…", html)
+        self.assertIn("function ruCount", app)
+
+    def test_compact_header_and_inspector_remain_accessible(self):
+        root = Path(__file__).parents[3]
+        html = (root / "apps/studio/web/index.html").read_text(encoding="utf-8")
+        shell = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn('aria-label="Найти инструмент, слой или действие"', html)
+        compact = shell.split("@media (max-width:900px)", 1)[1]
+        self.assertIn("background:var(--panel)", compact)
+        self.assertIn("backdrop-filter:none", compact)
+
     def test_windows_release_files_and_version_are_reproducible(self):
         root = Path(__file__).parents[3]
         release_version = json.loads(

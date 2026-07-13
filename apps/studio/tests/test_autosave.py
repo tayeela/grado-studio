@@ -94,6 +94,23 @@ class AutosaveTests(unittest.TestCase):
         current = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual("Исправная", server._autosave_state(current)["name"])
 
+    def test_load_autosave_validates_before_returning_payload(self):
+        state = self.state("Исправная", 2)
+        server.save_autosave(state, path=self.path)
+
+        payload = server.load_autosave(self.path)
+
+        self.assertEqual(state, server._autosave_state(payload))
+
+    def test_load_autosave_rejects_damaged_or_incomplete_payload(self):
+        self.path.write_bytes(b'{"features": [')
+        with self.assertRaises(json.JSONDecodeError):
+            server.load_autosave(self.path)
+
+        self.path.write_text('{"name": "без объектов"}', encoding="utf-8")
+        with self.assertRaises(ValueError):
+            server.load_autosave(self.path)
+
 
 class ReleaseManifestTests(unittest.TestCase):
     def test_manifest_is_single_source_for_server_and_packaging(self):
@@ -166,6 +183,14 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertIn("HttpOnly", value)
             self.assertIn("SameSite=Lax", value)
             self.assertIn("Secure", value)
+
+    def test_http_handler_hides_python_version_and_limits_idle_clients(self):
+        self.assertEqual("GRADO-Studio", server.Handler.server_version)
+        self.assertEqual("", server.Handler.sys_version)
+        handler = object.__new__(server.Handler)
+        self.assertEqual("GRADO-Studio", handler.version_string())
+        self.assertGreater(server.REQUEST_TIMEOUT, 0)
+        self.assertLessEqual(server.REQUEST_TIMEOUT, 120)
 
     def test_request_body_limit_rejects_oversized_upload(self):
         handler = object.__new__(server.Handler)

@@ -120,6 +120,7 @@ AUTOSAVE_BACKUPS = 10
 AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
 MAX_JSON_BODY = 64 * 1024 * 1024
 MAX_FILE_UPLOAD = 256 * 1024 * 1024
+REQUEST_TIMEOUT = 60
 
 
 class RequestBodyTooLarge(ValueError):
@@ -163,6 +164,13 @@ def _autosave_envelope(state, raw=None):
 
 def _read_autosave(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_autosave(path):
+    """Read a usable autosave or fail before malformed JSON reaches the UI."""
+    payload = _read_autosave(path)
+    _autosave_state(payload)
+    return payload
 
 
 def _autosave_meta(payload, index=None, path=None):
@@ -273,8 +281,20 @@ PROJ_DELETE_RE = re.compile(r"^/api/projects/([a-z0-9]{12})/delete$")
 
 
 class Handler(SimpleHTTPRequestHandler):
+    server_version = "GRADO-Studio"
+    sys_version = ""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(WEB), **kwargs)
+
+    def version_string(self):
+        return self.server_version
+
+    def setup(self):
+        super().setup()
+        # Облачный режим не должен бессрочно держать поток на клиенте,
+        # объявившем Content-Length и переставшем передавать тело запроса.
+        self.connection.settimeout(REQUEST_TIMEOUT)
 
     def log_message(self, fmt, *args):
         pass
@@ -472,8 +492,14 @@ class Handler(SimpleHTTPRequestHandler):
                        "application/json; charset=utf-8")
             return
         if self.path == "/api/autosave":
-            data = AUTOSAVE_PATH.read_bytes() if AUTOSAVE_PATH.exists() else b"null"
-            self._send(data, "application/json; charset=utf-8")
+            if not AUTOSAVE_PATH.exists():
+                self._json(None)
+                return
+            try:
+                with AUTOSAVE_LOCK:
+                    self._json(load_autosave(AUTOSAVE_PATH))
+            except (OSError, ValueError, json.JSONDecodeError):
+                self._json({"error": "autosave is damaged"}, 500)
             return
         if self.path == "/api/basemap-info":
             from grado_connectors.crs import ORIGIN_LAT, ORIGIN_LON
