@@ -136,7 +136,6 @@ async function importGisogd(fetchArgs, askText, errText) {
     return false;
   }
 }
-
 on("btn-gisogd", "click", async () => {
   const useFile = await uiConfirm("Загрузить ГИС ОГД:\n- Файл (ZIP с портала или отдельный GeoJSON, напр. экспорт из QGIS)\n- По прямой ссылке (сгенерированной на gisogd.mos.ru)", { ok: "Файл", cancel: "По ссылке" });
   if (useFile) {
@@ -207,4 +206,3 @@ function startDownloadsWatch() {
     }
   }, 3000);
 }
-
