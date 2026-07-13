@@ -1,0 +1,100 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/**"
+      - "core/**"
+      - "packaging/**"
+      - "requirements-windows.txt"
+      - ".github/workflows/windows-release.yml"
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-windows.txt
+
+      - name: Run test suite
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = "apps/studio;apps/wizard;core/render;core/geom;core/layout;core/compute;core/model;core/reactive;core/connectors"
+          $suites = @("apps/studio", "apps/wizard", "core/compute", "core/connectors", "core/geom", "core/layout", "core/model", "core/reactive", "core/render")
+          foreach ($suite in $suites) {
+            python -m unittest discover -s "$suite/tests" -p "test_*.py"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Build application
+        shell: pwsh
+        run: |
+          python packaging/windows_version.py
+          pyinstaller --noconfirm --clean packaging/windows.spec
+
+      - name: Smoke-test packaged application
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP "grado-smoke"
+          New-Item -ItemType Directory -Force -Path $data | Out-Null
+          $env:GRADO_STUDIO_DATA_DIR = $data
+          $env:GRADO_NO_BROWSER = "1"
+          $env:GRADO_DISABLE_BRIDGE = "1"
+          $env:PORT = "8874"
+          $process = Start-Process -FilePath "dist/ГРАДО Студия/ГРАДО Студия.exe" -PassThru
+          try {
+            $ready = $false
+            1..30 | ForEach-Object {
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:8874/api/health" -TimeoutSec 2
+                if ($health.ok -and $health.checks.web -and $health.checks.preset -and $health.checks.data_writable) { $ready = $true }
+              } catch {}
+              if (-not $ready) { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw "Packaged application did not become healthy" }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/studio/web/version.json | ConvertFrom-Json).version
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$version" packaging/windows-installer.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Compress-Archive -Path "dist/ГРАДО Студия" -DestinationPath "dist/GRADO-Studio-$version-windows-portable.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: GRADO-Studio-Windows
+          path: |
+            dist/installer/*.exe
+            dist/*-windows-portable.zip
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/installer/*.exe
+            dist/*-windows-portable.zip

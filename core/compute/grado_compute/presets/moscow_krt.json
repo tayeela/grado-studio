@@ -4,7 +4,7 @@
   "sources": [
     "Константы восстановлены из калькулятора genplan.tech/calc (реверс бандла, 2026-07-02)",
     "Соцнормативы: 44 места ДОО и 90 мест школ на 1 тыс. жителей — зона 1 по районам Москвы; поликлиники 13.2 взр. + 5.8 дет. посещений в смену на 1 тыс. жителей",
-    "Парковка: 257 мм на 1 тыс. жителей с коэфф. ж/д доступности и деловой активности (методика на базе 945-ПП)",
+    "Парковка: 257 м/м на 1 тыс. жителей с коэфф. ж/д доступности и деловой активности (методика на базе 945-ПП)",
     "Перед использованием в проектной документации сверить значения с действующей редакцией МНГП Москвы"
   ],
   "inputs": [
@@ -48,7 +48,7 @@
     {"id": "school_places", "title": "Школы к размещению (порог 150 мест)", "unit": "мест", "expr": "where(school_norm >= min_school_places, school_norm, 0)", "precision": 0, "group": "Социальные объекты"},
     {"id": "policlinic_norm", "title": "Потребность в поликлиниках", "unit": "посещ./смену", "expr": "round((policlinic_adult_per_ths + policlinic_child_per_ths) * population_ths)", "precision": 0, "group": "Социальные объекты"},
     {"id": "policlinic_places", "title": "Поликлиника к размещению (порог 320 посещ.)", "unit": "посещ./смену", "expr": "where(policlinic_norm >= min_policlinic_visits, policlinic_norm, 0)", "precision": 0, "group": "Социальные объекты"},
-    {"id": "parking_perm", "title": "Машино-места постоянного хранения", "unit": "мм", "expr": "round(population_ths * parking_mm_per_ths * k_rail * k_ba)", "precision": 0, "group": "Транспорт"},
-    {"id": "parking_guest", "title": "Гостевые машино-места", "unit": "мм", "expr": "round(parking_perm / 10)", "precision": 0, "group": "Транспорт"}
+    {"id": "parking_perm", "title": "Машино-места постоянного хранения", "unit": "м/м", "expr": "round(population_ths * parking_mm_per_ths * k_rail * k_ba)", "precision": 0, "group": "Транспорт"},
+    {"id": "parking_guest", "title": "Гостевые машино-места", "unit": "м/м", "expr": "round(parking_perm / 10)", "precision": 0, "group": "Транспорт"}
   ]
 }

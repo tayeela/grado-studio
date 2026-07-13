@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parents[3] / "packaging"))
 from build_support import data_files_for_tree  # noqa: E402
 from build_pages import build_pages  # noqa: E402
+from windows_version import build_version_file  # noqa: E402
 
 
 class TestPackagingResources(unittest.TestCase):
@@ -45,3 +46,22 @@ class TestPackagingResources(unittest.TestCase):
             self.assertNotIn('href="/', html)
             self.assertLess(html.index("pages-adapter.js"), html.index("app.js"))
             self.assertNotIn("презентационная страница", html.lower())
+
+    def test_windows_release_files_and_version_are_reproducible(self):
+        root = Path(__file__).parents[3]
+        with tempfile.TemporaryDirectory() as tmp:
+            version_file = build_version_file(Path(tmp) / "version.txt")
+            version_text = version_file.read_text(encoding="utf-8")
+
+        self.assertIn("0.9.0-beta.8", version_text)
+        self.assertTrue((root / "packaging/AppIcon.ico").is_file())
+        self.assertTrue((root / "packaging/windows.spec").is_file())
+        installer = (root / "packaging/windows-installer.iss").read_text(encoding="utf-8")
+        self.assertIn("GradoStudio.Project", installer)
+        self.assertIn("PrivilegesRequired=lowest", installer)
+
+    def test_frontend_escapes_imported_titles_and_provenance(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        self.assertIn('escHtml((L || {}).title || f.kind)', source)
+        self.assertIn('escHtml(f.prov.source)', source)

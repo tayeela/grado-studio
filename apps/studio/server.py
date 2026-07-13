@@ -118,6 +118,12 @@ AUTOSAVE_PATH = DATA_DIR / ".autosave.json"
 AUTOSAVE_LOCK = threading.Lock()
 AUTOSAVE_BACKUPS = 10
 AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
+MAX_JSON_BODY = 64 * 1024 * 1024
+MAX_FILE_UPLOAD = 256 * 1024 * 1024
+
+
+class RequestBodyTooLarge(ValueError):
+    pass
 
 
 def _autosave_backup_path(path, index):
@@ -334,8 +340,18 @@ class Handler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def _json_body(self):
-        n = int(self.headers.get("Content-Length", 0))
-        return json.loads(self.rfile.read(n).decode("utf-8"))
+        return json.loads(self._read_body(MAX_JSON_BODY).decode("utf-8"))
+
+    def _read_body(self, limit):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            raise ValueError("invalid content length") from None
+        if length < 0:
+            raise ValueError("invalid content length")
+        if length > limit:
+            raise RequestBodyTooLarge(f"request exceeds {limit} bytes")
+        return self.rfile.read(length)
 
     def _send(self, data, ctype, filename=None):
         self.send_response(200)
@@ -593,8 +609,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 return
             if self.path == "/api/autosave":
-                n = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(n)
+                raw = self._read_body(MAX_JSON_BODY)
                 try:
                     state = json.loads(raw)
                     with AUTOSAVE_LOCK:
@@ -605,8 +620,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self._json({"saved": changed, **meta})
                 return
             if self.path == "/api/style-overrides":
-                n = int(self.headers.get("Content-Length", 0))
-                overrides = json.loads(self.rfile.read(n))
+                overrides = json.loads(self._read_body(MAX_JSON_BODY))
                 if not isinstance(overrides, dict):
                     self.send_error(400, "expected object")
                     return
@@ -615,8 +629,7 @@ class Handler(SimpleHTTPRequestHandler):
                 self.end_headers()
                 return
             if self.path == "/api/import-gisogd":
-                n = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(n)
+                raw = self._read_body(MAX_FILE_UPLOAD)
                 # имя файла (для маршрутизации одиночного GeoJSON) — URL-энкод
                 # в заголовке (правило 5: заголовки строго ASCII, кириллица
                 # едет процент-кодированной)
@@ -712,8 +725,7 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             if self.path == "/api/open-grado":
-                n = int(self.headers.get("Content-Length", 0))
-                raw = self.rfile.read(n)
+                raw = self._read_body(MAX_FILE_UPLOAD)
                 with tempfile.NamedTemporaryFile(suffix=".grado") as tmp:
                     tmp.write(raw)
                     tmp.flush()
@@ -809,6 +821,8 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
             else:
                 self.send_error(404)
+        except RequestBodyTooLarge:
+            self.send_error(413, "request body too large")
         except Exception as e:
             traceback.print_exc()
             msg = json.dumps({"error": str(e)}, ensure_ascii=False).encode()

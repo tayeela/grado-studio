@@ -1,5 +1,6 @@
 import io
 import json
+import stat
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ from pathlib import Path
 
 import _paths  # noqa: F401
 from grado_connectors import GisogdZip, NspdCapture, SnapshotStore, StoreError, diff
+from grado_connectors.contract import ConnectorError
 from grado_connectors.gisogd import find_ogr2ogr
 from grado_connectors.crs import OGD_PROJ4
 
@@ -134,6 +136,26 @@ class TestGisogd(unittest.TestCase):
         result = GisogdZip().fetch(zpath)
         self.assertEqual(result["features"], [])
         self.assertTrue(any("ни shp" in n for n in result["notes"]))
+
+    def test_zip_cannot_write_outside_import_directory(self):
+        zpath = Path(self.tmp.name) / "unsafe.zip"
+        escaped = Path(self.tmp.name).parent / "grado-escaped.geojson"
+        escaped.unlink(missing_ok=True)
+        with zipfile.ZipFile(zpath, "w") as zf:
+            zf.writestr("../grado-escaped.geojson", json.dumps(GJ))
+        with self.assertRaises(ConnectorError):
+            GisogdZip().fetch(zpath)
+        self.assertFalse(escaped.exists())
+
+    def test_zip_symlink_is_rejected(self):
+        zpath = Path(self.tmp.name) / "symlink.zip"
+        link = zipfile.ZipInfo("link.geojson")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(zpath, "w") as zf:
+            zf.writestr(link, "../../outside")
+        with self.assertRaises(ConnectorError):
+            GisogdZip().fetch(zpath)
 
     @unittest.skipUnless(find_ogr2ogr(), "нет ogr2ogr (GDAL/QGIS)")
     def test_shp_msk50_roundtrip(self):
