@@ -624,14 +624,14 @@ class TestTileCache(unittest.TestCase):
         self.assertTrue(studio_core._valid_jpeg(
             b"\xff\xd8" + b"\x00" * 5 + b"\xff\xd9"))
         self.assertFalse(studio_core._valid_jpeg(b"\xff\xd8\x00"))
-        with tempfile.NamedTemporaryFile(suffix=".png") as f:
-            f.write(FAKE_PNG[:20])
-            f.flush()
-            self.assertFalse(studio_core._valid_png(Path(f.name)))
-            f.seek(0)
-            f.write(FAKE_PNG)
-            f.flush()
-            self.assertTrue(studio_core._valid_png(Path(f.name)))
+        # Windows не разрешает повторно открыть NamedTemporaryFile, пока он
+        # удерживается первым дескриптором. Проверяем файл через обычный Path.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "tile.png"
+            path.write_bytes(FAKE_PNG[:20])
+            self.assertFalse(studio_core._valid_png(path))
+            path.write_bytes(FAKE_PNG)
+            self.assertTrue(studio_core._valid_png(path))
 
 
 def _nspd_payload(cad, x=4187000, y=7509000):

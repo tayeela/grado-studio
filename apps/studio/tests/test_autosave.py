@@ -98,8 +98,10 @@ class AutosaveTests(unittest.TestCase):
 class ReleaseManifestTests(unittest.TestCase):
     def test_manifest_is_single_source_for_server_and_packaging(self):
         root = Path(__file__).parents[3]
-        manifest = json.loads((root / "apps/studio/web/version.json").read_text())
-        packaging = (root / "packaging/py2app_setup.py").read_text()
+        manifest = json.loads((root / "apps/studio/web/version.json").read_text(
+            encoding="utf-8"))
+        packaging = (root / "packaging/py2app_setup.py").read_text(
+            encoding="utf-8")
 
         self.assertEqual("0.9.0-beta.8", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
@@ -107,7 +109,7 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_frontend_persists_schema_and_album_configuration(self):
         root = Path(__file__).parents[3]
-        source = (root / "apps/studio/web/app.js").read_text()
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
 
         self.assertIn("schema_version: STATE_SCHEMA_VERSION", source)
         self.assertIn("albumConfig: state.albumConfig", source)
@@ -115,7 +117,7 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_frontend_opens_grado_once_and_embeds_project_settings(self):
         root = Path(__file__).parents[3]
-        source = (root / "apps/studio/web/app.js").read_text()
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
         handler = source.split('on("grado-file", "change"', 1)[1].split(
             "function loadProjectData", 1)[0]
 

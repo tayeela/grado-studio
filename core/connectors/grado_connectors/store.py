@@ -46,7 +46,7 @@ class SnapshotStore:
         with self._lock:
             man_path = target / "manifest.json"
             if man_path.exists():
-                if json.loads(man_path.read_text())["sha256"] == sha:
+                if json.loads(man_path.read_text(encoding="utf-8"))["sha256"] == sha:
                     return sid  # идемпотентность: тот же контент — тот же снимок
                 raise StoreError(f"коллизия идентификатора снимка {sid}")
             target.mkdir(exist_ok=True)

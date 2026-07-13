@@ -58,7 +58,9 @@ class TestStore(unittest.TestCase):
     def test_tamper_detected(self):
         sid = self.store.save(self.conn, nspd_result())
         path = self.store.root / sid / "data.geojson"
-        path.write_text(path.read_text().replace("77:09:1", "77:09:2"))
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("77:09:1", "77:09:2"),
+            encoding="utf-8")
         with self.assertRaises(StoreError):
             self.store.verify(sid)
 

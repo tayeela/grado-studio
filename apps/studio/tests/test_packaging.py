@@ -23,7 +23,7 @@ class TestPackagingResources(unittest.TestCase):
 
             manifest = data_files_for_tree(root, "source", "web")
             paths = [Path(path).name for _target, files in manifest for path in files]
-            targets = [target for target, _files in manifest]
+            targets = [Path(target).as_posix() for target, _files in manifest]
 
         self.assertEqual(paths, ["keep.json"])
         self.assertEqual(targets, ["web/nested"])
