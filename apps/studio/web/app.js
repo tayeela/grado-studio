@@ -163,12 +163,31 @@ const LAYERS_V2 = [
     annotation: true, tool: "dim", defaults: () => ({}) },
 ];
 const LAYER_BY_ID = {}, LAYER_BY_KIND = {};
-for (const L of LAYERS_V2) {
-  L.visible = true;
-  LAYER_BY_ID[L.id] = L;
-  // import-only слои не становятся дефолтом для kind (иначе нарисованная
-  // вручную зона ушла бы в ФГИС-ТП-слой): первый не-import_only выигрывает
-  if (!L.import_only && !(L.kind in LAYER_BY_KIND)) LAYER_BY_KIND[L.kind] = L;
+function rebuildLayerIndexes() {
+  for (const id of Object.keys(LAYER_BY_ID)) delete LAYER_BY_ID[id];
+  for (const kind of Object.keys(LAYER_BY_KIND)) delete LAYER_BY_KIND[kind];
+  for (const L of LAYERS_V2) {
+    if (L.visible == null) L.visible = true;
+    LAYER_BY_ID[L.id] = L;
+    // import-only слои не становятся дефолтом для kind (иначе нарисованная
+    // вручную зона ушла бы в ФГИС-ТП-слой): первый не-import_only выигрывает
+    if (!L.import_only && !(L.kind in LAYER_BY_KIND)) LAYER_BY_KIND[L.kind] = L;
+  }
+}
+function cloneLayerSpec(layer) {
+  const copy = { ...layer };
+  for (const key of ["fmt", "fields", "rules"])
+    if (layer[key] != null) copy[key] = JSON.parse(JSON.stringify(layer[key]));
+  return copy;
+}
+rebuildLayerIndexes();
+// Новый/открываемый проект должен начинаться с чистой исходной модели, даже
+// если в текущем проекте удаляли встроенные приёмники или меняли их поля.
+const _BUILTIN_LAYER_SPECS = LAYERS_V2.map(cloneLayerSpec);
+function resetLayerModel() {
+  LAYERS_V2.splice(0, LAYERS_V2.length,
+                   ..._BUILTIN_LAYER_SPECS.map(cloneLayerSpec));
+  rebuildLayerIndexes();
 }
 // инструмент «размер» жёстко пишет в этот слой (LAYER_BY_KIND["dim"]) —
 // если он когда-нибудь исчезнет из LAYERS_V2, простановка размеров упадёт
@@ -279,7 +298,15 @@ function createGenericLayer({ title, geometry_type, styleId, id = null }) {
 function userLayersManifest() {
   return LAYERS_V2.filter(L => L.user_created || (L.fields && L.fields.length))
     .map(L => ({
-      layer_id: L.id, code: L.semantic_class, title: L.title,
+      layer_id: L.id,
+      // custom.* не входит в классификатор GeoPackage: внутри .grado такой
+      // слой хранится как generic-геометрия, а исходная роль едет рядом и
+      // восстанавливается Студией без потери.
+      code: String(L.semantic_class || "").startsWith("custom.")
+        ? GENERIC_CODE[L.geometry_type] : L.semantic_class,
+      studio_code: String(L.semantic_class || "").startsWith("custom.")
+        ? L.semantic_class : undefined,
+      title: L.title,
       stage: L.stage, style_id: L.style_id,
       fields: L.fields || [],   // произвольные поля атрибутивной таблицы → колонки .grado
     }));
@@ -650,6 +677,11 @@ function importSourceFeatures(features) {
   return { added, dup };
 }
 
+const DEFAULT_ALBUM_CONFIG = {
+  sheets: ["title", "location", "base", "apo", "tep"],
+  title: { org: "ГРАДО", city_year: "Москва / 2026" },
+};
+
 const state = {
   features: [], tool: "select", selected: null, selectedIds: new Set(),
   drawing: null, drag: null, pan: null, edit: null, measure: null,
@@ -668,10 +700,7 @@ const state = {
   variants: [],                   // варианты концепции: снимки {id,name,features,params,createdAt}
   projectStyles: {},              // свои стили проекта: { "my_id": {fill, stroke, width, ... , title? } }
   projectCustomKinds: [],         // пользовательские роли/типы слоёв для этого проекта
-  albumConfig: {                  // конфигурация состава альбома (фаза 3)
-    sheets: ['title', 'location', 'base', 'apo', 'tep'],
-    title: {org: 'ГРАДО', city_year: 'Москва / 2026'}
-  },
+  albumConfig: JSON.parse(JSON.stringify(DEFAULT_ALBUM_CONFIG)),
   _fitted: false, _ix: null,
 };
 
@@ -2384,16 +2413,23 @@ function snapshot() {
   while (state.undo.length > max) state.undo.shift();
   state.redo = [];
 }
+function syncNextId() {
+  const maxId = state.features.reduce((max, feature) =>
+    Number.isFinite(+feature.id) ? Math.max(max, +feature.id) : max, 0);
+  state.nextId = Math.max(state.nextId || 1, maxId + 1);
+}
 function undo() {
   if (!state.undo.length) return;
   state.redo.push(JSON.stringify(state.features));
   state.features = JSON.parse(state.undo.pop());
+  syncNextId();
   clearSelection(); afterChange();
 }
 function redo() {
   if (!state.redo.length) return;
   state.undo.push(JSON.stringify(state.features));
   state.features = JSON.parse(state.redo.pop());
+  syncNextId();
   clearSelection(); afterChange();
 }
 let autosaveTimer = null;
@@ -2436,6 +2472,17 @@ function collectState() {
     accessRadii: state.accessRadii,
     albumConfig: state.albumConfig,
   };
+}
+// Настройки, которые должны ехать внутри .grado вместе с геометрией. Без
+// features и истории: они уже хранятся в собственных таблицах/метаданных
+// файла и не должны дублироваться в один огромный JSON.
+function collectProjectSettings() {
+  const saved = { ...collectState() };
+  delete saved.features;
+  delete saved.nextId;
+  delete saved.undo;
+  delete saved.redo;
+  return saved;
 }
 // личное (не отправляется коллегам): вид/выделение здесь не хранятся в payload
 // вовсе, а активный слой/подложка/undo — да; collab.js накладывает их поверх
@@ -3159,6 +3206,9 @@ const SHORTCUTS = [
   ["История", [
     ["⌘Z", "Отменить"], ["⌘⇧Z", "Вернуть"], ["?", "Эта справка"],
   ]],
+  ["Проект", [
+    ["⌘N", "Новый проект"], ["⌘O", "Открыть .grado"], ["⌘S", "Сохранить .grado"],
+  ]],
 ];
 function openShortcuts() {
   closePopups();
@@ -3329,6 +3379,49 @@ function rebuildKinds() {
   for (const b of BASE_KINDS) BASE_KIND_BY_KIND[b.kind] = b;
   for (const k of Object.keys(KIND_BY_SEMANTIC_CLASS)) delete KIND_BY_SEMANTIC_CLASS[k];
   for (const b of BASE_KINDS) KIND_BY_SEMANTIC_CLASS[b.semantic_class] = b.kind;
+}
+
+function resetProjectState(name = "Новый проект") {
+  clearTimeout(autosaveTimer);
+  clearTimeout(tepTimer);
+  resetLayerModel();
+  state.features = [];
+  state.nextId = 1;
+  state.undo = [];
+  state.redo = [];
+  state.sources = [];
+  state.variants = [];
+  state.projectStyles = {};
+  state.projectCustomKinds = [];
+  state.accessRadii = { on: false, r: 300 };
+  state.albumConfig = JSON.parse(JSON.stringify(DEFAULT_ALBUM_CONFIG));
+  state.activeLayerId = null;
+  state.drawing = null;
+  state.drag = null;
+  state.pan = null;
+  state.edit = null;
+  state.measure = null;
+  state.trimCtx = null;
+  state.xf = null;
+  state.view = { k: 1.1, tx: 120, ty: 0 };
+  state._fitted = false;
+  state._ix = null;
+  state._snapIndex = null;
+  rebuildKinds();
+  clearSelection();
+  document.getElementById("project-name").value = name;
+  document.getElementById("p-density").value = 25;
+  document.getElementById("p-ratio").value = 80;
+  document.getElementById("p-krail").value = 1;
+  document.getElementById("p-kba").value = 0.5;
+  const exportSelect = document.getElementById("export-style");
+  if (exportSelect) exportSelect.value = "standard";
+  const accessShow = document.getElementById("access-show");
+  const accessRadius = document.getElementById("access-r");
+  const accessWrap = document.getElementById("access-r-wrap");
+  if (accessShow) accessShow.checked = false;
+  if (accessRadius) accessRadius.value = 300;
+  if (accessWrap) accessWrap.style.display = "none";
 }
 
 function openManageKinds() {
@@ -3583,7 +3676,7 @@ function openAlbumConfig() {
   closePopups();
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
-  const cfg = state.albumConfig || {sheets: ['title','location','base','apo','tep'], title:{org:'ГРАДО',city_year:'Москва / 2026'}};
+  const cfg = state.albumConfig || JSON.parse(JSON.stringify(DEFAULT_ALBUM_CONFIG));
   let sheets = [...(cfg.sheets || ['title','location','base','apo','tep'])];
   const allSheets = ['title','location','base','apo','tep','ortho','photo','parking','greenery'];
   const sheetLabels = {
@@ -3834,7 +3927,11 @@ async function openAutosaveRecovery() {
           const saved = await backupResponse.json();
           clearTimeout(autosaveTimer);
           await saveStateNow(collectState());
+          const savedState = saved && saved.state && typeof saved.state === "object"
+            ? saved.state : saved;
+          resetProjectState(savedState && savedState.name || "Восстановленный проект");
           applyRestoredState(saved);
+          syncProjectControls();
           close();
           afterChange(); fitView();
           toast(`Восстановлена копия «${item.name}»`);
@@ -4586,6 +4683,15 @@ const PRESET_KIND_CODES = {
   KeyP: "public", KeyL: "redline", KeyS: "social",
 };
 document.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyS") {
+    e.preventDefault(); document.getElementById("btn-grado").click(); return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyO") {
+    e.preventDefault(); document.getElementById("btn-open").click(); return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.code === "KeyN") {
+    e.preventDefault(); document.getElementById("btn-new-project").click(); return;
+  }
   if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
   if (e.key === "Shift") { shiftDown = true; if (state.drawing) draw(); return; }
   if (e.code === "Space") { spaceDown = true; e.preventDefault(); return; }
@@ -4909,7 +5015,16 @@ function exportStyleMode() {
   return sel && sel.value === "canvas" ? "canvas" : "standard";
 }
 
-async function download(url, filename) {
+let downloadInProgress = false;
+function projectFileName(suffix) {
+  const name = document.getElementById("project-name").value.trim() || "grado-project";
+  return `${slugify(name)}${suffix}`;
+}
+async function download(url, suffix) {
+  if (downloadInProgress) { toast("Дождитесь завершения текущего файла", "warn"); return; }
+  if (url !== "/api/grado" && !state.features.length) {
+    toast("Проект пуст — сначала добавьте объекты", "warn"); return;
+  }
   // «как на холсте» — только для PDF (печать/альбом): DXF и .grado —
   // обменные форматы, там осмысленные стандартные знаки важнее (QGIS/CAD
   // не знают наши инлайн-стили)
@@ -4928,24 +5043,84 @@ async function download(url, filename) {
     accessRadii: state.accessRadii,
                     undo_stack: state.undo || [],
                     redo_stack: state.redo || [],
-                    albumConfig: state.albumConfig || null };
+                    albumConfig: state.albumConfig || null,
+                    studioState: collectProjectSettings() };
   if (canvasStyles) payload.canvasStyles = canvasStyles;
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload) });
-  if (!r.ok) { toast("Ошибка сборки: " + (await r.text()).slice(0, 200), "error"); return; }
-  const blob = await r.blob();
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  if (filename.endsWith(".pdf")) window.open(a.href, "_blank");
-  a.download = filename; a.click();
+  const filename = projectFileName(suffix);
+  const action = url === "/api/grado" ? "Сохраняю проект…" : "Собираю файл…";
+  const exportButtons = ["btn-album", "btn-grado", "btn-dxf", "btn-print"]
+    .map(id => document.getElementById(id)).filter(Boolean);
+  downloadInProgress = true;
+  exportButtons.forEach(button => { button.disabled = true; });
+  toast(action);
+  try {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload) });
+    if (!r.ok) throw new Error((await r.text()).slice(0, 200));
+    const blob = await r.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    if (suffix.endsWith(".pdf")) window.open(objectUrl, "_blank");
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    toast(url === "/api/grado" ? `Проект сохранён: ${filename}` : `Файл готов: ${filename}`);
+  } catch (error) {
+    toast("Не удалось собрать файл: " + String(error.message || error).slice(0, 180), "error");
+  } finally {
+    downloadInProgress = false;
+    exportButtons.forEach(button => { button.disabled = false; });
+  }
 }
 on("export-style", "change", () => { persist(); toast(exportStyleMode() === "canvas"
   ? "Печать и альбом — знаками как на холсте" : "Печать и альбом — по стандарту ЛГР"); });
-on("btn-album", "click", () => download("/api/album", "grado_agk_album.pdf"));
+on("btn-album", "click", () => download("/api/album", "-album.pdf"));
 on("btn-album-config", "click", openAlbumConfig);
-on("btn-grado", "click", () => download("/api/grado", "project.grado"));
-on("btn-dxf", "click", () => download("/api/dxf", "project.dxf"));
-on("btn-print", "click", () => download("/api/print", "chertezh.pdf"));
+on("btn-grado", "click", () => download("/api/grado", ".grado"));
+on("btn-dxf", "click", () => download("/api/dxf", ".dxf"));
+on("btn-print", "click", () => download("/api/print", "-print.pdf"));
+
+function hasProjectContent() {
+  return state.features.length > 0 || LAYERS_V2.some(layer => layer.user_created) ||
+    Object.keys(state.projectStyles || {}).length > 0 ||
+    (state.projectCustomKinds || []).length > 0 || (state.variants || []).length > 0;
+}
+async function checkpointBeforeReplace() {
+  if (window.Collab && window.Collab.active) return true;
+  clearTimeout(autosaveTimer);
+  try {
+    await saveStateNow(collectState());
+    return true;
+  } catch (error) {
+    toast("Не удалось сохранить текущий проект. Замена отменена.", "error");
+    return false;
+  }
+}
+function syncProjectControls() {
+  const access = state.accessRadii || { on: false, r: 300 };
+  const show = document.getElementById("access-show");
+  const radius = document.getElementById("access-r");
+  const wrap = document.getElementById("access-r-wrap");
+  if (show) show.checked = !!access.on;
+  if (radius) radius.value = access.r || 300;
+  if (wrap) wrap.style.display = access.on ? "" : "none";
+}
+
+async function newProject() {
+  if (window.Collab && window.Collab.active) {
+    toast("Новый общий проект создаётся из списка совместной работы", "warn"); return;
+  }
+  if (hasProjectContent() && !(await uiConfirm(
+    `Создать новый проект? Текущий проект (${state.features.length} объект(ов)) останется в автосохранениях.`,
+    { ok: "Новый проект" }))) return;
+  if (!(await checkpointBeforeReplace())) return;
+  resetProjectState();
+  setTool("select");
+  afterChange();
+  toast("Создан новый пустой проект");
+}
+on("btn-new-project", "click", newProject);
 
 // открытие проекта .grado (round-trip с QGIS)
 on("btn-open", "click", () => document.getElementById("grado-file").click());
@@ -4954,34 +5129,15 @@ on("grado-file", "change", async e => {
   if (!file) return;
   e.target.value = "";
   try {
+    toast("Проверяю файл проекта…");
     const r = await fetch("/api/open-grado", { method: "POST",
       headers: { "Content-Type": "application/octet-stream" }, body: file });
     if (!r.ok) throw new Error(await r.text());
     const data = await r.json();
-    snapshot();
-    state.features = data.features.map(f => upgradeFeature({ id: state.nextId++, ...f }));
-    if (data.name) document.getElementById("project-name").value = data.name;
-    if (data.projectStyles) state.projectStyles = data.projectStyles;
-    if (Array.isArray(data.projectCustomKinds)) {
-      state.projectCustomKinds = data.projectCustomKinds;
-      for (const k of data.projectCustomKinds) {
-        if (!BASE_KIND_BY_KIND[k.kind]) {
-          BASE_KINDS.push(k);
-          BASE_KIND_BY_KIND[k.kind] = k;
-          if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
-        }
-      }
-    }
-    if (Array.isArray(data.variants)) state.variants = data.variants;
-    if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
-    if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack.slice(-undoDepth());
-    if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack.slice(-undoDepth());
-    if (data.albumConfig && typeof data.albumConfig === 'object') {
-      state.albumConfig = data.albumConfig;
-    }
-    state.selected = null;
-    afterChange();
-    fitView();
+    if (hasProjectContent() && !(await uiConfirm(
+      `Открыть «${data.name || file.name}» и заменить текущий проект? Текущее состояние останется в автосохранениях.`,
+      { ok: "Открыть" }))) return;
+    if (!(await checkpointBeforeReplace())) return;
     loadProjectData(data);
   } catch (err) {
     toast("Не удалось открыть проект: " + String(err).slice(0, 200), "error");
@@ -4990,28 +5146,25 @@ on("grado-file", "change", async e => {
 
 function loadProjectData(data) {
   if (!data || !Array.isArray(data.features)) return;
-  snapshot();
-  state.features = data.features.map(f => upgradeFeature({ id: state.nextId++, ...f }));
-  if (data.name) document.getElementById("project-name").value = data.name;
-  if (data.projectStyles) state.projectStyles = data.projectStyles;
-  if (Array.isArray(data.projectCustomKinds)) {
-    state.projectCustomKinds = data.projectCustomKinds;
-    for (const k of data.projectCustomKinds) {
-      if (!BASE_KIND_BY_KIND[k.kind]) {
-        BASE_KINDS.push(k);
-        BASE_KIND_BY_KIND[k.kind] = k;
-        if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
-      }
-    }
-  }
-  if (Array.isArray(data.variants)) state.variants = data.variants;
-  if (data.accessRadii && typeof data.accessRadii === "object") state.accessRadii = data.accessRadii;
-  if (Array.isArray(data.undo_stack)) state.undo = data.undo_stack.slice(-undoDepth());
-  if (Array.isArray(data.redo_stack)) state.redo = data.redo_stack.slice(-undoDepth());
-  if (data.albumConfig && typeof data.albumConfig === 'object') {
-    state.albumConfig = data.albumConfig;
-  }
-  state.selected = null;
+  const settings = data.studioState && typeof data.studioState === "object"
+    ? data.studioState : {};
+  const features = data.features.map((feature, index) =>
+    ({ ...feature, id: index + 1 }));
+  const restored = {
+    ...settings,
+    name: data.name || settings.name || "Проект",
+    features,
+    nextId: features.length + 1,
+    userLayers: settings.userLayers || data.userLayers || [],
+    projectStyles: settings.projectStyles || data.projectStyles || {},
+    projectCustomKinds: settings.projectCustomKinds || data.projectCustomKinds || [],
+    undo: Array.isArray(data.undo_stack) ? data.undo_stack : [],
+    redo: Array.isArray(data.redo_stack) ? data.redo_stack : [],
+  };
+  resetProjectState(restored.name);
+  applyRestoredState(restored);
+  syncProjectControls();
+  setTool("select", { keepLayer: true });
   afterChange();
   fitView();
   toast(`Открыт проект: ${data.features.length} объектов`);
@@ -5077,20 +5230,34 @@ function applyRestoredState(d) {
   // сырым состоянием и по-прежнему открываются без миграции на диске.
   if (d && d.state && typeof d.state === "object") d = d.state;
   if (!d || typeof d !== "object") return;
+  // Свои типы нужны ДО восстановления слоёв: иначе слой пользовательского
+  // типа неизвестен индексам и молча пропускается при открытии .grado.
+  if (Array.isArray(d.projectCustomKinds)) {
+    state.projectCustomKinds = d.projectCustomKinds;
+    rebuildKinds();
+  }
   // пользовательские слои — ДО остального восстановления: layersVisible/
   // layerOrder/layerFmt/activeLayerId ссылаются на их id по значению
   if (Array.isArray(d.userLayers)) {
     for (const spec of d.userLayers) {
-      if (LAYER_BY_ID[spec.layer_id]) continue;  // уже есть (повторный restore)
-      if (CODE_TO_GEOM[spec.code]) {             // обычный (generic) слой
-        createGenericLayer({ title: spec.title, geometry_type: CODE_TO_GEOM[spec.code],
-                            styleId: spec.style_id, id: spec.layer_id });
-        continue;
+      if (LAYER_BY_ID[spec.layer_id]) {
+        if (Array.isArray(spec.fields) && spec.fields.length)
+          LAYER_BY_ID[spec.layer_id].fields = spec.fields;
+        continue;  // уже есть (встроенный или повторный restore)
       }
-      const kind = KIND_BY_SEMANTIC_CLASS[spec.code];
-      if (!kind) continue;  // неизвестный класс (снимок из будущей версии) — пропускаем не роняя
-      createUserLayer({ kind, title: spec.title, styleId: spec.style_id,
-                       id: spec.layer_id });
+      let created = null;
+      const semanticCode = spec.studio_code || spec.code;
+      if (CODE_TO_GEOM[semanticCode]) {          // обычный (generic) слой
+        created = createGenericLayer({ title: spec.title,
+          geometry_type: CODE_TO_GEOM[semanticCode], styleId: spec.style_id,
+          id: spec.layer_id });
+      } else {
+        const kind = KIND_BY_SEMANTIC_CLASS[semanticCode];
+        if (!kind) continue;  // неизвестный класс из будущей версии — не роняем
+        created = createUserLayer({ kind, title: spec.title,
+          styleId: spec.style_id, id: spec.layer_id });
+      }
+      if (created && Array.isArray(spec.fields)) created.fields = spec.fields;
     }
   }
   state.features = (d.features || []).map(upgradeFeature);  // legacy kind → слой v2
@@ -5113,6 +5280,7 @@ function applyRestoredState(d) {
     f.layer_id = L.id;
   }
   state.nextId = d.nextId || 1;
+  syncNextId();
   if (d.layerTitles) {
     for (const [id, title] of Object.entries(d.layerTitles))
       if (LAYER_BY_ID[id]) LAYER_BY_ID[id].title = title;
@@ -5166,16 +5334,6 @@ function applyRestoredState(d) {
   }
   if (d.projectStyles && typeof d.projectStyles === "object") {
     state.projectStyles = d.projectStyles;
-  }
-  if (Array.isArray(d.projectCustomKinds)) {
-    state.projectCustomKinds = d.projectCustomKinds;
-    for (const k of d.projectCustomKinds) {
-      if (!BASE_KIND_BY_KIND[k.kind]) {
-        BASE_KINDS.push(k);
-        BASE_KIND_BY_KIND[k.kind] = k;
-        if (k.semantic_class) KIND_BY_SEMANTIC_CLASS[k.semantic_class] = k.kind;
-      }
-    }
   }
   if (Array.isArray(d.variants)) state.variants = d.variants;
   if (d.accessRadii && typeof d.accessRadii === "object") state.accessRadii = d.accessRadii;

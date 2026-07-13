@@ -99,7 +99,7 @@ class ReleaseManifestTests(unittest.TestCase):
         manifest = json.loads((root / "apps/studio/web/version.json").read_text())
         packaging = (root / "packaging/py2app_setup.py").read_text()
 
-        self.assertEqual("0.9.0-beta.1", manifest["version"])
+        self.assertEqual("0.9.0-beta.2", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
@@ -109,6 +109,17 @@ class ReleaseManifestTests(unittest.TestCase):
 
         self.assertIn("schema_version: STATE_SCHEMA_VERSION", source)
         self.assertIn("albumConfig: state.albumConfig", source)
+
+    def test_frontend_opens_grado_once_and_embeds_project_settings(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/app.js").read_text()
+        handler = source.split('on("grado-file", "change"', 1)[1].split(
+            "function loadProjectData", 1)[0]
+
+        self.assertEqual(1, handler.count("loadProjectData(data)"))
+        self.assertNotIn("state.features = data.features", handler)
+        self.assertIn("studioState: collectProjectSettings()", source)
+        self.assertIn('on("btn-new-project", "click", newProject)', source)
 
 
 if __name__ == "__main__":

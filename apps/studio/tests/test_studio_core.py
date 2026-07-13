@@ -1078,6 +1078,52 @@ class TestUserLayers(unittest.TestCase):
         self.assertEqual(zone["layer_id"], "user.ozelenenie")
         self.assertEqual(zone["props"]["zone_title"], "Озеленение-1")
 
+    def test_grado_roundtrip_preserves_studio_settings_and_layer_manifest(self):
+        layers = [{**self.USER_LAYERS[0],
+                   "fields": [{"name": "Очередь", "type": "int"}]}]
+        studio_state = {
+            "albumConfig": {"sheets": ["title", "tep"]},
+            "variants": [{"id": "v1", "name": "Базовый"}],
+            "layerFmt": {"user.ozelenenie": {"fill": "#00aa55"}},
+            "exportStyle": "canvas",
+        }
+        data = studio_core.make_grado(
+            self.FEATS, "Т", layers=layers, studio_state=studio_state)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+
+        self.assertEqual(studio_state, out["studioState"])
+        self.assertEqual(layers, out["userLayers"])
+
+    def test_custom_layer_kind_uses_generic_storage_and_returns_to_studio(self):
+        custom_kinds = [{
+            "kind": "green", "semantic_class": "custom.green",
+            "geometry_type": "polygon", "style_id": "func_zone.fill",
+            "label": "Озеленение",
+        }]
+        layers = [{
+            "layer_id": "user.green", "code": "generic.polygon",
+            "studio_code": "custom.green", "title": "Озеленение",
+            "style_id": "func_zone.fill", "fields": [],
+        }]
+        features = [{
+            "kind": "green", "layer_id": "user.green",
+            "ring": [[0, 0], [20, 0], [20, 20], [0, 20]], "props": {},
+        }]
+        data = studio_core.make_grado(
+            features, "Свои типы", layers=layers,
+            project_custom_kinds=custom_kinds)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "custom.grado"
+            path.write_bytes(data)
+            out = studio_core.grado_to_features(path)
+
+        self.assertEqual("green", out["features"][0]["kind"])
+        self.assertEqual("user.green", out["features"][0]["layer_id"])
+        self.assertEqual("custom.green", out["userLayers"][0]["studio_code"])
+
     def test_builtin_template_wins_on_id_collision(self):
         # пользовательский манифест не может подменить встроенный слой
         clash = [{"layer_id": "project.territory.boundary",
@@ -1121,6 +1167,7 @@ class TestGenericGeomExport(unittest.TestCase):
         lines = [f for f in out["features"] if f.get("line")]
         self.assertEqual(len(lines), 1, "линия generic-слоя потерялась в roundtrip")
         self.assertEqual(lines[0]["layer_id"], "user.seti")
+        self.assertEqual(lines[0]["kind"], "generic")
 
 
 def _fake_nspd_transport(cad="77:01:0001013:19"):

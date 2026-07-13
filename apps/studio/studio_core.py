@@ -729,8 +729,20 @@ def _user_layer_templates(layers):
     return out
 
 
-def build_project(path, name, features, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
+def build_project(path, name, features, layers=None, project_styles=None,
+                  project_custom_kinds=None, undo_stack=None, redo_stack=None,
+                  studio_state=None):
     project = Project.create(path, name)
+    if layers is not None:
+        try:
+            project.set_meta("studio_layers", _json.dumps(layers))
+        except Exception:
+            pass
+    if isinstance(studio_state, dict):
+        try:
+            project.set_meta("studio_state", _json.dumps(studio_state))
+        except Exception:
+            pass
     if project_styles:
         try:
             project.set_meta("project_styles", _json.dumps(project_styles))
@@ -1089,19 +1101,44 @@ def grado_to_features(path):
     """Открытие .grado обратно в студию: слои проекта → фигуры холста."""
     project = Project.open(path)
     name = project.meta("name")
+    stored_layers = project.meta("studio_layers")
+    user_layers = None
+    if stored_layers:
+        try:
+            user_layers = _json.loads(stored_layers)
+        except Exception:
+            pass
+    pk = project.meta("project_custom_kinds")
+    project_kinds = []
+    if pk:
+        try:
+            project_kinds = _json.loads(pk)
+        except Exception:
+            pass
+    custom_kind_by_code = {
+        item.get("semantic_class"): item.get("kind")
+        for item in project_kinds if isinstance(item, dict)
+    }
+    studio_code_by_layer = {
+        item.get("layer_id"): item.get("studio_code")
+        for item in (user_layers or []) if isinstance(item, dict)
+        and item.get("studio_code")
+    }
     # ensure journal for reactive undo etc.
     try:
         from grado_reactive import Journal
         Journal(project.conn)
     except Exception:
         pass
+    layer_infos = project.layers()
     out = []
-    for info in project.layers():
-        kind = CODE_TO_KIND.get(info["code"])
+    for info in layer_infos:
+        studio_code = studio_code_by_layer.get(info["layer_id"], info["code"])
+        kind = CODE_TO_KIND.get(studio_code) or custom_kind_by_code.get(studio_code)
         if kind is None:
             code = info["code"]
             if code.startswith("generic."):
-                kind = code.split(".")[-1]  # "point" etc, or keep generic
+                kind = "generic"
             else:
                 continue
         # layer_id из модели → холст; если слой не из реестра, отдаём его id
@@ -1163,18 +1200,32 @@ def grado_to_features(path):
                     if ring[0] == ring[-1]:
                         ring = ring[:-1]
                     out.append({**base, "ring": ring, "props": dict(props)})
+    if not isinstance(user_layers, list):
+        # Старые .grado не содержали точный манифест интерфейса. Собираем
+        # достаточно данных из таблиц, чтобы два слоя одного класса снова
+        # открылись как два слоя, а не слились в первый попавшийся.
+        type_map = {"string": "text", "integer": "int", "number": "real"}
+        user_layers = []
+        for info in layer_infos:
+            fields = [{"name": f["id"], "type": type_map.get(f["type"], "text")}
+                      for f in project.layer_by_id(info["layer_id"]).user_fields]
+            user_layers.append({
+                "layer_id": info["layer_id"], "code": info["code"],
+                "title": info["title"], "stage": info.get("stage"),
+                "style_id": info.get("style_id"), "fields": fields,
+            })
+    saved_studio_state = project.meta("studio_state")
+    studio_state = {}
+    if saved_studio_state:
+        try:
+            studio_state = _json.loads(saved_studio_state)
+        except Exception:
+            pass
     ps = project.meta("project_styles")
     project_styles = {}
     if ps:
         try:
             project_styles = _json.loads(ps)
-        except Exception:
-            pass
-    pk = project.meta("project_custom_kinds")
-    project_kinds = []
-    if pk:
-        try:
-            project_kinds = _json.loads(pk)
         except Exception:
             pass
     undo = project.meta("studio_undo_stack")
@@ -1192,7 +1243,10 @@ def grado_to_features(path):
         except Exception:
             pass
     project.close()
-    return {"name": name, "features": out, "projectStyles": project_styles, "projectCustomKinds": project_kinds, "undo_stack": undo_stack, "redo_stack": redo_stack}
+    return {"name": name, "features": out, "userLayers": user_layers,
+            "studioState": studio_state, "projectStyles": project_styles,
+            "projectCustomKinds": project_kinds, "undo_stack": undo_stack,
+            "redo_stack": redo_stack}
 
 
 def import_fgistp(payload):
@@ -1901,10 +1955,15 @@ def fetch_extent(bbox, sources):
     return {"groups": out_groups, "notes": notes, "snapshots": snapshots}
 
 
-def make_grado(features, name, layers=None, project_styles=None, project_custom_kinds=None, undo_stack=None, redo_stack=None):
+def make_grado(features, name, layers=None, project_styles=None,
+               project_custom_kinds=None, undo_stack=None, redo_stack=None,
+               studio_state=None):
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "studio.grado"
-        build_project(path, name, features, layers, project_styles=project_styles, project_custom_kinds=project_custom_kinds, undo_stack=undo_stack, redo_stack=redo_stack).close()
+        build_project(path, name, features, layers, project_styles=project_styles,
+                      project_custom_kinds=project_custom_kinds,
+                      undo_stack=undo_stack, redo_stack=redo_stack,
+                      studio_state=studio_state).close()
         return path.read_bytes()
 
 

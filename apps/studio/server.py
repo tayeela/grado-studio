@@ -678,7 +678,13 @@ class Handler(SimpleHTTPRequestHandler):
                 project_kinds = body.get("projectCustomKinds")
                 undo_stack = body.get("undo_stack")
                 redo_stack = body.get("redo_stack")
-                data = studio_core.make_grado(features, name, layers=layers, project_styles=project_styles, project_custom_kinds=project_kinds, undo_stack=undo_stack, redo_stack=redo_stack)
+                studio_state = body.get("studioState")
+                data = studio_core.make_grado(
+                    features, name, layers=layers,
+                    project_styles=project_styles,
+                    project_custom_kinds=project_kinds,
+                    undo_stack=undo_stack, redo_stack=redo_stack,
+                    studio_state=studio_state)
                 self._send(data, "application/octet-stream", "project.grado")
             elif self.path == "/api/import-nspd":
                 out = studio_core.import_nspd(body.get("payload") or body)
