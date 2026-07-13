@@ -25,7 +25,8 @@ for module_dir in ("model", "compute", "reactive", "render", "geom", "layout",
                    "connectors"):
     sys.path.insert(0, str(ROOT / "core" / module_dir))
 sys.path.insert(0, str(ROOT / "apps" / "wizard"))
-VERSION = json.loads((ROOT / 'apps/studio/web/version.json').read_text())
+VERSION = json.loads(
+    (ROOT / 'apps/studio/web/version.json').read_text(encoding='utf-8'))
 ICON = ROOT / "packaging" / "AppIcon.icns"
 
 APP = ['apps/studio/server.py']

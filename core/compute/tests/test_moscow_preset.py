@@ -42,6 +42,9 @@ class TestMoscowPreset(unittest.TestCase):
     def test_parking(self):
         self.assertEqual(self.e.value("parking_perm"), 714)
         self.assertEqual(self.e.value("parking_guest"), 71)
+        rows = {row["id"]: row for row in self.e.results()}
+        self.assertEqual(rows["parking_perm"]["unit"], "м/м")
+        self.assertEqual(rows["parking_guest"]["unit"], "м/м")
 
     def test_social_thresholds_small_territory(self):
         e = Engine.from_file(PRESET)

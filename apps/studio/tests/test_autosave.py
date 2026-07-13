@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+import io
 from unittest import mock
 from pathlib import Path
 
@@ -97,23 +98,26 @@ class AutosaveTests(unittest.TestCase):
 class ReleaseManifestTests(unittest.TestCase):
     def test_manifest_is_single_source_for_server_and_packaging(self):
         root = Path(__file__).parents[3]
-        manifest = json.loads((root / "apps/studio/web/version.json").read_text())
-        packaging = (root / "packaging/py2app_setup.py").read_text()
+        manifest = json.loads((root / "apps/studio/web/version.json").read_text(
+            encoding="utf-8"))
+        packaging = (root / "packaging/py2app_setup.py").read_text(
+            encoding="utf-8")
 
-        self.assertEqual("0.9.0-beta.7", manifest["version"])
+        self.assertEqual("0.9.0-beta.8", manifest["version"])
         self.assertEqual(manifest, server.VERSION_INFO)
         self.assertIn("apps/studio/web/version.json", packaging)
 
     def test_frontend_persists_schema_and_album_configuration(self):
         root = Path(__file__).parents[3]
-        source = (root / "apps/studio/web/app.js").read_text()
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
 
         self.assertIn("schema_version: STATE_SCHEMA_VERSION", source)
         self.assertIn("albumConfig: state.albumConfig", source)
+        self.assertIn("renderLayers(); renderProps(); updateLayerStatus(); persist(); draw();", source)
 
     def test_frontend_opens_grado_once_and_embeds_project_settings(self):
         root = Path(__file__).parents[3]
-        source = (root / "apps/studio/web/app.js").read_text()
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
         handler = source.split('on("grado-file", "change"', 1)[1].split(
             "function loadProjectData", 1)[0]
 
@@ -162,6 +166,13 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertIn("HttpOnly", value)
             self.assertIn("SameSite=Lax", value)
             self.assertIn("Secure", value)
+
+    def test_request_body_limit_rejects_oversized_upload(self):
+        handler = object.__new__(server.Handler)
+        handler.headers = {"Content-Length": str(server.MAX_FILE_UPLOAD + 1)}
+        handler.rfile = io.BytesIO(b"")
+        with self.assertRaises(server.RequestBodyTooLarge):
+            handler._read_body(server.MAX_FILE_UPLOAD)
 
     def test_packaged_app_has_fallback_ports_but_dev_is_strict(self):
         with mock.patch.object(server.sys, "frozen", "macosx_app", create=True):

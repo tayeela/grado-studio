@@ -227,9 +227,17 @@ class Project:
         try:
             conn.execute("SELECT 1 FROM grado_meta LIMIT 1")
         except sqlite3.OperationalError:
+            # На Windows открытый sqlite-дескриптор блокирует удаление файла.
+            # Невалидный проект не возвращает Project, поэтому закрываем его
+            # здесь явно, а не оставляем освобождение сборщику мусора.
+            conn.close()
             raise ProjectError(f"{path} — не проект ГРАДО (нет grado_meta)") from None
-        cls._migrate_v2(conn)
-        return cls(conn, path)
+        try:
+            cls._migrate_v2(conn)
+            return cls(conn, path)
+        except Exception:
+            conn.close()
+            raise
 
     @staticmethod
     def _migrate_v2(conn):

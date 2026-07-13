@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 import zipfile
@@ -24,6 +25,8 @@ _OGR2OGR_FALLBACKS = [
     "/Applications/QGIS-LTR.app/Contents/MacOS/bin/ogr2ogr",
     "/Applications/QGIS.app/Contents/MacOS/bin/ogr2ogr",
 ]
+MAX_ARCHIVE_FILES = 20_000
+MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 
 
 def _windows_ogr2ogr_candidates():
@@ -49,17 +52,44 @@ def find_ogr2ogr():
     return None
 
 
-def _extract_recursive(zip_path, dest):
+def _safe_extract(zip_path, dest, budget):
+    """Распаковать недоверенный ZIP без выхода из каталога и zip-bomb."""
+    root = Path(dest).resolve()
     with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(dest)
+        for info in zf.infolist():
+            name = info.filename.replace("\\", "/")
+            parts = [part for part in name.split("/") if part not in ("", ".")]
+            if (not parts or name.startswith("/") or ".." in parts or
+                    ":" in parts[0] or
+                    stat.S_IFMT(info.external_attr >> 16) == stat.S_IFLNK):
+                raise ConnectorError(f"небезопасный путь в ZIP: {info.filename}")
+            target = root.joinpath(*parts).resolve()
+            if root not in target.parents and target != root:
+                raise ConnectorError(f"путь выходит из ZIP-каталога: {info.filename}")
+            budget["files"] += 1
+            budget["bytes"] += info.file_size
+            if budget["files"] > MAX_ARCHIVE_FILES:
+                raise ConnectorError("слишком много файлов в ZIP")
+            if budget["bytes"] > MAX_ARCHIVE_BYTES:
+                raise ConnectorError("распакованный ZIP больше 1 ГБ")
+            if info.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(info) as source, target.open("wb") as output:
+                shutil.copyfileobj(source, output, length=1024 * 1024)
+
+
+def _extract_recursive(zip_path, dest):
+    budget = {"files": 0, "bytes": 0}
+    _safe_extract(zip_path, dest, budget)
     while True:
         inner = glob.glob(os.path.join(dest, "**", "*.zip"), recursive=True)
         if not inner:
             return
         for z in inner:
             try:
-                with zipfile.ZipFile(z) as zf:
-                    zf.extractall(os.path.dirname(z))
+                _safe_extract(z, os.path.dirname(z), budget)
             except zipfile.BadZipFile:
                 pass
             finally:
