@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[3] / "packaging"))
 from build_support import data_files_for_tree  # noqa: E402
+from build_pages import build_pages  # noqa: E402
 
 
 class TestPackagingResources(unittest.TestCase):
@@ -32,3 +33,15 @@ class TestPackagingResources(unittest.TestCase):
         paths = [path for _target, files in manifest for path in files]
         self.assertTrue(any(path.endswith("index.html") for path in paths))
         self.assertFalse(any(Path(path).name == ".DS_Store" for path in paths))
+
+    def test_pages_build_is_self_contained_and_loads_adapter_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = build_pages(tmp)
+            html = (output / "index.html").read_text(encoding="utf-8")
+
+            self.assertTrue((output / "app.js").is_file())
+            self.assertTrue((output / "redesign" / "studio2.css").is_file())
+            self.assertNotIn('src="/', html)
+            self.assertNotIn('href="/', html)
+            self.assertLess(html.index("pages-adapter.js"), html.index("app.js"))
+            self.assertNotIn("презентационная страница", html.lower())
