@@ -129,6 +129,20 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("place-items:center", styles)
         self.assertIn(".modal-head .modal-x:focus-visible", styles)
 
+    def test_panel_close_is_only_visible_in_compact_drawer(self):
+        root = Path(__file__).parents[3]
+        styles = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+        desktop, compact = styles.split("@media (max-width:900px)", 1)
+
+        self.assertIn(".phbtn.panel-close{display:none}", desktop)
+        self.assertGreater(
+            desktop.index(".phbtn.panel-close{display:none}"),
+            desktop.index(".phbtn{"),
+            "desktop close rule must win over the generic phbtn display",
+        )
+        self.assertIn(".phbtn.panel-close{display:grid}", compact)
+
     def test_panel_resizer_prevents_selection_and_always_cleans_up(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
@@ -266,6 +280,125 @@ if (independent.merged.layerFmt.a.stroke !== "#222" || independent.merged.layerF
 const conflict = merge(base, { ...base, density: "28" }, { ...base, density: "32" });
 if (conflict.merged.density !== "28" || conflict.conflicts < 1)
   throw new Error("conflict policy is not local-wins with reporting");
+'''
+        subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/collab.js")],
+            check=True, capture_output=True, text=True,
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for collaboration races")
+    def test_collaboration_ignores_stale_requests_and_advances_merge_base(self):
+        root = Path(__file__).parents[3]
+        script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const response = (status, data) => ({
+  ok: status >= 200 && status < 300, status, json: async () => data,
+});
+function load(fetchImpl, initialState) {
+  let state = JSON.parse(JSON.stringify(initialState || {}));
+  const applied = [];
+  const window = {
+    addEventListener() {},
+    collectState: () => JSON.parse(JSON.stringify(state)),
+    collectPersonal: () => ({}),
+    applyRestoredState(next) {
+      state = JSON.parse(JSON.stringify(next));
+      applied.push(state);
+    },
+    afterExternalApply() {},
+  };
+  const document = { readyState: "loading", getElementById: () => null };
+  const context = { window, document, fetch: fetchImpl, console,
+    setTimeout, clearTimeout, setInterval, clearInterval, Symbol, Object, JSON,
+    Promise, Number };
+  vm.createContext(context);
+  vm.runInContext(source, context);
+  return { collab: window.Collab, applied, getState: () => state };
+}
+
+(async () => {
+  // Интервал не должен запускать второй GET, пока первый ещё не завершился.
+  let releasePoll;
+  let pollCalls = 0;
+  const pendingPoll = new Promise(resolve => { releasePoll = resolve; });
+  const first = load(async () => {
+    pollCalls++;
+    await pendingPoll;
+    return response(200, { rev: 1, online: [] });
+  }, { features: [], density: "25" });
+  Object.assign(first.collab, { active: true, pid: "a", rev: 1,
+    base: first.getState() });
+  const pollOne = first.collab._poll();
+  const pollTwo = first.collab._poll();
+  if (pollCalls !== 1) throw new Error("overlapping poll request was started");
+  releasePoll();
+  await Promise.all([pollOne, pollTwo]);
+
+  // Поздний ответ старого проекта не применяется после смены контекста.
+  let releaseOld;
+  let switchCalls = 0;
+  const oldPending = new Promise(resolve => { releaseOld = resolve; });
+  const switched = load(async () => {
+    switchCalls++;
+    if (switchCalls === 1) {
+      await oldPending;
+      return response(200, { rev: 9, online: [],
+        state: { features: [], density: "99" } });
+    }
+    return response(200, { rev: 2, online: [],
+      state: { features: [], density: "30" } });
+  }, { features: [], density: "25" });
+  Object.assign(switched.collab, { active: true, pid: "old", rev: 1,
+    base: switched.getState() });
+  const oldPoll = switched.collab._poll();
+  switched.collab.projectEpoch++;
+  switched.collab.pid = "new";
+  switched.collab.base = switched.getState();
+  await switched.collab._poll();
+  if (switchCalls !== 2 || switched.collab.rev !== 2
+      || switched.getState().density !== "30")
+    throw new Error("old request blocked the new project's first poll");
+  releaseOld();
+  await oldPoll;
+  if (switched.applied.length !== 1 || switched.collab.rev !== 2)
+    throw new Error("old project response mutated the new project");
+
+  // Даже в том же проекте более старая ревизия не откатывает интерфейс.
+  const stale = load(async () => response(200, { rev: 4, online: [],
+    state: { features: [], density: "4" } }), { features: [], density: "25" });
+  Object.assign(stale.collab, { active: true, pid: "a", rev: 5,
+    base: stale.getState() });
+  await stale.collab._poll();
+  if (stale.applied.length || stale.collab.rev !== 5)
+    throw new Error("stale revision rolled the project back");
+
+  // Два последовательных 409: второй серверный откат должен сохраниться.
+  const base = { features: [], density: "25", layersVisible: { a: true } };
+  const local = { features: [], density: "25", layersVisible: { a: false } };
+  const posts = [];
+  const replies = [
+    response(409, { rev: 1, state: {
+      features: [], density: "30", layersVisible: { a: true } } }),
+    response(409, { rev: 2, state: {
+      features: [], density: "25", layersVisible: { a: true } } }),
+    response(200, { rev: 3, online: [] }),
+  ];
+  const pushing = load(async (_url, options) => {
+    posts.push(JSON.parse(options.body));
+    return replies.shift();
+  }, local);
+  Object.assign(pushing.collab, { active: true, pid: "a", rev: 0,
+    base, dirty: true });
+  const pushOne = pushing.collab._pushNow();
+  const pushTwo = pushing.collab._pushNow();
+  if (pushOne !== pushTwo) throw new Error("callers did not share the active push");
+  await pushOne;
+  const finalPost = posts.at(-1).state;
+  if (finalPost.density !== "25" || finalPost.layersVisible.a !== false)
+    throw new Error("consecutive conflict used a stale merge base");
+})();
 '''
         subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/collab.js")],
