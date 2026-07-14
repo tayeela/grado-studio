@@ -111,6 +111,9 @@ class Hub:
         self._secure_permissions(self.root, 0o700)
         self._secure_permissions(self.projects_dir, 0o700)
         self.lock = threading.RLock()
+        # Password hashing is deliberately serialized away from the project
+        # lock: a slow/hostile login must not stall saves, polling or exports.
+        self.login_lock = threading.Lock()
         self.users = self._load("users.json")
         self.invites = self._load("invites.json")
         self.sessions = self._load("sessions.json")
@@ -139,12 +142,17 @@ class Hub:
             pass
 
     def _load(self, name):
+        path = self.root / name
         try:
-            with open(self.root / name, encoding="utf-8") as fh:
+            with open(path, encoding="utf-8") as fh:
                 data = json.load(fh)
-            return data if isinstance(data, dict) else {}
-        except (OSError, ValueError):
+        except FileNotFoundError:
             return {}
+        except (OSError, ValueError, TypeError):
+            raise HubError(500, f"файл хаба {name} повреждён или недоступен") from None
+        if not isinstance(data, dict):
+            raise HubError(500, f"файл хаба {name} повреждён")
+        return data
 
     def _save(self, name, data):
         tmp = self.root / (name + ".tmp")
@@ -166,24 +174,35 @@ class Hub:
         """Новый инвайт-код (только администратор)."""
         with self.lock:
             user = self.users.get(login)
-            if not user or not user.get("admin"):
+            if not isinstance(user, dict) or not user.get("admin"):
                 raise HubError(403, "инвайты создаёт администратор")
             return self._new_invite_locked()
 
     def register(self, invite, login, password):
+        if not LOGIN_RE.match(login or ""):
+            raise HubError(400, "логин: 3-32 символа, латиница/цифры/._-")
+        if not isinstance(password, str) or len(password) < PASSWORD_MIN_LENGTH:
+            raise HubError(400, f"пароль слишком короткий (минимум {PASSWORD_MIN_LENGTH})")
+        # Reject invalid invites before paying the scrypt cost. The same
+        # checks run again after hashing to close the concurrency window.
         with self.lock:
             inv = self.invites.get(invite or "")
-            if not inv or inv.get("used_by"):
+            if not isinstance(inv, dict) or inv.get("used_by"):
                 raise HubError(403, "инвайт-код не найден или уже использован")
-            if not LOGIN_RE.match(login or ""):
-                raise HubError(400, "логин: 3-32 символа, латиница/цифры/._-")
             if login in self.users:
                 raise HubError(409, "такой логин уже занят")
-            if not isinstance(password, str) or len(password) < PASSWORD_MIN_LENGTH:
-                raise HubError(400, f"пароль слишком короткий (минимум {PASSWORD_MIN_LENGTH})")
-            salt = os.urandom(16)
+        # Scrypt may take noticeable CPU time. Compute it before entering the
+        # global project lock; invite/login uniqueness is rechecked below.
+        salt = os.urandom(16)
+        password_hash = _scrypt(password, salt)
+        with self.lock:
+            inv = self.invites.get(invite or "")
+            if not isinstance(inv, dict) or inv.get("used_by"):
+                raise HubError(403, "инвайт-код не найден или уже использован")
+            if login in self.users:
+                raise HubError(409, "такой логин уже занят")
             self.users[login] = {
-                "pw": _scrypt(password, salt), "salt": salt.hex(),
+                "pw": password_hash, "salt": salt.hex(),
                 "admin": not self.users,      # первый пользователь — админ
                 "created": time.time(), "invite": invite}
             inv["used_by"] = login
@@ -192,7 +211,7 @@ class Hub:
             return self._new_session_locked(login)
 
     def login(self, login, password, client_key=""):
-        with self.lock:
+        with self.login_lock:
             login_key = login if isinstance(login, str) else "<invalid>"
             client_id = str(client_key or "local")[:128]
             throttle_key = (client_id, login_key[:64])
@@ -215,7 +234,9 @@ class Hub:
                 self.login_failures[throttle_key] = attempts
                 self.login_failures[client_throttle_key] = client_attempts
                 raise HubError(429, "слишком много попыток входа; повторите позже")
-            user = self.users.get(login or "") if isinstance(login, str) else None
+            with self.lock:
+                stored_user = self.users.get(login or "") if isinstance(login, str) else None
+                user = dict(stored_user) if isinstance(stored_user, dict) else None
             try:
                 salt = bytes.fromhex(user["salt"]) if user else _DUMMY_SALT
                 expected = user["pw"] if user else "-"
@@ -233,7 +254,8 @@ class Hub:
                 self.login_failures[client_throttle_key] = client_attempts
                 raise HubError(401, "неверный логин или пароль")
             self.login_failures.pop(throttle_key, None)
-            return self._new_session_locked(login)
+            with self.lock:
+                return self._new_session_locked(login)
 
     def _new_session_locked(self, login):
         token = secrets.token_urlsafe(32)
@@ -249,8 +271,21 @@ class Hub:
 
     def _prune_sessions(self):
         deadline = time.time() - SESSION_TTL
-        stale = [t for t, s in self.sessions.items()
-                 if s.get("created", 0) < deadline]
+        stale = []
+        for token, session in self.sessions.items():
+            if not isinstance(session, dict):
+                stale.append(token)
+                continue
+            login = session.get("login")
+            created = session.get("created")
+            try:
+                valid_created = (not isinstance(created, bool)
+                                 and math.isfinite(float(created))
+                                 and float(created) >= deadline)
+            except (TypeError, ValueError):
+                valid_created = False
+            if not isinstance(login, str) or login not in self.users or not valid_created:
+                stale.append(token)
         for t in stale:
             del self.sessions[t]
         return bool(stale)
@@ -270,7 +305,8 @@ class Hub:
 
     def user_info(self, login):
         u = self.users.get(login)
-        return {"login": login, "admin": bool(u and u.get("admin"))}
+        return {"login": login,
+                "admin": bool(isinstance(u, dict) and u.get("admin"))}
 
     # ---------- проекты ----------
 
@@ -283,8 +319,10 @@ class Hub:
         try:
             with open(self._project_path(pid), encoding="utf-8") as fh:
                 project = json.load(fh)
-        except OSError:
+        except FileNotFoundError:
             raise HubError(404, "проект не найден") from None
+        except OSError:
+            raise HubError(500, "файл проекта недоступен") from None
         except (TypeError, ValueError):
             raise HubError(500, "файл проекта повреждён") from None
         if not isinstance(project, dict) or project.get("id") != pid:
@@ -323,11 +361,16 @@ class Hub:
 
     def create_project(self, login, name):
         name = (name or "").strip() or "Новый проект"
-        pid = secrets.token_hex(6)
-        proj = {"id": pid, "name": name[:120], "owner": login,
-                "members": [], "rev": 0, "updated": time.time(),
-                "state": {}}
         with self.lock:
+            for _ in range(32):
+                pid = secrets.token_hex(6)
+                if not self._project_path(pid).exists():
+                    break
+            else:
+                raise HubError(503, "не удалось создать уникальный id проекта")
+            proj = {"id": pid, "name": name[:120], "owner": login,
+                    "members": [], "rev": 0, "updated": time.time(),
+                    "state": {}}
             self._write_project(proj)
         return {"id": pid, "name": proj["name"]}
 

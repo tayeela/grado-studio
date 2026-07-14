@@ -4,6 +4,7 @@ import sys
 import stat
 import json
 import tempfile
+import threading
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -67,6 +68,13 @@ class TestAuth(HubBase):
                 self.hub.login("missing-user", "password")
         hasher.assert_called_once()
 
+    def test_invalid_invite_is_rejected_before_password_hashing(self):
+        with mock.patch.object(webhub, "_scrypt") as hasher:
+            with self.assertRaises(HubError) as caught:
+                self.hub.register("missing", "anna", "секрет123")
+        self.assertEqual(403, caught.exception.status)
+        hasher.assert_not_called()
+
     def test_login_throttles_repeated_failures_before_more_password_hashing(self):
         self._user("anna")
         with mock.patch.object(webhub, "_scrypt", return_value="not-a-match") as hasher:
@@ -88,6 +96,38 @@ class TestAuth(HubBase):
             with self.assertRaises(HubError) as caught:
                 self.hub.login("anna", "wrong", client_key="192.0.2.11")
         self.assertEqual(401, caught.exception.status)
+
+    def test_slow_login_does_not_block_project_operations(self):
+        self._user("anna")
+        started = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+
+        def slow_hash(_password, _salt):
+            started.set()
+            release.wait(2)
+            return "not-a-match"
+
+        def attempt_login():
+            try:
+                self.hub.login("anna", "wrong", client_key="192.0.2.44")
+            except HubError:
+                pass
+            finally:
+                finished.set()
+
+        with mock.patch.object(webhub, "_scrypt", side_effect=slow_hash):
+            worker = threading.Thread(target=attempt_login, daemon=True)
+            worker.start()
+            self.assertTrue(started.wait(1), "login hash did not start")
+            # This needs the project lock. It must still complete while the
+            # password hash is deliberately blocked on a separate lock.
+            created = self.hub.create_project("anna", "Параллельный")
+            self.assertRegex(created["id"], r"^[a-z0-9]{12}$")
+            self.assertFalse(finished.is_set())
+            release.set()
+            worker.join(1)
+        self.assertTrue(finished.is_set())
 
     @unittest.skipIf(sys.platform == "win32", "POSIX permissions are not portable to Windows")
     def test_hub_secrets_and_projects_are_private_to_current_os_user(self):
@@ -123,6 +163,30 @@ class TestAuth(HubBase):
             encoding="utf-8"))
         self.assertNotIn(token, saved)
 
+    def test_malformed_sessions_are_pruned_on_restart(self):
+        token = self._user("anna")
+        sessions_path = self.hub.root / "sessions.json"
+        sessions_path.write_text(json.dumps({
+            token: self.hub.sessions[token],
+            "broken-value": "not-an-object",
+            "missing-login": {"created": 1e20},
+            "bad-created": {"login": "anna", "created": "never"},
+            "unknown-user": {"login": "ghost", "created": 1e20},
+        }), encoding="utf-8")
+
+        restarted = Hub(self.hub.root, quiet=True)
+        self.assertEqual("anna", restarted.session_user(token))
+        self.assertEqual({token}, set(restarted.sessions))
+        saved = json.loads(sessions_path.read_text(encoding="utf-8"))
+        self.assertEqual({token}, set(saved))
+
+    def test_corrupted_account_store_fails_closed(self):
+        (self.hub.root / "users.json").write_text("{broken", encoding="utf-8")
+        with self.assertRaises(HubError) as caught:
+            Hub(self.hub.root, quiet=True)
+        self.assertEqual(500, caught.exception.status)
+        self.assertIn("users.json", str(caught.exception))
+
 
 class TestProjects(HubBase):
     def setUp(self):
@@ -144,6 +208,19 @@ class TestProjects(HubBase):
             self.hub.share_project(pid, "boris", "anna")
         with self.assertRaises(HubError):     # несуществующий пользователь
             self.hub.share_project(pid, "anna", "нет-такого")
+
+    def test_create_project_retries_random_id_collision(self):
+        first = self.hub.create_project("anna", "Первый")["id"]
+        second_id = "b" * 12 if first != "b" * 12 else "c" * 12
+        with mock.patch.object(webhub.secrets, "token_hex",
+                               side_effect=[first, second_id]) as generator:
+            created = self.hub.create_project("anna", "Второй")
+        self.assertEqual(second_id, created["id"])
+        self.assertEqual(2, generator.call_count)
+        self.assertEqual(
+            {"Первый", "Второй"},
+            {project["name"] for project in self.hub.list_projects("anna")},
+        )
 
     def test_access_control_on_state(self):
         pid = self.hub.create_project("anna", "Секретный")["id"]

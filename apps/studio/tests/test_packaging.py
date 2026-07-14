@@ -141,6 +141,22 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("body.panel-resizing *", styles)
         self.assertIn("user-select:none!important", styles)
 
+    def test_panel_resizer_preserves_canvas_and_reports_effective_width(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        styles = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+        html = (root / "apps/studio/web/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("const MIN_STAGE_WIDTH = 480", app)
+        self.assertIn("const effectiveMaxWidth", app)
+        self.assertIn("window.innerWidth * 0.48", app)
+        self.assertIn("aria-valuetext", app)
+        self.assertIn("window.addEventListener('resize'", app)
+        self.assertIn("max-width:min(640px,48vw)", styles)
+        panel_close = html.split('id="btn-panel-close"', 1)[0].rsplit("<button", 1)[1]
+        self.assertNotIn("title=", panel_close)
+
     def test_fit_all_uses_feature_extents_and_visible_layers(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
@@ -212,6 +228,49 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn('aria-controls="cmdk" aria-expanded="false"', html)
         self.assertIn('trigger?.setAttribute("aria-expanded", "true")', source)
         self.assertIn('trigger?.setAttribute("aria-expanded", "false")', source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for collaboration merge")
+    def test_collaboration_merge_applies_remote_and_combines_independent_changes(self):
+        root = Path(__file__).parents[3]
+        script = r'''
+const fs = require("fs");
+const vm = require("vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const window = { addEventListener() {} };
+const context = { window, document: { readyState: "loading" }, console,
+  setTimeout, clearTimeout, setInterval, clearInterval, Symbol, Object, JSON };
+vm.createContext(context);
+vm.runInContext(source, context);
+const merge = context.window.Collab._mergeShared;
+const base = { features: [{ id: 1, x: 0 }], density: "25",
+  layersVisible: { a: true, b: true }, layerFmt: { a: { stroke: "#111" } } };
+
+const remoteOnly = merge(base, JSON.parse(JSON.stringify(base)), {
+  ...base, density: "30", layersVisible: { a: true, b: false }
+});
+if (remoteOnly.merged.density !== "30" || remoteOnly.merged.layersVisible.b !== false)
+  throw new Error("remote-only change was lost");
+
+const independent = merge(base, {
+  ...base, layersVisible: { a: false, b: true },
+  layerFmt: { a: { stroke: "#111", width: 2 } }
+}, {
+  ...base, layersVisible: { a: true, b: false },
+  layerFmt: { a: { stroke: "#222" } }
+});
+if (independent.merged.layersVisible.a !== false || independent.merged.layersVisible.b !== false)
+  throw new Error("independent map edits were not combined");
+if (independent.merged.layerFmt.a.stroke !== "#222" || independent.merged.layerFmt.a.width !== 2)
+  throw new Error("nested style edits were not combined");
+
+const conflict = merge(base, { ...base, density: "28" }, { ...base, density: "32" });
+if (conflict.merged.density !== "28" || conflict.conflicts < 1)
+  throw new Error("conflict policy is not local-wins with reporting");
+'''
+        subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/collab.js")],
+            check=True, capture_output=True, text=True,
+        )
 
     def test_layer_style_tabs_follow_keyboard_and_aria_tab_pattern(self):
         root = Path(__file__).parents[3]
