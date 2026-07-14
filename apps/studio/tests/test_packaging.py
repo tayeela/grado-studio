@@ -116,6 +116,17 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("!layer.annotation && !layer.import_only && !layer.locked", app)
         self.assertIn('document.getElementById("cv")?.focus()', app)
 
+    def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
+        root = Path(__file__).parents[3]
+        styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
+            encoding="utf-8")
+
+        self.assertIn(".modal-head .modal-x{", styles)
+        self.assertIn("margin:0;padding:0!important", styles)
+        self.assertIn("display:grid;", styles)
+        self.assertIn("place-items:center", styles)
+        self.assertIn(".modal-head .modal-x:focus-visible", styles)
+
     def test_panel_resizer_prevents_selection_and_always_cleans_up(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")

@@ -36,6 +36,7 @@ class AutosaveTests(unittest.TestCase):
         self.assertEqual("Проект", payload["state"]["name"])
         self.assertEqual(2, meta["feature_count"])
         self.assertTrue(payload["saved_at"].endswith("Z"))
+        self.assertEqual("sha256-canonical-state-v1", payload["checksum_kind"])
         self.assertEqual(64, len(payload["checksum"]))
 
     def test_identical_state_does_not_create_backup(self):
@@ -122,6 +123,23 @@ class AutosaveTests(unittest.TestCase):
         self.path.write_text('{"name": "без объектов"}', encoding="utf-8")
         with self.assertRaises(ValueError):
             server.load_autosave(self.path)
+
+    def test_load_autosave_rejects_silent_state_tampering(self):
+        server.save_autosave(self.state("Исходная", 2), path=self.path)
+        payload = json.loads(self.path.read_text(encoding="utf-8"))
+        payload["state"]["name"] = "Подменённая"
+        self.path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
+            server.load_autosave(self.path)
+
+    def test_legacy_envelope_without_checksum_kind_remains_readable(self):
+        state = self.state("Старая версия", 1)
+        payload = {"checksum": "legacy", "saved_at": "2025-01-01T00:00:00Z",
+                   "state": state}
+        self.path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+        self.assertEqual(state, server._autosave_state(server.load_autosave(self.path)))
 
 
 class ReleaseManifestTests(unittest.TestCase):
@@ -211,6 +229,14 @@ class ReleaseManifestTests(unittest.TestCase):
         with self.assertRaises(server.RequestBodyTooLarge):
             handler._read_body(server.MAX_FILE_UPLOAD)
 
+    def test_request_body_rejects_valid_but_truncated_payload(self):
+        handler = object.__new__(server.Handler)
+        handler.headers = {"Content-Length": "3"}
+        handler.rfile = io.BytesIO(b"{}")
+
+        with self.assertRaisesRegex(server.BadRequest, "incomplete"):
+            handler._read_body(server.MAX_JSON_BODY)
+
     def test_browser_posts_require_same_origin(self):
         handler = object.__new__(server.Handler)
         handler.path = "/api/tep"
@@ -284,6 +310,16 @@ class ReleaseManifestTests(unittest.TestCase):
         invalid.do_POST()
 
         self.assertEqual(400, invalid._reply.call_args.args[0])
+
+        truncated = object.__new__(server.BridgeHandler)
+        truncated.path = "/add_feature"
+        truncated.headers = {"Content-Length": "3"}
+        truncated.rfile = io.BytesIO(b"{}")
+        truncated._reply = mock.Mock()
+
+        truncated.do_POST()
+
+        self.assertEqual(400, truncated._reply.call_args.args[0])
 
     def test_api_rejects_non_object_features_and_invalid_metadata(self):
         bad_payloads = (

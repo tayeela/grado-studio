@@ -29,6 +29,7 @@
 """
 
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -154,14 +155,21 @@ def _autosave_state(payload):
     return state
 
 
+def _canonical_autosave_state(state):
+    """Stable bytes used to detect silent autosave corruption."""
+    return json.dumps(
+        _autosave_state(state), ensure_ascii=False, sort_keys=True,
+        separators=(",", ":")
+    ).encode("utf-8")
+
+
 def _autosave_envelope(state, raw=None):
     state = _autosave_state(state)
-    canonical = raw if raw is not None else json.dumps(
-        state, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
+    canonical = _canonical_autosave_state(state)
     return {
         "schema_version": VERSION_INFO["state_schema_version"],
         "saved_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "checksum_kind": "sha256-canonical-state-v1",
         "checksum": hashlib.sha256(canonical).hexdigest(),
         "state": state,
     }
@@ -171,10 +179,21 @@ def _read_autosave(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _validate_autosave_checksum(payload):
+    """Validate current envelopes while accepting old and raw-state files."""
+    if payload.get("checksum_kind") != "sha256-canonical-state-v1":
+        return
+    expected = payload.get("checksum")
+    actual = hashlib.sha256(_canonical_autosave_state(payload)).hexdigest()
+    if not isinstance(expected, str) or not hmac.compare_digest(expected, actual):
+        raise ValueError("autosave checksum mismatch")
+
+
 def load_autosave(path):
     """Read a usable autosave or fail before malformed JSON reaches the UI."""
     payload = _read_autosave(path)
     _autosave_state(payload)
+    _validate_autosave_checksum(payload)
     return payload
 
 
@@ -199,7 +218,7 @@ def save_autosave(state, raw=None, path=None, backups=AUTOSAVE_BACKUPS):
     tmp.write_bytes(data)
     if path.exists():
         try:
-            current = _read_autosave(path)
+            current = load_autosave(path)
             if _autosave_state(current) == envelope["state"]:
                 tmp.unlink(missing_ok=True)
                 return _autosave_meta(current, path=path), False
@@ -224,7 +243,7 @@ def list_autosave_backups(path=None, backups=AUTOSAVE_BACKUPS):
         if not backup.exists():
             continue
         try:
-            result.append(_autosave_meta(_read_autosave(backup), index, backup))
+            result.append(_autosave_meta(load_autosave(backup), index, backup))
         except (OSError, ValueError, json.JSONDecodeError):
             continue
     return result
@@ -268,7 +287,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
             if n > MAX_JSON_BODY:
                 self._reply(413, {"error": "request body is too large"})
                 return
-            data = json.loads(self.rfile.read(n).decode("utf-8"))
+            raw = self.rfile.read(n)
+            if len(raw) != n:
+                raise BadRequest("incomplete request body")
+            data = json.loads(raw.decode("utf-8"))
             if not isinstance(data, dict):
                 raise BadRequest("JSON body must be an object")
             source = data.get("grado_source", "nspd")
@@ -426,7 +448,10 @@ class Handler(SimpleHTTPRequestHandler):
             raise ValueError("invalid content length")
         if length > limit:
             raise RequestBodyTooLarge(f"request exceeds {limit} bytes")
-        return self.rfile.read(length)
+        body = self.rfile.read(length)
+        if len(body) != length:
+            raise BadRequest("incomplete request body")
+        return body
 
     def _send(self, data, ctype, filename=None):
         self.send_response(200)
@@ -510,7 +535,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             try:
                 with AUTOSAVE_LOCK:
-                    self._json(_read_autosave(backup))
+                    self._json(load_autosave(backup))
             except (OSError, ValueError, json.JSONDecodeError):
                 self._json({"error": "backup is damaged"}, 500)
             return
