@@ -328,6 +328,40 @@ def line_label_ops(chain, text, color, size, closed):
     return out
 
 
+def _label_bbox(lbl):
+    """Грубая оценка bbox подписи в мм листа — без реальных метрик шрифта
+    (~0.55 кегля на символ, моноширинное приближение, для greedy-фильтра
+    наложения этого достаточно)."""
+    w = len(lbl["text"]) * lbl["size"] * 0.55
+    h = lbl["size"] * 1.2
+    x, y = lbl["x"], lbl["y"]
+    anchor = lbl.get("anchor", "start")
+    if anchor == "middle":
+        x0 = x - w / 2
+    elif anchor == "end":
+        x0 = x - w
+    else:
+        x0 = x
+    return (x0, y - h, x0 + w, y + h * 0.25)
+
+
+def _filter_overlapping_labels(labels):
+    """Не показывать подпись, если её bbox пересекается с уже принятой
+    подписью того же слоя за этот проход (простой greedy-алгоритм, аналог
+    фильтра на холсте в app.js)."""
+    placed = {}
+    out = []
+    for lbl in labels:
+        bbox = _label_bbox(lbl)
+        bucket = placed.setdefault(lbl.get("_layer_id"), [])
+        if any(bbox[0] < b[2] and bbox[2] > b[0] and bbox[1] < b[3] and bbox[3] > b[1]
+               for b in bucket):
+            continue
+        bucket.append(bbox)
+        out.append(lbl)
+    return out
+
+
 def build_ops(project, frame_rect, scale, center=None, styles=None,
               label_size=2.2, only=None):
     """Операции отрисовки карты проекта в рамке frame_rect (мм), М 1:scale.
@@ -391,9 +425,10 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                    "text": str(f["attrs"][st.label]),
                                    "color": st.label_color or (0.15, 0.15, 0.15),
                                    "font_family": st.label_font_family or "ui",
-                                   "anchor": "middle"})
+                                   "anchor": "middle",
+                                   "_layer_id": info["layer_id"]})
                 if st.line_label:
-                    labels.extend(line_label_ops(
+                    labels.extend(dict(lbl, _layer_id=info["layer_id"]) for lbl in line_label_ops(
                         rings[0], st.line_label, st.stroke or (0.85, 0.1, 0.14),
                         label_size, closed=True))
             for line in _lines(geom):
@@ -411,7 +446,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                 "dash": st.dash,
                                 "rings": [_offset_chain(pts, st.double)]})
                 if st.line_label and len(pts) >= 2:
-                    labels.extend(line_label_ops(
+                    labels.extend(dict(lbl, _layer_id=info["layer_id"]) for lbl in line_label_ops(
                         pts, st.line_label, st.stroke or (0.85, 0.1, 0.14),
                         label_size, closed=False))
             for pt in _points(geom):
@@ -425,7 +460,11 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                                    "text": str(f["attrs"][st.label]),
                                    "color": st.label_color or (0.1, 0.1, 0.1),
                                    "font_family": st.label_font_family or "ui",
-                                   "anchor": "middle"})
+                                   "anchor": "middle",
+                                   "_layer_id": info["layer_id"]})
+    labels = _filter_overlapping_labels(labels)
+    for lbl in labels:
+        lbl.pop("_layer_id", None)
     ops.extend(labels)
     ops.append({"op": "unclip"})
     return ops
