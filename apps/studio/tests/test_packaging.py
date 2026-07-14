@@ -46,6 +46,7 @@ class TestPackagingResources(unittest.TestCase):
             html = (output / "index.html").read_text(encoding="utf-8")
 
             self.assertTrue((output / "app.js").is_file())
+            self.assertTrue((output / "crs.js").is_file())
             self.assertTrue((output / "pages-core.js").is_file())
             styles = json.loads((output / "styles.json").read_text(encoding="utf-8"))
             self.assertGreater(len(styles), 50)
@@ -54,6 +55,7 @@ class TestPackagingResources(unittest.TestCase):
             self.assertTrue((output / "favicon.svg").is_file())
             self.assertNotIn('src="/', html)
             self.assertNotIn('href="/', html)
+            self.assertLess(html.index("crs.js"), html.index("pages-core.js"))
             self.assertLess(html.index("pages-core.js"), html.index("pages-adapter.js"))
             self.assertLess(html.index("pages-adapter.js"), html.index("app.js"))
             self.assertNotIn("презентационная страница", html.lower())
@@ -449,6 +451,49 @@ process.stdout.write(JSON.stringify({query,osm:osm.groups.map(g=>[g.source,g.cou
         self.assertEqual("building", result["nspdKind"])
         self.assertEqual(8, result["floors"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser CRS")
+    def test_browser_crs_matches_proj_and_roundtrips(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const crs=require(process.argv[1]);
+const cases=[
+  [[37.6176,55.7558],[413242.9638,6179766.5783]],
+  [[39.0,55.0],[500000.0,6094791.4210]],
+  [[37.5,55.667],[405649.3971,6170038.5624]],
+];
+const projected=cases.map(([point,expected])=>{
+  const got=crs.wgs84ToUtm37n(point);
+  const back=crs.utm37nToWgs84(got);
+  return {dx:got[0]-expected[0],dy:got[1]-expected[1],
+    dlon:back[0]-point[0],dlat:back[1]-point[1]};
+});
+const originLocal=crs.wgs84ToLocal(crs.ORIGIN_WGS84);
+process.stdout.write(JSON.stringify({projected,originLocal}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/crs.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        for case in result["projected"]:
+            self.assertLess(abs(case["dx"]), 0.005)
+            self.assertLess(abs(case["dy"]), 0.005)
+            self.assertLess(abs(case["dlon"]), 1e-7)
+            self.assertLess(abs(case["dlat"]), 1e-7)
+        self.assertLess(abs(result["originLocal"][0]), 0.001)
+        self.assertLess(abs(result["originLocal"][1]), 0.001)
+
+    def test_basemap_uses_exact_projected_corners(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        data = (root / "apps/studio/web/app-data.js").read_text(encoding="utf-8")
+        self.assertIn("exactCrs.localToWgs84([x, y])", app)
+        self.assertIn("exactCrs.wgs84ToLocal([lon, lat])", app)
+        self.assertIn("const ne = lonLatToLocal", app)
+        self.assertIn("const sw = lonLatToLocal", app)
+        self.assertIn("ctx.transform((p10[0] - p00[0])", app)
+        self.assertIn("[[0, 0], [w, 0], [w, h], [0, h]]", data)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser snapping")
     def test_browser_object_snap_prefers_object_points_over_grid(self):
         root = Path(__file__).parents[3]
@@ -527,7 +572,7 @@ require(process.argv[2]);
             {"good": 200, "count": 1, "kind": "generic", "zip": 415,
              "badCrs": 400, "wrongMethod": 405, "extent": 200,
              "extentCount": 1,
-             "origin": [37.61429248873298, 55.73988778495184]},
+             "origin": [37.61429248873298, 55.73988778495185]},
             json.loads(completed.stdout),
         )
 
