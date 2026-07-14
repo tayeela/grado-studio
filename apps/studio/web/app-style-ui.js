@@ -85,9 +85,38 @@ function cmykToHex(c, m, y, k) {
     .toString(16).padStart(2, "0");
   return "#" + ch(c) + ch(m) + ch(y);
 }
+// HSV для встроенного спектра (H 0..360, S/V 0..1)
+function hexToHsv(hex) {
+  const h = normHex(hex) || "#000000";
+  const r = parseInt(h.slice(1, 3), 16) / 255, g = parseInt(h.slice(3, 5), 16) / 255,
+        b = parseInt(h.slice(5, 7), 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  let hue = 0;
+  if (d) {
+    if (mx === r) hue = ((g - b) / d) % 6;
+    else if (mx === g) hue = (b - r) / d + 2;
+    else hue = (r - g) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+  }
+  return [hue, mx ? d / mx : 0, mx];
+}
+function hsvToHex(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x]
+    : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  const ch = t => Math.round((t + m) * 255).toString(16).padStart(2, "0");
+  return "#" + ch(r) + ch(g) + ch(b);
+}
 // host — контейнер; onChange(hex) при смене. Возвращает {get,set,close}.
 function makeColorField(host, initial, onChange) {
   let value = normHex(initial) || "#888888", pop = null, onDoc = null, onViewport = null, onScroll = null;
+  const hsv = { h: 0, s: 0, v: 0 };
+  const syncHsvFromValue = () => {
+    const [h, s, v] = hexToHsv(value);
+    hsv.s = s; hsv.v = v;
+    if (s > 1e-4 && v > 1e-4) hsv.h = h;   // сохраняем тон у серых/чёрного
+  };
+  syncHsvFromValue();
   host.classList.add("cfield");
   host.innerHTML = `<button type="button" class="cfield-btn" aria-label="Открыть палитру цвета">
     <span class="cfield-sw"></span><span class="cfield-action">Палитра</span><span class="cfield-hex"></span>
@@ -99,19 +128,24 @@ function makeColorField(host, initial, onChange) {
     hexLbl.textContent = value;
     btn.setAttribute("aria-label", `Открыть палитру цвета ${value}`);
   };
-  const setValue = (hex, fire = true) => {
+  // keepHsv=true — правка пришла из самого спектра; не пересчитываем H/S/V из hex
+  const setValue = (hex, fire = true, keepHsv = false) => {
     const h = normHex(hex); if (!h) return;
-    value = h; paint(); if (pop) syncPop(); if (fire) onChange(h);
+    value = h; if (!keepHsv) syncHsvFromValue(); paint(); if (pop) syncPop(); if (fire) onChange(h);
   };
   function syncPop() {
     if (!pop) return;
     const [c, m, y, k] = hexToCmyk(value);
     pop.querySelector(".cf-hexin").value = value;
-    pop.querySelector(".cf-native").value = value;
     for (const [key, v] of [["c", c], ["m", m], ["y", y], ["k", k]])
       pop.querySelector(`[data-k="${key}"]`).value = v;
     pop.querySelectorAll(".cf-swatch").forEach(s =>
       s.classList.toggle("sel", s.dataset.hex === value));
+    pop.querySelector(".cf-sv").style.background =
+      `linear-gradient(to top,#000,rgba(0,0,0,0)),linear-gradient(to right,#fff,hsl(${hsv.h.toFixed(0)},100%,50%))`;
+    pop.querySelector(".cf-sv-th").style.left = `${(hsv.s * 100).toFixed(1)}%`;
+    pop.querySelector(".cf-sv-th").style.top = `${((1 - hsv.v) * 100).toFixed(1)}%`;
+    pop.querySelector(".cf-hue-th").style.left = `${(hsv.h / 360 * 100).toFixed(1)}%`;
   }
   function close() {
     if (!pop) return;
@@ -124,9 +158,13 @@ function makeColorField(host, initial, onChange) {
     if (pop) { close(); return; }
     pop = document.createElement("div");
     pop.className = "cfield-pop";
-    pop.innerHTML = `<div class="cf-grid">${COLOR_PALETTE.map(([n, h]) =>
+    pop.innerHTML = `<div class="cf-spectrum">
+        <div class="cf-sv" role="slider" aria-label="Насыщенность и яркость"><div class="cf-sv-th"></div></div>
+        <div class="cf-hue" role="slider" aria-label="Тон"><div class="cf-hue-th"></div></div>
+      </div>
+      <div class="cf-grid">${COLOR_PALETTE.map(([n, h]) =>
       `<button type="button" class="cf-swatch" data-hex="${h}" title="${n}" style="background:${h}"></button>`).join("")}</div>
-      <label class="cf-row cf-hex-row"><span>HEX</span><input class="cf-hexin" type="text" maxlength="7" spellcheck="false"><input class="cf-native" type="color" aria-label="Выбрать любой цвет из спектра" title="Спектр — любой цвет"></label>
+      <label class="cf-row cf-hex-row"><span>HEX</span><input class="cf-hexin" type="text" maxlength="7" spellcheck="false"></label>
       <div class="cf-cmyk"><span>CMYK</span>
         <label>C<input type="number" data-k="c" min="0" max="100" title="Cyan"></label>
         <label>M<input type="number" data-k="m" min="0" max="100" title="Magenta"></label>
@@ -142,7 +180,26 @@ function makeColorField(host, initial, onChange) {
     pop.querySelector(".cf-hexin").addEventListener("input", e => {
       const h = normHex(e.target.value); if (h) setValue(h);
     });
-    pop.querySelector(".cf-native").addEventListener("input", e => setValue(e.target.value));
+    // спектр: 1:1-перетаскивание указателем (S/V — квадрат, тон — полоса)
+    const track = (el, handler) => {
+      const move = e => {
+        const r = el.getBoundingClientRect();
+        handler(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+                Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)));
+      };
+      el.addEventListener("pointerdown", e => {
+        e.preventDefault(); el.setPointerCapture(e.pointerId); move(e);
+        const up = () => { el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); };
+        el.addEventListener("pointermove", move);
+        el.addEventListener("pointerup", up);
+      });
+    };
+    track(pop.querySelector(".cf-sv"), (x, y) => {
+      hsv.s = x; hsv.v = 1 - y; setValue(hsvToHex(hsv.h, hsv.s, hsv.v), true, true);
+    });
+    track(pop.querySelector(".cf-hue"), x => {
+      hsv.h = x * 360; setValue(hsvToHex(hsv.h, hsv.s, hsv.v), true, true);
+    });
     pop.querySelectorAll(".cf-cmyk input").forEach(inp =>
       inp.addEventListener("input", () => {
         const g = key => Math.max(0, Math.min(100, +pop.querySelector(`[data-k="${key}"]`).value || 0));
