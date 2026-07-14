@@ -128,6 +128,16 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("body.panel-resizing *", styles)
         self.assertIn("user-select:none!important", styles)
 
+    def test_fit_all_uses_feature_extents_and_visible_layers(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("function featureViewBox(f)", app)
+        self.assertIn("function unionViewBoxes(boxes)", app)
+        self.assertIn("if (layer && !layer.visible) continue", app)
+        self.assertIn("if (boxes.length > 4)", app)
+        self.assertIn("fitBox(b.minx, b.miny, b.maxx, b.maxy)", app)
+
     def test_ui_copy_uses_normal_project_names_and_russian_plurals(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
