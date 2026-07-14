@@ -1881,6 +1881,62 @@ EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0, "terrain": 80.0,
                      "gisogd": 80.0}
 
 
+_GISOGD_CATALOG_TTL = 24 * 3600
+
+
+def gisogd_catalog(force=False):
+    """Каталог слоёв портала ОГД (≈660) с кэшем на диске: [{code,name,path}].
+
+    Нужен, чтобы в «Данных по области» были доступны ВСЕ слои портала, а не
+    только кураторские: маршрут слоя (зона/красная линия/ЗОУИТ/прочее) и знак
+    ЛГР определяются по его имени — той же логикой, что у ручного импорта ОГД."""
+    import time
+    from grado_connectors.gisogd_api import catalog as _api_catalog
+    path = GISOGD_CACHE / "catalog.json"
+    if not force and path.exists() and \
+            (time.time() - path.stat().st_mtime) < _GISOGD_CATALOG_TTL:
+        try:
+            return _json.loads(path.read_text("utf-8"))
+        except Exception:
+            pass
+    rows = [c for c in _api_catalog() if c.get("type") == "layer" and c.get("code")]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps(rows, ensure_ascii=False), "utf-8")
+    return rows
+
+
+def _gisogd_layer_name(code):
+    for row in gisogd_catalog():
+        if row.get("code") == code:
+            return row.get("name") or row.get("path", "").split(" / ")[-1]
+    return None
+
+
+def _extent_spec(key):
+    """Спец источника: кураторский из EXTENT_SOURCES ИЛИ любой слой портала ОГД
+    по ключу вида «gisogd:virtual1742» (маршрут и знак — по имени слоя)."""
+    if key in EXTENT_SOURCES:
+        return EXTENT_SOURCES[key]
+    if not key.startswith("gisogd:"):
+        return None
+    import re
+    code = key.split(":", 1)[1]
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", code):
+        return None                      # код из запроса → в URL портала
+    name = _gisogd_layer_name(code)
+    if not name:
+        return None
+    kind, layer_id = _gisogd_route(name)
+    if not layer_id:                     # имя не распознано — «прочие», не теряем
+        kind, layer_id = "generic", "source.gisogd.other"
+    spec = {"conn": "gisogd", "codes": {code: name}, "kind": kind,
+            "layer_id": layer_id, "title": name}
+    style_id = _gisogd_style_for(name)
+    if style_id:
+        spec["style_id"] = style_id
+    return spec
+
+
 def bbox_km2(bbox):
     west, south, east, north = map(float, bbox)
     lat_mid = math.radians((south + north) / 2.0)
@@ -2068,6 +2124,12 @@ def _extent_props(src_key, p):
         elev = p.get("elev")
         props = {"elev": elev} if elev is not None else {}
         return props, base
+    if src_key.startswith("gisogd:"):
+        # Произвольный слой портала: имена полей у 663 слоёв разные — сохраняем
+        # все атрибуты как есть (как ручной импорт ОГД), ничего не теряя молча.
+        raw = {k: v for k, v in p.items() if k != "grado_layer_title"}
+        props, fields = _gisogd_clean_props(raw)
+        return props, fields
     if src_key.startswith("gisogd."):
         # Старая Москва (virtual1742): naimfunkzony + summfondpersp.
         # ТиНАО (virtual19xx): name/fz_type, суммарного фонда нет — тип зоны
@@ -2147,29 +2209,29 @@ def fetch_extent(bbox, sources):
     from grado_connectors import (GisogdApi, NspdDirect, OsmOverpass,
                                   TerrainContours)
 
-    keys = [k for k in sources if k in EXTENT_SOURCES]
-    unknown = [k for k in sources if k not in EXTENT_SOURCES]
-    notes = [f"неизвестный источник: {k}" for k in unknown]
+    specs = {k: _extent_spec(k) for k in sources}
+    keys = [k for k in sources if specs.get(k)]
+    notes = [f"неизвестный источник: {k}" for k in sources if not specs.get(k)]
     if not keys:
         return {"groups": [], "notes": notes or ["не выбраны источники"],
                 "snapshots": []}
     area = bbox_km2(bbox)
-    for conn_name in {EXTENT_SOURCES[k]["conn"] for k in keys}:
+    for conn_name in {specs[k]["conn"] for k in keys}:
         limit = EXTENT_LIMITS_KM2[conn_name]
         if area > limit:
             raise ValueError(
                 f"область {area:.1f} км² больше предела {limit:.0f} км² "
                 f"для источника {conn_name.upper()} — приблизьте вид")
 
-    groups = {k: {"source": k, "title": EXTENT_SOURCES[k]["title"],
-                  "layer_id": EXTENT_SOURCES[k]["layer_id"],
-                  "kind": EXTENT_SOURCES[k]["kind"], "features": [],
+    groups = {k: {"source": k, "title": specs[k]["title"],
+                  "layer_id": specs[k]["layer_id"],
+                  "kind": specs[k]["kind"], "features": [],
                   "fields": []}
               for k in keys}
     snapshots = []
 
     def _emit(src_key, wgs_features, prov):
-        spec = EXTENT_SOURCES[src_key]
+        spec = specs[src_key]
         g = groups[src_key]
         seen_fields = {fd["name"] for fd in g["fields"]}
         for f in wgs_features:
@@ -2192,9 +2254,9 @@ def fetch_extent(bbox, sources):
                 g["features"].append(feat)
 
     # --- OSM: один запрос Overpass на все выбранные наборы ------------------
-    osm_keys = [k for k in keys if EXTENT_SOURCES[k]["conn"] == "osm"]
+    osm_keys = [k for k in keys if specs[k]["conn"] == "osm"]
     if osm_keys:
-        sets = sorted({s for k in osm_keys for s in EXTENT_SOURCES[k]["sets"]})
+        sets = sorted({s for k in osm_keys for s in specs[k]["sets"]})
         conn = OsmOverpass()
         try:
             result = conn.fetch(bbox, sets)
@@ -2210,25 +2272,25 @@ def fetch_extent(bbox, sources):
                 by_set.setdefault(
                     (f.get("properties") or {}).get("grado_set"), []).append(f)
             for k in osm_keys:
-                for s in EXTENT_SOURCES[k]["sets"]:
+                for s in specs[k]["sets"]:
                     _emit(k, by_set.get(s, []), prov)
             notes.extend(result.get("notes") or [])
         except Exception as e:
             notes.append(f"OSM: {e}")
 
     # --- НСПД: отдельный запрос на источник (свой снимок и провенанс) -------
-    nspd_keys = [k for k in keys if EXTENT_SOURCES[k]["conn"] == "nspd"]
+    nspd_keys = [k for k in keys if specs[k]["conn"] == "nspd"]
     for i, k in enumerate(nspd_keys):
         if i:
             import time
             time.sleep(0.5)   # бережём лимит частоты геопортала
         conn = NspdDirect()
         try:
-            result = conn.fetch(bbox, EXTENT_SOURCES[k]["categories"])
+            result = conn.fetch(bbox, specs[k]["categories"])
             result["params"]["source"] = k   # разные источники ≠ один снимок
             manifest, d = _snapshot(conn, result)
             if d:
-                notes.append(f"{EXTENT_SOURCES[k]['title']}: изменения с "
+                notes.append(f"{specs[k]['title']}: изменения с "
                              f"прошлого снимка +{len(d['added'])} "
                              f"−{len(d['removed'])} ~{len(d['changed'])}")
             snapshots.append(manifest)
@@ -2236,19 +2298,19 @@ def fetch_extent(bbox, sources):
             notes.extend(n for n in (result.get("notes") or [])
                          if not n.endswith("отброшено: 0"))   # шум нормализации
         except Exception as e:
-            notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+            notes.append(f"{specs[k]['title']}: {e}")
 
     # --- ГИС ОГД: слой качается целиком в кэш (портал не фильтрует по bbox),
     # режем по области локально. Один источник = несколько слоёв портала
     # (ТиНАО: тип зоны = имя слоя) → сливаем в одну группу.
-    for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "gisogd"]:
+    for k in [k for k in keys if specs[k]["conn"] == "gisogd"]:
         conn = GisogdApi(cache_dir=GISOGD_CACHE)
         feats, params_codes = [], []
-        for code, layer_title in EXTENT_SOURCES[k]["codes"].items():
+        for code, layer_title in specs[k]["codes"].items():
             try:
                 result = conn.fetch(bbox, code)
             except Exception as e:
-                notes.append(f"{EXTENT_SOURCES[k]['title']} [{code}]: {e}")
+                notes.append(f"{specs[k]['title']} [{code}]: {e}")
                 continue
             for f in result["features"]:
                 if layer_title:      # тип зоны/вид ЗОУИТ несёт сам слой портала
@@ -2264,18 +2326,18 @@ def fetch_extent(bbox, sources):
         try:
             manifest, d = _snapshot(conn, snap)
             if d:
-                notes.append(f"{EXTENT_SOURCES[k]['title']}: изменения с прошлого "
+                notes.append(f"{specs[k]['title']}: изменения с прошлого "
                              f"снимка +{len(d['added'])} −{len(d['removed'])} "
                              f"~{len(d['changed'])}")
             snapshots.append(manifest)
             prov = _prov(manifest)
         except Exception as e:
-            notes.append(f"{EXTENT_SOURCES[k]['title']}: снимок не сохранён ({e})")
+            notes.append(f"{specs[k]['title']}: снимок не сохранён ({e})")
             prov = {"source": "gisogd"}
         _emit(k, feats, prov)
 
     # --- Рельеф: горизонтали из тайлового DEM (свой снимок и провенанс) ------
-    for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "terrain"]:
+    for k in [k for k in keys if specs[k]["conn"] == "terrain"]:
         conn = TerrainContours()
         try:
             result = conn.fetch(bbox)
@@ -2284,7 +2346,7 @@ def fetch_extent(bbox, sources):
             _emit(k, result["features"], _prov(manifest))
             notes.extend(result.get("notes") or [])
         except Exception as e:
-            notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+            notes.append(f"{specs[k]['title']}: {e}")
 
     out_groups = []
     for k in keys:

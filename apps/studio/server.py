@@ -658,6 +658,17 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
+        if self.path.startswith("/api/gisogd-catalog"):
+            # каталог слоёв портала ОГД (кэш на диске) — чтобы в «Данных по
+            # области» можно было выбрать ЛЮБОЙ слой, а не только кураторские
+            if _cloud_mode():
+                self._json({"error": "каталог ОГД недоступен в облачном режиме"}, 501)
+                return
+            try:
+                self._json({"layers": studio_core.gisogd_catalog()})
+            except Exception as e:
+                self._json({"error": f"каталог ГИС ОГД недоступен: {e}"}, 502)
+            return
         if self.path == "/api/sources":
             self._send(json.dumps(studio_core.sources_journal(),
                                   ensure_ascii=False).encode(),
