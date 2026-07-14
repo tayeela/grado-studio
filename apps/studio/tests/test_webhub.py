@@ -2,6 +2,7 @@
 
 import sys
 import stat
+import json
 import tempfile
 import unittest
 from unittest import mock
@@ -66,6 +67,28 @@ class TestAuth(HubBase):
                 self.hub.login("missing-user", "password")
         hasher.assert_called_once()
 
+    def test_login_throttles_repeated_failures_before_more_password_hashing(self):
+        self._user("anna")
+        with mock.patch.object(webhub, "_scrypt", return_value="not-a-match") as hasher:
+            for _ in range(webhub.LOGIN_FAILURE_LIMIT):
+                with self.assertRaises(HubError) as caught:
+                    self.hub.login("anna", "wrong", client_key="192.0.2.10")
+                self.assertEqual(401, caught.exception.status)
+            with self.assertRaises(HubError) as caught:
+                self.hub.login("anna", "wrong", client_key="192.0.2.10")
+        self.assertEqual(429, caught.exception.status)
+        self.assertEqual(webhub.LOGIN_FAILURE_LIMIT, hasher.call_count)
+
+    def test_login_throttle_isolated_by_client(self):
+        self._user("anna")
+        with mock.patch.object(webhub, "_scrypt", return_value="not-a-match"):
+            for _ in range(webhub.LOGIN_FAILURE_LIMIT):
+                with self.assertRaises(HubError):
+                    self.hub.login("anna", "wrong", client_key="192.0.2.10")
+            with self.assertRaises(HubError) as caught:
+                self.hub.login("anna", "wrong", client_key="192.0.2.11")
+        self.assertEqual(401, caught.exception.status)
+
     @unittest.skipIf(sys.platform == "win32", "POSIX permissions are not portable to Windows")
     def test_hub_secrets_and_projects_are_private_to_current_os_user(self):
         self._user("anna")
@@ -89,6 +112,16 @@ class TestAuth(HubBase):
         token = self._user("anna")
         hub2 = Hub(self.hub.root, quiet=True)             # «перезапуск сервера»
         self.assertEqual(hub2.session_user(token), "anna")
+
+    def test_expired_session_is_removed_from_memory_and_disk(self):
+        token = self._user("anna")
+        self.hub.sessions[token]["created"] = 0
+        self.hub._save("sessions.json", self.hub.sessions)
+
+        self.assertIsNone(self.hub.session_user(token))
+        saved = json.loads((self.hub.root / "sessions.json").read_text(
+            encoding="utf-8"))
+        self.assertNotIn(token, saved)
 
 
 class TestProjects(HubBase):
@@ -127,6 +160,16 @@ class TestProjects(HubBase):
         self.hub.delete_project(pid, "anna")
         with self.assertRaises(HubError):
             self.hub.get_state(pid, "anna")
+
+    def test_corrupted_project_returns_controlled_server_error(self):
+        pid = self.hub.create_project("anna", "Повреждённый")["id"]
+        (self.hub.projects_dir / f"{pid}.json").write_text("{broken",
+                                                            encoding="utf-8")
+
+        with self.assertRaises(HubError) as caught:
+            self.hub.get_state(pid, "anna")
+        self.assertEqual(500, caught.exception.status)
+        self.assertIn("повреждён", str(caught.exception))
 
 
 class TestSync(HubBase):

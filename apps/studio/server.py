@@ -668,7 +668,9 @@ class Handler(SimpleHTTPRequestHandler):
                                    set_cookie=self._session_cookie(token))
                     elif self.path == "/api/auth/login":
                         b = self._json_body()
-                        token = HUB.login(b.get("login"), b.get("password"))
+                        client = self.client_address[0] if self.client_address else "local"
+                        token = HUB.login(b.get("login"), b.get("password"),
+                                          client_key=client)
                         self._json(HUB.user_info(HUB.session_user(token)),
                                    set_cookie=self._session_cookie(token))
                     elif self.path == "/api/auth/logout":

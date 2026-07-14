@@ -36,6 +36,9 @@ SESSION_TTL = 30 * 24 * 3600          # 30 дней
 PRESENCE_TTL = 15                     # секунд с последнего поллинга = «онлайн»
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 PASSWORD_MIN_LENGTH = 8
+LOGIN_FAILURE_LIMIT = 5
+LOGIN_CLIENT_FAILURE_LIMIT = 25
+LOGIN_FAILURE_WINDOW = 60
 _DUMMY_SALT = bytes.fromhex("4a3f10b9b3e24815bd62a804674b0f2c")
 
 # ключи state, общие для всех участников проекта; личные (вид, активный
@@ -111,8 +114,10 @@ class Hub:
         self.users = self._load("users.json")
         self.invites = self._load("invites.json")
         self.sessions = self._load("sessions.json")
-        self._prune_sessions()
+        if self._prune_sessions():
+            self._save("sessions.json", self.sessions)
         self.presence = {}   # pid → {login: last_seen_ts} (только память)
+        self.login_failures = {}  # (client, login) → timestamps; only memory
         # пустой хаб: печатаем стартовый инвайт, чтобы можно было войти
         if not self.users and not any(
                 v.get("used_by") is None for v in self.invites.values()):
@@ -186,8 +191,30 @@ class Hub:
             self._save("invites.json", self.invites)
             return self._new_session_locked(login)
 
-    def login(self, login, password):
+    def login(self, login, password, client_key=""):
         with self.lock:
+            login_key = login if isinstance(login, str) else "<invalid>"
+            client_id = str(client_key or "local")[:128]
+            throttle_key = (client_id, login_key[:64])
+            client_throttle_key = (client_id, "*")
+            now = time.time()
+            if len(self.login_failures) > 2048:
+                for key, stamps in list(self.login_failures.items()):
+                    recent = [stamp for stamp in stamps
+                              if stamp > now - LOGIN_FAILURE_WINDOW]
+                    if recent:
+                        self.login_failures[key] = recent
+                    else:
+                        del self.login_failures[key]
+            attempts = [stamp for stamp in self.login_failures.get(throttle_key, [])
+                        if stamp > now - LOGIN_FAILURE_WINDOW]
+            client_attempts = [stamp for stamp in self.login_failures.get(
+                client_throttle_key, []) if stamp > now - LOGIN_FAILURE_WINDOW]
+            if (len(attempts) >= LOGIN_FAILURE_LIMIT or
+                    len(client_attempts) >= LOGIN_CLIENT_FAILURE_LIMIT):
+                self.login_failures[throttle_key] = attempts
+                self.login_failures[client_throttle_key] = client_attempts
+                raise HubError(429, "слишком много попыток входа; повторите позже")
             user = self.users.get(login or "") if isinstance(login, str) else None
             try:
                 salt = bytes.fromhex(user["salt"]) if user else _DUMMY_SALT
@@ -200,7 +227,12 @@ class Hub:
             # существующий: ответ по времени не должен выдавать аккаунты.
             candidate = _scrypt(password if isinstance(password, str) else "", salt)
             if not user or not secrets.compare_digest(candidate, expected):
+                attempts.append(now)
+                client_attempts.append(now)
+                self.login_failures[throttle_key] = attempts
+                self.login_failures[client_throttle_key] = client_attempts
                 raise HubError(401, "неверный логин или пароль")
+            self.login_failures.pop(throttle_key, None)
             return self._new_session_locked(login)
 
     def _new_session_locked(self, login):
@@ -221,12 +253,18 @@ class Hub:
                  if s.get("created", 0) < deadline]
         for t in stale:
             del self.sessions[t]
+        return bool(stale)
 
     def session_user(self, token):
         """Логин по токену сессии (None — не авторизован)."""
         with self.lock:
-            s = self.sessions.get(token or "")
-            if not s or s.get("created", 0) < time.time() - SESSION_TTL:
+            session_token = token or ""
+            s = self.sessions.get(session_token)
+            if not s:
+                return None
+            if s.get("created", 0) < time.time() - SESSION_TTL:
+                del self.sessions[session_token]
+                self._save("sessions.json", self.sessions)
                 return None
             return s["login"]
 
@@ -244,9 +282,14 @@ class Hub:
     def _read_project(self, pid):
         try:
             with open(self._project_path(pid), encoding="utf-8") as fh:
-                return json.load(fh)
+                project = json.load(fh)
         except OSError:
             raise HubError(404, "проект не найден") from None
+        except (TypeError, ValueError):
+            raise HubError(500, "файл проекта повреждён") from None
+        if not isinstance(project, dict) or project.get("id") != pid:
+            raise HubError(500, "файл проекта повреждён")
+        return project
 
     def _write_project(self, proj):
         path = self._project_path(proj["id"])

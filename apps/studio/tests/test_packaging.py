@@ -199,6 +199,7 @@ class TestPackagingResources(unittest.TestCase):
         root = Path(__file__).parents[3]
         source = (root / "apps/studio/web/redesign/cmdk.js").read_text(
             encoding="utf-8")
+        html = (root / "apps/studio/web/index.html").read_text(encoding="utf-8")
 
         self.assertIn("const isWeb = !!window.GRADO_STATIC", source)
         self.assertIn("(!isWeb || !i.desktop)", source)
@@ -206,6 +207,33 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn('isWeb ? "Сохранить проект (.grado-web.json)"', source)
         self.assertIn('available: () => toolEnabled("polygon")', source)
         self.assertIn('desktop: true', source)
+        self.assertIn('aria-controls="cmdk" aria-expanded="false"', html)
+        self.assertIn('trigger?.setAttribute("aria-expanded", "true")', source)
+        self.assertIn('trigger?.setAttribute("aria-expanded", "false")', source)
+
+    def test_layer_style_tabs_follow_keyboard_and_aria_tab_pattern(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/app-style-ui.js").read_text(
+            encoding="utf-8")
+
+        self.assertIn('role="tabpanel" aria-labelledby="style-mode-single"', source)
+        self.assertIn('aria-controls="ls-rules"', source)
+        self.assertIn('b.tabIndex = selected ? 0 : -1', source)
+        self.assertIn('event.key === "ArrowRight"', source)
+        self.assertIn('event.key === "ArrowLeft"', source)
+        self.assertIn('event.key === "Home"', source)
+        self.assertIn('event.key === "End"', source)
+
+    def test_pages_autosave_prefers_indexeddb_with_localstorage_fallback(self):
+        root = Path(__file__).parents[3]
+        adapter = (root / "apps/studio/web/pages-adapter.js").read_text(
+            encoding="utf-8")
+
+        self.assertIn('const DB_NAME = "grado-studio-pages"', adapter)
+        self.assertIn('indexedDB.open(DB_NAME, 1)', adapter)
+        self.assertIn('databaseRequest("readwrite"', adapter)
+        self.assertIn('await storedProjectSet(AUTOSAVE_KEY, envelope)', adapter)
+        self.assertIn('return readStoredJson(key)', adapter)
 
     def test_layer_and_style_controls_have_specific_accessible_names(self):
         root = Path(__file__).parents[3]
@@ -323,6 +351,79 @@ require(process.argv[2]);
         )
         self.assertEqual(
             {"tep": 400, "grado": 400, "autosave": 507},
+            json.loads(completed.stdout),
+        )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_adapter_saves_large_project_in_indexeddb_when_localstorage_is_full(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], head: {appendChild: () => {}}, createElement: () => ({})};
+const data = new Map();
+const database = {
+  objectStoreNames: {contains: () => false},
+  createObjectStore: () => {},
+  transaction: () => {
+    const transaction = {};
+    const request = work => {
+      const result = {};
+      setImmediate(() => {
+        try { result.result = work(); result.onsuccess && result.onsuccess(); }
+        catch (error) { result.error = error; result.onerror && result.onerror(); return; }
+        setImmediate(() => transaction.oncomplete && transaction.oncomplete());
+      });
+      return result;
+    };
+    transaction.objectStore = () => ({
+      get: key => request(() => data.get(key)),
+      put: (value, key) => request(() => { data.set(key, value); return key; }),
+    });
+    return transaction;
+  },
+};
+global.indexedDB = {open: () => {
+  const request = {};
+  setImmediate(() => {
+    request.result = database;
+    request.onupgradeneeded && request.onupgradeneeded();
+    request.onsuccess && request.onsuccess();
+  });
+  return request;
+}};
+global.localStorage = {
+  getItem: () => null,
+  setItem: () => { throw new Error('quota'); },
+  removeItem: () => {},
+};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  const marker = 'x'.repeat(6 * 1024 * 1024);
+  const state = {name:'Большой', features:[{id:1, props:{marker}}]};
+  const saved = await window.fetch('/api/autosave', {method:'POST', body:JSON.stringify(state)});
+  const loaded = await (await window.fetch('/api/autosave')).json();
+  process.stdout.write(JSON.stringify({
+    status: saved.status,
+    name: loaded.state.name,
+    size: loaded.state.features[0].props.marker.length,
+    databaseKeys: [...data.keys()].sort(),
+  }));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(
+            {"status": 200, "name": "Большой", "size": 6 * 1024 * 1024,
+             "databaseKeys": ["grado_pages_autosave_v1"]},
             json.loads(completed.stdout),
         )
 
