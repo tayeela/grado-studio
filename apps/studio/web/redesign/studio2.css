@@ -396,7 +396,7 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .cf-swatch.sel{box-shadow:0 0 0 2px var(--accent)}
 .cf-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted)}
 .cf-hexin{flex:1}
-.cf-native{flex:0 0 34px;height:30px;padding:2px;border:1px solid var(--field-border);border-radius:var(--r-sm);background:var(--field-bg);cursor:pointer}
+.cf-native{flex:0 0 34px;height:32px;padding:2px;border:1px solid var(--field-border);border-radius:var(--r-sm);background:var(--field-bg);cursor:pointer}
 .cf-native::-webkit-color-swatch-wrapper{padding:0}
 .cf-native::-webkit-color-swatch{border:none;border-radius:4px}
 .cf-native::-moz-color-swatch{border:none;border-radius:4px}
