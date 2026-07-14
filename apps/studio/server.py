@@ -31,6 +31,7 @@
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import socket
@@ -125,6 +126,8 @@ MAX_FILE_UPLOAD = 256 * 1024 * 1024
 REQUEST_TIMEOUT = 60
 MAX_PROJECT_NAME = 240
 PREFLIGHT_TARGETS = {"album", "grado", "dxf", "print", "tep"}
+JS_SAFE_INTEGER = 2 ** 53 - 1
+MAX_AUTOSAVE_JSON_DEPTH = 64
 
 
 class RequestBodyTooLarge(ValueError):
@@ -143,6 +146,33 @@ def _autosave_corrupt_path(path):
     return path.with_name(f"{path.stem}.corrupt{path.suffix}")
 
 
+def _validate_autosave_json(value, path="autosave", depth=0):
+    """Reject values that JSON can encode but the browser cannot restore safely."""
+    if depth > MAX_AUTOSAVE_JSON_DEPTH:
+        raise ValueError(f"{path}: structure is too deep")
+    if value is None or isinstance(value, (bool, str)):
+        return
+    if isinstance(value, int):
+        if abs(value) > JS_SAFE_INTEGER:
+            raise ValueError(f"{path}: integer is outside the safe range")
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError(f"{path}: number must be finite")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_autosave_json(item, f"{path}[{index}]", depth + 1)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise ValueError(f"{path}: object keys must be strings")
+            _validate_autosave_json(item, f"{path}.{key}", depth + 1)
+        return
+    raise ValueError(f"{path}: unsupported value type")
+
+
 def _autosave_state(payload):
     """Return state from current envelope or a legacy raw-state autosave."""
     if not isinstance(payload, dict):
@@ -152,6 +182,7 @@ def _autosave_state(payload):
         raise ValueError("autosave features must be an array")
     if any(not isinstance(feature, dict) for feature in state["features"]):
         raise ValueError("autosave features must contain objects")
+    _validate_autosave_json(state)
     return state
 
 
@@ -159,7 +190,7 @@ def _canonical_autosave_state(state):
     """Stable bytes used to detect silent autosave corruption."""
     return json.dumps(
         _autosave_state(state), ensure_ascii=False, sort_keys=True,
-        separators=(",", ":")
+        separators=(",", ":"), allow_nan=False,
     ).encode("utf-8")
 
 
@@ -209,30 +240,77 @@ def _autosave_meta(payload, index=None, path=None):
     }
 
 
+def _stage_autosave_bytes(path, data):
+    """Write and fsync a same-directory temporary file without replacing target."""
+    path = Path(path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    return tmp
+
+
+def _fsync_directory(path):
+    """Persist rename metadata where supported; Windows has no directory fsync."""
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(Path(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _atomic_write_bytes(path, data):
+    staged = _stage_autosave_bytes(path, data)
+    try:
+        os.replace(staged, path)
+        _fsync_directory(Path(path).parent)
+    finally:
+        staged.unlink(missing_ok=True)
+
+
 def save_autosave(state, raw=None, path=None, backups=AUTOSAVE_BACKUPS):
     """Atomically save state and rotate changed snapshots for recovery."""
-    path = path or AUTOSAVE_PATH
+    path = Path(path or AUTOSAVE_PATH)
     envelope = _autosave_envelope(state, raw=raw)
-    data = json.dumps(envelope, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(data)
-    if path.exists():
-        try:
-            current = load_autosave(path)
-            if _autosave_state(current) == envelope["state"]:
-                tmp.unlink(missing_ok=True)
-                return _autosave_meta(current, path=path), False
-            for index in range(backups, 1, -1):
-                older = _autosave_backup_path(path, index - 1)
-                if older.exists():
-                    older.replace(_autosave_backup_path(path, index))
-            path.replace(_autosave_backup_path(path, 1))
-        except ValueError:
-            # Повреждённый текущий файл не должен навсегда остановить новые
-            # сохранения. Оставляем его отдельно для ручной диагностики.
-            path.replace(_autosave_corrupt_path(path))
-    tmp.replace(path)
-    return _autosave_meta(envelope, path=path), True
+    data = json.dumps(
+        envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    staged = _stage_autosave_bytes(path, data)
+    try:
+        if path.exists():
+            try:
+                current = load_autosave(path)
+                if _autosave_state(current) == envelope["state"]:
+                    return _autosave_meta(current, path=path), False
+                for index in range(backups, 1, -1):
+                    older = _autosave_backup_path(path, index - 1)
+                    if older.exists():
+                        older.replace(_autosave_backup_path(path, index))
+                # Keep the current file at its canonical path until the new
+                # snapshot is fully staged. A crash cannot leave no autosave.
+                _atomic_write_bytes(
+                    _autosave_backup_path(path, 1), path.read_bytes())
+            except (ValueError, json.JSONDecodeError):
+                # Повреждённый текущий файл не должен навсегда остановить новые
+                # сохранения. Оставляем его отдельно для ручной диагностики.
+                _atomic_write_bytes(_autosave_corrupt_path(path), path.read_bytes())
+        os.replace(staged, path)
+        _fsync_directory(path.parent)
+        return _autosave_meta(envelope, path=path), True
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def list_autosave_backups(path=None, backups=AUTOSAVE_BACKUPS):

@@ -127,6 +127,7 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("margin:0;padding:0!important", styles)
         self.assertIn("display:grid;", styles)
         self.assertIn("place-items:center", styles)
+        self.assertIn("transform:translateY(-50%)", styles)
         self.assertIn(".modal-head .modal-x:focus-visible", styles)
 
     def test_panel_close_is_only_visible_in_compact_drawer(self):
@@ -453,8 +454,8 @@ function load(fetchImpl, initialState) {
         self.assertIn('aria-label="Включить заливку"', style_ui)
         self.assertIn('aria-label="Удалить правило ${i + 1}"', style_ui)
         self.assertIn('fieldCols.length ? "" : " disabled"', style_ui)
-        self.assertIn(".style-preview-canvas::before", styles)
-        self.assertIn("linear-gradient(90deg,#f8fafc 0 50%,#202938 50% 100%)", styles)
+        self.assertNotIn(".style-preview-canvas::before", styles)
+        self.assertIn("background:var(--canvas-bg)", styles)
 
     def test_first_project_steps_and_tep_explain_actual_vs_normative(self):
         root = Path(__file__).parents[3]
@@ -935,6 +936,36 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         self.assertIn("window.lastTepSignature === requestBody", app)
         self.assertIn("function renderTepUnavailable", app)
         self.assertIn('new Set(["doo_places", "school_places", "policlinic_places"])', app)
+
+    def test_station_requests_cannot_overwrite_changed_or_deleted_redlines(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("const stationRequests = new Map()", app)
+        self.assertIn("previous?.controller.abort()", app)
+        self.assertIn("stationRequests.get(f.id) !== request", app)
+        self.assertIn("state.features.find(feature => feature.id === f.id) !== f", app)
+        self.assertIn("stationRequestKey(f) !== key", app)
+        self.assertIn("cancelStaleStationRequests()", app)
+
+    def test_geometry_generators_prevent_duplicate_submissions(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("const offsetRequests = new WeakSet()", app)
+        self.assertIn("if (offsetRequests.has(f)) return false", app)
+        self.assertIn("let bufferRequestPending = false", app)
+        self.assertIn("if (bufferRequestPending) return false", app)
+        self.assertIn('createButton.textContent = "Создание…"', app)
+
+    def test_style_preview_uses_one_clear_canvas_surface(self):
+        root = Path(__file__).parents[3]
+        styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
+            encoding="utf-8")
+
+        self.assertNotIn(".style-preview-canvas::before", styles)
+        self.assertNotIn("linear-gradient(90deg,#f8fafc", styles)
+        self.assertIn("background:var(--canvas-bg)", styles)
 
     def test_source_import_skips_broken_objects_without_aborting_batch(self):
         root = Path(__file__).parents[3]

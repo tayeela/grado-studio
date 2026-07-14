@@ -1,4 +1,5 @@
 import json
+import math
 import tempfile
 import unittest
 import io
@@ -97,6 +98,26 @@ class AutosaveTests(unittest.TestCase):
 
         self.assertEqual(before, self.path.read_bytes())
 
+    def test_rejects_non_finite_and_unsafe_numbers_before_touching_current_file(self):
+        original = self.state("Надёжная", 1)
+        server.save_autosave(original, path=self.path)
+        before = self.path.read_bytes()
+
+        for bad in (math.nan, math.inf, -(2 ** 53)):
+            damaged = self.state("сломано", 1)
+            damaged["features"][0]["value"] = bad
+            with self.assertRaises(ValueError):
+                server.save_autosave(damaged, path=self.path)
+
+        self.assertEqual(before, self.path.read_bytes())
+
+    def test_load_rejects_non_finite_legacy_payload(self):
+        self.path.write_text(
+            '{"features":[{"id":1,"value":NaN}]}', encoding="utf-8")
+
+        with self.assertRaisesRegex(ValueError, "finite"):
+            server.load_autosave(self.path)
+
     def test_preserves_damaged_current_file_and_continues_saving(self):
         damaged = b'{"features": ['
         self.path.write_bytes(damaged)
@@ -106,6 +127,24 @@ class AutosaveTests(unittest.TestCase):
         self.assertEqual(damaged, server._autosave_corrupt_path(self.path).read_bytes())
         current = json.loads(self.path.read_text(encoding="utf-8"))
         self.assertEqual("Исправная", server._autosave_state(current)["name"])
+
+    def test_failed_final_replace_keeps_last_valid_autosave_readable(self):
+        original = self.state("Исходная", 1)
+        server.save_autosave(original, path=self.path)
+        real_replace = server.os.replace
+
+        def fail_final_replace(source, destination):
+            if Path(destination) == self.path:
+                raise OSError("disk failure")
+            return real_replace(source, destination)
+
+        with mock.patch.object(server.os, "replace", side_effect=fail_final_replace):
+            with self.assertRaisesRegex(OSError, "disk failure"):
+                server.save_autosave(self.state("Новая", 2), path=self.path)
+
+        self.assertEqual(
+            original, server._autosave_state(server.load_autosave(self.path)))
+        self.assertFalse(list(self.path.parent.glob(".*.tmp")))
 
     def test_load_autosave_validates_before_returning_payload(self):
         state = self.state("Исправная", 2)
