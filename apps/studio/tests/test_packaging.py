@@ -505,13 +505,16 @@ require(process.argv[2]);
       type:'FeatureCollection',features:[{type:'Feature',properties:{},
       geometry:{type:'Point',coordinates:[4187000,7509000]}}]})});
   const wrongMethod = await window.fetch('/api/import-gisogd');
+  const basemap = await window.fetch('/api/basemap-info');
+  const basemapBody = await basemap.json();
   const extent = await window.fetch('/api/fetch-extent', {method:'POST',
     body:JSON.stringify({bbox:[37.615,55.755,37.616,55.756],sources:['osm.roads']})});
   const extentBody = await extent.json();
   process.stdout.write(JSON.stringify({good:good.status,count:goodBody.features.length,
     kind:goodBody.features[0].kind,zip:zip.status,badCrs:badCrs.status,
     wrongMethod:wrongMethod.status,extent:extent.status,
-    extentCount:extentBody.groups[0].count}));
+    extentCount:extentBody.groups[0].count,
+    origin:[basemapBody.origin_lon,basemapBody.origin_lat]}));
 })();
 """
         completed = subprocess.run(
@@ -523,7 +526,8 @@ require(process.argv[2]);
         self.assertEqual(
             {"good": 200, "count": 1, "kind": "generic", "zip": 415,
              "badCrs": 400, "wrongMethod": 405, "extent": 200,
-             "extentCount": 1},
+             "extentCount": 1,
+             "origin": [37.61429248873298, 55.73988778495184]},
             json.loads(completed.stdout),
         )
 
