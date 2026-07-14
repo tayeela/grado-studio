@@ -14,7 +14,7 @@ TOP_LEVEL = (
     "app-transform.js", "app-snap.js", "app-data.js", "app-style-ui.js",
     "app-attr.js", "app.js", "app-import.js", "collab.js",
     "canvas-theme.js", "pages-core.js", "pages-adapter.js", "tokens.css", "style.css",
-    "version.json", "icons.svg",
+    "version.json", "icons.svg", "favicon.svg",
 )
 REDESIGN = ("shell.css", "studio2.css", "cmdk.js", "a11y.js")
 

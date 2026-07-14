@@ -51,6 +51,7 @@ class TestPackagingResources(unittest.TestCase):
             self.assertGreater(len(styles), 50)
             self.assertIn("boundary.line", styles)
             self.assertTrue((output / "redesign" / "studio2.css").is_file())
+            self.assertTrue((output / "favicon.svg").is_file())
             self.assertNotIn('src="/', html)
             self.assertNotIn('href="/', html)
             self.assertLess(html.index("pages-core.js"), html.index("pages-adapter.js"))
@@ -61,6 +62,7 @@ class TestPackagingResources(unittest.TestCase):
             self.assertIn(f'window.__GRADO_ASSET_VERSION__="{release}"', html)
             self.assertIn(f'src="./app.js?v={release}"', html)
             self.assertIn(f'href="./redesign/studio2.css?v={release}"', html)
+            self.assertIn(f'href="./favicon.svg?v={release}"', html)
             adapter = (output / "pages-adapter.js").read_text(encoding="utf-8")
             self.assertIn('new URL("./styles.json"', adapter)
 
