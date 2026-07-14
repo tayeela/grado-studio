@@ -40,6 +40,8 @@ LOGIN_FAILURE_LIMIT = 5
 LOGIN_CLIENT_FAILURE_LIMIT = 25
 LOGIN_FAILURE_WINDOW = 60
 _DUMMY_SALT = bytes.fromhex("4a3f10b9b3e24815bd62a804674b0f2c")
+JS_SAFE_INTEGER = 2 ** 53 - 1
+MAX_JSON_DEPTH = 64
 
 # ключи state, общие для всех участников проекта; личные (вид, активный
 # слой, подложка, undo/redo) на сервер не попадают — каждый смотрит своё
@@ -57,10 +59,60 @@ _SHARED_MAP_KEYS = {
 _SHARED_OBJECT_LIST_KEYS = {"features", "userLayers", "projectCustomKinds", "sources"}
 
 
+def _assert_json_value(value, path="state", depth=0):
+    """Отклонить значения, которые нельзя без потерь передать браузеру."""
+    if depth > MAX_JSON_DEPTH:
+        raise HubError(400, f"{path}: слишком глубокая структура")
+    if value is None or isinstance(value, (bool, str)):
+        return
+    if isinstance(value, int):
+        if abs(value) > JS_SAFE_INTEGER:
+            raise HubError(400, f"{path}: целое число выходит за безопасный диапазон")
+        return
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise HubError(400, f"{path}: число должно быть конечным")
+        return
+    if isinstance(value, list):
+        for index, item in enumerate(value):
+            _assert_json_value(item, f"{path}[{index}]", depth + 1)
+        return
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise HubError(400, f"{path}: ключи объекта должны быть строками")
+            _assert_json_value(item, f"{path}.{key}", depth + 1)
+        return
+    raise HubError(400, f"{path}: неподдерживаемый тип значения")
+
+
+def _clean_project_name(value, fallback="Новый проект"):
+    """Однострочное имя без управляющих символов, безопасное для списков UI."""
+    if not isinstance(value, str):
+        value = "" if value is None else str(value)
+    cleaned = " ".join(value.split()).strip()
+    return (cleaned or fallback)[:120]
+
+
+def _parse_revision(value, field):
+    if isinstance(value, bool):
+        raise HubError(400, f"{field} должен быть неотрицательным целым числом")
+    if isinstance(value, int):
+        revision = value
+    elif isinstance(value, str) and re.fullmatch(r"\d+", value):
+        revision = int(value)
+    else:
+        raise HubError(400, f"{field} должен быть неотрицательным целым числом")
+    if revision < 0 or revision > JS_SAFE_INTEGER:
+        raise HubError(400, f"{field} выходит за допустимый диапазон")
+    return revision
+
+
 def _validated_shared_state(state):
     """Оставить разрешённые ключи и отклонить заведомо повреждённый payload."""
     if not isinstance(state, dict):
         raise HubError(400, "state должен быть объектом")
+    _assert_json_value(state)
     shared = {key: state[key] for key in SHARED_STATE_KEYS if key in state}
     for key in _SHARED_MAP_KEYS:
         if key in shared and not isinstance(shared[key], dict):
@@ -116,9 +168,12 @@ class Hub:
         self.login_lock = threading.Lock()
         self.users = self._load("users.json")
         self.invites = self._load("invites.json")
-        self.sessions = self._load("sessions.json")
-        if self._prune_sessions():
+        self.sessions, sessions_reset = self._load_sessions()
+        self._validate_account_stores()
+        if sessions_reset or self._prune_sessions():
             self._save("sessions.json", self.sessions)
+        if sessions_reset and not quiet:
+            print("Файл сессий был повреждён — активные входы безопасно сброшены.")
         self.presence = {}   # pid → {login: last_seen_ts} (только память)
         self.login_failures = {}  # (client, login) → timestamps; only memory
         # пустой хаб: печатаем стартовый инвайт, чтобы можно было войти
@@ -154,13 +209,73 @@ class Hub:
             raise HubError(500, f"файл хаба {name} повреждён")
         return data
 
+    def _load_sessions(self):
+        """Повреждение эфемерных сессий не должно останавливать весь хаб."""
+        path = self.root / "sessions.json"
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            return {}, False
+        except OSError:
+            raise HubError(500, "файл хаба sessions.json недоступен") from None
+        except (ValueError, TypeError):
+            return {}, True
+        return (data, False) if isinstance(data, dict) else ({}, True)
+
     def _save(self, name, data):
         tmp = self.root / (name + ".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=1, allow_nan=False)
+            fh.flush()
+            os.fsync(fh.fileno())
         path = self.root / name
         tmp.replace(path)
         self._secure_permissions(path, 0o600)
+
+    def _validate_account_stores(self):
+        """Не запускать авторизацию на частично записанных учётных данных."""
+        for login, user in self.users.items():
+            try:
+                salt = bytes.fromhex(user["salt"])
+                created = user["created"]
+                valid = (
+                    isinstance(login, str) and LOGIN_RE.fullmatch(login)
+                    and isinstance(user, dict)
+                    and isinstance(user.get("pw"), str)
+                    and re.fullmatch(r"[0-9a-f]{128}", user["pw"])
+                    and len(salt) == 16
+                    and isinstance(user.get("admin"), bool)
+                    and not isinstance(created, bool)
+                    and math.isfinite(float(created))
+                )
+            except (KeyError, TypeError, ValueError, OverflowError):
+                valid = False
+            if not valid:
+                raise HubError(500, "файл хаба users.json повреждён")
+        if self.users and not any(user.get("admin") for user in self.users.values()):
+            raise HubError(500, "файл хаба users.json повреждён")
+
+        for code, invite in self.invites.items():
+            try:
+                created = invite["created"]
+                used_by = invite.get("used_by")
+                valid = (
+                    isinstance(code, str) and 8 <= len(code) <= 128
+                    and isinstance(invite, dict)
+                    and not isinstance(created, bool)
+                    and math.isfinite(float(created))
+                    and (used_by is None or used_by in self.users)
+                )
+            except (KeyError, TypeError, ValueError, OverflowError):
+                valid = False
+            if not valid:
+                raise HubError(500, "файл хаба invites.json повреждён")
+        for login, user in self.users.items():
+            invite_code = user.get("invite")
+            invite = self.invites.get(invite_code) if isinstance(invite_code, str) else None
+            if not isinstance(invite, dict) or invite.get("used_by") != login:
+                raise HubError(500, "файлы учётных данных хаба рассогласованы")
 
     # ---------- инвайты и аккаунты ----------
 
@@ -282,7 +397,7 @@ class Hub:
                 valid_created = (not isinstance(created, bool)
                                  and math.isfinite(float(created))
                                  and float(created) >= deadline)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 valid_created = False
             if not isinstance(login, str) or login not in self.users or not valid_created:
                 stale.append(token)
@@ -304,9 +419,10 @@ class Hub:
             return s["login"]
 
     def user_info(self, login):
-        u = self.users.get(login)
-        return {"login": login,
-                "admin": bool(isinstance(u, dict) and u.get("admin"))}
+        with self.lock:
+            u = self.users.get(login)
+            return {"login": login,
+                    "admin": bool(isinstance(u, dict) and u.get("admin"))}
 
     # ---------- проекты ----------
 
@@ -327,12 +443,34 @@ class Hub:
             raise HubError(500, "файл проекта повреждён") from None
         if not isinstance(project, dict) or project.get("id") != pid:
             raise HubError(500, "файл проекта повреждён")
+        owner = project.get("owner")
+        members = project.get("members")
+        updated = project.get("updated")
+        try:
+            valid_updated = (updated is None or
+                             (not isinstance(updated, bool)
+                              and math.isfinite(float(updated))))
+            _parse_revision(project.get("rev"), "rev")
+            _validated_shared_state(project.get("state"))
+        except (HubError, TypeError, ValueError, OverflowError):
+            raise HubError(500, "файл проекта повреждён") from None
+        if (not isinstance(owner, str) or not LOGIN_RE.fullmatch(owner)
+                or not isinstance(project.get("name"), str)
+                or not isinstance(members, list)
+                or not all(isinstance(member, str) and LOGIN_RE.fullmatch(member)
+                           for member in members)
+                or len(set(members)) != len(members)
+                or not valid_updated):
+            raise HubError(500, "файл проекта повреждён")
         return project
 
     def _write_project(self, proj):
         path = self._project_path(proj["id"])
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(proj, ensure_ascii=False), encoding="utf-8")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(proj, fh, ensure_ascii=False, allow_nan=False)
+            fh.flush()
+            os.fsync(fh.fileno())
         tmp.replace(path)
         self._secure_permissions(path, 0o600)
 
@@ -340,14 +478,15 @@ class Hub:
         if login != proj["owner"] and login not in proj.get("members", []):
             raise HubError(403, "нет доступа к проекту")
 
-    def list_projects(self, login):
+    def list_projects(self, login, include_damaged=False):
         out = []
+        damaged = 0
         with self.lock:
             for f in sorted(self.projects_dir.glob("*.json")):
                 try:
-                    with open(f, encoding="utf-8") as fh:
-                        p = json.load(fh)
-                except (OSError, ValueError):
+                    p = self._read_project(f.stem)
+                except HubError:
+                    damaged += 1
                     continue
                 if login == p.get("owner") or login in p.get("members", []):
                     out.append({
@@ -357,10 +496,12 @@ class Hub:
                         "objects": len((p.get("state") or {})
                                        .get("features") or [])})
         out.sort(key=lambda p: -(p["updated"] or 0))
+        if include_damaged:
+            return {"projects": out, "damaged": damaged}
         return out
 
     def create_project(self, login, name):
-        name = (name or "").strip() or "Новый проект"
+        name = _clean_project_name(name)
         with self.lock:
             for _ in range(32):
                 pid = secrets.token_hex(6)
@@ -368,7 +509,7 @@ class Hub:
                     break
             else:
                 raise HubError(503, "не удалось создать уникальный id проекта")
-            proj = {"id": pid, "name": name[:120], "owner": login,
+            proj = {"id": pid, "name": name, "owner": login,
                     "members": [], "rev": 0, "updated": time.time(),
                     "state": {}}
             self._write_project(proj)
@@ -409,12 +550,13 @@ class Hub:
 
     def get_state(self, pid, login, since=None):
         """Состояние проекта; since=rev → None, если не менялось (204)."""
+        parsed_since = _parse_revision(since, "since") if since is not None else None
         with self.lock:
             proj = self._read_project(pid)
             self._check_access(proj, login)
             self._touch_presence_locked(pid, login)
             online = self._online_locked(pid)
-            if since is not None and int(since) == proj.get("rev", 0):
+            if parsed_since is not None and parsed_since == proj.get("rev", 0):
                 return {"unchanged": True, "rev": proj["rev"],
                         "online": online}
             return {"rev": proj.get("rev", 0), "state": proj.get("state") or {},
@@ -427,11 +569,12 @@ class Hub:
         Сервер не сливает — только сериализует: проигравший 409-клиент
         мержит у себя и повторяет с новым base_rev."""
         shared = _validated_shared_state(state)
+        revision = _parse_revision(base_rev, "base_rev")
         with self.lock:
             proj = self._read_project(pid)
             self._check_access(proj, login)
             self._touch_presence_locked(pid, login)
-            if int(base_rev) != proj.get("rev", 0):
+            if revision != proj.get("rev", 0):
                 return {"conflict": True, "rev": proj["rev"],
                         "state": proj.get("state") or {},
                         "online": self._online_locked(pid)}
@@ -439,6 +582,6 @@ class Hub:
             proj["rev"] = proj.get("rev", 0) + 1
             proj["updated"] = time.time()
             if shared.get("name"):
-                proj["name"] = str(shared["name"])[:120]
+                proj["name"] = _clean_project_name(shared["name"])
             self._write_project(proj)
             return {"rev": proj["rev"], "online": self._online_locked(pid)}

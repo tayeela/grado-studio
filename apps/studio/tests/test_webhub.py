@@ -180,12 +180,46 @@ class TestAuth(HubBase):
         saved = json.loads(sessions_path.read_text(encoding="utf-8"))
         self.assertEqual({token}, set(saved))
 
+    def test_corrupted_session_store_resets_logins_but_hub_starts(self):
+        token = self._user("anna")
+        sessions_path = self.hub.root / "sessions.json"
+        sessions_path.write_text("{broken", encoding="utf-8")
+
+        restarted = Hub(self.hub.root, quiet=True)
+        self.assertIsNone(restarted.session_user(token))
+        self.assertEqual({}, restarted.sessions)
+        self.assertEqual({}, json.loads(sessions_path.read_text(encoding="utf-8")))
+        self.assertTrue(restarted.create_project("anna", "После восстановления")["id"])
+
     def test_corrupted_account_store_fails_closed(self):
         (self.hub.root / "users.json").write_text("{broken", encoding="utf-8")
         with self.assertRaises(HubError) as caught:
             Hub(self.hub.root, quiet=True)
         self.assertEqual(500, caught.exception.status)
         self.assertIn("users.json", str(caught.exception))
+
+    def test_structurally_invalid_account_stores_fail_closed(self):
+        self._user("anna")
+        users_path = self.hub.root / "users.json"
+        invites_path = self.hub.root / "invites.json"
+        users = json.loads(users_path.read_text(encoding="utf-8"))
+        invites = json.loads(invites_path.read_text(encoding="utf-8"))
+
+        broken_users = json.loads(json.dumps(users))
+        broken_users["anna"]["pw"] = "not-a-scrypt-hash"
+        users_path.write_text(json.dumps(broken_users), encoding="utf-8")
+        with self.assertRaises(HubError) as caught:
+            Hub(self.hub.root, quiet=True)
+        self.assertEqual(500, caught.exception.status)
+
+        users_path.write_text(json.dumps(users), encoding="utf-8")
+        broken_invites = json.loads(json.dumps(invites))
+        broken_invites[self.invite0]["used_by"] = None
+        invites_path.write_text(json.dumps(broken_invites), encoding="utf-8")
+        with self.assertRaises(HubError) as caught:
+            Hub(self.hub.root, quiet=True)
+        self.assertEqual(500, caught.exception.status)
+        self.assertIn("рассогласованы", str(caught.exception))
 
 
 class TestProjects(HubBase):
@@ -248,6 +282,27 @@ class TestProjects(HubBase):
         self.assertEqual(500, caught.exception.status)
         self.assertIn("повреждён", str(caught.exception))
 
+    def test_structurally_corrupt_project_does_not_break_project_list(self):
+        valid = self.hub.create_project("anna", "Рабочий")["id"]
+        broken = self.hub.create_project("anna", "Повреждённый")["id"]
+        path = self.hub.projects_dir / f"{broken}.json"
+        path.write_text(json.dumps({"id": broken, "name": "Повреждённый",
+                                    "rev": 0, "state": {}}), encoding="utf-8")
+
+        self.assertEqual([valid], [item["id"] for item in self.hub.list_projects("anna")])
+        listing = self.hub.list_projects("anna", include_damaged=True)
+        self.assertEqual(1, listing["damaged"])
+        self.assertEqual([valid], [item["id"] for item in listing["projects"]])
+        with self.assertRaises(HubError) as caught:
+            self.hub.get_state(broken, "anna")
+        self.assertEqual(500, caught.exception.status)
+
+    def test_project_names_are_single_line_and_bounded(self):
+        created = self.hub.create_project("anna", "  Квартал\n\t 12  ")
+        listed = self.hub.list_projects("anna")
+        self.assertEqual("Квартал 12", created["name"])
+        self.assertEqual("Квартал 12", listed[0]["name"])
+
 
 class TestSync(HubBase):
     def setUp(self):
@@ -309,6 +364,33 @@ class TestSync(HubBase):
                 self.hub.put_state(self.pid, "anna", 0, payload)
             self.assertEqual(caught.exception.status, 400)
         self.assertEqual(self.hub.get_state(self.pid, "anna")["rev"], 0)
+
+    def test_rejects_non_json_numbers_unsafe_integers_and_excessive_depth(self):
+        nested = {}
+        cursor = nested
+        for _ in range(webhub.MAX_JSON_DEPTH + 2):
+            cursor["child"] = {}
+            cursor = cursor["child"]
+        bad_payloads = (
+            {"features": [{"id": 1, "props": {"value": float("nan")}}]},
+            {"features": [{"id": 1, "props": {"value": float("inf")}}]},
+            {"features": [{"id": webhub.JS_SAFE_INTEGER + 1}]},
+            {"features": [], "projectStyles": nested},
+        )
+        for payload in bad_payloads:
+            with self.subTest(payload=str(payload)[:80]), self.assertRaises(HubError) as caught:
+                self.hub.put_state(self.pid, "anna", 0, payload)
+            self.assertEqual(400, caught.exception.status)
+        self.assertEqual(0, self.hub.get_state(self.pid, "anna")["rev"])
+
+    def test_rejects_malformed_revision_values(self):
+        for value in (-1, True, 1.5, "1.0", "-1", "rev"):
+            with self.subTest(operation="put", value=value), self.assertRaises(HubError) as caught:
+                self.hub.put_state(self.pid, "anna", value, {"features": []})
+            self.assertEqual(400, caught.exception.status)
+            with self.subTest(operation="get", value=value), self.assertRaises(HubError) as caught:
+                self.hub.get_state(self.pid, "anna", since=value)
+            self.assertEqual(400, caught.exception.status)
 
     def test_accepts_empty_project_state(self):
         out = self.hub.put_state(self.pid, "anna", 0, {

@@ -496,7 +496,10 @@ class Handler(SimpleHTTPRequestHandler):
                         "checks": checks}, 200 if ok else 503)
             return
         if HUB and parsed0.path == "/api/projects":
-            self._json({"projects": HUB.list_projects(hub_login)})
+            if HUB.user_info(hub_login)["admin"]:
+                self._json(HUB.list_projects(hub_login, include_damaged=True))
+            else:
+                self._json({"projects": HUB.list_projects(hub_login)})
             return
         m = PROJ_STATE_RE.match(parsed0.path) if HUB else None
         if m:

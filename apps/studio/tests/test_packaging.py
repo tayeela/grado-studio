@@ -405,6 +405,15 @@ function load(fetchImpl, initialState) {
             check=True, capture_output=True, text=True,
         )
 
+    def test_collaboration_surfaces_damaged_project_files_to_admins(self):
+        root = Path(__file__).parents[3]
+        client = (root / "apps/studio/web/collab.js").read_text(encoding="utf-8")
+        server = (root / "apps/studio/server.py").read_text(encoding="utf-8")
+
+        self.assertIn("Number.isInteger(res.data.damaged)", client)
+        self.assertIn('class="collab-warning" role="status"', client)
+        self.assertIn("include_damaged=True", server)
+
     def test_layer_style_tabs_follow_keyboard_and_aria_tab_pattern(self):
         root = Path(__file__).parents[3]
         source = (root / "apps/studio/web/app-style-ui.js").read_text(
@@ -514,6 +523,133 @@ require(process.argv[2]);
             ["grado_pages_autosave_checkpoint_v1", "grado_pages_autosave_v1"],
             result["keys"],
         )
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_autosave_preserves_request_order_when_older_body_is_slow(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], head: {appendChild: () => {}}, createElement: () => ({})};
+const store = new Map();
+global.localStorage = {
+  getItem: key => store.has(key) ? store.get(key) : null,
+  setItem: (key, value) => store.set(key, String(value)),
+  removeItem: key => store.delete(key),
+};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const slowBody = {text: async () => {
+    await gate;
+    return JSON.stringify({name:'Старый', features:[{id:1}]});
+  }};
+  const oldRequest = window.fetch('/api/autosave', {method:'POST', body:slowBody});
+  const newRequest = window.fetch('/api/autosave', {method:'POST',
+    body:JSON.stringify({name:'Новый', features:[{id:2}]})});
+  release();
+  await Promise.all([oldRequest, newRequest]);
+  const loaded = await (await window.fetch('/api/autosave')).json();
+  process.stdout.write(JSON.stringify({name:loaded.state.name,
+    id:loaded.state.features[0].id}));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual({"name": "Новый", "id": 2}, json.loads(completed.stdout))
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_autosave_retries_indexeddb_after_transient_open_failure(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], head: {appendChild: () => {}}, createElement: () => ({})};
+const data = new Map();
+const database = {
+  objectStoreNames: {contains: () => false},
+  createObjectStore: () => {}, close: () => {},
+  transaction: () => {
+    const transaction = {};
+    const request = work => {
+      const result = {};
+      setImmediate(() => {
+        try { result.result = work(); result.onsuccess && result.onsuccess(); }
+        catch (error) { result.error = error; result.onerror && result.onerror(); return; }
+        setImmediate(() => transaction.oncomplete && transaction.oncomplete());
+      });
+      return result;
+    };
+    transaction.objectStore = () => ({
+      get: key => request(() => data.get(key)),
+      put: (value, key) => request(() => { data.set(key, value); return key; }),
+    });
+    return transaction;
+  },
+};
+let openCalls = 0;
+global.indexedDB = {open: () => {
+  const request = {};
+  openCalls++;
+  setImmediate(() => {
+    if (openCalls === 1) {
+      request.error = new Error('temporary');
+      request.onerror && request.onerror();
+      return;
+    }
+    request.result = database;
+    request.onupgradeneeded && request.onupgradeneeded();
+    request.onsuccess && request.onsuccess();
+  });
+  return request;
+}};
+global.localStorage = {
+  getItem: () => null,
+  setItem: () => { throw new Error('quota'); },
+  removeItem: () => {},
+};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  const first = await window.fetch('/api/autosave', {method:'POST',
+    body:JSON.stringify({name:'Первый',features:[]})});
+  const second = await window.fetch('/api/autosave', {method:'POST',
+    body:JSON.stringify({name:'Второй',features:[{id:2}]})});
+  const loaded = await (await window.fetch('/api/autosave')).json();
+  process.stdout.write(JSON.stringify({first:first.status, second:second.status,
+    openCalls, name:loaded.state.name}));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(
+            {"first": 507, "second": 200, "openCalls": 2, "name": "Второй"},
+            json.loads(completed.stdout),
+        )
+
+    def test_application_serializes_autosave_and_checkpoint_requests(self):
+        root = Path(__file__).parents[3]
+        source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("let saveStateQueue = Promise.resolve()", source)
+        self.assertIn("const pending = saveStateQueue.then(", source)
+        self.assertIn("saveStateQueue = pending.catch(() => {})", source)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
     def test_pages_adapter_validates_api_and_storage_failures(self):
