@@ -9,6 +9,7 @@ from .contract import Connector, ConnectorError
 from .diff import diff, has_changes
 from .fgistp import FgistpConnector
 from .gisogd import GisogdZip
+from .gisogd_api import GISOGD_API_LAYERS, GisogdApi
 from .importer import import_snapshot
 from .nspd import NSPD_CATEGORIES, NspdCapture, NspdDirect
 from .osm import OSM_SETS, OsmOverpass
@@ -16,6 +17,7 @@ from .store import SnapshotStore, StoreError, Subscriptions
 from .terrain import TerrainContours
 
 __all__ = ["Connector", "ConnectorError", "FgistpConnector", "GisogdZip",
+           "GISOGD_API_LAYERS", "GisogdApi",
            "NSPD_CATEGORIES", "NspdCapture", "NspdDirect",
            "OSM_SETS", "OsmOverpass", "TerrainContours",
            "SnapshotStore", "StoreError", "Subscriptions",

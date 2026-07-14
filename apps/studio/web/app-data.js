@@ -32,8 +32,19 @@ const DATA_SOURCE_GROUPS = [
       { key: "nspd.zouit", label: "ЗОУИТ (все виды)", def: false },
     ]},
   { title: "Рельеф", hint: "горизонтали из открытого DEM (SRTM)", web: false,
-    maxKm2: 80, items: [
+    maxKm2: 80, webNote: "В веб-версии рельеф пока недоступен", items: [
       { key: "terrain.contours", label: "Горизонтали (сечение авто)", def: false },
+    ]},
+  // ОГД по области: портал не фильтрует по bbox — слой качается целиком один
+  // раз в кэш сервера (функц. зоны Москвы ≈15 МБ), дальше режется локально.
+  { title: "ГИС ОГД Москвы", hint: "Генплан и ЗОУИТ · первая загрузка слоя дольше",
+    web: false, maxKm2: 80,
+    webNote: "В веб-версии слои ОГД по области недоступны — нужна настольная версия",
+    items: [
+      { key: "gisogd.func_zones", label: "Функц. зоны Генплана (старая Москва)", def: false },
+      { key: "gisogd.func_zones_tinao", label: "Функц. зоны (Новая Москва, ТиНАО)", def: false },
+      { key: "gisogd.szz", label: "Санитарно-защитные зоны", def: false },
+      { key: "gisogd.vodookhr", label: "Водоохранные зоны", def: false },
     ]},
 ];
 
@@ -80,7 +91,7 @@ async function openDataFetch() {
           <span class="data-card-sub">${escHtml(g.hint)} · до ${g.maxKm2} км²</span></div>
         <button class="data-all" data-gi="${gi}"${disabled ? " disabled" : ""}>все</button>
       </div>
-      ${unavailable ? `<div class="data-over">В веб-версии рельеф пока недоступен</div>` : over ? `<div class="data-over">Область ${areaTxt} км² больше лимита ${g.maxKm2} км²
+      ${unavailable ? `<div class="data-over">${escHtml(g.webNote || "В веб-версии источник недоступен")}</div>` : over ? `<div class="data-over">Область ${areaTxt} км² больше лимита ${g.maxKm2} км²
         <button class="data-zoom" data-target="${g.maxKm2}">Приблизить</button></div>` : ""}
       <div class="data-rows">${rows}</div>
     </div>`;
@@ -97,8 +108,8 @@ async function openDataFetch() {
       ${cardsHtml}
       <div class="data-card data-card-ogd">
         <div class="data-card-head">
-          <div class="data-card-title">ГИС ОГД Москвы
-            <span class="data-card-sub">официальные слои · портал mos.ru</span></div>
+          <div class="data-card-title">ГИС ОГД — другие слои
+            <span class="data-card-sub">ZIP/GeoJSON с портала mos.ru</span></div>
         </div>
         <div class="data-ogd-row">
           <button class="data-ogd-portal">${ogdAction}</button>

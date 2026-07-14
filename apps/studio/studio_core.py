@@ -98,7 +98,8 @@ STYLE_LIB = merged_library()
 # каждый объект несёт провенанс (source/date/doc/snapshot), переимпорт
 # сравнивается с прошлым снимком (diff). Стор — на диске рядом с кэшем
 # тайлов (в .gitignore). Тесты подменяют SOURCE_STORE на временный.
-from grado_connectors import (GisogdZip, NspdCapture, SnapshotStore,  # noqa: E402
+from grado_connectors import (GISOGD_API_LAYERS, GisogdZip,  # noqa: E402
+                              NspdCapture, SnapshotStore,
                               diff as _snap_diff, has_changes as _has_changes)
 from grado_connectors.contract import make_result  # noqa: E402
 from grado_connectors.fgistp import FgistpConnector  # noqa: E402
@@ -231,6 +232,9 @@ def frontend_styles():
 # Локальный однопользовательский инструмент = «лёгкое использование» по
 # Tile Usage Policy OSM; при промышленной нагрузке — платный/self-hosted.
 TILE_CACHE = DATA_DIR / ".tile_cache"
+# слои ГИС ОГД целиком (портал не фильтрует по bbox) — качаем один раз,
+# режем по видимой области локально; в .gitignore рядом с прочими кэшами
+GISOGD_CACHE = DATA_DIR / ".gisogd_cache"
 TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 MAX_UNDERLAY_TILES = 130
 
@@ -1858,10 +1862,23 @@ EXTENT_SOURCES = {
         "layer_id": "source.terrain.contours", "title": "Рельеф: горизонтали"},
 }
 
+# ГИС ОГД Москвы по видимой области — из кураторского списка коннектора
+# (единый источник правды по кодам слоёв портала). Портал не фильтрует по
+# bbox: слой качается целиком один раз в кэш, режем по области сами.
+for _k, _spec in GISOGD_API_LAYERS.items():
+    EXTENT_SOURCES[_k] = {
+        "conn": "gisogd", "codes": _spec["codes"], "kind": _spec["kind"],
+        "layer_id": _spec["layer_id"], "title": _spec["title"],
+        **({"style_id": _spec["style_id"]} if _spec.get("style_id") else {}),
+    }
+
 # Пределы площади запроса, км² (фронт блокирует раньше, сервер — страховка):
 # НСПД в плотной застройке тяжёлый (сотни участков на км²), Overpass щедрее,
 # рельеф — тайловый DEM (число тайлов ограничено внутри коннектора).
-EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0, "terrain": 80.0}
+EXTENT_LIMITS_KM2 = {"osm": 60.0, "nspd": 12.0, "terrain": 80.0,
+                     # ОГД режется локально из кэша — ограничиваем не сеть,
+                     # а объём результата на холсте
+                     "gisogd": 80.0}
 
 
 def bbox_km2(bbox):
@@ -1992,7 +2009,30 @@ _EXTENT_BASE_FIELDS = {
         {"name": "name", "label": "название", "type": "text"}],
     "terrain.contours": [
         {"name": "elev", "label": "высота, м", "type": "real"}],
+    # ОГД: суммарный фонд — прямой вход ТЭП, поэтому real, а не text
+    "gisogd.func_zones": [
+        {"name": "zone_title", "label": "наименование зоны", "type": "text"},
+        {"name": "fz_type", "label": "тип функц. зоны", "type": "text"},
+        {"name": "summfond", "label": "суммарный фонд, тыс. м²", "type": "real"},
+        {"name": "district", "label": "район/поселение", "type": "text"}],
+    "gisogd.func_zones_tinao": [
+        {"name": "zone_title", "label": "наименование зоны", "type": "text"},
+        {"name": "fz_type", "label": "тип функц. зоны", "type": "text"},
+        {"name": "district", "label": "район/поселение", "type": "text"}],
+    "gisogd.szz": [
+        {"name": "kind", "label": "вид зоны", "type": "text"},
+        {"name": "basis", "label": "источник", "type": "text"}],
+    "gisogd.vodookhr": [
+        {"name": "kind", "label": "вид зоны", "type": "text"},
+        {"name": "basis", "label": "источник", "type": "text"}],
 }
+
+
+def _real_or_none(v):
+    try:
+        return float(str(v).replace(",", ".").strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def _extent_props(src_key, p):
@@ -2027,6 +2067,30 @@ def _extent_props(src_key, p):
     if src_key == "terrain.contours":
         elev = p.get("elev")
         props = {"elev": elev} if elev is not None else {}
+        return props, base
+    if src_key.startswith("gisogd."):
+        # Старая Москва (virtual1742): naimfunkzony + summfondpersp.
+        # ТиНАО (virtual19xx): name/fz_type, суммарного фонда нет — тип зоны
+        # подставляет диспетчер из имени слоя (grado_layer_title).
+        district = p.get("name_rajon") or p.get("name_raion") or p.get("name_okrug")
+        from grado_connectors.gisogd_api import norm_id
+        fz = p.get("fz_type") or p.get("fztip")
+        props = {k: v for k, v in {
+            "zone_title": (p.get("naimfunkzony") or p.get("name")
+                           or p.get("grado_layer_title")),
+            "fz_type": norm_id(fz) if fz not in (None, "") else None,
+            "summfond": _real_or_none(p.get("summfondpersp")),
+            "kind": p.get("grado_layer_title"),
+            "basis": "ГИС ОГД",
+            "district": district,
+        }.items() if v not in (None, "")}
+        if src_key.startswith("gisogd.func_zones"):
+            props.pop("kind", None)
+            props.pop("basis", None)
+        else:
+            props.pop("zone_title", None)
+            props.pop("fz_type", None)
+            props.pop("summfond", None)
         return props, base
     if src_key == "osm.buildings":
         purpose = p.get("building")
@@ -2080,7 +2144,8 @@ def fetch_extent(bbox, sources):
     bbox = [west, south, east, north] (WGS84); sources ⊆ EXTENT_SOURCES.
     Возвращает {"groups": [{source, title, layer_id, kind, count, features}],
     "notes": [...], "snapshots": [манифесты для журнала источников]}."""
-    from grado_connectors import NspdDirect, OsmOverpass, TerrainContours
+    from grado_connectors import (GisogdApi, NspdDirect, OsmOverpass,
+                                  TerrainContours)
 
     keys = [k for k in sources if k in EXTENT_SOURCES]
     unknown = [k for k in sources if k not in EXTENT_SOURCES]
@@ -2172,6 +2237,42 @@ def fetch_extent(bbox, sources):
                          if not n.endswith("отброшено: 0"))   # шум нормализации
         except Exception as e:
             notes.append(f"{EXTENT_SOURCES[k]['title']}: {e}")
+
+    # --- ГИС ОГД: слой качается целиком в кэш (портал не фильтрует по bbox),
+    # режем по области локально. Один источник = несколько слоёв портала
+    # (ТиНАО: тип зоны = имя слоя) → сливаем в одну группу.
+    for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "gisogd"]:
+        conn = GisogdApi(cache_dir=GISOGD_CACHE)
+        feats, params_codes = [], []
+        for code, layer_title in EXTENT_SOURCES[k]["codes"].items():
+            try:
+                result = conn.fetch(bbox, code)
+            except Exception as e:
+                notes.append(f"{EXTENT_SOURCES[k]['title']} [{code}]: {e}")
+                continue
+            for f in result["features"]:
+                if layer_title:      # тип зоны/вид ЗОУИТ несёт сам слой портала
+                    f["properties"]["grado_layer_title"] = layer_title
+            feats.extend(result["features"])
+            params_codes.append(code)
+            notes.extend(result.get("notes") or [])
+        if not params_codes:
+            continue
+        snap = make_result(feats, {"source": k, "codes": params_codes,
+                                   "bbox": ",".join(f"{float(v):.5f}" for v in bbox)},
+                           source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту")
+        try:
+            manifest, d = _snapshot(conn, snap)
+            if d:
+                notes.append(f"{EXTENT_SOURCES[k]['title']}: изменения с прошлого "
+                             f"снимка +{len(d['added'])} −{len(d['removed'])} "
+                             f"~{len(d['changed'])}")
+            snapshots.append(manifest)
+            prov = _prov(manifest)
+        except Exception as e:
+            notes.append(f"{EXTENT_SOURCES[k]['title']}: снимок не сохранён ({e})")
+            prov = {"source": "gisogd"}
+        _emit(k, feats, prov)
 
     # --- Рельеф: горизонтали из тайлового DEM (свой снимок и провенанс) ------
     for k in [k for k in keys if EXTENT_SOURCES[k]["conn"] == "terrain"]:

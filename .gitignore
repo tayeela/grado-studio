@@ -7,6 +7,7 @@ dist/
 graphify-out/
 apps/studio/.tile_cache/
 apps/studio/.sources/
+apps/studio/.gisogd_cache/
 apps/studio/.autosave.json
 apps/studio/.autosave.tmp
 apps/studio/.autosave.*.json
