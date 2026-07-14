@@ -640,6 +640,20 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .fmt-row>.style-form-error{flex:1 0 100%;margin-top:-2px}
 .fmt-body>.style-form-error{margin-top:8px}
 .fmt-row input[type=range]{height:32px}
+.range-field{display:flex;align-items:center;gap:10px;width:100%}
+.range-out{flex:0 0 auto;min-width:36px;text-align:right;font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
+/* непрозрачность: дорожка = прозрачность цвета заливки поверх шахматки */
+input[type=range].range-op{flex:1;min-width:0;height:16px;-webkit-appearance:none;appearance:none;padding:0;
+  border-radius:var(--r-pill);box-shadow:inset 0 0 0 1px var(--hairline);cursor:pointer;
+  background:
+    linear-gradient(to right,rgba(0,0,0,0),var(--op-c,var(--accent))),
+    conic-gradient(#8a8a8a44 25%,rgba(0,0,0,0) 0 50%,#8a8a8a44 0 75%,rgba(0,0,0,0) 0) 0 0/10px 10px,
+    var(--field-bg)}
+input[type=range].range-op::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:16px;height:16px;
+  border-radius:50%;background:#fff;box-shadow:0 0 0 1px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.35);cursor:pointer}
+input[type=range].range-op::-moz-range-thumb{width:16px;height:16px;border:none;border-radius:50%;background:#fff;
+  box-shadow:0 0 0 1px rgba(0,0,0,.4),0 1px 3px rgba(0,0,0,.35);cursor:pointer}
+input[type=range].range-op:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .fmt-sub.fmt-tgl{display:flex;align-items:center;gap:8px}
 .fmt-sub.fmt-tgl span{flex:1}
 .fmt-sub.fmt-tgl input[type=checkbox]{margin:0}

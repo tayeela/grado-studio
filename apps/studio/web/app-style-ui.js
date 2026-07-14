@@ -107,6 +107,13 @@ function hsvToHex(h, s, v) {
   const ch = t => Math.round((t + m) * 255).toString(16).padStart(2, "0");
   return "#" + ch(r) + ch(g) + ch(b);
 }
+// ползунок непрозрачности: число «%» + дорожка-прозрачность текущего цвета заливки
+function syncOpacityRange(input, out, colorHex) {
+  if (!input) return;
+  if (out) out.textContent = `${input.value}%`;
+  input.style.setProperty("--op-c", normHex(colorHex) || "#888888");
+}
+
 // host — контейнер; onChange(hex) при смене. Возвращает {get,set,close}.
 function makeColorField(host, initial, onChange) {
   let value = normHex(initial) || "#888888", pop = null, onDoc = null, onViewport = null, onScroll = null;
@@ -289,7 +296,7 @@ function openLayerStyle(layer, opts = {}) {
             <div class="style-section-head"><span><b>Заливка</b><small>Цвет и прозрачность полигона</small></span><label class="switch-control" title="Включить заливку"><input type="checkbox" id="fmt-hasfill" aria-label="Включить заливку" ${hasFill ? "checked" : ""}><span></span></label></div>
             <div class="fmt-body" id="fmt-fill-body" style="display:${hasFill ? "" : "none"}"><div class="fmt-row">
               <label>Цвет<div id="fmt-fill"></div></label>
-              <label>Непрозрачность<input type="range" id="fmt-opacity" min="10" max="100" step="5" value="${opacity}"></label>
+              <label>Непрозрачность<span class="range-field"><input type="range" id="fmt-opacity" class="range-op" min="10" max="100" step="5" value="${opacity}"><output class="range-out" id="fmt-opacity-out">${opacity}%</output></span></label>
             </div></div>
           </section>
           <section class="style-section">
@@ -407,8 +414,12 @@ function openLayerStyle(layer, opts = {}) {
   });
 
   // ----- режим «Единый стиль» -----
-  const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); };
+  let syncOpUI = () => {};
+  const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); syncOpUI(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
+  syncOpUI = () => syncOpacityRange($("fmt-opacity"), $("fmt-opacity-out"), fillCF.get());
+  $("fmt-opacity").addEventListener("input", syncOpUI);
+  syncOpUI();
   const strokeCF = makeColorField($("fmt-stroke"), toHexColor(cur.stroke, "#888888"), onColor);
   const lcolorCF = $("fmt-lcolor")
     ? makeColorField($("fmt-lcolor"), toHexColor(lfFont.color, "#5c5a54"), onColor) : null;
@@ -803,7 +814,7 @@ function openStyleLibrary() {
       <div class="fmt-sub">Заливка</div>
       <label class="chk"><input type="checkbox" id="lib-hasfill" ${hasFill ? "checked" : ""}> заливка цветом</label>
       <label>Цвет<div id="lib-fill"></div></label>
-      <label>Прозрачность, %<input type="range" id="lib-op" min="10" max="100" step="5" value="${op}"></label>
+      <label>Прозрачность, %<span class="range-field"><input type="range" id="lib-op" class="range-op" min="10" max="100" step="5" value="${op}"><output class="range-out" id="lib-op-out">${op}%</output></span></label>
       <div class="fmt-sub">Линия</div>
       <label>Цвет<div id="lib-stroke"></div></label>
       <label>Толщина<input type="number" id="lib-width" value="${boundedNumber(st.width, 0.2, 8, 1)}" min="0.2" max="8" step="0.1" required></label>
@@ -830,6 +841,9 @@ function openStyleLibrary() {
     const fillCF = makeColorField($("lib-fill"), toHexColor(st.fill, "#faf0bf"), onEdit);
     const strokeCF = makeColorField($("lib-stroke"), toHexColor(st.stroke, "#888888"), onEdit);
     ed._fillCF = fillCF; ed._strokeCF = strokeCF;
+    ed._syncOp = () => syncOpacityRange($("lib-op"), $("lib-op-out"), fillCF.get());
+    $("lib-op").addEventListener("input", ed._syncOp);
+    ed._syncOp();
     $("lib-dashp").addEventListener("change", () => {
       $("lib-dashcw").style.display = $("lib-dashp").value === "custom" ? "" : "none"; onEdit();
     });
@@ -885,6 +899,7 @@ function openStyleLibrary() {
     if (dot) dot.classList.add("on");
     const sw = overlay.querySelector(`.lib-item[data-sid="${CSS.escape(sel)}"] .lib-sw`);
     if (sw) { sw.style.background = swatchOf(sel); sw.style.borderColor = STYLES_V2[sel].stroke || "#999"; }
+    const ed = $("lib-edit"); if (ed && ed._syncOp) ed._syncOp();
     updatePreview(); draw();
   }
   overlay.querySelectorAll(".lib-item").forEach(el =>
