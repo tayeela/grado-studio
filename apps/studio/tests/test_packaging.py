@@ -149,6 +149,15 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn('else if (source === "url")', imports)
         self.assertNotIn('cancel: "По ссылке"', imports)
 
+    def test_statusbar_stays_single_line_when_inspector_is_wide(self):
+        root = Path(__file__).parents[3]
+        shell = (root / "apps/studio/web/redesign/shell.css").read_text(
+            encoding="utf-8")
+
+        self.assertRegex(shell, r"\.statusbar\{[\s\S]*?white-space:nowrap;overflow:hidden")
+        self.assertRegex(shell, r"\.statusbar \.st-active\{[\s\S]*?text-overflow:ellipsis")
+        self.assertIn(".statusbar .push{flex:1;min-width:0}", shell)
+
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
         styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
