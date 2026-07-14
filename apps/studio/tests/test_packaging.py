@@ -159,7 +159,8 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn(".statusbar .push{flex:1;min-width:0}", shell)
         self.assertIn("#stage{flex:1 1 0;position:relative;min-width:0;min-height:0;overflow:hidden;container-type:inline-size}", shell)
         self.assertIn("@container (max-width:680px)", shell)
-        self.assertIn("#st-coords,#st-grid,#st-snap{display:none!important}", shell)
+        self.assertIn("#st-coords,#st-grid,.cv-scale{display:none!important}", shell)
+        self.assertNotIn("#st-snap{display:none!important}", shell)
 
     def test_dialog_focus_and_numeric_editors_are_guarded(self):
         root = Path(__file__).parents[3]
@@ -361,8 +362,10 @@ process.stdout.write(JSON.stringify({
         blocked = adapter.split("const blocked = new Set(", 1)[1].split(");", 1)[0]
         self.assertNotIn('"btn-nspd"', blocked)
         self.assertNotIn('"btn-gisogd"', blocked)
+        self.assertNotIn('"btn-data"', blocked)
         self.assertIn('gisogdInput.accept = ".geojson,.json', adapter)
-        self.assertIn("В веб-версии доступны файлы НСПД и GeoJSON", adapter)
+        self.assertIn("В веб-версии доступны OSM и НСПД по видимой области", adapter)
+        self.assertIn('path === "/api/fetch-extent"', adapter)
         self.assertIn("window.GRADO_STATIC ? await file.text()", importer)
         self.assertIn('isWeb ? "Импорт ГИС ОГД (GeoJSON)"', cmdk)
 
@@ -408,13 +411,79 @@ process.stdout.write(JSON.stringify({
         self.assertAlmostEqual(107, result["ogdPoint"][0], delta=15)
         self.assertEqual("NAME", result["field"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser extent imports")
+    def test_browser_core_builds_and_normalizes_extent_sources(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+const bbox=[37.615,55.755,37.616,55.756];
+const query=core.buildOsmExtentRequest(bbox,['osm.roads','osm.buildings']);
+const osm=core.importOsmExtent({elements:[
+  {type:'way',id:10,tags:{highway:'residential',name:'Улица'},geometry:[
+    {lon:37.6151,lat:55.7551},{lon:37.6158,lat:55.7558}]},
+  {type:'way',id:20,tags:{building:'yes','building:levels':'5'},geometry:[
+    {lon:37.6152,lat:55.7552},{lon:37.6154,lat:55.7552},
+    {lon:37.6154,lat:55.7554},{lon:37.6152,lat:55.7552}]}
+]},['osm.roads','osm.buildings'],bbox);
+const request=core.buildNspdExtentRequest(bbox,'nspd.buildings');
+const merc=[[[4187345.5,7509247.8],[4187445.5,7509247.8],
+  [4187445.5,7509347.8],[4187345.5,7509247.8]]];
+const nspd=core.importNspdExtent({features:[{id:7,geometry:{type:'Polygon',coordinates:merc},
+  properties:{options:{cad_num:'77:01:7',building_name:'Дом',floors:'8'}}}]},
+  'nspd.buildings',bbox);
+process.stdout.write(JSON.stringify({query,osm:osm.groups.map(g=>[g.source,g.count]),
+  roadKey:osm.groups[0].features[0].srcKey,categories:request.categories,
+  nspdCount:nspd.groups[0].count,nspdKind:nspd.groups[0].features[0].kind,
+  floors:nspd.groups[0].features[0].props.floors}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertIn('way["highway"]', result["query"])
+        self.assertEqual([["osm.roads", 1], ["osm.buildings", 1]], result["osm"])
+        self.assertIn("way/10", result["roadKey"])
+        self.assertEqual([{"id": 36369}], result["categories"])
+        self.assertEqual(1, result["nspdCount"])
+        self.assertEqual("building", result["nspdKind"])
+        self.assertEqual(8, result["floors"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser snapping")
+    def test_browser_object_snap_prefers_object_points_over_grid(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const fs=require('fs'),vm=require('vm');
+const state={features:[{id:1,ring:[[0,0],[100,0],[100,100],[0,100]]}],
+  view:{k:1},osnap:true,gridSnap:true,_snapIndex:null,guides:[]};
+const c={state,Math,Map,Set,console,isHidden:()=>false,gridStep:()=>10,
+  lastDrawingPt:()=>null,selectionIds:()=>[],shiftDown:false,segIntersect:()=>null,
+  isAngleInSweep:()=>true,segCircleIntersections:()=>[],circleCircleIntersections:()=>[],
+  ctx:{save(){},restore(){}},w2s:(x,y)=>[x,y],cvColor:()=>'',layerOf:()=>({}),
+  isLocked:()=>false,LAYERS_V2:[]};
+vm.createContext(c);vm.runInContext(fs.readFileSync(process.argv[1],'utf8'),c);
+process.stdout.write(JSON.stringify({vertex:c.snapPoint(3,4),mid:c.snapPoint(50,4)}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/app-snap.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual("вершина", result["vertex"]["kind"])
+        self.assertEqual([0, 0], result["vertex"]["p"])
+        self.assertEqual("середина", result["mid"]["kind"])
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
     def test_pages_adapter_accepts_geojson_and_rejects_zip(self):
         root = Path(__file__).parents[3]
         script = r"""
 global.window = global;
 window.location = {href: 'https://example.test/'};
-window.fetch = async () => new Response('{}', {status: 200});
+window.fetch = async url => String(url).includes('overpass/api/interpreter')
+  ? new Response(JSON.stringify({elements:[{type:'way',id:10,
+      tags:{highway:'residential'},geometry:[{lon:37.6151,lat:55.7551},
+      {lon:37.6158,lat:55.7558}]}]}), {status: 200})
+  : new Response('{}', {status: 200});
 window.addEventListener = () => {};
 global.document = {addEventListener: () => {}, getElementById: () => null,
   querySelectorAll: () => [], querySelector: () => null,
@@ -436,9 +505,13 @@ require(process.argv[2]);
       type:'FeatureCollection',features:[{type:'Feature',properties:{},
       geometry:{type:'Point',coordinates:[4187000,7509000]}}]})});
   const wrongMethod = await window.fetch('/api/import-gisogd');
+  const extent = await window.fetch('/api/fetch-extent', {method:'POST',
+    body:JSON.stringify({bbox:[37.615,55.755,37.616,55.756],sources:['osm.roads']})});
+  const extentBody = await extent.json();
   process.stdout.write(JSON.stringify({good:good.status,count:goodBody.features.length,
     kind:goodBody.features[0].kind,zip:zip.status,badCrs:badCrs.status,
-    wrongMethod:wrongMethod.status}));
+    wrongMethod:wrongMethod.status,extent:extent.status,
+    extentCount:extentBody.groups[0].count}));
 })();
 """
         completed = subprocess.run(
@@ -449,9 +522,25 @@ require(process.argv[2]);
         )
         self.assertEqual(
             {"good": 200, "count": 1, "kind": "generic", "zip": 415,
-             "badCrs": 400, "wrongMethod": 405},
+             "badCrs": 400, "wrongMethod": 405, "extent": 200,
+             "extentCount": 1},
             json.loads(completed.stdout),
         )
+
+    def test_snap_status_and_color_palette_are_discoverable(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        style = (root / "apps/studio/web/app-style-ui.js").read_text(encoding="utf-8")
+        shell = (root / "apps/studio/web/redesign/shell.css").read_text(encoding="utf-8")
+        html = (root / "apps/studio/web/index.html").read_text(encoding="utf-8")
+
+        self.assertIn('class="cfield-action">Палитра</span>', style)
+        self.assertIn('aria-label="Открыть палитру цвета"', style)
+        self.assertIn('function updateSnapStatus(hit = null)', app)
+        self.assertIn('button.setAttribute("aria-pressed", String(state.osnap))', app)
+        self.assertIn('#st-snap.snap-active', shell)
+        self.assertNotIn('#st-coords,#st-grid,#st-snap{display:none!important}', shell)
+        self.assertIn('id="btn-snap" title="Привязки (X)" aria-pressed="true"', html)
 
     def test_command_palette_matches_web_and_current_ui_availability(self):
         root = Path(__file__).parents[3]
