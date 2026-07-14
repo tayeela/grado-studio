@@ -484,8 +484,18 @@ class Handler(SimpleHTTPRequestHandler):
             parsed = urlsplit(origin)
         except ValueError:
             return False
-        return parsed.scheme in {"http", "https"} and bool(host) and \
-            parsed.netloc.lower() == host
+        if parsed.scheme not in {"http", "https"} or not host or \
+                parsed.netloc.lower() != host:
+            return False
+        # Сравнить Origin и Host недостаточно: при DNS rebinding вредоносная
+        # страница может открыться как evil.example -> 127.0.0.1 и прислать
+        # одинаковые Host/Origin. Локальная Студия штатно доступна только через
+        # loopback-имена; нативные интеграции без Origin остаются совместимы.
+        if not _cloud_mode():
+            return (parsed.hostname or "").lower() in {
+                "localhost", "127.0.0.1", "::1",
+            }
+        return True
 
     def end_headers(self):
         # Safari охотно кэширует статику — интерфейс всегда свежий.

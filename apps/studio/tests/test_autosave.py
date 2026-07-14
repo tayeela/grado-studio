@@ -301,6 +301,20 @@ class ReleaseManifestTests(unittest.TestCase):
         handler.headers = {"Host": "localhost:8643"}
         self.assertTrue(handler._same_origin_post())
 
+    def test_local_api_rejects_dns_rebinding_origin(self):
+        handler = object.__new__(server.Handler)
+        handler.headers = {
+            "Host": "evil.example:8643",
+            "Origin": "http://evil.example:8643",
+        }
+        with mock.patch.object(server, "_cloud_mode", return_value=False):
+            self.assertFalse(handler._same_origin_post())
+
+        # Облачная установка имеет собственный публичный Host; там остаётся
+        # строгая проверка равенства Origin/Host без loopback-ограничения.
+        with mock.patch.object(server, "_cloud_mode", return_value=True):
+            self.assertTrue(handler._same_origin_post())
+
     def test_url_import_rejects_declared_oversized_download(self):
         body = json.dumps({"url": "https://example.test/data.zip"}).encode()
         handler = self.api_handler("/api/import-gisogd-url", body)

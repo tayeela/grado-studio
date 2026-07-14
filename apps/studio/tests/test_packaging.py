@@ -118,6 +118,37 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("!layer.annotation && !layer.import_only && !layer.locked", app)
         self.assertIn('document.getElementById("cv")?.focus()', app)
 
+    def test_new_project_name_and_dialog_names_are_lossless(self):
+        root = Path(__file__).parents[3]
+        web = root / "apps/studio/web"
+        html = (web / "index.html").read_text(encoding="utf-8")
+        app = (web / "app.js").read_text(encoding="utf-8")
+        a11y = (web / "redesign/a11y.js").read_text(encoding="utf-8")
+
+        self.assertIn('id="project-name" value="Новый проект" maxlength="240"', html)
+        self.assertIn('on("project-name", "input", event => {', app)
+        self.assertIn('rememberPendingProjectName(event.target.value)', app)
+        self.assertIn('PENDING_PROJECT_NAME_KEY', app)
+        self.assertIn('if (applyPendingProjectName()) persist(0)', app)
+        self.assertNotIn('on("project-name", "change", persist)', app)
+        self.assertIn('window.addEventListener("pagehide", flushPendingAutosave)', app)
+        self.assertIn('document.visibilityState === "hidden"', app)
+        self.assertIn("copy.querySelectorAll('button, input, select, textarea, a')", a11y)
+        self.assertIn("dialog.hasAttribute('aria-label')", a11y)
+
+    def test_gisogd_source_choice_has_a_real_cancel_path(self):
+        root = Path(__file__).parents[3]
+        web = root / "apps/studio/web"
+        app = (web / "app.js").read_text(encoding="utf-8")
+        imports = (web / "app-import.js").read_text(encoding="utf-8")
+
+        self.assertIn("function uiChoice(msg, choices", app)
+        self.assertIn('if (event.key === "Escape") done(null)', app)
+        self.assertIn('const source = await uiChoice(', imports)
+        self.assertIn('if (source === "file")', imports)
+        self.assertIn('else if (source === "url")', imports)
+        self.assertNotIn('cancel: "По ссылке"', imports)
+
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
         styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
