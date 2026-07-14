@@ -161,6 +161,50 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("@container (max-width:680px)", shell)
         self.assertIn("#st-coords,#st-grid,#st-snap{display:none!important}", shell)
 
+    def test_dialog_focus_and_numeric_editors_are_guarded(self):
+        root = Path(__file__).parents[3]
+        web = root / "apps/studio/web"
+        app = (web / "app.js").read_text(encoding="utf-8")
+        style = (web / "app-style-ui.js").read_text(encoding="utf-8")
+        a11y = (web / "redesign/a11y.js").read_text(encoding="utf-8")
+        css = (web / "redesign/studio2.css").read_text(encoding="utf-8")
+
+        self.assertIn("const popupTriggerFor = element =>", a11y)
+        self.assertIn("previousFocus.set(overlay, focusReturnTarget(source))", a11y)
+        self.assertIn("const previous = focusReturnTarget(previousFocus.get(overlay))", a11y)
+        self.assertIn('aria-label="Закрыть окно восстановления"', app)
+        self.assertIn('overlay.querySelector(".recovery-close").focus()', app)
+        self.assertIn('id="tep-form-error" role="alert" hidden', app)
+        self.assertIn('invalid.setAttribute("aria-invalid", "true")', app)
+        self.assertIn('.modal-overlay [aria-invalid="true"]', css)
+        self.assertIn("function boundedNumber(value, minimum, maximum, fallback)", app)
+        self.assertIn('boundedNumber($("fmt-width").value, 0.2, 8, 1)', style)
+        self.assertIn('boundedNumber($("lib-mperiod").value, 6, 200, 40)', style)
+        self.assertIn('id="style-form-error" role="alert" hidden', style)
+        self.assertIn("const validateSingleStyle = () =>", style)
+        self.assertIn('if (mode === "single" && !validateSingleStyle()) return', style)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine bounds")
+    def test_browser_tep_rejects_values_outside_moscow_preset(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+const rows = params => Object.fromEntries(
+  core.computeTep({features:[], params}).results.map(row => [row.id, row.value]));
+process.stdout.write(JSON.stringify({
+  baseline: rows({}),
+  invalid: rows({density:60.1, ratio_zh:100.1, percent_vpp:30.1,
+    k_rail:0.49, k_ba:1.01}),
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["invalid"], result["baseline"])
+
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
         styles = (root / "apps/studio/web/redesign/studio2.css").read_text(

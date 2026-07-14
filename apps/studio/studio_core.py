@@ -1040,9 +1040,11 @@ def _normalized_tep_params(params):
     if not isinstance(params, dict):
         return {}
     limits = {
-        "density": (0, 1000), "ratio_zh": (0, 100),
-        "percent_vpp": (0, 100), "education_zone": (1, 2),
-        "territory_mode": (1, 2), "k_rail": (0, 10), "k_ba": (0, 10),
+        # Один источник истины с действующим пресетом moscow_krt: внешние
+        # проекты и API не должны обходить диапазоны, которые показывает UI.
+        "density": (1, 60), "ratio_zh": (0, 100),
+        "percent_vpp": (0, 30), "education_zone": (1, 2),
+        "territory_mode": (1, 2), "k_rail": (0.5, 1), "k_ba": (0.1, 1),
     }
     result = {}
     for key, (minimum, maximum) in limits.items():

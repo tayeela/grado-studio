@@ -143,6 +143,21 @@ class TestStudioCore(unittest.TestCase):
         out = studio_core.compute_tep(numeric_strings, {"density": "25"})
         self.assertEqual(out["inputs"]["terr_area"], 1.0)
 
+    def test_compute_tep_rejects_values_outside_moscow_preset(self):
+        baseline = studio_core.compute_tep([])
+        baseline_rows = {row["id"]: row["value"] for row in baseline["results"]}
+        out = studio_core.compute_tep([], {
+            "density": 60.1,
+            "ratio_zh": 100.1,
+            "percent_vpp": 30.1,
+            "k_rail": 0.49,
+            "k_ba": 1.01,
+        })
+        self.assertEqual(
+            {row["id"]: row["value"] for row in out["results"]},
+            baseline_rows,
+        )
+
     def test_compute_tep_clamps_invalid_floor_counts(self):
         boundary = {"kind": "boundary", "ring": [
             [0, 0], [100, 0], [100, 100], [0, 100]], "props": {}}
