@@ -228,6 +228,110 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("function enabledMenuItems", a11y)
         self.assertIn("item.getAttribute('aria-disabled') !== 'true'", a11y)
 
+    def test_browser_menu_exposes_safe_file_imports(self):
+        root = Path(__file__).parents[3]
+        adapter = (root / "apps/studio/web/pages-adapter.js").read_text(
+            encoding="utf-8")
+        importer = (root / "apps/studio/web/app-import.js").read_text(
+            encoding="utf-8")
+        cmdk = (root / "apps/studio/web/redesign/cmdk.js").read_text(
+            encoding="utf-8")
+
+        blocked = adapter.split("const blocked = new Set(", 1)[1].split(");", 1)[0]
+        self.assertNotIn('"btn-nspd"', blocked)
+        self.assertNotIn('"btn-gisogd"', blocked)
+        self.assertIn('gisogdInput.accept = ".geojson,.json', adapter)
+        self.assertIn("В веб-версии доступны файлы НСПД и GeoJSON", adapter)
+        self.assertIn("window.GRADO_STATIC ? await file.text()", importer)
+        self.assertIn('isWeb ? "Импорт ГИС ОГД (GeoJSON)"', cmdk)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser imports")
+    def test_browser_core_imports_nspd_and_gisogd_geojson(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+const merc = [[[4187345.5,7509247.8],[4187445.5,7509247.8],
+  [4187445.5,7509347.8],[4187345.5,7509247.8]]];
+const nspd = core.importNspd({type:'FeatureCollection',grado_source:'nspd',features:[
+  {id:'77:09:0004021:181',geometry:{type:'Polygon',coordinates:merc},
+   properties:{options:{cad_num:'77:09:0004021:181',land_record_category_type:'земли'}}},
+  {id:'duplicate',geometry:{type:'Polygon',coordinates:merc},properties:{}}
+]});
+const poly = [[[37.6155646254,55.7522242128],[37.617,55.7522242128],
+  [37.617,55.753],[37.6155646254,55.7522242128]]];
+const ogd = core.importGeoJson({type:'FeatureCollection',features:[
+  {type:'Feature',id:7,properties:{NAME:'Ж-1'},geometry:{type:'Polygon',coordinates:poly}}
+]}, 'funkcionalnie_zony.geojson');
+process.stdout.write(JSON.stringify({
+  nspdCount:nspd.features.length,nspdKind:nspd.features[0].kind,
+  cad:nspd.features[0].props.cad_num,nspdPoint:nspd.features[0].ring[0],
+  duplicateNote:nspd.notes[0],ogdCount:ogd.features.length,
+  ogdKind:ogd.features[0].kind,ogdLayer:ogd.features[0].layer_id,
+  ogdPoint:ogd.features[0].ring[0],field:ogd.fields['source.gisogd.func_zones'][0].name
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script, str(root / "apps/studio/web/pages-core.js")],
+            check=True, capture_output=True, text=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(1, result["nspdCount"])
+        self.assertEqual("parcel", result["nspdKind"])
+        self.assertEqual("77:09:0004021:181", result["cad"])
+        self.assertAlmostEqual(107, result["nspdPoint"][0], delta=15)
+        self.assertAlmostEqual(1371, result["nspdPoint"][1], delta=15)
+        self.assertIn("дубликатов", result["duplicateNote"])
+        self.assertEqual(1, result["ogdCount"])
+        self.assertEqual("zone", result["ogdKind"])
+        self.assertEqual("source.gisogd.func_zones", result["ogdLayer"])
+        self.assertAlmostEqual(107, result["ogdPoint"][0], delta=15)
+        self.assertEqual("NAME", result["field"])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for pages adapter")
+    def test_pages_adapter_accepts_geojson_and_rejects_zip(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+global.window = global;
+window.location = {href: 'https://example.test/'};
+window.fetch = async () => new Response('{}', {status: 200});
+window.addEventListener = () => {};
+global.document = {addEventListener: () => {}, getElementById: () => null,
+  querySelectorAll: () => [], querySelector: () => null,
+  head: {appendChild: () => {}}, createElement: () => ({})};
+global.localStorage = {getItem: () => null, setItem: () => {}, removeItem: () => {}};
+global.GRADO_PAGES_CORE = require(process.argv[1]);
+require(process.argv[2]);
+(async () => {
+  const payload = {type:'FeatureCollection',features:[{type:'Feature',
+    properties:{name:'Слой'},geometry:{type:'Point',coordinates:[37.62,55.75]}}]};
+  const good = await window.fetch('/api/import-gisogd', {method:'POST',
+    headers:{'X-Grado-Filename':encodeURIComponent('opory.geojson')},
+    body:JSON.stringify(payload)});
+  const goodBody = await good.json();
+  const zip = await window.fetch('/api/import-gisogd', {method:'POST',
+    headers:{'X-Grado-Filename':'export.zip'},body:'PK'});
+  const badCrs = await window.fetch('/api/import-gisogd', {method:'POST',
+    headers:{'X-Grado-Filename':'bad.geojson'},body:JSON.stringify({
+      type:'FeatureCollection',features:[{type:'Feature',properties:{},
+      geometry:{type:'Point',coordinates:[4187000,7509000]}}]})});
+  const wrongMethod = await window.fetch('/api/import-gisogd');
+  process.stdout.write(JSON.stringify({good:good.status,count:goodBody.features.length,
+    kind:goodBody.features[0].kind,zip:zip.status,badCrs:badCrs.status,
+    wrongMethod:wrongMethod.status}));
+})();
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "apps/studio/web/pages-adapter.js")],
+            check=True, capture_output=True, text=True,
+        )
+        self.assertEqual(
+            {"good": 200, "count": 1, "kind": "generic", "zip": 415,
+             "badCrs": 400, "wrongMethod": 405},
+            json.loads(completed.stdout),
+        )
+
     def test_command_palette_matches_web_and_current_ui_availability(self):
         root = Path(__file__).parents[3]
         source = (root / "apps/studio/web/redesign/cmdk.js").read_text(
