@@ -138,6 +138,15 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn("if (boxes.length > 4)", app)
         self.assertIn("fitBox(b.minx, b.miny, b.maxx, b.maxy)", app)
 
+    def test_default_boundary_stroke_tracks_canvas_theme(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+
+        self.assertIn("function canvasStrokeOf(f, st)", app)
+        self.assertIn('styleId === "boundary.line"', app)
+        self.assertIn('return cvColor("boundary", st.stroke || "#1c1c1a")', app)
+        self.assertIn("ctx.strokeStyle = canvasStrokeOf(f, st)", app)
+
     def test_ui_copy_uses_normal_project_names_and_russian_plurals(self):
         root = Path(__file__).parents[3]
         app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
