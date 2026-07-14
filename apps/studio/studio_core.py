@@ -2280,12 +2280,18 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
 
 def redline_stations(line, radius, step):
     """Пикетаж вдоль красной линии (по сопряжённой кривой, если задан R)."""
+    radius = float(radius)
+    step = float(step)
+    if not math.isfinite(radius) or radius < 0 or radius > 500:
+        raise ValueError("radius must be between 0 and 500")
+    if not math.isfinite(step) or step <= 0 or step > 500:
+        raise ValueError("station step must be between 0 and 500")
     pts = [tuple(p) for p in line]
-    path = (GPath.fillet_polyline(pts, float(radius))
-            if radius and float(radius) > 0 and len(pts) >= 3
+    path = (GPath.fillet_polyline(pts, radius)
+            if radius > 0 and len(pts) >= 3
             else GPath.polyline(pts))
     out = []
-    for s, pt in path.stations(float(step)):
+    for s, pt in path.stations(step):
         _, tangent = path.point_at_station(s)
         out.append({"s": round(s, 3), "x": pt[0], "y": pt[1],
                     "a": round(tangent, 6)})
@@ -2325,11 +2331,17 @@ def redline_offset(line, radius, dist):
 
     dist > 0 — влево по ходу линии. Возвращает полилинию в тех же
     локальных координатах; сопряжение уже вшито в геометрию."""
+    radius = float(radius)
+    dist = float(dist)
+    if not math.isfinite(radius) or radius < 0 or radius > 500:
+        raise ValueError("radius must be between 0 and 500")
+    if not math.isfinite(dist) or dist == 0 or abs(dist) > 200:
+        raise ValueError("offset distance must be between -200 and 200")
     pts = [tuple(p) for p in line]
-    path = (GPath.fillet_polyline(pts, float(radius))
-            if radius and float(radius) > 0 and len(pts) >= 3
+    path = (GPath.fillet_polyline(pts, radius)
+            if radius > 0 and len(pts) >= 3
             else GPath.polyline(pts))
-    return [list(p) for p in path.offset(float(dist)).linearize(0.05)]
+    return [list(p) for p in path.offset(dist).linearize(0.05)]
 
 
 def make_buffer(features, dist, fillet=0.0, sides="both"):
@@ -2343,9 +2355,13 @@ def make_buffer(features, dist, fillet=0.0, sides="both"):
     import math
     out = []
     d = float(dist)
-    if d == 0:
-        return out
+    if not math.isfinite(d) or d <= 0 or d > 2000:
+        raise ValueError("buffer distance must be between 0 and 2000")
     fil = float(fillet or 0)
+    if not math.isfinite(fil) or fil < 0 or fil > 2000:
+        raise ValueError("buffer fillet must be between 0 and 2000")
+    if sides not in {"both", "left", "right", "outer", "inner"}:
+        raise ValueError("unsupported buffer side")
 
     for f in features or []:
         props = dict(f.get("props") or {})

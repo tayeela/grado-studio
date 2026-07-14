@@ -168,6 +168,7 @@ class TestPackagingResources(unittest.TestCase):
         style = (web / "app-style-ui.js").read_text(encoding="utf-8")
         a11y = (web / "redesign/a11y.js").read_text(encoding="utf-8")
         css = (web / "redesign/studio2.css").read_text(encoding="utf-8")
+        html = (web / "index.html").read_text(encoding="utf-8")
 
         self.assertIn("const popupTriggerFor = element =>", a11y)
         self.assertIn("previousFocus.set(overlay, focusReturnTarget(source))", a11y)
@@ -177,12 +178,24 @@ class TestPackagingResources(unittest.TestCase):
         self.assertIn('id="tep-form-error" role="alert" hidden', app)
         self.assertIn('invalid.setAttribute("aria-invalid", "true")', app)
         self.assertIn('.modal-overlay [aria-invalid="true"]', css)
+        self.assertIn('#props-body [aria-invalid="true"]', css)
+        self.assertIn('id="panel-resizer" title="Перетащите — ширина инспектора" data-no-tooltip', html)
         self.assertIn("function boundedNumber(value, minimum, maximum, fallback)", app)
         self.assertIn('boundedNumber($("fmt-width").value, 0.2, 8, 1)', style)
         self.assertIn('boundedNumber($("lib-mperiod").value, 6, 200, 40)', style)
         self.assertIn('id="style-form-error" role="alert" hidden', style)
         self.assertIn("const validateSingleStyle = () =>", style)
         self.assertIn('if (mode === "single" && !validateSingleStyle()) return', style)
+        self.assertIn('const validateRules = () =>', style)
+        self.assertIn('if (mode === "rules" && !validateRules()) return', style)
+        self.assertIn('overlay.querySelectorAll(".cr-op").forEach', style)
+        self.assertIn('class="layer-select" aria-pressed=', app)
+        self.assertIn('const selectButton = row.querySelector(".layer-select")', app)
+        self.assertIn('event.key !== "Enter" && event.key !== " "', app)
+        self.assertIn('freshButton.focus({ preventScroll: true })', app)
+        self.assertIn('.layer-row:focus-within .lrow-menu', css)
+        self.assertIn('function validatePropertyNumber(input, label)', app)
+        self.assertIn('if (!validatePropertyNumber(distanceInput, "Офсет")) return false', app)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine bounds")
     def test_browser_tep_rejects_values_outside_moscow_preset(self):
@@ -216,6 +229,27 @@ process.stdout.write(JSON.stringify({
         self.assertIn("place-items:center", styles)
         self.assertIn("transform:translateY(-50%)", styles)
         self.assertIn(".modal-head .modal-x:focus-visible", styles)
+
+    def test_user_style_and_property_values_are_bounded_and_escaped(self):
+        root = Path(__file__).parents[3]
+        app = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
+        style_ui = (root / "apps/studio/web/app-style-ui.js").read_text(
+            encoding="utf-8")
+
+        self.assertIn('value="${escHtml(val)}"', app)
+        self.assertIn('/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(cleanId)', app)
+        self.assertIn('value="${escHtml(st.title || id)}"', app)
+        self.assertIn('boundedNumber(st.width, 0.2, 8, 1.5)', app)
+        self.assertIn('id="ps-error" role="alert" hidden', app)
+        self.assertIn('<span id="project-style-edit-title">', app)
+        self.assertIn('boundedNumber(f.props._offdist, 0.5, 200, 15)', app)
+        self.assertIn('typeof c !== "string"', style_ui)
+        self.assertIn('const hex = normHex(c)', style_ui)
+        self.assertIn('<optgroup label="${escHtml(g)}">', style_ui)
+        self.assertIn('<option value="${escHtml(sid)}"', style_ui)
+        self.assertIn('>${escHtml(title)}</option>', style_ui)
+        self.assertIn('boundedNumber(cur.width, 0.2, 8, 1)', style_ui)
+        self.assertIn('Array.isArray(dash) ? dash.join(",")', app)
 
     def test_panel_close_is_only_visible_in_compact_drawer(self):
         root = Path(__file__).parents[3]

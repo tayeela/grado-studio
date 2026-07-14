@@ -138,6 +138,11 @@ class BadRequest(ValueError):
     """Запрос клиента нельзя разобрать или он не соответствует API-контракту."""
 
 
+def _reject_json_constant(token):
+    """Python json принимает NaN/Infinity, хотя это не JSON и ломает геометрию."""
+    raise BadRequest(f"non-finite JSON number: {token}")
+
+
 def _autosave_backup_path(path, index):
     return path.with_name(f"{path.stem}.{index}{path.suffix}")
 
@@ -368,7 +373,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             raw = self.rfile.read(n)
             if len(raw) != n:
                 raise BadRequest("incomplete request body")
-            data = json.loads(raw.decode("utf-8"))
+            data = json.loads(raw.decode("utf-8"),
+                              parse_constant=_reject_json_constant)
             if not isinstance(data, dict):
                 raise BadRequest("JSON body must be an object")
             source = data.get("grado_source", "nspd")
@@ -400,6 +406,9 @@ class BridgeHandler(BaseHTTPRequestHandler):
 class V6Server(ThreadingHTTPServer):
     # Safari резолвит localhost в ::1 — слушаем оба loopback-стека
     address_family = socket.AF_INET6
+    # Долгий внешний импорт/рендер не должен удерживать процесс после того,
+    # как пользователь закрыл настольное приложение.
+    daemon_threads = True
 
 
 PROJ_STATE_RE = re.compile(r"^/api/projects/([a-z0-9]{12})/state$")
@@ -520,7 +529,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _json_body(self):
         try:
-            payload = json.loads(self._read_body(MAX_JSON_BODY).decode("utf-8"))
+            payload = json.loads(
+                self._read_body(MAX_JSON_BODY).decode("utf-8"),
+                parse_constant=_reject_json_constant)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise BadRequest("invalid JSON body") from exc
         if not isinstance(payload, dict):

@@ -325,6 +325,20 @@ class TestStudioCore(unittest.TestCase):
         # check props carry over
         self.assertIn("_buffer_dist", lines[0].get("props", {}))
 
+    def test_geometry_generators_reject_unsafe_numeric_parameters(self):
+        line = [[0, 0], [100, 0], [100, 100]]
+        for step in (0, -1, 501, float("nan")):
+            with self.subTest(station_step=step), self.assertRaises(ValueError):
+                studio_core.redline_stations(line, 0, step)
+        for dist in (0, 201, -201, float("inf")):
+            with self.subTest(offset=dist), self.assertRaises(ValueError):
+                studio_core.redline_offset(line, 0, dist)
+        for dist in (0, -1, 2001, float("nan")):
+            with self.subTest(buffer=dist), self.assertRaises(ValueError):
+                studio_core.make_buffer([], dist)
+        with self.assertRaises(ValueError):
+            studio_core.make_buffer([], 10, sides="diagonal")
+
     def test_arc_trim_preserve(self):
         """Тест логики: arc features сохраняют параметры после roundtrip (trim симулируется в UI, здесь проверка roundtrip)."""
         arc_feat = [{

@@ -260,6 +260,7 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual("GRADO-Studio", handler.version_string())
         self.assertGreater(server.REQUEST_TIMEOUT, 0)
         self.assertLessEqual(server.REQUEST_TIMEOUT, 120)
+        self.assertTrue(server.V6Server.daemon_threads)
 
     def test_request_body_limit_rejects_oversized_upload(self):
         handler = object.__new__(server.Handler)
@@ -407,6 +408,28 @@ class ReleaseManifestTests(unittest.TestCase):
             malformed._json_body()
         with self.assertRaises(server.BadRequest):
             array_body._json_body()
+
+    def test_json_body_rejects_non_finite_numbers(self):
+        for token in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(token=token):
+                handler = self.api_handler(
+                    "/api/tep", b'{"features":[],"params":{"value":' + token + b"}}")
+                with self.assertRaises(server.BadRequest):
+                    handler._json_body()
+
+    def test_geometry_api_rejects_ranges_that_can_hang_or_corrupt_output(self):
+        cases = (
+            ("/api/redline-stations", {"features": [], "line": [[0, 0], [10, 0]], "step": 0}),
+            ("/api/redline-offset", {"features": [], "line": [[0, 0], [10, 0]], "dist": 201}),
+            ("/api/buffer", {"features": [], "dist": 2001}),
+            ("/api/buffer", {"features": [], "dist": 10, "sides": "diagonal"}),
+        )
+        for path, payload in cases:
+            with self.subTest(path=path, payload=payload):
+                handler = self.api_handler(path, json.dumps(payload).encode())
+                handler.do_POST()
+                handler._json.assert_called_once_with(
+                    {"error": "invalid request body"}, 400)
 
     def test_api_reports_bad_json_as_400_json(self):
         handler = self.api_handler("/api/tep", b'{"features": [')
