@@ -87,7 +87,7 @@ function cmykToHex(c, m, y, k) {
 }
 // host — контейнер; onChange(hex) при смене. Возвращает {get,set,close}.
 function makeColorField(host, initial, onChange) {
-  let value = normHex(initial) || "#888888", pop = null, onDoc = null, onViewport = null;
+  let value = normHex(initial) || "#888888", pop = null, onDoc = null, onViewport = null, onScroll = null;
   host.classList.add("cfield");
   host.innerHTML = `<button type="button" class="cfield-btn" aria-label="Открыть палитру цвета">
     <span class="cfield-sw"></span><span class="cfield-action">Палитра</span><span class="cfield-hex"></span>
@@ -107,6 +107,7 @@ function makeColorField(host, initial, onChange) {
     if (!pop) return;
     const [c, m, y, k] = hexToCmyk(value);
     pop.querySelector(".cf-hexin").value = value;
+    pop.querySelector(".cf-native").value = value;
     for (const [key, v] of [["c", c], ["m", m], ["y", y], ["k", k]])
       pop.querySelector(`[data-k="${key}"]`).value = v;
     pop.querySelectorAll(".cf-swatch").forEach(s =>
@@ -117,7 +118,7 @@ function makeColorField(host, initial, onChange) {
     pop.remove(); pop = null; btn.classList.remove("open");
     document.removeEventListener("mousedown", onDoc, true);
     window.removeEventListener("resize", onViewport);
-    window.removeEventListener("scroll", onViewport, true);
+    window.removeEventListener("scroll", onScroll, true);
   }
   function open() {
     if (pop) { close(); return; }
@@ -125,7 +126,7 @@ function makeColorField(host, initial, onChange) {
     pop.className = "cfield-pop";
     pop.innerHTML = `<div class="cf-grid">${COLOR_PALETTE.map(([n, h]) =>
       `<button type="button" class="cf-swatch" data-hex="${h}" title="${n}" style="background:${h}"></button>`).join("")}</div>
-      <label class="cf-row cf-hex-row"><span>HEX</span><input class="cf-hexin" type="text" maxlength="7" spellcheck="false"></label>
+      <label class="cf-row cf-hex-row"><span>HEX</span><input class="cf-hexin" type="text" maxlength="7" spellcheck="false"><input class="cf-native" type="color" aria-label="Выбрать любой цвет из спектра" title="Спектр — любой цвет"></label>
       <div class="cf-cmyk"><span>CMYK</span>
         <label>C<input type="number" data-k="c" min="0" max="100" title="Cyan"></label>
         <label>M<input type="number" data-k="m" min="0" max="100" title="Magenta"></label>
@@ -134,11 +135,14 @@ function makeColorField(host, initial, onChange) {
     pop.classList.add("cfield-pop-portal");
     document.body.appendChild(pop);
     btn.classList.add("open");
+    // клик по образцу НЕ закрывает поповер — даём посмотреть цвет на объекте,
+    // сравнить образцы и подстроить; закрытие по клику вне поля (см. onDoc ниже)
     pop.querySelectorAll(".cf-swatch").forEach(s =>
-      s.addEventListener("click", () => { setValue(s.dataset.hex); close(); }));
+      s.addEventListener("click", () => setValue(s.dataset.hex)));
     pop.querySelector(".cf-hexin").addEventListener("input", e => {
       const h = normHex(e.target.value); if (h) setValue(h);
     });
+    pop.querySelector(".cf-native").addEventListener("input", e => setValue(e.target.value));
     pop.querySelectorAll(".cf-cmyk input").forEach(inp =>
       inp.addEventListener("input", () => {
         const g = key => Math.max(0, Math.min(100, +pop.querySelector(`[data-k="${key}"]`).value || 0));
@@ -160,10 +164,13 @@ function makeColorField(host, initial, onChange) {
     // Регистрируем сразу: открывающий mousedown кнопки уже прошёл (open() —
     // из обработчика click), поэтому само-закрытия не будет.
     onDoc = e => { if (!host.contains(e.target) && !(pop && pop.contains(e.target))) close(); };
+    // прокрутка не закрывает выбор цвета, а держит поповер у кнопки; закрывает
+    // только смена размера окна (там раскладка меняется сильнее)
     onViewport = () => close();
+    onScroll = () => positionPop();
     document.addEventListener("mousedown", onDoc, true);
     window.addEventListener("resize", onViewport);
-    window.addEventListener("scroll", onViewport, true);
+    window.addEventListener("scroll", onScroll, true);
   }
   btn.addEventListener("click", e => { e.preventDefault(); open(); });
   paint();
