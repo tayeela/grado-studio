@@ -157,6 +157,9 @@ class TestPackagingResources(unittest.TestCase):
         self.assertRegex(shell, r"\.statusbar\{[\s\S]*?white-space:nowrap;overflow:hidden")
         self.assertRegex(shell, r"\.statusbar \.st-active\{[\s\S]*?text-overflow:ellipsis")
         self.assertIn(".statusbar .push{flex:1;min-width:0}", shell)
+        self.assertIn("#stage{flex:1 1 0;position:relative;min-width:0;min-height:0;overflow:hidden;container-type:inline-size}", shell)
+        self.assertIn("@container (max-width:680px)", shell)
+        self.assertIn("#st-coords,#st-grid,#st-snap{display:none!important}", shell)
 
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
