@@ -45,6 +45,7 @@ PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.j
 
 # --- единая библиотека стилей (styles/default.json): холст + PDF + DXF ------
 from grado_render import merged_library  # noqa: E402
+from grado_render import load_library  # noqa: E402
 from grado_render import style as _render_style  # noqa: E402
 import json as _json  # noqa: E402
 
@@ -1662,6 +1663,37 @@ def _gisogd_is_restrict(member):
     return any(any(k in low for k in keys) for keys, _ in _GISOGD_STYLE_RULES)
 
 
+# Имя функциональной зоны Генплана → знак из moscow_genplan.json. Ключ — само имя
+# зоны в нижнем регистре (в QML категории заданы именно по имени: поля name /
+# fz_name / fztype / naimfunkzo у разных документов). Строится из библиотеки,
+# чтобы не дублировать таблицу цветов: источник правды — tools/gen_moscow_genplan.py.
+_GP_ZONE_STYLE = {s["gp_zone"].lower(): sid
+                  for sid, s in STYLE_LIB["styles"].items() if s.get("gp_zone")}
+# Числовой код типа зоны → имя зоны (из ФЗ ГП Троицк, где категории заданы полем
+# fztype=100/200/…, а имя есть только в подписи). Есть документы, где в данных
+# лежит код, а не название.
+_GP_FZ_CODE = {str(k): v for k, v in
+               (load_library("moscow_genplan").get("fz_code") or {}).items()}
+
+
+def gp_style_for_zone(name):
+    """Имя ИЛИ числовой код функциональной зоны → style_id знака Генплана.
+
+    Совпадение ТОЧНОЕ (с приведением регистра), по подстроке гадать нельзя:
+    «природно-жилая зона» содержит «жилая зона» и увела бы объект в чужой знак.
+    Слои ТиНАО названы ровно типом зоны («Жилая зона»), у старой Москвы имя —
+    в naimfunkzony, у Троицка вместо имени числовой код."""
+    if name in (None, ""):
+        return None
+    key = str(name).strip()
+    sid = _GP_ZONE_STYLE.get(key.lower())
+    if sid:
+        return sid
+    code = key.split(".")[0]             # «100» и «100.0» из числовых полей
+    zone = _GP_FZ_CODE.get(code)
+    return _GP_ZONE_STYLE.get(zone.lower()) if zone else None
+
+
 def _zouit_layer_id(style_id):
     """Знак ЛГР → СВОЙ слой ЗОУИТ: lgr.vodookhr → source.gisogd.zouit.vodookhr."""
     return "source.gisogd.zouit." + style_id[len("lgr."):]
@@ -1806,6 +1838,17 @@ def _gisogd_process(conn, result):
         if kind in ("zone", "restrict"):
             # точный знак Эталона ЛГР по имени члена архива (per-object)
             style_id = _gisogd_style_for(member)
+            if style_id is None and kind == "zone":
+                # функциональная зона Генплана → знак по ИМЕНИ зоны. Имя лежит в
+                # разных полях у разных документов (name / fz_name / naimfunkzo /
+                # funct_zon), а у слоёв ТиНАО зона названа самим слоем — отсюда
+                # member в конце. fztype НЕ берём: там числовой код (100/200/300),
+                # а не имя. Первое совпадение выигрывает.
+                for cand in (name, raw.get("fz_name"), raw.get("naimfunkzo"),
+                             raw.get("funct_zon"), member):
+                    style_id = gp_style_for_zone(cand)
+                    if style_id:
+                        break
             style_title = STYLE_LIB["styles"][style_id]["title"] if style_id else None
             emitted = 0
             for i, part in enumerate(p for p in parts if "ring" in p):
@@ -1954,7 +1997,8 @@ def _extent_spec(key):
         kind, layer_id = "generic", "source.gisogd.other"
     spec = {"conn": "gisogd", "codes": {code: name}, "kind": kind,
             "layer_id": layer_id, "title": name}
-    style_id = _gisogd_style_for(name)
+    style_id = _gisogd_style_for(name) or (gp_style_for_zone(name)
+                                           if kind == "zone" else None)
     if style_id:
         spec["style_id"] = style_id
     return spec
@@ -2269,9 +2313,23 @@ def fetch_extent(bbox, sources):
             # стабильный ключ источника → фронт дедуплицирует повторную
             # выгрузку той же территории (не плодит дубликаты)
             key = f.get("grado_key")
+            # знак объекта: явный из спецификации набора (кураторские слои ОГД
+            # несут style_id, напр. lgr.vodookhr), иначе для функциональных зон —
+            # знак Генплана по имени/коду зоны. Прежде style_id из спецификации
+            # НЕ доходил до объектов вовсе: поле было заведено и не применялось,
+            # поэтому зоны рисовались общим стилем слоя.
+            sid = spec.get("style_id")
+            if not sid and spec["kind"] == "zone":
+                for cand in (props.get("zone_title"), props.get("fz_type"),
+                             spec.get("title")):
+                    sid = gp_style_for_zone(cand)
+                    if sid:
+                        break
             for i, part in enumerate(_wgs_geom_to_canvas(geom)):
                 feat = {"kind": spec["kind"], "layer_id": spec["layer_id"],
                         **part, "props": dict(props), "prov": dict(prov)}
+                if sid:
+                    feat["style_id"] = sid
                 if key is not None:
                     feat["srcKey"] = f"{spec['layer_id']}:{key}#{i}"
                 g["features"].append(feat)

@@ -1530,3 +1530,32 @@ class TestFetchExtent(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGenplanZoneStyle(unittest.TestCase):
+    """Функциональная зона Генплана → знак по имени или числовому коду."""
+
+    def test_by_zone_name(self):
+        self.assertEqual(studio_core.gp_style_for_zone("Жилая зона"), "gp.zhilaya_zona")
+        self.assertEqual(studio_core.gp_style_for_zone("жилая зона"), "gp.zhilaya_zona")
+
+    def test_substring_does_not_leak(self):
+        # «природно-жилая зона» СОДЕРЖИТ «жилая зона» — совпадение обязано быть
+        # точным, иначе объект уедет в чужой знак
+        self.assertEqual(studio_core.gp_style_for_zone("природно-жилая зона"),
+                         "gp.prirodno_zhilaya_zona")
+
+    def test_by_numeric_code(self):
+        # ФЗ ГП Троицк: в данных лежит код fztype, а не имя зоны
+        self.assertEqual(studio_core.gp_style_for_zone(100), "gp.obschestvennaya_zona")
+        self.assertEqual(studio_core.gp_style_for_zone("200.0"), "gp.zhilaya_zona")
+
+    def test_moscow_long_data_value(self):
+        self.assertEqual(
+            studio_core.gp_style_for_zone(
+                "специализированные административно-деловые общественные зоны"),
+            "gp.msk.administrativno_delovye")
+
+    def test_unknown_and_empty(self):
+        for v in (None, "", "чепуха", "  "):
+            self.assertIsNone(studio_core.gp_style_for_zone(v), repr(v))

@@ -311,6 +311,54 @@ class TestStyleSet(unittest.TestCase):
         self.assertLess(s.resolve("tp.func_zone").z, s.resolve("pp.red_line").z)
 
 
+class TestMoscowGenplanLibrary(unittest.TestCase):
+    """Функциональные зоны Генплана (moscow_genplan.json), источник — QML Москвы."""
+
+    def setUp(self):
+        from grado_render import load_library, merged_library
+        self.lib = load_library("moscow_genplan")
+        self.merged = merged_library()["styles"]
+        self.by_zone = {s["gp_zone"]: s for s in self.lib["styles"].values()
+                        if s.get("gp_zone")}
+
+    def test_base_palette_is_saturated(self):
+        # выбор юзера: насыщенная палитра (Некрасовка = Щербинка), не пастель
+        # Новой Москвы (#fcc2c2/#faedbb) и не оттенки Троицка (#f76767/#f3d357)
+        self.assertEqual(self.by_zone["общественная зона"]["fill"], "#ff6666")
+        self.assertEqual(self.by_zone["жилая зона"]["fill"], "#ffdd55")
+        self.assertEqual(self.by_zone["природная зона"]["fill"], "#77cc99")
+        self.assertEqual(self.by_zone["производственная зона"]["fill"], "#bbbbee")
+
+    def test_fill_is_solid_opaque(self):
+        # решение юзера: заливка сплошная и непрозрачная, как в QML
+        for sid, s in self.lib["styles"].items():
+            self.assertIsNone(s.get("fill_opacity"), f"{sid} — заливка без прозрачности")
+            self.assertFalse(s["hatch"], f"{sid} — зона заливается, а не штрихуется")
+
+    def test_moscow_keys_are_data_values_not_labels(self):
+        # У «ФЗ ГП Москва» value (в данных) и label (подпись) РАСХОДЯТСЯ во всех
+        # категориях. Ключ обязан быть по value, иначе знак не найдётся никогда.
+        s = self.merged["gp.msk.administrativno_delovye"]
+        self.assertEqual(s["gp_zone"],
+                         "специализированные административно-деловые общественные зоны")
+        self.assertEqual(s["title"], "Административно-деловые")
+
+    def test_zone_codes_from_troitsk(self):
+        # ФЗ ГП Троицк задаёт категории числовым кодом fztype, имя — в подписи
+        self.assertEqual(self.lib["fz_code"]["100"], "общественная зона")
+        self.assertEqual(self.lib["fz_code"]["400"], "природная зона")
+        for zone in self.lib["fz_code"].values():
+            self.assertIn(zone, self.by_zone, f"код указывает на зону без знака: {zone}")
+
+    def test_merged_into_library_without_collision(self):
+        # два классификатора (базовый и московский) живут в одной библиотеке
+        self.assertIn("gp.zhilaya_zona", self.merged)
+        self.assertIn("gp.msk.promyshlennye_zony", self.merged)
+        self.assertIn("lgr.vodookhr", self.merged, "знаки ЛГР на месте")
+        zones = [s["gp_zone"] for s in self.lib["styles"].values() if s.get("gp_zone")]
+        self.assertEqual(len(zones), len(set(zones)), "имя зоны не должно дублироваться")
+
+
 class TestMoscowLgrLibrary(unittest.TestCase):
     """Системная библиотека Эталона ЛГР (приказ ММА от 10.03.2025 № 65).
 
