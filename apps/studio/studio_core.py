@@ -1662,12 +1662,35 @@ def _gisogd_is_restrict(member):
     return any(any(k in low for k in keys) for keys, _ in _GISOGD_STYLE_RULES)
 
 
+def _zouit_layer_id(style_id):
+    """Знак ЛГР → СВОЙ слой ЗОУИТ: lgr.vodookhr → source.gisogd.zouit.vodookhr."""
+    return "source.gisogd.zouit." + style_id[len("lgr."):]
+
+
+# Каждый РАСПОЗНАННЫЙ знак ЛГР получает собственный слой, а не сваливается в общий
+# «ГИС ОГД: зоны с особыми условиями». Прежде водоохранные, СЗЗ, пояса санохраны и
+# ООПТ жили в ОДНОМ слое: их нельзя было отключить по отдельности, оформить или
+# посчитать — хотя знак у каждого свой. Слои заводятся здесь (после
+# _GISOGD_STYLE_RULES), название — из заголовка знака в библиотеке ЛГР.
+# _CODE_TO_LAYER считается выше и берёт только project.* — эти записи его не задевают.
+for _keys, _sid in _GISOGD_STYLE_RULES:
+    _lid = _zouit_layer_id(_sid)
+    if _lid not in LAYER_TEMPLATES:
+        _title = (STYLE_LIB["styles"].get(_sid) or {}).get("title", _sid)
+        LAYER_TEMPLATES[_lid] = {"code": "terr.restrict", "stage": "existing",
+                                 "source_kind": "gisogd", "style_id": _sid,
+                                 "title": f"ГИС ОГД: {_title}"}
+
+
 def _gisogd_route(member):
     low = member.lower()
     for keys, kind, layer_id in _GISOGD_LAYER_RULES:
         if any(k in low for k in keys):
             return kind, layer_id
-    if _gisogd_is_restrict(member):
+    style_id = _gisogd_style_for(member)
+    if style_id:                         # знак опознан → свой слой этого знака
+        return "restrict", _zouit_layer_id(style_id)
+    if _gisogd_is_restrict(member):      # общий ЗОУИТ-термин без точного знака
         return "restrict", "source.gisogd.restrict"
     return None, None
 

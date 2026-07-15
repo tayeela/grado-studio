@@ -5,6 +5,21 @@
 # (М 1:2000). Приоритеты наложения — приложение 2 к Эталону (1 высший).
 import json
 
+# Миллиметры листа → пиксели холста. ОДИН множитель на всю библиотеку.
+# 96 dpi / 25.4 = 3.7795 px на мм — ровно та же величина, по которой считается
+# подпись масштабной линейки в app.js (denom = mpp * 3779.5), поэтому знак на
+# холсте совпадает с листом М 1:2000.
+#
+# Раньше здесь было ЧЕТЫРЕ разных множителя: ширина ×3.2, штрих ×2, засечки ×2,
+# штриховка ×3.75. Штрихи и засечки выходили 47% от должного размера — отсюда
+# «мелкие, не читаются». Обратный пересчёт (canvasStyleToBackend в app.js) делил
+# на 2, из-за чего round-trip портил ширину (1.0 мм → 3.2 px → 1.6 мм).
+MM_PX = 96 / 25.4
+
+
+def to_px(mm):
+    return round(mm * MM_PX, 2)
+
 # приоритет визуального отображения при наложении (прил. 2): код ЛГР → 1..27
 PRIORITY = {13: 1, 59: 2, 60: 3, 15: 4, 14: 5, 61: 6, 19: 7, 8: 8, 55: 9,
             18: 10, 17: 11, 16: 12, 41: 13, 6: 14, 1: 15, 4: 16, 21: 17,
@@ -60,10 +75,20 @@ MARKERS = {
     9: ("tick", 10.0, 0.25),        # QML line 0.5 м, не square
     20: ("tick", 10.0, 1.0),        # QML line marker (одиночная линия, не двойная)
 }
-# направление засечки-остриё: по умолчанию ВНУТРЬ зоны, но у части знаков
-# Эталон рисует остриё НАРУЖУ (образцы-«коробки» осн. таблицы, маркеры от центра):
-# 8 ООПТ, 11 ландшафт ОКН, 16 водоохранная, 17 прибрежная, 18 ПК.
-OUTWARD = {8, 11, 17, 18}   # 16 водоохранная — галки развёрнуты внутрь (правка юзера)
+# направление засечки-остриё: по умолчанию ВНУТРЬ зоны, «наружу» — OUTWARD,
+# по ОБЕ стороны линии — BOTH.
+#
+# Сверено с QML поштучно (spritlines, угол под-маркера в MarkerLine):
+#   16 водоохранная  arrowhead@270  ─┐ углы ОДИНАКОВЫ → и направление одинаково.
+#   17 прибрежная    arrowhead@270  ─┘ Прежде 16 стоял «внутрь», 17 «наружу» —
+#      знаки-близнецы смотрели в разные стороны. Пометка «16 галки внутрь
+#      (правка юзера)» снята по прямому указанию юзера «не в ту сторону».
+OUTWARD = {8, 11, 16, 17, 18}
+# QML рисует ДВА под-маркера с углами 0 и 180 в одном MarkerLine — это глифы по
+# ОБЕ стороны линии, а не один. Прежде брался только первый, половина знака
+# терялась: 8 ООПТ (triangle@180+@0), 18 ПК (triangle@0+@180), 55 памятник
+# природы (circle@180+@0).
+BOTH = {8, 18, 55}
 # Толщина линии — по рабочим QML Москвы (spritlines_2022...): 1.0 мм у ВСЕХ
 # знаков ЛГР (line_width_unit=MM, Option==prop). Перекрывает прежние значения
 # по выноскам скана приказа №65 (0.50/0.62/0.75) — источник линий = QML.
@@ -269,7 +294,7 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
     # именованный стиль строки, если кода нет в QML-словаре
     if code in DASH_QML:
         dash_mm = DASH_QML[code]
-        dash_px = [round(x * 2, 1) for x in dash_mm] if dash_mm else None
+        dash_px = [to_px(x) for x in dash_mm] if dash_mm else None
     else:
         dash_px, dash_mm = DASH[line]
     prio = PRIORITY.get(code)
@@ -282,7 +307,7 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
         "lgr_priority": prio,
         "fill": None,
         "stroke": STROKE_QML.get(code, line_color),
-        "width_mm": w_mm, "width_px": round(w_mm * 3.2, 2),
+        "width_mm": w_mm, "width_px": to_px(w_mm),
         "dash_mm": dash_mm, "dash_px": dash_px,
         "line_label": label,
         "label_field": None, "marker_mm": 1.2,
@@ -295,12 +320,13 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
         shape, period, size = MARKERS[code]
         entry["line_marker"] = {"shape": shape, "period_mm": period,
                                 "size_mm": size,
-                                "period_px": round(period * 2, 1),
-                                "size_px": round(size * 2, 1),
-                                "dir": "out" if code in OUTWARD else "in"}
+                                "period_px": to_px(period),
+                                "size_px": to_px(size),
+                                "dir": ("both" if code in BOTH else
+                                        "out" if code in OUTWARD else "in")}
     if code in DOUBLE_MM:
         entry["double_mm"] = DOUBLE_MM[code]
-        entry["double_px"] = round(DOUBLE_MM[code] * 2, 1)
+        entry["double_px"] = to_px(DOUBLE_MM[code])
     if code in SOLID_FILL_QML:
         # QML: сплошная заливка (SimpleFill), а не штриховка — режимы ПК
         entry["fill"] = SOLID_FILL_QML[code]
@@ -309,7 +335,7 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
         # штриховка ровно по рабочим QML (spritzones): цвет/угол/шаг
         hc, ha, hs = HATCH_QML[code]
         entry["hatch"] = {"angle": ha, "cross": False,
-                          "spacing_px": round(hs * 3.75, 1), "spacing_mm": hs,
+                          "spacing_px": to_px(hs), "spacing_mm": hs,
                           "color": hc, "cmyk": cmyk}
     elif angle is not None:
         px, mm = SPACING[density]

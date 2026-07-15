@@ -1137,8 +1137,13 @@ class TestGisogdImport(unittest.TestCase):
         data = self._zip_bytes({"vodoohrannaya_zona_reki.geojson": _ogd_gj(poly)})
         out = studio_core.import_gisogd(data)
         f = out["features"][0]
-        self.assertEqual(f["layer_id"], "source.gisogd.restrict",
-                         "маршрутизация не меняется — тот же слой ЗОУИТ")
+        # Опознанный знак получает СВОЙ слой, а не общий ЗОУИТ: иначе
+        # водоохранные, СЗЗ и пояса санохраны лежали в одном слое и их нельзя
+        # было отключить или оформить по отдельности.
+        self.assertEqual(f["layer_id"], "source.gisogd.zouit.vodookhr")
+        self.assertEqual(
+            studio_core.LAYER_TEMPLATES["source.gisogd.zouit.vodookhr"]["title"],
+            "ГИС ОГД: Водоохранные зоны")
         self.assertEqual(f["style_id"], "lgr.vodookhr")
         self.assertEqual(f["props"]["kind"], "Водоохранные зоны",
                          "название атрибута — из Эталона, не общее «ЗОУИТ»")

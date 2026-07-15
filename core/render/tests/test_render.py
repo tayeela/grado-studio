@@ -444,9 +444,17 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # Величины — в мм ЛИСТА, пересчёт из QML MapUnit (метры местности) на
         # опорный масштаб Эталона М 1:2000: мм = метры / 2.
         # Водоохранная: QML arrowhead interval 20 м / size 3.5 м → ∨1.75/10 мм.
+        # px = мм × 96/25.4 (единый множитель, см. MM_PX в генераторе).
+        # dir=out: в QML у 16 и 17 один и тот же arrowhead@270 — знаки-близнецы
+        # смотрят в одну сторону (прежде 16 стоял «внутрь» и расходился с 17).
         self.assertEqual(by_code[16]["line_marker"],
                          {"shape": "chevron", "period_mm": 10.0, "size_mm": 1.75,
-                          "period_px": 20.0, "size_px": 3.5, "dir": "in"})
+                          "period_px": 37.8, "size_px": 6.61, "dir": "out"})
+        # 8 ООПТ / 18 ПК / 55 памятник природы — в QML ДВА под-маркера (углы 0 и
+        # 180), т.е. глифы по обе стороны линии
+        for c in (8, 18, 55):
+            self.assertEqual(by_code[c]["line_marker"]["dir"], "both",
+                             f"код {c} — засечки по обе стороны (QML: два под-маркера)")
         self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
         self.assertEqual(by_code[13]["line_marker"]["period_mm"], 4.0,
                          "пояс санохраны: QML interval 8 м → 4 мм на 1:2000")
@@ -479,13 +487,14 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         for c in (22, 64, 65, 66):
             self.assertEqual(by_code[c]["line_marker"]["shape"], "tick",
                              f"код {c} затоп/подтоп — перпенд. штрих (QML line)")
-        # направление засечки per-sign (осн. таблица, образцы-коробки):
-        # остриём НАРУЖУ — ООПТ/ландшафт ОКН/водоохранная/прибрежная/ПК
-        for c in (8, 11, 17, 18):
+        # направление засечки per-sign — сверено с углом под-маркера в QML.
+        # остриём НАРУЖУ — ландшафт ОКН / водоохранная / прибрежная
+        # (16 и 17 в QML — один и тот же arrowhead@270, направление общее)
+        for c in (11, 16, 17):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "out",
-                             f"код {c} — засечка остриём наружу зоны (эталон)")
+                             f"код {c} — засечка остриём наружу зоны (QML)")
         # остриём ВНУТРЬ — ООЗТ/геодез/резерв ООПТ/приаэродром./возд.подходы
-        for c in (16, 47, 38, 46, 50, 51):
+        for c in (47, 38, 46, 50, 51):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "in",
                              f"код {c} — засечка остриём внутрь зоны (эталон)")
 
@@ -590,10 +599,10 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(vod["line_label"], "водоохранная")
         self.assertEqual(vod["group"], "ЗОУИТ")
         self.assertEqual(vod["lgr_code"], 16)
-        # px холста = мм листа × 2 (мм пересчитаны из QML MapUnit на 1:2000)
+        # px холста = мм листа × 96/25.4 (мм пересчитаны из QML MapUnit на 1:2000)
         self.assertEqual(vod["line_marker"],
-                         {"shape": "chevron", "period": 20.0, "size": 3.5,
-                          "dir": "in"})
+                         {"shape": "chevron", "period": 37.8, "size": 6.61,
+                          "dir": "out"})
         # код 20 (защитная ОКН) — по QML одиночная линия со штрихами (не двойная)
         self.assertEqual(fs["lgr.okn.zashchit"]["line_marker"]["shape"], "tick")
         self.assertNotIn("double", fs["lgr.okn.zashchit"])

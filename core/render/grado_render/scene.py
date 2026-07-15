@@ -405,13 +405,17 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                         angle=h.get("angle", 45), cross=h.get("cross", False)))
                 if st.line_marker and len(rings[0]) >= 3:
                     # направление засечки по знаку (Эталон): по умолчанию остриём
-                    # ВНУТРЬ зоны, dir=="out" — наружу (ООПТ/ПК/водоохр./прибреж./ландшафт)
+                    # ВНУТРЬ зоны, dir=="out" — наружу (ООПТ/ландшафт ОКН/
+                    # водоохр./прибреж.), dir=="both" — по ОБЕ стороны линии
+                    # (в QML это два под-маркера с углами 0 и 180: 8, 18, 55).
                     d = _inward_sign(rings[0])
-                    if st.line_marker.get("dir") == "out":
-                        d = -d
-                    ops.extend(marker_ops(
-                        rings[0], st.line_marker, st.stroke, width=st.width,
-                        closed=True, inward=d))
+                    dirs = ((d, -d) if st.line_marker.get("dir") == "both"
+                            else (-d,) if st.line_marker.get("dir") == "out"
+                            else (d,))
+                    for side in dirs:
+                        ops.extend(marker_ops(
+                            rings[0], st.line_marker, st.stroke, width=st.width,
+                            closed=True, inward=side))
                 if st.double:
                     ops.append({"op": "path", "closed": True, "fill": None,
                                 "stroke": st.stroke, "width": st.width,
