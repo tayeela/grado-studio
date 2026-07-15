@@ -1559,3 +1559,41 @@ class TestGenplanZoneStyle(unittest.TestCase):
     def test_unknown_and_empty(self):
         for v in (None, "", "чепуха", "  "):
             self.assertIsNone(studio_core.gp_style_for_zone(v), repr(v))
+
+
+class TestGisogdRoutingNames(unittest.TestCase):
+    """Маршрутизация по имени слоя портала: реальные формы имён, не выдуманные."""
+
+    def test_beregovaya_all_forms(self):
+        # QML называет знак «Береговая линия», наш заголовок — «Береговые полосы»,
+        # портал встречает обе формы. Точная подстрока «береговая полоса» не
+        # ловила НИ ОДНУ из них — объект уезжал в «прочие слои».
+        for name in ("Береговая линия", "Береговые линии", "береговая полоса",
+                     "Береговые полосы", "beregovaya_liniya"):
+            self.assertEqual(studio_core._gisogd_route(name)[1],
+                             "source.gisogd.zouit.beregovaya", name)
+
+    def test_yo_does_not_send_to_wrong_sign(self):
+        # «ё» в имени против «е» в правиле: своё правило не срабатывало и объект
+        # молча подхватывало СЛЕДУЮЩЕЕ, более общее — это хуже «прочих».
+        self.assertEqual(studio_core._gisogd_style_for("Жёсткая зона 2 пояса санитарной охраны"),
+                         "lgr.sanokhr.2hard")
+        self.assertEqual(studio_core._gisogd_style_for("СЗЗ (расчётная)"), "lgr.szz.calc")
+
+    def test_plural_does_not_send_to_wrong_sign(self):
+        # «Охранные зоны ООПТ» не ловилось правилом «охранная зона оопт» и
+        # проваливалось в общий знак «ООПТ»
+        self.assertEqual(studio_core._gisogd_style_for("Охранные зоны ООПТ"), "lgr.oopt.okhr")
+        self.assertEqual(studio_core._gisogd_style_for("Защитные зоны ОКН"), "lgr.okn.zashchit")
+
+    def test_every_routed_sign_matches_its_own_title(self):
+        # Общий гейт класса: если у знака ЕСТЬ правило, то его собственный
+        # заголовок обязан ловиться именно им, а не соседним.
+        lgr = {sid: s for sid, s in studio_core.STYLE_LIB["styles"].items()
+               if sid.startswith("lgr.")}
+        routed = {sid for _, sid in studio_core._GISOGD_STYLE_RULES}
+        for sid, s in lgr.items():
+            if sid not in routed:
+                continue
+            self.assertEqual(studio_core._gisogd_style_for(s["title"]), sid,
+                             f"«{s['title']}» ловится чужим правилом")

@@ -1623,23 +1623,27 @@ _GISOGD_STYLE_RULES = [
     (("санитарно-защит", "sanitarno_zash", "сзз"), "lgr.szz.set"),
     (("подтоплен", "podtoplen"), "lgr.podtop.mid"),
     (("затоплен", "zatoplen"), "lgr.zatop"),
-    (("защитная зона окн", "zashitnaya_zona_okn"), "lgr.okn.zashchit"),
-    (("охранная зона окн", "ohrannaya_zona_okn"), "lgr.okn.okhr"),
+    (("защитная зона окн", "защитные зоны окн", "zashitnaya_zona_okn"), "lgr.okn.zashchit"),
+    (("охранная зона окн", "охранные зоны окн", "ohrannaya_zona_okn"), "lgr.okn.okhr"),
     (("регулирования застройки", "regulirovaniya"), "lgr.okn.reg"),
     (("охраняемого природного ландшафта", "landshaft"), "lgr.okn.landshaft"),
-    (("территория окн", "ter_okn", "territoriya_okn"), "lgr.okn.terr"),
-    (("охранная зона оопт", "ohrannaya_zona_oopt"), "lgr.oopt.okhr"),
+    (("территория окн", "территории окн", "ter_okn", "territoriya_okn"), "lgr.okn.terr"),
+    (("охранная зона оопт", "охранные зоны оопт", "ohrannaya_zona_oopt"), "lgr.oopt.okhr"),
     (("оопт", "oopt"), "lgr.oopt"),
     (("лесопарков", "lesopark"), "lgr.lesopark"),
     (("электроэнерг", "лэп", "elektroenerg"), "lgr.energo"),
     (("трубопровод", "truboprovod"), "lgr.truboprovod"),
-    (("теплосет", "teplosetey"), "lgr.teplo"),
+    (("теплосет", "тепловых сет", "teplosetey"), "lgr.teplo"),
     (("связи", "svyazi"), "lgr.svyaz"),
     (("метрополит", "metro"), "lgr.metro"),
     (("железных дорог", "пожд", "zhd_"), "lgr.zhd"),
     (("приаэродром", "priaerodrom"), "lgr.priaero"),
-    (("береговая полоса", "beregovaya"), "lgr.beregovaya"),
-    (("военного объекта", "military"), "lgr.military"),
+    # корень, а не точная форма: в QML знак назван «Береговая линия», у нас
+    # «Береговые полосы», на портале встречается и то и другое во мн. числе.
+    # Точная подстрока «береговая полоса» не ловила НИ ОДНО из реальных имён —
+    # береговая падала в «прочие слои».
+    (("берегов", "beregov"), "lgr.beregovaya"),
+    (("военного объекта", "военных объект", "military"), "lgr.military"),
     (("радиотехническ", "radio"), "lgr.radio"),
     (("технич", "инженерных коммуникаций", "tehnicheskaya_zona"), "lgr.tech.zone"),
 ]
@@ -1648,10 +1652,21 @@ _GISOGD_STYLE_RULES = [
 _GISOGD_RESTRICT_HINTS = ("зоуит", "zouit", "охран", "ohran", "sanit", "санит")
 
 
+def _norm_ru(s):
+    """Имя для сопоставления: регистр + «ё»→«е».
+
+    Правила писались через «е», а заголовки знаков и слои портала встречаются с
+    «ё» — из-за этого объект уезжал в ЧУЖОЙ знак (молча, что хуже «прочих»):
+    «Жёсткая зона 2 пояса» получала знак обычной 2-й зоны, «СЗЗ (расчётная)» —
+    знак установленной СЗЗ, потому что своё правило («жестк», «расчетн») не
+    срабатывало и подхватывало следующее, более общее."""
+    return str(s or "").lower().replace("ё", "е")
+
+
 def _gisogd_style_for(member):
-    low = member.lower()
+    low = _norm_ru(member)
     for keys, style_id in _GISOGD_STYLE_RULES:
-        if any(k in low for k in keys):
+        if any(_norm_ru(k) in low for k in keys):
             return style_id
     return None
 
