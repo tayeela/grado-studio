@@ -38,9 +38,7 @@ const DATA_SOURCE_GROUPS = [
   // ОГД по области: портал не фильтрует по bbox — слой качается целиком один
   // раз в кэш сервера (функц. зоны Москвы ≈15 МБ), дальше режется локально.
   { title: "ГИС ОГД Москвы", hint: "Генплан и ЗОУИТ · первая загрузка слоя дольше",
-    web: false, maxKm2: 80, picker: true,
-    webNote: "В веб-версии слои ОГД по области недоступны — нужна настольная версия",
-    items: [
+    maxKm2: 80, picker: true, items: [
       { key: "gisogd.func_zones", label: "Функц. зоны Генплана (старая Москва)", def: false },
       { key: "gisogd.func_zones_tinao", label: "Функц. зоны (Новая Москва, ТиНАО)", def: false },
       { key: "gisogd.szz", label: "Санитарно-защитные зоны", def: false },
@@ -89,15 +87,31 @@ async function openGisogdPicker(onPick) {
       <button class="ogdc-cancel">Закрыть</button></div></div>`;
   document.body.appendChild(overlay);
   const list = overlay.querySelector("#ogdc-list");
+  // Дерево папок как на портале: путь слоя («Слои / Генплан / …») — это и есть
+  // ветка каталога; последний сегмент — сам слой, его в заголовок папки не берём.
+  const folderOf = l => {
+    const parts = (l.path || "").split(" / ").filter(Boolean);
+    return parts.slice(0, -1).join(" / ") || "Без раздела";
+  };
   const render = q => {
     const low = q.trim().toLowerCase();
-    const hit = (low ? layers.filter(l =>
+    const hit = low ? layers.filter(l =>
       (l.name || "").toLowerCase().includes(low) ||
-      (l.path || "").toLowerCase().includes(low)) : layers).slice(0, 200);
-    list.innerHTML = hit.length ? hit.map(l => `<button class="ogdc-row" data-code="${escHtml(l.code)}"
-      data-name="${escHtml(l.name || l.code)}"><b>${escHtml(l.name || l.code)}</b>
-      <span>${escHtml(l.path || "")}</span></button>`).join("")
-      : `<div class="fc-help">Ничего не найдено</div>`;
+      (l.path || "").toLowerCase().includes(low)) : layers;
+    if (!hit.length) { list.innerHTML = `<div class="fc-help">Ничего не найдено</div>`; return; }
+    const folders = new Map();
+    hit.forEach(l => {
+      const f = folderOf(l);
+      if (!folders.has(f)) folders.set(f, []);
+      folders.get(f).push(l);
+    });
+    // при поиске папки раскрыты (видно, что нашлось), без поиска — свёрнуты
+    const open = !!low;
+    list.innerHTML = [...folders].map(([folder, items]) => `<details class="ogdc-folder"${open ? " open" : ""}>
+      <summary><span class="ogdc-fname">${escHtml(folder)}</span><span class="ogdc-fcount">${items.length}</span></summary>
+      ${items.map(l => `<button class="ogdc-row" data-code="${escHtml(l.code)}"
+        data-name="${escHtml(l.name || l.code)}">${escHtml(l.name || l.code)}</button>`).join("")}
+    </details>`).join("");
   };
   render("");
   overlay.querySelector("#ogdc-q").addEventListener("input", e => render(e.target.value));
