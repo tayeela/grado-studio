@@ -75,12 +75,17 @@ async function openGisogdPicker(onPick) {
   } catch (e) { toast(`Каталог ГИС ОГД недоступен: ${e.message}`, "warn"); return; }
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
+  // шапка и поля — как во всех окнах студии: kicker + название + X, поле во всю
+  // ширину (36px), пояснение под ним; иначе окно выглядит чужим
   overlay.innerHTML = `<div class="modal fmt-modal" role="dialog" aria-modal="true" aria-labelledby="ogdc-title">
-    <div class="modal-head"><span id="ogdc-title">Слои ГИС ОГД</span>
+    <div class="modal-head"><span class="modal-kicker">Каталог портала</span>
+      <span id="ogdc-title">Слои ГИС ОГД</span>
       <button class="modal-x" aria-label="Закрыть каталог слоёв"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
-      <label class="cf-row"><span>Поиск</span><input id="ogdc-q" type="search" placeholder="например, красные линии" autocomplete="off"></label>
-      <div class="fc-help">Всего слоёв на портале: ${layers.length}. Слой ляжет в слой-приёмник по своему названию.</div>
+      <label class="ogdc-search"><span>Поиск слоя</span>
+        <input id="ogdc-q" type="search" placeholder="например, красные линии" autocomplete="off"></label>
+      <p class="ogdc-hint">Всего слоёв на портале — ${layers.length}. Объекты лягут в слой-приёмник
+        по названию слоя, атрибуты сохранятся целиком.</p>
       <div id="ogdc-list" class="ogdc-list"></div>
     </div>
     <div class="modal-actions"><span class="spacer"></span>

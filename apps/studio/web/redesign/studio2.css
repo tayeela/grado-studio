@@ -644,10 +644,21 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .data-ogd-more{height:24px;padding:0 9px;border-radius:var(--r-pill);border:1px solid var(--field-border);
   background:var(--field-bg);color:var(--text-2);font-size:10px;font-weight:560;cursor:pointer;margin-right:6px}
 .data-ogd-more:hover{border-color:var(--accent-line);color:var(--accent)}
+/* шапка/поле/пояснение — по системе окон студии (см. «Новый слой», «Параметры ТЭП») */
+/* width:100%!important — глобальные правила полей модалки перебивают по
+   специфичности и схлопывают search в 22px (те же грабли, что с .ogdc-row) */
+.ogdc-search{display:flex;flex-direction:column;align-items:stretch;gap:5px;margin:0;width:100%}
+.ogdc-search>span{font-size:11px;color:var(--muted)}
+.ogdc-search>input{width:100%!important;min-width:0;max-width:none!important;box-sizing:border-box;
+  height:36px;padding:0 10px;border:1px solid var(--field-border);
+  border-radius:var(--r-sm);background:var(--field-bg);color:var(--text);font:inherit;font-size:12px}
+.ogdc-search>input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent-line)}
+.ogdc-hint{margin:8px 0 0;font-size:11px;line-height:1.45;color:var(--muted)}
+
 /* Дерево = одна рамка со строками. Никаких коробок на каждом узле: вложенность
    читается отступом, направляющей линией и весом шрифта, иначе «карточка в
    карточке в карточке» и всё сливается в кучу. */
-.ogdc-list{display:block;max-height:340px;overflow-y:auto;margin-top:8px;
+.ogdc-list{display:block;max-height:340px;overflow-y:auto;margin-top:10px;
   border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--field-bg)}
 /* дерево папок портала: раздел сворачивается, внутри — слои */
 .ogdc-folder{display:block}
