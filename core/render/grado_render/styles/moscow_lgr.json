@@ -204,10 +204,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -248,10 +248,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -292,10 +292,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -336,10 +336,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -374,10 +374,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -430,10 +430,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 10.0,
-        "size_mm": 2.0,
-        "period_px": 20.0,
-        "size_px": 4.0,
+        "period_mm": 5.0,
+        "size_mm": 1.0,
+        "period_px": 10.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -474,10 +474,10 @@
       },
       "line_marker": {
         "shape": "chevron",
-        "period_mm": 20.0,
-        "size_mm": 3.5,
-        "period_px": 40.0,
-        "size_px": 7.0,
+        "period_mm": 10.0,
+        "size_mm": 1.75,
+        "period_px": 20.0,
+        "size_px": 3.5,
         "dir": "in"
       },
       "hatch": {
@@ -522,10 +522,10 @@
       },
       "line_marker": {
         "shape": "chevron",
-        "period_mm": 21.0,
-        "size_mm": 3.5,
-        "period_px": 42.0,
-        "size_px": 7.0,
+        "period_mm": 10.5,
+        "size_mm": 1.75,
+        "period_px": 21.0,
+        "size_px": 3.5,
         "dir": "out"
       },
       "hatch": {
@@ -566,10 +566,10 @@
       },
       "line_marker": {
         "shape": "tee",
-        "period_mm": 8.0,
-        "size_mm": 2.0,
-        "period_px": 16.0,
-        "size_px": 4.0,
+        "period_mm": 4.0,
+        "size_mm": 1.0,
+        "period_px": 8.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -610,10 +610,10 @@
       },
       "line_marker": {
         "shape": "tee",
-        "period_mm": 8.0,
-        "size_mm": 2.0,
-        "period_px": 16.0,
-        "size_px": 4.0,
+        "period_mm": 4.0,
+        "size_mm": 1.0,
+        "period_px": 8.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -654,10 +654,10 @@
       },
       "line_marker": {
         "shape": "tee",
-        "period_mm": 8.0,
-        "size_mm": 2.0,
-        "period_px": 16.0,
-        "size_px": 4.0,
+        "period_mm": 4.0,
+        "size_mm": 1.0,
+        "period_px": 8.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -698,10 +698,10 @@
       },
       "line_marker": {
         "shape": "tee",
-        "period_mm": 8.0,
-        "size_mm": 2.0,
-        "period_px": 16.0,
-        "size_px": 4.0,
+        "period_mm": 4.0,
+        "size_mm": 1.0,
+        "period_px": 8.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -746,10 +746,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 10.0,
-        "size_mm": 2.0,
-        "period_px": 20.0,
-        "size_px": 4.0,
+        "period_mm": 5.0,
+        "size_mm": 1.0,
+        "period_px": 10.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -798,10 +798,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 10.0,
-        "size_mm": 2.0,
-        "period_px": 20.0,
-        "size_px": 4.0,
+        "period_mm": 5.0,
+        "size_mm": 1.0,
+        "period_px": 10.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -842,10 +842,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 16.0,
-        "size_mm": 2.5,
-        "period_px": 32.0,
-        "size_px": 5.0,
+        "period_mm": 8.0,
+        "size_mm": 1.25,
+        "period_px": 16.0,
+        "size_px": 2.5,
         "dir": "in"
       },
       "hatch": {
@@ -886,10 +886,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 16.0,
-        "size_mm": 2.5,
-        "period_px": 32.0,
-        "size_px": 5.0,
+        "period_mm": 8.0,
+        "size_mm": 1.25,
+        "period_px": 16.0,
+        "size_px": 2.5,
         "dir": "in"
       },
       "hatch": {
@@ -930,10 +930,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 16.0,
-        "size_mm": 2.5,
-        "period_px": 32.0,
-        "size_px": 5.0,
+        "period_mm": 8.0,
+        "size_mm": 1.25,
+        "period_px": 16.0,
+        "size_px": 2.5,
         "dir": "in"
       },
       "hatch": {
@@ -1040,10 +1040,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.5,
-        "period_px": 40.0,
-        "size_px": 5.0,
+        "period_mm": 10.0,
+        "size_mm": 1.25,
+        "period_px": 20.0,
+        "size_px": 2.5,
         "dir": "in"
       },
       "hatch": {
@@ -1222,10 +1222,10 @@
       },
       "line_marker": {
         "shape": "diamond",
-        "period_mm": 20.0,
-        "size_mm": 2.83,
-        "period_px": 40.0,
-        "size_px": 5.7,
+        "period_mm": 10.0,
+        "size_mm": 1.415,
+        "period_px": 20.0,
+        "size_px": 2.8,
         "dir": "in"
       },
       "hatch": {
@@ -1260,10 +1260,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -1370,10 +1370,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "out"
       },
       "hatch": {
@@ -1438,10 +1438,10 @@
       },
       "line_marker": {
         "shape": "dot",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -1518,10 +1518,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -1556,10 +1556,10 @@
       },
       "line_marker": {
         "shape": "triangle2",
-        "period_mm": 20.0,
-        "size_mm": 2.2,
-        "period_px": 40.0,
-        "size_px": 4.4,
+        "period_mm": 10.0,
+        "size_mm": 1.1,
+        "period_px": 20.0,
+        "size_px": 2.2,
         "dir": "in"
       },
       "hatch": {
@@ -1630,10 +1630,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "out"
       },
       "hatch": {
@@ -1871,10 +1871,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -1981,10 +1981,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.5,
-        "period_px": 40.0,
-        "size_px": 5.0,
+        "period_mm": 10.0,
+        "size_mm": 1.25,
+        "period_px": 20.0,
+        "size_px": 2.5,
         "dir": "in"
       },
       "hatch": {
@@ -2061,10 +2061,10 @@
       },
       "line_marker": {
         "shape": "triangle",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "out"
       },
       "hatch": {
@@ -2105,10 +2105,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 2.0,
-        "period_px": 40.0,
-        "size_px": 4.0,
+        "period_mm": 10.0,
+        "size_mm": 1.0,
+        "period_px": 20.0,
+        "size_px": 2.0,
         "dir": "in"
       },
       "hatch": {
@@ -2143,10 +2143,10 @@
       },
       "line_marker": {
         "shape": "tick",
-        "period_mm": 20.0,
-        "size_mm": 0.5,
-        "period_px": 40.0,
-        "size_px": 1.0,
+        "period_mm": 10.0,
+        "size_mm": 0.25,
+        "period_px": 20.0,
+        "size_px": 0.5,
         "dir": "in"
       },
       "hatch": {

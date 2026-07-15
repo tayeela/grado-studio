@@ -441,13 +441,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(len([s for s in by_code.values()
                               if s.get("line_marker")]), 30,
                          "30 знаков несут маркеры (по QML; 49 ЛЗП без маркера)")
-        # выборка по образцам: водоохранная ∨3.5/20, пояс санохраны ⊥2/8,
-        # памятник природы ●3/20, территории ОКН ■1.5/20
+        # Величины — в мм ЛИСТА, пересчёт из QML MapUnit (метры местности) на
+        # опорный масштаб Эталона М 1:2000: мм = метры / 2.
+        # Водоохранная: QML arrowhead interval 20 м / size 3.5 м → ∨1.75/10 мм.
         self.assertEqual(by_code[16]["line_marker"],
-                         {"shape": "chevron", "period_mm": 20.0, "size_mm": 3.5,
-                          "period_px": 40.0, "size_px": 7.0, "dir": "in"})
+                         {"shape": "chevron", "period_mm": 10.0, "size_mm": 1.75,
+                          "period_px": 20.0, "size_px": 3.5, "dir": "in"})
         self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
-        self.assertEqual(by_code[13]["line_marker"]["period_mm"], 8.0)
+        self.assertEqual(by_code[13]["line_marker"]["period_mm"], 4.0,
+                         "пояс санохраны: QML interval 8 м → 4 мм на 1:2000")
         self.assertEqual(by_code[55]["line_marker"]["shape"], "dot")
         self.assertEqual(by_code[9]["line_marker"]["shape"], "tick", "QML line=tick, не square")
         self.assertEqual(by_code[20]["line_marker"]["shape"], "tick",
@@ -588,8 +590,9 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(vod["line_label"], "водоохранная")
         self.assertEqual(vod["group"], "ЗОУИТ")
         self.assertEqual(vod["lgr_code"], 16)
+        # px холста = мм листа × 2 (мм пересчитаны из QML MapUnit на 1:2000)
         self.assertEqual(vod["line_marker"],
-                         {"shape": "chevron", "period": 40.0, "size": 7.0,
+                         {"shape": "chevron", "period": 20.0, "size": 3.5,
                           "dir": "in"})
         # код 20 (защитная ОКН) — по QML одиночная линия со штрихами (не двойная)
         self.assertEqual(fs["lgr.okn.zashchit"]["line_marker"]["shape"], "tick")
