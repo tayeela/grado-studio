@@ -345,19 +345,32 @@ def _label_bbox(lbl):
     return (x0, y - h, x0 + w, y + h * 0.25)
 
 
+_LABEL_CELL_MM = 8.0     # подпись листа заведомо мельче ячейки
+
+
 def _filter_overlapping_labels(labels):
     """Не показывать подпись, если её bbox пересекается с уже принятой
-    подписью того же слоя за этот проход (простой greedy-алгоритм, аналог
-    фильтра на холсте в app.js)."""
-    placed = {}
+    подписью того же слоя за этот проход (greedy, аналог фильтра на холсте).
+
+    Занятость — грид по ячейкам, а не список: раньше каждая подпись сверялась
+    ЛИНЕЙНЫМ перебором со всеми уже принятыми, и на городском слое (десятки
+    тысяч объектов) это давало квадратичный рост — тот же дефект, что был на
+    холсте. Правило не изменилось: побеждает первый занявший место; подпись
+    задевает 1-4 ячейки и сравнивается только с соседями по ним, поэтому
+    результат совпадает с полным перебором."""
+    cells = {}
     out = []
     for lbl in labels:
-        bbox = _label_bbox(lbl)
-        bucket = placed.setdefault(lbl.get("_layer_id"), [])
-        if any(bbox[0] < b[2] and bbox[2] > b[0] and bbox[1] < b[3] and bbox[3] > b[1]
-               for b in bucket):
+        x0, y0, x1, y1 = _label_bbox(lbl)
+        lid = lbl.get("_layer_id")
+        keys = [(lid, cx, cy)
+                for cx in range(int(x0 // _LABEL_CELL_MM), int(x1 // _LABEL_CELL_MM) + 1)
+                for cy in range(int(y0 // _LABEL_CELL_MM), int(y1 // _LABEL_CELL_MM) + 1)]
+        if any(x0 < b[2] and x1 > b[0] and y0 < b[3] and y1 > b[1]
+               for k in keys for b in cells.get(k, ())):
             continue
-        bucket.append(bbox)
+        for k in keys:
+            cells.setdefault(k, []).append((x0, y0, x1, y1))
         out.append(lbl)
     return out
 
