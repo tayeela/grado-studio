@@ -89,9 +89,31 @@ async function openGisogdPicker(onPick) {
   const list = overlay.querySelector("#ogdc-list");
   // Дерево папок как на портале: путь слоя («Слои / Генплан / …») — это и есть
   // ветка каталога; последний сегмент — сам слой, его в заголовок папки не берём.
-  const folderOf = l => {
-    const parts = (l.path || "").split(" / ").filter(Boolean);
-    return parts.slice(0, -1).join(" / ") || "Без раздела";
+  // Вложенное дерево, как на портале: путь «Слои / Генплан / 01. Функц. зоны»
+  // разворачивается в ветки. Плоский полный путь не годится — у всех папок
+  // одинаковый длинный префикс, и различить их нельзя.
+  const buildTree = items => {
+    const root = { kids: new Map(), layers: [] };
+    items.forEach(l => {
+      const parts = (l.path || "").split(" / ").filter(Boolean).slice(0, -1);
+      let node = root;
+      parts.forEach(p => {
+        if (!node.kids.has(p)) node.kids.set(p, { kids: new Map(), layers: [] });
+        node = node.kids.get(p);
+      });
+      node.layers.push(l);
+    });
+    return root;
+  };
+  const countOf = n => n.layers.length + [...n.kids.values()].reduce((s, k) => s + countOf(k), 0);
+  const renderNode = (node, open, depth) => {
+    const folders = [...node.kids].map(([name, kid]) => `<details class="ogdc-folder"${open ? " open" : ""}>
+      <summary style="padding-left:${9 + depth * 12}px"><span class="ogdc-fname">${escHtml(name)}</span>
+        <span class="ogdc-fcount">${countOf(kid)}</span></summary>
+      ${renderNode(kid, open, depth + 1)}</details>`).join("");
+    const rows = node.layers.map(l => `<button class="ogdc-row" style="padding-left:${21 + depth * 12}px"
+      data-code="${escHtml(l.code)}" data-name="${escHtml(l.name || l.code)}">${escHtml(l.name || l.code)}</button>`).join("");
+    return folders + rows;
   };
   const render = q => {
     const low = q.trim().toLowerCase();
@@ -99,19 +121,8 @@ async function openGisogdPicker(onPick) {
       (l.name || "").toLowerCase().includes(low) ||
       (l.path || "").toLowerCase().includes(low)) : layers;
     if (!hit.length) { list.innerHTML = `<div class="fc-help">Ничего не найдено</div>`; return; }
-    const folders = new Map();
-    hit.forEach(l => {
-      const f = folderOf(l);
-      if (!folders.has(f)) folders.set(f, []);
-      folders.get(f).push(l);
-    });
-    // при поиске папки раскрыты (видно, что нашлось), без поиска — свёрнуты
-    const open = !!low;
-    list.innerHTML = [...folders].map(([folder, items]) => `<details class="ogdc-folder"${open ? " open" : ""}>
-      <summary><span class="ogdc-fname">${escHtml(folder)}</span><span class="ogdc-fcount">${items.length}</span></summary>
-      ${items.map(l => `<button class="ogdc-row" data-code="${escHtml(l.code)}"
-        data-name="${escHtml(l.name || l.code)}">${escHtml(l.name || l.code)}</button>`).join("")}
-    </details>`).join("");
+    // при поиске ветки раскрыты (видно, что нашлось), без поиска — свёрнуты
+    list.innerHTML = renderNode(buildTree(hit), !!low, 0);
   };
   render("");
   overlay.querySelector("#ogdc-q").addEventListener("input", e => render(e.target.value));
