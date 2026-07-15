@@ -644,24 +644,32 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 .data-ogd-more{height:24px;padding:0 9px;border-radius:var(--r-pill);border:1px solid var(--field-border);
   background:var(--field-bg);color:var(--text-2);font-size:10px;font-weight:560;cursor:pointer;margin-right:6px}
 .data-ogd-more:hover{border-color:var(--accent-line);color:var(--accent)}
-.ogdc-list{display:flex;flex-direction:column;gap:4px;max-height:320px;overflow-y:auto;margin-top:8px}
+/* Дерево = одна рамка со строками. Никаких коробок на каждом узле: вложенность
+   читается отступом, направляющей линией и весом шрифта, иначе «карточка в
+   карточке в карточке» и всё сливается в кучу. */
+.ogdc-list{display:block;max-height:340px;overflow-y:auto;margin-top:8px;
+  border:1px solid var(--hairline);border-radius:var(--r-sm);background:var(--field-bg)}
 /* дерево папок портала: раздел сворачивается, внутри — слои */
-/* flex:0 0 auto обязателен: список — flex-колонка с max-height, без этого
-   129 папок сжимаются во flex'е в полоски по паре пикселей */
-.ogdc-folder{flex:0 0 auto;border:1px solid var(--hairline);border-radius:var(--r-sm);
-  background:var(--field-bg);overflow:hidden}
-.ogdc-folder>summary{display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;
-  font-size:11px;color:var(--text-2);font-weight:560;list-style:none}
+.ogdc-folder{display:block}
+/* строка ветки и строка слоя — одна высота и ритм, различаются только весом */
+.ogdc-folder>summary{display:flex;align-items:center;gap:7px;min-height:28px;padding:0 10px 0 0;
+  cursor:pointer;font-size:12px;color:var(--text);font-weight:560;list-style:none;user-select:none}
 .ogdc-folder>summary::-webkit-details-marker{display:none}
-.ogdc-folder>summary::before{content:"▸";color:var(--muted);font-size:9px;flex:0 0 auto}
-.ogdc-folder[open]>summary::before{content:"▾"}
-.ogdc-folder>summary:hover{color:var(--accent)}
+.ogdc-folder>summary:hover{background:var(--accent-weak)}
+/* треугольник фиксированной ширины — имена всех веток начинаются по одной линии */
+.ogdc-tw{flex:0 0 12px;color:var(--muted);font-size:8px;line-height:1;transition:transform .12s var(--ease-out)}
+.ogdc-folder[open]>summary .ogdc-tw{transform:rotate(90deg)}
 .ogdc-fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ogdc-fcount{flex:0 0 auto;font-size:9px;color:var(--muted);font-variant-numeric:tabular-nums}
-.ogdc-row{display:block;text-align:left;width:100%;height:auto!important;min-height:0;white-space:normal;
-  padding:6px 9px 6px 24px;border:0;border-top:1px solid var(--hairline);border-radius:0;
-  background:transparent;color:var(--text);font-size:12px;line-height:1.3;cursor:pointer}
-.ogdc-row:hover{background:var(--accent-weak);color:var(--accent)}
+.ogdc-fcount{flex:0 0 auto;font-size:10px;color:var(--faint);font-variant-numeric:tabular-nums}
+/* .ogdc-list .ogdc-row — специфичность выше глобальной «.modal-overlay button»,
+   иначе слои рисуются белыми пилюлями с рамкой и дерево рассыпается */
+.ogdc-list .ogdc-row{display:flex;align-items:center;text-align:left;width:100%;min-height:28px;
+  height:auto!important;padding:4px 10px 4px 0;border:0!important;border-radius:0!important;
+  background:transparent!important;box-shadow:none!important;color:var(--text-2);
+  font-size:12px;font-weight:400;line-height:1.35;white-space:normal;cursor:pointer}
+.ogdc-list .ogdc-row:hover{background:var(--accent-weak)!important;color:var(--accent)}
+/* направляющая линия вложенности — вместо рамки-коробки на каждом узле */
+.ogdc-guide{flex:0 0 auto;align-self:stretch;border-left:1px solid var(--hairline);margin-right:9px}
 .range-field{display:flex;align-items:center;gap:10px;width:100%}
 .range-out{flex:0 0 auto;min-width:36px;text-align:right;font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
 /* непрозрачность: дорожка = прозрачность цвета заливки поверх шахматки */

@@ -106,13 +106,19 @@ async function openGisogdPicker(onPick) {
     return root;
   };
   const countOf = n => n.layers.length + [...n.kids.values()].reduce((s, k) => s + countOf(k), 0);
+  // отступ рисуем направляющими линиями по числу уровней, а не padding'ом —
+  // так видно, к какой ветке относится строка
+  const guides = d => `<span class="ogdc-guide" style="margin-left:${d ? 11 : 10}px"></span>`.repeat(d)
+    || `<span style="width:10px;flex:0 0 auto"></span>`;
   const renderNode = (node, open, depth) => {
     const folders = [...node.kids].map(([name, kid]) => `<details class="ogdc-folder"${open ? " open" : ""}>
-      <summary style="padding-left:${9 + depth * 12}px"><span class="ogdc-fname">${escHtml(name)}</span>
+      <summary>${guides(depth)}<span class="ogdc-tw">▶</span><span class="ogdc-fname">${escHtml(name)}</span>
         <span class="ogdc-fcount">${countOf(kid)}</span></summary>
       ${renderNode(kid, open, depth + 1)}</details>`).join("");
-    const rows = node.layers.map(l => `<button class="ogdc-row" style="padding-left:${21 + depth * 12}px"
-      data-code="${escHtml(l.code)}" data-name="${escHtml(l.name || l.code)}">${escHtml(l.name || l.code)}</button>`).join("");
+    // у слоя треугольника нет — его место держит распорка, имена в столбик
+    const rows = node.layers.map(l => `<button class="ogdc-row"
+      data-code="${escHtml(l.code)}" data-name="${escHtml(l.name || l.code)}">${guides(depth)}<span
+      style="width:12px;flex:0 0 auto"></span><span class="ogdc-fname" style="white-space:normal">${escHtml(l.name || l.code)}</span></button>`).join("");
     return folders + rows;
   };
   const render = q => {
