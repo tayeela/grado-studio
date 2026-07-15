@@ -506,9 +506,13 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[20]["dash_mm"], [8.0, 2.0], "защитная ОКН — 8/2")
         self.assertEqual(by_code[49]["dash_mm"], [0.75, 2.0], "лесопарк — точечный 0.75/2")
         self.assertIn(33, by_code, "код 33 (охранные зоны инфраструктуры) добавлен")
-        # штриховка зон по рабочим QML (spritzones): цвет/угол/шаг, код 21 — заливка
-        self.assertEqual(by_code[6]["hatch"]["color"], "#27b702", "ж/д — зелёная (QML)")
-        self.assertEqual(by_code[19]["hatch"]["color"], "#e24b29", "охр. ООПТ — красно-оранж. (QML)")
+        # штриховка зон по рабочим QML (spritzones): цвет/угол/шаг, код 21 — заливка.
+        # Цвет — из ВЛОЖЕННОГО SimpleLine (им QGIS рисует штрихи), а не из
+        # легаси-атрибута `color` самого LinePatternFill: у кодов 6 и 19 они
+        # различаются, и раньше здесь были закреплены нерисуемые внешние цвета
+        # (#27b702 / #e24b29). Проверенные значения совпадают с приказом №65.
+        self.assertEqual(by_code[6]["hatch"]["color"], "#eb880e", "ж/д — оранжевая (QML: подсимвол)")
+        self.assertEqual(by_code[19]["hatch"]["color"], "#f8f400", "охр. ООПТ — жёлтая (QML: подсимвол)")
         self.assertEqual(by_code[16]["hatch"]["spacing_mm"], 2, "шаг штриховки по QML")
         self.assertEqual(by_code[57]["hatch"]["angle"], 135, "ОКС на ООПТ — угол 135 (QML)")
         self.assertEqual(by_code[21]["fill"], "#18f61f", "режимы ПК — сплошная заливка (QML)")

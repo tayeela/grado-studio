@@ -1051,7 +1051,7 @@
         "cross": false,
         "spacing_px": 7.5,
         "spacing_mm": 2,
-        "color": "#e24b29",
+        "color": "#f8f400",
         "cmyk": "0,0,100,0"
       }
     },
@@ -1780,7 +1780,7 @@
         "cross": false,
         "spacing_px": 18.8,
         "spacing_mm": 5,
-        "color": "#27b702",
+        "color": "#eb880e",
         "cmyk": "0,60,100,0"
       }
     },
