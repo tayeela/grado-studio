@@ -216,7 +216,7 @@ process.stdout.write(JSON.stringify({
         completed = subprocess.run(
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         self.assertEqual(result["invalid"], result["baseline"])
@@ -398,7 +398,7 @@ process.stdout.write(JSON.stringify({
 """
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         self.assertEqual(1, result["nspdCount"])
@@ -440,7 +440,7 @@ process.stdout.write(JSON.stringify({query,osm:osm.groups.map(g=>[g.source,g.cou
 """
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         self.assertIn('way["highway"]', result["query"])
@@ -472,7 +472,7 @@ process.stdout.write(JSON.stringify({projected,originLocal}));
 """
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/crs.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         for case in result["projected"]:
@@ -511,7 +511,7 @@ process.stdout.write(JSON.stringify({vertex:c.snapPoint(3,4),mid:c.snapPoint(50,
 """
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/app-snap.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         self.assertEqual("вершина", result["vertex"]["kind"])
@@ -566,7 +566,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(
             {"good": 200, "count": 1, "kind": "generic", "zip": 415,
@@ -647,7 +647,7 @@ if (conflict.merged.density !== "28" || conflict.conflicts < 1)
 '''
         subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/collab.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for collaboration races")
@@ -766,7 +766,7 @@ function load(fetchImpl, initialState) {
 '''
         subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/collab.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
 
     def test_collaboration_surfaces_damaged_project_files_to_admins(self):
@@ -875,7 +875,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         result = json.loads(completed.stdout)
         self.assertEqual(0, result["before"])
@@ -927,7 +927,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual({"name": "Новый", "id": 2}, json.loads(completed.stdout))
 
@@ -1000,7 +1000,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(
             {"first": 507, "second": 200, "openCalls": 2, "name": "Второй"},
@@ -1041,7 +1041,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(
             {"tep": 400, "grado": 400, "autosave": 507},
@@ -1113,7 +1113,7 @@ require(process.argv[2]);
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
              str(root / "apps/studio/web/pages-adapter.js")],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         self.assertEqual(
             {"status": 200, "name": "Большой", "size": 6 * 1024 * 1024,
@@ -1148,7 +1148,7 @@ process.stdout.write(JSON.stringify({
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
              json.dumps(features), json.dumps(params)],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         browser = json.loads(completed.stdout)
 
@@ -1205,7 +1205,7 @@ process.stdout.write(JSON.stringify(scenarios.map(payload => {
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
              json.dumps(scenarios)],
-            check=True, capture_output=True, text=True,
+            check=True, capture_output=True, text=True, encoding="utf-8",
         )
         browser_results = json.loads(completed.stdout)
         sys.path.insert(0, str(root / "apps/studio"))
@@ -1234,7 +1234,7 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         ]}
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
-             json.dumps(payload)], check=True, capture_output=True, text=True,
+             json.dumps(payload)], check=True, capture_output=True, text=True, encoding="utf-8",
         )
         report = json.loads(completed.stdout)
         self.assertFalse(report["can_export"])
@@ -1259,7 +1259,7 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         ]}
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
-             json.dumps(payload)], check=True, capture_output=True, text=True,
+             json.dumps(payload)], check=True, capture_output=True, text=True, encoding="utf-8",
         )
         report = json.loads(completed.stdout)
         self.assertTrue(report["can_export"])
@@ -1272,7 +1272,7 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         }
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js"),
-             json.dumps(payload)], check=True, capture_output=True, text=True,
+             json.dumps(payload)], check=True, capture_output=True, text=True, encoding="utf-8",
         )
         report = json.loads(completed.stdout)
         self.assertFalse(report["can_export"])
