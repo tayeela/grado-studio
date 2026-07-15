@@ -78,8 +78,7 @@ async function openGisogdPicker(onPick) {
   // шапка и поля — как во всех окнах студии: kicker + название + X, поле во всю
   // ширину (36px), пояснение под ним; иначе окно выглядит чужим
   overlay.innerHTML = `<div class="modal fmt-modal" role="dialog" aria-modal="true" aria-labelledby="ogdc-title">
-    <div class="modal-head"><span class="modal-kicker">Каталог портала</span>
-      <span id="ogdc-title">Слои ГИС ОГД</span>
+    <div class="modal-head modal-head-rich"><span class="modal-head-copy"><span class="modal-kicker">Каталог портала</span><span id="ogdc-title">Слои ГИС ОГД</span></span>
       <button class="modal-x" aria-label="Закрыть каталог слоёв"><svg class="ic"><use href="#ic-close"/></svg></button></div>
     <div class="modal-body compact">
       <label class="ogdc-search"><span>Поиск слоя</span>
@@ -111,19 +110,18 @@ async function openGisogdPicker(onPick) {
     return root;
   };
   const countOf = n => n.layers.length + [...n.kids.values()].reduce((s, k) => s + countOf(k), 0);
-  // отступ рисуем направляющими линиями по числу уровней, а не padding'ом —
-  // так видно, к какой ветке относится строка
-  const guides = d => `<span class="ogdc-guide" style="margin-left:${d ? 11 : 10}px"></span>`.repeat(d)
-    || `<span style="width:10px;flex:0 0 auto"></span>`;
+  // Отступ — обычным padding'ом. Направляющие линии не рисуем: на стыках строк
+  // они рвутся и выглядят пунктиром; глубину и так держат отступ и вес шрифта.
+  const pad = d => 12 + d * 16;
   const renderNode = (node, open, depth) => {
     const folders = [...node.kids].map(([name, kid]) => `<details class="ogdc-folder"${open ? " open" : ""}>
-      <summary>${guides(depth)}<span class="ogdc-tw">▶</span><span class="ogdc-fname">${escHtml(name)}</span>
+      <summary style="padding-left:${pad(depth)}px"><span class="ogdc-tw">▶</span><span class="ogdc-fname">${escHtml(name)}</span>
         <span class="ogdc-fcount">${countOf(kid)}</span></summary>
       ${renderNode(kid, open, depth + 1)}</details>`).join("");
-    // у слоя треугольника нет — его место держит распорка, имена в столбик
-    const rows = node.layers.map(l => `<button class="ogdc-row"
-      data-code="${escHtml(l.code)}" data-name="${escHtml(l.name || l.code)}">${guides(depth)}<span
-      style="width:12px;flex:0 0 auto"></span><span class="ogdc-fname" style="white-space:normal">${escHtml(l.name || l.code)}</span></button>`).join("");
+    // у слоя треугольника нет — его место держит отступ, имя идёт по той же линии
+    const rows = node.layers.map(l => `<button class="ogdc-row" style="padding-left:${pad(depth) + 19}px"
+      data-code="${escHtml(l.code)}" data-name="${escHtml(l.name || l.code)}"><span
+      class="ogdc-fname" style="white-space:normal">${escHtml(l.name || l.code)}</span></button>`).join("");
     return folders + rows;
   };
   const render = q => {

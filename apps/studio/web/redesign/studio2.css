@@ -663,7 +663,7 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 /* дерево папок портала: раздел сворачивается, внутри — слои */
 .ogdc-folder{display:block}
 /* строка ветки и строка слоя — одна высота и ритм, различаются только весом */
-.ogdc-folder>summary{display:flex;align-items:center;gap:7px;min-height:28px;padding:0 10px 0 0;
+.ogdc-folder>summary{display:flex;align-items:center;gap:7px;min-height:28px;padding-right:10px;
   cursor:pointer;font-size:12px;color:var(--text);font-weight:560;list-style:none;user-select:none}
 .ogdc-folder>summary::-webkit-details-marker{display:none}
 .ogdc-folder>summary:hover{background:var(--accent-weak)}
@@ -675,12 +675,11 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 /* .ogdc-list .ogdc-row — специфичность выше глобальной «.modal-overlay button»,
    иначе слои рисуются белыми пилюлями с рамкой и дерево рассыпается */
 .ogdc-list .ogdc-row{display:flex;align-items:center;text-align:left;width:100%;min-height:28px;
-  height:auto!important;padding:4px 10px 4px 0;border:0!important;border-radius:0!important;
+  height:auto!important;padding-top:4px;padding-bottom:4px;padding-right:10px;
+  border:0!important;border-radius:0!important;
   background:transparent!important;box-shadow:none!important;color:var(--text-2);
   font-size:12px;font-weight:400;line-height:1.35;white-space:normal;cursor:pointer}
 .ogdc-list .ogdc-row:hover{background:var(--accent-weak)!important;color:var(--accent)}
-/* направляющая линия вложенности — вместо рамки-коробки на каждом узле */
-.ogdc-guide{flex:0 0 auto;align-self:stretch;border-left:1px solid var(--hairline);margin-right:9px}
 .range-field{display:flex;align-items:center;gap:10px;width:100%}
 .range-out{flex:0 0 auto;min-width:36px;text-align:right;font-size:11px;color:var(--text-2);font-variant-numeric:tabular-nums}
 /* непрозрачность: дорожка = прозрачность цвета заливки поверх шахматки */
