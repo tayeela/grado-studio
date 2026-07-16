@@ -1,4 +1,7 @@
 import sys
+import io
+import json
+import zipfile
 import tempfile
 import unittest
 from pathlib import Path
@@ -1676,3 +1679,62 @@ class TestLineCodeRouting(unittest.TestCase):
         # объект без LineCode обязан остаться на прежнем маршруте, а не пропасть
         self.assertEqual(studio_core._linecode_routes({"name": "Водоохранные зоны"}), [])
         self.assertEqual(studio_core._linecode_routes({"linelineco": "NOT_FOUND"}), [])
+
+
+class TestManualZipLineCode(unittest.TestCase):
+    """Ручной импорт ZIP маршрутизируется по LineCode, как и выгрузка по области."""
+
+    def _zip(self, members):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for name, payload in members.items():
+                z.writestr(name, json.dumps(payload))
+        return buf.getvalue()
+
+    def _line(self, props):
+        return {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": props,
+             "geometry": {"type": "LineString",
+                          "coordinates": [[37.60, 55.75], [37.61, 55.75]]}}]}
+
+    def _poly(self, props):
+        return {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": props,
+             "geometry": {"type": "Polygon", "coordinates": [
+                 [[37.60, 55.75], [37.61, 55.75], [37.61, 55.76], [37.60, 55.75]]]}}]}
+
+    def test_linecode_beats_member_name(self):
+        # Имя файла говорит «красные линии УДС», а LineCode = -41 (береговая).
+        # Тип обязан браться из ДАННЫХ, а не из имени члена архива.
+        out = studio_core.import_gisogd(self._zip(
+            {"krasnye_linii_uds.geojson": self._line({"LineCode": "-41"})}))
+        f = out["features"][0]
+        self.assertEqual(f["layer_id"], "source.gisogd.zouit.beregovaya")
+        self.assertEqual(f["style_id"], "lgr.beregovaya")
+        self.assertEqual(f["props"]["line_side"], -1)
+
+    def test_multicode_splits_into_own_layers(self):
+        out = studio_core.import_gisogd(self._zip(
+            {"linii.geojson": self._line({"LineCode": "1,-29"})}))
+        got = [(f["layer_id"], f["props"]["line_code"], f["props"]["line_side"])
+               for f in out["features"]]
+        self.assertEqual(got, [("source.gisogd.red_lines", 1, 1),
+                               ("source.gisogd.zouit.tech.zone", 29, -1)])
+
+    def test_layers_reported_for_frontend(self):
+        # без описаний слоёв фронт не заведёт zouit.* и объект уедет в слой по виду
+        out = studio_core.import_gisogd(self._zip(
+            {"linii.geojson": self._line({"LineCode": "1,-29"})}))
+        ids = {L["id"]: L["kind"] for L in out["layers"]}
+        self.assertEqual(ids, {"source.gisogd.red_lines": "redline",
+                               "source.gisogd.zouit.tech.zone": "restrict"})
+
+    def test_without_linecode_name_routing_still_works(self):
+        # объекты без LineCode обязаны идти прежним путём, а не пропадать
+        out = studio_core.import_gisogd(self._zip({
+            "vodoohrannaya_zona.geojson": self._poly({"orbis_id": "x"}),
+            "funkcionalnye_zony.geojson": self._poly({"name": "жилая зона"}),
+        }))
+        by = {f["layer_id"]: f.get("style_id") for f in out["features"]}
+        self.assertEqual(by["source.gisogd.zouit.vodookhr"], "lgr.vodookhr")
+        self.assertEqual(by["source.gisogd.func_zones"], "gp.zhilaya_zona")

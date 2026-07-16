@@ -1917,6 +1917,35 @@ def _gisogd_process(conn, result):
         if not parts:
             continue
 
+        # LineCode из САМОГО объекта важнее маршрута по имени члена архива:
+        # в выгрузке SHP портала поле называется LineCode, и по нему же
+        # фильтруют рабочие QML. Одна геометрия несёт несколько кодов
+        # («1,-29» — и красная линия УДС, и граница техзоны), знак кода =
+        # сторона линии. Объект БЕЗ LineCode идёт прежним путём по имени.
+        routes = _linecode_routes(raw)
+        if routes:
+            for code, side, csid, clid in routes:
+                ckind = "redline" if code in _REDLINE_CODES else "restrict"
+                want = "line" if ckind == "redline" else None
+                emitted = 0
+                for i, part in enumerate(parts):
+                    if want and want not in part:
+                        continue
+                    sem = ({"status": "существующая"} if ckind == "redline"
+                           else {"kind": STYLE_LIB["styles"][csid]["title"],
+                                 "basis": "ГИС ОГД"})
+                    feat = {"kind": ckind, "layer_id": clid, **part,
+                            "props": {**sem, **extra_props,
+                                      "line_code": code, "line_side": side},
+                            "prov": dict(prov), "style_id": csid}
+                    if okey is not None:
+                        feat["srcKey"] = f"{clid}:{okey}#{i}"
+                    features.append(feat)
+                    emitted += 1
+                if emitted:
+                    _add_fields(clid, extra_fields)
+            continue
+
         if kind == "redline":
             emitted = 0
             for i, part in enumerate(p for p in parts if "line" in p):
@@ -1979,6 +2008,9 @@ def _gisogd_process(conn, result):
 
     return {"features": features, "notes": notes, "fields": layer_fields,
             "source_doc": result.get("source_doc"),
+            # слои-приёмники (в т.ч. source.gisogd.zouit.* по LineCode) — фронт
+            # их регистрирует, иначе объект молча уедет в слой по ВИДУ (правило 7)
+            "layers": _layer_defs(features),
             "snapshot": manifest, "diff": d}
 
 
