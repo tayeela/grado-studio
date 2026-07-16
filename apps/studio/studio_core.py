@@ -1652,6 +1652,59 @@ _GISOGD_STYLE_RULES = [
 _GISOGD_RESTRICT_HINTS = ("зоуит", "zouit", "охран", "ohran", "sanit", "санит")
 
 
+# ---------------------------------------------------------------------------
+# LineCode — ТИП ЛИНИИ ИЗ САМИХ ДАННЫХ, а не угаданный по имени слоя.
+#
+# Портал отдаёт его в каждом объекте (поле `linelineco` — это «LineLineCode»,
+# обрезанный до 10 символов по правилам DBF; в ручном импорте SHP встречается
+# «LineCode»). Ровно по нему фильтруют рабочие QML Москвы:
+#     array_intersect(string_to_array("LineCode", ','), array(-1,1))
+#
+# Формат — список кодов через запятую, КАЖДЫЙ СО ЗНАКОМ: «1», «-1», «1,-29»,
+# «-1,18,29», «1,-4,-6». Отсюда два следствия:
+#   1. ОДНА геометрия может нести НЕСКОЛЬКО знаков сразу («1,-29» — это и
+#      красная линия УДС, и граница техзоны инженерных коммуникаций). Поэтому в
+#      QML сравнение множеств, а не равенство: объект попадает в оба правила.
+#   2. Знак (+/-) различает СТОРОНУ линии, на которой лежит зона этого кода:
+#      «1» и «-1» — одна и та же красная линия, но с разных сторон.
+_LGR_CODE_STYLE = {s["lgr_code"]: sid for sid, s in STYLE_LIB["styles"].items()
+                   if s.get("lgr_code") is not None}
+_LINE_CODE_KEYS = ("linelineco", "linecode", "line_code", "lineлinecode")
+
+
+def parse_line_codes(value):
+    """«1,-29» → [(1, 1), (29, -1)]: (код знака ЛГР, сторона +1/-1).
+
+    Порядок сохраняется, дубликаты кода схлопываются по первому вхождению."""
+    out, seen = [], set()
+    for part in str(value or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            n = int(float(part))
+        except ValueError:
+            continue
+        if n == 0 or abs(n) in seen:
+            continue
+        seen.add(abs(n))
+        out.append((abs(n), 1 if n > 0 else -1))
+    return out
+
+
+def line_codes_of(props):
+    """Коды линии из атрибутов объекта (имя поля ищем без учёта регистра)."""
+    for k, v in (props or {}).items():
+        if k.lower() in _LINE_CODE_KEYS and v not in (None, ""):
+            return parse_line_codes(v)
+    return []
+
+
+def lgr_style_for_code(code):
+    """Код ЛГР → style_id знака (или None, если такого знака нет в библиотеке)."""
+    return _LGR_CODE_STYLE.get(code)
+
+
 def _norm_ru(s):
     """Имя для сопоставления: регистр + «ё»→«е».
 

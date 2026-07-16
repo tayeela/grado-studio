@@ -1597,3 +1597,49 @@ class TestGisogdRoutingNames(unittest.TestCase):
                 continue
             self.assertEqual(studio_core._gisogd_style_for(s["title"]), sid,
                              f"«{s['title']}» ловится чужим правилом")
+
+
+class TestLineCode(unittest.TestCase):
+    """LineCode — тип линии из САМИХ данных портала (поле linelineco).
+
+    Значения взяты из реальной выгрузки слоя l1 «Границы УДС (красные линии)»,
+    не выдуманы: «1» ×34433, «-1» ×34038, «1,-29» ×5873, «-1,18,29» ×1267.
+    """
+
+    def test_single_code_with_side(self):
+        self.assertEqual(studio_core.parse_line_codes("1"), [(1, 1)])
+        self.assertEqual(studio_core.parse_line_codes("-1"), [(1, -1)])
+
+    def test_multi_code_one_geometry(self):
+        # 34% объектов слоя несут НЕСКОЛЬКО кодов: одна геометрия — и красная
+        # линия УДС, и граница техзоны инженерных коммуникаций
+        self.assertEqual(studio_core.parse_line_codes("1,-29"), [(1, 1), (29, -1)])
+        self.assertEqual(studio_core.parse_line_codes("-1,18,29"),
+                         [(1, -1), (18, 1), (29, 1)])
+
+    def test_sign_is_the_side(self):
+        # «1,-29» и «-1,29» — одна линия зеркально: коды на общей границе всегда
+        # с противоположными знаками (УДС с одной стороны, техзона с другой)
+        a = dict(studio_core.parse_line_codes("1,-29"))
+        b = dict(studio_core.parse_line_codes("-1,29"))
+        self.assertEqual(a[1], -b[1])
+        self.assertEqual(a[29], -b[29])
+
+    def test_codes_map_to_signs(self):
+        self.assertEqual(studio_core.lgr_style_for_code(1), "lgr.kl.uds")
+        self.assertEqual(studio_core.lgr_style_for_code(29), "lgr.tech.zone")
+        self.assertEqual(studio_core.lgr_style_for_code(18), "lgr.pk")
+
+    def test_field_lookup_case_insensitive(self):
+        # портал отдаёт linelineco (DBF-обрезка), ручной импорт SHP — LineCode
+        self.assertEqual(studio_core.line_codes_of({"linelineco": "1,-29"}), [(1, 1), (29, -1)])
+        self.assertEqual(studio_core.line_codes_of({"LineCode": "-4"}), [(4, -1)])
+        self.assertEqual(studio_core.line_codes_of({"prochee": "1"}), [])
+        self.assertEqual(studio_core.line_codes_of({}), [])
+
+    def test_garbage_is_ignored_not_crashing(self):
+        self.assertEqual(studio_core.parse_line_codes(""), [])
+        self.assertEqual(studio_core.parse_line_codes("NOT_FOUND"), [])
+        self.assertEqual(studio_core.parse_line_codes("1,,мусор,-6"), [(1, 1), (6, -1)])
+        self.assertEqual(studio_core.parse_line_codes("0"), [], "код 0 — не знак")
+        self.assertEqual(studio_core.parse_line_codes("1,-1"), [(1, 1)], "дубль кода схлопывается")
