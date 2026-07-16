@@ -141,11 +141,12 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
         lines.append([[px + nx * s, py + ny * s],
                       [px + nx * s + tx * s, py + ny * s + ty * s]])
     elif shape in ("chevron", "chevron_dot"):
-        # остриё внутрь зоны, плечи на линии (Эталон: зубец «▽» остриём в зону)
+        # Галка-стрелка: УЗКИЙ конец (остриё) НА линии, плечи раскрываются по
+        # нормали (правка юзера: «узким концом повёрнуты к линии»). Раньше
+        # остриё уходило ОТ линии — выглядело как «▽», не как галка в линию.
         w2 = s * 0.5
-        apex = (px + nx * s, py + ny * s)
-        lines.append([[px - tx * w2, py - ty * w2], list(apex)])
-        lines.append([list(apex), [px + tx * w2, py + ty * w2]])
+        lines.append([[px + nx * s - tx * w2, py + ny * s - ty * w2], [px, py]])
+        lines.append([[px, py], [px + nx * s + tx * w2, py + ny * s + ty * w2]])
         if shape == "chevron_dot":
             hx = px + tx * period / 2 + nx * s * 0.5
             hy = py + ty * period / 2 + ny * s * 0.5
@@ -200,35 +201,63 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
                           [cx + ux * h, cy + uy * h]])
 
 
-def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0):
+def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None):
     """Маркеры-засечки Эталона ЛГР вдоль линии/контура (мм листа).
 
     spec: {shape, period_mm, size_mm} из библиотеки. Формы образцов:
     tick ⊢, tee ⊥, corner Г, chevron ∨, chevron_dot ∨., triangle ▼,
     dot ●, square ■, diamond ◇. Засечка — по нормали inward (внутрь зоны).
 
-    Размещение ПОСЕГМЕНТНОЕ: на каждом прямом ребре засечки распределяются
-    равномерно с отступом от вершин, а не непрерывно по периметру — иначе
-    на углах засечки соседних рёбер сходятся вплотную (в Эталоне углы
-    свободны, метки стоят по прямым участкам)."""
+    dash задан → линия штриховая: засечка стоит ТОЛЬКО на черте, не в разрыве
+    (правка юзера), в центре самого длинного штриха цикла, на каждом k-м штрихе
+    (k≈period/цикл). dash=None → сплошная: равномерно по period, углы свободны."""
     period = spec.get("period_mm", 20.0)
     size = spec.get("size_mm", 2.0)
     shape = spec.get("shape", "tick")
     chain = list(pts) + ([pts[0]] if closed else [])
     ops, lines = [], []
-    for (x1, y1), (x2, y2) in zip(chain, chain[1:]):
-        d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-        if d < period * 0.5:            # ребро короче половины периода — без метки
-            continue
-        tx, ty = (x2 - x1) / d, (y2 - y1) / d
-        nx, ny = -ty * inward, tx * inward
-        n = max(1, round(d / period))   # целое число меток, центрированных на ребре
-        gap = d / n                     # отступ gap/2 от каждой вершины
-        for i in range(n):
-            t = (gap * (i + 0.5)) / d
-            px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
-            _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period,
-                          stroke, width, lines, ops)
+    if dash:
+        cycle = sum(dash) or period
+        best_len, best_off, run = -1.0, 0.0, 0.0
+        for i, seg in enumerate(dash):
+            if i % 2 == 0 and seg > best_len:
+                best_len, best_off = seg, run + seg / 2
+            run += seg
+        k = max(1, round(period / cycle))
+        acc = 0.0
+        for (x1, y1), (x2, y2) in zip(chain, chain[1:]):
+            d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+            if d < 1e-9:
+                continue
+            tx, ty = (x2 - x1) / d, (y2 - y1) / d
+            nx, ny = -ty * inward, tx * inward
+            import math
+            j = math.ceil((acc - best_off) / cycle)
+            while True:
+                L = j * cycle + best_off     # длина центра j-го штриха от начала
+                if L > acc + d:
+                    break
+                if L >= acc and j % k == 0:
+                    t = (L - acc) / d
+                    _marker_glyph(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t,
+                                  tx, ty, nx, ny, shape, size, period,
+                                  stroke, width, lines, ops)
+                j += 1
+            acc += d
+    else:
+        for (x1, y1), (x2, y2) in zip(chain, chain[1:]):
+            d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+            if d < period * 0.5:            # ребро короче половины периода — без метки
+                continue
+            tx, ty = (x2 - x1) / d, (y2 - y1) / d
+            nx, ny = -ty * inward, tx * inward
+            n = max(1, round(d / period))   # целое число меток, центрированных на ребре
+            gap = d / n                     # отступ gap/2 от каждой вершины
+            for i in range(n):
+                t = (gap * (i + 0.5)) / d
+                px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
+                _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period,
+                              stroke, width, lines, ops)
     if lines:
         ops.append({"op": "path", "rings": lines, "closed": False,
                     "fill": None, "stroke": stroke, "width": width,
@@ -428,7 +457,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                     for side in dirs:
                         ops.extend(marker_ops(
                             rings[0], st.line_marker, st.stroke, width=st.width,
-                            closed=True, inward=side))
+                            closed=True, inward=side, dash=st.dash))
                 if st.double:
                     ops.append({"op": "path", "closed": True, "fill": None,
                                 "stroke": st.stroke, "width": st.width,
@@ -456,7 +485,7 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                             "dash": st.dash})
                 if st.line_marker and len(pts) >= 2:
                     ops.extend(marker_ops(pts, st.line_marker, st.stroke,
-                                          width=st.width))
+                                          width=st.width, dash=st.dash))
                 if st.double and len(pts) >= 2:
                     ops.append({"op": "path", "closed": False, "fill": None,
                                 "stroke": st.stroke, "width": st.width,
