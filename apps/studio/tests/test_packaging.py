@@ -1373,3 +1373,88 @@ process.stdout.write(JSON.stringify(core.preflightProject(JSON.parse(process.arg
         source = (root / "apps/studio/web/app.js").read_text(encoding="utf-8")
         self.assertIn('escHtml((L || {}).title || f.kind)', source)
         self.assertIn('escHtml(f.prov.source)', source)
+
+
+class TestBrowserLineCodeRouting(unittest.TestCase):
+    """Браузерная редакция маршрутизирует ОГД по LineCode — как настольная.
+
+    Значения — реальные из выгрузки слоя l1 «Границы УДС»: «1», «-1», «1,-29»,
+    «-1,18,29». Раньше веб-версия знала только маршрут по ИМЕНИ слоя, поэтому
+    береговая уезжала в «прочие», а многокодовые объекты (34% геометрий)
+    теряли половину смысла.
+    """
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine test")
+    def test_linecode_routes_match_desktop(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+const styles = require(process.argv[2]).styles;
+core.setLgrCodeStyles(styles);
+const r = v => core.lineCodeRoutes({linelineco: v}).map(([c, s, sid, lid]) => [c, s, sid, lid]);
+process.stdout.write(JSON.stringify({
+  one: r("1"), minus: r("-1"), multi: r("1,-29"), three: r("-1,18,29"),
+  garbage: r("NOT_FOUND"), empty: r(""), dup: core.parseLineCodes("1,-1"),
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "core/render/grado_render/styles/moscow_lgr.json")],
+            check=True, capture_output=True, text=True, encoding="utf-8",
+        )
+        out = json.loads(completed.stdout)
+        self.assertEqual(out["one"], [[1, 1, "lgr.kl.uds", "source.gisogd.red_lines"]])
+        # знак = сторона: слой тот же, различается только сторона
+        self.assertEqual(out["minus"], [[1, -1, "lgr.kl.uds", "source.gisogd.red_lines"]])
+        # одна геометрия → два знака в два разных слоя
+        self.assertEqual(out["multi"],
+                         [[1, 1, "lgr.kl.uds", "source.gisogd.red_lines"],
+                          [29, -1, "lgr.tech.zone", "source.gisogd.zouit.tech.zone"]])
+        self.assertEqual([c for c, *_ in out["three"]], [1, 18, 29])
+        self.assertEqual([s for _, s, *_ in out["three"]], [-1, 1, 1])
+        # без LineCode — прежний маршрут по имени слоя, объект не теряется
+        self.assertEqual(out["garbage"], [])
+        self.assertEqual(out["empty"], [])
+        self.assertEqual(out["dup"], [[1, 1]], "дубль кода схлопывается")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine test")
+    def test_import_splits_multicode_and_reports_layers(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+core.setLgrCodeStyles(require(process.argv[2]).styles);
+const gj = {type: "FeatureCollection", features: [
+  {type:"Feature", properties:{linelineco:"1,-29", orbis_id:"a"},
+   geometry:{type:"LineString", coordinates:[[37.6,55.75],[37.61,55.75]]}},
+  {type:"Feature", properties:{linelineco:"-1", orbis_id:"b"},
+   geometry:{type:"LineString", coordinates:[[37.6,55.76],[37.61,55.76]]}},
+]};
+const out = core.importGisogdExtent(gj, {code:"l1", name:"Границы улично-дорожной сети (красные линии)"},
+  [-180,-90,180,90]);
+const g = out.groups[0];
+process.stdout.write(JSON.stringify({
+  count: g.features.length,
+  layers: g.features.map(f => f.layer_id),
+  sides: g.features.map(f => f.props.line_side),
+  kinds: g.features.map(f => f.kind),
+  reported: (out.layers || []).map(L => [L.id, L.kind]),
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "core/render/grado_render/styles/moscow_lgr.json")],
+            check=True, capture_output=True, text=True, encoding="utf-8",
+        )
+        out = json.loads(completed.stdout)
+        # 2 геометрии → 3 объекта: «1,-29» разделился на красную линию и техзону
+        self.assertEqual(out["count"], 3)
+        self.assertEqual(out["layers"], ["source.gisogd.red_lines",
+                                         "source.gisogd.zouit.tech.zone",
+                                         "source.gisogd.red_lines"])
+        self.assertEqual(out["sides"], [1, -1, -1])
+        # вид — по СМЫСЛУ кода, а не по виду слоя-источника
+        self.assertEqual(out["kinds"], ["redline", "restrict", "redline"])
+        # слой ЗОУИТ отдан фронту на регистрацию (иначе объект уедет в слой по виду)
+        self.assertEqual(out["reported"], [["source.gisogd.zouit.tech.zone", "restrict"]])
