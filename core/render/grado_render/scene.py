@@ -125,6 +125,11 @@ def _ring_ccw(ring):
     return s < 0
 
 
+# Штрих засечки-маркера чуть тоньше линии (см. marker_ops). Единая величина с
+# холстом app.js MARKER_WIDTH_RATIO — холст и печать не расходятся по толщине.
+MARKER_WIDTH_RATIO = 0.65
+
+
 def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
                   lines, ops):
     """Одна засечка в точке (px,py): касательная (tx,ty), нормаль внутрь
@@ -214,6 +219,9 @@ def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None
     period = spec.get("period_mm", 20.0)
     size = spec.get("size_mm", 2.0)
     shape = spec.get("shape", "tick")
+    # штрих засечки чуть тоньше линии (правка юзера); единая величина с холстом
+    # app.js MARKER_WIDTH_RATIO — печать и экран не расходятся по толщине галок
+    width = max(0.1, width * MARKER_WIDTH_RATIO)
     chain = list(pts) + ([pts[0]] if closed else [])
     ops, lines = [], []
     if dash:

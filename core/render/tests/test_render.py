@@ -629,11 +629,12 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                 attrs={"kind": "водоохранная"}, style_id="lgr.vodookhr")
             ops = build_ops(p, (10, 10, 200, 160), scale=1000)
             p.close()
-        # среди ops есть path-и с width 1.0 (толщина линии по QML) без dash
-        # (маркеры-засечки) помимо контура
+        # среди ops есть path-и без dash (маркеры-засечки) помимо контура; штрих
+        # засечки ЧУТЬ ТОНЬШЕ линии (MARKER_WIDTH_RATIO=0.65 от 1.0 мм = 0.65),
+        # правка юзера «галки должны быть чуть тоньше»
         marker_paths = [o for o in ops if o["op"] == "path"
-                        and o.get("dash") is None and o.get("width") == 1.0
-                        and not o.get("closed")]
+                        and o.get("dash") is None and not o.get("closed")
+                        and 0 < o.get("width", 0) < 1.0]
         self.assertTrue(marker_paths, "засечки chevron в сцене")
 
     def test_frontend_styles_passthrough(self):

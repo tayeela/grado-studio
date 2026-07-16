@@ -1843,6 +1843,11 @@ function drawHatch(ring, hatch, strokeColor) {
   ctx.restore();
 }
 
+// Штрих засечки-маркера чуть тоньше самой линии (см. drawLineMarkers).
+// Единая величина с scene.py MARKER_WIDTH_RATIO — холст и печать не должны
+// расходиться по толщине галок.
+const MARKER_WIDTH_RATIO = 0.65;
+
 // Одна засечка в экранной точке (px,py): касательная (tx,ty), нормаль
 // внутрь (nx,ny). Формы: tick ⊢, tee ⊥, corner Г, chevron ∨, chevron_dot ∨.,
 // triangle ▼, dot ●, square ■, diamond ◇.
@@ -1980,8 +1985,10 @@ function drawLineMarkers(pts, mk, color, closed, inward, width, dash) {
   ctx.save();
   ctx.setLineDash([]);
   ctx.strokeStyle = color; ctx.fillStyle = color;
-  // штрих засечки — той же толщины, что линия (правка юзера), не фикс. 1.2
-  ctx.lineWidth = Math.max(0.5, width || 1);
+  // штрих засечки — чуть ТОНЬШЕ линии (правка юзера): галка на толщине линии
+  // читалась грубовато. MARKER_WIDTH_RATIO держим единым с scene.py (печать),
+  // иначе холст и PDF разойдутся.
+  ctx.lineWidth = Math.max(0.4, (width || 1) * MARKER_WIDTH_RATIO);
   const dashArr = (dash && dash.length) ? dash : null;
   if (dashArr) {
     // Линия штриховая → засечка стоит ТОЛЬКО на черте, не в разрыве (правка
