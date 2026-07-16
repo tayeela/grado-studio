@@ -1705,6 +1705,28 @@ def lgr_style_for_code(code):
     return _LGR_CODE_STYLE.get(code)
 
 
+# коды, которые по смыслу — красные линии (свой слой-приёмник студии)
+_REDLINE_CODES = {1, 2, 3, 4}
+
+
+def _linecode_routes(raw_props):
+    """Атрибуты объекта → [(код, сторона, style_id, layer_id)] по LineCode.
+
+    Пустой список — в объекте нет LineCode (тогда работает прежняя
+    маршрутизация по имени слоя). Коды без знака в библиотеке пропускаем:
+    выдумывать знак нельзя, но и молча терять объект тоже — он останется на
+    прежнем маршруте, если ни один код не распознан."""
+    out = []
+    for code, side in line_codes_of(raw_props):
+        sid = lgr_style_for_code(code)
+        if not sid:
+            continue
+        lid = ("source.gisogd.red_lines" if code in _REDLINE_CODES
+               else _zouit_layer_id(sid))
+        out.append((code, side, sid, lid))
+    return out
+
+
 def _norm_ru(s):
     """Имя для сопоставления: регистр + «ё»→«е».
 
@@ -2393,7 +2415,26 @@ def fetch_extent(bbox, sources):
                     sid = gp_style_for_zone(cand)
                     if sid:
                         break
+            # LineCode из САМОГО объекта — точный тип линии, а не догадка по
+            # имени слоя. Одна геометрия может нести несколько кодов («1,-29» —
+            # и красная линия УДС, и граница техзоны: 34% объектов слоя УДС),
+            # поэтому на каждый код выпускаем СВОЙ объект в СВОЙ слой. Знак кода
+            # = сторона линии → направление засечки (см. line_codes_of).
+            routes = _linecode_routes(f.get("properties") or {})
             for i, part in enumerate(_wgs_geom_to_canvas(geom)):
+                if routes:
+                    for code, side, csid, clid in routes:
+                        # line_code/line_side — это ДАННЫЕ объекта (из LineCode),
+                        # поэтому в props, а не в fmt: fmt — переопределения стиля,
+                        # и сторона протекла бы в сам знак.
+                        cf = {"kind": "redline" if code in _REDLINE_CODES else spec["kind"],
+                              "layer_id": clid, **part,
+                              "props": {**props, "line_code": code, "line_side": side},
+                              "prov": dict(prov), "style_id": csid}
+                        if key is not None:
+                            cf["srcKey"] = f"{clid}:{key}#{i}"
+                        g["features"].append(cf)
+                    continue
                 feat = {"kind": spec["kind"], "layer_id": spec["layer_id"],
                         **part, "props": dict(props), "prov": dict(prov)}
                 if sid:

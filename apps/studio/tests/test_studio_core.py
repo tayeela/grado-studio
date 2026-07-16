@@ -1643,3 +1643,36 @@ class TestLineCode(unittest.TestCase):
         self.assertEqual(studio_core.parse_line_codes("1,,мусор,-6"), [(1, 1), (6, -1)])
         self.assertEqual(studio_core.parse_line_codes("0"), [], "код 0 — не знак")
         self.assertEqual(studio_core.parse_line_codes("1,-1"), [(1, 1)], "дубль кода схлопывается")
+
+
+class TestLineCodeRouting(unittest.TestCase):
+    """Маршрутизация по LineCode: код → знак + свой слой, знак кода → сторона."""
+
+    def test_single_code_to_redline_layer(self):
+        r = studio_core._linecode_routes({"linelineco": "1"})
+        self.assertEqual(r, [(1, 1, "lgr.kl.uds", "source.gisogd.red_lines")])
+
+    def test_side_from_sign(self):
+        plus = studio_core._linecode_routes({"linelineco": "1"})[0]
+        minus = studio_core._linecode_routes({"linelineco": "-1"})[0]
+        self.assertEqual(plus[1], 1)
+        self.assertEqual(minus[1], -1)
+        self.assertEqual(plus[3], minus[3], "слой один — различается только сторона")
+
+    def test_multi_code_splits_into_own_layers(self):
+        # «1,-29» — 34% объектов слоя УДС: одна геометрия это и красная линия,
+        # и граница техзоны. Прежде объект уходил в ОДИН слой с ОДНИМ знаком.
+        r = studio_core._linecode_routes({"linelineco": "1,-29"})
+        self.assertEqual([(c, s, lid) for c, s, _, lid in r],
+                         [(1, 1, "source.gisogd.red_lines"),
+                          (29, -1, "source.gisogd.zouit.tech.zone")])
+
+    def test_three_codes(self):
+        r = studio_core._linecode_routes({"linelineco": "-1,18,29"})
+        self.assertEqual([c for c, *_ in r], [1, 18, 29])
+        self.assertEqual([s for _, s, *_ in r], [-1, 1, 1])
+
+    def test_no_linecode_falls_back_to_name_routing(self):
+        # объект без LineCode обязан остаться на прежнем маршруте, а не пропасть
+        self.assertEqual(studio_core._linecode_routes({"name": "Водоохранные зоны"}), [])
+        self.assertEqual(studio_core._linecode_routes({"linelineco": "NOT_FOUND"}), [])

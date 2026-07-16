@@ -323,6 +323,24 @@ async function openDataFetch() {
         const { added, dup, invalid } = importSourceFeatures(g.features);  // дедуп + валидация
         addedAll += added; dupAll += dup; invalidAll += invalid;
         parts.push(`${g.title} ${added}`);
+        // Объекты ОГД с LineCode разъезжаются по СВОИМ слоям (один код — один
+        // знак), поэтому показываем все затронутые слои, а не только слой
+        // группы: иначе объект есть, а слоя в панели не видно.
+        const touched = new Set([g.layer_id]);
+        for (const f of g.features) if (f.layer_id) touched.add(f.layer_id);
+        for (const lid of touched) {
+          const TL = LAYER_BY_ID[lid];
+          if (!TL) continue;
+          TL.visible = true;
+          // По умолчанию у импортированных зон штриховка и подпись ВЫКЛЮЧЕНЫ:
+          // на реальном чертеже поверх зон лежат линии ЛГР и сам проект, и
+          // сплошная штриховка «съедает» их. Включаются в «Оформлении слоя»
+          // (это переопределение слоя, знак в библиотеке не тронут).
+          if (lid.startsWith("source.gisogd.") && !TL._fmtInit) {
+            TL._fmtInit = true;
+            TL.fmt = { hatch: false, line_label: null, ...(TL.fmt || {}) };
+          }
+        }
         const L = LAYER_BY_ID[g.layer_id];
         if (!L) continue;
         L.visible = true;          // слой-приёмник сразу виден в панели
