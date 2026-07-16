@@ -131,9 +131,10 @@ MARKER_WIDTH_RATIO = 0.65
 
 
 def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
-                  lines, ops):
+                  lines, ops, filled=True):
     """Одна засечка в точке (px,py): касательная (tx,ty), нормаль внутрь
-    (nx,ny). Линейные формы кладутся в lines (общий path), заливные — в ops."""
+    (nx,ny). Линейные формы кладутся в lines (общий path), заливные — в ops.
+    filled=False — контурный треугольник (обводка), как в QML fill alpha=0."""
     s = size
     if shape == "tick":
         lines.append([[px, py], [px + nx * s, py + ny * s]])
@@ -158,24 +159,32 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
             ops.append({"op": "circle", "x": hx, "y": hy, "r": s * 0.15,
                         "fill": stroke, "stroke": None, "width": width})
     elif shape == "triangle":
-        # залитый «▼» остриём внутрь зоны, основание на линии (Эталон)
+        # «▼» остриём внутрь зоны, основание на линии. filled=False → КОНТУРНЫЙ
+        # (в QML fill alpha=0: коды 11/18/50) — обводкой, а не заливкой.
         b = s * 0.5
-        ops.append({"op": "path", "closed": True, "fill": stroke,
-                    "stroke": None, "width": width, "dash": None,
-                    "rings": [[[px - tx * b, py - ty * b],
-                               [px + tx * b, py + ty * b],
-                               [px + nx * s, py + ny * s]]]})
+        tri = [[px - tx * b, py - ty * b],
+               [px + tx * b, py + ty * b],
+               [px + nx * s, py + ny * s]]
+        if filled:
+            ops.append({"op": "path", "closed": True, "fill": stroke,
+                        "stroke": None, "width": width, "dash": None,
+                        "rings": [tri]})
+        else:
+            lines.append([tri[0], tri[1]])
+            lines.append([tri[1], tri[2]])
+            lines.append([tri[2], tri[0]])
     elif shape == "triangle2":
-        # два наложенных залитых треугольника остриём внутрь зоны (Эталон ООЗТ):
-        # второй сдвинут по нормали внутрь и перекрывает первый — двойное остриё
-        b = s * 0.5
-        for base, apex in ((0.0, s * 0.85), (s * 0.45, s * 1.3)):
-            bx, by = px + nx * base, py + ny * base
+        # ООЗТ (код 47): ДВА раздельных треугольника ▲▲ вдоль линии, остриём
+        # внутрь зоны. Прежде накладывались в одну точку и сливались в блоб.
+        b = s * 0.42
+        gap = s * 0.7
+        for o in (-gap, gap):
+            bx, by = px + tx * o, py + ty * o
             ops.append({"op": "path", "closed": True, "fill": stroke,
                         "stroke": None, "width": width, "dash": None,
                         "rings": [[[bx - tx * b, by - ty * b],
                                    [bx + tx * b, by + ty * b],
-                                   [px + nx * apex, py + ny * apex]]]})
+                                   [bx + nx * s, by + ny * s]]]})
     elif shape == "dot":
         ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
                     "fill": stroke, "stroke": None, "width": width})
@@ -219,9 +228,21 @@ def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None
     period = spec.get("period_mm", 20.0)
     size = spec.get("size_mm", 2.0)
     shape = spec.get("shape", "tick")
-    # штрих засечки чуть тоньше линии (правка юзера); единая величина с холстом
-    # app.js MARKER_WIDTH_RATIO — печать и экран не расходятся по толщине галок
-    width = max(0.1, width * MARKER_WIDTH_RATIO)
+    filled = spec.get("filled", True)
+    # Толщина штриха засечки: СВОЯ (ow_mm из QML outline_width), иначе чуть тоньше
+    # линии (MARKER_WIDTH_RATIO, единый с холстом). ow важен для line-штрихов —
+    # без него они выходили волоском (код 9 вообще исчезал).
+    ow = spec.get("ow_mm")
+    if shape == "tick" and ow:
+        # tick: размах засечки = бо́льшая из (длина, толщина), штрих = меньшая
+        # (см. app.js). Иначе код 9 (длина 0.25, толщина 1.88) — невидимый смаз.
+        ext, th = max(size, ow), min(size, ow)
+        size = ext
+        width = max(0.05, th)
+    elif ow:
+        width = ow
+    else:
+        width = max(0.1, width * MARKER_WIDTH_RATIO)
     chain = list(pts) + ([pts[0]] if closed else [])
     ops, lines = [], []
     if dash:
@@ -249,7 +270,7 @@ def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None
                     t = (L - acc) / d
                     _marker_glyph(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t,
                                   tx, ty, nx, ny, shape, size, period,
-                                  stroke, width, lines, ops)
+                                  stroke, width, lines, ops, filled)
                 j += 1
             acc += d
     else:
@@ -265,7 +286,7 @@ def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None
                 t = (gap * (i + 0.5)) / d
                 px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
                 _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period,
-                              stroke, width, lines, ops)
+                              stroke, width, lines, ops, filled)
     if lines:
         ops.append({"op": "path", "rings": lines, "closed": False,
                     "fill": None, "stroke": stroke, "width": width,

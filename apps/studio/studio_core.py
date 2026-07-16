@@ -218,6 +218,11 @@ def frontend_styles():
                                     "period": lm.get("period_px", 40),
                                     "size": lm.get("size_px", 4),
                                     "dir": lm.get("dir", "in")}
+            # ow — толщина штриха маркера (px); filled=False — контурный треугольник
+            if lm.get("ow_px") is not None:
+                entry["line_marker"]["ow"] = lm["ow_px"]
+            if lm.get("filled") is False:
+                entry["line_marker"]["filled"] = False
         if s.get("double_px"):
             entry["double"] = s["double_px"]
         if s.get("title"):

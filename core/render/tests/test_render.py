@@ -495,9 +495,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # px = мм × 96/25.4 (единый множитель, см. MM_PX в генераторе).
         # dir=out: в QML у 16 и 17 один и тот же arrowhead@270 — знаки-близнецы
         # смотрят в одну сторону (прежде 16 стоял «внутрь» и расходился с 17).
+        # ow — толщина штриха галки (QML outline_width 1.25 м → 0.62 мм)
         self.assertEqual(by_code[16]["line_marker"],
                          {"shape": "chevron", "period_mm": 10.0, "size_mm": 1.75,
-                          "period_px": 37.8, "size_px": 6.61, "dir": "out"})
+                          "period_px": 37.8, "size_px": 6.61, "dir": "out",
+                          "ow_mm": 0.62, "ow_px": 2.34})
+        # контурные треугольники (в QML fill alpha=0) — 11/18/50 helper filled=False
+        self.assertEqual(by_code[18]["line_marker"].get("filled"), False, "ПК — контурный")
+        self.assertEqual(by_code[50]["line_marker"].get("filled"), False, "приаэродром. — контурный")
+        self.assertNotIn("filled", by_code[8]["line_marker"], "ООПТ — залитый (не помечен)")
         # 8 ООПТ / 18 ПК / 55 памятник природы — в QML ДВА под-маркера (углы 0 и
         # 180), т.е. глифы по обе стороны линии
         for c in (8, 18, 55):
@@ -651,7 +657,7 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # px холста = мм листа × 96/25.4 (мм пересчитаны из QML MapUnit на 1:2000)
         self.assertEqual(vod["line_marker"],
                          {"shape": "chevron", "period": 37.8, "size": 6.61,
-                          "dir": "out"})
+                          "dir": "out", "ow": 2.34})
         # код 20 (защитная ОКН) — по QML одиночная линия со штрихами (не двойная)
         self.assertEqual(fs["lgr.okn.zashchit"]["line_marker"]["shape"], "tick")
         self.assertNotIn("double", fs["lgr.okn.zashchit"])
