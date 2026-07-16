@@ -56,8 +56,25 @@ def build_pages(destination):
         "bundle_version"
     ]
     marker = '<script src="./canvas-theme.js"></script>'
+    # Авто-обновление: index.html на GitHub Pages кэшируется браузером (~10 мин),
+    # из-за чего мягкий reload подтягивает СТАРЫЙ app.js даже при свежем ?v=.
+    # Ранний скрипт сверяет version.json (no-store) с запечённой версией сборки и,
+    # если страница устарела, один раз переходит на свежий URL (?b=<version> —
+    # новый ключ кэша ⇒ гарантированный чистый index.html). Петли нет: свежий
+    # index.html уже совпадает по версии, а повтор гасится проверкой ?b.
+    selfheal = (
+        '<script>(function(){try{var B="' + str(release) + '";'
+        'fetch("./version.json?ts="+Date.now(),{cache:"no-store"})'
+        '.then(function(r){return r.json();}).then(function(v){'
+        'var L=v&&String(v.bundle_version);'
+        'if(L&&L!==B){var u=new URL(location.href);'
+        'if(u.searchParams.get("b")!==L){u.searchParams.set("b",L);'
+        'location.replace(u.toString());}}}).catch(function(){});'
+        '}catch(e){}})();</script>'
+    )
     html = html.replace(
         marker,
+        selfheal + '\n'
         f'<script>window.__GRADO_ASSET_VERSION__="{release}";</script>\n'
         '<script src="./pages-core.js"></script>\n'
         '<script src="./pages-adapter.js"></script>\n' + marker,
