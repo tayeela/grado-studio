@@ -1795,13 +1795,19 @@ def _zouit_layer_id(style_id):
 # посчитать — хотя знак у каждого свой. Слои заводятся здесь (после
 # _GISOGD_STYLE_RULES), название — из заголовка знака в библиотеке ЛГР.
 # _CODE_TO_LAYER считается выше и берёт только project.* — эти записи его не задевают.
-for _keys, _sid in _GISOGD_STYLE_RULES:
+for _sid, _s in STYLE_LIB["styles"].items():
+    # ВСЕ знаки ЛГР, а не только те, у кого есть правило по имени слоя:
+    # маршрутизация по LineCode выдаёт любой из 55 кодов, и без шаблона слой
+    # не заведётся ни в модели, ни во фронте — объект молча уедет в чужой слой.
+    if not _sid.startswith("lgr.") or _s.get("lgr_code") is None:
+        continue
+    if _s["lgr_code"] in _REDLINE_CODES:
+        continue                          # красные линии — свой слой-приёмник
     _lid = _zouit_layer_id(_sid)
     if _lid not in LAYER_TEMPLATES:
-        _title = (STYLE_LIB["styles"].get(_sid) or {}).get("title", _sid)
         LAYER_TEMPLATES[_lid] = {"code": "terr.restrict", "stage": "existing",
                                  "source_kind": "gisogd", "style_id": _sid,
-                                 "title": f"ГИС ОГД: {_title}"}
+                                 "title": f"ГИС ОГД: {_s.get('title', _sid)}"}
 
 
 def _gisogd_route(member):
@@ -2092,6 +2098,27 @@ def _extent_spec(key):
     if style_id:
         spec["style_id"] = style_id
     return spec
+
+
+def _layer_defs(features):
+    """Описания слоёв, в которые реально попали объекты — для фронта.
+
+    LAYERS_V2 во фронте — СТАТИЧЕСКИЙ список, слоёв source.gisogd.zouit.* там
+    нет. Без регистрации объект не находит свой слой и молча откатывается на
+    слой по ВИДУ (layerOf → LAYER_BY_KIND), т.е. все ЗОУИТ снова в одной куче
+    (железное правило 7). Отдаём ТОЛЬКО встроенные шаблоны: выдумывать слои на
+    лету фронт не должен."""
+    out = {}
+    for f in features:
+        lid = f.get("layer_id")
+        t = LAYER_TEMPLATES.get(lid)
+        if not lid or lid in out or not t:
+            continue
+        out[lid] = {"id": lid, "title": t.get("title") or lid,
+                    "code": t["code"], "kind": f.get("kind"),
+                    "style_id": t.get("style_id"),
+                    "stage": t.get("stage"), "source_kind": t.get("source_kind")}
+    return list(out.values())
 
 
 def bbox_km2(bbox):
@@ -2427,7 +2454,10 @@ def fetch_extent(bbox, sources):
                         # line_code/line_side — это ДАННЫЕ объекта (из LineCode),
                         # поэтому в props, а не в fmt: fmt — переопределения стиля,
                         # и сторона протекла бы в сам знак.
-                        cf = {"kind": "redline" if code in _REDLINE_CODES else spec["kind"],
+                        # вид — по СМЫСЛУ кода, а не по виду слоя-источника:
+                        # иначе водоохранная, приехавшая из слоя красных линий,
+                        # получала kind=redline и семантику красной линии
+                        cf = {"kind": "redline" if code in _REDLINE_CODES else "restrict",
                               "layer_id": clid, **part,
                               "props": {**props, "line_code": code, "line_side": side},
                               "prov": dict(prov), "style_id": csid}
@@ -2543,7 +2573,10 @@ def fetch_extent(bbox, sources):
         g = groups[k]
         g["count"] = len(g["features"])
         out_groups.append(g)
-    return {"groups": out_groups, "notes": notes, "snapshots": snapshots}
+    return {"groups": out_groups, "notes": notes, "snapshots": snapshots,
+            # слои, в которые реально попали объекты (см. _layer_defs): фронт
+            # регистрирует незнакомые, иначе объект молча уедет в слой по виду
+            "layers": _layer_defs([f for g in out_groups for f in g["features"]])}
 
 
 def make_grado(features, name, layers=None, project_styles=None,

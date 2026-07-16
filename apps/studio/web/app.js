@@ -479,7 +479,13 @@ function ruleStyleFor(L, f) {
 function styleOf(f) {
   const L = layerOf(f);
   const sid = f.style_id;
-  const base = (sid && (state.projectStyles[sid] || STYLES_V2[sid])) || ruleStyleFor(L, f) || layerStyle(L) || {};
+  let base = (sid && (state.projectStyles[sid] || STYLES_V2[sid])) || ruleStyleFor(L, f) || layerStyle(L) || {};
+  // «Оформление слоя» действует и на объекты со СВОИМ знаком. Раньше явный
+  // f.style_id забирал стиль прямо из библиотеки, минуя L.fmt: правки слоя
+  // (напр. выключить штриховку/подпись у импортированных зон ОГД) просто не
+  // применялись — объект молча оставался с библиотечным знаком.
+  // Порядок остаётся: знак → оформление слоя → оформление объекта.
+  if (sid && L && L.fmt) base = { ...base, ...L.fmt };
   return f.fmt ? { ...base, ...f.fmt } : base;   // f.fmt — оформление отдельного объекта
 }
 
