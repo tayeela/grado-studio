@@ -241,7 +241,8 @@ process.stdout.write(JSON.stringify({
   aLayer: a.features[0].layer_id, aStyle: a.features[0].style_id, aSide: a.features[0].props.line_side,
   aLayers: a.layers.map(L => L.id),
   bLayers: b.features.map(f => f.layer_id), bReported: b.layers.map(L => [L.id, L.kind]),
-  cStyle: c.features[0].style_id, cLayers: c.layers.length,
+  cLayer: c.features[0].layer_id, cStyle: c.features[0].style_id,
+  cLayers: c.layers.map(L => L.id),
 }));
 """
         completed = subprocess.run(
@@ -260,9 +261,11 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(out["bLayers"],
                          ["source.gisogd.red_lines", "source.gisogd.zouit.tech.zone"])
         self.assertEqual(out["bReported"], [["source.gisogd.zouit.tech.zone", "restrict"]])
-        # без LineCode — прежний путь по имени, знак назначен, свой слой не заводится
+        # без LineCode — прежний путь по имени, но теперь в СВОЙ слой знака
+        # (как в настольной версии), а не в общий source.gisogd.restrict
+        self.assertEqual(out["cLayer"], "source.gisogd.zouit.vodookhr")
         self.assertEqual(out["cStyle"], "lgr.vodookhr")
-        self.assertEqual(out["cLayers"], 0)
+        self.assertEqual(out["cLayers"], ["source.gisogd.zouit.vodookhr"])
 
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
