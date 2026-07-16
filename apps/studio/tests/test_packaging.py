@@ -221,6 +221,49 @@ process.stdout.write(JSON.stringify({
         result = json.loads(completed.stdout)
         self.assertEqual(result["invalid"], result["baseline"])
 
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for browser-engine test")
+    def test_geojson_import_routes_by_linecode(self):
+        root = Path(__file__).parents[3]
+        script = r"""
+const core = require(process.argv[1]);
+core.setLgrCodeStyles(require(process.argv[2]).styles);
+const line = props => ({type:"FeatureCollection", features:[{type:"Feature",
+  properties: props, geometry:{type:"LineString", coordinates:[[37.6,55.75],[37.61,55.75]]}}]});
+// имя файла «красные линии УДС», а LineCode = -41 (береговая) — тип из ДАННЫХ
+const a = core.importGeoJson(line({LineCode:"-41"}), "krasnye_linii_uds.geojson");
+// многокодовый: одна геометрия → два знака в два слоя
+const b = core.importGeoJson(line({LineCode:"1,-29"}), "x.geojson");
+// без LineCode — прежний маршрут по имени файла, объект не теряется
+const c = core.importGeoJson({type:"FeatureCollection", features:[{type:"Feature",
+  properties:{}, geometry:{type:"Polygon", coordinates:[[[37.6,55.75],[37.61,55.75],[37.61,55.76],[37.6,55.75]]]}}]},
+  "vodoohrannaya_zona.geojson");
+process.stdout.write(JSON.stringify({
+  aLayer: a.features[0].layer_id, aStyle: a.features[0].style_id, aSide: a.features[0].props.line_side,
+  aLayers: a.layers.map(L => L.id),
+  bLayers: b.features.map(f => f.layer_id), bReported: b.layers.map(L => [L.id, L.kind]),
+  cStyle: c.features[0].style_id, cLayers: c.layers.length,
+}));
+"""
+        completed = subprocess.run(
+            ["node", "-e", script,
+             str(root / "apps/studio/web/pages-core.js"),
+             str(root / "core/render/grado_render/styles/moscow_lgr.json")],
+            check=True, capture_output=True, text=True, encoding="utf-8",
+        )
+        out = json.loads(completed.stdout)
+        # LineCode бьёт имя файла: -41 → береговая
+        self.assertEqual(out["aLayer"], "source.gisogd.zouit.beregovaya")
+        self.assertEqual(out["aStyle"], "lgr.beregovaya")
+        self.assertEqual(out["aSide"], -1)
+        self.assertEqual(out["aLayers"], ["source.gisogd.zouit.beregovaya"])
+        # многокодовый разделился на красную линию и техзону
+        self.assertEqual(out["bLayers"],
+                         ["source.gisogd.red_lines", "source.gisogd.zouit.tech.zone"])
+        self.assertEqual(out["bReported"], [["source.gisogd.zouit.tech.zone", "restrict"]])
+        # без LineCode — прежний путь по имени, знак назначен, свой слой не заводится
+        self.assertEqual(out["cStyle"], "lgr.vodookhr")
+        self.assertEqual(out["cLayers"], 0)
+
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
         styles = (root / "apps/studio/web/redesign/studio2.css").read_text(
