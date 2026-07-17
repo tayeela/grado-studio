@@ -1695,8 +1695,20 @@ _GISOGD_STYLE_RULES = [
     (("особо охраняемых природных", "особо охраняемые природные",
       "особо охраняемая природная", "охраняемых природных территор"), "lgr.oopt"),
     (("оопт", "oopt"), "lgr.oopt"),
+    # --- Природный комплекс (ЛГР 18 / 21), НЕ «природная зона» Генплана ---
+    # «природная зона» / «природно-жилая…» — gp.* (точное имя зоны), сюда не
+    # попадают: у них нет «комплекс»/«объектов пк»/«режимы на территор».
+    # Сначала режимы (код 21): l21, virtual139, заголовок «Режимы на территориях ПК».
+    (("режимы на территор", "режимами регулирования", "с режимами регулирования",
+      "участков объектов пк", "объектов пк"), "lgr.pk.rezhim"),
+    # Затем объекты/границы ПК (код 18): l18, title библиотеки, формы падежей.
+    # Не корень «комплекс» — иначе вокзальные/благоустроительные «комплексы».
+    (("объекты природного комплекса", "объектов природного комплекса",
+      "природного комплекса", "природный комплекс", "природном комплексе",
+      "природных комплексов", "территорий природного комплекса",
+      "территории природного комплекса", "prirodnogo kompleksa",
+      "prirodnyj kompleks"), "lgr.pk"),
     # --- полигон-знаки по полному имени портала (добавлено по просьбе юзера) ---
-    (("природного комплекса", "prirodnogo kompleksa"), "lgr.pk"),
     (("транспортных сооружен", "transportnyh sooruzhen"), "lgr.zone.transport"),
     (("линии застройки", "линия застройки", "линий застройки"), "lgr.zastroyka"),
     # «охраняемого объекта» НЕ contiguous в «охраняемого ВОЕННОГО объекта» (то —
@@ -1902,7 +1914,10 @@ def gp_style_for_zone(name):
     в naimfunkzony, у Троицка вместо имени числовой код."""
     if name in (None, ""):
         return None
-    key = str(name).strip()
+    # схлопываем повторные пробелы: в данных портала встречаются «общественно-
+    # жилая  зона» / «производственная  зона» с двойным пробелом — точное
+    # совпадение по ним не срабатывало, и зона теряла знак (чёрный контур).
+    key = " ".join(str(name).split())
     sid = _GP_ZONE_STYLE.get(key.lower())
     if sid:
         return sid
@@ -2308,6 +2323,15 @@ def _extent_spec(key):
     if not name:
         return None
     kind, _routed = _gisogd_route(name)
+    # Слой портала, НАЗВАННЫЙ прямо типом функц. зоны Генплана («Природная зона»,
+    # «Природно-жилая зона», «Жилая зона» — так устроены слои Новой Москвы
+    # virtual19xx/28xx), правило «функционал» НЕ ловит: у него в имени нет слова
+    # «функциональные». Без этого kind оставался generic, gp_style_for_zone не
+    # вызывался, и зона шла чёрным контуром — «природный комплекс без авто-стиля».
+    # Имя слоя = точный тип зоны → трактуем слой как зону и красим Генпланом.
+    gp_sid = gp_style_for_zone(name)
+    if gp_sid and not kind:
+        kind = "zone"
     # СЛОЙ = СЛОЙ-ИСТОЧНИК, а не знак (требование юзера, повторное). Прежде слой
     # выводился из знака (lgr.beregovaya → source.gisogd.zouit.beregovaya), и
     # «Зоны береговых полос» портала растворялись в чужом по смыслу «ЗОУИТ».
@@ -2319,8 +2343,7 @@ def _extent_spec(key):
             "layer_id": f"source.gisogd.{code}",
             "title": f"ГИС ОГД: {name}",
             "dyn_layer": True}
-    style_id = _gisogd_style_for(name) or (gp_style_for_zone(name)
-                                           if kind == "zone" else None)
+    style_id = _gisogd_style_for(name) or (gp_sid if kind == "zone" else None)
     if style_id:
         spec["style_id"] = style_id
     return spec
@@ -2566,21 +2589,27 @@ def _extent_props(src_key, p):
         # (имя) и fztip/fztype (код типа) встречаются ТОЛЬКО у ФЗ, поэтому промоушен
         # безопасен для прочих слоёв. Поднятые поля убираем из сырого дампа, чтобы
         # не двоить их с семантическими (как в кураторском пути).
-        zt = raw.get("naimfunkzony") or raw.get("naimfunkzo")
-        fz = raw.get("fztip") or raw.get("fztype")
+        # Имя/тип зоны у ФЗ портала названы ПО-РАЗНОМУ в разных слоях: старая
+        # Москва — naimfunkzony (в SHP обрезано до naimfunkzo), Щербинка/ряд ТиНАО
+        # — fz_name/fz_type, Троицк — числовой classid (без имени, отдельная
+        # схема). Читаем все известные варианты, иначе знак Генплана не
+        # подбирается и зона рисуется чёрным контуром слоя.
+        zt = (raw.get("naimfunkzony") or raw.get("naimfunkzo")
+              or raw.get("fz_name"))
+        fz = (raw.get("fztip") or raw.get("fztype") or raw.get("fz_type"))
         promoted, base = {}, []
         if zt not in (None, ""):
             promoted["zone_title"] = zt
             base.append({"name": "zone_title",
                          "label": "наименование зоны", "type": "text"})
-            raw.pop("naimfunkzony", None)
-            raw.pop("naimfunkzo", None)
+            for k in ("naimfunkzony", "naimfunkzo", "fz_name"):
+                raw.pop(k, None)
         if fz not in (None, ""):
             promoted["fz_type"] = str(fz)
             base.append({"name": "fz_type",
                          "label": "тип функц. зоны", "type": "text"})
-            raw.pop("fztip", None)
-            raw.pop("fztype", None)
+            for k in ("fztip", "fztype", "fz_type"):
+                raw.pop(k, None)
         props, fields = _gisogd_clean_props(raw)
         props.update(promoted)
         return props, base + fields

@@ -498,7 +498,7 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # ow — толщина штриха галки (QML outline_width 1.25 м → 0.62 мм)
         self.assertEqual(by_code[16]["line_marker"],
                          {"shape": "chevron", "period_mm": 10.0, "size_mm": 1.75,
-                          "period_px": 37.8, "size_px": 6.61, "dir": "out",
+                          "period_px": 37.8, "size_px": 6.61, "dir": "in",
                           "ow_mm": 0.62, "ow_px": 2.34})
         # контурные треугольники (в QML fill alpha=0) — 11/18/50 helper filled=False
         self.assertEqual(by_code[18]["line_marker"].get("filled"), False, "ПК — контурный")
@@ -522,7 +522,23 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertIsNone(by_code[41].get("line_marker"),
                           "береговая полоса — без маркеров (приложение 2)")
         self.assertEqual(by_code[47]["line_marker"]["shape"], "triangle2",
-                         "ООЗТ — ДВА наложенных треугольника (осн. таблица)")
+                         "ООЗТ — два треугольника, наложенных со сдвигом вверх (как ООПТ)")
+        self.assertEqual(by_code[47]["line_marker"]["size_mm"], 1.0,
+                         "ООЗТ — размер маркера как у ООПТ")
+        self.assertEqual(by_code[47]["line_marker"]["dir"], "in")
+        # глиф: второй треугольник сдвинут по нормали, не вдоль линии
+        from grado_render.scene import marker_ops as _mops
+        _ops = _mops([[0, 0], [40, 0]],
+                     {"shape": "triangle2", "period_mm": 40, "size_mm": 4, "dir": "in"},
+                     stroke="#f00", width=0.3, closed=False, inward=1.0)
+        _tris = [o for o in _ops if o.get("op") == "path"]
+        self.assertGreaterEqual(len(_tris), 2, "triangle2 даёт ≥2 треугольника")
+        _y0 = sum(y for _, y in _tris[0]["rings"][0]) / 3
+        _y1 = sum(y for _, y in _tris[1]["rings"][0]) / 3
+        self.assertGreater(_y1, _y0 + 0.5, "второй треугольник сдвинут вверх (по нормали)")
+        _x0 = sum(x for x, _ in _tris[0]["rings"][0]) / 3
+        _x1 = sum(x for x, _ in _tris[1]["rings"][0]) / 3
+        self.assertAlmostEqual(_x0, _x1, delta=0.3, msg="сдвиг не вдоль линии")
         self.assertEqual(by_code[46]["line_marker"]["shape"], "triangle",
                          "Резерв ООПТ — треугольники (семейство ООПТ)")
         self.assertEqual(by_code[10]["line_marker"]["shape"], "tick",
@@ -543,13 +559,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
             self.assertEqual(by_code[c]["line_marker"]["shape"], "tick",
                              f"код {c} затоп/подтоп — перпенд. штрих (QML line)")
         # направление засечки per-sign — сверено с углом под-маркера в QML.
-        # остриём НАРУЖУ — ландшафт ОКН / водоохранная / прибрежная
-        # (16 и 17 в QML — один и тот же arrowhead@270, направление общее)
-        for c in (11, 16, 17):
+        # остриём НАРУЖУ — ландшафт ОКН
+        for c in (11,):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "out",
                              f"код {c} — засечка остриём наружу зоны (QML)")
-        # остриём ВНУТРЬ — ООЗТ/геодез/резерв ООПТ/приаэродром./возд.подходы
-        for c in (47, 38, 46, 50, 51):
+        # остриём ВНУТРЬ зоны — апекс на границе, ничего снаружи полигона:
+        # ООЗТ/геодез/резерв ООПТ/приаэродром./возд.подходы, а также
+        # водоохранная(16)/прибрежная(17) — иначе на нижнем ребре плечи галки
+        # свисали ПОД линию (жалоба юзера «нижняя точка ниже пунктира»).
+        for c in (47, 38, 46, 50, 51, 16, 17):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "in",
                              f"код {c} — засечка остриём внутрь зоны (эталон)")
 
@@ -679,7 +697,7 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         # px холста = мм листа × 96/25.4 (мм пересчитаны из QML MapUnit на 1:2000)
         self.assertEqual(vod["line_marker"],
                          {"shape": "chevron", "period": 37.8, "size": 6.61,
-                          "dir": "out", "ow": 2.34})
+                          "dir": "in", "ow": 2.34})
         # код 20 (защитная ОКН) — по QML одиночная линия со штрихами (не двойная)
         self.assertEqual(fs["lgr.okn.zashchit"]["line_marker"]["shape"], "tick")
         self.assertNotIn("double", fs["lgr.okn.zashchit"])

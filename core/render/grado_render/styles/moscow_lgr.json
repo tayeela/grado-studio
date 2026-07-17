@@ -513,7 +513,7 @@
         "size_mm": 1.75,
         "period_px": 37.8,
         "size_px": 6.61,
-        "dir": "out",
+        "dir": "in",
         "ow_mm": 0.62,
         "ow_px": 2.34
       },
@@ -565,7 +565,7 @@
         "size_mm": 1.75,
         "period_px": 39.69,
         "size_px": 6.61,
-        "dir": "out",
+        "dir": "in",
         "ow_mm": 0.5,
         "ow_px": 1.89
       },
@@ -1670,9 +1670,9 @@
       "line_marker": {
         "shape": "triangle2",
         "period_mm": 10.0,
-        "size_mm": 1.1,
+        "size_mm": 1.0,
         "period_px": 37.8,
-        "size_px": 4.16,
+        "size_px": 3.78,
         "dir": "in"
       },
       "hatch": {

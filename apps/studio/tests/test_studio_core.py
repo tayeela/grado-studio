@@ -1594,6 +1594,32 @@ class TestGisogdRoutingNames(unittest.TestCase):
         self.assertEqual(studio_core._gisogd_style_for("Охранные зоны ООПТ"), "lgr.oopt.okhr")
         self.assertEqual(studio_core._gisogd_style_for("Защитные зоны ОКН"), "lgr.okn.zashchit")
 
+    def test_prirodny_kompleks_not_prirodnaya_zona(self):
+        # ПК (объекты природного комплекса, ЛГР 18/21) ≠ «природная зона» Генплана.
+        self.assertEqual(studio_core._gisogd_style_for("Объекты природного комплекса"),
+                         "lgr.pk")
+        self.assertEqual(studio_core._gisogd_style_for("Природный комплекс"), "lgr.pk")
+        self.assertEqual(
+            studio_core._gisogd_style_for(
+                "Границы территорий природного комплекса Москвы"), "lgr.pk")
+        self.assertEqual(studio_core._gisogd_style_for("Режимы на территориях ПК"),
+                         "lgr.pk.rezhim")
+        self.assertEqual(
+            studio_core._gisogd_style_for(
+                "Границы территорий и участков объектов ПК с режимами регулирования ГД"),
+            "lgr.pk.rezhim")
+        self.assertEqual(
+            studio_core._gisogd_style_for(
+                "Территории и участки объектов ПК с режимами регулирования ГД - площади"),
+            "lgr.pk.rezhim")
+        # Генплан — не трогаем
+        self.assertIsNone(studio_core._gisogd_style_for("Природная зона"))
+        self.assertIsNone(studio_core._gisogd_style_for("природно-жилая зона"))
+        # режимы ООПТ не должны уезжать в pk.rezhim
+        self.assertEqual(
+            studio_core._gisogd_style_for(
+                "Режимы особой охраны на территории ООПТ"), "lgr.oopt")
+
     def test_every_routed_sign_matches_its_own_title(self):
         # Общий гейт класса: если у знака ЕСТЬ правило, то его собственный
         # заголовок обязан ловиться именно им, а не соседним.

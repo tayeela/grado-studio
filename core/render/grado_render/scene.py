@@ -174,17 +174,18 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
             lines.append([tri[1], tri[2]])
             lines.append([tri[2], tri[0]])
     elif shape == "triangle2":
-        # ООЗТ (код 47): ДВА раздельных треугольника ▲▲ вдоль линии, остриём
-        # внутрь зоны. Прежде накладывались в одну точку и сливались в блоб.
-        b = s * 0.42
-        gap = s * 0.7
-        for o in (-gap, gap):
-            bx, by = px + tx * o, py + ty * o
+        # ООЗТ (код 47) — как ООПТ на эталоне: ДВА залитых треугольника,
+        # наложенных друг на друга со сдвигом «вверх» (по нормали внутрь зоны).
+        # Не разносить вдоль линии (▲▲ рядом) — это не эталонный знак.
+        b = s * 0.5
+        shift = s * 0.38  # второй треугольник сдвинут внутрь зоны
+        for o in (0.0, shift):
+            cx, cy = px + nx * o, py + ny * o
             ops.append({"op": "path", "closed": True, "fill": stroke,
                         "stroke": None, "width": width, "dash": None,
-                        "rings": [[[bx - tx * b, by - ty * b],
-                                   [bx + tx * b, by + ty * b],
-                                   [bx + nx * s, by + ny * s]]]})
+                        "rings": [[[cx - tx * b, cy - ty * b],
+                                   [cx + tx * b, cy + ty * b],
+                                   [cx + nx * s, cy + ny * s]]]})
     elif shape == "dot":
         ops.append({"op": "circle", "x": px, "y": py, "r": s / 2,
                     "fill": stroke, "stroke": None, "width": width})
