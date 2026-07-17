@@ -14,6 +14,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "красная",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 113,
@@ -42,14 +44,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "кл топ",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 108,
@@ -78,14 +82,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "кл ло",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 107,
@@ -114,14 +120,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "кл одмс",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 112,
@@ -150,14 +158,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона сооружений транспорта",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 105,
@@ -186,14 +196,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        8,
-        2
+        4.0,
+        1.0
       ],
       "dash_px": [
-        30.24,
-        7.56
+        15.12,
+        3.78
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -232,14 +244,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        8,
-        2
+        4.0,
+        1.0
       ],
       "dash_px": [
-        30.24,
-        7.56
+        15.12,
+        3.78
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -278,14 +292,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        8,
-        2
+        4.0,
+        1.0
       ],
       "dash_px": [
-        30.24,
-        7.56
+        15.12,
+        3.78
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -324,14 +340,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        8,
-        2
+        4.0,
+        1.0
       ],
       "dash_px": [
-        30.24,
-        7.56
+        15.12,
+        3.78
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -372,6 +390,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -409,26 +429,28 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        1.75,
-        0.5,
-        1.75,
-        6,
-        1.75,
-        0.5,
-        1.75
+        3.0,
+        0.875,
+        0.25,
+        0.875,
+        3.0,
+        0.875,
+        0.25,
+        0.875
       ],
       "dash_px": [
-        22.68,
-        6.61,
-        1.89,
-        6.61,
-        22.68,
-        6.61,
-        1.89,
-        6.61
+        11.34,
+        3.31,
+        0.94,
+        3.31,
+        11.34,
+        3.31,
+        0.94,
+        3.31
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -467,14 +489,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        4
+        3.0,
+        2.0
       ],
       "dash_px": [
-        22.68,
-        15.12
+        11.34,
+        7.56
       ],
       "line_label": "водоохранная",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 116,
@@ -513,18 +537,20 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2,
-        0.5,
-        2
+        3.0,
+        1.0,
+        0.25,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56,
-        1.89,
-        7.56
+        11.34,
+        3.78,
+        0.94,
+        3.78
       ],
       "line_label": "прибрежная",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 117,
@@ -563,14 +589,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона I пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 127,
@@ -609,14 +637,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона IА пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 126,
@@ -655,14 +685,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона IБ пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 125,
@@ -701,14 +733,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона II пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 123,
@@ -745,18 +779,20 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        1.75,
-        0.5,
-        1.75
+        3.0,
+        0.875,
+        0.25,
+        0.875
       ],
       "dash_px": [
-        22.68,
-        6.61,
-        1.89,
-        6.61
+        11.34,
+        3.31,
+        0.94,
+        3.31
       ],
       "line_label": "жесткая зона II пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 124,
@@ -795,22 +831,24 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
+        0.25,
         0.5,
-        1,
+        0.25,
         0.5,
-        1,
-        6,
-        1
+        3.0,
+        0.5
       ],
       "dash_px": [
+        0.94,
         1.89,
-        3.78,
+        0.94,
         1.89,
-        3.78,
-        22.68,
-        3.78
+        11.34,
+        1.89
       ],
       "line_label": "зона III пояса санитарной охраны",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 122,
@@ -849,14 +887,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "санитарно-защитная зона",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -895,14 +935,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "санитарно-защитная зона",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -941,14 +983,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "санитарно-защитная зона",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -987,14 +1031,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона военного О",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1023,14 +1069,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона радиотехнического О",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1061,6 +1109,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "охранная зона ООПТ",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 121,
@@ -1099,14 +1149,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона О электроэнергетики",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1135,14 +1187,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона инфраструктуры",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1171,14 +1225,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона связи",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1207,14 +1263,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона трубопровода",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1245,6 +1303,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1285,6 +1345,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1321,14 +1383,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона мин расстояний",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1357,14 +1421,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "охранная зона теплосетей",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1395,6 +1461,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ООПТ",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 120,
@@ -1433,6 +1501,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "режим",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 110,
@@ -1463,6 +1533,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "памятник природы",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 119,
@@ -1499,14 +1571,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "ОКС",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 109,
@@ -1535,14 +1609,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        4
+        3.0,
+        2.0
       ],
       "dash_px": [
-        22.68,
-        15.12
+        11.34,
+        7.56
       ],
       "line_label": "Резерв ООПТ",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1581,6 +1657,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ООЗТ",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1617,14 +1695,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "береговая",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 115,
@@ -1655,6 +1735,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ПК",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 118,
@@ -1694,6 +1776,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "режим",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 111,
@@ -1715,14 +1799,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "техническая зона",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 103,
@@ -1751,14 +1837,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "техзона метро",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 102,
@@ -1787,22 +1875,24 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
+        0.25,
         0.5,
-        1,
+        0.25,
         0.5,
-        1,
-        6,
-        1
+        3.0,
+        0.5
       ],
       "dash_px": [
+        0.94,
         1.89,
-        3.78,
+        0.94,
         1.89,
-        3.78,
-        22.68,
-        3.78
+        11.34,
+        1.89
       ],
       "line_label": "ПОЖД",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 114,
@@ -1831,14 +1921,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона ВПП",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 101,
@@ -1860,14 +1952,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "линия застройки",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 104,
@@ -1889,14 +1983,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        4
+        3.0,
+        2.0
       ],
       "dash_px": [
-        22.68,
-        15.12
+        11.34,
+        7.56
       ],
       "line_label": null,
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1933,14 +2029,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        0.75,
-        2
+        0.375,
+        1.0
       ],
       "dash_px": [
-        2.83,
-        7.56
+        1.42,
+        3.78
       ],
       "line_label": "ЛЗП",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -1969,14 +2067,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона транспортных коммуникаций",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 106,
@@ -2007,6 +2107,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "охранная зона ОКН",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -2045,14 +2147,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        2
+        3.0,
+        1.0
       ],
       "dash_px": [
-        22.68,
-        7.56
+        11.34,
+        3.78
       ],
       "line_label": "зона регулирования застройки ОКН",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -2081,14 +2185,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        6,
-        4
+        3.0,
+        2.0
       ],
       "dash_px": [
-        22.68,
-        15.12
+        11.34,
+        7.56
       ],
       "line_label": "зона охраняемого природного ландшафта",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -2126,14 +2232,16 @@
       "width_mm": 1.0,
       "width_px": 3.78,
       "dash_mm": [
-        8,
-        2
+        4.0,
+        1.0
       ],
       "dash_px": [
-        30.24,
-        7.56
+        15.12,
+        3.78
       ],
       "line_label": "защитная зона ОКН",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,
@@ -2174,6 +2282,8 @@
       "dash_mm": null,
       "dash_px": null,
       "line_label": "Тер ОКН",
+      "ground_units": true,
+      "ref_scale": 2000,
       "label_field": null,
       "marker_mm": 1.2,
       "z": 100,

@@ -534,8 +534,9 @@ class TestMoscowLgrLibrary(unittest.TestCase):
                               f"код {c} — сплошная линия (эталон, осн. таблица)")
         self.assertEqual(by_code[17]["line_marker"]["shape"], "chevron",
                          "прибрежная — шеврон; точки суть штрих-пунктир линии")
-        self.assertEqual(by_code[41]["dash_mm"], [6.0, 2.0],
-                         "береговая — простой штрих 6.0/2.0 (не штрих-пунктир)")
+        self.assertEqual(by_code[41]["dash_mm"], [3.0, 1.0],
+                         "береговая — простой штрих QML 6;2 МЕТРА → 3.0/1.0 мм "
+                         "на 1:2000 (не штрих-пунктир)")
         self.assertEqual(len(by_code[61]["dash_mm"]), 6,
                          "зона 3 пояса — штрих-пунктир с двумя точками")
         for c in (22, 64, 65, 66):
@@ -567,9 +568,25 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[41]["stroke"], "#0018b8", "береговая — синий")
         # штрих точно по QML
         self.assertIsNone(by_code[19]["dash_mm"], "охр. зона ООПТ — сплошная (QML)")
-        self.assertEqual(by_code[16]["dash_mm"], [6.0, 4.0], "водоохранная — 6/4")
-        self.assertEqual(by_code[20]["dash_mm"], [8.0, 2.0], "защитная ОКН — 8/2")
-        self.assertEqual(by_code[49]["dash_mm"], [0.75, 2.0], "лесопарк — точечный 0.75/2")
+        # ГЕЙТ КЛАССА ОШИБОК: в QML customdash_unit=MapUnit у 49 из 53 знаков —
+        # это МЕТРЫ НА МЕСТНОСТИ. Прежде числа QML переносились как мм листа,
+        # отчего все штрихи выходили вдвое грубее эталона, а галка садилась на
+        # каждый штрих вместо каждого второго. Держим мм = метры_QML / 2
+        # (опорный 1:2000). Проверяем обратным пересчётом в метры — так тест
+        # прямо сверяется с QML, а не с нашим промежуточным числом.
+        def qml_m(code):
+            return [round(x * 2, 3) for x in by_code[code]["dash_mm"]]
+        self.assertEqual(qml_m(16), [6.0, 4.0], "водоохранная — QML 6;4 МЕТРА")
+        self.assertEqual(qml_m(20), [8.0, 2.0], "защитная ОКН — QML 8;2 МЕТРА")
+        self.assertEqual(qml_m(49), [0.75, 2.0], "лесопарк — QML 0.75;2 МЕТРА")
+        self.assertEqual(by_code[16]["dash_mm"], [3.0, 2.0], "16 — мм на 1:2000")
+        # шаг галки 20 м при цикле штриха 10 м ⇒ засечка через штрих (k=2)
+        cycle_mm = sum(by_code[16]["dash_mm"])
+        self.assertEqual(cycle_mm, 5.0, "цикл штриха 16 = 5 мм = 10 м (QML)")
+        self.assertEqual(by_code[16]["line_marker"]["period_mm"], 10.0,
+                         "шаг галки 16 = 10 мм = 20 м (QML interval=20 MapUnit)")
+        self.assertEqual(round(by_code[16]["line_marker"]["period_mm"] / cycle_mm), 2,
+                         "галка через штрих: 20 м / 10 м = 2 (QML)")
         self.assertIn(33, by_code, "код 33 (охранные зоны инфраструктуры) добавлен")
         # штриховка зон по рабочим QML (spritzones): цвет/угол/шаг, код 21 — заливка.
         # Цвет — из ВЛОЖЕННОГО SimpleLine (им QGIS рисует штрихи), а не из

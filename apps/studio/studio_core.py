@@ -202,6 +202,11 @@ def frontend_styles():
             entry["fill"] = fill
         if s.get("dash_px"):
             entry["dash"] = s["dash_px"]
+        # Знаки ЛГР: штрих/маркеры в QML заданы в метрах на местности (MapUnit),
+        # в px записаны для опорного 1:2000 → холст масштабирует их по зуму.
+        if s.get("ground_units"):
+            entry["ground_units"] = True
+            entry["ref_scale"] = s.get("ref_scale", 2000)
         h = s.get("hatch")
         if isinstance(h, dict):
             entry["hatch"] = {k: h[k] for k in

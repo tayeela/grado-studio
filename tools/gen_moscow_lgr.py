@@ -16,6 +16,13 @@ import json
 # на 2, из-за чего round-trip портил ширину (1.0 мм → 3.2 px → 1.6 мм).
 MM_PX = 96 / 25.4
 
+# Опорный масштаб символики ЛГР — Эталон М 1:2000: 1 мм листа = 2 м местности.
+# В рабочих QML Москвы величины штриха и маркеров заданы в MapUnit (МЕТРЫ на
+# местности), поэтому мм = MapUnit_метры / MAPUNIT_MM. Одна константа на оба
+# словаря (DASH_QML и MARKERS) — при смене опорного масштаба менять здесь.
+MAPUNIT_MM = 2.0
+REF_SCALE_DENOM = 2000
+
 
 def to_px(mm):
     return round(mm * MM_PX, 2)
@@ -306,7 +313,17 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
     # штрих и толщина линии — по рабочим QML (точный источник), с откатом на
     # именованный стиль строки, если кода нет в QML-словаре
     if code in DASH_QML:
-        dash_mm = DASH_QML[code]
+        # ВАЖНО: в QML customdash_unit=MapUnit у 49 из 53 линейных знаков —
+        # это МЕТРЫ НА МЕСТНОСТИ, а не миллиметры листа. Прежде числа QML
+        # переносились как мм, отчего ВСЕ штрихи выходили вдвое грубее
+        # эталона, а галка садилась на КАЖДЫЙ штрих вместо каждого второго.
+        # Пересчёт на опорный масштаб 1:2000 (1 м местности = 0.5 мм листа):
+        # мм = MapUnit_метры / 2 — та же формула, что уже у MARKERS.
+        # Проверка на знаке 16: [6,4] м → [3,2] мм → цикл 10 м; период галки
+        # 20 м ⇒ k=2 (через штрих); bestOff = 1.5 мм = 3 м = QML
+        # offset_along_line. При смене опорного масштаба пересчитывать оба
+        # словаря (DASH_QML и MARKERS) вместе.
+        dash_mm = [x / MAPUNIT_MM for x in DASH_QML[code]] if DASH_QML[code] else None
         dash_px = [to_px(x) for x in dash_mm] if dash_mm else None
     else:
         dash_px, dash_mm = DASH[line]
@@ -323,6 +340,13 @@ for (code, slug, title, ppm, hexc, cmyk, angle, density, line, line_color,
         "width_mm": w_mm, "width_px": to_px(w_mm),
         "dash_mm": dash_mm, "dash_px": dash_px,
         "line_label": label,
+        # Штрих и маркеры знака заданы в QML в MapUnit (метры на местности).
+        # Флаг говорит рендерам масштабировать dash/период/размер по зуму
+        # относительно опорного 1:2000 (в px они записаны именно для него),
+        # чтобы плотность рисунка совпадала с эталоном на ЛЮБОМ масштабе.
+        # Пользовательских/проектных стилей флаг не касается — там px.
+        "ground_units": True,
+        "ref_scale": REF_SCALE_DENOM,
         "label_field": None, "marker_mm": 1.2,
         # приоритет 1 (высший) → рисуется поверх: z = 100 + (28 - prio)
         "z": 100 + (28 - prio) if prio else 100,
