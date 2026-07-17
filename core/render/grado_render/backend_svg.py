@@ -67,8 +67,13 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                 d += f"M {_pts(ring[:1])} L {_pts(ring[1:])} "
                 if o.get("closed"):
                     d += "Z "
+            # путь с ДЫРАМИ (несколько колец) — заливка по чётности, иначе
+            # выколотая часть закрасилась бы при «неправильной» намотке кольца
+            # (в данных портала направление обхода не гарантировано)
+            eo = (' fill-rule="evenodd"'
+                  if (o.get("evenodd") or len(o["rings"]) > 1) else "")
             body.append(
-                f'<path d="{d.strip()}" fill="{_css(o.get("fill"))}" '
+                f'<path d="{d.strip()}" fill="{_css(o.get("fill"))}"{eo} '
                 f'stroke="{_css(o.get("stroke"))}" '
                 f'stroke-width="{o.get("width", 0.3)}"{dash}/>')
         elif o["op"] == "circle":

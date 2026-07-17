@@ -69,11 +69,18 @@ class PdfBackend:
         r, g, b = c
         return f"{_f(r)} {_f(g)} {_f(b)} {'RG' if stroke else 'rg'}\n"
 
-    def _paint(self, fill, stroke):
+    def _paint(self, fill, stroke, evenodd=False):
+        """Операторы закраски. evenodd → f*/B*: путь с ДЫРАМИ (несколько колец)
+        закрашивается по чётности пересечений, и выколотая часть остаётся
+        пустой при ЛЮБОМ направлении обхода кольца. На nonzero (f/B) дыра
+        появлялась бы только при противоположной намотке, а в данных портала
+        она не гарантирована — холст по этой же причине рисует fill("evenodd").
+        """
+        star = "*" if evenodd else ""
         if fill is not None and stroke is not None:
-            return "B\n"
+            return f"B{star}\n"
         if fill is not None:
-            return "f\n"
+            return f"f{star}\n"
         return "S\n"
 
     def _path_ops(self, o, h):
@@ -93,7 +100,8 @@ class PdfBackend:
                 out += f"{_f(x)} {_f(y)} l\n"
             if o.get("closed"):
                 out += "h\n"
-        return out + self._paint(o.get("fill"), o.get("stroke"))
+        return out + self._paint(o.get("fill"), o.get("stroke"),
+                                 o.get("evenodd") or len(o["rings"]) > 1)
 
     def _circle_ops(self, o, h):
         cx, cy = o["x"] * MM2PT, (h - o["y"]) * MM2PT

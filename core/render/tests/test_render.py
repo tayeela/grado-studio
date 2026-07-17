@@ -684,3 +684,60 @@ class TestMoscowLgrLibrary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPrintHolesAndGroundUnits(unittest.TestCase):
+    """Печать: дыры полигонов и привязка знаков ЛГР к местности.
+
+    До правки: (1) выколотый полигон печатался сплошным — бэкенды заливали по
+    nonzero, а намотка колец в данных портала не гарантирована; (2) штрих и шаг
+    засечек брались как мм листа, т.е. рисунок был эталонным только при 1:2000.
+    """
+
+    def test_holes_reach_ops_and_print_evenodd(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "h.grado", "Дыра")
+            layer = p.add_layer("tp.func_zone")
+            layer.add_feature({"type": "Polygon", "coordinates": [
+                [[413000, 6178000], [413400, 6178000], [413400, 6178300],
+                 [413000, 6178300], [413000, 6178000]],
+                [[413100, 6178100], [413300, 6178100], [413300, 6178200],
+                 [413100, 6178200], [413100, 6178100]],
+            ]}, attrs={"zone_title": "с дырой"})
+            ops = build_ops(p, (10, 10, 257, 180), scale=2000)
+            p.close()
+        paths = [o for o in ops if o["op"] == "path" and len(o["rings"]) > 1]
+        self.assertTrue(paths, "внутреннее кольцо обязано дойти до печати")
+        pdf = PdfBackend()
+        body = pdf._path_ops(paths[0], 200)
+        self.assertIn("B*", body.split(),
+                      "путь с дырой закрашивается по even-odd (иначе дыра "
+                      "исчезнет при 'неправильной' намотке кольца)")
+
+    def test_plain_polygon_still_nonzero(self):
+        op = {"op": "path", "rings": [[(0, 0), (10, 0), (10, 10), (0, 10)]],
+              "closed": True, "fill": (0.2, 0.4, 0.8), "stroke": (0, 0, 0),
+              "width": 0.5, "dash": None}
+        body = PdfBackend()._path_ops(op, 100)
+        self.assertIn("B", body.split())
+        self.assertNotIn("B*", body.split(), "без дыр — прежнее поведение")
+
+    def test_lgr_dash_and_marker_follow_print_scale(self):
+        # штрих 6;4 м и шаг галки 20 м (QML MapUnit) обязаны держаться на ЛЮБОМ
+        # масштабе листа, а не только на опорном 1:2000
+        st = StyleSet().resolve_id("lgr.vodookhr")
+        self.assertTrue(st.ground_units)
+        for scale in (2000, 4000, 500):
+            s2 = st.for_scale(scale)
+            cycle_m = sum(s2.dash) * scale / 1000.0
+            period_m = s2.line_marker["period_mm"] * scale / 1000.0
+            self.assertAlmostEqual(cycle_m, 10.0, places=2,
+                                   msg=f"цикл штриха 10 м на 1:{scale} (QML 6;4)")
+            self.assertAlmostEqual(period_m, 20.0, places=2,
+                                   msg=f"шаг галки 20 м на 1:{scale} (QML interval)")
+            self.assertEqual(round(period_m / cycle_m), 2, "галка через штрих")
+
+    def test_non_lgr_style_untouched_by_scale(self):
+        st = StyleSet().resolve_id("red.line.projected")
+        if st is not None:
+            self.assertIs(st.for_scale(4000), st, "не-ЛГР стиль не пересчитывается")

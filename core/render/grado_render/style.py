@@ -8,6 +8,7 @@
 все три вывода без изменения кода.
 """
 
+import copy
 import json
 from pathlib import Path
 
@@ -82,7 +83,8 @@ class Style:
     def __init__(self, fill=None, stroke=None, width=0.3, dash=None,
                  label=None, marker=1.2, z=0, hatch=False,
                  line_marker=None, double=None, line_label=None,
-                 label_size=None, label_color=None, label_font_family=None):
+                 label_size=None, label_color=None, label_font_family=None,
+                 ground_units=False, ref_scale=2000):
         self.fill = fill          # (r,g,b) 0..1 | None
         self.stroke = stroke      # (r,g,b) | None
         self.width = width        # мм
@@ -97,6 +99,34 @@ class Style:
         self.label_size = label_size    # кегль подписи, мм (None → label_size сцены)
         self.label_color = label_color  # цвет подписи (r,g,b) | None → дефолт сцены
         self.label_font_family = label_font_family  # ui | serif | mono
+        # Знаки ЛГР: в рабочих QML Москвы штрих (customdash_unit=MapUnit) и шаг
+        # засечек (interval_unit=MapUnit) заданы в МЕТРАХ НА МЕСТНОСТИ, а в
+        # библиотеке записаны в мм для опорного масштаба ref_scale (1:2000).
+        # Печать в другом масштабе обязана пересчитать их (see for_scale),
+        # иначе рисунок эталонен только при 1:2000 — как это и было.
+        self.ground_units = ground_units
+        self.ref_scale = ref_scale
+
+    def for_scale(self, scale):
+        """Копия стиля с штрихом и шагом засечек, пересчитанными на масштаб
+        печати 1:scale. Для не-ЛГР стилей (ground_units=False) — сам объект.
+
+        Штрих и период ОБЯЗАНЫ множиться на ОДИН коэффициент, иначе засечка
+        уедет с черты (она ставится по фазе того же штриха). Размер засечки
+        НЕ масштабируем — как и на холсте: в QML он тоже MapUnit (3.5 м), но
+        на мелких масштабах вырождается и знак пропадает.
+        """
+        if not self.ground_units or not scale or scale == self.ref_scale:
+            return self
+        f = self.ref_scale / float(scale)
+        clone = copy.copy(self)
+        if self.dash:
+            clone.dash = [d * f for d in self.dash]
+        if self.line_marker and self.line_marker.get("period_mm"):
+            lm = dict(self.line_marker)
+            lm["period_mm"] = lm["period_mm"] * f
+            clone.line_marker = lm
+        return clone
 
     @classmethod
     def from_json(cls, s):
@@ -114,7 +144,9 @@ class Style:
             line_label=s.get("line_label"),
             label_size=s.get("label_size_mm"),
             label_color=hex_to_rgb(s.get("label_color")),
-            label_font_family=s.get("label_font_family"))
+            label_font_family=s.get("label_font_family"),
+            ground_units=s.get("ground_units", False),
+            ref_scale=s.get("ref_scale", 2000))
 
 
 def _build_default_styles(name="default"):

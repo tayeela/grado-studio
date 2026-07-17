@@ -462,6 +462,12 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
             # per-object стиль (столбец style_id в .grado) важнее стиля слоя:
             # напр. водоохранная зона со знаком Эталона ЛГР на слое ЗОУИТ
             st = styles.resolve_id(f.get("style_id")) or layer_st
+            # Знаки ЛГР: штрих и шаг засечек в QML заданы в метрах на местности,
+            # а в библиотеке лежат в мм для опорного 1:2000 → пересчитываем на
+            # масштаб ЭТОГО листа, иначе печать эталонна только при 1:2000
+            # (холст делает то же через groundFactor). for_scale отдаёт тот же
+            # объект для не-ЛГР стилей, так что накладных расходов нет.
+            st = st.for_scale(scale)
             for poly in _polygons(geom):
                 rings = [tr.ring(r) for r in poly]
                 ops.append({"op": "path", "rings": rings, "closed": True,
