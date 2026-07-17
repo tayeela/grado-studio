@@ -15,6 +15,12 @@ from pathlib import Path
 STYLE_DIR = Path(__file__).parent / "styles"
 _LIBRARY_CACHE = {}
 
+# QML spritlines: minScale=10000 при hasScaleBasedVisibilityFlag=1 — детальный
+# знак ЛГР (штрих + засечки) виден только до 1:10000; на более мелких масштабах
+# QGIS показывает spritlines_uds, где MarkerLine нет вовсе. Держим то же и на
+# холсте (app.js LGR_DETAIL_MAX_DENOM), и в печати (Style.for_scale).
+LGR_DETAIL_MAX_DENOM = 10000
+
 # Пользовательские правки эталонных знаков (глобальные для студии). Накладываются
 # ПОВЕРХ сгенерированной библиотеки (default + moscow_lgr) — сам генератор
 # tools/gen_moscow_lgr.py и его JSON не трогаются (правило 2 CLAUDE.md). Каждая
@@ -108,24 +114,40 @@ class Style:
         self.ref_scale = ref_scale
 
     def for_scale(self, scale):
-        """Копия стиля с штрихом и шагом засечек, пересчитанными на масштаб
-        печати 1:scale. Для не-ЛГР стилей (ground_units=False) — сам объект.
+        """Копия стиля, пересчитанная на масштаб листа 1:scale (ровно по QML).
 
-        Штрих и период ОБЯЗАНЫ множиться на ОДИН коэффициент, иначе засечка
-        уедет с черты (она ставится по фазе того же штриха). Размер засечки
-        НЕ масштабируем — как и на холсте: в QML он тоже MapUnit (3.5 м), но
-        на мелких масштабах вырождается и знак пропадает.
+        В рабочих QML Москвы штрих (customdash_unit), шаг (interval_unit) И
+        размер (size_unit) засечек заданы в MapUnit — МЕТРАХ НА МЕСТНОСТИ, а в
+        библиотеке лежат в мм для опорного ref_scale (1:2000). Множим все три
+        на ОДИН коэффициент: штрих и период — обязательно вместе (иначе засечка
+        уедет с черты), размер — чтобы знак ужимался пропорционально, а не
+        оставался крупным на мелком штрихе.
+
+        Сверх того у spritlines minScale=10000 при hasScaleBasedVisibilityFlag=1
+        — детальный знак виден только до 1:10000 (дальше QGIS берёт
+        spritlines_uds, где MarkerLine нет). За пределом снимаем засечки.
+
+        Для не-ЛГР стилей (ground_units=False) возвращается сам объект.
         """
-        if not self.ground_units or not scale or scale == self.ref_scale:
+        if not self.ground_units or not scale:
+            return self
+        detail = scale <= LGR_DETAIL_MAX_DENOM
+        if scale == self.ref_scale and detail:
             return self
         f = self.ref_scale / float(scale)
         clone = copy.copy(self)
         if self.dash:
             clone.dash = [d * f for d in self.dash]
-        if self.line_marker and self.line_marker.get("period_mm"):
-            lm = dict(self.line_marker)
-            lm["period_mm"] = lm["period_mm"] * f
-            clone.line_marker = lm
+        if self.line_marker:
+            if not detail:
+                clone.line_marker = None
+            else:
+                lm = dict(self.line_marker)
+                if lm.get("period_mm"):
+                    lm["period_mm"] = lm["period_mm"] * f
+                if lm.get("size_mm"):
+                    lm["size_mm"] = lm["size_mm"] * f
+                clone.line_marker = lm
         return clone
 
     @classmethod
