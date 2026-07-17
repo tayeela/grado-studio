@@ -2295,8 +2295,11 @@ def _extent_spec(key):
         return None
     import re
     code = key.split(":", 1)[1]
-    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", code):
-        return None                      # код из запроса → в URL портала
+    # код из запроса идёт в URL портала → валидируем. Предел 64: в каталоге
+    # есть слои-слаги до 44 символов (напр. «Размещение объектов капитального
+    # строительства»), прежний предел 40 их молча отсекал — не выгружались.
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,64}", code):
+        return None
     name = _gisogd_layer_name(code)
     if not name:
         return None
