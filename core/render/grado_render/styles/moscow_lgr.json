@@ -9,8 +9,8 @@
       "lgr_priority": 15,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "красная",
@@ -41,8 +41,8 @@
       "lgr_priority": 20,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -79,8 +79,8 @@
       "lgr_priority": 21,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -117,8 +117,8 @@
       "lgr_priority": 16,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -155,8 +155,8 @@
       "lgr_priority": 23,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -193,8 +193,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         4.0,
         1.0
@@ -241,8 +241,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         4.0,
         1.0
@@ -289,8 +289,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         4.0,
         1.0
@@ -337,8 +337,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         4.0,
         1.0
@@ -385,8 +385,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
@@ -426,8 +426,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         0.875,
@@ -486,8 +486,8 @@
       "lgr_priority": 12,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         2.0
@@ -534,8 +534,8 @@
       "lgr_priority": 11,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0,
@@ -586,8 +586,8 @@
       "lgr_priority": 1,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -634,8 +634,8 @@
       "lgr_priority": 2,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -682,8 +682,8 @@
       "lgr_priority": 3,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -730,8 +730,8 @@
       "lgr_priority": 5,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -776,8 +776,8 @@
       "lgr_priority": 4,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         0.875,
@@ -828,8 +828,8 @@
       "lgr_priority": 6,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         0.25,
         0.5,
@@ -884,8 +884,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -932,8 +932,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -980,8 +980,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1028,8 +1028,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1066,8 +1066,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1104,8 +1104,8 @@
       "lgr_priority": 7,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "охранная зона ООПТ",
@@ -1146,8 +1146,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1184,8 +1184,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1222,8 +1222,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1260,8 +1260,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1298,8 +1298,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
@@ -1340,8 +1340,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": null,
@@ -1380,8 +1380,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1418,8 +1418,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1456,8 +1456,8 @@
       "lgr_priority": 8,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ООПТ",
@@ -1496,8 +1496,8 @@
       "lgr_priority": 18,
       "fill": null,
       "stroke": "#18f61f",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "режим",
@@ -1528,8 +1528,8 @@
       "lgr_priority": 9,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "памятник природы",
@@ -1568,8 +1568,8 @@
       "lgr_priority": 19,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1606,8 +1606,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         2.0
@@ -1652,8 +1652,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ООЗТ",
@@ -1692,8 +1692,8 @@
       "lgr_priority": 13,
       "fill": null,
       "stroke": "#0018b8",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1730,8 +1730,8 @@
       "lgr_priority": 10,
       "fill": null,
       "stroke": "#ff0101",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "ПК",
@@ -1771,8 +1771,8 @@
       "lgr_priority": 17,
       "fill": "#18f61f",
       "stroke": "#18f61f",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "режим",
@@ -1796,8 +1796,8 @@
       "lgr_priority": 25,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1834,8 +1834,8 @@
       "lgr_priority": 26,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1872,8 +1872,8 @@
       "lgr_priority": 14,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         0.25,
         0.5,
@@ -1918,8 +1918,8 @@
       "lgr_priority": 27,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1949,8 +1949,8 @@
       "lgr_priority": 24,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -1980,8 +1980,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         2.0
@@ -2026,8 +2026,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         0.375,
         1.0
@@ -2064,8 +2064,8 @@
       "lgr_priority": 22,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -2102,8 +2102,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "охранная зона ОКН",
@@ -2144,8 +2144,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#fe0004",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         1.0
@@ -2182,8 +2182,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         3.0,
         2.0
@@ -2229,8 +2229,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": [
         4.0,
         1.0
@@ -2277,8 +2277,8 @@
       "lgr_priority": null,
       "fill": null,
       "stroke": "#ff0000",
-      "width_mm": 1.0,
-      "width_px": 3.78,
+      "width_mm": 0.2645833333333333,
+      "width_px": 1.0,
       "dash_mm": null,
       "dash_px": null,
       "line_label": "Тер ОКН",

@@ -559,8 +559,13 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         from grado_render import merged_library
         by_code = {s["lgr_code"]: s for sid, s in
                    merged_library()["styles"].items() if sid.startswith("lgr.")}
+        # ГЕЙТ: в QML у ВСЕХ 50 знаков ЛГР line_width=1 при line_width_unit=Pixel
+        # (единица УСТРОЙСТВА — не мм и не метры). Прежняя заметка «1.0 мм у всех,
+        # unit=MM» была неверна, и линии выходили втрое толще эталона. Сверяем в
+        # px: в мм это 0.2646 через ту же связку 96 dpi, что и MM_PX.
         for c, st in by_code.items():
-            self.assertEqual(st["width_mm"], 1.0, f"код {c} — ширина 1.0 мм (QML)")
+            self.assertEqual(st["width_px"], 1.0,
+                             f"код {c} — линия 1 px (QML line_width=1 Pixel)")
         # цвет по семейству QML
         self.assertEqual(by_code[1]["stroke"], "#ff0000", "красные линии — чистый красный")
         self.assertEqual(by_code[2]["stroke"], "#fe0004", "ТОП — «точечный» красный")
