@@ -1072,7 +1072,8 @@ class TestGisogdImport(unittest.TestCase):
         self.assertEqual(len(out["features"]), 1)
         f = out["features"][0]
         self.assertEqual(f["kind"], "zone")
-        self.assertEqual(f["layer_id"], "source.gisogd.func_zones")
+        # слой = файл-источник (требование юзера), не слой-знак
+        self.assertEqual(f["layer_id"], "source.gisogd.member.funkcionalnie_zony")
         self.assertEqual(f["props"]["zone_title"], "Ж-1")
         self.assertEqual(f["prov"]["source"], "gisogd")
         x, y = f["ring"][0]
@@ -1086,10 +1087,10 @@ class TestGisogdImport(unittest.TestCase):
         data = self._zip_bytes({"kultobjekty.geojson": _ogd_gj(poly)})
         out = studio_core.import_gisogd(data)
         self.assertEqual(len(out["features"]), 1)
-        self.assertEqual(out["features"][0]["layer_id"], "source.gisogd.other")
-        self.assertIn("source.gisogd.other", out["fields"])
-        self.assertTrue(any("kultobjekty" in n and "не распознан" in n
-                            for n in out["notes"]))
+        # слой = файл-источник (даже если знак не опознан — объект не теряется)
+        self.assertEqual(out["features"][0]["layer_id"],
+                         "source.gisogd.member.kultobjekty")
+        self.assertNotIn("style_id", out["features"][0], "знак не опознан")
 
     def test_point_layer_preserved(self):
         # точечные слои ОГД раньше молча выпадали (обрабатывались только
@@ -1110,14 +1111,17 @@ class TestGisogdImport(unittest.TestCase):
         out = studio_core.import_gisogd(data)
         kinds = sorted(f["kind"] for f in out["features"])
         self.assertEqual(kinds, ["redline", "restrict"])
-        restrict = next(f for f in out["features"] if f["kind"] == "restrict")
-        self.assertEqual(restrict["layer_id"], "source.gisogd.restrict")
+        # каждый файл-член → СВОЙ слой с его именем; знак — у объекта
+        by_layer = {f["layer_id"]: f for f in out["features"]}
+        self.assertIn("source.gisogd.member.zouit_sanitarnye", by_layer)
+        self.assertIn("source.gisogd.member.krasnye_linii", by_layer)
+        restrict = by_layer["source.gisogd.member.zouit_sanitarnye"]
         self.assertEqual(restrict["props"]["kind"], "СЗЗ предприятия")
         with tempfile.TemporaryDirectory() as tmp:
             p = studio_core.build_project(Path(tmp) / "ogd.grado", "ОГД", out["features"])
             ids = {i["layer_id"] for i in p.layers()}
-            self.assertIn("source.gisogd.red_lines", ids)
-            self.assertIn("source.gisogd.restrict", ids)
+            self.assertIn("source.gisogd.member.krasnye_linii", ids)
+            self.assertIn("source.gisogd.member.zouit_sanitarnye", ids)
             p.close()
 
     def test_snapshot_and_provenance_recorded(self):
@@ -1140,16 +1144,17 @@ class TestGisogdImport(unittest.TestCase):
         data = self._zip_bytes({"vodoohrannaya_zona_reki.geojson": _ogd_gj(poly)})
         out = studio_core.import_gisogd(data)
         f = out["features"][0]
-        # Опознанный знак получает СВОЙ слой, а не общий ЗОУИТ: иначе
-        # водоохранные, СЗЗ и пояса санохраны лежали в одном слое и их нельзя
-        # было отключить или оформить по отдельности.
-        self.assertEqual(f["layer_id"], "source.gisogd.zouit.vodookhr")
-        self.assertEqual(
-            studio_core.LAYER_TEMPLATES["source.gisogd.zouit.vodookhr"]["title"],
-            "ГИС ОГД: Водоохранные зоны")
+        # Слой = файл-источник (требование юзера: слой повторяет выгруженный
+        # слой). Знак опознаётся по имени и остаётся у ОБЪЕКТА — деление по
+        # знакам внутри слоя делается категориями, а не отдельными слоями-знаками.
+        self.assertEqual(f["layer_id"], "source.gisogd.member.vodoohrannaya_zona_reki")
         self.assertEqual(f["style_id"], "lgr.vodookhr")
         self.assertEqual(f["props"]["kind"], "Водоохранные зоны",
                          "название атрибута — из Эталона, не общее «ЗОУИТ»")
+        # слой отдаётся фронту с человекочитаемым именем файла-источника
+        layers = {L["id"]: L["title"] for L in out["layers"]}
+        self.assertEqual(layers["source.gisogd.member.vodoohrannaya_zona_reki"],
+                         "ГИС ОГД: vodoohrannaya_zona_reki")
 
     def test_lgr_style_survives_grado_roundtrip(self):
         poly = [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]
@@ -1651,24 +1656,25 @@ class TestLineCode(unittest.TestCase):
 class TestLineCodeRouting(unittest.TestCase):
     """Маршрутизация по LineCode: код → знак + свой слой, знак кода → сторона."""
 
-    def test_single_code_to_redline_layer(self):
+    def test_single_code_gives_sign_no_layer(self):
+        # LineCode даёт ЗНАК и сторону; слой больше НЕ отсюда (слой = источник)
         r = studio_core._linecode_routes({"linelineco": "1"})
-        self.assertEqual(r, [(1, 1, "lgr.kl.uds", "source.gisogd.red_lines")])
+        self.assertEqual(r, [(1, 1, "lgr.kl.uds", None)])
 
     def test_side_from_sign(self):
         plus = studio_core._linecode_routes({"linelineco": "1"})[0]
         minus = studio_core._linecode_routes({"linelineco": "-1"})[0]
         self.assertEqual(plus[1], 1)
         self.assertEqual(minus[1], -1)
-        self.assertEqual(plus[3], minus[3], "слой один — различается только сторона")
+        self.assertEqual(plus[2], minus[2], "знак один — различается только сторона")
 
-    def test_multi_code_splits_into_own_layers(self):
+    def test_multi_code_splits_into_signs(self):
         # «1,-29» — 34% объектов слоя УДС: одна геометрия это и красная линия,
-        # и граница техзоны. Прежде объект уходил в ОДИН слой с ОДНИМ знаком.
+        # и граница техзоны. Разбиваем на РАЗНЫЕ ЗНАКИ (слой у обоих — источника).
         r = studio_core._linecode_routes({"linelineco": "1,-29"})
-        self.assertEqual([(c, s, lid) for c, s, _, lid in r],
-                         [(1, 1, "source.gisogd.red_lines"),
-                          (29, -1, "source.gisogd.zouit.tech.zone")])
+        self.assertEqual([(c, s, sid) for c, s, sid, _ in r],
+                         [(1, 1, "lgr.kl.uds"),
+                          (29, -1, "lgr.tech.zone")])
 
     def test_three_codes(self):
         r = studio_core._linecode_routes({"linelineco": "-1,18,29"})
@@ -1703,41 +1709,42 @@ class TestManualZipLineCode(unittest.TestCase):
              "geometry": {"type": "Polygon", "coordinates": [
                  [[37.60, 55.75], [37.61, 55.75], [37.61, 55.76], [37.60, 55.75]]]}}]}
 
-    def test_linecode_beats_member_name(self):
+    def test_linecode_sets_sign_layer_from_source_file(self):
         # Имя файла говорит «красные линии УДС», а LineCode = -41 (береговая).
-        # Тип обязан браться из ДАННЫХ, а не из имени члена архива.
+        # ЗНАК берётся из ДАННЫХ (береговая), а СЛОЙ — от файла-источника
+        # (требование юзера: слой повторяет выгруженный слой).
         out = studio_core.import_gisogd(self._zip(
             {"krasnye_linii_uds.geojson": self._line({"LineCode": "-41"})}))
         f = out["features"][0]
-        self.assertEqual(f["layer_id"], "source.gisogd.zouit.beregovaya")
+        self.assertEqual(f["layer_id"], "source.gisogd.member.krasnye_linii_uds")
         self.assertEqual(f["style_id"], "lgr.beregovaya")
         self.assertEqual(f["props"]["line_side"], -1)
 
-    def test_multicode_splits_into_own_layers(self):
+    def test_multicode_stays_in_source_layer_split_by_sign(self):
+        # оба кода — из ОДНОГО файла → один слой; различаются ЗНАКОМ
         out = studio_core.import_gisogd(self._zip(
             {"linii.geojson": self._line({"LineCode": "1,-29"})}))
-        got = [(f["layer_id"], f["props"]["line_code"], f["props"]["line_side"])
+        got = [(f["layer_id"], f["style_id"], f["props"]["line_code"])
                for f in out["features"]]
-        self.assertEqual(got, [("source.gisogd.red_lines", 1, 1),
-                               ("source.gisogd.zouit.tech.zone", 29, -1)])
+        self.assertEqual(got, [("source.gisogd.member.linii", "lgr.kl.uds", 1),
+                               ("source.gisogd.member.linii", "lgr.tech.zone", 29)])
 
     def test_layers_reported_for_frontend(self):
-        # без описаний слоёв фронт не заведёт zouit.* и объект уедет в слой по виду
+        # слой файла-источника обязан прийти фронту, иначе объект уедет по виду
         out = studio_core.import_gisogd(self._zip(
             {"linii.geojson": self._line({"LineCode": "1,-29"})}))
-        ids = {L["id"]: L["kind"] for L in out["layers"]}
-        self.assertEqual(ids, {"source.gisogd.red_lines": "redline",
-                               "source.gisogd.zouit.tech.zone": "restrict"})
+        ids = [L["id"] for L in out["layers"]]
+        self.assertEqual(ids, ["source.gisogd.member.linii"])
 
-    def test_without_linecode_name_routing_still_works(self):
-        # объекты без LineCode обязаны идти прежним путём, а не пропадать
+    def test_without_linecode_still_uses_source_layer(self):
+        # без LineCode знак берётся по имени, но слой — файла-источника
         out = studio_core.import_gisogd(self._zip({
             "vodoohrannaya_zona.geojson": self._poly({"orbis_id": "x"}),
             "funkcionalnye_zony.geojson": self._poly({"name": "жилая зона"}),
         }))
         by = {f["layer_id"]: f.get("style_id") for f in out["features"]}
-        self.assertEqual(by["source.gisogd.zouit.vodookhr"], "lgr.vodookhr")
-        self.assertEqual(by["source.gisogd.func_zones"], "gp.zhilaya_zona")
+        self.assertEqual(by["source.gisogd.member.vodoohrannaya_zona"], "lgr.vodookhr")
+        self.assertEqual(by["source.gisogd.member.funkcionalnye_zony"], "gp.zhilaya_zona")
 
 
 class TestPolygonHoles(unittest.TestCase):

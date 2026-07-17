@@ -252,20 +252,20 @@ process.stdout.write(JSON.stringify({
             check=True, capture_output=True, text=True, encoding="utf-8",
         )
         out = json.loads(completed.stdout)
-        # LineCode бьёт имя файла: -41 → береговая
-        self.assertEqual(out["aLayer"], "source.gisogd.zouit.beregovaya")
+        # LineCode бьёт имя файла по ЗНАКУ: -41 → береговая. А СЛОЙ = файл-
+        # источник (требование юзера), а не слой-знак.
+        self.assertEqual(out["aLayer"], "source.gisogd.member.krasnye_linii_uds")
         self.assertEqual(out["aStyle"], "lgr.beregovaya")
         self.assertEqual(out["aSide"], -1)
-        self.assertEqual(out["aLayers"], ["source.gisogd.zouit.beregovaya"])
-        # многокодовый разделился на красную линию и техзону
+        self.assertEqual(out["aLayers"], ["source.gisogd.member.krasnye_linii_uds"])
+        # многокодовый: оба знака в ОДНОМ слое-источнике (файл x.geojson)
         self.assertEqual(out["bLayers"],
-                         ["source.gisogd.red_lines", "source.gisogd.zouit.tech.zone"])
-        self.assertEqual(out["bReported"], [["source.gisogd.zouit.tech.zone", "restrict"]])
-        # без LineCode — прежний путь по имени, но теперь в СВОЙ слой знака
-        # (как в настольной версии), а не в общий source.gisogd.restrict
-        self.assertEqual(out["cLayer"], "source.gisogd.zouit.vodookhr")
+                         ["source.gisogd.member.x", "source.gisogd.member.x"])
+        self.assertEqual(out["bReported"], [["source.gisogd.member.x", "redline"]])
+        # без LineCode — знак по имени, слой = файл-источник
+        self.assertEqual(out["cLayer"], "source.gisogd.member.vodoohrannaya_zona")
         self.assertEqual(out["cStyle"], "lgr.vodookhr")
-        self.assertEqual(out["cLayers"], ["source.gisogd.zouit.vodookhr"])
+        self.assertEqual(out["cLayers"], ["source.gisogd.member.vodoohrannaya_zona"])
 
     def test_modal_close_control_cannot_be_shifted_by_legacy_styles(self):
         root = Path(__file__).parents[3]
@@ -439,7 +439,7 @@ process.stdout.write(JSON.stringify({
   cad:nspd.features[0].props.cad_num,nspdPoint:nspd.features[0].ring[0],
   duplicateNote:nspd.notes[0],ogdCount:ogd.features.length,
   ogdKind:ogd.features[0].kind,ogdLayer:ogd.features[0].layer_id,
-  ogdPoint:ogd.features[0].ring[0],field:ogd.fields['source.gisogd.func_zones'][0].name
+  ogdPoint:ogd.features[0].ring[0],field:ogd.fields['source.gisogd.member.funkcionalnie_zony'][0].name
 }));
 """
         completed = subprocess.run(
@@ -455,7 +455,8 @@ process.stdout.write(JSON.stringify({
         self.assertIn("дубликатов", result["duplicateNote"])
         self.assertEqual(1, result["ogdCount"])
         self.assertEqual("zone", result["ogdKind"])
-        self.assertEqual("source.gisogd.func_zones", result["ogdLayer"])
+        # слой = файл-источник (требование юзера), не слой-знак func_zones
+        self.assertEqual("source.gisogd.member.funkcionalnie_zony", result["ogdLayer"])
         self.assertAlmostEqual(107, result["ogdPoint"][0], delta=15)
         self.assertEqual("NAME", result["field"])
 
@@ -1437,7 +1438,7 @@ class TestBrowserLineCodeRouting(unittest.TestCase):
 const core = require(process.argv[1]);
 const styles = require(process.argv[2]).styles;
 core.setLgrCodeStyles(styles);
-const r = v => core.lineCodeRoutes({linelineco: v}).map(([c, s, sid, lid]) => [c, s, sid, lid]);
+const r = v => core.lineCodeRoutes({linelineco: v}).map(([c, s, sid]) => [c, s, sid]);
 process.stdout.write(JSON.stringify({
   one: r("1"), minus: r("-1"), multi: r("1,-29"), three: r("-1,18,29"),
   garbage: r("NOT_FOUND"), empty: r(""), dup: core.parseLineCodes("1,-1"),
@@ -1450,13 +1451,12 @@ process.stdout.write(JSON.stringify({
             check=True, capture_output=True, text=True, encoding="utf-8",
         )
         out = json.loads(completed.stdout)
-        self.assertEqual(out["one"], [[1, 1, "lgr.kl.uds", "source.gisogd.red_lines"]])
-        # знак = сторона: слой тот же, различается только сторона
-        self.assertEqual(out["minus"], [[1, -1, "lgr.kl.uds", "source.gisogd.red_lines"]])
-        # одна геометрия → два знака в два разных слоя
+        # LineCode даёт ЗНАК и сторону; слой больше НЕ отсюда (слой = источник)
+        self.assertEqual(out["one"], [[1, 1, "lgr.kl.uds"]])
+        self.assertEqual(out["minus"], [[1, -1, "lgr.kl.uds"]])
+        # одна геометрия → два ЗНАКА (слой у обоих — слоя-источника)
         self.assertEqual(out["multi"],
-                         [[1, 1, "lgr.kl.uds", "source.gisogd.red_lines"],
-                          [29, -1, "lgr.tech.zone", "source.gisogd.zouit.tech.zone"]])
+                         [[1, 1, "lgr.kl.uds"], [29, -1, "lgr.tech.zone"]])
         self.assertEqual([c for c, *_ in out["three"]], [1, 18, 29])
         self.assertEqual([s for _, s, *_ in out["three"]], [-1, 1, 1])
         # без LineCode — прежний маршрут по имени слоя, объект не теряется
@@ -1496,11 +1496,9 @@ process.stdout.write(JSON.stringify({
         out = json.loads(completed.stdout)
         # 2 геометрии → 3 объекта: «1,-29» разделился на красную линию и техзону
         self.assertEqual(out["count"], 3)
-        self.assertEqual(out["layers"], ["source.gisogd.red_lines",
-                                         "source.gisogd.zouit.tech.zone",
-                                         "source.gisogd.red_lines"])
+        # ВСЕ в слое-источнике (l1), а не в слоях-знаках (требование юзера):
+        # различаются знаком (style_id) и видом, а слой один
+        self.assertEqual(out["layers"], ["source.gisogd.l1"] * 3)
         self.assertEqual(out["sides"], [1, -1, -1])
         # вид — по СМЫСЛУ кода, а не по виду слоя-источника
         self.assertEqual(out["kinds"], ["redline", "restrict", "redline"])
-        # слой ЗОУИТ отдан фронту на регистрацию (иначе объект уедет в слой по виду)
-        self.assertEqual(out["reported"], [["source.gisogd.zouit.tech.zone", "restrict"]])

@@ -943,6 +943,28 @@ def build_project(path, name, features, layers=None, project_styles=None,
     # порядок: augmented-копии builtin (builtin+fields) должны победить голый
     # builtin; подмена code/title невозможна — санация в _user_layer_templates
     templates = {**LAYER_TEMPLATES, **_user_layer_templates(layers)}
+    # Слои-источники (портал ОГД по файлу/области, дороги OSM) заводятся
+    # динамически: их id (source.gisogd.*/source.osm.*) нет во встроенных
+    # шаблонах, и БЕЗ синтеза _route откатил бы объект по ВИДУ (правило 7),
+    # а слой-источник в .grado потерялся бы. Заводим по факту наличия объектов,
+    # название — из провенанса (layer_title), код — нейтральный generic.line.
+    for f in features:
+        lid = f.get("layer_id")
+        if (lid and lid not in templates
+                and (lid.startswith("source.gisogd.") or lid.startswith("source.osm."))):
+            title = (f.get("prov") or {}).get("layer_title") or lid
+            # Код (схема .grado) — по ВИДУ объекта, как и раньше при маршруте по
+            # виду: restrict→terr.restrict (принимает и линии, и полигоны ЗОУИТ),
+            # redline→pp.red_line, zone→tp.func_zone; иначе по геометрии. Так
+            # KIND_ATTRS даёт атрибуты, которые схема кода принимает.
+            kind_lid = _KIND_TO_LAYER.get(f.get("kind"))
+            kind_tmpl = LAYER_TEMPLATES.get(kind_lid) if kind_lid else None
+            code = kind_tmpl.get("code") if kind_tmpl else None
+            if not code:
+                code = ("generic.polygon" if f.get("ring") else
+                        "generic.point" if f.get("point") else "generic.line")
+            templates[lid] = {"code": code, "title": title,
+                              "stage": "existing", "source_kind": "gisogd"}
     made = {}  # layer_id → Layer
     for f in features:
         lid, tmpl = _route(f, templates)
@@ -1784,9 +1806,10 @@ def _linecode_routes(raw_props):
         sid = lgr_style_for_code(code)
         if not sid:
             continue
-        lid = ("source.gisogd.red_lines" if code in _REDLINE_CODES
-               else _zouit_layer_id(sid))
-        out.append((code, side, sid, lid))
+        # layer_id тут больше НЕ вычисляем: слой берётся у СЛОЯ-ИСТОЧНИКА
+        # (см. _extent_spec). Раньше код уводил объект в слой-знак, и объекты
+        # одного выгруженного слоя портала разъезжались по чужим слоям.
+        out.append((code, side, sid, None))
     return out
 
 
@@ -1940,6 +1963,26 @@ for _sid, _s in STYLE_LIB["styles"].items():
                                  "title": f"ГИС ОГД: {_s.get('title', _sid)}"}
 
 
+def _member_title(member):
+    """Имя файла-члена архива → название слоя для панели (без расширения/пути)."""
+    import re as _re
+    stem = _re.sub(r"\.(geojson|json|shp)$", "", (member or "").strip(),
+                   flags=_re.I).rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return f"ГИС ОГД: {stem}" if stem else "ГИС ОГД: слой"
+
+
+def _member_layer_id(member):
+    """Имя члена архива ОГД → id слоя-источника. Слой повторяет файл-источник
+    (требование юзера), а не знак: «beregovaya_polosa.geojson» →
+    source.gisogd.member.beregovaya_polosa. Латиница/цифры/подчёркивание;
+    прочее (в т.ч. кириллица) сворачивается в «_», пустое → «other»."""
+    import re as _re
+    stem = _re.sub(r"\.(geojson|json|shp)$", "", (member or "").strip(),
+                   flags=_re.I).rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    slug = _re.sub(r"[^a-z0-9_]+", "_", stem.lower()).strip("_") or "other"
+    return f"source.gisogd.member.{slug}"
+
+
 def _gisogd_route(member):
     low = member.lower()
     for keys, kind, layer_id in _GISOGD_LAYER_RULES:
@@ -2034,7 +2077,14 @@ def _gisogd_process(conn, result):
             continue
         raw = f["properties"] or {}
         member = raw.get("grado_member", "")
-        kind, layer_id = _gisogd_route(member)
+        # СЛОЙ = член архива (слой-источник), а не знак: объекты одного файла
+        # остаются в одном слое, знак назначается объекту отдельно (ниже).
+        kind, _routed = _gisogd_route(member)
+        kind = kind or "generic"
+        layer_id = _member_layer_id(member)
+        # человекочитаемое имя слоя = имя файла-члена без расширения (для панели
+        # слоёв); кладём в провенанс объекта, оттуда его берёт _layer_defs
+        fprov = {**prov, "layer_title": _member_title(member)}
         name = raw.get("NAME") or raw.get("name")
         okey = f.get("grado_key")      # стабильный ключ → дедуп повторного ZIP
         extra_props, extra_fields = _gisogd_clean_props(raw)
@@ -2054,7 +2104,7 @@ def _gisogd_process(conn, result):
         # сторона линии. Объект БЕЗ LineCode идёт прежним путём по имени.
         routes = _linecode_routes(raw)
         if routes:
-            for code, side, csid, clid in routes:
+            for code, side, csid, _clid in routes:
                 ckind = "redline" if code in _REDLINE_CODES else "restrict"
                 want = "line" if ckind == "redline" else None
                 emitted = 0
@@ -2064,16 +2114,18 @@ def _gisogd_process(conn, result):
                     sem = ({"status": "существующая"} if ckind == "redline"
                            else {"kind": STYLE_LIB["styles"][csid]["title"],
                                  "basis": "ГИС ОГД"})
-                    feat = {"kind": ckind, "layer_id": clid, **part,
+                    # слой — от ЧЛЕНА АРХИВА (слоя-источника), а не от знака:
+                    # объекты одного выгруженного слоя остаются вместе
+                    feat = {"kind": ckind, "layer_id": layer_id, **part,
                             "props": {**sem, **extra_props,
                                       "line_code": code, "line_side": side},
-                            "prov": dict(prov), "style_id": csid}
+                            "prov": dict(fprov), "style_id": csid}
                     if okey is not None:
-                        feat["srcKey"] = f"{clid}:{okey}#{i}"
+                        feat["srcKey"] = f"{layer_id}:{code}:{okey}#{i}"
                     features.append(feat)
                     emitted += 1
                 if emitted:
-                    _add_fields(clid, extra_fields)
+                    _add_fields(layer_id, extra_fields)
             continue
 
         if kind == "redline":
@@ -2081,7 +2133,7 @@ def _gisogd_process(conn, result):
             for i, part in enumerate(p for p in parts if "line" in p):
                 feat = {"kind": "redline", "layer_id": layer_id, "line": part["line"],
                         "props": {"status": "существующая", **extra_props},
-                        "prov": dict(prov)}
+                        "prov": dict(fprov)}
                 if okey is not None:
                     feat["srcKey"] = f"{layer_id}:{okey}#{i}"
                 features.append(feat)
@@ -2111,7 +2163,7 @@ def _gisogd_process(conn, result):
                        if kind == "zone"
                        else {"kind": style_title or name or "ЗОУИТ", "basis": "ГИС ОГД"})
                 feat = {"kind": kind, "layer_id": layer_id, "ring": part["ring"],
-                        "props": {**sem, **extra_props}, "prov": dict(prov)}
+                        "props": {**sem, **extra_props}, "prov": dict(fprov)}
                 if style_id:
                     feat["style_id"] = style_id
                 if okey is not None:
@@ -2123,18 +2175,16 @@ def _gisogd_process(conn, result):
             continue
 
         # тип слоя не распознан — НЕ теряем: кладём в «прочие» как есть
-        # (любая геометрия), с полной атрибутикой
-        lid = "source.gisogd.other"
+        # (любая геометрия), с полной атрибутикой. СЛОЙ = файл-источник, а не
+        # общая свалка «прочие»: даже без опознанного знака слой повторяет
+        # выгруженный файл (требование юзера). Знак объекту не назначаем.
         for i, part in enumerate(parts):
-            feat = {"kind": "generic", "layer_id": lid, **part,
-                    "props": dict(extra_props), "prov": dict(prov)}
+            feat = {"kind": "generic", "layer_id": layer_id, **part,
+                    "props": dict(extra_props), "prov": dict(fprov)}
             if okey is not None:
-                feat["srcKey"] = f"{lid}:{okey}#{i}"
+                feat["srcKey"] = f"{layer_id}:{okey}#{i}"
             features.append(feat)
-        _add_fields(lid, extra_fields)
-        if member not in unknown:
-            notes.append(f"«{member}»: тип не распознан — в слой «прочие»")
-            unknown.add(member)
+        _add_fields(layer_id, extra_fields)
 
     return {"features": features, "notes": notes, "fields": layer_fields,
             "source_doc": result.get("source_doc"),
@@ -2250,11 +2300,18 @@ def _extent_spec(key):
     name = _gisogd_layer_name(code)
     if not name:
         return None
-    kind, layer_id = _gisogd_route(name)
-    if not layer_id:                     # имя не распознано — «прочие», не теряем
-        kind, layer_id = "generic", "source.gisogd.other"
+    kind, _routed = _gisogd_route(name)
+    # СЛОЙ = СЛОЙ-ИСТОЧНИК, а не знак (требование юзера, повторное). Прежде слой
+    # выводился из знака (lgr.beregovaya → source.gisogd.zouit.beregovaya), и
+    # «Зоны береговых полос» портала растворялись в чужом по смыслу «ЗОУИТ».
+    # Теперь каждый выгруженный слой портала даёт СВОЙ слой с его же названием —
+    # ровно как ЗУ из НСПД и ЗУ из ОГД должны быть разными слоями. Знак остаётся
+    # у ОБЪЕКТА, а деление по знакам внутри слоя — через категории (fmt.cats_off).
+    kind = kind or "generic"
     spec = {"conn": "gisogd", "codes": {code: name}, "kind": kind,
-            "layer_id": layer_id, "title": name}
+            "layer_id": f"source.gisogd.{code}",
+            "title": f"ГИС ОГД: {name}",
+            "dyn_layer": True}
     style_id = _gisogd_style_for(name) or (gp_style_for_zone(name)
                                            if kind == "zone" else None)
     if style_id:
@@ -2262,7 +2319,7 @@ def _extent_spec(key):
     return spec
 
 
-def _layer_defs(features):
+def _layer_defs(features, specs=None):
     """Описания слоёв, в которые реально попали объекты — для фронта.
 
     LAYERS_V2 во фронте — СТАТИЧЕСКИЙ список, слоёв source.gisogd.zouit.* там
@@ -2270,16 +2327,36 @@ def _layer_defs(features):
     слой по ВИДУ (layerOf → LAYER_BY_KIND), т.е. все ЗОУИТ снова в одной куче
     (железное правило 7). Отдаём ТОЛЬКО встроенные шаблоны: выдумывать слои на
     лету фронт не должен."""
+    # Слои источника заводятся ДИНАМИЧЕСКИ: их нет и не может быть в шаблонах
+    # (663 слоя каталога портала + любой файл ручного ZIP), но фронт обязан их
+    # получить — иначе объект молча уедет в слой по ВИДУ (железное правило 7).
+    # dyn_titles: id слоя → человекочитаемое название (из спеков выгрузки ИЛИ,
+    # для ручного ZIP, из провенанса объекта).
+    dyn = {sp["layer_id"]: sp.get("title")
+           for sp in (specs or {}).values()
+           if isinstance(sp, dict) and sp.get("dyn_layer")}
     out = {}
     for f in features:
         lid = f.get("layer_id")
-        t = LAYER_TEMPLATES.get(lid)
-        if not lid or lid in out or not t:
+        if not lid or lid in out:
             continue
-        out[lid] = {"id": lid, "title": t.get("title") or lid,
-                    "code": t["code"], "kind": f.get("kind"),
-                    "style_id": t.get("style_id"),
-                    "stage": t.get("stage"), "source_kind": t.get("source_kind")}
+        t = LAYER_TEMPLATES.get(lid)
+        if t:
+            out[lid] = {"id": lid, "title": t.get("title") or lid,
+                        "code": t["code"], "kind": f.get("kind"),
+                        "style_id": t.get("style_id"),
+                        "stage": t.get("stage"),
+                        "source_kind": t.get("source_kind")}
+        elif lid.startswith("source.gisogd."):
+            # слой-источник (портал по области или файл ручного ZIP): название —
+            # из спеков выгрузки, иначе из имени члена в провенансе объекта
+            title = dyn.get(lid) or (f.get("prov") or {}).get("layer_title")
+            if not title:
+                title = "ГИС ОГД: " + lid.rsplit(".", 1)[-1]
+            out[lid] = {"id": lid, "title": title,
+                        "code": "generic.line", "kind": f.get("kind"),
+                        "style_id": None, "stage": "existing",
+                        "source_kind": "gisogd"}
     return list(out.values())
 
 
@@ -2666,19 +2743,22 @@ def fetch_extent(bbox, sources):
             routes = _linecode_routes(f.get("properties") or {})
             for i, part in enumerate(_wgs_geom_to_canvas(geom)):
                 if routes:
-                    for code, side, csid, clid in routes:
+                    for code, side, csid, _clid in routes:
                         # line_code/line_side — это ДАННЫЕ объекта (из LineCode),
                         # поэтому в props, а не в fmt: fmt — переопределения стиля,
                         # и сторона протекла бы в сам знак.
                         # вид — по СМЫСЛУ кода, а не по виду слоя-источника:
                         # иначе водоохранная, приехавшая из слоя красных линий,
-                        # получала kind=redline и семантику красной линии
+                        # получала kind=redline и семантику красной линии.
+                        # СЛОЙ — слоя-источника (spec["layer_id"]): объекты одного
+                        # выгруженного слоя портала не разъезжаются по слоям-знакам,
+                        # а различаются знаком (переключаются категориями).
                         cf = {"kind": "redline" if code in _REDLINE_CODES else "restrict",
-                              "layer_id": clid, **part,
+                              "layer_id": spec["layer_id"], **part,
                               "props": {**props, "line_code": code, "line_side": side},
                               "prov": dict(prov), "style_id": csid}
                         if key is not None:
-                            cf["srcKey"] = f"{clid}:{key}#{i}"
+                            cf["srcKey"] = f"{spec['layer_id']}:{code}:{key}#{i}"
                         g["features"].append(cf)
                     continue
                 feat = {"kind": spec["kind"], "layer_id": spec["layer_id"],
@@ -2792,7 +2872,8 @@ def fetch_extent(bbox, sources):
     return {"groups": out_groups, "notes": notes, "snapshots": snapshots,
             # слои, в которые реально попали объекты (см. _layer_defs): фронт
             # регистрирует незнакомые, иначе объект молча уедет в слой по виду
-            "layers": _layer_defs([f for g in out_groups for f in g["features"]])}
+            "layers": _layer_defs([f for g in out_groups for f in g["features"]],
+                                  specs)}
 
 
 def make_grado(features, name, layers=None, project_styles=None,
