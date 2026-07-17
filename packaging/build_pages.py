@@ -72,9 +72,21 @@ def build_pages(destination):
         'location.replace(u.toString());}}}).catch(function(){});'
         '}catch(e){}})();</script>'
     )
+    # Правила маршрутизации ОГД — из ОДНОГО источника (studio_core), а не копией
+    # в pages-core.js: копия расходилась (веб застрял на beta.60 — без корня
+    # «берегов», без «ё»-нормализации, без гейта правовых актов). Теперь правка
+    # правила на сервере доезжает до браузерной редакции сама.
+    try:
+        sys.path.insert(0, str(ROOT / "apps" / "studio"))
+        import studio_core as _sc
+        _rules = json.dumps(_sc.gisogd_frontend_rules(), ensure_ascii=False)
+        rules_js = f'<script>window.__GRADO_GISOGD_RULES__={_rules};</script>\n'
+    except Exception as exc:                      # не роняем сборку из-за правил
+        print(f"  ВНИМАНИЕ: правила ОГД не впечены ({exc}) — браузер возьмёт свои")
+        rules_js = ''
     html = html.replace(
         marker,
-        selfheal + '\n'
+        selfheal + '\n' + rules_js +
         f'<script>window.__GRADO_ASSET_VERSION__="{release}";</script>\n'
         '<script src="./pages-core.js"></script>\n'
         '<script src="./pages-adapter.js"></script>\n' + marker,

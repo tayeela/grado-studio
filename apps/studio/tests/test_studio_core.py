@@ -1795,3 +1795,71 @@ class TestPolygonHoles(unittest.TestCase):
         geom = studio_core._geom_for(
             {"kind": "zone", "ring": p["ring"], "props": {}})
         self.assertEqual(len(geom["coordinates"]), 1, "старое поведение цело")
+
+
+class TestGisogdFrontendRules(unittest.TestCase):
+    """Правила маршрутизации ОГД для браузера — из ОДНОГО источника.
+
+    У браузерной редакции была СВОЯ копия правил, и она отстала: к beta.83 веб
+    сидел примерно на beta.60 — без корня «берегов» (жалоба юзера: «зоны
+    береговых полос уходят в прочие»), без «ё»-нормализации и без гейта
+    правовых актов. Гейт держит экспорт полным и правила — рабочими.
+    """
+
+    def setUp(self):
+        self.rules = studio_core.gisogd_frontend_rules()
+
+    def _route(self, name):
+        """Повтор JS-логики gisogdRoute на экспортированных правилах."""
+        low = studio_core._norm_ru(name)
+        if any(m in low for m in self.rules["doc_markers"]):
+            return self.rules["other_layer_id"]
+        for r in self.rules["layer_rules"]:
+            if any(k in low for k in r["keys"]):
+                return r["layer_id"]
+        for r in self.rules["style_rules"]:
+            if any(k in low for k in r["keys"]):
+                return r["layer_id"]
+        if any(k in low for k in self.rules["restrict_hints"]):
+            return self.rules["restrict_layer_id"]
+        return self.rules["other_layer_id"]
+
+    def test_export_covers_every_server_rule(self):
+        # экспорт обязан быть ПОЛНЫМ, иначе браузер снова отстанет
+        self.assertEqual(len(self.rules["style_rules"]),
+                         len(studio_core._GISOGD_STYLE_RULES))
+        self.assertEqual(len(self.rules["layer_rules"]),
+                         len(studio_core._GISOGD_LAYER_RULES))
+
+    def test_real_coastal_layer_names_get_their_own_layer(self):
+        # реальные имена из каталога портала (virtual1521 и др.) — не в «прочие»
+        for name in ("Зоны береговых полос", "Границы береговых полос",
+                     "Береговые полосы", "Границы береговой полосы"):
+            self.assertEqual(self._route(name),
+                             "source.gisogd.zouit.beregovaya", name)
+
+    def test_yo_letter_does_not_steal_foreign_sign(self):
+        # «ё» ломала своё правило, и подхватывалось следующее, более общее
+        self.assertEqual(self._route("Жёсткая зона 2 пояса санитарной охраны"),
+                         "source.gisogd.zouit.sanokhr.2hard")
+        self.assertEqual(self._route("СЗЗ (расчётная)"),
+                         "source.gisogd.zouit.szz.calc")
+
+    def test_legal_act_is_not_a_zone(self):
+        act = "Правовой акт об утверждении границ территории объектов культурного наследия"
+        self.assertEqual(self._route(act), "source.gisogd.other",
+                         "документ не должен получать знак зоны")
+
+    def test_export_matches_server_routing_on_catalog_names(self):
+        # экспорт и серверная маршрутизация обязаны давать ОДИН результат
+        for name in ("Зоны береговых полос", "Границы водоохранных зон",
+                     "Прибрежные защитные полосы", "Функциональные зоны",
+                     "Красные линии", "Границы ООПТ"):
+            self.assertEqual(self._route(name) == "source.gisogd.other",
+                             studio_core._gisogd_style_for(name) is None
+                             and not studio_core._gisogd_is_restrict(name)
+                             and not any(k in studio_core._norm_ru(name)
+                                         for k, _, _ in
+                                         [(kk[0], a, b) for kk, a, b in
+                                          studio_core._GISOGD_LAYER_RULES]),
+                             f"{name}: экспорт и сервер разошлись")

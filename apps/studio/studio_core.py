@@ -1863,6 +1863,36 @@ def gp_style_for_zone(name):
     return _GP_ZONE_STYLE.get(zone.lower()) if zone else None
 
 
+def gisogd_frontend_rules():
+    """Правила маршрутизации ОГД для БРАУЗЕРНОЙ редакции — из одного источника.
+
+    У браузера нет Python, поэтому у него была СВОЯ копия правил, и она
+    неизбежно расходилась: к beta.83 веб застрял примерно на beta.60 — без
+    корня «берегов» (жалоба юзера: «зоны береговых полос уходят в прочие»),
+    без нормализации «ё» (жёсткая/расчётная уезжали в ЧУЖОЙ знак) и без гейта
+    правовых актов. Теперь build_pages печёт этот словарь в страницу, и правка
+    правила на сервере доезжает до веба сама.
+
+    Ключи уже нормализованы (_norm_ru: регистр + «ё»→«е») — на стороне JS
+    достаточно применить ту же нормализацию к имени слоя.
+    """
+    return {
+        "layer_rules": [
+            {"keys": [_norm_ru(k) for k in keys], "kind": kind, "layer_id": lid}
+            for keys, kind, lid in _GISOGD_LAYER_RULES
+        ],
+        "style_rules": [
+            {"keys": [_norm_ru(k) for k in keys], "style_id": sid,
+             "layer_id": _zouit_layer_id(sid)}
+            for keys, sid in _GISOGD_STYLE_RULES
+        ],
+        "restrict_hints": [_norm_ru(k) for k in _GISOGD_RESTRICT_HINTS],
+        "doc_markers": [_norm_ru(k) for k in _GISOGD_DOC_MARKERS],
+        "restrict_layer_id": "source.gisogd.restrict",
+        "other_layer_id": "source.gisogd.other",
+    }
+
+
 def _zouit_layer_id(style_id):
     """Знак ЛГР → СВОЙ слой ЗОУИТ: lgr.vodookhr → source.gisogd.zouit.vodookhr."""
     return "source.gisogd.zouit." + style_id[len("lgr."):]
