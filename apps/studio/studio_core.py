@@ -207,6 +207,10 @@ def frontend_styles():
         if s.get("ground_units"):
             entry["ground_units"] = True
             entry["ref_scale"] = s.get("ref_scale", 2000)
+        # Теги OSM highway знака дорог — нужны браузерной редакции: она строит
+        # карту «тег → знак» из этих же стилей (свой Python-бэкенд ей недоступен)
+        if s.get("osm_highway"):
+            entry["osm_highway"] = list(s["osm_highway"])
         h = s.get("hatch")
         if isinstance(h, dict):
             entry["hatch"] = {k: h[k] for k in

@@ -98,13 +98,22 @@ def project_to_dxf(project, label_height=2.5, layers=None, fallback_layer=None):
             else:
                 polys = [geom["coordinates"]] if t == "Polygon" else geom["coordinates"]
                 for poly in polys:
-                    ring = poly[0]
-                    ring = ring[:-1] if ring[0] == ring[-1] else ring
-                    entities += _polyline(layer, ring, closed=True)
-                    label = _label(f["attrs"])
-                    if label is not None:
-                        cx, cy = _centroid([tuple(p) for p in ring])
-                        entities += _text(layer, cx, cy, label, label_height)
+                    # ВСЕ кольца полигона: poly[0] — внешний контур, poly[1:] —
+                    # дыры. Прежде выгружалось только внешнее, и выколотый
+                    # полигон приходил в DXF сплошным (расходился с .grado и
+                    # печатью). Заливок в нашем DXF нет, поэтому дыра — это
+                    # замкнутая полилиния её контура на том же слое.
+                    for ri, raw in enumerate(poly):
+                        ring = raw[:-1] if raw[0] == raw[-1] else raw
+                        if len(ring) < 3:
+                            continue
+                        entities += _polyline(layer, ring, closed=True)
+                        if ri == 0:
+                            label = _label(f["attrs"])
+                            if label is not None:
+                                cx, cy = _centroid([tuple(p) for p in ring])
+                                entities += _text(layer, cx, cy, label,
+                                                  label_height)
 
     layer_defs = list(dict.fromkeys(list(layers.values()) + [fallback_layer]))
     layer_table = _g(0, "TABLE") + _g(2, "LAYER") + _g(70, len(layer_defs))

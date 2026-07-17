@@ -62,6 +62,10 @@ class TestPackagingResources(unittest.TestCase):
             release = json.loads((output / "version.json").read_text(
                 encoding="utf-8"))["bundle_version"]
             self.assertIn(f'window.__GRADO_ASSET_VERSION__="{release}"', html)
+            # правила маршрутизации ОГД обязаны впекаться (беззвучный '' в
+            # rules_js оставил бы веб на устаревшей своей копии — класс beta.84)
+            self.assertIn("window.__GRADO_GISOGD_RULES__", html)
+            self.assertIn('"beregov"', html)
             self.assertIn(f'src="./app.js?v={release}"', html)
             self.assertIn(f'href="./redesign/studio2.css?v={release}"', html)
             self.assertIn(f'href="./favicon.svg?v={release}"', html)

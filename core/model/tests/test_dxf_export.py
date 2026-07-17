@@ -47,3 +47,28 @@ class TestDxfExport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDxfHoles(unittest.TestCase):
+    def test_polygon_holes_exported_as_closed_polylines(self):
+        # Прежде выгружалось только внешнее кольцо (ring = poly[0]) — выколотый
+        # полигон приходил в DXF сплошным, расходясь с .grado и печатью.
+        import tempfile
+        from pathlib import Path
+        from grado_model import Project
+        from grado_model.dxf_export import project_to_dxf
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Project.create(Path(tmp) / "h.grado", "Дыры")
+            p.add_layer("tp.func_zone").add_feature(
+                {"type": "Polygon", "coordinates": [
+                    [[0, 0], [100, 0], [100, 80], [0, 80], [0, 0]],
+                    [[30, 20], [70, 20], [70, 60], [30, 60], [30, 20]],
+                ]}, attrs={"zone_title": "с дырой"})
+            dxf = project_to_dxf(p).decode("cp1251")
+            p.close()
+        # обе полилинии замкнуты: вершины внешнего кольца и дыры присутствуют
+        self.assertIn("100.0000", dxf, "внешнее кольцо в DXF")
+        self.assertIn("30.0000", dxf, "кольцо дыры в DXF")
+        self.assertIn("70.0000", dxf, "кольцо дыры в DXF")
+        # подпись зоны — одна (не дублируется на кольцо дыры)
+        self.assertEqual(dxf.count("с дырой"), 1)
