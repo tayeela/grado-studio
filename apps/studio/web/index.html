@@ -223,6 +223,8 @@
   <label class="chk"><input type="checkbox" id="grid-snap" checked> привязка к сетке (C)</label>
   <label class="chk"><input type="checkbox" id="obj-snap" checked> привязка к объектам (X)</label>
   <label class="chk"><input type="checkbox" id="access-show"> радиусы доступности соцобъектов</label>
+  <label class="chk" title="По эталону (QML) штрих и засечки знаков ЛГР заданы в метрах на местности: на 1:4000 засечка — около 3 px, как и в QGIS. Режим делает знак постоянного разборчивого размера на экране. На печать не влияет — лист всегда по эталону."><input type="checkbox" id="lgr-readable"> читаемые знаки ЛГР на любом зуме</label>
+  <div class="hint" id="lgr-readable-hint">Только на экране: печать и выпуск всегда по эталону.</div>
   <div class="field" id="access-r-wrap" style="display:none"><label>Радиус доступности, м</label>
     <input id="access-r" type="number" value="300" min="50" max="3000" step="50"></div>
 </div>
