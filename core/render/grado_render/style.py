@@ -147,6 +147,11 @@ class Style:
                     lm["period_mm"] = lm["period_mm"] * f
                 if lm.get("size_mm"):
                     lm["size_mm"] = lm["size_mm"] * f
+                # ow (толщина штриха засечки) в QML тоже MapUnit — метры:
+                # без пересчёта глиф ужимался, а штрих оставался прежним и
+                # засечка вырождалась в кляксу. Множим тем же коэффициентом.
+                if lm.get("ow_mm"):
+                    lm["ow_mm"] = lm["ow_mm"] * f
                 clone.line_marker = lm
         return clone
 

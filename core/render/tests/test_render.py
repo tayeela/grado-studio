@@ -741,3 +741,18 @@ class TestPrintHolesAndGroundUnits(unittest.TestCase):
         st = StyleSet().resolve_id("red.line.projected")
         if st is not None:
             self.assertIs(st.for_scale(4000), st, "не-ЛГР стиль не пересчитывается")
+
+    def test_marker_outline_width_follows_scale(self):
+        # outline_width_unit=MapUnit у 15 знаков — толщина штриха засечки тоже в
+        # МЕТРАХ. Не масштабировалась: глиф ужимался, штрих оставался прежним, и
+        # на 1:4451 засечка (3 px) со штрихом 2.34 px вырождалась в кляксу.
+        st = StyleSet().resolve_id("lgr.vodookhr")
+        base = st.line_marker
+        ratio = base["ow_mm"] / base["size_mm"]
+        for scale in (500, 2000, 4451, 10000):
+            lm = st.for_scale(scale).line_marker
+            self.assertAlmostEqual(lm["ow_mm"] / lm["size_mm"], ratio, places=9,
+                                   msg=f"ow/size постоянно на 1:{scale}")
+            # QML: size 3.5 м, ow 1.25 м (1.24 — округление MARKER_OW 0.625→0.62)
+            self.assertAlmostEqual(lm["size_mm"] * scale / 1000, 3.5, delta=0.02)
+            self.assertAlmostEqual(lm["ow_mm"] * scale / 1000, 1.25, delta=0.02)
