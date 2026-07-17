@@ -30,6 +30,7 @@ from grado_compute.engine import Engine  # noqa: E402
 from grado_geom import Path as GPath  # noqa: E402
 from grado_geom import CurveError, PathError  # noqa: E402
 from grado_layout import Document, render_document_pdf  # noqa: E402
+from grado_layout import Page, A3_LANDSCAPE  # noqa: E402  # for stub sheets
 from grado_model import Project  # noqa: E402
 from grado_model import geometry  # noqa: E402
 from grado_model.classifier import Classifier  # noqa: E402
@@ -268,14 +269,6 @@ except ImportError:
 # перекачается и даёт вечную дырку в мозаике).
 _PNG_SIG = b"\x89PNG\r\n\x1a\n"
 _PNG_END = b"IEND\xaeB`\x82"
-
-
-def _valid_png(path):
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return False
-    return data[:8] == _PNG_SIG and data[-8:] == _PNG_END
 
 
 def _valid_jpeg(data):
@@ -644,7 +637,6 @@ def _geom_for(feature):
         return {"type": "LineString", "coordinates": _shift(line)}
     if "arc" in feature:
         a = feature["arc"]
-        import math
         n = 16
         pts = []
         for i in range(n+1):
@@ -655,7 +647,6 @@ def _geom_for(feature):
         return {"type": "LineString", "coordinates": _shift(pts)}
     if "circle" in feature:
         c = feature["circle"]
-        import math
         n = 32
         pts = []
         for i in range(n + 1):
@@ -2929,7 +2920,6 @@ def make_dxf(features, name, layers=None):
 
     Размерные линии — аннотация чертежа: в модель не попадают,
     в DXF выгружаются слоем RAZMERY (линия + текст длины)."""
-    import math
     from grado_model.dxf_export import _polyline, _text, project_to_dxf
     dxf_layers, dxf_fallback = dxf_layers_from_styles()
     with tempfile.TemporaryDirectory() as tmp:
@@ -3071,7 +3061,6 @@ def make_buffer(features, dist, fillet=0.0, sides="both"):
     sides — "left" | "right" | "both" | "outer" | "inner" (для полигонов outer=внешний).
     Возвращает список новых фичей (circle для точек, line/ring для остальных).
     """
-    import math
     out = []
     d = float(dist)
     if not math.isfinite(d) or d <= 0 or d > 2000:

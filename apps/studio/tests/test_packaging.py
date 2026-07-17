@@ -14,6 +14,27 @@ from windows_version import build_version_file  # noqa: E402
 from windows_entry import _data_dir  # noqa: E402
 
 
+def _baked_gisogd_rules():
+    """Правила маршрутизации ОГД из ЕДИНОГО источника (studio_core), как их
+    печёт build_pages в проде. pages-core.js больше НЕ держит своей копии, так
+    что node-тесты маршрутизации гоняют его на впечённых правилах."""
+    studio = str(Path(__file__).parents[1])          # apps/studio
+    if studio not in sys.path:
+        sys.path.insert(0, studio)
+    import studio_core
+    return json.dumps(studio_core.gisogd_frontend_rules(), ensure_ascii=False)
+
+
+def _prepend_rules(script):
+    """Впечь baked-правила ОГД в node-скрипт перед маршрутизацией. Сам находит,
+    задан ли уже window (тест сделал global.window = global) или его нет."""
+    rules = "window.__GRADO_GISOGD_RULES__ = " + _baked_gisogd_rules() + ";\n"
+    if "global.window = global;" in script:          # window уже готов
+        return script.replace("global.window = global;\n",
+                              "global.window = global;\n" + rules, 1)
+    return "global.window = global.window || {};\n" + rules + script
+
+
 class TestPackagingResources(unittest.TestCase):
     def test_resource_manifest_excludes_local_and_generated_files(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +270,7 @@ process.stdout.write(JSON.stringify({
   cLayers: c.layers.map(L => L.id),
 }));
 """
+        script = _prepend_rules(script)
         completed = subprocess.run(
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
@@ -446,6 +468,7 @@ process.stdout.write(JSON.stringify({
   ogdPoint:ogd.features[0].ring[0],field:ogd.fields['source.gisogd.member.funkcionalnie_zony'][0].name
 }));
 """
+        script = _prepend_rules(script)
         completed = subprocess.run(
             ["node", "-e", script, str(root / "apps/studio/web/pages-core.js")],
             check=True, capture_output=True, text=True, encoding="utf-8",
@@ -613,6 +636,7 @@ require(process.argv[2]);
     origin:[basemapBody.origin_lon,basemapBody.origin_lat]}));
 })();
 """
+        script = _prepend_rules(script)
         completed = subprocess.run(
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),
@@ -1491,6 +1515,7 @@ process.stdout.write(JSON.stringify({
   reported: (out.layers || []).map(L => [L.id, L.kind]),
 }));
 """
+        script = _prepend_rules(script)
         completed = subprocess.run(
             ["node", "-e", script,
              str(root / "apps/studio/web/pages-core.js"),

@@ -74,16 +74,15 @@ def build_pages(destination):
     )
     # Правила маршрутизации ОГД — из ОДНОГО источника (studio_core), а не копией
     # в pages-core.js: копия расходилась (веб застрял на beta.60 — без корня
-    # «берегов», без «ё»-нормализации, без гейта правовых актов). Теперь правка
-    # правила на сервере доезжает до браузерной редакции сама.
-    try:
-        sys.path.insert(0, str(ROOT / "apps" / "studio"))
-        import studio_core as _sc
-        _rules = json.dumps(_sc.gisogd_frontend_rules(), ensure_ascii=False)
-        rules_js = f'<script>window.__GRADO_GISOGD_RULES__={_rules};</script>\n'
-    except Exception as exc:                      # не роняем сборку из-за правил
-        print(f"  ВНИМАНИЕ: правила ОГД не впечены ({exc}) — браузер возьмёт свои")
-        rules_js = ''
+    # «берегов», без «ё»-нормализации, без гейта правовых актов). Впекание
+    # ОБЯЗАТЕЛЬНО: рукописной копии в pages-core.js больше нет, и без правил она
+    # падает громко. Раньше здесь был try/except, тихо пекший ПУСТОТУ — тогда
+    # браузер откатывался на стухшую копию (тот самый рецидивный дрейф). Пусть
+    # лучше сборка честно упадёт, чем отгрузит нерабочую маршрутизацию.
+    sys.path.insert(0, str(ROOT / "apps" / "studio"))
+    import studio_core as _sc
+    _rules = json.dumps(_sc.gisogd_frontend_rules(), ensure_ascii=False)
+    rules_js = f'<script>window.__GRADO_GISOGD_RULES__={_rules};</script>\n'
     html = html.replace(
         marker,
         selfheal + '\n' + rules_js +

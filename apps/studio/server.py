@@ -45,7 +45,7 @@ from datetime import datetime, timezone
 from http.server import (BaseHTTPRequestHandler, SimpleHTTPRequestHandler,
                          ThreadingHTTPServer)
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlparse, parse_qs
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -199,7 +199,7 @@ def _canonical_autosave_state(state):
     ).encode("utf-8")
 
 
-def _autosave_envelope(state, raw=None):
+def _autosave_envelope(state):
     state = _autosave_state(state)
     canonical = _canonical_autosave_state(state)
     return {
@@ -285,10 +285,10 @@ def _atomic_write_bytes(path, data):
         staged.unlink(missing_ok=True)
 
 
-def save_autosave(state, raw=None, path=None, backups=AUTOSAVE_BACKUPS):
+def save_autosave(state, path=None, backups=AUTOSAVE_BACKUPS):
     """Atomically save state and rotate changed snapshots for recovery."""
     path = Path(path or AUTOSAVE_PATH)
-    envelope = _autosave_envelope(state, raw=raw)
+    envelope = _autosave_envelope(state)
     data = json.dumps(
         envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
     ).encode("utf-8")
@@ -563,7 +563,6 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        from urllib.parse import urlparse, parse_qs
         parsed0 = urlparse(self.path)
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
@@ -705,7 +704,6 @@ class Handler(SimpleHTTPRequestHandler):
             # 200 + null не засоряет консоль браузера ложной ошибкой 404.
             self._send(b"null", "application/json; charset=utf-8")
             return
-        from urllib.parse import urlparse, parse_qs
         parsed = urlparse(self.path)
         if parsed.path == "/api/downloads-scan":
             if not _server_side_import_enabled():
@@ -840,7 +838,7 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     state = json.loads(raw)
                     with AUTOSAVE_LOCK:
-                        meta, changed = save_autosave(state, raw=raw)
+                        meta, changed = save_autosave(state)
                 except (json.JSONDecodeError, ValueError):
                     self._json({"error": "bad autosave state"}, 400)
                     return
