@@ -53,7 +53,8 @@ def load_library(name="default"):
     return _LIBRARY_CACHE[name]
 
 
-def merged_library(names=("default", "moscow_lgr", "moscow_genplan")):
+def merged_library(names=("default", "moscow_lgr", "moscow_genplan",
+                          "osm_highway")):
     """Объединённая библиотека из нескольких JSON (системный уровень) +
     пользовательские правки знаков поверх.
 

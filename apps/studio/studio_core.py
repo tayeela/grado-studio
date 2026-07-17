@@ -1845,6 +1845,27 @@ _GP_FZ_CODE = {str(k): v for k, v in
                (load_library("moscow_genplan").get("fz_code") or {}).items()}
 
 
+# Дороги OSM: тег highway → знак из рабочих QML юзера (osm_highway.json,
+# генератор tools/gen_osm_highway.py). Иерархия ширин ровно по QML: магистраль
+# 1.6 мм … прочие 0.26 мм. Ключ ТОЧНЫЙ (тег OSM — фиксированный словарь, гадать
+# по подстроке нельзя: 'motorway_link' ≠ 'motorway', это разные правила QML,
+# хоть и один знак).
+_OSM_HW_STYLE = {
+    tag: sid
+    for sid, s in (load_library("osm_highway").get("styles") or {}).items()
+    for tag in (s.get("osm_highway") or [])
+}
+OSM_ROAD_COLORS = load_library("osm_highway").get("road_colors") or {}
+
+
+def osm_style_for_highway(tag):
+    """Тег OSM highway → style_id знака дороги. Неизвестный тег → «прочие»."""
+    if not tag:
+        return None
+    sid = _OSM_HW_STYLE.get(str(tag).strip().lower())
+    return sid or "osm.hw.other"
+
+
 def gp_style_for_zone(name):
     """Имя ИЛИ числовой код функциональной зоны → style_id знака Генплана.
 
@@ -2624,6 +2645,13 @@ def fetch_extent(bbox, sources):
             # НЕ доходил до объектов вовсе: поле было заведено и не применялось,
             # поэтому зоны рисовались общим стилем слоя.
             sid = spec.get("style_id")
+            if not sid and src_key == "osm.roads":
+                # класс дороги — из САМИХ данных OSM (тег highway), а не из
+                # имени слоя: в одном наборе едут и магистрали, и тротуары.
+                # Берём СЫРОЙ тег (f["properties"]), а не props: _extent_props
+                # оставляет только семантику для панели атрибутов.
+                sid = osm_style_for_highway(
+                    (f.get("properties") or {}).get("highway"))
             if not sid and spec["kind"] == "zone":
                 for cand in (props.get("zone_title"), props.get("fz_type"),
                              spec.get("title")):

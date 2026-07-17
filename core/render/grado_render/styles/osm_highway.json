@@ -1,0 +1,560 @@
+{
+  "_doc": "Дороги OSM по рабочим QML юзера (highway.qml / highway_ffe8af.qml). Генерируется tools/gen_osm_highway.py — руками не править (правило 2 CLAUDE.md).",
+  "road_colors": {
+    "sand": "#ffe8af",
+    "grey": "#838383"
+  },
+  "styles": {
+    "osm.hw.motorway": {
+      "title": "Автомагистрали",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 1.6,
+      "width_px": 6.05,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 70.26,
+      "osm_highway": [
+        "motorway",
+        "motorway_link"
+      ],
+      "osm_major": true,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_MOTORWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.trunk": {
+      "title": "Дороги федерального значения",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 1.4,
+      "width_px": 5.29,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 70.25,
+      "osm_highway": [
+        "trunk",
+        "trunk_link"
+      ],
+      "osm_major": true,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_TRUNK",
+        "color": 8
+      }
+    },
+    "osm.hw.primary": {
+      "title": "Дороги регионального значения",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 1.0,
+      "width_px": 3.78,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 70.24,
+      "osm_highway": [
+        "primary",
+        "primary_link"
+      ],
+      "osm_major": true,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_PRIMARY",
+        "color": 8
+      }
+    },
+    "osm.hw.secondary": {
+      "title": "Дороги местного значения",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.7,
+      "width_px": 2.65,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 70.23,
+      "osm_highway": [
+        "secondary",
+        "secondary_link"
+      ],
+      "osm_major": true,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_SECONDARY",
+        "color": 8
+      }
+    },
+    "osm.hw.tertiary": {
+      "title": "Прочие связующие дороги",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 70.22,
+      "osm_highway": [
+        "tertiary",
+        "tertiary_link"
+      ],
+      "osm_major": true,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_TERTIARY",
+        "color": 8
+      }
+    },
+    "osm.hw.unclassified": {
+      "title": "Дороги без класса",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.21,
+      "osm_highway": [
+        "unclassified"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_UNCLASSIFIED",
+        "color": 8
+      }
+    },
+    "osm.hw.residential": {
+      "title": "Улицы жилой застройки",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.2,
+      "osm_highway": [
+        "residential"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_RESIDENTIAL",
+        "color": 8
+      }
+    },
+    "osm.hw.living_street": {
+      "title": "Жилые зоны",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.19,
+      "osm_highway": [
+        "living_street"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_LIVING_STREET",
+        "color": 8
+      }
+    },
+    "osm.hw.service": {
+      "title": "Служебные проезды",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.18,
+      "osm_highway": [
+        "service"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_SERVICE",
+        "color": 8
+      }
+    },
+    "osm.hw.pedestrian": {
+      "title": "Пешеходные улицы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.17,
+      "osm_highway": [
+        "pedestrian"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_PEDESTRIAN",
+        "color": 8
+      }
+    },
+    "osm.hw.track": {
+      "title": "Полевые дороги",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.16,
+      "osm_highway": [
+        "track"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_TRACK",
+        "color": 8
+      }
+    },
+    "osm.hw.busway": {
+      "title": "Полосы автобусов",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.15,
+      "osm_highway": [
+        "busway",
+        "bus_guideway"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_BUSWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.road": {
+      "title": "Дороги без уточнения",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.14,
+      "osm_highway": [
+        "road"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_ROAD",
+        "color": 8
+      }
+    },
+    "osm.hw.footway": {
+      "title": "Тротуары",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.13,
+      "osm_highway": [
+        "footway"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_FOOTWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.path": {
+      "title": "Тропы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.12,
+      "osm_highway": [
+        "path"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_PATH",
+        "color": 8
+      }
+    },
+    "osm.hw.cycleway": {
+      "title": "Велодорожки",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.11,
+      "osm_highway": [
+        "cycleway"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_CYCLEWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.bridleway": {
+      "title": "Конные тропы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.1,
+      "osm_highway": [
+        "bridleway"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_BRIDLEWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.steps": {
+      "title": "Лестницы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.09,
+      "osm_highway": [
+        "steps"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_STEPS",
+        "color": 8
+      }
+    },
+    "osm.hw.corridor": {
+      "title": "Внутренние проходы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.08,
+      "osm_highway": [
+        "corridor"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_CORRIDOR",
+        "color": 8
+      }
+    },
+    "osm.hw.platform": {
+      "title": "Посадочные платформы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.07,
+      "osm_highway": [
+        "platform"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_PLATFORM",
+        "color": 8
+      }
+    },
+    "osm.hw.rest_area": {
+      "title": "Площадки отдыха",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.06,
+      "osm_highway": [
+        "rest_area",
+        "services"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_REST_AREA",
+        "color": 8
+      }
+    },
+    "osm.hw.raceway": {
+      "title": "Гоночные трассы",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.05,
+      "osm_highway": [
+        "raceway"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_RACEWAY",
+        "color": 8
+      }
+    },
+    "osm.hw.escape": {
+      "title": "Аварийные съезды",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.04,
+      "osm_highway": [
+        "escape"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_ESCAPE",
+        "color": 8
+      }
+    },
+    "osm.hw.construction": {
+      "title": "Строящиеся дороги",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.03,
+      "osm_highway": [
+        "construction"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_CONSTRUCTION",
+        "color": 8
+      }
+    },
+    "osm.hw.proposed": {
+      "title": "Проектируемые дороги",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.02,
+      "osm_highway": [
+        "proposed"
+      ],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_PROPOSED",
+        "color": 8
+      }
+    },
+    "osm.hw.other": {
+      "title": "Прочие дороги",
+      "group": "Дороги OSM",
+      "stroke": "#ffe8af",
+      "width_mm": 0.26,
+      "width_px": 0.98,
+      "dash_mm": null,
+      "dash_px": null,
+      "label_field": null,
+      "marker_mm": 1.2,
+      "z": 60.01,
+      "osm_highway": [],
+      "osm_major": false,
+      "codes": [],
+      "dxf": {
+        "name": "OSM_OTHER",
+        "color": 8
+      }
+    }
+  }
+}

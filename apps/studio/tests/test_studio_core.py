@@ -1863,3 +1863,62 @@ class TestGisogdFrontendRules(unittest.TestCase):
                                          [(kk[0], a, b) for kk, a, b in
                                           studio_core._GISOGD_LAYER_RULES]),
                              f"{name}: экспорт и сервер разошлись")
+
+
+class TestOsmHighwayStyles(unittest.TestCase):
+    """Дороги OSM — знаки по рабочим QML юзера (highway.qml / highway_ffe8af.qml).
+
+    Класс дороги берётся из САМИХ данных (тег highway), а не из имени слоя: в
+    наборе osm.roads едут и магистрали, и тротуары. Иерархия ширин — ровно из
+    QML (line_width_unit=MM, метровой ловушки ЛГР здесь нет).
+    """
+
+    def test_tag_routes_to_its_sign(self):
+        cases = {
+            "motorway": "osm.hw.motorway", "motorway_link": "osm.hw.motorway",
+            "trunk": "osm.hw.trunk", "primary": "osm.hw.primary",
+            "secondary": "osm.hw.secondary", "tertiary": "osm.hw.tertiary",
+            "residential": "osm.hw.residential", "footway": "osm.hw.footway",
+        }
+        for tag, sid in cases.items():
+            self.assertEqual(studio_core.osm_style_for_highway(tag), sid, tag)
+
+    def test_unknown_tag_never_loses_the_road(self):
+        # незнакомый тег → «прочие дороги», а не None: объект не должен
+        # остаться без знака и уехать в общий стиль слоя
+        self.assertEqual(studio_core.osm_style_for_highway("экзотика"),
+                         "osm.hw.other")
+        self.assertIsNone(studio_core.osm_style_for_highway(None))
+
+    def test_width_hierarchy_matches_qml(self):
+        from grado_render.style import merged_library
+        lib = merged_library()["styles"]
+        # ширины из QML: motorway 1.6 > trunk 1.4 > primary 1.0 > secondary 0.7
+        # > tertiary 0.26 мм
+        expect = {"osm.hw.motorway": 1.6, "osm.hw.trunk": 1.4,
+                  "osm.hw.primary": 1.0, "osm.hw.secondary": 0.7,
+                  "osm.hw.tertiary": 0.26, "osm.hw.footway": 0.26}
+        for sid, mm in expect.items():
+            self.assertAlmostEqual(lib[sid]["width_mm"], mm, places=6, msg=sid)
+        widths = [lib[s]["width_mm"] for s in
+                  ("osm.hw.motorway", "osm.hw.trunk", "osm.hw.primary",
+                   "osm.hw.secondary", "osm.hw.tertiary")]
+        self.assertEqual(widths, sorted(widths, reverse=True),
+                         "иерархия: магистраль толще всех, дальше по убыванию")
+
+    def test_both_qml_colors_available(self):
+        # присланные файлы отличались ТОЛЬКО цветом — держим оба варианта
+        self.assertEqual(studio_core.OSM_ROAD_COLORS,
+                         {"sand": "#ffe8af", "grey": "#838383"})
+
+    def test_signs_reach_the_canvas(self):
+        fs = studio_core.frontend_styles()
+        osm = {k: v for k, v in fs.items() if k.startswith("osm.hw.")}
+        self.assertEqual(len(osm), 26, "все классы дорог доходят до холста")
+        self.assertEqual(osm["osm.hw.motorway"]["stroke"], "#ffe8af")
+
+    def test_no_tag_leads_to_two_signs(self):
+        from grado_render.style import load_library
+        tags = [t for s in load_library("osm_highway")["styles"].values()
+                for t in (s.get("osm_highway") or [])]
+        self.assertEqual(len(tags), len(set(tags)), "тег не должен вести в два знака")
