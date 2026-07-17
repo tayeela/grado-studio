@@ -674,7 +674,16 @@ def _geom_for(feature):
     ring = _shift(feature["ring"])
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
-    return {"type": "Polygon", "coordinates": [ring]}
+    rings = [ring]
+    # Дыры холста → внутренние кольца GeoJSON, иначе выколотый полигон
+    # схлопывался бы в сплошной при сохранении .grado (и в печати/экспорте).
+    for h in feature.get("holes") or []:
+        hr = _shift(h)
+        if len(hr) >= 3:
+            if hr[0] != hr[-1]:
+                hr.append(list(hr[0]))
+            rings.append(hr)
+    return {"type": "Polygon", "coordinates": rings}
 
 
 def _route(feature, templates):
@@ -986,8 +995,11 @@ def build_project(path, name, features, layers=None, project_styles=None,
 
 
 def _ring_area_ha(feature):
-    return geometry.area({"type": "Polygon",
-                          "coordinates": [feature["ring"]]}) / 10000.0
+    # Дыры вычитаются: выколотая часть не принадлежит зоне, иначе ТЭП считал бы
+    # её площадь своей. geometry.area понимает внутренние кольца Polygon.
+    rings = [feature["ring"]] + [h for h in (feature.get("holes") or [])
+                                 if len(h) >= 3]
+    return geometry.area({"type": "Polygon", "coordinates": rings}) / 10000.0
 
 
 def _tep_number(value):
@@ -1452,7 +1464,11 @@ def grado_to_features(path):
                     ring = _to_local(poly[0])
                     if ring[0] == ring[-1]:
                         ring = ring[:-1]
-                    out.append({**base, "ring": ring, "props": dict(props)})
+                    part = {**base, "ring": ring, "props": dict(props)}
+                    holes = _canvas_holes(poly)   # дыры переживают .grado
+                    if holes:
+                        part["holes"] = holes
+                    out.append(part)
     if not isinstance(user_layers, list):
         # Старые .grado не содержали точный манифест интерфейса. Собираем
         # достаточно данных из таблиц, чтобы два слоя одного класса снова
@@ -2499,8 +2515,31 @@ def _wgs_geom_to_canvas(geom):
         if len(ring) >= 2 and ring[0] == ring[-1]:
             ring = ring[:-1]
         if len(ring) >= 3:
-            out.append({"ring": ring})
+            part = {"ring": ring}
+            holes = _canvas_holes(poly)
+            if holes:
+                part["holes"] = holes
+            out.append(part)
     return out
+
+
+def _canvas_holes(poly):
+    """Внутренние кольца (дыры) полигона GeoJSON → кольца холста.
+
+    poly[0] — внешний контур, poly[1:] — дыры. Прежде дыры молча
+    отбрасывались на ВСЕХ путях импорта, и выколотый полигон грузился
+    сплошным (жалоба юзера: «дыр нет ни в водоохранных, ни в функц. зонах,
+    ни в береговых»). Кольцо холста — незамкнутое (без повтора первой точки),
+    как и внешнее.
+    """
+    holes = []
+    for h in poly[1:]:
+        hr = _to_local(h)
+        if len(hr) >= 2 and hr[0] == hr[-1]:
+            hr = hr[:-1]
+        if len(hr) >= 3:
+            holes.append(hr)
+    return holes
 
 
 def fetch_extent(bbox, sources):

@@ -1738,3 +1738,60 @@ class TestManualZipLineCode(unittest.TestCase):
         by = {f["layer_id"]: f.get("style_id") for f in out["features"]}
         self.assertEqual(by["source.gisogd.zouit.vodookhr"], "lgr.vodookhr")
         self.assertEqual(by["source.gisogd.func_zones"], "gp.zhilaya_zona")
+
+
+class TestPolygonHoles(unittest.TestCase):
+    """Выколотые полигоны (жалоба юзера: «дыр нет ни в водоохранных, ни в
+    функц. зонах, ни в береговых»). Импорт брал только внешний контур poly[0],
+    внутренние кольца молча отбрасывались — полигон грузился сплошным.
+    Гейт держит дыры на ВСЕХ трёх переходах: импорт, площадь, сохранение."""
+
+    # квадрат ~1.1x1.1 км с квадратной дырой внутри (WGS84)
+    GEOM = {"type": "Polygon", "coordinates": [
+        [[37.60, 55.75], [37.61, 55.75], [37.61, 55.76], [37.60, 55.76],
+         [37.60, 55.75]],
+        [[37.603, 55.753], [37.607, 55.753], [37.607, 55.757],
+         [37.603, 55.757], [37.603, 55.753]],
+    ]}
+
+    def test_import_keeps_holes(self):
+        parts = studio_core._wgs_geom_to_canvas(self.GEOM)
+        self.assertEqual(len(parts), 1)
+        self.assertEqual(len(parts[0].get("holes") or []), 1,
+                         "внутреннее кольцо обязано дожить до холста")
+        # кольца холста незамкнутые — как и внешнее
+        hole = parts[0]["holes"][0]
+        self.assertGreaterEqual(len(hole), 3)
+        self.assertNotEqual(hole[0], hole[-1], "кольцо холста без замыкающей точки")
+
+    def test_polygon_without_holes_unchanged(self):
+        plain = {"type": "Polygon", "coordinates": [self.GEOM["coordinates"][0]]}
+        parts = studio_core._wgs_geom_to_canvas(plain)
+        self.assertEqual(len(parts), 1)
+        self.assertNotIn("holes", parts[0], "без дыр ключ не появляется")
+
+    def test_area_subtracts_holes(self):
+        p = studio_core._wgs_geom_to_canvas(self.GEOM)[0]
+        with_holes = studio_core._ring_area_ha(
+            {"ring": p["ring"], "holes": p["holes"]})
+        without = studio_core._ring_area_ha({"ring": p["ring"]})
+        self.assertLess(with_holes, without,
+                        "выколотая часть не принадлежит зоне — ТЭП её не считает")
+        # дыра 0.004°x0.004° ≈ 250x445 м → заметная доля, не округление
+        self.assertGreater(without - with_holes, 5.0)
+
+    def test_holes_survive_save_to_grado(self):
+        p = studio_core._wgs_geom_to_canvas(self.GEOM)[0]
+        geom = studio_core._geom_for(
+            {"kind": "zone", "ring": p["ring"], "holes": p["holes"], "props": {}})
+        self.assertEqual(geom["type"], "Polygon")
+        self.assertEqual(len(geom["coordinates"]), 2,
+                         "внешнее кольцо + дыра переживают сохранение .grado")
+        for ring in geom["coordinates"]:
+            self.assertEqual(ring[0], ring[-1], "кольца GeoJSON замкнуты")
+
+    def test_save_without_holes_unchanged(self):
+        p = studio_core._wgs_geom_to_canvas(self.GEOM)[0]
+        geom = studio_core._geom_for(
+            {"kind": "zone", "ring": p["ring"], "props": {}})
+        self.assertEqual(len(geom["coordinates"]), 1, "старое поведение цело")
