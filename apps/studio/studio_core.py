@@ -2356,6 +2356,12 @@ def _layer_defs(features, specs=None):
     dyn = {sp["layer_id"]: sp.get("title")
            for sp in (specs or {}).values()
            if isinstance(sp, dict) and sp.get("dyn_layer")}
+    # знак слоя-источника (для превью в списке слоёв): у слоёв, опознанных по
+    # имени (ООЗТ→lgr.oozt, зона→gp.*), spec несёт style_id — прежде он терялся
+    # (превью слоя рисовалось общим чёрным контуром вместо знака объектов)
+    dyn_style = {sp["layer_id"]: sp.get("style_id")
+                 for sp in (specs or {}).values()
+                 if isinstance(sp, dict) and sp.get("dyn_layer")}
     out = {}
     for f in features:
         lid = f.get("layer_id")
@@ -2376,7 +2382,7 @@ def _layer_defs(features, specs=None):
                 title = "ГИС ОГД: " + lid.rsplit(".", 1)[-1]
             out[lid] = {"id": lid, "title": title,
                         "code": "generic.line", "kind": f.get("kind"),
-                        "style_id": None, "stage": "existing",
+                        "style_id": dyn_style.get(lid), "stage": "existing",
                         "source_kind": "gisogd"}
     return list(out.values())
 
