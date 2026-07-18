@@ -83,6 +83,10 @@ def build_pages(destination):
     import studio_core as _sc
     _rules = json.dumps(_sc.gisogd_frontend_rules(), ensure_ascii=False)
     rules_js = f'<script>window.__GRADO_GISOGD_RULES__={_rules};</script>\n'
+    # карта «тип функц. зоны → цвет Генплана»: без неё браузерная редакция красит
+    # только знаки ЛГР, а функц. зоны остаются голым контуром (жалоба юзера)
+    _gp = json.dumps(_sc.gp_zone_frontend_rules(), ensure_ascii=False)
+    rules_js += f'<script>window.__GRADO_GP_ZONE_RULES__={_gp};</script>\n'
     html = html.replace(
         marker,
         selfheal + '\n' + rules_js +

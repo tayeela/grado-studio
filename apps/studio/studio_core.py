@@ -1917,6 +1917,19 @@ def gp_style_for_zone(name):
     return _GP_ZONE_STYLE.get(zone.lower()) if zone else None
 
 
+def gp_zone_frontend_rules():
+    """Карта «тип функц. зоны → цвет Генплана» для БРАУЗЕРНОЙ редакции.
+
+    На десктопе цвет зоны ставит сервер (gp_style_for_zone в fetch_extent), а
+    браузерная редакция (pages-core.js) импортирует сама и раньше красила
+    ТОЛЬКО знаки ЛГР (gisogdStyle), а функц. зоны оставались голым контуром —
+    жалоба юзера «функциональные зоны просто обводкой без заливки по типу
+    зоны». Печём эту карту в страницу (build_pages), чтобы веб красил как
+    десктоп. Ключи name_to_style уже в нижнем регистре (= gp_style_for_zone)."""
+    return {"name_to_style": dict(_GP_ZONE_STYLE),
+            "code_to_zone": {c: z.lower() for c, z in _GP_FZ_CODE.items()}}
+
+
 def gisogd_frontend_rules():
     """Правила маршрутизации ОГД для БРАУЗЕРНОЙ редакции — из одного источника.
 
