@@ -275,19 +275,25 @@ def marker_ops(pts, spec, stroke, width=0.3, closed=False, inward=1.0, dash=None
                 j += 1
             acc += d
     else:
+        # Сплошная линия — засечки НЕПРЕРЫВНО по длине всей цепочки единым шагом
+        # period (как MarkerLine в QGIS), а не делением КАЖДОГО ребра отдельно:
+        # короткие рёбра пропускались, шаг d/n у каждого сегмента свой — отсюда
+        # неравномерность. Согласовано с холстом (drawLineMarkers).
+        acc = 0.0
+        nxt = period * 0.5
         for (x1, y1), (x2, y2) in zip(chain, chain[1:]):
             d = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
-            if d < period * 0.5:            # ребро короче половины периода — без метки
+            if d < 1e-6:
                 continue
             tx, ty = (x2 - x1) / d, (y2 - y1) / d
             nx, ny = -ty * inward, tx * inward
-            n = max(1, round(d / period))   # целое число меток, центрированных на ребре
-            gap = d / n                     # отступ gap/2 от каждой вершины
-            for i in range(n):
-                t = (gap * (i + 0.5)) / d
+            while nxt <= acc + d:
+                t = (nxt - acc) / d
                 px, py = x1 + (x2 - x1) * t, y1 + (y2 - y1) * t
                 _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period,
                               stroke, width, lines, ops, filled)
+                nxt += period
+            acc += d
     if lines:
         ops.append({"op": "path", "rings": lines, "closed": False,
                     "fill": None, "stroke": stroke, "width": width,
