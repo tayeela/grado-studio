@@ -332,14 +332,40 @@ def list_autosave_backups(path=None, backups=AUTOSAVE_BACKUPS):
     return result
 
 
+_BRIDGE_LOCAL_ORIGIN = re.compile(
+    r"^https?://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$")
+
+
+def _bridge_origin_allowed(origin):
+    """Мост (порт 8081) принимает данные ТОЛЬКО от расширения/локальных клиентов.
+
+    Прежде `_cors` эхом отдавал ЛЮБОЙ Origin + Allow-Private-Network, а INBOX
+    авто-применялся во фронте — значит любой открытый в браузере сайт мог молча
+    внедрить геометрию в проект (тело парсится как JSON независимо от
+    Content-Type, поэтому даже «простой» запрос без preflight проходил, и CORS
+    не защищал). Заголовок Origin браузер шлёт на всех кросс-запросах и НЕ даёт
+    странице его подделать — проверяем его на сервере. Нет Origin — нативный
+    клиент (QGIS-плагин/curl), это не браузерная угроза."""
+    if not origin:
+        return True
+    o = origin.lower()
+    return (o.startswith("chrome-extension://") or o.startswith("moz-extension://")
+            or o.startswith("safari-web-extension://")
+            or _BRIDGE_LOCAL_ORIGIN.match(o) is not None)
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     """Приёмник браузерного моста GRADO (как HTTP-сервер QGIS-плагина)."""
 
     def _cors(self):
-        self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Private-Network", "true")
+        # разрешительный CORS — только доверенному Origin; чужому не отдаём
+        # ничего, чтобы и preflight, и чтение ответа у него провалились
+        origin = self.headers.get("Origin")
+        if origin and _bridge_origin_allowed(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "*")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
 
     def setup(self):
         super().setup()
@@ -362,6 +388,10 @@ class BridgeHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/add_feature":
             self.send_error(404)
+            return
+        # Origin-гейт: публичный сайт (даже «простым» POST) не пишет в проект.
+        if not _bridge_origin_allowed(self.headers.get("Origin")):
+            self._reply(403, {"error": "origin not allowed"})
             return
         try:
             n = int(self.headers.get("Content-Length", 0))
@@ -445,6 +475,20 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _hub_user(self):
         return HUB.session_user(self._cookie_token()) if HUB else None
+
+    def _client_key(self):
+        """IP клиента для троттлинга логина. За reverse-proxy (документированный
+        деплой) client_address = IP прокси, ОДИН на всех, и клиентский лимит
+        «25 неудач/мин» становится коллективным — один абьюзер держит весь
+        инстанс в 429. При флаге GRADO_TRUST_PROXY берём реальный IP из
+        X-Forwarded-For (ПРАВЫЙ элемент — добавлен ближайшим прокси; спуф
+        клиента остаётся левее). БЕЗ флага XFF игнорируем: при прямом доступе
+        его подделывает сам клиент, обходя пер-аккаунт лимит."""
+        if os.environ.get("GRADO_TRUST_PROXY"):
+            xff = self.headers.get("X-Forwarded-For")
+            if xff and xff.split(",")[-1].strip():
+                return xff.split(",")[-1].strip()
+        return self.client_address[0] if self.client_address else "local"
 
     def _json(self, obj, status=200, set_cookie=None):
         data = json.dumps(obj, ensure_ascii=False).encode()
@@ -779,9 +823,8 @@ class Handler(SimpleHTTPRequestHandler):
                                    set_cookie=self._session_cookie(token))
                     elif self.path == "/api/auth/login":
                         b = self._json_body()
-                        client = self.client_address[0] if self.client_address else "local"
                         token = HUB.login(b.get("login"), b.get("password"),
-                                          client_key=client)
+                                          client_key=self._client_key())
                         self._json(HUB.user_info(HUB.session_user(token)),
                                    set_cookie=self._session_cookie(token))
                     elif self.path == "/api/auth/logout":
@@ -936,13 +979,21 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             if self.path == "/api/fetch-extent":
                 # «Данные по области»: прямые открытые источники (OSM/НСПД)
-                # по прямоугольнику WGS84, без моста и без портала
+                # по прямоугольнику WGS84, без моста и без портала.
+                # В облаке отключено, как и прочий серверный импорт: иначе
+                # хостинг делает исходящие запросы к порталам с облачного IP и
+                # пишет их кэш (слой ОГД до ~44 МБ) на диск по запросу любого
+                # вошедшего пользователя — и обходит 501 каталога ОГД.
+                if not _server_side_import_enabled():
+                    self.send_error(403, "area fetch disabled in cloud mode")
+                    return
                 body = self._json_body()
                 bbox = body.get("bbox")
                 sources = body.get("sources") or []
                 if (not isinstance(bbox, (list, tuple)) or len(bbox) != 4
-                        or not isinstance(sources, list)):
-                    self.send_error(400, "bbox[4] and sources[] required")
+                        or not isinstance(sources, list)
+                        or not all(isinstance(s, str) for s in sources)):
+                    self.send_error(400, "bbox[4] and sources[] of strings required")
                     return
                 try:
                     out = studio_core.fetch_extent(bbox, sources)

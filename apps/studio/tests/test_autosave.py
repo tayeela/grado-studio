@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import tempfile
 import unittest
 import io
@@ -374,6 +375,51 @@ class ReleaseManifestTests(unittest.TestCase):
         truncated.do_POST()
 
         self.assertEqual(400, truncated._reply.call_args.args[0])
+
+    def test_bridge_rejects_untrusted_origin(self):
+        # Публичный сайт (Origin https://evil.com) не пишет в проект: 403 и
+        # INBOX не трогается — даже до разбора тела.
+        server.INBOX.clear()
+        payload = json.dumps({"grado_source": "nspd", "features": []}).encode()
+        evil = object.__new__(server.BridgeHandler)
+        evil.path = "/add_feature"
+        evil.headers = {"Content-Length": str(len(payload)),
+                        "Origin": "https://evil.com"}
+        evil.rfile = io.BytesIO(payload)
+        evil._reply = mock.Mock()
+        evil.do_POST()
+        self.assertEqual(403, evil._reply.call_args.args[0])
+        self.assertEqual([], server.INBOX)
+
+        # Расширение и нативный клиент (без Origin) проходят Origin-гейт —
+        # доходят до разбора тела (тут «[]» → 400, но НЕ 403).
+        for hdrs in ({"Content-Length": "2", "Origin": "chrome-extension://abc"},
+                     {"Content-Length": "2"}):
+            handler = object.__new__(server.BridgeHandler)
+            handler.path = "/add_feature"
+            handler.headers = hdrs
+            handler.rfile = io.BytesIO(b"[]")
+            handler._reply = mock.Mock()
+            handler.do_POST()
+            self.assertEqual(400, handler._reply.call_args.args[0])
+
+    def test_login_throttle_key_respects_trusted_proxy(self):
+        def handler(headers, addr):
+            h = object.__new__(server.Handler)
+            h.headers = headers
+            h.client_address = addr
+            return h
+        # Прямой доступ (без флага): X-Forwarded-For от клиента ИГНОРИРУЕТСЯ —
+        # иначе спуфом обходят пер-аккаунт лимит подбора.
+        os.environ.pop("GRADO_TRUST_PROXY", None)
+        self.assertEqual("10.0.0.9", handler(
+            {"X-Forwarded-For": "1.2.3.4"}, ("10.0.0.9", 5))._client_key())
+        # За доверенным прокси: реальный IP из ПРАВОГО элемента XFF (его добавил
+        # ближайший прокси), а не общий IP прокси из client_address.
+        with mock.patch.dict(os.environ, {"GRADO_TRUST_PROXY": "1"}):
+            self.assertEqual("2.2.2.2", handler(
+                {"X-Forwarded-For": "1.1.1.1, 2.2.2.2"}, ("10.0.0.1", 5))._client_key())
+            self.assertEqual("10.0.0.1", handler({}, ("10.0.0.1", 5))._client_key())
 
     def test_api_rejects_non_object_features_and_invalid_metadata(self):
         bad_payloads = (
