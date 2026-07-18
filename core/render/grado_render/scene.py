@@ -117,6 +117,46 @@ def hatch_ops(rings, spacing, stroke, width=0.16, angle=45, cross=False):
              "fill": None, "stroke": stroke, "width": width, "dash": None}]
 
 
+def _point_in_rings(x, y, rings):
+    """Точка внутри полигона (even-odd по ВСЕМ кольцам — дыра исключается)."""
+    inside = False
+    for ring in rings:
+        n = len(ring)
+        for i in range(n):
+            x1, y1 = ring[i]
+            x2, y2 = ring[(i + 1) % n]
+            if (y1 > y) != (y2 > y):
+                xint = x1 + (x2 - x1) * (y - y1) / (y2 - y1)
+                if x < xint:
+                    inside = not inside
+    return inside
+
+
+def dots_ops(rings, spacing, size, color):
+    """Точечный узор ПОВЕРХ заливки (PointPatternFill эталона): сетка кружков
+    внутри полигона (мм листа), дыры исключены. Сетка выровнена к глобальному
+    началу — узор согласован между соседними полигонами одной зоны."""
+    import math
+    xs = [p[0] for r in rings for p in r]
+    ys = [p[1] for r in rings for p in r]
+    if not xs or spacing <= 0:
+        return []
+    x0, x1 = min(xs), max(xs)
+    y0, y1 = min(ys), max(ys)
+    r = size / 2.0
+    ops = []
+    y = math.floor(y0 / spacing) * spacing
+    while y <= y1:
+        x = math.floor(x0 / spacing) * spacing
+        while x <= x1:
+            if _point_in_rings(x, y, rings):
+                ops.append({"op": "circle", "x": x, "y": y, "r": r,
+                            "fill": color, "stroke": None, "width": 0})
+            x += spacing
+        y += spacing
+    return ops
+
+
 def _ring_ccw(ring):
     """True — обход против часовой (в координатах y-вверх)."""
     s = 0.0
@@ -489,6 +529,11 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                     ops.extend(hatch_ops(
                         rings, spacing=h.get("spacing_mm", 1.6), stroke=color,
                         angle=h.get("angle", 45), cross=h.get("cross", False)))
+                if st.dots:
+                    ops.extend(dots_ops(
+                        rings, spacing=st.dots.get("spacing_mm", 2.0),
+                        size=st.dots.get("size_mm", 0.6),
+                        color=st.dots.get("color") or st.stroke))
                 if st.line_marker and len(rings[0]) >= 3:
                     # направление засечки по знаку (Эталон): по умолчанию остриём
                     # ВНУТРЬ зоны, dir=="out" — наружу (ООПТ/ландшафт ОКН/

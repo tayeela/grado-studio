@@ -369,6 +369,14 @@
       "dxf": {
         "name": "GP_mnogofunkcionalnye_parko",
         "color": 14
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#5c9b7a",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.specializirovannye_obschestvennye_zony": {
@@ -684,6 +692,14 @@
       "dxf": {
         "name": "GP_kult_prosvet_sport_rek_v",
         "color": 3
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#e0867a",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.kulturno_prosvetitelnye_v_oopt": {
@@ -705,6 +721,14 @@
       "dxf": {
         "name": "GP_kulturno_prosvetitelnye_",
         "color": 3
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#e0867a",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.sportivno_rekreacionnye_v_oopt": {
@@ -726,6 +750,14 @@
       "dxf": {
         "name": "GP_sportivno_rekreacionnye_",
         "color": 3
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#e0867a",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.zony_vodnyh_poverhnostey": {
@@ -810,6 +842,14 @@
       "dxf": {
         "name": "GP_prochie_obekty_transport",
         "color": 8
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#3c5a3c",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.prochie_obekty_transporta_v_oopt_variant": {
@@ -831,6 +871,14 @@
       "dxf": {
         "name": "GP_prochie_obekty_transport",
         "color": 8
+      },
+      "dots": {
+        "shape": "circle",
+        "color": "#3c5a3c",
+        "size_mm": 0.6,
+        "size_px": 2.27,
+        "spacing_mm": 2.0,
+        "spacing_px": 7.56
       }
     },
     "gp.msk.prochee": {

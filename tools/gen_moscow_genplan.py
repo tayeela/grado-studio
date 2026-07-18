@@ -130,6 +130,23 @@ MSK = {
     "зоны прочих объектов внешнего транспорта в составе ООПТ":
         ("#7a7a7a", "#3c3c3c", "Прочие объекты транспорта в ООПТ (вариант)"),
 }
+# Зоны «в составе ООПТ» рисуются PointPatternFill — круглыми точками ПОВЕРХ
+# сплошной заливки (эталон: слой «ГИС ОГД — 01 Функциональные зоны» и ФЗ ГП
+# Москва — по 6 таких зон; жалоба юзера «помимо сплошной ещё поверх точками»).
+# value → цвет точки. В QML: круг, size 0.6 мм, сетка distance_x=distance_y=2 мм.
+MSK_DOTS = {
+    "многофункциональные парковые зоны": "#5c9b7a",
+    "зоны прочих объектов внешнего транспорта составе особо охраняемых природных территорий": "#3c5a3c",
+    "зоны прочих объектов внешнего транспорта в составе ООПТ": "#3c5a3c",
+    "специализированные культурно-просветительные общественные зоны в составе ООПТ": "#e0867a",
+    "специализированные спортивно-рекреационные общественные зоны в составе ООПТ": "#e0867a",
+    "культурно-просветительные, спортивно-рекреационные специализированные "
+    "общественные зоны, общественные зоны смешанного размещения указанных "
+    "объектов в составе особо охраняемых территорий": "#e0867a",
+}
+DOT_SIZE_MM = 0.6          # QML: SimpleMarker size 0.6 MM
+DOT_SPACING_MM = 2.0       # QML: distance_x = distance_y = 2 MM (шаг сетки точек)
+
 # 25-я категория Москвы — value="" (пустое): «Прочее / не определено», серая
 # заливка по умолчанию. Знак заводим, но на ПУСТОЕ имя не маршрутизируем (пустая
 # строка не должна утаскивать объекты в «прочее» — пусть остаётся без знака).
@@ -168,8 +185,8 @@ def slug(name):
     return s.strip("_")[:48]
 
 
-def entry(sid, zone_value, title, group, fill, outline):
-    return sid, {
+def entry(sid, zone_value, title, group, fill, outline, dots=None):
+    e = {
         "title": title,
         "group": group,
         # имя зоны КАК В ДАННЫХ (value категории QML) — по нему идёт маршрутизация
@@ -184,6 +201,12 @@ def entry(sid, zone_value, title, group, fill, outline):
         "codes": [],
         "dxf": {"name": f"GP_{slug(title)[:24]}", "color": ACI.get(fill, 7)},
     }
+    if dots:
+        # точечный узор ПОВЕРХ заливки (PointPatternFill эталона)
+        e["dots"] = {"shape": "circle", "color": dots,
+                     "size_mm": DOT_SIZE_MM, "size_px": to_px(DOT_SIZE_MM),
+                     "spacing_mm": DOT_SPACING_MM, "spacing_px": to_px(DOT_SPACING_MM)}
+    return sid, e
 
 
 styles = {}
@@ -194,7 +217,8 @@ for zone, (fill, outline) in BASE.items():
 for value, (fill, outline, label) in MSK.items():
     # слаг из КОРОТКОЙ подписи (value у Москвы — строки до 180 символов)
     sid, e = entry(f"gp.msk.{slug(label)}", value, label,
-                   "Генплан: Москва (детальный классификатор)", fill, outline)
+                   "Генплан: Москва (детальный классификатор)", fill, outline,
+                   dots=MSK_DOTS.get(value))
     assert sid not in styles, f"дубликат style_id: {sid}"
     styles[sid] = e
 _f, _o, _l = MSK_DEFAULT

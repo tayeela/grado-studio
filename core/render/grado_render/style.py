@@ -86,12 +86,21 @@ def hex_to_rgb(value):
     return tuple(int(v[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
 
 
+def _dots_from_json(d):
+    """dots из JSON → внутренний вид с rgb-цветом (или None)."""
+    if not d:
+        return None
+    return {"color": hex_to_rgb(d.get("color")),
+            "size_mm": d.get("size_mm", 0.6),
+            "spacing_mm": d.get("spacing_mm", 2.0)}
+
+
 class Style:
     def __init__(self, fill=None, stroke=None, width=0.3, dash=None,
                  label=None, marker=1.2, z=0, hatch=False,
                  line_marker=None, double=None, line_label=None,
                  label_size=None, label_color=None, label_font_family=None,
-                 ground_units=False, ref_scale=2000):
+                 ground_units=False, ref_scale=2000, dots=None):
         self.fill = fill          # (r,g,b) 0..1 | None
         self.stroke = stroke      # (r,g,b) | None
         self.width = width        # мм
@@ -100,6 +109,7 @@ class Style:
         self.marker = marker      # радиус маркера точек, мм
         self.z = z                # порядок отрисовки (меньше — ниже)
         self.hatch = hatch        # штриховка: bool (легаси 45°) | dict Эталона
+        self.dots = dots          # точечный узор ПОВЕРХ заливки (PointPatternFill): {color(rgb), size_mm, spacing_mm} | None
         self.line_marker = line_marker  # засечки Эталона ЛГР: {shape, period_mm, size_mm}
         self.double = double      # двойная параллельная линия: зазор, мм
         self.line_label = line_label  # повторяющаяся подпись вдоль линии/контура (ЛГР)
@@ -174,7 +184,8 @@ class Style:
             label_color=hex_to_rgb(s.get("label_color")),
             label_font_family=s.get("label_font_family"),
             ground_units=s.get("ground_units", False),
-            ref_scale=s.get("ref_scale", 2000))
+            ref_scale=s.get("ref_scale", 2000),
+            dots=_dots_from_json(s.get("dots")))
 
 
 def _build_default_styles(name="default"):

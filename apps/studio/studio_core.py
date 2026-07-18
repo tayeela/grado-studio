@@ -218,6 +218,13 @@ def frontend_styles():
                               ("angle", "cross", "spacing_px", "color") if k in h}
         elif h:
             entry["hatch"] = True
+        # точечный узор ПОВЕРХ заливки (PointPatternFill эталона) — холст рисует
+        # сетку кружков (drawDots): цвет + размер/шаг в px
+        d = s.get("dots")
+        if isinstance(d, dict):
+            entry["dots"] = {"color": d.get("color"),
+                             "size_px": d.get("size_px", 2),
+                             "spacing_px": d.get("spacing_px", 8)}
         if s.get("label_field"):
             entry["label_field"] = s["label_field"]
         if s.get("line_label"):
