@@ -504,11 +504,15 @@ class TestMoscowLgrLibrary(unittest.TestCase):
         self.assertEqual(by_code[18]["line_marker"].get("filled"), False, "ПК — контурный")
         self.assertEqual(by_code[50]["line_marker"].get("filled"), False, "приаэродром. — контурный")
         self.assertNotIn("filled", by_code[8]["line_marker"], "ООПТ — залитый (не помечен)")
-        # 8 ООПТ / 18 ПК / 55 памятник природы — в QML ДВА под-маркера (углы 0 и
-        # 180), т.е. глифы по обе стороны линии
-        for c in (8, 18, 55):
+        # 18 ПК: по кадру портала gisogd.mos.ru — засечки в ОДНУ сторону, остриём
+        # ВНУТРЬ территории. В QML symbol 18 — ровно ОДИН SimpleMarker (не два).
+        self.assertEqual(by_code[18]["line_marker"]["dir"], "in",
+                         "ПК (18) — одиночный треугольник внутрь (кадр портала + один SimpleMarker в QML)")
+        # 8 ООПТ / 55 памятник природы — тоже одиночные в QML (angle 180); пока
+        # оставлены «both» до сверки с кадром портала по этим слоям
+        for c in (8, 55):
             self.assertEqual(by_code[c]["line_marker"]["dir"], "both",
-                             f"код {c} — засечки по обе стороны (QML: два под-маркера)")
+                             f"код {c} — засечки по обе стороны (до сверки с порталом)")
         self.assertEqual(by_code[13]["line_marker"]["shape"], "tee")
         self.assertEqual(by_code[13]["line_marker"]["period_mm"], 4.0,
                          "пояс санохраны: QML interval 8 м → 4 мм на 1:2000")

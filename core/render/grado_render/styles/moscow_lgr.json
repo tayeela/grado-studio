@@ -1751,7 +1751,7 @@
         "size_mm": 1.0,
         "period_px": 37.8,
         "size_px": 3.78,
-        "dir": "both",
+        "dir": "in",
         "filled": false
       },
       "hatch": {

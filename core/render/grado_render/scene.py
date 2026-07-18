@@ -159,12 +159,14 @@ def _marker_glyph(px, py, tx, ty, nx, ny, shape, size, period, stroke, width,
             ops.append({"op": "circle", "x": hx, "y": hy, "r": s * 0.15,
                         "fill": stroke, "stroke": None, "width": width})
     elif shape == "triangle":
-        # «▼» остриём внутрь зоны, основание на линии. filled=False → КОНТУРНЫЙ
+        # ВЕРШИНА (остриё) НА линии, ОСНОВАНИЕ смещено по нормали внутрь зоны —
+        # как на кадре портала ГИС ОГД «Границы территорий ПК» (правка юзера:
+        # «вершина обращена к линии, а не основание»). filled=False → КОНТУРНЫЙ
         # (в QML fill alpha=0: коды 11/18/50) — обводкой, а не заливкой.
         b = s * 0.5
-        tri = [[px - tx * b, py - ty * b],
-               [px + tx * b, py + ty * b],
-               [px + nx * s, py + ny * s]]
+        tri = [[px, py],
+               [px + nx * s - tx * b, py + ny * s - ty * b],
+               [px + nx * s + tx * b, py + ny * s + ty * b]]
         if filled:
             ops.append({"op": "path", "closed": True, "fill": stroke,
                         "stroke": None, "width": width, "dash": None,
@@ -490,8 +492,8 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                 if st.line_marker and len(rings[0]) >= 3:
                     # направление засечки по знаку (Эталон): по умолчанию остриём
                     # ВНУТРЬ зоны, dir=="out" — наружу (ООПТ/ландшафт ОКН/
-                    # водоохр./прибреж.), dir=="both" — по ОБЕ стороны линии
-                    # (в QML это два под-маркера с углами 0 и 180: 8, 18, 55).
+                    # водоохр./прибреж.), dir=="both" — по ОБЕ стороны линии (8, 55).
+                    # ПК (18) — одиночный внутрь (кадр портала + один SimpleMarker).
                     def _mk_dirs(base):
                         return ((base, -base) if st.line_marker.get("dir") == "both"
                                 else (-base,) if st.line_marker.get("dir") == "out"
