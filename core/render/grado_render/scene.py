@@ -492,14 +492,22 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
                     # ВНУТРЬ зоны, dir=="out" — наружу (ООПТ/ландшафт ОКН/
                     # водоохр./прибреж.), dir=="both" — по ОБЕ стороны линии
                     # (в QML это два под-маркера с углами 0 и 180: 8, 18, 55).
-                    d = _inward_sign(rings[0])
-                    dirs = ((d, -d) if st.line_marker.get("dir") == "both"
-                            else (-d,) if st.line_marker.get("dir") == "out"
-                            else (d,))
-                    for side in dirs:
+                    def _mk_dirs(base):
+                        return ((base, -base) if st.line_marker.get("dir") == "both"
+                                else (-base,) if st.line_marker.get("dir") == "out"
+                                else (base,))
+                    for side in _mk_dirs(_inward_sign(rings[0])):
                         ops.extend(marker_ops(
                             rings[0], st.line_marker, st.stroke, width=st.width,
                             closed=True, inward=side, dash=st.dash))
+                    # Дыры выколотого полигона: засечки В ПОЛИГОН = ИЗ дыры
+                    # (инверсия относительно внешней границы, -_inward_sign).
+                    for hole in rings[1:]:
+                        if len(hole) >= 3:
+                            for side in _mk_dirs(-_inward_sign(hole)):
+                                ops.extend(marker_ops(
+                                    hole, st.line_marker, st.stroke, width=st.width,
+                                    closed=True, inward=side, dash=st.dash))
                 if st.double:
                     ops.append({"op": "path", "closed": True, "fill": None,
                                 "stroke": st.stroke, "width": st.width,
