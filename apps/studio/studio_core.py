@@ -2181,12 +2181,13 @@ def _gisogd_process(conn, result):
             style_id = _gisogd_style_for(member)
             if style_id is None and kind == "zone":
                 # функциональная зона Генплана → знак по ИМЕНИ зоны. Имя лежит в
-                # разных полях у разных документов (name / fz_name / naimfunkzo /
-                # funct_zon), а у слоёв ТиНАО зона названа самим слоем — отсюда
-                # member в конце. fztype НЕ берём: там числовой код (100/200/300),
-                # а не имя. Первое совпадение выигрывает.
-                for cand in (name, raw.get("fz_name"), raw.get("naimfunkzo"),
-                             raw.get("funct_zon"), member):
+                # разных полях у разных документов (name / fz_name / naimfunkzo(ny) /
+                # funct_zon / class_name у Химок), а у слоёв ТиНАО зона названа самим
+                # слоем — отсюда member в конце. fztype НЕ берём: там числовой код
+                # (100/200/300), а не имя. Первое совпадение выигрывает.
+                for cand in (name, raw.get("fz_name"), raw.get("naimfunkzony"),
+                             raw.get("naimfunkzo"), raw.get("funct_zon"),
+                             raw.get("class_name"), member):
                     style_id = gp_style_for_zone(cand)
                     if style_id:
                         break
