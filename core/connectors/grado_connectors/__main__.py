@@ -42,8 +42,9 @@ def main(argv=None):
     p.add_argument("path")
     p = sub.add_parser("fetch-fgistp")
     p.add_argument("--uin", required=True)
-    p.add_argument("--geom-type", default="100")
-    p.add_argument("--status", default=None)
+    p.add_argument("--geom-type", default=None)
+    p.add_argument("--status", default=None,
+                   help="1 существующие / 2 планируемые; пусто = оба")
     p.add_argument("--base-url", default=None)
     sub.add_parser("list")
     p = sub.add_parser("diff")
@@ -69,7 +70,8 @@ def main(argv=None):
     elif args.cmd == "fetch-fgistp":
         kw = {"base_url": args.base_url} if args.base_url else {}
         conn = FgistpConnector(**kw)
-        result = conn.fetch(args.uin, geom_type=args.geom_type, status=args.status)
+        result = conn.fetch(args.uin, geom_type=args.geom_type,
+                            statuses=((args.status,) if args.status else ("1", "2")))
         _report_saved(store, store.save(conn, result))
     elif args.cmd == "list":
         for m in store.list():

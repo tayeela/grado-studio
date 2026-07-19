@@ -42,35 +42,46 @@ class TestNspd(unittest.TestCase):
             NspdCapture().fetch(payload={"grado_source": "fgis_tp", "features": []})
 
 
-UIN = "1" * 25
+# Протокол v2 (JSP): фикстуры имитируют РЕАЛЬНЫЕ ответы вьюера geomnpn —
+# атрибуты лежат в КОРНЕ feature (properties нет), координаты EPSG:3857.
+UIN = "4678300002010307202209291"
 LAYERS = {"layer_stp_list": [
-    {"classid": "60107", "class_name": "Функциональные зоны",
-     "class_title": "Карта функциональных зон", "geom_type": "100",
-     "stp_name": "Генеральный план г. Пущино"},
-    {"classid": "60108", "class_name": "Дороги", "class_title": "Транспорт",
-     "geom_type": "010", "stp_name": "Генеральный план г. Пущино"},
-    {"classid": "60109", "class_name": "Пустой слой",
-     "class_title": "Карта функциональных зон", "geom_type": "100",
-     "stp_name": "Генеральный план г. Пущино"},
+    {"classid": "603010502", "class_name": "Охранная зона газопроводов",
+     "class_title": "ЗОУИТ", "geom_type": "100",
+     "stp_name": "Генплан г.о. Химки"},
+    {"classid": "601010302", "class_name": "Граница городского округа",
+     "class_title": "Границы", "geom_type": "010",
+     "stp_name": "Генплан г.о. Химки"},
+    {"classid": "603019999", "class_name": "Пустой слой",
+     "class_title": "ЗОУИТ", "geom_type": "100",
+     "stp_name": "Генплан г.о. Химки"},
 ]}
-WFS_60107 = {"type": "FeatureCollection", "features": [
-    {"type": "Feature", "id": "geo_db_data_fgistp_pol.101",
-     "geometry": {"type": "Polygon",
-                  "coordinates": [[[37.6, 54.8], [37.7, 54.8], [37.7, 54.9], [37.6, 54.8]]]},
-     "properties": {"mt_status": 1, "mt_classid": "60107"}},
+# Москва, EPSG:3857 (как отдаёт json_stp_layer_obj_list.jsp)
+MERC_TRI = [[4187345.5, 7509247.8], [4187445.5, 7509247.8],
+            [4187445.5, 7509347.8], [4187345.5, 7509247.8]]
+OBJS_GAS = {"type": "FeatureCollection", "features": [
+    {"type": "Feature", "id": "x.1", "naim": "Охранная зона ГРС",
+     "globalid": "GUID-1", "tp_stat": 1, "number": "7",
+     "geometry": {"type": "Polygon", "coordinates": [MERC_TRI]}},
+]}
+CATALOG = {"stp_list": [
+    {"uin": UIN, "stp_name": "Генплан г.о. Химки", "stp_extent": "x"},
+    {"uin": "2" * 25, "stp_name": "Генплан г. Пущино", "stp_extent": "y"},
 ]}
 
 
 def fake_transport(url):
-    if "json_layers_stp_list.jsp" in url:
-        assert f"uin={UIN}" in url
-        return json.dumps(LAYERS).encode()
     q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-    cql = q["CQL_FILTER"][0]
-    assert f"uin='{UIN}'" in cql
-    assert "((kit is null) OR (kit='irrelevant'))" in cql
-    if "mt_classid='60107'" in cql:
-        return json.dumps(WFS_60107).encode()
+    if "json_stp_list.jsp" in url:
+        return json.dumps(CATALOG).encode()
+    if "json_layers_stp_list.jsp" in url:
+        assert q["uin"][0] == UIN
+        return json.dumps(LAYERS).encode()
+    assert "json_stp_layer_obj_list.jsp" in url
+    assert q["uin"][0] == UIN and q["reg_code"][0] == "0"
+    assert q["st_code"][0] in ("1", "2")
+    if q["obj_code"][0] == "603010502" and q["st_code"][0] == "1":
+        return json.dumps(OBJS_GAS).encode()
     return json.dumps({"type": "FeatureCollection", "features": []}).encode()
 
 
@@ -78,40 +89,57 @@ class TestFgistp(unittest.TestCase):
     def setUp(self):
         self.conn = FgistpConnector(transport=fake_transport)
 
+    def test_catalog(self):
+        rows = self.conn.catalog()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["uin"], UIN)
+
     def test_discover(self):
         layers = self.conn.discover(UIN)
         self.assertEqual(len(layers), 3)
-        self.assertEqual(layers[0]["classid"], "60107")
+        self.assertEqual(layers[0]["classid"], "603010502")
 
-    def test_fetch_polygons(self):
+    def test_fetch_converts_and_annotates(self):
         result = self.conn.fetch(UIN)
         self.assertEqual(len(result["features"]), 1)
         f = result["features"][0]
-        self.assertEqual(f["grado_key"], "geo_db_data_fgistp_pol.101")
-        self.assertEqual(f["properties"]["class_name"], "Функциональные зоны")
-        self.assertEqual(f["properties"]["status_name"], "существующая")
-        self.assertEqual(f["properties"]["uin"], UIN)
+        # ключ — стабильный globalid, а не порядковый номер
+        self.assertEqual(f["grado_key"], "GUID-1")
+        p = f["properties"]
+        self.assertEqual(p["class_name"], "Охранная зона газопроводов")
+        self.assertEqual(p["status_name"], "существующий")
+        self.assertEqual(p["naim"], "Охранная зона ГРС")
+        self.assertEqual(p["uin"], UIN)
+        # геометрия сконвертирована 3857 → WGS84 ещё в коннекторе
+        lon, lat = f["geometry"]["coordinates"][0][0]
+        self.assertAlmostEqual(lon, 37.6155646, places=5)
+        self.assertAlmostEqual(lat, 55.7522242, places=5)
         self.assertIn("УИН " + UIN, result["source_doc"])
-        self.assertIn("Пущино", result["source_doc"])
-        self.assertTrue(any("60109" in n for n in result["notes"]),
+        self.assertIn("Химки", result["source_doc"])
+        self.assertTrue(any("603019999" in n for n in result["notes"]),
                         "пустой слой отмечен в примечаниях")
 
-    def test_wfs_url_format(self):
-        url = self.conn.wfs_url(UIN, "60107", status="2")
+    def test_fetch_filters_by_classid(self):
+        result = self.conn.fetch(UIN, classids={"601010302"})
+        self.assertEqual(len(result["features"]), 0)
+        self.assertEqual(result["params"]["classids"], ["601010302"])
+
+    def test_objects_url_format(self):
+        url = self.conn.objects_url(UIN, "603010502", "100", "2")
         q = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-        self.assertEqual(q["typeName"][0], "min_eco_test:geo_db_data_fgistp_pol")
-        self.assertEqual(q["version"][0], "2.0.0")
-        self.assertEqual(q["srsName"][0], "EPSG:4326")
-        self.assertIn("mt_status='2'", q["CQL_FILTER"][0])
+        self.assertEqual(q["obj_code"][0], "603010502")
+        self.assertEqual(q["st_code"][0], "2")
+        self.assertEqual(q["geom_type"][0], "100")
+        self.assertIn("json_stp_layer_obj_list.jsp", url)
 
     def test_unknown_geom_type(self):
         with self.assertRaises(ConnectorError):
-            self.conn.wfs_url(UIN, "60107", geom_type="999")
+            self.conn.objects_url(UIN, "60107", geom_type="999")
 
     def test_no_layers_of_type_noted(self):
         result = self.conn.fetch(UIN, geom_type="001")
         self.assertEqual(result["features"], [])
-        self.assertTrue(any("нет слоёв" in n for n in result["notes"]))
+        self.assertTrue(any("слоёв в документе нет" in n for n in result["notes"]))
 
 
 if __name__ == "__main__":

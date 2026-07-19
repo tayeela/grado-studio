@@ -712,6 +712,28 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as e:
                 self._json({"error": f"каталог ГИС ОГД недоступен: {e}"}, 502)
             return
+        if self.path.startswith("/api/fgistp-catalog"):
+            # каталог документов терпланирования ФГИС ТП (вся РФ, кэш 7 сут)
+            if _cloud_mode():
+                self._json({"error": "каталог ФГИС ТП недоступен в облачном режиме"}, 501)
+                return
+            try:
+                self._json({"docs": studio_core.fgistp_catalog()})
+            except Exception as e:
+                self._json({"error": f"каталог ФГИС ТП недоступен: {e}"}, 502)
+            return
+        if self.path.startswith("/api/fgistp-layers"):
+            if _cloud_mode():
+                self._json({"error": "ФГИС ТП недоступен в облачном режиме"}, 501)
+                return
+            uin = (parse_qs(urlparse(self.path).query).get("uin") or [""])[0]
+            try:
+                self._json({"layers": studio_core.fgistp_layers(uin)})
+            except ValueError:
+                self._json({"error": "bad uin"}, 400)
+            except Exception as e:
+                self._json({"error": f"sostav dokumenta nedostupen: {e}"}, 502)
+            return
         if self.path == "/api/sources":
             self._send(json.dumps(studio_core.sources_journal(),
                                   ensure_ascii=False).encode(),
@@ -903,6 +925,27 @@ class Handler(SimpleHTTPRequestHandler):
                     from urllib.parse import unquote
                     fn = unquote(fn)
                 out = studio_core.import_gisogd(raw, filename=fn or None)
+                self._send(json.dumps(out, ensure_ascii=False).encode(),
+                           "application/json; charset=utf-8")
+                return
+            if self.path == "/api/import-fgistp-doc":
+                # прямой импорт векторных слоёв документа ФГИС ТП по УИН
+                if not _server_side_import_enabled():
+                    self.send_error(403, "FGIS TP import disabled in cloud mode")
+                    return
+                body = self._json_body()
+                uin = body.get("uin")
+                classids = body.get("classids")
+                if classids is not None and (
+                        not isinstance(classids, list)
+                        or not all(isinstance(c, str) for c in classids)):
+                    self._json({"error": "classids: ожидается список строк"}, 400)
+                    return
+                try:
+                    out = studio_core.import_fgistp_doc(uin, classids=classids)
+                except ValueError:
+                    self._json({"error": "bad uin"}, 400)
+                    return
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
                 return

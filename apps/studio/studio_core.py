@@ -7,6 +7,7 @@
 
 import math
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -258,6 +259,9 @@ TILE_CACHE = DATA_DIR / ".tile_cache"
 # слои ГИС ОГД целиком (портал не фильтрует по bbox) — качаем один раз,
 # режем по видимой области локально; в .gitignore рядом с прочими кэшами
 GISOGD_CACHE = DATA_DIR / ".gisogd_cache"
+# каталог документов ФГИС ТП (вся РФ, ~27 тыс. записей, ~10 МБ JSON) — кэш
+FGISTP_CACHE = DATA_DIR / ".fgistp_cache"
+_FGISTP_CATALOG_TTL = 7 * 24 * 3600
 TILE_UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 MAX_UNDERLAY_TILES = 130
 
@@ -1602,6 +1606,131 @@ def import_fgistp(payload):
             "snapshot": manifest, "diff": d}
 
 
+def fgistp_catalog(force=False):
+    """Каталог документов терпланирования ФГИС ТП: [{uin, name}].
+
+    Вся РФ, ~27 000 документов (генпланы, СТП, изменения). Портал отдаёт
+    каталог целиком одним запросом (~10 МБ) — кэшируем на диске gzip'ом,
+    TTL 7 суток. Поиск/фильтр — на фронте по подстроке названия."""
+    import gzip
+    import time
+    from grado_connectors import FgistpConnector
+    path = FGISTP_CACHE / "catalog.json.gz"
+    if not force and path.exists() and \
+            (time.time() - path.stat().st_mtime) < _FGISTP_CATALOG_TTL:
+        try:
+            return _json.loads(gzip.decompress(path.read_bytes()).decode("utf-8"))
+        except Exception:
+            pass
+    rows = FgistpConnector().catalog()
+    compact = [{"uin": str(r["uin"]), "name": " ".join((r.get("stp_name") or "").split())}
+               for r in rows if r.get("uin")]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(gzip.compress(
+        _json.dumps(compact, ensure_ascii=False).encode("utf-8")))
+    return compact
+
+
+_FGISTP_UIN_RE = re.compile(r"^\d{5,40}$")
+
+
+def fgistp_layers(uin):
+    """Состав документа ФГИС ТП: [{classid, name, title, geom_type}].
+
+    УИН валидируется (только цифры) — он уходит в URL портала."""
+    from grado_connectors import FgistpConnector
+    uin = str(uin or "").strip()
+    if not _FGISTP_UIN_RE.match(uin):
+        raise ValueError("bad uin")
+    out = []
+    for l in FgistpConnector().discover(uin):
+        out.append({"classid": str(l.get("classid") or ""),
+                    "name": " ".join((l.get("class_name") or "").split()),
+                    "title": " ".join((l.get("class_title") or "").split()),
+                    "geom_type": l.get("geom_type") or "100"})
+    return out
+
+
+# geom_type ФГИС ТП → вид объекта холста. Полигон уточняется по смыслу:
+# функц. зона (знак Генплана нашёлся) → zone, раздел ЗОУИТ (classid 6030…)
+# → restrict, прочее — generic.
+_FGISTP_GEOM_KIND = {"010": "generic", "001": "generic"}
+
+
+def import_fgistp_doc(uin, classids=None):
+    """Прямой импорт векторных слоёв документа ФГИС ТП по УИН (протокол v2).
+
+    Раскладка по правилу «слой = слой-источник» (beta.86): каждый classid →
+    свой слой source.fgistp.<classid> с названием слоя портала; знак объекта —
+    по имени класса (охранные/санитарные зоны → знаки ЛГР через
+    _gisogd_style_for, функц. зоны → цвет Генплана через gp_style_for_zone).
+    Качаются И существующие, И планируемые объекты (status_name в атрибутах)."""
+    from grado_connectors import FgistpConnector
+    uin = str(uin or "").strip()
+    if not _FGISTP_UIN_RE.match(uin):
+        raise ValueError("bad uin")
+    conn = FgistpConnector()
+    layers = conn.discover(uin)
+    sel = {str(c) for c in classids} if classids else None
+    result = conn.fetch(uin, classids=sel, layers=layers)
+    manifest, d = _snapshot(conn, result)
+    prov = _prov(manifest)
+
+    by_class = {str(l.get("classid")): l for l in layers}
+    features, notes = [], list(result.get("notes") or [])
+    layer_defs, fields = {}, {}
+    for f in result["features"]:
+        props = dict(f.get("properties") or {})
+        classid = None
+        # class_name/class_title пришли из коннектора; classid восстановим по имени
+        for cid, l in by_class.items():
+            if l.get("class_name") == props.get("class_name"):
+                classid = cid
+                break
+        if classid is None:
+            continue
+        linfo = by_class[classid]
+        gt = linfo.get("geom_type") or "100"
+        cname = props.get("class_name") or ""
+        # знак и вид: функц. зона → цвет Генплана; иначе знак ЛГР по имени класса
+        style_id = gp_style_for_zone(props.get("naim")) or gp_style_for_zone(cname)
+        if style_id:
+            kind = "zone"
+        else:
+            style_id = _gisogd_style_for(cname)
+            kind = ("restrict" if classid.startswith("6030")
+                    else _FGISTP_GEOM_KIND.get(gt, "generic"))
+        lid = f"source.fgistp.{classid}"
+        if lid not in layer_defs:
+            layer_defs[lid] = {"id": lid, "title": f"ФГИС ТП: {cname or classid}",
+                               "code": "generic.line", "kind": kind,
+                               "style_id": style_id, "stage": "existing",
+                               "source_kind": "fgistp"}
+            fields[lid] = [
+                {"name": "naim", "label": "наименование", "type": "text"},
+                {"name": "status_name", "label": "статус", "type": "text"},
+                {"name": "number", "label": "номер", "type": "text"},
+            ]
+        sem = {"name": props.get("naim") or cname,
+               "status_name": props.get("status_name")}
+        if kind == "zone":
+            sem["zone_title"] = props.get("naim") or cname
+        extra = {k: v for k, v in props.items()
+                 if k not in ("class_name", "class_title") and v not in (None, "")}
+        for part in _wgs_geom_to_canvas(f["geometry"]):
+            feat = {"kind": kind, "layer_id": lid,
+                    "props": {**sem, **extra}, "prov": dict(prov), **part}
+            if style_id:
+                feat["style_id"] = style_id
+            features.append(feat)
+    if not features:
+        notes.append("в выбранных слоях нет объектов с геометрией")
+    return {"features": features, "layers": list(layer_defs.values()),
+            "fields": fields, "notes": notes,
+            "source_doc": result.get("source_doc") or uin,
+            "snapshot": manifest, "diff": d}
+
+
 def import_nspd(payload):
     """Захват НСПД (JSON браузерного моста GRADO) → фигуры холста.
 
@@ -1663,9 +1792,13 @@ _GISOGD_STYLE_RULES = [
     (("1а пояса", "зона_1а", "zona_1a", "sanokhr_1a"), "lgr.sanokhr.1a"),
     (("1б пояса", "зона_1б", "zona_1b", "sanokhr_1b"), "lgr.sanokhr.1b"),
     (("жестк", "zhestk"), "lgr.sanokhr.2hard"),
-    (("1 пояса санитар", "зона_1_пояса", "zona_1_poyasa"), "lgr.sanokhr.1"),
-    (("2 пояса санитар", "зона_2_пояса", "zona_2_poyasa"), "lgr.sanokhr.2"),
-    (("3 пояса санитар", "зона_3_пояса", "zona_3_poyasa"), "lgr.sanokhr.3"),
+    # «Первый/Второй/Третий пояс…» — формы классов ФГИС ТП (СТП/генпланы)
+    (("1 пояса санитар", "зона_1_пояса", "zona_1_poyasa",
+      "первый пояс зоны санитарной охраны"), "lgr.sanokhr.1"),
+    (("2 пояса санитар", "зона_2_пояса", "zona_2_poyasa",
+      "второй пояс зоны санитарной охраны"), "lgr.sanokhr.2"),
+    (("3 пояса санитар", "зона_3_пояса", "zona_3_poyasa",
+      "третий пояс зоны санитарной охраны"), "lgr.sanokhr.3"),
     (("водоохран", "vodoohran"), "lgr.vodookhr"),
     (("прибрежн", "pribrezh"), "lgr.pribrezh"),
     (("сзз_расчет", "szz_raschet", "расчетн"), "lgr.szz.calc"),
@@ -1679,7 +1812,11 @@ _GISOGD_STYLE_RULES = [
     (("подтоплен", "podtoplen"), "lgr.podtop.mid"),
     (("затоплен", "zatoplen"), "lgr.zatop"),
     (("защитная зона окн", "защитные зоны окн", "zashitnaya_zona_okn"), "lgr.okn.zashchit"),
-    (("охранная зона окн", "охранные зоны окн", "ohrannaya_zona_okn"), "lgr.okn.okhr"),
+    # полное имя без аббревиатуры — класс ФГИС ТП «Охранная зона объекта
+    # культурного наследия»
+    (("охранная зона окн", "охранные зоны окн", "ohrannaya_zona_okn",
+      "охранная зона объекта культурного наследия",
+      "охранные зоны объектов культурного наследия"), "lgr.okn.okhr"),
     (("регулирования застройки", "regulirovaniya"), "lgr.okn.reg"),
     (("охраняемого природного ландшафта", "landshaft"), "lgr.okn.landshaft"),
     (("территория окн", "территории окн", "ter_okn", "territoriya_okn",
@@ -1721,7 +1858,10 @@ _GISOGD_STYLE_RULES = [
     (("пешеходных переход", "пешеходный переход", "пешеходных перехода"), "lgr.peshekhod"),
     (("лесопарков", "lesopark"), "lgr.lesopark"),
     (("электроэнерг", "лэп", "elektroenerg"), "lgr.energo"),
-    (("трубопровод", "truboprovod"), "lgr.truboprovod"),
+    # газопроводы/нефтепроводы — тот же знак трубопроводов; полные имена
+    # классов ФГИС ТП («Охранная зона газопроводов и систем газоснабжения»,
+    # «…нефтепроводов, нефтепродуктопроводов и аммиакопроводов»)
+    (("трубопровод", "truboprovod", "газопровод", "нефтепровод"), "lgr.truboprovod"),
     (("теплосет", "тепловых сет", "teplosetey"), "lgr.teplo"),
     (("связи", "svyazi"), "lgr.svyaz"),
     # знак 36 — ТЕХНИЧЕСКАЯ ЗОНА метрополитена, НЕ сама инфраструктура: раньше
