@@ -1,0 +1,31 @@
+{
+  "name": "Квартал 1 га",
+  "features": [
+    {
+      "kind": "boundary",
+      "layer_id": "project.territory.boundary",
+      "ring": [[0, 0], [100, 0], [100, 100], [0, 100]],
+      "props": {"name": "Квартал"}
+    },
+    {
+      "kind": "building",
+      "layer_id": "project.apo.buildings",
+      "ring": [[10, 10], [30, 10], [30, 20], [10, 20]],
+      "props": {"floors": 5},
+      "srcKey": "fixture:building"
+    },
+    {
+      "kind": "building",
+      "layer_id": "project.apo.buildings",
+      "ring": [[40, 10], [50, 10], [50, 20], [40, 20]],
+      "props": {}
+    },
+    {
+      "kind": "redline",
+      "layer_id": "project.apo.red_lines",
+      "line": [[0, 0], [80, 0], [80, 40]],
+      "props": {"radius": 10},
+      "srcKey": "fixture:redline"
+    }
+  ]
+}

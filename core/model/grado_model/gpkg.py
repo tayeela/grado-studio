@@ -101,7 +101,9 @@ def add_feature_table(conn, table, identifier, geom_type, srs_id, columns, descr
             source TEXT NOT NULL DEFAULT 'manual',
             source_date TEXT NOT NULL,
             source_doc TEXT,
-            style_id TEXT{cols})""")
+            style_id TEXT,
+            grado_key TEXT,
+            curve TEXT{cols})""")
     conn.execute(
         "INSERT INTO gpkg_contents (table_name, data_type, identifier, description, last_change, srs_id) "
         "VALUES (?, 'features', ?, ?, ?, ?)",

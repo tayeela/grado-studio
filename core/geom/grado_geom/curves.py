@@ -84,3 +84,70 @@ class Arc:
         if r_new <= 0:
             raise CurveError(f"офсет {d} схлопывает дугу радиуса {self.r}")
         return Arc(self.cx, self.cy, r_new, self.a0, self.sweep)
+
+
+def _finite(value, name):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise CurveError(f"{name} не число") from None
+    if not math.isfinite(number):
+        raise CurveError(f"{name} не конечное число")
+    return number
+
+
+def curve_spec(spec):
+    """Каноническая схема кривой: arc, circle или path.
+
+    Это запись в колонку curve. Ломаная в geom — только тесселяция для QGIS.
+    """
+    if not isinstance(spec, dict):
+        raise CurveError("схема кривой — словарь")
+    kind = spec.get("type")
+    if kind == "circle":
+        cx, cy, r = _finite(spec.get("cx"), "cx"), _finite(spec.get("cy"), "cy"), _finite(spec.get("r"), "r")
+        if r <= 0:
+            raise CurveError("радиус должен быть > 0")
+        return {"type": "circle", "cx": cx, "cy": cy, "r": r}
+    if kind == "arc":
+        cx, cy = _finite(spec.get("cx"), "cx"), _finite(spec.get("cy"), "cy")
+        r = _finite(spec.get("r"), "r")
+        a0, sweep = _finite(spec.get("a0"), "a0"), _finite(spec.get("sweep"), "sweep")
+        Arc(cx, cy, r, a0, sweep)
+        return {"type": "arc", "cx": cx, "cy": cy, "r": r, "a0": a0, "sweep": sweep}
+    if kind == "path":
+        radius = _finite(spec.get("radius", 0), "radius")
+        if radius < 0:
+            raise CurveError("радиус пути < 0")
+        raw = spec.get("vertices")
+        if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+            raise CurveError("у пути меньше двух вершин")
+        vertices = []
+        for pt in raw:
+            if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+                raise CurveError("вершина пути — пара координат")
+            vertices.append([_finite(pt[0], "x"), _finite(pt[1], "y")])
+        return {"type": "path", "radius": radius, "vertices": vertices}
+    raise CurveError(f"неизвестный тип кривой {kind!r}")
+
+
+def tessellate_curve(spec, tol=0.05):
+    """Ломаная по схеме. Допуск — максимальная сагитта, метры."""
+    spec = curve_spec(spec)
+    if tol <= 0 or not math.isfinite(tol):
+        raise CurveError("допуск тесселяции должен быть > 0")
+    if spec["type"] == "circle":
+        pts = Arc(spec["cx"], spec["cy"], spec["r"], 0.0, 2 * math.pi).linearize(tol)
+        if pts[0] != pts[-1]:
+            pts.append(pts[0])
+        return pts
+    if spec["type"] == "arc":
+        return Arc(spec["cx"], spec["cy"], spec["r"], spec["a0"], spec["sweep"]).linearize(tol)
+    from .path import Path, PathError
+    vertices = [tuple(p) for p in spec["vertices"]]
+    if spec["radius"] > 0 and len(vertices) >= 3:
+        try:
+            return Path.fillet_polyline(vertices, spec["radius"]).linearize(tol)
+        except PathError:
+            return vertices
+    return vertices

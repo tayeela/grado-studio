@@ -330,7 +330,7 @@ class ReleaseManifestTests(unittest.TestCase):
             handler.do_POST()
 
         handler._json.assert_called_once_with(
-            {"error": "скачиваемый файл слишком большой"}, 413)
+            {"error": "downloaded file is too large"}, 413)
 
     def test_url_import_rejects_local_file_scheme(self):
         body = json.dumps({"url": "file:///etc/passwd"}).encode()
@@ -341,7 +341,7 @@ class ReleaseManifestTests(unittest.TestCase):
 
         urlopen.assert_not_called()
         handler._json.assert_called_once_with(
-            {"error": "допустимы только ссылки http и https"}, 400)
+            {"error": "only http and https urls are allowed"}, 400)
 
     def test_bridge_rejects_oversized_and_non_object_bodies(self):
         oversized = object.__new__(server.BridgeHandler)
@@ -519,6 +519,19 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertEqual(payload["error"], "project preflight failed")
         self.assertEqual(payload["report"]["errors"][0]["code"],
                          "invalid_geometry")
+        self.assertTrue(json.dumps(payload).isascii())
+
+    def test_fetch_extent_rejects_huge_bbox_in_ascii(self):
+        body = json.dumps({
+            "bbox": [0, 0, 40, 40],
+            "sources": ["osm.buildings"],
+        }).encode()
+        handler = self.api_handler("/api/fetch-extent", body)
+        handler.do_POST()
+        payload, status = handler._json.call_args.args
+        self.assertEqual(400, status)
+        self.assertEqual({"error": "extent too large"}, payload)
+        self.assertTrue(json.dumps(payload).isascii())
 
     def test_api_does_not_expose_internal_exception_details(self):
         body = json.dumps({"features": [], "params": {}}).encode()

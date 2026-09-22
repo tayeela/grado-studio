@@ -23,6 +23,64 @@ FEATURES = [
 ]
 
 
+class TestGeomOp(unittest.TestCase):
+    def test_snap_arc_and_rotate(self):
+        hit = studio_core.geom_op({
+            "op": "snap", "x": 0.1, "y": 0.05, "tolerance": 0.5,
+            "polylines": [[[0, 0], [10, 0]]],
+        })
+        self.assertEqual(hit["hit"]["kind"], "endpoint")
+        self.assertEqual(hit["hit"]["x"], 0)
+        arc = studio_core.geom_op({"op": "arc3", "points": [[0, 0], [1, 1], [2, 0]]})
+        self.assertAlmostEqual(arc["cx"], 1)
+        self.assertGreater(len(arc["preview"]), 2)
+        turned = studio_core.geom_op({
+            "op": "rotate", "points": [[1, 0]], "origin": [0, 0], "degrees": 90,
+        })
+        self.assertAlmostEqual(turned["points"][0][0], 0, places=6)
+        self.assertAlmostEqual(turned["points"][0][1], 1, places=6)
+        with self.assertRaises(studio_core.GeomOpError):
+            studio_core.geom_op({"op": "arc3", "points": [[0, 0], [1, 0], [2, 0]]})
+
+    def test_trim_extend_join_rect_measure_buffer(self):
+        trimmed = studio_core.geom_op({
+            "op": "trim",
+            "line": [[0, 0], [10, 0]],
+            "click": [8, 0],
+            "boundaries": [[[4, -5], [4, 5]]],
+        })["line"]
+        self.assertAlmostEqual(trimmed[-1][0], 4, places=6)
+        self.assertAlmostEqual(trimmed[0][0], 0, places=6)
+        extended = studio_core.geom_op({
+            "op": "extend",
+            "line": [[0, 0], [5, 0]],
+            "click": [5, 0],
+            "tolerance": 1,
+            "boundaries": [[[8, -2], [8, 2]]],
+        })["line"]
+        self.assertAlmostEqual(extended[-1][0], 8, places=6)
+        joined = studio_core.geom_op({
+            "op": "join",
+            "tolerance": 0.2,
+            "lines": [[[0, 0], [5, 0]], [[5, 0], [5, 4]]],
+        })["line"]
+        self.assertEqual(len(joined), 3)
+        self.assertAlmostEqual(joined[-1][1], 4)
+        rect = studio_core.geom_op({"op": "rectangle", "a": [0, 0], "b": [10, 4]})["ring"]
+        self.assertEqual(len(rect), 4)
+        self.assertAlmostEqual(rect[2][0], 10)
+        measured = studio_core.geom_op({"op": "measure", "points": [[0, 0], [3, 4]]})
+        self.assertAlmostEqual(measured["length_m"], 5)
+        buffered = studio_core.geom_op({
+            "op": "buffer", "dist": 10,
+            "features": [{"kind": "social", "point": [0, 0], "props": {}}],
+        })
+        self.assertEqual(len(buffered["features"]), 1)
+        self.assertAlmostEqual(buffered["features"][0]["circle"]["r"], 10)
+        grid = studio_core.geom_op({"op": "grid", "x": 1.4, "y": 2.6, "step": 1})
+        self.assertEqual([grid["x"], grid["y"]], [1, 3])
+
+
 class TestStudioCore(unittest.TestCase):
     def test_preflight_clean_project(self):
         report = studio_core.preflight_project(FEATURES, target="album")
@@ -125,8 +183,10 @@ class TestStudioCore(unittest.TestCase):
 
     def test_empty_features_defaults(self):
         out = studio_core.compute_tep([])
-        self.assertGreater(out["inputs"]["terr_area"], 0)
-        self.assertEqual(out["fact"]["spp"], 0)
+        self.assertIsNone(out["inputs"]["terr_area"])
+        self.assertIsNone(out["fact"]["spp"])
+        self.assertTrue(out["results"])
+        self.assertTrue(all(row["value"] is None for row in out["results"]))
 
     def test_compute_tep_sanitizes_malformed_external_values(self):
         baseline = studio_core.compute_tep([])
@@ -161,7 +221,7 @@ class TestStudioCore(unittest.TestCase):
             baseline_rows,
         )
 
-    def test_compute_tep_clamps_invalid_floor_counts(self):
+    def test_compute_tep_unknown_floors_are_not_invented(self):
         boundary = {"kind": "boundary", "ring": [
             [0, 0], [100, 0], [100, 100], [0, 100]], "props": {}}
         building = {"kind": "building", "ring": [
@@ -169,7 +229,9 @@ class TestStudioCore(unittest.TestCase):
             "props": {"floors": 10_000},
         }
         out = studio_core.compute_tep([boundary, building])
-        self.assertEqual(out["fact"]["spp"], 0.9)
+        self.assertEqual(out["fact"]["spp"], 0)
+        self.assertEqual(out["fact"]["floors_unknown"], 1)
+        self.assertAlmostEqual(out["inputs"]["terr_area"], 1.0)
 
     def test_preflight_rejects_non_finite_or_extreme_coordinates(self):
         for coordinate in (float("nan"), float("inf"), 1e308):
@@ -312,6 +374,34 @@ class TestStudioCore(unittest.TestCase):
         self.assertNotIn("circle", circs[0].get("props", {}))  # не в props
         # buffer-like: точка + радиус даёт окружность
         self.assertEqual(circs[0]["props"].get("capacity"), 200)
+
+    def test_redline_circle_and_project_style_roundtrip_drop_preview(self):
+        """Холст после открытия рисует круг из параметров: preview в файле нет."""
+        styles = studio_core.frontend_styles()
+        style_id = next(sid for sid, row in styles.items() if row.get("stroke"))
+        feature = {
+            "kind": "redline",
+            "layer_id": "project.apo.red_lines",
+            "circle": {"cx": 12.5, "cy": -4, "r": 8, "preview": [[0, 0], [1, 1]]},
+            "style_id": style_id,
+            "props": {},
+        }
+        override = {"stroke": "#1144aa", "fill": "#ddeeff", "width": 2.5}
+        raw = studio_core.make_grado(
+            [feature], "Круг", project_styles={style_id: override})
+        with tempfile.NamedTemporaryFile(suffix=".grado") as tmp:
+            tmp.write(raw)
+            tmp.flush()
+            out = studio_core.grado_to_features(tmp.name)
+        circ = next(item for item in out["features"] if item.get("circle"))
+        self.assertAlmostEqual(circ["circle"]["cx"], 12.5, delta=0.05)
+        self.assertAlmostEqual(circ["circle"]["cy"], -4, delta=0.05)
+        self.assertAlmostEqual(circ["circle"]["r"], 8, delta=0.05)
+        self.assertNotIn("preview", circ)
+        self.assertNotIn("preview", circ["circle"])
+        self.assertNotIn("line", circ)
+        self.assertEqual(circ["style_id"], style_id)
+        self.assertEqual(out["projectStyles"][style_id]["stroke"], "#1144aa")
 
     def test_make_buffer(self):
         """Генерация буферов: точка → circle, линия → офсет."""

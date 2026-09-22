@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ГРАДО Студия</title>
+  <link rel="stylesheet" href="shell.css">
+  <script src="/crs.js"></script>
+</head>
+<body>
+  <header class="ribbon" id="ribbon">
+    <strong class="brand">ГРАДО</strong>
+    <button type="button" data-act="new">Новый</button>
+    <button type="button" data-act="open">Открыть</button>
+    <button type="button" data-act="save">Сохранить</button>
+    <span class="views" role="tablist">
+      <button type="button" data-act="map" id="tab-map">Карта</button>
+      <button type="button" data-act="draw" id="tab-draw">Чертёж</button>
+      <button type="button" data-act="album" id="tab-album">Альбом</button>
+    </span>
+    <button type="button" data-act="boundary">Участок</button>
+    <button type="button" data-act="zone">Зона</button>
+    <button type="button" data-act="fit">Вписать</button>
+    <button type="button" data-act="undo">Отмена</button>
+    <button type="button" data-act="redo">Вернуть</button>
+    <button type="button" data-act="palette">Команды</button>
+    <a class="beta" href="/index.html">Прежняя бета</a>
+    <span id="view-name">Чертёж</span>
+  </header>
+  <div class="workspace">
+    <aside id="rail"></aside>
+    <aside id="layers"></aside>
+    <main>
+      <canvas id="sheet"></canvas>
+      <p id="empty"></p>
+      <section id="album" hidden></section>
+    </main>
+    <aside id="inspect"></aside>
+  </div>
+  <footer>
+    <div id="status"></div>
+    <form id="cmd">
+      <input id="command" autocomplete="off" spellcheck="false" placeholder="пл, отр, плг, прям, дга, кр, точка, обр, удл, соед, буфер 10, орто, сетка" aria-label="Командная строка">
+    </form>
+  </footer>
+  <dialog id="palette"><input id="palette-q" placeholder="Найти команду" aria-label="Палитра команд"><ul id="palette-list"></ul></dialog>
+  <input id="file" type="file" accept=".grado" hidden>
+  <input id="gisogd" type="file" accept=".zip,.shp,.geojson,.json" hidden>
+  <script type="module" src="shell.js"></script>
+</body>
+</html>

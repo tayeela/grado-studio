@@ -27,6 +27,17 @@ class SessionBase(unittest.TestCase):
 
 
 class TestSession(SessionBase):
+    def test_grado_key_survives_undo(self):
+        fid = self.s.insert_feature(
+            "terr.boundary", rect(0, 0, 10, 10), attrs={"name": "А"},
+            grado_key="fix:1",
+            curve={"type": "circle", "cx": 1, "cy": 2, "r": 3})
+        self.s.delete_feature("terr.boundary", fid)
+        self.s.undo()
+        feat = self.p.layer("terr.boundary").get_feature(fid)
+        self.assertEqual(feat["grado_key"], "fix:1")
+        self.assertEqual(feat["curve"]["r"], 3)
+
     def test_insert_journaled(self):
         fid = self.s.insert_feature("terr.boundary", rect(0, 0, 500, 300),
                                     attrs={"name": "Граница"})

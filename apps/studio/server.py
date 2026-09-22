@@ -134,6 +134,25 @@ class RequestBodyTooLarge(ValueError):
     pass
 
 
+def _ascii_report(report):
+    """Тело ошибки без кириллицы. Подписи остаются в ответе 200 и в интерфейсе."""
+    def clean(items):
+        out = []
+        for item in items or []:
+            row = {"code": str(item.get("code") or "")}
+            if "count" in item:
+                row["count"] = item["count"]
+            ids = item.get("feature_ids")
+            if ids:
+                row["feature_ids"] = [str(value) for value in ids]
+            out.append(row)
+        return out
+
+    return {"target": report.get("target"), "can_export": bool(report.get("can_export")),
+            "errors": clean(report.get("errors")),
+            "warnings": clean(report.get("warnings"))}
+
+
 class BadRequest(ValueError):
     """Запрос клиента нельзя разобрать или он не соответствует API-контракту."""
 
@@ -518,7 +537,7 @@ class Handler(SimpleHTTPRequestHandler):
             return True, self._hub_user() if HUB else None
         login = self._hub_user()
         if not login:
-            self._json({"error": "нужен вход"}, 401)
+            self._json({"error": "login required"}, 401)
             return False, None
         return True, login
 
@@ -610,6 +629,17 @@ class Handler(SimpleHTTPRequestHandler):
         parsed0 = urlparse(self.path)
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
+            return
+        if parsed0.path == "/desk":
+            page = (WEB / "v2" / "index.html").read_text(encoding="utf-8")
+            if "<base " not in page:
+                page = page.replace("<head>", "<head>\n  <base href=\"/v2/\">", 1)
+            data = page.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
             return
         if parsed0.path == "/favicon.ico":
             # У приложения пока нет отдельного значка; пустой штатный ответ
@@ -705,34 +735,34 @@ class Handler(SimpleHTTPRequestHandler):
             # каталог слоёв портала ОГД (кэш на диске) — чтобы в «Данных по
             # области» можно было выбрать ЛЮБОЙ слой, а не только кураторские
             if _cloud_mode():
-                self._json({"error": "каталог ОГД недоступен в облачном режиме"}, 501)
+                self._json({"error": "gisogd catalog disabled in cloud mode"}, 501)
                 return
             try:
                 self._json({"layers": studio_core.gisogd_catalog()})
             except Exception as e:
-                self._json({"error": f"каталог ГИС ОГД недоступен: {e}"}, 502)
+                self._json({"error": "gisogd catalog unavailable"}, 502)
             return
         if self.path.startswith("/api/fgistp-catalog"):
             # каталог документов терпланирования ФГИС ТП (вся РФ, кэш 7 сут)
             if _cloud_mode():
-                self._json({"error": "каталог ФГИС ТП недоступен в облачном режиме"}, 501)
+                self._json({"error": "fgistp catalog disabled in cloud mode"}, 501)
                 return
             try:
                 self._json({"docs": studio_core.fgistp_catalog()})
             except Exception as e:
-                self._json({"error": f"каталог ФГИС ТП недоступен: {e}"}, 502)
+                self._json({"error": "fgistp catalog unavailable"}, 502)
             return
         if self.path.startswith("/api/fgistp-layers"):
             if _cloud_mode():
-                self._json({"error": "ФГИС ТП недоступен в облачном режиме"}, 501)
+                self._json({"error": "fgistp disabled in cloud mode"}, 501)
                 return
             uin = (parse_qs(urlparse(self.path).query).get("uin") or [""])[0]
             try:
                 self._json({"layers": studio_core.fgistp_layers(uin)})
             except ValueError:
                 self._json({"error": "bad uin"}, 400)
-            except Exception as e:
-                self._json({"error": f"sostav dokumenta nedostupen: {e}"}, 502)
+            except Exception:
+                self._json({"error": "fgistp layers unavailable"}, 502)
             return
         if self.path == "/api/sources":
             self._send(json.dumps(studio_core.sources_journal(),
@@ -939,7 +969,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if classids is not None and (
                         not isinstance(classids, list)
                         or not all(isinstance(c, str) for c in classids)):
-                    self._json({"error": "classids: ожидается список строк"}, 400)
+                    self._json({"error": "classids must be a list of strings"}, 400)
                     return
                 try:
                     out = studio_core.import_fgistp_doc(uin, classids=classids)
@@ -960,7 +990,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 parsed_url = urlsplit(url) if isinstance(url, str) else None
                 if not parsed_url or parsed_url.scheme not in {"http", "https"}:
-                    self._json({"error": "допустимы только ссылки http и https"}, 400)
+                    self._json({"error": "only http and https urls are allowed"}, 400)
                     return
                 # ZIP по прямой ссылке (пользователь генерирует на портале).
                 # SSLContext c certifi обязателен (правило 6: сборка Python.org
@@ -975,16 +1005,16 @@ class Handler(SimpleHTTPRequestHandler):
                             context=studio_core.TILE_SSL_CTX) as resp:
                         declared = resp.headers.get("Content-Length")
                         if declared is not None and int(declared) > MAX_FILE_UPLOAD:
-                            self._json({"error": "скачиваемый файл слишком большой"}, 413)
+                            self._json({"error": "downloaded file is too large"}, 413)
                             return
                         raw = resp.read(MAX_FILE_UPLOAD + 1)
                         if len(raw) > MAX_FILE_UPLOAD:
-                            self._json({"error": "скачиваемый файл слишком большой"}, 413)
+                            self._json({"error": "downloaded file is too large"}, 413)
                             return
                 except Exception:
                     traceback.print_exc()
                     msg = json.dumps(
-                        {"error": "не удалось скачать файл по указанной ссылке"},
+                        {"error": "url download failed"},
                         ensure_ascii=False).encode()
                     self.send_response(400)
                     self.send_header("Content-Type",
@@ -1040,15 +1070,8 @@ class Handler(SimpleHTTPRequestHandler):
                     return
                 try:
                     out = studio_core.fetch_extent(bbox, sources)
-                except ValueError as e:   # область больше предела источника
-                    msg = json.dumps({"error": str(e)},
-                                     ensure_ascii=False).encode()
-                    self.send_response(400)
-                    self.send_header("Content-Type",
-                                     "application/json; charset=utf-8")
-                    self.send_header("Content-Length", str(len(msg)))
-                    self.end_headers()
-                    self.wfile.write(msg)
+                except ValueError:
+                    self._json({"error": "extent too large"}, 400)
                     return
                 self._send(json.dumps(out, ensure_ascii=False).encode(),
                            "application/json; charset=utf-8")
@@ -1063,6 +1086,10 @@ class Handler(SimpleHTTPRequestHandler):
                            "application/json; charset=utf-8")
                 return
             body = self._json_body()
+            if urlparse(self.path).path == "/api/geom":
+                out = studio_core.geom_op(body)
+                self._json(out)
+                return
             features = body.get("features", [])
             params = body.get("params")
             raw_name = body.get("name")
@@ -1107,7 +1134,7 @@ class Handler(SimpleHTTPRequestHandler):
                     features, layers=layers, target=output_targets[self.path])
                 if report["errors"]:
                     self._json({"error": "project preflight failed",
-                                "report": report}, 400)
+                                "report": _ascii_report(report)}, 400)
                     return
             if self.path == "/api/preflight":
                 target = body.get("target", "grado")

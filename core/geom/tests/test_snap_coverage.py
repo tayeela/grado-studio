@@ -29,6 +29,14 @@ class TestSnapper(unittest.TestCase):
     def test_nothing_beyond_tolerance(self):
         self.assertIsNone(self.s.snap(50, 50))
 
+    def test_grid_keeps_distant_endpoint(self):
+        self.s.add_segment((1000, 1000), (1010, 1000))
+        near = self.s.snap(0.1, 0.05)
+        far = self.s.snap(1000.1, 1000.1)
+        self.assertEqual(near.point, (0, 0))
+        self.assertEqual(far.kind, "endpoint")
+        self.assertEqual(far.point, (1000, 1000))
+
     def test_midpoint(self):
         s = Snapper(tolerance=0.5)
         s.add_segment((0, 0), (10, 0))

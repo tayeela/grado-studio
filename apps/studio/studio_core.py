@@ -29,7 +29,8 @@ sys.path.insert(0, str(ROOT / "apps" / "wizard"))
 
 from grado_compute.engine import Engine  # noqa: E402
 from grado_geom import Path as GPath  # noqa: E402
-from grado_geom import CurveError, PathError  # noqa: E402
+from grado_geom import (Arc, CurveError, PathError, Snapper, curve_spec,  # noqa: E402
+                        mirror, rotate, scale, tessellate_curve)
 from grado_layout import Document, render_document_pdf  # noqa: E402
 from grado_layout import Page, A3_LANDSCAPE  # noqa: E402  # for stub sheets
 from grado_model import Project  # noqa: E402
@@ -602,18 +603,30 @@ def _integer(value, default=0):
         return default
 
 
-def _floor_count(value, default=9):
-    """Этажность из внешних данных в тех же пределах, что и поле Студии."""
-    floors = _integer(value, default)
-    return floors if 1 <= floors <= 75 else default
+def _known_floors(value):
+    """Этажность 1…75. Пустое и негодное значение не подменяется дефолтом."""
+    if isinstance(value, bool) or value is None or value == "":
+        return None
+    try:
+        floors = int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return floors if 1 <= floors <= 75 else None
+
+
+def _building_attrs(props):
+    attrs = {"purpose": props.get("purpose", "МКД")}
+    floors = _known_floors(props.get("floors"))
+    if floors is not None:
+        attrs["floors"] = floors
+    return attrs
 
 KIND_ATTRS = {
     "boundary": lambda p: {"name": p.get("name", "Территория")},
     "restrict": lambda p: {"kind": p.get("kind", "ограничение")},
     "zone": lambda p: {"zone_code": p.get("zone_title", "Ж"),
                        "zone_title": p.get("zone_title", "Ж-1")},
-    "building": lambda p: {"purpose": p.get("purpose", "МКД"),
-                           "floors": _floor_count(p.get("floors"), 9)},
+    "building": _building_attrs,
     "redline": lambda p: {"status": "устанавливаемая"},
     "social": lambda p: {"kind": p.get("kind", "ОО+ДОО"),
                          "capacity": _integer(p.get("capacity"), 0)},
@@ -631,11 +644,83 @@ def _shift(pts):
     return [[x + ORIGIN[0], y + ORIGIN[1]] for x, y in pts]
 
 
+def _grado_key_of(feature):
+    raw = feature.get("grado_key")
+    if raw in (None, ""):
+        raw = feature.get("srcKey")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _stored_curve(feature):
+    """Схема кривой в СК проекта. None — у объекта нет параметрики."""
+    try:
+        if "arc" in feature:
+            a = feature["arc"]
+            return curve_spec({
+                "type": "arc",
+                "cx": float(a["cx"]) + ORIGIN[0], "cy": float(a["cy"]) + ORIGIN[1],
+                "r": a["r"], "a0": a.get("a0", 0), "sweep": a.get("sweep", 0),
+            })
+        if "circle" in feature:
+            c = feature["circle"]
+            return curve_spec({
+                "type": "circle",
+                "cx": float(c["cx"]) + ORIGIN[0], "cy": float(c["cy"]) + ORIGIN[1],
+                "r": c["r"],
+            })
+        props = feature.get("props") or {}
+        radius = float(props.get("radius") or 0)
+        line = feature.get("line")
+        if radius > 0 and isinstance(line, list) and len(line) >= 3:
+            return curve_spec({
+                "type": "path", "radius": radius,
+                "vertices": [[float(x) + ORIGIN[0], float(y) + ORIGIN[1]]
+                             for x, y in line],
+            })
+    except (CurveError, PathError, TypeError, ValueError, KeyError, IndexError):
+        return None
+    return None
+
+
+def _canvas_curve(raw):
+    if not raw:
+        return None
+    if isinstance(raw, str):
+        try:
+            raw = _json.loads(raw)
+        except _json.JSONDecodeError:
+            return None
+    if not isinstance(raw, dict) or "type" not in raw:
+        return None
+    curve = dict(raw)
+    if curve["type"] in ("arc", "circle"):
+        curve["cx"] = curve["cx"] - ORIGIN[0]
+        curve["cy"] = curve["cy"] - ORIGIN[1]
+    elif curve["type"] == "path":
+        curve["vertices"] = [[x - ORIGIN[0], y - ORIGIN[1]]
+                             for x, y in curve.get("vertices") or []]
+    return curve
+
+
 def _geom_for(feature):
     kind = feature["kind"]
     if kind == "social":
         x, y = feature["point"]
         return {"type": "Point", "coordinates": [x + ORIGIN[0], y + ORIGIN[1]]}
+    if "arc" in feature:
+        a = feature["arc"]
+        pts = tessellate_curve({
+            "type": "arc", "cx": a["cx"], "cy": a["cy"], "r": a["r"],
+            "a0": a.get("a0", 0), "sweep": a.get("sweep", 0),
+        }, 0.05)
+        return {"type": "LineString", "coordinates": _shift(pts)}
+    if "circle" in feature:
+        c = feature["circle"]
+        pts = tessellate_curve(
+            {"type": "circle", "cx": c["cx"], "cy": c["cy"], "r": c["r"]}, 0.05)
+        return {"type": "LineString", "coordinates": _shift(pts)}
     if kind == "redline":
         line = [tuple(p) for p in feature["line"]]
         radius = float(feature.get("props", {}).get("radius") or 0)
@@ -646,27 +731,6 @@ def _geom_for(feature):
             except (PathError, CurveError):
                 pass  # радиус не помещается — оставляем ломаную
         return {"type": "LineString", "coordinates": _shift(line)}
-    if "arc" in feature:
-        a = feature["arc"]
-        n = 16
-        pts = []
-        for i in range(n+1):
-            ang = a.get("a0", 0) + a.get("sweep", 0) * i / n
-            x = a["cx"] + a["r"] * math.cos(ang)
-            y = a["cy"] + a["r"] * math.sin(ang)
-            pts.append((x, y))
-        return {"type": "LineString", "coordinates": _shift(pts)}
-    if "circle" in feature:
-        c = feature["circle"]
-        n = 32
-        pts = []
-        for i in range(n + 1):
-            ang = i * 2 * math.pi / n
-            x = c["cx"] + c["r"] * math.cos(ang)
-            y = c["cy"] + c["r"] * math.sin(ang)
-            pts.append((x, y))
-        # closed for ring-like use, but as LineString for generic
-        return {"type": "LineString", "coordinates": _shift(pts)}
     # generic/неизвестные виды несут геометрию в самом объекте: линия/точка
     # без этих веток падала KeyError 'ring' и молча выпадала из экспорта.
     # Семантические полигональные виды (zone/building/…) сюда не пускаем:
@@ -1018,7 +1082,8 @@ def build_project(path, name, features, layers=None, project_styles=None,
         made[lid].add_feature(
             geom, attrs=attrs, source=source,
             source_date=prov.get("source_date"), source_doc=prov.get("source_doc"),
-            style_id=f.get("style_id"))
+            style_id=f.get("style_id"), grado_key=_grado_key_of(f),
+            curve=_stored_curve(f))
     return project
 
 
@@ -1216,15 +1281,55 @@ def _make_engine_from_normalized(features, params):
     engine = Engine.from_file(PRESET)
     # ТЭП считается ВНУТРИ границы территории разработки, а не по всей карте
     features = _clip_to_territory(features)
+    has_territory = any(_is_territory(f) for f in features)
     # площади входов ТЭП — из ролей слоёв, не из kind
     areas = _role_areas(features)
     inputs = {r: round(a, 4) for r, a in areas.items() if r in engine.inputs}
-    if inputs.get("terr_area", 0) == 0:
-        inputs.pop("terr_area", None)  # пустой холст → дефолт пресета
-    engine.set_inputs(**inputs)
+    if has_territory:
+        # ноль по геометрии остаётся нулём. Дефолт пресета 15 га сюда не подставляется.
+        inputs["terr_area"] = round(areas.get("terr_area", 0.0), 4)
+    elif "terr_area" in inputs:
+        inputs.pop("terr_area")
+    if inputs:
+        engine.set_inputs(**inputs)
     for key, value in params.items():
         engine.set_input(key, value)
+    engine.geometry_bound = has_territory
     return engine
+
+
+def _withheld_tep(engine):
+    """Нет границы — числа пресета не публикуются."""
+    return {
+        "inputs": {"terr_area": None, "restrict_area": None},
+        "results": [{**row, "value": None} for row in engine.results()],
+        "fact": {"spp": None, "density": None, "floors_unknown": 0},
+        "zones": None,
+        "checks": [{
+            "title": "Граница территории",
+            "ok": False,
+            "msg": "не задана — показатели не считаются, пока нет границы территории",
+        }],
+        "regulatory_profile": engine.preset.get("regulatory_profile", {}),
+        "has_territory": False,
+    }
+
+
+class _NdEngine:
+    """Альбом печатает «н/д», а не дефолт движка."""
+
+    def __init__(self, engine):
+        self.preset = engine.preset
+        self._rows = [{**row, "value": "н/д"} for row in engine.results()]
+
+    def display(self, name):
+        return "н/д"
+
+    def value(self, name):
+        return None
+
+    def results(self):
+        return list(self._rows)
 
 
 def make_engine(features, params=None):
@@ -1242,11 +1347,17 @@ def compute_tep(features, params=None):
     has_territory = any(_is_territory(f) for f in features)
     features = _clip_to_territory(features)
     engine = _make_engine_from_normalized(features, params)  # clip идемпотентен
+    if not engine.geometry_bound:
+        return _withheld_tep(engine)
     fact_spp = 0.0
+    floors_unknown = 0
     for f in features:
         cls = _class_of(f)
         if cls and cls.tep_role == "building_footprint" and "ring" in f:
-            floors = _floor_count(f.get("props", {}).get("floors"), 9)
+            floors = _known_floors(f.get("props", {}).get("floors"))
+            if floors is None:
+                floors_unknown += 1
+                continue
             fact_spp += _ring_area_ha(f) * 10000 * floors / 1000.0  # тыс. м²
     calc_area = engine.value("calc_area")
     results = engine.results()
@@ -1269,12 +1380,6 @@ def compute_tep(features, params=None):
     if pop > 0:
         checks.append({"title": "Территориальная доступность", "ok": False,
                        "msg": "Потребность рассчитана; существующую ёмкость и нормативные радиусы объектов необходимо проверить по окружению"})
-    # без границы территории ТЭП считается по ВСЕМ объектам карты (площадь —
-    # дефолт пресета) → честно предупреждаем: цифры не привязаны к территории
-    if not has_territory and any("ring" in f for f in features):
-        checks.insert(0, {"title": "Граница территории", "ok": False,
-                          "msg": "не задана — ТЭП по всем объектам карты; начертите "
-                                 "границу, чтобы считать внутри территории разработки"})
     return {
         "inputs": {"terr_area": engine.value("terr_area"),
                    "restrict_area": engine.value("restrict_area")},
@@ -1282,6 +1387,7 @@ def compute_tep(features, params=None):
         "fact": {
             "spp": round(fact_spp, 1),
             "density": dens,
+            "floors_unknown": floors_unknown,
         },
         "zones": zones_report(features),
         "checks": checks,
@@ -1290,16 +1396,25 @@ def compute_tep(features, params=None):
     }
 
 
+def album_engine(project, features, params=None):
+    """Движок листа. Без границы территории показ — «н/д», не дефолт 15 га."""
+    live = compute_tep(features, params)
+    engine = make_engine(features, params)
+    apply_to_engine(project, engine)
+    for key in ("density", "ratio_zh", "percent_vpp"):
+        if params and params.get(key) is not None:
+            engine.set_input(key, float(params[key]))
+    if not live["has_territory"]:
+        return _NdEngine(engine)
+    return engine
+
+
 def make_album(features, name, params=None, basemap=False, layers=None,
                basemap_source="osm", canvas_styles=None, project_styles=None,
                album_config=None):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
-        engine = make_engine(features, params)
-        apply_to_engine(project, engine)  # уточнение площадей по слоям проекта
-        for key in ("density", "ratio_zh", "percent_vpp"):
-            if params and params.get(key) is not None:
-                engine.set_input(key, float(params[key]))
+        engine = album_engine(project, features, params)
         doc = Document(name, meta={"org": "ГРАДО", "stage": "АГК"})
         # canvas_styles — inline-знаки «как на холсте» (режим выпуска студии):
         # объекты несут синтетический style_id, а сам знак приходит здесь
@@ -1456,6 +1571,26 @@ def grado_to_features(path):
                 base["style_id"] = f["style_id"]
             if prov:
                 base["prov"] = prov
+            if f.get("grado_key"):
+                base["grado_key"] = f["grado_key"]
+                base["srcKey"] = f["grado_key"]
+            curve = _canvas_curve(f.get("curve"))
+            if curve and curve.get("type") == "arc":
+                arc = {k: curve[k] for k in ("cx", "cy", "r", "a0", "sweep")}
+                clean = {k: v for k, v in props.items()
+                         if k != "arc" and not str(k).startswith("arc_")}
+                out.append({**base, "arc": arc, "props": clean})
+                continue
+            if curve and curve.get("type") == "circle":
+                circ = {k: curve[k] for k in ("cx", "cy", "r")}
+                clean = {k: v for k, v in props.items() if k != "circle"}
+                out.append({**base, "circle": circ, "props": clean})
+                continue
+            if curve and curve.get("type") == "path":
+                clean = dict(props)
+                clean["radius"] = curve.get("radius") or 0
+                out.append({**base, "line": curve["vertices"], "props": clean})
+                continue
             # reconstruct arc / circle if params were stored in attrs (for roundtrip)
             arc = None
             if "arc" in props:
@@ -3281,13 +3416,11 @@ def make_buffer(features, dist, fillet=0.0, sides="both"):
         elif f.get("line"):
             pts = [tuple(p) for p in f["line"]]
         elif f.get("arc"):
-            # sample arc to pts
             a = f["arc"]
-            n = 24
-            pts = []
-            for i in range(n + 1):
-                ang = a.get("a0", 0) + a.get("sweep", 0) * i / n
-                pts.append((a["cx"] + a["r"] * math.cos(ang), a["cy"] + a["r"] * math.sin(ang)))
+            pts = [tuple(p) for p in tessellate_curve({
+                "type": "arc", "cx": a["cx"], "cy": a["cy"], "r": a["r"],
+                "a0": a.get("a0", 0), "sweep": a.get("sweep", 0),
+            }, 0.05)]
         if not pts or len(pts) < 2:
             continue
 
@@ -3323,3 +3456,303 @@ def make_buffer(features, dist, fillet=0.0, sides="both"):
                 # если офсет схлопывается — пропускаем
                 continue
     return out
+
+
+class GeomOpError(ValueError):
+    """Операция холста отклонена. В HTTP уходит только ASCII-код."""
+
+
+def _geom_pair(value):
+    if not isinstance(value, (list, tuple)) or len(value) < 2:
+        raise GeomOpError("geometry rejected")
+    try:
+        x, y = float(value[0]), float(value[1])
+    except (TypeError, ValueError):
+        raise GeomOpError("geometry rejected") from None
+    if not math.isfinite(x) or not math.isfinite(y) or max(abs(x), abs(y)) > 1e7:
+        raise GeomOpError("geometry rejected")
+    return (x, y)
+
+
+def _geom_chain(raw, limit=4000):
+    if not isinstance(raw, list) or len(raw) > limit:
+        raise GeomOpError("geometry rejected")
+    return [_geom_pair(p) for p in raw]
+
+
+def _nearest_on_seg(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx * dx + dy * dy
+    if length2 == 0:
+        return a
+    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2))
+    return (a[0] + dx * t, a[1] + dy * t)
+
+
+def _param_on_seg(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    length2 = dx * dx + dy * dy
+    if length2 == 0:
+        return 0.0
+    return ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / length2
+
+
+def _seg_cross(a, b, c, d):
+    den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+    if abs(den) < 1e-12:
+        return None
+    t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den
+    u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den
+    if -1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9:
+        return (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+    return None
+
+
+def _ray_cross(a, b, c, d):
+    """Пересечение луча a→b (t >= 1, за концом b) с отрезком c–d."""
+    den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])
+    if abs(den) < 1e-12:
+        return None
+    t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den
+    u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den
+    if t >= 1 - 1e-9 and -1e-9 <= u <= 1 + 1e-9:
+        return (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+    return None
+
+
+def _boundary_chains(raw):
+    if not isinstance(raw, list):
+        raise GeomOpError("geometry rejected")
+    return [_geom_chain(chain) for chain in raw if isinstance(chain, list) and len(chain) >= 2]
+
+
+def _trim_line(line, click, boundaries):
+    if len(line) < 2:
+        raise GeomOpError("geometry rejected")
+    best_i, best_d = 0, 1e18
+    for i in range(len(line) - 1):
+        q = _nearest_on_seg(click, line[i], line[i + 1])
+        dist = math.hypot(q[0] - click[0], q[1] - click[1])
+        if dist < best_d:
+            best_i, best_d = i, dist
+    a, b = line[best_i], line[best_i + 1]
+    t_click = _param_on_seg(click, a, b)
+    best = None
+    for chain in boundaries:
+        for j in range(len(chain) - 1):
+            hit = _seg_cross(a, b, chain[j], chain[j + 1])
+            if hit is None:
+                continue
+            t = _param_on_seg(hit, a, b)
+            if best is None or abs(t - t_click) < abs(best[0] - t_click):
+                best = (t, hit)
+    if best is None:
+        raise GeomOpError("geometry rejected")
+    t, hit = best
+    if t_click > t:
+        kept = [list(p) for p in line[:best_i + 1]] + [[hit[0], hit[1]]]
+    else:
+        kept = [[hit[0], hit[1]]] + [list(p) for p in line[best_i + 1:]]
+    if len(kept) < 2:
+        raise GeomOpError("geometry rejected")
+    return kept
+
+
+def _extend_line(line, click, boundaries, tolerance):
+    if len(line) < 2 or not math.isfinite(tolerance) or tolerance <= 0:
+        raise GeomOpError("geometry rejected")
+    start = line[0]
+    end = line[-1]
+    d_start = math.hypot(click[0] - start[0], click[1] - start[1])
+    d_end = math.hypot(click[0] - end[0], click[1] - end[1])
+    if min(d_start, d_end) > tolerance:
+        raise GeomOpError("geometry rejected")
+    at_end = d_end <= d_start
+    a = line[-2] if at_end else line[1]
+    b = end if at_end else start
+    best = None
+    for chain in boundaries:
+        for j in range(len(chain) - 1):
+            hit = _ray_cross(a, b, chain[j], chain[j + 1])
+            if hit is None:
+                continue
+            dist = math.hypot(hit[0] - b[0], hit[1] - b[1])
+            if best is None or dist < best[0]:
+                best = (dist, hit)
+    if best is None:
+        raise GeomOpError("geometry rejected")
+    out = [list(p) for p in line]
+    out[-1 if at_end else 0] = [best[1][0], best[1][1]]
+    return out
+
+
+def _join_lines(lines, tolerance):
+    if not math.isfinite(tolerance) or tolerance < 0:
+        raise GeomOpError("geometry rejected")
+    items = [[list(p) for p in line] for line in lines if len(line) >= 2]
+    if len(items) < 2:
+        raise GeomOpError("geometry rejected")
+    chain = items[0]
+    rest = items[1:]
+    merged = 1
+    while rest:
+        cs, ce = chain[0], chain[-1]
+        found = None
+        for i, part in enumerate(rest):
+            ps, pe = part[0], part[-1]
+            if math.hypot(ce[0] - ps[0], ce[1] - ps[1]) <= tolerance:
+                found = chain + part[1:]
+            elif math.hypot(ce[0] - pe[0], ce[1] - pe[1]) <= tolerance:
+                found = chain + part[-2::-1]
+            elif math.hypot(cs[0] - pe[0], cs[1] - pe[1]) <= tolerance:
+                found = part[:-1] + chain
+            elif math.hypot(cs[0] - ps[0], cs[1] - ps[1]) <= tolerance:
+                found = part[:0:-1] + chain
+            if found is not None:
+                chain = found
+                rest.pop(i)
+                merged += 1
+                break
+        if found is None:
+            break
+    if merged < 2:
+        raise GeomOpError("geometry rejected")
+    return chain
+
+
+def geom_op(body):
+    """Привязка, дуга, окружность и аффинные преобразования. Без записи файла."""
+    if not isinstance(body, dict):
+        raise GeomOpError("geometry rejected")
+    op = body.get("op")
+    try:
+        if op == "snap":
+            tol = float(body.get("tolerance") or 0.5)
+            if not math.isfinite(tol) or tol <= 0 or tol > 100:
+                raise GeomOpError("geometry rejected")
+            snapper = Snapper(tolerance=tol)
+            lines = body.get("polylines") or []
+            if not isinstance(lines, list) or len(lines) > 2000:
+                raise GeomOpError("geometry rejected")
+            for line in lines:
+                pts = _geom_chain(line)
+                if len(pts) >= 2:
+                    snapper.add_polyline(pts)
+            x, y = _geom_pair([body.get("x"), body.get("y")])
+            hit = snapper.snap(x, y)
+            if hit is None:
+                return {"hit": None}
+            return {"hit": {"x": hit.point[0], "y": hit.point[1], "kind": hit.kind}}
+        if op == "arc3":
+            pts = _geom_chain(body.get("points"), 3)
+            if len(pts) != 3:
+                raise GeomOpError("geometry rejected")
+            arc = Arc.from_3pts(*pts)
+            return {"cx": arc.cx, "cy": arc.cy, "r": arc.r,
+                    "a0": arc.a0, "sweep": arc.sweep,
+                    "preview": [[round(x, 3), round(y, 3)]
+                                for x, y in arc.linearize(0.05)]}
+        if op == "circle":
+            center = _geom_pair(body.get("center"))
+            edge = _geom_pair(body.get("edge"))
+            radius = math.hypot(edge[0] - center[0], edge[1] - center[1])
+            if radius <= 0:
+                raise GeomOpError("geometry rejected")
+            spec = {"type": "circle", "cx": center[0], "cy": center[1], "r": radius}
+            return {"cx": spec["cx"], "cy": spec["cy"], "r": spec["r"],
+                    "preview": [[round(x, 3), round(y, 3)]
+                                for x, y in tessellate_curve(spec, 0.05)]}
+        if op == "fillet":
+            pts = _geom_chain(body.get("line"))
+            radius = float(body.get("radius"))
+            if len(pts) < 3 or not math.isfinite(radius) or radius <= 0 or radius > 500:
+                raise GeomOpError("geometry rejected")
+            path = GPath.fillet_polyline(pts, radius)
+            return {"radius": radius,
+                    "vertices": [[p[0], p[1]] for p in pts],
+                    "preview": [[round(x, 3), round(y, 3)]
+                                for x, y in path.linearize(0.05)]}
+        if op == "tessellate":
+            pts = tessellate_curve(body.get("curve"), 0.05)
+            return {"preview": [[round(x, 3), round(y, 3)] for x, y in pts]}
+        if op == "rotate":
+            degrees = float(body.get("degrees"))
+            if not math.isfinite(degrees) or abs(degrees) > 3600:
+                raise GeomOpError("geometry rejected")
+            pts = rotate(_geom_chain(body.get("points")),
+                         _geom_pair(body.get("origin")), degrees)
+            return {"points": [[x, y] for x, y in pts]}
+        if op == "scale":
+            factor = float(body.get("factor"))
+            if not math.isfinite(factor):
+                raise GeomOpError("geometry rejected")
+            pts = scale(_geom_chain(body.get("points")),
+                        _geom_pair(body.get("origin")), factor)
+            return {"points": [[x, y] for x, y in pts]}
+        if op == "mirror":
+            pts = mirror(_geom_chain(body.get("points")),
+                         _geom_pair(body.get("a")), _geom_pair(body.get("b")))
+            return {"points": [[x, y] for x, y in pts]}
+        if op == "rectangle":
+            a, b = _geom_pair(body.get("a")), _geom_pair(body.get("b"))
+            x0, x1 = sorted((a[0], b[0]))
+            y0, y1 = sorted((a[1], b[1]))
+            if x1 - x0 < 1e-9 or y1 - y0 < 1e-9:
+                raise GeomOpError("geometry rejected")
+            return {"ring": [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]}
+        if op == "measure":
+            pts = _geom_chain(body.get("points"))
+            if len(pts) < 2:
+                raise GeomOpError("geometry rejected")
+            length = sum(math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1])
+                         for i in range(len(pts) - 1))
+            area = 0.0
+            if len(pts) >= 3:
+                acc = 0.0
+                for i in range(len(pts)):
+                    x0, y0 = pts[i]
+                    x1, y1 = pts[(i + 1) % len(pts)]
+                    acc += x0 * y1 - x1 * y0
+                area = abs(acc) / 2.0
+            return {"length_m": round(length, 3), "area_m2": round(area, 3)}
+        if op == "trim":
+            return {"line": _trim_line(_geom_chain(body.get("line")),
+                                       _geom_pair(body.get("click")),
+                                       _boundary_chains(body.get("boundaries")))}
+        if op == "extend":
+            return {"line": _extend_line(_geom_chain(body.get("line")),
+                                         _geom_pair(body.get("click")),
+                                         _boundary_chains(body.get("boundaries")),
+                                         float(body.get("tolerance") or 1))}
+        if op == "join":
+            chains = body.get("lines")
+            if not isinstance(chains, list) or len(chains) < 2:
+                raise GeomOpError("geometry rejected")
+            tol = float(body.get("tolerance") or 0.5)
+            return {"line": _join_lines([_geom_chain(c) for c in chains], tol)}
+        if op == "buffer":
+            dist = float(body.get("dist"))
+            feats = body.get("features")
+            if not isinstance(feats, list) or not feats:
+                raise GeomOpError("geometry rejected")
+            made = make_buffer(feats, dist, fillet=float(body.get("fillet") or 0))
+            return {"features": made}
+        if op == "vertex":
+            pts = [list(p) for p in _geom_chain(body.get("points"))]
+            index = int(body.get("index"))
+            point = _geom_pair(body.get("point"))
+            if index < 0 or index >= len(pts):
+                raise GeomOpError("geometry rejected")
+            pts[index] = [point[0], point[1]]
+            return {"points": pts}
+        if op == "grid":
+            step = float(body.get("step"))
+            if not math.isfinite(step) or step <= 0 or step > 1000:
+                raise GeomOpError("geometry rejected")
+            x, y = _geom_pair([body.get("x"), body.get("y")])
+            return {"x": round(x / step) * step, "y": round(y / step) * step}
+    except GeomOpError:
+        raise
+    except (CurveError, PathError, TypeError, ValueError, OverflowError):
+        raise GeomOpError("geometry rejected") from None
+    raise GeomOpError("geometry rejected")

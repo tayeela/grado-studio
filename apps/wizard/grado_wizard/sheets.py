@@ -83,10 +83,14 @@ def location_sheet(doc, project, area_ha, page_no):
         (RIGHT_X, 40, RIGHT_W, 60),
         [("Границы:", [("line", doc.styles.resolve("terr.boundary"),
                         "граница территории разработки")])])
+    if isinstance(area_ha, (int, float)) and not isinstance(area_ha, bool):
+        area_line = f"площадью {area_ha:.2f} га расположена"
+    else:
+        area_line = "площадью н/д"
     annotation = TextFrame(
         (RIGHT_X, 110, RIGHT_W, 40),
-        [f"Разрабатываемая территория",
-         f"площадью {area_ha:.2f} га расположена",
+        ["Разрабатываемая территория",
+         area_line,
          "в границах участков правообладателя"], size=2.8)
     page.frames = [
         SheetHeader(page, ["Расположение рассматриваемой", "территории"], page_no),

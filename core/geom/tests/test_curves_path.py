@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from grado_geom import Arc, CurveError, Path, PathError
+from grado_geom import Arc, CurveError, Path, PathError, curve_spec, tessellate_curve, rotate, scale, mirror
 
 
 class TestArc(unittest.TestCase):
@@ -79,6 +79,22 @@ class TestPath(unittest.TestCase):
         self.assertAlmostEqual(inner.area(), 8 * 4, places=6)
         outer = rect.offset(-1)
         self.assertAlmostEqual(outer.area(), 12 * 8, places=6)
+
+    def test_curve_spec_round_and_tessellation(self):
+        arc = curve_spec({"type": "arc", "cx": 0, "cy": 0, "r": 10,
+                          "a0": 0, "sweep": math.pi / 2})
+        pts = tessellate_curve(arc, 0.05)
+        self.assertGreater(len(pts), 2)
+        self.assertAlmostEqual(pts[0][0], 10)
+        circle = tessellate_curve({"type": "circle", "cx": 0, "cy": 0, "r": 5}, 0.05)
+        self.assertEqual(circle[0], circle[-1])
+
+    def test_affine_rotate_scale_mirror(self):
+        turned = rotate([(1, 0)], (0, 0), 90)
+        self.assertAlmostEqual(turned[0][0], 0, places=6)
+        self.assertAlmostEqual(turned[0][1], 1, places=6)
+        self.assertEqual(scale([(2, 0)], (0, 0), 3), [(6, 0)])
+        self.assertEqual(mirror([(1, 2)], (0, 0), (1, 0)), [(1, -2)])
 
     def test_offset_mixed_non_g1_rejected(self):
         arc = Arc(0, 0, 5, 0, math.pi / 2)

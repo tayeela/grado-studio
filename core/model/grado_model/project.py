@@ -44,7 +44,8 @@ _LAYER_COLS = ("layer_id, table_name, classifier_code, title, "
 _LAYER_READ = _LAYER_COLS + ", fields"
 
 # служебные колонки feature-таблицы — на них пользовательское поле лечь не может
-_RESERVED_COLS = {"id", "geom", "source", "source_date", "source_doc", "style_id"}
+_RESERVED_COLS = {"id", "geom", "source", "source_date", "source_doc",
+                   "style_id", "grado_key", "curve"}
 
 
 def _table_name(layer_id):
@@ -96,10 +97,14 @@ class Layer:
         self.cls.validate_attrs({k: v for k, v in attrs.items() if k not in user_ids and k not in ("arc", "circle")})
         return geom, attrs, source_date or date.today().isoformat()
 
-    def _write(self, fid, geom, attrs, source, source_date, source_doc, style_id):
-        cols = ["geom", "source", "source_date", "source_doc", "style_id"]
+    def _write(self, fid, geom, attrs, source, source_date, source_doc, style_id,
+               grado_key, curve):
+        if isinstance(curve, (dict, list)):
+            curve = json.dumps(curve, ensure_ascii=False)
+        cols = ["geom", "source", "source_date", "source_doc", "style_id",
+                "grado_key", "curve"]
         vals = [geometry.gpkg_blob(geom, self.project.srs_id), source,
-                source_date, source_doc, style_id]
+                source_date, source_doc, style_id, grado_key, curve]
         for key, value in attrs.items():
             cols.append(f'"{key}"')
             vals.append(value)
@@ -119,9 +124,10 @@ class Layer:
         return fid
 
     def add_feature(self, geom, attrs=None, source="manual", source_date=None,
-                    source_doc=None, style_id=None):
+                    source_doc=None, style_id=None, grado_key=None, curve=None):
         geom, attrs, source_date = self._coerce(geom, attrs, source, source_date)
-        return self._write(None, geom, attrs, source, source_date, source_doc, style_id)
+        return self._write(None, geom, attrs, source, source_date, source_doc,
+                           style_id, grado_key, curve)
 
     def set_feature(self, fid, snapshot):
         """Записывает объект с заданным id (реплей дельт журнала)."""
@@ -130,7 +136,8 @@ class Layer:
             snapshot.get("source", "manual"), snapshot.get("source_date"))
         return self._write(fid, geom, attrs, snapshot.get("source", "manual"),
                            source_date, snapshot.get("source_doc"),
-                           snapshot.get("style_id"))
+                           snapshot.get("style_id"), snapshot.get("grado_key"),
+                           snapshot.get("curve"))
 
     def delete_feature(self, fid):
         cur = self.project.conn.execute(f'DELETE FROM "{self.table}" WHERE id=?', (fid,))
@@ -155,14 +162,20 @@ class Layer:
         except Exception:
             pass
         cols = ", ".join(f'"{a}"' for a in attr_ids)
-        sql = (f'SELECT id, geom, source, source_date, source_doc, style_id'
-               f'{", " + cols if cols else ""} FROM "{self.table}"')
+        sql = (f'SELECT id, geom, source, source_date, source_doc, style_id, '
+               f'grado_key, curve{", " + cols if cols else ""} FROM "{self.table}"')
         params = ()
         if where_id is not None:
             sql += " WHERE id=?"
             params = (where_id,)
         for row in self.project.conn.execute(sql, params):
             geom, _srs = geometry.gpkg_parse(row[1]) if row[1] else (None, None)
+            raw_curve = row[7]
+            if isinstance(raw_curve, str) and raw_curve:
+                try:
+                    raw_curve = json.loads(raw_curve)
+                except json.JSONDecodeError:
+                    raw_curve = None
             yield {
                 "id": row[0],
                 "geom": geom,
@@ -170,7 +183,9 @@ class Layer:
                 "source_date": row[3],
                 "source_doc": row[4],
                 "style_id": row[5],
-                "attrs": dict(zip(attr_ids, row[6:])),
+                "grado_key": row[6],
+                "curve": raw_curve,
+                "attrs": dict(zip(attr_ids, row[8:])),
             }
 
     def count(self):
@@ -271,6 +286,10 @@ class Project:
                 f'PRAGMA table_info("{table_name}")')]
             if "style_id" not in fcols:
                 conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN style_id TEXT')
+            if "grado_key" not in fcols:
+                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN grado_key TEXT')
+            if "curve" not in fcols:
+                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN curve TEXT')
         conn.commit()
 
     def meta(self, key):

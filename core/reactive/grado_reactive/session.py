@@ -63,10 +63,11 @@ class Session:
 
     def insert_feature(self, code, geom, attrs=None, source="manual",
                        source_date=None, source_doc=None, title=None,
-                       style_id=None):
+                       style_id=None, grado_key=None, curve=None):
         layer = self.project.layer(code)
         fid = layer.add_feature(geom, attrs, source, source_date, source_doc,
-                                style_id=style_id)
+                                style_id=style_id, grado_key=grado_key,
+                                curve=curve)
         after = D.snapshot(layer.get_feature(fid))
         self._commit(title or f"добавление объекта в {code}",
                      [{"op": "insert", "layer": code, "fid": fid,

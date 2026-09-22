@@ -45,9 +45,13 @@
     const parsed = number(value, fallback);
     return parsed >= minimum && parsed <= maximum ? parsed : fallback;
   };
-  const floorCount = value => {
-    const floors = Math.trunc(number(value, 9));
-    return floors >= 1 && floors <= 75 ? floors : 9;
+  const knownFloors = value => {
+    if (value === null || value === undefined || value === "" || typeof value === "boolean")
+      return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    const floors = Math.trunc(parsed);
+    return floors >= 1 && floors <= 75 ? floors : null;
   };
   const roundBits = new DataView(new ArrayBuffer(8));
   const compareDoubleToDecimalHalf = (value, lower, factor) => {
@@ -149,10 +153,44 @@
     const params = payload.params && typeof payload.params === "object" ? payload.params : {};
     const hasTerritory = rawFeatures.some(feature => feature.kind === "boundary" && feature.ring);
     const features = clippedToTerritory(rawFeatures);
-    const rawTerrArea = hasTerritory
-      ? features.filter(feature => feature.kind === "boundary" && feature.ring)
-        .reduce((sum, feature) => sum + featureAreaM2(feature), 0) / 10000
-      : 15;
+    if (!hasTerritory) {
+      return {
+        inputs: { terr_area: null, restrict_area: null },
+        results: [
+          ["calc_area", "Территория", "Расчётная площадь территории", "га"],
+          ["spp", "Застройка", "СПП в габаритах наружных стен", "тыс. м²"],
+          ["np", "Застройка", "Наземная площадь (НП)", "тыс. м²"],
+          ["spp_zh", "Застройка", "СПП жилых зданий", "тыс. м²"],
+          ["spp_nzh", "Застройка", "СПП нежилых зданий", "тыс. м²"],
+          ["spp_vpp", "Застройка", "СПП встроенных нежилых помещений (ВПП)", "тыс. м²"],
+          ["spp_zh_net", "Застройка", "СПП жилой части МКД", "тыс. м²"],
+          ["sq_flats", "Жильё и население", "Площадь квартир", "тыс. м²"],
+          ["population", "Жильё и население", "Расчётное население", "чел"],
+          ["flats", "Жильё и население", "Количество квартир", "кв."],
+          ["doo_norm", "Социальные объекты", "Потребность в местах ДОО (2151-ПП)", "мест"],
+          ["doo_places", "Социальные объекты", "Расчётная потребность ДОО", "мест"],
+          ["school_norm", "Социальные объекты", "Потребность в местах школ (2151-ПП)", "мест"],
+          ["school_places", "Социальные объекты", "Расчётная потребность школ", "мест"],
+          ["policlinic_norm", "Социальные объекты", "Потребность в поликлиниках", "посещ./смену"],
+          ["policlinic_places", "Социальные объекты", "Расчётная потребность поликлиник", "посещ./смену"],
+          ["retail_nnp_required", "Обслуживание", "Торговля к размещению (2152-ПП)", "м² ННП"],
+          ["services_nnp_required", "Обслуживание", "Бытовое обслуживание (2152-ПП)", "м² ННП"],
+          ["green_area_required", "Жилые территории", "Озеленённая территория по режиму 2152-ПП", "м²"],
+          ["playground_area_required", "Жилые территории", "Детские площадки при реконструкции", "м²"],
+          ["adult_recreation_area_required", "Жилые территории", "Площадки отдыха взрослых при реконструкции", "м²"],
+          ["parking_perm", "Транспорт", "Машино-места — предварительный расчёт", "м/м"],
+          ["parking_guest", "Транспорт", "Гостевые машино-места — предварительно", "м/м"],
+        ].map(([id, group, title, unit]) => ({ id, group, title, value: null, unit })),
+        fact: { spp: null, density: null, floors_unknown: 0 },
+        zones: null,
+        checks: [{ title: "Граница территории", ok: false,
+          msg: "не задана — показатели не считаются, пока нет границы территории" }],
+        regulatory_profile: PROFILE,
+        has_territory: false,
+      };
+    }
+    const rawTerrArea = features.filter(feature => feature.kind === "boundary" && feature.ring)
+      .reduce((sum, feature) => sum + featureAreaM2(feature), 0) / 10000;
     const rawRestrictArea = features.filter(feature => feature.kind === "restrict" && feature.ring)
       .reduce((sum, feature) => sum + featureAreaM2(feature), 0) / 10000;
     const terrArea = rounded(rawTerrArea, 4);
@@ -187,8 +225,16 @@
     const playground = rounded(territoryMode === 2 ? populationThs * 1000 * 0.5 : 0);
     const adultRecreation = rounded(territoryMode === 2 ? populationThs * 1000 * 0.1 : 0);
     const parking = rounded(populationThs * 257 * kRail * kBa);
+    let floorsUnknown = 0;
     const factSpp = features.filter(feature => feature.kind === "building" && feature.ring)
-      .reduce((sum, feature) => sum + featureAreaM2(feature) * floorCount(feature.props && feature.props.floors) / 1000, 0);
+      .reduce((sum, feature) => {
+        const floors = knownFloors(feature.props && feature.props.floors);
+        if (floors == null) {
+          floorsUnknown += 1;
+          return sum;
+        }
+        return sum + featureAreaM2(feature) * floors / 1000;
+      }, 0);
     const factDensity = calcArea > 0 ? factSpp / calcArea : 0;
     const results = [
       result("calc_area", "Территория", "Расчётная площадь территории", calcArea, "га", 2),
@@ -228,13 +274,10 @@
       checks.push({ title: "Территориальная доступность", ok: false,
         msg: "Потребность рассчитана; существующую ёмкость и нормативные радиусы объектов необходимо проверить по окружению" });
     }
-    if (!hasTerritory && rawFeatures.some(feature => feature && feature.ring)) {
-      checks.unshift({ title: "Граница территории", ok: false,
-        msg: "не задана — ТЭП по всем объектам карты; начертите границу, чтобы считать внутри территории разработки" });
-    }
     return {
       inputs: { terr_area: rounded(terrArea, 4), restrict_area: rounded(restrictArea, 4) },
-      results, fact: { spp: rounded(factSpp, 1), density: rounded(factDensity, 2) },
+      results, fact: { spp: rounded(factSpp, 1), density: rounded(factDensity, 2),
+        floors_unknown: floorsUnknown },
       zones: null, checks, regulatory_profile: PROFILE, has_territory: hasTerritory,
     };
   }

@@ -40,33 +40,71 @@ def _nearest_on_seg(p, a, b):
 
 
 class Snapper:
-    def __init__(self, tolerance=0.5):
+    def __init__(self, tolerance=0.5, cell=None):
         self.tolerance = tolerance
+        self.cell = cell if cell and cell > 0 else max(float(tolerance) * 10.0, 1.0)
         self.segments = []
+        self._grid = {}
         self._intersections = None
 
     def add_segment(self, a, b):
-        self.segments.append((tuple(a), tuple(b)))
+        a, b = (tuple(a), tuple(b))
+        idx = len(self.segments)
+        self.segments.append((a, b))
+        for key in self._segment_cells(a, b):
+            self._grid.setdefault(key, []).append(idx)
         self._intersections = None
 
     def add_polyline(self, pts):
         for a, b in zip(pts, pts[1:]):
             self.add_segment(a, b)
 
+    def _segment_cells(self, a, b):
+        c = self.cell
+        minx, maxx = (a[0], b[0]) if a[0] <= b[0] else (b[0], a[0])
+        miny, maxy = (a[1], b[1]) if a[1] <= b[1] else (b[1], a[1])
+        ix0, ix1 = math.floor(minx / c), math.floor(maxx / c)
+        iy0, iy1 = math.floor(miny / c), math.floor(maxy / c)
+        for ix in range(ix0, ix1 + 1):
+            for iy in range(iy0, iy1 + 1):
+                yield (ix, iy)
+
+    def _near(self, x, y):
+        c = self.cell
+        pad = self.tolerance
+        ix0, ix1 = math.floor((x - pad) / c), math.floor((x + pad) / c)
+        iy0, iy1 = math.floor((y - pad) / c), math.floor((y + pad) / c)
+        seen = set()
+        for ix in range(ix0, ix1 + 1):
+            for iy in range(iy0, iy1 + 1):
+                for idx in self._grid.get((ix, iy), ()):
+                    if idx not in seen:
+                        seen.add(idx)
+                        yield idx
+
     def _all_intersections(self):
         if self._intersections is None:
             self._intersections = []
-            for i in range(len(self.segments)):
-                for j in range(i + 1, len(self.segments)):
-                    p = _seg_intersect(*self.segments[i], *self.segments[j])
-                    if p:
-                        self._intersections.append(p)
+            pairs = set()
+            for bucket in self._grid.values():
+                for i in range(len(bucket)):
+                    for j in range(i + 1, len(bucket)):
+                        a, b = bucket[i], bucket[j]
+                        if a > b:
+                            a, b = b, a
+                        if a == b or (a, b) in pairs:
+                            continue
+                        pairs.add((a, b))
+                        hit = _seg_intersect(*self.segments[a], *self.segments[b])
+                        if hit:
+                            self._intersections.append(hit)
         return self._intersections
 
     def snap(self, x, y):
         p = (x, y)
         candidates = []
-        for a, b in self.segments:
+        for idx in self._near(x, y):
+            a, b = self.segments[idx]
             for pt in (a, b):
                 candidates.append((pt, "endpoint"))
             candidates.append((((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), "midpoint"))
