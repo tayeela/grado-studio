@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.6.3)
+## Where we are (23.09.2026, v0.7.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -32,12 +32,14 @@ labels, attribute table, editing with the original kept); real sources НСПД,
 (red lines with REDLN97); DXF import/export in МГГТ; node graph (layer filter, buffer, subtract,
 union, intersect, placement, ТЭП КРТ); sketch on demand along each block, preview vs accepted
 layer; variants; 3D; projects with autosave; self-audit hooks.
+Э1 done in v0.7.0: layer groups, multi-select (click, Shift, frame), batch attribute edit, undo/redo for objects and
+styles, keys window, first-run panel, GPU drawing for layers over 20 000 objects (100 000 checked).
 
 ## Stages
 
 Each stage ends with a working, checked version and a commit. Estimates are in working sessions.
 
-### Э1. Shell finish (2 sessions)
+### Э1. Shell finish (2 sessions) — done, v0.7.0
 - Layer groups in the tree; multi-select of objects (frame, Shift); batch attribute edit.
 - Undo for style changes. Done: copy/paste style between layers (v0.6.3).
 - Keyboard map window; first-run hint instead of an empty screen.

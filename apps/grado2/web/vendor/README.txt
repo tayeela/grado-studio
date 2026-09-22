@@ -1,3 +1,3 @@
 Third-party libraries, served locally so ГРАДО 2 works offline.
-OpenLayers 10.2.1 (BSD-2), Turf 7.1.0 (MIT), litegraph.js 0.7.18 (MIT), Lucide 0.469.0 (ISC). Licenses are next to the files.
+OpenLayers 10.10.0 (BSD-2), Turf 7.1.0 (MIT), litegraph.js 0.7.18 (MIT), Lucide 0.469.0 (ISC). Licenses are next to the files.
 Update: download the same paths from https://cdn.jsdelivr.net/npm/<package>@<version>/...

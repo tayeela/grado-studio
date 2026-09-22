@@ -55,6 +55,10 @@ I. **Save and restore.** Draw, restyle, change a graph slider → reload → eve
    shows «•» while there are unsaved changes. Test on `grado2-test` (port 8651, temp project folder),
    never in the owner's «Документы/ГРАДО 2».
 
+J. **Many objects.** A layer of 100 000 objects: pan and zoom without stalls; click selects; Shift+frame selects;
+   Ctrl/⌘+A selects all; batch-edit one field; Ctrl/⌘+Z undoes it at once. Groups: make a group, drag a layer in,
+   hide the group, save, reopen — the group and its order are back.
+
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
@@ -64,4 +68,6 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 
 - 2026-09-23: printing and sheets with REDLN97.
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
-- 2026-09-23: layer groups in the tree; multi-select and batch attribute edit.
+- 2026-09-23: Overpass (OSM) often times out on all mirrors (HTTP 504); the layer shows the error, others load. A local
+  cache of the last good OSM answer per bbox would make re-downloads reliable.
+- 2026-09-23: labels of a GPU-drawn layer show only when zoomed in (the canvas takes over there); say so in the style panel.

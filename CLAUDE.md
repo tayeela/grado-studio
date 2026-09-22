@@ -221,6 +221,37 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.7.0 (stage Э1): layer groups, multi-select, batch attributes, undo/redo for styles, keys window, 100 000 objects.**
+  - Groups as in QGIS: `GROUPS` + `layer.group`; a group's layers stay contiguous in `LYR` (`normGroups`, empty groups vanish).
+    Drag a layer onto a layer = its group; onto the lower half of a group header = into it; a group drags as a block.
+    Group visibility hides its layers (`shown(l)`). Saved in `.grado2` (`groups`, `layers[].group`).
+    **Pitfall:** during `applyProject` layers arrive one by one, and `normGroups` inside `ensureLayer` would drop the not yet
+    filled groups — groups and `layer.group` are restored after the layer loop.
+  - Selection is a list `SEL = [{key, f}]` from one or several layers, highlighted by its own overlay layer (canvas up to
+    5 000, WebGL above). Click, Shift+click toggles, Shift+drag adds a frame, Ctrl/⌘+drag a new frame; AutoCAD direction:
+    left→right only objects fully inside, right→left everything touched. `shiftDragZoom` is off for this. Ctrl/⌘+A = all
+    of the current layer. Del deletes all selected; M/E work on the selection (grips like AutoCAD).
+  - «Объект» with several objects: summary (area/length) and, for one layer, batch edit — an entered value goes to all,
+    «разные (N)» marks mixed values. Table: Shift/Ctrl+click adds rows, «только выбранные».
+  - Undo/redo (`UNDO`/`REDO`, Ctrl/⌘+Z, Ctrl/⌘+Shift+Z, Ctrl+Y): records keep only the touched objects (geometry clone +
+    properties), style records keep the style JSON; a slider drag is one record (same field within 1.5 s). The inverse record
+    is captured at undo time. Undo of a 100k layer edit takes ~20 ms (was a full-layer JSON copy per edit).
+  - Keys window (F1, «?», header button) is generated from `KEYS`/`TOOLS`, so it cannot drift from the handlers.
+    First run shows «С чего начать» on the map instead of opening «Данные».
+  - Performance: OpenLayers 10.2.1 → **10.10.0** (has `ol.layer.WebGLVector`). A layer over 20 000 objects is drawn by the
+    GPU at overview and by the normal canvas when zoomed in (switch resolution = ~15 000 objects in view, `glSwitchRes`).
+    Measured on 100 000 polygons (M3, headless Chrome): canvas 140 ms/frame at overview → GPU ~40 ms; zoomed ~20 ms;
+    select all 0.1 s; restyle 0.2 s. `DATA[key].fc` is now a lazy getter rebuilt from the map objects on first read after
+    an edit (`bindFC`); graph «Слой» nodes recompute by per-layer `d.rev`, not by any edit anywhere.
+  - **Pitfall:** WebGL shader names are built from property names, and `_sym` gave `a_prop__sym` («__» is reserved in GLSL,
+    the shader does not compile). The class property is `gradosym`, hidden from tables and stripped on write.
+  - **Pitfall:** `$("bUndo").onclick = undo` before `const undo = …` threw a TDZ error and silently stopped the rest of
+    layers.js. Keep top-level handler wiring after the definitions.
+  - **Pitfall:** without a doctype tables do not inherit the font size (quirks mode) — `table{font:inherit}`.
+  - Point labels sit above the marker and markers are declutter obstacles, otherwise labels hid the points.
+  - Checked in headless Chrome (CDP driver in the session scratchpad; the browser pane was hidden and does not render):
+    scenarios A, B, D, D2, E, F, G, H, I pass, console clean, fits 1280×800. C: NSPD loads; Overpass timed out (external).
+
 - **2026-09-23, ГРАДО 2 v0.6: sketch only on demand, edge-aligned placement, Preview/Bake, style fixes.**
   Owner: "style settings do not work; the boundary fills at once with random rows of houses; look at
   analogous programs and adopt their logic". Diagnosis: style controls worked, but graph results

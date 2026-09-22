@@ -42,7 +42,7 @@ function rot([x, y], a, c) { const s = Math.sin(a), k = Math.cos(a), dx = x - c[
 const GJ = new ol.format.GeoJSON({ featureProjection: "EPSG:3857" });
 const toOl = f => GJ.readFeature(f);
 const sharedView = new ol.View({ center: ol.proj.fromLonLat([37.525, 55.7925]), zoom: 15 });
-const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false });
+const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false, shiftDragZoom: false });   // Shift+тянуть — рамка выбора
 const basemap = () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 });
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
 function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
@@ -87,7 +87,7 @@ function setTerritory(feature) {
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
-  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.markDirty?.();
+  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
 $("bDraw").onclick = () => setTool("terr");
@@ -197,8 +197,9 @@ function NLayer() {
 NLayer.title = "Слой"; NLayer.prototype.onExecute = function () {
   const [lw, fw, ow, vw] = this.widgets, key = titleToKey(lw.value), d = DATA[key];
   if (!d) { this.setOutputData(0, null); this.info = lw.value ? "слой не загружен" : "выберите слой"; return; }
-  if (this._cacheKey !== [dataRev, key, fw.value, ow.value, vw.value, !!TERR].join("|")) {
-    this._cacheKey = [dataRev, key, fw.value, ow.value, vw.value, !!TERR].join("|");
+  const ck = [d.rev, key, fw.value, ow.value, vw.value, !!TERR].join("|");   // пересчёт — только при правке этого слоя
+  if (this._cacheKey !== ck) {
+    this._cacheKey = ck;
     const list = d.fc.features.filter(f => fw.value === "—" || testOp(f.properties[fw.value], ow.value, vw.value));
     const u = unionAll(list.map(asArea)); if (u) u.properties = { _src: list };
     this._out = u; this._n = [list.length, d.count];
@@ -535,7 +536,8 @@ const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST))
 const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
-  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)] }; };
+  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
+  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -625,8 +627,7 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
   renderSources(); icons();
   if (WST.wl) setDockWidth("l", WST.wl); if (WST.wr) setDockWidth("r", WST.wr);
   if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
-  const first = !Object.keys(WST).some(k => k.startsWith("w"));
-  Object.keys(W0()).forEach(id => { if (WST[id]?.open || (first && id === "wData")) winOpen(id, true); });
+  Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); });   // первый запуск: вместо окон — «С чего начать» на карте
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();
 })();

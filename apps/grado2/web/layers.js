@@ -32,17 +32,24 @@ function defaultStyle(key, fc) {
 
 /* ---------- модель ---------- */
 const LYR = [];                       // сверху вниз
+const GROUPS = [];                    // группы слоёв как в QGIS: {id, title, visible, open}; слои группы идут в LYR подряд
 let CUR = null;                       // текущий слой (выделен в дереве)
-let SEL = null;                       // {key, f} выбранный объект
+let SEL = [];                         // выбранные объекты [{key, f}] — из одного или нескольких слоёв
+const BIG = 20000;                    // слой крупнее рисуется через WebGL: 100 000 объектов без задержек
 const lyr = key => LYR.find(l => l.key === key);
+const grp = id => GROUPS.find(g => g.id === id);
+const shown = l => l.visible && (!l.group || grp(l.group)?.visible !== false);   // видимость слоя с учётом его группы
+const isBig = l => l.style.mode !== "lgr" && (layerSrc[l.key]?.getFeatures().length || 0) > BIG;
 const geomOf = fc => { const g = fc.features.find(f => f.geometry)?.geometry?.type || ""; return /Point/.test(g) ? "point" : /Line/.test(g) ? "line" : "poly"; };
 // поля с русскими названиями (подписанные сервером) — первыми, служебные поля порталов — после
-const fieldsOfKey = key => (DATA[key]?.fields || []).filter(k => !k.startsWith("_")).sort((a, b) => (/[а-яё]/i.test(b) - /[а-яё]/i.test(a)));
+const SYMK = "gradosym";              // служебное: номер цвета объекта в крупном слое, в файл и таблицы не попадает
+const hiddenField = k => k.startsWith("_") || k === SYMK || k === "geometry";
+const fieldsOfKey = key => (DATA[key]?.fields || []).filter(k => !hiddenField(k)).sort((a, b) => (/[а-яё]/i.test(b) - /[а-яё]/i.test(a)));
 function ensureLayer(key, title, geom) {
   let l = lyr(key);
   if (!l) {
     const fc = DATA[key]?.fc || { features: [] };
-    l = { key, title: title || DATA[key]?.title || key, visible: true, layerOpacity: 1, open: false, geom: geom || geomOf(fc), style: defaultStyle(key, fc), cache: new Map() };
+    l = { key, title: title || DATA[key]?.title || key, visible: true, layerOpacity: 1, open: false, group: null, geom: geom || geomOf(fc), style: defaultStyle(key, fc), cache: new Map() };
     if (l.style.mode === "cat") assignCats(l, true);
     const rank = k => { const i = PREFERRED.indexOf(k); return i < 0 ? -1 : i; };
     // свои слои и импорт — наверх; выгрузки — по привычному порядку (линии над застройкой, зоны внизу)
@@ -52,32 +59,79 @@ function ensureLayer(key, title, geom) {
     ALLMAPS.forEach(m => attachLayer(m, l));
     if (!CUR) CUR = key;
   }
-  applyOrder(); renderTree(); renderRight();
+  normGroups(); applyOrder(); renderTree(); renderRight();
   return l;
+}
+/* Слой на карте — холст со стилем на каждый объект. У крупного слоя (больше BIG объектов) два представления
+   одних и тех же объектов (замер на 100 000 полигонов: холст — 140 мс на кадр в обзоре и 15 мс вблизи,
+   WebGL — 45 мс в любом масштабе):
+   · издалека, где в кадре тысячи объектов, рисует видеокарта (WebGL): класс знака считается один раз
+     в служебное свойство SYMK (без подчёркиваний — WebGL их не допускает), цвет берётся по таблице;
+   · вблизи, где в кадре до ~15 000 объектов, — обычный холст со всем оформлением, подписями и правкой. */
+const kindOf = l => (isBig(l) ? "gl" : "cv") + (l.style.label ? "+t" : "");
+function glSwitchRes(l) {                 // разрешение (м/пикс.), крупнее которого в кадре больше ~15 000 объектов слоя
+  const ex = layerSrc[l.key].getExtent(), n = layerSrc[l.key].getFeatures().length, area = Math.max(1, ol.extent.getArea(ex));
+  return Math.sqrt(15000 * area / n / (1600 * 900));
+}
+function olLayersFor(l) {
+  const src = layerSrc[l.key], out = [];
+  l._kind = kindOf(l); l.gl = l._kind.startsWith("gl");
+  const cv = new ol.layer.Vector({ source: src, style: (f, res) => styleFor(l, f, res), declutter: !!l.style.label });
+  if (l.gl) {
+    symAll(l, false); const r = glSwitchRes(l);
+    out.push(new ol.layer.WebGLVector({ source: src, style: glStyle(l), minResolution: r, disableHitDetection: true }));
+    cv.setMaxResolution(r);
+  }
+  out.push(cv);
+  out.forEach((x, i) => { x.set("key", l.key); x.set("sub", i); x.set("gl", x instanceof ol.layer.WebGLVector); });
+  return out;
 }
 function attachLayer(map, l) {
   if (map.getLayers().getArray().some(x => x.get("key") === l.key)) return;
-  const ol_ = new ol.layer.Vector({ source: layerSrc[l.key], style: (f, res) => styleFor(l, f, res), declutter: true });
-  ol_.set("key", l.key); map.addLayer(ol_);
+  olLayersFor(l).forEach(x => map.addLayer(x));
 }
+function rebuildLayer(l) {
+  ALLMAPS.forEach(m => { m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x)); attachLayer(m, l); });
+  applyOrder();
+}
+const mainOl = (map, key) => map.getLayers().getArray().find(x => x.get("key") === key && !x.get("gl"));   // холст: выбор и правка
 window.attachDataLayers = map => LYR.forEach(l => attachLayer(map, l));
 function applyOrder() {
   window.markDirty?.();
-  ALLMAPS.forEach(m => m.getLayers().forEach(ml => { const l = lyr(ml.get("key")); if (!l) return; ml.setZIndex(10 + LYR.length - LYR.indexOf(l)); ml.setVisible(l.visible); ml.setOpacity(l.layerOpacity); }));
+  ALLMAPS.forEach(m => m.getLayers().forEach(ml => { const l = lyr(ml.get("key")); if (!l) return; ml.setZIndex(10 + LYR.length - LYR.indexOf(l)); ml.setVisible(shown(l)); ml.setOpacity(l.layerOpacity); }));
+}
+// слои одной группы держатся подряд на месте первого из них; пустые группы исчезают
+function normGroups() {
+  const seen = new Set(), out = [];
+  LYR.forEach(l => { if (l.group && !grp(l.group)) l.group = null; if (!l.group) return out.push(l); if (seen.has(l.group)) return; seen.add(l.group); out.push(...LYR.filter(x => x.group === l.group)); });
+  LYR.splice(0, LYR.length, ...out);
+  for (let i = GROUPS.length - 1; i >= 0; i--) if (!seen.has(GROUPS[i].id)) GROUPS.splice(i, 1);
+}
+/* Данные слоя: источник правды — объекты на карте (layerSrc). DATA[key].fc (GeoJSON WGS84 для графа,
+   сохранения и выгрузки) собирается из них лениво, при первом чтении после правки: на слое в 100 000
+   объектов правка одного объекта не переписывает весь слой. */
+let revSeq = 0;
+function writeFC(fs) { const o = GJ.writeFeaturesObject(fs); o.features.forEach(f => { if (f.properties) delete f.properties[SYMK]; }); return o; }
+function bindFC(key) {
+  const d = DATA[key]; if (d.stale) return;
+  let cache = d.fc || null; delete d.fc;
+  Object.defineProperty(d, "fc", { configurable: true, enumerable: true, get: () => cache ||= writeFC(layerSrc[key].getFeatures()), set: v => { cache = v; } });
+  Object.defineProperty(d, "stale", { value: () => { cache = null; } });
 }
 function setLayerData(key, fc) {
-  const d = DATA[key]; d.original ||= JSON.parse(JSON.stringify(fc));
-  layerSrc[key].clear(); layerSrc[key].addFeatures(GJ.readFeatures(fc));
-  syncFromSource(key, false);
+  const d = DATA[key]; d.original ||= fc;              // исходная выгрузка — тот же объект: он больше не меняется
+  layerSrc[key].clear(true); layerSrc[key].addFeatures(GJ.readFeatures(fc));
+  syncFromSource(key, false); d.fc = fc;
 }
-/* правка на карте → DATA (WGS84), которым питается граф */
+/* правка на карте → DATA, которым питается граф */
 function syncFromSource(key, edited = true) {
-  const d = DATA[key], fs = layerSrc[key].getFeatures();
-  d.fc = GJ.writeFeaturesObject(fs); d.count = fs.length;
-  d.fields = [...new Set(d.fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties || {})))];
-  d.edited = fs.filter(f => f.get("_edited")).length;
+  const d = DATA[key], fs = layerSrc[key].getFeatures(); bindFC(key); d.stale();
+  d.count = fs.length; d.rev = ++revSeq;
+  if (fs.length) d.fields = [...new Set(fs.slice(0, 500).flatMap(f => f.getKeys().filter(k => k !== "geometry" && k !== SYMK)))];
+  d.edited = fs.reduce((n, f) => n + (f.get("_edited") ? 1 : 0), 0);
   if (edited) dataRev++;
-  lyr(key)?.cache.clear();
+  const l = lyr(key);
+  if (l) { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) symAll(l, true); }
   renderTree(); renderTable();
 }
 
@@ -110,9 +164,27 @@ function symbolOf(l, f) {
   return { fill, hatch, hide };
 }
 const rgba = (hex, a) => { const c = [...ol.color.asArray(hex)]; c[3] = a; return c; };
-const SELSTYLE = { poly: S([47, 111, 196, .15], "#2f6fc4", 3), line: S(null, "#2f6fc4", 4), point: new ol.style.Style({ image: new ol.style.Circle({ radius: 8, stroke: new ol.style.Stroke({ color: "#2f6fc4", width: 3 }) }) }) };
+const css = (hex, a) => `rgba(${rgba(hex, a).join(",")})`;
+const labelStyle = (l, f) => { const st = l.style, t = f.get(st.label); return t == null || t === "" ? null : new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", offsetY: l.geom === "point" ? -(11 + st.width * 2) : 0, overflow: false }) }); };   // у точки подпись над знаком, иначе знак её закрывает
+// крупный слой: номер цвета в таблице l.pal у каждого объекта (-1 — скрыт категорией или правилом)
+function symAll(l, notify) {
+  const idx = new Map(); l.pal = [];
+  layerSrc[l.key].getFeatures().forEach(f => {
+    const s = symbolOf(l, f); let i = -1;
+    if (!s.hide) { i = idx.get(s.fill); if (i === undefined) { i = l.pal.length; idx.set(s.fill, i); l.pal.push(s.fill); } }
+    if (f.get(SYMK) !== i) f.set(SYMK, i, !notify);
+  });
+}
+function glStyle(l) {
+  const st = l.style, pal = l.pal.length ? l.pal : [st.fill];
+  const m = a => pal.length === 1 ? css(pal[0], a) : ["match", ["get", SYMK], ...pal.slice(0, -1).flatMap((c, i) => [i, css(c, a)]), css(pal[pal.length - 1], a)];
+  const style = l.geom === "poly" ? { "fill-color": m(st.hatch ? .22 : st.opacity), "stroke-color": st.hatch ? m(1) : css(st.stroke, 1), "stroke-width": st.width }   // штриховку WebGL не рисует — полупрозрачная заливка того же цвета
+    : l.geom === "line" ? { "stroke-color": m(1), "stroke-width": st.width }
+    : { "circle-radius": 2 + st.width * 2, "circle-fill-color": m(1), "circle-stroke-color": css(st.stroke, 1), "circle-stroke-width": 1 };
+  return [{ filter: [">=", ["get", SYMK], 0], style }];
+}
 function styleFor(l, f, res) {
-  const sel = SEL?.f === f, st = l.style;
+  const st = l.style;
   const out = [];
   if (st.mode === "lgr") { out.push(redLineStyle(f)); }
   else {
@@ -120,17 +192,22 @@ function styleFor(l, f, res) {
     const key = `${s.fill}|${s.hatch}`; let base = l.cache.get(key);
     if (!base) {
       if (l.geom === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
-      else if (l.geom === "point") base = new ol.style.Style({ image: new ol.style.Circle({ radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
+      else if (l.geom === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
       else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) });
       l.cache.set(key, base);
     }
     out.push(base);
   }
-  if (st.label && res < 4) { const t = f.get(st.label); if (t != null && t !== "") out.push(new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", overflow: false }) })); }
-  if (sel) out.push(SELSTYLE[l.geom]);
+  if (st.label && res < 4) { const t = labelStyle(l, f); if (t) out.push(t); }
   return out;
 }
-function restyle(l) { l.cache.clear(); l._br = null; layerSrc[l.key]?.changed(); renderTree(); window.markDirty?.(); }
+function restyle(l) {
+  l.cache.clear(); l._br = null;
+  if (kindOf(l) !== l._kind) rebuildLayer(l);
+  else if (l.gl) { symAll(l, false); ALLMAPS.forEach(m => m.getLayers().forEach(x => { if (x.get("key") === l.key) x.get("gl") ? x.setStyle(glStyle(l)) : x.changed(); })); }
+  else layerSrc[l.key]?.changed();
+  renderTree(); window.markDirty?.();
+}
 
 /* ---------- дерево слоёв ---------- */
 function symHTML(l, color) {
@@ -151,19 +228,33 @@ function legendItems(l) {
 function renderTree() {
   const el = $("layerTree"); if (!el) return;
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Граф», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Принять в проект».">Предпросмотр графа${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
-  if (!LYR.length) { el.innerHTML = `<div class="note">Слоёв пока нет. Нажмите «+» над списком и рисуйте, выберите инструмент рисования на панели сверху (слой появится сам) или загрузите источники в окне «Данные».</div>` + res; icons(); return; }
-  el.innerHTML = LYR.map((l, i) => {
-    const d = DATA[l.key], items = l.open ? legendItems(l).slice(0, 60) : [];
-    return `<div class="tn ${l.visible ? "" : "off"}" draggable="true" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
+  if (!LYR.length) { el.innerHTML = `<div class="note">Слоёв пока нет. Нажмите «+» над списком и рисуйте, выберите инструмент рисования на панели сверху (слой появится сам) или загрузите источники в окне «Данные».</div>` + res; icons(); syncStart(); return; }
+  let h = "", prevG = null;
+  LYR.forEach(l => {
+    const g = l.group && grp(l.group);
+    if (g && l.group !== prevG) {
+      const n = LYR.filter(x => x.group === g.id).length;
+      h += `<div class="tn gr ${g.visible ? "" : "off"}" draggable="true" data-gk="${esc(g.id)}" title="Группа слоёв: перетаскивается целиком, двойной щелчок — переименовать">
+        <button class="tw" data-gtw="${esc(g.id)}" aria-label="${g.open ? "Свернуть" : "Развернуть"} группу"><i data-lucide="${g.open ? "chevron-down" : "chevron-right"}"></i></button>
+        <input type="checkbox" data-gvis="${esc(g.id)}" ${g.visible ? "checked" : ""} aria-label="Видимость группы"><i data-lucide="${g.open ? "folder-open" : "folder"}" class="gi"></i>
+        <span class="nm">${esc(g.title)}</span><span class="meta num">${n}</span>
+        <button class="tw more" data-gmore="${esc(g.id)}" aria-label="Меню группы"><i data-lucide="more-horizontal"></i></button></div>`;
+    }
+    prevG = l.group;
+    if (g && !g.open) return;
+    const d = DATA[l.key], items = l.open ? legendItems(l).slice(0, 60) : [], ind = g ? " in" : "";
+    h += `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="true" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
       <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
       <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
       <span class="nm" title="${esc(d?.source || "")}">${esc(l.title)}</span>
       ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
-      <span class="meta num">${d?.count ?? 0}</span>
+      ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
+      <span class="meta num">${fmt(d?.count ?? 0)}</span>
       <button class="tw more" data-more="${esc(l.key)}" aria-label="Меню слоя"><i data-lucide="more-horizontal"></i></button></div>`
-      + items.map(it => `<div class="tn leg ${it.off ? "off" : ""}">${it.check ? `<input type="checkbox" data-catoff="${esc(l.key)}|${esc(it.v)}" ${it.off ? "" : "checked"} aria-label="Показывать">` : ""}${symHTML(l, it.c)}<span class="nm">${esc(it.v || "—")}</span>${it.n != null ? `<span class="meta num">${it.n}</span>` : ""}</div>`).join("");
-  }).join("") + res;
-  syncCurSelect();
+      + items.map(it => `<div class="tn leg${ind} ${it.off ? "off" : ""}">${it.check ? `<input type="checkbox" data-catoff="${esc(l.key)}|${esc(it.v)}" ${it.off ? "" : "checked"} aria-label="Показывать">` : ""}${symHTML(l, it.c)}<span class="nm">${esc(it.v || "—")}</span>${it.n != null ? `<span class="meta num">${it.n}</span>` : ""}</div>`).join("");
+  });
+  el.innerHTML = h + res;
+  syncCurSelect(); syncStart();
   icons();
 }
 const tree = () => $("layerTree");
@@ -171,66 +262,146 @@ document.addEventListener("click", e => {
   const t = e.target;
   if (!tree()?.contains(t)) return;
   const tw = t.closest("[data-tw]"); if (tw) { const l = lyr(tw.dataset.tw); l.open = !l.open; renderTree(); return; }
+  const gtw = t.closest("[data-gtw]"); if (gtw) { const g = grp(gtw.dataset.gtw); g.open = !g.open; window.markDirty?.(); renderTree(); return; }
   const more = t.closest("[data-more]"); if (more) { layerMenu(more, more.dataset.more); return; }
+  const gmore = t.closest("[data-gmore]"); if (gmore) { groupMenu(gmore, gmore.dataset.gmore); return; }
   if (t.matches("input")) return;
   const row = t.closest("[data-lk]"); if (row) setCurrent(row.dataset.lk);
 });
-document.addEventListener("dblclick", e => { const row = e.target.closest?.("#layerTree [data-lk]"); if (row && !e.target.closest("[data-tw],[data-more],input")) renameLayer(row.dataset.lk); });
+document.addEventListener("dblclick", e => {
+  if (e.target.closest?.("[data-tw],[data-more],[data-gtw],[data-gmore],input")) return;
+  const row = e.target.closest?.("#layerTree [data-lk]"); if (row) return renameLayer(row.dataset.lk);
+  const gr = e.target.closest?.("#layerTree [data-gk]"); if (gr) renameGroup(gr.dataset.gk);
+});
 document.addEventListener("change", e => {
   const t = e.target; if (!tree()?.contains(t)) return;
   if (t.dataset.vis) { lyr(t.dataset.vis).visible = t.checked; applyOrder(); renderTree(); }
+  if (t.dataset.gvis) { grp(t.dataset.gvis).visible = t.checked; applyOrder(); renderTree(); }
   if (t.dataset.res) { RES.find(r => r.id === t.dataset.res).on = t.checked; syncPreview(); }
-  if (t.dataset.catoff) { const [k, v] = t.dataset.catoff.split("|"); const l = lyr(k), st = l.style; st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); }
+  if (t.dataset.catoff) { const [k, v] = t.dataset.catoff.split("|"); const l = lyr(k), st = l.style; pushStyleUndo(l, "cat"); st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); }
 });
-/* перетаскивание = порядок прорисовки: верхний в списке рисуется поверх */
-let dragKey = null;
-document.addEventListener("dragstart", e => { const row = e.target.closest?.("#layerTree [data-lk]"); if (row) { dragKey = row.dataset.lk; e.dataTransfer.effectAllowed = "move"; row.classList.add("dragging"); } });
-document.addEventListener("dragover", e => { const row = e.target.closest?.("#layerTree [data-lk]"); if (!dragKey || !row) return; e.preventDefault(); const r = row.getBoundingClientRect(); document.querySelectorAll("#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("drop-a", "drop-b")); row.classList.add(e.clientY < r.top + r.height / 2 ? "drop-a" : "drop-b"); });
+/* перетаскивание = порядок прорисовки: верхний в списке рисуется поверх.
+   Слой, брошенный на слой, попадает в его группу; на верх заголовка группы — над группой, на низ — в группу.
+   Группа перетаскивается целиком. */
+let drag = null;                       // {key} слой или {gid} группа
+const dropRow = e => e.target.closest?.("#layerTree [data-lk], #layerTree [data-gk]");
+document.addEventListener("dragstart", e => {
+  const row = dropRow(e); if (!row) return;
+  drag = row.dataset.lk ? { key: row.dataset.lk } : { gid: row.dataset.gk };
+  e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", ""); row.classList.add("dragging");
+});
+document.addEventListener("dragover", e => {
+  const row = dropRow(e); if (!drag || !row) return; e.preventDefault();
+  const r = row.getBoundingClientRect(); document.querySelectorAll("#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("drop-a", "drop-b"));
+  row.classList.add(e.clientY < r.top + r.height / 2 ? "drop-a" : "drop-b");
+});
 document.addEventListener("drop", e => {
-  const row = e.target.closest?.("#layerTree [data-lk]"); if (!dragKey || !row) return; e.preventDefault();
-  const before = row.classList.contains("drop-a"), from = LYR.findIndex(l => l.key === dragKey), [l] = LYR.splice(from, 1);
-  let to = LYR.findIndex(x => x.key === row.dataset.lk); if (!before) to++; LYR.splice(to, 0, l); dragKey = null; applyOrder(); renderTree();
+  const row = dropRow(e); if (!drag || !row) return; e.preventDefault();
+  const before = row.classList.contains("drop-a"), d = drag; drag = null;
+  const moving = d.key ? [lyr(d.key)] : LYR.filter(l => l.group === d.gid);
+  if (row.dataset.lk && moving.some(l => l.key === row.dataset.lk)) return renderTree();
+  if (d.gid && row.dataset.gk === d.gid) return renderTree();
+  moving.forEach(l => LYR.splice(LYR.indexOf(l), 1));
+  let at, group = null;
+  if (row.dataset.lk) {
+    const t = lyr(row.dataset.lk); at = LYR.indexOf(t) + (before ? 0 : 1); group = t.group;
+    if (d.gid && t.group) { const blk = LYR.filter(l => l.group === t.group); at = before ? LYR.indexOf(blk[0]) : LYR.indexOf(blk[blk.length - 1]) + 1; group = null; }  // группа в группу не вкладывается
+  } else {
+    const blk = LYR.filter(l => l.group === row.dataset.gk);
+    if (before || d.gid) at = before ? LYR.indexOf(blk[0]) : LYR.indexOf(blk[blk.length - 1]) + 1;
+    else { at = LYR.indexOf(blk[0]); group = row.dataset.gk; grp(group).open = true; }
+  }
+  LYR.splice(at, 0, ...moving);
+  if (d.key) moving[0].group = group;
+  normGroups(); applyOrder(); renderTree();
 });
-document.addEventListener("dragend", () => { dragKey = null; document.querySelectorAll("#layerTree .dragging,#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("dragging", "drop-a", "drop-b")); });
+document.addEventListener("dragend", () => { drag = null; document.querySelectorAll("#layerTree .dragging,#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("dragging", "drop-a", "drop-b")); });
+
+/* ---------- группы ---------- */
+function newGroup(keys, title) {
+  const id = "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  GROUPS.push({ id, title: title || `Группа ${GROUPS.length + 1}`, visible: true, open: true });
+  keys.map(lyr).filter(Boolean).forEach(l => { l.group = id; });   // группа встаёт на место верхнего из слоёв
+  normGroups(); applyOrder(); renderTree(); return id;
+}
+function groupMenu(anchor, id) {
+  const g = grp(id), ls = LYR.filter(l => l.group === id);
+  showMenu(anchor, [
+    ["Приблизить к группе", () => { const ex = ol.extent.createEmpty(); ls.forEach(l => ol.extent.extend(ex, layerSrc[l.key].getExtent())); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
+    ["Переименовать", () => renameGroup(id)],
+    ["Разгруппировать", () => { ls.forEach(l => { l.group = null; }); normGroups(); applyOrder(); renderTree(); }],
+    ["Удалить группу вместе со слоями", () => { if (!confirmInline(anchor, `Удалить группу «${g.title}» и ${ls.length} слоёв в ней?`)) return; ls.forEach(l => dropLayer(l.key)); normGroups(); afterRemove(); }]]);
+}
+function renameGroup(id) {
+  const row = tree().querySelector(`[data-gk="${CSS.escape(id)}"] .nm`); if (!row) return; const g = grp(id);
+  inlineEdit(row, g.title, v => { g.title = v; window.markDirty?.(); });
+}
 
 let menuEl = null, STYLE_CLIP = null;   // буфер стиля, как «Копировать/Вставить стиль» в QGIS
 const closeMenu = () => { menuEl?.remove(); menuEl = null; };
-function layerMenu(anchor, key) {
-  closeMenu(); const l = lyr(key), d = DATA[key];
-  const items = [["Приблизить к слою", () => { const ex = layerSrc[key].getExtent(); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
-    ["Таблица атрибутов", () => { setCurrent(key); openTable(true); }],
-    ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
-    ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
-    STYLE_CLIP && STYLE_CLIP.from !== l.title ? [`Вставить стиль «${STYLE_CLIP.from}»`, () => { l.style = ST(JSON.parse(JSON.stringify(STYLE_CLIP.style))); if (l.style.mode === "cat") assignCats(l, true); restyle(l); renderRight(); if (STYLE_CLIP.geom !== l.geom) toast("Стиль вставлен; геометрия слоёв разная — проверьте толщину и заливку."); }] : null,
-    ["Переименовать", () => renameLayer(key)],
-    ["Выше", () => moveLayer(key, -1)], ["Ниже", () => moveLayer(key, 1)],
-    d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; setLayerData(key, d.original); dataRev++; }] : null,
-    ["Удалить слой из проекта", () => removeLayer(key)]].filter(Boolean);
-  menuEl = document.createElement("div"); menuEl.className = "menu";
-  menuEl.innerHTML = items.map((it, i) => `<button data-i="${i}">${esc(it[0])}</button>`).join("");
-  document.body.appendChild(menuEl); const r = anchor.getBoundingClientRect(); menuEl.style.left = Math.min(r.left, innerWidth - 240) + "px"; menuEl.style.top = Math.min(r.bottom + 2, innerHeight - menuEl.offsetHeight - 8) + "px";
+function showMenu(anchor, items) {
+  closeMenu(); items = items.filter(Boolean);
+  menuEl = document.createElement("div"); menuEl.className = "menu"; menuEl.setAttribute("role", "menu");
+  menuEl.innerHTML = items.map((it, i) => it === "-" ? `<hr>` : `<button data-i="${i}" role="menuitem">${esc(it[0])}</button>`).join("");
+  document.body.appendChild(menuEl); const r = anchor.getBoundingClientRect(); menuEl.style.left = Math.min(r.left, innerWidth - 250) + "px"; menuEl.style.top = Math.max(8, Math.min(r.bottom + 2, innerHeight - menuEl.offsetHeight - 8)) + "px";
   menuEl.onclick = ev => { const b = ev.target.closest("[data-i]"); if (b) { closeMenu(); items[+b.dataset.i][1](); } };
 }
-document.addEventListener("pointerdown", e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest("[data-more]")) closeMenu(); });
+function layerMenu(anchor, key) {
+  const l = lyr(key), d = DATA[key], others = GROUPS.filter(g => g.id !== l.group);
+  showMenu(anchor, [["Приблизить к слою", () => { const ex = layerSrc[key].getExtent(); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
+    ["Таблица атрибутов", () => { setCurrent(key); openTable(true); }],
+    ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
+    ["Выбрать все объекты слоя", () => { setCurrent(key); selectAll(); }],
+    "-",
+    ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
+    STYLE_CLIP && STYLE_CLIP.from !== l.title ? [`Вставить стиль «${STYLE_CLIP.from}»`, () => { pushStyleUndo(l, "paste"); l.style = ST(JSON.parse(JSON.stringify(STYLE_CLIP.style))); if (l.style.mode === "cat") assignCats(l, true); restyle(l); renderRight(); if (STYLE_CLIP.geom !== l.geom) toast("Стиль вставлен; геометрия слоёв разная — проверьте толщину и заливку."); }] : null,
+    "-",
+    ["Переименовать", () => renameLayer(key)],
+    ["Выше", () => moveLayer(key, -1)], ["Ниже", () => moveLayer(key, 1)],
+    l.group ? ["Убрать из группы", () => { l.group = null; normGroups(); applyOrder(); renderTree(); }] : null,
+    ...others.map(g => [`В группу «${g.title}»`, () => { l.group = g.id; LYR.splice(LYR.indexOf(l), 1); LYR.splice(LYR.findIndex(x => x.group === g.id), 0, l); normGroups(); applyOrder(); renderTree(); }]),
+    ["В новую группу", () => { const id = newGroup([key]); setTimeout(() => renameGroup(id), 0); }],
+    "-",
+    d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; pushUndo({ kind: "layer", key, label: `возврат выгрузки «${l.title}»`, fs: layerSrc[key].getFeatures() }); setLayerData(key, d.original); dataRev++; }] : null,
+    ["Удалить слой из проекта", () => removeLayer(key)]]);
+}
+document.addEventListener("pointerdown", e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest("[data-more],[data-gmore]")) closeMenu(); });
 // window.confirm в браузере-вьюере не работает: подтверждение — повторным выбором пункта в течение 4 с
 let pendingConfirm = null;
 function confirmInline(anchor, text) { const now = Date.now(); if (pendingConfirm && now - pendingConfirm < 4000) { pendingConfirm = null; return true; } pendingConfirm = now; toast(text + " Выберите пункт ещё раз, чтобы подтвердить."); return false; }
-function moveLayer(key, d) { const i = LYR.findIndex(l => l.key === key), j = i + d; if (j < 0 || j >= LYR.length) return; [LYR[i], LYR[j]] = [LYR[j], LYR[i]]; applyOrder(); renderTree(); }
+// «Выше/Ниже» — внутри своей группы или среди слоёв без группы; группы целиком — перетаскиванием
+function moveLayer(key, d) {
+  const l = lyr(key), peers = LYR.filter(x => x.group === l.group), i = peers.indexOf(l), j = i + d; if (j < 0 || j >= peers.length) return;
+  const a = LYR.indexOf(l), b = LYR.indexOf(peers[j]); [LYR[a], LYR[b]] = [LYR[b], LYR[a]]; normGroups(); applyOrder(); renderTree();
+}
+function inlineEdit(el, old, apply) {
+  el.innerHTML = `<input type="text" value="${esc(old)}" style="width:100%">`; const inp = el.querySelector("input"); inp.focus(); inp.select();
+  let fired = false;
+  const done = ok => { if (fired) return; fired = true; const v = inp.value.trim(); if (ok && v && v !== old) apply(v); renderTree(); };
+  inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); }; inp.onblur = () => done(true);
+}
 function renameLayer(key) {
   const row = tree().querySelector(`[data-lk="${CSS.escape(key)}"] .nm`); if (!row) return; const l = lyr(key), old = l.title;
-  row.innerHTML = `<input type="text" value="${esc(old)}" style="width:100%">`; const inp = row.querySelector("input"); inp.focus(); inp.select();
-  const done = ok => { const v = inp.value.trim(); if (ok && v && v !== old) { l.title = v; DATA[key].title = v; graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.name === "слой" && w.value === old) w.value = v; })); dataRev++; } renderTree(); };
-  inp.onkeydown = e => { if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); }; inp.onblur = () => done(true);
+  inlineEdit(row, old, v => { l.title = v; DATA[key].title = v; graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.name === "слой" && w.value === old) w.value = v; })); dataRev++; });
 }
-function removeLayer(key) {
+function dropLayer(key) {
   const i = LYR.findIndex(l => l.key === key); if (i < 0) return;
-  if (!confirmInline(tree(), `Удалить слой «${LYR[i].title}» из проекта?`)) return;
   LYR.splice(i, 1); ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === key).forEach(x => m.removeLayer(x)));
-  delete DATA[key]; layerSrc[key]?.clear(); if (CUR === key) CUR = LYR[0]?.key || null; if (SEL?.key === key) SEL = null;
-  dataRev++; renderTree(); renderRight(); renderTable(); renderSources?.(); setTool(UIS.tool);
+  delete DATA[key]; layerSrc[key]?.clear(); if (CUR === key) CUR = LYR[0]?.key || null;
+  setSel(SEL.filter(s => s.key !== key)); UNDO.splice(0, UNDO.length, ...UNDO.filter(u => !undoKeys(u).includes(key))); REDO.length = 0;
+}
+function afterRemove() { dataRev++; normGroups(); applyOrder(); renderTree(); renderRight(); renderTable(); renderSources?.(); setTool(UIS.tool); }
+function removeLayer(key) {
+  const l = lyr(key); if (!l) return;
+  if (!confirmInline(tree(), `Удалить слой «${l.title}» из проекта?`)) return;
+  dropLayer(key); afterRemove();
 }
 $("bNewLayer").onclick = () => {
   const box = $("newLayerBox"); box.hidden = !box.hidden; if (!box.hidden) $("nlName").focus();
+};
+$("bNewGroup").onclick = () => {
+  if (!CUR) return toast("Группа собирается из слоёв: выберите слой в списке, затем «Новая группа». Слои переносятся в группу перетаскиванием.");
+  const id = newGroup([CUR]); setTimeout(() => renameGroup(id), 0);
 };
 function createLayer(name, geom) {
   const key = "user:" + Date.now().toString(36);
@@ -283,52 +454,85 @@ function renderStyle(el) {
     <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div></div>`;
   el.innerHTML = h;
 }
+const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? +v : v;
+const sizeOf = f => { const g = f.getGeometry(), t = g?.getType() || "", w = GJ.writeFeatureObject(f); return /Polygon/.test(t) ? ["area", turf.area(w)] : /Line/.test(t) ? ["len", turf.length(w, { units: "kilometers" }) * 1000] : ["pt", 0]; };
 function renderObject(el) {
-  if (!SEL) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы</div>`; return; }
-  const l = lyr(SEL.key), f = SEL.f, g = f.getGeometry(), wgs = GJ.writeFeatureObject(f);
-  const size = /Polygon/.test(g.getType()) ? `${fmt(turf.area(wgs), 1)} м²` : /Line/.test(g.getType()) ? `${fmt(turf.length(wgs, { units: "kilometers" }) * 1000, 2)} м` : "";
-  const keys = Object.keys(f.getProperties()).filter(k => k !== "geometry" && !k.startsWith("_"));
-  el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${size}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>
-    <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
-    <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>`;
+  if (!SEL.length) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы.<br><br>Несколько объектов — Shift+щелчок или рамка с Shift. Все объекты слоя — ${MOD}+A.</div>`; return; }
+  if (SEL.length === 1) {
+    const { key, f } = SEL[0], l = lyr(key), [kind, v] = sizeOf(f);
+    const keys = Object.keys(f.getProperties()).filter(k => !hiddenField(k));
+    el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>
+      <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
+      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>`;
+    return;
+  }
+  // несколько объектов: сводка и, если они из одного слоя, общая правка атрибутов (как «Изменить атрибуты выбранных» в QGIS)
+  const by = new Map(); SEL.forEach(s => (by.get(s.key) || by.set(s.key, []).get(s.key)).push(s.f));
+  let area = 0, len = 0; if (SEL.length <= 5000) SEL.forEach(s => { const [k, v] = sizeOf(s.f); if (k === "area") area += v; if (k === "len") len += v; });
+  const sum = [area ? `площадь ${fmt(area / 1e4, 3)} га` : "", len ? `длина ${fmt(len, 0)} м` : ""].filter(Boolean).join(" · ");
+  let h = `<div class="pad"><div class="ph"><b>Выбрано объектов: ${fmt(SEL.length)}</b></div>${sum ? `<div class="note" style="padding:0 0 6px">${sum}</div>` : ""}</div>`;
+  if (by.size > 1) {
+    h += `<table class="cl" style="margin:0 8px;width:calc(100% - 16px)">${[...by].map(([k, fs]) => `<tr><td>${symHTML(lyr(k))}</td><td>${esc(lyr(k).title)}</td><td class="n num">${fmt(fs.length)}</td><td><button class="btn" data-only="${esc(k)}" title="Оставить в выборе только объекты этого слоя">Только он</button></td></tr>`).join("")}</table>
+      <div class="note">Атрибуты правятся у объектов одного слоя: оставьте в выборе один слой.</div>`;
+  } else {
+    const [key, fs] = [...by][0], l = lyr(key), keys = [...new Set(fs.slice(0, 2000).flatMap(f => Object.keys(f.getProperties())))].filter(k => !hiddenField(k));
+    h += `<div class="note" style="padding:0 8px 6px">Слой «${esc(l.title)}». Значение, введённое в поле, получат все ${fmt(fs.length)} объектов; «разные» — у объектов разные значения, поле не меняется, пока его не заполнить.</div>
+      <div class="pg">${keys.map(k => { const vals = new Set(fs.slice(0, 5000).map(f => String(f.get(k) ?? ""))); const same = vals.size === 1;
+        return `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-battr="${esc(k)}" value="${same ? esc([...vals][0]) : ""}" placeholder="${same ? "" : `разные (${vals.size}${fs.length > 5000 ? "+" : ""})`}"></div>`; }).join("")}</div>
+      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле для всех"><button class="btn" id="bAddField">Добавить</button></div></div>`;
+  }
+  el.innerHTML = h;
 }
 document.addEventListener("click", e => {
   const tab = e.target.closest?.("[data-rtab]"); if (tab) { UIS.rt = tab.dataset.rtab; renderRight(); return; }
   const pane = $("rightPane"); if (!pane?.contains(e.target)) return;
-  const b = e.target.closest("button"); if (!b) return; const l = lyr(CUR); if (!l) return; const st = l.style;
-  if (b.id === "bAddField") { const n = $("newField").value.trim(); if (n && SEL) { pushUndo(SEL.key); SEL.f.set(n, ""); SEL.f.set("_edited", true); syncFromSource(SEL.key); renderRight(); } return; }
-  if (b.dataset.mode) { st.mode = b.dataset.mode; if (st.mode === "cat" && !Object.keys(st.cat.colors).length) assignCats(l); restyle(l); renderRight(); }
-  else if (b.hasAttribute("data-recolor")) { assignCats(l, false); restyle(l); renderRight(); }
-  else if (b.dataset.ramp) { st.grad.ramp = b.dataset.ramp; restyle(l); renderRight(); }
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.id === "bAddField") {
+    const n = $("newField").value.trim(); if (!n || !SEL.length || new Set(SEL.map(s => s.key)).size > 1) return;
+    pushUndo(featRec(SEL, `новое поле «${n}»`)); SEL.forEach(s => { s.f.set(n, ""); s.f.set("_edited", true); }); syncFromSource(SEL[0].key); renderRight(); return;
+  }
+  if (b.dataset.only) { setSel(SEL.filter(s => s.key === b.dataset.only)); return; }
+  const l = lyr(CUR); if (!l) return; const st = l.style;
+  if (b.dataset.mode) { pushStyleUndo(l, "mode"); st.mode = b.dataset.mode; if (st.mode === "cat" && !Object.keys(st.cat.colors).length) assignCats(l); restyle(l); renderRight(); }
+  else if (b.hasAttribute("data-recolor")) { pushStyleUndo(l, "recolor"); assignCats(l, false); restyle(l); renderRight(); }
+  else if (b.dataset.ramp) { pushStyleUndo(l, "ramp"); st.grad.ramp = b.dataset.ramp; restyle(l); renderRight(); }
   else if (b.dataset.color) openPicker(b, b.dataset.color);
-  else if (b.hasAttribute("data-addrule")) { const f = fieldsOfKey(l.key)[0] || ""; st.rules.list.push({ field: f, op: "=", val: catValues(l.key, f)[0]?.[0] ?? "", fill: CAT[st.rules.list.length % 8], hatch: false }); restyle(l); renderRight(); }
-  else if (b.dataset.delrule) { st.rules.list.splice(+b.dataset.delrule, 1); restyle(l); renderRight(); }
+  else if (b.hasAttribute("data-addrule")) { pushStyleUndo(l, "addrule"); const f = fieldsOfKey(l.key)[0] || ""; st.rules.list.push({ field: f, op: "=", val: catValues(l.key, f)[0]?.[0] ?? "", fill: CAT[st.rules.list.length % 8], hatch: false }); restyle(l); renderRight(); }
+  else if (b.dataset.delrule) { pushStyleUndo(l, "delrule"); st.rules.list.splice(+b.dataset.delrule, 1); restyle(l); renderRight(); }
 });
 function onPaneEdit(e) {
   const t = e.target, pane = $("rightPane"); if (!pane?.contains(t)) return;
-  if (t.dataset.attr !== undefined) { if (e.type !== "change" || !SEL) return; pushUndo(SEL.key); const v = t.value; SEL.f.set(t.dataset.attr, isNum(v) && v.trim() !== "" && !/^0\d/.test(v) ? +v : v); SEL.f.set("_edited", true); syncFromSource(SEL.key); return; }
+  if (t.dataset.attr !== undefined) { if (e.type !== "change" || SEL.length !== 1) return; const { key, f } = SEL[0]; pushUndo(featRec(SEL, `атрибут «${t.dataset.attr}»`)); f.set(t.dataset.attr, numOrText(t.value)); f.set("_edited", true); syncFromSource(key); return; }
+  if (t.dataset.battr !== undefined) {
+    if (e.type !== "change" || !SEL.length) return; const k = t.dataset.battr, v = numOrText(t.value);
+    pushUndo(featRec(SEL, `атрибут «${k}» у ${SEL.length} об.`)); SEL.forEach(s => { s.f.set(k, v); s.f.set("_edited", true); });
+    syncFromSource(SEL[0].key); renderRight(); toast(`«${k}» = «${t.value}» у ${fmt(SEL.length)} объектов. Отменить — ${MOD}+Z.`); return;
+  }
   const l = lyr(CUR); if (!l) return; const st = l.style;
-  if (t.hasAttribute("data-lop")) { l.layerOpacity = +t.value; t.nextElementSibling.textContent = Math.round(l.layerOpacity * 100); applyOrder(); return; }
+  if (t.hasAttribute("data-lop")) { pushStyleUndo(l, "lop"); l.layerOpacity = +t.value; t.nextElementSibling.textContent = Math.round(l.layerOpacity * 100); applyOrder(); return; }
   if (t.dataset.k) {
+    pushStyleUndo(l, "k:" + t.dataset.k);
     const p = t.dataset.k.split("."), v = t.type === "checkbox" ? t.checked : ["range", "number"].includes(t.type) || p[1] === "n" ? +t.value : t.value;
     let o = st; p.slice(0, -1).forEach(x => o = o[x]); o[p[p.length - 1]] = v;
     if (t.dataset.k === "cat.field") assignCats(l, false);
     if (t.type === "range") t.nextElementSibling.textContent = Math.round(v * 100);
     restyle(l); if (e.type === "change") renderRight(); return;
   }
-  if (t.dataset.catoff2 !== undefined) { const v = t.dataset.catoff2; st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); return; }
-  if (t.dataset.rule !== undefined) { const r = st.rules.list[+t.dataset.rule]; r[t.dataset.rk] = t.type === "checkbox" ? t.checked : t.value; restyle(l); if (e.type === "change") renderRight(); }
+  if (t.dataset.catoff2 !== undefined) { pushStyleUndo(l, "cat"); const v = t.dataset.catoff2; st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); return; }
+  if (t.dataset.rule !== undefined) { pushStyleUndo(l, "rule" + t.dataset.rule + t.dataset.rk); const r = st.rules.list[+t.dataset.rule]; r[t.dataset.rk] = t.type === "checkbox" ? t.checked : t.value; restyle(l); if (e.type === "change") renderRight(); }
 }
 document.addEventListener("change", onPaneEdit);
+// Enter в поле атрибута — как в AutoCAD: значение принято, клавиши снова управляют картой (иначе M или V попадут в поле)
+$("rightPane").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("input[type=text]") && e.target.id !== "newField") e.target.blur(); });
 document.addEventListener("input", e => { if (e.target.type === "range" || e.target.dataset?.rk === "val") onPaneEdit(e); });
 
 let popEl = null;
 const closePop = () => { popEl?.remove(); popEl = null; };
 function openPicker(anchor, key) {
   closePop(); const l = lyr(CUR), st = l.style;
-  const set = c => { if (key === "fill") st.fill = c; else if (key === "stroke") st.stroke = c; else if (key === "else") st.rules.elseFill = c; else if (key.startsWith("cat:")) st.cat.colors[key.slice(4)] = c; else st.rules.list[+key.slice(5)].fill = c; restyle(l); renderRight(); };
+  const set = c => { pushStyleUndo(l, "color:" + key); if (key === "fill") st.fill = c; else if (key === "stroke") st.stroke = c; else if (key === "else") st.rules.elseFill = c; else if (key.startsWith("cat:")) st.cat.colors[key.slice(4)] = c; else st.rules.list[+key.slice(5)].fill = c; restyle(l); renderRight(); };
   popEl = document.createElement("div"); popEl.className = "pop";
-  popEl.innerHTML = `<div class="g">${PICK.map(c => `<button style="background:${c}" data-c="${c}" aria-label="${c}"></button>`).join("")}</div><input type="text" placeholder="#RRGGBB" aria-label="Цвет HEX">`;
+  popEl.innerHTML = `<div class="g">${PICK.map(c => `<button style="background:${c}" data-c="${c}" aria-label="${c}" title="${c}"></button>`).join("")}</div><input type="text" placeholder="#RRGGBB" aria-label="Цвет HEX">`;
   document.body.appendChild(popEl); const r = anchor.getBoundingClientRect(); popEl.style.left = Math.min(r.left, innerWidth - 206) + "px"; popEl.style.top = Math.min(r.bottom + 4, innerHeight - 200) + "px";
   popEl.onclick = e => { const b = e.target.closest("[data-c]"); if (b) set(b.dataset.c); };
   popEl.querySelector("input").onchange = e => { if (/^#[0-9a-f]{6}$/i.test(e.target.value)) set(e.target.value.toLowerCase()); };
@@ -339,39 +543,89 @@ document.addEventListener("pointerdown", e => { if (popEl && !popEl.contains(e.t
 function openTable(on) { winOpen("wTable", on); }
 function renderTable() {
   if ($("wTable").hidden) return; const l = lyr(CUR), el = $("attrBody");
-  $("attrTitle").textContent = l ? `${l.title} · ${DATA[l.key]?.count ?? 0} объектов · двойной щелчок по ячейке — правка` : "Выберите слой в дереве";
+  const selSet = new Set(SEL.map(s => s.f)), nSel = SEL.filter(s => s.key === CUR).length;
+  $("attrTitle").textContent = l ? `${l.title} · ${fmt(DATA[l.key]?.count ?? 0)} объектов${nSel ? ` · выбрано ${fmt(nSel)}` : ""} · двойной щелчок по ячейке — правка` : "Выберите слой в дереве";
   if (!l) { el.innerHTML = ""; return; }
-  const cols = fieldsOfKey(l.key); let rows = layerSrc[l.key].getFeatures().slice();
+  const cols = fieldsOfKey(l.key); let rows = UIS.selOnly ? SEL.filter(s => s.key === CUR).map(s => s.f) : layerSrc[l.key].getFeatures().slice();
   if (UIS.filter) { const q = UIS.filter.toLowerCase(); rows = rows.filter(f => cols.some(k => String(f.get(k) ?? "").toLowerCase().includes(q))); }
   if (UIS.sort && cols.includes(UIS.sort.k)) rows.sort((a, b) => { const x = a.get(UIS.sort.k), y = b.get(UIS.sort.k); return (isNum(x) && isNum(y) ? x - y : String(x ?? "").localeCompare(String(y ?? ""), "ru")) * UIS.sort.d; });
-  const shown = rows.slice(0, 1500);
-  el.innerHTML = `<table class="at"><thead><tr><th></th>${cols.map(k => `<th data-sort="${esc(k)}">${esc(k)}${UIS.sort?.k === k ? (UIS.sort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>${shown.map((f, i) => `<tr data-uid="${ol.util.getUid(f)}" class="${SEL?.f === f ? "sel" : ""}"><td class="rn">${i + 1}${f.get("_edited") ? "*" : ""}</td>${cols.map(k => `<td data-cell="${esc(k)}">${esc(f.get(k) ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>${rows.length > shown.length ? `<div class="note">Показаны первые ${shown.length} из ${rows.length}; уточните фильтр.</div>` : ""}`;
+  const vis = rows.slice(0, 1500);
+  el.innerHTML = `<table class="at"><thead><tr><th></th>${cols.map(k => `<th data-sort="${esc(k)}">${esc(k)}${UIS.sort?.k === k ? (UIS.sort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>${vis.map((f, i) => `<tr data-uid="${ol.util.getUid(f)}" class="${selSet.has(f) ? "sel" : ""}"><td class="rn">${i + 1}${f.get("_edited") ? "*" : ""}</td>${cols.map(k => `<td data-cell="${esc(k)}">${esc(f.get(k) ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>${rows.length > vis.length ? `<div class="note">Показаны первые ${fmt(vis.length)} из ${fmt(rows.length)}; уточните фильтр.</div>` : ""}`;
 }
 const featByUid = (key, uid) => layerSrc[key].getFeatures().find(f => String(ol.util.getUid(f)) === String(uid));
 $("attrBody").addEventListener("click", e => {
   const th = e.target.closest("[data-sort]"); if (th) { const k = th.dataset.sort; UIS.sort = { k, d: UIS.sort?.k === k ? -UIS.sort.d : 1 }; renderTable(); return; }
   const tr = e.target.closest("[data-uid]"); if (!tr) return; const f = featByUid(CUR, tr.dataset.uid); if (!f) return;
+  if (e.shiftKey || e.metaKey || e.ctrlKey) return toggleSel({ key: CUR, f });   // как в QGIS: строки добавляются к выбору
   select(CUR, f); sharedView.fit(f.getGeometry().getExtent(), { padding: [80, 80, 80, 80], maxZoom: 19, duration: 150 });
 });
 $("attrBody").addEventListener("dblclick", e => {
   const td = e.target.closest("[data-cell]"); if (!td) return;
   const f = featByUid(CUR, td.parentElement.dataset.uid), k = td.dataset.cell; td.innerHTML = `<input type="text" value="${esc(f.get(k) ?? "")}">`;
   const inp = td.querySelector("input"); inp.focus(); inp.select();
-  const done = ok => { if (ok && inp.value !== String(f.get(k) ?? "")) { pushUndo(CUR); const v = inp.value; f.set(k, isNum(v) && v.trim() !== "" && !/^0\d/.test(v) ? +v : v); f.set("_edited", true); syncFromSource(CUR); if (SEL?.f === f) renderRight(); } else renderTable(); };
+  const done = ok => { if (ok && inp.value !== String(f.get(k) ?? "")) { pushUndo(featRec([{ key: CUR, f }], `атрибут «${k}»`)); f.set(k, numOrText(inp.value)); f.set("_edited", true); syncFromSource(CUR); if (SEL.some(s => s.f === f)) renderRight(); } else renderTable(); };
   inp.onkeydown = ev => { if (ev.key === "Enter") done(true); if (ev.key === "Escape") done(false); }; inp.onblur = () => done(true);
 });
 $("attrFilter").oninput = e => { UIS.filter = e.target.value; renderTable(); };
+$("attrSelOnly").onchange = e => { UIS.selOnly = e.target.checked; renderTable(); };
 $("bTable").onclick = () => openTable();
 
-/* ---------- выбор ---------- */
-function select(key, f) { const prev = SEL; SEL = f ? { key, f } : null; if (prev) layerSrc[prev.key]?.changed(); if (SEL) layerSrc[key].changed(); UIS.rt = SEL ? "obj" : UIS.rt; renderRight(); renderTable(); syncRibbon(); }
-mMain.on("singleclick", e => {
-  if (UIS.tool !== "select") return;
+/* ---------- выбор: щелчок, Shift+щелчок, рамка ---------- */
+const MOD = /Mac/.test(navigator.platform) ? "⌘" : "Ctrl";
+const selSrc = new ol.source.Vector();
+const SELSTYLE = { poly: S([47, 111, 196, .15], "#2f6fc4", 3), line: S(null, "#2f6fc4", 4), point: new ol.style.Style({ image: new ol.style.Circle({ radius: 8, stroke: new ol.style.Stroke({ color: "#2f6fc4", width: 3 }) }) }) };
+const gkind = f => { const t = f.getGeometry()?.getType() || ""; return /Point/.test(t) ? "point" : /Line/.test(t) ? "line" : "poly"; };
+// подсветка выбора: до 5 000 объектов — холст, больше (выбрать всё в крупном слое) — видеокарта
+const selCv = new ol.layer.Vector({ source: selSrc, zIndex: 108, style: f => SELSTYLE[gkind(f)] });
+const selGl = new ol.layer.WebGLVector({ source: selSrc, zIndex: 108, visible: false, disableHitDetection: true, style: { "fill-color": "rgba(47,111,196,0.18)", "stroke-color": "#2f6fc4", "stroke-width": 2, "circle-radius": 6, "circle-fill-color": "rgba(47,111,196,0.25)", "circle-stroke-color": "#2f6fc4", "circle-stroke-width": 2 } });
+mMain.addLayer(selCv); mMain.addLayer(selGl);
+function setSel(list) {
+  const seen = new Set(); SEL = list.filter(s => s.f && layerSrc[s.key]?.hasFeature(s.f) && !seen.has(s.f) && seen.add(s.f));
+  const big = SEL.length > 5000; selCv.setVisible(!big); selGl.setVisible(big);
+  selSrc.clear(true); selSrc.addFeatures(SEL.map(s => s.f));
+  if (SEL.length) UIS.rt = "obj";
+  renderRight(); renderTable(); syncRibbon(); syncStatus();
+  if (UIS.tool === "move" || UIS.tool === "vertex") setTool(UIS.tool);      // перенос и вершины работают с выбором
+}
+function select(key, f) { setSel(f ? [{ key, f }] : []); }
+function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
+function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`); setSel(layerSrc[l.key].getFeatures().map(f => ({ key: l.key, f }))); toast(`Выбраны все объекты слоя «${l.title}»: ${fmt(SEL.length)}.`); }
+const keyOf = f => SEL.find(s => s.f === f)?.key || LYR.find(l => layerSrc[l.key]?.hasFeature(f))?.key;
+// объект под курсором: холст отвечает сам; крупный слой в обзоре (видеокарта) — поиск по его данным
+function hitAt(pixel) {
   let hit = null;
-  mMain.forEachFeatureAtPixel(e.pixel, (f, layer) => { const k = layer?.get("key"); if (!k || !lyr(k)) return; hit = { k, f }; return true; }, { hitTolerance: 4, layerFilter: la => { const l = lyr(la.get("key")); return !!l && l.visible; } });
+  mMain.forEachFeatureAtPixel(pixel, (f, layer) => { const k = layer?.get("key"); if (!k || !lyr(k)) return; hit = { key: k, f }; return true; }, { hitTolerance: 4, layerFilter: la => { const l = lyr(la.get("key")); return !!l && shown(l) && !la.get("gl"); } });
+  if (hit) return hit;
+  const c = mMain.getCoordinateFromPixel(pixel), res = sharedView.getResolution(), tol = 5 * res;
+  for (const l of LYR) {
+    if (!l.gl || !shown(l) || res < glSwitchRes(l)) continue;
+    const src = layerSrc[l.key];
+    if (l.geom === "poly") { const f = src.getFeaturesAtCoordinate(c).pop(); if (f && symVisible(f)) return { key: l.key, f }; }
+    else { const f = src.getClosestFeatureToCoordinate(c, x => symVisible(x)); if (f && ol.coordinate.distance(c, f.getGeometry().getClosestPoint(c)) <= tol) return { key: l.key, f }; }
+  }
+  return null;
+}
+const symVisible = f => f.get(SYMK) !== -1;
+mMain.on("click", e => {
+  if (UIS.tool !== "select") return;
+  const hit = hitAt(e.pixel);
   // как «Определить объекты» в QGIS: выбор не меняет текущий слой, иначе рисование уйдёт в чужую выгрузку
-  select(hit?.k, hit?.f || null);
+  if (e.originalEvent.shiftKey) { if (hit) toggleSel(hit); return; }
+  select(hit?.key, hit?.f || null);
 });
+/* рамка: Shift+тянуть добавляет к выбору, Ctrl/⌘+тянуть выбирает заново.
+   Как в AutoCAD: слева направо — только объекты целиком внутри рамки, справа налево — все, которых рамка касается. */
+let boxFrom = null;
+const dragBox = new ol.interaction.DragBox({ condition: e => UIS.tool === "select" && (ol.events.condition.shiftKeyOnly(e) || ol.events.condition.platformModifierKeyOnly(e)), className: "ol-dragbox selbox" });
+dragBox.on("boxstart", e => { boxFrom = e.coordinate; });
+dragBox.on("boxdrag", e => { document.querySelector(".selbox")?.classList.toggle("cross", e.coordinate[0] < boxFrom[0]); });
+dragBox.on("boxend", e => {
+  const ex = dragBox.getGeometry().getExtent(), cross = e.coordinate[0] < boxFrom[0], add = e.mapBrowserEvent.originalEvent.shiftKey, found = [];
+  LYR.filter(shown).forEach(l => layerSrc[l.key].forEachFeatureIntersectingExtent(ex, f => { if (symVisible(f) && (cross || ol.extent.containsExtent(ex, f.getGeometry().getExtent()))) found.push({ key: l.key, f }); }));
+  setSel(add ? [...SEL, ...found] : found);
+  setHint(`${cross ? "Секущая рамка (справа налево): всё, чего касается" : "Рамка (слева направо): только объекты целиком внутри"} — выбрано ${fmt(SEL.length)}.`);
+});
+mMain.addInteraction(dragBox);
 function setCurrent(key) {
   if (!lyr(key)) return; CUR = key; renderTree(); renderRight(); renderTable();
   // инструмент рисования остаётся, если геометрия слоя подходит, иначе — инструмент под его геометрию
@@ -387,16 +641,16 @@ $("curLayer").onchange = e => setCurrent(e.target.value);
 /* ---------- строка инструментов ---------- */
 const GEOMTOOL = { point: "point", line: "line", poly: "poly" };
 const TOOLS = {
-  select: { hint: "Выбор: щёлкните объект — его атрибуты справа. Del — удалить, Esc — снять выбор." },
-  point: { geom: "point", hint: "Точка: щелчок ставит точку в слой «%»." },
-  line: { geom: "line", hint: "Линия в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
-  poly: { geom: "poly", hint: "Полигон в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
-  rect: { geom: "poly", hint: "Прямоугольник в слой «%»: щёлкните первый угол, затем противоположный." },
-  vertex: { hint: "Вершины слоя «%»: тяните вершину; щелчок по ребру добавляет вершину, Alt+щелчок удаляет." },
-  move: { hint: "Перенос: тяните объект слоя «%»." },
-  mlen: { hint: "Длина: щёлкайте точки, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
-  marea: { hint: "Площадь: щёлкайте вершины, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
-  terr: { hint: "Граница территории: щёлкайте углы, двойной щелчок завершает." } };
+  select: { name: "Выбор", hint: "Выбор: щелчок — объект, Shift+щелчок — добавить или убрать, Shift+рамка — несколько. Del — удалить, Esc — снять выбор." },
+  point: { name: "Точка", geom: "point", hint: "Точка: щелчок ставит точку в слой «%»." },
+  line: { name: "Линия", geom: "line", hint: "Линия в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
+  poly: { name: "Полигон", geom: "poly", hint: "Полигон в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
+  rect: { name: "Прямоугольник", geom: "poly", hint: "Прямоугольник в слой «%»: щёлкните первый угол, затем противоположный." },
+  vertex: { name: "Вершины", hint: "Вершины %: тяните вершину; щелчок по ребру добавляет вершину, Alt+щелчок удаляет." },
+  move: { name: "Перенос", hint: "Перенос %: тяните объект." },
+  mlen: { name: "Длина", hint: "Длина: щёлкайте точки, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
+  marea: { name: "Площадь", hint: "Площадь: щёлкайте вершины, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
+  terr: { name: "Граница территории", hint: "Граница территории: щёлкайте углы, двойной щелчок завершает." } };
 const KEYS = { KeyV: "select", KeyP: "point", KeyL: "line", KeyG: "poly", KeyR: "rect", KeyE: "vertex", KeyM: "move", KeyD: "mlen", KeyA: "marea", KeyB: "terr" };
 // слой для рисования: текущий, если геометрия подходит; иначе свой слой той же геометрии; иначе новый
 function targetLayer(geom) {
@@ -413,28 +667,39 @@ function createLayerQuiet(name, geom) { const key = "user:" + Date.now().toStrin
 const measureSrc = new ol.source.Vector();
 mMain.addLayer(new ol.layer.Vector({ source: measureSrc, zIndex: 120, style: f => [S([224, 138, 0, .15], "#c46f00", 2), new ol.style.Style({ text: new ol.style.Text({ text: f.get("label") || "", font: "600 12px system-ui, sans-serif", fill: new ol.style.Fill({ color: "#7a4200" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), overflow: true, placement: "point" }) })] }));
 const measureText = g => g.getType() === "Polygon" ? `${fmt(ol.sphere.getArea(g), 0)} м² · ${fmt(ol.sphere.getArea(g) / 1e4, 3)} га` : `${fmt(ol.sphere.getLength(g), 1)} м`;
-let toolI = [], drawing = null;
+/* крупный слой: вершины и привязка берут объекты текущего кадра (до 5 000), а не все 100 000 —
+   индекс рёбер на весь слой строился бы секунды при каждом выборе инструмента */
+function viewCollection(key, cleanup) {
+  const coll = new ol.Collection(), src = layerSrc[key];
+  const fill = () => { const res = sharedView.getResolution(), l = lyr(key); coll.clear(); if (res > glSwitchRes(l)) return; const out = []; src.forEachFeatureInExtent(mMain.getView().calculateExtent(mMain.getSize()), f => { out.push(f); return out.length >= 5000 || undefined; }); coll.extend(out); };
+  fill(); const k = mMain.on("moveend", fill); cleanup.push(() => ol.Observable.unByKey(k)); return coll;
+}
+let toolI = [], toolClean = [], drawing = null;
 function setTool(t) {
   if (!TOOLS[t]) t = "select";
-  toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; drawing = null;
+  toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; toolClean.forEach(fn => fn()); toolClean = []; drawing = null;
   let l = lyr(CUR);
-  const geom = TOOLS[t].geom;
+  const geom = TOOLS[t].geom, selFs = SEL.map(s => s.f);
   if (geom) l = targetLayer(geom);
-  else if ((t === "vertex" || t === "move") && !l) { toast("Сначала выберите слой в списке."); t = "select"; }
+  else if ((t === "vertex" || t === "move") && !l && !SEL.length) { toast("Сначала выберите слой в списке или объекты на карте."); t = "select"; }
   UIS.tool = t;
   const src = l && layerSrc[l.key];
-  const draw = opts => { const d = new ol.interaction.Draw(opts); d.on("drawstart", e => { drawing = d; if (opts.source === src) pushUndo(l.key); if (opts.measure) e.feature.getGeometry().on("change", ev => setHint(measureText(ev.target))); });
+  const draw = opts => { const d = new ol.interaction.Draw(opts); d.on("drawstart", e => { drawing = d; if (opts.measure) e.feature.getGeometry().on("change", ev => setHint(measureText(ev.target))); });
     d.on("drawabort", () => { drawing = null; syncStatus(); }); toolI.push(d); return d; };
+  const editedKeys = fs => { const ks = new Set(); fs.forEach(f => { f.set("_edited", true); const k = keyOf(f); if (k) ks.add(k); }); ks.forEach(k => syncFromSource(k)); };
   if (geom) {
     const d = draw({ source: src, type: t === "rect" ? "Circle" : { point: "Point", line: "LineString", poly: "Polygon" }[geom], geometryFunction: t === "rect" ? ol.interaction.Draw.createBox() : undefined });
-    d.on("drawend", e => { drawing = null; e.feature.setProperties({ _edited: true, _new: true }); fieldsOfKey(l.key).forEach(k => e.feature.set(k, "")); setTimeout(() => { syncFromSource(l.key); select(l.key, e.feature); syncStatus(); }, 0); });
+    d.on("drawend", e => { drawing = null; pushUndo(featRec([{ key: l.key, f: e.feature }], `новый объект в «${l.title}»`)); e.feature.setProperties({ _edited: true, _new: true }); fieldsOfKey(l.key).forEach(k => e.feature.set(k, "")); setTimeout(() => { syncFromSource(l.key); select(l.key, e.feature); syncStatus(); }, 0); });
   } else if (t === "vertex") {
-    const mo = new ol.interaction.Modify({ source: src, deleteCondition: e => ol.events.condition.altKeyOnly(e) && ol.events.condition.singleClick(e) });
-    mo.on("modifystart", () => pushUndo(l.key)); mo.on("modifyend", e => { e.features.forEach(f => f.set("_edited", true)); syncFromSource(l.key); if (SEL) renderRight(); }); toolI.push(mo);
+    // как ручки AutoCAD: при выборе — вершины выбранных объектов; без выбора — объекты текущего слоя
+    const what = selFs.length ? { features: new ol.Collection(selFs) } : l.gl ? { features: viewCollection(l.key, toolClean) } : { source: src };
+    const mo = new ol.interaction.Modify({ ...what, deleteCondition: e => ol.events.condition.altKeyOnly(e) && ol.events.condition.singleClick(e) });
+    mo.on("modifystart", e => pushUndo(featRec(e.features.getArray().map(f => ({ key: keyOf(f), f })), "правка вершин")));
+    mo.on("modifyend", e => { editedKeys(e.features.getArray()); if (SEL.length) renderRight(); }); toolI.push(mo);
   } else if (t === "move") {
-    const la = mMain.getLayers().getArray().find(x => x.get("key") === l.key);
-    const tr = new ol.interaction.Translate({ layers: [la] });
-    tr.on("translatestart", () => pushUndo(l.key)); tr.on("translateend", e => { e.features.forEach(f => f.set("_edited", true)); syncFromSource(l.key); }); toolI.push(tr);
+    const tr = new ol.interaction.Translate(selFs.length ? { features: new ol.Collection(selFs) } : { layers: ALLMAPS.length ? [mainOl(mMain, l.key)] : [] });
+    tr.on("translatestart", e => pushUndo(featRec(e.features.getArray().map(f => ({ key: keyOf(f), f })), selFs.length > 1 ? `перенос ${selFs.length} об.` : "перенос")));
+    tr.on("translateend", e => editedKeys(e.features.getArray())); toolI.push(tr);
   } else if (t === "mlen" || t === "marea") {
     const d = draw({ source: measureSrc, type: t === "mlen" ? "LineString" : "Polygon", measure: true });
     d.on("drawend", e => { drawing = null; const g = e.feature.getGeometry(); e.feature.set("label", measureText(g)); setHint(measureText(g) + " — замер оставлен на карте, Esc стирает."); });
@@ -442,46 +707,123 @@ function setTool(t) {
     const d = draw({ source: new ol.source.Vector(), type: "Polygon" });
     d.on("drawend", e => { drawing = null; setTerritory(GJ.writeFeatureObject(e.feature)); setTool("select"); toast("Граница задана. Выгрузка источников — окно «Данные»."); });
   }
-  if (["point", "line", "poly", "rect", "vertex", "move"].includes(t) && $("snapT").checked) LYR.filter(x => x.visible).forEach(x => toolI.push(new ol.interaction.Snap({ source: layerSrc[x.key], pixelTolerance: 10 })));
+  if (["point", "line", "poly", "rect", "vertex", "move"].includes(t) && $("snapT").checked)
+    LYR.filter(shown).forEach(x => toolI.push(new ol.interaction.Snap(x.gl ? { features: viewCollection(x.key, toolClean), pixelTolerance: 10 } : { source: layerSrc[x.key], pixelTolerance: 10 })));
   toolI.forEach(i => mMain.addInteraction(i));
   mMain.getTargetElement().style.cursor = t === "select" ? "" : t === "move" ? "move" : "crosshair";
   syncRibbon(); syncStatus();
 }
 function syncRibbon() {
   document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === UIS.tool));
-  $("bDelFeat").disabled = !SEL; $("bUndo").disabled = !UNDO.length;
+  $("bDelFeat").disabled = !SEL.length; $("bUndo").disabled = !UNDO.length; $("bRedo").disabled = !REDO.length;
+  $("bUndo").title = UNDO.length ? `Отменить: ${UNDO[UNDO.length - 1].label} (${MOD}+Z)` : `Отменить (${MOD}+Z)`;
+  $("bRedo").title = REDO.length ? `Вернуть: ${REDO[REDO.length - 1].label} (${MOD}+Shift+Z)` : `Вернуть отменённое (${MOD}+Shift+Z)`;
 }
 let hintOverride = null;
 const setHint = t => { hintOverride = t; $("stHint").textContent = t; };
 function syncStatus() {
-  hintOverride = null; const l = lyr(CUR);
-  $("stHint").textContent = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (B) или откройте окно «Данные»." : TOOLS[UIS.tool].hint.replace("%", l?.title || "—");
+  hintOverride = null; const l = lyr(CUR), n = SEL.length;
+  const what = n ? `выбранных объектов (${fmt(n)})` : `слоя «${l?.title || "—"}»`;
+  $("stHint").textContent = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (B) или откройте окно «Данные». Все клавиши — F1."
+    : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить, M — перенести, E — вершины, Esc — снять выбор.`
+    : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
   $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : "";
 }
 window.syncStatus = syncStatus;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $("snapT").onchange = () => setTool(UIS.tool);
-$("bDelFeat").onclick = () => { if (!SEL) return toast("Выберите объект: инструмент «Выбор», щелчок по объекту."); const k = SEL.key; pushUndo(k); layerSrc[k].removeFeature(SEL.f); SEL = null; syncFromSource(k); renderRight(); syncRibbon(); };
-$("bUndo").onclick = undo;
-const UNDO = [];
-function pushUndo(key) { UNDO.push({ key, fc: JSON.stringify(GJ.writeFeaturesObject(layerSrc[key].getFeatures())) }); if (UNDO.length > 60) UNDO.shift(); syncRibbon(); }
-function undo() { if (drawing) { drawing.removeLastPoint(); return; } const u = UNDO.pop(); if (!u) return toast("Отменять нечего."); layerSrc[u.key].clear(); layerSrc[u.key].addFeatures(GJ.readFeatures(JSON.parse(u.fc))); SEL = null; syncFromSource(u.key); renderRight(); syncRibbon(); }
+$("bDelFeat").onclick = () => {
+  if (!SEL.length) return toast("Выберите объект: инструмент «Выбор», щелчок по объекту.");
+  const list = SEL, keys = new Set(list.map(s => s.key)); pushUndo(featRec(list, list.length > 1 ? `удаление ${list.length} об.` : "удаление"));
+  list.forEach(s => layerSrc[s.key].removeFeature(s.f)); keys.forEach(k => syncFromSource(k)); setSel([]);
+  if (list.length > 1) toast(`Удалено объектов: ${fmt(list.length)}. Вернуть — ${MOD}+Z.`);
+};
+
+/* ---------- отмена и возврат: правки объектов, стили, возврат выгрузки ----------
+   Запись хранит прежнее состояние только затронутых объектов (а не копию всего слоя),
+   поэтому отмена на слое в 100 000 объектов мгновенна. Обратная запись снимается в момент отмены. */
+const UNDO = [], REDO = [];
+const propsOf = f => { const p = { ...f.getProperties() }; delete p[f.getGeometryName()]; return p; };
+const snapF = (key, f) => layerSrc[key]?.hasFeature(f) ? { g: f.getGeometry()?.clone(), p: propsOf(f) } : null;
+const featRec = (items, label) => ({ kind: "feat", label, items: items.map(({ key, f }) => ({ key, f, s: snapF(key, f) })) });
+const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : [u.key];
+function pushUndo(rec) { UNDO.push(rec); if (UNDO.length > 80) UNDO.shift(); REDO.length = 0; syncRibbon(); }
+// ползунок и ввод числа дают десятки событий — одна запись на серию правок одного поля в течение 1,5 с
+function pushStyleUndo(l, tag) {
+  const top = UNDO[UNDO.length - 1], now = Date.now();
+  if (top?.kind === "style" && top.key === l.key && top.tag === tag && now - top.t < 1500) { top.t = now; return; }
+  pushUndo({ kind: "style", key: l.key, tag, t: now, label: `стиль «${l.title}»`, style: JSON.stringify(l.style), lop: l.layerOpacity });
+}
+function capture(rec) {
+  if (rec.kind === "feat") return { ...rec, items: rec.items.map(it => ({ ...it, s: snapF(it.key, it.f) })) };
+  if (rec.kind === "layer") return { ...rec, fs: layerSrc[rec.key].getFeatures() };
+  const l = lyr(rec.key); return { ...rec, t: 0, style: JSON.stringify(l.style), lop: l.layerOpacity };
+}
+function applyRec(rec) {
+  if (rec.kind === "style") { const l = lyr(rec.key); l.style = ST(JSON.parse(rec.style)); l.layerOpacity = rec.lop; restyle(l); applyOrder(); UIS.rt = "style"; if (CUR !== l.key) setCurrentQuiet(l.key); renderRight(); return; }
+  if (rec.kind === "layer") { const src = layerSrc[rec.key]; src.clear(true); src.addFeatures(rec.fs); syncFromSource(rec.key); return; }
+  const keys = new Set();
+  rec.items.forEach(({ key, f, s }) => {
+    const src = layerSrc[key]; if (!src) return; keys.add(key);
+    if (!s) { if (src.hasFeature(f)) src.removeFeature(f); return; }
+    Object.keys(propsOf(f)).forEach(k => { if (!(k in s.p)) f.unset(k, true); });
+    f.setProperties(s.p, true); f.setGeometry(s.g.clone());
+    if (!src.hasFeature(f)) src.addFeature(f);
+  });
+  keys.forEach(k => syncFromSource(k));
+}
+function stepHistory(from, to, verb) {
+  if (drawing) { if (from === UNDO) drawing.removeLastPoint(); return; }
+  const rec = from.pop(); if (!rec) return toast(from === UNDO ? "Отменять нечего." : "Возвращать нечего.");
+  if (rec.kind !== "feat" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
+  const inv = capture(rec); applyRec(rec); to.push(inv);
+  setSel(SEL); setHint(`${verb}: ${rec.label}.`); syncRibbon();
+}
+const undo = () => stepHistory(UNDO, REDO, "Отменено"), redo = () => stepHistory(REDO, UNDO, "Возвращено");
+$("bUndo").onclick = undo; $("bRedo").onclick = redo;
 addEventListener("keydown", e => {
   if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph")) return;
   // e.code не зависит от раскладки (русская тоже работает); без code — по латинской букве
   const code = e.code || (/^[a-z]$/i.test(e.key) ? "Key" + e.key.toUpperCase() : "");
-  if ((e.metaKey || e.ctrlKey) && code === "KeyZ") { e.preventDefault(); undo(); return; }
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && code === "KeyZ") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && code === "KeyY") { e.preventDefault(); redo(); return; }
+  if (mod && code === "KeyA") { e.preventDefault(); selectAll(); return; }
+  if (e.key === "F1" || e.key === "?" || (e.shiftKey && code === "Slash")) { e.preventDefault(); winOpen("wKeys"); return; }
+  if (mod || e.altKey) return;
   if (e.key === "Backspace" && drawing) { e.preventDefault(); drawing.removeLastPoint(); }
-  else if ((e.key === "Delete" || e.key === "Backspace") && SEL) { e.preventDefault(); $("bDelFeat").click(); }
+  else if ((e.key === "Delete" || e.key === "Backspace") && SEL.length) { e.preventDefault(); $("bDelFeat").click(); }
   else if (e.key === "Escape") { if (drawing) { drawing.abortDrawing(); return; } measureSrc.clear(); select(null, null); setTool("select"); }
   else if (KEYS[code]) { e.preventDefault(); setTool(KEYS[code]); }
 });
+
+/* ---------- окно «Клавиши»: собирается из тех же таблиц, что и обработчики, поэтому не расходится с ними ---------- */
+const KEYNAME = c => c.replace(/^Key/, "");
+function renderKeys() {
+  const rows = (title, list) => `<div class="sect">${title}</div><table class="keys">${list.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>`;
+  $("keysBody").innerHTML = rows("Инструменты", Object.entries(KEYS).map(([c, t]) => [KEYNAME(c), TOOLS[t].name]))
+    + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
+    + rows("Правка", [["Del, Backspace", "удалить выбранные объекты"], ["Backspace", "при рисовании — убрать последнюю вершину"], ["двойной щелчок", "завершить линию, полигон, замер"], ["Alt+щелчок", "в «Вершинах» — удалить вершину"], [`${MOD}+Z`, "отменить правку объектов или стиля"], [`${MOD}+Shift+Z, ${MOD}+Y`, "вернуть отменённое"]])
+    + rows("Проект и окна", [[`${MOD}+S`, "сохранить проект"], ["F1, ?", "это окно"], ["двойной щелчок по заголовку окна", "окно во всю высоту у края карты"]])
+    + rows("Карта", [["колесо, щипок", "масштаб"], ["тянуть", "сдвиг карты"]])
+    + `<div class="note">Буквы работают в любой раскладке: нажимается клавиша, а не символ.</div>`;
+}
+$("bKeys").onclick = () => winOpen("wKeys");
+
+/* ---------- пустой проект: с чего начать ---------- */
+function syncStart() { const el = $("start"); if (el) el.hidden = !!(LYR.length || TERR); }
+window.syncStart = syncStart;
+$("start").addEventListener("click", e => {
+  const b = e.target.closest("[data-go]"); if (!b) return;
+  ({ example: () => { $("bExample").click(); winOpen("wData", true); toast("Пример границы задан. Отметьте источники в окне «Данные» и нажмите «Загрузить»."); },
+    terr: () => setTool("terr"), draw: () => setTool("poly"), proj: () => $("bProj").click(), keys: () => winOpen("wKeys", true) })[b.dataset.go]();
+});
+
 // в подсказках Windows показывает Ctrl, macOS — ⌘
-if (/Mac/.test(navigator.platform)) document.querySelectorAll("[title*='Ctrl+Z']").forEach(b => b.title = b.title.replace("Ctrl+Z", "⌘Z"));
+if (MOD === "⌘") document.querySelectorAll("[title*='Ctrl+']").forEach(b => b.title = b.title.replaceAll("Ctrl+", "⌘"));
 mMain.on("pointermove", e => { const [lo, la] = ol.proj.toLonLat(e.coordinate); $("stXY").textContent = `${la.toFixed(5)}° с.ш. ${lo.toFixed(5)}° в.д.`; });
 const syncScale = () => { const r = sharedView.getResolution(), la = ol.proj.toLonLat(sharedView.getCenter())[1]; $("stScale").textContent = "1:" + fmt(Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10); };
 sharedView.on("change:resolution", syncScale); syncScale();
 
 ALLMAPS.forEach(m => window.attachDataLayers(m));
-renderTree(); renderRight(); setTool("select");
+renderTree(); renderRight(); setTool("select"); renderKeys();

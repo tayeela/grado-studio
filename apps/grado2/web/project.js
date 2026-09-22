@@ -22,7 +22,8 @@ function collectProject() {
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
     checked: [...CHECKED],
     current: CUR,
-    layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, style: l.style })),
+    groups: GROUPS.map(g => ({ ...g })),
+    layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
     data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, fc: d.fc, original: d.original }])),
     graph: graph.serialize(),
   };
@@ -34,7 +35,7 @@ function clearProject() {
   Object.keys(SOURCES).filter(k => k.startsWith("import:")).forEach(k => delete SOURCES[k]);
   TERR = null; TERR_M2 = 0; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
-  CUR = null; SEL = null; UNDO.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
+  CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
   $("vlist").innerHTML = `<div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты.</div>`;
 }
 
@@ -55,9 +56,11 @@ function applyProject(p) {
       const l = ensureLayer(s.key, s.title, s.geom);
       Object.assign(l, { visible: s.visible, layerOpacity: s.layerOpacity ?? 1, open: !!s.open, style: ST(s.style || {}) });
     }
+    GROUPS.push(...(p.groups || []).map(g => ({ id: g.id, title: g.title, visible: g.visible !== false, open: g.open !== false })));   // группы — после загрузки слоёв: пока слои приходят по одному, нормализация сочла бы группы пустыми
+    (p.layers || []).forEach(s => { const l = lyr(s.key); if (l) l.group = s.group || null; });
     const order = (p.layers || []).map(s => s.key);            // порядок прорисовки — как в файле
     LYR.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
-    LYR.forEach(l => { l.cache.clear(); l._br = null; });
+    normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
