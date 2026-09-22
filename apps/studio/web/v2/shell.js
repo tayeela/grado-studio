@@ -2,7 +2,8 @@ import { post, postBlob, saveBlob } from "./api.js";
 import { cancelDraft, filletSelection, fitView, mount, transformSelection, viewBbox } from "./canvas.js";
 import {
   LAYERS, addFeatures, emit, layerById, layerRows, loadProject, plainFeatures, redoEdit,
-  removeFeatures, resetProject, selectedFeature, setFeatures, state, subscribe, undoEdit,
+  removeFeatures, resetProject, restoreSnapshot, selectedFeature, setFeatures, snapshot, state,
+  subscribe, undoEdit,
 } from "./store.js";
 
 const EMPTY = {
@@ -160,6 +161,7 @@ function renderStatus() {
     "привязка " + snapToleranceText() + " м",
     state.ortho ? "орто вкл" : "орто выкл",
     state.dirty ? "правок " + state.dirty : "записано",
+    autosaveText(),
     state.name,
     layer ? layer.title : "",
     TOOL_LABEL[state.tool] || "",
@@ -600,8 +602,72 @@ function bind() {
   });
 }
 
+// Автосохранение: свой файл на сервере (.autosave-v2.json, 10 резервных копий).
+// До чтения сохранённого не пишем ничего — пустой старт затёр бы проект.
+const AUTOSAVE = "/api/autosave-v2";
+let autosave = { ready: false, key: "", timer: 0, at: "", failed: false };
+
+function autosaveText() {
+  if (!autosave.ready) return "";
+  if (autosave.failed) return "автосохранение не удалось";
+  return autosave.at ? "автосохранено " + autosave.at : "";
+}
+
+async function writeAutosave() {
+  autosave.timer = 0;
+  const body = JSON.stringify(snapshot());
+  if (body === autosave.key) return;
+  try {
+    const response = await fetch(AUTOSAVE, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body,
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    autosave.key = body;
+    autosave.failed = false;
+    autosave.at = new Date().toTimeString().slice(0, 5);
+  } catch {
+    autosave.failed = true;
+  }
+  renderStatus();
+}
+
+function scheduleAutosave() {
+  if (!autosave.ready) return;
+  clearTimeout(autosave.timer);
+  autosave.timer = setTimeout(writeAutosave, 1500);
+}
+
+async function restoreAutosave() {
+  try {
+    const response = await fetch(AUTOSAVE);
+    if (response.ok) {
+      const payload = await response.json();
+      const saved = payload && (payload.state || payload);
+      if (restoreSnapshot(saved)) {
+        autosave.key = JSON.stringify(snapshot());
+        state.message = saved.features.length
+          ? `Восстановлен проект «${state.name}»: объектов ${saved.features.length}` : "";
+      }
+      autosave.ready = true;
+    } else {
+      // Файл повреждён: не перезаписываем, резервные копии остаются на диске.
+      state.message = "Автосохранение не прочитано, запись остановлена";
+    }
+  } catch {
+    state.message = "Сервер не ответил, автосохранение выключено";
+  }
+  emit();
+}
+
+window.addEventListener("beforeunload", () => {
+  if (!autosave.ready) return;
+  const body = JSON.stringify(snapshot());
+  if (body !== autosave.key) navigator.sendBeacon(AUTOSAVE, new Blob([body], { type: "application/json" }));
+});
+
 let tepKey = "";
 subscribe(() => {
+  scheduleAutosave();
   renderLayers();
   renderRail();
   renderInspect();
@@ -626,3 +692,4 @@ fetch("/api/styles").then((response) => response.json()).then((library) => {
 bind();
 mount(document.querySelector("#sheet"));
 emit();
+restoreAutosave();

@@ -12,6 +12,57 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 import server  # noqa: E402
 
 
+class AutosaveSlotTests(unittest.TestCase):
+    """Интерфейс v2 пишет в свой файл и не трогает автосейв беты."""
+
+    def setUp(self):
+        import threading
+        from http.server import ThreadingHTTPServer
+        self.tempdir = tempfile.TemporaryDirectory()
+        root = Path(self.tempdir.name)
+        self.beta = root / ".autosave.json"
+        self.v2 = root / ".autosave-v2.json"
+        self.patches = [mock.patch.object(server, "AUTOSAVE_PATH", self.beta),
+                        mock.patch.object(server, "AUTOSAVE_V2_PATH", self.v2),
+                        mock.patch.object(server, "HUB", None)]
+        for patch in self.patches:
+            patch.start()
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        for patch in self.patches:
+            patch.stop()
+        self.tempdir.cleanup()
+
+    def call(self, path, body=None):
+        import urllib.request
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        request = urllib.request.Request(self.base + path, data=data,
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.loads(response.read() or b"null")
+
+    def test_v2_slot_is_separate_from_beta(self):
+        server.save_autosave({"name": "Бета", "features": [{"id": 1}]}, path=self.beta)
+        before = self.beta.read_bytes()
+
+        self.assertIsNone(self.call("/api/autosave-v2"))
+        self.call("/api/autosave-v2", {"ui": "v2", "name": "Новый", "features": []})
+        self.call("/api/autosave-v2", {"ui": "v2", "name": "Новый", "features": [{"id": "f1"}]})
+
+        self.assertEqual(before, self.beta.read_bytes())
+        self.assertEqual("Бета", self.call("/api/autosave")["state"]["name"])
+        saved = self.call("/api/autosave-v2")["state"]
+        self.assertEqual([{"id": "f1"}], saved["features"])
+        backups = self.call("/api/autosave-v2/backups")["backups"]
+        self.assertEqual([1], [row["id"] for row in backups])
+        self.assertEqual([], self.call("/api/autosave-v2/backups/1")["state"]["features"])
+
+
 class AutosaveTests(unittest.TestCase):
     def setUp(self):
         self.tempdir = tempfile.TemporaryDirectory()

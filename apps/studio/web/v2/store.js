@@ -229,7 +229,41 @@ export function resetProject(name) {
   emit();
 }
 
+function bumpSeq(features) {
+  for (const feature of features) {
+    const match = /^f(\d+)$/.exec(String(feature.id || ""));
+    if (match) seq = Math.max(seq, Number(match[1]) + 1);
+  }
+}
+
+// Что переживает закрытие вкладки. Undo-стек не пишем: он живёт в сессии.
+const PERSIST_KEYS = ["name", "projectStyles", "visible", "locked", "activeLayer", "view",
+  "ortho", "snapOn", "gridOn", "gridStep", "snap", "ppm", "origin", "sheetScale", "basemap", "uin"];
+
+export function snapshot() {
+  const out = { ui: "v2", features: plainFeatures() };
+  for (const key of PERSIST_KEYS) if (state[key] !== undefined) out[key] = state[key];
+  return out;
+}
+
+export function restoreSnapshot(saved) {
+  if (!saved || !Array.isArray(saved.features)) return false;
+  for (const key of PERSIST_KEYS) {
+    if (saved[key] === undefined) continue;
+    state[key] = key === "visible" ? { ...state.visible, ...saved.visible } : saved[key];
+  }
+  state.features = saved.features.map((feature) => ({ ...feature, props: feature.props || {} }));
+  bumpSeq(state.features);
+  for (const feature of state.features) feature.id = feature.id || nextId();
+  state.selection = null;
+  state.picked = [];
+  state.dirty = 0;
+  state.pending = null;
+  return true;
+}
+
 export function loadProject(payload) {
+  bumpSeq(payload.features || []);
   state.projectStyles = payload.projectStyles || {};
   state.name = payload.name || "Проект";
   state.features = (payload.features || []).map((feature) => ({

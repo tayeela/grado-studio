@@ -4,20 +4,43 @@
     {
       "name": "calc-web",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8642", "--directory", "/Users/tayeela/grado-studio"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8642",
+        "--directory",
+        "/Users/tayeela/grado-studio"
+      ],
       "port": 8642
     },
     {
       "name": "studio",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/tayeela/grado-studio/apps/studio/server.py", "8643"],
+      "runtimeArgs": [
+        "/Users/tayeela/grado-studio/apps/studio/server.py",
+        "8643"
+      ],
       "port": 8643
     },
     {
       "name": "studio-alt",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["/Users/tayeela/grado-studio/apps/studio/server.py", "8653"],
+      "runtimeArgs": [
+        "/Users/tayeela/grado-studio/apps/studio/server.py",
+        "8653"
+      ],
       "port": 8653
+    },
+    {
+      "name": "studio-v2-test",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "GRADO_STUDIO_DATA_DIR=/private/tmp/claude-501/-Users-tayeela/863f7fe2-5eaf-4dbc-9a05-97e79e24842f/scratchpad/v2data",
+        "python3",
+        "/Users/tayeela/grado-studio/apps/studio/server.py",
+        "8654"
+      ],
+      "port": 8654
     }
   ]
 }

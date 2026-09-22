@@ -20,6 +20,9 @@ let draft = [];
 let cursor = null;
 let panning = null;
 let drag = null;
+// Последняя расстановка точки: привязка идёт через сервер, двойной щелчок
+// обязан дождаться её, иначе контур закроется без последней вершины.
+let placing = Promise.resolve();
 const tileCache = new Map();
 
 export function worldFromEvent(event) {
@@ -400,6 +403,11 @@ async function commitDraft() {
       addFeature({ kind: layer.kind, layer_id: layer.id, ring: points, props: {} });
       return;
     }
+    if (state.tool === "polygon") {
+      state.message = "Контур не закрыт: нужно минимум три точки";
+      emit();
+      return;
+    }
     if (state.tool === "dim" && points.length >= 2) {
       const measured = await post("/api/geom", { op: "measure", points: points.slice(0, 2) });
       addFeature({
@@ -544,11 +552,14 @@ export function mount(canvas) {
     }
     if (event.detail > 1) return;
     canvas.setPointerCapture(event.pointerId);
-    const point = await placePoint(worldFromEvent(event));
-    state.snapHint = point.hint;
-    draft.push(point);
-    if (draft.length >= needed()) await commitDraft();
-    else emit();
+    const job = placePoint(worldFromEvent(event)).then(async (point) => {
+      state.snapHint = point.hint;
+      draft.push(point);
+      if (draft.length >= needed()) await commitDraft();
+      else emit();
+    });
+    placing = job.catch(() => {});
+    await job;
   });
 
   canvas.addEventListener("pointerup", async (event) => {
@@ -574,6 +585,7 @@ export function mount(canvas) {
   });
   canvas.addEventListener("dblclick", async (event) => {
     event.preventDefault();
+    await placing;
     if (draft.length >= 2 && (state.tool === "polyline" || state.tool === "polygon")) {
       await commitDraft();
     }
@@ -599,6 +611,7 @@ export function mount(canvas) {
       state.message = state.tool === "trim" ? "Клик по лишнему куску" : "Клик у открытого конца";
       emit();
     } else if (event.key === "Enter" && draft.length >= 2) {
+      await placing;
       await commitDraft();
     } else if ((event.metaKey || event.ctrlKey) && event.key === "z") {
       event.preventDefault();

@@ -21,6 +21,7 @@
     GET  /api/inbox       выгрузки браузерного моста, ждущие холст
     GET/POST /api/autosave  файловый автосейв (резерв к localStorage)
     GET  /api/autosave/backups[/N]  список/чтение предыдущих снимков
+    GET/POST /api/autosave-v2[/backups[/N]]  то же для интерфейса v2 (свой файл)
     GET  /api/version      единая версия приложения и схемы состояния
     GET  /api/health       готовность ресурсов и каталога рабочих данных
     GET  /api/basemap-info  {origin_lon, origin_lat, attribution}
@@ -118,9 +119,19 @@ BRIDGE_ON = False
 # файловый автосейв — резервная копия localStorage браузера на диске:
 # переживает чистку данных сайта/приватный режим/смену браузера
 AUTOSAVE_PATH = DATA_DIR / ".autosave.json"
+# Интерфейс v2 пишет в свой файл: формат состояния другой, и общий файл
+# затёр бы проект беты (оформление слоёв, варианты, правила).
+AUTOSAVE_V2_PATH = DATA_DIR / ".autosave-v2.json"
 AUTOSAVE_LOCK = threading.Lock()
 AUTOSAVE_BACKUPS = 10
-AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave/backups/([1-9]|10)$")
+AUTOSAVE_BACKUP_RE = re.compile(r"^/api/autosave(-v2)?/backups/([1-9]|10)$")
+AUTOSAVE_ROUTES = {"/api/autosave": "AUTOSAVE_PATH",
+                   "/api/autosave-v2": "AUTOSAVE_V2_PATH"}
+
+
+def _autosave_file(route):
+    """Файл слота по маршруту. Имя глобала читается при вызове (тесты его подменяют)."""
+    return globals()[AUTOSAVE_ROUTES[route]]
 MAX_JSON_BODY = 64 * 1024 * 1024
 MAX_FILE_UPLOAD = 256 * 1024 * 1024
 REQUEST_TIMEOUT = 60
@@ -630,7 +641,7 @@ class Handler(SimpleHTTPRequestHandler):
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
             return
-        if parsed0.path in ("/", "/desk"):
+        if parsed0.path == "/desk":
             page = (WEB / "v2" / "index.html").read_text(encoding="utf-8")
             if "<base " not in page:
                 page = page.replace("<head>", "<head>\n  <base href=\"/v2/\">", 1)
@@ -698,13 +709,15 @@ class Handler(SimpleHTTPRequestHandler):
             # затирали бы разные пользователи) — проекты живут в .hub/
             self._send(b"null", "application/json; charset=utf-8")
             return
-        if parsed0.path == "/api/autosave/backups":
+        if parsed0.path in ("/api/autosave/backups", "/api/autosave-v2/backups"):
+            slot = _autosave_file(parsed0.path[:-len("/backups")])
             with AUTOSAVE_LOCK:
-                self._json({"backups": list_autosave_backups()})
+                self._json({"backups": list_autosave_backups(slot)})
             return
         backup_match = AUTOSAVE_BACKUP_RE.match(parsed0.path)
         if backup_match:
-            backup = _autosave_backup_path(AUTOSAVE_PATH, int(backup_match.group(1)))
+            slot = _autosave_file("/api/autosave" + (backup_match.group(1) or ""))
+            backup = _autosave_backup_path(slot, int(backup_match.group(2)))
             if not backup.exists():
                 self._json({"error": "backup not found"}, 404)
                 return
@@ -769,13 +782,14 @@ class Handler(SimpleHTTPRequestHandler):
                                   ensure_ascii=False).encode(),
                        "application/json; charset=utf-8")
             return
-        if self.path == "/api/autosave":
-            if not AUTOSAVE_PATH.exists():
+        if self.path in AUTOSAVE_ROUTES:
+            slot = _autosave_file(self.path)
+            if not slot.exists():
                 self._json(None)
                 return
             try:
                 with AUTOSAVE_LOCK:
-                    self._json(load_autosave(AUTOSAVE_PATH))
+                    self._json(load_autosave(slot))
             except (OSError, ValueError, json.JSONDecodeError):
                 self._json({"error": "autosave is damaged"}, 500)
             return
@@ -924,16 +938,16 @@ class Handler(SimpleHTTPRequestHandler):
                     except (TypeError, ValueError):
                         self._json({"error": "bad request"}, 400)
                     return
-            if HUB and self.path == "/api/autosave":
+            if HUB and self.path in AUTOSAVE_ROUTES:
                 self.send_response(204)   # без записи: проекты живут в .hub/
                 self.end_headers()
                 return
-            if self.path == "/api/autosave":
+            if self.path in AUTOSAVE_ROUTES:
                 raw = self._read_body(MAX_JSON_BODY)
                 try:
                     state = json.loads(raw)
                     with AUTOSAVE_LOCK:
-                        meta, changed = save_autosave(state)
+                        meta, changed = save_autosave(state, _autosave_file(self.path))
                 except (json.JSONDecodeError, ValueError):
                     self._json({"error": "bad autosave state"}, 400)
                     return
