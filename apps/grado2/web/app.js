@@ -151,10 +151,9 @@ $("fDxf").onchange = async e => {
   } catch (err) { toast("DXF не прочитан: " + err.message); } finally { busy(false); }
 };
 $("bExport").onclick = async () => {
-  const layers = Object.entries(DATA).map(([k, d]) => ({ name: d.title, features: d.fc, color: k === "gisogd.red_lines" ? "#d7191c" : "#808080" }));
+  const layers = Object.entries(DATA).map(([k, d]) => ({ name: d.title, features: d.fc, color: k === "gisogd.red_lines" ? "#d7191c" : "#808080", floors: d.fc.features.some(f => f.properties?.["Этажность"]) }));
   if (TERR) layers.push({ name: "Граница территории", features: turf.featureCollection([TERR]), color: "#b3261e" });
-  if (RESULT.sketch?.length) layers.push({ name: "Эскиз застройки", features: turf.featureCollection(RESULT.sketch.map(b => turf.feature(b.f.geometry, { floors: b.floors }))), color: "#2a78d6", floors: true });
-  if (!layers.length) return toast("Экспортировать нечего: загрузите данные или постройте эскиз.");
+  if (!layers.length) return toast("Экспортировать нечего: загрузите данные, нарисуйте объекты или примите эскиз в проект.");
   busy(true);
   try {
     const r = await fetch("/api/export/dxf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layers }) });
@@ -236,10 +235,12 @@ function NPlace() {
   this.addWidget("slider", "ширина корпуса, м", 16, () => { }, { min: 12, max: 24, precision: 0, slider_color: "#8fb3e0" });
   this.addWidget("slider", "этажность", 12, () => { }, { min: 3, max: 30, precision: 0, slider_color: "#8fb3e0" });
   this.addWidget("slider", "разрыв / высота", 1.0, () => { }, { min: .5, max: 2, precision: 2, slider_color: "#8fb3e0" });
-  this.addWidget("slider", "ориентация, °", 0, () => { }, { min: 0, max: 90, precision: 0, slider_color: "#8fb3e0" });
+  this.addWidget("slider", "поворот, °", 0, () => { }, { min: -45, max: 45, precision: 0, slider_color: "#8fb3e0" });
+  this.properties = { run: false };        // как в TestFit: посадка строится только по команде «Построить эскиз»
   finish(this, "gen", 240);
 }
 NPlace.title = "Посадка застройки"; NPlace.prototype.onExecute = function () {
+  if (!this.properties.run) { this.setOutputData(0, []); this.info = "не построена: «Построить эскиз» в окне «Эскиз»"; return; }
   const site = this.getInputData(0), p = placeParams(this);
   const r = cached(this, gid(site) + JSON.stringify(p), () => generate(site, p)); this.setOutputData(0, r);
   this.info = `${r.length} корпусов · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП`;
@@ -272,30 +273,52 @@ async function tepRequest(sketch, kept, lim, share, target) {
 }
 
 /* ---------- генератор посадки (локальная рамка, метры) ---------- */
+/* Посадка по логике TestFit: каждый участок пятна (между улицами) — отдельно, корпуса вдоль его длинной
+   стороны (минимальный описанный прямоугольник), только целые корпуса, разрывы по нормам.
+   Разрыв между длинными сторонами жилых домов — не меньше 15 м (2–3 эт.) и 20 м (4 эт. и выше),
+   СП 42.13330.2016 п. 7.1; и не меньше «разрыв / высота» × высота — грубая замена расчёта инсоляции
+   (СанПиН 1.2.3685-21: 2 ч непрерывно). ponytail: инсоляция и противопожарные разрывы (СП 4.13130)
+   не считаются по-настоящему — только этим коэффициентом; честный расчёт — отдельный узел. */
+function hull(pts) {                 // выпуклая оболочка (монотонная цепь)
+  const P = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]), cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length > 1 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of P.reverse()) { while (up.length > 1 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+function partFrame(ring, extra) {     // угол длинной оси участка и его габарит в повёрнутой системе
+  const h = hull(ring), box = a => { const q = h.map(p => rot(p, -a, [0, 0])); return bboxOf(q); };
+  let best = null;
+  h.forEach((p, k) => { const q = h[(k + 1) % h.length], a = Math.atan2(q[1] - p[1], q[0] - p[0]), b = box(a), ar = (b[2] - b[0]) * (b[3] - b[1]); if (!best || ar < best.ar) best = { a, ar }; });
+  let a = best.a, b = box(a); if (b[2] - b[0] < b[3] - b[1]) { a += Math.PI / 2; b = box(a); }
+  a += extra; return { a, b: box(a) };
+}
 function generate(site, p) {
   if (!site) return [];
-  const H = p.floors * 3, out = [], a = p.angle * Math.PI / 180, rings = ringsXY(site); if (!rings.length) return [];
-  const bb = bboxOf(rings.flat()), c = [(bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2], R = Math.hypot(bb[2] - bb[0], bb[3] - bb[1]) / 2 + 20;
-  const push = (poly, floors) => { const ar = m2(poly); if (ar >= 150) out.push({ f: poly, floors, m2: ar }); };
-  const clip = ring => inter(site, polyLL(ring));
-  if (p.typ === "Секции") {
-    const step = p.width + Math.max(15, p.gap * H), secLen = 60, brk = 12;
-    for (let y = -R; y < R; y += step) for (let x = -R; x < R; x += secLen + brk) {
-      const r = clip(rect(c[0] + x, c[1] + y, c[0] + x + secLen, c[1] + y + p.width).map(q => rot(q, a, c)));
-      if (r && m2(r) > p.width * 24) splitParts(r).forEach(q => push(q, p.floors));
-    }
-  } else if (p.typ === "Башни") {
-    const s = p.width + 8, step = s + Math.max(20, p.gap * H * .6);
-    for (let y = -R; y < R; y += step) for (let x = -R; x < R; x += step) {
-      const r = clip(rect(c[0] + x, c[1] + y, c[0] + x + s, c[1] + y + s).map(q => rot(q, a, c)));
-      if (r && m2(r) > s * s * .97) push(r, Math.round(p.floors * 1.6));
-    }
-  } else {
-    for (const part of splitParts(site)) {
+  const out = [], extra = p.angle * Math.PI / 180;
+  const fits = (part, ring) => { const f = polyLL(ring), ar = m2(f); return m2(inter(part, f)) >= ar * .985 ? f : null; };
+  const push = (f, floors) => out.push({ f, floors, m2: m2(f) });
+  for (const part of splitParts(site)) {
+    if (m2(part) < 1500) continue;
+    const { a, b } = partFrame(ringsXY(part)[0], extra), W = rp => rp.map(q => rot(q, a, [0, 0]));
+    const span = (lo, hi, size, gap) => { const n = Math.max(0, Math.floor((hi - lo + gap) / (size + gap))); const s0 = lo + (hi - lo - (n * size + (n - 1) * gap)) / 2; return Array.from({ length: n }, (_, i) => s0 + i * (size + gap)); };
+    if (p.typ === "Секции") {
+      const H = p.floors * 3, gapLong = Math.max(p.gap * H, p.floors >= 4 ? 20 : 15), brk = 12;
+      for (const v of span(b[1], b[3], p.width, gapLong)) {
+        let u = b[0];
+        while (u < b[2]) {                      // секция 60 м, у края — 40 м; не влезла — шаг дальше
+          const L = [60, 40].find(len => u + len <= b[2] + .1 && fits(part, W(rect(u, v, u + len, v + p.width))));
+          if (L) { push(polyLL(W(rect(u, v, u + L, v + p.width))), p.floors); u += L + brk; } else u += 5;
+        }
+      }
+    } else if (p.typ === "Башни") {
+      const s = p.width + 8, fl = Math.round(p.floors * 1.6), gap = Math.max(20, p.gap * fl * 3 * .6);
+      for (const v of span(b[1], b[3], s, gap)) for (const u of span(b[0], b[2], s, gap)) { const f = fits(part, W(rect(u, v, u + s, v + s))); if (f) push(f, fl); }
+    } else {                                    // квартал: периметр по краю участка с проездом во двор
       if (m2(part) < 2500) continue;
-      const ring = diff(part, buf(part, -p.width)) || part, pb = bboxOf(ringsXY(part).flat()), cx = (pb[0] + pb[2]) / 2, cy = (pb[1] + pb[3]) / 2;
-      const r = diff(ring, polyLL(rect(cx - 7, pb[1] - 5, cx + 7, pb[3] + 5).map(q => rot(q, a, [cx, cy])))) || ring;
-      splitParts(r).forEach(q => push(q, Math.max(3, Math.round(p.floors * .7))));
+      const ring = diff(part, buf(part, -p.width)) || part, cx = (b[0] + b[2]) / 2;
+      const r = diff(ring, polyLL(W(rect(cx - 7, b[1] - 5, cx + 7, b[3] + 5)))) || ring;
+      splitParts(r).forEach(q => { if (m2(q) >= 150) push(q, Math.max(3, Math.round(p.floors * .7))); });
     }
   }
   return out;
@@ -308,7 +331,7 @@ const setW = (n, name, v) => { n.widgets.find(w => w.name === name).value = v; }
 const nT = add("Данные/Территория", [20, 20]);
 const nZ1 = add("Данные/Слой", [20, 100], n => setW(n, "слой", "Санитарно-защитные зоны (ОГД)"));
 const nZ2 = add("Данные/Слой", [20, 240], n => setW(n, "слой", "Водоохранные зоны (ОГД)"));
-const nK = add("Данные/Слой", [20, 380], n => { setW(n, "слой", "Здания (ЕГРН)"); setW(n, "поле", "Этажность"); setW(n, "условие", "≥"); setW(n, "значение", "9"); });
+const nK = add("Данные/Слой", [20, 380], n => { setW(n, "слой", "Здания (ЕГРН)"); n.title = "Сохраняемые здания"; });   // по умолчанию сносить нечего; снос — условием в узле
 const nR = add("Данные/Слой", [20, 540], n => { setW(n, "слой", "Улично-дорожная сеть (OSM)"); setW(n, "поле", "Тип дороги"); setW(n, "условие", "один из"); setW(n, "значение", "trunk,primary,secondary,tertiary,residential,unclassified"); });
 const nZ = add("Геометрия/Объединить", [300, 170], n => n.title = "ЗОУИТ");
 const nBK = add("Геометрия/Буфер", [300, 400], n => { n.title = "Разрыв до сохраняемых"; setW(n, "расстояние, м", 12); });
@@ -393,19 +416,46 @@ function publishedControls() {
   const out = [];
   if (p) out.push({ n: p, w: "типология", type: "seg", opts: ["Секции", "Квартал", "Башни"], hint: "квартал — периметр с проходом, башни — ×1,6 к этажности" });
   if (num) out.push({ n: num, w: "значение", label: "Этажность", min: 3, max: 30, step: 1, hint: "узел «Число» в графе" }); else if (p) out.push({ n: p, w: "этажность", min: 3, max: 30, step: 1 });
-  if (p) out.push({ n: p, w: "ширина корпуса, м", min: 12, max: 24, step: 1 }, { n: p, w: "разрыв / высота", min: .5, max: 2, step: .05, hint: "шаг между корпусами = коэф. × высота, не меньше 15 м" }, { n: p, w: "ориентация, °", min: 0, max: 90, step: 1 });
+  if (p) out.push({ n: p, w: "ширина корпуса, м", min: 12, max: 24, step: 1 }, { n: p, w: "разрыв / высота", min: .5, max: 2, step: .05, hint: "разрыв между длинными сторонами = коэф. × высота, но не меньше 15 м (2–3 эт.) и 20 м (4 эт. и выше), СП 42.13330 п. 7.1" }, { n: p, w: "поворот, °", label: "Поворот относительно длинной стороны участка, °", min: -45, max: 45, step: 1, hint: "0 — корпуса вдоль длинной стороны каждого участка" });
   graph._nodes.filter(n => n.type === "Геометрия/Буфер").forEach(n => out.push({ n, w: "расстояние, м", label: n.title + ", м", min: 0, max: 40, step: 1 }));
   if (t) out.push({ n: t, w: "доля жилья, %", min: 0, max: 100, step: 5 }, { n: t, w: "цель, тыс. м²/га", label: "Целевая плотность, тыс. м²/га", min: 5, max: 45, step: 1 });
   return out;
 }
 function renderParams() {
-  const cs = publishedControls();
-  $("params").innerHTML = cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
+  const cs = publishedControls(), pn = RESULT.placeNode, on = !!pn?.properties.run;
+  const head = !pn ? `<div class="note">В графе нет узла «Посадка застройки».</div>`
+    : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Принять в проект</button></div>
+      <small>${on ? `Эскиз перестраивается при каждой правке ниже. Корпусов: ${RESULT.sketch.length}. Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится."}</small></div>`;
+  $("params").innerHTML = head + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${lbl}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${w.value}">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры узлов графа, вынесенные в панель: правка здесь меняет граф, и наоборот.</div>`;
+  icons();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
-  $("params").onclick = e => { const b = e.target.closest("[data-seg]"); if (!b) return; const c = cs[+b.dataset.seg]; c.n.widgets.find(x => x.name === c.w).value = b.dataset.v; renderParams(); recompute(); };
+  $("params").onclick = e => {
+    const r = e.target.closest("[data-run]"); if (r) { pn.properties.run = r.dataset.run === "1"; pn._ck = null; recompute(true); renderParams(); syncPreview(); return; }
+    if (e.target.closest("[data-bake]")) return bakeSketch();
+    const b = e.target.closest("[data-seg]"); if (!b) return; const c = cs[+b.dataset.seg]; c.n.widgets.find(x => x.name === c.w).value = b.dataset.v; renderParams(); recompute(); };
+}
+/* «Принять в проект» (Bake в Grasshopper): снимок эскиза становится обычным слоем и больше не зависит от графа */
+function bakeSketch() {
+  const sk = RESULT.sketch; if (!sk.length) return toast("Эскиз пуст: сначала «Построить эскиз».");
+  const typ = RESULT.placeNode.widgets[0].value, fl = [...new Set(sk.map(b => b.floors))].join("/"), key = "user:" + Date.now().toString(36), title = `Эскиз: ${typ.toLowerCase()}, ${fl} эт.`;
+  const fc = turf.featureCollection(sk.map((b, i) => turf.feature(b.f.geometry, { "№": i + 1, "Типология": typ, "Этажность": b.floors, "Площадь застройки, м²": Math.round(b.m2), "СПП, м²": Math.round(b.m2 * b.floors) })));
+  DATA[key] = { title, source: "эскиз из графа, принят " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
+  layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
+  const l = ensureLayer(key, title, "poly");
+  const many = new Set(sk.map(b => b.floors)).size > 1;          // разная этажность — диапазоны, одна — единый цвет
+  l.style = ST({ mode: many ? "grad" : "single", fill: "#6fa6e6", stroke: "#1a4f94", width: .8, opacity: .9, label: "Этажность", grad: { field: "Этажность", n: 4, ramp: "blue", method: "equal" } });
+  restyle(l); setCurrent(key); dataRev++;
+  toast(`Эскиз принят слоем «${title}»: ${sk.length} корпусов. Слой можно править, стилизовать и выгружать; граф на него больше не влияет.`);
+}
+// предпросмотр графа (Preview в Grasshopper): только пока открыты окна графа/эскиза, выход узла — только при открытом графе
+const PREVIEW_WINS = ["wGraph", "wSketch", "wVars", "w3d", "wCmp"];
+function syncPreview() {
+  const open = id => !$(id).hidden, any = PREVIEW_WINS.some(open);
+  RES.forEach(r => r.layer.setVisible(r.on !== false && (r.id === "prev" ? open("wGraph") : any)));
+  if (typeof renderTree === "function") renderTree();
 }
 const GROUP_ORDER = ["Территория", "Застройка", "Население", "Социальная инфраструктура", "Обслуживание", "Благоустройство", "Транспорт"];
 function renderTep() {
@@ -470,10 +520,11 @@ function renderVars() {
     return `<button class="vc" data-var="${i}" aria-pressed="${i === varSel}"><svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet"><g transform="scale(1,-1)"><polygon points="${pts(ringsXY(TERR)[0])}" fill="#fff" stroke="#b3261e" stroke-width="${sw * 2}" stroke-dasharray="${sw * 8} ${sw * 4}"/>${v.tep.kept.flatMap(f => ringsXY(f)).map(r => `<polygon points="${pts(r)}" fill="#bdb8b0"/>`).join("")}${v.sk.flatMap(b => ringsXY(b.f)).map(r => `<polygon points="${pts(r)}" fill="#6fa6e6" stroke="#1a4f94" stroke-width="${sw}"/>`).join("")}</g></svg>
       <div class="vt">${v.typ} · ${v.floors} эт.</div><div class="vm"><span>плотность</span><b style="color:var(--${cls})">${fmt(v.tep.density, 1)}</b><span>СПП, тыс. м²</span><b>${fmt((v.tep.sppNew + v.tep.sppKept) / 1000, 1)}</b><span>население</span><b>${fmt(v.tep.m.population)}</b></div></button>`; }).join("");
 }
+$("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариант в списке — щелчок по карточке.") : bakeSketch();
 $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-var]"); if (!b) return; varSel = +b.dataset.var; const v = VARS[varSel], p = RESULT.placeNode;
   p.widgets.find(w => w.name === "типология").value = v.typ;
   const num = graph._nodes.find(n => n.type === "Параметры/Число" && n.outputs[0].links?.some(id => graph.links[id]?.target_id === p.id));
-  (num ? num.widgets[0] : p.widgets.find(w => w.name === "этажность")).value = v.floors;
+  (num ? num.widgets[0] : p.widgets.find(w => w.name === "этажность")).value = v.floors; p.properties.run = true; syncPreview();
   recompute(); renderParams(); renderVars(); toast(`Вариант «${v.typ} · ${v.floors} эт.» перенесён в граф.`); });
 
 /* ================= плавающие окна и панели ================= */
@@ -501,6 +552,7 @@ function winOpen(id, on) {
   const w = $(id); on = on ?? w.hidden; w.hidden = !on;
   if (on) { placeWin(w); winFront(w); requestAnimationFrame(() => WIN_OPEN[id]?.()); }
   if (id === "wGraph") $("pv").hidden = !on;
+  if (PREVIEW_WINS.includes(id)) syncPreview();
   (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
 }
 function syncWinButtons() {
@@ -536,5 +588,5 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
   const first = !Object.keys(WST).some(k => k.startsWith("w"));
   Object.keys(W0()).forEach(id => { if (WST[id]?.open || (first && id === "wData")) winOpen(id, true); });
   syncWinButtons(); recompute(true);
-  await window.projectStart?.();
+  await window.projectStart?.(); syncPreview();
 })();

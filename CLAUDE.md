@@ -221,6 +221,26 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.6: sketch only on demand, edge-aligned placement, Preview/Bake, style fixes.**
+  Owner: "style settings do not work; the boundary fills at once with random rows of houses; look at
+  analogous programs and adopt their logic". Diagnosis: style controls worked, but graph results
+  (site hatch, node output, sketch grid) were drawn over every layer, so style changes were invisible.
+  Adopted logic (research: Grasshopper Preview/Disable/Bake, TestFit/Forma opt-in generation, QGIS styling):
+  - «Посадка застройки» has `properties.run` (Data Dam): nothing is placed until «Построить эскиз» in
+    the «Эскиз» window; «Остановить» freezes it. Picking a variant turns it on.
+  - Generator: each part of the buildable area separately, oriented to its minimum-area rectangle
+    (rotating calipers over the convex hull), whole buildings only (≥98.5 % inside), rows centred,
+    long-side gap = max(gap×H, 15 m for 2–3 fl. / 20 m for 4+ fl., СП 42.13330 п. 7.1). Widget
+    «ориентация» became «поворот, °» (−45…45, relative to the part). Insolation/fire gaps not computed.
+  - Default graph keeps ALL ЕГРН buildings (no «≥ 9 floors» demolition), so houses do not land on houses.
+  - Preview: graph layers are visible only while Граф/Эскиз/Варианты/Объём/Сравнение are open
+    (`syncPreview`), node output only with «Граф». «Принять в проект» (`bakeSketch`) makes a normal layer
+    «Эскиз: …» with Этажность/СПП attributes; DXF export now takes only project layers (+ Этажность → thickness).
+  - Graduated breaks collapse duplicates (one value → one class, mid ramp colour); line swatches in the
+    tree got CSS; QGIS wording «Классифицировать».
+  - **Pitfall:** renaming a node widget breaks `publishedControls` lookups by name and old projects;
+    `applyProject` fills missing widget values with a safe default.
+
 - **2026-09-23, ГРАДО 2 v0.5: projects — save, open, new, autosave with restore after reload.**
   A project is a `.grado2` file (JSON) in `~/Documents/ГРАДО 2` (env `GRADO2_PROJECTS` overrides): territory,
   layers (order, style, visibility, opacity), their data with the original download, import sources,

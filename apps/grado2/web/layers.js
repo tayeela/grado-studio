@@ -7,7 +7,7 @@
 const CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"], OTHER = "#9aa1a8";
 const RAMPS = { blue: ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94", "#0f3363"], brick: ["#fbe4d8", "#f5b698", "#ec875b", "#cf5a2c", "#933717", "#5e200c"], green: ["#e1f2e3", "#b2dcb7", "#7ec188", "#3f9a4f", "#1f6e31", "#10461e"], grey: ["#f2f2f2", "#d4d4d4", "#aaaaaa", "#7a7a7a", "#4d4d4d", "#262626"] };
 const PICK = [...CAT, "#1d1d1f", "#5f6368", "#9aa1a8", "#d4d4d4", "#ffffff", "#b3261e", "#1f7a4d", "#7a4b2a", ...RAMPS.blue.slice(0, 4), ...RAMPS.brick.slice(0, 4)];
-const ramp = (n, k) => Array.from({ length: k }, (_, i) => RAMPS[n][Math.round(i * (RAMPS[n].length - 1) / Math.max(1, k - 1))]);
+const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i) => RAMPS[n][Math.round(i * (RAMPS[n].length - 1) / Math.max(1, k - 1))]);
 const ST = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
 // порядок по умолчанию: сверху вниз (первый — самый верхний)
@@ -93,7 +93,8 @@ function assignCats(l, keep) {
 }
 function breaks(l) {
   const g = l.style.grad, v = (layerSrc[l.key]?.getFeatures() || []).map(f => +f.get(g.field)).filter(x => !isNaN(x)).sort((a, b) => a - b); if (!v.length) return [0, 0];
-  const b = [v[0]]; for (let i = 1; i < g.n; i++) b.push(+(g.method === "equal" ? v[0] + (v[v.length - 1] - v[0]) * i / g.n : v[Math.floor(i * v.length / g.n)]).toFixed(2)); b.push(v[v.length - 1]); return b;
+  const b = [v[0]]; for (let i = 1; i < g.n; i++) b.push(+(g.method === "equal" ? v[0] + (v[v.length - 1] - v[0]) * i / g.n : v[Math.floor(i * v.length / g.n)]).toFixed(2)); b.push(v[v.length - 1]);
+  const u = [...new Set(b)]; return u.length > 1 ? u : [u[0], u[0]];   // совпавшие границы — один класс, а не «16–16» четыре раза
 }
 function testRule(r, f) {
   const v = f.get(r.field), t = r.val; if (v == null) return false;
@@ -104,7 +105,7 @@ function testRule(r, f) {
 function symbolOf(l, f) {
   const st = l.style; let fill = st.fill, hatch = st.hatch, hide = false;
   if (st.mode === "cat") { const v = String(f.get(st.cat.field) ?? ""); fill = st.cat.colors[v] || OTHER; hide = st.cat.off.includes(v); }
-  else if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)), v = +f.get(st.grad.field), cols = ramp(st.grad.ramp, st.grad.n); const i = b.findIndex((x, k) => k > 0 && v <= x); fill = isNaN(v) ? OTHER : cols[Math.max(0, i - 1)] ?? cols[cols.length - 1]; }
+  else if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)), v = +f.get(st.grad.field), cols = ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1); const i = b.findIndex((x, k) => k > 0 && v <= x); fill = isNaN(v) ? OTHER : cols[Math.max(0, i - 1)] ?? cols[cols.length - 1]; }
   else if (st.mode === "rules") { const r = st.rules.list.find(r => r.field && testRule(r, f)); if (r) { fill = r.fill; hatch = r.hatch; } else { fill = st.rules.elseFill; hatch = false; hide = st.rules.elseHide; } }
   return { fill, hatch, hide };
 }
@@ -143,13 +144,13 @@ function symHTML(l, color) {
 function legendItems(l) {
   const st = l.style;
   if (st.mode === "cat") return catValues(l.key, st.cat.field).map(([v, n]) => ({ v, n, c: st.cat.colors[v] || OTHER, off: st.cat.off.includes(v), check: true }));
-  if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)); return ramp(st.grad.ramp, st.grad.n).map((c, i) => ({ v: `${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}`, c })); }
+  if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)); return ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1).map((c, i) => ({ v: `${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}`, c })); }
   if (st.mode === "rules") return st.rules.list.map(r => ({ v: `${r.field} ${r.op} ${r.val}`, c: r.fill })).concat(st.rules.elseHide ? [] : [{ v: "остальные", c: st.rules.elseFill }]);
   return [];
 }
 function renderTree() {
   const el = $("layerTree"); if (!el) return;
-  const res = RESULT.sketch.length || RESULT.site ? `<div class="tgrp">Результат графа</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.layer.getVisible() ? "checked" : ""} aria-label="Видимость"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
+  const res = RESULT.sketch.length || RESULT.site ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Граф», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Принять в проект».">Предпросмотр графа${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
   if (!LYR.length) { el.innerHTML = `<div class="note">Слоёв пока нет. Нажмите «+» над списком и рисуйте, выберите инструмент рисования на панели сверху (слой появится сам) или загрузите источники в окне «Данные».</div>` + res; icons(); return; }
   el.innerHTML = LYR.map((l, i) => {
     const d = DATA[l.key], items = l.open ? legendItems(l).slice(0, 60) : [];
@@ -178,7 +179,7 @@ document.addEventListener("dblclick", e => { const row = e.target.closest?.("#la
 document.addEventListener("change", e => {
   const t = e.target; if (!tree()?.contains(t)) return;
   if (t.dataset.vis) { lyr(t.dataset.vis).visible = t.checked; applyOrder(); renderTree(); }
-  if (t.dataset.res) RES.find(r => r.id === t.dataset.res).layer.setVisible(t.checked);
+  if (t.dataset.res) { RES.find(r => r.id === t.dataset.res).on = t.checked; syncPreview(); }
   if (t.dataset.catoff) { const [k, v] = t.dataset.catoff.split("|"); const l = lyr(k), st = l.style; st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); }
 });
 /* перетаскивание = порядок прорисовки: верхний в списке рисуется поверх */
@@ -252,18 +253,18 @@ function renderRight() {
 function renderStyle(el) {
   const l = lyr(CUR); if (!l) { el.innerHTML = `<div class="empty">Выберите слой в дереве</div>`; return; }
   const st = l.style, fields = fieldsOfKey(l.key), nf = numFields(l.key), cf = fields.filter(k => !nf.includes(k));
-  const modes = [["single", "Единый"], ["cat", "Категории"], ["grad", "Диапазоны"], ["rules", "Правила"]].concat(fields.includes("_lt") || st.mode === "lgr" || DATA[l.key]?.fc.features.some(f => f.properties._lt) ? [["lgr", "ЛГР"]] : []);
+  const modes = [["single", "Единый"], ["cat", "Категории"], ["grad", "Градуир."], ["rules", "Правила"]].concat(fields.includes("_lt") || st.mode === "lgr" || DATA[l.key]?.fc.features.some(f => f.properties._lt) ? [["lgr", "ЛГР"]] : []);
   let h = `<div class="pad"><div class="ph">${symHTML(l)}<b>${esc(l.title)}</b></div><div class="modes">${modes.map(([m, t]) => `<button data-mode="${m}" aria-pressed="${st.mode === m}">${t}</button>`).join("")}</div>`;
   const colorWord = l.geom === "line" ? "Цвет" : l.geom === "point" ? "Цвет" : "Заливка";
   if (st.mode === "lgr") h += `<div class="note" style="padding:0 0 8px">Знаки красных линий и ЛГР по стандарту REDLN97: тип линии выбирается по LineCode объекта. <a href="linetypes.html" target="_blank">Каталог типов</a>.</div>`;
   else if (st.mode === "single") h += `<div class="row"><label>${colorWord}</label>${cbtn("fill", st.fill)}${l.geom === "poly" ? `<label class="inl"><input type="checkbox" data-k="hatch" ${st.hatch ? "checked" : ""}>штриховка</label>` : ""}</div>`;
   else if (st.mode === "cat") {
-    h += `<div class="row"><label>Поле</label><select data-k="cat.field">${opts(cf.length ? cf : fields, st.cat.field)}</select></div><div class="row"><label></label><button class="btn" data-recolor>Перекрасить</button></div>`;
+    h += `<div class="row"><label>Поле</label><select data-k="cat.field">${opts(cf.length ? cf : fields, st.cat.field)}</select></div><div class="row"><label></label><button class="btn" data-recolor title="Как «Классифицировать» в QGIS: заново собрать значения поля и раздать цвета">Классифицировать</button></div>`;
     h += `<table class="cl">${catValues(l.key, st.cat.field).slice(0, 80).map(([v, n]) => `<tr class="${st.cat.off.includes(v) ? "off" : ""}"><td><input type="checkbox" data-catoff2="${esc(v)}" ${st.cat.off.includes(v) ? "" : "checked"} aria-label="Показывать"></td><td>${cbtn("cat:" + v, st.cat.colors[v] || OTHER)}</td><td>${esc(v || "—")}</td><td class="n num">${n}</td></tr>`).join("")}</table>`;
     if (l.geom === "poly") h += `<div class="row" style="margin-top:7px"><label></label><label class="inl"><input type="checkbox" data-k="hatch" ${st.hatch ? "checked" : ""}>штриховка вместо заливки</label></div>`;
   } else if (st.mode === "grad") {
     if (!nf.length) h += `<div class="empty">Нет числовых полей</div>`;
-    else { if (!nf.includes(st.grad.field)) st.grad.field = nf[0]; const b = l._br || (l._br = breaks(l)), cols = ramp(st.grad.ramp, st.grad.n);
+    else { if (!nf.includes(st.grad.field)) st.grad.field = nf[0]; const b = l._br || (l._br = breaks(l)), cols = ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1);
       h += `<div class="row"><label>Поле</label><select data-k="grad.field">${opts(nf, st.grad.field)}</select></div><div class="row"><label>Классы</label><select data-k="grad.n">${opts([3, 4, 5, 6], st.grad.n)}</select><select data-k="grad.method"><option value="quantile" ${st.grad.method === "quantile" ? "selected" : ""}>Квантили</option><option value="equal" ${st.grad.method === "equal" ? "selected" : ""}>Равные интервалы</option></select></div>
       <div class="row"><label>Шкала</label><div class="ramps">${Object.keys(RAMPS).map(r => `<button class="ramp" data-ramp="${r}" aria-pressed="${st.grad.ramp === r}" aria-label="Шкала ${r}">${RAMPS[r].map(c => `<i style="background:${c}"></i>`).join("")}</button>`).join("")}</div></div>
       <table class="cl">${cols.map((c, i) => `<tr><td><span class="sym" style="background:${c}"></span></td><td class="num">${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}</td></tr>`).join("")}</table>`; }

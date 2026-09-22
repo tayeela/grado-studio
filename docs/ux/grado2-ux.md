@@ -21,7 +21,13 @@ the queue at the bottom with a date.
 6. **No command line. No AI-slop design.** Plain system font, neutral panels, Lucide icons,
    no gradients or decorative cards. Both themes.
 7. **Real data only.** Sources are real downloads (НСПД, OSM, ГИС ОГД); nothing is invented.
-8. **Windows version is mandatory** — nothing Mac-only in the UI (hotkeys show Ctrl on Windows).
+8. **Nothing is generated uninvited** (TestFit/Forma logic). A territory boundary only draws the
+   boundary. Buildings appear after «Построить эскиз» with a chosen typology; they hug each
+   part's long side, only whole buildings, gaps by СП 42.13330 п. 7.1 (15/20 m).
+9. **Preview is not the project** (Grasshopper Preview/Bake). Graph results show only while the
+   graph/sketch windows are open; «Принять в проект» turns the sketch into a normal layer that can
+   be edited, styled, saved and exported.
+10. **Windows version is mandatory** — nothing Mac-only in the UI (hotkeys show Ctrl on Windows).
 
 ## Scenarios
 
@@ -33,6 +39,10 @@ C. **Existing situation.** Open «Данные» → «Пример» territory 
    the tree in a sensible order → drag a layer up → it draws on top.
 D. **Analysis.** Open «Граф» → select a node → its output shows on the main map → change a
    buffer → «Эскиз застройки» on the map updates → «Показатели» shows ТЭП.
+D2. **No uninvited sketch.** New project → «Пример» → load → the map shows data and the boundary
+   only. «Эскиз» → «Построить эскиз» → sections along the blocks, not over existing houses →
+   «Принять в проект» → a layer «Эскиз: …» appears; close the sketch window → the preview hides,
+   the accepted layer stays; restyle it (single / ranges) → the map follows.
 E. **Variants and 3D.** Open «Варианты» → generate 6 → pick one → graph and map follow →
    open «Объём».
 F. **Measure.** Length and area tools show the value while drawing and keep it on the map; Esc
@@ -48,6 +58,9 @@ I. **Save and restore.** Draw, restyle, change a graph slider → reload → eve
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
+
+- 2026-09-23: real insolation and fire-gap checks (now only a gap/height coefficient).
+- 2026-09-23: setbacks from red lines by the ОГД layer (5 m, СП 42.13330) as a graph node.
 
 - 2026-09-23: printing and sheets with REDLN97.
 - 2026-09-23: DWG via the ODA converter (owner has not decided).

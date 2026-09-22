@@ -73,8 +73,9 @@ def export_dxf(layers, redln, lgr_colors):
                 if closed and len(pts) > 1 and pts[0] == pts[-1]:
                     pts = pts[:-1]
                 attrs = {"layer": lname}
-                if layer.get("floors") and props.get("floors"):
-                    attrs["thickness"] = props["floors"] * 3.0     # extrusion: storey 3 m
+                floors = props.get("floors") or props.get("Этажность")
+                if layer.get("floors") and isinstance(floors, (int, float)) and floors > 0:
+                    attrs["thickness"] = floors * 3.0              # extrusion: storey 3 m
                 for n in names or [None]:
                     a = dict(attrs)
                     if n:

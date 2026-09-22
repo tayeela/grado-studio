@@ -60,9 +60,10 @@ function applyProject(p) {
     LYR.forEach(l => { l.cache.clear(); l._br = null; });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     if (p.graph) graph.configure(p.graph);
+    graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
-    applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select");
+    applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview();
   } finally { PROJ.loading = false; }
   PROJ.name = p.name || null; PROJ.dirty = !!p.dirty; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle();
 }

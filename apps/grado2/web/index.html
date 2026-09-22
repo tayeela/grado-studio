@@ -124,6 +124,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .badge{font-size:10px;padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .edit-on{width:12px!important;height:12px!important;color:var(--accent)}
 .sym.pt{width:10px;height:10px;border-radius:50%}
+.sym.line{height:0;border:0;border-top:2px solid;align-self:center}
 .attr{flex:1;display:flex;flex-direction:column;min-height:0}
 .attr .ah{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line)}
 .attr .ah .ttl{color:var(--muted)}
@@ -309,7 +310,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 </section>
 <section class="win" id="wVars" hidden aria-label="Варианты">
   <header class="wh"><i data-lucide="layout-grid"></i><b>Варианты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
-  <div class="wb"><div class="vbar"><span style="color:var(--muted)">перебор типологии и этажности при текущих ограничениях</span><span class="sp"></span><button class="btn primary" id="bGen"><i data-lucide="sparkles"></i>Сгенерировать 6</button></div>
+  <div class="wb"><div class="vbar"><span style="color:var(--muted)">перебор типологии и этажности при текущих ограничениях</span><span class="sp"></span><button class="btn primary" id="bGen"><i data-lucide="sparkles"></i>Сгенерировать 6</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Принять в проект</button></div>
     <div class="vlist" id="vlist"><div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты. Выбранный вариант переносит параметры в граф.</div></div></div>
 </section>
 <section class="win" id="wTep" hidden aria-label="Показатели">
