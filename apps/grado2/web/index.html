@@ -27,7 +27,10 @@
 }
 html,body{height:100%}
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--text);font:12px/1.35 var(--ui);overflow:hidden}
+body{margin:0;background:var(--bg);color:var(--text);font:12px/1.35 var(--ui);overflow:hidden;-webkit-user-select:none;user-select:none}
+/* как в настольных программах: интерфейс не выделяется, текст выделяется только в полях и ячейках таблицы */
+input,textarea,.at td,.selectable{-webkit-user-select:text;user-select:text}
+::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
 *{box-sizing:border-box}
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
@@ -55,10 +58,15 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .ribbon .tgt select{max-width:220px}
 .ribbon label.inl{color:var(--muted);white-space:nowrap}
 /* рабочая область: слои | карта | свойства */
-.work{display:grid;grid-template-columns:280px minmax(0,1fr) 290px;min-height:0}
-.work.noL{grid-template-columns:0 minmax(0,1fr) 290px}.work.noR{grid-template-columns:280px minmax(0,1fr) 0}.work.noL.noR{grid-template-columns:0 minmax(0,1fr) 0}
-.work.noL>.side:first-child,.work.noR>.side.r{display:none}
-.work>.mapbox{grid-column:2;grid-row:1}.work>.side{grid-row:1}.work>.side.r{grid-column:3}
+.work{--wl:280px;--wr:290px;position:relative;display:grid;grid-template-columns:var(--wl) minmax(0,1fr) var(--wr);min-height:0}
+.work.noL{grid-template-columns:0 minmax(0,1fr) var(--wr)}.work.noR{grid-template-columns:var(--wl) minmax(0,1fr) 0}.work.noL.noR{grid-template-columns:0 minmax(0,1fr) 0}
+.gut{position:absolute;top:0;bottom:0;width:7px;cursor:col-resize;z-index:6;touch-action:none}
+.gut.l{left:calc(var(--wl) - 4px)}.gut.r{right:calc(var(--wr) - 4px)}
+.gut:hover,.gut.on{background:linear-gradient(90deg,transparent 3px,var(--accent) 3px,var(--accent) 4px,transparent 4px)}
+.work.noL .gut.l,.work.noR .gut.r{display:none}
+.win.snap{box-shadow:0 10px 30px rgba(0,0,0,.22),0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent)}
+.work.noL>.side:not(.r),.work.noR>.side.r{display:none}
+.work>.mapbox{grid-column:2;grid-row:1}.work>.side{grid-row:1;grid-column:1;min-width:0;overflow:hidden}.work>.side.r{grid-column:3}
 .status{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);white-space:nowrap;overflow:hidden}
 .status #stHint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .status b{font-weight:600}
@@ -278,6 +286,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
   </div>
 
   <main class="work" id="work">
+    <div class="gut l" data-gut="l" title="Потяните, чтобы изменить ширину панели слоёв"></div><div class="gut r" data-gut="r" title="Потяните, чтобы изменить ширину панели свойств"></div>
     <aside class="side">
       <div class="sh">Слои<span class="sp"></span><button class="tb" id="bNewLayer" title="Новый слой для рисования"><i data-lucide="plus"></i></button><button class="tb" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i></button></div>
       <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>

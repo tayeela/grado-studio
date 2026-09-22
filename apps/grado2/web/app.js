@@ -536,10 +536,32 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
   wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)] }; };
+// рабочее поле карты: края боковых панелей, к которым прилипают окна
+const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
   const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
+  if (d.anchor) return anchorWin(w);
   const W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 90);
   Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(40, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
+}
+/* окно, прижатое к боковой панели, следует за ней при растягивании и скрытии панели;
+   «во всю высоту» — двойной щелчок по заголовку, как у палитр AutoCAD */
+function anchorWin(w) {
+  const d = WST[w.id], m = mapBox(), W = Math.min(d.w || w.offsetWidth, m.width);
+  const H = d.full ? m.height : Math.min(d.h || w.offsetHeight, m.height), T = d.full ? m.top : Math.max(m.top, Math.min(d.t ?? m.top, m.bottom - H));
+  Object.assign(w.style, { width: W + "px", height: H + "px", top: T + "px", left: (d.anchor === "l" ? m.left : m.right - W) + "px" });
+}
+const reanchor = () => document.querySelectorAll(".win:not([hidden])").forEach(w => WST[w.id]?.anchor && anchorWin(w));
+addEventListener("resize", reanchor);
+const SNAP = 12;
+function snapMove(w, x, y) {           // магнит к краям карты (боковым панелям), строке инструментов, строке состояния и другим окнам
+  const m = mapBox(), W = w.offsetWidth, H = w.offsetHeight, xs = [m.left, m.right, 0, innerWidth], ys = [m.top, m.bottom, innerHeight];
+  document.querySelectorAll(".win:not([hidden])").forEach(o => { if (o === w) return; const r = o.getBoundingClientRect(); xs.push(r.left, r.right); ys.push(r.top, r.bottom); });
+  let sx = null, sy = null, best = SNAP;
+  for (const t of xs) for (const e of [0, W]) { const d = Math.abs(x + e - t); if (d < best) { best = d; sx = t - e; } }
+  best = SNAP; for (const t of ys) for (const e of [0, H]) { const d = Math.abs(y + e - t); if (d < best) { best = d; sy = t - e; } }
+  const anchor = sx === m.left ? "l" : sx !== null && sx + W === m.right ? "r" : null;
+  return { x: sx ?? x, y: sy ?? y, anchor, snapped: sx !== null || sy !== null };
 }
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
@@ -561,8 +583,17 @@ function syncWinButtons() {
 }
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
-  WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); requestAnimationFrame(() => mMain.updateSize());
+  WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize(); reanchor();
 }
+// боковые панели тянутся за разделитель, ширина запоминается
+function setDockWidth(side, px) { $("work").style.setProperty(side === "l" ? "--wl" : "--wr", px + "px"); WST["w" + side] = px; }
+document.querySelectorAll("[data-gut]").forEach(g => g.addEventListener("pointerdown", e => {
+  const side = g.dataset.gut, x0 = e.clientX, w0 = side === "l" ? $("work").children[2].offsetWidth : $("work").querySelector(".side.r").offsetWidth;
+  g.setPointerCapture(e.pointerId); g.classList.add("on");
+  const mv = ev => { setDockWidth(side, Math.max(200, Math.min(620, w0 + (side === "l" ? ev.clientX - x0 : x0 - ev.clientX)))); reanchor(); };
+  const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.classList.remove("on"); saveWins(); mMain.updateSize(); };
+  g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
+}));
 $("work").parentElement.querySelector(".wins").addEventListener("click", e => { const b = e.target.closest("[data-win]"); if (!b) return; const id = b.dataset.win;
   if (id === "dockL" || id === "dockR") toggleDock(id.slice(4)); else winOpen(id); });
 document.querySelectorAll(".win").forEach(w => {
@@ -572,9 +603,17 @@ document.querySelectorAll(".win").forEach(w => {
   h.addEventListener("pointerdown", e => {
     if (e.target.closest("button")) return;
     const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top; h.setPointerCapture(e.pointerId);
-    const mv = ev => { w.style.left = Math.max(-r.width + 80, Math.min(ev.clientX - dx, innerWidth - 80)) + "px"; w.style.top = Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)) + "px"; };
-    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); Object.assign(WST[w.id] ||= {}, { l: parseInt(w.style.left), t: parseInt(w.style.top) }); saveWins(); };
+    let s = null;
+    const mv = ev => { s = snapMove(w, Math.max(-r.width + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
+      w.style.left = s.x + "px"; w.style.top = s.y + "px"; w.classList.toggle("snap", s.snapped); };
+    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); w.classList.remove("snap");
+      const d = WST[w.id] ||= {}; Object.assign(d, { l: parseInt(w.style.left), t: parseInt(w.style.top), anchor: s?.anchor ?? d.anchor ?? null }); if (s) d.full = false; saveWins(); };
     h.addEventListener("pointermove", mv); h.addEventListener("pointerup", up);
+  });
+  h.addEventListener("dblclick", e => {
+    if (e.target.closest("button")) return; const d = WST[w.id] ||= {}, m = mapBox(), r = w.getBoundingClientRect();
+    if (d.full) { d.full = false; d.h = d.hPrev || 400; } else { d.hPrev = r.height; d.full = true; d.anchor ||= r.left + r.width / 2 < m.left + m.width / 2 ? "l" : "r"; }
+    anchorWin(w); saveWins();
   });
   // размер окна — за нижний правый угол (CSS resize); запоминаем и перерисовываем содержимое
   new ResizeObserver(() => { if (w.hidden) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);
@@ -584,6 +623,7 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
 (async () => {
   try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
   renderSources(); icons();
+  if (WST.wl) setDockWidth("l", WST.wl); if (WST.wr) setDockWidth("r", WST.wr);
   if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
   const first = !Object.keys(WST).some(k => k.startsWith("w"));
   Object.keys(W0()).forEach(id => { if (WST[id]?.open || (first && id === "wData")) winOpen(id, true); });
