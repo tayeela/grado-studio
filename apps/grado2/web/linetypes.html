@@ -1,0 +1,56 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Типы линий REDLN97</title>
+<style>
+:root{--bg:#f7f7f7;--text:#1d1d1f;--muted:#5f6368;--line:#d4d4d4;--ui:system-ui,-apple-system,"Segoe UI",Arial,sans-serif}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1f1f1f;--text:#e8e8e8;--muted:#b0b0b0;--line:#3a3a3a}}
+body{margin:0;background:var(--bg);color:var(--text);font:13px/1.4 var(--ui);padding:16px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 6px}
+.note{color:var(--muted);max-width:900px}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:10px 0}
+table{border-collapse:collapse;width:100%}
+td{border-bottom:1px solid var(--line);padding:3px 8px;vertical-align:middle}
+td.n{font-family:ui-monospace,Menlo,monospace;white-space:nowrap;width:1%}
+td.t{color:var(--muted);width:32%}
+canvas{display:block;background:#fff;border-radius:2px}
+.wrap{overflow-x:auto}
+</style>
+<h1>Типы линий красных линий REDLN97 + RED_LNS.SHX</h1>
+<p class="note">Каждая строка — тип линии из LIN, нарисованный тем же кодом, что в ГРАДО 2. Образец: ломаная 110 м. «b» — засечки справа по ходу линии, «t» — слева. Масштаб отображения меняется ползунком.</p>
+<div class="bar"><label>Пикселей на метр <input type="range" id="k" min="2" max="12" step="0.5" value="5"></label><span id="kv"></span>
+<label>Семейство <select id="fam"><option value="">все</option></select></label></div>
+<div id="out" class="wrap"></div>
+<script src="linetype.js"></script>
+<script>
+(async () => {
+  const lib = await Linetypes.load();
+  const lgr = await (await fetch("/styles/moscow_lgr.json")).json();
+  const title = {}; Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) title[+s.lgr_code] = s.title; });
+  const names = Object.keys(lib.linetypes);
+  const fam = n => (n.match(/^([A-Za-z]+\d*)/) || [0, n])[1].replace(/^L(\d\d).*$/, "L$1");
+  const fams = [...new Set(names.map(fam))].sort();
+  document.getElementById("fam").innerHTML += fams.map(f => `<option>${f}</option>`).join("");
+  function render() {
+    const k = +document.getElementById("k").value, sel = document.getElementById("fam").value;
+    document.getElementById("kv").textContent = `≈ 1:${Math.round(1 / (k * 0.000264583) / 10) * 10}`;
+    const W = 560, H = 44, out = document.getElementById("out"); out.innerHTML = "";
+    for (const f of fams) {
+      if (sel && f !== sel) continue;
+      const list = names.filter(n => fam(n) === f);
+      out.insertAdjacentHTML("beforeend", `<h2>${f} · ${list.length}</h2><table><tbody></tbody></table>`);
+      const tb = out.lastElementChild.querySelector("tbody");
+      for (const n of list) {
+        const m = n.match(/^L\d\ds(\d\d)([bts])$/i), code = m ? +m[1] : null;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td class="n">${n}</td><td class="t">${code != null ? (title[code] || "код " + code) : ""}${m ? " · " + ({ b: "справа", t: "слева", s: "без стороны" })[m[2].toLowerCase()] : ""}<br><small>${lib.linetypes[n].desc.replace(/</g, "&lt;")}</small></td><td></td>`;
+        const cv = document.createElement("canvas"), dpr = devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
+        const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
+        const x0 = 10, y = 24, len = 110 * k;
+        Linetypes.draw(ctx, [[x0, y], [x0 + len * .7, y], [x0 + len * .7 + len * .3 * .8, y - len * .3 * .6 / 3]], n, k, { color: "#d7191c", width: 1.2 });
+        tr.lastElementChild.appendChild(cv); tb.appendChild(tr);
+      }
+    }
+  }
+  document.getElementById("k").oninput = render; document.getElementById("fam").onchange = render; render();
+})();
+</script>

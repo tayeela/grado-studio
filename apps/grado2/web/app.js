@@ -47,8 +47,6 @@ function newMap(target, layers) { return new ol.Map({ target, layers: [basemap()
 const PAT = new Map();
 function hatch(color) { if (PAT.has(color)) return PAT.get(color); const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = color + "18"; x.fillRect(0, 0, 8, 8); x.strokeStyle = color; x.lineWidth = 1.1; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-4, 4); x.lineTo(4, -4); x.moveTo(4, 12); x.lineTo(12, 4); x.stroke(); const p = x.createPattern(c, "repeat"); PAT.set(color, p); return p; }
 const S = (fill, stroke, w = 1) => new ol.style.Style({ fill: fill && new ol.style.Fill({ color: fill }), stroke: stroke && new ol.style.Stroke({ color: stroke, width: w }) });
-const ZCOLORS = ["#e2a54a", "#d27a6f", "#9a93b8", "#79a7c9", "#8fbf8a", "#c9b27c", "#b58fb8", "#8ab5b0"];
-const zoneColor = new Map();
 const MAJOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
 const LAYER_STYLE = {
   "nspd.parcels": () => S("rgba(255,255,255,0.01)", "#7d8288", .8),
@@ -58,11 +56,34 @@ const LAYER_STYLE = {
   "osm.buildings": () => S("#dcd7ce", "#8a857c", .7),
   "osm.water": () => S("#b9d6ec", "#6fa6e6", .8),
   "osm.landuse": f => S(/park|grass|forest|garden|wood|meadow|recreation/.test(`${f.get("Землепользование")} ${f.get("Отдых")}`) ? "rgba(143,191,138,.45)" : "rgba(210,205,190,.25)", null),
-  "gisogd.func_zones": f => { const z = f.get("naimfunkzony") || f.get("Вид зоны") || "—"; if (!zoneColor.has(z)) zoneColor.set(z, ZCOLORS[zoneColor.size % ZCOLORS.length]); return S(zoneColor.get(z) + "66", zoneColor.get(z), .8); },
+  "gisogd.func_zones": f => zoneStyle(GPZ, f.get("naimfunkzony") || f.get("naimfunkzo")),
+  "gisogd.func_zones_tinao": f => zoneStyle(NMZ, f.get("Вид зоны")),
+  "gisogd.red_lines": f => redLineStyle(f),
   "gisogd.szz": () => S(hatch("#4a3aa7"), "#4a3aa7", 1.2),
   "gisogd.vodookhr": () => S(hatch("#2a78d6"), "#2a78d6", 1.2),
 };
-const ORDER = ["osm.landuse", "osm.water", "gisogd.func_zones", "nspd.parcels", "osm.roads", "gisogd.vodookhr", "gisogd.szz", "nspd.zouit", "osm.buildings", "nspd.buildings"];
+const ORDER = ["osm.landuse", "osm.water", "gisogd.func_zones", "gisogd.func_zones_tinao", "nspd.parcels", "osm.roads", "gisogd.vodookhr", "gisogd.szz", "nspd.zouit", "osm.buildings", "nspd.buildings", "gisogd.red_lines"];
+
+/* ---------- знаки: ЛГР (коды, цвета, штрих) и Генплан — из библиотек ядра ---------- */
+const LGRC = {}, LGRD = {}, GPZ = {}, NMZ = {};
+async function loadStyleLibs() {
+  await Linetypes.load();
+  const [lgr, gp] = await Promise.all(["/styles/moscow_lgr.json", "/styles/moscow_genplan.json"].map(u => fetch(u).then(r => r.json())));
+  Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) { LGRC[+s.lgr_code] = s.stroke; if (s.dash_mm) LGRD[+s.lgr_code] = s.dash_mm.map(v => v * 2); } }); // мм на 1:2000 → метры
+  Object.values(gp.styles).forEach(s => { if (s.gp_zone) GPZ[s.gp_zone.toLowerCase()] = s; if (s.nm_zone) NMZ[s.nm_zone.toLowerCase()] = s; });
+}
+const ltCode = n => { const m = /^L(\d\d)s(\d\d)/i.exec(n) || /^L(\d\d)[bt](\d\d)/i.exec(n); return m ? (/^L\d\ds/i.test(n) ? +m[2] : +m[1]) : null; };
+/* красные линии ОГД: тип линии REDLN97 по LineCode (выбирает сервер), коды без типа — по библиотеке ЛГР */
+const redLineStyle = f => new ol.style.Style({ renderer(coords, st) {
+  const ctx = st.context, pr = st.pixelRatio, mpp = st.resolution * Math.cos(LAT0 * Math.PI / 180), k = pr / mpp, plain = mpp / 0.000264583 > 10000;
+  const lines = typeof coords[0][0] === "number" ? [coords] : coords, lt = f.get("_lt") || [], miss = f.get("_miss") || [];
+  for (const pts of lines) {
+    lt.forEach(n => Linetypes.draw(ctx, pts, n, k, { color: LGRC[ltCode(n)] || "#d7191c", width: 1.3 * pr, plain }));
+    miss.forEach(([c]) => { ctx.save(); ctx.strokeStyle = LGRC[c] || "#888"; ctx.lineWidth = 1.3 * pr; if (LGRD[c] && !plain) ctx.setLineDash(LGRD[c].map(v => v * k)); ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); });
+    if (!lt.length && !miss.length) { ctx.save(); ctx.strokeStyle = "#999"; ctx.lineWidth = pr; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); }
+  }
+} });
+const zoneStyle = (lib, name) => { const z = lib[String(name || "").toLowerCase()]; return S(z ? z.fill + "cc" : "#dcdcdc99", z ? z.stroke : "#8a8d91", .6); };
 
 /* ---------- состояние проекта ---------- */
 let SOURCES = {};                 // ключ → {title, kind}
@@ -94,7 +115,7 @@ $("bDraw").onclick = () => {
   mCollect.addInteraction(drawI); toast("Щёлкайте по углам границы, двойной щелчок завершает.");
 };
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
-const GROUP = { nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы" };
+const GROUP = { import: "Импорт чертежей", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (красные линии: первая выгрузка — весь слой, около 100 МБ)" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
 function renderSources() {
   const groups = {}; Object.entries(SOURCES).forEach(([k, s]) => (groups[s.kind] ||= []).push(k));
@@ -102,7 +123,7 @@ function renderSources() {
     const d = DATA[k], e = ERRORS[k];
     return `<label class="lr"><input type="checkbox" data-src="${k}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${d.fetched_at}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
   }).join("") + `</div>`).join("") + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
-    + `<div class="note">Выгрузки не правятся: это доказательная база. В графе анализа они доступны узлом «Слой».</div>`;
+    + `<div class="note">Выгрузки не правятся: это доказательная база. В графе анализа они доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
   icons();
 }
 $("srcList").addEventListener("change", e => { const k = e.target.dataset.src; if (k) e.target.checked ? CHECKED.add(k) : CHECKED.delete(k); });
@@ -136,6 +157,40 @@ function existingSummary() {
   return rows;
 }
 function kv(rows) { return `<div class="kv">${rows.map(([k, v, cls]) => `<div>${esc(k)}</div><div class="${cls || ""}">${v}</div>`).join("")}</div>`; }
+
+/* ---------- DXF: импорт чертежа и экспорт проекта (сервер, ezdxf) ---------- */
+const MAPS = () => [mCollect, typeof mAnalysis !== "undefined" && mAnalysis, typeof mSketch !== "undefined" && mSketch].filter(Boolean);
+function addDynamicLayer(key) {
+  layerSrc[key] ||= new ol.source.Vector();
+  const style = f => f.get("_lt") ? redLineStyle(f) : S("rgba(90,90,90,.08)", "#3d3d3d", 1);
+  MAPS().forEach(m => { if (!m.getLayers().getArray().some(l => l.get("key") === key)) { const l = new ol.layer.Vector({ source: layerSrc[key], style, zIndex: 55 }); l.set("key", key); m.addLayer(l); } });
+}
+$("fDxf").onchange = async e => {
+  const file = e.target.files[0]; if (!file) return; e.target.value = "";
+  busy(true);
+  try {
+    const r = await fetch("/api/import/dxf", { method: "POST", body: await file.arrayBuffer() }); const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    const key = "import:" + file.name, fc = j.features;
+    SOURCES[key] = { title: "DXF: " + file.name, kind: "import" }; CHECKED.add(key);
+    DATA[key] = { title: "DXF: " + file.name, source: "файл " + file.name, fetched_at: new Date().toISOString().slice(0, 10), notes: j.notes, fc, count: fc.features.length, fields: [...new Set(fc.features.flatMap(f => Object.keys(f.properties)))] };
+    addDynamicLayer(key); layerSrc[key].clear(); layerSrc[key].addFeatures(GJ.readFeatures(fc)); dataRev++; renderSources();
+    if (fc.features.length) sharedView.fit(layerSrc[key].getExtent(), { padding: [40, 40, 40, 40], maxZoom: 18 });
+    toast(`DXF: объектов ${fc.features.length}. ${j.notes.join("; ")}`);
+  } catch (err) { toast("DXF не прочитан: " + err.message); } finally { busy(false); }
+};
+$("bExport").onclick = async () => {
+  const layers = Object.entries(DATA).map(([k, d]) => ({ name: d.title, features: d.fc, color: k === "gisogd.red_lines" ? "#d7191c" : "#808080" }));
+  if (TERR) layers.push({ name: "Граница территории", features: turf.featureCollection([TERR]), color: "#b3261e" });
+  if (RESULT.sketch?.length) layers.push({ name: "Эскиз застройки", features: turf.featureCollection(RESULT.sketch.map(b => turf.feature(b.f.geometry, { floors: b.floors }))), color: "#2a78d6", floors: true });
+  if (!layers.length) return toast("Экспортировать нечего: загрузите данные или постройте эскиз.");
+  busy(true);
+  try {
+    const r = await fetch("/api/export/dxf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layers }) });
+    if (!r.ok) throw new Error((await r.json()).error);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = "grado2-dxf.zip"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МГГТ, метры.");
+  } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
+};
 
 /* ================= 2. Граф анализа (litegraph.js) ================= */
 Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: "#d6dade", NODE_DEFAULT_BGCOLOR: "#f7f7f5", NODE_DEFAULT_BOXCOLOR: "#8a8d91", NODE_TITLE_COLOR: "#1d1d1f", NODE_SELECTED_TITLE_COLOR: "#000", NODE_TEXT_COLOR: "#333", NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11,
@@ -337,7 +392,7 @@ const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: s
 const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: new ol.style.Style({ fill: new ol.style.Fill({ color: hatch("#1f7a4d") }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
-const mAnalysis = newMap("mAnalysis", [...dataLayers(["osm.roads", "osm.water", "nspd.buildings", "osm.buildings"]), siteLayer(), new ol.layer.Vector({ source: prevSrc, zIndex: 30, style: S([224, 138, 0, .28], "#c46f00", 2) }), sketchLayer(), terrLayer()]);
+const mAnalysis = newMap("mAnalysis", [...dataLayers(["osm.roads", "osm.water", "nspd.buildings", "osm.buildings", "gisogd.red_lines"]), siteLayer(), new ol.layer.Vector({ source: prevSrc, zIndex: 30, style: S([224, 138, 0, .28], "#c46f00", 2) }), sketchLayer(), terrLayer()]);
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() { sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; })); }
 function updateAnalysisMap() {
@@ -351,7 +406,7 @@ function updateAnalysisMap() {
 }
 
 /* ================= 3. Эскиз ================= */
-const mSketch = newMap("mSketch", [...dataLayers(["osm.roads", "osm.water"]), siteLayer(), keptLayer(), sketchLayer(), terrLayer()]);
+const mSketch = newMap("mSketch", [...dataLayers(["osm.roads", "osm.water", "gisogd.red_lines"]), siteLayer(), keptLayer(), sketchLayer(), terrLayer()]);
 let mBefore = null, mAfter = null, view3d = "2d", rot3d = 0;
 function publishedControls() {
   const p = RESULT.placeNode, t = RESULT.tepNode, num = graph._nodes.find(n => n.type === "Параметры/Число" && n.outputs[0].links?.some(id => graph.links[id]?.target_id === p?.id));
@@ -466,6 +521,6 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
 document.querySelector(".proj").textContent = "Новый проект · реальные данные";
 
 (async () => {
-  try { SOURCES = await api("/api/sources"); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
+  try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
   renderSources(); icons(); go("collect");
 })();

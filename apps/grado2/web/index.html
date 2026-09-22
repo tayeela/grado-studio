@@ -163,6 +163,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
       <button data-step="analysis"><span class="n">2</span><span class="lbl">Параметрический анализ</span></button><span class="arr">→</span>
       <button data-step="sketch"><span class="n">3</span><span class="lbl">Эскиз</span></button>
     </nav>
+    <button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>Экспорт DXF</button>
     <button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
   </header>
 
@@ -171,7 +172,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <aside class="side">
       <div class="sh">Территория</div>
       <div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="pentagon"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
-      <div class="sh">Источники<span class="sp"></span><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+      <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
       <div class="sb" id="srcList"></div>
     </aside>
     <div class="mapbox"><div class="m" id="mCollect"></div></div>
@@ -220,4 +221,5 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <div class="toast" id="toast" role="status"></div>
 
 <div class="busy" id="busy" hidden></div>
+<script src="linetype.js"></script>
 <script src="app.js"></script>

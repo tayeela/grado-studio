@@ -60,5 +60,14 @@ class TestCrs(unittest.TestCase):
         self.assertAlmostEqual(crs.ORIGIN_LAT, 55.752, delta=0.05)
 
 
+
+class MoscowLocalRoundTrip(unittest.TestCase):
+    def test_wgs84_to_msk_and_back(self):
+        for lon, lat in [(37.6176, 55.7558), (37.525, 55.7925), (37.2, 55.4)]:
+            e, n = crs.wgs84_to_msk50(lon, lat)
+            lo, la = crs.msk50_to_wgs84(e, n)
+            self.assertAlmostEqual(lo, lon, places=8)
+            self.assertAlmostEqual(la, lat, places=8)
+
 if __name__ == "__main__":
     unittest.main()

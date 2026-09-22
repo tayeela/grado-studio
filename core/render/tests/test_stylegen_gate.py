@@ -20,6 +20,7 @@ CASES = [
     ("gen_moscow_lgr.py", "moscow_lgr.json"),
     ("gen_moscow_genplan.py", "moscow_genplan.json"),
     ("gen_osm_highway.py", "osm_highway.json"),
+    ("gen_redln97.py", "redln97.json"),
 ]
 
 
@@ -48,6 +49,9 @@ class TestStyleGeneratorsInSync(unittest.TestCase):
 
     def test_osm_highway_in_sync(self):
         self._check(*CASES[2])
+
+    def test_redln97_in_sync(self):
+        self._check(*CASES[3])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,169 @@
+"""DXF export/import for ГРАДО 2 on ezdxf (MIT), with the Moscow red-line linetypes REDLN97.
+
+Export: layers (GeoJSON WGS84) → DXF R2018 in the Moscow local system (МГГТ, metres).
+Red lines get the REDLN97 complex linetypes; the shape file red_lns.shx goes into the
+archive next to the drawing, as AutoCAD expects. Import: DXF in МГГТ or WGS84 → GeoJSON;
+REDLN97 linetype names become LineCode again.
+"""
+
+import io
+import re
+import zipfile
+from pathlib import Path
+
+import ezdxf
+
+from grado_connectors import crs
+from grado_render import acad_lin
+
+ROOT = Path(__file__).resolve().parents[2]
+STANDARD = ROOT / "docs/standards/redln97"
+
+
+def _pattern_string(lt, shapes):
+    parts = ["A"]
+    for e in lt["pattern"]:
+        if "d" in e:
+            parts.append(f"{e['d']:g}")
+        elif "shape" in e:
+            rot = f"a={e['r']:g}" if e.get("abs") else f"r={e['r']:g}"
+            no = shapes[e["shape"].upper()]["no"]      # DXF stores the shape NUMBER from the .shx index
+            parts.append(f"[{no},red_lns.shx,s={e['s']:g},{rot},x={e['x']:g},y={e['y']:g}]")
+    return ",".join(parts)
+
+
+def _add_linetype(doc, name, lt, shapes):
+    if name in doc.linetypes:
+        return
+    doc.linetypes.add(name, pattern=_pattern_string(lt, shapes), description=lt["desc"][:60], length=lt["length"])
+
+
+def _rings(geom):
+    t, c = geom["type"], geom["coordinates"]
+    if t == "Polygon":
+        return [(r, True) for r in c]
+    if t == "MultiPolygon":
+        return [(r, True) for p in c for r in p]
+    if t == "LineString":
+        return [(c, False)]
+    if t == "MultiLineString":
+        return [(r, False) for r in c]
+    return []
+
+
+def export_dxf(layers, redln, lgr_colors):
+    """layers: [{"name", "features": FeatureCollection, "color": "#rrggbb", "floors": bool}] → zip bytes."""
+    doc = ezdxf.new("R2018", setup=False)
+    doc.header["$INSUNITS"] = 6            # metres
+    doc.header["$LTSCALE"] = 1.0
+    doc.styles.add_shx("red_lns.shx")
+    shapes = {k.upper(): v for k, v in redln["shapes"].items()}
+    msp = doc.modelspace()
+    for layer in layers:
+        lname = re.sub(r'[<>/\\":;?*|=`]', "_", layer["name"])[:120]
+        if lname not in doc.layers:
+            doc.layers.add(lname, true_color=_rgb(layer.get("color", "#808080")))
+        for f in layer["features"]["features"]:
+            props = f.get("properties") or {}
+            names = [n for n in props.get("_lt") or [] if n in redln["linetypes"]]
+            for n in names:
+                _add_linetype(doc, n, redln["linetypes"][n], shapes)
+            for ring, closed in _rings(f["geometry"]):
+                pts = [crs.wgs84_to_msk50(x, y) for x, y in ring]
+                if closed and len(pts) > 1 and pts[0] == pts[-1]:
+                    pts = pts[:-1]
+                attrs = {"layer": lname}
+                if layer.get("floors") and props.get("floors"):
+                    attrs["thickness"] = props["floors"] * 3.0     # extrusion: storey 3 m
+                for n in names or [None]:
+                    a = dict(attrs)
+                    if n:
+                        a["linetype"] = n
+                        code = _code_of(n)
+                        if code in lgr_colors:
+                            a["true_color"] = _rgb(lgr_colors[code])
+                    msp.add_lwpolyline(pts, close=closed, dxfattribs=a)
+    buf = io.StringIO()
+    doc.write(buf)
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("grado2.dxf", buf.getvalue().encode("utf-8"))
+        z.write(STANDARD / "RED_LNS.SHX", "red_lns.shx")
+        z.write(STANDARD / "REDLN97.LIN", "REDLN97.LIN")
+        z.writestr("README.txt", ("Coordinates: Moscow local system (MGGT, as in GIS OGD), metres.\n"
+                                  "Red lines use REDLN97 linetypes; keep red_lns.shx next to grado2.dxf.\n").encode())
+    return out.getvalue()
+
+
+def _rgb(hexcolor):
+    h = hexcolor.lstrip("#")[:6]
+    return ezdxf.rgb2int((int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)))
+
+
+_PAIR = re.compile(r"^L(\d\d)([BT])(\d\d)([BT])$", re.I)
+
+
+def _code_of(name):
+    m = acad_lin.LGR_NAME.match(name)
+    if m:
+        return int(m.group(2))
+    m = _PAIR.match(name)
+    return int(m.group(1)) if m else None
+
+
+def linecode_of(name):
+    """REDLN97 linetype name → LineCode string of ГИС ОГД (inverse of linetypes_for_codes)."""
+    sign = lambda s: "" if s.lower() in "bs" else "-"
+    m = acad_lin.LGR_NAME.match(name)
+    if m:
+        carrier, code, side = int(m.group(1)), int(m.group(2)), m.group(3)
+        return (f"{carrier}," if carrier else "") + f"{sign(side)}{code}"
+    m = _PAIR.match(name)
+    if m:
+        return f"{sign(m.group(2))}{int(m.group(1))},{sign(m.group(4))}{int(m.group(3))}"
+    return None
+
+
+def import_dxf(data, redln):
+    """DXF bytes → (FeatureCollection WGS84, notes). Coordinates: МГГТ metres or WGS84 degrees."""
+    doc = ezdxf.read(io.StringIO(data.decode("utf-8", errors="replace")))
+    feats, skipped, notes = [], 0, []
+    upper = {n.upper(): n for n in redln["linetypes"]}
+    for e in doc.modelspace():
+        t = e.dxftype()
+        if t == "LWPOLYLINE":
+            pts, closed = [tuple(p[:2]) for p in e.get_points("xy")], e.closed
+        elif t == "POLYLINE" and not e.is_3d_polyline:
+            pts, closed = [tuple(v.dxf.location[:2]) for v in e.vertices], e.is_closed
+        elif t == "LINE":
+            pts, closed = [tuple(e.dxf.start[:2]), tuple(e.dxf.end[:2])], False
+        else:
+            skipped += 1
+            continue
+        if len(pts) < 2:
+            continue
+        lt = e.dxf.linetype if e.dxf.hasattr("linetype") else "BYLAYER"
+        if lt.upper() == "BYLAYER":
+            layer = doc.layers.get(e.dxf.layer) if e.dxf.layer in doc.layers else None
+            lt = layer.dxf.linetype if layer else "CONTINUOUS"
+        feats.append({"pts": pts, "closed": closed, "layer": e.dxf.layer, "lt": upper.get(lt.upper())})
+    if not feats:
+        return {"type": "FeatureCollection", "features": []}, [f"no lines or polylines (skipped {skipped})"]
+    xs = [p[0] for f in feats for p in f["pts"]]
+    is_wgs = all(-180 <= x <= 180 for x in xs[:500]) and max(map(abs, xs[:500])) > 1
+    if not is_wgs and max(map(abs, xs)) > 200_000:
+        raise ValueError("coordinates are neither МГГТ (Moscow local, tens of km) nor WGS84 degrees")
+    to = (lambda x, y: (x, y)) if is_wgs else crs.msk50_to_wgs84
+    out = []
+    for f in feats:
+        ring = [list(to(x, y)) for x, y in f["pts"]]
+        geom = {"type": "Polygon", "coordinates": [ring + [ring[0]]]} if f["closed"] and len(ring) > 2 \
+            else {"type": "LineString", "coordinates": ring}
+        props = {"Слой DXF": f["layer"]}
+        if f["lt"]:
+            props.update({"Тип линии": f["lt"], "LineCode": linecode_of(f["lt"]), "_lt": [f["lt"]], "_miss": []})
+            geom = {"type": "LineString", "coordinates": geom["coordinates"][0]} if geom["type"] == "Polygon" else geom
+        out.append({"type": "Feature", "geometry": geom, "properties": props})
+    notes.append(f"coordinates: {'WGS84' if is_wgs else 'МГГТ (Moscow local)'}; objects {len(out)}"
+                 + (f", other entities skipped: {skipped}" if skipped else ""))
+    return {"type": "FeatureCollection", "features": out}, notes

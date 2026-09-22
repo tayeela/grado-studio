@@ -19,7 +19,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-for sub in ("core/connectors", "core/compute"):
+for sub in ("core/connectors", "core/compute", "core/render"):
     sys.path.insert(0, str(ROOT / sub))
 
 from grado_compute import Engine                                   # noqa: E402
@@ -27,10 +27,13 @@ from grado_connectors.contract import ConnectorError               # noqa: E402
 from grado_connectors.gisogd_api import GISOGD_API_LAYERS, GisogdApi  # noqa: E402
 from grado_connectors.nspd import NspdDirect                       # noqa: E402
 from grado_connectors.osm import OsmOverpass                       # noqa: E402
+from grado_render import acad_lin                                  # noqa: E402
 
 WEB = Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
 PRESET = ROOT / "core/compute/grado_compute/presets/moscow_krt.json"
+STYLES = ROOT / "core/render/grado_render/styles"
+STYLE_FILES = {"redln97.json", "moscow_lgr.json", "moscow_genplan.json"}   # отдаются фронту как есть
 
 # ключ → (коннектор, параметр, название слоя)
 SOURCES = {
@@ -42,7 +45,8 @@ SOURCES = {
     "osm.water": ("osm", "water", "Водные объекты (OSM)"),
     "osm.landuse": ("osm", "landuse", "Землепользование (OSM)"),
 }
-for _k in ("gisogd.func_zones", "gisogd.szz", "gisogd.vodookhr"):
+SOURCES["gisogd.red_lines"] = ("gisogd", {"l1": None}, "Красные линии и ЛГР (ОГД)")
+for _k in ("gisogd.func_zones", "gisogd.func_zones_tinao", "gisogd.szz", "gisogd.vodookhr"):
     SOURCES[_k] = ("gisogd", GISOGD_API_LAYERS[_k]["codes"], GISOGD_API_LAYERS[_k]["title"])
 
 # НСПД отдаёт тяжёлые ответы в плотной застройке, ОГД режется из кэша слоя
@@ -84,9 +88,25 @@ def clean_props(props, extra=None):
     return out
 
 
+REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))
+REDLN_IDX = acad_lin.lgr_index(REDLN["linetypes"])
+LGR_COLORS = {int(v["lgr_code"]): v["stroke"] for v in json.loads((STYLES / "moscow_lgr.json").read_text("utf-8"))["styles"].values()
+              if v.get("lgr_code") is not None and v.get("stroke")}
+
+
+def linetype_props(props):
+    """LineCode of ГИС ОГД → linetypes REDLN97 (_lt) and codes without one (_miss: [[code, sign]])."""
+    code = next((v for k, v in (props or {}).items() if k.lower() in ("linelineco", "linecode")), None)
+    pairs = acad_lin.parse_line_codes(code)
+    if not pairs:
+        return {}
+    return {"LineCode": code, "_lt": acad_lin.linetypes_for_codes(pairs, REDLN["linetypes"], REDLN_IDX),
+            "_miss": [list(p) for p in acad_lin.missing_codes(pairs, REDLN["linetypes"], REDLN_IDX)]}
+
+
 def _layer(key, result):
     feats = [{"type": "Feature", "geometry": f["geometry"],
-              "properties": clean_props(f.get("properties"), f.get("_extra"))}
+              "properties": {**clean_props(f.get("properties"), f.get("_extra")), **linetype_props(f.get("properties"))}}
              for f in result["features"] if f.get("geometry")]
     return {"title": SOURCES[key][2], "source": result.get("source_doc"),
             "fetched_at": date.today().isoformat(), "notes": result.get("notes", []),
@@ -170,6 +190,14 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        name = self.path.split("?")[0].removeprefix("/styles/")
+        if self.path.startswith("/styles/") and name in STYLE_FILES:
+            body = (STYLES / name).read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
         return super().do_GET()
@@ -177,6 +205,10 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         try:
             n = int(self.headers.get("Content-Length") or 0)
+            if self.path == "/api/import/dxf":
+                import dxf_io
+                fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN)
+                return self._json(200, {"features": fc, "notes": notes})
             req = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/api/fetch":
                 bbox = [float(v) for v in req["bbox"]]
@@ -184,12 +216,23 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
                 layers, errors = fetch(bbox, list(req.get("sources") or []))
                 return self._json(200, {"layers": layers, "errors": errors})
+            if self.path == "/api/export/dxf":
+                import dxf_io
+                body = dxf_io.export_dxf(req["layers"], REDLN, LGR_COLORS)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", 'attachment; filename="grado2-dxf.zip"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path == "/api/tep":
                 f = {k: float(req.get(k) or 0) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2")}
                 return self._json(200, tep(**f))
             return self._json(404, {"error": "no such method"})
         except (KeyError, ValueError, TypeError) as e:
             return self._json(400, {"error": f"bad request: {e}"})
+        except Exception as e:      # битый DXF и т.п.: ответ с причиной, а не оборванное соединение
+            return self._json(422, {"error": f"{type(e).__name__}: {e}"})
 
     def log_message(self, fmt, *args):     # тише: только ошибки
         if len(args) > 1 and str(args[1])[:1] in "45":

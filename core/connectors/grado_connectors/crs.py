@@ -181,6 +181,23 @@ def msk50_to_wgs84(east, north):
     return math.degrees(lon), math.degrees(lat)
 
 
+def wgs84_to_msk50(lon, lat):
+    """(lon, lat) WGS84 → (easting, northing) Moscow local system (МГГТ, as in ГИС ОГД).
+
+    Inverse of msk50_to_wgs84 by Newton iterations: the forward chain is written once,
+    and the round trip stays consistent to millimetres."""
+    kx = 111320.0 * math.cos(math.radians(lat))
+    e = (lon - math.degrees(_MSK_LON0)) * kx + _MSK_X0
+    n = (lat - math.degrees(_MSK_LAT0)) * 110540.0 + _MSK_Y0
+    for _ in range(6):
+        lo, la = msk50_to_wgs84(e, n)
+        e -= (lo - lon) * kx
+        n -= (la - lat) * 110540.0
+        if abs(lo - lon) < 1e-11 and abs(la - lat) < 1e-11:
+            break
+    return e, n
+
+
 def transform_geom(geom, fn):
     """Применяет fn(x, y) -> (x, y) ко всем координатам геометрии."""
 

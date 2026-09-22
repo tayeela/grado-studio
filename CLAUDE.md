@@ -221,6 +221,28 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.2: AutoCAD red-line standard REDLN97 (LIN+SHX) — screen, DXF export/import; New Moscow pastel.**
+  The owner sent `REDLN97.LIN` + `RED_LNS.SHX` (now in `docs/standards/redln97`) and three Genplan QMLs.
+  - **Naming decoded, not guessed from docs:** `L00sNNx` = code NN alone; `LCCsNNx` = code NN on
+    carrier line CC (01 УДС, 02 ТОП, 04 ОДМС, 06 railway right-of-way); `LAAxBBy` = two codes without
+    a carrier. `x`: b/t/s. **Sign of ОГД LineCode verified on 585 real red lines:** «+» = object to the
+    right of the line → `b`, «−» → `t` (203:58 and 168:36). Codes 29 and 45 have no REDLN97 linetype;
+    they are drawn with the ЛГР library (dash + color), with no markers.
+  - Core: `core/render/grado_render/acad_lin.py` (SHX decoder per the AutoCAD shape spec, LIN parser,
+    LineCode→linetype `linetypes_for_codes`). `tools/gen_redln97.py` → `styles/redln97.json` (rule 2,
+    in the generator gate). `crs.wgs84_to_msk50` — inverse Moscow local (МГГТ) by Newton iteration.
+  - ГРАДО 2: ОГД red-lines layer `gisogd.red_lines` (l1, first download ~105 MB). Server attaches `_lt`
+    and `_miss`. JS renderer `web/linetype.js` (at 1:10000 and smaller: plain line, like the portal).
+    Catalog of all 500 types: `/linetypes.html`.
+  - DXF (`apps/grado2/dxf_io.py`, **ezdxf in venv `~/.grado2/venv`**, `requirements.txt`): export R2018
+    in МГГТ with complex linetypes (ezdxf needs the SHAPE NUMBER from the .shx index, not the name),
+    zip with `red_lns.shx`; import DXF → LineCode back, МГГТ/WGS84 detected automatically.
+    DWG is not supported (needs the ODA converter).
+  - Functional zones: Moscow and Nekrasovka QMLs match the library 1:1. New Moscow: owner's choice is
+    the pastel QML → a separate palette `nm_zone` (gp.nm.*); the legacy studio routing by gp_zone is unchanged.
+  - **Not done:** printing with REDLN97 (ГРАДО 2 has no sheets stage yet; the data is in core JSON).
+  - Tests: core 523 + grado2 7, green.
+
 - **2026-09-22, ГРАДО 2 v0.1: new app `apps/grado2` on the core + real exports; core audit.**
   The owner rejected the old studio (design, logic, convenience) and QGIS as a base. The new flow:
   existing situation from real sources → Grasshopper-like node graph (litegraph.js) → generative
