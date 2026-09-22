@@ -1,0 +1,223 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ГРАДО 2</title>
+<script src="https://cdn.jsdelivr.net/npm/ol@10.2.1/dist/ol.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/litegraph.js@0.7.18/build/litegraph.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
+<style>
+:root{
+  --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line:#d4d4d4; --line-2:#bdbdbd;
+  --text:#1d1d1f; --muted:#5f6368; --faint:#8a8d91; --hover:#e4e4e4; --selrow:#d3e3f8;
+  --accent:#2f6fc4; --accent-ink:#fff; --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
+  --canvas:#f5f4f0; --graph:#e6e6e2;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#4a4a4a;
+  --text:#e8e8e8; --muted:#b0b0b0; --faint:#8a8a8a; --hover:#353535; --selrow:#27405f;
+  --accent:#5b9bec; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#ef6b5f;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#4a4a4a;
+  --text:#e8e8e8; --muted:#b0b0b0; --faint:#8a8a8a; --hover:#353535; --selrow:#27405f;
+  --accent:#5b9bec; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#ef6b5f;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:12px/1.35 var(--ui);overflow:hidden}
+*{box-sizing:border-box}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
+svg.lucide{width:16px;height:16px;stroke-width:1.75;flex:0 0 auto}
+.num{font-variant-numeric:tabular-nums}
+select,input[type=text]{height:24px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0 5px;min-width:0}
+
+.app{height:100%;display:grid;grid-template-rows:40px 1fr;grid-template-columns:1fr}
+.top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+.brand{font-weight:600}
+.proj{color:var(--muted)}
+.steps{display:flex;align-items:center;gap:2px;margin:0 auto}
+.steps button{display:flex;align-items:center;gap:7px;border:1px solid transparent;background:none;height:30px;padding:0 12px;border-radius:4px;color:var(--muted)}
+.steps button:hover{background:var(--hover)}
+.steps button[aria-current="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
+.steps .n{width:18px;height:18px;border-radius:50%;border:1px solid currentColor;display:grid;place-items:center;font-size:11px}
+.steps button[aria-current="true"] .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.steps .arr{color:var(--faint)}
+.tb{border:1px solid transparent;background:none;width:28px;height:28px;border-radius:3px;display:grid;place-items:center;padding:0;flex:0 0 auto}
+.tb:hover{background:var(--hover)}
+.tb[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+
+.stage{display:grid;min-height:0;min-width:0}
+.side{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:0}
+.side.r{border-right:0;border-left:1px solid var(--line)}
+.sh{height:28px;display:flex;align-items:center;gap:6px;padding:0 8px;border-bottom:1px solid var(--line);font-weight:600;flex:0 0 auto}
+.sh .sp{flex:1}
+.sb{overflow:auto;flex:1;min-height:0}
+.sect{padding:4px 8px;font-weight:600;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:-1px}
+.note{padding:8px;color:var(--muted);line-height:1.45}
+.mapbox{position:relative;min-width:0;min-height:0;background:var(--canvas)}
+.mapbox .m{position:absolute;inset:0}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--line-2);height:100%}
+.split>div{position:relative;background:var(--canvas)}
+.mtag{position:absolute;left:8px;top:8px;background:#ffffffee;border:1px solid #bbb;border-radius:3px;padding:2px 7px;color:#222;z-index:2;pointer-events:none}
+.ol-scale-line{position:absolute;left:8px;bottom:8px;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:2px}
+.ol-scale-line-inner{border:1px solid #333;border-top:0;color:#333;font-size:10px;text-align:center;margin:1px}
+.mtools{position:absolute;right:8px;top:8px;display:flex;gap:2px;background:var(--panel);border:1px solid var(--line-2);border-radius:4px;padding:2px;z-index:3}
+
+/* 1 сбор */
+.s-collect{grid-template-columns:300px 1fr}
+.terr{padding:8px;border-bottom:1px solid var(--line);background:var(--field)}
+.terr .row{display:flex;gap:6px;flex-wrap:wrap}
+.btn:disabled{opacity:.5;cursor:default}
+.err{color:var(--bad);padding:2px 8px 6px 22px;background:var(--field)}
+.basemap canvas{filter:grayscale(1) contrast(.9) brightness(1.05)}
+.busy{position:fixed;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);background-size:40% 100%;animation:busy 1s linear infinite;z-index:90}
+@keyframes busy{from{background-position:-40% 0}to{background-position:140% 0}}
+.src{border-bottom:1px solid var(--line)}
+.srch{display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--panel)}
+.srch b{flex:1;font-weight:600}
+.srch small{color:var(--faint)}
+.ok{color:var(--good)}
+.lr{display:flex;align-items:center;gap:6px;height:24px;padding:0 8px 0 22px;background:var(--field)}
+.lr .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lr .c{color:var(--faint)}
+.lr input{margin:0}
+.sym{width:16px;height:11px;border:1px solid rgba(0,0,0,.35);flex:0 0 auto}
+.btn{border:1px solid var(--line-2);background:var(--panel);border-radius:3px;height:24px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.btn:hover{background:var(--hover)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn svg.lucide{width:14px;height:14px}
+.kv{display:grid;grid-template-columns:1fr auto;background:var(--field)}
+.kv>div{padding:4px 8px;border-bottom:1px solid var(--line)}
+.kv>div:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
+.kv .warn{color:var(--warn)}.kv .bad{color:var(--bad)}.kv .good{color:var(--good)}
+
+/* 2 анализ */
+.s-analysis{grid-template-columns:180px minmax(0,1.6fr) minmax(0,1fr)}
+.graphbox{position:relative;background:var(--graph);min-width:0;min-height:0;border-right:1px solid var(--line)}
+.graphbox canvas{position:absolute;inset:0;display:block}
+.lib button{display:flex;width:100%;align-items:center;gap:7px;border:0;background:none;text-align:left;padding:4px 8px 4px 14px;height:24px}
+.lib button:hover{background:var(--hover)}
+.lib .cat{padding:6px 8px 2px;color:var(--faint);font-weight:600}
+.gbar{position:absolute;left:8px;top:8px;display:flex;gap:6px;z-index:2}
+.pv{position:absolute;right:8px;bottom:8px;background:#ffffffee;border:1px solid #bbb;border-radius:3px;padding:4px 8px;color:#222;z-index:2;max-width:70%}
+.litegraph.litecontextmenu{font:12px var(--ui);background:#fff;color:#222;border:1px solid #bbb;box-shadow:0 4px 14px rgba(0,0,0,.2);padding:3px 0;min-width:160px;z-index:100;border-radius:3px}
+.litegraph .litemenu-title{padding:4px 10px;font-weight:600;color:#666}
+.litegraph .litemenu-entry{padding:4px 12px 4px 10px;cursor:default;white-space:nowrap}
+.litegraph .litemenu-entry:hover:not(.disabled){background:#2f6fc4;color:#fff}
+.litegraph .litemenu-entry.disabled{color:#aaa}
+.litegraph .litemenu-entry.separator{height:1px;background:#ddd;padding:0;margin:3px 0}
+.litegraph .litemenu-entry.submenu:after{content:" ▸";float:right;opacity:.6}
+.litegraph.litesearchbox{position:absolute;z-index:100;background:#fff;border:1px solid #bbb;padding:6px;font:12px var(--ui);color:#222;border-radius:3px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.litegraph.litesearchbox input{width:220px}
+.litegraph.litesearchbox .helper{max-height:220px;overflow:auto}
+.litegraph .litesearchbox .lite-search-item,.litegraph.litesearchbox .lite-search-item{padding:3px 6px}
+.litegraph.litesearchbox .lite-search-item.selected{background:#2f6fc4;color:#fff}
+.litegraph .dialog,.litegraph.dialog{display:none}
+
+/* 3 эскиз */
+.s-sketch{grid-template-columns:260px minmax(0,1fr) 270px;grid-template-rows:1fr auto}
+.s-sketch .side{grid-row:1/3}
+.s-sketch .side.r{grid-column:3}
+.ctl{padding:8px 10px;border-bottom:1px solid var(--line);background:var(--field)}
+.ctl .t{display:flex;justify-content:space-between;margin-bottom:4px}
+.ctl .t span:last-child{font-variant-numeric:tabular-nums;color:var(--muted)}
+.ctl input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.ctl .seg{display:flex;border:1px solid var(--line-2);border-radius:3px;overflow:hidden}
+.ctl .seg button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:24px}
+.ctl .seg button:last-child{border-right:0}
+.ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.ctl small{display:block;color:var(--faint);margin-top:3px}
+.variants{grid-column:2;background:var(--panel);border-top:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
+.vbar{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
+.vbar b{font-weight:600}
+.vbar .sp{flex:1}
+.vlist{display:flex;gap:6px;padding:8px;overflow-x:auto;height:168px}
+.vc{flex:0 0 180px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0;text-align:left;display:flex;flex-direction:column}
+.vc:hover{border-color:var(--accent)}
+.vc[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-1px}
+.vc svg{width:100%;height:84px;display:block;background:#f5f4f0;border-bottom:1px solid var(--line)}
+.vc .vt{padding:4px 7px 0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vc .vm{padding:2px 7px 6px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:0 8px;font-variant-numeric:tabular-nums}
+.vc .vm b{color:var(--text);font-weight:500}
+.empty{color:var(--faint);padding:24px;text-align:center}
+canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:#eeede8}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:3px;z-index:80;max-width:80%;opacity:0;pointer-events:none;transition:opacity .15s}
+.toast.on{opacity:1}
+@media (max-width:980px){
+  .s-collect{grid-template-columns:1fr;grid-template-rows:auto 1fr}.s-collect .side{max-height:40vh}
+  .s-analysis{grid-template-columns:1fr;grid-template-rows:0 1fr 1fr}.s-analysis .side{display:none}
+  .s-sketch{grid-template-columns:1fr;grid-template-rows:auto 1fr auto auto}.s-sketch .side{grid-row:auto;max-height:32vh}.s-sketch .side.r{grid-column:auto}.variants{grid-column:auto}
+  .proj{display:none}.steps .arr{display:none}.steps button{padding:0 6px}.steps .lbl{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app">
+  <header class="top">
+    <span class="brand">ГРАДО</span><span class="proj">Квартал «Заречье» · условные данные</span>
+    <nav class="steps" id="steps" aria-label="Этапы">
+      <button data-step="collect"><span class="n">1</span><span class="lbl">Существующее положение</span></button><span class="arr">→</span>
+      <button data-step="analysis"><span class="n">2</span><span class="lbl">Параметрический анализ</span></button><span class="arr">→</span>
+      <button data-step="sketch"><span class="n">3</span><span class="lbl">Эскиз</span></button>
+    </nav>
+    <button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
+  </header>
+
+  <!-- 1. Существующее положение -->
+  <section class="stage s-collect" id="st-collect">
+    <aside class="side">
+      <div class="sh">Территория</div>
+      <div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="pentagon"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
+      <div class="sh">Источники<span class="sp"></span><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+      <div class="sb" id="srcList"></div>
+    </aside>
+    <div class="mapbox"><div class="m" id="mCollect"></div></div>
+  </section>
+
+  <!-- 2. Анализ -->
+  <section class="stage s-analysis" id="st-analysis" hidden>
+    <aside class="side">
+      <div class="sh">Узлы</div>
+      <div class="sb lib" id="lib"></div>
+      <div class="note">Щелчок добавляет узел. Связи тянутся от выхода к входу. Правый щелчок по холсту или узлу — меню, двойной — поиск.</div>
+    </aside>
+    <div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
+      <div class="gbar"><button class="btn" id="bFitGraph"><i data-lucide="scan"></i>Весь граф</button><button class="btn" id="bRunGraph"><i data-lucide="play"></i>Пересчитать</button></div>
+    </div>
+    <div class="mapbox"><div class="m" id="mAnalysis"></div><div class="pv" id="pv"></div></div>
+  </section>
+
+  <!-- 3. Эскиз -->
+  <section class="stage s-sketch" id="st-sketch" hidden>
+    <aside class="side">
+      <div class="sh">Параметры эскиза</div>
+      <div class="sb" id="params"></div>
+    </aside>
+    <div class="mapbox" id="sketchBox">
+      <div class="m" id="mSketch"></div>
+      <div class="split" id="splitBox" hidden><div><div class="m" id="mBefore"></div><span class="mtag">Существующее</span></div><div><div class="m" id="mAfter"></div><span class="mtag">Эскиз</span></div></div>
+      <canvas class="c3d" id="c3d" hidden></canvas>
+      <div class="mtools">
+        <button class="tb" data-view="2d" title="План" aria-pressed="true"><i data-lucide="map"></i></button>
+        <button class="tb" data-view="3d" title="Объём"><i data-lucide="box"></i></button>
+        <button class="tb" data-view="cmp" title="Сравнить с существующим"><i data-lucide="columns-2"></i></button>
+        <button class="tb" id="bRot" title="Повернуть объём на 90°" hidden><i data-lucide="rotate-cw"></i></button>
+      </div>
+    </div>
+    <aside class="side r">
+      <div class="sh">Показатели</div>
+      <div class="sb" id="tep"></div>
+    </aside>
+    <div class="variants">
+      <div class="vbar"><b>Варианты</b><span style="color:var(--muted)">перебор типологии и этажности при текущих ограничениях</span><span class="sp"></span><button class="btn primary" id="bGen"><i data-lucide="sparkles"></i>Сгенерировать 6</button></div>
+      <div class="vlist" id="vlist"><div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты. Выбранный вариант переносит параметры в граф.</div></div>
+    </div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<div class="busy" id="busy" hidden></div>
+<script src="app.js"></script>

@@ -115,10 +115,11 @@ class Engine:
         self._recompute(self._dirty_set(input_id))
 
     def set_inputs(self, **kwargs):
+        unknown = [k for k in kwargs if k not in self.inputs]
+        if unknown:   # проверяем до записи: ошибка не оставляет полуизменённое состояние
+            raise KeyError(f"нет входного параметра {unknown[0]!r}")
         dirty = set()
         for input_id, value in kwargs.items():
-            if input_id not in self.inputs:
-                raise KeyError(f"нет входного параметра {input_id!r}")
             self._values[input_id] = value
             dirty |= self._dirty_set(input_id)
         self._recompute(dirty)

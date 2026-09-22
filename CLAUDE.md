@@ -221,6 +221,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-22, ГРАДО 2 v0.1: new app `apps/grado2` on the core + real exports; core audit.**
+  The owner rejected the old studio (design, logic, convenience) and QGIS as a base. The new flow:
+  existing situation from real sources → Grasshopper-like node graph (litegraph.js) → generative
+  TestFit-like sketch with variants and ТЭП. Run: `python3 apps/grado2/server.py` (port 8650,
+  preview config `grado2`).
+  - Backend `server.py` (stdlib only): `/api/fetch` = the core connectors NspdDirect/OsmOverpass/
+    GisogdApi, WGS84 output. `/api/tep` = the core `Engine` with the KRT preset. Population is
+    counted only from new buildings. The ТЭП copy in JS is gone.
+  - Front `web/app.js`: OpenLayers (EPSG:3857, OSM basemap), Turf.js for graph geometry.
+    Placement and the 3D view work in a local metric frame around the territory.
+  - Core fixes: atomic `set_inputs`; `calc_area` clamped to 0; OSM keeps holes in multipolygons.
+    Audit and the list of bugs NOT fixed: `docs/audits/2026-09-22-grado2-core.md`.
+  - Verified live (Khoroshevo, 45.9 ha): 8 layers loaded, buildable area 20.7 ha, 57 buildings,
+    6 variants. Tests 513 green.
+  - **NOTE:** this file claims the Moscow regulatory profile is "connected to compute_tep". It is
+    not true: `moscow_urban_planning.json` is not loaded by any code.
+
 - **2026-07-19, v0.9.0-beta.106: глобальный индикатор загрузки данных + реальный % каталога ФГИС ТП.**
   Юзер: «добавь прогресс загрузки каталога; для всех загружаемых данных должен быть прогресс-бар или
   упоминание, что процесс идёт». Сделан **глобальный индикатор занятости** (app.js): тонкая полоса

@@ -47,7 +47,7 @@
     "reconstruction_adult_recreation_sqm_per_person": 0.1
   },
   "metrics": [
-    {"id": "calc_area", "title": "Расчётная площадь территории", "unit": "га", "expr": "terr_area - restrict_area", "precision": 2, "group": "Территория"},
+    {"id": "calc_area", "title": "Расчётная площадь территории", "unit": "га", "expr": "max(terr_area - restrict_area, 0)", "precision": 2, "group": "Территория"},
     {"id": "spp", "title": "СПП в габаритах наружных стен", "unit": "тыс. м²", "expr": "density * calc_area", "precision": 1, "group": "Застройка"},
     {"id": "np", "title": "Наземная площадь (НП)", "unit": "тыс. м²", "expr": "spp * coeff_spp_to_np", "precision": 1, "group": "Застройка"},
     {"id": "spp_zh", "title": "СПП жилых зданий", "unit": "тыс. м²", "expr": "spp * ratio_zh / 100", "precision": 1, "group": "Застройка"},

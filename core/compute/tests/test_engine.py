@@ -63,5 +63,13 @@ class TestEngine(unittest.TestCase):
             })
 
 
+
+class SetInputsAtomic(unittest.TestCase):
+    def test_unknown_key_changes_nothing(self):
+        e = make_engine()
+        with self.assertRaises(KeyError):
+            e.set_inputs(a=99, bogus=1)
+        self.assertEqual(e.value("a"), 10)
+
 if __name__ == "__main__":
     unittest.main()

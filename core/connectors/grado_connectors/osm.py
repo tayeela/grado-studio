@@ -61,6 +61,14 @@ OSM_SETS = {
 _RING_SETS = {"buildings", "landuse", "water", "boundaries"}
 
 
+def _in_ring(pt, ring):
+    x, y, inside = pt[0], pt[1], False
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
+
+
 def _assemble_rings(segments):
     """Сшить member-way мультиполигона в замкнутые кольца по совпадающим
     концам (общие узлы OSM в ответе имеют идентичные координаты). Внешняя
@@ -208,19 +216,23 @@ class OsmOverpass(Connector):
                                  "geometry": geometry, "properties": props})
 
             elif set_key in _RING_SETS:      # relation — мультиполигон
-                outers = []
+                outers, inners = [], []
                 for m in el.get("members") or []:
                     if m.get("type") != "way" or not m.get("geometry"):
                         continue
-                    if m.get("role") not in ("outer", "", None):
-                        continue          # inner (острова) модель не хранит
-                    outers.append([[p["lon"], p["lat"]] for p in m["geometry"]])
+                    seg = [[p["lon"], p["lat"]] for p in m["geometry"]]
+                    (inners if m.get("role") == "inner" else outers).append(seg)
                 rings = _assemble_rings(outers)
                 if not rings:
                     skipped += 1
                     continue
-                geometry = {"type": "MultiPolygon",
-                            "coordinates": [[r] for r in rings]}
+                polys = [[r] for r in rings]
+                for hole in _assemble_rings(inners):
+                    for poly in polys:        # дыра — в тот внешний контур, что её содержит
+                        if _in_ring(hole[0], poly[0]):
+                            poly.append(hole)
+                            break
+                geometry = {"type": "MultiPolygon", "coordinates": polys}
                 features.append({"type": "Feature",
                                  "grado_key": f"rel/{el.get('id')}",
                                  "geometry": geometry, "properties": props})
