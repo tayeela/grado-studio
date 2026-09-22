@@ -12,8 +12,8 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 import server  # noqa: E402
 
 
-class AutosaveSlotTests(unittest.TestCase):
-    """Интерфейс v2 пишет в свой файл и не трогает автосейв беты."""
+class LocalServerTests(unittest.TestCase):
+    """Живой HTTP-сервер студии: слоты автосейва, проверка параметров печати."""
 
     def setUp(self):
         import threading
@@ -45,6 +45,14 @@ class AutosaveSlotTests(unittest.TestCase):
                                          headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.loads(response.read() or b"null")
+
+    def test_print_rejects_bad_paper_and_scale(self):
+        import urllib.error
+        for body in ({"features": [], "paper": "A0"}, {"features": [], "scale": "2000"},
+                     {"features": [], "scale": 5}, {"features": [], "scale": True}):
+            with self.subTest(body=body), self.assertRaises(urllib.error.HTTPError) as caught:
+                self.call("/api/print", body)
+            self.assertEqual(400, caught.exception.code)
 
     def test_v2_slot_is_separate_from_beta(self):
         server.save_autosave({"name": "Бета", "features": [{"id": 1}]}, path=self.beta)

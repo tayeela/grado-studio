@@ -1220,8 +1220,16 @@ class Handler(SimpleHTTPRequestHandler):
                 if not isinstance(canvas_styles, dict):
                     canvas_styles = None
                 project_styles = body.get("projectStyles")
+                paper = body.get("paper", "A2")
+                if paper not in ("A3", "A2", "A1"):
+                    raise BadRequest("paper must be A3, A2 or A1")
+                scale = body.get("scale")
+                if scale is not None and (
+                        isinstance(scale, bool) or not isinstance(scale, (int, float))
+                        or not 100 <= scale <= 50000):
+                    raise BadRequest("scale must be a number from 100 to 50000")
                 pdf, used = studio_core.make_print(
-                    features, name, body.get("scale"), body.get("paper", "A2"),
+                    features, name, scale, paper,
                     basemap=bool(body.get("basemap")), layers=layers,
                     basemap_source=basemap_source, canvas_styles=canvas_styles,
                     project_styles=project_styles)

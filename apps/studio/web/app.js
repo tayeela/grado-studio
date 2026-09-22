@@ -5184,6 +5184,7 @@ function openAlbumConfig() {
   };
   overlay.querySelector('#album-apply').onclick = () => {
     state.albumConfig = {
+      ...(state.albumConfig || {}),
       sheets: sheets,
       title: {org: overlay.querySelector('#title-org').value, city_year: overlay.querySelector('#title-year').value}
     };
@@ -6826,7 +6827,7 @@ function showPreflightReport(report) {
     overlay.querySelector(blocked ? ".preflight-cancel" : ".preflight-continue").focus();
   });
 }
-async function download(url, suffix) {
+async function download(url, suffix, extra = {}) {
   if (downloadInProgress) { toast("Дождитесь завершения текущего файла", "warn"); return; }
   if (url !== "/api/grado" && !state.features.length) {
     toast("Проект пуст — сначала добавьте объекты", "warn"); return;
@@ -6856,6 +6857,7 @@ async function download(url, suffix) {
                     albumConfig: state.albumConfig || null,
                     studioState: collectProjectSettings() };
   if (canvasStyles) payload.canvasStyles = canvasStyles;
+  Object.assign(payload, extra);
   const filename = projectFileName(suffix);
   const action = url === "/api/grado" ? "Сохраняю проект…" : "Собираю файл…";
   const exportButtons = ["btn-album", "btn-grado", "btn-dxf", "btn-print"]
@@ -6903,7 +6905,70 @@ on("btn-album-config", "click", openAlbumConfig);
 on("btn-grado", "click", () => download(
   "/api/grado", window.GRADO_STATIC ? ".grado-web.json" : ".grado"));
 on("btn-dxf", "click", () => download("/api/dxf", ".dxf"));
-on("btn-print", "click", () => download("/api/print", "-print.pdf"));
+on("btn-print", "click", openPrintDialog);
+
+const PRINT_PAPERS = [["A3", "A3 · 420×297"], ["A2", "A2 · 594×420"], ["A1", "A1 · 841×594"]];
+const PRINT_SCALES = [500, 1000, 2000, 5000, 10000];
+
+// Формат и масштаб печати хранятся в проекте (albumConfig.print): уходят в
+// автосейв и .grado вместе с составом альбома.
+function openPrintDialog() {
+  closePopups();
+  const saved = (state.albumConfig && state.albumConfig.print) || {};
+  const paper = PRINT_PAPERS.some(([id]) => id === saved.paper) ? saved.paper : "A2";
+  const scale = Number(saved.scale) || 0;
+  const preset = scale === 0 ? "fit" : PRINT_SCALES.includes(scale) ? String(scale) : "custom";
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `<div class="modal fmt-modal print-modal" role="dialog" aria-modal="true" aria-labelledby="print-title">
+    <div class="modal-head modal-head-rich">
+      <span class="modal-head-copy"><span class="modal-kicker">Выпуск</span><span id="print-title">Печать чертежа</span></span>
+      <button class="modal-x" aria-label="Закрыть печать"><svg class="ic"><use href="#ic-close"/></svg></button></div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <label><span>Формат листа</span><select id="pr-paper">${PRINT_PAPERS.map(([id, title]) =>
+          `<option value="${id}"${id === paper ? " selected" : ""}>${title}</option>`).join("")}</select></label>
+        <label><span>Масштаб</span><select id="pr-scale">
+          <option value="fit"${preset === "fit" ? " selected" : ""}>Вписать в лист</option>
+          ${PRINT_SCALES.map(value => `<option value="${value}"${preset === String(value) ? " selected" : ""}>1:${value}</option>`).join("")}
+          <option value="custom"${preset === "custom" ? " selected" : ""}>Свой…</option></select></label>
+        <label id="pr-custom-row"${preset === "custom" ? "" : " hidden"}><span>Свой масштаб 1:</span>
+          <input id="pr-custom" type="number" min="100" max="50000" step="50" value="${preset === "custom" ? scale : ""}"></label>
+      </div>
+      <div class="form-error" id="pr-error" role="alert" hidden></div>
+    </div>
+    <div class="modal-actions">
+      <span class="spacer"></span>
+      <button id="pr-cancel">Отмена</button>
+      <button id="pr-go" class="primary">Печать</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const $ = id => overlay.querySelector("#" + id);
+  const close = () => overlay.remove();
+  $("pr-scale").onchange = () => {
+    $("pr-custom-row").hidden = $("pr-scale").value !== "custom";
+    if (!$("pr-custom-row").hidden) $("pr-custom").focus();
+  };
+  $("pr-go").onclick = () => {
+    const mode = $("pr-scale").value;
+    let chosen = mode === "fit" ? 0 : mode === "custom" ? Math.round(Number($("pr-custom").value)) : Number(mode);
+    if (mode === "custom" && !(chosen >= 100 && chosen <= 50000)) {
+      $("pr-error").textContent = "Масштаб от 1:100 до 1:50 000";
+      $("pr-error").hidden = false;
+      return;
+    }
+    const print = { paper: $("pr-paper").value, scale: chosen };
+    state.albumConfig = { ...(state.albumConfig || JSON.parse(JSON.stringify(DEFAULT_ALBUM_CONFIG))), print };
+    persist();
+    close();
+    download("/api/print", "-print.pdf", chosen ? { paper: print.paper, scale: chosen } : { paper: print.paper });
+  };
+  $("pr-cancel").onclick = close;
+  overlay.querySelector(".modal-x").onclick = close;
+  overlay.onclick = event => { if (event.target === overlay) close(); };
+  $("pr-paper").focus();
+}
 
 function hasProjectContent() {
   return state.features.length > 0 || LAYERS_V2.some(layer => layer.user_created) ||

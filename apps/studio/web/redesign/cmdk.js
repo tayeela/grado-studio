@@ -97,7 +97,7 @@
     ]},
     { sec: "Выпуск", items: [
       { t: "Экспорт чертежа (DXF)", run: () => click("btn-dxf"), desktop: true },
-      { t: "Печать в масштабе (PDF)", run: () => click("btn-print"), desktop: true },
+      { t: "Печать чертежа (PDF)…", run: () => click("btn-print"), desktop: true },
       { t: "Собрать альбом АГК (PDF)", run: () => click("btn-album"), desktop: true },
       { t: "Состав альбома…", run: () => call("openAlbumConfig") },
     ]},
