@@ -36,7 +36,6 @@ from grado_layout import Page, A3_LANDSCAPE  # noqa: E402  # for stub sheets
 from grado_model import Project  # noqa: E402
 from grado_model import geometry  # noqa: E402
 from grado_model.classifier import Classifier  # noqa: E402
-from grado_model.tep_bridge import apply_to_engine  # noqa: E402
 from grado_render import StyleSet  # noqa: E402
 from grado_wizard.sheets import (GOST, PRESENTATION, apo_sheet, layout_of,  # noqa: E402
                                  base_plan_sheet, fit_scale, location_sheet,
@@ -1222,8 +1221,28 @@ def _normalized_tep_params(params):
 CLASSIFIER = Classifier.load()
 
 
+# Слои импорта (НСПД, OSM, ГИС ОГД, ФГИС ТП, рельеф) — существующее положение.
+# В ТЭП они не входят: здания НСПД и OSM — одни и те же дома, и оба попадали в
+# факт СПП; ЗОУИТ объекта культурного наследия на весь центр считалась
+# «территорией, не подлежащей застройке», и расчётная площадь уходила в минус.
+# Что считать ограничением и проектной застройкой, решает пользователь своими
+# слоями (source.constraints.restrict — ручной слой ограничений, в него не импортируют).
+_IMPORT_LAYER_PREFIXES = ("source.nspd.", "source.osm.", "source.gisogd.",
+                          "source.fgistp.", "source.terrain.")
+
+
+def _from_import(feature):
+    lid = feature.get("layer_id")
+    return isinstance(lid, str) and lid.startswith(_IMPORT_LAYER_PREFIXES)
+
+
 def _class_of(feature):
-    """Класс классификатора объекта холста (через мост kind → код)."""
+    """Класс классификатора объекта холста (через мост kind → код).
+
+    Объекты слоёв импорта класса для ТЭП не имеют (см. _IMPORT_LAYER_PREFIXES).
+    """
+    if _from_import(feature):
+        return None
     code = KIND_TO_CODE.get(feature.get("kind"))
     if code is None:
         return None
@@ -1436,8 +1455,10 @@ def compute_tep(features, params=None):
 def album_engine(project, features, params=None):
     """Движок листа. Без границы территории показ — «н/д», не дефолт 15 га."""
     live = compute_tep(features, params)
+    # Входы — те же, что у живого ТЭП панели (по объектам внутри границы).
+    # Прежде поверх ложились суммы по слоям всего проекта: альбом считал
+    # площадь ограничений по всему городу, а панель — внутри участка.
     engine = make_engine(features, params)
-    apply_to_engine(project, engine)
     for key in ("density", "ratio_zh", "percent_vpp"):
         if params and params.get(key) is not None:
             engine.set_input(key, float(params[key]))

@@ -359,6 +359,26 @@ class TestStudioCore(unittest.TestCase):
         self.assertAlmostEqual(100, x1 - x0, delta=0.01)
         self.assertAlmostEqual(80, y1 - y0, delta=0.01)
 
+    def test_import_layers_do_not_feed_tep(self):
+        """Здания и ЗОУИТ из НСПД/OSM — существующее положение, не проект."""
+        boundary = {"kind": "boundary", "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]}
+        imported = [
+            {"kind": "restrict", "layer_id": "source.nspd.zouit",
+             "ring": [[-900, -900], [900, -900], [900, 900], [-900, 900]]},
+            {"kind": "building", "layer_id": "source.nspd.buildings", "props": {"floors": 5},
+             "ring": [[10, 10], [30, 10], [30, 30], [10, 30]]},
+            {"kind": "building", "layer_id": "source.osm.buildings", "props": {"floors": 5},
+             "ring": [[10, 10], [30, 10], [30, 30], [10, 30]]},
+        ]
+        tep = studio_core.compute_tep([boundary] + imported)
+        self.assertEqual({"terr_area": 1.0, "restrict_area": 0}, tep["inputs"])
+        self.assertEqual(0, tep["fact"]["spp"])
+        with tempfile.TemporaryDirectory() as tmp:
+            project = studio_core.build_project(Path(tmp) / "t.grado", "Т", [boundary] + imported)
+            engine = studio_core.album_engine(project, [boundary] + imported)
+            project.close()
+        self.assertAlmostEqual(1.0, engine.value("calc_area"), places=3)
+
     def test_redline_fillet_applied(self):
         feat = [{"kind": "redline", "props": {"radius": 20},
                  "line": [[0, 0], [100, 0], [100, 100]]}]

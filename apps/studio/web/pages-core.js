@@ -152,7 +152,11 @@
     const rawFeatures = Array.isArray(payload.features) ? payload.features.filter(Boolean) : [];
     const params = payload.params && typeof payload.params === "object" ? payload.params : {};
     const hasTerritory = rawFeatures.some(feature => feature.kind === "boundary" && feature.ring);
-    const features = clippedToTerritory(rawFeatures);
+    // Слои импорта — существующее положение, в ТЭП не входят (как в studio_core):
+    // здания НСПД и OSM дублируют друг друга, ЗОУИТ не «запрещённая к застройке» территория.
+    const importPrefixes = ["source.nspd.", "source.osm.", "source.gisogd.", "source.fgistp.", "source.terrain."];
+    const features = clippedToTerritory(rawFeatures)
+      .filter(feature => !importPrefixes.some(prefix => String(feature.layer_id || "").startsWith(prefix)));
     if (!hasTerritory) {
       return {
         inputs: { terr_area: null, restrict_area: null },
