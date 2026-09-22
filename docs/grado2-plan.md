@@ -95,5 +95,29 @@ Constraints come before more generation: a sketch that ignores ЗОУИТ and in
 
 ## Generation under constraints
 
-To be filled from the research on generative urban design limited by insolation, ЗОУИТ, norms
-and spatial context.
+Research notes and sources: `docs/research/2026-09-23-generative-constraints.md`. The consensus of
+the literature and of production tools: hard geometry first, search only inside the feasible region.
+ML generators are not usable for norm compliance (no Moscow training data, not verifiable).
+
+Pipeline for ГРАДО 2, in this order:
+
+1. **Buildable area** (Э4, low effort): territory − ⋃ ЗОУИТ − 5 m from red lines − kept buildings
+   with СП 42.13330 gaps; the ПЗЗ height limit per zone. Turf difference/buffer. ЗОУИТ is plain data
+   exclusion — no published algorithm is needed.
+2. **Insolation of existing buildings** (Э4): sun positions for Moscow (55.75° N) every 10 min for
+   22.04 and 22.08 (the СанПиН window); 2.5D shadow polygons of each prism per sun position; an
+   "insolation front" of test points every few metres along the facades of existing residential
+   buildings (their flat layouts are unknown — PIK Digital's approach); a point passes with ≥ 2 h
+   continuous or ≥ 2.5 h intermittent with one interval ≥ 1 h. Validate on the МАрхИ worked cases.
+3. **Solar envelope** (Э4): per grid cell the max height that does not break any front point —
+   an instant «потолок» heatmap, order-independent (fixes PIK's greedy order dependence).
+4. **Growth inside the envelope** (Э5): typology footprints (sections, blocks, towers) placed along
+   the frontage as now; floors raised per building up to min(envelope, ПЗЗ, target density).
+5. **Variants** (Э5): NSGA-II or a simple weighted search over typology, width, rotation and floors,
+   scoring density vs. target, insolation margin, frontage, fire gaps (penalty). A comparison table;
+   accept one into the project.
+6. **Own insolation of new buildings** (Э5): the same front on the new facades — a check with
+   highlighted failures, not a generator.
+
+Every calculation says in the UI that it is a design-stage estimate by ГОСТ Р 57795-2017 methods,
+not the certified calculation for expertise.
