@@ -1,2 +1,3 @@
 ezdxf>=1.4
 certifi
+pillow>=10

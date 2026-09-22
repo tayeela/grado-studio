@@ -200,6 +200,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .btn:disabled{opacity:.5;cursor:default}
 .err{color:var(--bad);padding:2px 8px 6px 22px;background:var(--field)}
 .basemap canvas{filter:grayscale(1) contrast(.9) brightness(1.05)}
+.mapbox.dropfile::after{content:"Отпустите файлы: DXF, GeoJSON, KML, Shapefile — каждый станет слоем";position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:6px;background:color-mix(in srgb,var(--accent) 8%,transparent);display:grid;place-items:center;font-size:14px;color:var(--text);z-index:6;pointer-events:none}
 .busy{position:fixed;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);background-size:40% 100%;animation:busy 1s linear infinite;z-index:90}
 @keyframes busy{from{background-position:-40% 0}to{background-position:140% 0}}
 .src{border-bottom:1px solid var(--line)}
@@ -251,6 +252,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .ctl .seg{display:flex;border:1px solid var(--line-2);border-radius:3px;overflow:hidden}
 .ctl .seg button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:24px}
 .ctl .seg button:last-child{border-right:0}
+.seg.dec{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line-2);border-radius:3px;overflow:hidden}.seg.dec button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:26px;display:flex;align-items:center;justify-content:center;gap:5px}.seg.dec button:last-child{border-right:0}.seg.dec button:hover{background:var(--hover)}.seg.dec i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
 .vbar{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
@@ -305,6 +307,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
       <div class="sb tree" id="layerTree"></div>
     </aside>
     <div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
+      <div class="mtools"><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
       <div class="start" id="start" hidden><b>С чего начать</b>
         <button class="btn" data-go="example"><i data-lucide="map-pin"></i>Пример территории и выгрузка данных</button>
         <button class="btn" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу территории<kbd>B</kbd></button>
@@ -323,7 +326,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <section class="win" id="wData" hidden aria-label="Данные территории">
   <header class="wh"><i data-lucide="database"></i><b>Данные территории</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="scan"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
-    <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+    <div class="sh">Источники<span class="sp"></span><label class="btn" title="Импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile (zip или .shp вместе с .dbf, .prj). Координаты WGS84, МГГТ или Web Mercator распознаются сами. Файлы можно просто перетащить на карту."><i data-lucide="file-up"></i>Файл…<input type="file" id="fDxf" accept=".dxf,.geojson,.json,.kml,.kmz,.zip,.shp,.dbf,.prj,.cpg,.shx" multiple hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
     <div class="sb" id="srcList"></div></div>
 </section>
 <section class="win" id="wGraph" hidden aria-label="Граф анализа">

@@ -1,0 +1,223 @@
+"""Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of files or a zip), DXF.
+
+Every format ends as GeoJSON FeatureCollections in WGS84 degrees, one per source layer.
+Coordinates are recognised by their size: degrees (WGS84), Web Mercator metres (EPSG:3857,
+millions), or the Moscow local system МГГТ (tens of km) — the same rule as the DXF import.
+A Shapefile's .prj, when present, decides between them.
+"""
+
+import io
+import json
+import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
+from pathlib import Path
+
+from grado_connectors import crs
+from grado_connectors.shp_reader import read_shp
+
+VECTOR = {".geojson", ".json", ".kml", ".kmz", ".shp", ".dxf", ".zip"}
+
+
+def _walk(coords, fn):
+    if coords and isinstance(coords[0], (int, float)):
+        return list(fn(*coords[:2]))
+    return [_walk(c, fn) for c in coords]
+
+
+def _pts(fc):
+    out = []
+
+    def take(c):
+        if c and isinstance(c[0], (int, float)):
+            out.append(c[:2])
+        else:
+            for x in c:
+                take(x)
+                if len(out) > 2000:
+                    return
+    for f in fc["features"]:
+        if f.get("geometry"):
+            take(f["geometry"]["coordinates"])
+        if len(out) > 2000:
+            break
+    return out
+
+
+def system_of(pts):
+    """Система по самим координатам. Градусы — только если и x в ±180, и y в ±90: у МГГТ восточная
+    координата у осевого меридиана тоже бывает меньше 180 (37,5° в.д. — это x ≈ 115 м)."""
+    big = max(max(abs(x), abs(y)) for x, y in pts)
+    if all(abs(x) <= 180 and abs(y) <= 90 for x, y in pts):
+        return "wgs"
+    return "merc" if big > 1_000_000 else "mggt" if big <= 200_000 else None
+
+
+def to_wgs84(fc, hint=None):
+    """FeatureCollection in any of the three systems → WGS84; returns (fc, system name)."""
+    pts = _pts(fc)
+    if not pts:
+        return fc, "нет координат"
+    kind = hint or system_of(pts)
+    if kind is None:
+        raise ValueError("координаты не похожи ни на градусы WGS84, ни на МГГТ (Москва, десятки км), ни на Web Mercator")
+    fn = {"wgs": None, "merc": crs.merc_to_wgs84, "mggt": crs.msk50_to_wgs84}[kind]
+    if fn:
+        for f in fc["features"]:
+            if f.get("geometry"):
+                f["geometry"]["coordinates"] = _walk(f["geometry"]["coordinates"], fn)
+    return fc, {"wgs": "WGS84", "merc": "Web Mercator (EPSG:3857)", "mggt": "МГГТ (местная московская)"}[kind]
+
+
+def _clean(props):
+    return {str(k): v for k, v in (props or {}).items() if v not in (None, "")}
+
+
+def read_geojson(data):
+    obj = json.loads(data.decode("utf-8-sig"))
+    if obj.get("type") == "Feature":
+        obj = {"type": "FeatureCollection", "features": [obj]}
+    elif obj.get("type") in ("Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"):
+        obj = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": obj, "properties": {}}]}
+    if obj.get("type") != "FeatureCollection":
+        raise ValueError("это не GeoJSON: нет FeatureCollection")
+    feats = [{"type": "Feature", "geometry": f.get("geometry"), "properties": _clean(f.get("properties"))}
+             for f in obj.get("features") or [] if f.get("geometry")]
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def _kml_coords(text):
+    pts = []
+    for tok in (text or "").split():
+        parts = tok.split(",")
+        if len(parts) >= 2:
+            pts.append([float(parts[0]), float(parts[1])])
+    return pts
+
+
+def _kml_geoms(el, ns):
+    out = []
+    for g in el.iter():
+        tag = g.tag.split("}")[-1]
+        if tag == "Point":
+            c = _kml_coords(g.findtext(f"{ns}coordinates"))
+            if c:
+                out.append({"type": "Point", "coordinates": c[0]})
+        elif tag == "LineString":
+            c = _kml_coords(g.findtext(f"{ns}coordinates"))
+            if len(c) > 1:
+                out.append({"type": "LineString", "coordinates": c})
+        elif tag == "Polygon":
+            outer = g.find(f"{ns}outerBoundaryIs/{ns}LinearRing/{ns}coordinates")
+            inner = g.findall(f"{ns}innerBoundaryIs/{ns}LinearRing/{ns}coordinates")
+            rings = [_kml_coords(outer.text if outer is not None else "")] + [_kml_coords(i.text) for i in inner]
+            if len(rings[0]) > 2:
+                out.append({"type": "Polygon", "coordinates": rings})
+    return out
+
+
+def read_kml(data):
+    root = ET.fromstring(data)
+    ns = root.tag.split("}")[0] + "}" if root.tag.startswith("{") else ""
+    feats = []
+    for pm in root.iter(f"{ns}Placemark"):
+        props = {}
+        if pm.findtext(f"{ns}name"):
+            props["Название"] = pm.findtext(f"{ns}name").strip()
+        if pm.findtext(f"{ns}description"):
+            props["Описание"] = pm.findtext(f"{ns}description").strip()[:500]
+        for d in pm.iter(f"{ns}Data"):
+            props[d.get("name")] = d.findtext(f"{ns}value")
+        for d in pm.iter(f"{ns}SimpleData"):
+            props[d.get("name")] = d.text
+        geoms = _kml_geoms(pm, ns)
+        geom = geoms[0] if len(geoms) == 1 else {"type": "GeometryCollection", "geometries": geoms} if geoms else None
+        if geom and geom["type"] == "GeometryCollection":           # несколько частей одного типа — мульти-геометрия
+            kinds = {g["type"] for g in geoms}
+            if len(kinds) == 1:
+                geom = {"type": "Multi" + geoms[0]["type"], "coordinates": [g["coordinates"] for g in geoms]}
+            else:
+                for g in geoms:
+                    feats.append({"type": "Feature", "geometry": g, "properties": _clean(props)})
+                continue
+        if geom:
+            feats.append({"type": "Feature", "geometry": geom, "properties": _clean(props)})
+    return {"type": "FeatureCollection", "features": feats}
+
+
+def _prj_hint(text):
+    t = (text or "").upper()
+    if not t:
+        return None
+    if "MERCATOR" in t and ("PSEUDO" in t or "AUXILIARY" in t or "3857" in t):
+        return "merc"
+    if t.startswith("GEOGCS"):
+        return "wgs"
+    return None                     # местные системы: решает размер координат
+
+
+def read_shp_set(files):
+    """{name: bytes} of one Shapefile (.shp, .dbf, .prj, .cpg, …) → FeatureCollection."""
+    with tempfile.TemporaryDirectory() as td:
+        for name, b in files.items():
+            (Path(td) / Path(name).name).write_bytes(b)
+        shp = next(Path(td).glob("*.shp"))
+        rows = read_shp(shp)
+        prj = shp.with_suffix(".prj")
+        hint = _prj_hint(prj.read_text("latin-1", "replace")) if prj.exists() else None
+    fc = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": r["geometry"], "properties": _clean(r["properties"])}
+                                                    for r in rows if r["geometry"]]}
+    return fc, hint
+
+
+def import_files(files, redln=None):
+    """files: {file name: bytes} (one drop or one «Открыть» of the file dialog).
+    Returns [{"name", "features": FeatureCollection WGS84, "notes": [...]}], one entry per source layer."""
+    expanded = {}
+    for name, b in files.items():
+        suf = Path(name).suffix.lower()
+        if suf == ".zip":
+            with zipfile.ZipFile(io.BytesIO(b)) as z:
+                for n in z.namelist():
+                    if not n.endswith("/") and not Path(n).name.startswith("."):
+                        expanded[n] = z.read(n)
+        elif suf == ".kmz":
+            with zipfile.ZipFile(io.BytesIO(b)) as z:
+                kml = next((n for n in z.namelist() if n.lower().endswith(".kml")), None)
+                if kml:
+                    expanded[Path(name).stem + ".kml"] = z.read(kml)
+        else:
+            expanded[name] = b
+    out, shp_sets = [], {}
+    for name, b in expanded.items():
+        p, suf = Path(name), Path(name).suffix.lower()
+        if suf in (".shp", ".dbf", ".prj", ".cpg", ".shx"):
+            shp_sets.setdefault(str(p.with_suffix("")), {})[p.name] = b
+            continue
+        hint = None
+        if suf in (".geojson", ".json"):
+            fc = read_geojson(b)
+        elif suf == ".kml":
+            fc, hint = read_kml(b), "wgs"                 # KML всегда в градусах
+        elif suf == ".dxf":
+            import dxf_io
+            fc, notes = dxf_io.import_dxf(b, redln)
+            out.append({"name": p.stem, "format": "DXF", "features": fc, "notes": notes})
+            continue
+        else:
+            continue
+        fc, system = to_wgs84(fc, hint)
+        out.append({"name": p.stem, "format": suf.lstrip(".").upper(), "features": fc,
+                    "notes": [f"координаты: {system}; объектов {len(fc['features'])}"]})
+    for stem, group in shp_sets.items():
+        if not any(n.lower().endswith(".shp") for n in group):
+            continue
+        fc, hint = read_shp_set(group)
+        fc, system = to_wgs84(fc, hint)
+        notes = [f"координаты: {system}; объектов {len(fc['features'])}"]
+        if not any(n.lower().endswith(".dbf") for n in group):
+            notes.append("нет файла .dbf — атрибутов нет")
+        out.append({"name": Path(stem).name, "format": "SHP", "features": fc, "notes": notes})
+    if not out:
+        raise ValueError("нет векторных данных: ожидаются GeoJSON, KML/KMZ, Shapefile (.shp с .dbf или zip) или DXF")
+    return out

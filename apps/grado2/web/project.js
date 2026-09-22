@@ -17,14 +17,14 @@ function collectProject() {
   const v = sharedView;
   return {
     format: PROJ_FORMAT, version: PROJ_VERSION, name: PROJ.name, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
-    view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom() },
+    view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
     territory: TERR,
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
     checked: [...CHECKED],
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })),
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
-    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, fc: d.fc, original: d.original }])),
+    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, fc: d.fc, original: d.original }])),
     graph: graph.serialize(),
   };
 }
@@ -65,6 +65,7 @@ function applyProject(p) {
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }
+    if (p.view?.basemap && p.view.basemap !== BASE) setBasemap(p.view.basemap);
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
     applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview();
   } finally { PROJ.loading = false; }
@@ -150,8 +151,9 @@ $("projDownload").onclick = () => {
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(collectProject())], { type: "application/json" }));
   a.download = (PROJ.name || "проект") + ".grado2"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
-$("projFile").onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ""; if (!f || !confirmLoss(`Открыть «${f.name}»?`)) return;
+$("projFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) openProjectFile(f); };
+window.openProjectFile = async f => {
+  if (!confirmLoss(`Открыть «${f.name}»?`)) return;
   try { const p = JSON.parse(await f.text()); p.name ||= f.name.replace(/\.grado2$/i, ""); applyProject(p); PROJ.dirty = true; syncProjTitle(); toast(`Открыт файл «${f.name}». Сохраните проект, чтобы он появился в папке проектов.`); winOpen("wProjects", false); }
   catch (err) { toast("Файл не открылся: " + err.message); }
 };

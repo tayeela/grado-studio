@@ -43,7 +43,19 @@ const GJ = new ol.format.GeoJSON({ featureProjection: "EPSG:3857" });
 const toOl = f => GJ.readFeature(f);
 const sharedView = new ol.View({ center: ol.proj.fromLonLat([37.525, 55.7925]), zoom: 15 });
 const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false, shiftDragZoom: false });   // Shift+тянуть — рамка выбора
-const basemap = () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 });
+/* подложки: схема OSM (серая, приглушённая — чтобы читались знаки), спутник Esri, Sentinel-2 без облаков (EOX), без подложки */
+const BASEMAPS = {
+  osm: { title: "Схема OSM", layer: () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 }) },
+  esri: { title: "Спутник (Esri)", layer: () => new ol.layer.Tile({ className: "basemap-sat", opacity: .9, source: new ol.source.XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maxZoom: 19, attributions: "Снимки © Esri, Maxar, Earthstar Geographics" }) }) },
+  s2: { title: "Sentinel-2 (EOX)", layer: () => new ol.layer.Tile({ className: "basemap-sat", opacity: .9, source: new ol.source.XYZ({ url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg", maxZoom: 15, attributions: "Sentinel-2 cloudless 2021 © EOX IT Services GmbH (содержит изменённые данные Copernicus Sentinel)" }) }) },
+  none: { title: "Без подложки", layer: () => new ol.layer.Tile({ visible: false }) } };
+let BASE = localStorage.getItem("grado2.base") || "osm"; if (!BASEMAPS[BASE]) BASE = "osm";
+const basemap = () => { const l = BASEMAPS[BASE].layer(); l.set("basemap", true); return l; };
+function setBasemap(id) {
+  if (!BASEMAPS[id]) return; BASE = id; try { localStorage.setItem("grado2.base", id); } catch { }
+  ALLMAPS.forEach(m => { const old = m.getLayers().getArray().find(x => x.get("basemap")); if (old) m.removeLayer(old); m.getLayers().insertAt(0, basemap()); });
+  if ($("baseSel")) $("baseSel").value = id; window.markDirty?.();
+}
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
 function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
 const PAT = new Map();
@@ -87,23 +99,68 @@ function setTerritory(feature) {
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
-  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.();
+  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.(); if (!$("wData").hidden) renderSources();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
 $("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
-const GROUP = { import: "Импорт чертежей", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (красные линии: первая выгрузка — весь слой, около 100 МБ)" };
+const GROUP = { fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)", terrain: "Рельеф" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
+const histText = d => { const h = d.history || [], x = h[h.length - 1]; return h.length > 1 && x.added != null ? ` · выгрузок ${h.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
 function renderSources() {
   const groups = {}; Object.entries(SOURCES).forEach(([k, s]) => (groups[s.kind] ||= []).push(k));
   $("srcList").innerHTML = Object.entries(groups).map(([g, ks]) => `<div class="src"><div class="srch"><i data-lucide="database"></i><b>${GROUP[g] || g}</b></div>` + ks.map(k => {
     const d = DATA[k], e = ERRORS[k];
-    return `<label class="lr"><input type="checkbox" data-src="${k}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${d.fetched_at}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
+    return `<label class="lr"><input type="checkbox" data-src="${k}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${d.fetched_at}${histText(d)}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
   }).join("") + `</div>`).join("") + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
+    + `<div id="fgBox">${fgHTML()}</div>`
     + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В графе анализа слои доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
   icons();
 }
-$("srcList").addEventListener("change", e => { const k = e.target.dataset.src; if (k) e.target.checked ? CHECKED.add(k) : CHECKED.delete(k); });
+$("srcList").addEventListener("change", e => {
+  const k = e.target.dataset.src; if (k) e.target.checked ? CHECKED.add(k) : CHECKED.delete(k);
+  if (e.target.id === "fgDoc") fgPick(e.target.value);
+  if (e.target.dataset.fgl) { e.target.checked ? FG.sel.add(e.target.dataset.fgl) : FG.sel.delete(e.target.dataset.fgl); $("fgLoad").disabled = !FG.sel.size; }
+});
+$("srcList").addEventListener("click", e => { if (e.target.closest("#fgFind")) fgFind(); if (e.target.closest("#fgLoad")) fgLoad(); });
+
+/* ---------- ФГИС ТП: документы терпланирования, чей охват накрывает территорию → их слои ---------- */
+const FG = { docs: null, uin: "", layers: null, sel: new Set(), msg: "" };
+const GEOMW = { "100": "полигоны", "010": "линии", "001": "точки" };
+function fgHTML() {
+  let h = `<div class="src"><div class="srch"><i data-lucide="landmark"></i><b>ФГИС ТП — документы территориального планирования</b><button class="btn" id="fgFind" ${TERR ? "" : "disabled"} title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)">Найти по территории</button></div>`;
+  if (FG.msg) h += `<div class="note">${esc(FG.msg)}</div>`;
+  if (FG.docs) h += `<div class="lr" style="height:auto;padding:4px 8px"><select id="fgDoc" style="width:100%"><option value="">— документ (${FG.docs.length}) —</option>${FG.docs.map(d => `<option value="${esc(d.uin)}" ${d.uin === FG.uin ? "selected" : ""}>${esc(d.name.slice(0, 140))}${d.km ? ` · ${fmt(d.km)} км` : ""}</option>`).join("")}</select></div>`;
+  if (FG.layers) h += FG.layers.map(l => `<label class="lr"><input type="checkbox" data-fgl="${esc(l.classid)}" ${FG.sel.has(l.classid) ? "checked" : ""}><span class="nm" title="${esc(l.class_name || "")}">${esc(l.class_title || l.class_name || l.classid)}</span><span class="c">${GEOMW[l.geom_type] || ""}</span></label>`).join("")
+    + `<div class="lr" style="height:32px"><span class="sp" style="flex:1"></span><button class="btn primary" id="fgLoad" ${FG.sel.size ? "" : "disabled"}>Загрузить выбранные</button></div>`;
+  return h + `</div>`;
+}
+const fgRender = () => { const el = $("fgBox"); if (el) { el.innerHTML = fgHTML(); icons(); } };
+async function fgFind() {
+  const [w, s, e, n] = turf.bbox(TERR); FG.msg = "Каталог ФГИС ТП: первый раз около 10 МБ…"; fgRender(); busy(true);
+  try { FG.docs = (await api(`/api/fgistp/docs?bbox=${[w, s, e, n].join(",")}`)).docs; FG.msg = FG.docs.length ? "Самые местные документы — сверху. Выберите документ, затем слои." : "Документов с охватом этой территории нет."; }
+  catch (err) { FG.msg = "ФГИС ТП не ответила: " + err.message; } finally { busy(false); fgRender(); }
+}
+async function fgPick(uin) {
+  FG.uin = uin; FG.layers = null; FG.sel.clear(); if (!uin) return fgRender();
+  FG.msg = "Состав документа…"; fgRender(); busy(true);
+  try { FG.layers = (await api(`/api/fgistp/layers?uin=${encodeURIComponent(uin)}`)).layers; FG.msg = `Слоёв в документе: ${FG.layers.length}. Отметьте нужные.`; }
+  catch (err) { FG.msg = "Состав документа не получен: " + err.message; } finally { busy(false); fgRender(); }
+}
+async function fgLoad() {
+  const [w, s, e, n] = turf.bbox(buf(TERR, 60)); FG.msg = "Загрузка слоёв документа: портал отдаёт документ целиком, может занять минуту…"; fgRender(); busy(true);
+  try {
+    const r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: [w, s, e, n] });
+    let n2 = 0; const empty = Object.values(r.layers).filter(v => !v.features.features.length).map(v => v.title.replace("ФГИС ТП: ", ""));
+    for (const [k, v] of Object.entries(r.layers)) {
+      if (!v.features.features.length) continue;                 // пустой в этой области слой не засоряет список
+      SOURCES[k] = { title: v.title, kind: "fgistp" };
+      DATA[k] = { ...v, fc: v.features, count: v.features.features.length, fields: [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))], original: v.features };
+      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, v.features); const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l); n2 += DATA[k].count;
+    }
+    FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}`; dataRev++;
+  } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
+}
 $("bLoad").onclick = async () => {
   if (!TERR) return;
   const keys = [...CHECKED];
@@ -113,17 +170,50 @@ $("bLoad").onclick = async () => {
   try {
     const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: keys });
     ERRORS = r.errors;
+    const reports = [], fresh = [];
     for (const [k, v] of Object.entries(r.layers)) {
-      const fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
-      DATA[k] = { ...v, fc: v.features, count: v.features.features.length, fields };
-      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, v.features);
+      const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
+      const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
+      DATA[k] = { ...v, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
+        history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };
+      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc);
       const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l);
+      if (m) { reports.push(`«${v.title}»: ${m.text}`); fresh.push(...layerSrc[k].getFeatures().filter(f => m.mark.has(f.get("_key"))).map(f => ({ key: k, f }))); }
     }
     dataRev++; renderSources();
-    const ne = Object.keys(ERRORS).length; toast(`Загружено слоёв: ${Object.keys(r.layers).length}${ne ? `, с ошибкой: ${ne}` : ""}.`);
+    const ne = Object.keys(ERRORS).length;
+    if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
+    toast(`Загружено слоёв: ${Object.keys(r.layers).length}${ne ? `, с ошибкой: ${ne}` : ""}.${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}`);
   } catch (err) { toast("Выгрузка не удалась: " + err.message); }
   finally { busy(false); $("bLoad").disabled = false; window.syncStatus?.(); }
 };
+/* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
+   чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся
+   удалённым, нарисованное вами остаётся. */
+function mergeDownload(key, prev, fc) {
+  const clean = p => Object.fromEntries(Object.entries(p || {}).filter(([k]) => !k.startsWith("_")));
+  const sig = f => JSON.stringify([f.geometry, clean(f.properties)]);
+  const byKey = list => new Map(list.filter(f => f.properties?._key).map(f => [f.properties._key, f]));
+  const oldF = prev.original?.features || [], oldBy = byKey(oldF), newBy = byKey(fc.features);
+  if (!oldBy.size || !newBy.size) return null;                    // прежняя выгрузка без ключей (старый проект) — просто заменить
+  const cur = writeFC(layerSrc[key].getFeatures()).features, curBy = byKey(cur);
+  const added = [...newBy.keys()].filter(k => !oldBy.has(k)), removed = [...oldBy.keys()].filter(k => !newBy.has(k));
+  const changed = [...newBy.keys()].filter(k => oldBy.has(k) && sig(oldBy.get(k)) !== sig(newBy.get(k)));
+  const mine = cur.filter(f => f.properties?._edited && f.properties._key && newBy.has(f.properties._key));
+  const gone = new Set([...oldBy.keys()].filter(k => !curBy.has(k)));
+  const drawn = cur.filter(f => !f.properties?._key);
+  // поля, которых нет в источнике (добавлены вами, например «Решение» реестра), переносятся на новую версию объекта
+  const srcFields = new Set(fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties || {})));
+  const own = [...new Set(cur.slice(0, 500).flatMap(f => Object.keys(f.properties || {})))].filter(k => !srcFields.has(k) && !k.startsWith("_"));
+  const out = fc.features.filter(f => !gone.has(f.properties?._key)).map(f => { const c = curBy.get(f.properties?._key); if (c?.properties._edited) return c;
+    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(drawn);
+  const conflict = mine.filter(f => changed.includes(f.properties._key)).length;
+  const parts = [`+${added.length} новых`, `−${removed.length} исчезло`, `${changed.length} изменились`];
+  if (mine.length) parts.push(`ваши правки (${mine.length}) сохранены${conflict ? `, из них ${conflict} изменились и в источнике — сверьте` : ""}`);
+  if (gone.size) parts.push(`удалённые вами (${gone.size}) не вернулись`);
+  return { fc: { type: "FeatureCollection", features: out }, text: parts.join(", "), mark: new Set([...added, ...changed]),
+    counts: { added: added.length, removed: removed.length, changed: changed.length } };
+}
 const EXIST_KEY = () => DATA["nspd.buildings"] ? "nspd.buildings" : DATA["osm.buildings"] ? "osm.buildings" : null;
 const floorsOf = f => { const v = +(f.properties["Этажность"]); return v > 0 ? v : 1; };
 function insideTerr(f) { return TERR && safe(() => turf.booleanPointInPolygon(turf.pointOnFeature(f), TERR)); }
@@ -136,20 +226,37 @@ function existingSummary() {
 }
 function kv(rows) { return `<div class="kv">${rows.map(([k, v, cls]) => `<div>${esc(k)}</div><div class="${cls || ""}">${v}</div>`).join("")}</div>`; }
 
-/* ---------- DXF: импорт чертежа и экспорт проекта (сервер, ezdxf) ---------- */
-$("fDxf").onchange = async e => {
-  const file = e.target.files[0]; if (!file) return; e.target.value = "";
+/* ---------- импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile — кнопкой или перетаскиванием на карту, как в QGIS ---------- */
+const b64 = buf => { let s = ""; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+async function importFiles(fileList) {
+  const files = [...fileList]; if (!files.length) return;
   busy(true);
   try {
-    const r = await fetch("/api/import/dxf", { method: "POST", body: await file.arrayBuffer() }); const j = await r.json(); if (!r.ok) throw new Error(j.error);
-    const key = "import:" + file.name, fc = j.features;
-    SOURCES[key] = { title: "DXF: " + file.name, kind: "import" }; CHECKED.add(key);
-    DATA[key] = { title: "DXF: " + file.name, source: "файл " + file.name, fetched_at: new Date().toISOString().slice(0, 10), notes: j.notes, fc, count: fc.features.length, fields: [...new Set(fc.features.flatMap(f => Object.keys(f.properties)))] };
-    layerSrc[key] ||= new ol.source.Vector(); setLayerData(key, fc); ensureLayer(key, DATA[key].title); dataRev++; renderSources();
-    if (fc.features.length) sharedView.fit(layerSrc[key].getExtent(), { padding: [40, 40, 40, 40], maxZoom: 18 });
-    toast(`DXF: объектов ${fc.features.length}. ${j.notes.join("; ")}`);
-  } catch (err) { toast("DXF не прочитан: " + err.message); } finally { busy(false); }
-};
+    const body = { files: await Promise.all(files.map(async f => ({ name: f.name, b64: b64(await f.arrayBuffer()) }))) };
+    const r = await fetch("/api/import/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    const ex = ol.extent.createEmpty(), msgs = [];
+    for (const lay of j.layers) {
+      const key = "import:" + lay.name + "." + lay.format.toLowerCase(), title = `${lay.name} (${lay.format})`, fc = lay.features;
+      SOURCES[key] = { title, kind: "import" }; CHECKED.add(key);
+      DATA[key] = { title, source: "файл " + lay.name + "." + lay.format.toLowerCase(), fetched_at: new Date().toISOString().slice(0, 10), notes: lay.notes, fc, count: fc.features.length, fields: [...new Set(fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties)))] };
+      layerSrc[key] ||= new ol.source.Vector(); delete DATA[key].original; setLayerData(key, fc); ensureLayer(key, title);
+      if (fc.features.length) ol.extent.extend(ex, layerSrc[key].getExtent());
+      msgs.push(`${title}: ${fc.features.length} об. (${lay.notes.join("; ")})`);
+    }
+    dataRev++; renderSources();
+    if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 });
+    toast("Импорт: " + msgs.join(" · "));
+  } catch (err) { toast("Файл не прочитан: " + err.message); } finally { busy(false); }
+}
+$("fDxf").onchange = e => { const fs = [...e.target.files]; e.target.value = ""; importFiles(fs); };
+const mapDrop = $("mMain").parentElement;
+mapDrop.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); mapDrop.classList.add("dropfile"); } });
+mapDrop.addEventListener("dragleave", e => { if (!mapDrop.contains(e.relatedTarget)) mapDrop.classList.remove("dropfile"); });
+mapDrop.addEventListener("drop", e => { mapDrop.classList.remove("dropfile"); if (!e.dataTransfer.files.length) return; e.preventDefault();
+  const fs = [...e.dataTransfer.files], proj = fs.find(f => /\.grado2$/i.test(f.name));
+  if (proj) return window.openProjectFile?.(proj);          // файл проекта открывается как проект
+  importFiles(fs); });
 $("bExport").onclick = async () => {
   const layers = Object.entries(DATA).map(([k, d]) => ({ name: d.title, features: d.fc, color: k === "gisogd.red_lines" ? "#d7191c" : "#808080", floors: d.fc.features.some(f => f.properties?.["Этажность"]) }));
   if (TERR) layers.push({ name: "Граница территории", features: turf.featureCollection([TERR]), color: "#b3261e" });
@@ -620,6 +727,8 @@ document.querySelectorAll(".win").forEach(w => {
   // размер окна — за нижний правый угол (CSS resize); запоминаем и перерисовываем содержимое
   new ResizeObserver(() => { if (w.hidden) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);
 });
+$("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
+$("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };
 
 (async () => {

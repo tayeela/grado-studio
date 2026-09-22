@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.7.0)
+## Where we are (23.09.2026, v0.8.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -34,6 +34,10 @@ union, intersect, placement, ТЭП КРТ); sketch on demand along each block, 
 layer; variants; 3D; projects with autosave; self-audit hooks.
 Э1 done in v0.7.0: layer groups, multi-select (click, Shift, frame), batch attribute edit, undo/redo for objects and
 styles, keys window, first-run panel, GPU drawing for layers over 20 000 objects (100 000 checked).
+Э2 done in v0.8.0: ПЗЗ subzones (density, height, coverage) and zones (ВРИ), ОКН and their zones, demolition notices,
+relief contours, ФГИС ТП documents by territory, import of GeoJSON/KML/Shapefile/DXF by button or drop, satellite
+basemaps, re-download with a diff merged with manual edits, buildings register «сохраняем / сносим». DWG still waits for
+the owner's decision on the ODA converter.
 
 ## Stages
 
@@ -46,7 +50,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 - Performance: 100 000 objects in a layer without lag (OL WebGL layer for big point/line sets).
 - Done: OpenLayers, Turf, litegraph and Lucide served locally, the app works offline (v0.6.2).
 
-### Э2. Existing situation — complete data (3 sessions)
+### Э2. Existing situation — complete data (3 sessions) — done, v0.8.0 (DWG open)
 - ПЗЗ Москвы: territorial zones and their limits (height, density, КОЗ) from ГИС ОГД.
 - ОКН and their zones; ФГИС ТП (fix the DNS issue or go through the portal the studio already uses).
 - Import SHP, GeoJSON, KML; DWG through the ODA File Converter (the owner decides).

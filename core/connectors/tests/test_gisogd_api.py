@@ -75,6 +75,20 @@ class TestGisogdApi(unittest.TestCase):
             self.assertFalse(second["notes"], "из кэша предупреждать не о чем")
             self.assertTrue((Path(td) / "virtual1742.geojson.gz").is_file())
 
+    def test_line_cache_gives_same_answer(self):
+        # второй запрос идёт по построчному кэшу: те же объекты, те же ключи, без сети
+        t = FakeTransport()
+        with tempfile.TemporaryDirectory() as td:
+            conn = GisogdApi(transport=t, cache_dir=td)
+            first = conn.fetch(BBOX, "virtual1742")
+            self.assertTrue((Path(td) / "virtual1742.lines.gz").is_file())
+            second = conn.fetch(BBOX, "virtual1742")
+            far = conn.fetch((29.9, 49.9, 30.2, 50.2), "virtual1742")
+            self.assertEqual(len(t.calls), 1)
+            self.assertEqual([f["grado_key"] for f in second["features"]], [f["grado_key"] for f in first["features"]])
+            self.assertEqual(second["features"][0]["properties"], first["features"][0]["properties"])
+            self.assertEqual([f["properties"]["naimfunkzony"] for f in far["features"]], ["далёкая зона"])
+
     def test_expired_cache_refetches(self):
         t = FakeTransport()
         with tempfile.TemporaryDirectory() as td:

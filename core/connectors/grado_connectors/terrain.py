@@ -16,6 +16,7 @@ marching squares на адаптивном интервале сечения; о
 import io
 import math
 import ssl
+import time
 import urllib.error
 import urllib.request
 from collections import defaultdict, deque
@@ -122,13 +123,17 @@ def _fetch_grid(z, x0, y0, x1, y1, http):
 def _http_get(z, x, y):
     url = TERRARIUM_URL.format(z=z, x=x, y=y)
     req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    try:
-        with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
-            return resp.read()
-    except urllib.error.HTTPError as e:
-        raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: HTTP {e.code}") from None
-    except Exception as e:
-        raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: {e}") from None
+    last = None
+    for attempt in range(3):                 # S3 изредка не отвечает на рукопожатие TLS — повторить, а не терять слой
+        try:
+            with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: HTTP {e.code}") from None
+        except Exception as e:
+            last = e
+            time.sleep(0.5 * (attempt + 1))
+    raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: {last}")
 
 
 # ---- marching squares ------------------------------------------------------

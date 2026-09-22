@@ -23,6 +23,10 @@ class Grado2Server(unittest.TestCase):
         p = S.clean_props({"opt_floors": "9-12", "opt_cad_num": "77:1", "grado_set": "x", "name": ""})
         self.assertEqual(p, {"Этажность": 9, "Кадастровый номер": "77:1"})
 
+    def test_nspd_keeps_only_named_fields(self):
+        p = S.clean_props({"opt_floors": "9", "systemInfo": {"inserted": "x"}, "interactionId": "1", "opt_cost_index": "5"}, None, True)
+        self.assertEqual(p, {"Этажность": 9})
+
     def test_area_limit_blocks_before_network(self):
         layers, errors = S.fetch([37.0, 55.0, 37.5, 55.5], ["nspd.parcels", "unknown"])
         self.assertEqual(layers, {})

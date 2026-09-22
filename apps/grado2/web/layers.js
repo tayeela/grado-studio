@@ -11,7 +11,7 @@ const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i
 const ST = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
 // порядок по умолчанию: сверху вниз (первый — самый верхний)
-const PREFERRED = ["gisogd.red_lines", "nspd.buildings", "osm.buildings", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "osm.roads", "nspd.parcels", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "osm.landuse"];
+const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "nspd.buildings", "osm.buildings", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "relief.contours", "osm.landuse"];
 function defaultStyle(key, fc) {
   const zones = lib => { const colors = {}; fc.features.forEach(f => { const v = String(f.properties.naimfunkzony ?? f.properties.naimfunkzo ?? f.properties["Вид зоны"] ?? ""); const z = lib[v.toLowerCase()]; if (z) colors[v] = z.fill; }); return colors; };
   return ST(({
@@ -27,6 +27,12 @@ function defaultStyle(key, fc) {
     "gisogd.szz": { fill: "#4a3aa7", stroke: "#4a3aa7", hatch: true, width: 1.2 },
     "gisogd.vodookhr": { fill: "#2a78d6", stroke: "#2a78d6", hatch: true, width: 1.2 },
     "gisogd.red_lines": { mode: "lgr", fill: "#d7191c", width: 1.3 },
+    // ПЗЗ: подзоны окрашены по предельной плотности — она задана чаще высоты (серые — не установлена или «по факту»); зоны — контуром
+    "gisogd.pzz_sub": { mode: "grad", opacity: .45, stroke: "#8a5a00", width: .6, grad: { field: "Плотность, тыс. м²/га", n: 5, ramp: "brick", method: "quantile" } },
+    "gisogd.pzz_zones": { fill: "#ffffff", opacity: 0, stroke: "#6a3d9a", width: 1.4 },
+    "gisogd.okn": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", colors: {}, off: [] } },
+    "gisogd.demolition": { fill: "#b3261e", stroke: "#b3261e", hatch: true, width: 1.4 },
+    "relief.contours": { fill: "#a0663a", width: .8, label: "Высота, м", labelSize: 10 },
   })[key] || (fc.features.some(f => f.properties._lt) ? { mode: "lgr" } : { fill: CAT[LYR.length % CAT.length], stroke: "#3d3d3d" }));
 }
 
@@ -137,6 +143,7 @@ function syncFromSource(key, edited = true) {
 
 /* ---------- оформление ---------- */
 const isNum = v => typeof v === "number" || (v !== "" && v != null && !isNaN(+v));
+const numOf = v => v == null || v === "" ? NaN : +v;   // пустое значение — «нет данных», а не ноль
 function catValues(key, field) { const m = new Map(); layerSrc[key]?.getFeatures().forEach(f => { const v = String(f.get(field) ?? ""); m.set(v, (m.get(v) || 0) + 1); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
 function numFields(key) { const fs = layerSrc[key]?.getFeatures() || []; return fieldsOfKey(key).filter(k => fs.length && fs.slice(0, 300).every(f => f.get(k) == null || isNum(f.get(k)))); }
 function assignCats(l, keep) {
@@ -146,7 +153,7 @@ function assignCats(l, keep) {
   st.cat.colors = c; if (!keep) st.cat.off = [];
 }
 function breaks(l) {
-  const g = l.style.grad, v = (layerSrc[l.key]?.getFeatures() || []).map(f => +f.get(g.field)).filter(x => !isNaN(x)).sort((a, b) => a - b); if (!v.length) return [0, 0];
+  const g = l.style.grad, v = (layerSrc[l.key]?.getFeatures() || []).map(f => numOf(f.get(g.field))).filter(x => !isNaN(x)).sort((a, b) => a - b); if (!v.length) return [0, 0];
   const b = [v[0]]; for (let i = 1; i < g.n; i++) b.push(+(g.method === "equal" ? v[0] + (v[v.length - 1] - v[0]) * i / g.n : v[Math.floor(i * v.length / g.n)]).toFixed(2)); b.push(v[v.length - 1]);
   const u = [...new Set(b)]; return u.length > 1 ? u : [u[0], u[0]];   // совпавшие границы — один класс, а не «16–16» четыре раза
 }
@@ -159,7 +166,7 @@ function testRule(r, f) {
 function symbolOf(l, f) {
   const st = l.style; let fill = st.fill, hatch = st.hatch, hide = false;
   if (st.mode === "cat") { const v = String(f.get(st.cat.field) ?? ""); fill = st.cat.colors[v] || OTHER; hide = st.cat.off.includes(v); }
-  else if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)), v = +f.get(st.grad.field), cols = ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1); const i = b.findIndex((x, k) => k > 0 && v <= x); fill = isNaN(v) ? OTHER : cols[Math.max(0, i - 1)] ?? cols[cols.length - 1]; }
+  else if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)), v = numOf(f.get(st.grad.field)), cols = ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1); const i = b.findIndex((x, k) => k > 0 && v <= x); fill = isNaN(v) ? OTHER : cols[Math.max(0, i - 1)] ?? cols[cols.length - 1]; }
   else if (st.mode === "rules") { const r = st.rules.list.find(r => r.field && testRule(r, f)); if (r) { fill = r.fill; hatch = r.hatch; } else { fill = st.rules.elseFill; hatch = false; hide = st.rules.elseHide; } }
   return { fill, hatch, hide };
 }
@@ -221,7 +228,8 @@ function symHTML(l, color) {
 function legendItems(l) {
   const st = l.style;
   if (st.mode === "cat") return catValues(l.key, st.cat.field).map(([v, n]) => ({ v, n, c: st.cat.colors[v] || OTHER, off: st.cat.off.includes(v), check: true }));
-  if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)); return ramp(st.grad.ramp, (l._br || (l._br = breaks(l))).length - 1).map((c, i) => ({ v: `${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}`, c })); }
+  if (st.mode === "grad") { const b = l._br || (l._br = breaks(l)), none = (layerSrc[l.key]?.getFeatures() || []).filter(f => isNaN(numOf(f.get(st.grad.field)))).length;
+    return ramp(st.grad.ramp, b.length - 1).map((c, i) => ({ v: `${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}`, c })).concat(none ? [{ v: "нет значения", c: OTHER, n: none }] : []); }
   if (st.mode === "rules") return st.rules.list.map(r => ({ v: `${r.field} ${r.op} ${r.val}`, c: r.fill })).concat(st.rules.elseHide ? [] : [{ v: "остальные", c: st.rules.elseFill }]);
   return [];
 }
@@ -246,7 +254,7 @@ function renderTree() {
     h += `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="true" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
       <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
       <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
-      <span class="nm" title="${esc(d?.source || "")}">${esc(l.title)}</span>
+      <span class="nm" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}">${esc(l.title)}</span>
       ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
       ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
       <span class="meta num">${fmt(d?.count ?? 0)}</span>
@@ -317,6 +325,31 @@ document.addEventListener("drop", e => {
 });
 document.addEventListener("dragend", () => { drag = null; document.querySelectorAll("#layerTree .dragging,#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("dragging", "drop-a", "drop-b")); });
 
+/* ---------- реестр существующих зданий: решение по каждому зданию ----------
+   Поле «Решение» (сохраняем / реконструкция / сносим) у всех объектов слоя, раскраска по нему; решения
+   ставятся выбором зданий (щелчок, рамка) и кнопками в «Объекте». Узел графа, который подаёт «сохраняемые»
+   в ТЭП и разрывы, начинает отбирать здания по этому полю: снесённые не мешают посадке и уходят в «Под снос». */
+const DECISION = "Решение", DECISIONS = { "сохраняем": "#b9b4ab", "реконструкция": "#eda100", "сносим": "#b3261e" };
+function makeRegister(key) {
+  const l = lyr(key), fs = layerSrc[key].getFeatures();
+  pushUndo(featRec(fs.map(f => ({ key, f })), `реестр зданий «${l.title}»`)); pushStyleUndo(l, "register");
+  fs.forEach(f => { if (f.get(DECISION) == null) f.set(DECISION, "сохраняем", true); });
+  syncFromSource(key); DATA[key].fields = [DECISION, ...DATA[key].fields.filter(k => k !== DECISION)];
+  l.style = ST({ ...l.style, mode: "cat", opacity: .9, cat: { field: DECISION, colors: { ...DECISIONS }, off: [] } }); assignCats(l, true); restyle(l);
+  // узел графа, подающий «сохраняемые» в ТЭП, — фильтр «Решение ≠ сносим»
+  const tepN = graph._nodes.find(n => n.type === "Показатели/ТЭП КРТ"), link = tepN && graph.links[tepN.inputs[1]?.link], src = link && graph.getNodeById(link.origin_id);
+  let hooked = false;
+  if (src?.type === "Данные/Слой" && src.widgets[0].value === l.title) { src.widgets[1].value = DECISION; src.widgets[2].value = "≠"; src.widgets[3].value = "сносим"; hooked = true; }
+  setCurrent(key); renderRight();
+  toast(`Реестр: у ${fmt(fs.length)} зданий поле «Решение» = «сохраняем». Выберите здания (щелчок, Shift+рамка) и отметьте «сносим» кнопкой справа.${hooked ? " Граф берёт в «сохраняемые» только не снесённые." : ""}`);
+}
+function setDecision(v) {
+  const list = SEL.filter(s => fieldsOfKey(s.key).includes(DECISION)); if (!list.length) return;
+  pushUndo(featRec(list, `решение «${v}» у ${list.length} зд.`)); list.forEach(s => { s.f.set(DECISION, v); s.f.set("_edited", true); });
+  new Set(list.map(s => s.key)).forEach(k => { syncFromSource(k); const l = lyr(k); if (l.style.mode === "cat" && l.style.cat.field === DECISION) { assignCats(l, true); restyle(l); } });
+  renderRight(); setHint(`«${v}»: ${fmt(list.length)} зд. Отменить — ${MOD}+Z.`);
+}
+
 /* ---------- группы ---------- */
 function newGroup(keys, title) {
   const id = "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
@@ -352,6 +385,7 @@ function layerMenu(anchor, key) {
     ["Таблица атрибутов", () => { setCurrent(key); openTable(true); }],
     ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
     ["Выбрать все объекты слоя", () => { setCurrent(key); selectAll(); }],
+    l.geom === "poly" && !fieldsOfKey(key).includes(DECISION) ? ["Реестр зданий: сохраняем / сносим", () => makeRegister(key)] : null,
     "-",
     ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
     STYLE_CLIP && STYLE_CLIP.from !== l.title ? [`Вставить стиль «${STYLE_CLIP.from}»`, () => { pushStyleUndo(l, "paste"); l.style = ST(JSON.parse(JSON.stringify(STYLE_CLIP.style))); if (l.style.mode === "cat") assignCats(l, true); restyle(l); renderRight(); if (STYLE_CLIP.geom !== l.geom) toast("Стиль вставлен; геометрия слоёв разная — проверьте толщину и заливку."); }] : null,
@@ -456,12 +490,14 @@ function renderStyle(el) {
 }
 const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? +v : v;
 const sizeOf = f => { const g = f.getGeometry(), t = g?.getType() || "", w = GJ.writeFeatureObject(f); return /Polygon/.test(t) ? ["area", turf.area(w)] : /Line/.test(t) ? ["len", turf.length(w, { units: "kilometers" }) * 1000] : ["pt", 0]; };
+const DECSHORT = { "сохраняем": "сохраняем", "реконструкция": "реконстр.", "сносим": "сносим" };
+const decisionBar = () => SEL.some(s => fieldsOfKey(s.key).includes(DECISION)) ? `<div class="pad" style="padding-top:0"><div class="seg dec">${Object.keys(DECISIONS).map(v => `<button data-decide="${v}" title="Решение по выбранным зданиям: ${v}"><i style="background:${DECISIONS[v]}"></i>${DECSHORT[v]}</button>`).join("")}</div></div>` : "";
 function renderObject(el) {
   if (!SEL.length) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы.<br><br>Несколько объектов — Shift+щелчок или рамка с Shift. Все объекты слоя — ${MOD}+A.</div>`; return; }
   if (SEL.length === 1) {
     const { key, f } = SEL[0], l = lyr(key), [kind, v] = sizeOf(f);
     const keys = Object.keys(f.getProperties()).filter(k => !hiddenField(k));
-    el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>
+    el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>${decisionBar()}
       <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
       <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>`;
     return;
@@ -470,7 +506,7 @@ function renderObject(el) {
   const by = new Map(); SEL.forEach(s => (by.get(s.key) || by.set(s.key, []).get(s.key)).push(s.f));
   let area = 0, len = 0; if (SEL.length <= 5000) SEL.forEach(s => { const [k, v] = sizeOf(s.f); if (k === "area") area += v; if (k === "len") len += v; });
   const sum = [area ? `площадь ${fmt(area / 1e4, 3)} га` : "", len ? `длина ${fmt(len, 0)} м` : ""].filter(Boolean).join(" · ");
-  let h = `<div class="pad"><div class="ph"><b>Выбрано объектов: ${fmt(SEL.length)}</b></div>${sum ? `<div class="note" style="padding:0 0 6px">${sum}</div>` : ""}</div>`;
+  let h = `<div class="pad"><div class="ph"><b>Выбрано объектов: ${fmt(SEL.length)}</b></div>${sum ? `<div class="note" style="padding:0 0 6px">${sum}</div>` : ""}</div>${decisionBar()}`;
   if (by.size > 1) {
     h += `<table class="cl" style="margin:0 8px;width:calc(100% - 16px)">${[...by].map(([k, fs]) => `<tr><td>${symHTML(lyr(k))}</td><td>${esc(lyr(k).title)}</td><td class="n num">${fmt(fs.length)}</td><td><button class="btn" data-only="${esc(k)}" title="Оставить в выборе только объекты этого слоя">Только он</button></td></tr>`).join("")}</table>
       <div class="note">Атрибуты правятся у объектов одного слоя: оставьте в выборе один слой.</div>`;
@@ -492,6 +528,7 @@ document.addEventListener("click", e => {
     pushUndo(featRec(SEL, `новое поле «${n}»`)); SEL.forEach(s => { s.f.set(n, ""); s.f.set("_edited", true); }); syncFromSource(SEL[0].key); renderRight(); return;
   }
   if (b.dataset.only) { setSel(SEL.filter(s => s.key === b.dataset.only)); return; }
+  if (b.dataset.decide) return setDecision(b.dataset.decide);
   const l = lyr(CUR); if (!l) return; const st = l.style;
   if (b.dataset.mode) { pushStyleUndo(l, "mode"); st.mode = b.dataset.mode; if (st.mode === "cat" && !Object.keys(st.cat.colors).length) assignCats(l); restyle(l); renderRight(); }
   else if (b.hasAttribute("data-recolor")) { pushStyleUndo(l, "recolor"); assignCats(l, false); restyle(l); renderRight(); }

@@ -210,10 +210,48 @@ class GisogdApi(Connector):
         time.sleep(_PAUSE)
         return raw, False
 
+    def _lines_path(self, code):
+        return self.cache_dir / f"{code}.lines.gz" if self.cache_dir else None
+
+    def _from_lines(self, code, query):
+        """Быстрый путь по кэшу: строка на объект «w,s,e,n<TAB>ключ<TAB>json».
+        Разбирается только то, что попало в область: слой ПЗЗ старой Москвы — 221 МБ JSON,
+        целиком json.loads — ~5 с и 1,5 ГБ памяти, построчно — около секунды."""
+        lp, gz = self._lines_path(code), self._cache_path(code)
+        if not (lp and lp.exists() and gz and gz.exists()) or lp.stat().st_mtime < gz.stat().st_mtime \
+                or (time.time() - gz.stat().st_mtime) >= self.ttl:
+            return None
+        out = []
+        with gzip.open(lp, "rt", encoding="utf-8") as fh:
+            for line in fh:
+                bb, key, js = line.rstrip("\n").split("\t", 2)
+                fb = tuple(float(v) for v in bb.split(","))
+                if _overlaps(fb, query):
+                    f = json.loads(js)
+                    out.append({"type": "Feature", "geometry": f["geometry"],
+                                "properties": f["properties"], "grado_key": key})
+        return out
+
+    def _write_lines(self, code, rows):
+        lp = self._lines_path(code)
+        if not lp:
+            return
+        tmp = lp.with_suffix(lp.suffix + ".part")
+        with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) as fh:
+            for fb, key, f in rows:
+                fh.write(",".join(repr(v) for v in fb) + "\t" + key + "\t"
+                         + json.dumps({"geometry": f.get("geometry"), "properties": f.get("properties") or {}},
+                                      ensure_ascii=False, separators=(",", ":")) + "\n")
+        tmp.replace(lp)
+
     def fetch(self, bbox, code):
         """bbox = (west, south, east, north) WGS84; code — код слоя портала."""
         west, south, east, north = map(float, bbox)
         query = (west, south, east, north)
+        fast = self._from_lines(code, query)
+        if fast is not None:
+            return make_result(fast, {"code": code, "bbox": ",".join(f"{v:.5f}" for v in query)},
+                               source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту", notes=[])
         raw, cached = self._layer_bytes(code)
         try:
             data = json.loads(raw)
@@ -222,17 +260,21 @@ class GisogdApi(Connector):
         if not isinstance(data, dict) or not isinstance(data.get("features"), list):
             raise ConnectorError(f"ГИС ОГД: слой {code} — не FeatureCollection")
 
-        out, notes = [], []
+        out, notes, rows = [], [], []
         for i, f in enumerate(data["features"]):
             geom = f.get("geometry")
             fb = _geom_bbox(geom)
-            if not fb or not _overlaps(fb, query):
+            if not fb:
                 continue
             props = f.get("properties") or {}
-            key = props.get("orbis_id") or props.get("id") or f.get("id") or i
+            key = f"{code}:{norm_id(props.get('orbis_id') or props.get('id') or f.get('id') or i)}"
+            rows.append((fb, key, f))
+            if not _overlaps(fb, query):
+                continue
             out.append({"type": "Feature", "geometry": geom,
                         "properties": dict(props),
-                        "grado_key": f"{code}:{norm_id(key)}"})
+                        "grado_key": key})
+        self._write_lines(code, rows)
         if not cached:
             notes.append(f"слой {code} загружен целиком ({len(data['features'])} об., "
                          f"{len(raw)/1e6:.0f} МБ) — портал не фильтрует по области; "

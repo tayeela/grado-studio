@@ -150,10 +150,11 @@ def import_dxf(data, redln):
         feats.append({"pts": pts, "closed": closed, "layer": e.dxf.layer, "lt": upper.get(lt.upper())})
     if not feats:
         return {"type": "FeatureCollection", "features": []}, [f"no lines or polylines (skipped {skipped})"]
-    xs = [p[0] for f in feats for p in f["pts"]]
-    is_wgs = all(-180 <= x <= 180 for x in xs[:500]) and max(map(abs, xs[:500])) > 1
-    if not is_wgs and max(map(abs, xs)) > 200_000:
+    import file_io
+    system = file_io.system_of([p for f in feats for p in f["pts"]][:2000])
+    if system not in ("wgs", "mggt"):
         raise ValueError("coordinates are neither МГГТ (Moscow local, tens of km) nor WGS84 degrees")
+    is_wgs = system == "wgs"
     to = (lambda x, y: (x, y)) if is_wgs else crs.msk50_to_wgs84
     out = []
     for f in feats:

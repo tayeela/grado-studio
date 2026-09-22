@@ -221,6 +221,35 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.8.0 (stage Э2): existing situation — ПЗЗ, ОКН, demolition notices, relief, file import, satellite, re-download diff, buildings register.**
+  - ГИС ОГД layers (codes checked against the live catalog 23.09.2026): ПЗЗ subzones `virtual98` (old Moscow) + `virtual132`
+    (new Moscow) → «ПЗЗ: подзоны» with numeric «Плотность, тыс. м²/га», «Высота, м», «Застроенность, %» and a text «Регламент»;
+    ПЗЗ zones `virtual90` + `virtual130` → «ПЗЗ: территориальные зоны и ВРИ» (ВРИ codes and names, link to the regulation PDF);
+    ОКН `virtual500/502/504/508` (territory, protection zone, development regulation zone, protective zone) → one layer by «Вид зоны»;
+    demolition notices `t_1322`. Readable fields are built in `server.py` (`PRESENT`), technical portal fields are dropped.
+  - **Meaning of ПЗЗ values:** «-» = not set, «Ф» = by the existing state, 0/0/0 = «нулевые параметры: новое строительство не
+    предусмотрено». In old Moscow height is a number in only ~1 % of subzones, density in ~22 %; the default style is ranges by density.
+  - **Core connector:** `GisogdApi` writes a line cache `<code>.lines.gz` («w,s,e,n<TAB>key<TAB>json» per object) next to the full
+    layer and reads it line by line: the 221 MB zones layer goes from 7.4 s / ~1.5 GB to 0.5 s. First download still takes 1–2 min.
+  - Relief: «Рельеф: горизонтали (SRTM)» from the core `TerrainContours` (needs **Pillow**, added to `apps/grado2/requirements.txt`
+    and installed into `~/.grado2/venv`); terrain tiles now retry the TLS handshake 3 times.
+  - Import (button «Файл…» in «Данные» or drag files onto the map, like QGIS): GeoJSON, KML/KMZ, Shapefile (zip or .shp+.dbf+.prj),
+    DXF — `apps/grado2/file_io.py`, `/api/import/files`. Coordinates recognised as WGS84 / МГГТ / Web Mercator.
+    **Bug fixed in the DXF import too:** it decided «degrees» by x alone, but МГГТ easting near the central meridian is below 180
+    (37.5° E is x ≈ 115 m) — a drawing in that strip was read as degrees. Now both x within ±180 and y within ±90 are required.
+  - Basemap switch on the map: OSM scheme (grey), Esri satellite, Sentinel-2 cloudless (EOX), none; kept in the project.
+  - ФГИС ТП in «Данные»: documents whose extent covers the territory (catalog 28 000 docs cached a week, country-wide schemes cut off),
+    a document's layers, load the checked ones clipped to the territory. No DNS problem now; Moscow's own genplan is not found by extent.
+  - Re-download: each object carries the source key `_key`; a second download is compared with the previous one (+new, −gone,
+    changed) and merged with manual work — your edited objects win, objects you deleted stay deleted, objects you drew stay,
+    fields you added (e.g. «Решение») carry over. New and changed objects are selected; the history shows in «Данные».
+  - Buildings register: layer menu «Реестр зданий: сохраняем / сносим» adds «Решение» to every building, colours by it, and puts
+    buttons «сохраняем / реконстр. / сносим» into «Объект» for the selection. The graph node feeding «сохраняемые» into ТЭП gets the
+    filter «Решение ≠ сносим», so demolished buildings free the site and go to «Под снос».
+  - НСПД: only fields with a Russian name are kept (was: `systemInfo` as «[object Object]», `interactionId`, `opt_cost_*`, …).
+  - Checked in headless Chrome: load of ПЗЗ/ОКН/relief for Хорошёво, register + demolition marks + ТЭП «под снос 3», re-download merge,
+    GeoJSON import, satellite; scenarios A–I again; console clean. Tests: grado2 26, connectors green.
+
 - **2026-09-23, ГРАДО 2 v0.7.0 (stage Э1): layer groups, multi-select, batch attributes, undo/redo for styles, keys window, 100 000 objects.**
   - Groups as in QGIS: `GROUPS` + `layer.group`; a group's layers stay contiguous in `LYR` (`normGroups`, empty groups vanish).
     Drag a layer onto a layer = its group; onto the lower half of a group header = into it; a group drags as a block.
