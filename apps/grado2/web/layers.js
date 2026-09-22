@@ -193,13 +193,15 @@ document.addEventListener("drop", e => {
 });
 document.addEventListener("dragend", () => { dragKey = null; document.querySelectorAll("#layerTree .dragging,#layerTree .drop-a,#layerTree .drop-b").forEach(x => x.classList.remove("dragging", "drop-a", "drop-b")); });
 
-let menuEl = null;
+let menuEl = null, STYLE_CLIP = null;   // буфер стиля, как «Копировать/Вставить стиль» в QGIS
 const closeMenu = () => { menuEl?.remove(); menuEl = null; };
 function layerMenu(anchor, key) {
   closeMenu(); const l = lyr(key), d = DATA[key];
   const items = [["Приблизить к слою", () => { const ex = layerSrc[key].getExtent(); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
     ["Таблица атрибутов", () => { setCurrent(key); openTable(true); }],
     ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
+    ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
+    STYLE_CLIP && STYLE_CLIP.from !== l.title ? [`Вставить стиль «${STYLE_CLIP.from}»`, () => { l.style = ST(JSON.parse(JSON.stringify(STYLE_CLIP.style))); if (l.style.mode === "cat") assignCats(l, true); restyle(l); renderRight(); if (STYLE_CLIP.geom !== l.geom) toast("Стиль вставлен; геометрия слоёв разная — проверьте толщину и заливку."); }] : null,
     ["Переименовать", () => renameLayer(key)],
     ["Выше", () => moveLayer(key, -1)], ["Ниже", () => moveLayer(key, 1)],
     d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; setLayerData(key, d.original); dataRev++; }] : null,
