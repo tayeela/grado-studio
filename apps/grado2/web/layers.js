@@ -62,6 +62,7 @@ function attachLayer(map, l) {
 }
 window.attachDataLayers = map => LYR.forEach(l => attachLayer(map, l));
 function applyOrder() {
+  window.markDirty?.();
   ALLMAPS.forEach(m => m.getLayers().forEach(ml => { const l = lyr(ml.get("key")); if (!l) return; ml.setZIndex(10 + LYR.length - LYR.indexOf(l)); ml.setVisible(l.visible); ml.setOpacity(l.layerOpacity); }));
 }
 function setLayerData(key, fc) {
@@ -128,7 +129,7 @@ function styleFor(l, f, res) {
   if (sel) out.push(SELSTYLE[l.geom]);
   return out;
 }
-function restyle(l) { l.cache.clear(); l._br = null; layerSrc[l.key]?.changed(); renderTree(); }
+function restyle(l) { l.cache.clear(); l._br = null; layerSrc[l.key]?.changed(); renderTree(); window.markDirty?.(); }
 
 /* ---------- дерево слоёв ---------- */
 function symHTML(l, color) {

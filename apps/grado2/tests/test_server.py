@@ -29,5 +29,34 @@ class Grado2Server(unittest.TestCase):
         self.assertIn("nspd.parcels", errors)
 
 
+class Projects(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old, S.PROJECTS = S.PROJECTS, Path(self.tmp.name) / "p"
+
+    def tearDown(self):
+        S.PROJECTS = self.old
+        self.tmp.cleanup()
+
+    def test_save_list_and_autosave_apart(self):
+        S.save_project("Хорошёво", b'{"format": "grado2"}')
+        S.save_project(".autosave", b'{"format": "grado2"}')
+        r = S.list_projects()
+        self.assertEqual([p["name"] for p in r["projects"]], ["Хорошёво"])
+        self.assertIsNotNone(r["autosave"])
+        self.assertEqual(S.project_path("Хорошёво").read_bytes(), b'{"format": "grado2"}')
+
+    def test_names_cannot_escape_the_folder(self):
+        for bad in ("../x", "a/b", "", ".hidden", "c:x"):
+            with self.assertRaises(ValueError):
+                S.project_path(bad)
+
+    def test_broken_json_is_not_written(self):
+        with self.assertRaises(ValueError):
+            S.save_project("x", b"{not json")
+        self.assertFalse(S.project_path("x").exists())
+
+
 if __name__ == "__main__":
     unittest.main()

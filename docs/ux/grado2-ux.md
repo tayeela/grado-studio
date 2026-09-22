@@ -39,12 +39,16 @@ F. **Measure.** Length and area tools show the value while drawing and keep it o
    clears.
 G. **Export.** «Экспорт DXF» downloads a zip with the drawing, red_lns.shx and REDLN97.LIN.
 H. **Windows state.** Move and resize windows, reload → they come back where they were.
+I. **Save and restore.** Draw, restyle, change a graph slider → reload → everything is back
+   (autosave). Ctrl+S on an unnamed project asks for a name → «Проекты» lists it → «Новый проект»
+   empties the map → «Открыть» brings back layers, order, styles, data and graph values. The header
+   shows «•» while there are unsaved changes. Test on `grado2-test` (port 8651, temp project folder),
+   never in the owner's «Документы/ГРАДО 2».
 
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
 
-- 2026-09-23: project save/open to a file (edits live only until reload).
 - 2026-09-23: printing and sheets with REDLN97.
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
 - 2026-09-23: layer groups in the tree; multi-select and batch attribute edit.

@@ -221,6 +221,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.5: projects — save, open, new, autosave with restore after reload.**
+  A project is a `.grado2` file (JSON) in `~/Documents/ГРАДО 2` (env `GRADO2_PROJECTS` overrides): territory,
+  layers (order, style, visibility, opacity), their data with the original download, import sources,
+  graph (`graph.serialize()`), map view. Server: `GET /api/projects`, `GET|POST /api/project?name=…`,
+  `?autosave=1` → hidden `.autosave.grado2`; names are file names (no path characters, no leading dot),
+  writes are atomic (tmp + `os.replace`), non-JSON is refused. Client `web/project.js`: window «Проекты»
+  (name + Сохранить, Новый проект, Открыть файл…, Скачать копию, list), header button with «•» for unsaved
+  changes, Ctrl/⌘+S, autosave ~2 s after an edit, restore on start. Unsaved work is not dropped silently:
+  «Новый»/«Открыть» need a second press within 4 s.
+  - **Pitfall:** litegraph does not serialize widget values unless `serialize_widgets` is true — floors,
+    buffers and the layer names of «Слой» nodes were lost on reopen. Set on `LGraphNode.prototype`.
+  - **Pitfall:** start-up recomputes marked a fresh page as edited, and autosave wrote an empty project
+    over the real one. `PROJ.loading` stays true until `projectStart` has finished.
+  - Test server `grado2-test` (port 8651, `GRADO2_NO_BROWSER=1`, temp project folder) in `~/.claude/launch.json`.
+  - Checked: 9 real layers + territory + graph edits → save → new → open: order, counts, styles, original,
+    graph values all equal. Tests grado2 10 green. **Backend change: the owner must restart server.py.**
+
 - **2026-09-23, ГРАДО 2 v0.4: no stages — one workspace, AutoCAD tool strip, floating windows; self-audit hooks.**
   The owner: "I created a layer and cannot see how to add objects; where is the AutoCAD tool strip; why
   the stages on top — work should be free, in pop-up windows". The three stages are gone. Layout:

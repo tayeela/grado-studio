@@ -74,7 +74,9 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .wb canvas.c3d{position:absolute;inset:0}
 .top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:600}
-.proj{color:var(--muted)}
+.proj{border-color:transparent;background:none;color:var(--muted);max-width:340px}.proj .lb{overflow:hidden;text-overflow:ellipsis}.proj:hover{background:var(--hover);color:var(--text)}
+.projbar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}.projbar input[type=text]{flex:1;min-width:160px;height:26px}
+.projdir{padding:4px 8px;color:var(--faint);font-size:11px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb{border:1px solid transparent;background:none;width:28px;height:28px;border-radius:3px;display:grid;place-items:center;padding:0;flex:0 0 auto}
 .tb:hover{background:var(--hover)}
 .tb[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
@@ -254,7 +256,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 
 <div class="app">
   <header class="top">
-    <span class="brand">ГРАДО</span><span class="proj">Новый проект · реальные данные</span><span class="sp"></span>
+    <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
       <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
@@ -326,9 +328,19 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
   <header class="wh"><i data-lucide="table-2"></i><b>Таблица атрибутов</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="attr"><div class="ah"><span id="attrTitle" class="ttl"></span><span class="sp"></span><input type="text" id="attrFilter" placeholder="Фильтр" aria-label="Фильтр строк"></div><div class="ab" id="attrBody"></div></div></div>
 </section>
+<section class="win" id="wProjects" hidden aria-label="Проекты">
+  <header class="wh"><i data-lucide="folder-open"></i><b>Проекты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb">
+    <div class="projbar"><input type="text" id="projName" placeholder="Название проекта" aria-label="Название проекта"><button class="btn primary" id="projSave" title="Сохранить в папку проектов (Ctrl+S)"><i data-lucide="save"></i>Сохранить</button></div>
+    <div class="projbar"><button class="btn" id="projNew"><i data-lucide="file-plus"></i>Новый проект</button><label class="btn" title="Открыть файл .grado2 с диска или флешки"><i data-lucide="folder-input"></i>Открыть файл…<input type="file" id="projFile" accept=".grado2,.json" hidden></label><button class="btn" id="projDownload" title="Скачать копию текущего проекта одним файлом"><i data-lucide="download"></i>Скачать копию</button></div>
+    <div class="projdir" id="projDir"></div>
+    <div class="sb" id="projList"></div>
+  </div>
+</section>
 <div class="toast" id="toast" role="status"></div>
 
 <div class="busy" id="busy" hidden></div>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
 <script src="layers.js"></script>
+<script src="project.js"></script>

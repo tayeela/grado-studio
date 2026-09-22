@@ -87,7 +87,7 @@ function setTerritory(feature) {
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
-  $("bLoad").disabled = false; dataRev++; window.syncStatus?.();
+  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.markDirty?.();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
 $("bDraw").onclick = () => setTool("terr");
@@ -167,6 +167,7 @@ $("bExport").onclick = async () => {
 /* ================= граф анализа (litegraph.js) ================= */
 Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: "#d6dade", NODE_DEFAULT_BGCOLOR: "#f7f7f5", NODE_DEFAULT_BOXCOLOR: "#8a8d91", NODE_TITLE_COLOR: "#1d1d1f", NODE_SELECTED_TITLE_COLOR: "#000", NODE_TEXT_COLOR: "#333", NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11,
   WIDGET_BGCOLOR: "#ffffff", WIDGET_OUTLINE_COLOR: "#b5b8bc", WIDGET_TEXT_COLOR: "#1d1d1f", WIDGET_SECONDARY_TEXT_COLOR: "#6b6f75", LINK_COLOR: "#7a7e84", CONNECTING_LINK_COLOR: "#2f6fc4", NODE_TITLE_HEIGHT: 24, NODE_SLOT_HEIGHT: 20, NODE_WIDGET_HEIGHT: 20 });
+LGraphNode.prototype.serialize_widgets = true;   // значения полей узлов (слой, фильтр, ползунки) — в файл проекта
 LGraphCanvas.link_type_colors = { geom: "#3f8f5a", num: "#b07a00", sketch: "#2f6fc4", tep: "#8a4ab0" };
 const TITLE = { src: "#cfe3d4", op: "#d6dade", gen: "#cfdcf0", tep: "#e3d6ec", num: "#f0e3c8" };
 const OPS = ["—", "=", "≠", ">", "<", "≥", "≤", "содержит", "один из"];
@@ -349,7 +350,7 @@ $("lib").addEventListener("click", e => { const b = e.target.closest("[data-add]
 let lastSig = "", RESULT = { site: null, sketch: [], tep: null };
 const signature = () => JSON.stringify([dataRev, Object.values(graph.links || {}).filter(Boolean).map(l => [l.origin_id, l.origin_slot, l.target_id, l.target_slot]), graph._nodes.map(n => [n.id, n.widgets?.map(w => w.value)])]);
 function recompute(force) {
-  const sig = signature(); if (!force && sig === lastSig) return; lastSig = sig;
+  const sig = signature(); if (!force && sig === lastSig) return; if (sig !== lastSig) window.markDirty?.(); lastSig = sig;
   safe(() => graph.runStep(1, true));
   const place = graph._nodes.find(n => n.type === "Эскиз/Посадка застройки"), tepN = graph._nodes.find(n => n.type === "Показатели/ТЭП КРТ");
   RESULT = { site: place?.getInputData(0) || null, sketch: place?.getOutputData(0) || [], tep: tepN?._tep || null, placeNode: place, tepNode: tepN };
@@ -483,7 +484,7 @@ const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST))
 const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
-  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280] }; };
+  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)] }; };
 function placeWin(w) {
   const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
   const W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 90);
@@ -535,4 +536,5 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
   const first = !Object.keys(WST).some(k => k.startsWith("w"));
   Object.keys(W0()).forEach(id => { if (WST[id]?.open || (first && id === "wData")) winOpen(id, true); });
   syncWinButtons(); recompute(true);
+  await window.projectStart?.();
 })();

@@ -3,6 +3,7 @@
 Отдаёт веб-интерфейс из web/ и два метода:
   POST /api/fetch  {bbox:[w,s,e,n], sources:[ключ,...]} → реальные слои по области
   POST /api/tep    {terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2} → ТЭП (методика КРТ)
+  GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
@@ -12,11 +13,13 @@
 
 import json
 import math
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 for sub in ("core/connectors", "core/compute", "core/render"):
@@ -34,6 +37,9 @@ CACHE = Path.home() / ".grado2" / "cache"
 PRESET = ROOT / "core/compute/grado_compute/presets/moscow_krt.json"
 STYLES = ROOT / "core/render/grado_render/styles"
 STYLE_FILES = {"redln97.json", "moscow_lgr.json", "moscow_genplan.json"}   # отдаются фронту как есть
+# проекты — обычные файлы .grado2 (JSON) в папке документов: их видно в Finder/Проводнике, их можно переслать
+PROJECTS = Path(os.environ.get("GRADO2_PROJECTS") or Path.home() / "Documents" / "ГРАДО 2")
+AUTOSAVE = ".autosave"
 
 # ключ → (коннектор, параметр, название слоя)
 SOURCES = {
@@ -177,6 +183,33 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0):
             "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
 
 
+def project_path(name):
+    """Имя проекта → файл в PROJECTS. Имя становится именем файла, поэтому без путей и служебных знаков."""
+    name = (name or "").strip()
+    if name == AUTOSAVE:
+        return PROJECTS / f"{AUTOSAVE}.grado2"
+    if not name or name.startswith(".") or len(name) > 120 or any(c in name for c in '/\\:*?"<>|\0'):
+        raise ValueError("bad project name")
+    return PROJECTS / f"{name}.grado2"
+
+
+def save_project(name, body):
+    json.loads(body)                                  # в файл идёт только целый JSON
+    path = project_path(name)
+    PROJECTS.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(body)
+    os.replace(tmp, path)                             # атомарно: при сбое старая версия цела
+    return path
+
+
+def list_projects():
+    files = sorted(PROJECTS.glob("*.grado2"), key=lambda p: p.stat().st_mtime, reverse=True) if PROJECTS.exists() else []
+    info = lambda p: {"name": p.stem, "modified": p.stat().st_mtime, "size": p.stat().st_size}
+    auto = [info(p) for p in files if p.stem == AUTOSAVE]
+    return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None}
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB), **kw)
@@ -204,7 +237,24 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(body)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
+        if self.path == "/api/projects":
+            return self._json(200, list_projects())
+        if self.path.startswith("/api/project?"):
+            try:
+                path = project_path(self._project_name())
+                body = path.read_bytes()
+            except (ValueError, OSError):
+                return self._json(404, {"error": "no such project"})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         return super().do_GET()
+
+    def _project_name(self):
+        q = parse_qs(urlparse(self.path).query)
+        return AUTOSAVE if q.get("autosave") else (q.get("name") or [""])[0]
 
     def do_POST(self):
         try:
@@ -213,6 +263,9 @@ class Handler(SimpleHTTPRequestHandler):
                 import dxf_io
                 fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN)
                 return self._json(200, {"features": fc, "notes": notes})
+            if self.path.startswith("/api/project?"):
+                path = save_project(self._project_name(), self.rfile.read(n))
+                return self._json(200, {"saved": str(path), "modified": path.stat().st_mtime})
             req = json.loads(self.rfile.read(n) or b"{}")
             if self.path == "/api/fetch":
                 bbox = [float(v) for v in req["bbox"]]
@@ -267,5 +320,6 @@ if __name__ == "__main__":
     else:
         sys.exit(f"порты {port}–{port + 19} заняты")
     print(f"ГРАДО 2: http://127.0.0.1:{p}")
-    webbrowser.open(f"http://127.0.0.1:{p}")
+    if not os.environ.get("GRADO2_NO_BROWSER"):      # тестовый запуск без открытия окна
+        webbrowser.open(f"http://127.0.0.1:{p}")
     server.serve_forever()
