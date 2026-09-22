@@ -263,6 +263,51 @@ class TestStudioCore(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"/Count 5", pdf)
 
+    def test_album_meta_defaults_and_overrides(self):
+        meta = studio_core._album_meta({"title": {"org": "Бюро"}}, "Квартал 5")
+        self.assertEqual({"org": "Бюро", "stage": "АГК", "code": "", "object": "Квартал 5"}, meta)
+        meta = studio_core._album_meta({"stamp": {"org": "ООО Проект", "stage": "ППТ",
+                                                  "code": "12-24", "object": " "}}, "Квартал 5")
+        self.assertEqual(("ООО Проект", "ППТ", "12-24", "Квартал 5"),
+                         (meta["org"], meta["stage"], meta["code"], meta["object"]))
+
+    def test_album_gost_layout_keeps_content_off_the_stamp(self):
+        from grado_layout import Document, PageBorder, SheetHeader, StampFrame
+        from grado_wizard import sheets
+        with tempfile.TemporaryDirectory() as tmp:
+            project = studio_core.build_project(Path(tmp) / "a.grado", "А", FEATURES)
+            engine = studio_core.album_engine(project, FEATURES)
+            doc = Document("А")
+            doc.styles = studio_core.StyleSet()
+            doc.layout = sheets.GOST
+            pages = [sheets.location_sheet(doc, project, engine.value("terr_area"), 1),
+                     sheets.base_plan_sheet(doc, project, 2),
+                     sheets.apo_sheet(doc, project, engine, 3),
+                     sheets.tep_summary_sheet(doc, engine, 4)]
+            project.close()
+        for page in pages:
+            kinds = [type(frame) for frame in page.frames]
+            self.assertIn(StampFrame, kinds)
+            self.assertIn(PageBorder, kinds)
+            self.assertNotIn(SheetHeader, kinds)
+            self.assertTrue(page.sheet_title)
+            sx, sy, _, _ = next(f for f in page.frames if isinstance(f, StampFrame)).rect
+            ix, iy, iw, ih = page.inner_rect()
+            for frame in page.frames:
+                if isinstance(frame, (StampFrame, PageBorder)):
+                    continue
+                x, y, w, h = frame.rect
+                self.assertGreaterEqual(x, ix, type(frame).__name__)
+                self.assertLessEqual(x + w, ix + iw, type(frame).__name__)
+                self.assertFalse(x + w > sx and y + h > sy, f"{type(frame).__name__} заходит на штамп")
+
+    def test_make_album_with_stamp(self):
+        pdf = studio_core.make_album(FEATURES, "Тестовая концепция", album_config={
+            "sheets": ["title", "location", "base", "apo", "tep"],
+            "stamp": {"enabled": True, "code": "01-26", "stage": "АГК"}})
+        self.assertTrue(pdf.startswith(b"%PDF"))
+        self.assertIn(b"/Count 5", pdf)
+
     def test_redline_fillet_applied(self):
         feat = [{"kind": "redline", "props": {"radius": 20},
                  "line": [[0, 0], [100, 0], [100, 100]]}]

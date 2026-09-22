@@ -9,12 +9,62 @@ import math
 from pathlib import Path
 
 from grado_layout import (A3_LANDSCAPE, CalloutFrame, MapFrame, Page,
-                          SectionedLegendFrame, SheetHeader, TableFrame,
-                          TextFrame)
+                          PageBorder, SectionedLegendFrame, SheetHeader,
+                          StampFrame, TableFrame, TextFrame)
 from grado_render import project_extent
 
 MAP_RECT = (12, 10, 280, 277)
 RIGHT_X, RIGHT_W = 302, 106
+
+
+class SheetLayout:
+    """Раскладка листа A3: где карта, где правая колонка, чем подписан лист.
+
+    Листы описаны в координатах презентационной раскладки: правая колонка
+    от y=34 до y=270. Раскладка с основной надписью ГОСТ сжимает колонку
+    по высоте над штампом (185×55 в правом нижнем углу рамки 20/5).
+    """
+
+    COLUMN_TOP, COLUMN_BOTTOM = 34, 270
+
+    def __init__(self, map_rect, right_x, right_w, top, bottom, stamp):
+        self.map = map_rect
+        self.right_x, self.right_w = right_x, right_w
+        self.top, self.bottom = top, bottom
+        self.stamp = stamp
+        self.k = (bottom - top) / (self.COLUMN_BOTTOM - self.COLUMN_TOP)
+
+    def right(self, y, h):
+        """Прямоугольник правой колонки: y и h заданы в презентационной раскладке."""
+        return (self.right_x, self.top + (y - self.COLUMN_TOP) * self.k,
+                self.right_w, h * self.k)
+
+    def body(self):
+        """Поле листа под таблицу во всю ширину."""
+        if self.stamp:
+            return (25, 10, 385, self.bottom - 10)
+        return (40, 30, 340, 245)
+
+    def callout_slots(self):
+        """Углы карты под рамки выносок."""
+        x, y, w, h = self.map
+        return [(x + 6, y + 8), (x + 6, y + h - 43), (x + w - 92, y + h - 37)]
+
+    def header(self, page, title_lines, page_no):
+        """Подпись листа. Заголовок запоминается на листе для основной надписи."""
+        page.sheet_title = " ".join(title_lines)
+        if self.stamp:
+            return [PageBorder(page), StampFrame(page)]
+        return [SheetHeader(page, title_lines, page_no)]
+
+
+PRESENTATION = SheetLayout(MAP_RECT, RIGHT_X, RIGHT_W, 34, 270, stamp=False)
+# Рамка 20/5: поле x 20…415, y 5…292; штамп занимает x 230…415, y 237…292.
+GOST = SheetLayout((25, 10, 255, 222), 292, 118, 12, 230, stamp=True)
+
+
+def layout_of(doc):
+    return getattr(doc, "layout", PRESENTATION)
 NICE_SCALES = [500, 1000, 2000, 2500, 5000, 10000, 20000, 25000, 50000]
 
 # Наборы слоёв листов — декларативно из JSON (шаг 5): лист ссылается на
@@ -78,9 +128,10 @@ def title_sheet(doc, org="ГРАДО", city_year="Москва / 2026"):
 
 def location_sheet(doc, project, area_ha, page_no):
     page = Page(A3_LANDSCAPE)
-    scale = fit_scale(project, margin=2.2)
+    L = layout_of(doc)
+    scale = fit_scale(project, L.map, margin=2.2)
     legend = SectionedLegendFrame(
-        (RIGHT_X, 40, RIGHT_W, 60),
+        L.right(40, 60),
         [("Границы:", [("line", doc.styles.resolve("terr.boundary"),
                         "граница территории разработки")])])
     if isinstance(area_ha, (int, float)) and not isinstance(area_ha, bool):
@@ -88,13 +139,13 @@ def location_sheet(doc, project, area_ha, page_no):
     else:
         area_line = "площадью н/д"
     annotation = TextFrame(
-        (RIGHT_X, 110, RIGHT_W, 40),
+        L.right(110, 40),
         ["Разрабатываемая территория",
          area_line,
          "в границах участков правообладателя"], size=2.8)
     page.frames = [
-        SheetHeader(page, ["Расположение рассматриваемой", "территории"], page_no),
-        MapFrame(MAP_RECT, scale=scale, layers=layerset_layers(project, "location")),
+        *L.header(page, ["Расположение рассматриваемой", "территории"], page_no),
+        MapFrame(L.map, scale=scale, layers=layerset_layers(project, "location")),
         legend, annotation]
     return page
 
@@ -121,10 +172,11 @@ def _source_table(project, layer_ids, rect):
 
 def base_plan_sheet(doc, project, page_no):
     page = Page(A3_LANDSCAPE)
+    L = layout_of(doc)
     st = doc.styles.resolve
     layer_ids = layerset_layers(project, "existing_position")
     legend = SectionedLegendFrame(
-        (RIGHT_X, 40, RIGHT_W, 120),
+        L.right(40, 120),
         [("Границы:", [
             ("line", st("terr.boundary"), "территории разработки"),
             ("line", st("cad.parcel"), "земельных участков ЕГРН")]),
@@ -134,10 +186,10 @@ def base_plan_sheet(doc, project, page_no):
          ("Существующее положение:", [
             ("fill", st("tp.func_zone"), "функциональные зоны генплана")])])
     frames = [
-        SheetHeader(page, ["Опорный план.", "Существующее положение"], page_no),
-        MapFrame(MAP_RECT, scale=fit_scale(project), layers=layer_ids),
+        *L.header(page, ["Опорный план.", "Существующее положение"], page_no),
+        MapFrame(L.map, scale=fit_scale(project, L.map), layers=layer_ids),
         legend]
-    src = _source_table(project, layer_ids, (RIGHT_X, 170, RIGHT_W, 100))
+    src = _source_table(project, layer_ids, L.right(170, 100))
     if src:
         frames.append(src)
     page.frames = frames
@@ -147,19 +199,20 @@ def base_plan_sheet(doc, project, page_no):
 def ortho_sheet(doc, project, page_no, underlay, attribution=""):
     """Лист «Ортофотоплан»: снимок-подложка + граница и участки ЕГРН."""
     page = Page(A3_LANDSCAPE)
+    L = layout_of(doc)
     st = doc.styles.resolve
     legend = SectionedLegendFrame(
-        (RIGHT_X, 40, RIGHT_W, 60),
+        L.right(40, 60),
         [("Границы:", [
             ("line", st("terr.boundary"), "территории разработки"),
             ("line", st("cad.parcel"), "земельных участков ЕГРН")])])
-    note = TextFrame((RIGHT_X, 110, RIGHT_W, 20),
+    note = TextFrame(L.right(110, 20),
                      ["Подложка:", attribution] if attribution else [],
                      size=2.6)
     page.frames = [
-        SheetHeader(page, ["Ортофотоплан", "рассматриваемой территории"],
-                    page_no),
-        MapFrame(MAP_RECT, scale=fit_scale(project),
+        *L.header(page, ["Ортофотоплан", "рассматриваемой территории"],
+                  page_no),
+        MapFrame(L.map, scale=fit_scale(project, L.map),
                  layers=layerset_layers(project, "ortho"), underlay=underlay),
         legend, note]
     return page
@@ -210,9 +263,10 @@ def default_callouts(project, engine):
 
 def apo_sheet(doc, project, engine, page_no, callouts=None):
     page = Page(A3_LANDSCAPE)
+    L = layout_of(doc)
     st = doc.styles.resolve
     legend = SectionedLegendFrame(
-        (RIGHT_X, 34, RIGHT_W, 120),
+        L.right(34, 120),
         [("Границы:", [
             ("line", st("terr.boundary"), "территории разработки"),
             ("line", st("pp.red_line"), "красные линии (устанавливаемые)")]),
@@ -224,7 +278,7 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
             ("fill", st("tp.func_zone"), "функциональные зоны")])])
     d = engine.display
     tep = TableFrame(
-        (RIGHT_X, 168, RIGHT_W, 100),
+        L.right(168, 100),
         [("Показатель", 72, "left"), ("Значение", 34, "right")],
         [("Территория", f"{d('terr_area')} га"),
          ("СПП всего", f"{d('spp')} тыс. м²"),
@@ -235,26 +289,27 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
         title="Технико-экономические показатели")
 
     x0, y0, x1, y1 = project_extent(project)
-    scale = fit_scale(project)
+    scale = fit_scale(project, L.map)
     from grado_render import MapTransform
-    tr = MapTransform(MAP_RECT, ((x0 + x1) / 2, (y0 + y1) / 2), scale)
+    tr = MapTransform(L.map, ((x0 + x1) / 2, (y0 + y1) / 2), scale)
     if callouts is None:
         callouts = default_callouts(project, engine)
-    slots = [(18, 18), (18, 244), (200, 250)]  # углы карты под рамки выносок
+    slots = L.callout_slots()
     frames = []
     for (lines, target), (cx, cy) in zip(callouts, slots):
         frames.append(CalloutFrame((cx, cy, 64, 3 + 4.2 * len(lines)),
                                    lines, tr.to_mm(*target)))
     page.frames = [
-        SheetHeader(page, ["Схема архитектурно-планировочной",
-                           "организации территории"], page_no),
-        MapFrame(MAP_RECT, scale=scale, layers=layerset_layers(project, "apo")),
+        *L.header(page, ["Схема архитектурно-планировочной",
+                         "организации территории"], page_no),
+        MapFrame(L.map, scale=scale, layers=layerset_layers(project, "apo")),
         *frames, legend, tep]
     return page
 
 
 def tep_summary_sheet(doc, engine, page_no):
     page = Page(A3_LANDSCAPE)
+    L = layout_of(doc)
     grouped = {}
     for r in engine.results():
         grouped.setdefault(r["group"], []).append(r)
@@ -266,12 +321,12 @@ def tep_summary_sheet(doc, engine, page_no):
             idx += 1
             rows.append((str(idx), r["title"], r["unit"], str(r["value"])))
     table = TableFrame(
-        (40, 30, 340, 245),
+        L.body(),
         [("№", 14, "center"), ("Наименование показателей", 240, "left"),
          ("Ед. изм.", 40, "center"), ("Значение", 45, "right")],
         rows)
     page.frames = [
-        SheetHeader(page, ["Сводные основные", "технико-экономические показатели"],
-                    page_no),
+        *L.header(page, ["Сводные основные", "технико-экономические показатели"],
+                  page_no),
         table]
     return page

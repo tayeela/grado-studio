@@ -38,10 +38,10 @@ from grado_model import geometry  # noqa: E402
 from grado_model.classifier import Classifier  # noqa: E402
 from grado_model.tep_bridge import apply_to_engine  # noqa: E402
 from grado_render import StyleSet  # noqa: E402
-from grado_wizard.sheets import (MAP_RECT, apo_sheet,  # noqa: E402
+from grado_wizard.sheets import (GOST, PRESENTATION, apo_sheet, layout_of,  # noqa: E402
                                  base_plan_sheet, fit_scale, location_sheet,
                                  ortho_sheet, tep_summary_sheet, title_sheet,
-                                 SheetHeader, TextFrame)  # for stubs
+                                 TextFrame)  # for stubs
 
 ORIGIN = (413000.0, 6178000.0)
 PRESET = ROOT / "core" / "compute" / "grado_compute" / "presets" / "moscow_krt.json"
@@ -1409,13 +1409,31 @@ def album_engine(project, features, params=None):
     return engine
 
 
+def _album_meta(cfg, name):
+    """Основная надпись из настроек альбома: пустое поле = значение по умолчанию."""
+    title = cfg.get("title") if isinstance(cfg.get("title"), dict) else {}
+    stamp = cfg.get("stamp") if isinstance(cfg.get("stamp"), dict) else {}
+
+    def text(value, default=""):
+        value = str(value).strip() if value is not None else ""
+        return (value or default)[:120]
+
+    return {"org": text(stamp.get("org"), text(title.get("org"), "ГРАДО")),
+            "stage": text(stamp.get("stage"), "АГК"),
+            "code": text(stamp.get("code")),
+            "object": text(stamp.get("object"), text(name))}
+
+
 def make_album(features, name, params=None, basemap=False, layers=None,
                basemap_source="osm", canvas_styles=None, project_styles=None,
                album_config=None):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
         engine = album_engine(project, features, params)
-        doc = Document(name, meta={"org": "ГРАДО", "stage": "АГК"})
+        cfg = album_config if isinstance(album_config, dict) else {}
+        doc = Document(name, meta=_album_meta(cfg, name))
+        stamp_cfg = cfg.get("stamp") if isinstance(cfg.get("stamp"), dict) else {}
+        doc.layout = GOST if stamp_cfg.get("enabled") else PRESENTATION
         # canvas_styles — inline-знаки «как на холсте» (режим выпуска студии):
         # объекты несут синтетический style_id, а сам знак приходит здесь
         # project_styles — кастомные стили проекта, доступны и в стандартном режиме
@@ -1426,7 +1444,6 @@ def make_album(features, name, params=None, basemap=False, layers=None,
             id_styles.update(canvas_styles)
         doc.styles = StyleSet(id_styles=id_styles)
 
-        cfg = album_config or {}
         sheet_list = cfg.get('sheets') or ['title', 'location', 'base', 'apo', 'tep']
         title_p = cfg.get('title') or {'org': 'ГРАДО', 'city_year': 'Москва / 2026'}
 
@@ -1445,7 +1462,8 @@ def make_album(features, name, params=None, basemap=False, layers=None,
         pages = []
         underlay = None
         if basemap:
-            underlay = _project_underlay(project, MAP_RECT, fit_scale(project), source=basemap_source)
+            layout = layout_of(doc)
+            underlay = _project_underlay(project, layout.map, fit_scale(project, layout.map), source=basemap_source)
         for s in sheet_list:
             builder = page_builders.get(s)
             if builder:
@@ -1464,7 +1482,7 @@ def make_album(features, name, params=None, basemap=False, layers=None,
             ]
 
         doc.pages = pages
-        doc.sheet_titles = [s for s in sheet_list if page_builders.get(s)]
+        doc.sheet_titles = [getattr(page, "sheet_title", "") for page in pages]
         pdf = render_document_pdf(doc, project, styles=doc.styles, engine=engine)
         project.close()
     return pdf
@@ -1473,8 +1491,8 @@ def make_album(features, name, params=None, basemap=False, layers=None,
 def _photo_sheet(doc, page_no):
     page = Page(A3_LANDSCAPE)
     page.frames = [
-        SheetHeader(page, ["Фотофиксация"], page_no),
-        TextFrame((28, 80, 350, 180), [
+        *layout_of(doc).header(page, ["Фотофиксация"], page_no),
+        TextFrame(layout_of(doc).body(), [
             "Фотофиксация существующих объектов и видовых точек.",
             "(Добавить изображения через редактор альбома или расширения.)"
         ], size=3)
@@ -1484,16 +1502,16 @@ def _photo_sheet(doc, page_no):
 def _parking_sheet(doc, page_no):
     page = Page(A3_LANDSCAPE)
     page.frames = [
-        SheetHeader(page, ["Схема парковок"], page_no),
-        TextFrame((28, 80, 350, 100), ["Парковки и подъезды (данные из слоёв проекта)"], size=3)
+        *layout_of(doc).header(page, ["Схема парковок"], page_no),
+        TextFrame(layout_of(doc).body(), ["Парковки и подъезды (данные из слоёв проекта)"], size=3)
     ]
     return page
 
 def _greenery_sheet(doc, page_no):
     page = Page(A3_LANDSCAPE)
     page.frames = [
-        SheetHeader(page, ["Озеленение и благоустройство"], page_no),
-        TextFrame((28, 80, 350, 100), ["Озеленение, насаждения (из слоёв проекта)"], size=3)
+        *layout_of(doc).header(page, ["Озеленение и благоустройство"], page_no),
+        TextFrame(layout_of(doc).body(), ["Озеленение, насаждения (из слоёв проекта)"], size=3)
     ]
     return page
 

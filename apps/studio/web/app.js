@@ -5137,6 +5137,7 @@ function openAlbumConfig() {
   overlay.className = "modal-overlay";
   const cfg = state.albumConfig || JSON.parse(JSON.stringify(DEFAULT_ALBUM_CONFIG));
   let sheets = [...(cfg.sheets || ['title','location','base','apo','tep'])];
+  const stamp = cfg.stamp || {};
   const allSheets = ['title','location','base','apo','tep','ortho','photo','parking','greenery'];
   const sheetLabels = {
     title: 'Титульный лист', location: 'Ситуационный план', base: 'Существующее положение',
@@ -5155,6 +5156,15 @@ function openAlbumConfig() {
       <div class="album-title-fields">
         <label>Организация<input id="title-org" value="${escHtml(cfg.title && cfg.title.org || 'ГРАДО')}"></label>
         <label>Город и год<input id="title-year" value="${escHtml(cfg.title && cfg.title.city_year || 'Москва / 2026')}"></label>
+      </div>
+      <div class="album-section-title">Оформление листов</div>
+      <label class="album-check"><input type="checkbox" id="stamp-on"${stamp.enabled ? ' checked' : ''}> Рамка и основная надпись ГОСТ (форма 3)</label>
+      <div class="album-hint">Без галочки — презентационный лист: заголовок справа вверху и номер листа.</div>
+      <div class="album-title-fields" id="stamp-fields"${stamp.enabled ? '' : ' hidden'}>
+        <label>Шифр<input id="stamp-code" value="${escHtml(stamp.code || '')}" placeholder="например 01-26-АГК"></label>
+        <label>Стадия<input id="stamp-stage" value="${escHtml(stamp.stage || '')}" placeholder="АГК"></label>
+        <label>Объект<input id="stamp-object" value="${escHtml(stamp.object || '')}" placeholder="как название проекта"></label>
+        <label>Организация<input id="stamp-org" value="${escHtml(stamp.org || '')}" placeholder="как на титуле"></label>
       </div>
     </div>
     <div class="modal-actions">
@@ -5178,6 +5188,7 @@ function openAlbumConfig() {
     listEl.querySelectorAll('.rem').forEach(b => b.onclick = () => { sheets.splice(+b.dataset.i,1); renderList(); });
   }
   renderList();
+  overlay.querySelector('#stamp-on').onchange = e => { overlay.querySelector('#stamp-fields').hidden = !e.target.checked; };
   overlay.querySelector('#add-btn').onclick = () => {
     const s = overlay.querySelector('#add-sheet').value;
     if (!sheets.includes(s)) { sheets.push(s); renderList(); }
@@ -5186,7 +5197,14 @@ function openAlbumConfig() {
     state.albumConfig = {
       ...(state.albumConfig || {}),
       sheets: sheets,
-      title: {org: overlay.querySelector('#title-org').value, city_year: overlay.querySelector('#title-year').value}
+      title: {org: overlay.querySelector('#title-org').value, city_year: overlay.querySelector('#title-year').value},
+      stamp: {
+        enabled: overlay.querySelector('#stamp-on').checked,
+        code: overlay.querySelector('#stamp-code').value.trim(),
+        stage: overlay.querySelector('#stamp-stage').value.trim(),
+        object: overlay.querySelector('#stamp-object').value.trim(),
+        org: overlay.querySelector('#stamp-org').value.trim(),
+      },
     };
     persist();
     overlay.remove();
@@ -7315,6 +7333,22 @@ function normalizeRestoredState(payload) {
         ? rawAlbum.title.city_year : DEFAULT_ALBUM_CONFIG.title.city_year,
     },
   };
+  // основная надпись и печать: только известные поля, строки обрезаются
+  const text = value => (typeof value === "string" ? value.slice(0, 120) : "");
+  if (isRecord(rawAlbum.stamp)) {
+    albumConfig.stamp = {
+      enabled: rawAlbum.stamp.enabled === true,
+      code: text(rawAlbum.stamp.code), stage: text(rawAlbum.stamp.stage),
+      object: text(rawAlbum.stamp.object), org: text(rawAlbum.stamp.org),
+    };
+  }
+  if (isRecord(rawAlbum.print)) {
+    const scale = Number(rawAlbum.print.scale);
+    albumConfig.print = {
+      paper: ["A3", "A2", "A1"].includes(rawAlbum.print.paper) ? rawAlbum.print.paper : "A2",
+      scale: Number.isFinite(scale) && scale >= 100 && scale <= 50000 ? Math.round(scale) : 0,
+    };
+  }
   const radius = Number(restored.accessRadii?.r);
   const accessRadii = {
     on: !!restored.accessRadii?.on,

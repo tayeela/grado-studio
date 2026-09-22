@@ -253,7 +253,7 @@
 .modal-overlay label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--text-2);
   font-size:var(--fs-12);width:100%;white-space:nowrap}
 .modal-overlay input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);flex:0 0 auto}
-.modal-overlay select,.modal-overlay input[type=text],.modal-overlay input[type=number]{
+.modal-overlay select,.modal-overlay input[type=text],.modal-overlay input:not([type]),.modal-overlay input[type=number]{
   width:100%;height:36px;border-radius:var(--r-sm);border:1px solid var(--field-border);
   background:var(--field-bg);color:var(--text);font:inherit;font-size:var(--fs-12);padding:0 10px}
 .modal-overlay input[type=range]{width:100%;height:6px;padding:0}
@@ -358,6 +358,8 @@ label.data-src input[type=checkbox]{width:18px;height:18px;accent-color:var(--ac
 #add-sheet{width:100%}
 #add-btn{flex:0 0 auto}
 .album-title-fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-overlay label.album-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;margin:2px 0 4px;font-weight:500}
+.album-title-fields[hidden]{display:none}
 .modal-overlay #album-apply{background:var(--accent);color:var(--on-accent);border-color:transparent;font-weight:600}
 .modal-overlay #album-apply:hover{background:var(--accent-hover)}
 
