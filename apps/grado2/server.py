@@ -239,7 +239,29 @@ class Handler(SimpleHTTPRequestHandler):
             super().log_message(fmt, *args)
 
 
+def _is_grado(port):
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/sources", timeout=1) as r:
+            return "nspd.parcels" in json.loads(r.read())
+    except Exception:
+        return False
+
+
 if __name__ == "__main__":
+    import webbrowser
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8650
-    print(f"ГРАДО 2: http://127.0.0.1:{port}")
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    for p in range(port, port + 20):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+            break
+        except OSError:
+            if _is_grado(p):            # уже запущен — просто открыть
+                print(f"ГРАДО 2 уже работает: http://127.0.0.1:{p}")
+                webbrowser.open(f"http://127.0.0.1:{p}")
+                sys.exit(0)
+    else:
+        sys.exit(f"порты {port}–{port + 19} заняты")
+    print(f"ГРАДО 2: http://127.0.0.1:{p}")
+    webbrowser.open(f"http://127.0.0.1:{p}")
+    server.serve_forever()
