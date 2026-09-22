@@ -164,6 +164,24 @@ def _ascii_report(report):
             "warnings": clean(report.get("warnings"))}
 
 
+def _layer_labels(value):
+    """{layer_id: {"label": поле|None, "line_label": текст|None}} из запроса.
+
+    Лишнее отбрасывается: подпись — только строка или None.
+    """
+    if not isinstance(value, dict):
+        return None
+    out = {}
+    for layer_id, spec in value.items():
+        if not isinstance(layer_id, str) or not isinstance(spec, dict):
+            continue
+        clean = {key: spec[key] for key in ("label", "line_label")
+                 if key in spec and (spec[key] is None or isinstance(spec[key], str))}
+        if clean:
+            out[layer_id] = clean
+    return out or None
+
+
 class BadRequest(ValueError):
     """Запрос клиента нельзя разобрать или он не соответствует API-контракту."""
 
@@ -1175,7 +1193,8 @@ class Handler(SimpleHTTPRequestHandler):
                     features, name, params, basemap=bool(body.get("basemap")),
                     layers=layers, basemap_source=basemap_source,
                     canvas_styles=canvas_styles, project_styles=project_styles,
-                    album_config=album_config)
+                    album_config=album_config,
+                    layer_labels=_layer_labels(body.get("layerLabels")))
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
                 project_styles = body.get("projectStyles")
@@ -1232,7 +1251,8 @@ class Handler(SimpleHTTPRequestHandler):
                     features, name, scale, paper,
                     basemap=bool(body.get("basemap")), layers=layers,
                     basemap_source=basemap_source, canvas_styles=canvas_styles,
-                    project_styles=project_styles)
+                    project_styles=project_styles,
+                    layer_labels=_layer_labels(body.get("layerLabels")))
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

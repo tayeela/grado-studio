@@ -39,7 +39,7 @@
     },
     "zouit.hatch": {
       "title": "ЗОУИТ (охранная зона)",
-      "fill": "#cce0f7", "fill_opacity": 0.85, "stroke": "#739ecc",
+      "fill": "#cce0f7", "fill_opacity": 0.25, "stroke": "#739ecc",
       "width_mm": 0.25, "width_px": 1.0,
       "dash_mm": [2, 1], "dash_px": [4, 2],
       "hatch": true, "label_field": null, "marker_mm": 1.2, "z": 1,

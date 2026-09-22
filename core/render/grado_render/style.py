@@ -168,6 +168,12 @@ class Style:
 
     @classmethod
     def from_json(cls, s):
+        style = cls._from_json(s)
+        style.title = s.get("title")  # подпись знака в легенде листа
+        return style
+
+    @classmethod
+    def _from_json(cls, s):
         return cls(
             fill=hex_to_rgb(s.get("fill")),
             stroke=hex_to_rgb(s.get("stroke")),
@@ -210,8 +216,12 @@ _BY_ID_CACHE = {}  # style_id → Style (резолв per-object стилей, �
 
 
 class StyleSet:
-    def __init__(self, styles=None, id_styles=None):
+    def __init__(self, styles=None, id_styles=None, layer_labels=None):
         self.styles = dict(DEFAULT_STYLES)
+        # подписи по слоям, как их настроил пользователь на холсте:
+        # {layer_id: {"label": поле | None, "line_label": текст | None}}.
+        # Ключ есть — значение перекрывает знак; None = подпись выключена.
+        self.layer_labels = dict(layer_labels or {})
         if styles:
             self.styles.update(styles)
         # inline-стили по id (напр. «как на холсте» из студии): резолвятся

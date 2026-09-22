@@ -105,6 +105,61 @@ def layerset_layers(project, name):
     return out
 
 
+_STAGE_SECTIONS = (("project", "Проектные решения:"),
+                   ("existing", "Существующее положение:"),
+                   ("base", "Основа:"))
+
+
+def sheet_legend(doc, project, layer_ids, max_entries=14):
+    """Разделы легенды из слоёв, которые реально есть на листе.
+
+    Знак — тот же, что рисует карта: знак объекта (style_id), иначе знак класса
+    слоя. Слой с несколькими знаками даёт строку на каждый знак (функциональные
+    зоны, красные линии УДС по LineCode). Прежде легенда была вписана руками и
+    не совпадала с картой: синий «ЗОУИТ» при розовой штриховке, без зданий и УДС.
+    """
+    st = doc.styles
+    by_stage = {}
+    wanted = set(layer_ids)
+    for info in project.layers():
+        if info["layer_id"] not in wanted:
+            continue
+        layer = project.layer_by_id(info["layer_id"])
+        if not layer.count():
+            continue
+        geom = (project.classifier.get(info["code"]).geom_type or "").replace("Multi", "")
+        kind = {"Polygon": "fill", "LineString": "line", "Point": "point"}.get(geom, "fill")
+        sids = [row[0] for row in project.conn.execute(
+            f'SELECT DISTINCT style_id FROM "{info["table"]}" ORDER BY style_id')]
+        entries = []
+        for sid in sids:
+            style = st.resolve_id(sid) if sid else None
+            if style is None:
+                style = st.resolve(info["code"])
+                label = info["title"]
+            else:
+                label = getattr(style, "title", None) or info["title"]
+            if not any(e[2] == label for e in entries):
+                entries.append((kind, style, label))
+        section = info.get("stage") if info.get("stage") in dict(_STAGE_SECTIONS) else "existing"
+        by_stage.setdefault(section, []).extend(entries)
+    sections, used = [], 0
+    for stage, header in _STAGE_SECTIONS:
+        entries = by_stage.get(stage, [])
+        if not entries:
+            continue
+        room = max_entries - used
+        if room <= 0:
+            break
+        shown = entries[:room]
+        if len(entries) > room:
+            shown = entries[:room - 1] + [("line", st.resolve("generic.line"),
+                                           f"…и ещё {len(entries) - room + 1}")]
+        sections.append((header, shown))
+        used += len(shown)
+    return sections
+
+
 def fit_scale(project, rect=MAP_RECT, margin=1.12):
     x0, y0, x1, y1 = project_extent(project)
     raw = max((x1 - x0) * 1000 / rect[2], (y1 - y0) * 1000 / rect[3]) * margin
@@ -182,15 +237,7 @@ def base_plan_sheet(doc, project, page_no):
     st = doc.styles.resolve
     layer_ids = layerset_layers(project, "existing_position")
     legend = SectionedLegendFrame(
-        L.right(40, 120),
-        [("Границы:", [
-            ("line", st("terr.boundary"), "территории разработки"),
-            ("line", st("cad.parcel"), "земельных участков ЕГРН")]),
-         ("Ограничения:", [
-            ("fill", st("cad.zouit"), "ЗОУИТ"),
-            ("fill", st("terr.restrict"), "территории, не подлежащие застройке")]),
-         ("Существующее положение:", [
-            ("fill", st("tp.func_zone"), "функциональные зоны генплана")])])
+        L.right(40, 120), sheet_legend(doc, project, layer_ids, max_entries=int(15 * L.k)))
     frames = [
         *L.header(page, ["Опорный план.", "Существующее положение"], page_no),
         MapFrame(L.map, scale=fit_scale(project, L.map), layers=layer_ids),
@@ -272,16 +319,8 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
     L = layout_of(doc)
     st = doc.styles.resolve
     legend = SectionedLegendFrame(
-        L.right(34, 120),
-        [("Границы:", [
-            ("line", st("terr.boundary"), "территории разработки"),
-            ("line", st("pp.red_line"), "красные линии (устанавливаемые)")]),
-         ("Застройка:", [
-            ("fill", st("oks.building"), "жилого назначения"),
-            ("fill", st("pp.placement_zone"), "зоны размещения нежилых ОКС"),
-            ("point", st("social.object"), "объекты социальной инфраструктуры")]),
-         ("Зонирование:", [
-            ("fill", st("tp.func_zone"), "функциональные зоны")])])
+        L.right(34, 120), sheet_legend(doc, project, layerset_layers(project, "apo"),
+                                       max_entries=int(15 * L.k)))
     d = engine.display
     tep = TableFrame(
         L.right(168, 100),

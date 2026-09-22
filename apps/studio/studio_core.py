@@ -545,7 +545,7 @@ LAYER_TEMPLATES = {
     "source.gisogd.red_lines":    {"code": "pp.red_line", "stage": "existing",
                                    "source_kind": "gisogd",
                                    "title": "ГИС ОГД: красные линии"},
-    "source.gisogd.restrict":     {"code": "terr.restrict", "stage": "existing",
+    "source.gisogd.restrict":     {"code": "cad.zouit", "stage": "existing",
                                    "source_kind": "gisogd",
                                    "title": "ГИС ОГД: зоны с особыми условиями"},
     "source.gisogd.other":        {"code": "generic.polygon", "stage": "existing",
@@ -558,7 +558,7 @@ LAYER_TEMPLATES = {
     "source.nspd.constructions":  {"code": "generic.line", "stage": "existing",
                                    "source_kind": "nspd",
                                    "title": "НСПД: сооружения"},
-    "source.nspd.zouit":          {"code": "terr.restrict", "stage": "existing",
+    "source.nspd.zouit":          {"code": "cad.zouit", "stage": "existing",
                                    "source_kind": "nspd",
                                    "title": "НСПД: ЗОУИТ"},
     "source.osm.roads":           {"code": "generic.line", "stage": "existing",
@@ -776,7 +776,12 @@ def _dyn_layer_codes(features):
     codes = {}
     for lid, entry in seen.items():
         code = None
-        if len(entry["kinds"]) == 1:
+        if entry["kinds"] == {"restrict"} and "generic.polygon" in entry["geoms"]:
+            # ЗОУИТ портала — зона с особыми условиями, а не «территория,
+            # не подлежащая застройке»: что вычитать из площади, решает
+            # пользователь своим слоем ограничений
+            code = "cad.zouit"
+        elif len(entry["kinds"]) == 1:
             kind_lid = _KIND_TO_LAYER.get(next(iter(entry["kinds"])))
             kind_tmpl = LAYER_TEMPLATES.get(kind_lid) if kind_lid else None
             code = kind_tmpl.get("code") if kind_tmpl else None
@@ -1076,7 +1081,8 @@ def build_project(path, name, features, layers=None, project_styles=None,
         # пустые атрибуты как у обычного (generic) слоя
         props = f.get("props", {})
         kind_attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])
-        if KIND_TO_CODE.get(f["kind"]) not in (None, tmpl["code"]):
+        if (KIND_TO_CODE.get(f["kind"]) not in (None, tmpl["code"])
+                and not (f["kind"] == "restrict" and tmpl["code"] == "cad.zouit")):
             # вид объекта не совпадает со схемой слоя (смешанный слой-источник):
             # семантические атрибуты вида схема не примет
             kind_attrs = KIND_ATTRS["generic"]
@@ -1484,7 +1490,7 @@ def _album_meta(cfg, name):
 
 def make_album(features, name, params=None, basemap=False, layers=None,
                basemap_source="osm", canvas_styles=None, project_styles=None,
-               album_config=None):
+               album_config=None, layer_labels=None):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
         engine = album_engine(project, features, params)
@@ -1500,7 +1506,7 @@ def make_album(features, name, params=None, basemap=False, layers=None,
             id_styles.update(project_styles)
         if canvas_styles:
             id_styles.update(canvas_styles)
-        doc.styles = StyleSet(id_styles=id_styles)
+        doc.styles = StyleSet(id_styles=id_styles, layer_labels=layer_labels)
 
         sheet_list = cfg.get('sheets') or ['title', 'location', 'base', 'apo', 'tep']
         title_p = cfg.get('title') or {'org': 'ГРАДО', 'city_year': 'Москва / 2026'}
@@ -1575,6 +1581,8 @@ def _greenery_sheet(doc, page_no):
 
 
 CODE_TO_KIND = {v: k for k, v in KIND_TO_CODE.items()}
+# ЗОУИТ из импорта хранится классом cad.zouit; на холсте это тот же вид «ограничение»
+CODE_TO_KIND["cad.zouit"] = "restrict"
 
 
 def _to_local(pts):
@@ -3357,7 +3365,8 @@ def make_dxf(features, name, layers=None):
 
 
 def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None,
-               basemap_source="osm", canvas_styles=None, project_styles=None):
+               basemap_source="osm", canvas_styles=None, project_styles=None,
+               layer_labels=None):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -3394,7 +3403,8 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
         if canvas_styles:
             id_styles.update(canvas_styles)
         # canvas_styles — inline-знаки «как на холсте» (иначе стандарт ЛГР)
-        pdf = render_document_pdf(doc, project, styles=StyleSet(id_styles=id_styles))
+        pdf = render_document_pdf(doc, project, styles=StyleSet(
+            id_styles=id_styles, layer_labels=layer_labels))
         project.close()
     return pdf, used_scale
 

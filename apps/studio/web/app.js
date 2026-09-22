@@ -101,8 +101,8 @@ const LAYERS_V2 = [
     style_id: "red.line.projected", stage: "existing", source_kind: "gisogd",
     import_only: true, defaults: () => ({}) },
   { id: "source.gisogd.restrict", title: "ГИС ОГД: зоны с особыми условиями", kind: "restrict",
-    semantic_class: "terr.restrict", geometry_type: "polygon",
-    style_id: "restrict.hatch", stage: "existing", source_kind: "gisogd",
+    semantic_class: "cad.zouit", geometry_type: "polygon",
+    style_id: "zouit.hatch", stage: "existing", source_kind: "gisogd",
     import_only: true, defaults: () => ({}) },
   // «Прочие слои» ОГД: всё, что портал отдал сверх зон/красных линий/ЗОУИТ
   // (кадастр, ОКС, инженерия, транспорт, смежные территории) — чтобы ничего
@@ -127,8 +127,8 @@ const LAYERS_V2 = [
     fmt: { stroke: "#8c7a5e", width: 1.2, dash: [6, 3] },
     defaults: () => ({}) },
   { id: "source.nspd.zouit", title: "ЗОУИТ (НСПД)", kind: "restrict",
-    semantic_class: "terr.restrict", geometry_type: "polygon",
-    style_id: "restrict.hatch", stage: "existing", source_kind: "nspd",
+    semantic_class: "cad.zouit", geometry_type: "polygon", cat_field: "kind",
+    style_id: "zouit.hatch", stage: "existing", source_kind: "nspd",
     import_only: true, defaults: () => ({}) },
   { id: "source.osm.roads", title: "Дороги и улицы (OSM)", kind: "generic",
     semantic_class: "generic.line", geometry_type: "polyline",
@@ -146,7 +146,8 @@ const LAYERS_V2 = [
     semantic_class: "oks.building", geometry_type: "polygon",
     style_id: "building.fill", stage: "existing", source_kind: "osm",
     import_only: true,
-    fmt: { fill: "rgba(176,170,160,0.35)", stroke: "#8f887e", width: 0.8 },
+    // этажность подписывают здания НСПД; OSM — те же дома, второе число рядом лишнее
+    fmt: { fill: "rgba(176,170,160,0.35)", stroke: "#8f887e", width: 0.8, label_field: null },
     defaults: () => ({}) },
   { id: "source.osm.landuse", title: "Землепользование (OSM)", kind: "generic",
     semantic_class: "generic.polygon", geometry_type: "polygon",
@@ -344,6 +345,20 @@ function registerSourceLayer(ld) {
   LAYER_BY_ID[L.id] = L;
 }
 
+// Настройки подписей слоёв для выпуска: только то, что пользователь задал в
+// оформлении слоя (label_field / line_label есть в fmt). null = подпись выключена.
+function layerLabelsForExport() {
+  const out = {};
+  for (const L of LAYERS_V2) {
+    const fmt = L.fmt || {};
+    const spec = {};
+    if (Object.prototype.hasOwnProperty.call(fmt, "label_field")) spec.label = fmt.label_field || null;
+    if (Object.prototype.hasOwnProperty.call(fmt, "line_label")) spec.line_label = fmt.line_label || null;
+    if (Object.keys(spec).length) out[L.id] = spec;
+  }
+  return out;
+}
+
 function userLayersManifest() {
   return LAYERS_V2.filter(L => L.user_created || (L.fields && L.fields.length))
     .map(L => ({
@@ -448,7 +463,21 @@ function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] ||
 // (osm.hw.*), ОГД — по LineCode/имени (lgr.*). Без переключателя категорий,
 // убрав слои-знаки, мы отняли бы возможность гасить отдельные классы — поэтому
 // выключенные категории храним в оформлении слоя (fmt.cats_off = [style_id]).
-function featCat(f) { return (f && f.style_id) || null; }
+// Объекты без знака делятся по полю слоя (L.cat_field): у ЗОУИТ НСПД знака нет,
+// зато есть «вид зоны» — иначе категория одна и зону ОКН на весь центр можно было
+// только удалить, но не скрыть.
+function featCat(f) {
+  if (!f) return null;
+  if (f.style_id) return f.style_id;
+  const L = layerOf(f);
+  const field = L && ((L.fmt && L.fmt.cat_field) || L.cat_field);
+  const value = field && f.props && f.props[field];
+  return value == null || value === "" ? null : "field:" + value;
+}
+function catTitle(c) {
+  if (String(c).startsWith("field:")) return String(c).slice(6);
+  return (STYLES_V2[c] && STYLES_V2[c].title) || c;
+}
 // Объекты БЕЗ скрытых категорией: пользователь выключил класс — он не должен
 // ни считаться в ТЭП, ни попадать в ВЫПУСК (печать/DXF/альбом). Это то же, что
 // он видит на холсте. Сохранение .grado НЕ фильтруем — это данные проекта, а
@@ -472,8 +501,7 @@ function layerCats(L) {
     if (layerOf(f) !== L) continue;
     const c = featCat(f);
     if (!c || seen.has(c)) continue;
-    const st = STYLES_V2[c];
-    seen.set(c, (st && st.title) || c);
+    seen.set(c, catTitle(c));
   }
   return [...seen].map(([id, title]) => ({ id, title }))
                   .sort((a, b) => a.title.localeCompare(b.title, "ru"));
@@ -488,7 +516,7 @@ function layerCatStats(L) {
     const c = featCat(f);
     if (!c) continue;
     let e = m.get(c);
-    if (!e) { e = { id: c, title: (STYLES_V2[c] && STYLES_V2[c].title) || c, count: 0, sample: f }; m.set(c, e); }
+    if (!e) { e = { id: c, title: catTitle(c), count: 0, sample: f }; m.set(c, e); }
     e.count++;
   }
   return [...m.values()].sort((a, b) => a.title.localeCompare(b.title, "ru"));
@@ -6894,6 +6922,9 @@ async function download(url, suffix, extra = {}) {
                     albumConfig: state.albumConfig || null,
                     studioState: collectProjectSettings() };
   if (canvasStyles) payload.canvasStyles = canvasStyles;
+  // подписи слоёв, как они настроены на холсте, — печать и альбом в стандартном
+  // режиме берут знаки из библиотеки, но включённость подписей — отсюда
+  payload.layerLabels = layerLabelsForExport();
   Object.assign(payload, extra);
   const filename = projectFileName(suffix);
   const action = url === "/api/grado" ? "Сохраняю проект…" : "Собираю файл…";

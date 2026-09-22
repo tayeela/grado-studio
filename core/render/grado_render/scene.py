@@ -533,6 +533,14 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
             # (холст делает то же через groundFactor). for_scale отдаёт тот же
             # объект для не-ЛГР стилей, так что накладных расходов нет.
             st = st.for_scale(scale)
+            label_ov = styles.layer_labels.get(info["layer_id"]) if getattr(
+                styles, "layer_labels", None) else None
+            if label_ov:
+                import copy
+                st = copy.copy(st)
+                for key in ("label", "line_label"):
+                    if key in label_ov:
+                        setattr(st, key, label_ov[key])
             for poly in _polygons(geom):
                 rings = [tr.ring(r) for r in poly]
                 ops.append({"op": "path", "rings": rings, "closed": True,
