@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.6.1)
+## Where we are (23.09.2026, v0.6.3)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -39,10 +39,10 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 
 ### Э1. Shell finish (2 sessions)
 - Layer groups in the tree; multi-select of objects (frame, Shift); batch attribute edit.
-- Undo for style changes; copy/paste style between layers (QGIS «Копировать стиль»).
+- Undo for style changes. Done: copy/paste style between layers (v0.6.3).
 - Keyboard map window; first-run hint instead of an empty screen.
 - Performance: 100 000 objects in a layer without lag (OL WebGL layer for big point/line sets).
-- Vendor OpenLayers, Turf, litegraph and Lucide locally, so the app works offline.
+- Done: OpenLayers, Turf, litegraph and Lucide served locally, the app works offline (v0.6.2).
 
 ### Э2. Existing situation — complete data (3 sessions)
 - ПЗЗ Москвы: territorial zones and their limits (height, density, КОЗ) from ГИС ОГД.
