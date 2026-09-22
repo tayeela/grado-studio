@@ -67,7 +67,90 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .mtools{position:absolute;right:8px;top:8px;display:flex;gap:2px;background:var(--panel);border:1px solid var(--line-2);border-radius:4px;padding:2px;z-index:3}
 
 /* 1 сбор */
-.s-collect{grid-template-columns:300px 1fr}
+
+.s-collect{grid-template-columns:300px minmax(0,1fr) 300px}
+.pane{display:flex;flex-direction:column;min-height:0;flex:1}
+.dtabs{display:flex;align-items:flex-end;height:28px;padding:0 4px;border-bottom:1px solid var(--line);flex:0 0 auto;gap:1px}
+.dtabs button{border:1px solid transparent;border-bottom:0;background:none;height:26px;padding:0 10px;border-radius:3px 3px 0 0;color:var(--muted)}
+.dtabs button[aria-selected="true"]{background:var(--field);border-color:var(--line);color:var(--text);margin-bottom:-1px;height:27px}
+.ltool{display:flex;gap:4px;align-items:center;padding:5px 6px;border-bottom:1px solid var(--line)}
+.ltool .hint{color:var(--faint);font-size:11px}
+.tree{background:var(--field);user-select:none}
+.tn{display:flex;align-items:center;gap:4px;height:24px;padding:0 4px 0 2px;white-space:nowrap;cursor:default}
+.tn:hover{background:var(--hover)}
+.tn[aria-selected="true"]{background:var(--selrow)}
+.tn .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tn .meta{color:var(--faint);font-size:11px}
+.tn input[type=checkbox]{margin:0 2px 0 0}
+.tn.off .nm,.tn.off .sym{opacity:.45}
+.tn.leg{padding-left:34px;color:var(--muted)}
+.tn.dragging{opacity:.4}
+.tn.drop-a{box-shadow:inset 0 2px 0 var(--accent)}
+.tn.drop-b{box-shadow:inset 0 -2px 0 var(--accent)}
+.tw{width:16px;height:16px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--muted)}
+.tw svg.lucide{width:12px;height:12px}
+.tw.more{opacity:.6}.tn:hover .tw.more{opacity:1}
+.badge{font-size:10px;padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.edit-on{width:12px!important;height:12px!important;color:var(--accent)}
+.sym.pt{width:10px;height:10px;border-radius:50%}
+.ccol{display:flex;flex-direction:column;min-width:0;min-height:0}
+.ccol .mapbox{flex:1}
+.editbar{position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--line-2);border-radius:4px;padding:2px;z-index:3}
+.editbar .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+.editbar .tb:disabled{opacity:.35;cursor:default}
+.editbar .snap{display:flex;align-items:center;gap:4px;padding:0 6px;color:var(--muted)}
+.attr{height:220px;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--panel)}
+.attr .ah{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line)}
+.attr .ah .ttl{color:var(--muted)}
+.attr .ah input{height:22px;width:160px}
+.attr .ab{flex:1;overflow:auto;background:var(--field)}
+table.at{border-collapse:collapse;width:100%}
+.at th{position:sticky;top:0;background:var(--panel);text-align:left;font-weight:600;padding:3px 8px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap}
+.at td{padding:2px 8px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.at td input{height:20px;width:100%}
+.at tr:hover td{background:var(--hover)}
+.at tr.sel td{background:var(--selrow)}
+.at td.rn{color:var(--faint);background:var(--panel);text-align:right}
+.pad{padding:8px}
+.ph{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ph b{font-size:13px}
+.row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.row>label:first-child{width:92px;color:var(--muted);flex:0 0 auto}
+.row>select,.row>input[type=text],.row>input[type=range]{flex:1}
+.inl{display:flex;align-items:center;gap:4px;color:var(--text)}
+.modes{display:flex;border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.modes button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:24px;padding:0 3px;font-size:11.5px}
+.modes button:last-child{border-right:0}
+.modes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.cbtn{width:26px;height:20px;border:1px solid var(--line-2);border-radius:2px;padding:2px;background:var(--field);flex:0 0 auto}
+.cbtn i{display:block;width:100%;height:100%}
+table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
+.cl td{border-bottom:1px solid var(--line);padding:2px 5px;height:24px}
+.cl td:first-child,.cl td:nth-child(2){width:1%}
+.cl .n{color:var(--faint);text-align:right;width:1%}
+.cl tr.off td:not(:first-child){opacity:.4}
+.rule{border:1px solid var(--line);padding:5px;margin-bottom:5px;background:var(--panel)}
+.rule .w{display:grid;grid-template-columns:1fr 58px 1fr;gap:4px}
+.rule .t{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--muted)}
+.rule .t .sp{flex:1}
+.ramps{display:flex;gap:4px;flex:1}
+.ramp{flex:1;height:18px;border:1px solid var(--line-2);padding:0;display:flex}
+.ramp i{flex:1}
+.ramp[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:1px}
+.pg{display:grid;grid-template-columns:118px 1fr}
+.pg>div{padding:3px 8px;border-bottom:1px solid var(--line);min-height:26px;display:flex;align-items:center;min-width:0}
+.pg>div:nth-child(odd){color:var(--muted);background:var(--panel)}
+.pg input{width:100%;height:22px}
+.ro{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.menu{position:fixed;z-index:60;background:var(--panel);border:1px solid var(--line-2);box-shadow:0 4px 14px rgba(0,0,0,.18);padding:4px 0;min-width:220px;border-radius:4px}
+.menu button{display:block;width:100%;border:0;background:none;padding:5px 12px;text-align:left}
+.menu button:hover{background:var(--accent);color:var(--accent-ink)}
+.pop{position:fixed;z-index:70;background:var(--panel);border:1px solid var(--line-2);box-shadow:0 4px 14px rgba(0,0,0,.2);padding:6px;width:196px;border-radius:3px}
+.pop .g{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px}
+.pop .g button{aspect-ratio:1;border:1px solid rgba(0,0,0,.25);padding:0;border-radius:1px}
+.pop input{width:100%}
+.sect{padding:4px 8px;font-weight:600;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+
 .terr{padding:8px;border-bottom:1px solid var(--line);background:var(--field)}
 .terr .row{display:flex;gap:6px;flex-wrap:wrap}
 .btn:disabled{opacity:.5;cursor:default}
@@ -170,12 +253,40 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
   <!-- 1. Существующее положение -->
   <section class="stage s-collect" id="st-collect">
     <aside class="side">
-      <div class="sh">Территория</div>
-      <div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="pentagon"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
-      <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
-      <div class="sb" id="srcList"></div>
+      <div class="dtabs" role="tablist"><button data-ltab="layers" aria-selected="true" role="tab">Слои</button><button data-ltab="sources" aria-selected="false" role="tab">Источники</button></div>
+      <div id="paneLayers" class="pane">
+        <div class="ltool"><button class="btn" id="bNewLayer" title="Пустой слой для оцифровки"><i data-lucide="plus"></i>Слой</button><button class="btn" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i>Таблица</button><span class="sp"></span><span class="hint">перетаскивайте — порядок прорисовки</span></div>
+        <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>
+        <div class="sb tree" id="layerTree"></div>
+      </div>
+      <div id="paneSources" class="pane" hidden>
+        <div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="pentagon"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
+        <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+        <div class="sb" id="srcList"></div>
+      </div>
     </aside>
-    <div class="mapbox"><div class="m" id="mCollect"></div></div>
+    <div class="ccol">
+      <div class="mapbox"><div class="m" id="mCollect"></div>
+        <div class="editbar" role="toolbar" aria-label="Редактирование">
+          <button class="tb" id="bEdit" title="Редактировать текущий слой"><i data-lucide="pencil"></i></button>
+          <span class="sep"></span>
+          <button class="tb" data-etool="select" title="Выбор объекта"><i data-lucide="mouse-pointer-2"></i></button>
+          <button class="tb" data-etool="vertex" title="Правка вершин: тяните вершину, щелчок по ребру добавляет, Alt+щелчок удаляет"><i data-lucide="pen-tool"></i></button>
+          <button class="tb" data-etool="add" title="Добавить объект (двойной щелчок завершает)"><i data-lucide="square-plus"></i></button>
+          <button class="tb" id="bDelFeat" title="Удалить выбранный объект (Del)"><i data-lucide="trash-2"></i></button>
+          <button class="tb" id="bUndo" title="Отменить правку (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
+          <label class="snap" title="Привязка к вершинам и рёбрам"><input type="checkbox" id="snapT" checked>привязка</label>
+        </div>
+      </div>
+      <div class="attr" id="attrBox" hidden>
+        <div class="ah"><b>Таблица атрибутов</b><span id="attrTitle" class="ttl"></span><span class="sp"></span><input type="text" id="attrFilter" placeholder="Фильтр" aria-label="Фильтр строк"><button class="tb" id="bAttrClose" title="Закрыть"><i data-lucide="x"></i></button></div>
+        <div class="ab" id="attrBody"></div>
+      </div>
+    </div>
+    <aside class="side r">
+      <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button></div>
+      <div class="sb" id="rightPane"></div>
+    </aside>
   </section>
 
   <!-- 2. Анализ -->
@@ -223,3 +334,4 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <div class="busy" id="busy" hidden></div>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
+<script src="layers.js"></script>

@@ -181,6 +181,10 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB), **kw)
 
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-cache")   # после обновления браузер не держит старые app.js
+        super().end_headers()
+
     def _json(self, code, obj):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)

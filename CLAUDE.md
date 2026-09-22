@@ -221,6 +221,18 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.3: step 1 «Существующее положение» works like QGIS; exports are editable.**
+  `web/layers.js` — layer model (top to bottom): tree with drag-and-drop draw order (zIndex on all maps),
+  visibility, legend children (categories toggle on/off), layer menu (zoom, table, edit, rename,
+  up/down, «Вернуть исходную выгрузку», delete), new empty layer (polygons/lines/points).
+  Style: single / categories / ranges / rules / ЛГР (REDLN97), outline, fill and layer opacity, labels.
+  Editing: vertices (ol Modify), new objects (Draw), delete, attributes in «Объект» and in the table
+  (double-click a cell), snapping, Ctrl+Z; edits go to `DATA[key].fc` → the graph sees them; the original
+  download is kept in `DATA[key].original`. Maps register in `ALLMAPS`; layers attach to each one.
+  Checked in the browser: drag → zIndex, cat/grad, attribute edit (badge «изм.»), delete+undo, table.
+  **Pitfall:** without `Cache-Control: no-cache` the browser kept the old app.js after an update — the
+  server now sends it. **Not done:** saving the project to a file (edits live only until reload).
+
 - **2026-09-23, ГРАДО 2 v0.2: AutoCAD red-line standard REDLN97 (LIN+SHX) — screen, DXF export/import; New Moscow pastel.**
   The owner sent `REDLN97.LIN` + `RED_LNS.SHX` (now in `docs/standards/redln97`) and three Genplan QMLs.
   - **Naming decoded, not guessed from docs:** `L00sNNx` = code NN alone; `LCCsNNx` = code NN on

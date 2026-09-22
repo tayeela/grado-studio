@@ -43,26 +43,12 @@ const toOl = f => GJ.readFeature(f);
 const sharedView = new ol.View({ center: ol.proj.fromLonLat([37.525, 55.7925]), zoom: 15 });
 const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false });
 const basemap = () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 });
-function newMap(target, layers) { return new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: true })], interactions: interactions() }); }
+const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
+function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: true })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
 const PAT = new Map();
 function hatch(color) { if (PAT.has(color)) return PAT.get(color); const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = color + "18"; x.fillRect(0, 0, 8, 8); x.strokeStyle = color; x.lineWidth = 1.1; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-4, 4); x.lineTo(4, -4); x.moveTo(4, 12); x.lineTo(12, 4); x.stroke(); const p = x.createPattern(c, "repeat"); PAT.set(color, p); return p; }
 const S = (fill, stroke, w = 1) => new ol.style.Style({ fill: fill && new ol.style.Fill({ color: fill }), stroke: stroke && new ol.style.Stroke({ color: stroke, width: w }) });
 const MAJOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
-const LAYER_STYLE = {
-  "nspd.parcels": () => S("rgba(255,255,255,0.01)", "#7d8288", .8),
-  "nspd.buildings": () => S("#cbc6be", "#4d4d4d", .8),
-  "nspd.zouit": () => S(hatch("#7a4ab0"), "#7a4ab0", 1),
-  "osm.roads": f => S(null, MAJOR.has(f.get("Тип дороги")) ? "#9a9489" : "#c2bcb0", MAJOR.has(f.get("Тип дороги")) ? 3 : 1.2),
-  "osm.buildings": () => S("#dcd7ce", "#8a857c", .7),
-  "osm.water": () => S("#b9d6ec", "#6fa6e6", .8),
-  "osm.landuse": f => S(/park|grass|forest|garden|wood|meadow|recreation/.test(`${f.get("Землепользование")} ${f.get("Отдых")}`) ? "rgba(143,191,138,.45)" : "rgba(210,205,190,.25)", null),
-  "gisogd.func_zones": f => zoneStyle(GPZ, f.get("naimfunkzony") || f.get("naimfunkzo")),
-  "gisogd.func_zones_tinao": f => zoneStyle(NMZ, f.get("Вид зоны")),
-  "gisogd.red_lines": f => redLineStyle(f),
-  "gisogd.szz": () => S(hatch("#4a3aa7"), "#4a3aa7", 1.2),
-  "gisogd.vodookhr": () => S(hatch("#2a78d6"), "#2a78d6", 1.2),
-};
-const ORDER = ["osm.landuse", "osm.water", "gisogd.func_zones", "gisogd.func_zones_tinao", "nspd.parcels", "osm.roads", "gisogd.vodookhr", "gisogd.szz", "nspd.zouit", "osm.buildings", "nspd.buildings", "gisogd.red_lines"];
 
 /* ---------- знаки: ЛГР (коды, цвета, штрих) и Генплан — из библиотек ядра ---------- */
 const LGRC = {}, LGRD = {}, GPZ = {}, NMZ = {};
@@ -83,7 +69,6 @@ const redLineStyle = f => new ol.style.Style({ renderer(coords, st) {
     if (!lt.length && !miss.length) { ctx.save(); ctx.strokeStyle = "#999"; ctx.lineWidth = pr; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(...p) : ctx.moveTo(...p)); ctx.stroke(); ctx.restore(); }
   }
 } });
-const zoneStyle = (lib, name) => { const z = lib[String(name || "").toLowerCase()]; return S(z ? z.fill + "cc" : "#dcdcdc99", z ? z.stroke : "#8a8d91", .6); };
 
 /* ---------- состояние проекта ---------- */
 let SOURCES = {};                 // ключ → {title, kind}
@@ -93,12 +78,9 @@ let TERR = null, TERR_M2 = 0, dataRev = 0;
 const terrSrc = new ol.source.Vector(), layerSrc = {};
 const terrStyle = S(null, "#b3261e", 2); terrStyle.getStroke().setLineDash([12, 4, 2, 4]);
 const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle, zIndex: 60 });
-function dataLayers(only) {
-  return ORDER.filter(k => !only || only.includes(k)).map((k, i) => { layerSrc[k] ||= new ol.source.Vector(); const l = new ol.layer.Vector({ source: layerSrc[k], style: f => (LAYER_STYLE[k] || (() => S("#ccc8", "#888")))(f), zIndex: i + 1 }); l.set("key", k); return l; });
-}
 
 /* ================= 1. Существующее положение ================= */
-const mCollect = newMap("mCollect", [...dataLayers(), terrLayer()]);
+const mCollect = newMap("mCollect", [terrLayer()]);
 function setTerritory(feature) {
   TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR);
   setFrame(turf.centroid(TERR).geometry.coordinates);
@@ -139,7 +121,8 @@ $("bLoad").onclick = async () => {
     for (const [k, v] of Object.entries(r.layers)) {
       const fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
       DATA[k] = { ...v, fc: v.features, count: v.features.features.length, fields };
-      layerSrc[k] ||= new ol.source.Vector(); layerSrc[k].clear(); layerSrc[k].addFeatures(GJ.readFeatures(v.features));
+      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, v.features);
+      const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l);
     }
     dataRev++; renderSources();
     const ne = Object.keys(ERRORS).length; toast(`Загружено слоёв: ${Object.keys(r.layers).length}${ne ? `, с ошибкой: ${ne}` : ""}.`);
@@ -159,12 +142,6 @@ function existingSummary() {
 function kv(rows) { return `<div class="kv">${rows.map(([k, v, cls]) => `<div>${esc(k)}</div><div class="${cls || ""}">${v}</div>`).join("")}</div>`; }
 
 /* ---------- DXF: импорт чертежа и экспорт проекта (сервер, ezdxf) ---------- */
-const MAPS = () => [mCollect, typeof mAnalysis !== "undefined" && mAnalysis, typeof mSketch !== "undefined" && mSketch].filter(Boolean);
-function addDynamicLayer(key) {
-  layerSrc[key] ||= new ol.source.Vector();
-  const style = f => f.get("_lt") ? redLineStyle(f) : S("rgba(90,90,90,.08)", "#3d3d3d", 1);
-  MAPS().forEach(m => { if (!m.getLayers().getArray().some(l => l.get("key") === key)) { const l = new ol.layer.Vector({ source: layerSrc[key], style, zIndex: 55 }); l.set("key", key); m.addLayer(l); } });
-}
 $("fDxf").onchange = async e => {
   const file = e.target.files[0]; if (!file) return; e.target.value = "";
   busy(true);
@@ -173,7 +150,7 @@ $("fDxf").onchange = async e => {
     const key = "import:" + file.name, fc = j.features;
     SOURCES[key] = { title: "DXF: " + file.name, kind: "import" }; CHECKED.add(key);
     DATA[key] = { title: "DXF: " + file.name, source: "файл " + file.name, fetched_at: new Date().toISOString().slice(0, 10), notes: j.notes, fc, count: fc.features.length, fields: [...new Set(fc.features.flatMap(f => Object.keys(f.properties)))] };
-    addDynamicLayer(key); layerSrc[key].clear(); layerSrc[key].addFeatures(GJ.readFeatures(fc)); dataRev++; renderSources();
+    layerSrc[key] ||= new ol.source.Vector(); setLayerData(key, fc); ensureLayer(key, DATA[key].title); dataRev++; renderSources();
     if (fc.features.length) sharedView.fit(layerSrc[key].getExtent(), { padding: [40, 40, 40, 40], maxZoom: 18 });
     toast(`DXF: объектов ${fc.features.length}. ${j.notes.join("; ")}`);
   } catch (err) { toast("DXF не прочитан: " + err.message); } finally { busy(false); }
@@ -392,7 +369,7 @@ const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: s
 const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: new ol.style.Style({ fill: new ol.style.Fill({ color: hatch("#1f7a4d") }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
-const mAnalysis = newMap("mAnalysis", [...dataLayers(["osm.roads", "osm.water", "nspd.buildings", "osm.buildings", "gisogd.red_lines"]), siteLayer(), new ol.layer.Vector({ source: prevSrc, zIndex: 30, style: S([224, 138, 0, .28], "#c46f00", 2) }), sketchLayer(), terrLayer()]);
+const mAnalysis = newMap("mAnalysis", [siteLayer(), new ol.layer.Vector({ source: prevSrc, zIndex: 30, style: S([224, 138, 0, .28], "#c46f00", 2) }), sketchLayer(), terrLayer()]);
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() { sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; })); }
 function updateAnalysisMap() {
@@ -406,7 +383,7 @@ function updateAnalysisMap() {
 }
 
 /* ================= 3. Эскиз ================= */
-const mSketch = newMap("mSketch", [...dataLayers(["osm.roads", "osm.water", "gisogd.red_lines"]), siteLayer(), keptLayer(), sketchLayer(), terrLayer()]);
+const mSketch = newMap("mSketch", [siteLayer(), keptLayer(), sketchLayer(), terrLayer()]);
 let mBefore = null, mAfter = null, view3d = "2d", rot3d = 0;
 function publishedControls() {
   const p = RESULT.placeNode, t = RESULT.tepNode, num = graph._nodes.find(n => n.type === "Параметры/Число" && n.outputs[0].links?.some(id => graph.links[id]?.target_id === p?.id));
@@ -447,7 +424,7 @@ document.querySelector(".mtools").addEventListener("click", e => {
 });
 function applyView() {
   $("mSketch").hidden = view3d !== "2d"; $("c3d").hidden = view3d !== "3d"; $("splitBox").hidden = view3d !== "cmp"; $("bRot").hidden = view3d !== "3d";
-  if (view3d === "cmp" && !mBefore) { mBefore = newMap("mBefore", [...dataLayers(), terrLayer()]); mAfter = newMap("mAfter", [...dataLayers(["osm.roads", "osm.water"]), keptLayer(), sketchLayer(), terrLayer()]); }
+  if (view3d === "cmp" && !mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); }
   requestAnimationFrame(() => { [mSketch, mBefore, mAfter].forEach(m => m?.updateSize()); if (view3d === "3d") draw3d(); });
 }
 /* аксонометрия: стены, крыши, порядок по глубине; дороги — земля */
