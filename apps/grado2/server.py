@@ -237,6 +237,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(body)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
+        if self.path == "/api/health":
+            return self._json(200, {"pid": os.getpid(), "stamp": STAMP})
         if self.path == "/api/projects":
             return self._json(200, list_projects())
         if self.path.startswith("/api/project?"):
@@ -296,6 +298,27 @@ class Handler(SimpleHTTPRequestHandler):
             super().log_message(fmt, *args)
 
 
+def code_stamp():
+    """Версия серверного кода: время правки файлов бэкенда. Разная → запущенный сервер устарел."""
+    here = Path(__file__).resolve().parent
+    return max(p.stat().st_mtime for p in (here / "server.py", here / "dxf_io.py"))
+
+
+STAMP = code_stamp()          # версия кода, с которой этот процесс запущен
+
+
+def _running(port):
+    """Сведения о ГРАДО 2 на порту: {"pid", "stamp"}; {} — ГРАДО, но старый, без /api/health; None — не ГРАДО."""
+    import urllib.request
+    if not _is_grado(port):
+        return None
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as r:
+            return json.loads(r.read())
+    except Exception:
+        return {}
+
+
 def _is_grado(port):
     import urllib.request
     try:
@@ -308,15 +331,35 @@ def _is_grado(port):
 if __name__ == "__main__":
     import webbrowser
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8650
+    import signal
+    import time
     for p in range(port, port + 20):
         try:
             server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
             break
         except OSError:
-            if _is_grado(p):            # уже запущен — просто открыть
+            info = _running(p)
+            if info is None:
+                continue                                  # порт занят чужой программой
+            if info.get("stamp") == STAMP:                # тот же код уже работает — просто открыть
                 print(f"ГРАДО 2 уже работает: http://127.0.0.1:{p}")
-                webbrowser.open(f"http://127.0.0.1:{p}")
+                if not os.environ.get("GRADO2_NO_BROWSER"):
+                    webbrowser.open(f"http://127.0.0.1:{p}")
                 sys.exit(0)
+            if not info.get("pid"):
+                sys.exit(f"На порту {p} работает старая версия ГРАДО 2. Остановите её (Ctrl+C в её окне) и запустите снова.")
+            print(f"На порту {p} работает прежняя версия ГРАДО 2 — заменяю её новой.")
+            os.kill(info["pid"], signal.SIGTERM)
+            for _ in range(30):                           # ждём, пока порт освободится
+                time.sleep(0.1)
+                try:
+                    server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+                    break
+                except OSError:
+                    pass
+            else:
+                sys.exit(f"Прежняя версия на порту {p} не остановилась. Остановите её вручную и запустите снова.")
+            break
     else:
         sys.exit(f"порты {port}–{port + 19} заняты")
     print(f"ГРАДО 2: http://127.0.0.1:{p}")
