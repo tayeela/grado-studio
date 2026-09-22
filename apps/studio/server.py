@@ -630,7 +630,7 @@ class Handler(SimpleHTTPRequestHandler):
         allowed, hub_login = self._hub_gate(parsed0.path)
         if not allowed:
             return
-        if parsed0.path == "/desk":
+        if parsed0.path in ("/", "/desk"):
             page = (WEB / "v2" / "index.html").read_text(encoding="utf-8")
             if "<base " not in page:
                 page = page.replace("<head>", "<head>\n  <base href=\"/v2/\">", 1)
