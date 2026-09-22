@@ -28,6 +28,23 @@ class MapTransform:
         return [self.to_mm(x, y) for x, y in ring]
 
 
+def _geom_bbox(geom):
+    """Габариты координат GeoJSON-геометрии (любой вложенности)."""
+    x0 = y0 = float("inf")
+    x1 = y1 = float("-inf")
+    stack = [geom.get("coordinates")]
+    while stack:
+        item = stack.pop()
+        if not item:
+            continue
+        if isinstance(item[0], (int, float)):
+            x, y = item[0], item[1]
+            x0, y0, x1, y1 = min(x0, x), min(y0, y), max(x1, x), max(y1, y)
+        else:
+            stack.extend(item)
+    return x0, y0, x1, y1
+
+
 def centroid(ring):
     a = cx = cy = 0.0
     for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
@@ -511,6 +528,12 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
         x0, y0, x1, y1 = project_extent(project)
         center = ((x0 + x1) / 2, (y0 + y1) / 2)
     tr = MapTransform(frame_rect, center, scale)
+    # видимая область рамки в метрах (+ запас на подписи и засечки): объекты
+    # за рамкой не рисуем — выгрузка по области даёт тысячи объектов на
+    # несколько км вокруг участка, и лист собирался минуту и весил 25 МБ
+    half_w = frame_rect[2] / tr.k / 2 * 1.1
+    half_h = frame_rect[3] / tr.k / 2 * 1.1
+    view = (center[0] - half_w, center[1] - half_h, center[0] + half_w, center[1] + half_h)
 
     layers = sorted(project.layers(),
                     key=lambda i: styles.resolve(i["code"]).z)
@@ -523,6 +546,9 @@ def build_ops(project, frame_rect, scale, center=None, styles=None,
         for f in project.layer_by_id(info["layer_id"]).features():
             geom = f["geom"]
             if not geom:
+                continue
+            gx0, gy0, gx1, gy1 = _geom_bbox(geom)
+            if gx1 < view[0] or gx0 > view[2] or gy1 < view[1] or gy0 > view[3]:
                 continue
             # per-object стиль (столбец style_id в .grado) важнее стиля слоя:
             # напр. водоохранная зона со знаком Эталона ЛГР на слое ЗОУИТ

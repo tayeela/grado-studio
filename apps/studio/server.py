@@ -164,6 +164,13 @@ def _ascii_report(report):
             "warnings": clean(report.get("warnings"))}
 
 
+def _string_list(value):
+    """Список строк из запроса; всё остальное отбрасывается."""
+    if not isinstance(value, list):
+        return None
+    return [item for item in value if isinstance(item, str)] or None
+
+
 def _layer_labels(value):
     """{layer_id: {"label": поле|None, "line_label": текст|None}} из запроса.
 
@@ -1194,7 +1201,8 @@ class Handler(SimpleHTTPRequestHandler):
                     layers=layers, basemap_source=basemap_source,
                     canvas_styles=canvas_styles, project_styles=project_styles,
                     album_config=album_config,
-                    layer_labels=_layer_labels(body.get("layerLabels")))
+                    layer_labels=_layer_labels(body.get("layerLabels")),
+                    hidden_layers=_string_list(body.get("hiddenLayers")))
                 self._send(pdf, "application/pdf", "grado_agk_album.pdf")
             elif self.path == "/api/grado":
                 project_styles = body.get("projectStyles")
@@ -1252,7 +1260,8 @@ class Handler(SimpleHTTPRequestHandler):
                     basemap=bool(body.get("basemap")), layers=layers,
                     basemap_source=basemap_source, canvas_styles=canvas_styles,
                     project_styles=project_styles,
-                    layer_labels=_layer_labels(body.get("layerLabels")))
+                    layer_labels=_layer_labels(body.get("layerLabels")),
+                    hidden_layers=_string_list(body.get("hiddenLayers")))
                 self._send(pdf, "application/pdf",
                            f"chertezh_1-{used}.pdf")
             elif self.path == "/api/redline-stations":

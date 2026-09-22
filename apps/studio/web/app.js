@@ -233,7 +233,7 @@ const BASE_KINDS = [
   { kind: "zone", semantic_class: "tp.func_zone", geometry_type: "polygon",
     style_id: "func_zone.fill", label: "Функциональная зона / территория" },
   { kind: "restrict", semantic_class: "terr.restrict", geometry_type: "polygon",
-    style_id: "restrict.hatch", label: "Ограничение (ЗОУИТ)" },
+    style_id: "restrict.hatch", label: "Ограничение застройки (вычитается из площади)" },
   { kind: "building", semantic_class: "oks.building", geometry_type: "polygon",
     style_id: "building.fill", label: "Здание" },
   { kind: "redline", semantic_class: "pp.red_line", geometry_type: "polyline",
@@ -297,7 +297,16 @@ function createUserLayer({ kind, title, styleId, id = null }) {
   // его спецификации, у встроенных — по фикс-списку зон/ограничений/границ
   if (base.topology) L.topology = base.topology;
   else if (["boundary", "restrict", "zone"].includes(base.kind)) L.topology = "coverage";
-  LAYERS_V2.push(L);
+  // Площадные заливки (зоны, ограничения, пятна ОКС) — под зданиями, участками и
+  // линиями: новый слой зон поверх всего закрывал только что начерченные дома.
+  // Порядок потом меняется перетаскиванием в панели.
+  if (["zone", "restrict", "public"].includes(base.kind)) {
+    const covering = new Set(["building", "parcel", "redline", "social", "boundary"]);
+    const at = LAYERS_V2.findIndex(other => covering.has(other.kind));
+    if (at >= 0) LAYERS_V2.splice(at, 0, L); else LAYERS_V2.push(L);
+  } else {
+    LAYERS_V2.push(L);
+  }
   LAYER_BY_ID[L.id] = L;
   return L;
 }
@@ -4496,7 +4505,7 @@ const SHORTCUTS = [
     ["T", "Обрезать по границе"], ["E", "Продлить до границы"], ["J", "Склеить линии"],
   ]],
   ["Быстрый слой (создать/выбрать + чертить)", [
-    ["G", "Граница территории"], ["Z", "Функциональная зона"], ["O", "Ограничение (ЗОУИТ)"],
+    ["G", "Граница территории"], ["Z", "Функциональная зона"], ["O", "Ограничение застройки"],
     ["B", "Здание"], ["P", "Общественная зона"], ["L", "Красная линия"], ["S", "Соцобъект"],
   ]],
   ["Черчение", [
@@ -6992,6 +7001,8 @@ async function download(url, suffix, extra = {}) {
   // подписи слоёв, как они настроены на холсте, — печать и альбом в стандартном
   // режиме берут знаки из библиотеки, но включённость подписей — отсюда
   payload.layerLabels = layerLabelsForExport();
+  // скрытые на холсте слои не печатаются (в ТЭП участвуют — объекты уходят все)
+  payload.hiddenLayers = LAYERS_V2.filter(L => L.visible === false).map(L => L.id);
   Object.assign(payload, extra);
   const filename = projectFileName(suffix);
   const action = url === "/api/grado" ? "Сохраняю проект…" : "Собираю файл…";

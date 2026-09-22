@@ -407,6 +407,30 @@ class TestStudioCore(unittest.TestCase):
                                       dict(nested, tep_restrict=True)])
         self.assertAlmostEqual(0.5, on["inputs"]["restrict_area"], places=3)
 
+    def test_sheet_skips_offsheet_and_hidden_objects(self):
+        from grado_render import build_ops
+        from grado_wizard import sheets
+        near = {"kind": "building", "layer_id": "source.nspd.buildings", "props": {"floors": 3},
+                "ring": [[10, 10], [20, 10], [20, 20], [10, 20]]}
+        far = dict(near, ring=[[90000, 0], [90010, 0], [90010, 10], [90000, 10]])
+        boundary = {"kind": "boundary", "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]}
+        manifest = [{"layer_id": "source.gisogd.x", "code": "generic.polygon", "stage": "project"}]
+        zone = {"kind": "zone", "layer_id": "source.gisogd.x", "ring": [[0, 0], [50, 0], [50, 50]]}
+        with tempfile.TemporaryDirectory() as tmp:
+            project = studio_core.build_project(Path(tmp) / "c.grado", "С",
+                                                [boundary, near, far, zone], manifest)
+            stages = {i["layer_id"]: i["stage"] for i in project.layers()}
+            ops = build_ops(project, (0, 0, 200, 200), 1000)
+            paths = [o for o in ops if o["op"] == "path"]
+            from grado_layout import Document
+            doc = Document("С")
+            doc.hidden_layers = {"source.nspd.buildings"}
+            shown = sheets.sheet_layers(doc, project, "apo")
+            project.close()
+        self.assertEqual("existing", stages["source.gisogd.x"], "слой импорта — существующее положение")
+        self.assertEqual(3, len(paths), "граница, ближнее здание и зона; дальнее здание не рисуется")
+        self.assertNotIn("source.nspd.buildings", shown)
+
     def test_redline_fillet_applied(self):
         feat = [{"kind": "redline", "props": {"radius": 20},
                  "line": [[0, 0], [100, 0], [100, 100]]}]

@@ -160,6 +160,15 @@ def sheet_legend(doc, project, layer_ids, max_entries=14):
     return sections
 
 
+def sheet_layers(doc, project, name):
+    """Слои набора листа без слоёв, скрытых пользователем на холсте.
+
+    Скрытый слой не печатается, но в ТЭП участвует: ТЭП считается по
+    объектам проекта, а не по картинке."""
+    hidden = set(getattr(doc, "hidden_layers", ()) or ())
+    return [lid for lid in layerset_layers(project, name) if lid not in hidden]
+
+
 def fit_scale(project, rect=MAP_RECT, margin=1.12):
     x0, y0, x1, y1 = project_extent(project)
     raw = max((x1 - x0) * 1000 / rect[2], (y1 - y0) * 1000 / rect[3]) * margin
@@ -206,7 +215,7 @@ def location_sheet(doc, project, area_ha, page_no):
          "в границах участков правообладателя"], size=2.8)
     page.frames = [
         *L.header(page, ["Расположение рассматриваемой", "территории"], page_no),
-        MapFrame(L.map, scale=scale, layers=layerset_layers(project, "location")),
+        MapFrame(L.map, scale=scale, layers=sheet_layers(doc, project, "location")),
         legend, annotation]
     return page
 
@@ -235,7 +244,7 @@ def base_plan_sheet(doc, project, page_no):
     page = Page(A3_LANDSCAPE)
     L = layout_of(doc)
     st = doc.styles.resolve
-    layer_ids = layerset_layers(project, "existing_position")
+    layer_ids = sheet_layers(doc, project, "existing_position")
     legend = SectionedLegendFrame(
         L.right(40, 120), sheet_legend(doc, project, layer_ids, max_entries=int(15 * L.k)))
     frames = [
@@ -266,17 +275,22 @@ def ortho_sheet(doc, project, page_no, underlay, attribution=""):
         *L.header(page, ["Ортофотоплан", "рассматриваемой территории"],
                   page_no),
         MapFrame(L.map, scale=fit_scale(project, L.map),
-                 layers=layerset_layers(project, "ortho"), underlay=underlay),
+                 layers=sheet_layers(doc, project, "ortho"), underlay=underlay),
         legend, note]
     return page
 
 
 def _layer_centroid(project, code, bbox_of_all=False):
+    """Центр объектов ПРОЕКТНЫХ слоёв класса code.
+
+    Слои импорта (здания НСПД/OSM того же класса) не в счёт: выноска схемы
+    АПО иначе указывала в середину всего района, за край листа."""
     from grado_render.scene import centroid, _polygons, _points
     pts = []
-    if code not in [i["code"] for i in project.layers()]:
-        return None
-    for f in project.layer(code).features():
+    layer_ids = [i["layer_id"] for i in project.layers()
+                 if i["code"] == code and i.get("stage") == "project"]
+    features = (f for lid in layer_ids for f in project.layer_by_id(lid).features())
+    for f in features:
         geom = f["geom"]
         if not geom:
             continue
@@ -319,13 +333,14 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
     L = layout_of(doc)
     st = doc.styles.resolve
     legend = SectionedLegendFrame(
-        L.right(34, 120), sheet_legend(doc, project, layerset_layers(project, "apo"),
+        L.right(34, 120), sheet_legend(doc, project, sheet_layers(doc, project, "apo"),
                                        max_entries=int(15 * L.k)))
     d = engine.display
     tep = TableFrame(
         L.right(168, 100),
         [("Показатель", 72, "left"), ("Значение", 34, "right")],
-        [("Территория", f"{d('terr_area')} га"),
+        [("Территория в границе", f"{d('terr_area')} га"),
+         ("Расчётная площадь", f"{d('calc_area')} га"),
          ("СПП всего", f"{d('spp')} тыс. м²"),
          ("СПП жилых зданий", f"{d('spp_zh')} тыс. м²"),
          ("СПП нежилых зданий", f"{d('spp_nzh')} тыс. м²"),
@@ -347,7 +362,7 @@ def apo_sheet(doc, project, engine, page_no, callouts=None):
     page.frames = [
         *L.header(page, ["Схема архитектурно-планировочной",
                          "организации территории"], page_no),
-        MapFrame(L.map, scale=scale, layers=layerset_layers(project, "apo")),
+        MapFrame(L.map, scale=scale, layers=sheet_layers(doc, project, "apo")),
         *frames, legend, tep]
     return page
 
@@ -360,8 +375,23 @@ def tep_summary_sheet(doc, engine, page_no):
         grouped.setdefault(r["group"], []).append(r)
     rows = []
     idx = 0
+    # Факт по начерченным зданиям: для концепции это главные цифры, а ниже —
+    # потенциал по нормативной плотности. Без факта лист показывал только потенциал.
+    fact = getattr(engine, "fact", None) or {}
+    if fact.get("spp") is not None:
+        rows.append(("", "Застройка по чертежу", "", ""))
+        idx += 1
+        rows.append((str(idx), "СПП зданий по чертежу", "тыс. м²", str(fact["spp"])))
+        idx += 1
+        rows.append((str(idx), "Плотность застройки по чертежу", "тыс. м²/га",
+                     str(fact.get("density"))))
+        if fact.get("floors_unknown"):
+            idx += 1
+            rows.append((str(idx), "Здания без этажности (не в СПП)", "шт.",
+                         str(fact["floors_unknown"])))
     for group, items in grouped.items():
-        rows.append(("", group, "", ""))
+        rows.append(("", "Расчётный потенциал по нормативной плотности"
+                     if group == "Застройка" else group, "", ""))
         for r in items:
             idx += 1
             rows.append((str(idx), r["title"], r["unit"], str(r["value"])))

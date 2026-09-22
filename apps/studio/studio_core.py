@@ -872,8 +872,12 @@ def _user_layer_templates(layers):
             if fields:
                 out[lid] = {**LAYER_TEMPLATES[lid], "fields": fields}
             continue
+        # слой импорта — всегда существующее положение, что бы ни прислал
+        # клиент: иначе ЗОУИТ и зоны генплана попадали в раздел легенды
+        # «Проектные решения» и в выноски схемы АПО
+        stage = "existing" if lid.startswith(_IMPORT_LAYER_PREFIXES) else spec.get("stage")
         out[lid] = {"code": code, "title": spec.get("title"),
-                    "stage": spec.get("stage"), "style_id": spec.get("style_id"),
+                    "stage": stage, "style_id": spec.get("style_id"),
                     "fields": _manifest_fields(spec)}
     return out
 
@@ -1526,6 +1530,7 @@ def album_engine(project, features, params=None):
     # Прежде поверх ложились суммы по слоям всего проекта: альбом считал
     # площадь ограничений по всему городу, а панель — внутри участка.
     engine = make_engine(features, params)
+    engine.fact = live.get("fact") or {}   # факт по начерченным зданиям — в сводные ТЭП
     for key in ("density", "ratio_zh", "percent_vpp"):
         if params and params.get(key) is not None:
             engine.set_input(key, float(params[key]))
@@ -1551,7 +1556,7 @@ def _album_meta(cfg, name):
 
 def make_album(features, name, params=None, basemap=False, layers=None,
                basemap_source="osm", canvas_styles=None, project_styles=None,
-               album_config=None, layer_labels=None):
+               album_config=None, layer_labels=None, hidden_layers=None):
     with tempfile.TemporaryDirectory() as tmp:
         project = build_project(Path(tmp) / "studio.grado", name, features, layers, project_styles=project_styles)
         engine = album_engine(project, features, params)
@@ -1559,6 +1564,7 @@ def make_album(features, name, params=None, basemap=False, layers=None,
         doc = Document(name, meta=_album_meta(cfg, name))
         stamp_cfg = cfg.get("stamp") if isinstance(cfg.get("stamp"), dict) else {}
         doc.layout = GOST if stamp_cfg.get("enabled") else PRESENTATION
+        doc.hidden_layers = set(hidden_layers or ())
         # canvas_styles — inline-знаки «как на холсте» (режим выпуска студии):
         # объекты несут синтетический style_id, а сам знак приходит здесь
         # project_styles — кастомные стили проекта, доступны и в стандартном режиме
@@ -3461,7 +3467,7 @@ def make_dxf(features, name, layers=None):
 
 def make_print(features, name, scale=None, paper="A2", basemap=False, layers=None,
                basemap_source="osm", canvas_styles=None, project_styles=None,
-               layer_labels=None):
+               layer_labels=None, hidden_layers=None):
     """Печать чертежа в масштабе: один лист PDF с рамкой и подписью."""
     from grado_layout import (A1_LANDSCAPE, A2_LANDSCAPE, A3_LANDSCAPE,
                               Document, MapFrame, Page, PageBorder,
@@ -3483,7 +3489,10 @@ def make_print(features, name, scale=None, paper="A2", basemap=False, layers=Non
         import datetime
         page.frames = [
             PageBorder(page),
-            MapFrame(map_rect, scale=used_scale, underlay=underlay),
+            MapFrame(map_rect, scale=used_scale, underlay=underlay,
+                     layers=([i["layer_id"] for i in project.layers()
+                              if i["layer_id"] not in set(hidden_layers)]
+                             if hidden_layers else None)),
             TextFrame((ix + 8, iy + 2, iw - 16, 10),
                       [f"{name} — чертёж, М 1:{used_scale}, "
                        f"{datetime.date.today().isoformat()}{caption_extra}"],
