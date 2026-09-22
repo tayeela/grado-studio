@@ -325,19 +325,7 @@ async function openDataFetch() {
       // source.gisogd.zouit.* — свой слой на каждый знак ЛГР): регистрируем ДО
       // раскладки объектов. Иначе layerOf не находит слой и молча откатывается
       // на слой по ВИДУ — все ЗОУИТ снова в одной куче (железное правило 7).
-      for (const ld of (data.layers || [])) {
-        if (LAYER_BY_ID[ld.id]) continue;
-        const L = {
-          id: ld.id, title: ld.title, kind: ld.kind || "restrict",
-          semantic_class: ld.code, geometry_type: "polygon",
-          style_id: ld.style_id, stage: ld.stage || "existing",
-          source_kind: ld.source_kind, import_only: true, visible: true,
-          defaults: () => ({}),
-        };
-        if (["boundary", "restrict", "zone"].includes(L.kind)) L.topology = "coverage";
-        LAYERS_V2.push(L);
-        LAYER_BY_ID[L.id] = L;
-      }
+      for (const ld of (data.layers || [])) registerSourceLayer(ld);
       let addedAll = 0, dupAll = 0, invalidAll = 0;
       const parts = [];
       for (const g of groups) {

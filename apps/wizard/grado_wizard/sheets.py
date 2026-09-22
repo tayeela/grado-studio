@@ -88,9 +88,15 @@ def layerset_layers(project, name):
     excl, incl = set(spec.get("exclude_stages", [])), set(spec.get("include_stages", []))
     if not excl and not incl:
         return [i["layer_id"] for i in infos]
+    # include_codes: классы, которые попадают на лист при любой стадии слоя —
+    # граница территории, начерченная в проекте, нужна и на опорном плане
+    always = set(spec.get("include_codes", []))
     out = []
     for i in infos:
         stage = i.get("stage")  # стадия слоя (не класса) — учитывает override
+        if i["code"] in always:
+            out.append(i["layer_id"])
+            continue
         if excl and stage in excl:
             continue
         if incl and stage not in incl:

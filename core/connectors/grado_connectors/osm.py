@@ -8,6 +8,7 @@
 """
 
 import json
+import time
 import ssl
 import urllib.parse
 import urllib.request
@@ -114,29 +115,50 @@ class OsmOverpass(Connector):
         self.transport = transport or self._http_post
 
     def _http_post(self, query):
+        """Запрос сразу ко всем зеркалам, берём первый годный ответ.
+
+        Зеркала Overpass отвечают через раз: одно висит минуту, другое отдаёт
+        504, третье — за 5 секунд. По очереди это давало до трёх минут
+        ожидания и пустой результат; гонка ограничивает ожидание самым быстрым
+        живым зеркалом.
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
         data = urllib.parse.urlencode({"data": query}).encode("utf-8")
         try:
             import certifi
             ctx = ssl.create_default_context(cafile=certifi.where())
         except ImportError:
             ctx = ssl.create_default_context()
-        last = None
-        for url in OVERPASS_URLS:
-            req = urllib.request.Request(url, data=data,
-                                         headers={"User-Agent": _UA})
-            try:
-                with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
-                    return json.loads(r.read().decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                if e.code in (429, 504):   # перегрузка — пробуем зеркало
-                    last = f"HTTP {e.code}"
-                    continue
-                raise ConnectorError(f"Overpass ответил HTTP {e.code}") from None
-            except Exception as e:
-                last = str(e)
-                continue
+
+        def one(url):
+            # 429/504 зеркало отдаёт за доли секунды — повтор дешёвый
+            for attempt in range(3):
+                req = urllib.request.Request(url, data=data, headers={"User-Agent": _UA})
+                try:
+                    with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
+                        return json.loads(r.read().decode("utf-8"))
+                except urllib.error.HTTPError as e:
+                    if e.code not in (429, 504) or attempt == 2:
+                        raise
+                    time.sleep(2 * (attempt + 1))
+
+        errors = []
+        pool = ThreadPoolExecutor(max_workers=len(OVERPASS_URLS))
+        try:
+            futures = {pool.submit(one, url): url for url in OVERPASS_URLS}
+            for future in as_completed(futures):
+                try:
+                    return future.result()
+                except urllib.error.HTTPError as e:
+                    errors.append(f"HTTP {e.code}")
+                except Exception as e:
+                    errors.append(str(e))
+        finally:
+            # опоздавшие зеркала доработают в фоне, ответ уже не ждём
+            pool.shutdown(wait=False)
         raise ConnectorError(
-            f"Overpass перегружен ({last}) — попробуйте позже "
+            f"Overpass не ответил ({'; '.join(errors)}) — попробуйте позже "
             "или уменьшите область")
 
     def fetch(self, bbox, sets):

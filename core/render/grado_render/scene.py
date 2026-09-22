@@ -41,10 +41,26 @@ def centroid(ring):
 
 
 def project_extent(project):
-    """Габариты всех слоёв проекта в СК проекта (по gpkg_contents)."""
-    rows = project.conn.execute(
-        "SELECT min(min_x), min(min_y), max(max_x), max(max_y) "
-        "FROM gpkg_contents WHERE data_type='features'").fetchone()
+    """Габариты чертежа в СК проекта (по gpkg_contents).
+
+    Если задана граница территории — её габариты: данные по области всегда
+    шире участка, а зона ОКН или приаэродромная территория тянется на весь
+    город, и лист уходил в 1:50 000 с участком-точкой посередине. Без границы —
+    габариты всех слоёв.
+    """
+    tables = [info["table"] for info in project.layers()
+              if info.get("code") == "terr.boundary"]
+    rows = None
+    if tables:
+        marks = ",".join("?" * len(tables))
+        rows = project.conn.execute(
+            "SELECT min(min_x), min(min_y), max(max_x), max(max_y) "
+            f"FROM gpkg_contents WHERE data_type='features' AND table_name IN ({marks})",
+            tables).fetchone()
+    if rows is None or rows[0] is None:
+        rows = project.conn.execute(
+            "SELECT min(min_x), min(min_y), max(max_x), max(max_y) "
+            "FROM gpkg_contents WHERE data_type='features'").fetchone()
     if rows is None or rows[0] is None:
         raise ValueError("в проекте нет объектов")
     return rows

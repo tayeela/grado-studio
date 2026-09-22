@@ -325,6 +325,25 @@ function createGenericLayer({ title, geometry_type, styleId, id = null }) {
 // не знает layer_id, придуманный на холсте, без этого списка). Встроенные
 // слои-приёмники с СВОИМИ полями (полная атрибуция НСПД из «Данных») тоже
 // идут в манифест — бэкенд мержит из него только fields, code/title builtin
+// Слой-источник из ответа импорта (ГИС ОГД по области или ZIP). Регистрируется
+// ДО раскладки объектов, иначе layerOf откатит объект в слой по виду (правило 7).
+// Зоны (заливки) кладутся под остальные слои: сплошная заливка функциональных
+// зон поверх участков и зданий закрывала всю карту.
+function registerSourceLayer(ld) {
+  if (LAYER_BY_ID[ld.id]) return;
+  const L = {
+    id: ld.id, title: ld.title, kind: ld.kind || "restrict",
+    semantic_class: ld.code, geometry_type: ld.geometry_type || "polygon",
+    style_id: ld.style_id, stage: ld.stage || "existing",
+    source_kind: ld.source_kind, import_only: true, visible: true,
+    defaults: () => ({}),
+  };
+  if (["boundary", "restrict", "zone"].includes(L.kind)) L.topology = "coverage";
+  if (L.kind === "zone" && L.geometry_type === "polygon") LAYERS_V2.unshift(L);
+  else LAYERS_V2.push(L);
+  LAYER_BY_ID[L.id] = L;
+}
+
 function userLayersManifest() {
   return LAYERS_V2.filter(L => L.user_created || (L.fields && L.fields.length))
     .map(L => ({

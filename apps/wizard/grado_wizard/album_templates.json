@@ -3,15 +3,25 @@
   "layersets": {
     "location": {
       "title": "Расположение территории",
-      "codes": ["terr.boundary"]
+      "codes": [
+        "terr.boundary"
+      ]
     },
     "ortho": {
       "title": "Ортофотоплан",
-      "codes": ["terr.boundary", "cad.parcel"]
+      "codes": [
+        "terr.boundary",
+        "cad.parcel"
+      ]
     },
     "existing_position": {
       "title": "Существующее положение",
-      "exclude_stages": ["project"]
+      "exclude_stages": [
+        "project"
+      ],
+      "include_codes": [
+        "terr.boundary"
+      ]
     },
     "apo": {
       "title": "Архитектурно-планировочная организация"

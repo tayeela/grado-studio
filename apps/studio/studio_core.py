@@ -756,6 +756,35 @@ def _geom_for(feature):
     return {"type": "Polygon", "coordinates": rings}
 
 
+def _dyn_layer_codes(features):
+    """Схема (код классификатора) каждого слоя-источника по его объектам.
+
+    Один вид на весь слой → схема этого вида (redline→pp.red_line,
+    zone→tp.func_zone, restrict→terr.restrict): KIND_ATTRS даёт атрибуты,
+    которые она примет. Смесь видов (слой УДС: красные линии и границы техзон)
+    → обычный слой по преобладающей геометрии.
+    """
+    seen = {}
+    for f in features:
+        lid = f.get("layer_id")
+        if not (isinstance(lid, str) and (lid.startswith("source.gisogd.")
+                                          or lid.startswith("source.osm."))):
+            continue
+        entry = seen.setdefault(lid, {"kinds": set(), "geoms": []})
+        entry["kinds"].add(f.get("kind"))
+        entry["geoms"].append("generic.polygon" if f.get("ring") else
+                              "generic.point" if f.get("point") else "generic.line")
+    codes = {}
+    for lid, entry in seen.items():
+        code = None
+        if len(entry["kinds"]) == 1:
+            kind_lid = _KIND_TO_LAYER.get(next(iter(entry["kinds"])))
+            kind_tmpl = LAYER_TEMPLATES.get(kind_lid) if kind_lid else None
+            code = kind_tmpl.get("code") if kind_tmpl else None
+        codes[lid] = code or max(set(entry["geoms"]), key=entry["geoms"].count)
+    return codes
+
+
 def _route(feature, templates):
     """(layer_id, template) объекта холста → слой модели.
 
@@ -1018,23 +1047,20 @@ def build_project(path, name, features, layers=None, project_styles=None,
     # шаблонах, и БЕЗ синтеза _route откатил бы объект по ВИДУ (правило 7),
     # а слой-источник в .grado потерялся бы. Заводим по факту наличия объектов,
     # название — из провенанса (layer_title), код — нейтральный generic.line.
-    for f in features:
-        lid = f.get("layer_id")
-        if (lid and lid not in templates
-                and (lid.startswith("source.gisogd.") or lid.startswith("source.osm."))):
-            title = (f.get("prov") or {}).get("layer_title") or lid
-            # Код (схема .grado) — по ВИДУ объекта, как и раньше при маршруте по
-            # виду: restrict→terr.restrict (принимает и линии, и полигоны ЗОУИТ),
-            # redline→pp.red_line, zone→tp.func_zone; иначе по геометрии. Так
-            # KIND_ATTRS даёт атрибуты, которые схема кода принимает.
-            kind_lid = _KIND_TO_LAYER.get(f.get("kind"))
-            kind_tmpl = LAYER_TEMPLATES.get(kind_lid) if kind_lid else None
-            code = kind_tmpl.get("code") if kind_tmpl else None
-            if not code:
-                code = ("generic.polygon" if f.get("ring") else
-                        "generic.point" if f.get("point") else "generic.line")
-            templates[lid] = {"code": code, "title": title,
-                              "stage": "existing", "source_kind": "gisogd"}
+    # Код слоя-источника считается по его объектам и тогда, когда слой пришёл
+    # в манифесте клиента: прежние версии отдавали таким слоям generic.line при
+    # любой геометрии, и слой функциональных зон не собирался вовсе.
+    for lid, code in _dyn_layer_codes(features).items():
+        if lid in LAYER_TEMPLATES:
+            continue
+        if lid in templates:
+            templates[lid] = {**templates[lid], "code": code}
+            continue
+        title = next(((f.get("prov") or {}).get("layer_title") for f in features
+                      if f.get("layer_id") == lid and (f.get("prov") or {}).get("layer_title")),
+                     None)
+        templates[lid] = {"code": code, "title": title or lid,
+                          "stage": "existing", "source_kind": "gisogd"}
     made = {}  # layer_id → Layer
     for f in features:
         lid, tmpl = _route(f, templates)
@@ -1050,10 +1076,21 @@ def build_project(path, name, features, layers=None, project_styles=None,
         # неизвестный вид (напр. из будущей версии) не должен ронять экспорт —
         # пустые атрибуты как у обычного (generic) слоя
         props = f.get("props", {})
-        attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])(props)
-        # произвольные поля атрибутивной таблицы студии → колонки .grado
+        kind_attrs = KIND_ATTRS.get(f["kind"], KIND_ATTRS["generic"])
+        if KIND_TO_CODE.get(f["kind"]) not in (None, tmpl["code"]):
+            # вид объекта не совпадает со схемой слоя (смешанный слой-источник):
+            # семантические атрибуты вида схема не примет
+            kind_attrs = KIND_ATTRS["generic"]
+        attrs = kind_attrs(props)
+        # произвольные поля атрибутивной таблицы студии → колонки .grado.
+        # Пишем только колонки, которые слой реально завёл: служебные имена
+        # (id, fid…) и совпадения с атрибутами классификатора он пропускает,
+        # и такое поле роняло сборку («неизвестный атрибут 'id'») — у слоёв
+        # ГИС ОГД поле id есть почти всегда.
+        layer_cols = {u["id"] for u in made[lid].user_fields}
         for fd in tfields:
-            attrs[fd["id"]] = _cast_field(fd["ftype"], props.get(fd["name"]))
+            if fd["id"] in layer_cols:
+                attrs[fd["id"]] = _cast_field(fd["ftype"], props.get(fd["name"]))
         # провенанс из импорта переносится в модель (source/date/doc),
         # per-object стиль — в колонку style_id
         prov = f.get("prov") or {}
@@ -2124,6 +2161,20 @@ def _linecode_routes(raw_props):
     return out
 
 
+def _linecode_kind(code, part):
+    """Вид объекта по коду LineCode и по его геометрии.
+
+    Красная линия в модели — только линия (pp.red_line), ограничение — только
+    полигон (terr.restrict). Граница техзоны или пешеходного перехода в слое
+    УДС приходит линией: с видом restrict она не собиралась ни в один слой,
+    и предпроверка блокировала печать всего проекта. Такие объекты — обычная
+    линия (или полигон) со своим знаком.
+    """
+    if code in _REDLINE_CODES:
+        return "redline" if "line" in part else "generic"
+    return "restrict" if "ring" in part else "generic"
+
+
 def _norm_ru(s):
     """Имя для сопоставления: регистр + «ё»→«е».
 
@@ -2432,11 +2483,10 @@ def _gisogd_process(conn, result):
         routes = _linecode_routes(raw)
         if routes:
             for code, side, csid, _clid in routes:
-                ckind = "redline" if code in _REDLINE_CODES else "restrict"
-                want = "line" if ckind == "redline" else None
                 emitted = 0
                 for i, part in enumerate(parts):
-                    if want and want not in part:
+                    ckind = _linecode_kind(code, part)
+                    if code in _REDLINE_CODES and ckind != "redline":
                         continue
                     sem = ({"status": "существующая"} if ckind == "redline"
                            else {"kind": STYLE_LIB["styles"][csid]["title"],
@@ -2681,6 +2731,7 @@ def _layer_defs(features, specs=None):
                  for sp in (specs or {}).values()
                  if isinstance(sp, dict) and sp.get("dyn_layer")}
     out = {}
+    dyn_codes = _dyn_layer_codes(features)
     for f in features:
         lid = f.get("layer_id")
         if not lid or lid in out:
@@ -2698,8 +2749,12 @@ def _layer_defs(features, specs=None):
             title = dyn.get(lid) or (f.get("prov") or {}).get("layer_title")
             if not title:
                 title = "ГИС ОГД: " + lid.rsplit(".", 1)[-1]
-            out[lid] = {"id": lid, "title": title,
-                        "code": "generic.line", "kind": f.get("kind"),
+            code = dyn_codes.get(lid, "generic.line")
+            out[lid] = {"id": lid, "title": title, "code": code,
+                        "geometry_type": {"generic.polygon": "polygon", "generic.point": "point",
+                                          "generic.line": "polyline"}.get(
+                            code, "polyline" if code == "pp.red_line" else "polygon"),
+                        "kind": f.get("kind"),
                         "style_id": dyn_style.get(lid), "stage": "existing",
                         "source_kind": "gisogd"}
     return list(out.values())
@@ -3104,7 +3159,7 @@ def fetch_extent(bbox, sources):
                         # СЛОЙ — слоя-источника (spec["layer_id"]): объекты одного
                         # выгруженного слоя портала не разъезжаются по слоям-знакам,
                         # а различаются знаком (переключаются категориями).
-                        cf = {"kind": "redline" if code in _REDLINE_CODES else "restrict",
+                        cf = {"kind": _linecode_kind(code, part),
                               "layer_id": spec["layer_id"], **part,
                               "props": {**props, "line_code": code, "line_side": side},
                               "prov": dict(prov), "style_id": csid}
@@ -3121,29 +3176,18 @@ def fetch_extent(bbox, sources):
                 g["features"].append(feat)
 
     # --- OSM: один запрос Overpass на все выбранные наборы ------------------
+    # Overpass самый медленный (десятки секунд), поэтому запрос уходит сразу,
+    # а НСПД, ГИС ОГД и рельеф грузятся, пока он идёт. Порядок групп в ответе
+    # задаёт keys, от порядка обработки он не зависит.
     osm_keys = [k for k in keys if specs[k]["conn"] == "osm"]
+    osm_job = None
     if osm_keys:
-        sets = sorted({s for k in osm_keys for s in specs[k]["sets"]})
-        conn = OsmOverpass()
-        try:
-            result = conn.fetch(bbox, sets)
-            manifest, d = _snapshot(conn, result)
-            if d:
-                notes.append(f"OSM изменился с прошлого снимка: "
-                             f"+{len(d['added'])} −{len(d['removed'])} "
-                             f"~{len(d['changed'])}")
-            snapshots.append(manifest)
-            prov = _prov(manifest)
-            by_set = {}
-            for f in result["features"]:
-                by_set.setdefault(
-                    (f.get("properties") or {}).get("grado_set"), []).append(f)
-            for k in osm_keys:
-                for s in specs[k]["sets"]:
-                    _emit(k, by_set.get(s, []), prov)
-            notes.extend(result.get("notes") or [])
-        except Exception as e:
-            notes.append(f"OSM: {e}")
+        from concurrent.futures import ThreadPoolExecutor
+        osm_sets = sorted({s for k in osm_keys for s in specs[k]["sets"]})
+        osm_conn = OsmOverpass()
+        osm_pool = ThreadPoolExecutor(max_workers=1)
+        osm_job = osm_pool.submit(osm_conn.fetch, bbox, osm_sets)
+        osm_pool.shutdown(wait=False)
 
     # --- НСПД: отдельный запрос на источник (свой снимок и провенанс) -------
     nspd_keys = [k for k in keys if specs[k]["conn"] == "nspd"]
@@ -3214,6 +3258,29 @@ def fetch_extent(bbox, sources):
             notes.extend(result.get("notes") or [])
         except Exception as e:
             notes.append(f"{specs[k]['title']}: {e}")
+
+    # --- OSM: разбор ответа, запрошенного в начале -------------------------
+    if osm_job is not None:
+        conn = osm_conn
+        try:
+            result = osm_job.result()
+            manifest, d = _snapshot(conn, result)
+            if d:
+                notes.append(f"OSM изменился с прошлого снимка: "
+                             f"+{len(d['added'])} −{len(d['removed'])} "
+                             f"~{len(d['changed'])}")
+            snapshots.append(manifest)
+            prov = _prov(manifest)
+            by_set = {}
+            for f in result["features"]:
+                by_set.setdefault(
+                    (f.get("properties") or {}).get("grado_set"), []).append(f)
+            for k in osm_keys:
+                for s in specs[k]["sets"]:
+                    _emit(k, by_set.get(s, []), prov)
+            notes.extend(result.get("notes") or [])
+        except Exception as e:
+            notes.append(f"OSM: {e}")
 
     out_groups = []
     for k in keys:

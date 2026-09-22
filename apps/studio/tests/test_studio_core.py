@@ -308,6 +308,57 @@ class TestStudioCore(unittest.TestCase):
         self.assertTrue(pdf.startswith(b"%PDF"))
         self.assertIn(b"/Count 5", pdf)
 
+    def test_linecode_kind_follows_geometry(self):
+        line, ring = {"line": [[0, 0], [1, 1]]}, {"ring": [[0, 0], [1, 0], [1, 1]]}
+        self.assertEqual("redline", studio_core._linecode_kind(1, line))
+        self.assertEqual("generic", studio_core._linecode_kind(1, ring))
+        self.assertEqual("generic", studio_core._linecode_kind(45, line))
+        self.assertEqual("restrict", studio_core._linecode_kind(16, ring))
+
+    def test_source_layers_export_with_mixed_kinds_and_stale_manifest(self):
+        """Слой УДС (красные линии + границы техзон линиями) и слой зон с
+        устаревшим кодом generic.line в манифесте клиента собираются в .grado."""
+        feats = FEATURES + [
+            {"id": "u1", "kind": "redline", "layer_id": "source.gisogd.l1",
+             "line": [[0, 0], [50, 0]], "props": {"status": "существующая"}},
+            {"id": "u2", "kind": "generic", "layer_id": "source.gisogd.l1",
+             "line": [[0, 10], [50, 10]], "props": {"kind": "Переход"},
+             "style_id": "lgr.peshekhod"},
+            {"id": "z1", "kind": "zone", "layer_id": "source.gisogd.virtual1742",
+             "ring": [[0, 0], [40, 0], [40, 40], [0, 40]], "props": {"zone_title": "жилая"}},
+        ]
+        manifest = [{"layer_id": "source.gisogd.virtual1742", "code": "generic.line",
+                     "title": "ГИС ОГД: зоны", "fields": [{"name": "district", "type": "text"}]},
+                    {"layer_id": "source.gisogd.l1", "code": "generic.line",
+                     "title": "ГИС ОГД: УДС", "fields": []}]
+        report = studio_core.preflight_project(feats, manifest, target="print")
+        self.assertTrue(report["can_export"], report["errors"])
+        with tempfile.TemporaryDirectory() as tmp:
+            project = studio_core.build_project(Path(tmp) / "s.grado", "С", feats, manifest)
+            codes = {info["layer_id"]: info["code"] for info in project.layers()}
+            counts = {info["layer_id"]: project.layer_by_id(info["layer_id"]).count()
+                      for info in project.layers()}
+            project.close()
+        self.assertEqual("tp.func_zone", codes["source.gisogd.virtual1742"])
+        self.assertEqual("generic.line", codes["source.gisogd.l1"])
+        self.assertEqual(2, counts["source.gisogd.l1"])
+        defs = {d["id"]: d for d in studio_core._layer_defs(feats)}
+        self.assertEqual("polygon", defs["source.gisogd.virtual1742"]["geometry_type"])
+        self.assertEqual("polyline", defs["source.gisogd.l1"]["geometry_type"])
+
+    def test_sheet_extent_follows_territory_boundary(self):
+        from grado_render import project_extent
+        feats = [
+            {"kind": "boundary", "ring": [[0, 0], [100, 0], [100, 80], [0, 80]]},
+            {"kind": "restrict", "ring": [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            project = studio_core.build_project(Path(tmp) / "e.grado", "Э", feats)
+            x0, y0, x1, y1 = project_extent(project)
+            project.close()
+        self.assertAlmostEqual(100, x1 - x0, delta=0.01)
+        self.assertAlmostEqual(80, y1 - y0, delta=0.01)
+
     def test_redline_fillet_applied(self):
         feat = [{"kind": "redline", "props": {"radius": 20},
                  "line": [[0, 0], [100, 0], [100, 100]]}]

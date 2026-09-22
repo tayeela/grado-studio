@@ -118,16 +118,7 @@ async function applyGisogdData(data, askText) {
   // свой слой на каждый знак ЛГР, объекты разъезжаются по LineCode): заводим ДО
   // раскладки, иначе layerOf откатится на слой по ВИДУ и все ЗОУИТ снова лягут
   // в одну кучу (железное правило 7).
-  for (const ld of (data.layers || [])) {
-    if (LAYER_BY_ID[ld.id]) continue;
-    const L = { id: ld.id, title: ld.title, kind: ld.kind || "restrict",
-      semantic_class: ld.code, geometry_type: "polygon", style_id: ld.style_id,
-      stage: ld.stage || "existing", source_kind: ld.source_kind,
-      import_only: true, visible: true, defaults: () => ({}) };
-    if (["boundary", "restrict", "zone"].includes(L.kind)) L.topology = "coverage";
-    LAYERS_V2.push(L);
-    LAYER_BY_ID[L.id] = L;
-  }
+  for (const ld of (data.layers || [])) registerSourceLayer(ld);
   const { added, dup, invalid } = importSourceFeatures(data.features);
   state.selected = null;
   recordSource(data.snapshot, data.diff);
