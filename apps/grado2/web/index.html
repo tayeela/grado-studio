@@ -35,17 +35,46 @@ svg.lucide{width:16px;height:16px;stroke-width:1.75;flex:0 0 auto}
 .num{font-variant-numeric:tabular-nums}
 select,input[type=text]{height:24px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0 5px;min-width:0}
 
-.app{height:100%;display:grid;grid-template-rows:40px 1fr;grid-template-columns:1fr}
+.app{height:100%;display:grid;grid-template-rows:38px 40px minmax(0,1fr) 24px;grid-template-columns:1fr}
+.top .sp{flex:1}
+.wins{display:flex;gap:1px;align-items:center}
+.wins .btn{border-color:transparent;background:none;color:var(--muted)}
+.wins .btn:hover{background:var(--hover);color:var(--text)}
+.wins .btn[aria-pressed="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
+.wins .vs{width:1px;height:18px;background:var(--line);margin:0 5px}
+/* строка инструментов */
+.ribbon{display:flex;align-items:center;gap:2px;padding:0 8px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden}
+.ribbon .g{display:flex;align-items:center;gap:1px}
+.ribbon .vs{width:1px;height:24px;background:var(--line);margin:0 6px;flex:0 0 auto}
+.tl{display:flex;align-items:center;gap:5px;height:30px;padding:0 8px;border:1px solid transparent;background:none;border-radius:4px;white-space:nowrap;color:var(--text)}
+.tl:hover{background:var(--hover)}
+.tl[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.tl:disabled{opacity:.4}
+.tl kbd{font:10px var(--mono);color:var(--faint)}
+.ribbon .tgt{display:flex;align-items:center;gap:6px;color:var(--muted);white-space:nowrap}
+.ribbon .tgt select{max-width:220px}
+.ribbon label.inl{color:var(--muted);white-space:nowrap}
+/* рабочая область: слои | карта | свойства */
+.work{display:grid;grid-template-columns:280px minmax(0,1fr) 290px;min-height:0}
+.work.noL{grid-template-columns:0 minmax(0,1fr) 290px}.work.noR{grid-template-columns:280px minmax(0,1fr) 0}.work.noL.noR{grid-template-columns:0 minmax(0,1fr) 0}
+.work.noL>.side:first-child,.work.noR>.side.r{display:none}
+.work>.mapbox{grid-column:2;grid-row:1}.work>.side{grid-row:1}.work>.side.r{grid-column:3}
+.status{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);white-space:nowrap;overflow:hidden}
+.status #stHint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.status b{font-weight:600}
+/* плавающие окна */
+.win{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.22);display:flex;flex-direction:column;resize:both;overflow:hidden;min-width:240px;min-height:140px}
+.win.front{z-index:41}
+.wh{height:30px;display:flex;align-items:center;gap:7px;padding:0 3px 0 10px;border-bottom:1px solid var(--line);cursor:move;flex:0 0 auto;user-select:none;touch-action:none}
+.wh b{font-weight:600}.wh .sp{flex:1}.wh small{color:var(--faint)}
+.wb{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;position:relative}
+.gwrap{flex:1;display:grid;grid-template-columns:150px minmax(0,1fr);min-height:0}
+.gwrap .lib{border-right:1px solid var(--line);overflow:auto}
+.wb .split{flex:1}
+.wb canvas.c3d{position:absolute;inset:0}
 .top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:600}
 .proj{color:var(--muted)}
-.steps{display:flex;align-items:center;gap:2px;margin:0 auto}
-.steps button{display:flex;align-items:center;gap:7px;border:1px solid transparent;background:none;height:30px;padding:0 12px;border-radius:4px;color:var(--muted)}
-.steps button:hover{background:var(--hover)}
-.steps button[aria-current="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
-.steps .n{width:18px;height:18px;border-radius:50%;border:1px solid currentColor;display:grid;place-items:center;font-size:11px}
-.steps button[aria-current="true"] .n{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.steps .arr{color:var(--faint)}
 .tb{border:1px solid transparent;background:none;width:28px;height:28px;border-radius:3px;display:grid;place-items:center;padding:0;flex:0 0 auto}
 .tb:hover{background:var(--hover)}
 .tb[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
@@ -64,12 +93,10 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .split>div{position:relative;background:var(--canvas)}
 .mtag{position:absolute;left:8px;top:8px;background:#ffffffee;border:1px solid #bbb;border-radius:3px;padding:2px 7px;color:#222;z-index:2;pointer-events:none}
 .ol-scale-line{position:absolute;left:8px;bottom:8px;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:2px}
+.ol-attribution{position:absolute;right:6px;bottom:6px;font-size:10px;background:rgba(255,255,255,.8);color:#333;padding:1px 6px;border-radius:2px}.ol-attribution ul{margin:0;padding:0;list-style:none;display:inline}.ol-attribution li{display:inline}.ol-attribution a{color:#333}.ol-attribution button{display:none}
 .ol-scale-line-inner{border:1px solid #333;border-top:0;color:#333;font-size:10px;text-align:center;margin:1px}
 .mtools{position:absolute;right:8px;top:8px;display:flex;gap:2px;background:var(--panel);border:1px solid var(--line-2);border-radius:4px;padding:2px;z-index:3}
 
-/* 1 сбор */
-
-.s-collect{grid-template-columns:300px minmax(0,1fr) 300px}
 .pane{display:flex;flex-direction:column;min-height:0;flex:1}
 .dtabs{display:flex;align-items:flex-end;height:28px;padding:0 4px;border-bottom:1px solid var(--line);flex:0 0 auto;gap:1px}
 .dtabs button{border:1px solid transparent;border-bottom:0;background:none;height:26px;padding:0 10px;border-radius:3px 3px 0 0;color:var(--muted)}
@@ -85,6 +112,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .tn input[type=checkbox]{margin:0 2px 0 0}
 .tn.off .nm,.tn.off .sym{opacity:.45}
 .tn.leg{padding-left:34px;color:var(--muted)}
+.tgrp{padding:8px 8px 3px;color:var(--faint);font-weight:600;border-top:1px solid var(--line);margin-top:4px}
 .tn.dragging{opacity:.4}
 .tn.drop-a{box-shadow:inset 0 2px 0 var(--accent)}
 .tn.drop-b{box-shadow:inset 0 -2px 0 var(--accent)}
@@ -94,13 +122,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .badge{font-size:10px;padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .edit-on{width:12px!important;height:12px!important;color:var(--accent)}
 .sym.pt{width:10px;height:10px;border-radius:50%}
-.ccol{display:flex;flex-direction:column;min-width:0;min-height:0}
-.ccol .mapbox{flex:1}
-.editbar{position:absolute;left:8px;top:8px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--line-2);border-radius:4px;padding:2px;z-index:3}
-.editbar .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
-.editbar .tb:disabled{opacity:.35;cursor:default}
-.editbar .snap{display:flex;align-items:center;gap:4px;padding:0 6px;color:var(--muted)}
-.attr{height:220px;display:flex;flex-direction:column;border-top:1px solid var(--line);background:var(--panel)}
+.attr{flex:1;display:flex;flex-direction:column;min-height:0}
 .attr .ah{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line)}
 .attr .ah .ttl{color:var(--muted)}
 .attr .ah input{height:22px;width:160px}
@@ -179,8 +201,7 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .kv .warn{color:var(--warn)}.kv .bad{color:var(--bad)}.kv .good{color:var(--good)}
 
 /* 2 анализ */
-.s-analysis{grid-template-columns:180px minmax(0,1.6fr) minmax(0,1fr)}
-.graphbox{position:relative;background:var(--graph);min-width:0;min-height:0;border-right:1px solid var(--line)}
+.graphbox{position:relative;background:var(--graph);min-width:0;min-height:0}
 .graphbox canvas{position:absolute;inset:0;display:block}
 .lib button{display:flex;width:100%;align-items:center;gap:7px;border:0;background:none;text-align:left;padding:4px 8px 4px 14px;height:24px}
 .lib button:hover{background:var(--hover)}
@@ -202,9 +223,6 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .litegraph .dialog,.litegraph.dialog{display:none}
 
 /* 3 эскиз */
-.s-sketch{grid-template-columns:260px minmax(0,1fr) 270px;grid-template-rows:1fr auto}
-.s-sketch .side{grid-row:1/3}
-.s-sketch .side.r{grid-column:3}
 .ctl{padding:8px 10px;border-bottom:1px solid var(--line);background:var(--field)}
 .ctl .t{display:flex;justify-content:space-between;margin-bottom:4px}
 .ctl .t span:last-child{font-variant-numeric:tabular-nums;color:var(--muted)}
@@ -214,11 +232,10 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .ctl .seg button:last-child{border-right:0}
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
-.variants{grid-column:2;background:var(--panel);border-top:1px solid var(--line);display:flex;flex-direction:column;min-width:0}
 .vbar{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
 .vbar b{font-weight:600}
 .vbar .sp{flex:1}
-.vlist{display:flex;gap:6px;padding:8px;overflow-x:auto;height:168px}
+.vlist{display:flex;flex-wrap:wrap;gap:6px;padding:8px;align-content:flex-start}
 .vc{flex:0 0 180px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0;text-align:left;display:flex;flex-direction:column}
 .vc:hover{border-color:var(--accent)}
 .vc[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-1px}
@@ -230,106 +247,85 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:#eeede8}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:3px;z-index:80;max-width:80%;opacity:0;pointer-events:none;transition:opacity .15s}
 .toast.on{opacity:1}
-@media (max-width:980px){
-  .s-collect{grid-template-columns:1fr;grid-template-rows:auto 1fr}.s-collect .side{max-height:40vh}
-  .s-analysis{grid-template-columns:1fr;grid-template-rows:0 1fr 1fr}.s-analysis .side{display:none}
-  .s-sketch{grid-template-columns:1fr;grid-template-rows:auto 1fr auto auto}.s-sketch .side{grid-row:auto;max-height:32vh}.s-sketch .side.r{grid-column:auto}.variants{grid-column:auto}
-  .proj{display:none}.steps .arr{display:none}.steps button{padding:0 6px}.steps .lbl{display:none}
-}
+@media (max-width:1180px){.tl span.lb{display:none}.wins .btn span.lb{display:none}}
+@media (max-width:900px){.work{grid-template-columns:0 minmax(0,1fr) 0}.work>.side{display:none}.proj{display:none}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
 <div class="app">
   <header class="top">
-    <span class="brand">ГРАДО</span><span class="proj">Квартал «Заречье» · условные данные</span>
-    <nav class="steps" id="steps" aria-label="Этапы">
-      <button data-step="collect"><span class="n">1</span><span class="lbl">Существующее положение</span></button><span class="arr">→</span>
-      <button data-step="analysis"><span class="n">2</span><span class="lbl">Параметрический анализ</span></button><span class="arr">→</span>
-      <button data-step="sketch"><span class="n">3</span><span class="lbl">Эскиз</span></button>
+    <span class="brand">ГРАДО</span><span class="proj">Новый проект · реальные данные</span><span class="sp"></span>
+    <nav class="wins" aria-label="Окна">
+      <button class="btn" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
+      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
     </nav>
+    <span class="vs"></span>
     <button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>Экспорт DXF</button>
     <button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
   </header>
 
-  <!-- 1. Существующее положение -->
-  <section class="stage s-collect" id="st-collect">
+  <div class="ribbon" role="toolbar" aria-label="Инструменты">
+    <div class="g"><button class="tl" data-tool="select" title="Выбор объекта (V)"><i data-lucide="mouse-pointer-2"></i><span class="lb">Выбор</span></button></div><span class="vs"></span>
+    <div class="g"><button class="tl" data-tool="point" title="Точка (P)"><i data-lucide="circle-dot"></i><span class="lb">Точка</span></button><button class="tl" data-tool="line" title="Линия (L)"><i data-lucide="spline"></i><span class="lb">Линия</span></button><button class="tl" data-tool="poly" title="Полигон (G)"><i data-lucide="pentagon"></i><span class="lb">Полигон</span></button><button class="tl" data-tool="rect" title="Прямоугольник (R)"><i data-lucide="square"></i><span class="lb">Прямоугольник</span></button></div>
+    <label class="tgt" title="Слой, в который попадают новые объекты">в слой <select id="curLayer" aria-label="Текущий слой"></select></label><span class="vs"></span>
+    <div class="g"><button class="tl" data-tool="vertex" title="Правка вершин (E)"><i data-lucide="pen-tool"></i><span class="lb">Вершины</span></button><button class="tl" data-tool="move" title="Перенос объекта (M)"><i data-lucide="move"></i><span class="lb">Перенос</span></button><button class="tl" id="bDelFeat" title="Удалить выбранный объект (Del)"><i data-lucide="trash-2"></i><span class="lb">Удалить</span></button><button class="tl" id="bUndo" title="Отменить правку (Ctrl+Z)"><i data-lucide="undo-2"></i><span class="lb">Отменить</span></button></div>
+    <label class="inl" title="Привязка к вершинам и рёбрам видимых слоёв"><input type="checkbox" id="snapT" checked>привязка</label><span class="vs"></span>
+    <div class="g"><button class="tl" data-tool="mlen" title="Измерить длину (D)"><i data-lucide="ruler"></i><span class="lb">Длина</span></button><button class="tl" data-tool="marea" title="Измерить площадь (A)"><i data-lucide="square-dashed"></i><span class="lb">Площадь</span></button></div><span class="vs"></span>
+    <div class="g"><button class="tl" data-tool="terr" title="Нарисовать границу территории (B)"><i data-lucide="scan"></i><span class="lb">Граница</span></button></div>
+  </div>
+
+  <main class="work" id="work">
     <aside class="side">
-      <div class="dtabs" role="tablist"><button data-ltab="layers" aria-selected="true" role="tab">Слои</button><button data-ltab="sources" aria-selected="false" role="tab">Источники</button></div>
-      <div id="paneLayers" class="pane">
-        <div class="ltool"><button class="btn" id="bNewLayer" title="Пустой слой для оцифровки"><i data-lucide="plus"></i>Слой</button><button class="btn" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i>Таблица</button><span class="sp"></span><span class="hint">перетаскивайте — порядок прорисовки</span></div>
-        <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>
-        <div class="sb tree" id="layerTree"></div>
-      </div>
-      <div id="paneSources" class="pane" hidden>
-        <div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="pentagon"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
-        <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
-        <div class="sb" id="srcList"></div>
-      </div>
+      <div class="sh">Слои<span class="sp"></span><button class="tb" id="bNewLayer" title="Новый слой для рисования"><i data-lucide="plus"></i></button><button class="tb" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i></button></div>
+      <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>
+      <div class="sb tree" id="layerTree"></div>
     </aside>
-    <div class="ccol">
-      <div class="mapbox"><div class="m" id="mCollect"></div>
-        <div class="editbar" role="toolbar" aria-label="Редактирование">
-          <button class="tb" id="bEdit" title="Редактировать текущий слой"><i data-lucide="pencil"></i></button>
-          <span class="sep"></span>
-          <button class="tb" data-etool="select" title="Выбор объекта"><i data-lucide="mouse-pointer-2"></i></button>
-          <button class="tb" data-etool="vertex" title="Правка вершин: тяните вершину, щелчок по ребру добавляет, Alt+щелчок удаляет"><i data-lucide="pen-tool"></i></button>
-          <button class="tb" data-etool="add" title="Добавить объект (двойной щелчок завершает)"><i data-lucide="square-plus"></i></button>
-          <button class="tb" id="bDelFeat" title="Удалить выбранный объект (Del)"><i data-lucide="trash-2"></i></button>
-          <button class="tb" id="bUndo" title="Отменить правку (Ctrl+Z)"><i data-lucide="undo-2"></i></button>
-          <label class="snap" title="Привязка к вершинам и рёбрам"><input type="checkbox" id="snapT" checked>привязка</label>
-        </div>
-      </div>
-      <div class="attr" id="attrBox" hidden>
-        <div class="ah"><b>Таблица атрибутов</b><span id="attrTitle" class="ttl"></span><span class="sp"></span><input type="text" id="attrFilter" placeholder="Фильтр" aria-label="Фильтр строк"><button class="tb" id="bAttrClose" title="Закрыть"><i data-lucide="x"></i></button></div>
-        <div class="ab" id="attrBody"></div>
-      </div>
-    </div>
+    <div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div></div>
     <aside class="side r">
       <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button></div>
       <div class="sb" id="rightPane"></div>
     </aside>
-  </section>
+  </main>
 
-  <!-- 2. Анализ -->
-  <section class="stage s-analysis" id="st-analysis" hidden>
-    <aside class="side">
-      <div class="sh">Узлы</div>
-      <div class="sb lib" id="lib"></div>
-      <div class="note">Щелчок добавляет узел. Связи тянутся от выхода к входу. Правый щелчок по холсту или узлу — меню, двойной — поиск.</div>
-    </aside>
-    <div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
-      <div class="gbar"><button class="btn" id="bFitGraph"><i data-lucide="scan"></i>Весь граф</button><button class="btn" id="bRunGraph"><i data-lucide="play"></i>Пересчитать</button></div>
-    </div>
-    <div class="mapbox"><div class="m" id="mAnalysis"></div><div class="pv" id="pv"></div></div>
-  </section>
-
-  <!-- 3. Эскиз -->
-  <section class="stage s-sketch" id="st-sketch" hidden>
-    <aside class="side">
-      <div class="sh">Параметры эскиза</div>
-      <div class="sb" id="params"></div>
-    </aside>
-    <div class="mapbox" id="sketchBox">
-      <div class="m" id="mSketch"></div>
-      <div class="split" id="splitBox" hidden><div><div class="m" id="mBefore"></div><span class="mtag">Существующее</span></div><div><div class="m" id="mAfter"></div><span class="mtag">Эскиз</span></div></div>
-      <canvas class="c3d" id="c3d" hidden></canvas>
-      <div class="mtools">
-        <button class="tb" data-view="2d" title="План" aria-pressed="true"><i data-lucide="map"></i></button>
-        <button class="tb" data-view="3d" title="Объём"><i data-lucide="box"></i></button>
-        <button class="tb" data-view="cmp" title="Сравнить с существующим"><i data-lucide="columns-2"></i></button>
-        <button class="tb" id="bRot" title="Повернуть объём на 90°" hidden><i data-lucide="rotate-cw"></i></button>
-      </div>
-    </div>
-    <aside class="side r">
-      <div class="sh">Показатели</div>
-      <div class="sb" id="tep"></div>
-    </aside>
-    <div class="variants">
-      <div class="vbar"><b>Варианты</b><span style="color:var(--muted)">перебор типологии и этажности при текущих ограничениях</span><span class="sp"></span><button class="btn primary" id="bGen"><i data-lucide="sparkles"></i>Сгенерировать 6</button></div>
-      <div class="vlist" id="vlist"><div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты. Выбранный вариант переносит параметры в граф.</div></div>
-    </div>
-  </section>
+  <footer class="status"><span id="stHint"></span><span id="stLayer"></span><span id="stScale" class="num"></span><span id="stXY" class="num"></span></footer>
 </div>
+
+<section class="win" id="wData" hidden aria-label="Данные территории">
+  <header class="wh"><i data-lucide="database"></i><b>Данные территории</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="scan"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
+    <div class="sh">Источники<span class="sp"></span><label class="btn" title="Чертёж DXF в МГГТ или WGS84; типы линий REDLN97 читаются как LineCode"><i data-lucide="file-up"></i>DXF<input type="file" id="fDxf" accept=".dxf" hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+    <div class="sb" id="srcList"></div></div>
+</section>
+<section class="win" id="wGraph" hidden aria-label="Граф анализа">
+  <header class="wh"><i data-lucide="workflow"></i><b>Граф анализа</b><small>выход выбранного узла — на карте оранжевым</small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="gwrap"><div class="lib" id="lib"></div><div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
+      <div class="gbar"><button class="btn" id="bFitGraph"><i data-lucide="scan"></i>Весь граф</button><button class="btn" id="bRunGraph"><i data-lucide="play"></i>Пересчитать</button></div></div></div></div>
+</section>
+<section class="win" id="wSketch" hidden aria-label="Параметры эскиза">
+  <header class="wh"><i data-lucide="building-2"></i><b>Параметры эскиза</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div id="params"></div></div>
+</section>
+<section class="win" id="wVars" hidden aria-label="Варианты">
+  <header class="wh"><i data-lucide="layout-grid"></i><b>Варианты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="vbar"><span style="color:var(--muted)">перебор типологии и этажности при текущих ограничениях</span><span class="sp"></span><button class="btn primary" id="bGen"><i data-lucide="sparkles"></i>Сгенерировать 6</button></div>
+    <div class="vlist" id="vlist"><div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты. Выбранный вариант переносит параметры в граф.</div></div></div>
+</section>
+<section class="win" id="wTep" hidden aria-label="Показатели">
+  <header class="wh"><i data-lucide="calculator"></i><b>Показатели</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div id="tep"></div></div>
+</section>
+<section class="win" id="w3d" hidden aria-label="Объём">
+  <header class="wh"><i data-lucide="box"></i><b>Объём</b><button class="tb" id="bRot" title="Повернуть на 90°"><i data-lucide="rotate-cw"></i></button><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><canvas class="c3d" id="c3d"></canvas></div>
+</section>
+<section class="win" id="wCmp" hidden aria-label="Сравнение">
+  <header class="wh"><i data-lucide="columns-2"></i><b>Сравнение</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="split" id="splitBox"><div><div class="m" id="mBefore"></div><span class="mtag">Существующее</span></div><div><div class="m" id="mAfter"></div><span class="mtag">Эскиз</span></div></div></div>
+</section>
+<section class="win" id="wTable" hidden aria-label="Таблица атрибутов">
+  <header class="wh"><i data-lucide="table-2"></i><b>Таблица атрибутов</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="attr"><div class="ah"><span id="attrTitle" class="ttl"></span><span class="sp"></span><input type="text" id="attrFilter" placeholder="Фильтр" aria-label="Фильтр строк"></div><div class="ab" id="attrBody"></div></div></div>
+</section>
 <div class="toast" id="toast" role="status"></div>
 
 <div class="busy" id="busy" hidden></div>

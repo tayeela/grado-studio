@@ -1,4 +1,5 @@
-/* ГРАДО 2: существующее положение → параметрический граф → эскиз.
+/* ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна
+   (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный.
    Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep).
    Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории. */
 
@@ -44,7 +45,7 @@ const sharedView = new ol.View({ center: ol.proj.fromLonLat([37.525, 55.7925]), 
 const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false });
 const basemap = () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 });
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
-function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: true })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
+function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
 const PAT = new Map();
 function hatch(color) { if (PAT.has(color)) return PAT.get(color); const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = color + "18"; x.fillRect(0, 0, 8, 8); x.strokeStyle = color; x.lineWidth = 1.1; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-4, 4); x.lineTo(4, -4); x.moveTo(4, 12); x.lineTo(12, 4); x.stroke(); const p = x.createPattern(c, "repeat"); PAT.set(color, p); return p; }
 const S = (fill, stroke, w = 1) => new ol.style.Style({ fill: fill && new ol.style.Fill({ color: fill }), stroke: stroke && new ol.style.Stroke({ color: stroke, width: w }) });
@@ -77,25 +78,19 @@ let ERRORS = {};
 let TERR = null, TERR_M2 = 0, dataRev = 0;
 const terrSrc = new ol.source.Vector(), layerSrc = {};
 const terrStyle = S(null, "#b3261e", 2); terrStyle.getStroke().setLineDash([12, 4, 2, 4]);
-const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle, zIndex: 60 });
+const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle, zIndex: 110 });
 
-/* ================= 1. Существующее положение ================= */
-const mCollect = newMap("mCollect", [terrLayer()]);
+/* ================= данные территории ================= */
+const mMain = newMap("mMain", [terrLayer()]);
 function setTerritory(feature) {
   TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR);
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
-  $("bLoad").disabled = false; dataRev++;
+  $("bLoad").disabled = false; dataRev++; window.syncStatus?.();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
-let drawI = null;
-$("bDraw").onclick = () => {
-  if (drawI) mCollect.removeInteraction(drawI);
-  drawI = new ol.interaction.Draw({ type: "Polygon", source: new ol.source.Vector() });
-  drawI.on("drawend", e => { mCollect.removeInteraction(drawI); drawI = null; setTerritory(JSON.parse(new ol.format.GeoJSON().writeFeature(e.feature, { featureProjection: "EPSG:3857" }))); });
-  mCollect.addInteraction(drawI); toast("Щёлкайте по углам границы, двойной щелчок завершает.");
-};
+$("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
 const GROUP = { import: "Импорт чертежей", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (красные линии: первая выгрузка — весь слой, около 100 МБ)" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
@@ -105,7 +100,7 @@ function renderSources() {
     const d = DATA[k], e = ERRORS[k];
     return `<label class="lr"><input type="checkbox" data-src="${k}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${d.fetched_at}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
   }).join("") + `</div>`).join("") + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
-    + `<div class="note">Выгрузки не правятся: это доказательная база. В графе анализа они доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
+    + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В графе анализа слои доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
   icons();
 }
 $("srcList").addEventListener("change", e => { const k = e.target.dataset.src; if (k) e.target.checked ? CHECKED.add(k) : CHECKED.delete(k); });
@@ -114,7 +109,7 @@ $("bLoad").onclick = async () => {
   const keys = [...CHECKED];
   if (!keys.length) return toast("Отметьте источники.");
   const [w, s, e, n] = turf.bbox(buf(TERR, 60));
-  $("bLoad").disabled = true; busy(true); toast("Выгрузка идёт: НСПД и OSM — секунды, ГИС ОГД в первый раз качает слой целиком.");
+  $("bLoad").disabled = true; busy(true); window.setHint?.(`Выгрузка ${keys.length} источников идёт: порталы отвечают от секунд до минуты, ГИС ОГД в первый раз качает слой целиком. Работать можно дальше.`);
   try {
     const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: keys });
     ERRORS = r.errors;
@@ -127,7 +122,7 @@ $("bLoad").onclick = async () => {
     dataRev++; renderSources();
     const ne = Object.keys(ERRORS).length; toast(`Загружено слоёв: ${Object.keys(r.layers).length}${ne ? `, с ошибкой: ${ne}` : ""}.`);
   } catch (err) { toast("Выгрузка не удалась: " + err.message); }
-  finally { busy(false); $("bLoad").disabled = false; }
+  finally { busy(false); $("bLoad").disabled = false; window.syncStatus?.(); }
 };
 const EXIST_KEY = () => DATA["nspd.buildings"] ? "nspd.buildings" : DATA["osm.buildings"] ? "osm.buildings" : null;
 const floorsOf = f => { const v = +(f.properties["Этажность"]); return v > 0 ? v : 1; };
@@ -169,7 +164,7 @@ $("bExport").onclick = async () => {
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
-/* ================= 2. Граф анализа (litegraph.js) ================= */
+/* ================= граф анализа (litegraph.js) ================= */
 Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: "#d6dade", NODE_DEFAULT_BGCOLOR: "#f7f7f5", NODE_DEFAULT_BOXCOLOR: "#8a8d91", NODE_TITLE_COLOR: "#1d1d1f", NODE_SELECTED_TITLE_COLOR: "#000", NODE_TEXT_COLOR: "#333", NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11,
   WIDGET_BGCOLOR: "#ffffff", WIDGET_OUTLINE_COLOR: "#b5b8bc", WIDGET_TEXT_COLOR: "#1d1d1f", WIDGET_SECONDARY_TEXT_COLOR: "#6b6f75", LINK_COLOR: "#7a7e84", CONNECTING_LINK_COLOR: "#2f6fc4", NODE_TITLE_HEIGHT: 24, NODE_SLOT_HEIGHT: 20, NODE_WIDGET_HEIGHT: 20 });
 LGraphCanvas.link_type_colors = { geom: "#3f8f5a", num: "#b07a00", sketch: "#2f6fc4", tep: "#8a4ab0" };
@@ -257,7 +252,7 @@ NTep.title = "ТЭП · методика КРТ Москвы"; NTep.prototype.on
   const sk = this.getInputData(0) || [], kept = this.getInputData(1), lim = this.getInputData(2), share = this.widgets[0].value / 100, target = this.widgets[1].value;
   const key = [gid(sk), gid(kept), gid(lim), share, target, dataRev].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); if (ui.step === "sketch") renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
@@ -340,7 +335,7 @@ lgc.onNodeDeselected = () => { selNode = null; updateAnalysisMap(); };
 function fitGraph() {
   const box = $("graphbox").getBoundingClientRect(), ns = graph._nodes; if (!ns.length || !box.width) return;
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
-  const s = Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0)); lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
+  const s = Math.max(.6, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
 }
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
 new ResizeObserver(sizeGraph).observe($("graphbox"));
@@ -358,33 +353,40 @@ function recompute(force) {
   safe(() => graph.runStep(1, true));
   const place = graph._nodes.find(n => n.type === "Эскиз/Посадка застройки"), tepN = graph._nodes.find(n => n.type === "Показатели/ТЭП КРТ");
   RESULT = { site: place?.getInputData(0) || null, sketch: place?.getOutputData(0) || [], tep: tepN?._tep || null, placeNode: place, tepNode: tepN };
-  lgc.setDirty(true, true); updateAnalysisMap(); if (ui.step === "sketch") renderSketch();
+  lgc.setDirty(true, true); updateAnalysisMap(); renderSketch();
+  if (!recompute.once) { recompute.once = true; renderParams(); }
 }
-setInterval(() => { if (ui.step !== "collect") recompute(false); }, 250);
+setInterval(() => recompute(false), 250);
 
-/* ---------- карта анализа ---------- */
+/* ---------- результат графа на основной карте ---------- */
 const prevSrc = new ol.source.Vector(), sketchSrc = new ol.source.Vector(), siteSrc = new ol.source.Vector(), keptSrc = new ol.source.Vector();
 const shade = n => ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94"][Math.min(4, Math.floor(n / 6))];
 const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: shade(f.get("floors")) }), stroke: new ol.style.Stroke({ color: "#1a4f94", width: 1 }), text: new ol.style.Text({ text: String(f.get("floors")), font: "11px Arial", fill: new ol.style.Fill({ color: f.get("floors") > 14 ? "#fff" : "#123" }) }) });
 const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: new ol.style.Style({ fill: new ol.style.Fill({ color: hatch("#1f7a4d") }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
-const mAnalysis = newMap("mAnalysis", [siteLayer(), new ol.layer.Vector({ source: prevSrc, zIndex: 30, style: S([224, 138, 0, .28], "#c46f00", 2) }), sketchLayer(), terrLayer()]);
+// результат графа — отдельные слои над данными; видимость переключается в дереве слоёв
+const RES = [
+  { id: "site", title: "Пятно застройки", color: "#1f7a4d", layer: siteLayer() },
+  { id: "kept", title: "Сохраняемые здания", color: "#bdb8b0", layer: keptLayer() },
+  { id: "sketch", title: "Эскиз застройки", color: "#6fa6e6", layer: sketchLayer() },
+  { id: "prev", title: "Выход выбранного узла", color: "#e08a00", layer: new ol.layer.Vector({ source: prevSrc, style: S([224, 138, 0, .28], "#c46f00", 2) }) }];
+RES.forEach((r, i) => { r.layer.setZIndex(100 + i); mMain.addLayer(r.layer); });
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() { sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; })); }
 function updateAnalysisMap() {
   fillGeom(siteSrc, RESULT.site); fillSketch(); prevSrc.clear();
-  let txt = TERR ? `Пятно застройки ${ha(RESULT.site)} · ${RESULT.sketch.length} корпусов` : "Сначала задайте территорию и загрузите данные (шаг 1)";
+  let txt = TERR ? `Пятно застройки ${ha(RESULT.site)} · ${RESULT.sketch.length} корпусов` : "Сначала задайте территорию и загрузите данные (окно «Данные»)";
   if (selNode) { const out = selNode.getOutputData?.(0), t = selNode.outputs?.[0]?.type;
     if (t === "geom") { if (out) prevSrc.addFeature(toOl(out)); txt = `Выход узла «${selNode.title}»: ${ha(out)}`; }
     else if (t === "tep" && out) txt = `«${selNode.title}»: плотность ${fmt(out.density, 1)} тыс. м²/га, население ${fmt(out.m.population)} чел.`;
     else if (t === "num") txt = `«${selNode.title}»: ${out}`; }
-  $("pv").textContent = txt;
+  $("pv").textContent = txt; $("pv").hidden = $("wGraph").hidden;
+  if (typeof renderTree === "function") renderTree();
 }
 
-/* ================= 3. Эскиз ================= */
-const mSketch = newMap("mSketch", [siteLayer(), keptLayer(), sketchLayer(), terrLayer()]);
-let mBefore = null, mAfter = null, view3d = "2d", rot3d = 0;
+/* ================= эскиз ================= */
+let mBefore = null, mAfter = null, rot3d = 0;
 function publishedControls() {
   const p = RESULT.placeNode, t = RESULT.tepNode, num = graph._nodes.find(n => n.type === "Параметры/Число" && n.outputs[0].links?.some(id => graph.links[id]?.target_id === p?.id));
   const out = [];
@@ -414,19 +416,11 @@ function renderTep() {
     + `<div class="note">Нормативная часть — движок ТЭП ядра ГРАДО (пресет КРТ Москвы) от СПП новой застройки: население, ДОО, школы, поликлиники, парковки. Ограничения — площадь ЗОУИТ внутри границы. ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}Перед документацией сверить с действующими нормативами.</div>`;
 }
 function renderSketch() {
-  renderTep(); fillSketch(); fillGeom(siteSrc, RESULT.site);
+  renderTep();
   keptSrc.clear(); (RESULT.tepNode?._tep?.kept || []).forEach(f => keptSrc.addFeature(toOl(f)));
-  if (view3d === "3d") draw3d();
+  if (!$("w3d").hidden) draw3d();
 }
-document.querySelector(".mtools").addEventListener("click", e => {
-  const b = e.target.closest("[data-view]"); if (b) { view3d = b.dataset.view; document.querySelectorAll("[data-view]").forEach(x => x.setAttribute("aria-pressed", x === b)); applyView(); }
-  if (e.target.closest("#bRot")) { rot3d = (rot3d + 1) % 4; draw3d(); }
-});
-function applyView() {
-  $("mSketch").hidden = view3d !== "2d"; $("c3d").hidden = view3d !== "3d"; $("splitBox").hidden = view3d !== "cmp"; $("bRot").hidden = view3d !== "3d";
-  if (view3d === "cmp" && !mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); }
-  requestAnimationFrame(() => { [mSketch, mBefore, mAfter].forEach(m => m?.updateSize()); if (view3d === "3d") draw3d(); });
-}
+$("bRot").onclick = () => { rot3d = (rot3d + 1) % 4; draw3d(); };
 /* аксонометрия: стены, крыши, порядок по глубине; дороги — земля */
 function draw3d() {
   const cv = $("c3d"), r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (!r.width || !TERR) return;
@@ -454,7 +448,7 @@ function draw3d() {
   }
   x.fillStyle = "#555"; x.font = "11px system-ui, sans-serif"; x.fillText("Объём: этаж 3 м. Серым — сохраняемые здания.", 10, r.height - 10);
 }
-new ResizeObserver(() => { if (view3d === "3d" && ui.step === "sketch") draw3d(); }).observe($("sketchBox"));
+new ResizeObserver(() => { if (!$("w3d").hidden) draw3d(); }).observe($("c3d").parentElement);
 
 /* ---------- варианты ---------- */
 let VARS = [], varSel = -1;
@@ -465,6 +459,7 @@ $("bGen").onclick = async () => {
   busy(true);
   try { VARS = await Promise.all(combos.map(async ([typ, floors]) => { const sk = generate(RESULT.site, { ...base, typ, floors }); return { typ, floors, sk, tep: await tepRequest(sk, kept, lim, share, target) }; })); varSel = -1; renderVars(); }
   catch (e) { toast("Варианты не посчитались: " + e.message); } finally { busy(false); }
+  if (!VARS.length) return;
 };
 function renderVars() {
   const tb = bboxOf(ringsXY(TERR)[0]), pad = 10, vb = `${tb[0] - pad} ${-tb[3] - pad} ${tb[2] - tb[0] + 2 * pad} ${tb[3] - tb[1] + 2 * pad}`;
@@ -480,24 +475,64 @@ $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-va
   (num ? num.widgets[0] : p.widgets.find(w => w.name === "этажность")).value = v.floors;
   recompute(); renderParams(); renderVars(); toast(`Вариант «${v.typ} · ${v.floors} эт.» перенесён в граф.`); });
 
-/* ================= навигация ================= */
-const ui = { step: "collect" };
-function go(step) {
-  if (step !== "collect" && !Object.keys(DATA).length) toast("Данных пока нет: задайте территорию и загрузите источники на шаге 1.");
-  ui.step = step; document.querySelectorAll("[data-step]").forEach(b => b.setAttribute("aria-current", b.dataset.step === step));
-  ["collect", "analysis", "sketch"].forEach(s => $("st-" + s).hidden = s !== step);
-  requestAnimationFrame(() => {
-    [mCollect, mAnalysis, mSketch, mBefore, mAfter].forEach(m => m?.updateSize());
-    if (step === "analysis") { sizeGraph(); if (!go.fitted) { fitGraph(); go.fitted = true; } }
-    if (step !== "collect") recompute(true);
-    if (step === "sketch") { renderParams(); renderSketch(); applyView(); }
-  });
+/* ================= плавающие окна и панели ================= */
+// окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
+const WINKEY = "grado2.win";
+let WST = {}; try { WST = JSON.parse(localStorage.getItem(WINKEY)) || {}; } catch { }
+const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST)); } catch { } };
+const W0 = () => { const w = innerWidth, h = innerHeight; return {
+  wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
+  wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
+  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280] }; };
+function placeWin(w) {
+  const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
+  const W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 90);
+  Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(40, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
 }
-$("steps").addEventListener("click", e => { const b = e.target.closest("[data-step]"); if (b) go(b.dataset.step); });
+function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
+const WIN_OPEN = {
+  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(); go.fitted = true; } updateAnalysisMap(); },
+  wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
+  wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
+  wTable: () => window.renderTable?.(), wData: () => renderSources() };
+const go = {};
+function winOpen(id, on) {
+  const w = $(id); on = on ?? w.hidden; w.hidden = !on;
+  if (on) { placeWin(w); winFront(w); requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  if (id === "wGraph") $("pv").hidden = !on;
+  (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
+}
+function syncWinButtons() {
+  document.querySelectorAll("[data-win]").forEach(b => { const id = b.dataset.win;
+    b.setAttribute("aria-pressed", id === "dockL" ? !$("work").classList.contains("noL") : id === "dockR" ? !$("work").classList.contains("noR") : !$(id).hidden); });
+}
+function toggleDock(side, on) {
+  const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
+  WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); requestAnimationFrame(() => mMain.updateSize());
+}
+$("work").parentElement.querySelector(".wins").addEventListener("click", e => { const b = e.target.closest("[data-win]"); if (!b) return; const id = b.dataset.win;
+  if (id === "dockL" || id === "dockR") toggleDock(id.slice(4)); else winOpen(id); });
+document.querySelectorAll(".win").forEach(w => {
+  w.addEventListener("pointerdown", () => winFront(w));
+  w.querySelector("[data-close]").onclick = () => winOpen(w.id, false);
+  const h = w.querySelector(".wh");
+  h.addEventListener("pointerdown", e => {
+    if (e.target.closest("button")) return;
+    const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top; h.setPointerCapture(e.pointerId);
+    const mv = ev => { w.style.left = Math.max(-r.width + 80, Math.min(ev.clientX - dx, innerWidth - 80)) + "px"; w.style.top = Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)) + "px"; };
+    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); Object.assign(WST[w.id] ||= {}, { l: parseInt(w.style.left), t: parseInt(w.style.top) }); saveWins(); };
+    h.addEventListener("pointermove", mv); h.addEventListener("pointerup", up);
+  });
+  // размер окна — за нижний правый угол (CSS resize); запоминаем и перерисовываем содержимое
+  new ResizeObserver(() => { if (w.hidden) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);
+});
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };
-document.querySelector(".proj").textContent = "Новый проект · реальные данные";
 
 (async () => {
   try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
-  renderSources(); icons(); go("collect");
+  renderSources(); icons();
+  if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
+  const first = !Object.keys(WST).some(k => k.startsWith("w"));
+  Object.keys(W0()).forEach(id => { if (WST[id]?.open || (first && id === "wData")) winOpen(id, true); });
+  syncWinButtons(); recompute(true);
 })();

@@ -221,6 +221,30 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.4: no stages — one workspace, AutoCAD tool strip, floating windows; self-audit hooks.**
+  The owner: "I created a layer and cannot see how to add objects; where is the AutoCAD tool strip; why
+  the stages on top — work should be free, in pop-up windows". The three stages are gone. Layout:
+  header with window toggles → tool strip → layers | map | style/object → status bar.
+  - Tool strip (`layers.js` `TOOLS`/`setTool`): select, point, line, polygon, rectangle, vertices, move,
+    delete, undo, snap, length, area, territory boundary. Hotkeys by `e.code` (work in the Russian
+    layout): V P L G R E M D A B, Esc, Del, Backspace removes the last vertex, Ctrl/⌘+Z.
+  - Drawing goes into the current layer when its geometry fits, else into the owner's own layer of that
+    geometry, else a new «Точки/Линии/Полигоны» is created with a toast. «+ Слой» turns the drawing tool
+    on at once. A map click selects but does NOT change the current layer (QGIS identify), otherwise the
+    next polygon could land in a download. The `editing` mode flag is gone: attributes are always editable.
+  - Floating windows (`app.js` `winOpen`): Данные, Граф, Эскиз, Варианты, Показатели, Объём, Сравнение,
+    Таблица; drag by the header, resize by the corner, position/size/open state in localStorage
+    `grado2.win`. Docks «Слои»/«Свойства» toggle from the header. Graph results (site, kept, sketch,
+    selected-node output) are layers on the main map with toggles under «Результат графа» in the tree.
+  - Status bar: what the tool expects next, the target layer, scale, coordinates.
+  - **Hooks** (`.claude/settings.json`): PostToolUse `grado2_check.py` runs `node --check`/py_compile on
+    edited grado2 files (exit 2 shows the error); Stop `grado2_ux_gate.py` blocks the first stop after any
+    change to `apps/grado2` (hash of HEAD tree + diff) and sends Claude to `docs/ux/grado2-ux.md`
+    (owner's principles, scenarios A–H, queue). `stop_hook_active` lets the second stop pass.
+  - **Pitfall:** the browser pane's `navigate` to the same URL reused the cached page — check with
+    `location.reload()`. Litegraph at scale < 0.6 is unreadable → `fitGraph` clamps to 0.6.
+  - Checked in the browser (1440×900): scenarios A–H, console clean; grado2 tests 7 green.
+
 - **2026-09-23, ГРАДО 2 v0.3: step 1 «Существующее положение» works like QGIS; exports are editable.**
   `web/layers.js` — layer model (top to bottom): tree with drag-and-drop draw order (zIndex on all maps),
   visibility, legend children (categories toggle on/off), layer menu (zoom, table, edit, rename,

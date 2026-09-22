@@ -14,3 +14,4 @@ apps/studio/.autosave.*.json
 apps/studio/style_overrides.json
 apps/studio/style_overrides.tmp
 apps/studio/.hub/
+.claude/.grado2_ux_audited
