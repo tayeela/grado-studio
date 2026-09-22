@@ -1,0 +1,99 @@
+# ГРАДО 2 — goal and plan
+
+## Goal
+
+**ГРАДО 2 is a workstation for an urban planner (macOS and Windows) for pre-design analysis of a
+territory in Moscow and a massing sketch on top of it.**
+
+It is ready when an urban planner, without a programmer, gets from a territory boundary to a
+package of materials in one working day:
+
+1. a map of the existing situation from real sources, with the date of each download;
+2. a map of constraints: ЗОУИТ, red lines and setbacks, the ПЗЗ height limit, the insolation shadow
+   of existing buildings, the parts to keep and to demolish;
+3. two or three sketch variants that pass the norms check, each with ТЭП by the Moscow КРТ method;
+4. the output: a PDF album on sheets with a frame, legend and scale, plus DXF/DWG in МГГТ with the
+   REDLN97 linetypes.
+
+Every number and every constraint can be traced to a data source and to a clause of a norm.
+
+**Out of scope:** a legally valid insolation certificate (in Russia that needs certified software;
+ГРАДО gives a design-stage estimate and says so), full ППТ documentation, BIM.
+
+**Acceptance:** two reference territories — Хорошёво (46 ha, dense old Moscow) and a ТиНАО site
+(greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
+under a day, the console is clean, and the Windows installer runs on a clean machine.
+
+## Where we are (23.09.2026, v0.6.1)
+
+Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
+panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
+labels, attribute table, editing with the original kept); real sources НСПД, OSM, ГИС ОГД
+(red lines with REDLN97); DXF import/export in МГГТ; node graph (layer filter, buffer, subtract,
+union, intersect, placement, ТЭП КРТ); sketch on demand along each block, preview vs accepted
+layer; variants; 3D; projects with autosave; self-audit hooks.
+
+## Stages
+
+Each stage ends with a working, checked version and a commit. Estimates are in working sessions.
+
+### Э1. Shell finish (2 sessions)
+- Layer groups in the tree; multi-select of objects (frame, Shift); batch attribute edit.
+- Undo for style changes; copy/paste style between layers (QGIS «Копировать стиль»).
+- Keyboard map window; first-run hint instead of an empty screen.
+- Performance: 100 000 objects in a layer without lag (OL WebGL layer for big point/line sets).
+- Vendor OpenLayers, Turf, litegraph and Lucide locally, so the app works offline.
+
+### Э2. Existing situation — complete data (3 sessions)
+- ПЗЗ Москвы: territorial zones and their limits (height, density, КОЗ) from ГИС ОГД.
+- ОКН and their zones; ФГИС ТП (fix the DNS issue or go through the portal the studio already uses).
+- Import SHP, GeoJSON, KML; DWG through the ODA File Converter (the owner decides).
+- Satellite basemap; relief (contours) from the core connector.
+- Re-download with a diff against the previous download (the core connectors already keep snapshots).
+- Existing-buildings register: floors, year, purpose, «сохраняем / сносим» marked on the map.
+
+### Э3. Analysis (3 sessions)
+- Nodes: distance and service radii (schools, ДОО, clinics by 2151-ПП/945-ПП), walking isochrones
+  over the OSM street graph, density and floors by block, territory balance.
+- Thematic maps as «views» of one map (layer set + styles + title + legend), reused on sheets.
+- Every node explains its result in words on the map («почему здесь нельзя»).
+
+### Э4. Constraints for generation (3–4 sessions)
+- Buildable area = territory − ЗОУИТ − 5 m from red lines (СП 42.13330) − kept buildings with
+  their gaps; the ПЗЗ height limit per zone.
+- Insolation: shadow of existing buildings on the site and of new buildings on existing windows,
+  СанПиН 1.2.3685-21 (2 h continuous, 22.04–22.08) — 2.5D extruded prisms, sun vectors, facade
+  points. Solar envelope of the site (the max height that does not shade neighbours).
+- Fire gaps by СП 4.13130 table 1 (by fire-resistance degree), shown as buffers.
+- All constraints are layers the owner can see and switch off; generation reads the same layers.
+- Details and sources: section «Generation under constraints» below (from the research).
+
+### Э5. Generation (3–4 sessions)
+- Typologies: sections, perimeter block, towers, point-and-bar, mixed; floors chosen to hit the
+  target density within the height limit.
+- Several variants scored by ТЭП and constraints; a comparison table; accept one into the project.
+- Manual edit of accepted buildings (floors per building, move) with a live norms check that
+  highlights violations (gap, insolation of neighbours, ЗОУИТ).
+- 3D with shadows for a chosen date and time.
+
+### Э6. Output (3 sessions)
+- Sheets: A3/A1 frame by ГОСТ, title block, north arrow, scale bar, legend from the view, ТЭП table.
+- PDF through the core renderer (core/render + core/layout already print albums), with REDLN97.
+- Album of several sheets; DXF/DWG of the whole project.
+
+### Э7. Product (2–3 sessions)
+- Windows and macOS installers (the studio already has PyInstaller/py2app + Inno Setup specs).
+- Project format with a version number and migrations.
+- Scenario tests in a headless browser in CI; the UX hook scenarios become automated.
+- Short built-in help in the owner's terms.
+
+## Order
+
+Э1 → Э2 (ПЗЗ and existing-buildings register first) → Э4 (constraints) → Э5 → Э3 → Э6 → Э7.
+Constraints come before more generation: a sketch that ignores ЗОУИТ and insolation is the
+"random rows of houses" the owner rejected. Analysis nodes grow along the way as constraints need them.
+
+## Generation under constraints
+
+To be filled from the research on generative urban design limited by insolation, ЗОУИТ, norms
+and spatial context.
