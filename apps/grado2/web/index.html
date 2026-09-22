@@ -282,7 +282,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
-      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
+      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
     </nav>
     <span class="vs"></span>
     <button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>Экспорт DXF</button>
@@ -368,6 +368,10 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <div class="sb" id="projList"></div>
   </div>
 </section>
+<section class="win" id="wCons" hidden aria-label="Ограничения">
+  <header class="wh"><i data-lucide="shield-check"></i><b>Ограничения</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb" id="consBody"></div>
+</section>
 <section class="win" id="wKeys" hidden aria-label="Клавиши">
   <header class="wh"><i data-lucide="keyboard"></i><b>Клавиши</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb" id="keysBody"></div>
@@ -375,7 +379,9 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <div class="toast" id="toast" role="status"></div>
 
 <div class="busy" id="busy" hidden></div>
+<script src="insol.js"></script>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
 <script src="layers.js"></script>
+<script src="constraints.js"></script>
 <script src="project.js"></script>

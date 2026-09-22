@@ -64,12 +64,15 @@ K. **Existing situation, full.** «Пример» → tick «ПЗЗ: подзо�
    «Показатели» shows them under «Под снос». Drag a GeoJSON or KML onto the map → a layer appears. Switch the basemap to
    satellite. «Загрузить» again → the toast says what changed and your marks stay.
 
+L. **Constraints.** With buildings (and ideally red lines, ПЗЗ, ОКН) loaded: «Ограничения» → «Рассчитать» → a group
+   «Ограничения» appears; the front shows green / red / grey dots on neighbours' facades; the ceiling colours the site.
+   «Эскиз» → «Построить» → some sections are lower («ниже по потолку» in the node). Switch the ceiling layer off → the sketch
+   rises back. The window says the insolation is a design-stage estimate by ГОСТ Р 57795-2017, not for expertise.
+
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
 
-- 2026-09-23: real insolation and fire-gap checks (now only a gap/height coefficient).
-- 2026-09-23: setbacks from red lines by the ОГД layer (5 m, СП 42.13330) as a graph node.
 
 - 2026-09-23: printing and sheets with REDLN97.
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
@@ -80,3 +83,6 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 - 2026-09-23: Overpass (OSM) often times out on all mirrors (HTTP 504); the layer shows the error, others load. A local
   cache of the last good OSM answer per bbox would make re-downloads reliable.
 - 2026-09-23: labels of a GPU-drawn layer show only when zoomed in (the canvas takes over there); say so in the style panel.
+- 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
+  one reveal angle for all windows. The front points are dense: at 1:3000 they merge into the facade line.
+- 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).

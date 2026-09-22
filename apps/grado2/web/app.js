@@ -27,12 +27,24 @@ const ringsXY = f => polys(f).map(p => p[0].map(toXY));
 const splitParts = f => polys(f).map(c => turf.polygon(c));
 const m2 = f => f ? turf.area(f) : 0;
 const safe = fn => { try { return fn(); } catch (e) { console.warn(e); return null; } };
+/* булевы операции Turf (polygon-clipping) изредка падают на почти совпадающих рёбрах соседних зон
+   («Unable to find segment … in SweepLine tree»). Тогда повтор с координатами, округлёнными до ~1 см,
+   а затем с «раздутым» на 1 см вычитаемым — иначе пятно застройки молча пропадает целиком. */
+const quiet = fn => { try { return { ok: true, v: fn() }; } catch { return { ok: false }; } };
+const snap6 = f => turf.truncate(f, { precision: 7, coordinates: 2 });
+function robust(op, a, b) {
+  const tries = [() => op(a, b), () => op(snap6(a), snap6(b)), () => op(snap6(a), snap6(turf.buffer(b, .01, { units: "meters" }) || b))];
+  for (const t of tries) { const r = quiet(t); if (r.ok) return r.v; }
+  console.warn("геометрия: операция не удалась и после повторов"); return null;
+}
 function unionAll(fs) {
   fs = fs.filter(f => f && polys(f).length); if (!fs.length) return null; if (fs.length === 1) return fs[0];
-  return safe(() => turf.union(turf.featureCollection(fs))) || fs.reduce((a, b) => safe(() => turf.union(turf.featureCollection([a, b]))) || a);
+  const all = quiet(() => turf.union(turf.featureCollection(fs))); if (all.ok) return all.v;
+  const snapped = quiet(() => turf.union(turf.featureCollection(fs.map(snap6)))); if (snapped.ok) return snapped.v;
+  return fs.reduce((a, b) => robust((x, y) => turf.union(turf.featureCollection([x, y])), a, b) || a);
 }
-const diff = (a, b) => !a ? null : !b ? a : safe(() => turf.difference(turf.featureCollection([a, b])));
-const inter = (a, b) => (a && b) ? safe(() => turf.intersect(turf.featureCollection([a, b]))) : null;
+const diff = (a, b) => !a ? null : !b ? a : robust((x, y) => turf.difference(turf.featureCollection([x, y])), a, b);
+const inter = (a, b) => (a && b) ? robust((x, y) => turf.intersect(turf.featureCollection([x, y])), a, b) : null;
 const buf = (a, d) => { if (!a) return null; if (!d) return a; const r = safe(() => turf.buffer(a, d, { units: "meters" })); return r?.geometry ? r : null; };
 // ponytail: объединение линий дорог через буфер каждой — O(n) union, для района в сотни улиц хватает
 const asArea = f => f && /Line/.test(f.geometry.type) ? buf(f, 0.5) : f;
@@ -338,7 +350,7 @@ NInter.title = "Пересечь"; NInter.prototype.onExecute = function () { co
 LiteGraph.registerNodeType("Геометрия/Пересечь", NInter);
 
 function NPlace() {
-  this.addInput("пятно", "geom"); this.addInput("этажность", "num"); this.addOutput("посадка", "sketch");
+  this.addInput("пятно", "geom"); this.addInput("этажность", "num"); this.addInput("потолок", "cap"); this.addOutput("посадка", "sketch");
   this.addWidget("combo", "типология", "Секции", () => { }, { values: ["Секции", "Квартал", "Башни"] });
   this.addWidget("slider", "ширина корпуса, м", 16, () => { }, { min: 12, max: 24, precision: 0, slider_color: "#8fb3e0" });
   this.addWidget("slider", "этажность", 12, () => { }, { min: 3, max: 30, precision: 0, slider_color: "#8fb3e0" });
@@ -350,11 +362,12 @@ function NPlace() {
 NPlace.title = "Посадка застройки"; NPlace.prototype.onExecute = function () {
   if (!this.properties.run) { this.setOutputData(0, []); this.info = "не построена: «Построить эскиз» в окне «Эскиз»"; return; }
   const site = this.getInputData(0), p = placeParams(this);
-  const r = cached(this, gid(site) + JSON.stringify(p), () => generate(site, p)); this.setOutputData(0, r);
-  this.info = `${r.length} корпусов · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП`;
+  const r = cached(this, gid(site) + JSON.stringify(p) + (p.cap?._id || ""), () => generate(site, p)); this.setOutputData(0, r);
+  const capped = r.filter(b => b.capped).length;
+  this.info = `${r.length} корпусов · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП${capped ? ` · ${capped} ниже по потолку` : ""}`;
 };
 LiteGraph.registerNodeType("Эскиз/Посадка застройки", NPlace);
-function placeParams(n) { const w = n.widgets; return { typ: w[0].value, width: Math.round(w[1].value), floors: n.getInputData?.(1) ?? Math.round(w[2].value), gap: +w[3].value, angle: Math.round(w[4].value) }; }
+function placeParams(n) { const w = n.widgets; return { typ: w[0].value, width: Math.round(w[1].value), floors: n.getInputData?.(1) ?? Math.round(w[2].value), gap: +w[3].value, angle: Math.round(w[4].value), cap: n.inputs?.[2] ? n.getInputData?.(2) || null : null }; }
 
 function NTep() { this.addInput("посадка", "sketch"); this.addInput("сохраняемые", "geom"); this.addInput("ограничения", "geom"); this.addOutput("ТЭП", "tep");
   this.addWidget("slider", "доля жилья, %", 80, () => { }, { min: 0, max: 100, precision: 0, slider_color: "#c0a6d4" }); this.addWidget("slider", "цель, тыс. м²/га", 25, () => { }, { min: 5, max: 45, precision: 0, slider_color: "#c0a6d4" }); finish(this, "tep", 230); }
@@ -402,6 +415,14 @@ function partFrame(ring, extra) {     // угол длинной оси учас
   a += extra; return { a, b: box(a) };
 }
 function generate(site, p) {
+  const out = place(site, p); if (!p.cap) return out;
+  /* потолок (узел «Ограничения»): корпус не выше наименьшего потолка под ним — инсоляция соседей и высота по ПЗЗ;
+     ниже двух этажей корпус не ставится. ponytail: разрывы между корпусами считаются от исходной этажности —
+     после понижения они с запасом, а не впритык */
+  const fh = typeof CONS !== "undefined" ? CONS.floorH : 3;
+  return out.map(b => { const top = p.cap(b.f); if (top == null) return b; const fl = Math.min(b.floors, Math.floor(top / fh)); return fl >= 2 ? { ...b, floors: fl, capped: fl < b.floors } : null; }).filter(Boolean);
+}
+function place(site, p) {
   if (!site) return [];
   const out = [], extra = p.angle * Math.PI / 180;
   const fits = (part, ring) => { const f = polyLL(ring), ar = m2(f); return m2(inter(part, f)) >= ar * .985 ? f : null; };
@@ -644,7 +665,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
   wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)] }; };
+  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -677,7 +698,7 @@ const WIN_OPEN = {
   wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(); go.fitted = true; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
-  wTable: () => window.renderTable?.(), wData: () => renderSources() };
+  wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.() };
 const go = {};
 function winOpen(id, on) {
   const w = $(id); on = on ?? w.hidden; w.hidden = !on;

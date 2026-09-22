@@ -185,7 +185,7 @@ function symAll(l, notify) {
 function glStyle(l) {
   const st = l.style, pal = l.pal.length ? l.pal : [st.fill];
   const m = a => pal.length === 1 ? css(pal[0], a) : ["match", ["get", SYMK], ...pal.slice(0, -1).flatMap((c, i) => [i, css(c, a)]), css(pal[pal.length - 1], a)];
-  const style = l.geom === "poly" ? { "fill-color": m(st.hatch ? .22 : st.opacity), "stroke-color": st.hatch ? m(1) : css(st.stroke, 1), "stroke-width": st.width }   // штриховку WebGL не рисует — полупрозрачная заливка того же цвета
+  const style = l.geom === "poly" ? { "fill-color": m(st.hatch ? .22 : st.opacity), "stroke-color": st.hatch ? m(1) : css(st.stroke, st.width > 0 ? 1 : 0), "stroke-width": Math.max(st.width, .01) }   // штриховку WebGL не рисует — полупрозрачная заливка того же цвета
     : l.geom === "line" ? { "stroke-color": m(1), "stroke-width": st.width }
     : { "circle-radius": 2 + st.width * 2, "circle-fill-color": m(1), "circle-stroke-color": css(st.stroke, 1), "circle-stroke-width": 1 };
   return [{ filter: [">=", ["get", SYMK], 0], style }];
@@ -200,7 +200,7 @@ function styleFor(l, f, res) {
     if (!base) {
       if (l.geom === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
       else if (l.geom === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
-      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) });
+      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
       l.cache.set(key, base);
     }
     out.push(base);
@@ -283,8 +283,8 @@ document.addEventListener("dblclick", e => {
 });
 document.addEventListener("change", e => {
   const t = e.target; if (!tree()?.contains(t)) return;
-  if (t.dataset.vis) { lyr(t.dataset.vis).visible = t.checked; applyOrder(); renderTree(); }
-  if (t.dataset.gvis) { grp(t.dataset.gvis).visible = t.checked; applyOrder(); renderTree(); }
+  if (t.dataset.vis) { lyr(t.dataset.vis).visible = t.checked; dataRev++; applyOrder(); renderTree(); }      // видимость слоёв ограничений читает граф
+  if (t.dataset.gvis) { grp(t.dataset.gvis).visible = t.checked; dataRev++; applyOrder(); renderTree(); }
   if (t.dataset.res) { RES.find(r => r.id === t.dataset.res).on = t.checked; syncPreview(); }
   if (t.dataset.catoff) { const [k, v] = t.dataset.catoff.split("|"); const l = lyr(k), st = l.style; pushStyleUndo(l, "cat"); st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); }
 });

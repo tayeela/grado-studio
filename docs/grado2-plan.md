@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.8.0)
+## Where we are (23.09.2026, v0.9.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -38,6 +38,10 @@ styles, keys window, first-run panel, GPU drawing for layers over 20 000 objects
 relief contours, ФГИС ТП documents by territory, import of GeoJSON/KML/Shapefile/DXF by button or drop, satellite
 basemaps, re-download with a diff merged with manual edits, buildings register «сохраняем / сносим». DWG still waits for
 the owner's decision on the ODA converter.
+Э4 done in v0.9.0: window «Ограничения» → layers (ЗОУИТ and ОКН zones, red-line setback, fire gaps to kept buildings,
+ПЗЗ zero subzones, insolation front of neighbours' windows, solar ceiling with the ПЗЗ height); graph node «Ограничения»
+reads the switched-on layers; placement never exceeds the ceiling. Insolation validated against the МАрхИ 55° ruler and
+analytic cases. Not done: site sun-hours map and own insolation of new buildings (moved to Э5).
 
 ## Stages
 
@@ -64,7 +68,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 - Thematic maps as «views» of one map (layer set + styles + title + legend), reused on sheets.
 - Every node explains its result in words on the map («почему здесь нельзя»).
 
-### Э4. Constraints for generation (3–4 sessions)
+### Э4. Constraints for generation (3–4 sessions) — done, v0.9.0
 - Buildable area = territory − ЗОУИТ − 5 m from red lines (СП 42.13330) − kept buildings with
   their gaps; the ПЗЗ height limit per zone.
 - Insolation: shadow of existing buildings on the site and of new buildings on existing windows,

@@ -221,6 +221,34 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.9.0 (stage Э4): constraints for generation — window «Ограничения», insolation front, solar ceiling.**
+  - Window «Ограничения» (header button) builds ordinary layers in the group «Ограничения» from loaded data: «Запрет: ЗОУИТ и
+    охранные зоны» (ЕГРН ЗОУИТ, СЗЗ, водоохранные, ОКН except development-regulation zones; each zone keeps «Причина»),
+    «Запрет: N м от красных линий» (СП 42.13330.2016, N adjustable, default 5), «Запрет: сохраняемые здания и пожарные разрывы»
+    (all buildings except «сносим»; 6/8/10 m by wall material, СП 4.13130.2013 table 1), «Запрет: ПЗЗ без нового строительства»
+    (0/0/0 subzones), «Инсоляция: окна соседей (фронт)» and «Потолок застройки (инсоляция соседей, ПЗЗ)».
+  - Graph node «Ограничения» (`constraints.js`) reads only the layers of the group that are switched on: what is visible is what
+    generation respects. On the first calculation it is inserted between «Пятно застройки» and «Посадка» («Пятно с ограничениями» =
+    site − bans; «потолок» → the new third input of «Посадка»). A building never exceeds the lowest ceiling under its footprint and
+    is dropped below 2 floors (`generate` → `place` + cap). Layer visibility toggles bump `dataRev`, so the sketch follows at once.
+  - **Insolation (`web/insol.js`, no DOM, tested under node):** sun by Spencer declination, solar time, 22.04 and 22.08; window
+    sunrise+1 h … sunset−1 h rounded to half an hour = 6:00–18:00 at 55.75° N, exactly the МАрхИ (Поповский) 55° ruler; norm
+    2 h continuous or 2.5 h intermittent with one period ≥ 1 h (СанПиН 1.2.3685-21). Front points every 4 m on facades of kept
+    residential buildings (ЕГРН «Назначение» жилой/многоквартирный, OSM residential), 0.2 m outside, at 2 m; courtyard facades
+    included. Facades that cannot reach the norm by orientation even unobstructed are marked «не нормируется (фасад на север)»
+    and not protected. Points already failing are protected entirely («не ухудшать»).
+  - **Solar ceiling:** per 8 m cell the highest top that keeps every protected sun ray: a passing point protects one norm-long
+    window inside its lit period, chosen so its rays cross the site the least. Any mass under the ceiling keeps all neighbours
+    compliant regardless of order (fixes the order dependence of greedy growth). Exact grid traversal (Amanatides–Woo) and a 1 cm
+    margin: half-cell stepping skipped cell corners and float32 rounding let a random test building break a window.
+  - Validation (`tests/insol_test.js`, run by `test_insol.py`): 6:00–18:00 window; declination 22.04 = 11.92°; noon altitude
+    46.2°, 10 m pole shadow 9.60 m; east facade 6:00–12:00; south facade symmetric; a 30 m wall 20 m south matches the analytic
+    shading formula in all 145 samples; norm rules; 6 random developments under the ceiling lose no compliant facade; a 120 m tower
+    in a low cell does; a courtyard is shaded by its own walls. Хорошёво: 1328 points on 24 houses, whole calculation ~1 s.
+  - **Pitfall:** Turf `difference`/`union` throw «Unable to find segment … SweepLine» on nearly coincident edges and the whole site
+    silently became empty. `robust()` retries with coordinates rounded to ~1 cm, then with a 1 cm buffered subtrahend.
+  - **Pitfall:** a canvas stroke of width 0 is ignored (the previous width stays) — a layer with «Контур 0» drew a white grid.
+
 - **2026-09-23, ГРАДО 2 v0.8.0 (stage Э2): existing situation — ПЗЗ, ОКН, demolition notices, relief, file import, satellite, re-download diff, buildings register.**
   - ГИС ОГД layers (codes checked against the live catalog 23.09.2026): ПЗЗ subzones `virtual98` (old Moscow) + `virtual132`
     (new Moscow) → «ПЗЗ: подзоны» with numeric «Плотность, тыс. м²/га», «Высота, м», «Застроенность, %» and a text «Регламент»;
