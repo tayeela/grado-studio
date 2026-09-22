@@ -148,6 +148,90 @@
     id, group, title, value: rounded(value, digits), unit,
   });
 
+  // Площадь (∪ regions) ∩ (∪ clips) — тот же метод сканирующих строк, что
+  // grado_geom.overlay.union_intersection_area (настольная версия). Полигон —
+  // список колец [[x, y], …], первое внешнее, остальные дыры.
+  function unionIntersectionArea(regions, clips, maxRows = 4000, minStep = 0.05) {
+    regions = regions.filter(p => p && p.length);
+    clips = clips.filter(p => p && p.length);
+    if (!regions.length || !clips.length) return 0;
+    const bbox = polys => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const poly of polys) for (const ring of poly) for (const p of ring) {
+        x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]);
+        x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]);
+      }
+      return [x0, y0, x1, y1];
+    };
+    const cb = bbox(clips), rb = bbox(regions);
+    const y0 = Math.max(cb[1], rb[1]), y1 = Math.min(cb[3], rb[3]);
+    if (Math.min(cb[2], rb[2]) <= Math.max(cb[0], rb[0]) || y1 <= y0) return 0;
+    let step = Math.max(minStep, (y1 - y0) / maxRows);
+    const rows = Math.max(1, Math.ceil((y1 - y0) / step));
+    step = (y1 - y0) / rows;
+    const bucket = polys => {
+      const perRow = Array.from({ length: rows }, () => []);
+      polys.forEach((poly, index) => {
+        for (const ring of poly) {
+          const n = ring.length;
+          if (n < 3) continue;
+          for (let i = 0; i < n; i++) {
+            const a = ring[i], b = ring[(i + 1) % n];
+            if (a[1] === b[1]) continue;
+            const lo = Math.min(a[1], b[1]), hi = Math.max(a[1], b[1]);
+            if (hi <= y0 || lo >= y1) continue;
+            const first = Math.max(0, Math.ceil((lo - y0) / step - 0.5));
+            const last = Math.min(rows - 1, Math.ceil((hi - y0) / step - 0.5) - 1);
+            for (let r = first; r <= last; r++) perRow[r].push([index, a[0], a[1], b[0], b[1]]);
+          }
+        }
+      });
+      return perRow;
+    };
+    const merge = list => {
+      list.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+      const out = [];
+      for (const [a, b] of list) {
+        if (out.length && a <= out[out.length - 1][1]) {
+          if (b > out[out.length - 1][1]) out[out.length - 1][1] = b;
+        } else out.push([a, b]);
+      }
+      return out;
+    };
+    const spans = (edges, y) => {
+      const byPoly = new Map();
+      for (const [index, xa, ya, xb, yb] of edges) {
+        if ((ya <= y && y < yb) || (yb <= y && y < ya)) {
+          if (!byPoly.has(index)) byPoly.set(index, []);
+          byPoly.get(index).push(xa + (y - ya) * (xb - xa) / (yb - ya));
+        }
+      }
+      const out = [];
+      for (const xs of byPoly.values()) {
+        xs.sort((p, q) => p - q);
+        for (let k = 0; k + 1 < xs.length; k += 2) out.push([xs[k], xs[k + 1]]);
+      }
+      return merge(out);
+    };
+    const intersectLen = (a, b) => {
+      let i = 0, j = 0, total = 0;
+      while (i < a.length && j < b.length) {
+        const lo = Math.max(a[i][0], b[j][0]), hi = Math.min(a[i][1], b[j][1]);
+        if (hi > lo) total += hi - lo;
+        if (a[i][1] < b[j][1]) i++; else j++;
+      }
+      return total;
+    };
+    const regRows = bucket(regions), clipRows = bucket(clips);
+    let total = 0;
+    for (let r = 0; r < rows; r++) {
+      if (!regRows[r].length || !clipRows[r].length) continue;
+      const y = y0 + (r + 0.5) * step;
+      total += intersectLen(spans(regRows[r], y), spans(clipRows[r], y)) * step;
+    }
+    return total;
+  }
+
   function computeTep(payload = {}) {
     const rawFeatures = Array.isArray(payload.features) ? payload.features.filter(Boolean) : [];
     const params = payload.params && typeof payload.params === "object" ? payload.params : {};
@@ -195,8 +279,14 @@
     }
     const rawTerrArea = features.filter(feature => feature.kind === "boundary" && feature.ring)
       .reduce((sum, feature) => sum + featureAreaM2(feature), 0) / 10000;
-    const rawRestrictArea = features.filter(feature => feature.kind === "restrict" && feature.ring)
-      .reduce((sum, feature) => sum + featureAreaM2(feature), 0) / 10000;
+    // Ограничения — объединение внутри границы (как studio_core._restrict_area_ha):
+    // свои слои ограничений и зоны импорта с включённым учётом (tep_restrict)
+    const polyRings = feature => [feature.ring, ...((feature.holes || []).filter(h => h.length >= 3))];
+    const isImport = feature => importPrefixes.some(prefix => String(feature.layer_id || "").startsWith(prefix));
+    const restrictRegions = rawFeatures.filter(feature => feature.ring && (isImport(feature)
+      ? feature.tep_restrict === true : feature.kind === "restrict")).map(polyRings);
+    const territoryPolys = rawFeatures.filter(feature => feature.kind === "boundary" && feature.ring).map(polyRings);
+    const rawRestrictArea = unionIntersectionArea(restrictRegions, territoryPolys) / 10000;
     const terrArea = rounded(rawTerrArea, 4);
     const restrictArea = rounded(rawRestrictArea, 4);
     const calcArea = terrArea - restrictArea;

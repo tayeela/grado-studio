@@ -379,6 +379,34 @@ class TestStudioCore(unittest.TestCase):
             project.close()
         self.assertAlmostEqual(1.0, engine.value("calc_area"), places=3)
 
+    def test_nspd_zouit_sign_by_type_and_name(self):
+        okn = "Зона охраны объекта культурного наследия"
+        self.assertEqual("lgr.okn.okhr", studio_core._nspd_zouit_style(
+            {"type_zone": okn, "name_by_doc": "Охранная (объединенная охранная) зона № 103"}))
+        self.assertEqual("lgr.okn.reg", studio_core._nspd_zouit_style(
+            {"type_zone": okn, "name_by_doc": "Зона регулирования застройки № 1"}))
+        self.assertEqual("lgr.military", studio_core._nspd_zouit_style(
+            {"type_zone": "Запретная зона при военном складе"}))
+        self.assertIsNone(studio_core._nspd_zouit_style(
+            {"type_zone": okn, "name_by_doc": "Зона № 5"}))
+
+    def test_import_zone_counts_only_when_user_enables_it(self):
+        """Учёт зоны импорта в ТЭП — выбор пользователя; площадь — объединение
+        внутри границы, без двойного счёта и без части за границей."""
+        boundary = {"kind": "boundary", "ring": [[0, 0], [100, 0], [100, 100], [0, 100]]}
+        big = {"kind": "restrict", "layer_id": "source.nspd.zouit", "tep_cat": "lgr.okn.okhr",
+               "ring": [[50, -900], [900, -900], [900, 900], [50, 900]]}
+        nested = {"kind": "restrict", "layer_id": "source.nspd.zouit", "tep_cat": "lgr.okn.reg",
+                  "ring": [[60, 10], [90, 10], [90, 40], [60, 40]]}
+        off = studio_core.compute_tep([boundary, big, nested])
+        self.assertEqual(0, off["inputs"]["restrict_area"])
+        rows = {r["cat"]: r for r in off["restrictions"]}
+        self.assertAlmostEqual(0.5, rows["lgr.okn.okhr"]["area_ha"], places=3)
+        self.assertFalse(rows["lgr.okn.okhr"]["on"])
+        on = studio_core.compute_tep([boundary, dict(big, tep_restrict=True),
+                                      dict(nested, tep_restrict=True)])
+        self.assertAlmostEqual(0.5, on["inputs"]["restrict_area"], places=3)
+
     def test_redline_fillet_applied(self):
         feat = [{"kind": "redline", "props": {"radius": 20},
                  "line": [[0, 0], [100, 0], [100, 100]]}]

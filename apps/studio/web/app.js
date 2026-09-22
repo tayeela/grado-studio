@@ -127,7 +127,7 @@ const LAYERS_V2 = [
     fmt: { stroke: "#8c7a5e", width: 1.2, dash: [6, 3] },
     defaults: () => ({}) },
   { id: "source.nspd.zouit", title: "ЗОУИТ (НСПД)", kind: "restrict",
-    semantic_class: "cad.zouit", geometry_type: "polygon", cat_field: "kind",
+    semantic_class: "cad.zouit", geometry_type: "polygon", cat_field: ["type_zone", "kind"],
     style_id: "zouit.hatch", stage: "existing", source_kind: "nspd",
     import_only: true, defaults: () => ({}) },
   { id: "source.osm.roads", title: "Дороги и улицы (OSM)", kind: "generic",
@@ -463,16 +463,56 @@ function layerOf(f) { return LAYER_BY_ID[f.layer_id] || LAYER_BY_KIND[f.kind] ||
 // (osm.hw.*), ОГД — по LineCode/имени (lgr.*). Без переключателя категорий,
 // убрав слои-знаки, мы отняли бы возможность гасить отдельные классы — поэтому
 // выключенные категории храним в оформлении слоя (fmt.cats_off = [style_id]).
-// Объекты без знака делятся по полю слоя (L.cat_field): у ЗОУИТ НСПД знака нет,
-// зато есть «вид зоны» — иначе категория одна и зону ОКН на весь центр можно было
-// только удалить, но не скрыть.
+// Чем делить слой на категории — решает пользователь (fmt.cat_field в «Оформлении
+// слоя»): любое поле объекта или "" = по знаку. Без выбора — по знаку объекта,
+// а объекты без знака — по полям слоя по умолчанию (L.cat_field; у ЗОУИТ НСПД
+// «тип зоны», затем укрупнённый «вид»).
+function catFieldsOf(L) {
+  const own = L && L.fmt && L.fmt.cat_field;
+  if (own) return [own];
+  if (own === "") return [];
+  return [].concat((L && L.cat_field) || []);
+}
 function featCat(f) {
   if (!f) return null;
-  if (f.style_id) return f.style_id;
   const L = layerOf(f);
-  const field = L && ((L.fmt && L.fmt.cat_field) || L.cat_field);
-  const value = field && f.props && f.props[field];
-  return value == null || value === "" ? null : "field:" + value;
+  const explicit = L && L.fmt && L.fmt.cat_field;
+  if (!explicit && f.style_id) return f.style_id;
+  for (const field of catFieldsOf(L)) {
+    const value = f.props && f.props[field];
+    if (value != null && value !== "") return "field:" + value;
+  }
+  return null;
+}
+// Знак, назначенный пользователем категории (fmt.cat_styles), важнее знака объекта
+function catSign(f) {
+  const L = layerOf(f);
+  const map = L && L.fmt && L.fmt.cat_styles;
+  if (!map) return null;
+  const c = featCat(f);
+  return (c && map[c]) || null;
+}
+// Учёт категории как ограничения застройки в ТЭП (fmt.tep_restrict_cats;
+// "*" — весь слой). По умолчанию выключен: вид зоны сам по себе не говорит,
+// запрещена ли застройка.
+function tepRestrictOn(f) {
+  const L = layerOf(f);
+  const cats = L && L.fmt && L.fmt.tep_restrict_cats;
+  if (!cats || !cats.length) return false;
+  return cats.includes("*") || cats.includes(featCat(f) || "*");
+}
+// Объекты для сервера (ТЭП, печать, альбом): знак категории вместо знака
+// объекта, ключ категории и флаг учёта в ТЭП.
+function serverFeatures(list) {
+  return list.map(f => {
+    const sign = catSign(f);
+    const cat = featCat(f);
+    if (!sign && !cat && !tepRestrictOn(f)) return f;
+    const out = { ...f, tep_cat: cat || "*" };
+    if (sign) out.style_id = sign;
+    if (tepRestrictOn(f)) out.tep_restrict = true;
+    return out;
+  });
 }
 function catTitle(c) {
   if (String(c).startsWith("field:")) return String(c).slice(6);
@@ -485,7 +525,7 @@ function catTitle(c) {
 function catVisibleFeatures() {
   return state.features.filter(f => !catOff(layerOf(f), f));
 }
-function tepFeatures() { return catVisibleFeatures(); }
+function tepFeatures() { return serverFeatures(catVisibleFeatures()); }
 function catOff(L, f) {
   const off = L && L.fmt && L.fmt.cats_off;
   if (!off || !off.length) return false;
@@ -649,7 +689,7 @@ function layerSignSid(L) {
 
 function styleOf(f) {
   const L = layerOf(f);
-  const sid = f.style_id;
+  const sid = catSign(f) || f.style_id;
   // знак для объекта без style_id: цвет зоны по типу ИЛИ знак слоя по имени
   const gsid = sid ? null : (gpZoneSid(f) || layerSignSid(L));
   let base = (sid && (state.projectStyles[sid] || STYLES_V2[sid]))
@@ -3710,6 +3750,22 @@ function renderTepUnavailable() {
     `<div class="tep-empty-actions"><button type="button" id="tep-retry">Повторить расчёт</button></div></div>`;
   body.querySelector("#tep-retry")?.addEventListener("click", () => refreshTep(true));
 }
+// «Ограничения на участке»: зоны импорта в границе, площадь внутри границы и
+// галочка «вычитать из площади». По умолчанию выключено — решает проектировщик.
+function restrictionsHtml(rows) {
+  if (!rows || !rows.length) return "";
+  const items = rows.map(row => {
+    const L = LAYER_BY_ID[row.layer_id];
+    const title = row.cat && row.cat !== "*" ? catTitle(row.cat) : (L ? L.title : row.layer_id);
+    const source = L && row.cat !== "*" ? `<small>${escHtml(L.title)}</small>` : "";
+    return `<label class="tep-restrict">
+      <input type="checkbox" class="tep-restrict-toggle" data-layer="${escHtml(row.layer_id)}" data-cat="${escHtml(row.cat)}"${row.on ? " checked" : ""}>
+      <span class="tep-restrict-copy"><span>${escHtml(title)}</span>${source}</span>
+      <span class="v">${escHtml(row.area_ha)} <small>га</small></span></label>`;
+  }).join("");
+  return `<div class="tep-fact-head tep-restrict-head"><b>Ограничения на участке</b><small>площадь внутри границы · галочка — вычитать из расчётной площади</small></div>${items}`;
+}
+
 function renderTep(data) {
   const fact = document.getElementById("tep-fact");
   const bodyEl = document.getElementById("tep-body");
@@ -3742,7 +3798,17 @@ function renderTep(data) {
     <div class="tep-row"><span>СПП факт</span><span class="v">${data.fact.spp} <small>тыс. м²</small></span></div>
     <div class="tep-row"><span>Плотность факт</span><span class="v">${data.fact.density} <small>тыс. м²/га</small></span></div>
     ${zonesHtml}
+    ${restrictionsHtml(data.restrictions)}
     <div class="tep-context-note">Ниже — расчётный потенциал по заданной нормативной плотности, а не уже размещённые здания.</div>`;
+  fact.querySelectorAll(".tep-restrict-toggle").forEach(input => input.addEventListener("change", () => {
+    const L = LAYER_BY_ID[input.dataset.layer];
+    if (!L) return;
+    L.fmt = L.fmt || {};
+    const cats = new Set(L.fmt.tep_restrict_cats || []);
+    if (input.checked) cats.add(input.dataset.cat); else cats.delete(input.dataset.cat);
+    L.fmt.tep_restrict_cats = [...cats];
+    afterChange();
+  }));
   const body = document.getElementById("tep-body");
   body.classList.remove("muted");
   let html = "", group = null;
@@ -6837,7 +6903,8 @@ function signOverridePatch(st) {
 function canvasStyleExport() {
   const styles = {}, cache = new Map();
   let n = 0;
-  const features = catVisibleFeatures().map(f => {
+  // берём объекты для сервера: флаги учёта в ТЭП и ключ категории сохраняются
+  const features = serverFeatures(catVisibleFeatures()).map(f => {
     const js = JSON.stringify(canvasStyleToBackend(styleOf(f)));
     let sid = cache.get(js);
     if (!sid) { sid = "canvas." + (n++); cache.set(js, sid); styles[sid] = JSON.parse(js); }
@@ -6905,7 +6972,7 @@ async function download(url, suffix, extra = {}) {
   // выпуск (печать/DXF/альбом) уважает скрытые категории — как холст и ТЭП
   // (правка юзера); .grado — это ДАННЫЕ проекта, сохраняется полным (cats_off
   // в fmt восстановит скрытое состояние при открытии)
-  let features = url === "/api/grado" ? state.features : catVisibleFeatures();
+  let features = url === "/api/grado" ? state.features : serverFeatures(catVisibleFeatures());
   let canvasStyles = null;
   if (canvasMode) { const ex = canvasStyleExport(); features = ex.features; canvasStyles = ex.styles; }
   const payload = { features, params: params(),

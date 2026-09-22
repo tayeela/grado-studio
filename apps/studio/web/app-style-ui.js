@@ -265,14 +265,33 @@ function openLayerStyle(layer, opts = {}) {
   // и гасятся здесь, а не отдельными слоями-знаками. Список — по РЕАЛЬНО
   // выгруженным объектам (layerCats), а не по библиотеке: показывать 26 классов
   // дорог, когда выгружено три, — мусор. Меньше двух категорий — секции нет.
+  // Категории: чем делить (поле или знак) и какой знак у каждой — выбирает
+  // пользователь. Знак категории перекрывает знак объекта и уходит в печать.
+  const catColumns = attrColumns(layer).filter(c => !c.virtual);
+  const catFieldNow = () => (layer.fmt && Object.prototype.hasOwnProperty.call(layer.fmt, "cat_field"))
+    ? layer.fmt.cat_field : "__auto__";
+  const signOptions = sid => stylePickerOptions(sid).replace(/<option value="__create_project_style__">[^<]*<\/option>/, "");
+  const catRowsHtml = () => {
+    const off = new Set((layer.fmt && layer.fmt.cats_off) || []);
+    const signs = (layer.fmt && layer.fmt.cat_styles) || {};
+    const list = typeof layerCats === "function" ? layerCats(layer) : [];
+    if (!list.length) return `<p class="fmt-note">Нет категорий по выбранному полю.</p>`;
+    return list.map(c => `<div class="fmt-cat-row">
+        <label class="chk"><input type="checkbox" class="fmt-cat" value="${escHtml(c.id)}"${off.has(c.id) ? "" : " checked"}> ${escHtml(c.title)}</label>
+        <select class="fmt-cat-sign" data-cat="${escHtml(c.id)}" aria-label="Знак категории ${escHtml(c.title)}">${signOptions(signs[c.id] || "")}</select>
+      </div>`).join("");
+  };
   const cats = typeof layerCats === "function" ? layerCats(layer) : [];
-  const catsOffSet = new Set((layer.fmt && layer.fmt.cats_off) || []);
-  const catsSection = cats.length < 2 ? "" : `
+  const showCats = cats.length >= 2 || catColumns.length > 0 || (layer.cat_field && layer.cat_field.length);
+  const catsSection = !showCats ? "" : `
       <section class="style-section">
-        <div class="style-section-head"><span><b>Категории слоя</b><small>Что показывать из выгруженного слоя (${cats.length})</small></span></div>
-        <div class="fmt-body" id="fmt-cats">${cats.map(c =>
-          `<label class="chk"><input type="checkbox" class="fmt-cat" value="${escHtml(c.id)}"${catsOffSet.has(c.id) ? "" : " checked"}> ${escHtml(c.title)}</label>`
-        ).join("")}</div>
+        <div class="style-section-head"><span><b>Категории слоя</b><small>Что показывать и каким знаком — по категориям</small></span></div>
+        <label class="fmt-catfield"><span>Делить по</span><select id="fmt-catfield">
+          ${layer.cat_field ? `<option value="__auto__">автоматически: знак, иначе ${escHtml([].concat(layer.cat_field).map(n => (catColumns.find(c => c.name === n) || {}).label || n).join(" / "))}</option>` : `<option value="__auto__">знаку объекта</option>`}
+          <option value="">только знаку объекта</option>
+          ${catColumns.map(c => `<option value="${escHtml(c.name)}">полю «${escHtml(c.label || c.name)}»</option>`).join("")}
+        </select></label>
+        <div class="fmt-body" id="fmt-cats">${catRowsHtml()}</div>
       </section>`;
   const hasFill = cur.fill != null && cur.fill !== "transparent";
   const opacity = boundedNumber(Math.round((cur.fillOpacity != null ? cur.fillOpacity : 1) * 100), 10, 100, 100);
@@ -436,13 +455,37 @@ function openLayerStyle(layer, opts = {}) {
   // ----- режим «Единый стиль» -----
   let syncOpUI = () => {};
   // живой отклик: галочка категории сразу гасит/возвращает объекты на холсте
-  overlay.querySelectorAll(".fmt-cat").forEach(cb => cb.addEventListener("change", () => {
-    layer.fmt = { ...(layer.fmt || {}), cats_off: catsOffNow() };
-    // снап-индекс запекает фильтр категорий при построении — сбрасываем,
-    // иначе привязки продолжат цепляться за только что скрытые объекты
-    state._snapIndex = null;
-    draw();
-  }));
+  const bindCats = () => {
+    overlay.querySelectorAll(".fmt-cat").forEach(cb => cb.addEventListener("change", () => {
+      layer.fmt = { ...(layer.fmt || {}), cats_off: catsOffNow() };
+      // снап-индекс запекает фильтр категорий при построении — сбрасываем,
+      // иначе привязки продолжат цепляться за только что скрытые объекты
+      state._snapIndex = null;
+      draw();
+    }));
+    overlay.querySelectorAll(".fmt-cat-sign").forEach(sel => sel.addEventListener("change", () => {
+      const signs = { ...((layer.fmt && layer.fmt.cat_styles) || {}) };
+      if (sel.value) signs[sel.dataset.cat] = sel.value; else delete signs[sel.dataset.cat];
+      layer.fmt = { ...(layer.fmt || {}), cat_styles: signs };
+      draw();
+    }));
+  };
+  bindCats();
+  if ($("fmt-catfield")) {
+    $("fmt-catfield").value = catFieldNow();
+    $("fmt-catfield").addEventListener("change", () => {
+      const v = $("fmt-catfield").value;
+      const fmt = { ...(layer.fmt || {}) };
+      if (v === "__auto__") delete fmt.cat_field; else fmt.cat_field = v;
+      // ключи категорий сменились: прежние скрытия, знаки и учёт в ТЭП к ним не относятся
+      delete fmt.cats_off; delete fmt.cat_styles; delete fmt.tep_restrict_cats;
+      layer.fmt = fmt;
+      $("fmt-cats").innerHTML = catRowsHtml();
+      bindCats();
+      state._snapIndex = null;
+      draw();
+    });
+  }
   const onColor = () => { $("fmt-preset").value = ""; layer.fmt = collect(); draw(); updateDashPreview(); syncOpUI(); };
   const fillCF = makeColorField($("fmt-fill"), toHexColor(cur.fill, "#faf0bf"), onColor);
   syncOpUI = () => syncOpacityRange($("fmt-opacity"), $("fmt-opacity-out"), fillCF.get());
@@ -517,7 +560,12 @@ function openLayerStyle(layer, opts = {}) {
   const catsOffNow = () => [...overlay.querySelectorAll(".fmt-cat")]
     .filter(cb => !cb.checked).map(cb => cb.value);
   const collect = () => {
+    // категории и учёт в ТЭП живут в fmt, но не в полях этого окна — переносим
+    const keep = {};
+    for (const key of ["cat_field", "cat_styles", "tep_restrict_cats"])
+      if (layer.fmt && Object.prototype.hasOwnProperty.call(layer.fmt, key)) keep[key] = layer.fmt[key];
     const fmt = {
+      ...keep,
       cats_off: catsOffNow(),
       stroke: strokeCF.get(),
       width: boundedNumber($("fmt-width").value, 0.2, 8, 1),

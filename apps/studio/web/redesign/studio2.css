@@ -881,3 +881,20 @@ input[type=range].range-op:focus-visible{outline:2px solid var(--accent);outline
   animation:fg-spin .7s linear infinite}
 @keyframes fg-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.fg-loading::before{animation-duration:1.6s}}
+
+/* ТЭП: ограничения на участке (зоны импорта с учётом по выбору) */
+#tep-fact .tep-restrict-head{margin-top:10px;display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+#tep-fact label.tep-restrict{display:flex!important;flex-direction:row!important;align-items:flex-start;gap:8px;padding:4px 0;font-size:12px;cursor:pointer}
+#tep-fact .tep-restrict input{margin-top:2px;flex:0 0 auto;accent-color:var(--accent)}
+#tep-fact .tep-restrict-copy{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+#tep-fact .tep-restrict-copy small{color:var(--muted);font-size:11px}
+#tep-fact .tep-restrict .v{white-space:nowrap}
+
+/* Оформление слоя: категории — поле деления и знак категории */
+.modal-overlay label.fmt-catfield{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;margin-bottom:8px}
+.modal-overlay label.fmt-catfield span{flex:0 0 auto;color:var(--muted)}
+.modal-overlay label.fmt-catfield select{flex:1 1 auto;min-width:0}
+.fmt-cat-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,190px);gap:8px;align-items:center;padding:2px 0}
+.fmt-cat-row label.chk{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.fmt-cat-row select{height:30px!important;font-size:12px}
+.fmt-note{color:var(--muted);font-size:12px;margin:4px 0}

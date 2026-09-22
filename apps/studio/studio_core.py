@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT / "apps" / "wizard"))
 
 from grado_compute.engine import Engine  # noqa: E402
 from grado_geom import Path as GPath  # noqa: E402
-from grado_geom import (Arc, CurveError, PathError, Snapper, curve_spec,  # noqa: E402
+from grado_geom import (Arc, CurveError, PathError, Snapper, curve_spec, union_intersection_area,  # noqa: E402
                         mirror, rotate, scale, tessellate_curve)
 from grado_layout import Document, render_document_pdf  # noqa: E402
 from grado_layout import Page, A3_LANDSCAPE  # noqa: E402  # for stub sheets
@@ -1339,8 +1339,65 @@ def _clip_to_territory(features):
     return kept
 
 
+def _polygon_rings(feature):
+    return [feature["ring"]] + [h for h in (feature.get("holes") or []) if len(h) >= 3]
+
+
+def _counts_as_restriction(feature):
+    """Вычитается ли объект из площади территории.
+
+    Свои слои ограничений — по роли класса. Объекты импорта (ЗОУИТ, зоны
+    генплана) — только если пользователь включил учёт их категории
+    (флаг tep_restrict из студии): вид зоны сам по себе не говорит, запрещена
+    ли застройка, решает проектировщик.
+    """
+    if "ring" not in feature:
+        return False
+    if _from_import(feature):
+        return bool(feature.get("tep_restrict"))
+    cls = _class_of(feature)
+    return bool(cls and cls.tep_role == "restrict_area")
+
+
+def _restrict_area_ha(features):
+    """Площадь ограничений ВНУТРИ границы: объединение без двойного счёта
+    перекрытий и с обрезкой по границе (зона на весь город даёт только свою
+    часть на участке)."""
+    territory = [_polygon_rings(f) for f in features if _is_territory(f)]
+    regions = [_polygon_rings(f) for f in features if _counts_as_restriction(f)]
+    return union_intersection_area(regions, territory) / 10000.0
+
+
+def _restriction_candidates(features):
+    """Зоны импорта, попадающие в границу, по слою и категории — для блока
+    «Ограничения на участке»: площадь внутри границы и включён ли учёт."""
+    territory = [_polygon_rings(f) for f in features if _is_territory(f)]
+    if not territory:
+        return []
+    groups = {}
+    for f in features:
+        if ("ring" not in f or not _from_import(f)
+                or f.get("kind") not in ("restrict", "zone")):
+            continue
+        key = (f.get("layer_id"), str(f.get("tep_cat") or "*"))
+        group = groups.setdefault(key, {"rings": [], "on": False})
+        group["rings"].append(_polygon_rings(f))
+        group["on"] = group["on"] or bool(f.get("tep_restrict"))
+    out = []
+    for (layer_id, cat), group in groups.items():
+        area = union_intersection_area(group["rings"], territory) / 10000.0
+        if area >= 0.0001:
+            out.append({"layer_id": layer_id, "cat": cat,
+                        "area_ha": round(area, 4), "on": group["on"]})
+    out.sort(key=lambda row: -row["area_ha"])
+    return out
+
+
 def _make_engine_from_normalized(features, params):
     engine = Engine.from_file(PRESET)
+    # ограничения — по ВСЕМ объектам с обрезкой по границе: у зоны на весь
+    # город представительная точка вне участка, и обрезка по точке её теряла
+    restrict_ha = _restrict_area_ha(features)
     # ТЭП считается ВНУТРИ границы территории разработки, а не по всей карте
     features = _clip_to_territory(features)
     has_territory = any(_is_territory(f) for f in features)
@@ -1350,6 +1407,8 @@ def _make_engine_from_normalized(features, params):
     if has_territory:
         # ноль по геометрии остаётся нулём. Дефолт пресета 15 га сюда не подставляется.
         inputs["terr_area"] = round(areas.get("terr_area", 0.0), 4)
+        if "restrict_area" in engine.inputs:
+            inputs["restrict_area"] = round(restrict_ha, 4)
     elif "terr_area" in inputs:
         inputs.pop("terr_area")
     if inputs:
@@ -1407,8 +1466,9 @@ def compute_tep(features, params=None):
     features = _normalize_tep_features(features)
     params = _normalized_tep_params(params)
     has_territory = any(_is_territory(f) for f in features)
+    restrictions = _restriction_candidates(features)
+    engine = _make_engine_from_normalized(features, params)
     features = _clip_to_territory(features)
-    engine = _make_engine_from_normalized(features, params)  # clip идемпотентен
     if not engine.geometry_bound:
         return _withheld_tep(engine)
     fact_spp = 0.0
@@ -1455,6 +1515,7 @@ def compute_tep(features, params=None):
         "checks": checks,
         "regulatory_profile": engine.preset.get("regulatory_profile", {}),
         "has_territory": has_territory,
+        "restrictions": restrictions,
     }
 
 
@@ -2220,6 +2281,38 @@ def _norm_ru(s):
 # территории объектов культурного наследия…» → знак территории ОКН. Документ
 # уходит в «прочие» как есть (принцип: неверный знак хуже «прочих»).
 _GISOGD_DOC_MARKERS = ("правовой акт", "правовые акты", "правового акта")
+
+
+def _nspd_zouit_style(props):
+    """Знак ЛГР зоны из НСПД по её собственным данным.
+
+    «Вид» НСПД — одна из пяти укрупнённых групп, по нему знак не выбрать.
+    Смотрим наименование по документу («Зона регулирования застройки № 1»),
+    затем тип зоны по классификатору ЕГРН. Для зон охраны ОКН тип общий на
+    охранную зону, зону регулирования застройки и ландшафт — различаем по
+    наименованию. Не распознали — знака нет, зона остаётся своей категорией
+    по типу, и знак ей назначает пользователь.
+    """
+    name = props.get("name_by_doc")
+    zone_type = props.get("type_zone") or props.get("kind")
+    sid = _gisogd_style_for(name) or _gisogd_style_for(zone_type)
+    if sid:
+        return sid
+    # виды ст. 105 ЗК РФ, которые в НСПД названы иначе, чем слои портала
+    low_type = _norm_ru(f"{zone_type} {name}")
+    for marker, candidate in (("военн", "lgr.military"), ("геодезическ", "lgr.geodez"),
+                              ("радиотехническ", "lgr.radio"), ("тепловых сет", "lgr.teplo"),
+                              ("трубопровод", "lgr.truboprovod")):
+        if marker in low_type:
+            return candidate
+    if "культурного наследия" in _norm_ru(zone_type):
+        low = _norm_ru(name)
+        for marker, candidate in (("охранн", "lgr.okn.okhr"), ("защитн", "lgr.okn.zashchit"),
+                                  ("ландшафт", "lgr.okn.landshaft"),
+                                  ("регулирования", "lgr.okn.reg")):
+            if marker in low:
+                return candidate
+    return None
 
 
 def _gisogd_is_document(member):
@@ -3164,6 +3257,8 @@ def fetch_extent(bbox, sources):
                 # оставляет только семантику для панели атрибутов.
                 sid = osm_style_for_highway(
                     (f.get("properties") or {}).get("highway"))
+            if not sid and src_key == "nspd.zouit":
+                sid = _nspd_zouit_style(props)
             if not sid and spec["kind"] == "zone":
                 for cand in (props.get("zone_title"), props.get("fz_type"),
                              spec.get("title")):
