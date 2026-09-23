@@ -52,6 +52,7 @@ function collectProject() {
 }
 
 function clearProject() {
+  PROJ.askName = null;                                           // согласие заменить файл относится к прежнему проекту
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
   Object.keys(SOURCES).filter(k => k.startsWith("import:")).forEach(k => delete SOURCES[k]);
@@ -123,7 +124,7 @@ async function saveProject(name) {
     const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", body }); const j = await r.json();
     if (!r.ok) throw new Error(j.error === "bad project name" ? "в названии не должно быть знаков / \\ : * ? \" < > | и точки в начале" : j.error);
     PROJ.savedTick = tick; PROJ.dirty = PROJ.tick !== tick; syncProjTitle(); autosave(true);
-    toast(`Проект «${name}» сохранён: ${j.saved}`); if (!$("wProjects").hidden) renderProjects();
+    toast(`Проект «${name}» сохранён в папке «${j.saved.split(/[\\/]/).slice(-2, -1)[0] || "проектов"}».`); if (!$("wProjects").hidden) renderProjects();
   } catch (e) { PROJ.name = prev; PROJ.file = prevFile; syncProjTitle(); toast("Проект не сохранён: " + e.message); }
   finally { busy(false); }
 }

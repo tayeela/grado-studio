@@ -393,7 +393,7 @@ NLayer.title = "Слой"; NLayer.prototype.onExecute = function () {
   }
   this.setOutputData(0, this._out);
   fitTitle(this, "Слой: " + d.title + (fw.value !== "—" && ow.value !== "—" ? ` [${fw.value} ${ow.value} ${vw.value}]` : ""));
-  this.info = `${this._n[0]} из ${this._n[1]} объектов${alt ? " — ЕГРН нет, взяты здания OSM" : ""}`;
+  this.info = alt ? `${this._n[0]} зд. OSM: ЕГРН не выгружен` : `${this._n[0]} из ${this._n[1]} объектов`;
 };
 NLayer.prototype.onResize = function () { if (this._fullTitle) fitTitle(this, this._fullTitle); };
 LiteGraph.registerNodeType("Данные/Слой", NLayer);
@@ -573,12 +573,12 @@ function add(type, pos, setup) { const n = LiteGraph.createNode(type); n.pos = p
 const setW = (n, name, v) => { n.widgets.find(w => w.name === name).value = v; };
 const nT = add("Данные/Территория", [20, 20]);
 const nZ1 = add("Данные/Слой", [20, 100], n => setW(n, "слой", "Санитарно-защитные зоны (ОГД)"));
-const nZ2 = add("Данные/Слой", [20, 240], n => setW(n, "слой", "Водоохранные зоны (ОГД)"));
-const nK = add("Данные/Слой", [20, 380], n => { setW(n, "слой", "Здания (ЕГРН)"); n.title = "Сохраняемые здания"; });   // по умолчанию сносить нечего; снос — условием в узле
-const nR = add("Данные/Слой", [20, 540], n => { setW(n, "слой", "Улично-дорожная сеть (OSM)"); setW(n, "поле", "Тип дороги"); setW(n, "условие", "один из"); setW(n, "значение", "trunk,primary,secondary,tertiary,residential,unclassified"); });
-const nZ = add("Геометрия/Объединить", [300, 170], n => n.title = "ЗОУИТ");
-const nBK = add("Геометрия/Буфер", [300, 400], n => { n.title = "Разрыв до сохраняемых"; setW(n, "расстояние, м", 12); });
-const nBR = add("Геометрия/Буфер", [300, 560], n => { n.title = "Отступ от улиц"; setW(n, "расстояние, м", 12); });
+const nZ2 = add("Данные/Слой", [20, 280], n => setW(n, "слой", "Водоохранные зоны (ОГД)"));
+const nK = add("Данные/Слой", [20, 460], n => { setW(n, "слой", "Здания (ЕГРН)"); n.title = "Сохраняемые здания"; });   // по умолчанию сносить нечего; снос — условием в узле
+const nR = add("Данные/Слой", [20, 640], n => { setW(n, "слой", "Улично-дорожная сеть (OSM)"); setW(n, "поле", "Тип дороги"); setW(n, "условие", "один из"); setW(n, "значение", "trunk,primary,secondary,tertiary,residential,unclassified"); });
+const nZ = add("Геометрия/Объединить", [300, 200], n => n.title = "ЗОУИТ");
+const nBK = add("Геометрия/Буфер", [300, 470], n => { n.title = "Разрыв до сохраняемых"; setW(n, "расстояние, м", 12); });
+const nBR = add("Геометрия/Буфер", [300, 650], n => { n.title = "Отступ от улиц"; setW(n, "расстояние, м", 12); });
 const nD1 = add("Геометрия/Вычесть", [520, 40], n => n.title = "Без ЗОУИТ");
 const nD2 = add("Геометрия/Вычесть", [720, 110]);
 const nD3 = add("Геометрия/Вычесть", [720, 250], n => n.title = "Пятно застройки");
@@ -599,15 +599,15 @@ Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // �
 let selNode = null;
 lgc.onNodeSelected = n => { selNode = n; updateAnalysisMap(); };
 lgc.onNodeDeselected = () => { selNode = null; updateAnalysisMap(); };
-function fitGraph() {
+function fitGraph(min = .6) {
   const box = $("graphbox").getBoundingClientRect(), ns = graph._nodes; if (!ns.length || !box.width) return;
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
-  const s = Math.max(.6, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка
+  const s = Math.max(min, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка
   lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
 }
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
 new ResizeObserver(sizeGraph).observe($("graphbox"));
-$("bFitGraph").onclick = fitGraph;
+$("bFitGraph").onclick = () => fitGraph();
 $("bRunGraph").onclick = () => { graph._nodes.forEach(n => { n._ck = n._cacheKey = n._key = null; }); recompute(true); };
 const LIB = { "Данные": ["Данные/Территория", "Данные/Слой"], "Параметры": ["Параметры/Число"], "Геометрия": ["Геометрия/Буфер", "Геометрия/Вычесть", "Геометрия/Объединить", "Геометрия/Пересечь"], "Эскиз": ["Эскиз/Посадка застройки"], "Показатели": ["Показатели/ТЭП КРТ"] };
 const LIBICON = { "Данные": "database", "Параметры": "sliders-horizontal", "Геометрия": "shapes", "Эскиз": "building-2", "Показатели": "calculator" };
@@ -867,7 +867,7 @@ function snapMove(w, x, y) {           // магнит к краям карты 
 }
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
-  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(); go.fitted = true; } updateAnalysisMap(); },
+  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(.8); go.fitted = true; }   // при открытии — читаемо (0,8), «Весь граф» ужимает до 0,6 updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };

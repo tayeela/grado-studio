@@ -221,6 +221,12 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.18.1: UX audit of v0.18.0.** The overwrite confirmation carried over to another project (asked
+  for one, «Новый», then the same name saved without asking) — `clearProject` resets it. Save toast shows the folder name, not
+  the full path. The OSM-fallback note in the graph node was cut and hidden under the next node: shorter text, and the default
+  graph's left column is spaced (no node overlaps, checked). «Весь граф» now works, so the first opening fitted the graph at
+  0.6 — too small to read; the automatic fit stops at 0.8, the button still fits everything.
+
 - **2026-09-23, ГРАДО 2 v0.18.0: weak-point audit (three parallel reviewers) and fixes.** Owner: «определи слабые места и исправь».
   **Server (apps/grado2):**
   - **Any web page could overwrite projects** (no Host/Origin check, body parsed as JSON whatever the Content-Type — a
