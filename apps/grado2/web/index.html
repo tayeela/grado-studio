@@ -38,7 +38,7 @@ svg.lucide{width:16px;height:16px;stroke-width:1.75;flex:0 0 auto}
 .num{font-variant-numeric:tabular-nums}
 select,input[type=text]{height:24px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0 5px;min-width:0}
 
-.app{height:100%;display:grid;grid-template-rows:38px 40px minmax(0,1fr) 24px;grid-template-columns:minmax(0,1fr)}
+.app{height:100%;display:grid;grid-template-rows:38px auto minmax(0,1fr) 24px;grid-template-columns:minmax(0,1fr)}
 .top .sp{flex:1}
 .wins{display:flex;gap:1px;align-items:center}
 .wins .btn{border-color:transparent;background:none;color:var(--muted)}
@@ -46,7 +46,8 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .wins .btn[aria-pressed="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
 .wins .vs{width:1px;height:18px;background:var(--line);margin:0 5px}
 /* строка инструментов */
-.ribbon{display:flex;align-items:center;gap:2px;padding:0 8px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;overflow-y:hidden}
+.ribbon{display:flex;align-items:center;flex-wrap:wrap;gap:2px;row-gap:3px;padding:4px 8px;min-height:40px;background:var(--panel);border-bottom:1px solid var(--line)}
+.ribbon>*{flex:0 0 auto}
 .ribbon .g{display:flex;align-items:center;gap:1px}
 .ribbon .vs{width:1px;height:24px;background:var(--line);margin:0 6px;flex:0 0 auto}
 .tl{display:flex;align-items:center;gap:5px;height:30px;padding:0 8px;border:1px solid transparent;background:none;border-radius:4px;white-space:nowrap;color:var(--text)}
@@ -291,6 +292,11 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .cadac div{padding:0 8px}.cadac b{display:inline-block;min-width:34px;font-family:var(--mono)}
 .cadmenu .mi{display:flex;align-items:center;gap:8px;border:none;background:none;color:var(--text);padding:3px 4px;border-radius:3px;text-align:left;font:inherit;white-space:nowrap}.cadmenu .mi:hover{background:var(--hover)}.cadmenu .mi kbd{margin-left:auto;padding-left:14px;font:10.5px var(--mono);color:var(--faint)}
 .dd2{font-size:11px;color:var(--muted)}
+.cmdline{position:absolute;left:10px;bottom:30px;z-index:6;max-width:calc(100% - 20px);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;padding:5px 9px;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.14);font:12.5px/1.45 system-ui,sans-serif;color:var(--text)}
+.cmdline b{font-weight:650;letter-spacing:.02em}.cmdline .op{border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);border-radius:3px;padding:0 6px;font:inherit;line-height:1.5;cursor:pointer}.cmdline .op:hover{background:color-mix(in srgb,var(--accent) 18%,transparent)}.cmdline .k{color:var(--muted)}
+body.cmdon .toast{bottom:104px}
+.cmdline .nt{flex-basis:100%;color:var(--warn);font-size:12px}
+.ctl .seg>:last-child:nth-child(3n+2){grid-column:span 2}
 .cadtip{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:12px/1.35 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none}
 .cadin{position:absolute;z-index:5;width:170px;height:26px;padding:0 6px;font:13px system-ui,sans-serif;font-variant-numeric:tabular-nums;border:1px solid var(--accent);border-radius:3px;background:var(--panel);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .cadin.bad{border-color:#b3261e;outline:1px solid #b3261e}
@@ -304,8 +310,10 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .wmenu button{display:flex;align-items:center;gap:8px}.wmenu button svg{width:15px;height:15px}
 .wmenu button::after{content:"";margin-left:auto;width:14px;text-align:right}.wmenu button[aria-checked="true"]::after{content:"✓"}
 @media (max-width:1480px){.wins .btn.opt{display:none}.more{display:inline-flex}.tl.opt span.lb{display:none}}
-@media (max-width:1180px){.tl span.lb{display:none}.wins .btn span.lb{display:none}}
-@media (max-width:900px){.work{grid-template-columns:0 minmax(0,1fr) 0}.work>.side{display:none}.proj{display:none}}
+@media (max-width:1180px){.tl span.lb{display:none}}
+@media (max-width:1080px){.wins .btn span.lb{display:none}}
+/* узкое окно: панели слоёв и свойств выезжают поверх карты (кнопки «Слои» и «Свойства» в меню «Окна»), а не пропадают */
+@media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side{position:absolute;top:0;bottom:0;width:min(300px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{max-width:140px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 

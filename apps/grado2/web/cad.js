@@ -46,6 +46,43 @@ const fLine = (ws, k) => new ol.Feature({ geometry: new ol.geom.LineString(ws.ma
 const fPoly = (ring, k) => new ol.Feature({ geometry: new ol.geom.Polygon([ring.map(fromM)]), k });
 const fPt = (w, k) => new ol.Feature({ geometry: new ol.geom.Point(fromM(w)), k });
 
+/* ---------- ручки выбранных объектов, как в AutoCAD: квадраты на вершинах, треугольники на серединах сторон ---------- */
+const gripSrc = new ol.source.Vector();
+const GF = new ol.style.Fill({ color: ACC }), GS = new ol.style.Stroke({ color: "#ffffff", width: 1.2 });
+const sGrip = new ol.style.Style({ image: new ol.style.RegularShape({ points: 4, radius: 6, angle: Math.PI / 4, fill: GF, stroke: GS }) });
+const sGripMid = new ol.style.Style({ image: new ol.style.RegularShape({ points: 3, radius: 5.5, fill: GF, stroke: GS }) });
+const sGripHover = new ol.style.Style({ image: new ol.style.RegularShape({ points: 4, radius: 7, angle: Math.PI / 4, fill: new ol.style.Fill({ color: "#e8590c" }), stroke: GS }) });
+mMain.addLayer(new ol.layer.Vector({ source: gripSrc, zIndex: 136, style: f => f.get("hover") ? sGripHover : f.get("mid") ? sGripMid : sGrip }));
+// обход координат геометрии с путями: путь — индексы в getCoordinates() до вершины
+function vertices(g) {
+  const out = [], walk = (c, path) => { if (typeof c[0] === "number") { out.push({ c, path }); return; } c.forEach((x, i) => walk(x, [...path, i])); };
+  walk(g.getCoordinates(), []); return out;
+}
+const MAXGRIPS = 3000;
+function syncGrips() {
+  gripSrc.clear(true);
+  if (CMD || UIS.tool !== "select" || !SEL.length) return;
+  const fs = [];
+  for (const { key, f } of SEL) {
+    const g = f.getGeometry(); if (!g) continue;
+    const vs = vertices(g), byRing = new Map();
+    vs.forEach(v => { const r = v.path.slice(0, -1).join(","); if (!byRing.has(r)) byRing.set(r, []); byRing.get(r).push(v); });
+    for (const ring of byRing.values()) {
+      const cl = ring.length > 2 && G.same(ring[0].c, ring[ring.length - 1].c, 1e-9), list = cl ? ring.slice(0, -1) : ring;
+      list.forEach(v => fs.push(new ol.Feature({ geometry: new ol.geom.Point(v.c), key, f, path: v.path, closed: cl, n: list.length })));
+      if (ring.length > 1 && !f.get("_cad")) for (let i = 0; i + 1 < ring.length; i++) { const a = ring[i].c, b = ring[i + 1].c; fs.push(new ol.Feature({ geometry: new ol.geom.Point([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), key, f, path: ring[i + 1].path, mid: true })); }
+    }
+    if (fs.length > MAXGRIPS) { gripSrc.clear(true); return; }
+  }
+  gripSrc.addFeatures(fs);
+}
+function gripAt(px) {
+  let best = null;
+  gripSrc.forEachFeature(g => { const q = mMain.getPixelFromCoordinate(g.getGeometry().getCoordinates()), d = Math.hypot(q[0] - px[0], q[1] - px[1]); if (d <= 8 && (!best || d < best.d - 0.5 || (Math.abs(d - best.d) <= 0.5 && best.g.get("mid") && !g.get("mid")))) best = { g, d }; });
+  return best?.g || null;
+}
+let hoverGrip = null;
+
 /* ---------- кандидаты привязки у курсора ---------- */
 function chainsOf(g) {
   const t = g.getType(), c = g.getCoordinates();
@@ -127,6 +164,8 @@ function resolve(c) {
     if (best) acquireTick(best); else { clearTimeout(hover?.timer); hover = null; }
   }
   const lines = [];
+  // орто: точка только на оси X или Y от последней точки; линия отслеживания может лишь указать, где на этой оси остановиться
+  const ortho = ST.ortho && base && pointMode ? (() => { const v = G.sub(W, base), ax = Math.abs(v[0]) >= Math.abs(v[1]); return { d: ax ? [Math.sign(v[0]) || 1, 0] : [0, Math.sign(v[1]) || 1], p: ax ? [W[0], base[1]] : [base[0], W[1]] }; })() : null;
   if (!best && pointMode) {
     const near = [];
     for (const L of trackLines(base, CMD?.prev?.() || null)) {
@@ -134,16 +173,24 @@ function resolve(c) {
       const off = Math.abs(G.cross(L.d, v)); if (off <= tol * 0.8) near.push({ ...L, p: G.add(L.o, G.mul(L.d, along)), off });
     }
     near.sort((a, b) => a.off - b.off);
-    for (let i = 0; i < near.length && !best; i++) for (let j = i + 1; j < near.length; j++) {        // две линии — точка их пересечения
-      const a = near[i], b = near[j]; if (Math.abs(G.cross(a.d, b.d)) < 1e-6) continue;
-      const x = G.inter(a.o, G.add(a.o, a.d), b.o, G.add(b.o, b.d), true);
-      if (x && G.dist(x.p, W) <= tol * 1.5) { best = { w: x.p, k: "track2", pr: 3.5, d: 0 }; lines.push(a, b); break; }
+    if (ortho) {
+      for (const a of near) {
+        if (Math.abs(G.cross(a.d, ortho.d)) < 1e-6) continue;
+        const x = G.inter(base, G.add(base, ortho.d), a.o, G.add(a.o, a.d), true);
+        if (x && x.t > 1e-9 && G.dist(x.p, ortho.p) <= tol * 1.5) { best = { w: x.p, k: "track", pr: 3.5, d: 0, dir: ortho.d }; lines.push(a); break; }
+      }
+    } else {
+      for (let i = 0; i < near.length && !best; i++) for (let j = i + 1; j < near.length; j++) {        // две линии — точка их пересечения
+        const a = near[i], b = near[j]; if (Math.abs(G.cross(a.d, b.d)) < 1e-6) continue;
+        const x = G.inter(a.o, G.add(a.o, a.d), b.o, G.add(b.o, b.d), true);
+        if (x && G.dist(x.p, W) <= tol * 1.5) { best = { w: x.p, k: "track2", pr: 3.5, d: 0 }; lines.push(a, b); break; }
+      }
+      if (!best && near.length) { const a = near[0]; best = { w: a.p, k: a.k, pr: 4, d: a.off, dir: a.k === "polar" ? a.d : null, t: a.t }; lines.push(a); }
     }
-    if (!best && near.length) { const a = near[0]; best = { w: a.p, k: a.k, pr: 4, d: a.off, dir: a.k === "polar" ? a.d : null, t: a.t }; lines.push(a); }
-    if (!best && snapOn && ST.modes.near) for (const s of g.segs) cand(G.foot(W, s.a, s.b, true), "near", 5);
+    if (!best && !ortho && snapOn && ST.modes.near) for (const s of g.segs) cand(G.foot(W, s.a, s.b, true), "near", 5);
   }
   let w = best ? best.w : W, k = best?.k || null, dir = best?.dir || null;
-  if (!best && ST.ortho && base && pointMode) { const v = G.sub(W, base), ax = Math.abs(v[0]) >= Math.abs(v[1]); w = ax ? [W[0], base[1]] : [base[0], W[1]]; k = "ortho"; dir = ax ? [Math.sign(v[0]) || 1, 0] : [0, Math.sign(v[1]) || 1]; }
+  if (!best && ortho) { w = ortho.p; k = "ortho"; dir = ortho.d; }
   if (base && !dir) { const v = G.sub(w, base); dir = G.len(v) > 1e-9 ? G.unit(v) : null; }
   return { c, w, k, dir, lines, mpp, t: best?.t };
 }
@@ -216,7 +263,7 @@ inEl.addEventListener("keydown", e => {
   else if (e.key === "Escape") { e.preventDefault(); closeInput(); }
 });
 inEl.addEventListener("input", () => { inEl.classList.remove("bad"); autoc(); });
-function bad(msg) { inEl.classList.add("bad"); setHint(msg); }
+function bad(msg) { inEl.classList.add("bad"); note(msg); }
 const NUM = "(-?\\d+(?:[.,]\\d+)?)", num = s => +s.replace(",", ".");
 function submit() {
   const raw = inEl.value.trim();
@@ -255,22 +302,34 @@ function parsePoint(s) {
 let CMD = null, LAST = null;
 const title = () => CMD ? CMDS[CMD.id].title.toUpperCase() : "";
 function start(name, opts = {}) {
-  cancel(true); closeInput();
-  window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0;
+  cancel(true); closeInput(); lastNote = null;
+  window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
   CMD = CMDS[name].make(opts); CMD.id = name; LAST = name;
   mMain.getTargetElement().style.cursor = "crosshair";
   if (CMD.done) return finish();
   after();
 }
 function cancel(silent) {
-  if (!CMD) return; CMD.cancel?.(); CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; closeInput();
+  if (!CMD) return; CMD.cancel?.(); CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; closeInput(); setTimeout(() => { syncGrips(); showCmd(); }, 0);
   if (!silent) { UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); }
 }
 // итог команды («Соединено: 12 → 2», «Расстояние 25 м») остаётся в строке состояния после её завершения
-function finish() { const t = title(), msg = document.getElementById("stHint")?.textContent || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) setHint(msg); }
+function finish() { setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), msg = document.getElementById("stHint")?.textContent || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
+let lastNote = null;
+function note(msg) { setHint(msg); lastNote = msg; if (CMD) showCmd(); }
+const cmdEl = document.createElement("div"); cmdEl.className = "cmdline"; cmdEl.hidden = true; cmdEl.setAttribute("role", "status");
+mMain.getTargetElement().parentElement.appendChild(cmdEl);
+function showCmd() {
+  document.body.classList.toggle("cmdon", !!CMD);
+  if (!CMD) { cmdEl.hidden = true; return; }
+  const text = CMD.prompt().replace(/\s*\[[^\]]*\]/g, ""), ops = CMD.opts?.() || [];
+  cmdEl.innerHTML = (lastNote ? `<div class="nt">${esc(lastNote)}</div>` : "") + `<b>${esc(title())}</b><span>${esc(text)}</span>` + ops.map((o, i) => `<button class="op" data-op="${i}" title="Или наберите букву в скобках и Enter">${esc(o.label)}</button>`).join("") + `<span class="k">Esc — прервать</span>`;
+  cmdEl.querySelectorAll("[data-op]").forEach(b => b.onclick = () => { const o = (CMD?.opts?.() || [])[+b.dataset.op]; if (o) { o.fn(); after(); } });
+  cmdEl.hidden = false;
+}
 function after() {
-  if (!CMD) return; if (CMD.done) return finish();
-  setHint(`${title()} · ${CMD.prompt()}`);
+  if (!CMD) { showCmd(); return; } if (CMD.done) return finish();
+  setHint(`${title()} · ${CMD.prompt().replace(/\s*\[[^\]]*\]/g, "")}`); showCmd(); lastNote = null;
   if (CUR) CUR = resolve(CUR.c); refresh(); syncButtons();
 }
 function enter() { if (!CMD) return; if (CMD.enter) CMD.enter(); else CMD.done = true; after(); }
@@ -279,7 +338,15 @@ function syncButtons() { document.querySelectorAll("[data-cmd]").forEach(b => b.
 let lastClick = null;
 /* события карты: во время команды щелчок — ввод для команды, двойной щелчок не приближает, перетаскивание двигает карту */
 const cadI = new ol.interaction.Interaction({ handleEvent: e => {
+  if (!CMD && UIS.tool === "select" && gripSrc.getFeatures().length) {
+    if (e.type === "pointermove") { const g = gripAt(e.pixel); if (g !== hoverGrip) { hoverGrip?.set("hover", false); hoverGrip = g; g?.set("hover", true); mMain.getTargetElement().style.cursor = g ? "pointer" : ""; } return true; }
+    if (e.type === "pointerdown" && e.originalEvent.button === 0 && !e.originalEvent.shiftKey && !e.originalEvent.ctrlKey && !e.originalEvent.metaKey) {
+      const g = gripAt(e.pixel); if (g) { hoverGrip = null; start("grip", { g, px: e.pixel.slice() }); return false; }
+    }
+  }
   if (!CMD) return true;
+  if (e.type === "pointerdrag" && CMD.id === "grip") { CMD.moved = true; CUR = resolve(e.coordinate); refresh(); return false; }
+  if (e.type === "pointerup" && CMD.id === "grip" && CMD.moved) { CUR = resolve(e.coordinate); CMD.point(CUR.w, { drag: true }); after(); return false; }
   if (e.type === "pointermove") { CUR = resolve(e.coordinate); refresh(); return true; }
   if (e.type === "click") {
     // свой двойной щелчок: два щелчка в одной точке быстрее 0,4 с (у OpenLayers двойным считаются любые два быстрых щелчка)
@@ -289,7 +356,7 @@ const cadI = new ol.interaction.Interaction({ handleEvent: e => {
     if (dbl && CMD.need === "point" && CMD.dbl) CMD.dbl();
     else if (CMD.need === "point") CMD.point(CUR.w, { click: true });
     else if (CMD.need === "sel") { const h = hitAt(e.pixel); if (h) setSel(e.originalEvent.shiftKey ? SEL.filter(s => s.f !== h.f) : [...SEL, h]); }
-    else if (CMD.need === "obj") { const h = hitAt(e.pixel); if (!h) setHint(`${title()} · Под курсором нет объекта: щёлкните по линии или контуру.`); else CMD.pick(h, CUR); }
+    else if (CMD.need === "obj") { const h = hitAt(e.pixel); if (!h) note(`${title()} · Под курсором нет объекта: щёлкните по линии или контуру.`); else CMD.pick(h, CUR); }
     after(); return false;
   }
   if (e.type === "dblclick") return false;                         // без приближения карты во время команды
@@ -309,6 +376,7 @@ addEventListener("keydown", e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape" && CMD) { e.preventDefault(); e.stopImmediatePropagation(); cancel(); return; }
   if ((e.key === "Enter" || e.key === " ") && (CMD || LAST)) { e.preventDefault(); e.stopImmediatePropagation(); CMD ? enter() : start(LAST); return; }
+  if ((e.key === "Delete" || e.key === "Backspace") && CMD?.id === "grip") { e.preventDefault(); e.stopImmediatePropagation(); const o = CMD.opts()[0]; if (o) { o.fn(); after(); } return; }
   if (e.key === "Backspace" && CMD?.back) { e.preventDefault(); e.stopImmediatePropagation(); CMD.back(); after(); return; }
   if (e.key.length !== 1 || e.key === "?" || e.key === "/") return;
   if (CMD && CMD.need !== "sel") { e.preventDefault(); e.stopImmediatePropagation(); openInput("val", e.key); }
@@ -443,8 +511,8 @@ def("pline", "Полилиния", ["PL"], o => {                               
   const arcTo = w => { const P = pts(); return P.length ? G.tangentArc(P[P.length - 1], endDir(), w) : null; };
   const commit = close => {
     const P = pts(), p = P.filter((q, i) => !i || !G.same(q, P[i - 1], 1e-6));
-    if (close || poly()) { if (p.length < 3) { setHint("Для замкнутого контура нужно не меньше трёх точек."); return false; } addNew([newFeature("closed", [...p, p[0]], o.prefer || null)], "полилиния"); }
-    else { if (p.length < 2) { setHint("Для полилинии нужно не меньше двух точек."); return false; } addNew([newFeature("line", p)], "полилиния"); }
+    if (close || poly()) { if (p.length < 3) { note("Для замкнутого контура нужно не меньше трёх точек."); return false; } addNew([newFeature("closed", [...p, p[0]], o.prefer || null)], "полилиния"); }
+    else { if (p.length < 2) { note("Для полилинии нужно не меньше двух точек."); return false; } addNew([newFeature("line", p)], "полилиния"); }
     return true;
   };
   const st = { need: "point", base: () => pts()[pts().length - 1] || null, prev: () => { const P = pts(); return P[P.length - 2] || null; }, own: () => [pts()],
@@ -484,7 +552,7 @@ def("circle", "Круг", ["C"], o => {                                       //
     opts: () => three ? [] : !c ? [opt("3Т — по трём точкам", ["3", "3т", "3p"], () => { three = []; })] : [opt(dia ? "Радиус (Р)" : "Диаметр (Д)", dia ? ["р", "радиус", "r"] : ["д", "диаметр", "d"], () => { dia = !dia; })],
     valueFirst: () => !!c && !three, value: v => make(c, v / (dia ? 2 : 1)),
     point: w => {
-      if (three) { three.push(w); if (three.length === 3) { const k = G.circle3(...three); if (!k) { three = []; return setHint("Точки на одной прямой — окружность не строится."); } make(k.c, k.r); } return; }
+      if (three) { three.push(w); if (three.length === 3) { const k = G.circle3(...three); if (!k) { three = []; return note("Точки на одной прямой — окружность не строится."); } make(k.c, k.r); } return; }
       if (!c) { c = w; return; } make(c, G.dist(c, w) / (dia ? 2 : 1));
     },
     tip: w => c && !three ? [`R ${f2(G.dist(c, w) / (dia ? 2 : 1))} м`] : [],
@@ -497,7 +565,7 @@ def("arc", "Дуга", ["A"], () => {                                         //
   const st = { need: "point", base: () => pts[pts.length - 1] || null,
     prompt: () => center ? ["Центр дуги", "Начальная точка", "Конечная точка (дуга против часовой стрелки)"][pts.length] : [`Начальная точка${optStr(st.opts())}`, "Вторая точка дуги", "Конечная точка"][pts.length],
     opts: () => !pts.length && !center ? [opt("Центр (Ц)", ["ц", "центр", "c", "center"], () => { center = true; })] : [],
-    point: w => { if (pts.length < 2) { pts.push(w); return; } const a = arcOf(w); if (!a) return setHint("Точки на одной прямой — дуга не строится."); addNew([newFeature("line", G.arcPts(a, 0.01), null, { _cad: { t: "arc", c: a.c, r: a.r, a0: a.a0, sw: a.sw } })], "дуга"); st.done = true; },
+    point: w => { if (pts.length < 2) { pts.push(w); return; } const a = arcOf(w); if (!a) return note("Точки на одной прямой — дуга не строится."); addNew([newFeature("line", G.arcPts(a, 0.01), null, { _cad: { t: "arc", c: a.c, r: a.r, a0: a.a0, sw: a.sw } })], "дуга"); st.done = true; },
     tip: w => { const a = arcOf(w); return a ? [`R ${f2(a.r)} м · длина ${f2(Math.abs(a.sw) * a.r)} м`] : []; },
     preview: w => { const a = arcOf(w); return a ? { lines: [G.arcPts(a, 0.05)], pts } : { lines: pts.length ? [[...pts, w]] : [], pts }; } };
   return st;
@@ -508,7 +576,7 @@ def("polygon", "Многоугольник", ["POL"], o => {                    
   const ring = w => G.regPoly(c, n, G.dist(c, w), G.ang(c, w), insc);
   const st = { need: "value", base: () => c,
     prompt: () => st.need === "value" ? `Число сторон <${n}>` : !c ? "Центр многоугольника" : `Радиус: ${insc ? "вершина" : "середина стороны"} — точка или число${optStr(st.opts())}`,
-    value: v => { if (!c && st.need === "value") { if (v < 3 || v > 1024 || !Number.isInteger(v)) return setHint("Число сторон — целое от 3 до 1024."); n = lastSides = v; st.need = "point"; return; } if (v > 0) { addNew([newFeature("closed", G.regPoly(c, n, v, 0, insc), o.prefer)], "многоугольник"); st.done = true; } },
+    value: v => { if (!c && st.need === "value") { if (v < 3 || v > 1024 || !Number.isInteger(v)) return note("Число сторон — целое от 3 до 1024."); n = lastSides = v; st.need = "point"; return; } if (v > 0) { addNew([newFeature("closed", G.regPoly(c, n, v, 0, insc), o.prefer)], "многоугольник"); st.done = true; } },
     valueFirst: () => !!c,
     enter: () => { if (st.need === "value") { st.need = "point"; return; } st.done = true; },
     opts: () => c ? [opt(insc ? "Описанный (О)" : "Вписанный (В)", insc ? ["о", "описанный", "c"] : ["в", "вписанный", "i"], () => { insc = !insc; })] : [],
@@ -528,8 +596,8 @@ function chainCmd(prompt0, promptN, finishFn, tipFn) {               // заме
     return st;
   };
 }
-const distFin = pts => { if (pts.length < 2) return; const f = fLine(pts); f.set("label", `${f2(G.chainLen(pts))} м`); measureSrc.addFeature(f); setHint(`Расстояние ${f2(G.chainLen(pts))} м. Замер оставлен на карте, Esc стирает.`); };
-const areaFin = pts => { if (pts.length < 3) return; const r = [...pts, pts[0]], A = Math.abs(G.area(r)), f = fPoly(r); f.set("label", `${fmt(A, 1)} м² · ${fmt(A / 1e4, 3)} га`); measureSrc.addFeature(f); setHint(`Площадь ${fmt(A, 1)} м², периметр ${f2(G.chainLen(r))} м. Esc стирает замер.`); };
+const distFin = pts => { if (pts.length < 2) return; const f = fLine(pts); f.set("label", `${f2(G.chainLen(pts))} м`); measureSrc.addFeature(f); note(`Расстояние ${f2(G.chainLen(pts))} м. Замер оставлен на карте, Esc стирает.`); };
+const areaFin = pts => { if (pts.length < 3) return; const r = [...pts, pts[0]], A = Math.abs(G.area(r)), f = fPoly(r); f.set("label", `${fmt(A, 1)} м² · ${fmt(A / 1e4, 3)} га`); measureSrc.addFeature(f); note(`Площадь ${fmt(A, 1)} м², периметр ${f2(G.chainLen(r))} м. Esc стирает замер.`); };
 areaFin.closed = true;
 const terrFin = pts => { if (pts.length < 3) return; setTerritory(GJ.writeFeatureObject(new ol.Feature(new ol.geom.Polygon([[...pts, pts[0]].map(fromM)])))); toast("Граница задана. Выгрузка источников — окно «Данные»."); };
 terrFin.closed = true;
@@ -560,8 +628,8 @@ function transformCmd(kind) {
       value: v => {
         if (kind === "rotate") { apply(G.T.rotate(base, v * DEG), 1, false, "поворот", copy); st.done = true; return; }
         if (kind === "scale") {
-          if (st.need === "value" && st.ref == null) { if (v <= 0) return setHint("Длина — больше нуля."); st.ref = v; return; }
-          const k = st.ref != null ? v / st.ref : v; if (k <= 0) return setHint("Масштаб — положительное число."); apply(G.T.scale(base, k), k, false, "масштаб", copy); st.done = true;
+          if (st.need === "value" && st.ref == null) { if (v <= 0) return note("Длина — больше нуля."); st.ref = v; return; }
+          const k = st.ref != null ? v / st.ref : v; if (k <= 0) return note("Масштаб — положительное число."); apply(G.T.scale(base, k), k, false, "масштаб", copy); st.done = true;
         }
       },
       point: w => {
@@ -570,7 +638,7 @@ function transformCmd(kind) {
           if (G.dist(base, w) < 1e-6) return; p2 = w; st.need = "value";
           st.prompt = () => "Удалить исходные объекты? [Да (Д) / Нет (Н)] <Нет>";
           st.opts = () => [opt("Да", ["д", "да", "y", "yes"], () => { apply(G.T.mirror(base, p2), 1, true, "зеркало", false); st.done = true; }), opt("Нет", ["н", "нет", "n", "no"], () => { apply(G.T.mirror(base, p2), 1, true, "зеркало", true); st.done = true; })];
-          st.enter = () => { apply(G.T.mirror(base, p2), 1, true, "зеркало", true); st.done = true; }; st.value = () => setHint("Ответьте Д или Н."); return;
+          st.enter = () => { apply(G.T.mirror(base, p2), 1, true, "зеркало", true); st.done = true; }; st.value = () => note("Ответьте Д или Н."); return;
         }
         if (kind === "rotate") { apply(G.T.rotate(base, G.ang(base, w)), 1, false, "поворот", copy); st.done = true; return; }
         if (kind === "scale") { const k = G.dist(base, w); if (k < 1e-9) return; apply(G.T.scale(base, k), k, false, "масштаб", copy); st.done = true; return; }
@@ -595,11 +663,11 @@ def("offset", "Подобие", ["O"], () => {
   const offCh = w => { const cad = pick.f.get("_cad"); if (cad?.c) { const r = cad.r + (G.dist(w, cad.c) > cad.r ? d : -d); return r > 0 ? { ch: cad.t === "circle" ? G.circlePts(cad.c, r) : G.arcPts({ ...cad, r }, 0.01), cad: { ...cad, r } } : null; } const ch = G.offset(pick.ch, G.side(pick.ch, w) * d); return ch ? { ch } : null; };
   const st = { need: "value", base: () => null,
     prompt: () => st.need === "value" ? `Расстояние подобия, м <${fmt(d, 2)}>` : !pick ? "Выберите линию или контур, Enter — завершить" : "Укажите сторону, с которой строить подобие",
-    value: v => { if (v <= 0) return setHint("Расстояние — больше нуля."); d = window.__cadOffset = v; st.need = "obj"; },
+    value: v => { if (v <= 0) return note("Расстояние — больше нуля."); d = window.__cadOffset = v; st.need = "obj"; },
     enter: () => { if (st.need === "value") { st.need = "obj"; return; } st.done = true; },
-    pick: (h, pos) => { const p = pickChain(h, pos); if (!p) return setHint("Подобие строится для линий и контуров."); pick = p; st.need = "point"; },
+    pick: (h, pos) => { const p = pickChain(h, pos); if (!p) return note("Подобие строится для линий и контуров."); pick = p; st.need = "point"; },
     point: w => {
-      const r = offCh(w); if (!r) return setHint("Подобие на эту сторону не строится (радиус получается нулевым).");
+      const r = offCh(w); if (!r) return note("Подобие на эту сторону не строится (радиус получается нулевым).");
       const g = /Polygon/.test(pick.t) ? new ol.geom.Polygon([r.ch.map(fromM)]) : new ol.geom.LineString(r.ch.map(fromM));
       addNew([{ key: pick.key, f: copyFeat(pick.f, g, r.cad ? { _cad: r.cad } : {}) }], "подобие"); pick = null; st.need = "obj";
     },
@@ -619,9 +687,9 @@ def("trim", "Обрезать", ["TR"], () => {
     objTip: () => prevSrc.getFeatures().some(f => f.get("k") === "gone") ? "щелчок — отрезать красное" : "наведите на отрезаемую часть",
     enter: () => { st.done = true; },
     pick: (h, pos) => {
-      const t = info(pos); if (!t) return setHint("Обрезаются линии и контуры.");
+      const t = info(pos); if (!t) return note("Обрезаются линии и контуры.");
       const { p, cuts } = t, pieces = G.trim(p.ch, p.q.s, cuts); memo = null;
-      if (!pieces) return setHint("Здесь нечего отрезать: у этого участка нет пересечений с другими объектами.");
+      if (!pieces) return note("Здесь нечего отрезать: у этого участка нет пересечений с другими объектами.");
       if (/Polygon/.test(p.t)) {                                   // контур после обрезки не замкнут — уходит в слой линий
         const lk = targetLayer("line").key;
         edit([{ key: p.key, f: p.f, remove: true }], pieces.map(c => ({ key: lk, f: copyFeat(p.f, new ol.geom.LineString(c)) })), "обрезка");
@@ -643,14 +711,14 @@ def("extend", "Удлинить", ["EX"], () => {
   const st = { need: "obj", prompt: () => "Щёлкните у конца линии, которую нужно удлинить до ближайшего объекта, Enter — завершить",
     objTip: () => prevSrc.getFeatures().some(f => f.get("k") === "ghost") ? "щелчок — удлинить по пунктиру" : "наведите у конца линии",
     enter: () => { st.done = true; },
-    pick: (h, pos) => { const r = ext(pos); if (!r) return setHint("Удлиняются незамкнутые линии."); if (!r.ch) return setHint("По направлению линии нет объекта, до которого её можно удлинить."); edit([{ key: r.p.key, f: r.p.f, geom: replaced(r.p, [r.ch]), cad: null }], [], "удлинение"); },
+    pick: (h, pos) => { const r = ext(pos); if (!r) return note("Удлиняются незамкнутые линии."); if (!r.ch) return note("По направлению линии нет объекта, до которого её можно удлинить."); edit([{ key: r.p.key, f: r.p.f, geom: replaced(r.p, [r.ch]), cad: null }], [], "удлинение"); },
     previewObj: pos => { const r = ext(pos); if (!r?.ch) return []; const e = r.atStart ? [r.ch[0], r.p.ch[0]] : [r.p.ch[r.p.ch.length - 1], r.ch[r.ch.length - 1]]; return [new ol.Feature({ geometry: new ol.geom.LineString(e), k: "ghost" })]; } };
   return st;
 });
 def("break", "Разорвать", ["BR"], () => {
   let p = null;
   const st = { need: "obj", prompt: () => p ? "Вторая точка разрыва" : "Щёлкните по линии в первой точке разрыва",
-    pick: (h, pos) => { p = pickChain(h, pos, "map"); if (!p || /Polygon/.test(p.t)) { p = null; return setHint("Разрываются линии (контур сначала расчлените: X)."); } st.need = "point"; },
+    pick: (h, pos) => { p = pickChain(h, pos, "map"); if (!p || /Polygon/.test(p.t)) { p = null; return note("Разрываются линии (контур сначала расчлените: X)."); } st.need = "point"; },
     base: () => p ? toM(p.q.p) : null,
     point: w => { const q = G.nearest(p.ch, fromM(w)); piecesEdit(p, G.breakChain(p.ch, p.q.s, q.s), "разрыв"); st.done = true; },
     preview: w => { const q = G.nearest(p.ch, fromM(w)), a = Math.min(p.q.s, q.s), b = Math.max(p.q.s, q.s); return { ghosts: [new ol.Feature({ geometry: new ol.geom.LineString(G.sliceChain(p.ch, a, b)), k: "gone" })] }; } };
@@ -664,32 +732,32 @@ def("fillet", "Сопряжение", ["F"], () => {
     value: v => { r = window.__cadFillet = Math.max(0, v); st.need = "obj"; },
     enter: () => { if (st.need === "value") { st.need = "obj"; return; } st.done = true; },
     pick: (h, pos) => {
-      const p = pickChain(h, pos); if (!p) return setHint("Сопрягаются линии и контуры.");
-      if (all) { if (r <= 0) return setHint("Для скругления всех углов задайте радиус: Р."); const res = G.filletAll(p.ch, r, 0.01); edit([{ key: p.key, f: p.f, geom: replaced(p, [res.pts]), cad: null }], [], "сопряжение"); setHint(`Скруглено углов: ${res.done}.`); st.done = true; return; }
+      const p = pickChain(h, pos); if (!p) return note("Сопрягаются линии и контуры.");
+      if (all) { if (r <= 0) return note("Для скругления всех углов задайте радиус: Р."); const res = G.filletAll(p.ch, r, 0.01); edit([{ key: p.key, f: p.f, geom: replaced(p, [res.pts]), cad: null }], [], "сопряжение"); note(`Скруглено углов: ${res.done}.`); st.done = true; return; }
       if (!first) { first = p; return; }
       const a = first, b = p; first = null;
       if (a.f === b.f && a.i === b.i) {                           // соседние отрезки одной полилинии — скругляется общая вершина
         const ch = a.ch, cl = G.closed(ch), n = cl ? ch.length - 1 : ch.length, i = a.q.i, j = b.q.i;
         const v = (i + 1) % n === j % n ? (i + 1) % n : (j + 1) % n === i % n ? (j + 1) % n : -1;
-        if (v < 0 || (!cl && (v === 0 || v === n - 1))) return setHint("Выберите два соседних отрезка одной полилинии.");
-        if (r === 0) return setHint("Угол полилинии уже острый: для скругления задайте радиус (Р).");
+        if (v < 0 || (!cl && (v === 0 || v === n - 1))) return note("Выберите два соседних отрезка одной полилинии.");
+        if (r === 0) return note("Угол полилинии уже острый: для скругления задайте радиус (Р).");
         const P = cl ? ch.slice(0, -1) : ch.slice(), f = G.filletCorner(P[(v - 1 + n) % n], P[v], P[(v + 1) % n], r);
-        if (!f) return setHint("Радиус слишком велик для этих отрезков.");
+        if (!f) return note("Радиус слишком велик для этих отрезков.");
         P.splice(v, 1, ...G.arcPts(f.arc, 0.01)); if (cl) P.push(P[0]);
         edit([{ key: a.key, f: a.f, geom: replaced(a, [P]), cad: null }], [], "сопряжение"); st.done = true; return;
       }
-      if (a.f === b.f) return setHint("Выберите два разных объекта или два соседних отрезка одной полилинии.");
-      if (G.closed(a.ch) || G.closed(b.ch)) return setHint("Для двух объектов выбирайте незамкнутые линии.");
+      if (a.f === b.f) return note("Выберите два разных объекта или два соседних отрезка одной полилинии.");
+      if (G.closed(a.ch) || G.closed(b.ch)) return note("Для двух объектов выбирайте незамкнутые линии.");
       // два объекта: подрезать или продлить концевые отрезки до пересечения; при радиусе — дуга между ними
       const sa = [a.ch[a.q.i], a.ch[a.q.i + 1]], sb = [b.ch[b.q.i], b.ch[b.q.i + 1]], x = G.inter(sa[0], sa[1], sb[0], sb[1], true);
-      if (!x) return setHint("Отрезки параллельны — сопряжение не строится.");
+      if (!x) return note("Отрезки параллельны — сопряжение не строится.");
       // конец, который уходит к углу: щёлкнутая часть отрезка остаётся, как в AutoCAD
       const endOf = p => { const L = p.ch.length - 1, a0 = p.ch[p.q.i], d = G.sub(p.ch[p.q.i + 1], a0), sx = G.dot(G.sub(x.p, a0), d), sp = G.dot(G.sub(p.q.p, a0), d), toEnd = sx >= sp;
         if (toEnd && p.q.i === L - 1) return L; if (!toEnd && p.q.i === 0) return 0; return -1; };
-      const ea = endOf(a), eb = endOf(b); if (ea < 0 || eb < 0) return setHint("Выбирайте концевые отрезки линий.");
+      const ea = endOf(a), eb = endOf(b); if (ea < 0 || eb < 0) return note("Выбирайте концевые отрезки линий.");
       const far = (p, e) => p.ch[e === 0 ? 1 : p.ch.length - 2];
       let ta = x.p, tb = x.p, arc = null;
-      if (r > 0) { const f = G.filletCorner(far(a, ea), x.p, far(b, eb), r); if (!f) return setHint("Радиус слишком велик для этих отрезков."); ta = f.t1; tb = f.t2; arc = f.arc; }
+      if (r > 0) { const f = G.filletCorner(far(a, ea), x.p, far(b, eb), r); if (!f) return note("Радиус слишком велик для этих отрезков."); ta = f.t1; tb = f.t2; arc = f.arc; }
       const ca = a.ch.slice(), cb = b.ch.slice(); ca[ea] = ta; cb[eb] = tb;
       edit([{ key: a.key, f: a.f, geom: replaced(a, [ca]), cad: null }, { key: b.key, f: b.f, geom: replaced(b, [cb]), cad: null }], arc ? [newFeature("line", G.arcPts(arc, 0.01), null, { _cad: { t: "arc", ...arc } })] : [], "сопряжение");
       st.done = true;
@@ -701,28 +769,28 @@ def("chamfer", "Фаска", ["CHA"], () => {
   const st = { need: "obj",
     prompt: () => ask === 1 ? `Длина фаски на первом отрезке, м <${fmt(d1, 2)}>` : ask === 2 ? `Длина фаски на втором отрезке, м <${fmt(d2, 2)}>` : `${all ? "Выберите полилинию или контур — фаски на всех углах" : first ? "Второй отрезок" : "Первый отрезок"} (длины ${fmt(d1, 2)} и ${fmt(d2, 2)} м)${optStr(st.opts())}`,
     opts: () => ask ? [] : [opt("Длины (Д)", ["д", "длины", "d", "distance"], () => { ask = 1; st.need = "value"; }), opt("Полилиния (П)", ["п", "полилиния", "p", "polyline"], () => { all = true; first = null; })],
-    value: v => { if (v < 0) return setHint("Длина — не меньше нуля."); if (ask === 1) { d1 = window.__cadCh1 = v; d2 = window.__cadCh2 = v; ask = 2; return; } d2 = window.__cadCh2 = v; ask = 0; st.need = "obj"; },
+    value: v => { if (v < 0) return note("Длина — не меньше нуля."); if (ask === 1) { d1 = window.__cadCh1 = v; d2 = window.__cadCh2 = v; ask = 2; return; } d2 = window.__cadCh2 = v; ask = 0; st.need = "obj"; },
     enter: () => { if (ask === 1) { ask = 2; return; } if (ask === 2) { ask = 0; st.need = "obj"; return; } st.done = true; },
     pick: (h, pos) => {
-      const p = pickChain(h, pos); if (!p) return setHint("Фаска строится на линиях и контурах.");
-      if (all) { const r = G.chamferAll(p.ch, d1, d2); edit([{ key: p.key, f: p.f, geom: replaced(p, [r.pts]), cad: null }], [], "фаска"); setHint(`Фасок: ${r.done}.`); st.done = true; return; }
+      const p = pickChain(h, pos); if (!p) return note("Фаска строится на линиях и контурах.");
+      if (all) { const r = G.chamferAll(p.ch, d1, d2); edit([{ key: p.key, f: p.f, geom: replaced(p, [r.pts]), cad: null }], [], "фаска"); note(`Фасок: ${r.done}.`); st.done = true; return; }
       if (!first) { first = p; return; }
       const a = first, b = p; first = null;
       if (a.f === b.f && a.i === b.i) {
         const ch = a.ch, cl = G.closed(ch), n = cl ? ch.length - 1 : ch.length, i = a.q.i, j = b.q.i;
         const v = (i + 1) % n === j % n ? (i + 1) % n : (j + 1) % n === i % n ? (j + 1) % n : -1;
-        if (v < 0 || (!cl && (v === 0 || v === n - 1))) return setHint("Выберите два соседних отрезка одной полилинии.");
+        if (v < 0 || (!cl && (v === 0 || v === n - 1))) return note("Выберите два соседних отрезка одной полилинии.");
         const P = cl ? ch.slice(0, -1) : ch.slice(), first1 = (i + 1) % n === v, c = G.chamferCorner(P[(v - 1 + n) % n], P[v], P[(v + 1) % n], first1 ? d1 : d2, first1 ? d2 : d1);
-        if (!c) return setHint("Длины фаски больше отрезков.");
+        if (!c) return note("Длины фаски больше отрезков.");
         P.splice(v, 1, c.t1, c.t2); if (cl) P.push(P[0]);
         edit([{ key: a.key, f: a.f, geom: replaced(a, [P]), cad: null }], [], "фаска"); st.done = true; return;
       }
-      if (a.f === b.f || G.closed(a.ch) || G.closed(b.ch)) return setHint("Выберите две незамкнутые линии или два соседних отрезка одной полилинии.");
-      const x = G.inter(a.ch[a.q.i], a.ch[a.q.i + 1], b.ch[b.q.i], b.ch[b.q.i + 1], true); if (!x) return setHint("Отрезки параллельны — фаска не строится.");
+      if (a.f === b.f || G.closed(a.ch) || G.closed(b.ch)) return note("Выберите две незамкнутые линии или два соседних отрезка одной полилинии.");
+      const x = G.inter(a.ch[a.q.i], a.ch[a.q.i + 1], b.ch[b.q.i], b.ch[b.q.i + 1], true); if (!x) return note("Отрезки параллельны — фаска не строится.");
       const endOf = p => { const L = p.ch.length - 1, a0 = p.ch[p.q.i], d = G.sub(p.ch[p.q.i + 1], a0), toEnd = G.dot(G.sub(x.p, a0), d) >= G.dot(G.sub(p.q.p, a0), d); if (toEnd && p.q.i === L - 1) return L; if (!toEnd && p.q.i === 0) return 0; return -1; };
-      const ea = endOf(a), eb = endOf(b); if (ea < 0 || eb < 0) return setHint("Выбирайте концевые отрезки линий.");
+      const ea = endOf(a), eb = endOf(b); if (ea < 0 || eb < 0) return note("Выбирайте концевые отрезки линий.");
       const far = (p, e) => p.ch[e === 0 ? 1 : p.ch.length - 2], c = G.chamferCorner(far(a, ea), x.p, far(b, eb), d1, d2);
-      if (!c) return setHint("Длины фаски больше отрезков.");
+      if (!c) return note("Длины фаски больше отрезков.");
       const ca = a.ch.slice(), cb = b.ch.slice(); ca[ea] = c.t1; cb[eb] = c.t2;
       edit([{ key: a.key, f: a.f, geom: replaced(a, [ca]), cad: null }, { key: b.key, f: b.f, geom: replaced(b, [cb]), cad: null }], G.dist(c.t1, c.t2) > 1e-6 ? [newFeature("line", [c.t1, c.t2])] : [], "фаска");
       st.done = true;
@@ -745,8 +813,8 @@ def("array", "Массив", ["AR"], () => selection(items => {
   const make = () => {
     const adds = [];
     for (const { fn } of fns()) for (const { key, f } of items) { const cad = xformCad(f.get("_cad"), fn); adds.push({ key, f: copyFeat(f, xformGeom(f.getGeometry(), fn), cad ? { _cad: cad } : {}) }); }
-    if (adds.length > 20000) return setHint("Больше 20 000 копий — уменьшите массив.");
-    edit([], adds, "массив"); setHint(`Массив: ${adds.length} копий.`); st.done = true;
+    if (adds.length > 20000) return note("Больше 20 000 копий — уменьшите массив.");
+    edit([], adds, "массив"); note(`Массив: ${adds.length} копий.`); st.done = true;
   };
   const cur = () => steps[P.kind][k];
   const st = { need: "value",
@@ -756,9 +824,9 @@ def("array", "Массив", ["AR"], () => selection(items => {
     base: () => P.c,
     point: w => { P.c = w; st.need = "value"; },
     value: v => {
-      if (!P.kind) return setHint("Выберите П или К.");
+      if (!P.kind) return note("Выберите П или К.");
       const key = cur(); if (!key) return;
-      if (["cols", "rows", "n"].includes(key) && (!Number.isInteger(v) || v < 1)) return setHint("Нужно целое число, не меньше 1.");
+      if (["cols", "rows", "n"].includes(key) && (!Number.isInteger(v) || v < 1)) return note("Нужно целое число, не меньше 1.");
       P[key] = v; k++;
       if (P.kind === "rect" && k >= steps.rect.length) make();
     },
@@ -785,7 +853,7 @@ def("stretch", "Растянуть", ["S"], () => {
     prompt: () => !c1 ? "Первый угол секущей рамки (захватите вершины, которые нужно сдвинуть)" : !box ? "Противоположный угол рамки" : !base ? `Базовая точка (захвачено объектов: ${hits.length})` : "Вторая точка: щелчок, @dx;dy или длина по направлению курсора",
     point: w => {
       if (!c1) { c1 = w; return; }
-      if (!box) { box = [Math.min(c1[0], w[0]), Math.min(c1[1], w[1]), Math.max(c1[0], w[0]), Math.max(c1[1], w[1])]; hits = collect(); if (!hits.length) { c1 = box = null; setHint("В рамку не попала ни одна вершина — укажите рамку заново."); } return; }
+      if (!box) { box = [Math.min(c1[0], w[0]), Math.min(c1[1], w[1]), Math.max(c1[0], w[0]), Math.max(c1[1], w[1])]; hits = collect(); if (!hits.length) { c1 = box = null; note("В рамку не попала ни одна вершина — укажите рамку заново."); } return; }
       if (!base) { base = w; return; }
       const d = G.sub(w, base);
       edit(hits.map(({ key, f }) => { const all = chainsOf(f.getGeometry()).every(ch => ch.every(c => inBox(toM(c)))), cad = f.get("_cad"); return { key, f, geom: moved(f.getGeometry(), d), cad: all && cad ? xformCad(cad, G.T.move(d)) : null }; }), [], "растянуть");
@@ -806,23 +874,47 @@ def("lengthen", "Увеличить", ["LEN"], () => {
   const st = { need: "value",
     prompt: () => st.need === "value" ? (total != null ? `Полная длина, м <${fmt(total, 2)}>` : `Приращение, м (минус — укоротить) <${fmt(delta, 2)}>${optStr(st.opts())}`) : `Щёлкните у конца линии: ${total != null ? `полная длина ${fmt(total, 2)} м` : `приращение ${fmt(delta, 2)} м`}, Enter — завершить`,
     opts: () => st.need === "value" && total == null ? [opt("Всего (В)", ["в", "всего", "t", "total"], () => { total = 0; })] : [],
-    value: v => { if (total != null) { if (v <= 0) return setHint("Длина — больше нуля."); total = v; } else delta = window.__cadLen = v; st.need = "obj"; },
+    value: v => { if (total != null) { if (v <= 0) return note("Длина — больше нуля."); total = v; } else delta = window.__cadLen = v; st.need = "obj"; },
     enter: () => { if (st.need === "value") { st.need = "obj"; return; } st.done = true; },
     pick: (h, pos) => {
-      const p = pickChain(h, pos); if (!p || G.closed(p.ch)) return setHint("Увеличиваются незамкнутые линии.");
+      const p = pickChain(h, pos); if (!p || G.closed(p.ch)) return note("Увеличиваются незамкнутые линии.");
       const atStart = G.dist(pos.w, p.ch[0]) < G.dist(pos.w, p.ch[p.ch.length - 1]), d = total != null ? total - G.chainLen(p.ch) : delta;
-      const ch = G.lengthen(p.ch, atStart, d); if (!ch) return setHint("Укоротить на столько нельзя: линия короче.");
+      const ch = G.lengthen(p.ch, atStart, d); if (!ch) return note("Укоротить на столько нельзя: линия короче.");
       edit([{ key: p.key, f: p.f, geom: replaced(p, [ch]), cad: null }], [], "увеличить");
     } };
   return st;
 });
+// РУЧКА: щелчок по ручке, затем щелчок в новом месте (или перетаскивание); привязки, отслеживание, орто и ввод работают
+def("grip", "Ручка", [], o => {
+  const g = o.g, f = g.get("f"), key = g.get("key"), path = g.get("path"), mid = !!g.get("mid"), closed = g.get("closed"), orig = f.getGeometry();
+  const baseW = toM(g.getGeometry().getCoordinates());
+  const build = (c, remove) => {
+    const coords = JSON.parse(JSON.stringify(orig.getCoordinates())), last = path[path.length - 1];
+    let arr = coords; for (const i of path.slice(0, -1)) arr = arr[i];
+    if (mid) arr.splice(last, 0, c);
+    else if (remove) { arr.splice(last, 1); if (closed && last === 0) arr[arr.length - 1] = arr[0].slice(); }
+    else if (!path.length) return new ol.geom.Point(c);
+    else { arr[last] = c; if (closed && last === 0) arr[arr.length - 1] = c.slice(); }
+    const g2 = orig.clone(); g2.setCoordinates(coords); return g2;
+  };
+  let skip = true;
+  const st = { need: "point", base: () => baseW,
+    prompt: () => mid ? "Новая вершина: щелчок, @dx;dy или X;Y (Esc — отмена)" : `Новое положение вершины: щелчок, @dx;dy или X;Y${optStr(st.opts())} (Esc — отмена)`,
+    opts: () => mid || !path.length ? [] : [opt("Удалить вершину (У)", ["у", "удалить", "d", "delete"], () => {
+      const n = g.get("n"), min = closed ? 3 : 2; if (n <= min) return note(`Удалить нельзя: у ${closed ? "контура" : "линии"} останется меньше ${min} вершин.`);
+      edit([{ key, f, geom: build(null, true), cad: null }], [], "удаление вершины"); st.done = true; })],
+    point: (w, how) => { if (skip && how?.click && !st.moved) { skip = false; return; } edit([{ key, f, geom: build(fromM(w)), cad: null }], [], mid ? "новая вершина" : "перенос вершины"); st.done = true; },
+    enter: () => { st.done = true; },
+    preview: w => ({ ghosts: [new ol.Feature({ geometry: build(fromM(w)), k: "ghost" })], lines: [[baseW, w]] }) };
+  return st;
+});
 def("join", "Соединить", ["J"], () => selection(items => {
   const lines = items.filter(it => /LineString/.test(it.f.getGeometry().getType()));
-  if (lines.length < 2) { setHint("Для соединения выберите две и больше линии с общими концами."); return { done: true }; }
+  if (lines.length < 2) { note("Для соединения выберите две и больше линии с общими концами."); return { done: true }; }
   const chains = lines.flatMap(it => worldChains(it.f)), merged = G.join(chains, 0.001);
-  if (merged.length >= chains.length) { setHint("У выбранных линий нет общих концов (допуск 1 мм)."); return { done: true }; }
+  if (merged.length >= chains.length) { note("У выбранных линий нет общих концов (допуск 1 мм)."); return { done: true }; }
   const key = lines[0].key, adds = merged.map(c => ({ key, f: copyFeat(lines[0].f, new ol.geom.LineString(c.map(fromM))) }));
-  edit(lines.map(it => ({ ...it, remove: true })), adds, "соединение"); setSel(adds); setHint(`Соединено: ${chains.length} → ${merged.length}.`);
+  edit(lines.map(it => ({ ...it, remove: true })), adds, "соединение"); setSel(adds); note(`Соединено: ${chains.length} → ${merged.length}.`);
   return { done: true };
 }));
 def("explode", "Расчленить", ["X"], () => selection(items => {
@@ -833,7 +925,7 @@ def("explode", "Расчленить", ["X"], () => selection(items => {
     chainsOf(it.f.getGeometry()).forEach(ch => { for (let i = 0; i + 1 < ch.length; i++) adds.push({ key, f: copyFeat(it.f, new ol.geom.LineString([ch[i], ch[i + 1]])) }); });
     changes.push({ ...it, remove: true });
   }
-  if (changes.length) { edit(changes, adds, "расчленение"); setSel([]); setHint(`Получено отрезков: ${adds.length}.`); }
+  if (changes.length) { edit(changes, adds, "расчленение"); setSel([]); note(`Получено отрезков: ${adds.length}.`); }
   return { done: true };
 }));
 
@@ -897,6 +989,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { grip: gripTip, start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
+window.CAD = { grip: gripTip, grips: () => syncGrips(), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();

@@ -92,12 +92,16 @@ O. **Album.** After M: «Виды» → save «Существующее» and «
    (one per view, one A1 at 1:1000 with ТЭП) → the eye shows the sheet with frame, stamp, north arrow, scale bar and legend →
    «PDF альбома» downloads a file in about a second.
 
-Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
+Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800 **and at 840 px wide** (the owner's
+browser pane: the ribbon wraps into two rows, the layer and properties panels open over the map from «Окна ▾», windows stay
+below the ribbon, the command line with clickable options sits at the bottom of the map).
 Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/grado2/tests/e2e/scenarios.mjs`
 (`GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py`); C, D, E, G, H, N need real portals or the eye.
 
 ## Queue
 
+- 2026-09-23 (v0.26.0): drawers in a narrow window close only from «Окна ▾» — add a close button in the drawer header;
+  grips show for up to 3 000 grips (large selections show none, without saying so).
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). Not yet — rectangle corner options,
   ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel.

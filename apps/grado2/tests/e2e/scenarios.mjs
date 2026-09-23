@@ -89,6 +89,17 @@ export default async p => {
   const e = await at(1000, 1000); for (let i = 3; i >= 0; i--) await p.move(e[0] + i * 3, e[1] + i * 2); await p.sleep(600);
   for (let i = 1; i <= 6; i++) await p.move(e[0] + 1, e[1] - i * 12); await p.sleep(150);
   check(await p.ev(`const c=CAD.cur(); return CAD.acq().length===1 && c.k==="track" && Math.abs(c.w[0]-1000)<1e-6`), "ОТСЛЕЖ: после задержки на конечной точке курсор ведётся по пунктирной вертикали через неё");
+  // орто при захваченной точке: отслеживание лишь останавливает курсор на оси, отрезок остаётся строго горизонтальным
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+  await p.ev(`CAD.setOrtho(true); return 1`); await type("l"); await enter(); await type("1050;1025"); await enter();
+  const e2 = await at(1030, 1020); for (let i = 3; i >= 0; i--) await p.move(e2[0] + i * 3, e2[1] + i * 2); await p.sleep(600);
+  q = await at(1031, 1027); await p.move(q[0] + 6, q[1]); await p.move(q[0], q[1]); await p.sleep(150);
+  await p.click(q[0], q[1]); await enter(); await p.ev(`CAD.setOrtho(false); return 1`);
+  check((await lines()).some(l => /^1050;1025 1030;1025$/.test(l)), "ОРТО + ОТСЛЕЖ: точка на оси там, где её пересекает линия отслеживания, отрезок строго горизонтален");
+  // ручки: выбрать отрезок, щёлкнуть по ручке, ввести новое положение
+  await p.ev(`setSel(layerSrc[CUR].getFeatures().filter(f=>{const c=f.getGeometry().getCoordinates().map(CAD.toM); return Math.abs(c[0][0]-1050)<1e-6 && Math.abs(c[0][1]-1025)<1e-6;}).map(f=>({key:CUR,f}))); return SEL.length`);
+  q = await at(1030, 1025); await p.click(q[0], q[1]); await type("@0;-5"); await enter();
+  check((await lines()).includes("1050;1025 1030;1020"), "ручка: щелчок по вершине выбранного отрезка и @0;-5 — вершина сдвинута ровно на 5 м");
   await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
 
   // группы

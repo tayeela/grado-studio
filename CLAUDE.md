@@ -226,6 +226,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.26.0: ortho fixed, AutoCAD grips, narrow-window layout, command line.** Owner (screenshot at a
+  ~840 px pane): «в орто линия получается под углом; уйма косяков в вёрстке; не получается выбрать вершину фигуры».
+  - Ortho: tracking beat ortho — a tracking line gave a slanted segment. Now with ortho on the point stays on the X or Y axis
+    from the last point and a tracking line only tells where on the axis to stop (AutoCAD behaviour); two-line tracking and
+    «nearest» are off under ortho; osnap still wins.
+  - Grips in selection mode: blue squares on vertices, triangles at segment midpoints of selected objects (up to 3 000).
+    Click a grip, then click the new place, or drag it; snaps, tracking, ortho, typed @dx;dy / X;Y all work (command
+    «grip»); a midpoint grip inserts a vertex; «У» or Delete removes the hot vertex (keeps ≥ 2 / 3 vertices). Closed rings keep
+    the closing vertex in sync. OpenLayers Modify («Вершины») stays for bulk editing of a layer.
+  - Narrow window (≤ 1000 px): the ribbon wraps into two rows at group boundaries (grid row `auto`); header window labels hide
+    only below 1080 px; the layer and properties panels become drawers over the map (closed at start, opened from «Окна ▾»),
+    instead of disappearing below 900 px; the project button stays; windows are placed below the ribbon (`mapBox().top`).
+  - Command line at the bottom of the map: command name, prompt, clickable option chips, command messages (`note()` —
+    errors were visible only in the truncated status bar); toasts move above it; typology segments fill the last row.
+  - Testing note: the owner's pane was ~840 CSS px (screenshot at 1.4×); audit at that width, not only 1280.
+  - e2e +2 steps: ortho with tracking stays horizontal; grip + @0;-5 moves a vertex exactly.
+
 - **2026-09-23, ГРАДО 2 v0.25.0: more AutoCAD commands.** PLINE option «Дуга (Д)» / «Линейный (Л)»: arc segments tangent to
   the previous segment (`CG.tangentArc`, `arcEndDir`), undo removes a whole arc step. CHA — chamfer (two lengths, «Полилиния» for
   all corners). AR — array: rectangular (columns, rows, spacings, defaults 1.5 × selection size) and polar (centre, count,

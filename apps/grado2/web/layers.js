@@ -658,6 +658,7 @@ function setSel(list) {
   if (SEL.length) UIS.rt = "obj";
   renderRight(); renderTable(); syncRibbon(); syncStatus();
   if (UIS.tool === "vertex") setTool(UIS.tool);      // ручки работают с выбором
+  CAD.grips?.();                                     // ручки AutoCAD на вершинах выбранных объектов
 }
 function select(key, f) { setSel(f ? [{ key, f }] : []); }
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
@@ -790,7 +791,7 @@ function setTool(t) {
   }
   placeTools(toolI);
   mMain.getTargetElement().style.cursor = t === "select" ? "" : "crosshair";
-  syncRibbon(); syncStatus();
+  syncRibbon(); syncStatus(); CAD.grips?.();
 }
 function syncRibbon() {
   document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === UIS.tool));

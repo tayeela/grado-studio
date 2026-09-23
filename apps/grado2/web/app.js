@@ -1056,8 +1056,9 @@ const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
   const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
   if (d.anchor) return anchorWin(w);
-  const W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 90);
-  Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(40, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
+  // окно не заходит на шапку и ленту: на узком экране лента в две строки, верх рабочего поля ниже
+  const top = Math.round(mapBox().top) + 4, W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - top - 30);
+  Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(top, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
 }
 /* окно, прижатое к боковой панели, следует за ней при растягивании и скрытии панели;
    «во всю высоту» — двойной щелчок по заголовку, как у палитр AutoCAD */
@@ -1157,6 +1158,8 @@ const startApp = async () => {
   renderSources(); icons();
   if (WST.wl) setDockWidth("l", WST.wl); if (WST.wr) setDockWidth("r", WST.wr);
   if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
+  // узкое окно: панели поверх карты, при запуске закрыты — открываются из меню «Окна»
+  if (innerWidth <= 1000) { $("work").classList.add("noL", "noR"); syncWinButtons(); }          // без записи: на широком окне панели вернутся
   Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); });   // первый запуск: вместо окон — «С чего начать» на карте
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();
