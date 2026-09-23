@@ -221,6 +221,33 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.19.0: new typologies — ИЖС, «Блокированные», «Урбан-блоки».** Owner: «проработай генерацию ижс,
+  блокированных домов и урбан блоков».
+  - `place()` returns buildings plus `out.plots` (участки, дворы) and `out.streets` (проезды, улицы); `generate` keeps them.
+    Buildings carry `grp` (one house / one blocked row / one urban block) and low-rise ones `maxF: 3`, `minF: 1`.
+  - ИЖС: strips «plot row — plot row — 12 m проезд», plots back to back, facing their проезд (edge rows face the site edge);
+    plot area from the new widget «участок, соток» (4–20, frontage √(area/1.6), 18–40 m); house ≤ 12×12 m, 5 m from the
+    проезд, ≥ 3 m from neighbours; ≤ 3 floors (ГрК РФ ст. 1 п. 39).
+  - Блокированные: unit 7 m, depth = «ширина корпуса» clamped 10–14 m, front yard 5 m, garden 12 m (24 m between rear
+    facades ≥ 15 m for 2–3 floors), up to 6 units per row (ГрК ст. 49 ч. 2 п. 2 allows 10), 10 m between rows; one plot per
+    unit; ≤ 3 floors.
+  - Урбан-блоки: grid of blocks «квартал, м» × 0.8 (new widget, 60–200) with 20 m streets; perimeter sections of depth
+    «ширина корпуса», continuous street front («1 этаж: нежилой, на улицу»), north corners ×1.4 floors, the side facing
+    south ×0.6 (its corners at the base height), 12 m passage in the east/west sides, courtyard as a plot. **First version
+    put the accents on all four corners — the check found 48 east/west sections below 50 % insolated facades; with accents
+    only on the north corners: 0.** A part too small for a block gets a perimeter.
+  - Insolation (`insol.js` `frontPoints`): points on a wall shared with another building (sections of a block, blocked
+    houses, fire walls in ЕГРН) are dropped — they sat inside the neighbour and counted as shaded facades.
+  - Norms check skips the 6 m fire gap between buildings of the same `grp` (the baked layer keeps it as «Блок»).
+  - Panel: controls depend on the typology (plot size only for ИЖС, block size only for urban blocks, «Глубина дома» for
+    blocked, no «разрыв/высота» for these three); floors 1–3 for low-rise; switching between low-rise and high-rise sets
+    2 or 12 floors. Variant search adds urban blocks always and low-rise only when the target density ≤ 10.
+  - Preview layer «Участки и улицы эскиза»; «Принять в проект» makes a group «Эскиз: …» with the buildings, «участки и
+    дворы» and «улицы и проезды» layers (buildings on top). 3D ignores the plot and street layers. Node info in Russian
+    plural forms (`plural`).
+  - Example site: ИЖС 378 houses on 10-sotka plots, 2.4 тыс. м²/га; blocked 234 rows / 1404 units, 9.0; urban blocks at 8 floors
+    300 sections in 30 blocks, 25.7 — all three «нарушений нет». e2e +3 steps.
+
 - **2026-09-23, ГРАДО 2 v0.18.2: v0.18.1 shipped a syntax error in app.js** — a `//` comment placed inside a one-line object
   literal commented out the rest of the line («Unexpected token ':'»), the page did not start. The commit ran in parallel with
   the `node --check` that caught it. **Rule: commit only after the syntax check and tests of that exact tree have passed —

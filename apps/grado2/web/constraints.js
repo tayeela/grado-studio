@@ -198,7 +198,7 @@ const prismsOf = (f, h) => polys(f).map(p => ({ ring: openRing(p[0].map(toXY)), 
 const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, 200); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
 let CHECK = null;                 // {key} — принятый слой, который перепроверяется после правки
 function sketchFromLayer(key) {
-  return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1 })).filter(b => /Polygon/.test(b.f.geometry?.type));
+  return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1, grp: o.get("Блок") || null })).filter(b => /Polygon/.test(b.f.geometry?.type));
 }
 async function checkNorms(sk, title) {
   if (!TERR) return null;
@@ -224,6 +224,7 @@ async function checkNorms(sk, title) {
     sk.forEach((b, i) => { const x = inter(b.f, zf); if (x && m2(x) > 5) add(turf.pointOnFeature(x).geometry.coordinates, `корпус на запрете: ${z.get("Причина") || l.title}`, z.get("Норма") || "", `корпус ${i + 1}`); }); }));
   // 4. противопожарный разрыв между новыми корпусами
   for (let i = 0; i < sk.length; i++) for (let j = i + 1; j < sk.length; j++) {
+    if (sk[i].grp && sk[i].grp === sk[j].grp) continue;          // секции одного урбан-блока стоят вплотную — это одно здание
     const a = sk[i].f, b = sk[j].f; if (!safe(() => turf.booleanIntersects(buf(a, 6), b))) continue;
     const x = inter(buf(a, 6), b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
   }
@@ -233,7 +234,7 @@ async function checkNorms(sk, title) {
   return { n: out.length, own: ownN.length ? Math.round((ownN.length - ownBad.length) / ownN.length * 100) : 100, lost: lost.length, text: out.length ? `нарушений: ${out.length}` : "нарушений нет" };
 }
 async function runCheck(key) {
-  const sk = key ? sketchFromLayer(key) : RESULT.sketch.map(b => ({ f: b.f, floors: b.floors }));
+  const sk = key ? sketchFromLayer(key) : RESULT.sketch.map(b => ({ f: b.f, floors: b.floors, grp: b.grp || null }));
   if (!sk.length) return toast("Проверять нечего: постройте эскиз или выберите принятый слой эскиза.");
   busy(true);
   try {

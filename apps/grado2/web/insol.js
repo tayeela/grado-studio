@@ -98,6 +98,12 @@
      Фасад — ребро контура; нормаль наружу считается по обходу контура. */
   function frontPoints(buildings, step, z) {
     const out = [];
+    // точка у стены, примыкающей к соседнему дому (секции урбан-блока, блокированные дома, брандмауэры), — не окно:
+    // она внутри соседа. Такие точки отбрасываются, иначе общая стена считается затенённым фасадом
+    const G = 40, grid = new Map(), inRing = (x, y, r) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+    buildings.forEach((b, bi) => { if (!(b.h > z)) return; let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; b.ring.forEach(([x, y]) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); });
+      for (let gx = Math.floor(x0 / G); gx <= Math.floor(x1 / G); gx++) for (let gy = Math.floor(y0 / G); gy <= Math.floor(y1 / G); gy++) { const k = gx + ":" + gy; (grid.get(k) || grid.set(k, []).get(k)).push(bi); } });
+    const covered = (x, y, own) => (grid.get(Math.floor(x / G) + ":" + Math.floor(y / G)) || []).some(bi => bi !== own && inRing(x, y, buildings[bi].ring) && !(buildings[bi].holes || []).some(h => inRing(x, y, h)));
     const signed = r => r.reduce((s, p, i) => { const q = r[(i + 1) % r.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0);
     buildings.forEach((b, bi) => [b.ring, ...(b.holes || [])].forEach((r0, ri) => {
       // наружный контур — против часовой, двор — по часовой: тогда справа от ребра всегда воздух, а не здание
@@ -105,7 +111,7 @@
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], c = ring[(i + 1) % ring.length], L = Math.hypot(c[0] - a[0], c[1] - a[1]); if (L < 3) continue;
         const ux = (c[0] - a[0]) / L, uy = (c[1] - a[1]) / L, nx = uy, ny = -ux, n = Math.max(1, Math.round(L / step));
-        for (let k = 0; k < n; k++) { const f = (k + .5) / n; out.push({ x: a[0] + ux * L * f + nx * .2, y: a[1] + uy * L * f + ny * .2, z, nx, ny, b: bi, yard: ri > 0 }); }
+        for (let k = 0; k < n; k++) { const f = (k + .5) / n, x = a[0] + ux * L * f + nx * .2, y = a[1] + uy * L * f + ny * .2; if (!covered(x, y, bi)) out.push({ x, y, z, nx, ny, b: bi, yard: ri > 0 }); }
       }
     }));
     return out;
