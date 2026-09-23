@@ -221,6 +221,18 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23: Moscow НГП for ТЭП extracted — `docs/standards/moscow-ngp/`.** Owner sent 945-ПП (transport, parking), 2150-ПП
+  (health), 2151-ПП (education), 2152-ПП (retail, services, residential territories) as RTF. MarkItDown does not read RTF
+  (it passed the raw RTF through); conversion is `textutil -convert html` then `markitdown` (tables kept). Four parallel
+  reviewers extracted every calculation rule with clause numbers (`*-алгоритмы.md`); the parking formulas of 945-ПП are images
+  in the original — pulled out of the RTF (`\pngblip` hex) into `945-формулы/` and checked by eye: Nп = S/(S₁×2,1)×D, D = 0,8;
+  Nв = X/X₂×K1×K2; Nк = S/S₁. `README.md` holds the calculation chain, the norms and a check of the ТЭП preset:
+  **errors in `moscow_krt.json`: residents' parking is population × 257/1000 × K1 × K2, the decree gives 381 per 1000 and no
+  K1/K2 (K1, K2 are for visitor parking at non-residential objects); reconstruction playgrounds use the low-rise complex rows
+  (0,5 + 0,1) instead of 1,5 m²/person; ИЖС/blocked population must use 50 m²/person.** Missing: catering 120, culture 150,
+  city services 90 per 1000; additional education 6/8/4; ОВЗ 5 places; ОТОП 0,7; visitor and stop parking; land plots.
+  The preset is not changed yet — waiting for the owner.
+
 - **2026-09-23, ГРАДО 2 v0.20.1: UX audit of v0.20.0.** The «квартал, м» slider went down to 60 m while a 16 m section
   depth needs ≥ 65 m (two sections + 20 m courtyard, short side 0.8) — the slider minimum now follows the section width.
 
