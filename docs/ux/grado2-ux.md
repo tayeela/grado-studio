@@ -100,6 +100,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (UX audit v0.27–0.28, 840 and 1440 px, e2e green, console clean): a yard left by a dropped section is the
+  section's own rectangle — it is not merged with the courtyard next to it, and on the map it looks like an unbuilt plot
+  (the reason is only in the attribute «Причина»); the graph node line with the drop count is cut, the full text is in
+  «Эскиз». The array's typed-value box appears at the top-left when the mouse has not moved over the map yet.
 - 2026-09-23 (done v0.27.0): a selection over 3 000 grips says so in the status bar; ARRAY shows ghost copies while its numbers are typed.
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). Not yet — rectangle corner options,
