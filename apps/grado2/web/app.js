@@ -547,15 +547,41 @@ function generate(site, p) {
   if (!p.goal) return out;
   /* этажность под цель плотности («выращивание» внутри потолка): всем корпусам одна этажность, упёршиеся в свой
      потолок остаются на нём, недобор раздаётся остальным — пока не набрана нужная СПП или всем некуда расти */
-  let need = p.goal.need, free = out.slice().sort((a, b) => a.max - b.max), fixed = 0;
-  while (free.length) {
-    const area = free.reduce((s, b) => s + b.m2, 0), f = Math.max(Math.min(...free.map(b => b.minF ?? 2)), Math.round((need - fixed) / area));
-    const low = free.filter(b => b.max <= f);
-    if (!low.length) { free.forEach(b => { b.floors = Math.min(b.max, f); }); break; }
-    low.forEach(b => { b.floors = b.max; fixed += b.m2 * b.max; }); free = free.filter(b => b.max > f);
+  const need = p.goal.need;
+  const fill = list => {
+    let free = list.slice().sort((a, b) => a.max - b.max), fixed = 0;
+    while (free.length) {
+      const area = free.reduce((s, b) => s + b.m2, 0), f = Math.max(Math.min(...free.map(b => b.minF ?? 2)), Math.round((need - fixed) / area));
+      const low = free.filter(b => b.max <= f);
+      if (!low.length) { free.forEach(b => { b.floors = Math.min(b.max, f); }); break; }
+      low.forEach(b => { b.floors = b.max; fixed += b.m2 * b.max; }); free = free.filter(b => b.max > f);
+    }
+    // одна общая этажность округляется вниз до полэтажа — при 5 этажах это до 10 % цели; добор по этажу корпусам с запасом
+    let spp = list.reduce((s, b) => s + b.m2 * b.floors, 0);
+    for (const b of list.slice().sort((a, b) => b.m2 - a.m2)) { if (spp >= need) break; if (b.floors < b.max) { b.floors++; spp += b.m2; } }
+    return spp;
+  };
+  let spp = fill(out);
+  /* цель набрана — корпуса под низким потолком (инсоляция соседей, ПЗЗ) убираются по одному, начиная с самого низкого, пока
+     остальные добирают цель своей этажностью. Их пятна остаются дворами: там свет нужен соседям. Урбан-блоки, блокированные
+     и ИЖС не прореживаются — у них корпус часть квартала, ряда или участка (grp). Решение владельца 23.09.2026 (Э10). */
+  const dropped = [];
+  if (spp >= need * .97) {
+    const cand = out.filter(b => b.capped && b.grp == null).sort((a, b) => a.max - b.max || a.m2 - b.m2);
+    let keep = out.slice();
+    for (const b of cand) {
+      const rest = keep.filter(x => x !== b);
+      if (fill(rest) >= need * .97) { keep = rest; dropped.push(b); } else break;
+    }
+    if (dropped.length) {
+      spp = fill(keep);
+      const kept = new Set(keep), plots2 = out.plots, streets2 = out.streets, note2 = out.note;
+      out = out.filter(b => kept.has(b)); out.plots = plots2; out.streets = streets2; out.note = note2;
+      dropped.forEach(b => out.plots.push({ f: b.f, kind: "двор", m2: b.m2, "Причина": "низкий потолок: свет соседям" }));
+    } else spp = fill(out);
   }
-  const spp = out.reduce((s, b) => s + b.m2 * b.floors, 0);
-  out.goal = spp < need * .97 ? `цель не достигнута: не хватает ${fmt((need - spp) / 1000, 1)} тыс. м²` : `цель ${p.goal.target} тыс. м²/га`;
+  out.dropped = dropped.length;
+  out.goal = spp < need * .97 ? `цель не достигнута: не хватает ${fmt((need - spp) / 1000, 1)} тыс. м²` : `цель ${p.goal.target} тыс. м²/га${dropped.length ? ` · ${plural(dropped.length, ["корпус убран", "корпуса убраны", "корпусов убрано"])} под низким потолком (дворы)` : ""}`;
   return out;
 }
 function place(site, p) {
@@ -845,7 +871,7 @@ function renderParams() {
   const cs = publishedControls(), pn = RESULT.placeNode, on = !!pn?.properties.run;
   const head = !pn ? `<div class="note">В графе нет узла «Посадка застройки».</div>`
     : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Принять в проект</button></div>
-      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}. Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится."}</small></div>`;
+      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низким потолком — на их месте дворы, там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${lbl}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;

@@ -145,7 +145,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   capacity under the ceiling gave +0 % (sections), +0 % (mixed), +8 % (towers) on the test site, at 5× the time (1.7–2.5 s
   per edit instead of 0.35–0.5 s). What helps is per building: in «цели плотности» mode the best grid reached the goal
   with 91 instead of 100 sections — dropping buildings under a low ceiling when the goal is met without them. Needs the
-  owner's word: it leaves free spots (yards) where neighbours need sun.
+  owner's word: it leaves free spots (yards) where neighbours need sun. (Done v0.28.0 with the owner's approval.)
 - 2026-09-23 (done v0.14.0): the variant search has a progress bar and «Стоп» (also Esc); stopped runs keep what is
   computed. Still open: sections do not move towards where the ceiling is high — only floors adapt.
 - 2026-09-23 (done v0.15.0): a toast moves to the top of the map when a window stands at the bottom centre.

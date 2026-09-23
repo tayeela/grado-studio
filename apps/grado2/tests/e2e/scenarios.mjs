@@ -91,13 +91,19 @@ export default async p => {
   await p.ev(`CAD.ST.otrack=true; setSel([]); return 1`); await type("l"); await enter(); q = await at(1100, 1025); await p.click(q[0], q[1]);
   const e = await at(1000, 1000); for (let i = 3; i >= 0; i--) await p.move(e[0] + i * 3, e[1] + i * 2); await p.sleep(600);
   for (let i = 1; i <= 6; i++) await p.move(e[0] + 1, e[1] - i * 12); await p.sleep(150);
-  check(await p.ev(`const c=CAD.cur(); return CAD.acq().length===1 && c.k==="track" && Math.abs(c.w[0]-1000)<1e-6`), "ОТСЛЕЖ: после задержки на конечной точке курсор ведётся по пунктирной вертикали через неё");
+  // захваченной может оказаться и первая точка отрезка (курсор постоял на ней после щелчка) — как в AutoCAD; важна точка 1000;1000
+  check(await p.ev(`const c=CAD.cur(); return CAD.acq().some(a=>Math.hypot(a.w[0]-1000,a.w[1]-1000)<1e-6) && c.k==="track" && Math.abs(c.w[0]-1000)<1e-6`), "ОТСЛЕЖ: после задержки на конечной точке курсор ведётся по пунктирной вертикали через неё");
   // орто при захваченной точке: отслеживание лишь останавливает курсор на оси, отрезок остаётся строго горизонтальным
   await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
   await p.ev(`CAD.setOrtho(true); return 1`); await type("l"); await enter(); await type("1050;1025"); await enter();
+  // под нагрузкой обработчик мыши отстаёт от пауз — перед щелчком ждём, что точка захвачена и курсор ведётся линией
+  const until = js => p.ev(`for (let i=0;i<30;i++){ if (${js}) return true; await new Promise(r=>setTimeout(r,100)); } return false`);
   const e2 = await at(1030, 1020); for (let i = 3; i >= 0; i--) await p.move(e2[0] + i * 3, e2[1] + i * 2); await p.sleep(600);
+  await until(`CAD.acq().some(a=>Math.hypot(a.w[0]-1030,a.w[1]-1020)<1e-6)`);
   q = await at(1031, 1027); await p.move(q[0] + 6, q[1]); await p.move(q[0], q[1]); await p.sleep(150);
+  await until(`CAD.cur()?.k==="track"`);
   await p.click(q[0], q[1]); await enter(); await p.ev(`CAD.setOrtho(false); return 1`);
+  if (!(await lines()).some(l => /^1050;1025 /.test(l) && /^1050;1025 1030;1025$/.test(l))) p.log("DBG", JSON.stringify((await lines()).filter(l => /^1050;1025/.test(l))));
   check((await lines()).some(l => /^1050;1025 1030;1025$/.test(l)), "ОРТО + ОТСЛЕЖ: точка на оси там, где её пересекает линия отслеживания, отрезок строго горизонтален");
   // слишком большой выбор: ручек нет, и строка состояния говорит об этом
   await p.ev(`setSel(Array.from({length:1600},(_,i)=>{const f=new ol.Feature(new ol.geom.LineString([CAD.fromM([3000+i,900]),CAD.fromM([3000+i,901])])); layerSrc[CUR].addFeature(f); return {key:CUR,f};})); return 1`);
@@ -127,8 +133,16 @@ export default async p => {
 
   // генерация под цель плотности и проверка норм
   const gen = await p.ev(`const pn=RESULT.placeNode; pn.properties.run=true; pn.widgets[5].value="цели плотности"; pn._ck=null; recompute(true); await new Promise(r=>setTimeout(r,3000));
-    const t=RESULT.tepNode._tep; await runCheck(null); return [RESULT.sketch.length, t && t.density, t && t.target, window.LASTCHECK.lost]`);
+    const t=RESULT.tepNode._tep; await runCheck(null); return [RESULT.sketch.length, t && t.density, t && t.target, window.LASTCHECK.lost, RESULT.sketch.dropped, (RESULT.sketch.plots||[]).filter(g=>g["Причина"]).length, RESULT.placeNode.info]`);
   check(gen[0] > 0 && Math.abs(gen[1] - gen[2]) / gen[2] < .1, `эскиз: ${gen[0]} корпусов, плотность ${gen[1]?.toFixed(1)} при цели ${gen[2]}`);
+  p.log(`  убрано под низким потолком: ${gen[4]}; ${gen[6]}`);
+  const g15 = await p.ev(`const t=RESULT.tepNode; window.__was=t.widgets[1].value; t.widgets[1].value=15; RESULT.placeNode._ck=null; recompute(true); await new Promise(r=>setTimeout(r,2500));
+    const tp=RESULT.tepNode._tep, s=RESULT.sketch, out=[s.length, s.dropped, (s.plots||[]).filter(g=>g["Причина"]).length, tp && tp.density, RESULT.placeNode.info];
+    await runCheck(null); out.push(window.LASTCHECK.lost); winOpen("wSketch", true); await new Promise(r=>setTimeout(r,500)); return out`);
+  if (process.env.E2E_SHOTS) await p.shot(process.env.E2E_SHOTS + "/g15.png");
+  await p.ev(`const t=RESULT.tepNode; winOpen("wSketch", false); t.widgets[1].value=window.__was; RESULT.placeNode._ck=null; recompute(true); await new Promise(r=>setTimeout(r,2500)); return 1`);
+  p.log(`  цель 15: ${g15[4]}`);
+  check(g15[1] > 0 && g15[1] === g15[2] && Math.abs(g15[3] - 15) / 15 < .1 && g15[5] === 0, `цель 15 набрана и без ${g15[1]} корпусов под низким потолком: их пятна — дворы, плотность ${g15[3]?.toFixed(1)}, соседи не потеряли норму`);
   check(gen[3] === 0, "соседи под потолком не потеряли норму инсоляции");
   check(await p.ev(`const l=lyr("cons:ceiling"); l.visible=false; dataRev++; applyOrder(); recompute(true); await new Promise(r=>setTimeout(r,1500)); const off=RESULT.sketch.reduce((s,b)=>s+b.floors,0); l.visible=true; dataRev++; applyOrder(); recompute(true); await new Promise(r=>setTimeout(r,1500)); return off>0`), "выключенный слой потолка генерация не учитывает");
   check(await p.ev(`winOpen("wVars", true); $("bGen").click(); await new Promise(r=>setTimeout(r,300)); const running=!$("bStopVar").hidden && !$("varProg").hidden;

@@ -226,6 +226,18 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.28.0 (Э10, owner's decision 3): buildings under a low solar ceiling are dropped when the density
+  goal is met without them.** In «цели плотности» mode, after the water-fill, capped buildings (ceiling below the planned
+  floors) are removed one by one from the lowest ceiling up while the rest still reach the goal (≥ 97 %); their footprints
+  stay as «двор» plots with «Причина: низкий потолок: свет соседям». Urban blocks, blocked rows and ИЖС are not thinned
+  (their buildings carry `grp`). The graph node and the «Эскиз» window say how many were dropped.
+  - Water-fill fix: one common floor count was rounded, which at ~5 floors lost up to 10 % of the goal («цель не достигнута»
+    at 14.1 of 15); now the largest buildings with headroom get one more floor until the goal is reached.
+  - Test site: goal 25 — 86 sections instead of 103 at 24.6; goal 15 — 84 sections and 19 yards at 15.6; neighbours lose no
+    insolation in both.
+  - e2e: two tracking steps were timing-flaky under load (the check ran before the map handled the last mouse move; the
+    first point of a line can also be acquired, as in AutoCAD) — they now wait for the state instead of a fixed pause.
+
 - **2026-09-23, ГРАДО 2 v0.27.0: array preview, grips limit said aloud.** ARRAY shows its copies as ghosts from the first
   number on: rectangular copies at the current rows/columns/spacings, and the number being typed is applied live before Enter
   (`CMD.still(typedNum())`, drawn by `refresh()` without a mouse move; up to 400 ghost objects). Polar: before the centre is

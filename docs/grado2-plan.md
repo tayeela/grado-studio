@@ -105,8 +105,8 @@ Results so far:
 ### Э10. Generation quality (3 sessions)
 - Rows bent to the site boundary instead of straight strips; blocked rows packed from both ends; outbuildings and garages
   for ИЖС; guest parking in urban blocks.
-- Per-building drop under a low solar ceiling when the density goal is met without it (tested: 91 instead of 100
-  sections); the freed spots become yards where neighbours need sun. Approved by the owner.
+- Done v0.28.0: per-building drop under a low solar ceiling when the density goal is met without it; the freed spots
+  become yards where neighbours need sun (test site: goal 15 — 19 sections dropped, neighbours keep the norm).
 - Insolation: schools and kindergartens as their own norm class (hours to be taken from СанПиН 1.2.3685-21 text, not from memory), relief height
   from SRTM under the buildings, the site sun-hours map.
 - A variant can be edited and saved as a named variant; the comparison table keeps accepted and hand-edited variants.
