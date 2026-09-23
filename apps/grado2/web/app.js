@@ -867,7 +867,8 @@ function snapMove(w, x, y) {           // магнит к краям карты 
 }
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
-  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(.8); go.fitted = true; }   // при открытии — читаемо (0,8), «Весь граф» ужимает до 0,6 updateAnalysisMap(); },
+  // при первом открытии граф вписывается читаемо (не мельче 0,8); «Весь граф» ужимает до 0,6
+  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(.8); go.fitted = true; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };

@@ -221,6 +221,11 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.18.2: v0.18.1 shipped a syntax error in app.js** — a `//` comment placed inside a one-line object
+  literal commented out the rest of the line («Unexpected token ':'»), the page did not start. The commit ran in parallel with
+  the `node --check` that caught it. **Rule: commit only after the syntax check and tests of that exact tree have passed —
+  never in the same parallel batch.** Fixed; graph opens at 0.8, «Весь граф» fits at 0.6; all tests and scenarios green.
+
 - **2026-09-23, ГРАДО 2 v0.18.1: UX audit of v0.18.0.** The overwrite confirmation carried over to another project (asked
   for one, «Новый», then the same name saved without asking) — `clearProject` resets it. Save toast shows the folder name, not
   the full path. The OSM-fallback note in the graph node was cut and hidden under the next node: shorter text, and the default
