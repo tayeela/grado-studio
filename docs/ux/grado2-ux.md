@@ -100,6 +100,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.31.0, ЕГКО): the clipped road polygon draws its outline along the frame of the area (the cut edge is stroked
+  like a kerb); the first download of a big ЕГКО layer waits minutes before the first byte while the portal prepares the file —
+  the status line shows «0 МБ» all that time. The re-download report toast lists all seven layers in one long message.
 - 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): not yet — docking by keyboard; a layout
   does not remember window sizes inside zones (only which zone). Audit v0.30.0: a toast shown while the «Окна» menu is open
   covers the menu's lower items (toasts sit above menus).

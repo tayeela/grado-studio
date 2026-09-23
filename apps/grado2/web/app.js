@@ -125,7 +125,8 @@ function setTerritory(feature) {
 }
 $("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
-const GROUP = { fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)", terrain: "Рельеф" };
+const GROUP = { fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
+  egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
 const histText = d => { const h = d.history || [], x = h[h.length - 1]; return h.length > 1 && x.added != null ? ` · выгрузок ${h.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
 function renderSources() {
@@ -203,16 +204,17 @@ $("bLoad").onclick = async () => {
   if (!keys.length) return toast("Отметьте источники.");
   const [w, s, e, n] = turf.bbox(buf(TERR, 60));
   // OSM (Overpass) отвечает от секунд до минуты — отдельным запросом, чтобы остальные слои появились сразу
-  const osm = keys.filter(k => k.startsWith("osm.")), rest = keys.filter(k => !k.startsWith("osm.")), parts = [rest, osm].filter(p => p.length);
+  // ЕГКО — тоже отдельно: первая выгрузка слоя всей Москвы идёт минутами
+  const osm = keys.filter(k => k.startsWith("osm.")), egko = keys.filter(k => k.startsWith("egko.")), rest = keys.filter(k => !k.startsWith("osm.") && !k.startsWith("egko.")), parts = [rest, osm, egko].filter(p => p.length);
   const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [];
   ERRORS = {}; $("bLoad").disabled = true; busy(true);
   const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
   hint();
   // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ): сервер сообщает ход, показываем процент
   const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0);
-  const poll = rest.some(k => SOURCES[k]?.kind === "gisogd") && setInterval(async () => {
+  const poll = (rest.some(k => SOURCES[k]?.kind === "gisogd") || egko.length) && setInterval(async () => {
     try { const pr = Object.values(await api("/api/progress")); if (!pr.length || !pending.size) return;
-      window.setHint?.("ГИС ОГД, первая выгрузка слоя целиком: " + pr.map(x => `«${x.title}» — ${x.stage === "parse" ? "разбор" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") + ". Работать можно дальше."); } catch { }
+      window.setHint?.("Первая выгрузка слоя целиком: " + pr.map(x => `«${x.title}» — ${x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") + ". Работать можно дальше."); } catch { }
   }, 800);
   await Promise.all(parts.map(async part => {
     try {

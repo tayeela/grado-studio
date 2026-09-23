@@ -11,7 +11,7 @@ const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i
 const ST = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
 // порядок по умолчанию: сверху вниз (первый — самый верхний)
-const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "nspd.buildings", "osm.buildings", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "relief.contours", "osm.landuse"];
+const PREFERRED = ["gisogd.red_lines", "egko.addresses", "gisogd.demolition", "nspd.buildings", "osm.buildings", "egko.buildings", "egko.fences", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "egko.paths", "egko.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "egko.water", "relief.contours", "osm.landuse", "egko.green"];
 function defaultStyle(key, fc) {
   const zones = lib => { const colors = {}; fc.features.forEach(f => { const v = String(f.properties.naimfunkzony ?? f.properties.naimfunkzo ?? f.properties["Вид зоны"] ?? ""); const z = lib[v.toLowerCase()]; if (z) colors[v] = z.fill; }); return colors; };
   return ST(({
@@ -33,6 +33,14 @@ function defaultStyle(key, fc) {
     "gisogd.okn": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", colors: {}, off: [] } },
     "gisogd.demolition": { fill: "#b3261e", stroke: "#b3261e", hatch: true, width: 1.4 },
     "relief.contours": { fill: "#a0663a", width: .8, label: "Высота, м", labelSize: 10 },
+    // ЕГКО — картооснова: те же тона, что у зданий НСПД/OSM, улиц эскиза и воды OSM, чтобы подложка не спорила с проектом
+    "egko.buildings": { fill: "#d6d1c7", stroke: "#6f6a62", width: .7, opacity: 1 },
+    "egko.fences": { fill: "#5f5a52", width: .7 },
+    "egko.addresses": { fill: "#6b6b6b", stroke: "#ffffff", width: .5, opacity: 1 },
+    "egko.paths": { fill: "#b09b7a", width: .8 },
+    "egko.roads": { fill: "#e4e1da", stroke: "#b7b2a8", width: .5, opacity: .9 },
+    "egko.water": { fill: "#b9d6ec", stroke: "#6fa6e6", width: .8, opacity: 1 },
+    "egko.green": { fill: "#cfe3b4", stroke: "#8fb573", width: .4, opacity: .7 },
   })[key] || (fc.features.some(f => f.properties._lt) ? { mode: "lgr" } : { fill: CAT[LYR.length % CAT.length], stroke: "#3d3d3d" }));
 }
 

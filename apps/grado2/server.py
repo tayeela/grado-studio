@@ -73,9 +73,20 @@ SOURCES["gisogd.pzz_zones"] = ("gisogd", {"virtual90": None, "virtual130": None}
 SOURCES["gisogd.okn"] = ("gisogd", {"virtual500": None, "virtual502": None, "virtual504": None, "virtual508": None}, "Объекты культурного наследия и их зоны (ОГД)")
 SOURCES["gisogd.demolition"] = ("gisogd", {"t_1322": None}, "Уведомления о сносе (ОГД)")
 SOURCES["relief.contours"] = ("terrain", None, "Рельеф: горизонтали (SRTM)")
+# ЕГКО Москвы — векторная картооснова портала ГИС ОГД (карта base2, коды сверены 23.09.2026). Значение кода — состояние
+# здания: оно идёт в поле «Состояние», как тип зоны в «Вид зоны» у функциональных зон ТиНАО.
+SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "virtual15": "строящееся", "virtual16": "разрушенное",
+                                      "virtual17": "нулевой цикл (фундамент)"}, "Здания (ЕГКО)")
+SOURCES["egko.roads"] = ("egko", {"dorogi_pol": None}, "Дороги (ЕГКО)")
+SOURCES["egko.paths"] = ("egko", {"tropinki": None}, "Пешеходные дороги (ЕГКО)")
+SOURCES["egko.green"] = ("egko", {"gazons": "газон", "forest": "растительность"}, "Газоны и растительность (ЕГКО)")
+SOURCES["egko.water"] = ("egko", {"hidrograf": None}, "Водная поверхность (ЕГКО)")
+SOURCES["egko.fences"] = ("egko", {"fence2k": None}, "Заборы (ЕГКО)")
+SOURCES["egko.addresses"] = ("egko", {"adres": None}, "Адреса (ЕГКО)")
+EGKO_EXTRA = {"egko.buildings": "Состояние", "egko.green": "Вид"}     # куда пишется значение кода слоя
 
 # НСПД отдаёт тяжёлые ответы в плотной застройке, ОГД режется из кэша слоя
-LIMIT_KM2 = {"nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "terrain": 60.0}
+LIMIT_KM2 = {"nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0}
 
 # читаемые имена полей; остальные поля проходят как есть
 LABELS = {
@@ -181,10 +192,64 @@ def social_props(p):
     return {"Вид": AMENITY.get(p.get("amenity"), p.get("amenity")), "Название": p.get("name")}
 
 
+# ---------- ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми ----------
+def egko_address(p):
+    """Адрес здания в формате поля full_addr слоя «Адреса» — «Научный проезд 20 стр.4», «улица Борисовские Пруды 11 к.1»
+    (сверено по 217 029 адресам 23.09.2026): улица, номер дома без слова «дом», корпус «к.», строение с приставкой из поля
+    is_struct («стр.» или «соор.»), владение «вл.» (в слое адресов не встретилось ни разу)."""
+    s = lambda k: str(_v(p.get(k)) or "").strip()
+    parts = [s("name_str1"), s("house")]
+    if s("trunk"):
+        parts.append("к." + s("trunk"))
+    if s("building"):
+        parts.append((s("is_struct") or "стр.") + s("building"))
+    if s("estate"):
+        parts.append("вл." + s("estate"))
+    return " ".join(x for x in parts if x) or None
+
+
+EGKO_H = "Высота, м"     # поле h: проверено сверкой с этажностью ЕГРН (см. CLAUDE.md, v0.31.0)
+
+
+def egko_building_props(p):
+    area = _v(p.get("shape_area"))
+    return {"Назначение": _v(p.get("type_zd")), "Вид": _v(p.get("vid_zd")), "Наименование": _v(p.get("name_bui")),
+            "Адрес": egko_address(p), "Вторая улица": _v(p.get("name_str2")), EGKO_H: _v(p.get("h")),
+            "Отметка в ЕГКО": _v(p.get("state")),     # своя отметка портала; бывает и у «действующих» (1,2 % на выборке)
+            "Площадь застройки, м²": round(float(area), 1) if area is not None else None}
+
+
+def egko_road_props(p):
+    return {"Наименование": _v(p.get("ext_name")), "Улица или район": _v(p.get("name_str")), "Вид": _v(p.get("vid_road")) or _v(p.get("vid_str"))}
+
+
+def egko_path_props(p):
+    return {"Вид": _v(p.get("vid_road")), "Улица": _v(p.get("name_str")) or _v(p.get("ext_name"))}
+
+
+FLORA = {"gazon": "газон"}
+
+
+def egko_green_props(p):
+    t = _v(p.get("type_flora"))
+    return {"Тип": FLORA.get(t, t) if t else _v(p.get("vid_frst")), "Название": _v(p.get("name_frs"))}
+
+
+def egko_water_props(p):
+    return {"Вид": _v(p.get("vid_wat")), "Название": _v(p.get("name_wat"))}
+
+
+def egko_address_props(p):
+    return {"Адрес": _v(p.get("full_addr")), "Угол подписи, °": _v(p.get("angl"))}
+
+
 # ключ источника → свойства портала в читаемые поля (служебные поля портала не нужны в таблице)
 PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, "gisogd.okn": okn_props,
            "gisogd.demolition": demolition_props, "relief.contours": lambda p: {"Высота, м": p.get("elev")},
-           "osm.social": social_props}
+           "osm.social": social_props,
+           "egko.buildings": egko_building_props, "egko.roads": egko_road_props, "egko.paths": egko_path_props,
+           "egko.green": egko_green_props, "egko.water": egko_water_props, "egko.fences": lambda p: {},
+           "egko.addresses": egko_address_props}
 
 
 REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))
@@ -217,7 +282,8 @@ def _layer(key, result):
 
 
 MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
-PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД целиком (GET /api/progress)
+PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
+EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ, еженедельно перекачивать незачем
 
 
 def fetch(bbox, keys):
@@ -262,12 +328,34 @@ def fetch(bbox, keys):
         PROGRESS.pop(k, None)
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
 
+    def run_egko(ks):
+        """ЕГКО — по очереди, один слой за другим: первая выгрузка газонов — 1,3 ГБ, портал не долбим параллельно."""
+        for k in ks:
+            feats, notes, doc = [], [], None
+            def tell(code, got, total, stage, k=k):
+                PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage}
+            api = GisogdApi(cache_dir=CACHE / "egko", progress=tell, map_name="base2", clip=True, ttl=EGKO_TTL)
+            try:
+                for code, val in SOURCES[k][1].items():
+                    res = api.fetch(bbox, code)
+                    doc, notes = res["source_doc"], notes + res["notes"]
+                    for f in res["features"]:
+                        if val:
+                            f["_extra"] = {EGKO_EXTRA.get(k, "Вид"): val}
+                        feats.append(f)
+                layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
+            except ConnectorError as e:
+                errors[k] = str(e)
+            finally:
+                PROGRESS.pop(k, None)
+
     def run_terrain(k):
         layers[k] = _layer(k, TerrainContours().fetch(bbox))
 
     by = lambda kind: [k for k in keys if SOURCES[k][0] == kind]
     jobs = [(by("osm"), run_osm), (by("nspd"), run_nspd)] + \
-        [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd")] + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")]
+        [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd")] + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")] + \
+        ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else [])
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
             try:

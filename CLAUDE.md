@@ -226,6 +226,35 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.31.0: ЕГКО Москвы (картооснова ГИС ОГД, карта base2) — new source group, seven layers.**
+  - Connector (`core/connectors/grado_connectors/gisogd_api.py`): `GisogdApi(map_name="base2", clip=True)`; `MAPS` holds both maps
+    (the base2 catalog answers only with `?type=full&returnCss=0`). isogd is unchanged: same URLs, keys «код:id», slurp + `.lines.gz`.
+    base2 streams: `_http_stream` (15 min socket timeout — the portal first assembles a big layer: gazons started after ~3–4 min,
+    buildings after ~2 min) → incremental UTF-8 → `_FeatureStream` (C `raw_decode` per feature, waits for the next chunk on a
+    split) → every feature goes to a grid on disk `~/.grado2/cache/egko/base2.<code>.grid/<ix>_<iy>.lines.gz` (0.01° cells by
+    the south-west corner of its bbox; bigger than a cell → `big.lines.gz`), buffered ≤ 48 M chars then appended as gzip
+    members; written to a `.part` folder and renamed. A query reads its cells plus the neighbours to the west/south and `big`.
+    Keys «base2:код:id» (base2 codes are spelled like isogd codes). One lock per layer; TTL 30 days (`EGKO_TTL`).
+  - `clip.py` (stdlib): polygons ring by ring (Sutherland–Hodgman; a ring wholly inside/outside is kept/dropped by its bbox
+    first — the city-wide road polygon has thousands of block holes), lines by Liang–Barsky split into parts, points filtered.
+    Applied only to egko.*.
+  - Server: `egko.buildings` (virtual6/15/16/17 → «Состояние»), `egko.roads` (dorogi_pol), `egko.paths` (tropinki),
+    `egko.green` (gazons, forest → «Вид»), `egko.water` (hidrograf), `egko.fences` (fence2k), `egko.addresses` (adres); limit
+    25 km²; all egko keys run one after another in one job (portal and memory). PRESENT per layer; the portal's " " is empty.
+    Building address is built like `full_addr` of «Адреса» («Научный проезд 20 стр.4», «… 11 к.1»; the строение prefix comes
+    from `is_struct`, «стр.» or «соор.») — 156 of 159 addresses of the Пушкинская area match the address layer.
+  - **Field h = height in metres** («Высота, м»): 244 buildings matched with ЕГРН «Этажность» at Пушкинская give
+    h / floors median 4.11 m (quartiles 2.96–4.83; historic centre, high ceilings). «Этажность» is NOT derived from it.
+  - Measured (first download, M-series Mac): virtual6 650 MB / 782 642 objects — 149 s (≈125 s portal preparation), peak
+    RSS 471 MB, grid 170 MB in 4 296 files; gazons 1 295 MB / 915 090 — 233 s (≈180 s preparation), peak 143 MB, grid 389 MB;
+    whole egko cache 704 MB. Repeat from cache: 0.02–0.4 s per layer.
+  - Пушкинская (37.600, 55.760, 37.612, 55.766): 428 buildings (426 of virtual6, as the bbox selection gave: clipping keeps every
+    object that really enters the box), roads 1 clipped piece 0.02 MB instead of 2 whole polygons 18 MB. In the app the
+    territory is buffered by 60 m, so the same box shows 605 buildings.
+  - UI: group «ЕГКО Москвы» with the warning about the first download; egko goes in its own `/api/fetch` request; progress
+    for egko too («раскладка по сетке» stage). Default styles in the OSM/НСПД palette, places in `PREFERRED` next to analogues.
+  - Tests: connectors +12 (`test_egko.py`), server +6.
+
 - **2026-09-23, ГРАДО 2 v0.30.0: window layouts for tasks; a splitter between windows under the map.** The «Окна ▾» button is
   now always shown: above the windows that did not fit the header it lists «Раскладка окон» — «Существующее положение»
   (Данные left, Таблица below), «Ограничения и анализ» (Ограничения, Показатели right; Граф below), «Эскиз и варианты»
