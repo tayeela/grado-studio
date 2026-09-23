@@ -9,15 +9,16 @@ export default async p => {
 
   // первый запуск: «С чего начать» вместо пустого экрана; F1 — клавиши
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
-  await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`return !$("wKeys").hidden && $("keysBody").innerText.includes("Полигон")`), "F1 открывает окно клавиш");
+  await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`return !$("wKeys").hidden && $("keysBody").innerText.includes("Полилиния") && $("keysBody").innerText.includes("TR")`), "F1 открывает окно клавиш с командами черчения");
   await p.ev(`winOpen("wKeys", false); return 1`);
 
   // A: слой, два полигона, атрибут, удаление и отмена
   await p.ev(`$("bNewLayer").click(); $("nlName").value = "Кварталы"; $("nlOk").click(); return 1`);
-  await poly(cx - 150, cy - 80, 90); await poly(cx + 20, cy - 80, 90);
+  // «+ Слой» включает полилинию в этот слой; как в AutoCAD, пробел повторяет команду для второго контура
+  await poly(cx - 150, cy - 80, 90); await p.key(" ", "Space", { text: " " }); await poly(cx + 20, cy - 80, 90);
   check(await p.ev(`return layerSrc[CUR].getFeatures().length`) === 2, "нарисованы два полигона");
   // рамка с Shift слева направо — оба целиком внутри
-  await p.key("v", "KeyV"); await p.drag(cx - 180, cy - 110, cx + 140, cy + 40, { shift: true });
+  await p.key("Escape", "Escape", { vk: 27 }); await p.drag(cx - 180, cy - 110, cx + 140, cy + 40, { shift: true });
   check(await p.ev(`return SEL.length`) === 2, "рамка выбрала оба полигона");
   const inp = await p.ev(`const i=document.querySelector('[data-battr="Наименование"]'); const b=i.getBoundingClientRect(); return [b.left+20,b.top+8]`);
   await p.click(inp[0], inp[1]); await p.type("Квартал 1"); await p.key("Enter", "Enter", { vk: 13 });
@@ -30,23 +31,48 @@ export default async p => {
   check(await p.ev(`const l=lyr(CUR), was=l.style.fill; UIS.rt="style"; renderRight(); document.querySelector('[data-color="fill"]').click(); document.querySelector('.pop [data-c="#e34948"]').click(); const changed=l.style.fill; undo(); return changed==="#e34948" && l.style.fill===was`), "смена заливки отменяется");
 
   // точное черчение: ввод с клавиатуры, орто, прямоугольник по осям МГГТ, точка по координатам, метка привязки
-  const type = async str => { for (const ch of str) await p.key(ch, "", { text: ch, wait: 25 }); };
+  const type = async str => { for (const ch of str) await p.key(ch, /[a-z]/i.test(ch) ? "Key" + ch.toUpperCase() : /\d/.test(ch) ? "Digit" + ch : "", { text: ch, wait: 25 }); };
   const enter = () => p.key("Enter", "Enter", { vk: 13, wait: 200 });
-  await p.key("g", "KeyG"); await p.click(cx - 60, cy + 60); await p.move(cx + 60, cy + 60);
+  await type("pl"); await enter(); await p.click(cx - 60, cy + 60); await p.move(cx + 60, cy + 60);
   await type("40<0"); await enter(); await type("25<90"); await enter(); await type("@-40;0"); await enter(); await enter();
   check(await p.ev(`const r=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()[0].map(CAD.toM); const e=[]; for(let i=1;i<r.length;i++) e.push(Math.hypot(r[i][0]-r[i-1][0], r[i][1]-r[i-1][1]));
     return r.length===5 && [40,25,40,25].every((v,i)=>Math.abs(e[i]-v)<0.001)`), "полигон 40 × 25 м набран с клавиатуры: стороны точны до миллиметра");
-  await p.key("l", "KeyL"); await p.ev(`CAD.setOrtho(true); return 1`);
+  await p.ev(`setTool("line"); CAD.setOrtho(true); return 1`);
   await p.click(cx + 100, cy - 220); await p.click(cx + 190, cy - 205); await p.click(cx + 200, cy - 150); await enter(); await p.ev(`CAD.setOrtho(false); return 1`);   // клики вдали от других объектов: привязка сильнее орто
   check(await p.ev(`const c=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates().map(CAD.toM), a=(p,q)=>Math.atan2(q[1]-p[1],q[0]-p[0])*180/Math.PI; return Math.abs(a(c[0],c[1]))<1e-6 && Math.abs(a(c[1],c[2])+90)<1e-6`), "орто: отрезки строго по оси и под прямым углом");
-  await p.key("r", "KeyR"); await p.click(cx + 60, cy + 40); await type("@30;20"); await enter();
-  check(await p.ev(`const r=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()[0].map(CAD.toM); return Math.abs(r[1][0]-r[0][0]-30)<1e-6 && Math.abs(r[2][1]-r[1][1]-20)<1e-6 && Math.abs(r[1][1]-r[0][1])<1e-6`), "прямоугольник @30;20 — ровно по осям МГГТ");
-  await p.key("p", "KeyP"); await type("5000;15000"); await enter();
+  await type("rec"); await enter(); await p.click(cx + 60, cy + 40); await type("@30;20"); await enter();
+  check(await p.ev(`const g=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry(), r=(g.getType()==="Polygon"?g.getCoordinates()[0]:g.getCoordinates()).map(CAD.toM); return Math.abs(r[1][0]-r[0][0]-30)<1e-6 && Math.abs(r[2][1]-r[1][1]-20)<1e-6 && Math.abs(r[1][1]-r[0][1])<1e-6`), "прямоугольник @30;20 — ровно по осям МГГТ (в слое линий — замкнутой линией)");
+  await type("po"); await enter(); await type("5000;15000"); await enter(); await enter();
   check(await p.ev(`const c=CAD.toM(layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()); return Math.abs(c[0]-5000)<1e-4 && Math.abs(c[1]-15000)<1e-4`), "точка по координатам МГГТ 5000;15000");
-  await p.key("l", "KeyL"); await p.click(cx - 160, cy + 140); for (let i = 0; i <= 8; i++) await p.move(cx - 100 + i * 5.25, cy + 90 - i * 3.5); await p.sleep(150);
-  check(await p.ev(`return CAD.snapped === "вершина" && /привязка: вершина/.test(document.querySelector(".cadtip").innerText) && /[0-9]+,[0-9]{2} м · [0-9]/.test(document.querySelector(".cadtip").innerText)`), "у курсора длина, угол и метка привязки к вершине");
-  await p.key("Escape", "Escape", { vk: 27 }); await p.key("v", "KeyV");
+  await type("l"); await enter(); await p.click(cx - 160, cy + 140); for (let i = 0; i <= 8; i++) await p.move(cx - 100 + i * 5.25, cy + 90 - i * 3.5); await p.sleep(150);
+  check(await p.ev(`return CAD.cur()?.k === "end" && /конточка/.test(document.querySelector(".cadtip").innerText) && /[0-9]+,[0-9]{2} м · [0-9]/.test(document.querySelector(".cadtip").innerText)`), "у курсора длина, угол и метка привязки к вершине");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
   check(await p.ev(`return /^МГГТ X/.test($("stXY").textContent)`), "в строке состояния координаты МГГТ");
+
+  // команды AutoCAD: отрезки по координатам, обрезка, удлинение, подобие, сопряжение, поворот, отслеживание
+  await p.ev(`CAD.ST.otrack=false; CAD.ST.polar=false; return 1`);
+  for (const [a, b] of [["1000;1000", "1100;1000"], ["1030;980", "1030;1020"], ["1070;980", "1070;1020"]]) { await type("l"); await enter(); await type(a); await enter(); await type(b); await enter(); await enter(); }
+  const lines = () => p.ev(`return layerSrc[CUR].getFeatures().filter(f=>f.getGeometry().getType()==="LineString").map(f=>f.getGeometry().getCoordinates().map(CAD.toM).map(q=>q.map(v=>Math.round(v*1000)/1000).join(";")).join(" "))`);
+  const at = (x, y) => p.ev(`sharedView.fit(ol.extent.buffer(ol.extent.boundingExtent([CAD.fromM([990,970]),CAD.fromM([1110,1030])]),5)); await new Promise(r=>setTimeout(r,200)); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [Math.round(r.left+q[0]), Math.round(r.top+q[1])]`);
+  let q = await at(1050, 1000); await type("tr"); await enter(); await p.click(q[0], q[1] + 1); await enter();
+  check((await lines()).filter(l => /^1000;1000 1030;1000$|^1070;1000 1100;1000$/.test(l)).length === 2, "TR: середина отрезка между двумя кромками отрезана, остались два отдельных отрезка");
+  q = await at(1027, 1000); await type("ex"); await enter(); await p.click(q[0], q[1] + 1); await enter();
+  check((await lines()).includes("1000;1000 1070;1000"), "EX: отрезок удлинён до следующей кромки");
+  q = await at(1030, 1010); await type("o"); await enter(); await type("5"); await enter(); await p.click(q[0], q[1]); q = await at(1040, 1010); await p.click(q[0], q[1]); await enter();
+  check((await lines()).includes("1035;980 1035;1020"), "O: подобие на 5 м в сторону щелчка");
+  await type("f"); await enter(); await type("р"); await enter(); await type("3"); await enter();
+  q = await at(1070, 990); await p.click(q[0] + 1, q[1]); q = await at(1085, 1000); await p.click(q[0], q[1] + 1);
+  check((await lines()).some(l => l === "1070;980 1070;997") && (await lines()).some(l => l === "1073;1000 1100;1000"), "F: сопряжение радиусом 3 м подрезает оба отрезка и вставляет дугу");
+  await p.ev(`setSel(layerSrc[CUR].getFeatures().filter(f=>Math.abs(f.getGeometry().getCoordinates().map(CAD.toM)[0][0]-1035)<1e-6).map(f=>({key:CUR,f}))); return SEL.length`);
+  await type("ro"); await enter(); await type("1035;1000"); await enter(); await type("90"); await enter();
+  check((await lines()).includes("1055;1000 1015;1000"), "RO: поворот выбранного отрезка на 90° вокруг базовой точки");
+  await p.key("z", "KeyZ", { meta: true }); check((await lines()).includes("1035;980 1035;1020"), "Ctrl+Z отменяет поворот");
+  // отслеживание: задержка на конце отрезка даёт «+», дальше — пунктирная линия выравнивания
+  await p.ev(`CAD.ST.otrack=true; setSel([]); return 1`); await type("l"); await enter(); q = await at(1100, 1025); await p.click(q[0], q[1]);
+  const e = await at(1000, 1000); for (let i = 3; i >= 0; i--) await p.move(e[0] + i * 3, e[1] + i * 2); await p.sleep(600);
+  for (let i = 1; i <= 6; i++) await p.move(e[0] + 1, e[1] - i * 12); await p.sleep(150);
+  check(await p.ev(`const c=CAD.cur(); return CAD.acq().length===1 && c.k==="track" && Math.abs(c.w[0]-1000)<1e-6`), "ОТСЛЕЖ: после задержки на конечной точке курсор ведётся по пунктирной вертикали через неё");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
 
   // группы
   check(await p.ev(`const id=newGroup([CUR],"Проект"); grp(id).visible=false; applyOrder(); const hidden=!shown(lyr(CUR)); grp(id).visible=true; applyOrder(); return hidden`), "скрытая группа прячет свои слои");
