@@ -841,7 +841,7 @@ addEventListener("keydown", e => {
   if (mod || e.altKey) return;
   if (e.key === "Backspace" && drawing) { e.preventDefault(); drawing.removeLastPoint(); }
   else if ((e.key === "Delete" || e.key === "Backspace") && SEL.length) { e.preventDefault(); $("bDelFeat").click(); }
-  else if (e.key === "Escape") { if (drawing) { drawing.abortDrawing(); return; } measureSrc.clear(); select(null, null); setTool("select"); }
+  else if (e.key === "Escape") { if (varRun && !varRun.stop) { $("bStopVar").click(); return; } if (drawing) { drawing.abortDrawing(); return; } measureSrc.clear(); select(null, null); setTool("select"); }
   else if (KEYS[code]) { e.preventDefault(); setTool(KEYS[code]); }
 });
 

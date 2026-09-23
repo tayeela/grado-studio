@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.13.0)
+## Where we are (23.09.2026, v0.14.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -54,6 +54,7 @@ converter decision.
 Э7 done in v0.13.0 except the installer runs: project format 2 with migrations, browser scenarios (offline, headless Chrome)
 in the unittest gate and CI, PyInstaller spec + Inno Setup + GitHub workflow for Windows and macOS, launchers, built-in help.
 Open: run the workflow on GitHub and install on a clean Windows machine; accept the Xcode licence to build the .app locally.
+v0.14.0 (after the plan): OSM answer cache and a separate OSM request, «Стоп» and progress for the variant search, long names cut in graph nodes.
 
 ## Stages
 

@@ -37,5 +37,56 @@ class OsmSocial(unittest.TestCase):
         self.assertTrue(any(f["properties"]["grado_set"] == "buildings" for f in res["features"]))
 
 
+class OsmCache(unittest.TestCase):
+    """Ответ Overpass кэшируется на диске: повтор и область внутри прошлой — без сети."""
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.calls = 0
+        ring = lambda x: [(x, 0), (x + 1, 0), (x + 1, 1), (x, 1), (x, 0)]
+        self.data = {"elements": [
+            {"type": "way", "id": i, "tags": {"building": "yes"}, "geometry": [{"lon": a, "lat": b} for a, b in ring(i)]}
+            for i in (0, 5)]}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def transport(self, q):
+        self.calls += 1
+        return self.data
+
+    def conn(self, **kw):
+        return OsmOverpass(transport=self.transport, cache_dir=self.tmp.name, **kw)
+
+    def test_repeat_and_inner_area_come_from_disk(self):
+        first = self.conn().fetch((0, 0, 10, 10), ["buildings"])
+        self.assertEqual((self.calls, len(first["features"]), first["notes"]), (1, 2, []))
+        again = self.conn().fetch((0, 0, 10, 10), ["buildings"])
+        self.assertEqual((self.calls, len(again["features"])), (1, 2))
+        self.assertIn("с диска", again["notes"][0])
+        self.assertIn("fetched_at", again)
+        inner = self.conn().fetch((4, 0, 8, 2), ["buildings"])          # внутри прошлой: лишнее отсечено
+        self.assertEqual((self.calls, [f["grado_key"] for f in inner["features"]]), (1, ["way/5"]))
+
+    def test_wider_area_or_new_set_goes_to_network(self):
+        self.conn().fetch((0, 0, 10, 10), ["buildings"])
+        self.conn().fetch((0, 0, 20, 10), ["buildings"])
+        self.conn().fetch((0, 0, 10, 10), ["buildings", "roads"])
+        self.assertEqual(self.calls, 3)
+
+    def test_stale_answer_used_when_overpass_is_down(self):
+        from grado_connectors.contract import ConnectorError
+        self.conn().fetch((0, 0, 10, 10), ["buildings"])
+
+        def down(q):
+            raise ConnectorError("нет ответа")
+        res = OsmOverpass(transport=down, cache_dir=self.tmp.name, fresh_s=0).fetch((0, 0, 10, 10), ["buildings"])
+        self.assertEqual(len(res["features"]), 2)
+        self.assertIn("не ответил", res["notes"][0])
+        with self.assertRaises(ConnectorError):
+            OsmOverpass(transport=down, cache_dir=self.tmp.name, fresh_s=0).fetch((0, 0, 30, 10), ["buildings"])
+
+
 if __name__ == "__main__":
     unittest.main()

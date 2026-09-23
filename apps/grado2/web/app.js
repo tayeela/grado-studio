@@ -178,26 +178,32 @@ $("bLoad").onclick = async () => {
   const keys = [...CHECKED];
   if (!keys.length) return toast("Отметьте источники.");
   const [w, s, e, n] = turf.bbox(buf(TERR, 60));
-  $("bLoad").disabled = true; busy(true); window.setHint?.(`Выгрузка ${keys.length} источников идёт: порталы отвечают от секунд до минуты, ГИС ОГД в первый раз качает слой целиком. Работать можно дальше.`);
-  try {
-    const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: keys });
-    ERRORS = r.errors;
-    const reports = [], fresh = [];
-    for (const [k, v] of Object.entries(r.layers)) {
-      const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
-      const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
-      DATA[k] = { ...v, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
-        history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };
-      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc);
-      const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l);
-      if (m) { reports.push(`«${v.title}»: ${m.text}`); fresh.push(...layerSrc[k].getFeatures().filter(f => m.mark.has(f.get("_key"))).map(f => ({ key: k, f }))); }
-    }
-    dataRev++; renderSources();
-    const ne = Object.keys(ERRORS).length;
-    if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
-    toast(`Загружено слоёв: ${Object.keys(r.layers).length}${ne ? `, с ошибкой: ${ne}` : ""}.${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}`);
-  } catch (err) { toast("Выгрузка не удалась: " + err.message); }
-  finally { busy(false); $("bLoad").disabled = false; window.syncStatus?.(); }
+  // OSM (Overpass) отвечает от секунд до минуты — отдельным запросом, чтобы остальные слои появились сразу
+  const osm = keys.filter(k => k.startsWith("osm.")), rest = keys.filter(k => !k.startsWith("osm.")), parts = [rest, osm].filter(p => p.length);
+  const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [];
+  ERRORS = {}; $("bLoad").disabled = true; busy(true);
+  const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
+  hint();
+  await Promise.all(parts.map(async part => {
+    try {
+      const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part });
+      Object.assign(ERRORS, r.errors);
+      for (const [k, v] of Object.entries(r.layers)) {
+        const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
+        const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
+        DATA[k] = { ...v, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
+          history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };
+        layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc);
+        const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l); nLayers++;
+        if (m) { reports.push(`«${v.title}»: ${m.text}`); fresh.push(...layerSrc[k].getFeatures().filter(f => m.mark.has(f.get("_key"))).map(f => ({ key: k, f }))); }
+      }
+    } catch (err) { part.forEach(k => { ERRORS[k] = err.message; }); }
+    pending.delete(part); dataRev++; renderSources(); if (pending.size) hint();
+  }));
+  busy(false); $("bLoad").disabled = false; window.syncStatus?.();
+  const ne = Object.keys(ERRORS).length;
+  if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
+  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}`);
 };
 /* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
    чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся
@@ -296,7 +302,7 @@ function testOp(v, op, t) {
   const n = !isNaN(+v) && !isNaN(+t) && t !== "", a = n ? +v : String(v), b = n ? +t : String(t);
   return { "=": a == b, "≠": a != b, ">": a > b, "<": a < b, "≥": a >= b, "≤": a <= b }[op];
 }
-function drawInfo(ctx) { if (this.flags.collapsed || !this.info) return; ctx.fillStyle = "#5f6368"; ctx.font = "11px system-ui, sans-serif"; ctx.fillText(this.info, 8, this.size[1] - 7); }
+function drawInfo(ctx) { if (this.flags.collapsed || !this.info) return; ctx.fillStyle = "#5f6368"; ctx.font = "11px system-ui, sans-serif"; ctx.fillText(fitText(this.info, this.size[0] - 14, ctx.font), 8, this.size[1] - 7); }
 function finish(node, kind, w = 210) { node.color = TITLE[kind]; node.bgcolor = "#f7f7f5"; node.size = node.computeSize(); node.size[0] = Math.max(w, node.size[0]); node.size[1] += 16; node.onDrawForeground = drawInfo; }
 const ha = f => f ? fmt(m2(f) / 1e4, 2) + " га" : "пусто";
 const titleToKey = t => Object.keys(DATA).find(k => DATA[k].title === t) || Object.keys(SOURCES).find(k => SOURCES[k].title === t);
@@ -305,10 +311,28 @@ function NTerr() { this.addOutput("граница", "geom"); finish(this, "src",
 NTerr.title = "Территория"; NTerr.prototype.onExecute = function () { this.setOutputData(0, TERR); this.info = TERR ? ha(TERR) : "граница не задана"; };
 LiteGraph.registerNodeType("Данные/Территория", NTerr);
 
+/* Длинные имена в узле графа: litegraph рисует значение списка без обрезки, и оно наезжает на подпись.
+   Если values — объект, он рисует values[значение], а в меню показывает ключи: ключ = полное имя, показ = обрезанное. */
+const _mc = document.createElement("canvas").getContext("2d"), GFONT = { title: "600 12px system-ui, sans-serif", inner: "11px system-ui, sans-serif" };
+function fitText(t, px, font) {
+  _mc.font = font; t = String(t ?? "");
+  if (_mc.measureText(t).width <= px) return t;
+  let lo = 0, hi = t.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (_mc.measureText(t.slice(0, m) + "…").width <= px) lo = m; else hi = m - 1; }
+  return t.slice(0, lo) + "…";
+}
+const fitCombo = (node, name, list) => () => {
+  const font = GFONT.inner; _mc.font = font;
+  const room = node.size[0] - 50 - 35 - _mc.measureText(name).width - 14;            // от подписи до стрелки справа
+  const fit = v => fitText(v === "" ? "—" : v, Math.max(24, room), font);
+  // Proxy: значение, которого нет в списке (пустое, удалённый слой), тоже рисуется, а в меню не попадает
+  return new Proxy(Object.fromEntries(list().map(v => [v, fit(v)])), { get: (o, k) => typeof k !== "string" || k in o ? o[k] : fit(k) });
+};
+function fitTitle(node, full) { node._fullTitle = full; node.title = fitText(full, node.size[0] - 34, GFONT.title); }
 function NLayer() {
   this.addOutput("объекты", "geom");
-  this.addWidget("combo", "слой", "", () => { }, { values: () => Object.keys(DATA).map(k => DATA[k].title) });
-  this.addWidget("combo", "поле", "—", () => { }, { values: () => ["—", ...(DATA[titleToKey(this.widgets[0].value)]?.fields || [])] });
+  this.addWidget("combo", "слой", "", () => { }, { values: fitCombo(this, "слой", () => Object.keys(DATA).map(k => DATA[k].title)) });
+  this.addWidget("combo", "поле", "—", () => { }, { values: fitCombo(this, "поле", () => ["—", ...(DATA[titleToKey(this.widgets[0].value)]?.fields || [])]) });
   this.addWidget("combo", "условие", "—", () => { }, { values: OPS });
   this.addWidget("text", "значение", "", () => { });
   finish(this, "src", 250);
@@ -324,9 +348,10 @@ NLayer.title = "Слой"; NLayer.prototype.onExecute = function () {
     this._out = u; this._n = [list.length, d.count];
   }
   this.setOutputData(0, this._out);
-  this.title = "Слой: " + d.title + (fw.value !== "—" && ow.value !== "—" ? ` [${fw.value} ${ow.value} ${vw.value}]` : "");
+  fitTitle(this, "Слой: " + d.title + (fw.value !== "—" && ow.value !== "—" ? ` [${fw.value} ${ow.value} ${vw.value}]` : ""));
   this.info = `${this._n[0]} из ${this._n[1]} объектов`;
 };
+NLayer.prototype.onResize = function () { if (this._fullTitle) fitTitle(this, this._fullTitle); };
 LiteGraph.registerNodeType("Данные/Слой", NLayer);
 
 function NNum() { this.addOutput("число", "num"); this.addWidget("slider", "значение", 12, () => { }, { min: 1, max: 40, precision: 0, slider_color: "#e3b25a" }); finish(this, "num", 190); }
@@ -513,7 +538,7 @@ nD3.connect(0, nP, 0); nNum.connect(0, nP, 1);
 nP.connect(0, nTep, 0); nK.connect(0, nTep, 1); nZ.connect(0, nTep, 2);
 
 const lgc = new LGraphCanvas($("gcv"), graph);
-Object.assign(lgc, { background_image: null, clear_background_color: "#e6e6e2", render_canvas_border: false, render_shadows: false, show_info: false, render_connection_arrows: false, title_text_font: "600 12px system-ui, sans-serif", inner_text_font: "11px system-ui, sans-serif", links_render_mode: LiteGraph.SPLINE_LINK });
+Object.assign(lgc, { background_image: null, clear_background_color: "#e6e6e2", render_canvas_border: false, render_shadows: false, show_info: false, render_connection_arrows: false, title_text_font: GFONT.title, inner_text_font: GFONT.inner, links_render_mode: LiteGraph.SPLINE_LINK });
 Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // подписи узлов при любом масштабе
 let selNode = null;
 lgc.onNodeSelected = n => { selNode = n; updateAnalysisMap(); };
@@ -689,27 +714,40 @@ let VARS = [], varSel = -1;
    (вдоль и поперёк длинной стороны участков), этажность — под цель плотности узла ТЭП, не выше потолка.
    Оценка: отклонение плотности от цели и доля фасадов новых домов с нормой инсоляции. Все кандидаты — в таблице,
    шесть лучших — карточками; выбранный переносит параметры в граф, «Принять в проект» делает его слоем. */
+let varRun = null;                 // идущий подбор: {stop}
+const varProgress = (done, total, text) => { $("varProg").firstElementChild.style.width = (done / total * 100).toFixed(1) + "%"; $("varMsg").textContent = text; setHint(text); };
+$("bStopVar").onclick = () => { if (varRun) { varRun.stop = true; $("bStopVar").disabled = true; $("varMsg").textContent = "Останавливаю: дорабатывает текущий вариант…"; } };
 $("bGen").onclick = async () => {
   const p = RESULT.placeNode, t = RESULT.tepNode; if (!p || !RESULT.site) return toast("В графе нет пятна застройки или узла посадки: задайте территорию и загрузите данные.");
   const base = placeParams(p), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), goal = densityGoal();
   const sppKept = keptBuildings(kept).reduce((s, f) => s + m2(f) * floorsOf(f), 0), ha = TERR_M2 / 1e4;
   const cands = []; for (const typ of TYPOLOGIES) for (const width of typ === "Квартал" ? [14, 18] : [14, 17]) for (const angle of [0, 90]) cands.push({ typ, width, angle });
-  busy(true); $("bGen").disabled = true; VARS = [];
+  const NINS = 8, total = cands.length + NINS + 1, run = varRun = { stop: false }, tick = () => new Promise(r => setTimeout(r, 0));
+  busy(true); $("bGen").hidden = true; $("bStopVar").hidden = false; $("bStopVar").disabled = false; $("varProg").hidden = false; VARS = [];
   try {
     for (const [i, c] of cands.entries()) {
-      setHint(`Варианты: ${i + 1} из ${cands.length} — ${c.typ}, ${c.width} м, ${c.angle ? "поперёк" : "вдоль"}…`); await new Promise(r => setTimeout(r, 0));
+      if (run.stop) break;
+      varProgress(i, total, `Посадка: вариант ${i + 1} из ${cands.length} — ${c.typ}, ${c.width} м, ${c.angle ? "поперёк" : "вдоль"}…`); await tick();
       const sk = generate(RESULT.site, { ...base, ...c, goal }); if (!sk.length) continue;
       const spp = sk.reduce((s, b) => s + b.m2 * b.floors, 0), fp = sk.reduce((s, b) => s + b.m2, 0);
       VARS.push({ ...c, sk, n: sk.length, spp, density: (spp + sppKept) / 1000 / ha, cover: fp / TERR_M2, avg: spp / fp, capped: sk.filter(b => b.capped).length });
     }
     VARS.forEach(v => { v.err = Math.abs(v.density - target) / target; });
     VARS.sort((a, b) => a.err - b.err);
-    for (const [i, v] of VARS.slice(0, 8).entries()) { setHint(`Инсоляция новых домов: вариант ${i + 1} из 8…`); await new Promise(r => setTimeout(r, 0)); v.own = window.ownInsolation?.(v.sk) ?? null; }
+    const ins = VARS.slice(0, NINS);
+    for (const [i, v] of ins.entries()) {
+      if (run.stop) break;
+      varProgress(cands.length + i, total, `Инсоляция новых домов: вариант ${i + 1} из ${ins.length}…`); await tick(); v.own = window.ownInsolation?.(v.sk) ?? null;
+    }
     VARS.forEach(v => { v.score = v.err + (v.own == null ? .3 : (100 - v.own) / 100 * .5); });   // недобор инсоляции весит как половина отклонения плотности
     VARS.sort((a, b) => a.score - b.score);
+    varProgress(total - 1, total, "Показатели лучших вариантов…");
     await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target); }));
-    varSel = -1; renderVars(); setHint(`Вариантов: ${VARS.length}. Щелчок по карточке или строке таблицы переносит параметры в граф и на карту.`);
-  } catch (e) { console.error(e); toast("Варианты не посчитались: " + e.message); } finally { busy(false); $("bGen").disabled = false; }
+    varSel = -1; renderVars();
+    const msg = run.stop ? `Подбор остановлен: вариантов ${VARS.length} из ${cands.length}${VARS.some(v => v.own == null) ? ", у части инсоляция не посчитана (—)" : ""}.` : `Вариантов: ${VARS.length}.`;
+    $("varMsg").textContent = msg; setHint(msg + " Щелчок по карточке или строке таблицы переносит параметры в граф и на карту.");
+  } catch (e) { console.error(e); toast("Варианты не посчитались: " + e.message); $("varMsg").textContent = "Подбор не удался: " + e.message; }
+  finally { varRun = null; busy(false); $("bGen").hidden = false; $("bStopVar").hidden = true; $("varProg").hidden = true; }
 };
 const vName = v => `${v.typ} · ${v.width} м · ${v.angle ? "поперёк" : "вдоль"}`;
 function renderVars() {

@@ -129,12 +129,91 @@ def _point_of(el):
     return [sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)]
 
 
+def _bbox_hits(geom, bb):
+    """Пересекает ли габарит геометрии прямоугольник (запад, юг, восток, север)."""
+    xs, ys = [], []
+
+    def walk(c):
+        if c and isinstance(c[0], (int, float)):
+            xs.append(c[0])
+            ys.append(c[1])
+        else:
+            for x in c:
+                walk(x)
+    walk(geom.get("coordinates") or [])
+    return bool(xs) and min(xs) <= bb[2] and max(xs) >= bb[0] and min(ys) <= bb[3] and max(ys) >= bb[1]
+
+
+class _OverpassCache:
+    """Ответы Overpass на диске: <папка>/index.json + <n>.json.gz. Потокобезопасно в пределах процесса."""
+
+    KEEP = 40                         # не больше стольких ответов, старые вытесняются
+
+    def __init__(self, folder):
+        import threading
+        from pathlib import Path
+        self.dir = Path(folder)
+        self.lock = threading.Lock()
+
+    def _index(self):
+        try:
+            return json.loads((self.dir / "index.json").read_text("utf-8"))
+        except (OSError, ValueError):
+            return []
+
+    def find(self, bbox, sets, max_age):
+        import gzip
+        now, eps = time.time(), 1e-7
+        with self.lock:
+            for e in sorted(self._index(), key=lambda e: -e["t"]):
+                b = e["bbox"]
+                if now - e["t"] > max_age or not set(sets) <= set(e["sets"]):
+                    continue
+                if b[0] - eps <= bbox[0] and b[1] - eps <= bbox[1] and b[2] + eps >= bbox[2] and b[3] + eps >= bbox[3]:
+                    try:
+                        with gzip.open(self.dir / e["file"], "rt", encoding="utf-8") as f:
+                            return json.load(f), e["t"]
+                    except (OSError, ValueError):
+                        continue
+        return None
+
+    def put(self, bbox, sets, data):
+        import gzip
+        import os
+        with self.lock:
+            self.dir.mkdir(parents=True, exist_ok=True)
+            idx = self._index()
+            name = f"{int(time.time() * 1000)}.json.gz"
+            tmp = self.dir / (name + ".tmp")
+            with gzip.open(tmp, "wt", encoding="utf-8") as f:
+                json.dump(data, f)
+            os.replace(tmp, self.dir / name)
+            idx.append({"bbox": list(bbox), "sets": sorted(sets), "t": time.time(), "file": name})
+            idx.sort(key=lambda e: -e["t"])
+            for e in idx[self.KEEP:]:
+                try:
+                    (self.dir / e["file"]).unlink()
+                except OSError:
+                    pass
+            tmp = self.dir / "index.json.tmp"
+            tmp.write_text(json.dumps(idx[:self.KEEP]), "utf-8")
+            os.replace(tmp, self.dir / "index.json")
+
+
 class OsmOverpass(Connector):
     name = "osm"
     source = "osm"
 
-    def __init__(self, transport=None):
+    def __init__(self, transport=None, cache_dir=None, fresh_s=24 * 3600, stale_s=90 * 24 * 3600):
+        """cache_dir — папка дискового кэша ответов Overpass (None — без кэша).
+
+        Ответ моложе fresh_s отдаётся с диска без запроса; если зеркала не
+        ответили, берётся и более старый, но не старше stale_s — с пометкой.
+        Кэш с бо́льшей областью и не меньшим составом наборов покрывает запрос.
+        """
         self.transport = transport or self._http_post
+        self.cache = _OverpassCache(cache_dir) if cache_dir else None
+        self.fresh_s, self.stale_s = fresh_s, stale_s
 
     def _http_post(self, query):
         """Запрос сразу ко всем зеркалам, берём первый годный ответ.
@@ -193,7 +272,7 @@ class OsmOverpass(Connector):
                 raise ConnectorError(f"неизвестный набор OSM: {key!r}")
             clauses += [sel + bb for sel in OSM_SETS[key]]
         query = f"[out:json][timeout:25];({';'.join(clauses)};);out geom;"
-        data = self.transport(query)
+        data, cached_at, cache_note = self._answer(query, (west, south, east, north), sets)
 
         features, skipped = [], 0
         for el in data.get("elements") or []:
@@ -258,12 +337,37 @@ class OsmOverpass(Connector):
                 features.append({"type": "Feature",
                                  "grado_key": f"rel/{el.get('id')}",
                                  "geometry": geometry, "properties": props})
-        notes = []
+        notes = [cache_note] if cache_note else []
+        if cached_at:
+            # кэш мог быть снят с области шире запроса — лишнее отсекается по габаритам
+            features = [f for f in features if _bbox_hits(f["geometry"], (west, south, east, north))]
         if skipped:
             notes.append(f"пропущено вырожденных геометрий: {skipped}")
-        return make_result(
+        res = make_result(
             features,
             params={"bbox": ",".join(f"{float(v):.5f}" for v in bbox),
                     "sets": sorted(sets)},
             source_doc="OpenStreetMap (Overpass API)",
             notes=notes)
+        if cached_at:
+            res["fetched_at"] = time.strftime("%Y-%m-%d", time.localtime(cached_at))
+        return res
+
+    def _answer(self, query, bbox, sets):
+        """(ответ Overpass, время снятия из кэша или None, пометка для пользователя)."""
+        if not self.cache:
+            return self.transport(query), None, None
+        hit = self.cache.find(bbox, sets, self.fresh_s)
+        if hit:
+            day = time.strftime("%d.%m.%Y %H:%M", time.localtime(hit[1]))
+            return hit[0], hit[1], f"ответ OSM от {day} с диска: Overpass не запрашивался (данные OSM меняются медленно)"
+        try:
+            data = self.transport(query)
+        except ConnectorError:
+            old = self.cache.find(bbox, sets, self.stale_s)
+            if not old:
+                raise
+            day = time.strftime("%d.%m.%Y", time.localtime(old[1]))
+            return old[0], old[1], f"Overpass не ответил — взят прошлый ответ от {day}"
+        self.cache.put(bbox, sets, data)
+        return data, None, None

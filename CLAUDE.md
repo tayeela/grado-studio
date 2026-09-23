@@ -221,6 +221,24 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.14.0: OSM answer cache, split download, «Стоп» for the variant search, long names in graph nodes.**
+  Owner's queue items after v0.13.1.
+  - **Overpass measured:** overpass-api.de refused the connection, maps.mail.ru answered in 21 s, kumi and private.coffee
+    gave 504 after 50–77 s. The mirror race was already right; the fix is not to ask again. `OsmOverpass(cache_dir=…)`
+    keeps raw answers in `~/.grado2/cache/osm` (index.json + gz, up to 40): an answer younger than 24 h whose area contains
+    the request and whose sets cover it is used without the network (features outside the request are cut by bbox);
+    when Overpass fails, an answer up to 90 days old is used with a note. `fetched_at` of a cached layer = the cache date.
+    The studio still calls the connector without a cache (unchanged).
+  - «Загрузить»: OSM goes in its own `/api/fetch` request in parallel, so ЕГРН/ОГД/relief appear without waiting for it;
+    the status line says when only OSM is left.
+  - «Варианты»: progress bar under the bar, «Стоп» (and Esc) in place of «Подобрать»; a stopped run keeps the ranked
+    variants computed so far and says which have no insolation yet.
+  - Graph: litegraph draws a combo value unclipped. If `options.values` is an object, it draws `values[value]` and lists the
+    keys in the menu, so `fitCombo` returns a Proxy {full name → name cut to the node width}; a value outside the list
+    (empty, deleted layer) is drawn too («—» for empty) without entering the menu. Node title and info line are also cut.
+  - **Pitfall:** `typeof lgc` on a `let` still in its temporal dead zone throws — graph fonts are the constant `GFONT`.
+  - Checked headless on grado2-test; e2e +2 steps (stop, long name), all green; connectors +3 cache tests.
+
 - **2026-09-23, ГРАДО 2 v0.13.0 (stage Э7): product — project format with migrations, browser scenarios in CI, installers, help.**
   - Version: single source `apps/grado2/web/version.json` (0.13.0, project format 2); `/api/health` returns it, the brand shows it.
   - Project format 2 with migrations (`project.js` `MIGRATIONS`, `migrate`): a format-1 file gets groups, views, album and the

@@ -261,6 +261,8 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .vbar{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
 .vbar b{font-weight:600}
 .vbar .sp{flex:1}
+.vprog{height:3px;background:var(--line);overflow:hidden}.vprog>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+@media (prefers-reduced-motion:reduce){.vprog>i{transition:none}}
 .vlist{display:flex;flex-wrap:wrap;gap:6px;padding:8px;align-content:flex-start}
 .vlist{display:block}.vcards{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.vt-table tr{cursor:default}
 .vc{flex:0 0 180px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0;text-align:left;display:flex;flex-direction:column}
@@ -344,7 +346,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 </section>
 <section class="win" id="wVars" hidden aria-label="Варианты">
   <header class="wh"><i data-lucide="layout-grid"></i><b>Варианты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
-  <div class="wb"><div class="vbar"><span style="color:var(--muted)">перебор типологий и направления корпусов в пределах ограничений</span><span class="sp"></span><button class="btn primary" id="bGen" title="Перебор типологий, ширины и направления корпусов с этажностью под цель плотности в пределах ограничений"><i data-lucide="sparkles"></i>Подобрать варианты</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Принять в проект</button></div>
+  <div class="wb"><div class="vbar"><span style="color:var(--muted)" id="varMsg">перебор типологий и направления корпусов в пределах ограничений</span><span class="sp"></span><button class="btn primary" id="bGen" title="Перебор типологий, ширины и направления корпусов с этажностью под цель плотности в пределах ограничений"><i data-lucide="sparkles"></i>Подобрать варианты</button><button class="btn" id="bStopVar" hidden title="Прервать подбор: уже посчитанные варианты останутся (Esc)"><i data-lucide="square"></i>Стоп</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Принять в проект</button></div><div class="vprog" id="varProg" hidden><i></i></div>
     <div class="vlist" id="vlist"><div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений. Выбранный вариант переносит параметры в граф.</div></div></div>
 </section>
 <section class="win" id="wTep" hidden aria-label="Показатели">

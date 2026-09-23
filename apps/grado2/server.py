@@ -209,7 +209,7 @@ def _layer(key, result):
                              **({"_key": f["grado_key"]} if f.get("grado_key") else {})}}
              for f in result["features"] if f.get("geometry")]
     return {"title": SOURCES[key][2], "source": result.get("source_doc"),
-            "fetched_at": date.today().isoformat(), "notes": result.get("notes", []),
+            "fetched_at": result.get("fetched_at") or date.today().isoformat(), "notes": result.get("notes", []),
             "features": {"type": "FeatureCollection", "features": feats}}
 
 
@@ -228,7 +228,7 @@ def fetch(bbox, keys):
         osm_keys = [k for k in keys if SOURCES[k][0] == "osm"]
         if not osm_keys:
             return
-        res = OsmOverpass().fetch(bbox, [SOURCES[k][1] for k in osm_keys])
+        res = OsmOverpass(cache_dir=CACHE / "osm").fetch(bbox, [SOURCES[k][1] for k in osm_keys])
         for k in osm_keys:
             part = [f for f in res["features"] if f["properties"].get("grado_set") == SOURCES[k][1]]
             layers[k] = _layer(k, {**res, "features": part})

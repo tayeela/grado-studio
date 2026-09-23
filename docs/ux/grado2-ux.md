@@ -95,16 +95,18 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   Search by name inside the found list would help.
 - 2026-09-23: the first ГИС ОГД download of the ПЗЗ zones is 221 MB (1–2 min) with only a thin progress line; a percentage
   (bytes received) would make the wait honest.
-- 2026-09-23: Overpass (OSM) often times out on all mirrors (HTTP 504); the layer shows the error, others load. A local
-  cache of the last good OSM answer per bbox would make re-downloads reliable.
+- 2026-09-23 (done v0.14.0): OSM answers are cached on disk; a repeat or an area inside a cached one is instant, and when
+  Overpass is down the last answer (up to 90 days) is used with a note. The first download of a new area still waits for
+  the fastest mirror (measured 21 s at maps.mail.ru; overpass-api.de refused, two mirrors 504 after 50–77 s).
 - 2026-09-23: labels of a GPU-drawn layer show only when zoomed in (the canvas takes over there); say so in the style panel.
 - 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
   one reveal angle for all windows. The front points are dense: at 1:3000 they merge into the facade line.
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
-- 2026-09-23: the variant search takes ~25 s with a status line only; a progress bar and a «Стоп» would help. Sections do not
-  yet move towards where the ceiling is high — only floors adapt.
+- 2026-09-23 (done v0.14.0): the variant search has a progress bar and «Стоп» (also Esc); stopped runs keep what is
+  computed. Still open: sections do not move towards where the ceiling is high — only floors adapt.
 - 2026-09-23: the 5-typology segmented control wraps to two lines in the narrow «Эскиз» window.
-- 2026-09-23: in graph «Слой» nodes a long layer name overlaps the widget label (litegraph combo); short names or a wider node.
+- 2026-09-23 (done v0.14.0): graph node titles, list values and the info line are cut with «…» to the node width;
+  the list menu still shows full names.
 - 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a
   Moscow document is prepared.
 - 2026-09-23: sheets take the whole view; per-sheet extent/centre (drag the frame on the map) and a separate ТЭП-only sheet
