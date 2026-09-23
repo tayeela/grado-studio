@@ -9,8 +9,12 @@ the queue at the bottom with a date.
 
 1. **No imposed stages.** Work does not have to go collect → analysis → sketch. Everything lives
    in one workspace; tools open as floating windows the owner arranges freely.
-2. **A tool strip like AutoCAD is always visible.** Point, line, polygon, rectangle, vertices,
-   move, delete, undo, measure, territory boundary. Hotkeys work in any keyboard layout.
+2. **Drawing works like AutoCAD** (owner, 23.09.2026: «ориентируйся на автокад, скопируй инструменты»). The ribbon
+   has the AutoCAD Draw and Modify panels (line, polyline, circle, arc, rectangle, polygon, point; move, copy, rotate,
+   mirror, scale, offset, trim, extend, fillet, break, join, explode, erase, grips) with AutoCAD-style icons; commands are
+   typed by their AutoCAD aliases (L, PL, C, TR…) and Enter or Space in any keyboard layout; Enter/Space repeats the last
+   command, right click is Enter. Status bar modes: object snap (F3), object tracking with dashed alignment lines (F11),
+   polar tracking (F10), ortho (F8), dynamic input (F12).
 3. **Every tool says what to do next.** The status bar shows the active tool, the layer it
    draws into, and the next action ("щёлкайте вершины, двойной щелчок завершает").
 4. **A new layer is immediately usable.** After «+ Слой» the drawing tool of its geometry is on.
@@ -31,10 +35,11 @@ the queue at the bottom with a date.
 
 ## Scenarios
 
-A. **Draw from scratch.** Fresh page → «+ Слой», name it, polygons → draw two polygons →
+A. **Draw from scratch.** Fresh page → «+ Слой», name it, polygons → draw a polygon (polyline, double click),
+   Space repeats the command → a second polygon →
    edit an attribute in «Объект» → move one polygon → delete one → Ctrl+Z brings it back.
-B. **Draw without creating a layer.** Pick «Линия» on the tool strip → a layer «Линии» appears
-   and is current → draw a line → the status bar names the layer.
+B. **Draw without creating a layer.** Type PL and Enter (or the polyline button) → click points → Enter → a layer
+   «Линии» appears and is current; the status bar shows the command prompt with its options in brackets.
 C. **Existing situation.** Open «Данные» → «Пример» territory → load sources → layers appear in
    the tree in a sensible order → drag a layer up → it draws on top.
 D. **Analysis.** Open «Граф» → select a node → its output shows on the main map → change a
@@ -45,9 +50,10 @@ D2. **No uninvited sketch.** New project → «Пример» → load → the m
    the accepted layer stays; restyle it (single / ranges) → the map follows.
 E. **Variants and 3D.** Open «Варианты» → generate 6 → pick one → graph and map follow →
    open «Объём».
-F2. **Precise drawing.** «Полигон» → click a corner → type 40, Enter → 25<90, Enter → @-40;0, Enter → Enter: a 40 × 25 m
-   polygon; the tooltip shows each segment length and angle and the area. F8 → segments snap to 90°. «Прямоугольник» →
-   click → @30;20 → Enter. «Точка» → 5000;15000 → Enter. Near an existing vertex the marker and «привязка: вершина» appear.
+F2. **Precise drawing.** PL in a polygon layer → click → 40<0, 25<90, @-40;0, Enter each → Enter: a 40 × 25 m polygon.
+   REC → click → @30;20. PO → 5000;15000. Hover an endpoint half a second → green «+» → move away along the vertical:
+   a dashed tracking line holds the cursor; with a second acquired point the cursor stops at the crossing. L lines by
+   coordinates, then TR (red dashed preview of what goes), EX, O 5, F with Р 3, RO 90 — all exact to a millimetre.
 F. **Measure.** Length and area tools show the value while drawing and keep it on the map; Esc
    clears.
 G. **Export.** «Экспорт DXF» downloads a zip with the drawing, red_lns.shx and REDLN97.LIN.
@@ -92,6 +98,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.24.0, AutoCAD drawing): not yet — PLINE arc segments (option «Дуга»), CHAMFER, STRETCH, ARRAY,
+  LENGTHEN, rectangle corner options, ellipse, hatch, dimensions (DIM), text; polar tracking relative to the last segment;
+  grips with length display; a command history panel. Trim and extend work on lines and contours, not on points; a trimmed
+  polygon becomes a line (a GIS polygon cannot be open).
 - 2026-09-23 (v0.23.0, precise drawing): not yet — lengths while dragging a vertex in «Вершины», polar tracking other than
   90°, perpendicular and parallel snaps, a typed rotation for «Перенос»; the first mouse moves right after a click sometimes
   do not show the snap marker in headless runs (the next moves do).

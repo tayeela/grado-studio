@@ -226,6 +226,33 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.24.0: drawing rebuilt after AutoCAD.** Owner: «в прошлой версии черчение было лучше, ориентируйся
+  на автокад (пунктирные продолжающие линии и пр), мало инструментов, значок линии похож на дугу — скопируй инструменты из
+  автокад». OpenLayers Draw/Translate are gone from drawing; OpenLayers only shows. Grips («Вершины») stay on OL Modify.
+  - `web/cadcore.js` (`CG`, no DOM, 33 checks in `tests/cadcore_test.js` via `test_cadcore.py`): intersections, foot,
+    tangents, circle/arc by three points, regular polygon, offset (miter), cuts along a chain, trim (open and closed), break,
+    extend, fillet of a corner and of all corners, join by common ends, move/rotate/scale/mirror.
+  - `web/cad.js` rewritten as a command engine: commands by ribbon button or AutoCAD alias typed + Enter/Space (layout
+    independent by `e.code`; autocomplete list): L, PL, C, A, REC, POL, PO, M, CO/CP, RO, SC, MI, O, TR, EX, F, BR, J, X, E,
+    DI, AA, BO. Enter/Space/right click finish a step; Enter/Space with no command repeats the last one; Backspace removes
+    the last point; Esc cancels. Options in brackets are typed as letters (Russian, or the same key in the Latin layout,
+    or the AutoCAD English letter). Pick-first or command-first selection (Shift+frame works in the selection step).
+  - Own snapping (F3, menu of modes: endpoint, midpoint, center, quadrant, intersection, extension, perpendicular,
+    tangent, nearest) with AutoCAD markers; object tracking (F11): hover a snap point 0.38 s → green «+», then dotted
+    alignment lines (0/90° or polar angles) and extension lines, the crossing of two lines snaps; polar tracking (F10, step
+    90/45/30/15/10/5°) with a dotted ray; ortho (F8, МГГТ axes); dynamic input (F12). Snap search reads only features in
+    a 10 px box (≤ 300) and converts only nearby vertices to МГГТ.
+  - Circles and arcs keep `_cad` {t, c, r, a0, sw} in МГГТ (hidden field) for center/quadrant/tangent snaps and exact offset;
+    transforms update it; grips editing drops it. Closed figures go to the current polygon layer (in a line layer — as a
+    closed line); open ones to lines. Trim/extend/break cut in map coordinates (Mercator keeps angles; < 1 cm over 1 km),
+    so untouched vertices stay bit-exact; trimmed pieces become separate objects with the same attributes.
+  - Ribbon: own SVG icons (sprite `#ci-*` in index.html, grips drawn in the accent colour); status bar mode buttons.
+  - **Pitfalls:** OpenLayers fires `dblclick` for any two clicks within 250 ms, wherever they are — fast vertices ended the
+    polyline; the engine detects its own double click (same spot, < 0.4 s). `RegularShape` in OL 10 has no `radius1` —
+    crosses drawn with it were invisible. A command object replaced after the selection step must become `CMD` itself;
+    merging it into the old object left closures pointing to the inner object, so commands never finished.
+  - e2e: A/B adapted (Space repeats PL for the second polygon), +8 steps: TR, EX, O, F R=3, RO 90 and Ctrl+Z, tracking line.
+
 - **2026-09-23, ГРАДО 2 v0.23.0: precise drawing like AutoCAD; server listen queue.** Owner: «улучши элементы черчения,
   сделай их понятнее и точнее для черчения».
   - `web/mggt.js`: the core МГГТ transform (`crs.py` msk50 ↔ WGS84) ported one to one; `tests/test_mggt.py` checks it against
