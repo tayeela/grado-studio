@@ -22,7 +22,7 @@ function collectProject() {
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
     checked: [...CHECKED],
     current: CUR,
-    groups: GROUPS.map(g => ({ ...g })),
+    groups: GROUPS.map(g => ({ ...g })), views: VIEWS,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
     data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, fc: d.fc, original: d.original }])),
     graph: graph.serialize(),
@@ -35,7 +35,7 @@ function clearProject() {
   Object.keys(SOURCES).filter(k => k.startsWith("import:")).forEach(k => delete SOURCES[k]);
   TERR = null; TERR_M2 = 0; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
-  CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
+  CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
   $("vlist").innerHTML = `<div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений.</div>`;
 }
 
@@ -62,6 +62,7 @@ function applyProject(p) {
     LYR.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
+    VIEWS.push(...(p.views || []));
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }

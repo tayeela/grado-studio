@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.10.0)
+## Where we are (23.09.2026, v0.11.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -46,6 +46,8 @@ analytic cases. Not done: site sun-hours map and own insolation of new buildings
 search with a comparison table, «Проверить нормы» (own and neighbours' insolation, bans, fire gaps) re-run live on edits of
 an accepted sketch, floors ± for selected buildings, 3D ground shadows for a date and time. Not done: NSGA-II (a weighted
 ranking is used instead), a sun-hours map of the site.
+Э3 done in v0.11.0: analysis nodes (service radii by СП 42.13330, walking isochrones over OSM streets, block indicators,
+territory balance) that label their result on the map, «В слой» for any node, views of the map with legends.
 
 ## Stages
 
@@ -66,7 +68,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 - Re-download with a diff against the previous download (the core connectors already keep snapshots).
 - Existing-buildings register: floors, year, purpose, «сохраняем / сносим» marked on the map.
 
-### Э3. Analysis (3 sessions)
+### Э3. Analysis (3 sessions) — done, v0.11.0
 - Nodes: distance and service radii (schools, ДОО, clinics by 2151-ПП/945-ПП), walking isochrones
   over the OSM street graph, density and floors by block, territory balance.
 - Thematic maps as «views» of one map (layer set + styles + title + legend), reused on sheets.

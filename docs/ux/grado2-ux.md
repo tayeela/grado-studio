@@ -74,6 +74,11 @@ M. **Generation.** After L: «Эскиз» → «Этажность по: цел
    Select three buildings → «Этажность +» a few times → the «Проверка норм» layer updates by itself. «Объём» → move the time
    slider → shadows move.
 
+N. **Analysis and views.** Load «Улично-дорожная сеть» and «Школы, детсады, поликлиники (OSM)». Graph → «Анализ» →
+   «Радиусы обслуживания» → select it: circles and «вне радиуса … га» are written on the map → «В слой». «Показатели
+   кварталов» without inputs → blocks between streets with density. «Виды» → save «Существующее», hide layers, save
+   «Анализ», switch between them; the legend follows.
+
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
@@ -94,3 +99,6 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 - 2026-09-23: the variant search takes ~25 s with a status line only; a progress bar and a «Стоп» would help. Sections do not
   yet move towards where the ceiling is high — only floors adapt.
 - 2026-09-23: the 5-typology segmented control wraps to two lines in the narrow «Эскиз» window.
+- 2026-09-23: in graph «Слой» nodes a long layer name overlaps the widget label (litegraph combo); short names or a wider node.
+- 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a
+  Moscow document is prepared.

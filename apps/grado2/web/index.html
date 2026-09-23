@@ -182,6 +182,7 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .menu{position:fixed;z-index:60;background:var(--panel);border:1px solid var(--line-2);box-shadow:0 4px 14px rgba(0,0,0,.18);padding:4px 0;min-width:220px;border-radius:4px}
 .menu button{display:block;width:100%;border:0;background:none;padding:5px 12px;text-align:left}
 .menu button:hover{background:var(--accent);color:var(--accent-ink)}
+.legend{padding:6px 8px;background:var(--field)}.lg{margin-bottom:6px}.lgh{display:flex;gap:6px;align-items:center;font-weight:600}.lgi{display:flex;gap:6px;align-items:center;padding:1px 0 1px 18px;color:var(--muted)}
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
 .ol-dragbox.selbox{border:1.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .ol-dragbox.selbox.cross{border:1.5px dashed var(--good);background:color-mix(in srgb,var(--good) 10%,transparent)}
@@ -225,7 +226,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 /* 2 анализ */
 .graphbox{position:relative;background:var(--graph);min-width:0;min-height:0}
 .graphbox canvas{position:absolute;inset:0;display:block}
-.lib button{display:flex;width:100%;align-items:center;gap:7px;border:0;background:none;text-align:left;padding:4px 8px 4px 14px;height:24px}
+.lib button{display:flex;width:100%;align-items:center;gap:7px;border:0;background:none;text-align:left;padding:4px 8px 4px 14px;min-height:24px;line-height:1.2}
 .lib button:hover{background:var(--hover)}
 .lib .cat{padding:6px 8px 2px;color:var(--faint);font-weight:600}
 .gbar{position:absolute;left:8px;top:8px;display:flex;gap:6px;z-index:2}
@@ -283,7 +284,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
-      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
+      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wViews" title="Виды карты: наборы видимых слоёв с оформлением и легендой (как темы карты в QGIS)"><i data-lucide="bookmark"></i><span class="lb">Виды</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn opt" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn opt" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
     </nav>
     <span class="vs"></span>
     <button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>Экспорт DXF</button>
@@ -296,7 +297,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <label class="tgt" title="Слой, в который попадают новые объекты">в слой <select id="curLayer" aria-label="Текущий слой"></select></label><span class="vs"></span>
     <div class="g"><button class="tl" data-tool="vertex" title="Правка вершин (E)"><i data-lucide="pen-tool"></i><span class="lb">Вершины</span></button><button class="tl" data-tool="move" title="Перенос объекта (M)"><i data-lucide="move"></i><span class="lb">Перенос</span></button><button class="tl" id="bDelFeat" title="Удалить выбранный объект (Del)"><i data-lucide="trash-2"></i><span class="lb">Удалить</span></button><button class="tl" id="bUndo" title="Отменить правку (Ctrl+Z)" aria-label="Отменить"><i data-lucide="undo-2"></i></button><button class="tl" id="bRedo" title="Вернуть отменённое (Ctrl+Shift+Z)" aria-label="Вернуть"><i data-lucide="redo-2"></i></button></div>
     <label class="inl" title="Привязка к вершинам и рёбрам видимых слоёв"><input type="checkbox" id="snapT" checked>привязка</label><span class="vs"></span>
-    <div class="g"><button class="tl" data-tool="mlen" title="Измерить длину (D)"><i data-lucide="ruler"></i><span class="lb">Длина</span></button><button class="tl" data-tool="marea" title="Измерить площадь (A)"><i data-lucide="square-dashed"></i><span class="lb">Площадь</span></button></div><span class="vs"></span>
+    <div class="g"><button class="tl opt" data-tool="mlen" title="Измерить длину (D)"><i data-lucide="ruler"></i><span class="lb">Длина</span></button><button class="tl opt" data-tool="marea" title="Измерить площадь (A)"><i data-lucide="square-dashed"></i><span class="lb">Площадь</span></button></div><span class="vs"></span>
     <div class="g"><button class="tl" data-tool="terr" title="Нарисовать границу территории (B)"><i data-lucide="scan"></i><span class="lb">Граница</span></button></div>
   </div>
 
@@ -333,7 +334,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <section class="win" id="wGraph" hidden aria-label="Граф анализа">
   <header class="wh"><i data-lucide="workflow"></i><b>Граф анализа</b><small>выход выбранного узла — на карте оранжевым</small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="gwrap"><div class="lib" id="lib"></div><div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
-      <div class="gbar"><button class="btn" id="bFitGraph"><i data-lucide="scan"></i>Весь граф</button><button class="btn" id="bRunGraph"><i data-lucide="play"></i>Пересчитать</button></div></div></div></div>
+      <div class="gbar"><button class="btn" id="bFitGraph"><i data-lucide="scan"></i>Весь граф</button><button class="btn" id="bRunGraph"><i data-lucide="play"></i>Пересчитать</button><button class="btn" id="bBakeNode" title="Выход выбранного узла — обычным слоем проекта (с таблицей показателей у узлов анализа)"><i data-lucide="stamp"></i>В слой</button></div></div></div></div>
 </section>
 <section class="win" id="wSketch" hidden aria-label="Параметры эскиза">
   <header class="wh"><i data-lucide="building-2"></i><b>Параметры эскиза</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
@@ -375,6 +376,10 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
   <header class="wh"><i data-lucide="shield-check"></i><b>Ограничения</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb" id="consBody"></div>
 </section>
+<section class="win" id="wViews" hidden aria-label="Виды карты">
+  <header class="wh"><i data-lucide="bookmark"></i><b>Виды карты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb" id="viewsBody"></div>
+</section>
 <section class="win" id="wKeys" hidden aria-label="Клавиши">
   <header class="wh"><i data-lucide="keyboard"></i><b>Клавиши</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb" id="keysBody"></div>
@@ -386,5 +391,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <script src="linetype.js"></script>
 <script src="app.js"></script>
 <script src="layers.js"></script>
+<script src="analysis.js"></script>
 <script src="constraints.js"></script>
+<script src="views.js"></script>
 <script src="project.js"></script>

@@ -54,7 +54,10 @@ OSM_SETS = {
     # вешает Overpass.
     "boundaries": ['relation["boundary"="administrative"]'
                    '["admin_level"~"^(6|8)$"]'],
+    # социальные объекты для радиусов обслуживания: точки (узел или центр контура)
+    "social": ['nwr["amenity"~"^(school|kindergarten|clinic|hospital|doctors|pharmacy)$"]'],
 }
+_SOCIAL = {"school", "kindergarten", "clinic", "hospital", "doctors", "pharmacy"}
 
 # Замкнутые наборы становятся полигонами; дороги остаются линиями. Границы —
 # кольца (контур адм. единицы), но на холсте рисуются без заливки.
@@ -97,7 +100,7 @@ def _assemble_rings(segments):
 # Теги, уходящие в атрибуты холста (шум вроде source=* отбрасывается).
 _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
               "leisure", "natural", "water", "waterway", "surface", "lanes",
-              "boundary", "admin_level")
+              "boundary", "admin_level", "amenity")
 
 
 def _which_set(tags):
@@ -113,6 +116,17 @@ def _which_set(tags):
     if "landuse" in tags or "leisure" in tags or "natural" in tags:
         return "landuse"
     return None
+
+
+def _point_of(el):
+    """Точка объекта: узел — сам, контур — среднее его вершин, отношение — среднее вершин членов."""
+    if el.get("type") == "node" and "lon" in el:
+        return [el["lon"], el["lat"]]
+    pts = [[g["lon"], g["lat"]] for g in el.get("geometry") or []] or \
+        [[g["lon"], g["lat"]] for m in el.get("members") or [] for g in m.get("geometry") or []]
+    if not pts:
+        return None
+    return [sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)]
 
 
 class OsmOverpass(Connector):
@@ -184,9 +198,17 @@ class OsmOverpass(Connector):
         features, skipped = [], 0
         for el in data.get("elements") or []:
             etype = el.get("type")
+            tags = el.get("tags") or {}
+            # школа или поликлиника — ещё и точка набора social (контур здания при этом остаётся в buildings)
+            if "social" in sets and tags.get("amenity") in _SOCIAL:
+                pt = _point_of(el)
+                if pt:
+                    props = {k: tags[k] for k in _KEEP_TAGS if k in tags}
+                    props["grado_set"] = "social"
+                    features.append({"type": "Feature", "grado_key": f"{etype}/{el.get('id')}/social",
+                                     "geometry": {"type": "Point", "coordinates": pt}, "properties": props})
             if etype not in ("way", "relation"):
                 continue
-            tags = el.get("tags") or {}
             set_key = _which_set(tags)
             if set_key is None or set_key not in sets:
                 continue

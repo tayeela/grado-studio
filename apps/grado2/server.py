@@ -55,6 +55,7 @@ SOURCES = {
     "osm.buildings": ("osm", "buildings", "Здания (OSM)"),
     "osm.water": ("osm", "water", "Водные объекты (OSM)"),
     "osm.landuse": ("osm", "landuse", "Землепользование (OSM)"),
+    "osm.social": ("osm", "social", "Школы, детсады, поликлиники (OSM)"),
 }
 SOURCES["gisogd.red_lines"] = ("gisogd", {"l1": None}, "Красные линии и ЛГР (ОГД)")
 for _k in ("gisogd.func_zones", "gisogd.func_zones_tinao", "gisogd.szz", "gisogd.vodookhr"):
@@ -166,9 +167,18 @@ def demolition_props(p):
             "Территория": _v(p.get("terri")), "Объект": _v(str(p.get("name_obj") or "").strip())}
 
 
+AMENITY = {"school": "школа", "kindergarten": "детский сад", "clinic": "поликлиника", "doctors": "поликлиника",
+           "hospital": "больница", "pharmacy": "аптека"}
+
+
+def social_props(p):
+    return {"Вид": AMENITY.get(p.get("amenity"), p.get("amenity")), "Название": p.get("name")}
+
+
 # ключ источника → свойства портала в читаемые поля (служебные поля портала не нужны в таблице)
 PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, "gisogd.okn": okn_props,
-           "gisogd.demolition": demolition_props, "relief.contours": lambda p: {"Высота, м": p.get("elev")}}
+           "gisogd.demolition": demolition_props, "relief.contours": lambda p: {"Высота, м": p.get("elev")},
+           "osm.social": social_props}
 
 
 REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))

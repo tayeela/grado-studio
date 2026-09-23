@@ -221,6 +221,25 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.11.0 (stage Э3): analysis nodes that explain themselves, «В слой», views of the map.**
+  - OSM set `social` in the core connector (nodes, ways and relations with amenity school / kindergarten / clinic / doctors /
+    hospital / pharmacy → points; a school's outline stays in `buildings` too). ГРАДО 2 source «Школы, детсады, поликлиники (OSM)»
+    with «Вид» in Russian.
+  - Graph group «Анализ» (`web/analysis.js`): «Радиусы обслуживания» (ДОО 300 м, школы 500 м, поликлиники 1000 м, аптеки 500 м —
+    СП 42.13330.2016 табл. 10.1/10.2, checked against the text of the code; −30 % switch for dense high-rise), «Пешая
+    доступность» (Dijkstra over OSM streets without motorways, 4.5 km/h, reachable pieces buffered 30 m), «Показатели кварталов»
+    (per block: area, buildings, СПП, density, coverage, mean floors; without an input the blocks are the territory between
+    OSM streets), «Баланс территории» (area and share inside the boundary by a field of the input layer).
+  - Every analysis node keeps a feature list `_fc` with «Пояснение»; while the node is selected the preview labels it on the map.
+    «В слой» in the graph window bakes the selected node's output as a project layer with that table.
+  - Window «Виды» (like QGIS map themes): a view stores visible layers, their styles and opacity, group visibility, the basemap
+    and optionally the extent; «Показать» switches the map, the legend of the view is built from its visible layers. Saved in
+    the project (`views`). Sheets of Э6 will take their content from views.
+  - Header and tool strip keep fitting at 1280 px: labels of Таблица, Показатели, Длина, Площадь become icons below 1480 px.
+  - Checked in headless Chrome on Хорошёво with real OSM (Overpass answered in ~60 s): 8 social objects, school radius leaves
+    9.9 ha outside, walking 10 min to kindergartens 23.8 ha (0.6 s, 1939 street nodes), 5 blocks between streets, ПЗЗ balance
+    by ВРИ — 16 values covering 100 %, bake, two views switch, views survive save/open.
+
 - **2026-09-23, ГРАДО 2 v0.10.0 (stage Э5): generation — typologies, floors to the density goal, variant search, norms check, 3D shadows.**
   - Typologies: Секции, Квартал, Башни, «Точка + секция» (a tower between sections in each row), «Смешанная» (sections on the edge
     rows along streets, towers inside). Every building knows its kind («Корпус» in the accepted layer). Rotation −90…90 (90 = across).

@@ -556,7 +556,10 @@ const RES = [
   { id: "site", title: "Пятно застройки", color: "#1f7a4d", layer: siteLayer() },
   { id: "kept", title: "Сохраняемые здания", color: "#bdb8b0", layer: keptLayer() },
   { id: "sketch", title: "Эскиз застройки", color: "#6fa6e6", layer: sketchLayer() },
-  { id: "prev", title: "Выход выбранного узла", color: "#e08a00", layer: new ol.layer.Vector({ source: prevSrc, style: S([224, 138, 0, .28], "#c46f00", 2) }) }];
+  { id: "prev", title: "Выход выбранного узла", color: "#e08a00", layer: new ol.layer.Vector({ source: prevSrc, declutter: true, style: f => {
+    const out = [S([224, 138, 0, .22], "#c46f00", 2)], t = f.get("Пояснение");            // узел объясняет результат словами прямо на карте
+    if (t) out.push(new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: "600 12px system-ui, sans-serif", fill: new ol.style.Fill({ color: "#6b3a00" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), overflow: false, placement: "point" }) }));
+    return out; } }) }];
 RES.forEach((r, i) => { r.layer.setZIndex(100 + i); mMain.addLayer(r.layer); });
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() { sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; })); }
@@ -564,7 +567,8 @@ function updateAnalysisMap() {
   fillGeom(siteSrc, RESULT.site); fillSketch(); prevSrc.clear();
   let txt = TERR ? `Пятно застройки ${ha(RESULT.site)} · ${RESULT.sketch.length} корпусов` : "Сначала задайте территорию и загрузите данные (окно «Данные»)";
   if (selNode) { const out = selNode.getOutputData?.(0), t = selNode.outputs?.[0]?.type;
-    if (t === "geom") { if (out) prevSrc.addFeature(toOl(out)); txt = `Выход узла «${selNode.title}»: ${ha(out)}`; }
+    if (selNode._fc?.length) { prevSrc.addFeatures(selNode._fc.map(toOl)); txt = `«${selNode.title}»: ${selNode.info || ""}. «В слой» — сохранить результат с таблицей.`; }
+    else if (t === "geom") { if (out) prevSrc.addFeature(toOl(out)); txt = `Выход узла «${selNode.title}»: ${ha(out)}`; }
     else if (t === "tep" && out) txt = `«${selNode.title}»: плотность ${fmt(out.density, 1)} тыс. м²/га, население ${fmt(out.m.population)} чел.`;
     else if (t === "num") txt = `«${selNode.title}»: ${out}`; }
   $("pv").textContent = txt; $("pv").hidden = $("wGraph").hidden;
@@ -735,7 +739,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
   wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)] }; };
+  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -768,7 +772,7 @@ const WIN_OPEN = {
   wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(); go.fitted = true; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
-  wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.() };
+  wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.() };
 const go = {};
 function winOpen(id, on) {
   const w = $(id); on = on ?? w.hidden; w.hidden = !on;
