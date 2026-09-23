@@ -723,7 +723,8 @@ $("bGen").onclick = async () => {
   const sppKept = keptBuildings(kept).reduce((s, f) => s + m2(f) * floorsOf(f), 0), ha = TERR_M2 / 1e4;
   const cands = []; for (const typ of TYPOLOGIES) for (const width of typ === "Квартал" ? [14, 18] : [14, 17]) for (const angle of [0, 90]) cands.push({ typ, width, angle });
   const NINS = 8, total = cands.length + NINS + 1, run = varRun = { stop: false }, tick = () => new Promise(r => setTimeout(r, 0));
-  busy(true); $("bGen").hidden = true; $("bStopVar").hidden = false; $("bStopVar").disabled = false; $("varProg").hidden = false; VARS = [];
+  busy(true); $("bGen").hidden = true; $("bStopVar").hidden = false; $("bStopVar").disabled = false; $("varProg").hidden = false; $("bBakeVar").disabled = true; VARS = [];
+  $("vlist").innerHTML = `<div class="empty">Подбор идёт: сначала посадка всех ${cands.length} вариантов, потом инсоляция лучших ${NINS}. «Стоп» оставит уже посчитанное.</div>`;
   try {
     for (const [i, c] of cands.entries()) {
       if (run.stop) break;
@@ -744,10 +745,11 @@ $("bGen").onclick = async () => {
     varProgress(total - 1, total, "Показатели лучших вариантов…");
     await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target); }));
     varSel = -1; renderVars();
+    if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
     const msg = run.stop ? `Подбор остановлен: вариантов ${VARS.length} из ${cands.length}${VARS.some(v => v.own == null) ? ", у части инсоляция не посчитана (—)" : ""}.` : `Вариантов: ${VARS.length}.`;
     $("varMsg").textContent = msg; setHint(msg + " Щелчок по карточке или строке таблицы переносит параметры в граф и на карту.");
   } catch (e) { console.error(e); toast("Варианты не посчитались: " + e.message); $("varMsg").textContent = "Подбор не удался: " + e.message; }
-  finally { varRun = null; busy(false); $("bGen").hidden = false; $("bStopVar").hidden = true; $("varProg").hidden = true; }
+  finally { varRun = null; busy(false); $("bGen").hidden = false; $("bStopVar").hidden = true; $("varProg").hidden = true; $("bBakeVar").disabled = false; }
 };
 const vName = v => `${v.typ} · ${v.width} м · ${v.angle ? "поперёк" : "вдоль"}`;
 function renderVars() {

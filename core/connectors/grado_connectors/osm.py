@@ -359,8 +359,7 @@ class OsmOverpass(Connector):
             return self.transport(query), None, None
         hit = self.cache.find(bbox, sets, self.fresh_s)
         if hit:
-            day = time.strftime("%d.%m.%Y %H:%M", time.localtime(hit[1]))
-            return hit[0], hit[1], f"ответ OSM от {day} с диска: Overpass не запрашивался (данные OSM меняются медленно)"
+            return hit[0], hit[1], f"с диска, ответ в {time.strftime('%H:%M', time.localtime(hit[1]))} (повторно Overpass не запрашивался)"
         try:
             data = self.transport(query)
         except ConnectorError:

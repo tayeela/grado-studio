@@ -221,6 +221,11 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.14.1: UX audit of v0.14.0.** The cached-OSM note repeated the date and ran to three lines per
+  layer; now «с диска, ответ в ЧЧ:ММ (повторно Overpass не запрашивался)». During the variant search the list said «Нажмите
+  «Подобрать варианты»» while that button was hidden, and «Принять в проект» stayed active; now the list explains the run and
+  the bake button is disabled until it ends; an empty result says why. Queue: toasts cover a window docked at the bottom.
+
 - **2026-09-23, ГРАДО 2 v0.14.0: OSM answer cache, split download, «Стоп» for the variant search, long names in graph nodes.**
   Owner's queue items after v0.13.1.
   - **Overpass measured:** overpass-api.de refused the connection, maps.mail.ru answered in 21 s, kumi and private.coffee

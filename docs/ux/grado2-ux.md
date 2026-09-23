@@ -104,6 +104,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
 - 2026-09-23 (done v0.14.0): the variant search has a progress bar and «Стоп» (also Esc); stopped runs keep what is
   computed. Still open: sections do not move towards where the ceiling is high — only floors adapt.
+- 2026-09-23: toasts sit at the bottom centre and cover the lower part of a window docked there (e.g. «Варианты» cards).
 - 2026-09-23: the 5-typology segmented control wraps to two lines in the narrow «Эскиз» window.
 - 2026-09-23 (done v0.14.0): graph node titles, list values and the info line are cut with «…» to the node width;
   the list menu still shows full names.
