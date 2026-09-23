@@ -451,7 +451,7 @@ NPlace.title = "Посадка застройки"; NPlace.prototype.onExecute =
   const r = cached(this, gid(site) + JSON.stringify(p) + (p.cap?._id || ""), () => generate(site, p)); this.setOutputData(0, r);
   const capped = r.filter(b => b.capped).length, avg = r.length ? r.reduce((s, b) => s + b.floors * b.m2, 0) / r.reduce((s, b) => s + b.m2, 0) : 0;
   const np = r.plots?.filter(g => g.kind !== "двор").length, ny = r.plots?.length - np;
-  this.info = `${plural(r.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${capped ? ` · ${capped} ниже по потолку` : ""}${r.goal ? ` · ${r.goal}` : ""}`;
+  this.info = `${plural(r.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${capped ? ` · ${capped} ниже по потолку` : ""}${r.goal ? ` · ${r.goal}` : ""}${r.note ? ` · ${r.note}` : ""}`;
 };
 LiteGraph.registerNodeType("Эскиз/Посадка застройки", NPlace);
 const TYPOLOGIES = ["Секции", "Квартал", "Башни", "Точка + секция", "Смешанная", "Урбан-блоки", "Блокированные", "ИЖС"], FLOOR_MODES = ["заданной", "цели плотности"];
@@ -520,11 +520,11 @@ function generate(site, p) {
      ниже двух этажей корпус не ставится. Разрывы между корпусами считаются от наибольшей этажности — после
      понижения они с запасом, а не впритык */
   const fh = typeof CONS !== "undefined" ? CONS.floorH : 3;
-  const plots = out.plots, streets = out.streets;
+  const plots = out.plots, streets = out.streets, note = out.note;
   // малоэтажный дом (ИЖС, блокированный) может быть и одноэтажным; остальные корпуса ниже двух этажей не ставятся
   out = out.map(b => { const top = p.cap ? p.cap(b.f) : null, max = Math.min(b.maxF ?? Infinity, top == null ? b.floors : Math.min(b.floors, Math.floor(top / fh))); return max >= (b.minF ?? 2) ? { ...b, max, floors: max, capped: max < b.floors } : null; }).filter(Boolean);   // capped — потолок ниже задуманного
   // участок без дома (дом не поместился под потолком) остаётся свободным, а не пропадает
-  out.plots = plots || []; out.streets = streets || [];
+  out.plots = plots || []; out.streets = streets || []; out.note = note;
   if (!p.goal) return out;
   /* этажность под цель плотности («выращивание» внутри потолка): всем корпусам одна этажность, упёршиеся в свой
      потолок остаются на нём, недобор раздаётся остальным — пока не набрана нужная СПП или всем некуда расти */
@@ -573,12 +573,13 @@ function place(site, p) {
     } else if (p.typ === "ИЖС" || p.typ === "Блокированные") {
       lowRise(part, a, b, W, span);
     } else if (p.typ === "Урбан-блоки") {
-      if (!urbanBlocks(part, a, b, W, span) && m2(part) >= 2500) perimeter(part, b, W, p.floors, "урбан-блок");   // участок меньше квартала — его периметр
+      urbanBlocks(part, a, b, W, span);
     } else {                                    // квартал: периметр по краю участка с проездом во двор
       if (m2(part) < 2500) continue;
       perimeter(part, b, W, Math.max(3, Math.round(p.floors * .7)), "квартал");
     }
   }
+  if (p.typ === "Урбан-блоки" && !out.length) out.note ||= `квартал ${p.block} × ${Math.round(p.block * .8)} м не помещается в пятно — уменьшите «квартал, м»`;
   return out;
 
   function perimeter(part, b, W, floors, kind) {
@@ -586,6 +587,10 @@ function place(site, p) {
     const r = diff(ring, polyLL(W(rect(cx - 7, b[1] - 5, cx + 7, b[3] + 5)))) || ring;
     splitParts(r).forEach(q => { if (m2(q) >= 150) push(q, floors, kind); });
   }
+  function pieces(f) { return f ? splitParts(f) : []; }
+  // часть прямоугольника внутри пятна (одним куском), если её площадь не меньше доли share от прямоугольника
+  function clipped(part, ring, share) { const f = polyLL(ring), full = m2(f); if (m2(inter(part, f)) >= full * .997) return f;
+    const q = pieces(inter(part, f)).sort((x, y) => m2(y) - m2(x))[0]; return q && m2(q) >= full * share ? q : null; }
   function street(part, W, x0, y0, x1, y1, kind) { const f = inter(part, polyLL(W(rect(x0, y0, x1, y1)))); if (f && m2(f) > 50) out.streets.push({ f, kind, m2: m2(f) }); }
 
   /* ИЖС и блокированные дома — полосы «ряд участков — ряд участков — проезд»: участки двух рядов смыкаются задними
@@ -608,18 +613,23 @@ function place(site, p) {
       for (const [r0, up] of [[vs, false], [vs + D, true]]) {        // up — ряд лицом к верхней границе полосы
         if (izs) {
           for (const u of span(b[0], b[2], F, 0)) {
-            const pl = fits(part, W(rect(u, r0, u + F, r0 + D))); if (!pl) continue;
+            // у неровной границы участок подрезается ею, если осталось не меньше 70 % площади и дом помещается целиком
             const hw = Math.min(12, F - 8), hh = Math.min(12, D - 5 - 10), hu = u + (F - hw) / 2, hv = up ? r0 + D - 5 - hh : r0 + 5;
+            const pl = clipped(part, W(rect(u, r0, u + F, r0 + D)), .7), house = pl && fits(part, W(rect(hu, hv, hu + hw, hv + hh))); if (!house) continue;
             plot(pl, "участок ИЖС", { "Площадь, сот.": Math.round(m2(pl) / 10) / 10 });
-            push(polyLL(W(rect(hu, hv, hu + hw, hv + hh))), p.floors, "дом ИЖС", { grp: ++grp });
+            push(house, p.floors, "дом ИЖС", { grp: ++grp });
           }
         } else {
           let u = b[0];
           while (u + 3 * uw <= b[2] + .1) {
-            let n = 6; while (n >= 3 && !fits(part, W(rect(u, r0, u + n * uw, r0 + D)))) n--;
-            if (n < 3) { u += 5; continue; }
-            const hv = up ? r0 + D - 5 - hd : r0 + 5; grp++;
-            for (let i = 0; i < n; i++) plot(polyLL(W(rect(u + i * uw, r0, u + (i + 1) * uw, r0 + D))), "участок блока", { "Площадь, сот.": Math.round(uw * D / 10) / 10, "Блок": grp });
+            // ряд блоков: дом целиком на пятне, участки блоков у границы подрезаются (не меньше 60 % площади)
+            const hv = up ? r0 + D - 5 - hd : r0 + 5;
+            // участки блоков считаются по одному разу: сколько подряд помещается — столько блоков в ряду (3–6)
+            const units = []; for (let i = 0; i < 6; i++) { const q = clipped(part, W(rect(u + i * uw, r0, u + (i + 1) * uw, r0 + D)), .6); if (!q) break; units.push(q); }
+            let n = units.length; while (n >= 3 && !fits(part, W(rect(u, hv, u + n * uw, hv + hd)))) n--;
+            if (n < 3) { u += units.length ? uw : 5; continue; }
+            grp++;
+            for (let i = 0; i < n; i++) plot(units[i], "участок блока", { "Площадь, сот.": Math.round(m2(units[i]) / 10) / 10, "Блок": grp });
             push(polyLL(W(rect(u, hv, u + n * uw, hv + hd))), p.floors, "блокированный дом", { grp, "Блоков": n });
             u += n * uw + 10;
           }
@@ -634,15 +644,17 @@ function place(site, p) {
      во двор 12 м. Квартал ставится только целиком внутри пятна. */
   function urbanBlocks(part, a, b, W, span) {
     const S = 20, Bu = p.block, Bv = Math.round(p.block * .8), d = p.width;
-    if (Bu < 2 * d + 20 || Bv < 2 * d + 20) return false;
+    if (Bu < 2 * d + 20 || Bv < 2 * d + 20) { out.note = `квартал ${Bu} × ${Bv} м меньше двух корпусов по ${d} м и двора 20 м — нужно от ${Math.ceil((2 * d + 20) / .8)} м`; return false; }
     const us = span(b[0], b[2], Bu, S), vs = span(b[1], b[3], Bv, S);
     let placed = 0;
     const side = (nx, ny) => { const c = Math.cos(a), s_ = Math.sin(a); return nx * s_ + ny * c; };        // северная составляющая наружной нормали стороны
     const south = [[0, -1], [0, 1], [-1, 0], [1, 0]].map(([nx, ny]) => side(nx, ny)), minN = Math.min(...south);
     const fl = { corner: Math.round(p.floors * 1.4), mid: p.floors, south: Math.max(2, Math.round(p.floors * .6)) };
-    us.forEach(x0 => vs.forEach(y0 => {
-      const x1 = x0 + Bu, y1 = y0 + Bv; if (!fits(part, W(rect(x0, y0, x1, y1)))) return;
-      placed++; grp++;
+    const at = new Set();                       // клетки сетки с кварталом: улицы — только между ними
+    us.forEach((x0, i) => vs.forEach((y0, j) => {
+      const x1 = x0 + Bu, y1 = y0 + Bv;
+      if (!fits(part, W(rect(x0, y0, x1, y1)))) { if (cutBlock(part, W, x0, y0, x1, y1, d, Bu * Bv)) { placed++; at.add(i + ":" + j); } return; }
+      placed++; grp++; at.add(i + ":" + j);
       const put = (r, floors, kind) => push(polyLL(W(r)), floors, kind, { grp, "1 этаж": "нежилой, на улицу" });
       const isS = k => south[k] === minN && minN < -.5;          // сторона смотрит на юг (отклонение не больше 60°)
       // нижняя и верхняя стороны — во всю длину с углами; боковые — между ними, с проходом во двор посередине
@@ -660,9 +672,31 @@ function place(site, p) {
       });
       plot(polyLL(W(rect(x0 + d, y0 + d, x1 - d, y1 - d))), "двор", { "Блок": grp });
     }));
-    for (let i = 0; i + 1 < us.length; i++) street(part, W, us[i] + Bu, b[1] - 5, us[i + 1], b[3] + 5, "улица");
-    for (let j = 0; j + 1 < vs.length; j++) street(part, W, b[0] - 5, vs[j] + Bv, b[2] + 5, vs[j + 1], "улица");
-    return placed > 0;
+    if (!placed) return false;
+    us.forEach((x0, i) => vs.forEach((y0, j) => {
+      if (!at.has(i + ":" + j)) return;
+      if (at.has(i + 1 + ":" + j)) street(part, W, x0 + Bu, y0, us[i + 1], y0 + Bv, "улица");
+      if (at.has(i + ":" + (j + 1))) street(part, W, x0, y0 + Bv, x0 + Bu, vs[j + 1], "улица");
+      if (at.has(i + 1 + ":" + j) && at.has(i + ":" + (j + 1)) && at.has(i + 1 + ":" + (j + 1))) street(part, W, x0 + Bu, y0 + Bv, us[i + 1], vs[j + 1], "улица");   // перекрёсток
+    }));
+    return true;
+  }
+  /* квартал у границы пятна (улица, отступ, существующие дома): часть клетки сетки внутри пятна, если это не меньше
+     60 % квартала; секции идут по её наружному контуру (внутрь, вокруг сохраняемых домов, лент не будет), фронт режется
+     на секции по 45 м; этажность — заданная */
+  function cutBlock(part, W, x0, y0, x1, y1, d, full) {
+    const cp = pieces(inter(part, polyLL(W(rect(x0, y0, x1, y1))))).sort((x, y) => m2(y) - m2(x))[0];
+    if (!cp || m2(cp) < full * .6) return 0;
+    // квартал без двора — не квартал: двор не меньше 20 % его площади и 600 м², иначе клетка остаётся пустой
+    const outer = turf.polygon([cp.geometry.coordinates[0]]), core = buf(outer, -d), yard = core && inter(core, cp);
+    if (!yard || m2(yard) < Math.max(600, m2(cp) * .2)) return 0;
+    const ring = inter(diff(outer, core), cp); if (!ring) return 0;
+    grp++; let n = 0;
+    for (let tx = x0; tx < x1 - .1; tx += 45) for (let ty = y0; ty < y1 - .1; ty += 45)
+      pieces(inter(ring, polyLL(W(rect(tx, ty, Math.min(tx + 45, x1), Math.min(ty + 45, y1))))))
+        .forEach(q => { if (m2(q) >= 150) { push(q, p.floors, "урбан-блок", { grp, "1 этаж": "нежилой, на улицу" }); n++; } });
+    plot(yard, "двор", { "Блок": grp });
+    return n ? 1 : 0;
   }
 }
 
@@ -916,8 +950,9 @@ $("bGen").onclick = async () => {
   const base = placeParams(p), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), goal = densityGoal();
   const sppKept = keptBuildings(kept).reduce((s, f) => s + m2(f) * floorsOf(f), 0), ha = TERR_M2 / 1e4;
   // малоэтажные типологии (ИЖС, блокированные) — только при цели до 10 тыс. м²/га: плотнее они не бывают
-  const widthsOf = typ => typ === "ИЖС" ? [base.width] : typ === "Блокированные" ? [12, 14] : typ === "Квартал" || typ === "Урбан-блоки" ? [14, 18] : [14, 17];
-  const cands = []; for (const typ of TYPOLOGIES) { if (LOWRISE.has(typ) && target > 10) continue; for (const width of widthsOf(typ)) for (const angle of [0, 90]) cands.push({ typ, width, angle }); }
+  const widthsOf = typ => typ === "ИЖС" ? [base.width] : typ === "Блокированные" ? [12, 14] : typ === "Квартал" ? [14, 18] : typ === "Урбан-блоки" ? [16] : [14, 17];
+  const cands = []; for (const typ of TYPOLOGIES) { if (LOWRISE.has(typ) && target > 10) continue;
+    for (const width of widthsOf(typ)) for (const angle of [0, 90]) for (const block of typ === "Урбан-блоки" ? [80, 110] : [base.block]) cands.push({ typ, width, angle, block }); }
   const NINS = 8, total = cands.length + NINS + 1, run = varRun = { stop: false }, tick = () => new Promise(r => setTimeout(r, 0));
   busy(true); $("bGen").hidden = true; $("bStopVar").hidden = false; $("bStopVar").disabled = false; $("varProg").hidden = false; $("bBakeVar").disabled = true; VARS = [];
   $("vlist").innerHTML = `<div class="empty">Подбор идёт: сначала посадка всех ${cands.length} вариантов, потом инсоляция лучших ${NINS}. «Стоп» оставит уже посчитанное.</div>`;
@@ -947,7 +982,7 @@ $("bGen").onclick = async () => {
   } catch (e) { console.error(e); toast("Варианты не посчитались: " + e.message); $("varMsg").textContent = "Подбор не удался: " + e.message; }
   finally { varRun = null; busy(false); $("bGen").hidden = false; $("bStopVar").hidden = true; $("varProg").hidden = true; $("bBakeVar").disabled = false; }
 };
-const vName = v => `${v.typ}${v.typ === "ИЖС" ? "" : ` · ${v.width} м`} · ${v.angle ? "поперёк" : "вдоль"}`;
+const vName = v => `${v.typ}${v.typ === "ИЖС" ? "" : v.typ === "Урбан-блоки" ? ` · квартал ${v.block} м` : ` · ${v.width} м`} · ${v.angle ? "поперёк" : "вдоль"}`;
 function renderVars() {
   if (!VARS.length || !TERR) return;
   const tb = bboxOf(ringsXY(TERR)[0]), pad = 10, vb = `${tb[0] - pad} ${-tb[3] - pad} ${tb[2] - tb[0] + 2 * pad} ${tb[3] - tb[1] + 2 * pad}`;
@@ -963,7 +998,7 @@ function renderVars() {
 $("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариант в списке — щелчок по карточке.") : bakeSketch();
 $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-var]"); if (!b) return; varSel = +b.dataset.var; const v = VARS[varSel], p = RESULT.placeNode;
   const setWv = (name, val) => { const w = p.widgets.find(w => w.name === name); if (w) w.value = val; };
-  setWv("типология", v.typ); setWv("ширина корпуса, м", v.width); setWv("поворот, °", v.angle); setWv("этажность по", FLOOR_MODES[1]);
+  setWv("типология", v.typ); setWv("ширина корпуса, м", v.width); setWv("поворот, °", v.angle); if (v.block) setWv("квартал, м", v.block); setWv("этажность по", FLOOR_MODES[1]);
   p.properties.run = true; syncPreview(); recompute(); renderParams(); renderVars(); toast(`Вариант «${vName(v)}» перенесён в граф: на карте эскиз этого варианта.`); });
 
 /* ================= плавающие окна и панели ================= */

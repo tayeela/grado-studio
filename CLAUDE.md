@@ -221,6 +221,18 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.20.0: new typologies on a real site (Хорошёво with ЕГРН, OSM, ЗОУИТ, ПЗЗ, constraints).**
+  Buildable spot 13.2 ha in 6 irregular parts. Found and fixed:
+  - Urban blocks: no 110 m block fitted whole, and the fallback «perimeter of the part» wrapped ribbons around existing
+    houses; streets were drawn with no blocks. Now `cutBlock` takes the grid cell ∩ site when ≥ 60 % of a block, runs the
+    sections along the outer contour only (no ribbons around kept houses), cuts the front into 45 m sections, and places the
+    block only with a courtyard ≥ 20 % and ≥ 600 m²; streets only between placed blocks (and crossings); the too-small-block
+    note says the minimum («нужно от 65 м» for 16 m depth). Variants try blocks of 80 and 110 m. Result: 80–90 m blocks give
+    5–6 blocks, 18–24 sections.
+  - ИЖС / blocked: plots clipped by the boundary are accepted when ≥ 70 % / 60 % remain and the house fits (`clipped`) — use of
+    the site 30 → 45 %, ИЖС 33 → 55 houses, blocked 32 → 45 rows. Blocked row search caches unit plots (1.8 → 1.1 s).
+  - Node info notes (`out.note`) survive `generate`.
+
 - **2026-09-23, ГРАДО 2 v0.19.1: UX audit of v0.19.0.** After a typology click the panel said «Корпусов: 130» while the
   map had 300 — the panel was drawn before the recompute; now recompute first. The typology hint described all eight
   typologies in five lines; now one line about the selected one (`TYP_HINT`).

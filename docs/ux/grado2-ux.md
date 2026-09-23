@@ -90,11 +90,11 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 ## Queue
 
 
-- 2026-09-23 (v0.19.0, open): ИЖС and blocked houses fill a part with straight strips (two plot rows + 12 m street); on an
-  irregular part the edge strips lose area and the rows are not bent to the boundary; no outbuildings, garages or
-  guest parking. Blocked rows are packed from one end (no centring). Urban blocks are placed only whole inside the site;
-  a part smaller than a block gets a perimeter. The ТЭП preset is the Moscow КРТ one — for ИЖС its population and
-  social objects are rough (no ИЖС norm of m² per person).
+- 2026-09-23 (v0.20.0, partly done): on the real Хорошёво site (13.2 ha buildable in 6 irregular parts) plots are now clipped
+  by the boundary when ≥ 70 % (ИЖС) / 60 % (blocked) remain and the house fits — use of the site 30 → 45 %; urban blocks are
+  clipped to the site with a courtyard ≥ 20 % and ≥ 600 m², streets only between placed blocks, no ribbons around existing
+  houses. Still open: strips stay straight (not bent to the boundary); no outbuildings, garages, guest parking; blocked rows
+  packed from one end; the blocked generator takes ~1.1 s on this site; ТЭП preset for ИЖС is rough (no m² per person norm).
 
 - 2026-09-23 (audit v0.18.0, not done): autosave still serialises every layer's `fc` on each save (~0.3 s freeze with 100 000
   objects): cache each layer's JSON by `rev` and join. «Правила» in the style panel count matches over all objects on each
