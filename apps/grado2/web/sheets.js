@@ -16,7 +16,8 @@ function autoScale(size) {
 // состояние слоя в виде (или как сейчас на карте)
 function viewLayers(sheet) {
   const v = VIEWS.find(x => x.id === sheet.view), by = v ? new Map(v.layers.map(x => [x.key, x])) : null, gv = v ? new Map(v.groups.map(x => [x.id, x.visible])) : null;
-  return LYR.map(l => { const x = by?.get(l.key); const st = x ? ST(JSON.parse(JSON.stringify(x.style))) : l.style, vis = x ? x.visible : l.visible;
+  // слой, которого не было при сохранении вида, в вид не входит — как при «Показать» (applyView)
+  return LYR.map(l => { const x = by?.get(l.key); const st = x ? ST(JSON.parse(JSON.stringify(x.style))) : l.style, vis = v ? !!x?.visible : l.visible;
     const g = l.group ? (gv?.has(l.group) ? gv.get(l.group) : grp(l.group)?.visible !== false) : true;
     return { key: l.key, title: l.title, geom: l.geom, style: st, visible: vis && g, a: x ? x.layerOpacity ?? 1 : l.layerOpacity, _br: null, cache: new Map() }; }).filter(p => p.visible);
 }

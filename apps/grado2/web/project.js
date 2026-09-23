@@ -2,7 +2,7 @@
    автосохранение с восстановлением после перезагрузки страницы.
    В файле: граница, слои (порядок, стиль, видимость), их данные с исходной выгрузкой, граф, вид карты. */
 
-const PROJ = { name: null, dirty: false, tick: 0, savedTick: 0, autoTick: 0, loading: true };   // loading до projectStart: стартовые пересчёты — не правки
+const PROJ = { name: null, file: null, dirty: false, tick: 0, savedTick: 0, autoTick: 0, loading: true };   // loading до projectStart: стартовые пересчёты — не правки
 const PROJ_FORMAT = "grado2", PROJ_VERSION = 2;
 /* Формат проекта с номером версии: файл старой версии при открытии проходит миграции по порядку, файл новее
    программы не открывается (иначе незнакомые поля молча пропали бы при следующем сохранении).
@@ -23,7 +23,11 @@ function migrate(p) {
 }
 window.migrateProject = migrate;
 
-function markDirty() { if (PROJ.loading) return; PROJ.tick++; if (!PROJ.dirty) { PROJ.dirty = true; syncProjTitle(); } }
+function markDirty() {
+  if (PROJ.loading) return;
+  if (PROJ.tick === PROJ.autoTick) PROJ.pendingSince = Date.now();
+  PROJ.tick++; PROJ.lastEdit = Date.now(); if (!PROJ.dirty) { PROJ.dirty = true; syncProjTitle(); }
+}
 function syncProjTitle() {
   const b = $("bProj"); if (!b) return;
   b.querySelector(".lb").textContent = (PROJ.name || "Без названия") + (PROJ.dirty ? " •" : "");
@@ -34,7 +38,7 @@ function syncProjTitle() {
 function collectProject() {
   const v = sharedView;
   return {
-    format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
+    format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, file: PROJ.file, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
     territory: TERR,
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
@@ -42,7 +46,7 @@ function collectProject() {
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
-    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, fc: d.fc, original: d.original }])),
+    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
     graph: graph.serialize(),
   };
 }
@@ -51,7 +55,7 @@ function clearProject() {
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
   Object.keys(SOURCES).filter(k => k.startsWith("import:")).forEach(k => delete SOURCES[k]);
-  TERR = null; TERR_M2 = 0; terrSrc.clear(); $("bLoad").disabled = true;
+  TERR = null; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ALBUM.sheets.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
   $("vlist").innerHTML = `<div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений.</div>`;
@@ -69,6 +73,7 @@ function applyProject(p) {
     for (const s of p.layers || []) {
       const d = p.data?.[s.key]; if (!d) continue;
       DATA[s.key] = { ...d, fc: d.fc || { type: "FeatureCollection", features: [] }, count: 0, fields: [] };
+      if (d.original === "=fc") delete DATA[s.key].original;      // исходная выгрузка совпадала с данными: её возьмёт setLayerData
       layerSrc[s.key] ||= new ol.source.Vector(); setLayerData(s.key, DATA[s.key].fc);
       if (!d.original) delete DATA[s.key].original;              // свой слой: «исходной выгрузки» у него нет
       if (!d.fc?.features?.length) DATA[s.key].fields = ["Наименование", "Примечание"];
@@ -90,13 +95,28 @@ function applyProject(p) {
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
     applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview();
   } finally { PROJ.loading = false; }
-  PROJ.name = p.name || null; PROJ.dirty = !!p.dirty; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle();
+  // file — имя файла в папке проектов, в который этот проект сохранялся (у открытого с диска файла его нет):
+  // по нему «Сохранить» отличает свой файл от чужого с тем же названием
+  PROJ.name = p.name || null; PROJ.file = p.file !== undefined ? p.file : p.name || null; PROJ.dirty = !!p.dirty; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle();
 }
 
 async function saveProject(name) {
   name = (name ?? PROJ.name ?? "").trim();
   if (!name) return openProjects(true);
-  const prev = PROJ.name; PROJ.name = name;
+  // другое название, чем у своего файла, и такой проект в папке уже есть (регистр и «ё» не различаются файловой
+  // системой) — без второго нажатия чужой проект не заменяется
+  if (name !== PROJ.file) {
+    const norm = x => x.normalize("NFC").toLowerCase();
+    try {
+      const clash = (await (await fetch("/api/projects")).json()).projects.find(q => norm(q.name) === norm(name));
+      if (clash && !(PROJ.askName === norm(name) && Date.now() - PROJ.askT < 8000)) {
+        PROJ.askName = norm(name); PROJ.askT = Date.now();
+        return toast(`В папке уже есть проект «${clash.name}» (изменён ${new Date(clash.modified * 1000).toLocaleString("ru-RU")}). Сохраните ещё раз в течение 8 с, чтобы заменить его, или введите другое название.`);
+      }
+    } catch { }
+  }
+  PROJ.askName = null;
+  const prev = PROJ.name, prevFile = PROJ.file; PROJ.name = name; PROJ.file = name;
   const tick = PROJ.tick, body = JSON.stringify({ ...collectProject(), dirty: false });
   busy(true);
   try {
@@ -104,7 +124,7 @@ async function saveProject(name) {
     if (!r.ok) throw new Error(j.error === "bad project name" ? "в названии не должно быть знаков / \\ : * ? \" < > | и точки в начале" : j.error);
     PROJ.savedTick = tick; PROJ.dirty = PROJ.tick !== tick; syncProjTitle(); autosave(true);
     toast(`Проект «${name}» сохранён: ${j.saved}`); if (!$("wProjects").hidden) renderProjects();
-  } catch (e) { PROJ.name = prev; syncProjTitle(); toast("Проект не сохранён: " + e.message); }
+  } catch (e) { PROJ.name = prev; PROJ.file = prevFile; syncProjTitle(); toast("Проект не сохранён: " + e.message); }
   finally { busy(false); }
 }
 
@@ -113,7 +133,7 @@ async function openProject(name) {
   busy(true);
   try {
     const r = await fetch("/api/project?name=" + encodeURIComponent(name)); if (!r.ok) throw new Error("файл не найден");
-    applyProject(await r.json()); PROJ.dirty = false; syncProjTitle(); autosave(true);
+    applyProject(await r.json()); PROJ.file = name; PROJ.dirty = false; syncProjTitle(); autosave(true);
     toast(`Открыт проект «${name}».`); winOpen("wProjects", false);
   } catch (e) { toast("Проект не открылся: " + e.message); } finally { busy(false); }
 }
@@ -123,7 +143,7 @@ function newProject() {
   PROJ.loading = true;
   try { clearProject(); graph.configure(JSON.parse(DEFAULT_GRAPH)); dataRev++; lastSig = ""; recompute(true); renderParams(); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncStatus(); }
   finally { PROJ.loading = false; }
-  PROJ.name = null; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle(); autosave(true);
+  PROJ.name = PROJ.file = null; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle(); autosave(true);
   toast("Новый проект. Прежний остался в папке проектов, если был сохранён."); winOpen("wProjects", false);
 }
 const DEFAULT_GRAPH = JSON.stringify(graph.serialize());          // граф по умолчанию — снимок на старте, до правок
@@ -138,16 +158,19 @@ function confirmLoss(what) {
 
 /* ---------- автосохранение: после каждой правки, с паузой 2 с ---------- */
 // ponytail: при долгой непрерывной правке пишет файл раз в ~3 с целиком; инкрементальная запись — если проекты станут в сотни МБ
-let autoT = null;
-function autosave(now) {
-  clearTimeout(autoT); autoT = null;
-  const run = async () => {
-    autoT = null; const tick = PROJ.tick;
-    try { const r = await fetch("/api/project?autosave=1", { method: "POST", body: JSON.stringify(collectProject()) }); if (r.ok) PROJ.autoTick = tick; } catch { }
-  };
-  now ? run() : autoT = setTimeout(run, 2000);
+/* автосохранение — когда правки затихли на 1,5 с (перетаскивание вершины, ползунок — это десятки правок подряд),
+   но не реже раза в 15 с при непрерывной работе; одно сохранение за раз */
+let autoBusy = false, autoAgain = false;
+async function autosave() {
+  if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
+  autoBusy = true; const tick = PROJ.tick;
+  try { const r = await fetch("/api/project?autosave=1", { method: "POST", body: JSON.stringify(collectProject()) }); if (r.ok) PROJ.autoTick = tick; } catch { }
+  finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }
 }
-setInterval(() => { if (!PROJ.loading && PROJ.tick !== PROJ.autoTick && !autoT) autosave(); }, 1000);
+setInterval(() => {
+  if (PROJ.loading || PROJ.tick === PROJ.autoTick || autoBusy) return;
+  const t = Date.now(); if (t - (PROJ.lastEdit || 0) > 1500 || t - (PROJ.pendingSince || t) > 15000) autosave();
+}, 500);
 
 /* ---------- окно «Проекты» ---------- */
 const fmtDate = t => new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -175,7 +198,7 @@ $("projDownload").onclick = () => {
 $("projFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) openProjectFile(f); };
 window.openProjectFile = async f => {
   if (!confirmLoss(`Открыть «${f.name}»?`)) return;
-  try { const p = JSON.parse(await f.text()); p.name ||= f.name.replace(/\.grado2$/i, ""); applyProject(p); PROJ.dirty = true; syncProjTitle(); toast(`Открыт файл «${f.name}». Сохраните проект, чтобы он появился в папке проектов.`); winOpen("wProjects", false); }
+  try { const p = JSON.parse(await f.text()); p.name ||= f.name.replace(/\.grado2$/i, ""); applyProject(p); PROJ.file = null; PROJ.dirty = true; syncProjTitle(); toast(`Открыт файл «${f.name}». Сохраните проект, чтобы он появился в папке проектов.`); winOpen("wProjects", false); }
   catch (err) { toast("Файл не открылся: " + err.message); }
 };
 addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); saveProject(); } });

@@ -221,6 +221,45 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.18.0: weak-point audit (three parallel reviewers) and fixes.** Owner: «определи слабые места и исправь».
+  **Server (apps/grado2):**
+  - **Any web page could overwrite projects** (no Host/Origin check, body parsed as JSON whatever the Content-Type — a
+    `no-cors` text/plain POST from another site replaced a project; DNS rebinding could read them). `Handler._foreign`: Host
+    must be `127.0.0.1|localhost|[::1]:<port>`, a present Origin must be the app's own → 403 for GET/HEAD/POST.
+  - **Two saves at once corrupted the file** (shared `.tmp`, truncating write: 36 of 200 runs left invalid JSON). `atomic_write`
+    (mkstemp beside + `os.replace`) + `_SAVE_LOCK`; the same for the ФГИС ТП catalog (a half-written one broke search for
+    a week with no response — now it is deleted and downloaded again, and any GET error answers 500 with the reason).
+  - Caches: the OSM cache lock was per request (new connector each time) → one lock per folder, unique file names, orphans
+    evicted, a cache failure never fails the download. ГИС ОГД: unique `.part` names (`_tmp_beside`), a broken layer or line
+    cache is deleted and rebuilt instead of failing for the whole 7-day TTL.
+  - Limits: request body ≤ 1.5 GB and non-negative; zip/KMZ refuse > 1 GB unpacked or ratio > 200 over 50 MB (a 438 KB
+    bomb used to reach 786 MB of memory). GeoJSON GeometryCollection is split into features instead of failing the drop.
+  - DXF import: encoding from `$DWGCODEPAGE` via `ezdxf.recover`, plus cp1251 fallback when names look like «Êðàñíûå»;
+    polyline vertices through OCS → WCS (mirrored polylines landed 20 km away).
+  - Sheets: second-order transform (Jacobian + curvature) — A1 1:25 000 error 13.9 m → 1 cm on the ground.
+  **Front:**
+  - Undo after a re-download re-added the old object next to the merged one (double СПП) — `setLayerData` drops feature
+    undo records of that layer (not for «Вернуть исходную выгрузку», which records the old objects itself).
+  - Re-download kept the server title → a renamed layer vanished from graph nodes; now the user's title stays. Merge keeps
+    objects you edited that the source dropped («Нет в источнике»), and objects you drew when the source has no keys.
+  - Only OSM buildings loaded → graph «Сохраняемые здания» took nothing, the sketch sat on houses and ТЭП counted all as
+    demolished; the node now falls back to OSM buildings and says so.
+  - Analysis nodes and «Слой» key on `TERR_REV` (redrawn boundary recomputes). Deleting a view moves its sheets to the current
+    map (with a toast); sheets treat layers newer than the view as hidden, like «Показать».
+  - Frame select and Ctrl/⌘+A skip objects hidden by category/rules and out-of-scale layers; «Этажность ±» only on own
+    layers; «Весь граф» worked again (its code sat in a comment since v0.4); variants without a ТЭП node say so.
+  - «Сохранить» under the name of another existing project (case-insensitive) asks for a second press within 8 s;
+    `PROJ.file` tells your own file from a same-named one; a file opened from disk is never «own».
+  - Start runs on DOMContentLoaded: autosave restore raced script loading («ALBUM is not defined»).
+  - `writeFC` writes `{}` for objects without attributes (null crashed the style panel).
+  **Speed:** autosave skips `original` when equal to `fc`, waits for 1.5 s of quiet (max 15 s), one save at a time with a
+  queued follow-up; graph «Слой» keeps its union when the geometry fingerprint (order-independent) is unchanged — attribute
+  edit on 3 000 buildings 267 → 9 ms; snapping stays on the map and is toggled (OpenLayers re-indexes a Snap on every
+  `setMap`) — select in «Перенос» on 3×15 000 objects 386 → 12–23 ms; layers > 5 000 objects snap to the view only; bulk
+  attribute edit silent + one refresh; sorted table cached by rev; GPU style slider throttled to 120 ms.
+  - Checked: auditor scripts (CSRF 403, 0/200 corrupt, cache, bomb), headless scenarios for each front fix, snapping still
+    exact, all tests green. Not done → UX queue: per-layer autosave cache, «Правила» counting, norms re-check chunking.
+
 - **2026-09-23, ГРАДО 2 v0.17.1: UX audit of v0.15–0.17 (dark theme, 1280 px).** The empty sheet preview left a light
   strip under the sheets list (`.sheetprev:has(img[hidden])` hides it); the scale and content selects of a sheet row were
   cut at 1280 px (column widths). Menu «Окна ▾», segments, sheet frame and scale visibility checked in the dark theme.

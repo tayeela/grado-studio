@@ -38,6 +38,7 @@ function defaultStyle(key, fc) {
 
 /* ---------- модель ---------- */
 const LYR = [];                       // сверху вниз
+const UNDO = [], REDO = [];           // отмена и возврат: записи правок объектов и стиля (pushUndo ниже)
 const GROUPS = [];                    // группы слоёв как в QGIS: {id, title, visible, open}; слои группы идут в LYR подряд
 let CUR = null;                       // текущий слой (выделен в дереве)
 let SEL = [];                         // выбранные объекты [{key, f}] — из одного или нескольких слоёв
@@ -120,15 +121,22 @@ function normGroups() {
    сохранения и выгрузки) собирается из них лениво, при первом чтении после правки: на слое в 100 000
    объектов правка одного объекта не переписывает весь слой. */
 let revSeq = 0;
-function writeFC(fs) { const o = GJ.writeFeaturesObject(fs); o.features.forEach(f => { if (f.properties) delete f.properties[SYMK]; }); return o; }
+// у объекта без атрибутов OpenLayers пишет properties: null — дальше код везде ждёт объект
+function writeFC(fs) { const o = GJ.writeFeaturesObject(fs); o.features.forEach(f => { if (f.properties) delete f.properties[SYMK]; else f.properties = {}; }); return o; }
 function bindFC(key) {
   const d = DATA[key]; if (d.stale) return;
   let cache = d.fc || null; delete d.fc;
   Object.defineProperty(d, "fc", { configurable: true, enumerable: true, get: () => cache ||= writeFC(layerSrc[key].getFeatures()), set: v => { cache = v; } });
   Object.defineProperty(d, "stale", { value: () => { cache = null; } });
 }
-function setLayerData(key, fc) {
+function setLayerData(key, fc, keepUndo = false) {
   const d = DATA[key]; d.original ||= fc;              // исходная выгрузка — тот же объект: он больше не меняется
+  // объекты слоя заменяются новыми: записи отмены по старым объектам больше не к чему применить (отмена вернула бы
+  // старую копию рядом с новой — дубль в СПП и ТЭП). Отмена стиля слоя остаётся
+  if (!keepUndo && layerSrc[key].getFeatures().length) {           // «Вернуть исходную выгрузку» сама ставит запись, возвращающую эти объекты
+    const stale = u => u.kind === "feat" && u.items.some(i => i.key === key);
+    if (UNDO.some(stale) || REDO.some(stale)) { UNDO.splice(0, UNDO.length, ...UNDO.filter(u => !stale(u))); REDO.splice(0, REDO.length, ...REDO.filter(u => !stale(u))); syncRibbon(); }
+  }
   layerSrc[key].clear(true); layerSrc[key].addFeatures(GJ.readFeatures(fc));
   syncFromSource(key, false); d.fc = fc;
 }
@@ -401,7 +409,7 @@ function layerMenu(anchor, key) {
     ...others.map(g => [`В группу «${g.title}»`, () => { l.group = g.id; LYR.splice(LYR.indexOf(l), 1); LYR.splice(LYR.findIndex(x => x.group === g.id), 0, l); normGroups(); applyOrder(); renderTree(); }]),
     ["В новую группу", () => { const id = newGroup([key]); setTimeout(() => renameGroup(id), 0); }],
     "-",
-    d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; pushUndo({ kind: "layer", key, label: `возврат выгрузки «${l.title}»`, fs: layerSrc[key].getFeatures() }); setLayerData(key, d.original); dataRev++; }] : null,
+    d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; pushUndo({ kind: "layer", key, label: `возврат выгрузки «${l.title}»`, fs: layerSrc[key].getFeatures() }); setLayerData(key, d.original, true); dataRev++; }] : null,
     ["Удалить слой из проекта", () => removeLayer(key)]]);
 }
 document.addEventListener("pointerdown", e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest("[data-more],[data-gmore]")) closeMenu(); });
@@ -540,7 +548,8 @@ document.addEventListener("click", e => {
   if (b.dataset.only) { setSel(SEL.filter(s => s.key === b.dataset.only)); return; }
   if (b.dataset.decide) return setDecision(b.dataset.decide);
   if (b.dataset.fl) {
-    const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность")), d = +b.dataset.fl; if (!own.length) return;
+    // только свои слои (эскиз, нарисованное): этажность выгрузки ЕГРН/OSM — это факт, а не параметр проекта
+    const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность") && !/^(nspd|osm|gisogd)\./.test(s.key)), d = +b.dataset.fl; if (!own.length) return;
     pushUndo(featRec(own, `этажность ${d > 0 ? "+1" : "−1"} у ${own.length} корп.`));
     own.forEach(s => { const n = Math.max(1, (+s.f.get("Этажность") || 1) + d); s.f.set("Этажность", n); if (s.f.get("Площадь застройки, м²")) s.f.set("СПП, м²", Math.round(s.f.get("Площадь застройки, м²") * n)); s.f.set("_edited", true); });
     new Set(own.map(s => s.key)).forEach(k => { syncFromSource(k); const l = lyr(k); l._br = null; restyle(l); }); renderRight(); return;
@@ -558,8 +567,9 @@ function onPaneEdit(e) {
   if (t.dataset.attr !== undefined) { if (e.type !== "change" || SEL.length !== 1) return; const { key, f } = SEL[0]; pushUndo(featRec(SEL, `атрибут «${t.dataset.attr}»`)); f.set(t.dataset.attr, numOrText(t.value)); f.set("_edited", true); syncFromSource(key); return; }
   if (t.dataset.battr !== undefined) {
     if (e.type !== "change" || !SEL.length) return; const k = t.dataset.battr, v = numOrText(t.value);
-    pushUndo(featRec(SEL, `атрибут «${k}» у ${SEL.length} об.`)); SEL.forEach(s => { s.f.set(k, v); s.f.set("_edited", true); });
-    syncFromSource(SEL[0].key); renderRight(); toast(`«${k}» = «${t.value}» у ${fmt(SEL.length)} объектов. Отменить — ${MOD}+Z.`); return;
+    // без события на каждый объект: у 100 000 выбранных это 200 000 перерисовок; одно обновление слоя в конце
+    pushUndo(featRec(SEL, `атрибут «${k}» у ${SEL.length} об.`)); SEL.forEach(s => { s.f.set(k, v, true); s.f.set("_edited", true, true); });
+    new Set(SEL.map(s => s.key)).forEach(key => { layerSrc[key].changed(); syncFromSource(key); }); renderRight(); toast(`«${k}» = «${t.value}» у ${fmt(SEL.length)} объектов. Отменить — ${MOD}+Z.`); return;
   }
   const l = lyr(CUR); if (!l) return; const st = l.style;
   if (t.hasAttribute("data-lop")) { pushStyleUndo(l, "lop"); l.layerOpacity = +t.value; t.nextElementSibling.textContent = Math.round(l.layerOpacity * 100); applyOrder(); return; }
@@ -569,7 +579,9 @@ function onPaneEdit(e) {
     let o = st; p.slice(0, -1).forEach(x => o = o[x]); o[p[p.length - 1]] = v;
     if (t.dataset.k === "cat.field") assignCats(l, false);
     if (t.type === "range") t.nextElementSibling.textContent = Math.round(v * 100);
-    restyle(l); if (e.type === "change") renderRight(); return;
+    // крупный слой видеокарта перестраивает целиком (~150 мс): при движении ползунка — не чаще раза в 120 мс
+    if (l.gl && e.type === "input") { l._rsT ||= setTimeout(() => { l._rsT = null; restyle(l); }, 120); return; }
+    clearTimeout(l._rsT); l._rsT = null; restyle(l); if (e.type === "change") renderRight(); return;
   }
   if (t.dataset.catoff2 !== undefined) { pushStyleUndo(l, "cat"); const v = t.dataset.catoff2; st.cat.off = t.checked ? st.cat.off.filter(x => x !== v) : [...st.cat.off, v]; restyle(l); renderRight(); return; }
   if (t.dataset.rule !== undefined) { pushStyleUndo(l, "rule" + t.dataset.rule + t.dataset.rk); const r = st.rules.list[+t.dataset.rule]; r[t.dataset.rk] = t.type === "checkbox" ? t.checked : t.value; restyle(l); if (e.type === "change") renderRight(); }
@@ -594,6 +606,7 @@ document.addEventListener("pointerdown", e => { if (popEl && !popEl.contains(e.t
 
 /* ---------- таблица атрибутов ---------- */
 function openTable(on) { winOpen("wTable", on); }
+const tableSort = { k: "", rows: [] };
 function renderTable() {
   if ($("wTable").hidden) return; const l = lyr(CUR), el = $("attrBody");
   const selSet = new Set(SEL.map(s => s.f)), nSel = SEL.filter(s => s.key === CUR).length;
@@ -601,7 +614,13 @@ function renderTable() {
   if (!l) { el.innerHTML = ""; return; }
   const cols = fieldsOfKey(l.key); let rows = UIS.selOnly ? SEL.filter(s => s.key === CUR).map(s => s.f) : layerSrc[l.key].getFeatures().slice();
   if (UIS.filter) { const q = UIS.filter.toLowerCase(); rows = rows.filter(f => cols.some(k => String(f.get(k) ?? "").toLowerCase().includes(q))); }
-  if (UIS.sort && cols.includes(UIS.sort.k)) rows.sort((a, b) => { const x = a.get(UIS.sort.k), y = b.get(UIS.sort.k); return (isNum(x) && isNum(y) ? x - y : String(x ?? "").localeCompare(String(y ?? ""), "ru")) * UIS.sort.d; });
+  // сортировка — одна на версию слоя и колонку: выбор объекта и правка стиля таблицу заново не сортируют (256 мс на 100 000)
+  if (UIS.sort && cols.includes(UIS.sort.k)) {
+    const d = DATA[l.key], sk = [l.key, d?.rev, UIS.sort.k, UIS.sort.d, UIS.filter, UIS.selOnly ? SEL.length : 0].join("|");
+    if (!UIS.selOnly && tableSort.k === sk) rows = tableSort.rows;
+    else { const coll = new Intl.Collator("ru", { numeric: true }); rows.sort((a, b) => { const x = a.get(UIS.sort.k), y = b.get(UIS.sort.k); return (isNum(x) && isNum(y) ? x - y : coll.compare(String(x ?? ""), String(y ?? ""))) * UIS.sort.d; });
+      if (!UIS.selOnly) Object.assign(tableSort, { k: sk, rows }); }
+  }
   const vis = rows.slice(0, 1500);
   el.innerHTML = `<table class="at"><thead><tr><th></th>${cols.map(k => `<th data-sort="${esc(k)}">${esc(k)}${UIS.sort?.k === k ? (UIS.sort.d > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>${vis.map((f, i) => `<tr data-uid="${ol.util.getUid(f)}" class="${selSet.has(f) ? "sel" : ""}"><td class="rn">${i + 1}${f.get("_edited") ? "*" : ""}</td>${cols.map(k => `<td data-cell="${esc(k)}">${esc(f.get(k) ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>${rows.length > vis.length ? `<div class="note">Показаны первые ${fmt(vis.length)} из ${fmt(rows.length)}; уточните фильтр.</div>` : ""}`;
 }
@@ -642,7 +661,8 @@ function setSel(list) {
 }
 function select(key, f) { setSel(f ? [{ key, f }] : []); }
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
-function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`); setSel(layerSrc[l.key].getFeatures().map(f => ({ key: l.key, f }))); toast(`Выбраны все объекты слоя «${l.title}»: ${fmt(SEL.length)}.`); }
+function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
+  toast(`Выбраны все видимые объекты слоя «${l.title}»: ${fmt(SEL.length)}.${vis.length < all.length ? ` Скрытые стилем (${fmt(all.length - vis.length)}) не выбраны.` : ""}`); }
 const keyOf = f => SEL.find(s => s.f === f)?.key || LYR.find(l => layerSrc[l.key]?.hasFeature(f))?.key;
 // объект под курсором: холст отвечает сам; крупный слой в обзоре (видеокарта) — поиск по его данным
 function hitAt(pixel) {
@@ -659,6 +679,8 @@ function hitAt(pixel) {
   return null;
 }
 const symVisible = f => f.get(SYMK) !== -1;
+// объект виден на карте: скрытые категорией или правилом стиля не выбираются рамкой и «выбрать все» — Del их не заденет
+const visibleIn = (l, f) => l.gl ? symVisible(f) : !symbolOf(l, f).hide;
 mMain.on("click", e => {
   if (UIS.tool !== "select") return;
   const hit = hitAt(e.pixel);
@@ -674,7 +696,7 @@ dragBox.on("boxstart", e => { boxFrom = e.coordinate; });
 dragBox.on("boxdrag", e => { document.querySelector(".selbox")?.classList.toggle("cross", e.coordinate[0] < boxFrom[0]); });
 dragBox.on("boxend", e => {
   const ex = dragBox.getGeometry().getExtent(), cross = e.coordinate[0] < boxFrom[0], add = e.mapBrowserEvent.originalEvent.shiftKey, found = [];
-  LYR.filter(shown).forEach(l => layerSrc[l.key].forEachFeatureIntersectingExtent(ex, f => { if (symVisible(f) && (cross || ol.extent.containsExtent(ex, f.getGeometry().getExtent()))) found.push({ key: l.key, f }); }));
+  LYR.filter(l => shown(l) && !outOfScale(l)).forEach(l => layerSrc[l.key].forEachFeatureIntersectingExtent(ex, f => { if (visibleIn(l, f) && (cross || ol.extent.containsExtent(ex, f.getGeometry().getExtent()))) found.push({ key: l.key, f }); }));
   setSel(add ? [...SEL, ...found] : found);
   setHint(`${cross ? "Секущая рамка (справа налево): всё, чего касается" : "Рамка (слева направо): только объекты целиком внутри"} — выбрано ${fmt(SEL.length)}.`);
 });
@@ -728,6 +750,25 @@ function viewCollection(key, cleanup) {
   fill(); const k = mMain.on("moveend", fill); cleanup.push(() => ol.Observable.unByKey(k)); return coll;
 }
 let toolI = [], toolClean = [], drawing = null;
+/* привязка: индекс вершин слоя строится один раз и дальше сам следит за правками источника. OpenLayers пересобирает
+   индекс при каждом добавлении привязки на карту, поэтому привязки слоёв стоят на карте постоянно и только
+   включаются и выключаются, а инструменты вставляются перед ними (привязка должна стоять после рисования и правки).
+   Прежде индекс строился заново при каждом переключении инструмента и каждом выборе в «Переносе» — 0,4–0,8 с на
+   слоях в 15 000 объектов. Крупный слой (больше 5 000 объектов) привязывает только к видимым в кадре. */
+const big = l => l.gl || layerSrc[l.key].getFeatures().length > 5000;
+const SNAPS = new Map();
+function snapFor(l) {
+  let c = SNAPS.get(l.key);
+  if (c && c.src !== layerSrc[l.key]) { mMain.removeInteraction(c.snap); SNAPS.delete(l.key); c = null; }
+  if (!c) { const snap = new ol.interaction.Snap({ source: layerSrc[l.key], pixelTolerance: 10 }); snap.set("gradoSnap", true); mMain.addInteraction(snap); c = { src: layerSrc[l.key], snap }; SNAPS.set(l.key, c); }
+  return c.snap;
+}
+function placeTools(list) {                  // инструменты — перед постоянными привязками, привязки к кадру крупных слоёв — в конце
+  const coll = mMain.getInteractions(), arr = coll.getArray();
+  let at = arr.findIndex(i => i.get("gradoSnap")); if (at < 0) at = arr.length;
+  list.filter(i => !i.get("viewSnap")).forEach(i => coll.insertAt(at++, i));
+  list.filter(i => i.get("viewSnap")).forEach(i => mMain.addInteraction(i));
+}
 function setTool(t) {
   if (!TOOLS[t]) t = "select";
   toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; toolClean.forEach(fn => fn()); toolClean = []; drawing = null;
@@ -745,7 +786,7 @@ function setTool(t) {
     d.on("drawend", e => { drawing = null; pushUndo(featRec([{ key: l.key, f: e.feature }], `новый объект в «${l.title}»`)); e.feature.setProperties({ _edited: true, _new: true }); fieldsOfKey(l.key).forEach(k => e.feature.set(k, "")); setTimeout(() => { syncFromSource(l.key); select(l.key, e.feature); syncStatus(); }, 0); });
   } else if (t === "vertex") {
     // как ручки AutoCAD: при выборе — вершины выбранных объектов; без выбора — объекты текущего слоя
-    const what = selFs.length ? { features: new ol.Collection(selFs) } : l.gl ? { features: viewCollection(l.key, toolClean) } : { source: src };
+    const what = selFs.length ? { features: new ol.Collection(selFs) } : big(l) ? { features: viewCollection(l.key, toolClean) } : { source: src };
     const mo = new ol.interaction.Modify({ ...what, deleteCondition: e => ol.events.condition.altKeyOnly(e) && ol.events.condition.singleClick(e) });
     mo.on("modifystart", e => pushUndo(featRec(e.features.getArray().map(f => ({ key: keyOf(f), f })), "правка вершин")));
     mo.on("modifyend", e => { editedKeys(e.features.getArray()); if (SEL.length) renderRight(); }); toolI.push(mo);
@@ -760,9 +801,11 @@ function setTool(t) {
     const d = draw({ source: new ol.source.Vector(), type: "Polygon" });
     d.on("drawend", e => { drawing = null; setTerritory(GJ.writeFeatureObject(e.feature)); setTool("select"); toast("Граница задана. Выгрузка источников — окно «Данные»."); });
   }
+  const on = new Set();
   if (["point", "line", "poly", "rect", "vertex", "move"].includes(t) && $("snapT").checked)
-    LYR.filter(shown).forEach(x => toolI.push(new ol.interaction.Snap(x.gl ? { features: viewCollection(x.key, toolClean), pixelTolerance: 10 } : { source: layerSrc[x.key], pixelTolerance: 10 })));
-  toolI.forEach(i => mMain.addInteraction(i));
+    LYR.filter(shown).forEach(x => { if (big(x)) { const v = new ol.interaction.Snap({ features: viewCollection(x.key, toolClean), pixelTolerance: 10 }); v.set("viewSnap", true); toolI.push(v); } else on.add(snapFor(x)); });
+  SNAPS.forEach((c, k) => { if (!lyr(k)) { mMain.removeInteraction(c.snap); SNAPS.delete(k); } else c.snap.setActive(on.has(c.snap)); });
+  placeTools(toolI);
   mMain.getTargetElement().style.cursor = t === "select" ? "" : t === "move" ? "move" : "crosshair";
   syncRibbon(); syncStatus();
 }
@@ -795,7 +838,7 @@ $("bDelFeat").onclick = () => {
 /* ---------- отмена и возврат: правки объектов, стили, возврат выгрузки ----------
    Запись хранит прежнее состояние только затронутых объектов (а не копию всего слоя),
    поэтому отмена на слое в 100 000 объектов мгновенна. Обратная запись снимается в момент отмены. */
-const UNDO = [], REDO = [];
+
 const propsOf = f => { const p = { ...f.getProperties() }; delete p[f.getGeometryName()]; return p; };
 const snapF = (key, f) => layerSrc[key]?.hasFeature(f) ? { g: f.getGeometry()?.clone(), p: propsOf(f) } : null;
 const featRec = (items, label) => ({ kind: "feat", label, items: items.map(({ key, f }) => ({ key, f, s: snapF(key, f) })) });

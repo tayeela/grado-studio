@@ -45,24 +45,29 @@ def _nice(v):
 
 
 class MapTransform:
-    """WGS84 → МГГТ → мм листа. Точный пересчёт (итерации Ньютона) делается в центре листа, дальше — его
-    линейное приближение (якобиан): на листе в несколько километров расхождение меньше сантиметра на местности,
-    а лист собирается в сотни раз быстрее."""
+    """WGS84 → МГГТ → мм листа. Точный пересчёт (итерации Ньютона) делается в центре листа, дальше — его разложение
+    до второго порядка (якобиан и кривизна): на листе А1 1:25 000 (16 × 13 км) расхождение с точным пересчётом —
+    сантиметры на местности, а лист собирается в сотни раз быстрее, чем пересчёт каждой вершины."""
 
     def __init__(self, rect, center_lonlat, scale):
         self.rect = rect
         self.k = 1000.0 / scale                                      # мм листа на метр
         lon0, lat0 = self.lon0, self.lat0 = center_lonlat
-        self.cx, self.cy = crs.wgs84_to_msk50(lon0, lat0)
-        d = 1e-3
-        ex, ey = crs.wgs84_to_msk50(lon0 + d, lat0)
-        nx, ny = crs.wgs84_to_msk50(lon0, lat0 + d)
-        self.j = ((ex - self.cx) / d, (nx - self.cx) / d, (ey - self.cy) / d, (ny - self.cy) / d)
+        f = lambda dl, dp: crs.wgs84_to_msk50(lon0 + dl, lat0 + dp)
+        self.cx, self.cy = f(0, 0)
+        d = 0.02                                                     # шаг разностей, градусы (~1,5–2 км)
+        e, w, n, s_, ne, nw, se, sw = f(d, 0), f(-d, 0), f(0, d), f(0, -d), f(d, d), f(-d, d), f(d, -d), f(-d, -d)
+        c = (self.cx, self.cy)
+        # по каждой координате: первые производные по долготе и широте, вторые (ll, lp, pp) — центральные разности
+        self.t = [((e[i] - w[i]) / (2 * d), (n[i] - s_[i]) / (2 * d),
+                   (e[i] - 2 * c[i] + w[i]) / d ** 2, (ne[i] - nw[i] - se[i] + sw[i]) / (4 * d * d), (n[i] - 2 * c[i] + s_[i]) / d ** 2)
+                  for i in (0, 1)]
 
     def mm(self, lon, lat):
-        a, b, c, e = self.j
         dl, dp = lon - self.lon0, lat - self.lat0
-        x, y = a * dl + b * dp, c * dl + e * dp
+        (a, b, aa, ab, bb), (c, e, cc, ce, ee) = self.t
+        x = a * dl + b * dp + .5 * aa * dl * dl + ab * dl * dp + .5 * bb * dp * dp
+        y = c * dl + e * dp + .5 * cc * dl * dl + ce * dl * dp + .5 * ee * dp * dp
         fx, fy, fw, fh = self.rect
         return (fx + fw / 2 + x * self.k, fy + fh / 2 - y * self.k)
 

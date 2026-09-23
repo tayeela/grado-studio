@@ -18,6 +18,8 @@ import math
 import os
 import re
 import sys
+import threading
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -213,6 +215,7 @@ def _layer(key, result):
             "features": {"type": "FeatureCollection", "features": feats}}
 
 
+MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД целиком (GET /api/progress)
 
 
@@ -279,6 +282,7 @@ def fetch(bbox, keys):
 # ---------- ФГИС ТП: документы территориального планирования (Минэкономразвития) ----------
 FGISTP_TTL = 7 * 24 * 3600
 _FG_MEMO = {}
+_FG_LOCK = threading.RLock()
 
 
 def fgistp_catalog(conn=None):
@@ -286,15 +290,19 @@ def fgistp_catalog(conn=None):
     import gzip
     import time
     path = CACHE / "fgistp" / "catalog.json.gz"
-    if path.exists() and time.time() - path.stat().st_mtime < FGISTP_TTL:
-        mt = path.stat().st_mtime                   # поиск по названию зовёт каталог на каждое слово — держим в памяти
-        if _FG_MEMO.get("mt") != mt:
-            _FG_MEMO.update(mt=mt, cat=json.loads(gzip.decompress(path.read_bytes())))
-        return _FG_MEMO["cat"]
-    cat = (conn or FgistpConnector()).catalog()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(gzip.compress(json.dumps(cat, ensure_ascii=False).encode("utf-8")))
-    return cat
+    with _FG_LOCK:                                  # один скачивает каталог, остальные ждут его, а не качают параллельно
+        if path.exists() and time.time() - path.stat().st_mtime < FGISTP_TTL:
+            mt = path.stat().st_mtime               # поиск по названию зовёт каталог на каждое слово — держим в памяти
+            if _FG_MEMO.get("mt") != mt:
+                try:
+                    _FG_MEMO.update(mt=mt, cat=json.loads(gzip.decompress(path.read_bytes())))
+                except (OSError, EOFError, ValueError, zlib.error):
+                    path.unlink(missing_ok=True)    # недописанный файл — скачать заново, а не падать неделю
+                    return fgistp_catalog(conn)
+            return _FG_MEMO["cat"]
+        cat = (conn or FgistpConnector()).catalog()
+        atomic_write(path, gzip.compress(json.dumps(cat, ensure_ascii=False).encode("utf-8")))
+        return cat
 
 
 def fgistp_docs(bbox, catalog):
@@ -389,13 +397,32 @@ def project_path(name):
     return PROJECTS / f"{name}.grado2"
 
 
+_SAVE_LOCK = threading.Lock()
+
+
+def atomic_write(path, body):
+    """Запись файла целиком или никак: свой временный файл рядом + os.replace. Общий «.tmp» на всех писателей
+    давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON."""
+    import tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix="." + path.stem[:40] + ".", suffix=".part")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save_project(name, body):
     json.loads(body)                                  # в файл идёт только целый JSON
     path = project_path(name)
-    PROJECTS.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_bytes(body)
-    os.replace(tmp, path)                             # атомарно: при сбое старая версия цела
+    with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
+        atomic_write(path, body)
     return path
 
 
@@ -423,6 +450,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        if self._foreign():
+            return self._deny()
         name = self.path.split("?")[0].removeprefix("/styles/")
         if self.path.startswith("/styles/") and name in STYLE_FILES:
             body = (STYLES / name).read_bytes()
@@ -451,6 +480,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(502, {"error": str(e)})
             except (KeyError, ValueError) as e:
                 return self._json(400, {"error": f"bad request: {e}"})
+            except Exception as e:      # любой сбой — ответ с причиной, а не оборванное соединение
+                return self._json(500, {"error": f"{type(e).__name__}: {e}"})
             except OSError as e:
                 return self._json(502, {"error": f"ФГИС ТП недоступна: {e}"})
         if self.path == "/api/projects":
@@ -468,13 +499,39 @@ class Handler(SimpleHTTPRequestHandler):
             return self.wfile.write(body)
         return super().do_GET()
 
+    def _foreign(self):
+        """Запрос не от самой программы: чужой адрес в Host (подмена DNS на 127.0.0.1) или страница другого сайта
+        (Origin). Такой сайт мог бы молча перезаписать проект обычной формой — сервер ему не отвечает."""
+        port = self.server.server_address[1]
+        ok = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        if (self.headers.get("Host") or "") not in ok:
+            return True
+        origin = self.headers.get("Origin")
+        return origin is not None and origin not in {"http://" + h for h in ok}
+
+    def _deny(self):
+        self.send_response(403)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", "9")
+        self.end_headers()
+        self.wfile.write(b"forbidden")
+
     def _project_name(self):
         q = parse_qs(urlparse(self.path).query)
         return AUTOSAVE if q.get("autosave") else (q.get("name") or [""])[0]
 
+    def do_HEAD(self):
+        if self._foreign():
+            return self._deny()
+        return super().do_HEAD()
+
     def do_POST(self):
+        if self._foreign():
+            return self._deny()
         try:
             n = int(self.headers.get("Content-Length") or 0)
+            if not 0 <= n <= MAX_BODY:
+                return self._json(413, {"error": f"запрос больше {MAX_BODY // 2**20} МБ"})
             if self.path == "/api/import/files":
                 import base64
                 import file_io

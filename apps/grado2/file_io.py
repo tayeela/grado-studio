@@ -38,10 +38,23 @@ def _pts(fc):
                     return
     for f in fc["features"]:
         if f.get("geometry"):
-            take(f["geometry"]["coordinates"])
+            take(f["geometry"].get("coordinates") or [])
         if len(out) > 2000:
             break
     return out
+
+
+def _explode(fc):
+    """GeometryCollection (допустимый GeoJSON, но не слой ГИС) → отдельные объекты с теми же атрибутами."""
+    out = []
+    for f in fc.get("features") or []:
+        g = f.get("geometry") or {}
+        if g.get("type") == "GeometryCollection":
+            out += [{**f, "geometry": x} for x in g.get("geometries") or [] if x and x.get("coordinates")]
+        else:
+            out.append(f)
+    fc["features"] = out
+    return fc
 
 
 def system_of(pts):
@@ -55,7 +68,7 @@ def system_of(pts):
 
 def to_wgs84(fc, hint=None):
     """FeatureCollection in any of the three systems → WGS84; returns (fc, system name)."""
-    pts = _pts(fc)
+    pts = _pts(_explode(fc))
     if not pts:
         return fc, "нет координат"
     kind = hint or system_of(pts)
@@ -64,7 +77,7 @@ def to_wgs84(fc, hint=None):
     fn = {"wgs": None, "merc": crs.merc_to_wgs84, "mggt": crs.msk50_to_wgs84}[kind]
     if fn:
         for f in fc["features"]:
-            if f.get("geometry"):
+            if (f.get("geometry") or {}).get("coordinates"):
                 f["geometry"]["coordinates"] = _walk(f["geometry"]["coordinates"], fn)
     return fc, {"wgs": "WGS84", "merc": "Web Mercator (EPSG:3857)", "mggt": "МГГТ (местная московская)"}[kind]
 
@@ -170,6 +183,18 @@ def read_shp_set(files):
     return fc, hint
 
 
+MAX_UNPACKED = 1024 * 2**20        # 1 ГБ распакованного: слой ПЗЗ Москвы целиком — 221 МБ
+
+
+def _check_unpacked(name, packed, members):
+    """Архив-бомба (сотни КБ, распаковываются в гигабайты) не должна съесть память: проверка по заявленным размерам,
+    а zipfile сам остановит член архива, чьё содержимое длиннее заявленного."""
+    total = sum(i.file_size for i in members)
+    if total > MAX_UNPACKED or (total > 50 * 2**20 and total > packed * 200):
+        raise ValueError(f"архив «{name}» распаковывается в {total / 2**20:.0f} МБ — это больше допустимого; "
+                         "распакуйте нужные слои и перетащите их отдельно")
+
+
 def import_files(files, redln=None):
     """files: {file name: bytes} (one drop or one «Открыть» of the file dialog).
     Returns [{"name", "features": FeatureCollection WGS84, "notes": [...]}], one entry per source layer."""
@@ -178,13 +203,15 @@ def import_files(files, redln=None):
         suf = Path(name).suffix.lower()
         if suf == ".zip":
             with zipfile.ZipFile(io.BytesIO(b)) as z:
-                for n in z.namelist():
-                    if not n.endswith("/") and not Path(n).name.startswith("."):
-                        expanded[n] = z.read(n)
+                members = [i for i in z.infolist() if not i.is_dir() and not Path(i.filename).name.startswith(".")]
+                _check_unpacked(name, len(b), members)
+                for i in members:
+                    expanded[i.filename] = z.read(i)
         elif suf == ".kmz":
             with zipfile.ZipFile(io.BytesIO(b)) as z:
-                kml = next((n for n in z.namelist() if n.lower().endswith(".kml")), None)
+                kml = next((i for i in z.infolist() if i.filename.lower().endswith(".kml")), None)
                 if kml:
+                    _check_unpacked(name, len(b), [kml])
                     expanded[Path(name).stem + ".kml"] = z.read(kml)
         else:
             expanded[name] = b

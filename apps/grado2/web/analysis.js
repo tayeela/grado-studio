@@ -19,7 +19,7 @@ function NRadius() {
 }
 NRadius.title = "Радиусы обслуживания"; NRadius.prototype.onExecute = function () {
   const sv = SERVICES[this.widgets[0].value] || Object.values(SERVICES)[0], r = sv.r * (this.widgets[1].value ? .7 : 1);
-  const pts = socialPoints(sv.kinds), key = [DATA["osm.social"]?.rev, this.widgets[0].value, r, !!TERR].join("|");
+  const pts = socialPoints(sv.kinds), key = [DATA["osm.social"]?.rev, this.widgets[0].value, r, TERR_REV].join("|");
   if (this._ck !== key) {
     this._ck = key;
     const circles = pts.map(p => turf.circle(p, r, { units: "meters", steps: 48, properties: { "Пояснение": `${p.properties["Название"] || p.properties["Вид"]}: ${Math.round(r)} м` } }));
@@ -113,7 +113,7 @@ LiteGraph.registerNodeType("Анализ/Показатели кварталов
 /* баланс территории: площадь внутри границы по значениям поля входного слоя (функц. зоны, ПЗЗ, землепользование) */
 function NBalance() { this.addInput("зоны", "geom"); this.addOutput("территория", "geom"); this.addWidget("text", "поле", "", () => { }); finish(this, "op", 240); }
 NBalance.title = "Баланс территории"; NBalance.prototype.onExecute = function () {
-  const z = this.getInputData(0), src = z?.properties?._src || [], key = gid(z) + this.widgets[0].value + !!TERR;
+  const z = this.getInputData(0), src = z?.properties?._src || [], key = gid(z) + this.widgets[0].value + TERR_REV;
   if (this._ck !== key && TERR) {
     this._ck = key; this._fc = [];
     const fields = [...new Set(src.slice(0, 200).flatMap(f => Object.keys(f.properties || {})))].filter(k => !k.startsWith("_"));

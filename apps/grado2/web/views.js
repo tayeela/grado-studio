@@ -40,6 +40,13 @@ $("viewsBody").addEventListener("click", e => {
   if (t.id === "viewSave") { const name = $("viewName").value.trim() || `Вид ${VIEWS.length + 1}`; const v = captureView(name, $("viewExt").checked); VIEWS.push(v); VIEW_CUR = v.id; window.markDirty?.(); renderViews(); toast(`Вид «${name}» сохранён.`); }
   if (t.dataset.vshow) applyView(VIEWS.find(v => v.id === t.dataset.vshow));
   if (t.dataset.vupd) { const i = VIEWS.findIndex(v => v.id === t.dataset.vupd), old = VIEWS[i]; VIEWS[i] = { ...captureView(old.name, !!old.extent), id: old.id }; window.markDirty?.(); renderViews(); toast(`Вид «${old.name}» обновлён.`); }
-  if (t.dataset.vdel) { const i = VIEWS.findIndex(v => v.id === t.dataset.vdel); if (confirmInline(t, `Удалить вид «${VIEWS[i].name}»?`)) { VIEWS.splice(i, 1); window.markDirty?.(); renderViews(); } }
+  if (t.dataset.vdel) {
+    const i = VIEWS.findIndex(v => v.id === t.dataset.vdel), used = ALBUM.sheets.filter(s => s.view === t.dataset.vdel);
+    if (!confirmInline(t, `Удалить вид «${VIEWS[i].name}»?${used.length ? ` Листов с ним: ${used.length} — они перейдут на текущую карту.` : ""}`)) return;
+    // лист на удалённом виде не печатает молча «что сейчас на карте»: он явно переводится на текущую карту
+    used.forEach(s => { s.view = ""; }); if (VIEW_CUR === t.dataset.vdel) VIEW_CUR = null;
+    const name = VIEWS[i].name; VIEWS.splice(i, 1); window.markDirty?.(); renderViews(); window.renderSheets?.();
+    if (used.length) toast(`Вид «${name}» удалён. Листы ${used.map(s => `«${s.title}»`).join(", ")} теперь показывают текущую карту.`);
+  }
 });
 window.renderViews = renderViews;

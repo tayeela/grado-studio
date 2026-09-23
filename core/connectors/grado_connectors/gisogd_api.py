@@ -106,6 +106,29 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
+class _tmp_beside:
+    """Временный файл с уникальным именем рядом с целевым; при выходе без ошибки — атомарная подмена."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    def __enter__(self):
+        import tempfile
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        fd, name = tempfile.mkstemp(dir=self.path.parent, prefix=self.path.name + ".", suffix=".part")
+        import os
+        os.close(fd)
+        self.tmp = Path(name)
+        return self.tmp
+
+    def __exit__(self, kind, *_):
+        if kind is None:
+            self.tmp.replace(self.path)
+        else:
+            self.tmp.unlink(missing_ok=True)
+        return False
+
+
 def _expected_size(headers):
     """Размер слоя без сжатия, если портал его сообщает: Content-Length без gzip или число в ETag «мтайм-размер-inode»."""
     if headers.get("Content-Encoding") != "gzip" and headers.get("Content-Length", "").isdigit():
@@ -231,7 +254,10 @@ class GisogdApi(Connector):
         """Слой целиком: из кэша, иначе скачать и закэшировать (gzip на диске)."""
         path = self._cache_path(code)
         if path and path.exists() and (time.time() - path.stat().st_mtime) < self.ttl:
-            return gzip.decompress(path.read_bytes()), True
+            try:
+                return gzip.decompress(path.read_bytes()), True
+            except (OSError, EOFError, zlib.error):
+                path.unlink(missing_ok=True)       # недописанный кэш — скачать заново, а не падать до конца срока
         url = f"{BASE}/layers/{code}/export/?format=geojson"
         if self.progress and self.transport is _http_get:
             raw = _http_get(url, progress=lambda got, total: self.progress(code, got, total, "download"))
@@ -240,10 +266,8 @@ class GisogdApi(Connector):
         if self.progress:
             self.progress(code, len(raw), len(raw), "parse")
         if path:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(path.suffix + ".part")
-            tmp.write_bytes(gzip.compress(raw, 6))
-            tmp.replace(path)          # атомарно: не оставить битый кэш
+            with _tmp_beside(path) as tmp:         # свой временный файл: две вкладки не склеят чужие хвосты
+                tmp.write_bytes(gzip.compress(raw, 6))
         time.sleep(_PAUSE)
         return raw, False
 
@@ -259,27 +283,29 @@ class GisogdApi(Connector):
                 or (time.time() - gz.stat().st_mtime) >= self.ttl:
             return None
         out = []
-        with gzip.open(lp, "rt", encoding="utf-8") as fh:
-            for line in fh:
-                bb, key, js = line.rstrip("\n").split("\t", 2)
-                fb = tuple(float(v) for v in bb.split(","))
-                if _overlaps(fb, query):
-                    f = json.loads(js)
-                    out.append({"type": "Feature", "geometry": f["geometry"],
-                                "properties": f["properties"], "grado_key": key})
+        try:
+            with gzip.open(lp, "rt", encoding="utf-8") as fh:
+                for line in fh:
+                    bb, key, js = line.rstrip("\n").split("\t", 2)
+                    fb = tuple(float(v) for v in bb.split(","))
+                    if _overlaps(fb, query):
+                        f = json.loads(js)
+                        out.append({"type": "Feature", "geometry": f["geometry"],
+                                    "properties": f["properties"], "grado_key": key})
+        except (OSError, EOFError, zlib.error, ValueError):
+            lp.unlink(missing_ok=True)             # битый построчный кэш — пересобрать из слоя целиком
+            return None
         return out
 
     def _write_lines(self, code, rows):
         lp = self._lines_path(code)
         if not lp:
             return
-        tmp = lp.with_suffix(lp.suffix + ".part")
-        with gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) as fh:
+        with _tmp_beside(lp) as tmp, gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) as fh:
             for fb, key, f in rows:
                 fh.write(",".join(repr(v) for v in fb) + "\t" + key + "\t"
                          + json.dumps({"geometry": f.get("geometry"), "properties": f.get("properties") or {}},
                                       ensure_ascii=False, separators=(",", ":")) + "\n")
-        tmp.replace(lp)
 
     def fetch(self, bbox, code):
         """bbox = (west, south, east, north) WGS84; code — код слоя портала."""

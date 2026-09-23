@@ -105,7 +105,7 @@ const redLineStyle = f => new ol.style.Style({ renderer(coords, st) {
 let SOURCES = {};                 // ключ → {title, kind}
 const DATA = {};                  // ключ → {title, source, fetched_at, fc, count, fields}
 let ERRORS = {};
-let TERR = null, TERR_M2 = 0, dataRev = 0;
+let TERR = null, TERR_M2 = 0, dataRev = 0, TERR_REV = 0;   // TERR_REV — номер версии границы: узлы графа пересчитываются при её перерисовке
 const terrSrc = new ol.source.Vector(), layerSrc = {};
 const terrStyle = S(null, "#b3261e", 2); terrStyle.getStroke().setLineDash([12, 4, 2, 4]);
 const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle, zIndex: 110 });
@@ -113,7 +113,7 @@ const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle,
 /* ================= данные территории ================= */
 const mMain = newMap("mMain", [terrLayer()]);
 function setTerritory(feature) {
-  TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR);
+  TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR); TERR_REV++;
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
@@ -218,7 +218,8 @@ $("bLoad").onclick = async () => {
       for (const [k, v] of Object.entries(r.layers)) {
         const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
         const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
-        DATA[k] = { ...v, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
+        // имя, данное слою вами, переживает перевыгрузку: по нему слой находят узлы графа
+        DATA[k] = { ...v, title: prev?.title || v.title, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
           history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };
         layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc);
         const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l); nLayers++;
@@ -241,8 +242,11 @@ function mergeDownload(key, prev, fc) {
   const sig = f => JSON.stringify([f.geometry, clean(f.properties)]);
   const byKey = list => new Map(list.filter(f => f.properties?._key).map(f => [f.properties._key, f]));
   const oldF = prev.original?.features || [], oldBy = byKey(oldF), newBy = byKey(fc.features);
-  if (!oldBy.size || !newBy.size) return null;                    // прежняя выгрузка без ключей (старый проект) — просто заменить
   const cur = writeFC(layerSrc[key].getFeatures()).features, curBy = byKey(cur);
+  if (!oldBy.size || !newBy.size) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
+    const drawn = cur.filter(f => !f.properties?._key);            // слой заменяется, но нарисованное вами в нём остаётся
+    return drawn.length ? { fc: { type: "FeatureCollection", features: fc.features.concat(drawn) }, text: `слой заменён новой выгрузкой, нарисованные вами объекты (${drawn.length}) сохранены`, mark: new Set(), counts: {} } : null;
+  }
   const added = [...newBy.keys()].filter(k => !oldBy.has(k)), removed = [...oldBy.keys()].filter(k => !newBy.has(k));
   const changed = [...newBy.keys()].filter(k => oldBy.has(k) && sig(oldBy.get(k)) !== sig(newBy.get(k)));
   const mine = cur.filter(f => f.properties?._edited && f.properties._key && newBy.has(f.properties._key));
@@ -251,12 +255,15 @@ function mergeDownload(key, prev, fc) {
   // поля, которых нет в источнике (добавлены вами, например «Решение» реестра), переносятся на новую версию объекта
   const srcFields = new Set(fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties || {})));
   const own = [...new Set(cur.slice(0, 500).flatMap(f => Object.keys(f.properties || {})))].filter(k => !srcFields.has(k) && !k.startsWith("_"));
+  // правленный вами объект, которого в источнике больше нет, не пропадает молча: остаётся с пометкой
+  const orphan = cur.filter(f => f.properties?._edited && f.properties._key && !newBy.has(f.properties._key)).map(f => ({ ...f, properties: { ...f.properties, "Нет в источнике": "да" } }));
   const out = fc.features.filter(f => !gone.has(f.properties?._key)).map(f => { const c = curBy.get(f.properties?._key); if (c?.properties._edited) return c;
-    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(drawn);
+    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(drawn, orphan);
   const conflict = mine.filter(f => changed.includes(f.properties._key)).length;
   const parts = [`+${added.length} новых`, `−${removed.length} исчезло`, `${changed.length} изменились`];
   if (mine.length) parts.push(`ваши правки (${mine.length}) сохранены${conflict ? `, из них ${conflict} изменились и в источнике — сверьте` : ""}`);
   if (gone.size) parts.push(`удалённые вами (${gone.size}) не вернулись`);
+  if (orphan.length) parts.push(`правленные вами, но исчезнувшие из источника (${orphan.length}) оставлены с пометкой «Нет в источнике»`);
   return { fc: { type: "FeatureCollection", features: out }, text: parts.join(", "), mark: new Set([...added, ...changed]),
     counts: { added: added.length, removed: removed.length, changed: changed.length } };
 }
@@ -366,18 +373,27 @@ function NLayer() {
   finish(this, "src", 250);
 }
 NLayer.title = "Слой"; NLayer.prototype.onExecute = function () {
-  const [lw, fw, ow, vw] = this.widgets, key = titleToKey(lw.value), d = DATA[key];
+  const [lw, fw, ow, vw] = this.widgets;
+  let key = titleToKey(lw.value), d = DATA[key];
+  // здания ЕГРН не выгрузились (портал не ответил), а OSM есть — узел берёт здания OSM и говорит об этом,
+  // иначе сохраняемых нет, эскиз садится на существующие дома, а ТЭП считает их все под снос
+  const alt = !d && lw.value === "Здания (ЕГРН)" && DATA["osm.buildings"] ? "osm.buildings" : null;
+  if (alt) { key = alt; d = DATA[alt]; }
   if (!d) { this.setOutputData(0, null); this.info = lw.value ? "слой не загружен" : "выберите слой"; return; }
-  const ck = [d.rev, key, fw.value, ow.value, vw.value, !!TERR].join("|");   // пересчёт — только при правке этого слоя
+  const ck = [d.rev, key, fw.value, ow.value, vw.value, TERR_REV].join("|");   // пересчёт — только при правке этого слоя
   if (this._cacheKey !== ck) {
     this._cacheKey = ck;
     const list = d.fc.features.filter(f => fw.value === "—" || testOp(f.properties[fw.value], ow.value, vw.value));
-    const u = unionAll(list.map(asArea)); if (u) u.properties = { _src: list };
-    this._out = u; this._n = [list.length, d.count];
+    // правка атрибута (адрес, этажность, «Решение» у несносимого) не меняет геометрию: объединение и все буферы после
+    // него остаются, обновляется только список объектов для ТЭП. Объединение 3 000 зданий и буфер — полсекунды
+    const gs = geomSig(list);
+    if (this._out && gs === this._gsig && TERR_REV === this._terr) this._out.properties = { _src: list };
+    else { const u = unionAll(list.map(asArea)); if (u) u.properties = { _src: list }; this._out = u; this._gsig = gs; this._terr = TERR_REV; }
+    this._n = [list.length, d.count];
   }
   this.setOutputData(0, this._out);
   fitTitle(this, "Слой: " + d.title + (fw.value !== "—" && ow.value !== "—" ? ` [${fw.value} ${ow.value} ${vw.value}]` : ""));
-  this.info = `${this._n[0]} из ${this._n[1]} объектов`;
+  this.info = `${this._n[0]} из ${this._n[1]} объектов${alt ? " — ЕГРН нет, взяты здания OSM" : ""}`;
 };
 NLayer.prototype.onResize = function () { if (this._fullTitle) fitTitle(this, this._fullTitle); };
 LiteGraph.registerNodeType("Данные/Слой", NLayer);
@@ -386,6 +402,18 @@ function NNum() { this.addOutput("число", "num"); this.addWidget("slider", 
 NNum.title = "Число"; NNum.prototype.onExecute = function () { this.setOutputData(0, Math.round(this.widgets[0].value)); };
 LiteGraph.registerNodeType("Параметры/Число", NNum);
 
+// отпечаток геометрии набора объектов (координаты до 1 см): равный — значит, геометрия та же. Порядок объектов не
+// важен — источник карты после правки отдаёт их в другом порядке; порядок вершин внутри объекта важен
+function geomSig(list) {
+  let A = list.length, B = 0;
+  for (const f of list) {
+    if (!f.geometry) continue;
+    let a = 7, b = 11;
+    const walk = c => { if (typeof c[0] === "number") { a = (a * 31 + Math.round(c[0] * 1e7)) % 2147483647; b = (b * 37 + Math.round(c[1] * 1e7)) % 2147483629; } else for (const x of c) walk(x); };
+    walk(f.geometry.coordinates); A = (A + a) % 9007199254740881; B = (B + b) % 9007199254740881;
+  }
+  return A + ":" + B;
+}
 function cached(node, key, fn) { if (node._ck !== key) { node._ck = key; node._cv = fn(); } return node._cv; }
 const gid = f => f ? (f._gid ||= Math.random().toString(36).slice(2)) : "-";
 function NBuf() { this.addInput("объекты", "geom"); this.addInput("расстояние", "num"); this.addOutput("зона", "geom"); this.addWidget("slider", "расстояние, м", 10, () => { }, { min: -30, max: 60, precision: 0, slider_color: "#9fc0a8" }); finish(this, "op"); }
@@ -574,7 +602,8 @@ lgc.onNodeDeselected = () => { selNode = null; updateAnalysisMap(); };
 function fitGraph() {
   const box = $("graphbox").getBoundingClientRect(), ns = graph._nodes; if (!ns.length || !box.width) return;
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
-  const s = Math.max(.6, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
+  const s = Math.max(.6, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка
+  lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
 }
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
 new ResizeObserver(sizeGraph).observe($("graphbox"));
@@ -747,6 +776,7 @@ const varProgress = (done, total, text) => { $("varProg").firstElementChild.styl
 $("bStopVar").onclick = () => { if (varRun) { varRun.stop = true; $("bStopVar").disabled = true; $("varMsg").textContent = "Останавливаю: дорабатывает текущий вариант…"; } };
 $("bGen").onclick = async () => {
   const p = RESULT.placeNode, t = RESULT.tepNode; if (!p || !RESULT.site) return toast("В графе нет пятна застройки или узла посадки: задайте территорию и загрузите данные.");
+  if (!t) return toast("В графе нет узла «ТЭП КРТ»: варианты сравниваются по его целевой плотности. Добавьте его из группы «Показатели» и соедините с посадкой.");
   const base = placeParams(p), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), goal = densityGoal();
   const sppKept = keptBuildings(kept).reduce((s, f) => s + m2(f) * floorsOf(f), 0), ha = TERR_M2 / 1e4;
   const cands = []; for (const typ of TYPOLOGIES) for (const width of typ === "Квартал" ? [14, 18] : [14, 17]) for (const angle of [0, 90]) cands.push({ typ, width, angle });
@@ -905,7 +935,9 @@ $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };
 
-(async () => {
+// старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
+// layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS
+const startApp = async () => {
   try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
   try { window.APP_VERSION = (await api("/version.json")).version; document.querySelector(".brand").title = "ГРАДО 2, версия " + window.APP_VERSION; } catch { }
   renderSources(); icons();
@@ -914,4 +946,5 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
   Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); });   // первый запуск: вместо окон — «С чего начать» на карте
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();
-})();
+};
+if (document.readyState === "loading") addEventListener("DOMContentLoaded", startApp); else startApp();

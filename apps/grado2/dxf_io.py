@@ -128,15 +128,24 @@ def linecode_of(name):
 
 def import_dxf(data, redln):
     """DXF bytes → (FeatureCollection WGS84, notes). Coordinates: МГГТ metres or WGS84 degrees."""
-    doc = ezdxf.read(io.StringIO(data.decode("utf-8", errors="replace")))
+    # кодировку файл объявляет сам ($DWGCODEPAGE): чертежи R2000–R2004 из русского AutoCAD — cp1251, а не UTF-8
+    from ezdxf import recover
+    doc, _ = recover.read(io.BytesIO(data))
+    # кодовая страница бывает потеряна (ANSI_1252 по умолчанию при байтах cp1251): имена слоёв выходят «Êðàñíûå».
+    # Русский текст, прочитанный как cp1252, — это сплошь буквы À…ÿ; тогда файл перечитывается как cp1251
+    if doc.dxfversion < "AC1021" and doc.encoding.lower() in ("cp1252", "iso-8859-1", "latin-1"):
+        names = "".join(l.dxf.name for l in doc.layers)
+        if sum("\xc0" <= c <= "\xff" for c in names) >= 3:
+            doc = ezdxf.read(io.TextIOWrapper(io.BytesIO(data), encoding="cp1251", errors="replace"))
     feats, skipped, notes = [], 0, []
     upper = {n.upper(): n for n in redln["linetypes"]}
     for e in doc.modelspace():
         t = e.dxftype()
+        # вершины полилинии хранятся в её собственной системе (OCS): у зеркальной полилинии x с обратным знаком
         if t == "LWPOLYLINE":
-            pts, closed = [tuple(p[:2]) for p in e.get_points("xy")], e.closed
+            pts, closed = [tuple(p)[:2] for p in e.vertices_in_wcs()], e.closed
         elif t == "POLYLINE" and not e.is_3d_polyline:
-            pts, closed = [tuple(v.dxf.location[:2]) for v in e.vertices], e.is_closed
+            pts, closed = [tuple(p)[:2] for p in e.points_in_wcs()], e.is_closed
         elif t == "LINE":
             pts, closed = [tuple(e.dxf.start[:2]), tuple(e.dxf.end[:2])], False
         else:

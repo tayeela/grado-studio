@@ -145,15 +145,17 @@ def _bbox_hits(geom, bb):
 
 
 class _OverpassCache:
-    """Ответы Overpass на диске: <папка>/index.json + <n>.json.gz. Потокобезопасно в пределах процесса."""
+    """Ответы Overpass на диске: <папка>/index.json + <имя>.json.gz. Замок общий на папку (сервер создаёт
+    коннектор на каждый запрос), файлы пишутся через свой временный файл — две вкладки не портят кэш."""
 
     KEEP = 40                         # не больше стольких ответов, старые вытесняются
+    _LOCKS = {}
 
     def __init__(self, folder):
         import threading
         from pathlib import Path
         self.dir = Path(folder)
-        self.lock = threading.Lock()
+        self.lock = self._LOCKS.setdefault(str(self.dir.resolve()), threading.Lock())
 
     def _index(self):
         try:
@@ -161,8 +163,24 @@ class _OverpassCache:
         except (OSError, ValueError):
             return []
 
+    def _write(self, name, data):
+        import os
+        import tempfile
+        fd, tmp = tempfile.mkstemp(dir=self.dir, suffix=".part")
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(data)
+            os.replace(tmp, self.dir / name)
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
     def find(self, bbox, sets, max_age):
         import gzip
+        import zlib
         now, eps = time.time(), 1e-7
         with self.lock:
             for e in sorted(self._index(), key=lambda e: -e["t"]):
@@ -173,31 +191,30 @@ class _OverpassCache:
                     try:
                         with gzip.open(self.dir / e["file"], "rt", encoding="utf-8") as f:
                             return json.load(f), e["t"]
-                    except (OSError, ValueError):
+                    except (OSError, ValueError, EOFError, zlib.error):
                         continue
         return None
 
     def put(self, bbox, sets, data):
+        """Сбой кэша не должен ронять выгрузку: ответ Overpass уже есть, он просто не запомнится."""
         import gzip
-        import os
-        with self.lock:
-            self.dir.mkdir(parents=True, exist_ok=True)
-            idx = self._index()
-            name = f"{int(time.time() * 1000)}.json.gz"
-            tmp = self.dir / (name + ".tmp")
-            with gzip.open(tmp, "wt", encoding="utf-8") as f:
-                json.dump(data, f)
-            os.replace(tmp, self.dir / name)
-            idx.append({"bbox": list(bbox), "sets": sorted(sets), "t": time.time(), "file": name})
-            idx.sort(key=lambda e: -e["t"])
-            for e in idx[self.KEEP:]:
-                try:
-                    (self.dir / e["file"]).unlink()
-                except OSError:
-                    pass
-            tmp = self.dir / "index.json.tmp"
-            tmp.write_text(json.dumps(idx[:self.KEEP]), "utf-8")
-            os.replace(tmp, self.dir / "index.json")
+        import uuid
+        try:
+            with self.lock:
+                self.dir.mkdir(parents=True, exist_ok=True)
+                idx = self._index()
+                name = f"{uuid.uuid4().hex}.json.gz"
+                self._write(name, gzip.compress(json.dumps(data).encode("utf-8")))
+                idx.append({"bbox": list(bbox), "sets": sorted(sets), "t": time.time(), "file": name})
+                idx.sort(key=lambda e: -e["t"])
+                keep = idx[:self.KEEP]
+                self._write("index.json", json.dumps(keep).encode("utf-8"))
+                live = {e["file"] for e in keep}
+                for f in self.dir.glob("*.json.gz"):     # вытесненные и осиротевшие ответы
+                    if f.name not in live:
+                        f.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 class OsmOverpass(Connector):
