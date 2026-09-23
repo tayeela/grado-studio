@@ -47,9 +47,9 @@
       "runtimeExecutable": "env",
       "runtimeArgs": [
         "GRADO2_NO_BROWSER=1",
-        "GRADO2_PROJECTS=/private/tmp/claude-501/-Users-tayeela-grado-studio--claude-worktrees-stoic-mirzakhani-92ecaa/382baffe-1744-467d-926a-d638c897e596/scratchpad/proj",
+        "GRADO2_PROJECTS=/private/tmp/claude-501/-Users-tayeela/dd7881a4-f8ce-4cc7-86a4-161788a642e5/scratchpad/proj",
         "/Users/tayeela/.grado2/venv/bin/python",
-        "/Users/tayeela/grado-studio/.claude/worktrees/stoic-mirzakhani-92ecaa/apps/grado2/server.py",
+        "/Users/tayeela/grado-studio/apps/grado2/server.py",
         "8651"
       ],
       "port": 8651
