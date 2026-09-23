@@ -56,7 +56,72 @@ in the unittest gate and CI, PyInstaller spec + Inno Setup + GitHub workflow for
 Open: run the workflow on GitHub and install on a clean Windows machine; accept the Xcode licence to build the .app locally.
 v0.14.0 (after the plan): OSM answer cache and a separate OSM request, «Стоп» and progress for the variant search, long names cut in graph nodes.
 
-## Stages
+## Where we are (23.09.2026, v0.21.0) and the next plan
+
+All seven stages Э1–Э7 are done in code. Since v0.14: ФГИС ТП search by name, ОГД download percent (v0.15), sheet frame on
+the map and ТЭП-only sheets (v0.16), per-layer scale visibility (v0.17), weak-point audit with security and data-safety fixes
+(v0.18), typologies ИЖС, blocked houses and urban blocks with plots and streets (v0.19–0.20), ТЭП by «Калькулятор 2.0» with
+Moscow norms, district parameters and the owner's rounding rules (v0.21).
+
+**The goal is not yet accepted.** The acceptance above needs two things that were never done: the full package on the
+ТиНАО reference site, and the Windows installer on a clean machine. The release workflow cannot even start: 69 commits of
+ГРАДО 2 (everything since 17.07.2026) are not pushed to GitHub — this is also the only off-site copy of the work.
+
+Next stages, in order. Estimates are in working sessions.
+
+### Э8. Acceptance of the goal (2 sessions) — first
+- Push `main` to GitHub (owner's approval), run `grado2-release.yml`, install on a clean Windows machine (owner or a
+  Windows VM), build the .app after `sudo xcodebuild -license` (owner's password).
+- ТиНАО greenfield site (e.g. Коммунарка or Былово): boundary → data → constraints → sketch → variants → album PDF + DXF,
+  timed. Everything that stops the owner goes into Э9–Э11; the package-in-a-day claim is written down with the real time.
+- Repeat on Хорошёво with the new ТЭП and the new typologies; compare ТЭП with the genplan.tech calculator for the same inputs.
+
+### Э9. ТЭП and social infrastructure to the end (3 sessions)
+- The ТЭП demand becomes objects: ДОО, school and clinic as placeable building types with plot areas by capacity
+  (2151-ПП tables 1.4.1–1.4.2 steps, clinic plot 0.35 ha); «Посадка» reserves them first when the deficit is not covered.
+- Service radii and walking access by the Moscow decrees instead of federal СП 42.13330 (ДОО 300 m, 500 m in ЦАО; school
+  1000 m; retail 500/800 m; culture 1500 m / 20 min; clinic 20/30 min) — the analysis nodes switch by the territory.
+- Missing norms: additional education 6/8/4 per 1000, 5 places for children with disabilities (owner decides whether they
+  are inside or on top), ОТОП 0.7 m² per person, playground reductions (−15 %, −20 %), minimums 100/50 m².
+- Parking as space: permanent places turn into a required area of car parks (ground, underground, multi-storey) and the
+  sketch shows where they go; visitor parking for non-residential floors.
+- K1 by walking distance over the OSM street graph (the walking isochrone node already has Dijkstra) instead of × 1.3;
+  a territory over two districts takes the district with the larger share and says so.
+- ВРИ change cost and social compensation — only after the owner gives P, Kp and the УПКС source.
+- Old studio, wizard and calc-web still use `moscow_krt.json` with the known errors (residents' parking 257 per 1000 × K1 × K2,
+  wrong playground norm): switch them to `moscow_calc2.json` or retire them — owner decides.
+
+### Э10. Generation quality (3 sessions)
+- Rows bent to the site boundary instead of straight strips; blocked rows packed from both ends; outbuildings and garages
+  for ИЖС; guest parking in urban blocks.
+- Sections move to where the solar ceiling is high: per-building drop under a low ceiling when the density goal is met
+  without it (tested: 91 instead of 100 sections) — needs the owner's word, it leaves free yards where neighbours need sun.
+- Insolation: schools and kindergartens as their own norm class (СанПиН: 3 h for group rooms and classrooms), relief height
+  from SRTM under the buildings, the site sun-hours map.
+- A variant can be edited and saved as a named variant; the comparison table keeps accepted and hand-edited variants.
+
+### Э11. Speed and reliability for big projects (1–2 sessions)
+- Autosave caches each layer's JSON by `rev` (now ~0.3 s freeze at 100 000 objects).
+- «Правила» style counts once per data change, not per redraw; attribute table virtualised.
+- «Проверить нормы» re-checks only buildings near the edit, in chunks, with a progress line.
+- PDF: text as real text (ToUnicode and font subset) so an album can be searched and copied; empty rings; `fill_opacity`
+  instead of mixing with white.
+
+### Э12. Exchange (2 sessions, depends on owner decisions)
+- DWG in and out through the ODA File Converter (free, separate installer) — owner decides.
+- Export of the accepted sketch and constraints to GeoJSON/SHP for QGIS and to the ГИС ОГД attribute layout.
+- Sheet list and ТЭП table as XLSX for the explanatory note.
+
+### Owner decisions that block work
+1. Push to GitHub (and whether the repo stays private) — blocks Э8.
+2. Rounding: «СПП до двух знаков» taken as SPP values and SPP density only; everything else three.
+3. Dropping buildings under a low solar ceiling (Э10).
+4. DWG through ODA (Э12).
+5. Old studio / wizard / calc-web: move to the new ТЭП or retire (Э9).
+6. ОВЗ places inside or on top of the ДОО and school norm (Э9).
+7. P, Kp and the УПКС source for the ВРИ cost and compensation (Э9).
+
+## Stages (Э1–Э7, done)
 
 Each stage ends with a working, checked version and a commit. Estimates are in working sessions.
 
