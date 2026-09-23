@@ -1,0 +1,55 @@
+"""Browser scenarios of docs/ux/grado2-ux.md in headless Chrome (tests/e2e/scenarios.mjs).
+
+Opt-in because it takes about a minute: set GRADO2_E2E=1 (CI does). Needs node 22+ and Chrome
+(env CHROME or the default macOS path). A throw-away server runs on a free port with a temporary projects folder,
+so the owner's projects are never touched.
+"""
+
+import os
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import urllib.request
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+CHROME = os.environ.get("CHROME") or "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+@unittest.skipUnless(os.environ.get("GRADO2_E2E") == "1" and shutil.which("node") and Path(CHROME).exists(),
+                     "set GRADO2_E2E=1; needs node and Chrome")
+class BrowserScenarios(unittest.TestCase):
+    def test_owner_scenarios(self):
+        port = _free_port()
+        with tempfile.TemporaryDirectory() as projects:
+            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": projects}
+            srv = subprocess.Popen([sys.executable, str(HERE.parent / "server.py"), str(port)], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    try:
+                        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1)
+                        break
+                    except Exception:
+                        time.sleep(0.1)
+                r = subprocess.run(["node", str(HERE / "e2e/driver.mjs"), f"http://127.0.0.1:{port}/", str(HERE / "e2e/scenarios.mjs")],
+                                   capture_output=True, text=True, timeout=600, env={**os.environ, "CHROME": CHROME})
+                print(r.stdout[-4000:])
+                self.assertEqual(r.returncode, 0, r.stdout[-4000:] + r.stderr[-2000:])
+            finally:
+                srv.terminate()
+                srv.wait(10)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -3,7 +3,25 @@
    В файле: граница, слои (порядок, стиль, видимость), их данные с исходной выгрузкой, граф, вид карты. */
 
 const PROJ = { name: null, dirty: false, tick: 0, savedTick: 0, autoTick: 0, loading: true };   // loading до projectStart: стартовые пересчёты — не правки
-const PROJ_FORMAT = "grado2", PROJ_VERSION = 1;
+const PROJ_FORMAT = "grado2", PROJ_VERSION = 2;
+/* Формат проекта с номером версии: файл старой версии при открытии проходит миграции по порядку, файл новее
+   программы не открывается (иначе незнакомые поля молча пропали бы при следующем сохранении).
+   v1 → v2 (ГРАДО 2 0.7–0.12): группы слоёв, виды карты, альбом листов, шестой параметр «Посадки» — этажность по цели. */
+const MIGRATIONS = {
+  1: p => {
+    p.groups ||= []; p.views ||= []; p.album ||= { meta: {}, sheets: [] };
+    (p.layers || []).forEach(l => { if (!("group" in l)) l.group = null; });
+    (p.graph?.nodes || []).forEach(n => { if (n.type === "Эскиз/Посадка застройки" && Array.isArray(n.widgets_values) && n.widgets_values.length < 6) n.widgets_values[5] = "заданной"; });
+    return p;
+  },
+};
+function migrate(p) {
+  let v = p.version || 1;
+  if (v > PROJ_VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${v}, эта программа понимает до ${PROJ_VERSION}) — обновите программу`);
+  while (v < PROJ_VERSION) { p = MIGRATIONS[v](p); v++; }
+  p.version = PROJ_VERSION; return p;
+}
+window.migrateProject = migrate;
 
 function markDirty() { if (PROJ.loading) return; PROJ.tick++; if (!PROJ.dirty) { PROJ.dirty = true; syncProjTitle(); } }
 function syncProjTitle() {
@@ -16,7 +34,7 @@ function syncProjTitle() {
 function collectProject() {
   const v = sharedView;
   return {
-    format: PROJ_FORMAT, version: PROJ_VERSION, name: PROJ.name, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
+    format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
     territory: TERR,
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
@@ -41,6 +59,7 @@ function clearProject() {
 
 function applyProject(p) {
   if (p?.format !== PROJ_FORMAT) throw new Error("это не файл проекта ГРАДО 2");
+  p = migrate(p);
   PROJ.loading = true;
   try {
     clearProject();

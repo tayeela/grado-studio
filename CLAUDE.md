@@ -221,6 +221,25 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.13.0 (stage Э7): product — project format with migrations, browser scenarios in CI, installers, help.**
+  - Version: single source `apps/grado2/web/version.json` (0.13.0, project format 2); `/api/health` returns it, the brand shows it.
+  - Project format 2 with migrations (`project.js` `MIGRATIONS`, `migrate`): a format-1 file gets groups, views, album and the
+    sixth «Посадка» widget; a file newer than the program is refused with a clear reason instead of silently dropping fields.
+  - Browser scenarios in the repo: `tests/e2e/driver.mjs` (headless Chrome over the DevTools protocol, node only) and
+    `tests/e2e/scenarios.mjs` — offline (synthetic buildings), mouse and keys like the owner: first-run panel, F1, drawing,
+    frame selection, batch edit, Del/undo/redo, style undo, groups, register, constraints, goal-density sketch within 10 %,
+    neighbours keep insolation, ceiling switched off, view, PDF album, save/new/open, format-1 migration, newer file refused,
+    100 000 objects. `tests/test_e2e.py` runs them on a throw-away server with a temp projects folder when `GRADO2_E2E=1` (~18 s).
+  - Packaging: `server.main()`; frozen paths via `sys._MEIPASS` (server and dxf_io); `packaging/grado2_entry.py` (crash log +
+    message box on Windows), `packaging/grado2.spec` (one-folder build, .app bundle on macOS with `.grado2` document type),
+    `packaging/grado2-installer.iss` (Inno Setup), `.github/workflows/grado2-release.yml` (unit + browser tests on Ubuntu, builds on
+    windows-latest and macos-latest with a smoke test of `/api/health`, installer and DMG, release on tag `grado2-v*`).
+    **Not verified here:** a local macOS build stops at `lipo` because the Xcode licence is not accepted on this Mac
+    (`sudo xcodebuild -license` — the owner's password); the Windows build needs the CI run. Launchers without an installer:
+    `ГРАДО 2.command` (macOS) and `ГРАДО 2.bat` (Windows) create the venv on first start.
+  - Help: F1 window «Справка и клавиши» starts with «Как работать» in nine steps and states that insolation is a design-stage
+    estimate and radii are federal СП 42.13330.
+
 - **2026-09-23, ГРАДО 2 v0.12.0 (stage Э6): sheets and a PDF album through the core renderer.**
   - Window «Листы» (header): album meta for the title block (object, code, short stage ПП/П/Р, organisation) and a list of
     sheets — title, A3 or A1 landscape, content (a saved view or the current map), scale (auto by the territory or

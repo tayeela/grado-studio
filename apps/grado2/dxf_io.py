@@ -8,6 +8,7 @@ REDLN97 linetype names become LineCode again.
 
 import io
 import re
+import sys
 import zipfile
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import ezdxf
 from grado_connectors import crs
 from grado_render import acad_lin
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))   # собранная программа — папка распаковки
 STANDARD = ROOT / "docs/standards/redln97"
 
 

@@ -84,6 +84,8 @@ O. **Album.** After M: «Виды» → save «Существующее» and «
    «PDF альбома» downloads a file in about a second.
 
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
+Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/grado2/tests/e2e/scenarios.mjs`
+(`GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py`); C, D, E, G, H, N need real portals or the eye.
 
 ## Queue
 

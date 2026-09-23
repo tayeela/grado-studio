@@ -24,7 +24,9 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-ROOT = Path(__file__).resolve().parents[2]
+# в собранной программе (PyInstaller) всё лежит в папке распаковки sys._MEIPASS: web/, core/…, docs/standards/
+FROZEN = getattr(sys, "frozen", False)
+ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
 for sub in ("core/connectors", "core/compute", "core/render", "core/layout"):
     sys.path.insert(0, str(ROOT / sub))
 
@@ -38,7 +40,7 @@ from grado_connectors.osm import OsmOverpass                       # noqa: E402
 from grado_connectors.terrain import TerrainContours               # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
 
-WEB = Path(__file__).resolve().parent / "web"
+WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
 PRESET = ROOT / "core/compute/grado_compute/presets/moscow_krt.json"
 STYLES = ROOT / "core/render/grado_render/styles"
@@ -404,7 +406,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
         if self.path == "/api/health":
-            return self._json(200, {"pid": os.getpid(), "stamp": STAMP})
+            return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION})
         if self.path.startswith("/api/fgistp/"):
             q = parse_qs(urlparse(self.path).query)
             try:
@@ -508,12 +510,15 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def code_stamp():
-    """Версия серверного кода: время правки файлов бэкенда. Разная → запущенный сервер устарел."""
+    """Версия серверного кода: время правки файлов бэкенда. Разная → запущенный сервер устарел и заменяется."""
+    if FROZEN:
+        return json.loads((WEB / "version.json").read_text("utf-8"))["version"]
     here = Path(__file__).resolve().parent
-    return max(p.stat().st_mtime for p in (here / "server.py", here / "dxf_io.py"))
+    return max(p.stat().st_mtime for p in here.glob("*.py"))
 
 
 STAMP = code_stamp()          # версия кода, с которой этот процесс запущен
+VERSION = json.loads((WEB / "version.json").read_text("utf-8"))["version"]
 
 
 def _running(port):
@@ -537,9 +542,11 @@ def _is_grado(port):
         return False
 
 
-if __name__ == "__main__":
+def main(argv=None):
+    """Запуск: свободный порт от 8650, прежняя версия на порту заменяется, окно браузера открывается само."""
+    argv = sys.argv[1:] if argv is None else argv
     import webbrowser
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8650
+    port = int(argv[0]) if argv else int(os.environ.get("GRADO2_PORT") or 8650)
     import signal
     import time
     for p in range(port, port + 20):
@@ -575,3 +582,7 @@ if __name__ == "__main__":
     if not os.environ.get("GRADO2_NO_BROWSER"):      # тестовый запуск без открытия окна
         webbrowser.open(f"http://127.0.0.1:{p}")
     server.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

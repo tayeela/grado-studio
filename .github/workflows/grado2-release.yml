@@ -1,0 +1,102 @@
+name: ГРАДО 2 release
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/grado2/**"
+      - "core/**"
+      - "packaging/grado2*"
+      - ".github/workflows/grado2-release.yml"
+  push:
+    tags:
+      - "grado2-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install dependencies
+        run: python -m pip install -r apps/grado2/requirements.txt
+      - name: Unit tests (server, import, print, insolation under node)
+        run: |
+          export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
+          python -m unittest discover -s apps/grado2/tests -p "test_*.py"
+          python -m unittest discover -s core/connectors/tests -p "test_*.py"
+      - name: Browser scenarios (headless Chrome, offline data)
+        env:
+          CHROME: /usr/bin/google-chrome
+        run: |
+          export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
+          GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build dependencies
+        run: python -m pip install -r apps/grado2/requirements.txt pyinstaller
+      - name: Build application
+        run: pyinstaller --noconfirm --clean packaging/grado2.spec
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:GRADO2_NO_BROWSER = "1"; $env:GRADO2_NO_DIALOG = "1"; $env:GRADO2_PORT = "8874"
+          $env:GRADO2_PROJECTS = Join-Path $env:RUNNER_TEMP "grado2-projects"
+          $p = Start-Process -FilePath "dist/ГРАДО 2/ГРАДО 2.exe" -PassThru
+          try {
+            $ok = $false
+            1..60 | ForEach-Object { if (-not $ok) { try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8874/api/health" -TimeoutSec 2; if ($h.version) { $ok = $true } } catch { Start-Sleep -Seconds 1 } } }
+            if (-not $ok) { throw "packaged ГРАДО 2 did not answer /api/health" }
+            Invoke-RestMethod -Uri "http://127.0.0.1:8874/styles/redln97.json" -TimeoutSec 5 | Out-Null
+          } finally { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
+      - name: Smoke test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export GRADO2_NO_BROWSER=1 GRADO2_PORT=8874 GRADO2_PROJECTS="$RUNNER_TEMP/grado2-projects"
+          "dist/ГРАДО 2.app/Contents/MacOS/ГРАДО 2" & pid=$!
+          for i in $(seq 60); do curl -sf http://127.0.0.1:8874/api/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:8874/api/health; kill $pid
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = (Get-Content apps/grado2/web/version.json | ConvertFrom-Json).version
+          choco install innosetup --no-progress -y
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" packaging\grado2-installer.iss
+      - name: macOS disk image
+        if: runner.os == 'macOS'
+        run: hdiutil create -volname "ГРАДО 2" -srcfolder "dist/ГРАДО 2.app" -ov -format UDZO "dist/GRADO2.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: grado2-${{ matrix.os }}
+          path: |
+            dist/installer/*.exe
+            dist/GRADO2.dmg
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/grado2-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/installer/*.exe
+            dist/GRADO2.dmg

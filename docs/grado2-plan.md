@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.12.0)
+## Where we are (23.09.2026, v0.13.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -51,6 +51,9 @@ territory balance) that label their result on the map, «В слой» for any n
 Э6 done in v0.12.0: window «Листы» — A3/A1 sheets from views with a ГОСТ frame and title block, north arrow, scale bar,
 legend and ТЭП table; SVG preview and a PDF album through the core renderer in МГГТ with REDLN97. DWG waits for the ODA
 converter decision.
+Э7 done in v0.13.0 except the installer runs: project format 2 with migrations, browser scenarios (offline, headless Chrome)
+in the unittest gate and CI, PyInstaller spec + Inno Setup + GitHub workflow for Windows and macOS, launchers, built-in help.
+Open: run the workflow on GitHub and install on a clean Windows machine; accept the Xcode licence to build the .app locally.
 
 ## Stages
 
@@ -100,7 +103,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 - PDF through the core renderer (core/render + core/layout already print albums), with REDLN97.
 - Album of several sheets; DXF/DWG of the whole project.
 
-### Э7. Product (2–3 sessions)
+### Э7. Product (2–3 sessions) — done in code, v0.13.0 (installers not yet run on a clean machine)
 - Windows and macOS installers (the studio already has PyInstaller/py2app + Inno Setup specs).
 - Project format with a version number and migrations.
 - Scenario tests in a headless browser in CI; the UX hook scenarios become automated.

@@ -739,7 +739,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
   wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 230), 80, 460, Math.min(640, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)], wSheets: [Math.max(300, w - 1020), 90, Math.min(700, w - 320), Math.min(760, h - 140)] }; };
+  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)], wSheets: [Math.max(300, w - 1020), 90, Math.min(700, w - 320), Math.min(760, h - 140)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -828,6 +828,7 @@ $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)
 
 (async () => {
   try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
+  try { window.APP_VERSION = (await api("/version.json")).version; document.querySelector(".brand").title = "ГРАДО 2, версия " + window.APP_VERSION; } catch { }
   renderSources(); icons();
   if (WST.wl) setDockWidth("l", WST.wl); if (WST.wr) setDockWidth("r", WST.wr);
   if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
