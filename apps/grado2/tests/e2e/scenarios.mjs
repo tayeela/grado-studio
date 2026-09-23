@@ -59,7 +59,7 @@ export default async p => {
   // отмена стиля
   check(await p.ev(`const l=lyr(CUR), was=l.style.fill; UIS.rt="style"; renderRight(); document.querySelector('[data-color="fill"]').click(); document.querySelector('.pop [data-c="#e34948"]').click(); const changed=l.style.fill; undo(); return changed==="#e34948" && l.style.fill===was`), "смена заливки отменяется");
 
-  // точное черчение: ввод с клавиатуры, орто, прямоугольник по осям МГГТ, точка по координатам, метка привязки
+  // точное черчение: ввод с клавиатуры, орто, прямоугольник по осям МСК, точка по координатам, метка привязки
   const type = async str => { for (const ch of str) await p.key(ch, /[a-z]/i.test(ch) ? "Key" + ch.toUpperCase() : /\d/.test(ch) ? "Digit" + ch : "", { text: ch, wait: 25 }); };
   const enter = () => p.key("Enter", "Enter", { vk: 13, wait: 200 });
   await type("pl"); await enter(); await p.click(cx - 60, cy + 60); await p.move(cx + 60, cy + 60);
@@ -70,13 +70,15 @@ export default async p => {
   await p.click(cx + 100, cy - 220); await p.click(cx + 190, cy - 205); await p.click(cx + 200, cy - 150); await enter(); await p.ev(`CAD.setOrtho(false); return 1`);   // клики вдали от других объектов: привязка сильнее орто
   check(await p.ev(`const c=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates().map(CAD.toM), a=(p,q)=>Math.atan2(q[1]-p[1],q[0]-p[0])*180/Math.PI; return Math.abs(a(c[0],c[1]))<1e-6 && Math.abs(a(c[1],c[2])+90)<1e-6`), "орто: отрезки строго по оси и под прямым углом");
   await type("rec"); await enter(); await p.click(cx + 60, cy + 40); await type("@30;20"); await enter();
-  check(await p.ev(`const g=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry(), r=(g.getType()==="Polygon"?g.getCoordinates()[0]:g.getCoordinates()).map(CAD.toM); return Math.abs(r[1][0]-r[0][0]-30)<1e-6 && Math.abs(r[2][1]-r[1][1]-20)<1e-6 && Math.abs(r[1][1]-r[0][1])<1e-6`), "прямоугольник @30;20 — ровно по осям МГГТ (в слое линий — замкнутой линией)");
+  check(await p.ev(`const g=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry(), r=(g.getType()==="Polygon"?g.getCoordinates()[0]:g.getCoordinates()).map(CAD.toM); return Math.abs(r[1][0]-r[0][0]-30)<1e-6 && Math.abs(r[2][1]-r[1][1]-20)<1e-6 && Math.abs(r[1][1]-r[0][1])<1e-6`), "прямоугольник @30;20 — ровно по осям МСК (в слое линий — замкнутой линией)");
   await type("po"); await enter(); await type("5000;15000"); await enter(); await enter();
-  check(await p.ev(`const c=CAD.toM(layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()); return Math.abs(c[0]-5000)<1e-4 && Math.abs(c[1]-15000)<1e-4`), "точка по координатам МГГТ 5000;15000");
+  check(await p.ev(`const c=CAD.toM(layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()); return Math.abs(c[0]-5000)<1e-4 && Math.abs(c[1]-15000)<1e-4`), "точка по координатам МСК 5000;15000");
   await type("l"); await enter(); await p.click(cx - 160, cy + 140); for (let i = 0; i <= 8; i++) await p.move(cx - 100 + i * 5.25, cy + 90 - i * 3.5); await p.sleep(150);
   check(await p.ev(`return CAD.cur()?.k === "end" && /конточка/.test(document.querySelector(".cadtip").innerText) && /[0-9]+,[0-9]{2} м · [0-9]/.test(document.querySelector(".cadtip").innerText)`), "у курсора длина, угол и метка привязки к вершине");
   await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
-  check(await p.ev(`return /^МГГТ X/.test($("stXY").textContent)`), "в строке состояния координаты МГГТ");
+  check(await p.ev(`return /^МСК X/.test($("stXY").textContent)`), "в строке состояния координаты МСК");
+  // МСК — как в QGIS: точка, введённая как X;Y, в системе ГИС ОГД лежит на (16,098; 14,512) м дальше
+  check(await p.ev(`const ll=MSK.toWgs([5000,15000]); return Math.abs(ll[0]-37.58)<0.01 && Math.abs(ll[1]-55.80)<0.01 && typeof MGGT==="undefined"`), "ввод X;Y идёт в МСК (как пользовательская СК «МСК» в QGIS)");
 
   // команды AutoCAD: отрезки по координатам, обрезка, удлинение, подобие, сопряжение, поворот, отслеживание
   await p.ev(`CAD.ST.otrack=false; CAD.ST.polar=false; return 1`);

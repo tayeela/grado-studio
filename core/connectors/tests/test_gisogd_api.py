@@ -3,6 +3,7 @@
 Ключевая особенность, ради которой существует кэш: портал ИГНОРИРУЕТ bbox и
 всегда отдаёт слой целиком (проверено на virtual1742: 3285 объектов и без
 bbox, и с bbox 150 м). Поэтому режем по области сами, а слой держим в кэше.
+Слой приходит zip-архивом SHP в родных координатах ГИС ОГД (тестовый портал — _shpfix).
 """
 
 import json
@@ -11,6 +12,7 @@ import unittest
 from pathlib import Path
 
 import _paths  # noqa: F401
+from _shpfix import shp_zip
 from grado_connectors import ConnectorError, GisogdApi
 from grado_connectors.gisogd_api import catalog, norm_id
 
@@ -40,7 +42,7 @@ class FakeTransport:
 
     def __call__(self, url, timeout=None):
         self.calls.append(url)
-        return json.dumps(self.payload).encode("utf-8")
+        return self.payload if isinstance(self.payload, bytes) else shp_zip(self.payload)
 
 
 class TestGisogdApi(unittest.TestCase):
@@ -73,7 +75,8 @@ class TestGisogdApi(unittest.TestCase):
             self.assertEqual(len(second["features"]), len(first["features"]))
             self.assertTrue(first["notes"], "первая загрузка честно предупреждает")
             self.assertFalse(second["notes"], "из кэша предупреждать не о чем")
-            self.assertTrue((Path(td) / "virtual1742.geojson.gz").is_file())
+            self.assertTrue((Path(td) / "virtual1742.shp.gz").is_file())
+            self.assertFalse((Path(td) / "virtual1742.geojson.gz").exists(), "прежний GeoJSON-кэш не пишется")
 
     def test_line_cache_gives_same_answer(self):
         # второй запрос идёт по построчному кэшу: те же объекты, те же ключи, без сети
@@ -81,7 +84,7 @@ class TestGisogdApi(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             conn = GisogdApi(transport=t, cache_dir=td)
             first = conn.fetch(BBOX, "virtual1742")
-            self.assertTrue((Path(td) / "virtual1742.lines.gz").is_file())
+            self.assertTrue((Path(td) / "virtual1742.shp.lines.gz").is_file())
             second = conn.fetch(BBOX, "virtual1742")
             far = conn.fetch((29.9, 49.9, 30.2, 50.2), "virtual1742")
             self.assertEqual(len(t.calls), 1)
@@ -97,14 +100,37 @@ class TestGisogdApi(unittest.TestCase):
             conn.fetch(BBOX, "virtual1742")
             self.assertEqual(len(t.calls), 2, "протухший кэш перекачивается")
 
-    def test_export_url_asks_geojson(self):
+    def test_export_url_asks_shp(self):
         t = FakeTransport()
         GisogdApi(transport=t).fetch(BBOX, "virtual1742")
         self.assertIn("/layers/virtual1742/export/", t.calls[0])
-        self.assertIn("format=geojson", t.calls[0])
+        self.assertIn("format=shp", t.calls[0], "родные координаты ОГД — только в SHP; GeoJSON портала сдвинут на ~7,7 м")
+
+    def test_old_geojson_cache_is_ignored(self):
+        with tempfile.TemporaryDirectory() as td:
+            import gzip
+            (Path(td) / "virtual1742.geojson.gz").write_bytes(gzip.compress(json.dumps(LAYER).encode()))
+            t = FakeTransport()
+            GisogdApi(transport=t, cache_dir=td).fetch(BBOX, "virtual1742")
+            self.assertEqual(len(t.calls), 1, "слой перекачивается в SHP, старый GeoJSON не берётся")
+
+    def test_dbf_names_back_to_full(self):
+        # .dbf режет имена до 10 знаков: naimfunkzo, summfondpe — коннектор возвращает прежние полные имена
+        r = GisogdApi(transport=FakeTransport()).fetch(BBOX, "virtual1742")
+        p = r["features"][0]["properties"]
+        self.assertEqual(p["naimfunkzony"], "жилая зона")
+        self.assertEqual(p["summfondpersp"], "440.1")
+        self.assertNotIn("naimfunkzo", p)
+
+    def test_coordinates_back_to_wgs84(self):
+        r = GisogdApi(transport=FakeTransport()).fetch(BBOX, "virtual1742")
+        ring = r["features"][0]["geometry"]["coordinates"][0]
+        want = LAYER["features"][0]["geometry"]["coordinates"][0]
+        got = {(round(x, 9), round(y, 9)) for x, y in ring}
+        self.assertEqual(got, {(round(x, 9), round(y, 9)) for x, y in want})
 
     def test_broken_payload_raises(self):
-        conn = GisogdApi(transport=FakeTransport(payload={"type": "Nonsense"}))
+        conn = GisogdApi(transport=FakeTransport(payload=b"<html>not a zip</html>"))
         with self.assertRaises(ConnectorError):
             conn.fetch(BBOX, "virtual1742")
 
@@ -140,8 +166,9 @@ class GisogdProgress(unittest.TestCase):
         import json
         import tempfile
         from grado_connectors.gisogd_api import GisogdApi
+        from _shpfix import shp_zip
         seen = []
-        body = json.dumps({"type": "FeatureCollection", "features": []}).encode()
+        body = shp_zip({"type": "FeatureCollection", "features": []})
         with tempfile.TemporaryDirectory() as d:
             GisogdApi(transport=lambda url: body, cache_dir=d, progress=lambda *a: seen.append(a)).fetch((0, 0, 1, 1), "x1")
         self.assertEqual(seen, [("x1", len(body), len(body), "parse")])

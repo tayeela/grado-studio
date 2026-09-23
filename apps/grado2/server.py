@@ -694,10 +694,10 @@ class Handler(SimpleHTTPRequestHandler):
                 import file_io
                 req = json.loads(self.rfile.read(n) or b"{}")
                 files = {f["name"]: base64.b64decode(f["b64"]) for f in req.get("files") or []}
-                return self._json(200, {"layers": file_io.import_files(files, REDLN)})
-            if self.path == "/api/import/dxf":
+                return self._json(200, {"layers": file_io.import_files(files, REDLN, req.get("local") or "msk")})
+            if self.path.split("?")[0] == "/api/import/dxf":
                 import dxf_io
-                fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN)
+                fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN, "ogd" if "local=ogd" in self.path else "msk")
                 return self._json(200, {"features": fc, "notes": notes})
             if self.path.startswith("/api/project?"):
                 path = save_project(self._project_name(), self.rfile.read(n))

@@ -1,12 +1,12 @@
-/* ГРАДО 2 · местная система координат Москвы МГГТ (как в ГИС ОГД и в DXF-выгрузке) в браузере.
-   Перенос core/connectors/grado_connectors/crs.py (msk50_to_wgs84 / wgs84_to_msk50) один в один: обратный
-   поперечный Меркатор на эллипсоиде Бесселя, 7-параметрический Хельмерт (Position Vector), WGS84.
-   X — на восток, Y — на север, метры: так же, как в DXF, который выгружает программа.
-   Сверено с Python-версией в tests/mggt_test.js (расхождение меньше 1 мм). */
+/* ГРАДО 2 · рабочая местная система Москвы МСК (как пользовательская СК «МСК» в QGIS владельца) в браузере.
+   Перенос core/connectors/grado_connectors/crs.py (msk_to_wgs84 / wgs84_to_msk) один в один: обратный поперечный
+   Меркатор на эллипсоиде Бесселя без сдвига начала (+x_0=0 +y_0=0), 7-параметрический Хельмерт (Position Vector),
+   WGS84. X — на восток, Y — на север, метры: так же, как в DXF и на листах. Система ГИС ОГД — та же формула со сдвигом
+   начала (16,098; 14,512) м, в браузере она не нужна. Сверено с PROJ в tests/test_msk.py (меньше 1 мм). */
 (function (root) {
   const R = Math.PI / 180;
   const BA = 6377397.155, BF = 1 / 299.1528128, BE2 = BF * (2 - BF), BEP2 = BE2 / (1 - BE2);
-  const LAT0 = 55.66666666667 * R, LON0 = 37.5 * R, K0 = 1.0, X0 = 16.098, Y0 = 14.512;
+  const LAT0 = 55.66666666667 * R, LON0 = 37.5 * R, K0 = 1.0, X0 = 0, Y0 = 0;     // МСК: начало без сдвига
   const TD = [316.151, 78.924, 589.650], TR = [-1.57273, 2.69209, 2.34693].map(v => v / 3600 * R), TS = 8.4507e-6;
   const WA = 6378137.0, WF = 1 / 298.257223563, WE2 = WF * (2 - WF);
   const arc = (phi, a, e2) => a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * phi
@@ -14,7 +14,7 @@
     + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * phi) - (35 * e2 ** 3 / 3072) * Math.sin(6 * phi));
   const M0 = arc(LAT0, BA, BE2);
 
-  // [x восток, y север] МГГТ → [lon, lat] WGS84, градусы
+  // [x восток, y север] МСК → [lon, lat] WGS84, градусы
   function toWgs([east, north]) {
     const a = BA, e2 = BE2, ep2 = BEP2;
     const m = M0 + (north - Y0) / K0, mu = m / (a * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256));
@@ -34,7 +34,7 @@
     const lat = Math.atan2(zo + ep2w * bw * Math.sin(th) ** 3, p - WE2 * WA * Math.cos(th) ** 3), lon = Math.atan2(yo, xo);
     return [lon / R, lat / R];
   }
-  // [lon, lat] → [x, y] МГГТ: обратная задача итерациями Ньютона по прямой цепочке, как в ядре
+  // [lon, lat] → [x, y] МСК: обратная задача итерациями Ньютона по прямой цепочке, как в ядре
   function fromWgs([lon, lat]) {
     const kx = 111320.0 * Math.cos(lat * R);
     let e = (lon - LON0 / R) * kx + X0, n = (lat - LAT0 / R) * 110540.0 + Y0;
@@ -45,5 +45,5 @@
     return [e, n];
   }
   const api = { toWgs, fromWgs };
-  if (typeof module === "object" && module.exports) module.exports = api; else root.MGGT = api;
+  if (typeof module === "object" && module.exports) module.exports = api; else root.MSK = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

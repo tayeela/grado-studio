@@ -33,6 +33,26 @@ class DxfRoundTrip(unittest.TestCase):
         self.assertAlmostEqual(x, 37.52, places=8)
         self.assertAlmostEqual(y, 55.79, places=8)
 
+    def test_export_in_msk_matches_proj_and_ogd_import(self):
+        sys.path.insert(0, str(HERE.parents[1] / "core/connectors/tests"))
+        from test_crs import MSK_PROJ
+        (lon, lat), (mx, my) = MSK_PROJ[19]
+        fc = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {},
+              "geometry": {"type": "LineString", "coordinates": [[lon, lat], [lon + .001, lat]]}}]}
+        z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Л", "features": fc}], S.REDLN, S.LGR_COLORS)))
+        doc = ezdxf.read(io.StringIO(z.read("grado2.dxf").decode("utf-8")))
+        v = list(next(iter(doc.modelspace())).vertices_in_wcs())[0]; x, y = v.x, v.y
+        self.assertLess(((x - mx) ** 2 + (y - my) ** 2) ** .5, 0.001, "DXF в МСК, как PROJ с MSK_PROJ4")
+        self.assertIn("MSK", z.read("README.txt").decode())
+        # DXF, выгруженный ГРАДО 2 до v0.32, был в системе ГИС ОГД: читается с выбором «ГИС ОГД»
+        doc2 = ezdxf.new("R2018")
+        doc2.modelspace().add_lwpolyline([(mx + 16.098, my + 14.512), (mx + 116.098, my + 14.512)])
+        buf = io.StringIO(); doc2.write(buf)
+        back, notes = dxf_io.import_dxf(buf.getvalue().encode(), S.REDLN, "ogd")
+        blon, blat = back["features"][0]["geometry"]["coordinates"][0]
+        self.assertAlmostEqual(blon, lon, places=7); self.assertAlmostEqual(blat, lat, places=7)
+        self.assertIn("ГИС ОГД", notes[-1])
+
     def test_linetype_uses_shape_number(self):
         doc = ezdxf.new("R2018")
         doc.styles.add_shx("red_lns.shx")

@@ -12,6 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server  # noqa: E402,F401  (sets up sys.path for the core)
 import file_io  # noqa: E402
 from grado_connectors import crs  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "core/connectors/tests"))
+from test_crs import MSK_PROJ  # noqa: E402  (эталон PROJ: WGS84 → МСК)
+(LON, LAT), (MX, MY) = MSK_PROJ[19]          # 37.62, 55.755 → МСК по pyproj
+OGD = (MX + 16.098, MY + 14.512)             # та же точка в системе ГИС ОГД
+PRJ_OGD = 'PROJCS["Moscow_bessel",GEOGCS["GCS_Bessel_1841",DATUM["D_Bessel_1841",SPHEROID["Bessel_1841",6377397.155,299.1528128]]]]'
 
 
 def _fc(geom, **props):
@@ -43,13 +48,17 @@ class FileImport(unittest.TestCase):
         self.assertEqual(lay["features"]["features"][0]["geometry"]["coordinates"], [37.6, 55.75])
         self.assertIn("WGS84", lay["notes"][0])
 
-    def test_geojson_in_mggt_is_converted(self):
-        lon, lat = 37.5, 55.79
-        e, n = crs.wgs84_to_msk50(lon, lat)
-        [lay] = file_io.import_files({"b.json": _fc({"type": "Point", "coordinates": [e, n]})})
+    def test_geojson_in_local_metres_is_msk_by_default(self):
+        [lay] = file_io.import_files({"b.json": _fc({"type": "Point", "coordinates": [MX, MY]})})
         x, y = lay["features"]["features"][0]["geometry"]["coordinates"]
-        self.assertAlmostEqual(x, lon, places=5); self.assertAlmostEqual(y, lat, places=5)
-        self.assertIn("МГГТ", lay["notes"][0])
+        self.assertAlmostEqual(x, LON, places=7); self.assertAlmostEqual(y, LAT, places=7)     # ~1 см
+        self.assertIn("МСК (как в QGIS)", lay["notes"][0])
+
+    def test_geojson_read_as_ogd_when_chosen(self):
+        [lay] = file_io.import_files({"b.json": _fc({"type": "Point", "coordinates": list(OGD)})}, None, "ogd")
+        x, y = lay["features"]["features"][0]["geometry"]["coordinates"]
+        self.assertAlmostEqual(x, LON, places=7); self.assertAlmostEqual(y, LAT, places=7)
+        self.assertIn("ГИС ОГД", lay["notes"][0])
 
     def test_geojson_in_web_mercator_is_converted(self):
         x, y = crs.wgs84_to_merc(37.6, 55.75)
@@ -76,16 +85,26 @@ class FileImport(unittest.TestCase):
         self.assertEqual(lay["features"]["features"][0]["geometry"]["coordinates"], [37.6, 55.75])
 
     def test_shapefile_in_zip_with_russian_attribute(self):
-        e0, n0 = crs.wgs84_to_msk50(37.5, 55.79)
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as z:
-            z.writestr("zones/zone.shp", _shp_polygon([(e0, n0), (e0 + 100, n0), (e0 + 100, n0 + 100)]))
+            z.writestr("zones/zone.shp", _shp_polygon([(MX, MY), (MX + 100, MY), (MX + 100, MY + 100)]))
             z.writestr("zones/zone.dbf", _dbf("NAME", "Жилая"))
         [lay] = file_io.import_files({"zones.zip": buf.getvalue()})
         f = lay["features"]["features"][0]
         self.assertEqual(f["properties"]["NAME"], "Жилая")
-        self.assertAlmostEqual(f["geometry"]["coordinates"][0][0][0], 37.5, places=5)
+        self.assertAlmostEqual(f["geometry"]["coordinates"][0][0][0], LON, places=7)    # без .prj — МСК
         self.assertEqual(lay["format"], "SHP")
+
+    def test_shapefile_with_moscow_bessel_prj_is_ogd(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("ogd/v.shp", _shp_polygon([OGD, (OGD[0] + 100, OGD[1]), (OGD[0] + 100, OGD[1] + 100)]))
+            z.writestr("ogd/v.dbf", _dbf("NAME", "Зона"))
+            z.writestr("ogd/v.prj", PRJ_OGD)
+        [lay] = file_io.import_files({"ogd.zip": buf.getvalue()})      # выбор МСК не мешает: .prj называет систему
+        x, y = lay["features"]["features"][0]["geometry"]["coordinates"][0][0]
+        self.assertAlmostEqual(x, LON, places=7); self.assertAlmostEqual(y, LAT, places=7)
+        self.assertIn("ГИС ОГД", lay["notes"][0])
 
     def test_nothing_readable_raises(self):
         with self.assertRaises(ValueError):

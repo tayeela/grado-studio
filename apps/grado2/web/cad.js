@@ -1,15 +1,15 @@
 /* ГРАДО 2 · черчение как в AutoCAD.
    Команды вызываются кнопкой на ленте или набором псевдонима (L, PL, C, A, REC, POL, PO, M, CO, RO, SC, MI, O, TR, EX, F, BR, J,
    X, E, DI, AA, BO) и Enter или пробелом в любой раскладке; Enter или пробел без команды повторяют последнюю. У курсора — поле
-   динамического ввода: длина, длина<угол, @dx;dy, X;Y (МГГТ), буквы параметров команды ([З]амкнуть, [Р]адиус…).
+   динамического ввода: длина, длина<угол, @dx;dy, X;Y (МСК), буквы параметров команды ([З]амкнуть, [Р]адиус…).
    Режимы строки состояния, как у AutoCAD: ПРИВЯЗКА (F3, набор привязок), ОТСЛЕЖ (F11: наведите курсор на точку привязки,
    пока не появится «+», — дальше пунктирные линии выравнивания и продолжения), ПОЛЯР (F10, шаг угла), ОРТО (F8), ДИН (F12).
-   Размеры, углы и площади считаются в метрах МГГТ (CG — cadcore.js); в слои вершины переводятся точно, каждая отдельно.
+   Размеры, углы и площади считаются в метрах МСК (CG — cadcore.js); в слои вершины переводятся точно, каждая отдельно.
    Обрезка, удлинение и разрыв режут в координатах карты — Меркатор сохраняет углы, и на участках до километра расхождение
-   с МГГТ меньше сантиметра, зато исходные вершины остаются как были. */
+   с МСК меньше сантиметра, зато исходные вершины остаются как были. */
 (() => {
 const G = CG;
-const toM = c => MGGT.fromWgs(ol.proj.toLonLat(c)), fromM = w => ol.proj.fromLonLat(MGGT.toWgs(w));
+const toM = c => MSK.fromWgs(ol.proj.toLonLat(c)), fromM = w => ol.proj.fromLonLat(MSK.toWgs(w));
 const DEG = Math.PI / 180;
 
 /* ---------- режимы ---------- */
@@ -148,7 +148,7 @@ function trackLines(base, prev) {
 }
 
 /* ---------- точка под курсором: привязка → отслеживание → ближайшая → орто ---------- */
-let CUR = null;                       // {c: координаты карты под курсором, w: точка МГГТ, k: вид, dir, lines, mpp}
+let CUR = null;                       // {c: координаты карты под курсором, w: точка МСК, k: вид, dir, lines, mpp}
 function resolve(c) {
   const res = sharedView.getResolution(), W = toM(c), mpp = G.dist(W, toM([c[0] + res * 20, c[1]])) / 20, tol = 10 * mpp;
   const base = CMD?.base?.() || null, pointMode = CMD?.need === "point", snapOn = ST.osnap && pointMode;
@@ -300,7 +300,7 @@ function parsePoint(s) {
     if (!CUR?.dir) return "Покажите направление курсором и повторите ввод длины.";
     return G.add(base, G.mul(CUR.dir, num(m[1])));
   }
-  return "Не понял ввод. Примеры: 25 · 25<90 · @10;-5 · 12345,6;6789,1 (X;Y в МГГТ).";
+  return "Не понял ввод. Примеры: 25 · 25<90 · @10;-5 · 12345,6;6789,1 (X;Y в МСК).";
 }
 
 /* ---------- запуск команд ---------- */
@@ -457,7 +457,7 @@ function selection(then) {
   if (SEL.length) return then(SEL.slice());
   return st;
 }
-// объект под щелчком: цепочка (часть мульти-геометрии, ближайшая к щелчку) в координатах карты (space = "map") или МГГТ
+// объект под щелчком: цепочка (часть мульти-геометрии, ближайшая к щелчку) в координатах карты (space = "map") или МСК
 function pickChain(h, pos, space = "world") {
   const t = h.f.getGeometry().getType(); if (/Point/.test(t)) return null;
   const chains = space === "map" ? chainsOf(h.f.getGeometry()) : worldChains(h.f), p = space === "map" ? pos.c : pos.w;
@@ -537,7 +537,7 @@ def("pline", "Полилиния", ["PL"], o => {                               
       return poly() && all.length >= 3 ? { polys: [[...all, all[0]]] } : { lines: [all] }; } };
   return st;
 });
-def("rect", "Прямоугольник", ["REC"], o => {                              // по осям МГГТ или с поворотом
+def("rect", "Прямоугольник", ["REC"], o => {                              // по осям МСК или с поворотом
   let a = null, rot = 0;
   const ring = b => { const u = [Math.cos(rot), Math.sin(rot)], v = [-u[1], u[0]], d = G.sub(b, a), x = G.dot(d, u), y = G.dot(d, v); return [a, G.add(a, G.mul(u, x)), G.add(G.add(a, G.mul(u, x)), G.mul(v, y)), G.add(a, G.mul(v, y)), a]; };
   const st = { need: "point", base: () => a,
@@ -590,7 +590,7 @@ def("polygon", "Многоугольник", ["POL"], o => {                    
     preview: w => c ? { polys: [ring(w)], lines: [[c, w]], pts: [c] } : {} };
   return st;
 });
-def("point", "Точка", ["PO"], () => { const st = { need: "point", base: () => null, prompt: () => "Укажите точку (X;Y в МГГТ — с клавиатуры), Enter — завершить", point: w => addNew([newFeature("point", w)], "точка"), enter: () => { st.done = true; } }; return st; });
+def("point", "Точка", ["PO"], () => { const st = { need: "point", base: () => null, prompt: () => "Укажите точку (X;Y в МСК — с клавиатуры), Enter — завершить", point: w => addNew([newFeature("point", w)], "точка"), enter: () => { st.done = true; } }; return st; });
 function chainCmd(prompt0, promptN, finishFn, tipFn) {               // замеры и граница: точки по очереди, Enter — итог
   return () => {
     const pts = [];
@@ -955,7 +955,7 @@ const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a =>
 const DRAW = ["line", "pline", "circle", "arc", "rect", "polygon", "point"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "erase"];
-const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МГГТ", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
+const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
@@ -985,7 +985,7 @@ function modeMenu(anchor, html, bind, below) {
 function buildModes() {
   const footer = document.querySelector("footer.status"); if (!footer || document.getElementById("mdOrtho")) return;
   const box = document.createElement("span"); box.className = "modes";
-  box.innerHTML = `<button id="mdOsnap" title="Объектная привязка (F3). ▾ или правая кнопка — какие привязки включены"><span class="t">ПРИВЯЗКА</span><i class="dd">▾</i></button><button id="mdOtrack" title="Объектное отслеживание (F11): задержите курсор на точке привязки, пока не появится «+», и ведите — пунктирные линии выравнивания и продолжения"><span class="t">ОТСЛЕЖ</span></button><button id="mdPolar" title="Полярное отслеживание (F10): пунктирный луч от последней точки под углами, кратными шагу. ▾ — шаг угла"><span class="t">ПОЛЯР</span><i class="dd">▾</i></button><button id="mdOrtho" title="Орто (F8): только по осям X и Y МГГТ"><span class="t">ОРТО</span></button><button id="mdDyn" title="Динамический ввод (F12): размеры и поле ввода у курсора"><span class="t">ДИН</span></button>`;
+  box.innerHTML = `<button id="mdOsnap" title="Объектная привязка (F3). ▾ или правая кнопка — какие привязки включены"><span class="t">ПРИВЯЗКА</span><i class="dd">▾</i></button><button id="mdOtrack" title="Объектное отслеживание (F11): задержите курсор на точке привязки, пока не появится «+», и ведите — пунктирные линии выравнивания и продолжения"><span class="t">ОТСЛЕЖ</span></button><button id="mdPolar" title="Полярное отслеживание (F10): пунктирный луч от последней точки под углами, кратными шагу. ▾ — шаг угла"><span class="t">ПОЛЯР</span><i class="dd">▾</i></button><button id="mdOrtho" title="Орто (F8): только по осям X и Y МСК"><span class="t">ОРТО</span></button><button id="mdDyn" title="Динамический ввод (F12): размеры и поле ввода у курсора"><span class="t">ДИН</span></button>`;
   footer.insertBefore(box, document.getElementById("stXY"));
   box.querySelector("#mdOrtho").onclick = () => toggle("ortho"); box.querySelector("#mdOtrack").onclick = () => toggle("otrack"); box.querySelector("#mdDyn").onclick = () => toggle("dyn");
   const osnapMenu = b => modeMenu(b, `<div class="mh">Объектные привязки</div>` + Object.entries(MODES).map(([k, t]) => `<label><input type="checkbox" data-m="${k}" ${ST.modes[k] ? "checked" : ""}> ${t}</label>`).join("") + `<div class="mm"><button data-all="1">все</button><button data-all="0">снять все</button></div>`, m => {

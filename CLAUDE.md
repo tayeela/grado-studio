@@ -226,6 +226,32 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.32.0: coordinates as in the owner's QGIS («МСК»); ГИС ОГД and ЕГКО read from SHP.** Owner's scheme,
+  not to be discussed or «calibrated»: two Moscow systems on one datum — «МСК (как в QGIS)» (`crs.MSK_PROJ4`, x_0 = y_0 = 0) and
+  «система ГИС ОГД (Бессель со смещением)» (`OGD_PROJ4`, x_0 = 16.098, y_0 = 14.512); МСК = ОГД − `OGD_SHIFT` exactly.
+  - `crs.py`: `MSK_PROJ4`, `OGD_SHIFT`, `msk_to_wgs84` / `wgs84_to_msk` / `ogd_to_msk` built on the ОГД pair plus the shift (no second
+    copy of the formulas); `OGD_PROJ4`, `msk50_to_wgs84`, `wgs84_to_msk50` unchanged.
+  - Everything the user sees, types and exports is МСК: `web/mggt.js` → `web/msk.js` (`X0 = Y0 = 0`, `window.MSK`), cad.js, layers.js
+    (status bar «МСК X … Y …»), `dxf_io.py`, `print_io.py`; interface texts say «МСК», not «МГГТ». Project geometry stays WGS84 and
+    does not move on the map; shown/typed/exported coordinates change by −16.098 m X, −14.512 m Y.
+  - Import of local metres (`file_io.LOCAL`): МСК by default; a `.prj` with MOSCOW_BESSEL means ОГД; the «Данные» window has
+    «Файлы в метрах: МСК (как в QGIS) / ГИС ОГД» for files without .prj (DXF, GeoJSON in metres); `/api/import/files` takes
+    `local`, `/api/import/dxf?local=ogd`.
+  - **The portal's GeoJSON export is ~7.7 m off** (median 7.66, p95 7.84 against its own SHP; ЕГКО the same, 7.74). `gisogd_api.py`
+    now asks `format=shp` (zip: .shp/.dbf/.prj «Moscow_bessel»/.cpg UTF-8, native ОГД coordinates) and converts with
+    `msk50_to_wgs84` through `shp_reader` (`iter_zip`, `iter_records`: records one by one, date fields as ISO). DBF truncates field
+    names to 10 characters — `DBF_FULL_NAMES` restores the ones PRESENT uses. Cache names changed (`{code}.shp.gz`,
+    `{code}.shp.lines.gz`, `base2.{code}.shp.grid`), so old GeoJSON caches are ignored (left on disk, not deleted: ~297 MB isogd,
+    ~704 MB egko). All 41 SOURCES layers checked as SHP zips. ЕГКО downloads the zip to a temp file and streams records.
+  - Checked: МСК against pyproj on 20 points max 0.74 mm; `msk.js` against PROJ < 1 mm; virtual1681 (591 884 vertices) WGS84
+    against PROJ max 0.47 mm; DXF export equals native minus shift to 0.00 mm; status bar on an ОГД vertex X 7 112,69 Y 11 037,70
+    = native 7112.692 / 11037.698 minus shift. ЕГКО virtual6 via SHP: first download 364 s (portal preparation most of it), peak
+    173 MB, 428 buildings at Пушкинская (as before), grid 150 MB, repeat 0.03 s.
+  - **Owner-visible consequences:** ОГД/ЕГКО layers in projects saved before v0.32 stay ~7.7 m off until re-downloaded («Данные» →
+    tick the layer → «Загрузить»; edited objects keep their geometry). DXF written before v0.32 are in the ОГД system — import them
+    with «ГИС ОГД».
+  - Tests: connectors 70 (PROJ fixtures, SHP fixture `_shpfix.py`), grado2 44 with e2e.
+
 - **2026-09-23, ГРАДО 2 v0.31.0: ЕГКО Москвы (картооснова ГИС ОГД, карта base2) — new source group, seven layers.**
   - Connector (`core/connectors/grado_connectors/gisogd_api.py`): `GisogdApi(map_name="base2", clip=True)`; `MAPS` holds both maps
     (the base2 catalog answers only with `?type=full&returnCss=0`). isogd is unchanged: same URLs, keys «код:id», slurp + `.lines.gz`.

@@ -372,6 +372,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 @media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side,.work>.side.r{grid-column:1/-1;position:absolute;top:0;bottom:0;width:min(320px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{width:140px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:1180px){.status .modes #mdPolar .t{min-width:2.4em}}
+.implocal{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid var(--line);color:var(--muted)}.implocal span{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#impLocal{height:24px;flex:0 0 auto}
 </style>
 
 <div class="app">
@@ -383,7 +384,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
       <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Окна, которые не поместились в шапку, и раскладки окон под задачу: существующее положение, анализ, эскиз, листы"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
     </nav>
     <span class="vs"></span>
-    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button>
+    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МСК, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button>
     <button class="tb" id="bKeys" title="Справка: как работать, клавиши и приёмы мыши (F1)"><i data-lucide="circle-help"></i></button><button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
   </header>
 
@@ -428,7 +429,8 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <section class="win" id="wData" hidden aria-label="Данные территории">
   <header class="wh"><i data-lucide="database"></i><b>Данные территории</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="scan"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
-    <div class="sh">Источники<span class="sp"></span><label class="btn" title="Импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile (zip или .shp вместе с .dbf, .prj). Координаты WGS84, МГГТ или Web Mercator распознаются сами. Файлы можно просто перетащить на карту."><i data-lucide="file-up"></i>Файл…<input type="file" id="fDxf" accept=".dxf,.geojson,.json,.kml,.kmz,.zip,.shp,.dbf,.prj,.cpg,.shx" multiple hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+    <div class="sh">Источники<span class="sp"></span><label class="btn" title="Импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile (zip или .shp вместе с .dbf, .prj). Градусы WGS84 и Web Mercator распознаются сами; местные метры читаются в системе, выбранной рядом (по умолчанию МСК, как в QGIS). Файлы можно просто перетащить на карту."><i data-lucide="file-up"></i>Файл…<input type="file" id="fDxf" accept=".dxf,.geojson,.json,.kml,.kmz,.zip,.shp,.dbf,.prj,.cpg,.shx" multiple hidden></label><button class="btn primary" id="bLoad" disabled><i data-lucide="download"></i>Загрузить</button></div>
+      <div class="implocal"><span title="Как читать местные московские метры в DXF, GeoJSON и Shapefile без .prj">Файлы в метрах:</span><select id="impLocal" aria-label="Местные координаты импортируемых файлов" title="Как читать местные московские метры в DXF и GeoJSON без .prj: МСК — как пользовательская СК «МСК» в QGIS; ГИС ОГД — система портала (так же выгружал DXF ГРАДО 2 до версии 0.32). Shapefile с .prj «Moscow_bessel» всегда читается как ГИС ОГД."><option value="msk">МСК (как в QGIS)</option><option value="ogd">ГИС ОГД</option></select></div>
     <div class="sb" id="srcList"></div></div>
 </section>
 <section class="win" id="wGraph" hidden aria-label="Граф анализа">
@@ -494,7 +496,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <script src="insol.js"></script>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
-<script src="mggt.js"></script>
+<script src="msk.js"></script>
 <script src="cadcore.js"></script>
 <script src="cad.js"></script>
 <script src="layers.js"></script>

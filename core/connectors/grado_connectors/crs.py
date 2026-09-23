@@ -1,5 +1,8 @@
 """Трансформации СК без PROJ (для эталонной реализации).
 
+Москва: МСК (как в QGIS, MSK_PROJ4 — то, что видит и вводит пользователь) и система ГИС ОГД (Бессель со смещением,
+OGD_PROJ4 — родные координаты выгрузок портала); МСК = ОГД − OGD_SHIFT.
+
 Реализовано: EPSG:3857 → EPSG:4326 (сферическая модель, точная),
 EPSG:4326 → EPSG:32637 (Transverse Mercator, ряды Снайдера, точность ~мм;
 сверено с PROJ 8 из комплекта QGIS-LTR) и МСК-50 → WGS84 для выгрузок ГИС ОГД
@@ -10,14 +13,22 @@ SHP в сервисе — ogr2ogr; msk50_to_wgs84 — фолбэк без GDAL (
 
 import math
 
-# МСК-50 (система координат выгрузок ГИС ОГД Москвы) — параметры из
-# работающего GRADO-плагина.
+# Две местные системы Москвы — один датум (Бессель + тот же towgs84), разный сдвиг начала:
+#   • система ГИС ОГД (Бессель со смещением) — в ней лежат родные координаты выгрузок портала (SHP «Moscow_bessel»);
+#     параметры — из работающего GRADO-плагина владельца (config.py, OGD_PROJ4). НЕ менять.
+#   • МСК (как в QGIS) — пользовательская СК «МСК» из QGIS владельца: то же без +x_0/+y_0. В ней пользователь видит и
+#     вводит координаты, в ней DXF и листы. МСК = ОГД − OGD_SHIFT точно (датум общий; сверено pyproj во всей Москве).
 OGD_PROJ4 = (
     "+proj=tmerc +lat_0=55.66666666667 +lon_0=37.5 +k=1 "
     "+x_0=16.098 +y_0=14.512 +ellps=bessel "
     "+towgs84=316.151,78.924,589.650,-1.57273,2.69209,2.34693,8.4507 "
     "+units=m +no_defs"
 )
+MSK_PROJ4 = (
+    "+proj=tmerc +lat_0=55.66666666667 +lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel "
+    "+towgs84=316.151,78.924,589.65,-1.57273,2.69209,2.34693,8.4507 +units=m +no_defs"
+)
+OGD_SHIFT = (16.098, 14.512)     # система ГИС ОГД − МСК, метры (false easting/northing OGD_PROJ4)
 
 _R = 6378137.0                       # сфера Web Mercator
 _A = 6378137.0                       # WGS84
@@ -131,7 +142,8 @@ def _meridian_arc(phi, a, e2):
 
 
 def msk50_to_wgs84(east, north):
-    """(easting, northing) МСК-50 → (lon, lat) WGS84, градусы."""
+    """(easting, northing) в системе ГИС ОГД (Бессель со смещением, OGD_PROJ4) → (lon, lat) WGS84, градусы.
+    Имя историческое: это НЕ рабочая МСК пользователя — для неё msk_to_wgs84."""
     a, e2, ep2 = _B_A, _B_E2, _B_EP2
     # обратный TM (ряды Снайдера) → широта/долгота на датуме Бесселя
     m0 = _meridian_arc(_MSK_LAT0, a, e2)
@@ -182,7 +194,7 @@ def msk50_to_wgs84(east, north):
 
 
 def wgs84_to_msk50(lon, lat):
-    """(lon, lat) WGS84 → (easting, northing) Moscow local system (МГГТ, as in ГИС ОГД).
+    """(lon, lat) WGS84 → (easting, northing) в системе ГИС ОГД (Бессель со смещением, OGD_PROJ4).
 
     Inverse of msk50_to_wgs84 by Newton iterations: the forward chain is written once,
     and the round trip stays consistent to millimetres."""
@@ -196,6 +208,22 @@ def wgs84_to_msk50(lon, lat):
         if abs(lo - lon) < 1e-11 and abs(la - lat) < 1e-11:
             break
     return e, n
+
+
+def msk_to_wgs84(x, y):
+    """(X восток, Y север) в МСК (как в QGIS, MSK_PROJ4) → (lon, lat) WGS84. Через систему ГИС ОГД и сдвиг: формулы одни."""
+    return msk50_to_wgs84(x + OGD_SHIFT[0], y + OGD_SHIFT[1])
+
+
+def wgs84_to_msk(lon, lat):
+    """(lon, lat) WGS84 → (X восток, Y север) в МСК (как в QGIS, MSK_PROJ4)."""
+    e, n = wgs84_to_msk50(lon, lat)
+    return e - OGD_SHIFT[0], n - OGD_SHIFT[1]
+
+
+def ogd_to_msk(x, y):
+    """Родные координаты ГИС ОГД → МСК: сдвиг, без пересчёта через градусы."""
+    return x - OGD_SHIFT[0], y - OGD_SHIFT[1]
 
 
 def transform_geom(geom, fn):

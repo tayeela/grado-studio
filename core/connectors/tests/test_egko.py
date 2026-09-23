@@ -1,7 +1,8 @@
 """ЕГКО Москвы — карта base2 портала ГИС ОГД: потоковая выгрузка, сетка на диске, обрезка по рамке.
 
-Слои base2 огромны (газоны 1,3 ГБ), поэтому коннектор не держит слой в памяти: разбирает FeatureCollection
-по объекту, раскладывает объекты по клеткам сетки на диске и режет выдачу по рамке области.
+Слои base2 огромны (газоны — 308 МБ в SHP), поэтому коннектор не держит слой в памяти: архив SHP (родные координаты
+ГИС ОГД) ложится на диск, записи читаются по одной, объекты раскладываются по клеткам сетки на диске, выдача режется
+по рамке области.
 """
 
 import json
@@ -12,7 +13,8 @@ from pathlib import Path
 import _paths  # noqa: F401
 from grado_connectors import ConnectorError, GisogdApi
 from grado_connectors.clip import clip_geometry
-from grado_connectors.gisogd_api import MAPS, _FeatureStream, catalog
+from _shpfix import shp_zip
+from grado_connectors.gisogd_api import MAPS, catalog
 
 BOX = (37.600, 55.760, 37.612, 55.766)
 
@@ -38,13 +40,27 @@ LAYER = {"type": "FeatureCollection", "crs": {"type": "name", "properties": {"na
          ]}
 
 
+def pts(g):
+    """Вершины геометрии округлённо (1e-9° ≈ 0,1 мм), без порядка обхода: SHP пишет внешнее кольцо по часовой."""
+    out, c = set(), g["coordinates"]
+
+    def walk(c):
+        if isinstance(c[0], (int, float)):
+            out.add((round(c[0], 9), round(c[1], 9)))
+        else:
+            for x in c:
+                walk(x)
+    walk(c)
+    return out
+
+
 class FakeTransport:
     def __init__(self, payload=LAYER):
         self.calls, self.payload = [], payload
 
     def __call__(self, url, timeout=None):
         self.calls.append(url)
-        return json.dumps(self.payload, ensure_ascii=False, indent=1).encode("utf-8")   # с переводами строк внутри
+        return shp_zip(self.payload)
 
 
 class TestEgko(unittest.TestCase):
@@ -63,28 +79,19 @@ class TestEgko(unittest.TestCase):
         self.assertIn("virtual6:1", {f["grado_key"] for f in r["features"]})
         # без обрезки: объект на краю приходит целиком
         edge = next(f for f in r["features"] if f["grado_key"] == "virtual6:2")
-        self.assertEqual(edge["geometry"], LAYER["features"][1]["geometry"])
+        self.assertEqual(pts(edge["geometry"]), pts(LAYER["features"][1]["geometry"]))
 
     def test_catalog_base2_asks_full(self):
         seen = []
         catalog(lambda url, timeout=None: seen.append(url) or b"[]", map_name="base2")
         self.assertTrue(seen[0].endswith("/base2/layers/?type=full&returnCss=0"))
 
-    def test_stream_parser_across_any_chunk_boundary(self):
-        text = json.dumps(LAYER, ensure_ascii=False, indent=1)
-        for size in (1, 7, 50, 333):
-            p, got = _FeatureStream(), []
-            for i in range(0, len(text), size):
-                got += [o for o, raw in p.feed(text[i:i + size])]
-            p.finish()
-            self.assertEqual(got, LAYER["features"], f"куски по {size} символов")
-
-    def test_truncated_stream_is_an_error(self):
-        text = json.dumps(LAYER)[:-40]
-        p = _FeatureStream()
-        list(p.feed(text))
+    def test_export_is_shp_and_bad_zip_is_an_error(self):
+        t = FakeTransport()
+        GisogdApi(transport=t, map_name="base2").fetch(BOX, "fence2k")
+        self.assertIn("format=shp", t.calls[0])
         with self.assertRaises(ConnectorError):
-            p.finish()
+            GisogdApi(transport=lambda url, timeout=None: b"<html>busy</html>", map_name="base2").fetch(BOX, "fence2k")
 
     def test_grid_cache_second_query_without_network_same_answer(self):
         with tempfile.TemporaryDirectory() as d:
@@ -95,7 +102,7 @@ class TestEgko(unittest.TestCase):
             self.assertEqual(t2.calls, [], "второй раз — из сетки на диске")
             key = lambda r: sorted((f["grado_key"], json.dumps(f["geometry"], sort_keys=True)) for f in r["features"])
             self.assertEqual(key(first), key(second))
-            grid = Path(d) / "base2.virtual6.grid"
+            grid = Path(d) / "base2.virtual6.shp.grid"
             self.assertTrue((grid / "_meta.json").exists() and (grid / "big.lines.gz").exists())
             # другая область — тоже из сетки, и объекта оттуда нет в первой
             far = GisogdApi(transport=t2, cache_dir=d, map_name="base2").fetch((37.69, 55.79, 37.71, 55.81), "virtual6")
@@ -114,7 +121,7 @@ class TestEgko(unittest.TestCase):
     def test_clip_applies_to_egko(self):
         r = GisogdApi(transport=FakeTransport(), map_name="base2", clip=True).fetch(BOX, "virtual6")
         by = {f["grado_key"]: f["geometry"] for f in r["features"]}
-        self.assertEqual(by["base2:virtual6:1"], LAYER["features"][0]["geometry"], "целиком внутри — как есть")
+        self.assertEqual(pts(by["base2:virtual6:1"]), pts(LAYER["features"][0]["geometry"]), "целиком внутри — как есть")
         xs = [p[0] for p in by["base2:virtual6:2"]["coordinates"][0]]
         self.assertLessEqual(max(xs), BOX[2] + 1e-12, "край обрезан по рамке")
         big = by["base2:virtual6:3"]["coordinates"][0]

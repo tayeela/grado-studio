@@ -1,8 +1,9 @@
 """DXF export/import for ГРАДО 2 on ezdxf (MIT), with the Moscow red-line linetypes REDLN97.
 
-Export: layers (GeoJSON WGS84) → DXF R2018 in the Moscow local system (МГГТ, metres).
+Export: layers (GeoJSON WGS84) → DXF R2018 in МСК, the owner's QGIS «МСК» (metres; = ГИС ОГД system − (16.098; 14.512)).
 Red lines get the REDLN97 complex linetypes; the shape file red_lns.shx goes into the
-archive next to the drawing, as AutoCAD expects. Import: DXF in МГГТ or WGS84 → GeoJSON;
+archive next to the drawing, as AutoCAD expects. Import: DXF in МСК (default), the ГИС ОГД system (DXF written by
+ГРАДО 2 before v0.32) or WGS84 → GeoJSON;
 REDLN97 linetype names become LineCode again.
 """
 
@@ -70,7 +71,7 @@ def export_dxf(layers, redln, lgr_colors):
             for n in names:
                 _add_linetype(doc, n, redln["linetypes"][n], shapes)
             for ring, closed in _rings(f["geometry"]):
-                pts = [crs.wgs84_to_msk50(x, y) for x, y in ring]
+                pts = [crs.wgs84_to_msk(x, y) for x, y in ring]
                 if closed and len(pts) > 1 and pts[0] == pts[-1]:
                     pts = pts[:-1]
                 attrs = {"layer": lname}
@@ -92,7 +93,8 @@ def export_dxf(layers, redln, lgr_colors):
         z.writestr("grado2.dxf", buf.getvalue().encode("utf-8"))
         z.write(STANDARD / "RED_LNS.SHX", "red_lns.shx")
         z.write(STANDARD / "REDLN97.LIN", "REDLN97.LIN")
-        z.writestr("README.txt", ("Coordinates: Moscow local system (MGGT, as in GIS OGD), metres.\n"
+        z.writestr("README.txt", ("Coordinates: MSK - Moscow local system as the QGIS custom CRS 'MSK' "
+                                  "(+proj=tmerc +lat_0=55.66666666667 +lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel), metres.\n"
                                   "Red lines use REDLN97 linetypes; keep red_lns.shx next to grado2.dxf.\n").encode())
     return out.getvalue()
 
@@ -126,8 +128,9 @@ def linecode_of(name):
     return None
 
 
-def import_dxf(data, redln):
-    """DXF bytes → (FeatureCollection WGS84, notes). Coordinates: МГГТ metres or WGS84 degrees."""
+def import_dxf(data, redln, local="msk"):
+    """DXF bytes → (FeatureCollection WGS84, notes). Coordinates: WGS84 degrees or local metres — local="msk" (МСК, as in
+    QGIS) or "ogd" (ГИС ОГД system: the DXF files ГРАДО 2 wrote before v0.32)."""
     # кодировку файл объявляет сам ($DWGCODEPAGE): чертежи R2000–R2004 из русского AutoCAD — cp1251, а не UTF-8
     from ezdxf import recover
     doc, _ = recover.read(io.BytesIO(data))
@@ -162,10 +165,10 @@ def import_dxf(data, redln):
         return {"type": "FeatureCollection", "features": []}, [f"no lines or polylines (skipped {skipped})"]
     import file_io
     system = file_io.system_of([p for f in feats for p in f["pts"]][:2000])
-    if system not in ("wgs", "mggt"):
-        raise ValueError("coordinates are neither МГГТ (Moscow local, tens of km) nor WGS84 degrees")
+    if system not in ("wgs", "local"):
+        raise ValueError("coordinates are neither Moscow local metres (tens of km) nor WGS84 degrees")
     is_wgs = system == "wgs"
-    to = (lambda x, y: (x, y)) if is_wgs else crs.msk50_to_wgs84
+    to = (lambda x, y: (x, y)) if is_wgs else file_io.LOCAL[local][0]
     out = []
     for f in feats:
         ring = [list(to(x, y)) for x, y in f["pts"]]
@@ -176,6 +179,6 @@ def import_dxf(data, redln):
             props.update({"Тип линии": f["lt"], "LineCode": linecode_of(f["lt"]), "_lt": [f["lt"]], "_miss": []})
             geom = {"type": "LineString", "coordinates": geom["coordinates"][0]} if geom["type"] == "Polygon" else geom
         out.append({"type": "Feature", "geometry": geom, "properties": props})
-    notes.append(f"coordinates: {'WGS84' if is_wgs else 'МГГТ (Moscow local)'}; objects {len(out)}"
+    notes.append(f"координаты: {'WGS84' if is_wgs else file_io.LOCAL[local][1]}; объектов {len(out)}"
                  + (f", other entities skipped: {skipped}" if skipped else ""))
     return {"type": "FeatureCollection", "features": out}, notes

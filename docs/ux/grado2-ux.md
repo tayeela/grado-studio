@@ -100,6 +100,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.32.0, МСК): layers of ГИС ОГД and ЕГКO in projects saved before v0.32 stay ~7,7 m off until «Загрузить» is
+  pressed again for them (the program does not say so on opening an old project); objects you edited keep their old
+  geometry after the re-download. DXF files written before v0.32 must be imported with «ГИС ОГД» — nothing tells which
+  system an old DXF is in.
 - 2026-09-23 (v0.31.0, ЕГКО): the clipped road polygon draws its outline along the frame of the area (the cut edge is stroked
   like a kerb); the first download of a big ЕГКО layer waits minutes before the first byte while the portal prepares the file —
   the status line shows «0 МБ» all that time. The re-download report toast lists all seven layers in one long message.

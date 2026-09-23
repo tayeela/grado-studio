@@ -290,7 +290,7 @@ async function importFiles(fileList) {
   const files = [...fileList]; if (!files.length) return;
   busy(true);
   try {
-    const body = { files: await Promise.all(files.map(async f => ({ name: f.name, b64: b64(await f.arrayBuffer()) }))) };
+    const body = { local: $("impLocal")?.value || "msk", files: await Promise.all(files.map(async f => ({ name: f.name, b64: b64(await f.arrayBuffer()) }))) };
     const r = await fetch("/api/import/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const j = await r.json();
     if (!r.ok) throw new Error(j.error);
     const ex = ol.extent.createEmpty(), msgs = [];
@@ -324,7 +324,7 @@ $("bExport").onclick = async () => {
     const r = await fetch("/api/export/dxf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layers }) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = "grado2-dxf.zip"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МГГТ, метры.");
+    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МСК (как в QGIS), метры.");
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 

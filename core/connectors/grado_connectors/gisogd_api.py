@@ -5,7 +5,8 @@
 
     BASE = https://gisogd.mos.ru/gis/api/2.8/gisogd/isogd
     GET /layers/                                → каталог (id, code, name, parent_id, type)
-    GET /layers/{code}/export/?format=geojson   → весь слой, WGS84 (CRS84)
+    GET /layers/{code}/export/?format=shp       → весь слой, zip SHP в родных координатах ОГД
+    (format=geojson — тот же слой в WGS84, но пересчитан порталом со сдвигом ~7,7 м; не используется)
 
 ⚠ Параметр `bbox` этот API ИГНОРИРУЕТ. Проверено 2026-07-15 на `virtual1742`:
 `/objects/` без bbox и с bbox ~150 м отдают одинаковые 3285 объектов, export
@@ -17,9 +18,14 @@
 
 Вежливость: данные официальные и открытые (ИСОГД публичен), но портал не
 «долбим» — кэш на диске с TTL и пауза между сетевыми запросами.
+
+Координаты (с 23.09.2026): слой берётся в SHP (`format=shp`, zip: .shp/.dbf/.cpg, .prj «Moscow_bessel») — это родные
+координаты ГИС ОГД — и переводится в WGS84 через OGD_PROJ4 (crs.msk50_to_wgs84), как в QGIS-плагине владельца.
+GeoJSON, пересчитанный сервером портала, стоит на ~7,7 м иначе (virtual1681: 13 215 объектов, p95 7,8 м; у ЕГКО так же).
+Имена полей в .dbf обрезаны до 10 знаков (podzone_num → podzone_nu); кэш прежнего GeoJSON не используется (имена файлов
+кэша с «shp»).
 """
 
-import codecs
 import gzip
 import json
 import math
@@ -36,6 +42,8 @@ from pathlib import Path
 
 from .clip import clip_geometry
 from .contract import Connector, ConnectorError, make_result
+from .crs import msk50_to_wgs84, transform_geom
+from .shp_reader import iter_zip
 
 BASE = "https://gisogd.mos.ru/gis/api/2.8/gisogd/isogd"
 # Карты портала: isogd — слои ИСОГД (Генплан, ПЗЗ, ЗОУИТ…), base2 — ЕГКО, «Картоснова (дополненная)»: здания, газоны,
@@ -230,50 +238,6 @@ def _http_stream(url, timeout=900):
     return _expected_size(r.headers), chunks()
 
 
-class _FeatureStream:
-    """Потоковый разбор FeatureCollection: объекты массива features по одному, без json.loads всего файла.
-    Каждый объект разбирается C-разбором json (raw_decode); незаконченный на стыке кусков ждёт следующий кусок."""
-
-    def __init__(self):
-        self.buf, self.pos, self.state = "", 0, "head"
-        self.dec = json.JSONDecoder()
-
-    def feed(self, text):
-        self.buf = self.buf[self.pos:] + text
-        self.pos = 0
-        return self._drain()
-
-    def _drain(self):
-        buf = self.buf
-        if self.state == "head":
-            i = buf.find('"features"')
-            j = buf.find("[", i) if i >= 0 else -1
-            if j < 0:
-                self.pos = max(0, len(buf) - 32)
-                return
-            self.pos, self.state = j + 1, "items"
-        while self.state == "items":
-            p, n = self.pos, len(buf)
-            while p < n and buf[p] in " \t\r\n,":
-                p += 1
-            self.pos = p
-            if p >= n:
-                return
-            if buf[p] == "]":
-                self.state = "done"
-                return
-            try:
-                obj, end = self.dec.raw_decode(buf, p)
-            except ValueError:
-                return                             # объект не закончился — ждём следующий кусок
-            yield obj, buf[p:end]
-            self.pos = end
-
-    def finish(self):
-        if self.state != "done":
-            raise ConnectorError("ГИС ОГД: выгрузка оборвана или не FeatureCollection")
-
-
 # сетка индекса слоя ЕГКО: объект не шире клетки лежит в клетке своего юго-западного угла, крупные — в общем файле
 _CELL = 0.01                    # ° ≈ 0,63 × 1,1 км в Москве: здание или газон почти всегда меньше
 _LOCKS, _LOCKS_GUARD = {}, threading.Lock()
@@ -306,6 +270,50 @@ def catalog(transport=None, map_name="isogd"):
 
     return [{"code": x.get("code"), "name": x.get("name"),
              "type": x.get("type"), "path": path(x)} for x in arr]
+
+
+# Имена полей .dbf обрезаны до 10 знаков. Для слоёв ИСОГД из SOURCES возвращаются прежние полные имена, как в GeoJSON
+# портала: на них завязаны стиль и запрет «природные зоны» функциональных зон (naimfunkzony), разбор ПЗЗ в server.py
+# и поля уже сохранённых проектов. Соответствие сверено 23.09.2026 по всем 30 слоям (старый кэш GeoJSON ↔ .dbf).
+DBF_FULL_NAMES = {
+    "naimfunkzo": "naimfunkzony", "summfondpe": "summfondpersp", "podzone_nu": "podzone_num", "old_zone_n": "old_zone_num",
+    "zone_index": "zone_index_literal_n", "zone_ind_1": "zone_index_literal_f", "restrictio": "restrictions2",
+    "num_adm_ok": "num_adm_okr", "name_adm_o": "name_adm_okr", "interval_f": "interval_fo",
+    "db2gse_st_": "db2gse_st_area_shape_", "db2gse_sde": "db2gse_sdelength_shape_",
+}
+
+
+def _full_names(props):
+    out = {DBF_FULL_NAMES.get(k, k): v for k, v in props.items()}
+    # shape_length: обычно усечён в shape_leng; если в слое были оба (уведомления о сносе), второй — shape_le_1
+    if "shape_le_1" in out:
+        out["shape_length"] = out.pop("shape_le_1")
+    elif "shape_leng" in out and "shape_length" not in out:
+        out["shape_length"] = out.pop("shape_leng")
+    return out
+
+
+def _shp_features(zf, code, full_names=False):
+    """zip-выгрузка слоя в SHP → объекты GeoJSON в WGS84 (родные координаты ОГД → OGD_PROJ4 → WGS84), по одному."""
+    try:
+        _prj, records = iter_zip(zf)
+    except (ValueError, KeyError) as e:
+        raise ConnectorError(f"ГИС ОГД: слой {code} — архив SHP не разобран: {e}") from None
+    for r in records:
+        g = r["geometry"]
+        if g and g.get("type") == "MultiPoint" and not g["coordinates"]:
+            g = None
+        props = _full_names(r["properties"]) if full_names else r["properties"]
+        yield {"type": "Feature", "geometry": transform_geom(g, msk50_to_wgs84) if g else None, "properties": props}
+
+
+def _zip_of(raw, code):
+    import io
+    import zipfile
+    try:
+        return zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise ConnectorError(f"ГИС ОГД: слой {code} — ответ не архив SHP") from None
 
 
 def _geom_bbox(geom):
@@ -363,7 +371,7 @@ class GisogdApi(Connector):
 
     # ---------- ЕГКО: потоковая выгрузка и сетка на диске ----------
     def _grid_dir(self, code):
-        return self.cache_dir / f"{self.map_name}.{code}.grid" if self.cache_dir else None
+        return self.cache_dir / f"{self.map_name}.{code}.shp.grid" if self.cache_dir else None
 
     def _grid_fresh(self, code):
         g = self._grid_dir(code)
@@ -388,15 +396,20 @@ class GisogdApi(Connector):
             self.progress(code, got, total, "index")
 
     def _stream_build(self, code, query):
-        """Выгрузить слой потоком: объекты в области — сразу в ответ, все — в клетки сетки (если есть кэш)."""
-        url = f"{self.base}/layers/{code}/export/?format=geojson"
+        """Выгрузить слой (zip SHP) потоком на диск, затем разобрать по записи: объекты в области — сразу в ответ,
+        все — в клетки сетки (если есть кэш). В памяти нет ни архива, ни слоя."""
+        import tempfile
+        import zipfile
+        url = f"{self.base}/layers/{code}/export/?format=shp"
         grid = self._grid_dir(code)
         tmp = None
+        base = grid.parent if grid else Path(tempfile.gettempdir())
+        base.mkdir(parents=True, exist_ok=True)
         if grid:
-            grid.parent.mkdir(parents=True, exist_ok=True)
             tmp = Path(str(grid) + f".{os.getpid()}.{threading.get_ident()}.part")
             shutil.rmtree(tmp, ignore_errors=True)
             tmp.mkdir()
+        fd, zpath = tempfile.mkstemp(dir=base, prefix=f"{code}.", suffix=".zip.part")
         buf, size, count, out = {}, 0, 0, []
 
         def flush():
@@ -407,38 +420,43 @@ class GisogdApi(Connector):
             buf.clear()
             size = 0
 
-        parser, utf8 = _FeatureStream(), codecs.getincrementaldecoder("utf-8")()
         try:
-            for chunk in self._chunks(url, code):
-                for f, rawtext in parser.feed(utf8.decode(chunk)):
+            with os.fdopen(fd, "wb") as fh:
+                for chunk in self._chunks(url, code):
+                    fh.write(chunk)
+            try:
+                zf = zipfile.ZipFile(zpath)
+            except zipfile.BadZipFile:
+                raise ConnectorError(f"ГИС ОГД: слой {code} — ответ не архив SHP") from None
+            with zf:
+                for f in _shp_features(zf, code):
                     count += 1
                     geom = f.get("geometry")
                     fb = _geom_bbox(geom)
                     if not fb:
                         continue
-                    props = f.get("properties") or {}
-                    key = f"{self.map_name}:{code}:{norm_id(props.get('orbis_id') or props.get('id') or f.get('id') or count)}"
+                    props = f["properties"]
+                    key = f"{self.map_name}:{code}:{norm_id(props.get('orbis_id') or props.get('id') or count)}"
                     if _overlaps(fb, query):
                         out.append({"type": "Feature", "geometry": geom, "properties": dict(props), "grado_key": key})
                     if tmp is None:
                         continue
                     small = fb[2] - fb[0] <= _CELL and fb[3] - fb[1] <= _CELL
                     cell = f"{math.floor(fb[0] / _CELL)}_{math.floor(fb[1] / _CELL)}" if small else "big"
-                    line = ",".join(repr(v) for v in fb) + "\t" + key + "\t" + rawtext.replace("\n", " ") + "\n"
+                    line = (",".join(repr(v) for v in fb) + "\t" + key + "\t"
+                            + json.dumps({"geometry": geom, "properties": props}, ensure_ascii=False, separators=(",", ":")) + "\n")
                     buf.setdefault(cell, []).append(line)
                     size += len(line)
                     if size > 48_000_000:           # ~50–100 МБ строк в памяти, дальше — на диск
                         flush()
-            for _ in parser.feed(utf8.decode(b"", final=True)):
-                pass
-            parser.finish()
             if tmp is not None:
                 flush()
-                (tmp / "_meta.json").write_text(json.dumps({"code": code, "map": self.map_name, "count": count, "cell": _CELL}), "utf-8")
+                (tmp / "_meta.json").write_text(json.dumps({"code": code, "map": self.map_name, "count": count, "cell": _CELL, "format": "shp"}), "utf-8")
                 shutil.rmtree(grid, ignore_errors=True)
                 tmp.replace(grid)
                 tmp = None
         finally:
+            Path(zpath).unlink(missing_ok=True)
             if tmp is not None:
                 shutil.rmtree(tmp, ignore_errors=True)
         time.sleep(_PAUSE)
@@ -492,7 +510,7 @@ class GisogdApi(Connector):
     def _cache_path(self, code):
         if not self.cache_dir:
             return None
-        return self.cache_dir / f"{code}.geojson.gz"
+        return self.cache_dir / f"{code}.shp.gz"
 
     def _layer_bytes(self, code):
         """Слой целиком: из кэша, иначе скачать и закэшировать (gzip на диске)."""
@@ -502,7 +520,7 @@ class GisogdApi(Connector):
                 return gzip.decompress(path.read_bytes()), True
             except (OSError, EOFError, zlib.error):
                 path.unlink(missing_ok=True)       # недописанный кэш — скачать заново, а не падать до конца срока
-        url = f"{self.base}/layers/{code}/export/?format=geojson"
+        url = f"{self.base}/layers/{code}/export/?format=shp"
         if self.progress and self.transport is _http_get:
             raw = _http_get(url, progress=lambda got, total: self.progress(code, got, total, "download"))
         else:
@@ -516,7 +534,7 @@ class GisogdApi(Connector):
         return raw, False
 
     def _lines_path(self, code):
-        return self.cache_dir / f"{code}.lines.gz" if self.cache_dir else None
+        return self.cache_dir / f"{code}.shp.lines.gz" if self.cache_dir else None
 
     def _from_lines(self, code, query):
         """Быстрый путь по кэшу: строка на объект «w,s,e,n<TAB>ключ<TAB>json».
@@ -563,11 +581,11 @@ class GisogdApi(Connector):
                                source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту", notes=[])
         raw, cached = self._layer_bytes(code)
         try:
-            data = json.loads(raw)
+            data = {"features": list(_shp_features(_zip_of(raw, code), code, full_names=True))}
+        except ConnectorError:
+            raise
         except Exception as e:
             raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {e}") from None
-        if not isinstance(data, dict) or not isinstance(data.get("features"), list):
-            raise ConnectorError(f"ГИС ОГД: слой {code} — не FeatureCollection")
 
         out, notes, rows = [], [], []
         for i, f in enumerate(data["features"]):

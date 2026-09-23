@@ -1,7 +1,7 @@
 /* ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида,
    таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов
    считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его
-   собирает рендер ядра (print_io.py): МГГТ, типы линий REDLN97, штриховки. Состав альбома хранится в проекте. */
+   собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте. */
 const ALBUM = { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] };
 const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 10000, 25000];
 const FRAME_MM = { A3: [275, 224], A1: [636, 521] };          // размер карты на листе (как layout() в print_io.py)
@@ -72,7 +72,7 @@ async function albumPdf() {
     const r = await fetch("/api/print/pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(ALBUM.sheets)) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (ALBUM.meta.object || PROJ.name || "альбом") + ".pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast(`Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МГГТ, красные линии — типами REDLN97.`);
+    toast(`Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`);
   } catch (e) { toast("PDF не собран: " + e.message); } finally { busy(false); }
 }
 function renderSheets() {

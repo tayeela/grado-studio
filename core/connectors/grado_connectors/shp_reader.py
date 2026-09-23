@@ -11,43 +11,57 @@ import struct
 from pathlib import Path
 
 
-def _read_dbf(path, encoding):
-    data = path.read_bytes()
-    if len(data) < 32:
-        return []
-    num_records = struct.unpack("<I", data[4:8])[0]
-    header_size = struct.unpack("<H", data[8:10])[0]
-    record_size = struct.unpack("<H", data[10:12])[0]
-    fields, pos = [], 32
-    while pos < len(data) and data[pos] != 0x0D:
-        name = data[pos:pos + 11].split(b"\x00")[0].decode("ascii", "replace")
-        ftype = chr(data[pos + 11])
-        flen = data[pos + 16]
-        fields.append((name, ftype, flen))
+def _dbf_fields(fh):
+    """Заголовок .dbf → (число записей, длина записи, поля [(имя, тип, длина)]); fh стоит на первой записи."""
+    head = fh.read(32)
+    if len(head) < 32:
+        return 0, 0, []
+    num_records = struct.unpack("<I", head[4:8])[0]
+    header_size = struct.unpack("<H", head[8:10])[0]
+    record_size = struct.unpack("<H", head[10:12])[0]
+    rest = fh.read(header_size - 32)
+    fields, pos = [], 0
+    while pos + 32 <= len(rest) and rest[pos] != 0x0D:
+        name = rest[pos:pos + 11].split(b"\x00")[0].decode("ascii", "replace")
+        fields.append((name, chr(rest[pos + 11]), rest[pos + 16]))
         pos += 32
-    records = []
-    for r in range(num_records):
-        off = header_size + r * record_size
-        if data[off:off + 1] == b"\x2a":     # запись помечена удалённой
-            continue
-        row, c = {}, off + 1
-        for name, ftype, flen in fields:
-            val = data[c:c + flen].decode(encoding, "replace").strip()
-            c += flen
-            if ftype in "NF":
-                if val in ("", "*"):
+    return num_records, record_size, fields
+
+
+def _dbf_row(rec, fields, encoding):
+    row, c = {}, 1
+    for name, ftype, flen in fields:
+        val = rec[c:c + flen].decode(encoding, "replace").strip()
+        c += flen
+        if ftype in "NF":
+            if val in ("", "*"):
+                val = None
+            else:
+                try:
+                    val = (int(val) if ftype == "N" and "." not in val
+                           else float(val))
+                except ValueError:
                     val = None
-                else:
-                    try:
-                        val = (int(val) if ftype == "N" and "." not in val
-                               else float(val))
-                    except ValueError:
-                        val = None
-            elif ftype == "L":
-                val = (True if val in "YyTt" else
-                       False if val in "NnFf" else None)
-            row[name] = val
-        records.append(row)
+        elif ftype == "L":
+            val = (True if val in "YyTt" else
+                   False if val in "NnFf" else None)
+        elif ftype == "D":                    # дата dBASE «ГГГГММДД» → «ГГГГ-ММ-ДД», как её отдавал GeoJSON портала
+            val = f"{val[:4]}-{val[4:6]}-{val[6:8]}" if len(val) == 8 and val.isdigit() else (val or None)
+        row[name] = val
+    return row
+
+
+def _read_dbf(path, encoding):
+    with open(path, "rb") as fh:
+        num, size, fields = _dbf_fields(fh)
+        records = []
+        for _ in range(num):
+            rec = fh.read(size)
+            if len(rec) < size:
+                break
+            if rec[:1] == b"\x2a":            # запись помечена удалённой
+                continue
+            records.append(_dbf_row(rec, fields, encoding))
     return records
 
 
@@ -125,3 +139,56 @@ def read_shp(shp_path):
         pos += 8 + rec_len
     return [{"geometry": g, "properties": attrs[i] if i < len(attrs) else {}}
             for i, g in enumerate(geoms)]
+
+
+def iter_records(shp_fh, dbf_fh=None, encoding="cp1251"):
+    """Потоковое чтение: записи .shp и .dbf по одной из открытых файлов (в том числе членов zip-архива),
+    без чтения файла целиком — слой зданий ЕГКО в SHP весит сотни мегабайт. Отдаёт {"geometry", "properties"};
+    объект, помеченный в .dbf удалённым, пропускается вместе с геометрией."""
+    shp_fh.read(100)
+    num = size = 0
+    fields = []
+    if dbf_fh is not None:
+        num, size, fields = _dbf_fields(dbf_fh)
+    i = 0
+    while True:
+        head = shp_fh.read(8)
+        if len(head) < 8:
+            return
+        rec_len = struct.unpack(">i", head[4:8])[0] * 2
+        geom = _shape(shp_fh.read(rec_len))
+        props, deleted = {}, False
+        if dbf_fh is not None and i < num:
+            rec = dbf_fh.read(size)
+            deleted = rec[:1] == b"\x2a"
+            props = _dbf_row(rec, fields, encoding) if len(rec) == size else {}
+        i += 1
+        if not deleted:
+            yield {"geometry": geom, "properties": props}
+
+
+def _encoding_of(tag, default="cp1251"):
+    tag = (tag or "").strip().lower()
+    return "utf-8" if "utf" in tag else "cp866" if "866" in tag else default
+
+
+def iter_zip(zf):
+    """zipfile.ZipFile выгрузки ГИС ОГД (один слой: .shp, .dbf, .cpg, .prj) → (prj-текст, генератор записей)."""
+    members = {Path(i.filename).suffix.lower(): i for i in zf.infolist() if not i.is_dir()}
+    if ".shp" not in members:
+        raise ValueError("в архиве нет .shp")
+    enc = _encoding_of(zf.read(members[".cpg"]).decode("ascii", "replace")) if ".cpg" in members else "cp1251"
+    prj = zf.read(members[".prj"]).decode("latin-1", "replace") if ".prj" in members else ""
+
+    def gen():
+        with zf.open(members[".shp"]) as shp, (zf.open(members[".dbf"]) if ".dbf" in members else _Null()) as dbf:
+            yield from iter_records(shp, dbf if ".dbf" in members else None, enc)
+    return prj, gen()
+
+
+class _Null:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, *a):
+        return False

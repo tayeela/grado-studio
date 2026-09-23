@@ -2,8 +2,9 @@
 
 Every format ends as GeoJSON FeatureCollections in WGS84 degrees, one per source layer.
 Coordinates are recognised by their size: degrees (WGS84), Web Mercator metres (EPSG:3857,
-millions), or the Moscow local system МГГТ (tens of km) — the same rule as the DXF import.
-A Shapefile's .prj, when present, decides between them.
+millions), or Moscow local metres (tens of km) — the same rule as the DXF import. Local metres are МСК (as the owner's
+QGIS «МСК») unless the user chose «ГИС ОГД» for the import, or a Shapefile's .prj says Moscow_bessel (the ГИС ОГД system:
+МСК + (16.098; 14.512)). A .prj also decides between degrees and Web Mercator.
 """
 
 import io
@@ -17,6 +18,8 @@ from grado_connectors import crs
 from grado_connectors.shp_reader import read_shp
 
 VECTOR = {".geojson", ".json", ".kml", ".kmz", ".shp", ".dxf", ".zip"}
+# местные метры: МСК (как в QGIS) — по умолчанию; система ГИС ОГД — выгрузки портала и DXF ГРАДО 2 до v0.32
+LOCAL = {"msk": (crs.msk_to_wgs84, "МСК (как в QGIS)"), "ogd": (crs.msk50_to_wgs84, "система ГИС ОГД (Бессель со смещением)")}
 
 
 def _walk(coords, fn):
@@ -58,28 +61,30 @@ def _explode(fc):
 
 
 def system_of(pts):
-    """Система по самим координатам. Градусы — только если и x в ±180, и y в ±90: у МГГТ восточная
-    координата у осевого меридиана тоже бывает меньше 180 (37,5° в.д. — это x ≈ 115 м)."""
+    """Система по самим координатам. Градусы — только если и x в ±180, и y в ±90: у местной московской системы
+    восточная координата у осевого меридиана тоже бывает меньше 180 (37,5° в.д. — это x ≈ 115 м)."""
     big = max(max(abs(x), abs(y)) for x, y in pts)
     if all(abs(x) <= 180 and abs(y) <= 90 for x, y in pts):
         return "wgs"
-    return "merc" if big > 1_000_000 else "mggt" if big <= 200_000 else None
+    return "merc" if big > 1_000_000 else "local" if big <= 200_000 else None
 
 
-def to_wgs84(fc, hint=None):
-    """FeatureCollection in any of the three systems → WGS84; returns (fc, system name)."""
+def to_wgs84(fc, hint=None, local="msk"):
+    """FeatureCollection in any of the systems → WGS84; returns (fc, system name). hint "ogd" — .prj Moscow_bessel."""
     pts = _pts(_explode(fc))
     if not pts:
         return fc, "нет координат"
     kind = hint or system_of(pts)
     if kind is None:
-        raise ValueError("координаты не похожи ни на градусы WGS84, ни на МГГТ (Москва, десятки км), ни на Web Mercator")
-    fn = {"wgs": None, "merc": crs.merc_to_wgs84, "mggt": crs.msk50_to_wgs84}[kind]
+        raise ValueError("координаты не похожи ни на градусы WGS84, ни на местные московские метры (десятки км), ни на Web Mercator")
+    if kind == "local":
+        kind = local
+    fn = {"wgs": None, "merc": crs.merc_to_wgs84, "msk": LOCAL["msk"][0], "ogd": LOCAL["ogd"][0]}[kind]
     if fn:
         for f in fc["features"]:
             if (f.get("geometry") or {}).get("coordinates"):
                 f["geometry"]["coordinates"] = _walk(f["geometry"]["coordinates"], fn)
-    return fc, {"wgs": "WGS84", "merc": "Web Mercator (EPSG:3857)", "mggt": "МГГТ (местная московская)"}[kind]
+    return fc, {"wgs": "WGS84", "merc": "Web Mercator (EPSG:3857)", "msk": LOCAL["msk"][1], "ogd": LOCAL["ogd"][1]}[kind]
 
 
 def _clean(props):
@@ -166,7 +171,9 @@ def _prj_hint(text):
         return "merc"
     if t.startswith("GEOGCS"):
         return "wgs"
-    return None                     # местные системы: решает размер координат
+    if "MOSCOW_BESSEL" in t:
+        return "ogd"                # выгрузка ГИС ОГД: родные координаты портала
+    return None                     # прочие местные системы: решает выбор пользователя (по умолчанию МСК)
 
 
 def read_shp_set(files):
@@ -195,9 +202,11 @@ def _check_unpacked(name, packed, members):
                          "распакуйте нужные слои и перетащите их отдельно")
 
 
-def import_files(files, redln=None):
-    """files: {file name: bytes} (one drop or one «Открыть» of the file dialog).
+def import_files(files, redln=None, local="msk"):
+    """files: {file name: bytes} (one drop or one «Открыть» of the file dialog). local: how to read local metres of
+    files without a .prj that names the system — "msk" (МСК, как в QGIS; default) or "ogd" (система ГИС ОГД).
     Returns [{"name", "features": FeatureCollection WGS84, "notes": [...]}], one entry per source layer."""
+    local = local if local in LOCAL else "msk"
     expanded = {}
     for name, b in files.items():
         suf = Path(name).suffix.lower()
@@ -228,19 +237,19 @@ def import_files(files, redln=None):
             fc, hint = read_kml(b), "wgs"                 # KML всегда в градусах
         elif suf == ".dxf":
             import dxf_io
-            fc, notes = dxf_io.import_dxf(b, redln)
+            fc, notes = dxf_io.import_dxf(b, redln, local)
             out.append({"name": p.stem, "format": "DXF", "features": fc, "notes": notes})
             continue
         else:
             continue
-        fc, system = to_wgs84(fc, hint)
+        fc, system = to_wgs84(fc, hint, local)
         out.append({"name": p.stem, "format": suf.lstrip(".").upper(), "features": fc,
                     "notes": [f"координаты: {system}; объектов {len(fc['features'])}"]})
     for stem, group in shp_sets.items():
         if not any(n.lower().endswith(".shp") for n in group):
             continue
         fc, hint = read_shp_set(group)
-        fc, system = to_wgs84(fc, hint)
+        fc, system = to_wgs84(fc, hint, local)
         notes = [f"координаты: {system}; объектов {len(fc['features'])}"]
         if not any(n.lower().endswith(".dbf") for n in group):
             notes.append("нет файла .dbf — атрибутов нет")

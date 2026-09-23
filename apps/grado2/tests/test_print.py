@@ -46,7 +46,7 @@ class Print(unittest.TestCase):
     def test_map_scale_puts_100m_at_50mm_on_1_2000(self):
         tr = print_io.MapTransform((0, 0, 200, 200), [37.525, 55.7925], 2000)
         x0, _ = tr.mm(37.525, 55.7925)
-        lon1 = S.crs.msk50_to_wgs84(*[a + b for a, b in zip(S.crs.wgs84_to_msk50(37.525, 55.7925), (100, 0))])[0]
+        lon1 = S.crs.msk_to_wgs84(*[a + b for a, b in zip(S.crs.wgs84_to_msk(37.525, 55.7925), (100, 0))])[0]
         x1, _ = tr.mm(lon1, 55.7925)
         self.assertAlmostEqual(x1 - x0, 50, places=1)
 
