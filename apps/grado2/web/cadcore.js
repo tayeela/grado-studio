@@ -182,6 +182,38 @@
     if (cl) out.push(out[0].slice());
     return { pts: out, done };
   }
+  // фаска угла v: отрезать d1 по стороне к p0 и d2 по стороне к p2
+  function chamferCorner(p0, v, p2, d1, d2) {
+    if (d1 > dist(p0, v) + 1e-9 || d2 > dist(p2, v) + 1e-9) return null;
+    return { t1: add(v, mul(unit(sub(p0, v)), d1)), t2: add(v, mul(unit(sub(p2, v)), d2)) };
+  }
+  function chamferAll(pts, d1, d2) {
+    const cl = closed(pts), P = cl ? pts.slice(0, -1) : pts, n = P.length, out = []; let done = 0;
+    for (let i = 0; i < n; i++) {
+      if (!cl && (i === 0 || i === n - 1)) { out.push(P[i]); continue; }
+      const c = chamferCorner(P[(i - 1 + n) % n], P[i], P[(i + 1) % n], d1, d2);
+      if (!c) { out.push(P[i]); continue; } out.push(c.t1, c.t2); done++;
+    }
+    if (cl) out.push(out[0].slice());
+    return { pts: out, done };
+  }
+  // дуга, касательная к направлению t в точке p0 и приходящая в p1 (дуговой участок полилинии AutoCAD)
+  function tangentArc(p0, t, p1) {
+    const d = sub(p1, p0), n = [-t[1], t[0]], s = dot(d, n);
+    if (Math.abs(s) < 1e-9 * Math.max(1, len(d))) return null;               // по касательной — это прямая
+    const r = dot(d, d) / (2 * s), c = add(p0, mul(n, r)), a0 = ang(c, p0), a1 = ang(c, p1);
+    const sw = r > 0 ? norm2pi(a1 - a0) : -norm2pi(a0 - a1);
+    return { c, r: Math.abs(r), a0, sw };
+  }
+  // направление касательной в конце дуги
+  const arcEndDir = a => { const e = a.a0 + a.sw; return a.sw >= 0 ? [-Math.sin(e), Math.cos(e)] : [Math.sin(e), -Math.cos(e)]; };
+  // удлинить или укоротить конец цепочки на delta по направлению последнего отрезка
+  function lengthen(pts, atStart, delta) {
+    const P = atStart ? pts.slice().reverse() : pts.slice(), L = chainLen(P);
+    if (delta < 0) { if (-delta >= L - 1e-9) return null; const out = sliceChain(P, 0, L + delta); return atStart ? out.reverse() : out; }
+    const a = P[P.length - 2], b = P[P.length - 1]; P[P.length - 1] = add(b, mul(unit(sub(b, a)), delta));
+    return atStart ? P.reverse() : P;
+  }
   // соединение цепочек, у которых совпадают концы (допуск tol), в наименьшее число цепочек
   function join(chains, tol = 0.001) {
     const left = chains.map(c => c.slice()), out = [];
@@ -212,6 +244,6 @@
 
   const api = { EPS, sub, add, mul, dot, cross, len, dist, ang, unit, polar, same, closed, norm2pi, inter, foot, segCircle, circleCircle, tangents,
     circle3, arc3, arcPts, circlePts, regPoly, chainLen, area, nearest, offset, side, cutsAlong, sliceChain, trim, breakChain, extend,
-    filletCorner, filletAll, join, T };
+    filletCorner, filletAll, chamferCorner, chamferAll, tangentArc, arcEndDir, lengthen, join, T };
   if (typeof module === "object" && module.exports) module.exports = api; else root.CG = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

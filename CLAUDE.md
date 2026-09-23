@@ -226,6 +226,15 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.25.0: more AutoCAD commands.** PLINE option «Дуга (Д)» / «Линейный (Л)»: arc segments tangent to
+  the previous segment (`CG.tangentArc`, `arcEndDir`), undo removes a whole arc step. CHA — chamfer (two lengths, «Полилиния» for
+  all corners). AR — array: rectangular (columns, rows, spacings, defaults 1.5 × selection size) and polar (centre, count,
+  fill angle, rotate items). S — stretch by a crossing window in МГГТ axes: vertices inside move, objects fully inside move
+  whole. LEN — lengthen by a delta (minus shortens across vertices) or to a total length. Polar tracking can count angles from
+  the last segment (polar menu). Grips show the adjacent segment lengths and МГГТ coordinates while a vertex is dragged.
+  Rare Modify commands (chamfer, break, join, explode, lengthen, erase) sit in a «▾» menu so the ribbon fits 1280 px.
+  cadcore checks 40, e2e +5 steps.
+
 - **2026-09-23, ГРАДО 2 v0.24.0: drawing rebuilt after AutoCAD.** Owner: «в прошлой версии черчение было лучше, ориентируйся
   на автокад (пунктирные продолжающие линии и пр), мало инструментов, значок линии похож на дугу — скопируй инструменты из
   автокад». OpenLayers Draw/Translate are gone from drawing; OpenLayers only shows. Grips («Вершины») stay on OL Modify.

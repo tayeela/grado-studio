@@ -67,6 +67,23 @@ export default async p => {
   await type("ro"); await enter(); await type("1035;1000"); await enter(); await type("90"); await enter();
   check((await lines()).includes("1055;1000 1015;1000"), "RO: поворот выбранного отрезка на 90° вокруг базовой точки");
   await p.key("z", "KeyZ", { meta: true }); check((await lines()).includes("1035;980 1035;1020"), "Ctrl+Z отменяет поворот");
+  // полилиния с дуговым участком, фаска, увеличение, массив, растянуть
+  await type("pl"); await enter(); for (const v of ["2000;1000", "2020;1000", "д", "2030;1010", "л", "2030;1030"]) { await type(v); await enter(); } await enter();
+  check((await lines()).some(l => l.startsWith("2000;1000 2020;1000") && l.endsWith("2030;1010 2030;1030")), "PL: дуговой участок (Д), касательный к прямому, и снова прямой (Л)");
+  for (const [a, b] of [["2100;1000", "2140;1000"], ["2100;1000", "2100;1040"]]) { await type("l"); await enter(); await type(a); await enter(); await type(b); await enter(); await enter(); }
+  const at2 = (x, y) => p.ev(`sharedView.fit(ol.extent.buffer(ol.extent.boundingExtent([CAD.fromM([2090,990]),CAD.fromM([2160,1060])]),5)); await new Promise(r=>setTimeout(r,200)); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [Math.round(r.left+q[0]), Math.round(r.top+q[1])]`);
+  await type("cha"); await enter(); await type("д"); await enter(); await type("2"); await enter(); await type("3"); await enter();
+  q = await at2(2120, 1000); await p.click(q[0], q[1] + 1); q = await at2(2100, 1020); await p.click(q[0] + 1, q[1]);
+  check((await lines()).includes("2102;1000 2140;1000") && (await lines()).includes("2100;1003 2100;1040") && (await lines()).includes("2102;1000 2100;1003"), "CHA: фаска 2 × 3 м между двумя отрезками");
+  await type("len"); await enter(); await type("в"); await enter(); await type("50"); await enter(); q = await at2(2138, 1000); await p.click(q[0], q[1] + 1); await enter();
+  check((await lines()).includes("2102;1000 2152;1000"), "LEN: отрезок доведён до полной длины 50 м");
+  await p.ev(`setSel(layerSrc[CUR].getFeatures().filter(f=>{const c=f.getGeometry().getCoordinates().map(CAD.toM); return Math.abs(c[0][0]-2100)<1e-6 && Math.abs(c[c.length-1][1]-1040)<1e-6;}).map(f=>({key:CUR,f}))); return SEL.length`);
+  const n0 = await p.ev(`return layerSrc[CUR].getFeatures().length`);
+  await type("ar"); await enter(); await enter(); for (const v of ["3", "2", "10", "60"]) { await type(v); await enter(); }
+  check(await p.ev(`return layerSrc[CUR].getFeatures().length`) === n0 + 5 && (await lines()).includes("2120;1063 2120;1100"), "AR: прямоугольный массив 3 × 2 с шагом 10 и 60 м");
+  await p.ev(`setSel([]); return 1`); await type("s"); await enter(); for (const v of ["2095;1035", "2105;1045", "2100;1040", "@0;10"]) { await type(v); await enter(); }
+  check((await lines()).includes("2100;1003 2100;1050"), "S: секущая рамка захватила верхнюю вершину, растянуто на 10 м");
+
   // отслеживание: задержка на конце отрезка даёт «+», дальше — пунктирная линия выравнивания
   await p.ev(`CAD.ST.otrack=true; setSel([]); return 1`); await type("l"); await enter(); q = await at(1100, 1025); await p.click(q[0], q[1]);
   const e = await at(1000, 1000); for (let i = 3; i >= 0; i--) await p.move(e[0] + i * 3, e[1] + i * 2); await p.sleep(600);

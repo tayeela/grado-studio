@@ -779,8 +779,11 @@ function setTool(t) {
     // как ручки AutoCAD: при выборе — вершины выбранных объектов; без выбора — объекты текущего слоя
     const what = selFs.length ? { features: new ol.Collection(selFs) } : big(l) ? { features: viewCollection(l.key, toolClean) } : { source: src };
     const mo = new ol.interaction.Modify({ ...what, deleteCondition: e => ol.events.condition.altKeyOnly(e) && ol.events.condition.singleClick(e) });
-    mo.on("modifystart", e => pushUndo(featRec(e.features.getArray().map(f => ({ key: keyOf(f), f })), "правка вершин")));
-    mo.on("modifyend", e => { editedKeys(e.features.getArray()); if (SEL.length) renderRight(); }); toolI.push(mo);
+    let dragging = null;
+    mo.on("modifystart", e => { dragging = e.features.getArray(); pushUndo(featRec(dragging.map(f => ({ key: keyOf(f), f })), "правка вершин")); });
+    mo.on("modifyend", e => { dragging = null; CAD.grip(null); editedKeys(e.features.getArray()); if (SEL.length) renderRight(); }); toolI.push(mo);
+    // как ручки AutoCAD: пока тянете вершину — длины соседних отрезков и координаты МГГТ у курсора
+    const k = mMain.on("pointermove", e => { if (dragging) CAD.grip(dragging, e.coordinate); }); toolClean.push(() => { ol.Observable.unByKey(k); CAD.grip(null); });
     const on = new Set();
     if (CAD.ST.osnap) LYR.filter(shown).forEach(x => { if (big(x)) { const v = new ol.interaction.Snap({ features: viewCollection(x.key, toolClean), pixelTolerance: 10 }); v.set("viewSnap", true); toolI.push(v); } else on.add(snapFor(x)); });
     SNAPS.forEach((c, k) => { if (!lyr(k)) { mMain.removeInteraction(c.snap); SNAPS.delete(k); } else c.snap.setActive(on.has(c.snap)); });
