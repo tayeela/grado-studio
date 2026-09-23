@@ -70,7 +70,7 @@ Moscow norms, district parameters and the owner's rounding rules (v0.21).
 Next stages, in order. Estimates are in working sessions.
 
 ### Э8. Acceptance of the goal (2 sessions) — first
-- Push `main` to GitHub (owner's approval), run `grado2-release.yml`, install on a clean Windows machine (owner or a
+- Done 23.09.2026: `main` pushed, run `grado2-release.yml`, install on a clean Windows machine (owner or a
   Windows VM), build the .app after `sudo xcodebuild -license` (owner's password).
 - ТиНАО greenfield site (e.g. Коммунарка or Былово): boundary → data → constraints → sketch → variants → album PDF + DXF,
   timed. Everything that stops the owner goes into Э9–Э11; the package-in-a-day claim is written down with the real time.
@@ -81,21 +81,17 @@ Next stages, in order. Estimates are in working sessions.
   (2151-ПП tables 1.4.1–1.4.2 steps, clinic plot 0.35 ha); «Посадка» reserves them first when the deficit is not covered.
 - Service radii and walking access by the Moscow decrees instead of federal СП 42.13330 (ДОО 300 m, 500 m in ЦАО; school
   1000 m; retail 500/800 m; culture 1500 m / 20 min; clinic 20/30 min) — the analysis nodes switch by the territory.
-- Missing norms: additional education 6/8/4 per 1000, 5 places for children with disabilities (owner decides whether they
-  are inside or on top), ОТОП 0.7 m² per person, playground reductions (−15 %, −20 %), minimums 100/50 m².
+- Missing norms: additional education 6/8/4 per 1000, ОТОП 0.7 m² per person, playground reductions (−15 %, −20 %), minimums 100/50 m².
 - Parking as space: permanent places turn into a required area of car parks (ground, underground, multi-storey) and the
   sketch shows where they go; visitor parking for non-residential floors.
 - K1 by walking distance over the OSM street graph (the walking isochrone node already has Dijkstra) instead of × 1.3;
   a territory over two districts takes the district with the larger share and says so.
-- ВРИ change cost and social compensation — only after the owner gives P, Kp and the УПКС source.
-- Old studio, wizard and calc-web still use `moscow_krt.json` with the known errors (residents' parking 257 per 1000 × K1 × K2,
-  wrong playground norm): switch them to `moscow_calc2.json` or retire them — owner decides.
 
 ### Э10. Generation quality (3 sessions)
 - Rows bent to the site boundary instead of straight strips; blocked rows packed from both ends; outbuildings and garages
   for ИЖС; guest parking in urban blocks.
-- Sections move to where the solar ceiling is high: per-building drop under a low ceiling when the density goal is met
-  without it (tested: 91 instead of 100 sections) — needs the owner's word, it leaves free yards where neighbours need sun.
+- Per-building drop under a low solar ceiling when the density goal is met without it (tested: 91 instead of 100
+  sections); the freed spots become yards where neighbours need sun. Approved by the owner.
 - Insolation: schools and kindergartens as their own norm class (hours to be taken from СанПиН 1.2.3685-21 text, not from memory), relief height
   from SRTM under the buildings, the site sun-hours map.
 - A variant can be edited and saved as a named variant; the comparison table keeps accepted and hand-edited variants.
@@ -107,19 +103,20 @@ Next stages, in order. Estimates are in working sessions.
 - PDF: text as real text (ToUnicode and font subset) so an album can be searched and copied; empty rings; `fill_opacity`
   instead of mixing with white.
 
-### Э12. Exchange (2 sessions, depends on owner decisions)
-- DWG in and out through the ODA File Converter (free, separate installer) — owner decides.
+### Э12. Exchange (1–2 sessions)
 - Export of the accepted sketch and constraints to GeoJSON/SHP for QGIS and to the ГИС ОГД attribute layout.
 - Sheet list and ТЭП table as XLSX for the explanatory note.
 
-### Owner decisions that block work
-1. Push to GitHub (and whether the repo stays private) — blocks Э8.
-2. Rounding: «СПП до двух знаков» taken as SPP values and SPP density only; everything else three.
-3. Dropping buildings under a low solar ceiling (Э10).
-4. DWG through ODA (Э12).
-5. Old studio / wizard / calc-web: move to the new ТЭП or retire (Э9).
-6. ОВЗ places inside or on top of the ДОО and school norm (Э9).
-7. P, Kp and the УПКС source for the ВРИ cost and compensation (Э9).
+### Owner decisions (23.09.2026)
+1. Work is pushed to GitHub; the repository stays private.
+2. Rounding: two decimals only for SPP values and SPP density, three for everything else — as implemented in v0.21.
+3. Buildings under a low solar ceiling are dropped when the density goal is met without them (Э10).
+4. No DWG: the ODA converter is not used; exchange stays DXF. Э12 loses its DWG item.
+5. The old studio (`apps/studio`), the wizard (`apps/wizard`) and the ТЭП web calculator (`apps/calc-web`) are closed: no
+   development and no fixes; their launchers and the studio release workflow are removed. The code stays in the repository
+   because `core/*` tests and history use it. `moscow_krt.json` stays with its known errors, only for them.
+6. The 5 places for children with disabilities are inside the ДОО and school norm — nothing to add.
+7. ВРИ change cost and social compensation are not done for now.
 
 ## Stages (Э1–Э7, done)
 
