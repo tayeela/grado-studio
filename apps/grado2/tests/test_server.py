@@ -15,9 +15,12 @@ class Grado2Server(unittest.TestCase):
         self.assertAlmostEqual(r["density_total"], 25.0)  # (200 + 50) / 10 га
 
     def test_tep_restrict_larger_than_territory_is_safe(self):
+        # Restrictions larger than the territory: the area is clamped to 0 and densities do not divide by it.
+        # Population follows the flats area («Калькулятор 2.0»), not the territory: 611 m² of flats / 33 = 18.5, rounded up to 19.
         m = {x["id"]: x["value"] for x in S.tep(1, 5, 1000, 1)["metrics"]}
         self.assertEqual(m["calc_area"], 0)
-        self.assertEqual(m["population"], 0)
+        self.assertEqual(m["density_spp"], 0)
+        self.assertEqual(m["population"], 19)
 
     def test_clean_props_renames_and_parses_numbers(self):
         p = S.clean_props({"opt_floors": "9-12", "opt_cad_num": "77:1", "grado_set": "x", "name": ""})

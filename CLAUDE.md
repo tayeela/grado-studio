@@ -221,6 +221,27 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.21.0: ТЭП по методике «Калькулятор 2.0» (genplan.tech/calc) с московскими нормами.**
+  Owner sent the calculator's methodological reference and the rounding rule: math rounding to 3 decimals (SPP to 2),
+  people and parking places always up to a whole number.
+  - New preset `core/compute/grado_compute/presets/moscow_calc2.json` (ГРАДО 2 only; `moscow_krt.json` stays for the studio,
+    wizard and calc-web). Chain: СПП → жилая/нежилая, МКД/ИЖС, нежилая часть МКД 6 % → НП ×0.9 → квартиры ×0.65 → население
+    ceil(S/33) (ИЖС and blocked S/50) → квартиры ceil(pop/2.1) → ДОО/школы by zone, поликлиники, спорт, обслуживание, машино-места
+    (945-ПП: постоянные S/(33×2.1)×0.8 without K1/K2, гостевые 10 %, приобъектные ×K1×K2, остановка with the 4-place cap for
+    built-in premises), озеленение by territory mode, баланс.
+  - Engine: `round` is now half-up (`expressions.round_half_up`, Decimal; Python round is banker's) and display uses it;
+    `results()` returns each metric's `precision`; new `div(a, b)` because `where()` evaluates both branches.
+  - Verified against the calculator's own output for Якиманка 15 ha (`core/compute/tests/fixtures/calc2_yakimanka_15ha.json`):
+    6610 people, 3148 flats, parking 2804/2519/252/33, stop 14, ДОО 291, школы 595 — all equal.
+    The calculator shows service areas rounded up (0.794); ГРАДО 2 keeps math rounding (0.793) by the owner's rule.
+  - District parameters: `regulations/moscow_districts.json` (2151-ПП zones for 132 districts, 945-ПП K2 incl. 11 districts
+    split by ТТК, ТТК hull from OSM). `/api/place` finds the district of the territory centre via Overpass `is_in` (cached in
+    `~/.grado2/cache/place`), plus rail stations within 3 km for K1 (straight distance × 1.3 — an estimate).
+  - «Показатели» window: block «Территория расчёта» (district, zone, K1, K2, ТиНАО, territory mode, nonresidential part of
+    МКД, unbuilt share); a manual change turns off «по району», the button returns it. Values are shown with their precision.
+  - Not done: ВРИ change cost and social compensation (P, Kp, УПКС missing), placement of social objects, population by flat
+    count, parking by flat mix (АГР).
+
 - **2026-09-23: Moscow НГП for ТЭП extracted — `docs/standards/moscow-ngp/`.** Owner sent 945-ПП (transport, parking), 2150-ПП
   (health), 2151-ПП (education), 2152-ПП (retail, services, residential territories) as RTF. MarkItDown does not read RTF
   (it passed the raw RTF through); conversion is `textutil -convert html` then `markitdown` (tables kept). Four parallel

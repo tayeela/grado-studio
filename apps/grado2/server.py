@@ -44,7 +44,8 @@ from grado_render import acad_lin                                  # noqa: E402
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
-PRESET = ROOT / "core/compute/grado_compute/presets/moscow_krt.json"
+PRESET = ROOT / "core/compute/grado_compute/presets/moscow_calc2.json"      # методика «Калькулятора 2.0» (docs/standards/moscow-ngp)
+DISTRICTS = json.loads((ROOT / "core/compute/grado_compute/regulations/moscow_districts.json").read_text("utf-8"))
 STYLES = ROOT / "core/render/grado_render/styles"
 STYLE_FILES = {"redln97.json", "moscow_lgr.json", "moscow_genplan.json"}   # отдаются фронту как есть
 # проекты — обычные файлы .grado2 (JSON) в папке документов: их видно в Finder/Проводнике, их можно переслать
@@ -376,15 +377,83 @@ def _bbox_of(geom):
     return (min(xs), min(ys), max(xs), max(ys)) if xs else None
 
 
-def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0):
-    """ТЭП по пресету КРТ Москвы. Население и соцобъекты — только от новой застройки."""
-    calc = max(terr_ha - restrict_ha, 0.0)
+def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0, nonres_part=6, education_zone=1,
+        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25):
+    """ТЭП по методике «Калькулятора 2.0» (Москва). Население, соцобъекты и машино-места — от новой застройки;
+    СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя."""
     e = Engine.from_file(PRESET)
-    e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha,
-                 density=(spp_new_m2 / 1000 / calc) if calc else 0.0,
-                 ratio_zh=max(0.0, min(100.0, share * 100)))
+    e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
+                 spp_low_in=spp_low_m2 / 1000, nonres_part=nonres_part, education_zone=2 if int(education_zone) == 2 else 1,
+                 k1=k1, k2=k2, tinao=1 if tinao else 0, territory_mode=int(territory_mode) if int(territory_mode) in (1, 2, 3) else 1,
+                 unbuilt_share=unbuilt_share)
     return {"metrics": e.results(),
             "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
+
+
+def _norm_name(t):
+    t = str(t or "").lower().replace("ё", "е")
+    for w in ("муниципальный округ", "поселение", "район", "городской округ", "город"):
+        t = t.replace(w, "")
+    return " ".join(t.replace("-", " ").split())
+
+
+def _in_ring(x, y, ring):
+    c = False
+    for i in range(len(ring)):
+        (x1, y1), (x2, y2) = ring[i], ring[i - 1]
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            c = not c
+    return c
+
+
+_PLACE_MEMO = {}
+
+
+def place_info(lon, lat):
+    """Территориальные параметры ТЭП по точке (как маркер «Калькулятора 2.0»): район и округ по OSM, образовательная
+    зона (2151-ПП), K2 (945-ПП прил. 3 с границей ТТК), ТиНАО, K1 по расстоянию до ближайшего входа или станции
+    метро, МЦК, МЦД. K1 — приближение: прямое расстояние × 1,3 вместо пешеходной изохроны."""
+    import math
+    key = (round(lon, 3), round(lat, 3))
+    if key in _PLACE_MEMO:
+        return _PLACE_MEMO[key]
+    cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"
+    if cache.exists():
+        raw = json.loads(cache.read_text("utf-8"))
+    else:
+        q = (f"[out:json][timeout:25];is_in({lat},{lon})->.a;area.a[\"boundary\"=\"administrative\"][\"admin_level\"~\"^(5|8)$\"];out tags;"
+             f"(node(around:3000,{lat},{lon})[\"railway\"=\"subway_entrance\"];node(around:3000,{lat},{lon})[\"railway\"~\"^(station|halt)$\"];);out;")
+        raw = OsmOverpass()._http_post(q)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps(raw, ensure_ascii=False), "utf-8")
+    areas = [e.get("tags", {}) for e in raw.get("elements", []) if e.get("type") == "area"]
+    okrug = next((a.get("name") for a in areas if a.get("admin_level") == "5"), "")
+    dname = next((a.get("name") for a in areas if a.get("admin_level") == "8"), "")
+    tinao = int(any(w in (okrug or "") for w in ("Троицк", "Новомосковск")))
+    table = {_norm_name(k): k for k in DISTRICTS["k2"]}
+    district = table.get(_norm_name(dname))
+    inside_ttk = _in_ring(lon, lat, DISTRICTS["ttk_hull"])
+    notes = []
+    if district:
+        k2row = DISTRICTS["k2"][district]
+        k2 = (k2row.get("inside_ttk") if inside_ttk else k2row.get("outside_ttk")) if "inside_ttk" in k2row else \
+             (k2row["exclave"] if "exclave" in k2row and lon < 37.33 else k2row["value"])
+        zone = 2 if district in DISTRICTS["zone2"] else 1
+    else:
+        k2, zone = (0.9, 2 if tinao else 1)
+        notes.append(f"район «{dname or 'не определён'}» не найден в таблицах 945-ПП и 2151-ПП — K2 и зона приняты {k2} и {zone}, поправьте вручную")
+    # ближайший вход или станция рельсового каркаса
+    rail = [e for e in raw.get("elements", []) if e.get("type") == "node"
+            and (e["tags"].get("railway") == "subway_entrance" or e["tags"].get("station") in ("subway", "light_rail", "monorail")
+                 or e["tags"].get("railway") in ("station", "halt") and e["tags"].get("train") == "yes" or "МЦ" in e["tags"].get("network", ""))]
+    kx = 111320 * math.cos(math.radians(lat))
+    dist = min((math.hypot((e["lon"] - lon) * kx, (e["lat"] - lat) * 110540) for e in rail), default=None)
+    walk = dist * 1.3 if dist is not None else None
+    k1 = 0.75 if walk is not None and walk < 1200 else 0.9 if walk is not None and walk <= 2200 else 1.0
+    out = {"district": district or dname, "known": bool(district), "okrug": okrug, "tinao": tinao, "inside_ttk": inside_ttk,
+           "zone": zone, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes}
+    _PLACE_MEMO[key] = out
+    return out
 
 
 def project_path(name):
@@ -585,8 +654,14 @@ class Handler(SimpleHTTPRequestHandler):
                 except ConnectorError as e:
                     return self._json(502, {"error": str(e)})
             if self.path == "/api/tep":
-                f = {k: float(req.get(k) or 0) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2")}
+                f = {k: float(req[k]) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2", "spp_low_m2", "nonres_part",
+                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share") if req.get(k) is not None}
                 return self._json(200, tep(**f))
+            if self.path == "/api/place":
+                try:
+                    return self._json(200, place_info(float(req["lon"]), float(req["lat"])))
+                except ConnectorError as e:
+                    return self._json(502, {"error": str(e)})
             return self._json(404, {"error": "no such method"})
         except (KeyError, ValueError, TypeError) as e:
             return self._json(400, {"error": f"bad request: {e}"})

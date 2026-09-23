@@ -1,0 +1,19 @@
+{
+  "source": "genplan.tech/calc «Калькулятор 2.0», точка в районе Якиманка (ЦАО, кад. квартал 77:01:0002016), снято 23.09.2026",
+  "inputs": {"terr_area_ha": 15, "restrict_area_ha": 0, "district": "Якиманка", "mode": "СПП", "density_spp": 23.8, "residential_share": 1.0,
+             "nonresidential_part_of_residential": 0.06, "social_objects_placed": false},
+  "expected": {
+    "density_spp": 23.8, "density_np": 21.42, "population": 6610, "flats": 3148,
+    "spp_total": 357.000, "spp_res": 357.000, "spp_res_living": 335.580, "spp_res_nonres": 21.420, "spp_nonres": 0.000,
+    "np_total": 321.300, "np_res_living": 302.022, "np_res_nonres": 19.278,
+    "flats_area": 218.127, "nnp": 19.278,
+    "balance_res_ha": 15, "balance_mkd_plots_ha": 11.25, "balance_unbuilt_ha": 3.75,
+    "density_res_plots": 31.73,
+    "doo_places": 291, "school_places": 595, "clinic_mixed": 126, "clinic_adult": 88, "clinic_child": 39,
+    "sport_flat_ha": 0.6412, "sport_indoor_nnp": 5.288, "sport_indoor_500": 2.116, "sport_indoor_1500": 3.173,
+    "retail_nnp": 1.785, "services_nnp": 0.661, "catering_nnp": 0.794, "culture_nnp": 0.992, "city_services_nnp": 0.595,
+    "parking_total": 2804, "parking_perm": 2519, "parking_guest": 252, "parking_visitor": 33, "parking_stop": 14,
+    "vri_cost_mln": 72640.310, "social_compensation_mln": 11300.140, "comp_doo_mln": 3771.232, "comp_school_mln": 5812.776, "comp_clinic_mln": 1716.132,
+    "green_zhk_ha": 3.3050, "green_planting_ha": 2.3135, "green_playgrounds_ha": 0.9915, "green_public_ha": 0.4627
+  }
+}

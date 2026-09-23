@@ -131,7 +131,7 @@ class Engine:
         v = self._values[name]
         m = self.metrics.get(name)
         if m is not None and m.precision is not None:
-            v = round(v, m.precision) if m.precision > 0 else int(round(v))
+            v = expressions.round_half_up(v, m.precision)
         if isinstance(v, float) and v.is_integer():
             v = int(v)
         return v
@@ -143,5 +143,5 @@ class Engine:
             if m.hidden:
                 continue
             out.append({"id": m.id, "title": m.title, "unit": m.unit,
-                        "group": m.group, "value": self.display(mid)})
+                        "group": m.group, "value": self.display(mid), "precision": m.precision})
         return out

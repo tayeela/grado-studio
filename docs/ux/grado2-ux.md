@@ -89,6 +89,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». Open: K1 is straight distance × 1.3, not a walking route; a
+  territory across two districts takes the district of its centre; ВРИ cost and social compensation are not computed;
+  the «Территория расчёта» block has no «сброс» for territory mode and percentages (only for district values).
 
 - 2026-09-23 (v0.20.0, partly done): on the real Хорошёво site (13.2 ha buildable in 6 irregular parts) plots are now clipped
   by the boundary when ≥ 70 % (ИЖС) / 60 % (blocked) remain and the house fits — use of the site 30 → 45 %; urban blocks are
@@ -127,7 +130,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (done v0.15.0): segmented controls are an even grid; five typologies sit in 3 + 2 equal cells, nothing cut.
 - 2026-09-23 (done v0.14.0): graph node titles, list values and the info line are cut with «…» to the node width;
   the list menu still shows full names.
-- 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a
+- 2026-09-23 (partly done v0.21.0: ТЭП uses 2151-ПП/2150-ПП norms and zones): Moscow's own social norms are not wired into radii; radii are federal СП 42.13330 — say so when a
   Moscow document is prepared.
 - 2026-09-23 (done v0.16.0): a sheet's frame is shown on the map (button in the sheet row) and dragged with the mouse
   like an AutoCAD viewport; the sheet keeps its own centre («Вернуть» centres it on the territory again). Content «таблица

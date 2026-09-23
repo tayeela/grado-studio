@@ -471,24 +471,43 @@ function densityGoal() {
 
 function NTep() { this.addInput("посадка", "sketch"); this.addInput("сохраняемые", "geom"); this.addInput("ограничения", "geom"); this.addOutput("ТЭП", "tep");
   this.addWidget("slider", "доля жилья, %", 80, () => { }, { min: 0, max: 100, precision: 0, slider_color: "#c0a6d4" }); this.addWidget("slider", "цель, тыс. м²/га", 25, () => { }, { min: 5, max: 45, precision: 0, slider_color: "#c0a6d4" }); finish(this, "tep", 230); }
-NTep.title = "ТЭП · методика КРТ Москвы"; NTep.prototype.onExecute = function () {
+NTep.title = "ТЭП · Москва, «Калькулятор 2.0»"; NTep.prototype.onExecute = function () {
   const sk = this.getInputData(0) || [], kept = this.getInputData(1), lim = this.getInputData(2), share = this.widgets[0].value / 100, target = this.widgets[1].value;
-  const key = [gid(sk), gid(kept), gid(lim), share, target, dataRev].join("|");
+  const tp = tepParams(this); placeLookup(this);
+  const key = [gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
 
+/* Территориальные параметры ТЭП (как маркер «Калькулятора 2.0»): район → образовательная зона (2151-ПП), K2 (945-ПП прил. 3,
+   внутри ТТК 0,2), ТиНАО; K1 — по расстоянию до ближайшей станции. Определяются по центру территории, правятся руками
+   в окне «Показатели» (тогда auto = false и повторно не перезаписываются). Хранятся в узле ТЭП — сохраняются в проекте. */
+function tepParams(n) {
+  n.properties ||= {};
+  return n.properties.tp ||= { auto: true, district: "", zone: 1, k1: 1, k2: 0.9, tinao: 0, mode: 1, nonres: 6, unbuilt: 25, walk: null, rev: -1, notes: [] };
+}
+function placeLookup(n) {
+  const tp = tepParams(n); if (!TERR || tp.rev === TERR_REV || n._placeBusy) return;
+  n._placeBusy = true; const rev = TERR_REV, [lon, lat] = turf.centroid(TERR).geometry.coordinates;
+  api("/api/place", { lon, lat }).then(r => {
+    tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
+    if (tp.auto) Object.assign(tp, { zone: r.zone, k1: r.k1, k2: r.k2, tinao: r.tinao });
+    recompute(true); renderTep();
+  }).catch(e => { tp.rev = rev; tp.notes = ["район не определён: " + e.message + " — задайте зону и K1, K2 вручную"]; renderTep(); }).finally(() => { n._placeBusy = false; });
+}
 /* ТЭП: геометрические части — здесь, нормативная часть — движок ядра на сервере */
 function keptBuildings(kept) { const src = kept?.properties?._src || []; return src.filter(f => /Polygon/.test(f.geometry.type) && insideTerr(f)); }
-async function tepRequest(sketch, kept, lim, share, target) {
+async function tepRequest(sketch, kept, lim, share, target, tp = {}) {
   const keptList = keptBuildings(kept), keptSet = new Set(keptList);
   const sppNew = sketch.reduce((s, b) => s + b.m2 * b.floors, 0), fpNew = sketch.reduce((s, b) => s + b.m2, 0);
   const sppKept = keptList.reduce((s, f) => s + m2(f) * floorsOf(f), 0), fpKept = keptList.reduce((s, f) => s + m2(f), 0);
   const ek = EXIST_KEY(), demol = ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry.type) && insideTerr(f) && !keptSet.has(f)) : [];
   const restrict = m2(inter(TERR, lim)) / 1e4, terr = TERR_M2 / 1e4;
-  const r = await api("/api/tep", { terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept });
+  const sppLow = sketch.filter(b => b.maxF === 3).reduce((s, b) => s + b.m2 * b.floors, 0);        // ИЖС и блокированные: 50 м² квартир на жителя
+  const r = await api("/api/tep", { terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept, spp_low_m2: sppLow,
+    nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25 });
   const m = Object.fromEntries(r.metrics.map(x => [x.id, x.value]));
   return { m, metrics: r.metrics, density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
 }
@@ -879,15 +898,34 @@ function syncPreview() {
   RES.forEach(r => r.layer.setVisible(r.on !== false && (r.id === "prev" ? open("wGraph") : any)));
   if (typeof renderTree === "function") renderTree();
 }
-const GROUP_ORDER = ["Территория", "Застройка", "Население", "Социальная инфраструктура", "Обслуживание", "Благоустройство", "Транспорт"];
+const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
+const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
   const t = RESULT.tepNode?._tep; if (!t) { $("tep").innerHTML = `<div class="empty">${TERR ? "Считаю…" : "Нет территории"}</div>`; return; }
+  const tp = tepParams(RESULT.tepNode), sel = (k, opts, lab) => `<select data-tp="${k}" aria-label="${lab}">${opts.map(([v, l]) => `<option value="${v}" ${String(tp[k]) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
   const dCls = t.density > t.target * 1.05 ? "bad" : t.density < t.target * .8 ? "warn" : "good";
   const byGroup = {}; t.metrics.forEach(m => (byGroup[m.group || "Прочее"] ||= []).push(m));
-  $("tep").innerHTML = `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 1) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 1) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 1) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 1) + " тыс. м²"]])
-    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)} · методика КРТ</div>` + kv(ms.map(m => [m.title, fmt(m.value, Number.isInteger(m.value) ? 0 : 2) + " " + esc(m.unit)]))).join("")
-    + `<div class="note">Нормативная часть — движок ТЭП ядра ГРАДО (пресет КРТ Москвы) от СПП новой застройки: население, ДОО, школы, поликлиники, парковки. Ограничения — площадь ЗОУИТ внутри границы. ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}Перед документацией сверить с действующими нормативами.</div>`;
+  const place = `<div class="sect">Территория расчёта</div><div class="pad tepp">
+      <div class="row"><label>Район</label><b>${esc(tp.district || "определяется…")}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
+      <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
+      <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}${tp.walk != null ? `<small title="прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3">≈ ${fmt(tp.walk)} м</small>` : ""}</div>
+      <div class="row"><label title="945-ПП прил. 3: деловая активность района">K2</label>${sel("k2", [[0.2, "0,2"], [0.5, "0,5"], [0.7, "0,7"], [0.9, "0,9"]], "K2")}<label class="inl"><input type="checkbox" data-tp="tinao" ${tp.tinao ? "checked" : ""}> ТиНАО</label></div>
+      <div class="row"><label title="2152-ПП табл. 1.4.2">Жилые территории</label>${sel("mode", Object.entries(MODES), "Тип территории")}</div>
+      <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${tp.nonres}" style="width:64px"></div>
+      <div class="row"><label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label><input type="number" data-tp="unbuilt" min="0" max="90" value="${tp.unbuilt}" style="width:64px"></div>
+      ${tp.auto ? "" : `<button class="btn" data-tp-auto title="Снова взять зону, K1, K2 и ТиНАО по району территории">по району</button>`}
+      ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
+  $("tep").innerHTML = place + `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
+    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)]))).join("")
+    + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — приблизительно: прямое расстояние до станции × 1,3 вместо пешеходной изохроны. ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
+$("tep").addEventListener("change", e => {
+  const k = e.target.dataset.tp; if (!k || !RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
+  tp[k] = e.target.type === "checkbox" ? (e.target.checked ? 1 : 0) : +e.target.value;
+  if (["zone", "k1", "k2", "tinao"].includes(k)) tp.auto = false;
+  window.markDirty?.(); recompute(true);
+});
+$("tep").addEventListener("click", e => { if (!e.target.closest("[data-tp-auto]") || !RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode); tp.auto = true; tp.rev = -1; recompute(true); });
 function renderSketch() {
   renderTep();
   keptSrc.clear(); (RESULT.tepNode?._tep?.kept || []).forEach(f => keptSrc.addFeature(toOl(f)));
@@ -975,7 +1013,7 @@ $("bGen").onclick = async () => {
     VARS.forEach(v => { v.score = v.err + (v.own == null ? .3 : (100 - v.own) / 100 * .5); });   // недобор инсоляции весит как половина отклонения плотности
     VARS.sort((a, b) => a.score - b.score);
     varProgress(total - 1, total, "Показатели лучших вариантов…");
-    await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target); }));
+    await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target, tepParams(t)); }));
     varSel = -1; renderVars();
     if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
     const msg = run.stop ? `Подбор остановлен: вариантов ${VARS.length} из ${cands.length}${VARS.some(v => v.own == null) ? ", у части инсоляция не посчитана (—)" : ""}.` : `Вариантов: ${VARS.length}.`;
