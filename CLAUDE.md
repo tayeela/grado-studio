@@ -221,6 +221,10 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.19.1: UX audit of v0.19.0.** After a typology click the panel said «Корпусов: 130» while the
+  map had 300 — the panel was drawn before the recompute; now recompute first. The typology hint described all eight
+  typologies in five lines; now one line about the selected one (`TYP_HINT`).
+
 - **2026-09-23, ГРАДО 2 v0.19.0: new typologies — ИЖС, «Блокированные», «Урбан-блоки».** Owner: «проработай генерацию ижс,
   блокированных домов и урбан блоков».
   - `place()` returns buildings plus `out.plots` (участки, дворы) and `out.streets` (проезды, улицы); `generate` keeps them.
