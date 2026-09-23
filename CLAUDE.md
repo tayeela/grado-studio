@@ -221,6 +221,9 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.20.1: UX audit of v0.20.0.** The «квартал, м» slider went down to 60 m while a 16 m section
+  depth needs ≥ 65 m (two sections + 20 m courtyard, short side 0.8) — the slider minimum now follows the section width.
+
 - **2026-09-23, ГРАДО 2 v0.20.0: new typologies on a real site (Хорошёво with ЕГРН, OSM, ЗОУИТ, ПЗЗ, constraints).**
   Buildable spot 13.2 ha in 6 irregular parts. Found and fixed:
   - Urban blocks: no 110 m block fitted whole, and the fallback «perimeter of the part» wrapped ribbons around existing
