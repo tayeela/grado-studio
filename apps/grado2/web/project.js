@@ -36,7 +36,7 @@ function clearProject() {
   TERR = null; TERR_M2 = 0; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
-  $("vlist").innerHTML = `<div class="empty">Нажмите «Сгенерировать», чтобы сравнить варианты.</div>`;
+  $("vlist").innerHTML = `<div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений.</div>`;
 }
 
 function applyProject(p) {

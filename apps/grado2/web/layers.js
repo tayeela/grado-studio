@@ -139,6 +139,7 @@ function syncFromSource(key, edited = true) {
   const l = lyr(key);
   if (l) { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) symAll(l, true); }
   renderTree(); renderTable();
+  if (edited) window.onLayerEdited?.(key);
 }
 
 /* ---------- оформление ---------- */
@@ -386,6 +387,7 @@ function layerMenu(anchor, key) {
     ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
     ["Выбрать все объекты слоя", () => { setCurrent(key); selectAll(); }],
     l.geom === "poly" && !fieldsOfKey(key).includes(DECISION) ? ["Реестр зданий: сохраняем / сносим", () => makeRegister(key)] : null,
+    l.geom === "poly" && fieldsOfKey(key).includes("Этажность") && !key.startsWith("nspd.") && !key.startsWith("osm.") ? ["Проверить нормы (инсоляция, запреты, разрывы)", () => runCheck(key)] : null,
     "-",
     ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
     STYLE_CLIP && STYLE_CLIP.from !== l.title ? [`Вставить стиль «${STYLE_CLIP.from}»`, () => { pushStyleUndo(l, "paste"); l.style = ST(JSON.parse(JSON.stringify(STYLE_CLIP.style))); if (l.style.mode === "cat") assignCats(l, true); restyle(l); renderRight(); if (STYLE_CLIP.geom !== l.geom) toast("Стиль вставлен; геометрия слоёв разная — проверьте толщину и заливку."); }] : null,
@@ -492,12 +494,15 @@ const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? 
 const sizeOf = f => { const g = f.getGeometry(), t = g?.getType() || "", w = GJ.writeFeatureObject(f); return /Polygon/.test(t) ? ["area", turf.area(w)] : /Line/.test(t) ? ["len", turf.length(w, { units: "kilometers" }) * 1000] : ["pt", 0]; };
 const DECSHORT = { "сохраняем": "сохраняем", "реконструкция": "реконстр.", "сносим": "сносим" };
 const decisionBar = () => SEL.some(s => fieldsOfKey(s.key).includes(DECISION)) ? `<div class="pad" style="padding-top:0"><div class="seg dec">${Object.keys(DECISIONS).map(v => `<button data-decide="${v}" title="Решение по выбранным зданиям: ${v}"><i style="background:${DECISIONS[v]}"></i>${DECSHORT[v]}</button>`).join("")}</div></div>` : "";
+// этажность выбранных корпусов своего слоя (эскиз, свои слои): − / +, как ручки высоты в TestFit
+const floorsBar = () => { const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность") && !/^(nspd|osm|gisogd)\./.test(s.key)); if (!own.length) return "";
+  const v = [...new Set(own.map(s => s.f.get("Этажность")))]; return `<div class="pad" style="padding-top:0"><div class="row" style="margin:0"><label>Этажность</label><button class="btn" data-fl="-1" title="На этаж ниже">−</button><b class="num" style="min-width:48px;text-align:center">${v.length === 1 ? v[0] : "разная"}</b><button class="btn" data-fl="1" title="На этаж выше">+</button></div></div>`; };
 function renderObject(el) {
   if (!SEL.length) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы.<br><br>Несколько объектов — Shift+щелчок или рамка с Shift. Все объекты слоя — ${MOD}+A.</div>`; return; }
   if (SEL.length === 1) {
     const { key, f } = SEL[0], l = lyr(key), [kind, v] = sizeOf(f);
     const keys = Object.keys(f.getProperties()).filter(k => !hiddenField(k));
-    el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>${decisionBar()}
+    el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>${decisionBar()}${floorsBar()}
       <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
       <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>`;
     return;
@@ -506,7 +511,7 @@ function renderObject(el) {
   const by = new Map(); SEL.forEach(s => (by.get(s.key) || by.set(s.key, []).get(s.key)).push(s.f));
   let area = 0, len = 0; if (SEL.length <= 5000) SEL.forEach(s => { const [k, v] = sizeOf(s.f); if (k === "area") area += v; if (k === "len") len += v; });
   const sum = [area ? `площадь ${fmt(area / 1e4, 3)} га` : "", len ? `длина ${fmt(len, 0)} м` : ""].filter(Boolean).join(" · ");
-  let h = `<div class="pad"><div class="ph"><b>Выбрано объектов: ${fmt(SEL.length)}</b></div>${sum ? `<div class="note" style="padding:0 0 6px">${sum}</div>` : ""}</div>${decisionBar()}`;
+  let h = `<div class="pad"><div class="ph"><b>Выбрано объектов: ${fmt(SEL.length)}</b></div>${sum ? `<div class="note" style="padding:0 0 6px">${sum}</div>` : ""}</div>${decisionBar()}${floorsBar()}`;
   if (by.size > 1) {
     h += `<table class="cl" style="margin:0 8px;width:calc(100% - 16px)">${[...by].map(([k, fs]) => `<tr><td>${symHTML(lyr(k))}</td><td>${esc(lyr(k).title)}</td><td class="n num">${fmt(fs.length)}</td><td><button class="btn" data-only="${esc(k)}" title="Оставить в выборе только объекты этого слоя">Только он</button></td></tr>`).join("")}</table>
       <div class="note">Атрибуты правятся у объектов одного слоя: оставьте в выборе один слой.</div>`;
@@ -529,6 +534,12 @@ document.addEventListener("click", e => {
   }
   if (b.dataset.only) { setSel(SEL.filter(s => s.key === b.dataset.only)); return; }
   if (b.dataset.decide) return setDecision(b.dataset.decide);
+  if (b.dataset.fl) {
+    const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность")), d = +b.dataset.fl; if (!own.length) return;
+    pushUndo(featRec(own, `этажность ${d > 0 ? "+1" : "−1"} у ${own.length} корп.`));
+    own.forEach(s => { const n = Math.max(1, (+s.f.get("Этажность") || 1) + d); s.f.set("Этажность", n); if (s.f.get("Площадь застройки, м²")) s.f.set("СПП, м²", Math.round(s.f.get("Площадь застройки, м²") * n)); s.f.set("_edited", true); });
+    new Set(own.map(s => s.key)).forEach(k => { syncFromSource(k); const l = lyr(k); l._br = null; restyle(l); }); renderRight(); return;
+  }
   const l = lyr(CUR); if (!l) return; const st = l.style;
   if (b.dataset.mode) { pushStyleUndo(l, "mode"); st.mode = b.dataset.mode; if (st.mode === "cat" && !Object.keys(st.cat.colors).length) assignCats(l); restyle(l); renderRight(); }
   else if (b.hasAttribute("data-recolor")) { pushStyleUndo(l, "recolor"); assignCats(l, false); restyle(l); renderRight(); }

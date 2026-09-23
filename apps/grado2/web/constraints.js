@@ -185,3 +185,73 @@ $("consBody").addEventListener("change", e => {
   try { localStorage.setItem("grado2.cons", JSON.stringify({ ...CONS, log: undefined })); } catch { }
 });
 $("consBody").addEventListener("click", e => { if (e.target.closest("#consRun")) computeConstraints(); });
+
+/* ---------- проверка норм эскиза (этап Э5): после «Построить эскиз» или правки принятого слоя ----------
+   Проверяется то, что посадка обещает, но что можно сломать ручной правкой или вне потолка:
+   · собственная инсоляция новых домов — фронт на их фасадах, тени от сохраняемых и других новых;
+   · соседи — точки, выполнявшие норму до застройки и потерявшие её;
+   · корпус на запрете (ЗОУИТ, отступ от красных линий, пожарный разрыв, ПЗЗ без строительства);
+   · разрыв между новыми корпусами меньше противопожарного 6 м (СП 4.13130, I–II степень).
+   Итог — слой точек «Проверка норм» с причиной у каждой точки, сводка в окне «Эскиз». */
+const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
+const prismsOf = (f, h) => polys(f).map(p => ({ ring: openRing(p[0].map(toXY)), holes: p.slice(1).map(q => openRing(q.map(toXY))), h, f }));
+const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, 200); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
+let CHECK = null;                 // {key} — принятый слой, который перепроверяется после правки
+function sketchFromLayer(key) {
+  return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1 })).filter(b => /Polygon/.test(b.f.geometry?.type));
+}
+async function checkNorms(sk, title) {
+  if (!TERR) return null;
+  const fh = CONS.floorH, kept = keptForCheck(), norm = CONS.norm * 60, lat = turf.centroid(TERR).geometry.coordinates[1];
+  const paths = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 10));
+  const keptP = kept.flatMap(f => prismsOf(f, floorsOf(f) * fh)), newP = sk.flatMap((b, i) => prismsOf(b.f, b.floors * fh).map(p => ({ ...p, i })));
+  const out = [], add = (ll, why, normTxt, obj) => out.push(turf.point(ll, { "Нарушение": why, "Норма": normTxt, "Объект": obj }));
+  // 1. собственная инсоляция новых домов (жилые — все корпуса эскиза)
+  const own = INSOL.frontPoints(newP, 6, CONS.z), obAll = INSOL.obstacleIndex(keptP.concat(newP));
+  for (let i = 0; i < own.length; i += 300) { INSOL.evalFront(own.slice(i, i + 300), obAll, paths, { norm, reveal: CONS.reveal }); await new Promise(r => setTimeout(r, 0)); }
+  const ownN = own.filter(p => !p.orient), ownBad = ownN.filter(p => !p.worst.ok);
+  // корпус без единого фасада с нормой — нарушение (квартира должна получить солнце хотя бы одной комнатой)
+  const byB = new Map(); ownN.forEach(p => { const b = newP[p.b].i; (byB.get(b) || byB.set(b, []).get(b)).push(p); });
+  byB.forEach((ps, i) => { const okShare = ps.filter(p => p.worst.ok).length / ps.length; if (okShare < .5) add(turf.centroid(sk[i].f).geometry.coordinates, `инсоляция: норму получают ${Math.round(okShare * 100)} % фасадов корпуса`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, `корпус ${i + 1}, ${sk[i].floors} эт.`); });
+  // 2. соседи, потерявшие норму
+  const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step * 2, CONS.z);
+  const nb0 = nb.map(p => ({ ...p })); INSOL.evalFront(nb0, INSOL.obstacleIndex(keptP), paths, { norm, reveal: CONS.reveal });
+  INSOL.evalFront(nb, obAll, paths, { norm, reveal: CONS.reveal });
+  const lost = nb.filter((p, n) => !p.orient && nb0[n].worst.ok && !p.worst.ok);
+  lost.forEach(p => add(toLL([p.x, p.y]), `инсоляция соседа: было ${Math.round(nb0[nb.indexOf(p)].worst.cont / 6) / 10} ч, стало ${Math.round(p.worst.cont / 6) / 10} ч`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, String(resid[p.b].f.properties["Адрес"] || "существующий дом")));
+  // 3. корпус на запрете — только включённые слои-запреты
+  EXCLUDE.map(lyr).filter(l => l && shown(l)).forEach(l => layerSrc[l.key].getFeatures().forEach(z => { const zf = GJ.writeFeatureObject(z);
+    sk.forEach((b, i) => { const x = inter(b.f, zf); if (x && m2(x) > 5) add(turf.pointOnFeature(x).geometry.coordinates, `корпус на запрете: ${z.get("Причина") || l.title}`, z.get("Норма") || "", `корпус ${i + 1}`); }); }));
+  // 4. противопожарный разрыв между новыми корпусами
+  for (let i = 0; i < sk.length; i++) for (let j = i + 1; j < sk.length; j++) {
+    const a = sk[i].f, b = sk[j].f; if (!safe(() => turf.booleanIntersects(buf(a, 6), b))) continue;
+    const x = inter(buf(a, 6), b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
+  }
+  const key = "cons:check";
+  consLayer(key, `Проверка норм: ${title}`, turf.featureCollection(out), "point", { mode: "cat", width: 2.5, cat: { field: "Нарушение", colors: {}, off: [] } });
+  const l = lyr(key); l.style.cat.colors = Object.fromEntries(catValues(key, "Нарушение").map(([v]) => [v, /инсоляция/.test(v) ? "#eda100" : "#b3261e"])); restyle(l);
+  return { n: out.length, own: ownN.length ? Math.round((ownN.length - ownBad.length) / ownN.length * 100) : 100, lost: lost.length, text: out.length ? `нарушений: ${out.length}` : "нарушений нет" };
+}
+async function runCheck(key) {
+  const sk = key ? sketchFromLayer(key) : RESULT.sketch.map(b => ({ f: b.f, floors: b.floors }));
+  if (!sk.length) return toast("Проверять нечего: постройте эскиз или выберите принятый слой эскиза.");
+  busy(true);
+  try {
+    const r = await checkNorms(sk, key ? lyr(key).title : "эскиз"); CHECK = key ? { key } : null;
+    window.LASTCHECK = r; if (!$("wSketch").hidden) renderParams();
+    toast(`Проверка норм: ${r.text}. Новые дома: норму инсоляции получают ${r.own} % фасадов (без северных); соседи, потерявшие норму: ${r.lost}.${key ? " Слой перепроверяется после каждой правки." : ""}`);
+  } catch (e) { console.error(e); toast("Проверка не выполнена: " + e.message); } finally { busy(false); }
+}
+// правка принятого эскиза — перепроверка через 1,5 с (живой контроль, как проверка правил в САПР)
+let checkT = null;
+window.onLayerEdited = key => { if (CHECK?.key !== key || !lyr(key)) return; clearTimeout(checkT); checkT = setTimeout(() => runCheck(key), 1500); };
+
+/* собственная инсоляция для перебора вариантов: доля фасадов новых домов с нормой (без северных), грубый шаг */
+function ownInsolation(sk) {
+  if (!TERR || !sk.length) return null;
+  const fh = CONS.floorH, lat = turf.centroid(TERR).geometry.coordinates[1], paths = [INSOL.sunPath(lat, 112, 15)];
+  const newP = sk.flatMap(b => prismsOf(b.f, b.floors * fh)), keptP = keptForCheck().flatMap(f => prismsOf(f, floorsOf(f) * fh));
+  const pts = INSOL.frontPoints(newP, 12, CONS.z); INSOL.evalFront(pts, INSOL.obstacleIndex(keptP.concat(newP)), paths, { norm: CONS.norm * 60, reveal: CONS.reveal });
+  const n = pts.filter(p => !p.orient); return n.length ? Math.round(n.filter(p => p.worst.ok).length / n.length * 100) : 100;
+}
+window.runCheck = runCheck; window.ownInsolation = ownInsolation;

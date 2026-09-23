@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.9.0)
+## Where we are (23.09.2026, v0.10.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -42,6 +42,10 @@ the owner's decision on the ODA converter.
 ПЗЗ zero subzones, insolation front of neighbours' windows, solar ceiling with the ПЗЗ height); graph node «Ограничения»
 reads the switched-on layers; placement never exceeds the ceiling. Insolation validated against the МАрхИ 55° ruler and
 analytic cases. Not done: site sun-hours map and own insolation of new buildings (moved to Э5).
+Э5 done in v0.10.0: five typologies, floors water-filled to the density goal under the ceiling, a 20-candidate variant
+search with a comparison table, «Проверить нормы» (own and neighbours' insolation, bans, fire gaps) re-run live on edits of
+an accepted sketch, floors ± for selected buildings, 3D ground shadows for a date and time. Not done: NSGA-II (a weighted
+ranking is used instead), a sun-hours map of the site.
 
 ## Stages
 
@@ -78,7 +82,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
 - All constraints are layers the owner can see and switch off; generation reads the same layers.
 - Details and sources: section «Generation under constraints» below (from the research).
 
-### Э5. Generation (3–4 sessions)
+### Э5. Generation (3–4 sessions) — done, v0.10.0
 - Typologies: sections, perimeter block, towers, point-and-bar, mixed; floors chosen to hit the
   target density within the height limit.
 - Several variants scored by ТЭП and constraints; a comparison table; accept one into the project.

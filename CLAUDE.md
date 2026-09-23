@@ -221,6 +221,24 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.10.0 (stage Э5): generation — typologies, floors to the density goal, variant search, norms check, 3D shadows.**
+  - Typologies: Секции, Квартал, Башни, «Точка + секция» (a tower between sections in each row), «Смешанная» (sections on the edge
+    rows along streets, towers inside). Every building knows its kind («Корпус» in the accepted layer). Rotation −90…90 (90 = across).
+  - «Этажность по: цели плотности» (new 6th widget of «Посадка»): floors are water-filled so the new СПП reaches the ТЭП node's
+    target (target × territory − kept СПП), never above a building's ceiling; the node says «цель не достигнута: не хватает N тыс. м²»
+    when the ceiling does not allow it. «ниже по потолку» now means the ceiling is below the planned floors.
+  - «Подобрать варианты»: 5 typologies × 2 widths × along/across = 20 candidates with the density goal, ranked by density error
+    plus own insolation (share of non-north facades of the new buildings with the norm on 22.04, coarse), ТЭП from the server for
+    the top six; cards + a full comparison table; a click moves the parameters into the graph. ~25 s for Хорошёво.
+  - «Проверить нормы» (window «Эскиз», or layer menu of an accepted sketch): own insolation of new buildings (a building with < 50 %
+    facades at the norm is flagged), neighbours that lose the norm (checked against the state before development), buildings on
+    switched-on ban layers, gaps < 6 m between new buildings. Result — point layer «Проверка норм» with the reason on each point.
+    An accepted sketch that was checked is re-checked 1.5 s after every edit (`window.onLayerEdited` from `syncFromSource`).
+  - «Объект» for sketch buildings: «Этажность − / +» for the selection (undoable, recomputes «СПП, м²»).
+  - «Объём»: ground shadows for 22.04 / 22.06 / 22.08 / 22.12 and a solar-time slider 6–18; accepted sketch layers are drawn too.
+  - `fits` now needs 99.7 % of a building on the site (was 98.5 %): 1.5 % let sections poke into a water-protection zone.
+  - Window headers ignore drags that start on their own inputs and selects.
+
 - **2026-09-23, ГРАДО 2 v0.9.0 (stage Э4): constraints for generation — window «Ограничения», insolation front, solar ceiling.**
   - Window «Ограничения» (header button) builds ordinary layers in the group «Ограничения» from loaded data: «Запрет: ЗОУИТ и
     охранные зоны» (ЕГРН ЗОУИТ, СЗЗ, водоохранные, ОКН except development-regulation zones; each zone keeps «Причина»),

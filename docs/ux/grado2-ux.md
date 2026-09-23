@@ -69,6 +69,11 @@ L. **Constraints.** With buildings (and ideally red lines, ПЗЗ, ОКН) loade
    «Эскиз» → «Построить» → some sections are lower («ниже по потолку» in the node). Switch the ceiling layer off → the sketch
    rises back. The window says the insolation is a design-stage estimate by ГОСТ Р 57795-2017, not for expertise.
 
+M. **Generation.** After L: «Эскиз» → «Этажность по: цели плотности» → «Построить» — the node reaches the ТЭП target or says
+   how much is missing. «Варианты» → «Подобрать варианты» → cards and a table; click one → the map shows it → «Принять в проект».
+   Select three buildings → «Этажность +» a few times → the «Проверка норм» layer updates by itself. «Объём» → move the time
+   slider → shadows move.
+
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
@@ -86,3 +91,6 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 - 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
   one reveal angle for all windows. The front points are dense: at 1:3000 they merge into the facade line.
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
+- 2026-09-23: the variant search takes ~25 s with a status line only; a progress bar and a «Стоп» would help. Sections do not
+  yet move towards where the ceiling is high — only floors adapt.
+- 2026-09-23: the 5-typology segmented control wraps to two lines in the narrow «Эскиз» window.
