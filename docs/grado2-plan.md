@@ -24,7 +24,7 @@ Every number and every constraint can be traced to a data source and to a clause
 (greenfield). For each, the scenarios in `docs/ux/grado2-ux.md` pass, the package is produced in
 under a day, the console is clean, and the Windows installer runs on a clean machine.
 
-## Where we are (23.09.2026, v0.11.0)
+## Where we are (23.09.2026, v0.12.0)
 
 Done: one workspace with an AutoCAD-like tool strip; floating windows that snap to the side
 panels; resizable panels; QGIS-like layers (order, styles single/categories/ranges/rules/ЛГР,
@@ -48,6 +48,9 @@ an accepted sketch, floors ± for selected buildings, 3D ground shadows for a da
 ranking is used instead), a sun-hours map of the site.
 Э3 done in v0.11.0: analysis nodes (service radii by СП 42.13330, walking isochrones over OSM streets, block indicators,
 territory balance) that label their result on the map, «В слой» for any node, views of the map with legends.
+Э6 done in v0.12.0: window «Листы» — A3/A1 sheets from views with a ГОСТ frame and title block, north arrow, scale bar,
+legend and ТЭП table; SVG preview and a PDF album through the core renderer in МГГТ with REDLN97. DWG waits for the ODA
+converter decision.
 
 ## Stages
 
@@ -92,7 +95,7 @@ Each stage ends with a working, checked version and a commit. Estimates are in w
   highlights violations (gap, insolation of neighbours, ЗОУИТ).
 - 3D with shadows for a chosen date and time.
 
-### Э6. Output (3 sessions)
+### Э6. Output (3 sessions) — done, v0.12.0 (DWG open)
 - Sheets: A3/A1 frame by ГОСТ, title block, north arrow, scale bar, legend from the view, ТЭП table.
 - PDF through the core renderer (core/render + core/layout already print albums), with REDLN97.
 - Album of several sheets; DXF/DWG of the whole project.

@@ -79,12 +79,15 @@ N. **Analysis and views.** Load «Улично-дорожная сеть» and �
    кварталов» without inputs → blocks between streets with density. «Виды» → save «Существующее», hide layers, save
    «Анализ», switch between them; the legend follows.
 
+O. **Album.** After M: «Виды» → save «Существующее» and «Эскиз» → «Листы» → fill the title block → «Добавить лист» twice
+   (one per view, one A1 at 1:1000 with ТЭП) → the eye shows the sheet with frame, stamp, north arrow, scale bar and legend →
+   «PDF альбома» downloads a file in about a second.
+
 Every scenario: no console errors, every button has a tooltip, nothing overlaps at 1280×800.
 
 ## Queue
 
 
-- 2026-09-23: printing and sheets with REDLN97.
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
 - 2026-09-23: ФГИС ТП lists federal schemes first for Moscow; the Moscow genplan itself is not in the catalog by extent.
   Search by name inside the found list would help.
@@ -102,3 +105,5 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 - 2026-09-23: in graph «Слой» nodes a long layer name overlaps the widget label (litegraph combo); short names or a wider node.
 - 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a
   Moscow document is prepared.
+- 2026-09-23: sheets take the whole view; per-sheet extent/centre (drag the frame on the map) and a separate ТЭП-only sheet
+  are not there yet.

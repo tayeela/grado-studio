@@ -4,6 +4,7 @@
   POST /api/fetch  {bbox:[w,s,e,n], sources:[ключ,...]} → реальные слои по области
   POST /api/tep    {terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2} → ТЭП (методика КРТ)
   POST /api/import/files {files:[{name, b64}]} → слои из GeoJSON, KML/KMZ, Shapefile, DXF (WGS84)
+  POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
@@ -24,7 +25,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
-for sub in ("core/connectors", "core/compute", "core/render"):
+for sub in ("core/connectors", "core/compute", "core/render", "core/layout"):
     sys.path.insert(0, str(ROOT / sub))
 
 from grado_compute import Engine                                   # noqa: E402
@@ -183,8 +184,9 @@ PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, 
 
 REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))
 REDLN_IDX = acad_lin.lgr_index(REDLN["linetypes"])
-LGR_COLORS = {int(v["lgr_code"]): v["stroke"] for v in json.loads((STYLES / "moscow_lgr.json").read_text("utf-8"))["styles"].values()
-              if v.get("lgr_code") is not None and v.get("stroke")}
+_LGR = json.loads((STYLES / "moscow_lgr.json").read_text("utf-8"))["styles"].values()
+LGR_COLORS = {int(v["lgr_code"]): v["stroke"] for v in _LGR if v.get("lgr_code") is not None and v.get("stroke")}
+LGR_DASH = {int(v["lgr_code"]): [d * 2 for d in v["dash_mm"]] for v in _LGR if v.get("lgr_code") is not None and v.get("dash_mm")}   # мм на 1:2000 → метры
 
 
 def linetype_props(props):
@@ -459,6 +461,23 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
                 layers, errors = fetch(bbox, list(req.get("sources") or []))
                 return self._json(200, {"layers": layers, "errors": errors})
+            if self.path == "/api/print/pdf":
+                import print_io
+                body = print_io.render_pdf(req, REDLN, LGR_DASH)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/pdf")
+                self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path == "/api/print/svg":
+                import print_io
+                body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0))).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path == "/api/export/dxf":
                 import dxf_io
                 body = dxf_io.export_dxf(req["layers"], REDLN, LGR_COLORS)

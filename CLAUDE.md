@@ -221,6 +221,24 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.12.0 (stage Э6): sheets and a PDF album through the core renderer.**
+  - Window «Листы» (header): album meta for the title block (object, code, short stage ПП/П/Р, organisation) and a list of
+    sheets — title, A3 or A1 landscape, content (a saved view or the current map), scale (auto by the territory or
+    1:500…1:25 000), legend and ТЭП switches, preview (SVG) and «PDF альбома».
+  - The client resolves every object's symbol with the same `symbolOf` that draws the layers (a view's styles if the sheet
+    uses a view), clips to the frame and sends WGS84 + symbols; `apps/grado2/print_io.py` builds pages with the core layout
+    (`PageBorder`, `StampFrame` form 3 ГОСТ Р 21.101, `TableFrame`) and renders with the core PDF writer / SVG backend.
+    Map in МГГТ metres (exact transform at the sheet centre + its Jacobian; < 1 cm on the ground), REDLN97 linetypes from the
+    same LIN/SHX data as the screen (`linetype_ops`), red-line codes without a linetype dashed by the ЛГР library, hatches,
+    opacity mixed with white (the core PDF writer has no alpha), north arrow, scale bar, labels without overlaps, legend of the
+    view, ТЭП table (overflow is noted). Layout: map 275×224 mm on A3, 636×521 on A1, above the 185×55 stamp.
+  - **Pitfall (performance):** the first album of two sheets took 3 minutes — `hatch_ops` walked every vertex of whole
+    water-protection and sanitary zones (kilometres of outline) for each hatch line. Zones are clipped to the frame first
+    (`clip_ring`, Sutherland–Hodgman): 84 s → 0.08 s for an A3 sheet. The per-point Newton transform was replaced by the
+    Jacobian and the linetype walker by a moving pointer for the same reason.
+  - Tests: `tests/test_print.py` (two-sheet PDF, SVG with frame and legend, 100 m = 50 mm at 1:2000, a REDLN97 linetype with
+    shapes, ring clipping). The album and the sheets list are saved in the project (`album`).
+
 - **2026-09-23, ГРАДО 2 v0.11.0 (stage Э3): analysis nodes that explain themselves, «В слой», views of the map.**
   - OSM set `social` in the core connector (nodes, ways and relations with amenity school / kindergarten / clinic / doctors /
     hospital / pharmacy → points; a school's outline stays in `buildings` too). ГРАДО 2 source «Школы, детсады, поликлиники (OSM)»
