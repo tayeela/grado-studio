@@ -34,7 +34,7 @@ function sheetSpec(sheet) {
   const center = sheetCenter(sheet);
   const half = [fw / 2 / 1000 * scale * 1.15, fh / 2 / 1000 * scale * 1.15], c3 = ol.proj.fromLonLat(center), stretch = 1 / Math.cos(center[1] * Math.PI / 180);
   const ext = [c3[0] - half[0] * stretch, c3[1] - half[1] * stretch, c3[0] + half[0] * stretch, c3[1] + half[1] * stretch];
-  const vl = viewLayers(sheet), layers = [], legend = [];
+  const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
   vl.slice().reverse().forEach(pl => {                                   // снизу вверх, как рисует карта
     const st = pl.style, feats = [];
     layerSrc[pl.key]?.forEachFeatureInExtent(ext, f => {

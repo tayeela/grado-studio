@@ -79,14 +79,17 @@ function glSwitchRes(l) {                 // разрешение (м/пикс.)
   const ex = layerSrc[l.key].getExtent(), n = layerSrc[l.key].getFeatures().length, area = Math.max(1, ol.extent.getArea(ex));
   return Math.sqrt(15000 * area / n / (1600 * 900));
 }
+// видимость по масштабу (как в QGIS): слой виден только крупнее 1:maxDen; разрешение карты — через широту центра
+const denToRes = den => den * 0.000264583 / Math.cos(ol.proj.toLonLat(sharedView.getCenter())[1] * Math.PI / 180);
+const outOfScale = l => !!l.style.maxDen && scaleDen(sharedView.getResolution()) > l.style.maxDen;
 function olLayersFor(l) {
-  const src = layerSrc[l.key], out = [];
-  l._kind = kindOf(l); l.gl = l._kind.startsWith("gl");
-  const cv = new ol.layer.Vector({ source: src, style: (f, res) => styleFor(l, f, res), declutter: !!l.style.label });
+  const src = layerSrc[l.key], out = [], mr = l.style.maxDen ? denToRes(l.style.maxDen) : Infinity;
+  l._kind = kindOf(l); l.gl = l._kind.startsWith("gl"); l._maxDen = l.style.maxDen || 0;
+  const cv = new ol.layer.Vector({ source: src, style: (f, res) => styleFor(l, f, res), declutter: !!l.style.label, maxResolution: mr });
   if (l.gl) {
     symAll(l, false); const r = glSwitchRes(l);
-    out.push(new ol.layer.WebGLVector({ source: src, style: glStyle(l), minResolution: r, disableHitDetection: true }));
-    cv.setMaxResolution(r);
+    out.push(new ol.layer.WebGLVector({ source: src, style: glStyle(l), minResolution: r, maxResolution: mr, disableHitDetection: true }));
+    cv.setMaxResolution(Math.min(r, mr));
   }
   out.push(cv);
   out.forEach((x, i) => { x.set("key", l.key); x.set("sub", i); x.set("gl", x instanceof ol.layer.WebGLVector); });
@@ -211,7 +214,7 @@ function styleFor(l, f, res) {
 }
 function restyle(l) {
   l.cache.clear(); l._br = null;
-  if (kindOf(l) !== l._kind) rebuildLayer(l);
+  if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== l._maxDen) rebuildLayer(l);
   else if (l.gl) { symAll(l, false); ALLMAPS.forEach(m => m.getLayers().forEach(x => { if (x.get("key") === l.key) x.get("gl") ? x.setStyle(glStyle(l)) : x.changed(); })); }
   else layerSrc[l.key]?.changed();
   renderTree(); window.markDirty?.();
@@ -255,7 +258,7 @@ function renderTree() {
     h += `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="true" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
       <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
       <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
-      <span class="nm" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}">${esc(l.title)}</span>
+      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
       ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
       ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
       <span class="meta num">${fmt(d?.count ?? 0)}</span>
@@ -486,6 +489,8 @@ function renderStyle(el) {
   if (l.geom === "poly") h += `<div class="row"><label>Контур</label>${cbtn("stroke", st.stroke)}<input type="number" data-k="width" min="0" max="8" step=".1" value="${st.width}" style="width:64px" aria-label="Толщина контура"> пикс.</div>
     <div class="row"><label>Заливка, %</label><input type="range" data-k="opacity" min="0" max="1" step=".05" value="${st.opacity}" aria-label="Непрозрачность заливки"><span class="num">${Math.round(st.opacity * 100)}</span></div>`;
   else h += `<div class="row"><label>${l.geom === "point" ? "Размер" : "Толщина"}</label><input type="number" data-k="width" min=".3" max="10" step=".1" value="${st.width}" style="width:64px" aria-label="Толщина"> пикс.</div>`;
+  const DENS = [0, 1000, 2000, 2500, 5000, 10000, 25000];
+  h += `<div class="row"><label>Виден</label><select data-k="maxDen" data-num aria-label="Видимость слоя по масштабу" title="Как «Видимость в зависимости от масштаба» в QGIS: на более мелком масштабе слой не рисуется ни на карте, ни на листе. На расчёты (граф, ограничения) не влияет">${DENS.map(d => `<option value="${d}" ${(st.maxDen || 0) === d ? "selected" : ""}>${d ? "крупнее 1:" + fmt(d) : "на любом масштабе"}</option>`).join("")}</select></div>`;
   h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${l.layerOpacity}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(l.layerOpacity * 100)}</span></div>
     <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
   el.innerHTML = h;
@@ -560,7 +565,7 @@ function onPaneEdit(e) {
   if (t.hasAttribute("data-lop")) { pushStyleUndo(l, "lop"); l.layerOpacity = +t.value; t.nextElementSibling.textContent = Math.round(l.layerOpacity * 100); applyOrder(); return; }
   if (t.dataset.k) {
     pushStyleUndo(l, "k:" + t.dataset.k);
-    const p = t.dataset.k.split("."), v = t.type === "checkbox" ? t.checked : ["range", "number"].includes(t.type) || p[1] === "n" ? +t.value : t.value;
+    const p = t.dataset.k.split("."), v = t.type === "checkbox" ? t.checked : ["range", "number"].includes(t.type) || p[1] === "n" || t.dataset.num !== undefined ? +t.value : t.value;
     let o = st; p.slice(0, -1).forEach(x => o = o[x]); o[p[p.length - 1]] = v;
     if (t.dataset.k === "cat.field") assignCats(l, false);
     if (t.type === "range") t.nextElementSibling.textContent = Math.round(v * 100);
@@ -883,7 +888,9 @@ $("start").addEventListener("click", e => {
 if (MOD === "⌘") document.querySelectorAll("[title*='Ctrl+']").forEach(b => b.title = b.title.replaceAll("Ctrl+", "⌘"));
 mMain.on("pointermove", e => { const [lo, la] = ol.proj.toLonLat(e.coordinate); $("stXY").textContent = `${la.toFixed(5)}° с.ш. ${lo.toFixed(5)}° в.д.`; });
 function scaleDen(r) { const la = ol.proj.toLonLat(sharedView.getCenter())[1]; return Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10; }
-const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution())); };
+const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution()));
+  // имя слоя вне своего масштаба — серым курсивом, как в QGIS
+  LYR.forEach(l => { if (l.style.maxDen) document.querySelector(`[data-lk="${CSS.escape(l.key)}"] .nm`)?.classList.toggle("outscale", outOfScale(l)); }); };
 sharedView.on("change:resolution", syncScale); syncScale();
 
 ALLMAPS.forEach(m => window.attachDataLayers(m));

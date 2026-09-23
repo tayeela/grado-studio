@@ -102,7 +102,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (done v0.15.0): the style panel of a GPU-drawn layer says that labels appear from scale 1:N and hatches
   are a translucent fill at overview.
 - 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
-  one reveal angle for all windows. The front points are dense: at 1:3000 they merge into the facade line.
+  one reveal angle for all windows. (Done v0.17.0: the front points merged into the facade line at 1:3000 — the layer is now
+  shown only at 1:2500 and larger, by the new per-layer scale visibility.)
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
   Tried in v0.16 and not adopted: shifting the whole row grid across rows by 1/5…4/5 of a step and keeping the best
   capacity under the ceiling gave +0 % (sections), +0 % (mixed), +8 % (towers) on the test site, at 5× the time (1.7–2.5 s

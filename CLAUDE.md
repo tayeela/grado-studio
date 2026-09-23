@@ -221,6 +221,15 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.17.0: scale-dependent visibility of a layer (QGIS «Видимость в зависимости от масштаба»).**
+  Style panel row «Виден»: on any scale or larger than 1:1000…1:25 000 (`style.maxDen`, saved with the style, undoable).
+  `olLayersFor` sets `maxResolution` from the denominator (`denToRes`, latitude of the view centre) on the canvas and GPU
+  layers; `restyle` rebuilds the layer when `maxDen` changes (`l._maxDen`). The tree shows an out-of-scale layer's name in
+  grey italics (`outscale`, refreshed on every zoom); sheets drop layers whose limit is below the sheet scale. It does not
+  touch calculations: the «Ограничения» node reads `shown(l)` (checkbox and group), not the zoom. The insolation front layer
+  gets 1:2500 by default for newly computed constraints (existing projects keep their style).
+  - Also tried and **not adopted**: shifting the row grid under the solar ceiling (see the UX queue: +0–8 % at 5× the time).
+
 - **2026-09-23, ГРАДО 2 v0.16.0: «Окна ▾» menu on a laptop, sheet frame on the map, ТЭП-only sheet.**
   - Below 1480 px the `.btn.opt` window buttons are hidden and a «Окна ▾» menu lists them with labels and check marks
     (`role=menuitemcheckbox`, `aria-checked` set by `syncWinButtons`; arrows, Enter, Esc, outside click).

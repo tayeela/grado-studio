@@ -87,7 +87,7 @@ async function computeConstraints() {
       for (let i = 0; i < pts.length; i += 200) { INSOL.evalFront(pts.slice(i, i + 200), ob, paths, { norm: CONS.norm * 60, reveal: CONS.reveal }); setHint(`Инсоляция: фасады ${Math.min(pts.length, i + 200)} из ${pts.length}…`); await tick(); }
       const fmin = m => `${Math.floor(m / 60)} ч ${String(m % 60).padStart(2, "0")} мин`;
       const front = turf.featureCollection(pts.map(p => turf.point(toLL([p.x, p.y]), { "Норма": p.orient ? "не нормируется (фасад на север)" : p.worst.ok ? `выполняется (${p.worst.ok})` : "не выполняется до застройки", "Непрерывно": fmin(p.worst.cont), "Всего": fmin(p.worst.total), "Непрерывно, мин": p.worst.cont, "Здание": resid[p.b].f.properties["Адрес"] || resid[p.b].f.properties["Кадастровый номер"] || "" })));
-      consLayer(CK.front, "Инсоляция: окна соседей (фронт)", front, "point", { mode: "cat", width: 1.2, cat: { field: "Норма", colors: { "выполняется (непрерывная)": "#1f7a4d", "выполняется (прерывистая)": "#eda100", "не выполняется до застройки": "#b3261e", "не нормируется (фасад на север)": "#9aa1a8" }, off: [] } });
+      consLayer(CK.front, "Инсоляция: окна соседей (фронт)", front, "point", { mode: "cat", width: 1.2, maxDen: 2500, cat: { field: "Норма", colors: { "выполняется (непрерывная)": "#1f7a4d", "выполняется (прерывистая)": "#eda100", "не выполняется до застройки": "#b3261e", "не нормируется (фасад на север)": "#9aa1a8" }, off: [] } });
       // сетка потолка по территории
       const tb = bboxOf(ringsXY(TERR)[0]), cell = CONS.cell, nx = Math.ceil((tb[2] - tb[0]) / cell), ny = Math.ceil((tb[3] - tb[1]) / cell);
       const grid = { x0: tb[0], y0: tb[1], cell, nx, ny, inside: new Uint8Array(nx * ny) };
