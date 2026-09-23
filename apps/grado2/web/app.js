@@ -1123,6 +1123,9 @@ function syncZones() {
     let act = z.dataset.active; if (!ws.some(w => w.id === act)) act = ws[ws.length - 1]?.id || "";
     z.dataset.active = act; z.classList.toggle("tabbed", tabbed);
     ws.forEach(w => w.classList.toggle("dzoff", tabbed && w.id !== act));
+    // нижняя зона без вкладок: окна рядом, ширины — перетаскиваемой границей между ними (WST[id].bw — доля)
+    ws.forEach((w, i) => { w.classList.toggle("nfirst", k === "b" && !tabbed && i > 0); w.style.flexGrow = k === "b" && !tabbed ? (WST[w.id]?.bw || 1) : ""; });
+    if (k !== "b" && WST["zh" + k]) z.style.setProperty("--dzh", WST["zh" + k] + "px");
     let bar = z.querySelector(":scope>.dztabs");
     if (!bar) { bar = document.createElement("div"); bar.className = "dztabs"; bar.setAttribute("role", "tablist"); z.insertBefore(bar, z.querySelector(":scope>.win")); bindTabs(bar); }
     bar.hidden = !tabbed;
@@ -1219,12 +1222,43 @@ function syncWinButtons() {
 }
 // меню «Окна ▾»: те же кнопки с подписями (видно ниже 1480 px, где значки без слов непонятны)
 // ниже 1080 px в меню уходят и основные окна: значки без подписей непонятны
-$("winMenu").innerHTML = [...document.querySelectorAll(".wins .btn[data-win]")].map(b => `<button role="menuitemcheckbox" class="${b.classList.contains("opt") ? "" : "core"}" data-win="${b.dataset.win}" title="${esc(b.title)}">${b.querySelector("i, svg").outerHTML}${esc(b.querySelector(".lb").textContent)}</button>`).join("");
-const winMenu = on => { $("winMenu").hidden = !on; $("bMore").setAttribute("aria-expanded", on); if (on) { syncWinButtons(); $("winMenu").querySelector("button")?.focus(); } };
+const WINITEMS = [...document.querySelectorAll(".wins .btn[data-win]")].map(b => `<button role="menuitemcheckbox" class="${b.classList.contains("opt") ? "" : "core"}" data-win="${b.dataset.win}" title="${esc(b.title)}">${b.querySelector("i, svg").outerHTML}${esc(b.querySelector(".lb").textContent)}</button>`).join("");
+/* Раскладки окон под задачу (как рабочие пространства AutoCAD и профили панелей QGIS): какие окна открыты и где встроены.
+   Готовые — под основные этапы; «Запомнить текущую» добавляет свою. Значение окна: "l" / "r" / "b" — зона, null — плавает. */
+const LAYOUTS = {
+  "Существующее положение": { wData: "l", wTable: "b" },
+  "Ограничения и анализ": { wCons: "r", wGraph: "b", wTep: "r" },
+  "Эскиз и варианты": { wSketch: "r", wTep: "r", wVars: "b" },
+  "Листы и альбом": { wViews: "l", wSheets: "b" },
+};
+const userLayouts = () => WST.layouts ||= {};
+function applyLayout(L) {
+  Object.keys(W0()).forEach(id => { if (!(id in L) && !$(id).hidden) winOpen(id, false); });
+  Object.entries(L).forEach(([id, z]) => { if (!$(id)) return; (WST[id] ||= {}).dock = z; if (!$(id).hidden) winOpen(id, false); winOpen(id, true); });
+  saveWins(); layoutChanged();
+}
+function saveLayout() {
+  const L = {}; Object.keys(W0()).forEach(id => { if (!$(id).hidden) L[id] = $(id).classList.contains("docked") ? dockPref(id) : null; });
+  if (!Object.keys(L).length) return toast("Откройте нужные окна и расставьте их — тогда раскладку можно запомнить.");
+  const U = userLayouts(); let n = 1; while (U["Моя раскладка " + n]) n++; U["Моя раскладка " + n] = L; saveWins(); toast(`Запомнено как «Моя раскладка ${n}» — она в меню «Окна», раздел «Раскладка окон».`);
+}
+function renderWinMenu() {
+  const lay = (name, user) => `<button role="menuitem" class="lay" data-layout="${esc(name)}" data-user="${user ? 1 : ""}" title="Открыть окна этой раскладки и расставить их"><i data-lucide="layout-dashboard"></i>${esc(name)}${user ? `<i class="x" data-laydel="${esc(name)}" title="Удалить раскладку">×</i>` : ""}</button>`;
+  $("winMenu").innerHTML = WINITEMS + `<div class="mh">Раскладка окон</div>` + Object.keys(LAYOUTS).map(n => lay(n)).join("") + Object.keys(userLayouts()).map(n => lay(n, true)).join("")
+    + `<button role="menuitem" class="lay" data-laysave title="Запомнить, какие окна открыты и где встроены"><i data-lucide="bookmark-plus"></i>Запомнить текущую…</button>`;
+  icons();
+}
+renderWinMenu();
+$("winMenu").addEventListener("click", e => {
+  const del = e.target.closest("[data-laydel]"); if (del) { e.stopImmediatePropagation(); delete userLayouts()[del.dataset.laydel]; saveWins(); renderWinMenu(); return; }
+  const b = e.target.closest("[data-layout]"); if (b) { applyLayout(b.dataset.user ? userLayouts()[b.dataset.layout] : LAYOUTS[b.dataset.layout]); return; }
+  if (e.target.closest("[data-laysave]")) saveLayout();
+});
+const winMenu = on => { if (on) renderWinMenu(); $("winMenu").hidden = !on; $("bMore").setAttribute("aria-expanded", on); if (on) { syncWinButtons(); [...$("winMenu").querySelectorAll("button")].find(b => b.offsetParent)?.focus(); } };
 $("bMore").onclick = e => { e.stopPropagation(); winMenu($("winMenu").hidden); };
 $("winMenu").addEventListener("click", () => winMenu(false));
 $("winMenu").addEventListener("keydown", e => {
-  const items = [...$("winMenu").querySelectorAll("button")], i = items.indexOf(document.activeElement);
+  const items = [...$("winMenu").querySelectorAll("button")].filter(b => b.offsetParent), i = items.indexOf(document.activeElement);
   if (e.key === "Escape") { e.stopPropagation(); winMenu(false); $("bMore").focus(); }
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
 });
@@ -1262,9 +1296,22 @@ document.querySelectorAll(".win").forEach(w => {
   const dres = document.createElement("div"); dres.className = "dres"; dres.title = "Потяните, чтобы изменить высоту"; w.append(dres);
   dres.addEventListener("pointerdown", e => {
     const y0 = e.clientY, h0 = w.offsetHeight, side = w.parentElement.closest(".side"); dres.setPointerCapture(e.pointerId);
-    const mv = ev => { const px = Math.max(90, Math.min((side?.clientHeight || 600) - 90, h0 - (ev.clientY - y0))); w.style.flexBasis = px + "px"; (WST[w.id] ||= {}).dh = px; };
+    const z = w.parentElement, zk = Object.keys(DZ).find(k => DZ[k] === z), tab = z.classList.contains("tabbed"), zh0 = z.offsetHeight;
+    // во вкладках высоту держит сама зона (одна на все вкладки), без вкладок — окно
+    const mv = ev => { const lim = (side?.clientHeight || 600) - 150, px = Math.max(90, Math.min(lim, (tab ? zh0 : h0) - (ev.clientY - y0)));
+      if (tab) { z.style.setProperty("--dzh", px + "px"); WST["zh" + zk] = px; } else { w.style.flexBasis = px + "px"; (WST[w.id] ||= {}).dh = px; } };
     const up = () => { dres.removeEventListener("pointermove", mv); dres.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
     dres.addEventListener("pointermove", mv); dres.addEventListener("pointerup", up);
+  });
+  // граница с соседом слева в нижней зоне: ширины двух окон меняются, сумма остаётся
+  const dresv = document.createElement("div"); dresv.className = "dresv"; dresv.title = "Потяните, чтобы поделить ширину между окнами"; w.append(dresv);
+  dresv.addEventListener("pointerdown", e => {
+    let prev = w.previousElementSibling; while (prev && (!prev.classList.contains("win") || prev.hidden)) prev = prev.previousElementSibling;
+    if (!prev) return;
+    const x0 = e.clientX, pw0 = prev.offsetWidth, tot = pw0 + w.offsetWidth; dresv.setPointerCapture(e.pointerId);
+    const mv = ev => { const pw = Math.max(200, Math.min(tot - 200, pw0 + ev.clientX - x0)); prev.style.flexGrow = pw; w.style.flexGrow = tot - pw; (WST[prev.id] ||= {}).bw = pw; (WST[w.id] ||= {}).bw = tot - pw; };
+    const up = () => { dresv.removeEventListener("pointermove", mv); dresv.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
+    dresv.addEventListener("pointermove", mv); dresv.addEventListener("pointerup", up);
   });
   // размер окна — за нижний правый угол (CSS resize); запоминаем и перерисовываем содержимое
   new ResizeObserver(() => { if (w.hidden || w.classList.contains("docked")) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);

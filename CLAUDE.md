@@ -226,6 +226,15 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.30.0: window layouts for tasks; a splitter between windows under the map.** The «Окна ▾» button is
+  now always shown: above the windows that did not fit the header it lists «Раскладка окон» — «Существующее положение»
+  (Данные left, Таблица below), «Ограничения и анализ» (Ограничения, Показатели right; Граф below), «Эскиз и варианты»
+  (Эскиз, Показатели right; Варианты below), «Листы и альбом» (Виды left; Листы below) — and «Запомнить текущую…», which
+  saves open windows with their zones as «Моя раскладка N» (× deletes; `WST.layouts`). `applyLayout` closes the other
+  windows. Two windows side by side under the map share the width by a draggable border (`.dresv`, `WST[id].bw`); a tabbed
+  side zone is resized as a whole (`--dzh`, `WST.zhl/zhr`). Menu icons are drawn after each render (the menu is rebuilt on
+  open); the short polar label at ≤ 1180 px had lost to a later CSS rule. e2e +3 steps.
+
 - **2026-09-23, ГРАДО 2 v0.29.1: layout audit (parallel reviewer, 17 findings) fixed.**
   - Several windows in one zone become tabs (`syncZones`): side zones always, the bottom zone when windows get < 340 px each;
     a tab drags out to float (`dragWin` shared by headers and tabs), × closes; crowded tabs keep only the icon. The layer

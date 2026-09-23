@@ -91,6 +91,9 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .dz.b{overflow:hidden}
 .dz.b>.win.docked{flex:1 1 0;min-width:0;border-left:1px solid var(--line)}
 .dz.b>.win.docked:first-of-type{border-left:0}
+.dresv{display:none;position:absolute;top:0;bottom:0;left:-3px;width:7px;cursor:col-resize;z-index:5;touch-action:none}
+.dresv:hover{background:linear-gradient(90deg,transparent 3px,var(--accent) 3px,var(--accent) 4px,transparent 4px)}
+.dz.b:not(.tabbed)>.win.docked.nfirst>.dresv{display:block}
 .dz.tabbed{flex-direction:column}
 .dz.tabbed>.win.dzoff{display:none}
 .dz.tabbed>.win.docked{flex:1 1 0;border-left:0;border-top:0}
@@ -353,17 +356,22 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.note.warn{color:var(--warn)}.nm.outscale{color:var(--faint);font-style:italic}
 /* узкий экран (ноутбук 1280): редкие подписи уходят в подсказки, иконки остаются */
 /* ноутбук: редкие окна уходят в меню «Окна ▾» с подписями, а не остаются значками без слов */
-.more{display:none;position:relative}.more .chev{width:12px;height:12px;margin-left:-2px}
+.more{display:inline-flex;position:relative}.more .chev{width:12px;height:12px;margin-left:-2px}
 .wmenu{position:absolute;top:calc(100% + 4px);right:0;min-width:210px}
 .wmenu button{display:flex;align-items:center;gap:8px}.wmenu button svg{width:15px;height:15px}
 .wmenu button::after{content:"";margin-left:auto;width:14px;text-align:right}.wmenu button[aria-checked="true"]::after{content:"✓"}
-@media (max-width:1480px){.wins .btn.opt{display:none}.more{display:inline-flex}.tl.opt span.lb{display:none}}
+/* меню «Окна»: раскладки — всегда; окна — те, что не поместились в шапку */
+.wmenu [data-win]{display:none}
+.wmenu .mh{padding:6px 12px 3px;color:var(--faint);font-size:11px}
+.wmenu .lay{display:flex;align-items:center;gap:8px}.wmenu .lay svg{width:15px;height:15px}.wmenu .lay::after{display:none}
+.wmenu .lay .x{font-style:normal;margin-left:auto;width:18px;height:18px;display:grid;place-items:center;border-radius:3px;opacity:.7}.wmenu .lay .x:hover{opacity:1;background:color-mix(in srgb,var(--accent-ink) 25%,transparent)}
+@media (max-width:1480px){.wins .btn.opt{display:none}.tl.opt span.lb{display:none}.wmenu [data-win]:not(.core){display:flex}}
 @media (max-width:1180px){.tl span.lb{display:none}}
-.wmenu .core{display:none}
 @media (max-width:1080px){.wins .btn[data-win]:not(.opt){display:none}.wmenu .core{display:flex}.wins>.vs{display:none}}
 /* узкое окно: панели слоёв и свойств выезжают поверх карты (кнопки «Слои» и «Свойства» в меню «Окна»), а не пропадают */
 @media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side,.work>.side.r{grid-column:1/-1;position:absolute;top:0;bottom:0;width:min(320px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{width:140px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+@media (max-width:1180px){.status .modes #mdPolar .t{min-width:2.4em}}
 </style>
 
 <div class="app">
@@ -372,7 +380,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
       <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wViews" title="Виды карты: наборы видимых слоёв с оформлением и легендой (как темы карты в QGIS)"><i data-lucide="bookmark"></i><span class="lb">Виды</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn opt" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn opt" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
-      <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Остальные окна и панели: слои, свойства, показатели, объём, сравнение, таблица"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
+      <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Окна, которые не поместились в шапку, и раскладки окон под задачу: существующее положение, анализ, эскиз, листы"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
     </nav>
     <span class="vs"></span>
     <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МГГТ, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button>

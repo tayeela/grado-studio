@@ -27,6 +27,14 @@ export default async p => {
   check(await p.ev(`["wTep","wSketch","wCons"].forEach(id=>winOpen(id,true)); await new Promise(r=>setTimeout(r,400));
     const ok = $("dzR").classList.contains("tabbed") && $("dzR").querySelectorAll(".dztabs [data-tab]").length===3 && $("rightPane").clientHeight>=140;
     ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,false)); return ok`), "три окна в панели свойств — вкладками, панель «Стиль» не сжата");
+  // раскладки окон: готовая открывает свои окна в своих зонах и закрывает прочие; текущую можно запомнить
+  check(await p.ev(`winOpen("wKeys", true); $("bMore").click(); await new Promise(r=>setTimeout(r,100)); [...document.querySelectorAll("#winMenu [data-layout]")].find(b=>b.textContent.startsWith("Эскиз")).click(); await new Promise(r=>setTimeout(r,400));
+    return $("wSketch").parentElement.id==="dzR" && $("wTep").parentElement.id==="dzR" && $("wVars").parentElement.id==="dzB" && $("wKeys").hidden && $("winMenu").hidden`), "раскладка «Эскиз и варианты» расставляет свои окна и закрывает прочие");
+  check(await p.ev(`winOpen("wTable", true); await new Promise(r=>setTimeout(r,300)); saveLayout(); return !!userLayouts()["Моя раскладка 1"]?.wTable`), "текущую раскладку можно запомнить");
+  const gv = await p.ev(`const g=$("wTable").querySelector(".dresv").getBoundingClientRect(), a=$("wVars").offsetWidth; return [g.left+3, g.top+g.height/2, a, $("dzB").classList.contains("tabbed")]`);
+  if (!gv[3]) { await p.drag(gv[0], gv[1], gv[0] + 120, gv[1]);
+    check(await p.ev(`return Math.abs($("wVars").offsetWidth - ${gv[2]} - 120) < 6`), "граница между окнами под картой перетаскивается"); }
+  await p.ev(`applyLayout({}); delete userLayouts()["Моя раскладка 1"]; saveWins(); return 1`);
   check(await p.ev(`const m=document.querySelector(".status .modes"), cs=getComputedStyle(m); return cs.marginBottom==="0px" && cs.backgroundColor==="rgba(0, 0, 0, 0)"`), "кнопки режимов в строке состояния не берут оформление переключателя стиля");
   check(await p.ev(`winOpen("wKeys", true); await new Promise(r=>setTimeout(r,100)); document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); await new Promise(r=>setTimeout(r,100)); return $("wKeys").hidden`), "Esc закрывает верхнее плавающее окно");
   // «С чего начать» закрывается и больше не мешает
