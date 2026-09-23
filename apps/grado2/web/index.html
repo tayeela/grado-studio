@@ -56,7 +56,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .tl:disabled{opacity:.4}
 .tl kbd{font:10px var(--mono);color:var(--faint)}
 .ribbon .tgt{display:flex;align-items:center;gap:6px;color:var(--muted);white-space:nowrap}
-.ribbon .tgt select{max-width:180px}
+.ribbon .tgt select{width:190px}
 .ribbon label.inl{color:var(--muted);white-space:nowrap}
 /* рабочая область: слои | карта | свойства */
 .work{--wl:280px;--wr:290px;position:relative;display:grid;grid-template-columns:var(--wl) minmax(0,1fr) var(--wr);min-height:0}
@@ -67,13 +67,33 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .work.noL .gut.l,.work.noR .gut.r{display:none}
 .win.snap{box-shadow:0 10px 30px rgba(0,0,0,.22),0 0 0 2px color-mix(in srgb,var(--accent) 55%,transparent)}
 .work.noL>.side:not(.r),.work.noR>.side.r{display:none}
-.work>.mapbox{grid-column:2;grid-row:1}.work>.side{grid-row:1;grid-column:1;min-width:0;overflow:hidden}.work>.side.r{grid-column:3}
+.work>.center{grid-column:2;grid-row:1;display:flex;flex-direction:column;min-width:0;min-height:0}.center>.mapbox{flex:1 1 0}.work>.side{grid-row:1;grid-column:1;min-width:0;overflow:hidden}.work>.side.r{grid-column:3}
 .status{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);white-space:nowrap;overflow:hidden}
 .status #stHint{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 .status b{font-weight:600}
+/* строка состояния не «прыгает»: у имени слоя, масштаба и координат постоянная ширина, цифры одинаковой ширины */
+.status #stLayer{flex:0 0 190px;overflow:hidden;text-overflow:ellipsis}
+.status #stScale{flex:0 0 64px;text-align:right}
+.status #stXY{flex:0 0 auto;min-width:27ch;text-align:right}
+.status #stScale,.status #stXY{font-variant-numeric:tabular-nums}
+@media (max-width:1180px){.status #stLayer{display:none}}
 /* плавающие окна */
 .win{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.22);display:flex;flex-direction:column;resize:both;overflow:hidden;min-width:240px;min-height:140px}
 .win.front{z-index:41}
+/* встроенные окна: зоны в панели слоёв, панели свойств и под картой */
+.dz{position:relative;display:flex;flex-direction:column;min-height:0;flex:0 1 auto}
+.dz:not(:has(>.win:not([hidden]))){display:none}
+.dz.b{flex:0 0 auto;flex-direction:row;height:280px;border-top:1px solid var(--line);background:var(--panel)}
+.win.docked{position:relative;inset:auto;z-index:auto;resize:none;border:0;border-radius:0;box-shadow:none;min-width:0;min-height:0;width:auto;height:auto;overflow:hidden}
+.dz:not(.b)>.win.docked{flex:0 1 300px;min-height:90px;border-top:1px solid var(--line)}
+.dz.b>.win.docked{flex:1 1 0;min-width:220px;border-left:1px solid var(--line)}
+.dz.b>.win.docked:first-of-type{border-left:0}
+.win.docked .wh{cursor:grab;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
+.dres{display:none;position:absolute;left:0;right:0;top:-3px;height:7px;cursor:row-resize;z-index:5;touch-action:none}
+.dres:hover{background:linear-gradient(transparent 3px,var(--accent) 3px,var(--accent) 4px,transparent 4px)}
+.dz:not(.b)>.win.docked>.dres,.dz.b>.dres.b{display:block}
+.dropind{position:fixed;z-index:60;pointer-events:none;border-radius:4px;background:color-mix(in srgb,var(--accent) 16%,transparent);outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
+.win.todock{opacity:.72}
 .wh{height:30px;display:flex;align-items:center;gap:7px;padding:0 3px 0 10px;border-bottom:1px solid var(--line);cursor:move;flex:0 0 auto;user-select:none;touch-action:none}
 .wh b{font-weight:600}.wh .sp{flex:1}.wh small{color:var(--faint)}
 .wb{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;position:relative}
@@ -81,6 +101,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .gwrap .lib{border-right:1px solid var(--line);overflow:auto}
 .wb .split{flex:1}
 .wb canvas.c3d{position:absolute;inset:0}
+.wb .empty{margin:auto;max-width:360px;padding:24px;text-align:center;color:var(--muted);line-height:1.5;display:flex;flex-direction:column;gap:6px;position:relative}.wb .empty b{color:var(--text);font-size:13px}
 .top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
 .brand{font-weight:600}
 .proj{border-color:transparent;background:none;color:var(--muted);max-width:340px}.proj .lb{overflow:hidden;text-overflow:ellipsis}.proj:hover{background:var(--hover);color:var(--text)}
@@ -139,8 +160,11 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .sym.line{height:0;border:0;border-top:2px solid;align-self:center}
 .attr{flex:1;display:flex;flex-direction:column;min-height:0}
 .attr .ah{display:flex;align-items:center;gap:8px;padding:4px 8px;border-bottom:1px solid var(--line)}
-.attr .ah .ttl{color:var(--muted)}
-.attr .ah input{height:22px;width:160px}
+.attr .ah .ttl{color:var(--muted);flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attr .ah .sp{display:none}
+.attr .ah label.inl{display:flex;align-items:center;gap:5px;white-space:nowrap;color:var(--muted);flex:0 0 auto}
+.attr .ah input[type=checkbox]{margin:0}
+.attr .ah input[type=text]{height:24px;width:clamp(90px,30%,180px);flex:0 1 auto}
 .attr .ab{flex:1;overflow:auto;background:var(--field)}
 table.at{border-collapse:collapse;width:100%}
 .at th{position:sticky;top:0;background:var(--panel);text-align:left;font-weight:600;padding:3px 8px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap}
@@ -153,12 +177,14 @@ table.at{border-collapse:collapse;width:100%}
 .ph{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .ph b{font-size:13px}
 .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
-.row>label:first-child{width:92px;color:var(--muted);flex:0 0 auto}
-.row>select,.row>input[type=text],.row>input[type=range]{flex:1}
+.row>label:first-child{width:clamp(62px,34%,92px);color:var(--muted);flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row>*{min-width:0}
+.row>select,.row>input[type=text],.row>input[type=range]{flex:1 1 60px;min-width:0}
+.row>input[type=number]{flex:0 1 64px}
+.row>label.inl{display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inl{display:flex;align-items:center;gap:4px;color:var(--text)}
-.modes{display:flex;border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin-bottom:8px}
-.modes button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:24px;padding:0 3px;font-size:11.5px}
-.modes button:last-child{border-right:0}
+.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.modes button{border:0;background:var(--panel);height:24px;padding:0 3px;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .modes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .cbtn{width:26px;height:20px;border:1px solid var(--line-2);border-radius:2px;padding:2px;background:var(--field);flex:0 0 auto}
 .cbtn i{display:block;width:100%;height:100%}
@@ -193,7 +219,7 @@ table.sheets input[type=checkbox]{width:auto;height:auto;display:block;margin:0 
 kbd{font:11px var(--mono);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:var(--field);color:var(--text);white-space:nowrap}
 table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;border-bottom:1px solid var(--line);vertical-align:top}table.keys td:first-child{width:1%;white-space:nowrap}
 .start{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:5;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.14);padding:12px;display:flex;flex-direction:column;gap:6px;min-width:300px}
-.start b{font-size:13px;margin-bottom:2px}.start .btn{justify-content:flex-start;height:28px}.start .btn kbd{margin-left:auto}
+.starth{display:flex;align-items:center;justify-content:space-between;margin:-4px -4px 2px 0}.start b{font-size:13px}.start .btn{justify-content:flex-start;height:28px}.start .btn kbd{margin-left:auto}
 .pop{position:fixed;z-index:70;background:var(--panel);border:1px solid var(--line-2);box-shadow:0 4px 14px rgba(0,0,0,.2);padding:6px;width:196px;border-radius:3px}
 .pop .g{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px}
 .pop .g button{aspect-ratio:1;border:1px solid rgba(0,0,0,.25);padding:0;border-radius:1px}
@@ -260,7 +286,8 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .seg.dec{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line-2);border-radius:3px;overflow:hidden}.seg.dec button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:26px;display:flex;align-items:center;justify-content:center;gap:5px}.seg.dec button:last-child{border-right:0}.seg.dec button:hover{background:var(--hover)}.seg.dec i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
-.vbar{display:flex;align-items:center;gap:8px;padding:5px 8px;border-bottom:1px solid var(--line)}
+.vbar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.vbar>#varMsg{flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vbar>.sp{display:none}.vbar .btn{flex:0 0 auto}
 .vbar b{font-weight:600}
 .vbar .sp{flex:1}
 .vprog{height:3px;background:var(--line);overflow:hidden}.vprog>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
@@ -275,7 +302,8 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .vc .vm{padding:2px 7px 6px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:0 8px;font-variant-numeric:tabular-nums}
 .vc .vm b{color:var(--text);font-weight:500}
 .empty{color:var(--faint);padding:24px;text-align:center}
-canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:#eeede8}
+canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--canvas)}
+.warnt{color:var(--warn);font-weight:600}
 .ci{width:18px;height:18px;flex:0 0 auto}
 .tl.ic{padding:0 6px}
 .ribbon .rl{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin:0 4px 0 2px;white-space:nowrap}
@@ -283,6 +311,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .status .modes{display:flex;gap:2px;flex:0 0 auto}
 .status .modes button{height:20px;padding:0 6px;border:1px solid var(--line);border-radius:3px;background:none;color:var(--faint);font:600 10.5px/1 system-ui,sans-serif;letter-spacing:.03em;display:flex;align-items:center;gap:3px}
 .status .modes button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:var(--accent)}
+.status .modes #mdPolar .t{min-width:6.6em;text-align:left}
 .status .modes .dd{font-style:normal;font-size:9px;padding-left:2px;border-left:1px solid var(--line);margin-left:1px}
 .cadmenu{position:fixed;z-index:90;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:6px 8px;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
 .cadmenu label{display:flex;align-items:center;gap:6px;white-space:nowrap}
@@ -314,7 +343,7 @@ body.cmdon .toast{bottom:104px}
 @media (max-width:1180px){.tl span.lb{display:none}}
 @media (max-width:1080px){.wins .btn span.lb{display:none}}
 /* узкое окно: панели слоёв и свойств выезжают поверх карты (кнопки «Слои» и «Свойства» в меню «Окна»), а не пропадают */
-@media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side{position:absolute;top:0;bottom:0;width:min(300px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{max-width:140px}}
+@media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side,.work>.side.r{grid-column:1/-1;position:absolute;top:0;bottom:0;width:min(320px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{width:140px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -347,24 +376,28 @@ body.cmdon .toast{bottom:104px}
       <div class="sh">Слои<span class="sp"></span><button class="tb" id="bNewLayer" title="Новый слой для рисования"><i data-lucide="plus"></i></button><button class="tb" id="bNewGroup" title="Новая группа из текущего слоя; другие слои переносятся в неё перетаскиванием"><i data-lucide="folder-plus"></i></button><button class="tb" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i></button><button class="tb drawerx" data-dock="L" title="Закрыть панель слоёв" aria-label="Закрыть панель слоёв"><i data-lucide="x"></i></button></div>
       <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>
       <div class="sb tree" id="layerTree"></div>
+      <div class="dz" id="dzL"></div>
     </aside>
-    <div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
+    <div class="center"><div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
       <div class="mtools"><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
-      <div class="start" id="start" hidden><b>С чего начать</b>
+      <div class="start" id="start" hidden role="dialog" aria-label="С чего начать"><div class="starth"><b>С чего начать</b><button class="tb" data-close-start title="Закрыть (Esc). Эти действия есть в справке F1" aria-label="Закрыть"><i data-lucide="x"></i></button></div>
         <button class="btn" data-go="example"><i data-lucide="map-pin"></i>Пример территории и выгрузка данных</button>
         <button class="btn" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу территории<kbd>BO</kbd></button>
         <button class="btn" data-go="draw"><i data-lucide="pentagon"></i>Чертить с нуля<kbd>PL</kbd></button>
         <button class="btn" data-go="proj"><i data-lucide="folder-open"></i>Открыть проект</button>
         <button class="btn" data-go="keys"><i data-lucide="circle-help"></i>Как работать и клавиши<kbd>F1</kbd></button></div></div>
+      <div class="dz b" id="dzB"></div></div>
     <aside class="side r">
       <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button><button class="tb drawerx" data-dock="R" title="Закрыть панель свойств" aria-label="Закрыть панель свойств"><i data-lucide="x"></i></button></div>
       <div class="sb" id="rightPane"></div>
+      <div class="dz" id="dzR"></div>
     </aside>
   </main>
 
   <footer class="status"><span id="stHint"></span><span id="stLayer"></span><span id="stScale" class="num"></span><span id="stXY" class="num"></span></footer>
 </div>
 
+<div class="dropind" id="dropInd" hidden></div>
 <section class="win" id="wData" hidden aria-label="Данные территории">
   <header class="wh"><i data-lucide="database"></i><b>Данные территории</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="terr"><div class="row"><button class="btn" id="bDraw"><i data-lucide="scan"></i>Нарисовать границу</button><button class="btn" id="bExample"><i data-lucide="map-pin"></i>Пример</button></div><div id="terrInfo" class="note" style="padding:6px 0 0">Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.</div></div>
@@ -393,7 +426,7 @@ body.cmdon .toast{bottom:104px}
   <header class="wh"><i data-lucide="box"></i><b>Объём</b><button class="tb" id="bRot" title="Повернуть на 90°"><i data-lucide="rotate-cw"></i></button>
     <select id="sunDay" title="Дата теней" aria-label="Дата теней"><option value="112">22 апреля</option><option value="172">22 июня</option><option value="234">22 августа</option><option value="356">22 декабря</option></select>
     <input type="range" id="sunTime" min="6" max="18" step=".25" value="12" style="width:120px" title="Время, солнечное" aria-label="Время"><small id="sunInfo" class="num"></small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
-  <div class="wb"><canvas class="c3d" id="c3d"></canvas></div>
+  <div class="wb"><canvas class="c3d" id="c3d"></canvas><div class="empty" id="e3d" hidden><b>Объёма пока нет</b>Здесь видны корпуса эскиза и сохраняемые здания с тенями. Сначала задайте границу территории (команда BO или «Пример территории» в окне «Данные»), затем постройте эскиз в окне «Эскиз».</div></div>
 </section>
 <section class="win" id="wCmp" hidden aria-label="Сравнение">
   <header class="wh"><i data-lucide="columns-2"></i><b>Сравнение</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>

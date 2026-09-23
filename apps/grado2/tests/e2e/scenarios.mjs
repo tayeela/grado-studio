@@ -11,6 +11,21 @@ export default async p => {
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
   await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`return !$("wKeys").hidden && $("keysBody").innerText.includes("Полилиния") && $("keysBody").innerText.includes("TR")`), "F1 открывает окно клавиш с командами черчения");
   await p.ev(`winOpen("wKeys", false); return 1`);
+  // эскиз без границы территории не строится и говорит почему
+  check(await p.ev(`winOpen("wSketch", true); await new Promise(r=>setTimeout(r,200)); document.querySelector('#wSketch [data-run="1"]').click(); await new Promise(r=>setTimeout(r,150));
+    const ok = !RESULT.placeNode.properties.run && /границ/.test($("toast").textContent) && /Нет границы/.test($("wSketch").textContent); winOpen("wSketch", false); return ok`), "эскиз без границы не строится: сообщение и пометка в окне «Эскиз»");
+  check(await p.ev(`winOpen("w3d", true); await new Promise(r=>setTimeout(r,200)); const ok=!$("e3d").hidden; winOpen("w3d", false); return ok`), "пустой «Объём» объясняет, что показать пока нечего");
+  // встраивание окон: таблица по умолчанию под картой; вытянутая за заголовок — плавает; брошенная у правого края — в панели свойств
+  const dock = await p.ev(`winOpen("wTable", true); await new Promise(r=>setTimeout(r,300)); const h=$("wTable").querySelector(".wh b").getBoundingClientRect(), m=$("mMain").getBoundingClientRect(); return [$("wTable").parentElement.id, h.left+5, h.top+5, m.left+m.width/2, m.top+100, m.right-8, m.top+m.height/2]`);
+  check(dock[0] === "dzB", "таблица атрибутов встроена под картой, карта ужалась");
+  await p.drag(dock[1], dock[2], dock[3], dock[4]);
+  check(await p.ev(`return $("wTable").parentElement===document.body && !$("wTable").classList.contains("docked")`), "окно вытягивается из панели за заголовок и плавает");
+  const h2 = await p.ev(`const h=$("wTable").querySelector(".wh b").getBoundingClientRect(); return [h.left+5, h.top+5]`);
+  await p.drag(h2[0], h2[1], dock[5], dock[6]);
+  check(await p.ev(`const ok=$("wTable").parentElement.id==="dzR"; winOpen("wTable", false); return ok && $("dropInd").hidden`), "брошенное у правого края окно встраивается в панель свойств");
+  await p.ev(`floatWin($("wTable")); WST.wTable.dock="b"; saveWins(); return 1`);
+  // «С чего начать» закрывается и больше не мешает
+  check(await p.ev(`document.querySelector("[data-close-start]").click(); const ok=$("start").hidden; localStorage.removeItem("grado2.start"); return ok`), "«С чего начать» закрывается крестиком");
 
   // A: слой, два полигона, атрибут, удаление и отмена
   await p.ev(`$("bNewLayer").click(); $("nlName").value = "Кварталы"; $("nlOk").click(); return 1`);

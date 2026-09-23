@@ -226,6 +226,29 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.29.0: windows dock into the workspace; layout defects from the owner's screenshots.** Owner: «значки
+  скачут, нет отступов, кривая вёрстка; окно должно не прилипать, а встраиваться в панель; приветственное окно нельзя закрыть;
+  эскиз строится без границы без ошибки; боковая панель неверно ведёт себя при сужении».
+  - Docking (QGIS panels / AutoCAD palettes): three zones — under the layer tree (`#dzL`), under the properties pane (`#dzR`),
+    under the map (`#dzB`, the map column is now `.center` = map + bottom zone). Drag a window header onto a side panel, the
+    map's left/right edge or its bottom edge — a blue drop indicator shows where; release docks it (the section is moved into
+    the zone, `.docked`: static, no shadow, no CSS resize), the map shrinks. Drag a docked header > 6 px — it floats again at
+    its floating size. Double click on the header toggles. Side zone windows share the panel height (`flex-basis`, top edge
+    resizes, `WST[id].dh`); bottom zone windows share the width, the zone height is dragged by its top edge (`WST.hb`).
+    Defaults: Таблица, Варианты, Листы, Граф — bottom; Эскиз, Показатели, Ограничения — right; Данные, Виды — left; Проекты,
+    Справка, Объём, Сравнение float. `WST[id].dock` (null = float); old `anchor` is read as a dock side.
+    **Pitfall:** moving a section to another parent drops pointer capture — the header drag listens on `window`, not on the header.
+  - **Narrow window (≤ 1000 px) drawers were 1 px wide:** an absolutely positioned grid item takes its grid area as the
+    containing block, and the side columns are 0 there, so `width:min(300px,85%)` was 0. Drawers now span `grid-column:1/-1`.
+  - Toolbar and status bar no longer shift: the «в слой» select has a fixed width (its text changed the ribbon length); the
+    status bar layer name, scale and МГГТ coordinates have fixed widths with tabular digits; the polar button keeps its width.
+  - Properties pane fits 220 px: style mode buttons are a wrapping grid, row labels shrink, fields may shrink. The attribute
+    table's «только выбранные» checkbox was 160 px wide (the filter input rule hit it); window bars keep one line with «…».
+  - «С чего начать» has a close button and closes on Esc (remembered: `grado2.start`); its actions are in F1.
+  - «Построить эскиз» without a territory boundary does nothing and says so (toast + a warning line in «Эскиз»; the node says
+    «нет границы территории»); an empty site says to check «Ограничения». «Объём» without a boundary shows an explanation
+    instead of an empty grey canvas. e2e +6 steps.
+
 - **2026-09-23, ГРАДО 2 v0.28.0 (Э10, owner's decision 3): buildings under a low solar ceiling are dropped when the density
   goal is met without them.** In «цели плотности» mode, after the water-fill, capped buildings (ceiling below the planned
   floors) are removed one by one from the lowest ceiling up while the rest still reach the goal (≥ 97 %); their footprints

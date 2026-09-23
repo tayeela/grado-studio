@@ -903,9 +903,14 @@ function renderKeys() {
 $("bKeys").onclick = () => winOpen("wKeys");
 
 /* ---------- пустой проект: с чего начать ---------- */
-function syncStart() { const el = $("start"); if (el) el.hidden = !!(LYR.length || TERR); }
+// закрытая панель больше не появляется сама (её содержимое есть в справке F1)
+let startOff = false; try { startOff = localStorage.getItem("grado2.start") === "off"; } catch { }
+function syncStart() { const el = $("start"); if (el) el.hidden = startOff || !!(LYR.length || TERR); }
 window.syncStart = syncStart;
+function closeStart() { startOff = true; try { localStorage.setItem("grado2.start", "off"); } catch { } syncStart(); }
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("start").hidden && !window.CAD?.active()) closeStart(); });
 $("start").addEventListener("click", e => {
+  if (e.target.closest("[data-close-start]")) return closeStart();
   const b = e.target.closest("[data-go]"); if (!b) return;
   ({ example: () => { $("bExample").click(); winOpen("wData", true); toast("Пример границы задан. Отметьте источники в окне «Данные» и нажмите «Загрузить»."); },
     terr: () => setTool("terr"), draw: () => setTool("poly"), proj: () => $("bProj").click(), keys: () => winOpen("wKeys", true) })[b.dataset.go]();

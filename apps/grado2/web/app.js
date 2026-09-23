@@ -117,7 +117,7 @@ function setTerritory(feature) {
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
-  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.(); if (!$("wData").hidden) renderSources();
+  $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.(); if (!$("wData").hidden) renderSources(); if (!$("wSketch").hidden) renderParams(); if (!$("w3d").hidden) draw3d();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
 $("bDraw").onclick = () => setTool("terr");
@@ -447,6 +447,7 @@ function NPlace() {
 }
 NPlace.title = "Посадка застройки"; NPlace.prototype.onExecute = function () {
   if (!this.properties.run) { this.setOutputData(0, []); this.info = "не построена: «Построить эскиз» в окне «Эскиз»"; return; }
+  if (!TERR) { this.setOutputData(0, []); this.info = "нет границы территории — эскиз не строится"; return; }
   const site = this.getInputData(0), p = placeParams(this);
   const r = cached(this, gid(site) + JSON.stringify(p) + (p.cap?._id || ""), () => generate(site, p)); this.setOutputData(0, r);
   const capped = r.filter(b => b.capped).length, avg = r.length ? r.reduce((s, b) => s + b.floors * b.m2, 0) / r.reduce((s, b) => s + b.m2, 0) : 0;
@@ -871,7 +872,7 @@ function renderParams() {
   const cs = publishedControls(), pn = RESULT.placeNode, on = !!pn?.properties.run;
   const head = !pn ? `<div class="note">В графе нет узла «Посадка застройки».</div>`
     : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Принять в проект</button></div>
-      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низким потолком — на их месте дворы, там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится."}</small></div>`;
+      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низким потолком — на их месте дворы, там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : TERR ? "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится." : "<b class=\"warnt\">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу командой BO или «Пример территории» в окне «Данные»."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${lbl}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
@@ -880,7 +881,10 @@ function renderParams() {
   icons();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
   $("params").onclick = e => {
-    const r = e.target.closest("[data-run]"); if (r) { pn.properties.run = r.dataset.run === "1"; pn._ck = null; recompute(true); renderParams(); syncPreview(); return; }
+    const r = e.target.closest("[data-run]"); if (r) {
+      if (r.dataset.run === "1" && !TERR) return toast("Эскиз строится внутри границы территории, а её нет. Задайте границу: команда BO (кнопка «Граница» на ленте) или «Пример территории» в окне «Данные».");
+      if (r.dataset.run === "1" && !RESULT.site) return toast("Пятно застройки пусто: вся территория занята запретами или сохраняемыми зданиями. Проверьте окно «Ограничения».");
+      pn.properties.run = r.dataset.run === "1"; pn._ck = null; recompute(true); renderParams(); syncPreview(); return; }
     if (e.target.closest("[data-bake]")) return bakeSketch();
     if (e.target.closest("[data-check]")) return window.runCheck?.(null);
     const b = e.target.closest("[data-seg]"); if (!b) return; const c = cs[+b.dataset.seg]; c.n.widgets.find(x => x.name === c.w).value = b.dataset.v;
@@ -962,7 +966,8 @@ $("bRot").onclick = () => { rot3d = (rot3d + 1) % 4; draw3d(); };
 $("sunDay").onchange = $("sunTime").oninput = () => draw3d();
 /* аксонометрия: стены, крыши, порядок по глубине; дороги — земля */
 function draw3d() {
-  const cv = $("c3d"), r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1; if (!r.width || !TERR) return;
+  const cv = $("c3d"), r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  $("e3d").hidden = !!TERR; if (!r.width || !TERR) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); return; }
   cv.width = r.width * dpr; cv.height = r.height * dpr; const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, r.width, r.height);
   const terr = ringsXY(TERR)[0], A = rot3d * Math.PI / 2, C = Math.cos(Math.PI / 6), Sn = Math.sin(Math.PI / 6), R = p => rot(p, A, [0, 0]);
   // новые — эскиз графа и принятые слои эскизов (видимые), серые — сохраняемые здания
@@ -1081,29 +1086,57 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
   const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
-  if (d.anchor) return anchorWin(w);
   // окно не заходит на шапку и ленту: на узком экране лента в две строки, верх рабочего поля ниже
   const top = Math.round(mapBox().top) + 4, W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - top - 30);
   Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(top, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
 }
-/* окно, прижатое к боковой панели, следует за ней при растягивании и скрытии панели;
-   «во всю высоту» — двойной щелчок по заголовку, как у палитр AutoCAD */
-function anchorWin(w) {
-  const d = WST[w.id], m = mapBox(), W = Math.min(d.w || w.offsetWidth, m.width);
-  const H = d.full ? m.height : Math.min(d.h || w.offsetHeight, m.height), T = d.full ? m.top : Math.max(m.top, Math.min(d.t ?? m.top, m.bottom - H));
-  Object.assign(w.style, { width: W + "px", height: H + "px", top: T + "px", left: (d.anchor === "l" ? m.left : m.right - W) + "px" });
-}
-const reanchor = () => document.querySelectorAll(".win:not([hidden])").forEach(w => WST[w.id]?.anchor && anchorWin(w));
-addEventListener("resize", reanchor);
 const SNAP = 12;
-function snapMove(w, x, y) {           // магнит к краям карты (боковым панелям), строке инструментов, строке состояния и другим окнам
+function snapMove(w, x, y) {           // магнит плавающего окна к краям карты, строке состояния и другим окнам
   const m = mapBox(), W = w.offsetWidth, H = w.offsetHeight, xs = [m.left, m.right, 0, innerWidth], ys = [m.top, m.bottom, innerHeight];
-  document.querySelectorAll(".win:not([hidden])").forEach(o => { if (o === w) return; const r = o.getBoundingClientRect(); xs.push(r.left, r.right); ys.push(r.top, r.bottom); });
+  document.querySelectorAll(".win:not([hidden]):not(.docked)").forEach(o => { if (o === w) return; const r = o.getBoundingClientRect(); xs.push(r.left, r.right); ys.push(r.top, r.bottom); });
   let sx = null, sy = null, best = SNAP;
   for (const t of xs) for (const e of [0, W]) { const d = Math.abs(x + e - t); if (d < best) { best = d; sx = t - e; } }
   best = SNAP; for (const t of ys) for (const e of [0, H]) { const d = Math.abs(y + e - t); if (d < best) { best = d; sy = t - e; } }
-  const anchor = sx === m.left ? "l" : sx !== null && sx + W === m.right ? "r" : null;
-  return { x: sx ?? x, y: sy ?? y, anchor, snapped: sx !== null || sy !== null };
+  return { x: sx ?? x, y: sy ?? y, snapped: sx !== null || sy !== null };
+}
+
+/* Встраивание окон в рабочее поле (как панели QGIS и палитры AutoCAD): окно, брошенное на панель слоёв, на панель
+   свойств или к нижнему краю карты, становится частью раскладки — карта ужимается, окна в одной зоне делят место;
+   вытянутое за заголовок — снова плавает. Двойной щелчок по заголовку — встроить / сделать плавающим. */
+const DZ = { l: $("dzL"), r: $("dzR"), b: $("dzB") };
+const DOCK_DEFAULT = { wTable: "b", wVars: "b", wSheets: "b", wGraph: "b", wSketch: "r", wTep: "r", wCons: "r", wData: "l", wViews: "l" };
+const dockOf = id => { const d = WST[id]; return d && "dock" in d ? d.dock : d?.anchor || DOCK_DEFAULT[id] || null; };   // anchor — прилипание прежних версий
+const layoutChanged = () => requestAnimationFrame(() => { mMain.updateSize(); window.CAD?.grips?.(); });
+function dockWin(w, side) {
+  const d = WST[w.id] ||= {}; d.dock = side; delete d.anchor; delete d.full;
+  w.classList.add("docked"); w.classList.remove("front", "snap"); w.style.cssText = "";
+  if (side !== "b") w.style.flexBasis = (d.dh || 300) + "px";
+  if (w.parentElement !== DZ[side]) DZ[side].append(w);
+  if (side === "l" && $("work").classList.contains("noL")) toggleDock("L", true);
+  if (side === "r" && $("work").classList.contains("noR")) toggleDock("R", true);
+  saveWins(); layoutChanged();
+}
+function floatWin(w) {
+  const d = WST[w.id] ||= {}; d.dock = null; w.classList.remove("docked"); w.style.flexBasis = "";
+  document.body.append(w); saveWins(); layoutChanged();
+}
+// куда встанет окно, если отпустить его здесь: над панелью слоёв или у левого края карты — влево, и т. д.
+function dropZone(x, y) {
+  const m = mapBox(), inR = r => r.width && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom, E = 36;
+  const sl = document.querySelector(".work>.side:not(.r)").getBoundingClientRect(), sr = document.querySelector(".work>.side.r").getBoundingClientRect(), bb = DZ.b.getBoundingClientRect();
+  if (inR(sl) || (x >= m.left && x < m.left + E && y > m.top && y < m.bottom)) return "l";
+  if (inR(sr) || (x <= m.right && x > m.right - E && y > m.top && y < m.bottom)) return "r";
+  if (inR(bb) || (y <= m.bottom && y > m.bottom - E && x > m.left && x < m.right)) return "b";
+  return null;
+}
+function showDrop(z) {
+  const el = $("dropInd"); el.hidden = !z; if (!z) return;
+  const m = mapBox(), side = z === "l" ? document.querySelector(".work>.side:not(.r)") : document.querySelector(".work>.side.r");
+  let r;
+  if (z === "b") { const bb = DZ.b.getBoundingClientRect(), h = bb.height || Math.min(280, m.height * .4); r = { left: m.left, top: (bb.height ? bb.top : m.bottom - h), width: m.width, height: h }; }
+  else { const sb = side.getBoundingClientRect(), w = sb.width || 290, left = sb.width ? sb.left : z === "l" ? m.left : m.right - w, top = m.top + m.height * .45; r = { left, top, width: w, height: m.bottom - top + (DZ.b.getBoundingClientRect().height || 0) }; }
+  Object.assign(el.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
+  el.dataset.z = z;
 }
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
@@ -1115,7 +1148,8 @@ const WIN_OPEN = {
 const go = {};
 function winOpen(id, on) {
   const w = $(id); on = on ?? w.hidden; w.hidden = !on;
-  if (on) { placeWin(w); winFront(w); requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  if (on) { const z = dockOf(id); if (z) dockWin(w, z); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  if (w.classList.contains("docked")) layoutChanged();
   if (id === "wGraph") $("pv").hidden = !on;
   if (PREVIEW_WINS.includes(id)) syncPreview();
   (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
@@ -1137,14 +1171,14 @@ $("winMenu").addEventListener("keydown", e => {
 addEventListener("pointerdown", e => { if (!$("winMenu").hidden && !e.target.closest(".more")) winMenu(false); });
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
-  WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize(); reanchor();
+  WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize();
 }
 // боковые панели тянутся за разделитель, ширина запоминается
 function setDockWidth(side, px) { $("work").style.setProperty(side === "l" ? "--wl" : "--wr", px + "px"); WST["w" + side] = px; }
 document.querySelectorAll("[data-gut]").forEach(g => g.addEventListener("pointerdown", e => {
   const side = g.dataset.gut, x0 = e.clientX, w0 = side === "l" ? $("work").children[2].offsetWidth : $("work").querySelector(".side.r").offsetWidth;
   g.setPointerCapture(e.pointerId); g.classList.add("on");
-  const mv = ev => { setDockWidth(side, Math.max(200, Math.min(620, w0 + (side === "l" ? ev.clientX - x0 : x0 - ev.clientX)))); reanchor(); };
+  const mv = ev => { setDockWidth(side, Math.max(220, Math.min(620, w0 + (side === "l" ? ev.clientX - x0 : x0 - ev.clientX)))); mMain.updateSize(); };
   const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.classList.remove("on"); saveWins(); mMain.updateSize(); };
   g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
 }));
@@ -1156,23 +1190,56 @@ document.querySelectorAll(".win").forEach(w => {
   w.querySelector("[data-close]").onclick = () => winOpen(w.id, false);
   const h = w.querySelector(".wh");
   h.addEventListener("pointerdown", e => {
-    if (e.target.closest("button,input,select")) return;
-    const r = w.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top; h.setPointerCapture(e.pointerId);
-    let s = null;
-    const mv = ev => { s = snapMove(w, Math.max(-r.width + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
-      w.style.left = s.x + "px"; w.style.top = s.y + "px"; w.classList.toggle("snap", s.snapped); };
-    const up = () => { h.removeEventListener("pointermove", mv); h.removeEventListener("pointerup", up); w.classList.remove("snap");
-      const d = WST[w.id] ||= {}; Object.assign(d, { l: parseInt(w.style.left), t: parseInt(w.style.top), anchor: s?.anchor ?? d.anchor ?? null }); if (s) d.full = false; saveWins(); };
-    h.addEventListener("pointermove", mv); h.addEventListener("pointerup", up);
+    if (e.button || e.target.closest("button,input,select")) return;
+    const x0 = e.clientX, y0 = e.clientY; let r = w.getBoundingClientRect(), dx = x0 - r.left, dy = y0 - r.top, moving = !w.classList.contains("docked"), z = null, s = null;
+    // слушаем окно браузера, а не заголовок: перенос окна в другую зону страницы снимает захват указателя
+    const pid = e.pointerId;
+    const mv = ev => {
+      if (ev.pointerId !== pid) return;
+      if (!moving) {             // встроенное окно вытягивается, когда указатель ушёл дальше 6 px: плывёт под указателем своим размером
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        const d = WST[w.id] ||= {}, [, , ww, hh] = W0()[w.id], W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 80);
+        floatWin(w); Object.assign(w.style, { width: W + "px", height: H + "px" }); dx = Math.min(dx, W - 60); dy = Math.min(dy, 24); moving = true; winFront(w);
+      }
+      s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
+      w.style.left = s.x + "px"; w.style.top = s.y + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
+    };
+    const up = ev => {
+      if (ev.pointerId !== pid) return;
+      removeEventListener("pointermove", mv); removeEventListener("pointerup", up); removeEventListener("pointercancel", up); showDrop(null); w.classList.remove("snap", "todock");
+      if (!moving) return;
+      if (z) { dockWin(w, z); requestAnimationFrame(() => WIN_OPEN[w.id]?.()); return; }
+      const d = WST[w.id] ||= {}; Object.assign(d, { l: parseInt(w.style.left), t: parseInt(w.style.top), dock: null }); saveWins();
+    };
+    addEventListener("pointermove", mv); addEventListener("pointerup", up); addEventListener("pointercancel", up); e.preventDefault();
   });
   h.addEventListener("dblclick", e => {
-    if (e.target.closest("button,input,select")) return; const d = WST[w.id] ||= {}, m = mapBox(), r = w.getBoundingClientRect();
-    if (d.full) { d.full = false; d.h = d.hPrev || 400; } else { d.hPrev = r.height; d.full = true; d.anchor ||= r.left + r.width / 2 < m.left + m.width / 2 ? "l" : "r"; }
-    anchorWin(w); saveWins();
+    if (e.target.closest("button,input,select")) return;
+    if (w.classList.contains("docked")) { floatWin(w); placeWin(w); winFront(w); }
+    else { const r = w.getBoundingClientRect(), m = mapBox(); dockWin(w, r.left + r.width / 2 < m.left + m.width / 2 ? "l" : "r"); }
+    requestAnimationFrame(() => WIN_OPEN[w.id]?.());
+  });
+  // высота встроенного окна в боковой панели — за верхнюю кромку
+  const dres = document.createElement("div"); dres.className = "dres"; dres.title = "Потяните, чтобы изменить высоту"; w.append(dres);
+  dres.addEventListener("pointerdown", e => {
+    const y0 = e.clientY, h0 = w.offsetHeight, side = w.parentElement.closest(".side"); dres.setPointerCapture(e.pointerId);
+    const mv = ev => { const px = Math.max(90, Math.min((side?.clientHeight || 600) - 90, h0 - (ev.clientY - y0))); w.style.flexBasis = px + "px"; (WST[w.id] ||= {}).dh = px; };
+    const up = () => { dres.removeEventListener("pointermove", mv); dres.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
+    dres.addEventListener("pointermove", mv); dres.addEventListener("pointerup", up);
   });
   // размер окна — за нижний правый угол (CSS resize); запоминаем и перерисовываем содержимое
-  new ResizeObserver(() => { if (w.hidden) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);
+  new ResizeObserver(() => { if (w.hidden || w.classList.contains("docked")) return; Object.assign(WST[w.id] ||= {}, { w: w.offsetWidth, h: w.offsetHeight }); saveWins(); }).observe(w);
 });
+// высота нижней зоны встроенных окон — за её верхнюю кромку
+{ const g = document.createElement("div"); g.className = "dres b"; g.title = "Потяните, чтобы изменить высоту нижней панели"; DZ.b.prepend(g);
+  g.addEventListener("pointerdown", e => {
+    const y0 = e.clientY, h0 = DZ.b.offsetHeight, cap = DZ.b.parentElement.clientHeight; g.setPointerCapture(e.pointerId);
+    const mv = ev => { const px = Math.max(120, Math.min(cap - 120, h0 - (ev.clientY - y0))); DZ.b.style.height = px + "px"; WST.hb = px; mMain.updateSize(); };
+    const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
+    g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
+  });
+  if (WST.hb) DZ.b.style.height = WST.hb + "px"; }
+new ResizeObserver(() => mMain.updateSize()).observe($("mMain"));
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };
