@@ -221,6 +221,10 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.17.1: UX audit of v0.15–0.17 (dark theme, 1280 px).** The empty sheet preview left a light
+  strip under the sheets list (`.sheetprev:has(img[hidden])` hides it); the scale and content selects of a sheet row were
+  cut at 1280 px (column widths). Menu «Окна ▾», segments, sheet frame and scale visibility checked in the dark theme.
+
 - **2026-09-23, ГРАДО 2 v0.17.0: scale-dependent visibility of a layer (QGIS «Видимость в зависимости от масштаба»).**
   Style panel row «Виден»: on any scale or larger than 1:1000…1:25 000 (`style.maxDen`, saved with the style, undoable).
   `olLayersFor` sets `maxResolution` from the denominator (`denToRes`, latitude of the view centre) on the canvas and GPU

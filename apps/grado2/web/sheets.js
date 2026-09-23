@@ -82,7 +82,7 @@ function renderSheets() {
   const tepS = s => s.kind === "tep" ? "disabled" : "";
   el.innerHTML = `<div class="pad"><div class="note" style="padding:0 0 6px">Основная надпись</div><div class="meta4">${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия кратко: ПП, П, Р")}${inp("org", "Организация")}</div></div>`
     + `<div class="sect">Листы альбома</div>`
-    + (ALBUM.sheets.length ? `<table class="at sheets"><colgroup><col style="width:26px"><col><col style="width:58px"><col style="width:19%"><col style="width:17%"><col style="width:36px"><col style="width:36px"><col style="width:148px"></colgroup><thead><tr><th>№</th><th>Название</th><th>Формат</th><th>Содержание</th><th>Масштаб</th><th title="Легенда вида">Лег.</th><th title="Таблица ТЭП">ТЭП</th><th></th></tr></thead><tbody>${ALBUM.sheets.map((s, i) => `<tr data-sh="${i}">
+    + (ALBUM.sheets.length ? `<table class="at sheets"><colgroup><col style="width:26px"><col><col style="width:58px"><col style="width:20%"><col style="width:19%"><col style="width:36px"><col style="width:36px"><col style="width:148px"></colgroup><thead><tr><th>№</th><th>Название</th><th>Формат</th><th>Содержание</th><th>Масштаб</th><th title="Легенда вида">Лег.</th><th title="Таблица ТЭП">ТЭП</th><th></th></tr></thead><tbody>${ALBUM.sheets.map((s, i) => `<tr data-sh="${i}">
         <td class="num">${i + 1}</td><td><input type="text" data-sk="title" value="${esc(s.title)}" aria-label="Название листа"></td>
         <td><select data-sk="size" aria-label="Формат">${["A3", "A1"].map(v => `<option ${v === s.size ? "selected" : ""}>${v}</option>`).join("")}</select></td>
         <td><select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select></td>
