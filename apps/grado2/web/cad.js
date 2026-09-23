@@ -59,8 +59,9 @@ function vertices(g) {
   walk(g.getCoordinates(), []); return out;
 }
 const MAXGRIPS = 3000;
+let gripCut = false;                  // выбор больше MAXGRIPS вершин: ручки не показаны, строка состояния говорит об этом
 function syncGrips() {
-  gripSrc.clear(true);
+  gripSrc.clear(true); gripCut = false;
   if (CMD || UIS.tool !== "select" || !SEL.length) return;
   const fs = [];
   for (const { key, f } of SEL) {
@@ -72,7 +73,7 @@ function syncGrips() {
       list.forEach(v => fs.push(new ol.Feature({ geometry: new ol.geom.Point(v.c), key, f, path: v.path, closed: cl, n: list.length })));
       if (ring.length > 1 && !f.get("_cad")) for (let i = 0; i + 1 < ring.length; i++) { const a = ring[i].c, b = ring[i + 1].c; fs.push(new ol.Feature({ geometry: new ol.geom.Point([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]), key, f, path: ring[i + 1].path, mid: true })); }
     }
-    if (fs.length > MAXGRIPS) { gripSrc.clear(true); return; }
+    if (fs.length > MAXGRIPS) { gripCut = true; return; }
   }
   gripSrc.addFeatures(fs);
 }
@@ -212,6 +213,8 @@ function refresh() {
       if (CUR.k && CUR.k !== "ortho" && CUR.k !== "polar") fs.push(fPt(CUR.w, ["ext", "track", "track2"].includes(CUR.k) ? "track" : CUR.k));
     } else if (CMD.need === "obj") (CMD.previewObj?.(CUR) || []).forEach(f => fs.push(f));
   }
+  // неподвижный предпросмотр команды (массив): виден и без движения мыши, следует за набираемым числом
+  if (CMD?.still) (CMD.still(typedNum()) || []).forEach(f => fs.push(f));
   prevSrc.addFeatures(fs);
   tip();
 }
@@ -262,7 +265,9 @@ inEl.addEventListener("keydown", e => {
   if (e.key === "Enter" || (e.key === " " && inMode === "cmd")) { e.preventDefault(); submit(); }
   else if (e.key === "Escape") { e.preventDefault(); closeInput(); }
 });
-inEl.addEventListener("input", () => { inEl.classList.remove("bad"); autoc(); });
+inEl.addEventListener("input", () => { inEl.classList.remove("bad"); autoc(); if (CMD?.still) refresh(); });
+// число, которое сейчас набирается в поле ввода команды (для живого предпросмотра), иначе null
+function typedNum() { if (inMode !== "val" || inEl.hidden) return null; const s = normNum(inEl.value.trim()); return new RegExp(`^${NUM}$`).test(s) ? num(s) : null; }
 function bad(msg) { inEl.classList.add("bad"); note(msg); }
 const NUM = "(-?\\d+(?:[.,]\\d+)?)", num = s => +s.replace(",", ".");
 function submit() {
@@ -804,10 +809,18 @@ def("array", "Массив", ["AR"], () => selection(items => {
   const P = { kind: null, rows: 1, cols: 4, dr: +(h * 1.5).toFixed(2), dc: +(w * 1.5).toFixed(2), n: 6, fill: 360, rot: true, c: null };
   const steps = { rect: ["cols", "rows", "dc", "dr"], polar: ["n", "fill"] }, LBL = { cols: "Число столбцов", rows: "Число рядов", dc: "Расстояние между столбцами, м", dr: "Расстояние между рядами, м", n: "Число элементов", fill: "Угол заполнения, °" };
   let k = 0;
-  const fns = () => {
-    if (P.kind === "rect") { const out = []; for (let r = 0; r < P.rows; r++) for (let c = 0; c < P.cols; c++) if (r || c) out.push({ fn: G.T.move([c * P.dc, r * P.dr]) }); return out; }
-    const out = [], step = (P.fill >= 360 ? 360 / P.n : P.fill / Math.max(1, P.n - 1)) * DEG;
-    for (let i = 1; i < P.n; i++) { const a = step * i; out.push({ fn: P.rot ? G.T.rotate(P.c, a) : (() => { const cen = toM(ol.extent.getCenter(ext)), d = G.sub(G.T.rotate(P.c, a)(cen), cen); return G.T.move(d); })() }); }
+  const cen = toM(ol.extent.getCenter(ext));
+  const fns = (Q = P) => {
+    if (Q.kind === "rect") { const out = []; for (let r = 0; r < Q.rows; r++) for (let c = 0; c < Q.cols; c++) if (r || c) out.push({ fn: G.T.move([c * Q.dc, r * Q.dr]) }); return out; }
+    const out = [], step = (Q.fill >= 360 ? 360 / Q.n : Q.fill / Math.max(1, Q.n - 1)) * DEG;
+    for (let i = 1; i < Q.n; i++) { const a = step * i; out.push({ fn: Q.rot ? G.T.rotate(Q.c, a) : G.T.move(G.sub(G.T.rotate(Q.c, a)(cen), cen)) }); }
+    return out;
+  };
+  // копии-призраки при текущих числах (и при числе, которое набирается), не больше 400 объектов
+  const shadow = Q => {
+    if (!Q.kind || (Q.kind === "polar" && !Q.c)) return [];
+    const list = fns(Q), per = Math.max(1, Math.floor(400 / items.length)), out = [];
+    for (const { fn } of list.slice(0, per)) out.push(...ghosts(items, fn, cen));
     return out;
   };
   const make = () => {
@@ -836,7 +849,14 @@ def("array", "Массив", ["AR"], () => selection(items => {
       if (k < steps[P.kind].length) { k++; if (P.kind === "rect" && k >= steps.rect.length) make(); return; }
       make();
     },
-    preview: w => P.kind === "polar" && !P.c ? {} : {} };
+    // до указания центра кругового массива копии разворачиваются вокруг курсора
+    preview: w => P.kind === "polar" && !P.c ? { ghosts: shadow({ ...P, c: w }), pts: [w] } : {},
+    still: tv => {
+      if (P.kind === "polar" && !P.c) return [];
+      const Q = { ...P }, key = P.kind && cur();
+      if (key && tv != null && (["cols", "rows", "n"].includes(key) ? Number.isInteger(tv) && tv >= 1 : key === "fill" ? tv > 0 : tv !== 0)) Q[key] = tv;
+      return shadow(Q);
+    } };
   return st;
 }));
 // РАСТЯНУТЬ: вершины внутри секущей рамки двигаются, объекты целиком внутри — переносятся
@@ -989,6 +1009,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { grip: gripTip, grips: () => syncGrips(), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
+window.CAD = { grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();

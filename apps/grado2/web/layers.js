@@ -656,9 +656,9 @@ function setSel(list) {
   const big = SEL.length > 5000; selCv.setVisible(!big); selGl.setVisible(big);
   selSrc.clear(true); selSrc.addFeatures(SEL.map(s => s.f));
   if (SEL.length) UIS.rt = "obj";
+  CAD.grips?.();                                     // ручки AutoCAD на вершинах выбранных объектов (до строки состояния: она говорит, если ручек нет)
   renderRight(); renderTable(); syncRibbon(); syncStatus();
   if (UIS.tool === "vertex") setTool(UIS.tool);      // ручки работают с выбором
-  CAD.grips?.();                                     // ручки AutoCAD на вершинах выбранных объектов
 }
 function select(key, f) { setSel(f ? [{ key, f }] : []); }
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
@@ -791,7 +791,7 @@ function setTool(t) {
   }
   placeTools(toolI);
   mMain.getTargetElement().style.cursor = t === "select" ? "" : "crosshair";
-  syncRibbon(); syncStatus(); CAD.grips?.();
+  CAD.grips?.(); syncRibbon(); syncStatus();
 }
 function syncRibbon() {
   document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", b.dataset.tool === UIS.tool));
@@ -806,6 +806,7 @@ function syncStatus() {
   if (UIS.tool === "cmd" && CAD.active()) { $("stHint").textContent = CAD.prompt(); $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; return; }
   const what = n ? `выбранных объектов (${fmt(n)})` : `слоя «${l?.title || "—"}»`;
   $("stHint").textContent = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
+    : UIS.tool === "select" && n && CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: ручек было бы больше ${fmt(CAD.MAXGRIPS)}, поэтому они не показаны — выберите меньше объектов, чтобы править вершины. Команды (M, CO, RO) работают со всем выбором; Esc — снять выбор.`
     : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить; команды: M — перенести, CO — копировать, RO — повернуть, MI — зеркало (буквы и Enter); Esc — снять выбор.`
     : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
   $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : "";

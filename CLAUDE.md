@@ -226,6 +226,14 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.27.0: array preview, grips limit said aloud.** ARRAY shows its copies as ghosts from the first
+  number on: rectangular copies at the current rows/columns/spacings, and the number being typed is applied live before Enter
+  (`CMD.still(typedNum())`, drawn by `refresh()` without a mouse move; up to 400 ghost objects). Polar: before the centre is
+  picked, copies turn around the cursor. A selection whose grips would exceed 3 000 now says so in the status bar
+  («ручек было бы больше 3 000…») instead of showing nothing; `CAD.grips()` runs before `syncStatus()`. e2e +2 steps.
+  **Note:** the in-app browser pane's «type» does not send keydown, so drawing by typed commands cannot be checked there —
+  use the headless driver (`tests/e2e/driver.mjs`, `W=840 H=760`).
+
 - **2026-09-23, ГРАДО 2 v0.26.0: ortho fixed, AutoCAD grips, narrow-window layout, command line.** Owner (screenshot at a
   ~840 px pane): «в орто линия получается под углом; уйма косяков в вёрстке; не получается выбрать вершину фигуры».
   - Ortho: tracking beat ortho — a tracking line gave a slanted segment. Now with ortho on the point stays on the X or Y axis

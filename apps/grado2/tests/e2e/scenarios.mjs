@@ -79,7 +79,10 @@ export default async p => {
   check((await lines()).includes("2102;1000 2152;1000"), "LEN: отрезок доведён до полной длины 50 м");
   await p.ev(`setSel(layerSrc[CUR].getFeatures().filter(f=>{const c=f.getGeometry().getCoordinates().map(CAD.toM); return Math.abs(c[0][0]-2100)<1e-6 && Math.abs(c[c.length-1][1]-1040)<1e-6;}).map(f=>({key:CUR,f}))); return SEL.length`);
   const n0 = await p.ev(`return layerSrc[CUR].getFeatures().length`);
-  await type("ar"); await enter(); await enter(); for (const v of ["3", "2", "10", "60"]) { await type(v); await enter(); }
+  await type("ar"); await enter(); await enter(); for (const v of ["3", "2"]) { await type(v); await enter(); }
+  await type("10"); await p.sleep(100);
+  check(await p.ev(`const g=CAD.ghosts(); return g.length===5 && g.some(c=>Math.abs(c[0]-2120)<0.01 && Math.abs(c[1]-1003)<0.01)`), "AR: копии видны призраками ещё до Enter и следуют за набираемым шагом");
+  await enter(); await type("60"); await enter();
   check(await p.ev(`return layerSrc[CUR].getFeatures().length`) === n0 + 5 && (await lines()).includes("2120;1063 2120;1100"), "AR: прямоугольный массив 3 × 2 с шагом 10 и 60 м");
   await p.ev(`setSel([]); return 1`); await type("s"); await enter(); for (const v of ["2095;1035", "2105;1045", "2100;1040", "@0;10"]) { await type(v); await enter(); }
   check((await lines()).includes("2100;1003 2100;1050"), "S: секущая рамка захватила верхнюю вершину, растянуто на 10 м");
@@ -96,6 +99,10 @@ export default async p => {
   q = await at(1031, 1027); await p.move(q[0] + 6, q[1]); await p.move(q[0], q[1]); await p.sleep(150);
   await p.click(q[0], q[1]); await enter(); await p.ev(`CAD.setOrtho(false); return 1`);
   check((await lines()).some(l => /^1050;1025 1030;1025$/.test(l)), "ОРТО + ОТСЛЕЖ: точка на оси там, где её пересекает линия отслеживания, отрезок строго горизонтален");
+  // слишком большой выбор: ручек нет, и строка состояния говорит об этом
+  await p.ev(`setSel(Array.from({length:1600},(_,i)=>{const f=new ol.Feature(new ol.geom.LineString([CAD.fromM([3000+i,900]),CAD.fromM([3000+i,901])])); layerSrc[CUR].addFeature(f); return {key:CUR,f};})); return 1`);
+  check(await p.ev(`return CAD.gripsCut() && /ручки|ручек/.test($("stHint").textContent)`), "Ручки: при слишком большом выборе строка состояния объясняет, почему их нет");
+  await p.ev(`SEL.forEach(s=>layerSrc[CUR].removeFeature(s.f)); setSel([]); syncFromSource(CUR); return CAD.gripsCut()`);
   // ручки: выбрать отрезок, щёлкнуть по ручке, ввести новое положение
   await p.ev(`setSel(layerSrc[CUR].getFeatures().filter(f=>{const c=f.getGeometry().getCoordinates().map(CAD.toM); return Math.abs(c[0][0]-1050)<1e-6 && Math.abs(c[0][1]-1025)<1e-6;}).map(f=>({key:CUR,f}))); return SEL.length`);
   q = await at(1030, 1025); await p.click(q[0], q[1]); await type("@0;-5"); await enter();
