@@ -21,10 +21,12 @@
 
 import gzip
 import json
+import re
 import ssl
 import time
 import urllib.error
 import urllib.request
+import zlib
 from pathlib import Path
 
 from .contract import Connector, ConnectorError, make_result
@@ -104,8 +106,20 @@ def _ssl_context():
         return ssl.create_default_context()
 
 
-def _http_get(url, timeout=300):
-    """GET → распакованные байты. gzip обязателен: слой 44 МБ ужимается до 14."""
+def _expected_size(headers):
+    """Размер слоя без сжатия, если портал его сообщает: Content-Length без gzip или число в ETag «мтайм-размер-inode»."""
+    if headers.get("Content-Encoding") != "gzip" and headers.get("Content-Length", "").isdigit():
+        return int(headers["Content-Length"])
+    m = re.search(r'-(\d+)-', headers.get("ETag") or "")
+    return int(m.group(1)) if m else None
+
+
+def _http_get(url, timeout=300, progress=None):
+    """GET → распакованные байты. gzip обязателен: слой 44 МБ ужимается до 14.
+
+    progress(получено, всего или None) — по распакованным байтам, раз в ~0,5 МБ: слой ПЗЗ весит 221 МБ,
+    и без процента первая выгрузка выглядит зависанием.
+    """
     req = urllib.request.Request(url, headers={
         "User-Agent": _UA, "Accept-Encoding": "gzip"})
     ctx = _ssl_context()
@@ -113,9 +127,24 @@ def _http_get(url, timeout=300):
     for attempt in range(3):
         try:
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
-                raw = r.read()
-                if r.headers.get("Content-Encoding") == "gzip":
-                    raw = gzip.decompress(raw)
+                gz = r.headers.get("Content-Encoding") == "gzip"
+                total, parts, got, told = _expected_size(r.headers), [], 0, 0
+                dec = zlib.decompressobj(16 + zlib.MAX_WBITS) if gz else None
+                while True:
+                    chunk = r.read(1 << 18)
+                    if not chunk:
+                        break
+                    chunk = dec.decompress(chunk) if dec else chunk
+                    parts.append(chunk)
+                    got += len(chunk)
+                    if progress and got - told >= 1 << 19:
+                        progress(got, total)
+                        told = got
+                if dec:
+                    parts.append(dec.flush())
+                raw = b"".join(parts)
+                if progress:
+                    progress(len(raw), total)
                 return raw
         except urllib.error.HTTPError as e:
             raise ConnectorError(f"ГИС ОГД ответил HTTP {e.code}") from None
@@ -186,8 +215,10 @@ class GisogdApi(Connector):
     name = "gisogd"
     source = "gisogd"
 
-    def __init__(self, transport=None, cache_dir=None, ttl=_TTL_SEC):
+    def __init__(self, transport=None, cache_dir=None, ttl=_TTL_SEC, progress=None):
+        """progress(code, получено, всего или None, этап) — ход первой выгрузки слоя целиком."""
         self.transport = transport or _http_get
+        self.progress = progress
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.ttl = ttl
 
@@ -201,7 +232,13 @@ class GisogdApi(Connector):
         path = self._cache_path(code)
         if path and path.exists() and (time.time() - path.stat().st_mtime) < self.ttl:
             return gzip.decompress(path.read_bytes()), True
-        raw = self.transport(f"{BASE}/layers/{code}/export/?format=geojson")
+        url = f"{BASE}/layers/{code}/export/?format=geojson"
+        if self.progress and self.transport is _http_get:
+            raw = _http_get(url, progress=lambda got, total: self.progress(code, got, total, "download"))
+        else:
+            raw = self.transport(url)
+        if self.progress:
+            self.progress(code, len(raw), len(raw), "parse")
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(path.suffix + ".part")

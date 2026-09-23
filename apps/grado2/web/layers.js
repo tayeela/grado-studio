@@ -487,7 +487,7 @@ function renderStyle(el) {
     <div class="row"><label>Заливка, %</label><input type="range" data-k="opacity" min="0" max="1" step=".05" value="${st.opacity}" aria-label="Непрозрачность заливки"><span class="num">${Math.round(st.opacity * 100)}</span></div>`;
   else h += `<div class="row"><label>${l.geom === "point" ? "Размер" : "Толщина"}</label><input type="number" data-k="width" min=".3" max="10" step=".1" value="${st.width}" style="width:64px" aria-label="Толщина"> пикс.</div>`;
   h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${l.layerOpacity}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(l.layerOpacity * 100)}</span></div>
-    <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div></div>`;
+    <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
   el.innerHTML = h;
 }
 const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? +v : v;
@@ -882,7 +882,8 @@ $("start").addEventListener("click", e => {
 // в подсказках Windows показывает Ctrl, macOS — ⌘
 if (MOD === "⌘") document.querySelectorAll("[title*='Ctrl+']").forEach(b => b.title = b.title.replaceAll("Ctrl+", "⌘"));
 mMain.on("pointermove", e => { const [lo, la] = ol.proj.toLonLat(e.coordinate); $("stXY").textContent = `${la.toFixed(5)}° с.ш. ${lo.toFixed(5)}° в.д.`; });
-const syncScale = () => { const r = sharedView.getResolution(), la = ol.proj.toLonLat(sharedView.getCenter())[1]; $("stScale").textContent = "1:" + fmt(Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10); };
+function scaleDen(r) { const la = ol.proj.toLonLat(sharedView.getCenter())[1]; return Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10; }
+const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution())); };
 sharedView.on("change:resolution", syncScale); syncScale();
 
 ALLMAPS.forEach(m => window.attachDataLayers(m));

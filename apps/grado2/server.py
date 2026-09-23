@@ -213,6 +213,9 @@ def _layer(key, result):
             "features": {"type": "FeatureCollection", "features": feats}}
 
 
+PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД целиком (GET /api/progress)
+
+
 def fetch(bbox, keys):
     """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors)."""
     keys = [k for k in keys if k in SOURCES]
@@ -242,7 +245,9 @@ def fetch(bbox, keys):
 
     def run_gisogd(k):
         feats, notes, doc = [], [], None
-        api = GisogdApi(cache_dir=CACHE / "gisogd")
+        def tell(code, got, total, stage):
+            PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage}
+        api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell)
         for code, zone in SOURCES[k][1].items():
             res = api.fetch(bbox, code)
             doc, notes = res["source_doc"], notes + res["notes"]
@@ -250,6 +255,7 @@ def fetch(bbox, keys):
                 if zone:
                     f["_extra"] = {"Вид зоны": zone}
                 feats.append(f)
+        PROGRESS.pop(k, None)
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
 
     def run_terrain(k):
@@ -264,6 +270,7 @@ def fetch(bbox, keys):
                 fut.result()
             except Exception as e:   # сеть/разбор: слой помечается ошибкой, остальные доезжают
                 for k in job_keys:
+                    PROGRESS.pop(k, None)
                     if k not in layers:
                         errors.setdefault(k, str(e) or type(e).__name__)
     return layers, errors
@@ -271,6 +278,7 @@ def fetch(bbox, keys):
 
 # ---------- ФГИС ТП: документы территориального планирования (Минэкономразвития) ----------
 FGISTP_TTL = 7 * 24 * 3600
+_FG_MEMO = {}
 
 
 def fgistp_catalog(conn=None):
@@ -279,7 +287,10 @@ def fgistp_catalog(conn=None):
     import time
     path = CACHE / "fgistp" / "catalog.json.gz"
     if path.exists() and time.time() - path.stat().st_mtime < FGISTP_TTL:
-        return json.loads(gzip.decompress(path.read_bytes()))
+        mt = path.stat().st_mtime                   # поиск по названию зовёт каталог на каждое слово — держим в памяти
+        if _FG_MEMO.get("mt") != mt:
+            _FG_MEMO.update(mt=mt, cat=json.loads(gzip.decompress(path.read_bytes())))
+        return _FG_MEMO["cat"]
     cat = (conn or FgistpConnector()).catalog()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(gzip.compress(json.dumps(cat, ensure_ascii=False).encode("utf-8")))
@@ -301,6 +312,23 @@ def fgistp_docs(bbox, catalog):
             continue
         out.append({"uin": d["uin"], "name": (d.get("stp_name") or d["uin"]).strip(), "km": round((c - a) / 1000)})
     return sorted(out, key=lambda x: x["km"])[:300]
+
+
+def fgistp_search(text, catalog, limit=100):
+    """Документы по названию во всём каталоге РФ: все слова запроса (регистр и «ё» не важны), самые местные — первыми."""
+    norm = lambda t: str(t or "").lower().replace("ё", "е")
+    words = norm(text).split()
+    out = []
+    for d in catalog:
+        name = (d.get("stp_name") or d["uin"]).strip()
+        if all(w in norm(name) for w in words):
+            try:
+                a, _, c, _ = (float(v) for v in str(d.get("stp_extent") or "").split("_"))
+                km = round((c - a) / 1000)
+            except ValueError:
+                km = None
+            out.append({"uin": d["uin"], "name": name, "km": km})
+    return sorted(out, key=lambda x: (x["km"] is None, x["km"] or 0))[:limit]
 
 
 def fgistp_fetch(uin, classids, bbox, conn=None):
@@ -407,10 +435,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
         if self.path == "/api/health":
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION})
+        if self.path == "/api/progress":
+            return self._json(200, dict(PROGRESS))
         if self.path.startswith("/api/fgistp/"):
             q = parse_qs(urlparse(self.path).query)
             try:
                 if self.path.startswith("/api/fgistp/docs"):
+                    if q.get("q", [""])[0].strip():
+                        return self._json(200, {"docs": fgistp_search(q["q"][0], fgistp_catalog())})
                     bbox = [float(v) for v in q["bbox"][0].split(",")]
                     return self._json(200, {"docs": fgistp_docs(bbox, fgistp_catalog())})
                 if self.path.startswith("/api/fgistp/layers"):

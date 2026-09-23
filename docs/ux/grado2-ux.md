@@ -91,21 +91,23 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
-- 2026-09-23: ФГИС ТП lists federal schemes first for Moscow; the Moscow genplan itself is not in the catalog by extent.
-  Search by name inside the found list would help.
-- 2026-09-23: the first ГИС ОГД download of the ПЗЗ zones is 221 MB (1–2 min) with only a thin progress line; a percentage
-  (bytes received) would make the wait honest.
+- 2026-09-23 (done v0.15.0): ФГИС ТП has a search by name over the whole catalog (all words, «ё» = «е»). The Moscow
+  genplan is not in the ФГИС ТП catalog at all (checked over all 27 993 documents); for a territory in Moscow the window says
+  so and points to the ГИС ОГД group.
+- 2026-09-23 (done v0.15.0): the first ГИС ОГД download shows percent and MB in the status line (size from the portal's
+  ETag / Content-Length), then «разбор».
 - 2026-09-23 (done v0.14.0): OSM answers are cached on disk; a repeat or an area inside a cached one is instant, and when
   Overpass is down the last answer (up to 90 days) is used with a note. The first download of a new area still waits for
   the fastest mirror (measured 21 s at maps.mail.ru; overpass-api.de refused, two mirrors 504 after 50–77 s).
-- 2026-09-23: labels of a GPU-drawn layer show only when zoomed in (the canvas takes over there); say so in the style panel.
+- 2026-09-23 (done v0.15.0): the style panel of a GPU-drawn layer says that labels appear from scale 1:N and hatches
+  are a translucent fill at overview.
 - 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
   one reveal angle for all windows. The front points are dense: at 1:3000 they merge into the facade line.
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
 - 2026-09-23 (done v0.14.0): the variant search has a progress bar and «Стоп» (also Esc); stopped runs keep what is
   computed. Still open: sections do not move towards where the ceiling is high — only floors adapt.
-- 2026-09-23: toasts sit at the bottom centre and cover the lower part of a window docked there (e.g. «Варианты» cards).
-- 2026-09-23: the 5-typology segmented control wraps to two lines in the narrow «Эскиз» window.
+- 2026-09-23 (done v0.15.0): a toast moves to the top of the map when a window stands at the bottom centre.
+- 2026-09-23 (done v0.15.0): segmented controls are an even grid; five typologies sit in 3 + 2 equal cells, nothing cut.
 - 2026-09-23 (done v0.14.0): graph node titles, list values and the info line are cut with «…» to the node width;
   the list menu still shows full names.
 - 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a

@@ -7,7 +7,13 @@ const $ = id => document.getElementById(id);
 const fmt = (n, d = 0) => Number(n).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const icons = () => lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
-let tT; function toast(t) { const el = $("toast"); el.textContent = t; el.classList.add("on"); clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), 4200); }
+// сообщение внизу по центру; если там стоит окно — над картой сверху, чтобы не закрывать карточки и кнопки окна
+let tT; function toast(t) {
+  const el = $("toast"); el.textContent = t; el.classList.remove("top"); el.classList.add("on");
+  const r = el.getBoundingClientRect(), hit = [...document.querySelectorAll(".win:not([hidden])")].some(w => { const b = w.getBoundingClientRect(); return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top; });
+  if (hit) el.classList.add("top");
+  clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), 4200);
+}
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
 async function api(path, body) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
@@ -134,23 +140,38 @@ $("srcList").addEventListener("change", e => {
   if (e.target.id === "fgDoc") fgPick(e.target.value);
   if (e.target.dataset.fgl) { e.target.checked ? FG.sel.add(e.target.dataset.fgl) : FG.sel.delete(e.target.dataset.fgl); $("fgLoad").disabled = !FG.sel.size; }
 });
+$("srcList").addEventListener("input", e => { if (e.target.id === "fgQ") { clearTimeout(fgQT); fgQT = setTimeout(() => fgSearch(e.target.value), 450); } });
 $("srcList").addEventListener("click", e => { if (e.target.closest("#fgFind")) fgFind(); if (e.target.closest("#fgLoad")) fgLoad(); });
 
 /* ---------- ФГИС ТП: документы терпланирования, чей охват накрывает территорию → их слои ---------- */
-const FG = { docs: null, uin: "", layers: null, sel: new Set(), msg: "" };
+const FG = { docs: null, uin: "", layers: null, sel: new Set(), msg: "", q: "" };
 const GEOMW = { "100": "полигоны", "010": "линии", "001": "точки" };
 function fgHTML() {
   let h = `<div class="src"><div class="srch"><i data-lucide="landmark"></i><b>ФГИС ТП — документы территориального планирования</b><button class="btn" id="fgFind" ${TERR ? "" : "disabled"} title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)">Найти по территории</button></div>`;
+  if (TERR) h += `<div class="lr" style="height:auto;padding:4px 8px"><input type="search" id="fgQ" value="${esc(FG.q || "")}" placeholder="Поиск по названию во всём каталоге, например «генеральный план москвы»" aria-label="Поиск документа ФГИС ТП по названию" style="width:100%"></div>`;
   if (FG.msg) h += `<div class="note">${esc(FG.msg)}</div>`;
-  if (FG.docs) h += `<div class="lr" style="height:auto;padding:4px 8px"><select id="fgDoc" style="width:100%"><option value="">— документ (${FG.docs.length}) —</option>${FG.docs.map(d => `<option value="${esc(d.uin)}" ${d.uin === FG.uin ? "selected" : ""}>${esc(d.name.slice(0, 140))}${d.km ? ` · ${fmt(d.km)} км` : ""}</option>`).join("")}</select></div>`;
+  const inMoscow = TERR && (([x, y]) => x > 36.8 && x < 37.97 && y > 55.1 && y < 56.02)(turf.centroid(TERR).geometry.coordinates);
+  if (inMoscow) h += `<div class="note">Генеральный план Москвы в ФГИС ТП не размещён (проверено по всему каталогу): его функциональные зоны — в группе «ГИС ОГД» выше. Здесь для Москвы есть схемы РФ и генплан Троицка.</div>`;
+  if (FG.docs) h += `<div class="lr" style="height:auto;padding:4px 8px"><select id="fgDoc" style="width:100%"><option value="">— документ (${FG.docs.length}${FG.q ? ", найдено по названию" : ", по охвату территории"}) —</option>${FG.docs.map(d => `<option value="${esc(d.uin)}" ${d.uin === FG.uin ? "selected" : ""}>${esc(d.name.slice(0, 140))}${d.km ? ` · ${fmt(d.km)} км` : ""}</option>`).join("")}</select></div>`;
   if (FG.layers) h += FG.layers.map(l => `<label class="lr"><input type="checkbox" data-fgl="${esc(l.classid)}" ${FG.sel.has(l.classid) ? "checked" : ""}><span class="nm" title="${esc(l.class_name || "")}">${esc(l.class_title || l.class_name || l.classid)}</span><span class="c">${GEOMW[l.geom_type] || ""}</span></label>`).join("")
     + `<div class="lr" style="height:32px"><span class="sp" style="flex:1"></span><button class="btn primary" id="fgLoad" ${FG.sel.size ? "" : "disabled"}>Загрузить выбранные</button></div>`;
   return h + `</div>`;
 }
-const fgRender = () => { const el = $("fgBox"); if (el) { el.innerHTML = fgHTML(); icons(); } };
+// перерисовка не теряет набранное в поиске, пока ответ шёл
+const fgRender = () => { const el = $("fgBox"); if (!el) return; const q = $("fgQ"), typed = q?.value, focus = q && document.activeElement === q;
+  el.innerHTML = fgHTML(); icons(); const n = $("fgQ"); if (n && typed != null) { n.value = typed; if (focus) { n.focus(); n.setSelectionRange(typed.length, typed.length); } } };
 async function fgFind() {
-  const [w, s, e, n] = turf.bbox(TERR); FG.msg = "Каталог ФГИС ТП: первый раз около 10 МБ…"; fgRender(); busy(true);
+  FG.q = ""; const [w, s, e, n] = turf.bbox(TERR); FG.msg = "Каталог ФГИС ТП: первый раз около 10 МБ…"; fgRender(); busy(true);
   try { FG.docs = (await api(`/api/fgistp/docs?bbox=${[w, s, e, n].join(",")}`)).docs; FG.msg = FG.docs.length ? "Самые местные документы — сверху. Выберите документ, затем слои." : "Документов с охватом этой территории нет."; }
+  catch (err) { FG.msg = "ФГИС ТП не ответила: " + err.message; } finally { busy(false); fgRender(); }
+}
+let fgQT;
+async function fgSearch(q) {
+  FG.q = q.trim(); if (!FG.q) return TERR ? fgFind() : fgRender();
+  if (FG.q.length < 3) return;
+  FG.msg = "Поиск в каталоге ФГИС ТП…"; busy(true);
+  try { FG.docs = (await api(`/api/fgistp/docs?q=${encodeURIComponent(FG.q)}`)).docs; FG.uin = ""; FG.layers = null; FG.sel.clear();
+    FG.msg = FG.docs.length ? `Найдено документов: ${FG.docs.length}${FG.docs.length === 100 ? " (первые 100 — уточните запрос)" : ""}. Самые местные — сверху.` : "По такому названию документов нет."; }
   catch (err) { FG.msg = "ФГИС ТП не ответила: " + err.message; } finally { busy(false); fgRender(); }
 }
 async function fgPick(uin) {
@@ -184,6 +205,12 @@ $("bLoad").onclick = async () => {
   ERRORS = {}; $("bLoad").disabled = true; busy(true);
   const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
   hint();
+  // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ): сервер сообщает ход, показываем процент
+  const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0);
+  const poll = rest.some(k => SOURCES[k]?.kind === "gisogd") && setInterval(async () => {
+    try { const pr = Object.values(await api("/api/progress")); if (!pr.length || !pending.size) return;
+      window.setHint?.("ГИС ОГД, первая выгрузка слоя целиком: " + pr.map(x => `«${x.title}» — ${x.stage === "parse" ? "разбор" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") + ". Работать можно дальше."); } catch { }
+  }, 800);
   await Promise.all(parts.map(async part => {
     try {
       const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part });
@@ -200,6 +227,7 @@ $("bLoad").onclick = async () => {
     } catch (err) { part.forEach(k => { ERRORS[k] = err.message; }); }
     pending.delete(part); dataRev++; renderSources(); if (pending.size) hint();
   }));
+  if (poll) clearInterval(poll);
   busy(false); $("bLoad").disabled = false; window.syncStatus?.();
   const ne = Object.keys(ERRORS).length;
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
@@ -620,7 +648,7 @@ function renderParams() {
       <small>${on ? `Эскиз перестраивается при каждой правке ниже. Корпусов: ${RESULT.sketch.length}. Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
-    if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${lbl}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
+    if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${lbl}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${w.value}">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры узлов графа, вынесенные в панель: правка здесь меняет граф, и наоборот.</div>`;
   icons();

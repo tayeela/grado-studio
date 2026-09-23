@@ -221,6 +221,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.15.0: small queue items — ОГД download percent, ФГИС ТП search by name, toasts, segments, GPU note.**
+  - ГИС ОГД: `_http_get(url, progress=)` streams in 256 KB chunks and decompresses gzip on the fly, so progress counts
+    uncompressed bytes; the total comes from Content-Length (no gzip) or the middle number of the portal's ETag
+    («mtime-size-inode», checked: 22 099 748 = the real size of `virtual132`). `GisogdApi(progress=)` reports
+    `(code, got, total, "download"|"parse")`; the server keeps `PROGRESS` per source key, `GET /api/progress`; «Загрузить»
+    polls it every 0.8 s while a ГИС ОГД source is pending and shows ««ПЗЗ: подзоны…» — 62 % (13,8 из 22 МБ)».
+  - ФГИС ТП: `GET /api/fgistp/docs?q=` searches the whole catalog by name (all words, case and «ё» ignored, most local
+    first, 100 max); the catalog stays in memory keyed by the file mtime. The search field keeps what was typed while an
+    answer was on its way. **Finding:** the Moscow genplan is not in the ФГИС ТП catalog at all (27 993 documents, «москв»
+    gives Троицк and federal schemes only) — for a territory inside Moscow the window says so and points to ГИС ОГД.
+  - Toasts move to the top of the map when a window covers their bottom-centre spot.
+  - `.ctl .seg` is an even grid (`auto-fit, minmax(90px,1fr)`, lines by box-shadow so an empty last cell stays clean);
+    buttons carry the full name as a tooltip.
+  - Style panel of a GPU layer: labels appear from 1:N (from `glSwitchRes`), hatches are a translucent fill at overview.
+  - Checked headless on grado2-test at 1280×800 and against the live portal (progress 1.6 → 13.8 → 22.1 MB, then parse);
+    connectors +2 tests, grado2 e2e green.
+
 - **2026-09-23, ГРАДО 2 v0.14.1: UX audit of v0.14.0.** The cached-OSM note repeated the date and ran to three lines per
   layer; now «с диска, ответ в ЧЧ:ММ (повторно Overpass не запрашивался)». During the variant search the list said «Нажмите
   «Подобрать варианты»» while that button was hidden, and «Принять в проект» stayed active; now the list explains the run and

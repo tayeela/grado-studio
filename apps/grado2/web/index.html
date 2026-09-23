@@ -252,9 +252,9 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .ctl .t{display:flex;justify-content:space-between;margin-bottom:4px}
 .ctl .t span:last-child{font-variant-numeric:tabular-nums;color:var(--muted)}
 .ctl input[type=range]{width:100%;accent-color:var(--accent);margin:0}
-.ctl .seg{display:flex;flex-wrap:wrap;border:1px solid var(--line-2);border-radius:3px;overflow:hidden}
-.ctl .seg button{flex:1 1 auto;border:0;border-right:1px solid var(--line-2);border-bottom:1px solid var(--line-2);margin-bottom:-1px;background:var(--panel);height:24px;padding:0 8px}
-.ctl .seg button:last-child{border-right:0}
+/* ровные ячейки: при переносе строки не рвутся, как в сегментах macOS */
+.ctl .seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:1px;background:var(--panel);border:1px solid var(--line-2);border-radius:3px;overflow:hidden}
+.ctl .seg button{border:0;box-shadow:0 0 0 1px var(--line-2);background:var(--panel);height:24px;padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seg.dec{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line-2);border-radius:3px;overflow:hidden}.seg.dec button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:26px;display:flex;align-items:center;justify-content:center;gap:5px}.seg.dec button:last-child{border-right:0}.seg.dec button:hover{background:var(--hover)}.seg.dec i{width:10px;height:10px;border-radius:2px;display:inline-block}
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
@@ -275,7 +275,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .empty{color:var(--faint);padding:24px;text-align:center}
 canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:#eeede8}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:3px;z-index:80;max-width:80%;opacity:0;pointer-events:none;transition:opacity .15s}
-.toast.on{opacity:1}
+.toast.on{opacity:1}.toast.top{bottom:auto;top:96px}
 /* узкий экран (ноутбук 1280): редкие подписи уходят в подсказки, иконки остаются */
 @media (max-width:1480px){.wins .btn.opt span.lb,.tl.opt span.lb{display:none}}
 @media (max-width:1180px){.tl span.lb{display:none}.wins .btn span.lb{display:none}}

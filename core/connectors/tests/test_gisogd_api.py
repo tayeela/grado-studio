@@ -125,5 +125,26 @@ class TestGisogdApi(unittest.TestCase):
         self.assertEqual(row["type"], "layer")
 
 
+
+class GisogdProgress(unittest.TestCase):
+    """Первая выгрузка слоя целиком сообщает ход: размер берётся из Content-Length или ETag портала."""
+
+    def test_expected_size_from_headers(self):
+        from grado_connectors.gisogd_api import _expected_size
+        self.assertEqual(_expected_size({"Content-Length": "22099748"}), 22099748)
+        self.assertEqual(_expected_size({"Content-Encoding": "gzip", "Content-Length": "6000000",
+                                         "ETag": 'W/"1790146102.3793728-22099748-2461611553"'}), 22099748)
+        self.assertIsNone(_expected_size({"Content-Encoding": "gzip"}))
+
+    def test_parse_stage_reported_with_custom_transport(self):
+        import json
+        import tempfile
+        from grado_connectors.gisogd_api import GisogdApi
+        seen = []
+        body = json.dumps({"type": "FeatureCollection", "features": []}).encode()
+        with tempfile.TemporaryDirectory() as d:
+            GisogdApi(transport=lambda url: body, cache_dir=d, progress=lambda *a: seen.append(a)).fetch((0, 0, 1, 1), "x1")
+        self.assertEqual(seen, [("x1", len(body), len(body), "parse")])
+
 if __name__ == "__main__":
     unittest.main()
