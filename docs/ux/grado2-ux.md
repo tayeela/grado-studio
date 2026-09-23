@@ -45,6 +45,9 @@ D2. **No uninvited sketch.** New project → «Пример» → load → the m
    the accepted layer stays; restyle it (single / ranges) → the map follows.
 E. **Variants and 3D.** Open «Варианты» → generate 6 → pick one → graph and map follow →
    open «Объём».
+F2. **Precise drawing.** «Полигон» → click a corner → type 40, Enter → 25<90, Enter → @-40;0, Enter → Enter: a 40 × 25 m
+   polygon; the tooltip shows each segment length and angle and the area. F8 → segments snap to 90°. «Прямоугольник» →
+   click → @30;20 → Enter. «Точка» → 5000;15000 → Enter. Near an existing vertex the marker and «привязка: вершина» appear.
 F. **Measure.** Length and area tools show the value while drawing and keep it on the map; Esc
    clears.
 G. **Export.** «Экспорт DXF» downloads a zip with the drawing, red_lns.shx and REDLN97.LIN.
@@ -89,6 +92,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.23.0, precise drawing): not yet — lengths while dragging a vertex in «Вершины», polar tracking other than
+  90°, perpendicular and parallel snaps, a typed rotation for «Перенос»; the first mouse moves right after a click sometimes
+  do not show the snap marker in headless runs (the next moves do).
 - 2026-09-23 (v0.22.0, acceptance on ТиНАО): the ТЭП density target defaults to 25 everywhere; on a ТиНАО site with ПЗЗ
   subzones it should come from their density. Urban blocks leave north-side sections under 50 % insolated facades.
 - 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». Open: K1 is straight distance × 1.3, not a walking route; a

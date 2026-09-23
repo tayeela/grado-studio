@@ -226,6 +226,27 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.23.0: precise drawing like AutoCAD; server listen queue.** Owner: «улучши элементы черчения,
+  сделай их понятнее и точнее для черчения».
+  - `web/mggt.js`: the core МГГТ transform (`crs.py` msk50 ↔ WGS84) ported one to one; `tests/test_mggt.py` checks it against
+    the core (< 1 mm). All drawing lengths, angles and areas are in МГГТ — the system of the DXF and sheets (X east, Y north,
+    angle from east counter-clockwise). Status bar shows МГГТ X/Y (WGS84 in its tooltip).
+  - `web/cad.js` (IIFE, `window.CAD`), wired from `setTool`: a tooltip at the cursor with the current segment length and
+    angle, total length or area, and the snap kind; typed input while drawing — a digit, «@» or «-» opens a box at the
+    cursor: `25` (length along the cursor), `25<90` (length and angle), `@dx;dy`, `X;Y` (МГГТ, also the first point and the
+    point tool); Enter finishes a line/polygon; ortho (F8, toolbar «орто», Shift held) keeps segments along or across the
+    previous one (the first along the axes; snap still wins, as osnap over ortho in AutoCAD). The rectangle is built along the
+    МГГТ axes (`CAD.boxM`), so it is square in the DXF. Snaps got midpoints (zero-length segments from custom `segmenters`),
+    intersections (`intersection: true`) and a marker: square vertex, triangle midpoint, cross intersection, diamond on a line.
+  - **Pitfall:** OpenLayers' polygon sketch ring is `[v0, cursor]` after the first click and `[v0, …, cursor, v0]` later — the
+    closing point appears only from the second vertex (`openRing`). The Draw default `condition` ignores Shift clicks and
+    Shift+drag is freehand: both are switched off so Shift can be the temporary ortho.
+  - **Server bug found by the headless runs:** `ThreadingHTTPServer` has a listen queue of 5; the ~15 parallel script requests
+    on start sometimes got «connection refused» and the page came up without app.js or layers.js (3 of 225 parallel curls
+    failed). `Server.request_queue_size = 128`: 0 of 450 fail. **Backend change: the owner must restart server.py.**
+  - e2e +6 steps (typed polygon 40×25 m to a millimetre, ortho angles, rectangle @30;20 on МГГТ axes, point by МГГТ
+    coordinates, tooltip and vertex snap, МГГТ in the status bar).
+
 - **2026-09-23, ГРАДО 2 v0.22.0: acceptance run Э8 on ТиНАО; Genplan nature zones become a ban.** Owner decisions of the
   day: push to GitHub (private), rounding as implemented, drop buildings under a low ceiling (Э10), no DWG, old studio /
   wizard / calc-web closed (launchers and `windows-release.yml` removed), ОВЗ places inside the norm, ВРИ cost postponed —

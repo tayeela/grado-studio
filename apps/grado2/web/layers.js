@@ -717,15 +717,15 @@ $("curLayer").onchange = e => setCurrent(e.target.value);
 const GEOMTOOL = { point: "point", line: "line", poly: "poly" };
 const TOOLS = {
   select: { name: "Выбор", hint: "Выбор: щелчок — объект, Shift+щелчок — добавить или убрать, Shift+рамка — несколько. Del — удалить, Esc — снять выбор." },
-  point: { name: "Точка", geom: "point", hint: "Точка: щелчок ставит точку в слой «%»." },
-  line: { name: "Линия", geom: "line", hint: "Линия в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
-  poly: { name: "Полигон", geom: "poly", hint: "Полигон в слой «%»: щёлкайте вершины, двойной щелчок завершает, Backspace убирает последнюю вершину, Esc — отмена." },
-  rect: { name: "Прямоугольник", geom: "poly", hint: "Прямоугольник в слой «%»: щёлкните первый угол, затем противоположный." },
+  point: { name: "Точка", geom: "point", hint: "Точка: щелчок ставит точку в слой «%»; точные координаты — наберите X;Y в МГГТ и Enter." },
+  line: { name: "Линия", geom: "line", hint: "Линия в слой «%»: щёлкайте вершины или вводите с клавиатуры (25 — длина, 25<90 — длина и угол, @dx;dy, X;Y МГГТ). Enter или двойной щелчок завершает, Backspace — убрать вершину, F8 — орто." },
+  poly: { name: "Полигон", geom: "poly", hint: "Полигон в слой «%»: щёлкайте вершины или вводите с клавиатуры (25 — длина, 25<90 — длина и угол, @dx;dy, X;Y МГГТ). Enter или двойной щелчок завершает, Backspace — убрать вершину, F8 — орто." },
+  rect: { name: "Прямоугольник", geom: "poly", hint: "Прямоугольник в слой «%» по осям МГГТ: щёлкните первый угол, затем противоположный, или введите его: @ширина;высота и Enter." },
   vertex: { name: "Вершины", hint: "Вершины %: тяните вершину; щелчок по ребру добавляет вершину, Alt+щелчок удаляет." },
   move: { name: "Перенос", hint: "Перенос %: тяните объект." },
-  mlen: { name: "Длина", hint: "Длина: щёлкайте точки, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
-  marea: { name: "Площадь", hint: "Площадь: щёлкайте вершины, двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
-  terr: { name: "Граница территории", hint: "Граница территории: щёлкайте углы, двойной щелчок завершает." } };
+  mlen: { name: "Длина", hint: "Длина: щёлкайте точки, Enter или двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
+  marea: { name: "Площадь", hint: "Площадь: щёлкайте вершины, Enter или двойной щелчок завершает. Замеры остаются на карте, Esc стирает." },
+  terr: { name: "Граница территории", hint: "Граница территории: щёлкайте углы или вводите их с клавиатуры (длина, длина<угол, @dx;dy, X;Y МГГТ); Enter или двойной щелчок завершает." } };
 const KEYS = { KeyV: "select", KeyP: "point", KeyL: "line", KeyG: "poly", KeyR: "rect", KeyE: "vertex", KeyM: "move", KeyD: "mlen", KeyA: "marea", KeyB: "terr" };
 // слой для рисования: текущий, если геометрия подходит; иначе свой слой той же геометрии; иначе новый
 function targetLayer(geom) {
@@ -760,7 +760,7 @@ const SNAPS = new Map();
 function snapFor(l) {
   let c = SNAPS.get(l.key);
   if (c && c.src !== layerSrc[l.key]) { mMain.removeInteraction(c.snap); SNAPS.delete(l.key); c = null; }
-  if (!c) { const snap = new ol.interaction.Snap({ source: layerSrc[l.key], pixelTolerance: 10 }); snap.set("gradoSnap", true); mMain.addInteraction(snap); c = { src: layerSrc[l.key], snap }; SNAPS.set(l.key, c); }
+  if (!c) { const snap = CAD.makeSnap({ source: layerSrc[l.key], intersection: true }); snap.set("gradoSnap", true); mMain.addInteraction(snap); c = { src: layerSrc[l.key], snap }; SNAPS.set(l.key, c); }
   return c.snap;
 }
 function placeTools(list) {                  // инструменты — перед постоянными привязками, привязки к кадру крупных слоёв — в конце
@@ -771,18 +771,19 @@ function placeTools(list) {                  // инструменты — пе�
 }
 function setTool(t) {
   if (!TOOLS[t]) t = "select";
-  toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; toolClean.forEach(fn => fn()); toolClean = []; drawing = null;
+  toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; toolClean.forEach(fn => fn()); toolClean = []; drawing = null; CAD.detach();
   let l = lyr(CUR);
   const geom = TOOLS[t].geom, selFs = SEL.map(s => s.f);
   if (geom) l = targetLayer(geom);
   else if ((t === "vertex" || t === "move") && !l && !SEL.length) { toast("Сначала выберите слой в списке или объекты на карте."); t = "select"; }
   UIS.tool = t;
   const src = l && layerSrc[l.key];
-  const draw = opts => { const d = new ol.interaction.Draw(opts); d.on("drawstart", e => { drawing = d; if (opts.measure) e.feature.getGeometry().on("change", ev => setHint(measureText(ev.target))); });
+  const draw = opts => { const d = new ol.interaction.Draw({ condition: e => ol.events.condition.primaryAction(e) && !ol.events.condition.altKeyOnly(e) && !e.originalEvent.ctrlKey && !e.originalEvent.metaKey,
+      freehandCondition: ol.events.condition.never, ...opts }); CAD.attach(d, t, opts.source); d.on("drawstart", e => { drawing = d; if (opts.measure) e.feature.getGeometry().on("change", ev => setHint(measureText(ev.target))); });
     d.on("drawabort", () => { drawing = null; syncStatus(); }); toolI.push(d); return d; };
   const editedKeys = fs => { const ks = new Set(); fs.forEach(f => { f.set("_edited", true); const k = keyOf(f); if (k) ks.add(k); }); ks.forEach(k => syncFromSource(k)); };
   if (geom) {
-    const d = draw({ source: src, type: t === "rect" ? "Circle" : { point: "Point", line: "LineString", poly: "Polygon" }[geom], geometryFunction: t === "rect" ? ol.interaction.Draw.createBox() : undefined });
+    const d = draw({ source: src, type: t === "rect" ? "Circle" : { point: "Point", line: "LineString", poly: "Polygon" }[geom], geometryFunction: t === "rect" ? CAD.boxM : undefined });
     d.on("drawend", e => { drawing = null; pushUndo(featRec([{ key: l.key, f: e.feature }], `новый объект в «${l.title}»`)); e.feature.setProperties({ _edited: true, _new: true }); fieldsOfKey(l.key).forEach(k => e.feature.set(k, "")); setTimeout(() => { syncFromSource(l.key); select(l.key, e.feature); syncStatus(); }, 0); });
   } else if (t === "vertex") {
     // как ручки AutoCAD: при выборе — вершины выбранных объектов; без выбора — объекты текущего слоя
@@ -803,9 +804,10 @@ function setTool(t) {
   }
   const on = new Set();
   if (["point", "line", "poly", "rect", "vertex", "move"].includes(t) && $("snapT").checked)
-    LYR.filter(shown).forEach(x => { if (big(x)) { const v = new ol.interaction.Snap({ features: viewCollection(x.key, toolClean), pixelTolerance: 10 }); v.set("viewSnap", true); toolI.push(v); } else on.add(snapFor(x)); });
+    LYR.filter(shown).forEach(x => { if (big(x)) { const v = CAD.makeSnap({ features: viewCollection(x.key, toolClean) }); v.set("viewSnap", true); toolI.push(v); } else on.add(snapFor(x)); });
   SNAPS.forEach((c, k) => { if (!lyr(k)) { mMain.removeInteraction(c.snap); SNAPS.delete(k); } else c.snap.setActive(on.has(c.snap)); });
   placeTools(toolI);
+  mMain.removeInteraction(CAD.i); if (CAD.draw) mMain.addInteraction(CAD.i);
   mMain.getTargetElement().style.cursor = t === "select" ? "" : t === "move" ? "move" : "crosshair";
   syncRibbon(); syncStatus();
 }
@@ -828,6 +830,7 @@ function syncStatus() {
 window.syncStatus = syncStatus;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
 $("snapT").onchange = () => setTool(UIS.tool);
+$("orthoT").checked = CAD.ortho; $("orthoT").onchange = e => CAD.setOrtho(e.target.checked);
 $("bDelFeat").onclick = () => {
   if (!SEL.length) return toast("Выберите объект: инструмент «Выбор», щелчок по объекту.");
   const list = SEL, keys = new Set(list.map(s => s.key)); pushUndo(featRec(list, list.length > 1 ? `удаление ${list.length} об.` : "удаление"));
@@ -912,6 +915,7 @@ function renderKeys() {
     + rows("Инструменты", Object.entries(KEYS).map(([c, t]) => [KEYNAME(c), TOOLS[t].name]))
     + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
     + rows("Правка", [["Del, Backspace", "удалить выбранные объекты"], ["Backspace", "при рисовании — убрать последнюю вершину"], ["двойной щелчок", "завершить линию, полигон, замер"], ["Alt+щелчок", "в «Вершинах» — удалить вершину"], [`${MOD}+Z`, "отменить правку объектов или стиля"], [`${MOD}+Shift+Z, ${MOD}+Y`, "вернуть отменённое"]])
+    + rows("Точное черчение", [["число, Enter", "следующая точка на этом расстоянии по направлению курсора, м"], ["длина<угол", "длина и угол; угол от направления на восток против часовой стрелки, как в AutoCAD"], ["@dx;dy", "смещение от последней точки по X и Y, м"], ["X;Y", "точка в координатах МГГТ (X — на восток, Y — на север)"], ["@ширина;высота", "противоположный угол прямоугольника"], ["Enter", "завершить линию или полигон"], ["F8", "орто: отрезки вдоль или поперёк предыдущего"], ["Shift (держать)", "орто на время"]])
     + rows("Проект и окна", [[`${MOD}+S`, "сохранить проект"], ["F1, ?", "это окно"], ["двойной щелчок по заголовку окна", "окно во всю высоту у края карты"]])
     + rows("Карта", [["колесо, щипок", "масштаб"], ["тянуть", "сдвиг карты"]])
     + `<div class="note">Буквы работают в любой раскладке: нажимается клавиша, а не символ.</div>`;
@@ -929,7 +933,8 @@ $("start").addEventListener("click", e => {
 
 // в подсказках Windows показывает Ctrl, macOS — ⌘
 if (MOD === "⌘") document.querySelectorAll("[title*='Ctrl+']").forEach(b => b.title = b.title.replaceAll("Ctrl+", "⌘"));
-mMain.on("pointermove", e => { const [lo, la] = ol.proj.toLonLat(e.coordinate); $("stXY").textContent = `${la.toFixed(5)}° с.ш. ${lo.toFixed(5)}° в.д.`; });
+mMain.on("pointermove", e => { const ll = ol.proj.toLonLat(e.coordinate), [x, y] = MGGT.fromWgs(ll);
+  $("stXY").textContent = `МГГТ X ${fmt(x, 2)}  Y ${fmt(y, 2)}`; $("stXY").title = `${ll[1].toFixed(6)}° с.ш. ${ll[0].toFixed(6)}° в.д. (WGS84). X — на восток, Y — на север, как в DXF.`; });
 function scaleDen(r) { const la = ol.proj.toLonLat(sharedView.getCenter())[1]; return Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10; }
 const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution()));
   // имя слоя вне своего масштаба — серым курсивом, как в QGIS

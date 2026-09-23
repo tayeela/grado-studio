@@ -706,6 +706,13 @@ def _is_grado(port):
         return False
 
 
+
+class Server(ThreadingHTTPServer):
+    # The browser opens about fifteen script and data requests at once on start. The default listen queue of 5
+    # dropped some of them (connection refused), and the page came up without app.js or layers.js now and then.
+    request_queue_size = 128
+    daemon_threads = True
+
 def main(argv=None):
     """Запуск: свободный порт от 8650, прежняя версия на порту заменяется, окно браузера открывается само."""
     argv = sys.argv[1:] if argv is None else argv
@@ -715,7 +722,7 @@ def main(argv=None):
     import time
     for p in range(port, port + 20):
         try:
-            server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+            server = Server(("127.0.0.1", p), Handler)
             break
         except OSError:
             info = _running(p)
@@ -733,7 +740,7 @@ def main(argv=None):
             for _ in range(30):                           # ждём, пока порт освободится
                 time.sleep(0.1)
                 try:
-                    server = ThreadingHTTPServer(("127.0.0.1", p), Handler)
+                    server = Server(("127.0.0.1", p), Handler)
                     break
                 except OSError:
                     pass

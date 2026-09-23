@@ -275,6 +275,9 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .vc .vm b{color:var(--text);font-weight:500}
 .empty{color:var(--faint);padding:24px;text-align:center}
 canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;background:#eeede8}
+.cadtip{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:12px/1.35 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none}
+.cadin{position:absolute;z-index:5;width:170px;height:26px;padding:0 6px;font:13px system-ui,sans-serif;font-variant-numeric:tabular-nums;border:1px solid var(--accent);border-radius:3px;background:var(--panel);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.cadin.bad{border-color:#b3261e;outline:1px solid #b3261e}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:3px;z-index:80;max-width:80%;opacity:0;pointer-events:none;transition:opacity .15s}
 .toast.on{opacity:1}
 .tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.note.warn{color:#9a5b00}.nm.outscale{color:var(--faint);font-style:italic}.toast.top{bottom:auto;top:96px}
@@ -308,7 +311,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <div class="g"><button class="tl" data-tool="point" title="Точка (P)"><i data-lucide="circle-dot"></i><span class="lb">Точка</span></button><button class="tl" data-tool="line" title="Линия (L)"><i data-lucide="spline"></i><span class="lb">Линия</span></button><button class="tl" data-tool="poly" title="Полигон (G)"><i data-lucide="pentagon"></i><span class="lb">Полигон</span></button><button class="tl opt" data-tool="rect" title="Прямоугольник (R)"><i data-lucide="square"></i><span class="lb">Прямоугольник</span></button></div>
     <label class="tgt" title="Слой, в который попадают новые объекты">в слой <select id="curLayer" aria-label="Текущий слой"></select></label><span class="vs"></span>
     <div class="g"><button class="tl" data-tool="vertex" title="Правка вершин (E)"><i data-lucide="pen-tool"></i><span class="lb">Вершины</span></button><button class="tl" data-tool="move" title="Перенос объекта (M)"><i data-lucide="move"></i><span class="lb">Перенос</span></button><button class="tl" id="bDelFeat" title="Удалить выбранный объект (Del)"><i data-lucide="trash-2"></i><span class="lb">Удалить</span></button><button class="tl" id="bUndo" title="Отменить правку (Ctrl+Z)" aria-label="Отменить"><i data-lucide="undo-2"></i></button><button class="tl" id="bRedo" title="Вернуть отменённое (Ctrl+Shift+Z)" aria-label="Вернуть"><i data-lucide="redo-2"></i></button></div>
-    <label class="inl" title="Привязка к вершинам и рёбрам видимых слоёв"><input type="checkbox" id="snapT" checked>привязка</label><span class="vs"></span>
+    <label class="inl" title="Привязка к вершинам, серединам отрезков, пересечениям и рёбрам видимых слоёв"><input type="checkbox" id="snapT" checked>привязка</label><label class="inl" title="Орто (F8): отрезки только вдоль или поперёк предыдущего, первый — по осям МГГТ. Shift — на время"><input type="checkbox" id="orthoT">орто</label><span class="vs"></span>
     <div class="g"><button class="tl opt" data-tool="mlen" title="Измерить длину (D)"><i data-lucide="ruler"></i><span class="lb">Длина</span></button><button class="tl opt" data-tool="marea" title="Измерить площадь (A)"><i data-lucide="square-dashed"></i><span class="lb">Площадь</span></button></div><span class="vs"></span>
     <div class="g"><button class="tl" data-tool="terr" title="Нарисовать границу территории (B)"><i data-lucide="scan"></i><span class="lb">Граница</span></button></div>
   </div>
@@ -406,6 +409,8 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <script src="insol.js"></script>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
+<script src="mggt.js"></script>
+<script src="cad.js"></script>
 <script src="layers.js"></script>
 <script src="analysis.js"></script>
 <script src="constraints.js"></script>
