@@ -24,7 +24,13 @@ export default async p => {
   await p.drag(h2[0], h2[1], dock[5], dock[6]);
   check(await p.ev(`const ok=$("wTable").parentElement.id==="dzR"; winOpen("wTable", false); return ok && $("dropInd").hidden`), "брошенное у правого края окно встраивается в панель свойств");
   await p.ev(`floatWin($("wTable")); WST.wTable.dock="b"; saveWins(); return 1`);
+  check(await p.ev(`["wTep","wSketch","wCons"].forEach(id=>winOpen(id,true)); await new Promise(r=>setTimeout(r,400));
+    const ok = $("dzR").classList.contains("tabbed") && $("dzR").querySelectorAll(".dztabs [data-tab]").length===3 && $("rightPane").clientHeight>=140;
+    ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,false)); return ok`), "три окна в панели свойств — вкладками, панель «Стиль» не сжата");
+  check(await p.ev(`const m=document.querySelector(".status .modes"), cs=getComputedStyle(m); return cs.marginBottom==="0px" && cs.backgroundColor==="rgba(0, 0, 0, 0)"`), "кнопки режимов в строке состояния не берут оформление переключателя стиля");
+  check(await p.ev(`winOpen("wKeys", true); await new Promise(r=>setTimeout(r,100)); document.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape",bubbles:true})); await new Promise(r=>setTimeout(r,100)); return $("wKeys").hidden`), "Esc закрывает верхнее плавающее окно");
   // «С чего начать» закрывается и больше не мешает
+  check(await p.ev(`CAD.start("pline"); await new Promise(r=>setTimeout(r,50)); const hid=$("start").hidden; CAD.cancel(); await new Promise(r=>setTimeout(r,50)); return hid && !$("start").hidden`), "«С чего начать» прячется, пока идёт команда, и не ловит щелчки черчения");
   check(await p.ev(`document.querySelector("[data-close-start]").click(); const ok=$("start").hidden; localStorage.removeItem("grado2.start"); return ok`), "«С чего начать» закрывается крестиком");
 
   // A: слой, два полигона, атрибут, удаление и отмена

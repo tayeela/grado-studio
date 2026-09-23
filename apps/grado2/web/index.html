@@ -76,7 +76,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .status #stScale{flex:0 0 64px;text-align:right}
 .status #stXY{flex:0 0 auto;min-width:27ch;text-align:right}
 .status #stScale,.status #stXY{font-variant-numeric:tabular-nums}
-@media (max-width:1180px){.status #stLayer{display:none}}
+@media (max-width:1180px){.status #stLayer{display:none}.status #stXY{min-width:22ch}.status .modes #mdPolar .t{min-width:2.4em}.status{gap:10px}}
 /* плавающие окна */
 .win{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:0 10px 30px rgba(0,0,0,.22);display:flex;flex-direction:column;resize:both;overflow:hidden;min-width:240px;min-height:140px}
 .win.front{z-index:41}
@@ -85,9 +85,27 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .dz:not(:has(>.win:not([hidden]))){display:none}
 .dz.b{flex:0 0 auto;flex-direction:row;height:280px;border-top:1px solid var(--line);background:var(--panel)}
 .win.docked{position:relative;inset:auto;z-index:auto;resize:none;border:0;border-radius:0;box-shadow:none;min-width:0;min-height:0;width:auto;height:auto;overflow:hidden}
+/* своё содержимое панели (слои, стиль) не отдаёт встроенным окнам всё место */
+.work>.side>.sb{flex:1 1 0;min-height:150px}
 .dz:not(.b)>.win.docked{flex:0 1 300px;min-height:90px;border-top:1px solid var(--line)}
-.dz.b>.win.docked{flex:1 1 0;min-width:220px;border-left:1px solid var(--line)}
+.dz.b{overflow:hidden}
+.dz.b>.win.docked{flex:1 1 0;min-width:0;border-left:1px solid var(--line)}
 .dz.b>.win.docked:first-of-type{border-left:0}
+.dz.tabbed{flex-direction:column}
+.dz.tabbed>.win.dzoff{display:none}
+.dz.tabbed>.win.docked{flex:1 1 0;border-left:0;border-top:0}
+.dz:not(.b).tabbed{flex:0 1 var(--dzh,340px);border-top:1px solid var(--line)}
+.dz.tabbed>.win:not(.hctl)>.wh{display:none}
+.dz.tabbed>.win.hctl>.wh>:is(b,[data-close]),.dz.tabbed>.win.hctl>.wh>:first-child{display:none}
+.dztabs{display:flex;align-items:flex-end;gap:1px;height:30px;padding:0 4px;border-bottom:1px solid var(--line);flex:0 0 auto;overflow-x:auto;scrollbar-width:none;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
+.dztabs button{display:flex;align-items:center;gap:5px;height:26px;padding:0 3px 0 8px;border:1px solid transparent;border-bottom:0;border-radius:4px 4px 0 0;background:none;color:var(--muted);white-space:nowrap;cursor:grab;flex:0 1 auto;min-width:0;touch-action:none}
+.dztabs button>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.dztabs.many button:not([aria-selected=true]){flex:0 0 auto}.dztabs.many button:not([aria-selected=true])>span{display:none}
+.dztabs button>svg,.dztabs .x{flex:0 0 auto}
+.dztabs button svg{width:14px;height:14px}
+.dztabs button[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text);margin-bottom:-1px;height:27px}
+.dztabs .x{font-style:normal;width:18px;height:18px;display:grid;place-items:center;border-radius:3px;color:var(--faint);cursor:pointer}
+.dztabs .x:hover{background:var(--hover);color:var(--text)}
 .win.docked .wh{cursor:grab;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
 .dres{display:none;position:absolute;left:0;right:0;top:-3px;height:7px;cursor:row-resize;z-index:5;touch-action:none}
 .dres:hover{background:linear-gradient(transparent 3px,var(--accent) 3px,var(--accent) 4px,transparent 4px)}
@@ -123,7 +141,7 @@ select,input[type=text]{height:24px;border:1px solid var(--line-2);background:va
 .mapbox .m{position:absolute;inset:0}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--line-2);height:100%}
 .split>div{position:relative;background:var(--canvas)}
-.mtag{position:absolute;left:8px;top:8px;background:#ffffffee;border:1px solid #bbb;border-radius:3px;padding:2px 7px;color:#222;z-index:2;pointer-events:none}
+.mtag{position:absolute;left:8px;top:8px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);border-radius:3px;padding:2px 7px;color:var(--text);z-index:2;pointer-events:none}
 .ol-scale-line{position:absolute;left:8px;bottom:8px;background:rgba(255,255,255,.85);padding:2px 4px;border-radius:2px}
 .ol-attribution{position:absolute;right:6px;bottom:6px;font-size:10px;background:rgba(255,255,255,.8);color:#333;padding:1px 6px;border-radius:2px}.ol-attribution ul{margin:0;padding:0;list-style:none;display:inline}.ol-attribution li{display:inline}.ol-attribution a{color:#333}.ol-attribution button{display:none}
 .ol-scale-line-inner{border:1px solid #333;border-top:0;color:#333;font-size:10px;text-align:center;margin:1px}
@@ -183,9 +201,9 @@ table.at{border-collapse:collapse;width:100%}
 .row>input[type=number]{flex:0 1 64px}
 .row>label.inl{display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .inl{display:flex;align-items:center;gap:4px;color:var(--text)}
-.modes{display:grid;grid-template-columns:repeat(auto-fit,minmax(72px,1fr));gap:1px;background:var(--line-2);border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin-bottom:8px}
-.modes button{border:0;background:var(--panel);height:24px;padding:0 3px;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-.modes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.stmodes{display:flex;flex-wrap:wrap;gap:1px;background:var(--line-2);border:1px solid var(--line-2);border-radius:3px;overflow:hidden;margin-bottom:8px}
+.stmodes button{flex:1 1 auto;border:0;background:var(--panel);height:24px;padding:0 8px;font-size:11.5px;white-space:nowrap}
+.stmodes button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 .cbtn{width:26px;height:20px;border:1px solid var(--line-2);border-radius:2px;padding:2px;background:var(--field);flex:0 0 auto}
 .cbtn i{display:block;width:100%;height:100%}
 table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
@@ -194,7 +212,7 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .cl .n{color:var(--faint);text-align:right;width:1%}
 .cl tr.off td:not(:first-child){opacity:.4}
 .rule{border:1px solid var(--line);padding:5px;margin-bottom:5px;background:var(--panel)}
-.rule .w{display:grid;grid-template-columns:1fr 58px 1fr;gap:4px}
+.rule .w{display:grid;grid-template-columns:58px minmax(0,1fr);gap:4px}.rule .w>:first-child{grid-column:1/-1}.rule .w>*{min-width:0}
 .rule .t{display:flex;align-items:center;gap:6px;margin-top:5px;color:var(--muted)}
 .rule .t .sp{flex:1}
 .ramps{display:flex;gap:4px;flex:1}
@@ -260,19 +278,19 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .lib button:hover{background:var(--hover)}
 .lib .cat{padding:6px 8px 2px;color:var(--faint);font-weight:600}
 .gbar{position:absolute;left:8px;top:8px;display:flex;gap:6px;z-index:2}
-.pv{position:absolute;right:8px;bottom:8px;background:#ffffffee;border:1px solid #bbb;border-radius:3px;padding:4px 8px;color:#222;z-index:2;max-width:70%}
-.litegraph.litecontextmenu{font:12px var(--ui);background:#fff;color:#222;border:1px solid #bbb;box-shadow:0 4px 14px rgba(0,0,0,.2);padding:3px 0;min-width:160px;z-index:100;border-radius:3px}
+.pv{position:absolute;right:8px;bottom:8px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);border-radius:3px;padding:4px 8px;color:var(--text);z-index:2;max-width:70%}
+.litegraph.litecontextmenu{font:12px var(--ui);background:var(--panel);color:var(--text);border:1px solid var(--line-2);box-shadow:0 4px 14px rgba(0,0,0,.2);padding:3px 0;min-width:160px;z-index:100;border-radius:3px}
 .litegraph .litemenu-title{padding:4px 10px;font-weight:600;color:#666}
 .litegraph .litemenu-entry{padding:4px 12px 4px 10px;cursor:default;white-space:nowrap}
-.litegraph .litemenu-entry:hover:not(.disabled){background:#2f6fc4;color:#fff}
-.litegraph .litemenu-entry.disabled{color:#aaa}
-.litegraph .litemenu-entry.separator{height:1px;background:#ddd;padding:0;margin:3px 0}
+.litegraph .litemenu-entry:hover:not(.disabled){background:var(--accent);color:var(--accent-ink)}
+.litegraph .litemenu-entry.disabled{color:var(--faint)}
+.litegraph .litemenu-entry.separator{height:1px;background:var(--line);padding:0;margin:3px 0}
 .litegraph .litemenu-entry.submenu:after{content:" ▸";float:right;opacity:.6}
-.litegraph.litesearchbox{position:absolute;z-index:100;background:#fff;border:1px solid #bbb;padding:6px;font:12px var(--ui);color:#222;border-radius:3px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.litegraph.litesearchbox{position:absolute;z-index:100;background:var(--panel);border:1px solid var(--line-2);padding:6px;font:12px var(--ui);color:var(--text);border-radius:3px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
 .litegraph.litesearchbox input{width:220px}
 .litegraph.litesearchbox .helper{max-height:220px;overflow:auto}
 .litegraph .litesearchbox .lite-search-item,.litegraph.litesearchbox .lite-search-item{padding:3px 6px}
-.litegraph.litesearchbox .lite-search-item.selected{background:#2f6fc4;color:#fff}
+.litegraph.litesearchbox .lite-search-item.selected{background:var(--accent);color:var(--accent-ink)}
 .litegraph .dialog,.litegraph.dialog{display:none}
 
 /* 3 эскиз */
@@ -297,7 +315,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .vc{flex:0 0 180px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0;text-align:left;display:flex;flex-direction:column}
 .vc:hover{border-color:var(--accent)}
 .vc[aria-pressed="true"]{outline:2px solid var(--accent);outline-offset:-1px}
-.vc svg{width:100%;height:84px;display:block;background:#f5f4f0;border-bottom:1px solid var(--line)}
+.vc svg{width:100%;height:84px;display:block;background:var(--canvas);border-bottom:1px solid var(--line)}
 .vc .vt{padding:4px 7px 0;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vc .vm{padding:2px 7px 6px;color:var(--muted);display:grid;grid-template-columns:1fr 1fr;gap:0 8px;font-variant-numeric:tabular-nums}
 .vc .vm b{color:var(--text);font-weight:500}
@@ -312,6 +330,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .status .modes button{height:20px;padding:0 6px;border:1px solid var(--line);border-radius:3px;background:none;color:var(--faint);font:600 10.5px/1 system-ui,sans-serif;letter-spacing:.03em;display:flex;align-items:center;gap:3px}
 .status .modes button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 14%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent);color:var(--accent)}
 .status .modes #mdPolar .t{min-width:6.6em;text-align:left}
+.status .modes button .t{white-space:nowrap}
 .status .modes .dd{font-style:normal;font-size:9px;padding-left:2px;border-left:1px solid var(--line);margin-left:1px}
 .cadmenu{position:fixed;z-index:90;background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:4px;box-shadow:0 4px 14px rgba(0,0,0,.18);padding:6px 8px;display:flex;flex-direction:column;gap:3px;font-size:12.5px}
 .cadmenu label{display:flex;align-items:center;gap:6px;white-space:nowrap}
@@ -323,7 +342,6 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .dd2{font-size:11px;color:var(--muted)}
 .cmdline{position:absolute;left:10px;bottom:30px;z-index:6;max-width:calc(100% - 20px);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;padding:5px 9px;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.14);font:12.5px/1.45 system-ui,sans-serif;color:var(--text)}
 .cmdline b{font-weight:650;letter-spacing:.02em}.cmdline .op{border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);border-radius:3px;padding:0 6px;font:inherit;line-height:1.5;cursor:pointer}.cmdline .op:hover{background:color-mix(in srgb,var(--accent) 18%,transparent)}.cmdline .k{color:var(--muted)}
-body.cmdon .toast{bottom:104px}
 .cmdline .nt{flex-basis:100%;color:var(--warn);font-size:12px}
 .ctl .seg>:last-child:nth-child(3n+2){grid-column:span 2}
 .drawerx{display:none;margin-left:auto}@media (max-width:1000px){.drawerx{display:inline-flex}}
@@ -332,7 +350,7 @@ body.cmdon .toast{bottom:104px}
 .cadin.bad{border-color:#b3261e;outline:1px solid #b3261e}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#333;color:#fff;padding:6px 12px;border-radius:3px;z-index:80;max-width:80%;opacity:0;pointer-events:none;transition:opacity .15s}
 .toast.on{opacity:1}
-.tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.note.warn{color:#9a5b00}.nm.outscale{color:var(--faint);font-style:italic}.toast.top{bottom:auto;top:96px}
+.tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.note.warn{color:var(--warn)}.nm.outscale{color:var(--faint);font-style:italic}
 /* узкий экран (ноутбук 1280): редкие подписи уходят в подсказки, иконки остаются */
 /* ноутбук: редкие окна уходят в меню «Окна ▾» с подписями, а не остаются значками без слов */
 .more{display:none;position:relative}.more .chev{width:12px;height:12px;margin-left:-2px}
@@ -341,7 +359,8 @@ body.cmdon .toast{bottom:104px}
 .wmenu button::after{content:"";margin-left:auto;width:14px;text-align:right}.wmenu button[aria-checked="true"]::after{content:"✓"}
 @media (max-width:1480px){.wins .btn.opt{display:none}.more{display:inline-flex}.tl.opt span.lb{display:none}}
 @media (max-width:1180px){.tl span.lb{display:none}}
-@media (max-width:1080px){.wins .btn span.lb{display:none}}
+.wmenu .core{display:none}
+@media (max-width:1080px){.wins .btn[data-win]:not(.opt){display:none}.wmenu .core{display:flex}.wins>.vs{display:none}}
 /* узкое окно: панели слоёв и свойств выезжают поверх карты (кнопки «Слои» и «Свойства» в меню «Окна»), а не пропадают */
 @media (max-width:1000px){.work,.work.noL,.work.noR{grid-template-columns:0 minmax(0,1fr) 0}.work>.side,.work>.side.r{grid-column:1/-1;position:absolute;top:0;bottom:0;width:min(320px,85%);z-index:40;box-shadow:0 6px 24px rgba(0,0,0,.22)}.work>.side:not(.r){left:0}.work>.side.r{right:0}.work .gut{display:none}.proj{max-width:150px}.ribbon .tgt select{width:140px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -422,7 +441,7 @@ body.cmdon .toast{bottom:104px}
   <header class="wh"><i data-lucide="calculator"></i><b>Показатели</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div id="tep"></div></div>
 </section>
-<section class="win" id="w3d" hidden aria-label="Объём">
+<section class="win hctl" id="w3d" hidden aria-label="Объём">
   <header class="wh"><i data-lucide="box"></i><b>Объём</b><button class="tb" id="bRot" title="Повернуть на 90°"><i data-lucide="rotate-cw"></i></button>
     <select id="sunDay" title="Дата теней" aria-label="Дата теней"><option value="112">22 апреля</option><option value="172">22 июня</option><option value="234">22 августа</option><option value="356">22 декабря</option></select>
     <input type="range" id="sunTime" min="6" max="18" step=".25" value="12" style="width:120px" title="Время, солнечное" aria-label="Время"><small id="sunInfo" class="num"></small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>

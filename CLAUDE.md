@@ -226,6 +226,24 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.29.1: layout audit (parallel reviewer, 17 findings) fixed.**
+  - Several windows in one zone become tabs (`syncZones`): side zones always, the bottom zone when windows get < 340 px each;
+    a tab drags out to float (`dragWin` shared by headers and tabs), × closes; crowded tabs keep only the icon. The layer
+    tree and the style pane keep ≥ 150 px (docked windows were squeezing «Стиль» to 0 px). Windows with header controls
+    («Объём») keep their header in a tab (`.hctl`).
+  - ≤ 1000 px: windows meant for the side panels dock as tabs under the map (drawers must not cover the map); only one drawer
+    is open at a time; crossing the width moves them back. Floating windows are re-clamped on resize; default positions are
+    inside the map field, not over the side panels.
+  - **The style pane's `.modes` class also matched the status-bar mode buttons** (grey box, border, 8 px margin — the buttons
+    sat 2 px high and were clipped): renamed `.stmodes`.
+  - «С чего начать» hides while a command runs (a click on the map under it hit «Чертить с нуля» and restarted PL).
+  - Esc order: open menu → variant search → selection/tool → front floating window → «С чего начать».
+  - Below 1080 px all window buttons move into «Окна ▾» with labels (icons alone were unreadable); status bar mode labels are
+    shortened below 1180 px so the next-step hint keeps room; toasts sit over the map (above the bottom zone and command line).
+  - Dark theme: graph menus, search box, map notes, variant thumbnails and the ТЭП warning colour use theme variables.
+  - Rules: the field picker gets its own row; «Категории» picks a text field with 2–30 values by default; «в слой» empty text
+    «новый слой» with the full name in its tooltip; «Объём» always shows the time. e2e +4 steps.
+
 - **2026-09-23, ГРАДО 2 v0.29.0: windows dock into the workspace; layout defects from the owner's screenshots.** Owner: «значки
   скачут, нет отступов, кривая вёрстка; окно должно не прилипать, а встраиваться в панель; приветственное окно нельзя закрыть;
   эскиз строится без границы без ошибки; боковая панель неверно ведёт себя при сужении».

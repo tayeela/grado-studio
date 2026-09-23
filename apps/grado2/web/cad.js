@@ -310,7 +310,7 @@ function start(name, opts = {}) {
   cancel(true); closeInput(); lastNote = null;
   window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
   CMD = CMDS[name].make(opts); CMD.id = name; LAST = name;
-  mMain.getTargetElement().style.cursor = "crosshair";
+  mMain.getTargetElement().style.cursor = "crosshair"; window.syncStart?.();
   if (CMD.done) return finish();
   after();
 }
@@ -971,8 +971,11 @@ function fillRibbon() {
 fillRibbon();
 function syncModes() {
   const set = (id, on, text) => { const b = document.getElementById(id); if (!b) return; b.setAttribute("aria-pressed", !!on); if (text) b.querySelector(".t").textContent = text; };
-  set("mdOrtho", ST.ortho); set("mdPolar", ST.polar, `ПОЛЯР ${ST.polarInc}°`); set("mdOsnap", ST.osnap); set("mdOtrack", ST.otrack); set("mdDyn", ST.dyn);
+  // на узком окне подписи короче: строке состояния нужно место для подсказки, что делать дальше
+  const n = innerWidth <= 1180;
+  set("mdOrtho", ST.ortho); set("mdPolar", ST.polar, n ? `${ST.polarInc}°` : `ПОЛЯР ${ST.polarInc}°`); set("mdOsnap", ST.osnap, n ? "ПРИВ" : "ПРИВЯЗКА"); set("mdOtrack", ST.otrack, n ? "ОТСЛ" : "ОТСЛЕЖ"); set("mdDyn", ST.dyn);
 }
+addEventListener("resize", () => syncModes());
 function modeMenu(anchor, html, bind, below) {
   document.querySelectorAll(".cadmenu").forEach(m => m.remove());
   const m = document.createElement("div"); m.className = "cadmenu"; m.innerHTML = html; document.body.appendChild(m);

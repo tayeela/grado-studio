@@ -10,8 +10,11 @@ const icons = () => lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
 // сообщение внизу по центру; если там стоит окно — над картой сверху, чтобы не закрывать карточки и кнопки окна
 let tT; function toast(t) {
   const el = $("toast"); el.textContent = t; el.classList.remove("top"); el.classList.add("on");
+  // сообщение — над низом карты (над встроенными снизу окнами и командной строкой), по центру карты; поверх окна — вверху карты
+  const m = $("mMain").getBoundingClientRect();
+  Object.assign(el.style, { left: (m.left + m.width / 2) + "px", bottom: (innerHeight - m.bottom + (document.body.classList.contains("cmdon") ? 58 : 14)) + "px", top: "" });
   const r = el.getBoundingClientRect(), hit = [...document.querySelectorAll(".win:not([hidden])")].some(w => { const b = w.getBoundingClientRect(); return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top; });
-  if (hit) el.classList.add("top");
+  if (hit) { el.classList.add("top"); Object.assign(el.style, { top: (m.top + 10) + "px", bottom: "auto" }); }
   clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), 4200);
 }
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
@@ -967,6 +970,7 @@ $("sunDay").onchange = $("sunTime").oninput = () => draw3d();
 /* аксонометрия: стены, крыши, порядок по глубине; дороги — земля */
 function draw3d() {
   const cv = $("c3d"), r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+  const tm = +$("sunTime").value; $("sunInfo").textContent = `${String(Math.floor(tm)).padStart(2, "0")}:${String(Math.round(tm % 1 * 60)).padStart(2, "0")}`;
   $("e3d").hidden = !!TERR; if (!r.width || !TERR) { cv.getContext("2d").clearRect(0, 0, cv.width, cv.height); return; }
   cv.width = r.width * dpr; cv.height = r.height * dpr; const x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0); x.clearRect(0, 0, r.width, r.height);
   const terr = ringsXY(TERR)[0], A = rot3d * Math.PI / 2, C = Math.cos(Math.PI / 6), Sn = Math.sin(Math.PI / 6), R = p => rot(p, A, [0, 0]);
@@ -1077,11 +1081,12 @@ $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-va
 const WINKEY = "grado2.win";
 let WST = {}; try { WST = JSON.parse(localStorage.getItem(WINKEY)) || {}; } catch { }
 const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST)); } catch { } };
-const W0 = () => { const w = innerWidth, h = innerHeight; return {
-  wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
-  wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
-  wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)], wSheets: [300, Math.max(120, h - 400), Math.min(820, w - 620), Math.min(370, h - 160)] }; };
+// начальные места окон — внутри поля карты, а не поверх боковых панелей
+const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoundingClientRect(), L = Math.round(m.left) + 12, R = Math.round(m.right) - 12, mw = Math.max(360, R - L); return {
+  wData: [L, 96, 340, Math.min(560, h - 150)], wGraph: [L, Math.round(h * .38), Math.max(560, mw), Math.round(h * .56)], wSketch: [R - 320, 96, 320, 470],
+  wVars: [L, h - 300, Math.min(1180, mw), 260], wTep: [R - 330, 96, 330, Math.min(620, h - 150)], w3d: [L + 40, 110, Math.min(620, mw), 440],
+  wCmp: [L + 20, 100, Math.min(1000, mw), 520], wTable: [L, h - 330, Math.max(560, mw), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
+  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -1105,27 +1110,54 @@ function snapMove(w, x, y) {           // магнит плавающего ок
    вытянутое за заголовок — снова плавает. Двойной щелчок по заголовку — встроить / сделать плавающим. */
 const DZ = { l: $("dzL"), r: $("dzR"), b: $("dzB") };
 const DOCK_DEFAULT = { wTable: "b", wVars: "b", wSheets: "b", wGraph: "b", wSketch: "r", wTep: "r", wCons: "r", wData: "l", wViews: "l" };
-const dockOf = id => { const d = WST[id]; return d && "dock" in d ? d.dock : d?.anchor || DOCK_DEFAULT[id] || null; };   // anchor — прилипание прежних версий
-const layoutChanged = () => requestAnimationFrame(() => { mMain.updateSize(); window.CAD?.grips?.(); });
-function dockWin(w, side) {
-  const d = WST[w.id] ||= {}; d.dock = side; delete d.anchor; delete d.full;
+const narrow = () => innerWidth <= 1000;       // боковые панели — выезжающие поверх карты: окна боковых зон встают вкладками под карту
+const dockPref = id => { const d = WST[id]; return d && "dock" in d ? d.dock : d?.anchor || DOCK_DEFAULT[id] || null; };   // anchor — прилипание прежних версий
+const dockOf = id => { const z = dockPref(id); return z && z !== "b" && narrow() ? "b" : z; };
+const layoutChanged = () => requestAnimationFrame(() => { syncZones(); mMain.updateSize(); window.CAD?.grips?.(); });
+/* несколько окон в одной зоне — вкладки (как сгруппированные панели QGIS): боковая панель всегда, нижняя — когда окнам
+   не хватает ширины (меньше 340 px на окно). Вкладку можно вытянуть мышью — окно поплывёт. */
+function syncZones() {
+  for (const [k, z] of Object.entries(DZ)) {
+    const ws = [...z.querySelectorAll(":scope>.win")].filter(w => !w.hidden);
+    const width = k === "b" ? z.parentElement.clientWidth : 0, tabbed = ws.length > 1 && (k !== "b" || ws.length * 340 > width);
+    let act = z.dataset.active; if (!ws.some(w => w.id === act)) act = ws[ws.length - 1]?.id || "";
+    z.dataset.active = act; z.classList.toggle("tabbed", tabbed);
+    ws.forEach(w => w.classList.toggle("dzoff", tabbed && w.id !== act));
+    let bar = z.querySelector(":scope>.dztabs");
+    if (!bar) { bar = document.createElement("div"); bar.className = "dztabs"; bar.setAttribute("role", "tablist"); z.insertBefore(bar, z.querySelector(":scope>.win")); bindTabs(bar); }
+    bar.hidden = !tabbed;
+    // вкладкам тесно — у неактивных остаются значок и крестик, подпись — в подсказке
+    bar.classList.toggle("many", tabbed && ws.length * 120 > (k === "b" ? width : z.clientWidth || z.parentElement.clientWidth));
+    if (tabbed) bar.innerHTML = ws.map(w => `<button role="tab" data-tab="${w.id}" aria-selected="${w.id === act}" title="${esc(w.getAttribute("aria-label"))}. Потяните вкладку, чтобы окно поплыло">${w.querySelector(".wh>svg, .wh>i")?.outerHTML || ""}<span>${esc(document.querySelector(`.wins [data-win="${w.id}"] .lb`)?.textContent || w.querySelector(".wh b")?.textContent || "")}</span><i class="x" data-tabclose="${w.id}" title="Закрыть">×</i></button>`).join("");
+  }
+}
+function bindTabs(bar) {
+  bar.addEventListener("pointerdown", e => {
+    const t = e.target.closest("[data-tab]"); if (!t || e.button) return;
+    if (e.target.closest("[data-tabclose]")) { winOpen(t.dataset.tab, false); return; }
+    const w = $(t.dataset.tab); dragWin(w, e, () => { w.parentElement.dataset.active = w.id; syncZones(); requestAnimationFrame(() => WIN_OPEN[w.id]?.()); });
+  });
+}
+function dockWin(w, side, keepPref) {
+  const d = WST[w.id] ||= {}; if (!keepPref) d.dock = side; delete d.anchor; delete d.full;
   w.classList.add("docked"); w.classList.remove("front", "snap"); w.style.cssText = "";
   if (side !== "b") w.style.flexBasis = (d.dh || 300) + "px";
   if (w.parentElement !== DZ[side]) DZ[side].append(w);
+  DZ[side].dataset.active = w.id;
   if (side === "l" && $("work").classList.contains("noL")) toggleDock("L", true);
   if (side === "r" && $("work").classList.contains("noR")) toggleDock("R", true);
   saveWins(); layoutChanged();
 }
-function floatWin(w) {
-  const d = WST[w.id] ||= {}; d.dock = null; w.classList.remove("docked"); w.style.flexBasis = "";
+function floatWin(w, keepPref) {
+  const d = WST[w.id] ||= {}; if (!keepPref) d.dock = null; w.classList.remove("docked", "dzoff"); w.style.flexBasis = "";
   document.body.append(w); saveWins(); layoutChanged();
 }
 // куда встанет окно, если отпустить его здесь: над панелью слоёв или у левого края карты — влево, и т. д.
 function dropZone(x, y) {
   const m = mapBox(), inR = r => r.width && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom, E = 36;
   const sl = document.querySelector(".work>.side:not(.r)").getBoundingClientRect(), sr = document.querySelector(".work>.side.r").getBoundingClientRect(), bb = DZ.b.getBoundingClientRect();
-  if (inR(sl) || (x >= m.left && x < m.left + E && y > m.top && y < m.bottom)) return "l";
-  if (inR(sr) || (x <= m.right && x > m.right - E && y > m.top && y < m.bottom)) return "r";
+  if (!narrow() && (inR(sl) || (x >= m.left && x < m.left + E && y > m.top && y < m.bottom))) return "l";
+  if (!narrow() && (inR(sr) || (x <= m.right && x > m.right - E && y > m.top && y < m.bottom))) return "r";
   if (inR(bb) || (y <= m.bottom && y > m.bottom - E && x > m.left && x < m.right)) return "b";
   return null;
 }
@@ -1138,18 +1170,45 @@ function showDrop(z) {
   Object.assign(el.style, { left: r.left + "px", top: r.top + "px", width: r.width + "px", height: r.height + "px" });
   el.dataset.z = z;
 }
+// перетаскивание окна за заголовок или вкладку: встроенное вытягивается, плавающее двигается, у края зоны — встраивается;
+// без движения (щелчок) — onTap
+function dragWin(w, e, onTap) {
+  const x0 = e.clientX, y0 = e.clientY, r = w.getBoundingClientRect(); let dx = x0 - r.left, dy = y0 - r.top, moving = !w.classList.contains("docked"), z = null, s = null, moved = false;
+  // слушаем окно браузера, а не заголовок: перенос окна в другую зону страницы снимает захват указателя
+  const pid = e.pointerId;
+  const mv = ev => {
+    if (ev.pointerId !== pid) return;
+    if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+    moved = true;
+    if (!moving) {             // встроенное окно плывёт под указателем своим плавающим размером
+      const d = WST[w.id] ||= {}, [, , ww, hh] = W0()[w.id], W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 80);
+      floatWin(w); Object.assign(w.style, { width: W + "px", height: H + "px" }); dx = Math.min(dx, W - 60); dy = Math.min(dy, 24); moving = true; winFront(w);
+    }
+    s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
+    w.style.left = s.x + "px"; w.style.top = s.y + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
+  };
+  const up = ev => {
+    if (ev.pointerId !== pid) return;
+    removeEventListener("pointermove", mv); removeEventListener("pointerup", up); removeEventListener("pointercancel", up); showDrop(null); w.classList.remove("snap", "todock");
+    if (!moved) { onTap?.(); return; }
+    if (z) { dockWin(w, z); requestAnimationFrame(() => WIN_OPEN[w.id]?.()); return; }
+    const d = WST[w.id] ||= {}; Object.assign(d, { l: parseInt(w.style.left), t: parseInt(w.style.top), dock: null }); saveWins();
+  };
+  addEventListener("pointermove", mv); addEventListener("pointerup", up); addEventListener("pointercancel", up); e.preventDefault();
+}
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
   // при первом открытии граф вписывается читаемо (не мельче 0,8); «Весь граф» ужимает до 0,6
-  wGraph: () => { sizeGraph(); if (!go.fitted) { fitGraph(.8); go.fitted = true; } updateAnalysisMap(); },
+  wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.8); go.fitted = k; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
 const go = {};
 function winOpen(id, on) {
   const w = $(id); on = on ?? w.hidden; w.hidden = !on;
-  if (on) { const z = dockOf(id); if (z) dockWin(w, z); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  if (on) { const z = dockOf(id); if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
   if (w.classList.contains("docked")) layoutChanged();
+  if (on && w.classList.contains("docked")) { w.parentElement.dataset.active = id; syncZones(); }
   if (id === "wGraph") $("pv").hidden = !on;
   if (PREVIEW_WINS.includes(id)) syncPreview();
   (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
@@ -1159,7 +1218,8 @@ function syncWinButtons() {
     b.setAttribute(b.getAttribute("role") === "menuitemcheckbox" ? "aria-checked" : "aria-pressed", on); });
 }
 // меню «Окна ▾»: те же кнопки с подписями (видно ниже 1480 px, где значки без слов непонятны)
-$("winMenu").innerHTML = [...document.querySelectorAll(".wins .btn.opt")].map(b => `<button role="menuitemcheckbox" data-win="${b.dataset.win}" title="${esc(b.title)}">${b.querySelector("i, svg").outerHTML}${esc(b.querySelector(".lb").textContent)}</button>`).join("");
+// ниже 1080 px в меню уходят и основные окна: значки без подписей непонятны
+$("winMenu").innerHTML = [...document.querySelectorAll(".wins .btn[data-win]")].map(b => `<button role="menuitemcheckbox" class="${b.classList.contains("opt") ? "" : "core"}" data-win="${b.dataset.win}" title="${esc(b.title)}">${b.querySelector("i, svg").outerHTML}${esc(b.querySelector(".lb").textContent)}</button>`).join("");
 const winMenu = on => { $("winMenu").hidden = !on; $("bMore").setAttribute("aria-expanded", on); if (on) { syncWinButtons(); $("winMenu").querySelector("button")?.focus(); } };
 $("bMore").onclick = e => { e.stopPropagation(); winMenu($("winMenu").hidden); };
 $("winMenu").addEventListener("click", () => winMenu(false));
@@ -1171,6 +1231,8 @@ $("winMenu").addEventListener("keydown", e => {
 addEventListener("pointerdown", e => { if (!$("winMenu").hidden && !e.target.closest(".more")) winMenu(false); });
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
+  // узкое окно: панели выезжают поверх карты — открыта только одна, иначе вдвоём они закрывают почти всю карту
+  if (narrow() && !$("work").classList.contains(cls)) $("work").classList.add(side === "L" ? "noR" : "noL");
   WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize();
 }
 // боковые панели тянутся за разделитель, ширина запоминается
@@ -1189,30 +1251,7 @@ document.querySelectorAll(".win").forEach(w => {
   w.addEventListener("pointerdown", () => winFront(w));
   w.querySelector("[data-close]").onclick = () => winOpen(w.id, false);
   const h = w.querySelector(".wh");
-  h.addEventListener("pointerdown", e => {
-    if (e.button || e.target.closest("button,input,select")) return;
-    const x0 = e.clientX, y0 = e.clientY; let r = w.getBoundingClientRect(), dx = x0 - r.left, dy = y0 - r.top, moving = !w.classList.contains("docked"), z = null, s = null;
-    // слушаем окно браузера, а не заголовок: перенос окна в другую зону страницы снимает захват указателя
-    const pid = e.pointerId;
-    const mv = ev => {
-      if (ev.pointerId !== pid) return;
-      if (!moving) {             // встроенное окно вытягивается, когда указатель ушёл дальше 6 px: плывёт под указателем своим размером
-        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
-        const d = WST[w.id] ||= {}, [, , ww, hh] = W0()[w.id], W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 80);
-        floatWin(w); Object.assign(w.style, { width: W + "px", height: H + "px" }); dx = Math.min(dx, W - 60); dy = Math.min(dy, 24); moving = true; winFront(w);
-      }
-      s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
-      w.style.left = s.x + "px"; w.style.top = s.y + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
-    };
-    const up = ev => {
-      if (ev.pointerId !== pid) return;
-      removeEventListener("pointermove", mv); removeEventListener("pointerup", up); removeEventListener("pointercancel", up); showDrop(null); w.classList.remove("snap", "todock");
-      if (!moving) return;
-      if (z) { dockWin(w, z); requestAnimationFrame(() => WIN_OPEN[w.id]?.()); return; }
-      const d = WST[w.id] ||= {}; Object.assign(d, { l: parseInt(w.style.left), t: parseInt(w.style.top), dock: null }); saveWins();
-    };
-    addEventListener("pointermove", mv); addEventListener("pointerup", up); addEventListener("pointercancel", up); e.preventDefault();
-  });
+  h.addEventListener("pointerdown", e => { if (!e.button && !e.target.closest("button,input,select")) dragWin(w, e); });
   h.addEventListener("dblclick", e => {
     if (e.target.closest("button,input,select")) return;
     if (w.classList.contains("docked")) { floatWin(w); placeWin(w); winFront(w); }
@@ -1238,8 +1277,16 @@ document.querySelectorAll(".win").forEach(w => {
     const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
     g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
   });
-  if (WST.hb) DZ.b.style.height = WST.hb + "px"; }
+  DZ.b.style.height = (WST.hb || Math.max(260, Math.round(DZ.b.parentElement.clientHeight * .4))) + "px"; }
 new ResizeObserver(() => mMain.updateSize()).observe($("mMain"));
+// при сужении окна браузера плавающие окна остаются на экране; ниже 1000 px боковые встроенные окна плывут, шире — встают обратно
+let wasNarrow = narrow();
+addEventListener("resize", () => {
+  const n = narrow();
+  if (n !== wasNarrow) document.querySelectorAll(".win:not([hidden])").forEach(w => { const z = dockPref(w.id); if (z === "l" || z === "r") dockWin(w, n ? "b" : z, n); });
+  wasNarrow = n;
+  document.querySelectorAll(".win:not([hidden]):not(.docked)").forEach(placeWin); syncZones();
+});
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };

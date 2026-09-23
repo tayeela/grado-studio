@@ -159,7 +159,11 @@ const numOf = v => v == null || v === "" ? NaN : +v;   // пустое знач�
 function catValues(key, field) { const m = new Map(); layerSrc[key]?.getFeatures().forEach(f => { const v = String(f.get(field) ?? ""); m.set(v, (m.get(v) || 0) + 1); }); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
 function numFields(key) { const fs = layerSrc[key]?.getFeatures() || []; return fieldsOfKey(key).filter(k => fs.length && fs.slice(0, 300).every(f => f.get(k) == null || isNum(f.get(k)))); }
 function assignCats(l, keep) {
-  const st = l.style; if (!st.cat.field) st.cat.field = fieldsOfKey(l.key).find(k => !numFields(l.key).includes(k)) || fieldsOfKey(l.key)[0] || "";
+  // поле по умолчанию — текстовое с немногими значениями (2–30): у «Наименования» каждый объект был бы своим классом
+  const st = l.style;
+  if (!st.cat.field) { const fs = fieldsOfKey(l.key), txt = fs.filter(k => !numFields(l.key).includes(k)), feats = layerSrc[l.key]?.getFeatures() || [];
+    const nv = k => new Set(feats.slice(0, 5000).map(f => String(f.get(k) ?? ""))).size;
+    st.cat.field = txt.find(k => { const n = nv(k); return n >= 2 && n <= 30; }) || txt[0] || fs[0] || ""; }
   const c = keep ? { ...st.cat.colors } : {}; let k = Object.keys(c).length;
   catValues(l.key, st.cat.field).forEach(([v]) => { if (!c[v]) c[v] = k < CAT.length ? CAT[k++] : OTHER; });
   st.cat.colors = c; if (!keep) st.cat.off = [];
@@ -474,7 +478,7 @@ function renderStyle(el) {
   const l = lyr(CUR); if (!l) { el.innerHTML = `<div class="empty">Выберите слой в дереве</div>`; return; }
   const st = l.style, fields = fieldsOfKey(l.key), nf = numFields(l.key), cf = fields.filter(k => !nf.includes(k));
   const modes = [["single", "Единый"], ["cat", "Категории"], ["grad", "Градуир."], ["rules", "Правила"]].concat(fields.includes("_lt") || st.mode === "lgr" || DATA[l.key]?.fc.features.some(f => f.properties._lt) ? [["lgr", "ЛГР"]] : []);
-  let h = `<div class="pad"><div class="ph">${symHTML(l)}<b>${esc(l.title)}</b></div><div class="modes">${modes.map(([m, t]) => `<button data-mode="${m}" aria-pressed="${st.mode === m}">${t}</button>`).join("")}</div>`;
+  let h = `<div class="pad"><div class="ph">${symHTML(l)}<b>${esc(l.title)}</b></div><div class="stmodes">${modes.map(([m, t]) => `<button data-mode="${m}" aria-pressed="${st.mode === m}">${t}</button>`).join("")}</div>`;
   const colorWord = l.geom === "line" ? "Цвет" : l.geom === "point" ? "Цвет" : "Заливка";
   if (st.mode === "lgr") h += `<div class="note" style="padding:0 0 8px">Знаки красных линий и ЛГР по стандарту REDLN97: тип линии выбирается по LineCode объекта. <a href="linetypes.html" target="_blank">Каталог типов</a>.</div>`;
   else if (st.mode === "single") h += `<div class="row"><label>${colorWord}</label>${cbtn("fill", st.fill)}${l.geom === "poly" ? `<label class="inl"><input type="checkbox" data-k="hatch" ${st.hatch ? "checked" : ""}>штриховка</label>` : ""}</div>`;
@@ -709,7 +713,8 @@ function setCurrent(key) {
 }
 function syncCurSelect() {
   const s = $("curLayer"); if (!s) return;
-  s.innerHTML = LYR.length ? LYR.map(l => `<option value="${esc(l.key)}" ${l.key === CUR ? "selected" : ""}>${esc(l.title)} · ${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}</option>`).join("") : `<option>нет слоёв — появится при рисовании</option>`;
+  s.innerHTML = LYR.length ? LYR.map(l => `<option value="${esc(l.key)}" ${l.key === CUR ? "selected" : ""}>${esc(l.title)} · ${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}</option>`).join("") : `<option>новый слой</option>`;
+  s.title = LYR.length ? `Слой для новых объектов: ${lyr(CUR)?.title || ""}` : "Слоёв нет: первый появится сам, как только начнёте чертить";
   s.disabled = !LYR.length;
 }
 $("curLayer").onchange = e => setCurrent(e.target.value);
@@ -809,7 +814,8 @@ function syncStatus() {
     : UIS.tool === "select" && n && CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: ручек было бы больше ${fmt(CAD.MAXGRIPS)}, поэтому они не показаны — выберите меньше объектов, чтобы править вершины. Команды (M, CO, RO) работают со всем выбором; Esc — снять выбор.`
     : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить; команды: M — перенести, CO — копировать, RO — повернуть, MI — зеркало (буквы и Enter); Esc — снять выбор.`
     : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
-  $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : "";
+  $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; $("stLayer").title = l ? `Текущий слой: ${l.title}` : "";
+  window.syncStart?.();
 }
 window.syncStatus = syncStatus;
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
@@ -873,7 +879,12 @@ addEventListener("keydown", e => {
   if (e.key === "F1" || e.key === "?" || (e.shiftKey && code === "Slash")) { e.preventDefault(); winOpen("wKeys"); return; }
   if (mod || e.altKey) return;
   if ((e.key === "Delete" || e.key === "Backspace") && SEL.length) { e.preventDefault(); $("bDelFeat").click(); }
-  else if (e.key === "Escape") { if (varRun && !varRun.stop) { $("bStopVar").click(); return; } measureSrc.clear(); select(null, null); setTool("select"); }
+  else if (e.key === "Escape") {
+    // Esc по очереди: открытое меню → подбор вариантов → выбор и инструмент → верхнее плавающее окно
+    const menu = document.querySelector(".cadmenu"); if (menu) { menu.remove(); return; }
+    if (varRun && !varRun.stop) { $("bStopVar").click(); return; }
+    if (!SEL.length && UIS.tool === "select" && !measureSrc.getFeatures().length) { const w = document.querySelector(".win.front:not([hidden]):not(.docked)"); if (w) { winOpen(w.id, false); return; } if (!$("start").hidden) { closeStart(); return; } }
+    measureSrc.clear(); select(null, null); setTool("select"); }
 });
 
 /* ---------- окно «Клавиши»: собирается из тех же таблиц, что и обработчики, поэтому не расходится с ними ---------- */
@@ -905,10 +916,10 @@ $("bKeys").onclick = () => winOpen("wKeys");
 /* ---------- пустой проект: с чего начать ---------- */
 // закрытая панель больше не появляется сама (её содержимое есть в справке F1)
 let startOff = false; try { startOff = localStorage.getItem("grado2.start") === "off"; } catch { }
-function syncStart() { const el = $("start"); if (el) el.hidden = startOff || !!(LYR.length || TERR); }
+// во время команды панель прячется: иначе щелчок по карте под ней попадал в её кнопки и сбрасывал черчение
+function syncStart() { const el = $("start"); if (el) el.hidden = startOff || !!(LYR.length || TERR) || UIS.tool !== "select" || !!window.CAD?.active(); }
 window.syncStart = syncStart;
 function closeStart() { startOff = true; try { localStorage.setItem("grado2.start", "off"); } catch { } syncStart(); }
-addEventListener("keydown", e => { if (e.key === "Escape" && !$("start").hidden && !window.CAD?.active()) closeStart(); });
 $("start").addEventListener("click", e => {
   if (e.target.closest("[data-close-start]")) return closeStart();
   const b = e.target.closest("[data-go]"); if (!b) return;
@@ -919,7 +930,7 @@ $("start").addEventListener("click", e => {
 // в подсказках Windows показывает Ctrl, macOS — ⌘
 if (MOD === "⌘") document.querySelectorAll("[title*='Ctrl+']").forEach(b => b.title = b.title.replaceAll("Ctrl+", "⌘"));
 mMain.on("pointermove", e => { const ll = ol.proj.toLonLat(e.coordinate), [x, y] = MGGT.fromWgs(ll);
-  $("stXY").textContent = `МГГТ X ${fmt(x, 2)}  Y ${fmt(y, 2)}`; $("stXY").title = `${ll[1].toFixed(6)}° с.ш. ${ll[0].toFixed(6)}° в.д. (WGS84). X — на восток, Y — на север, как в DXF.`; });
+  $("stXY").textContent = `${innerWidth > 1180 ? "МГГТ " : ""}X ${fmt(x, 2)}  Y ${fmt(y, 2)}`; $("stXY").title = `${ll[1].toFixed(6)}° с.ш. ${ll[0].toFixed(6)}° в.д. (WGS84). X — на восток, Y — на север, как в DXF.`; });
 function scaleDen(r) { const la = ol.proj.toLonLat(sharedView.getCenter())[1]; return Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10; }
 const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution()));
   // имя слоя вне своего масштаба — серым курсивом, как в QGIS
