@@ -100,8 +100,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
-- 2026-09-23 (v0.26.0): drawers in a narrow window close only from «Окна ▾» — add a close button in the drawer header;
-  grips show for up to 3 000 grips (large selections show none, without saying so).
+- 2026-09-23 (v0.26.0; done: a close button in the drawer header of a narrow window): grips show for up to 3 000 grips (large selections show none, without saying so).
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). Not yet — rectangle corner options,
   ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel.

@@ -1124,6 +1124,7 @@ document.querySelectorAll("[data-gut]").forEach(g => g.addEventListener("pointer
 }));
 $("work").parentElement.querySelector(".wins").addEventListener("click", e => { const b = e.target.closest("[data-win]"); if (!b) return; const id = b.dataset.win;
   if (id === "dockL" || id === "dockR") toggleDock(id.slice(4)); else winOpen(id); });
+document.querySelectorAll(".drawerx").forEach(b => b.onclick = () => toggleDock(b.dataset.dock, false));   // крестик выезжающей панели на узком окне
 document.querySelectorAll(".win").forEach(w => {
   w.addEventListener("pointerdown", () => winFront(w));
   w.querySelector("[data-close]").onclick = () => winOpen(w.id, false);

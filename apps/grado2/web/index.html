@@ -297,6 +297,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 body.cmdon .toast{bottom:104px}
 .cmdline .nt{flex-basis:100%;color:var(--warn);font-size:12px}
 .ctl .seg>:last-child:nth-child(3n+2){grid-column:span 2}
+.drawerx{display:none;margin-left:auto}@media (max-width:1000px){.drawerx{display:inline-flex}}
 .cadtip{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:3px;padding:3px 6px;font:12px/1.35 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,.18);pointer-events:none}
 .cadin{position:absolute;z-index:5;width:170px;height:26px;padding:0 6px;font:13px system-ui,sans-serif;font-variant-numeric:tabular-nums;border:1px solid var(--accent);border-radius:3px;background:var(--panel);color:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .cadin.bad{border-color:#b3261e;outline:1px solid #b3261e}
@@ -343,7 +344,7 @@ body.cmdon .toast{bottom:104px}
   <main class="work" id="work">
     <div class="gut l" data-gut="l" title="Потяните, чтобы изменить ширину панели слоёв"></div><div class="gut r" data-gut="r" title="Потяните, чтобы изменить ширину панели свойств"></div>
     <aside class="side">
-      <div class="sh">Слои<span class="sp"></span><button class="tb" id="bNewLayer" title="Новый слой для рисования"><i data-lucide="plus"></i></button><button class="tb" id="bNewGroup" title="Новая группа из текущего слоя; другие слои переносятся в неё перетаскиванием"><i data-lucide="folder-plus"></i></button><button class="tb" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i></button></div>
+      <div class="sh">Слои<span class="sp"></span><button class="tb" id="bNewLayer" title="Новый слой для рисования"><i data-lucide="plus"></i></button><button class="tb" id="bNewGroup" title="Новая группа из текущего слоя; другие слои переносятся в неё перетаскиванием"><i data-lucide="folder-plus"></i></button><button class="tb" id="bTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i></button><button class="tb drawerx" data-dock="L" title="Закрыть панель слоёв" aria-label="Закрыть панель слоёв"><i data-lucide="x"></i></button></div>
       <div id="newLayerBox" class="terr" hidden><div class="row"><input type="text" id="nlName" placeholder="Название слоя" style="flex:1"><select id="nlGeom" aria-label="Геометрия"><option value="poly">полигоны</option><option value="line">линии</option><option value="point">точки</option></select><button class="btn primary" id="nlOk">Создать</button></div></div>
       <div class="sb tree" id="layerTree"></div>
     </aside>
@@ -356,7 +357,7 @@ body.cmdon .toast{bottom:104px}
         <button class="btn" data-go="proj"><i data-lucide="folder-open"></i>Открыть проект</button>
         <button class="btn" data-go="keys"><i data-lucide="circle-help"></i>Как работать и клавиши<kbd>F1</kbd></button></div></div>
     <aside class="side r">
-      <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button></div>
+      <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button><button class="tb drawerx" data-dock="R" title="Закрыть панель свойств" aria-label="Закрыть панель свойств"><i data-lucide="x"></i></button></div>
       <div class="sb" id="rightPane"></div>
     </aside>
   </main>
