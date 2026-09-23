@@ -807,7 +807,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight; return {
   wData: [300, 96, 340, Math.min(560, h - 150)], wGraph: [290, Math.round(h * .38), Math.max(560, w - 310), Math.round(h * .56)], wSketch: [w - 640, 96, 320, 470],
   wVars: [300, h - 300, Math.min(1180, w - 620), 260], wTep: [w - 640, 96, 330, Math.min(620, h - 150)], w3d: [360, 110, 620, 440],
   wCmp: [320, 100, Math.min(1000, w - 400), 520], wTable: [300, h - 330, Math.max(560, w - 620), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)], wSheets: [Math.max(300, w - 1020), 90, Math.min(700, w - 320), Math.min(760, h - 140)] }; };
+  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [650, 96, 340, Math.min(700, h - 150)], wViews: [650, 96, 380, Math.min(560, h - 150)], wSheets: [300, Math.max(120, h - 400), Math.min(820, w - 620), Math.min(370, h - 160)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {
@@ -850,9 +850,20 @@ function winOpen(id, on) {
   (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
 }
 function syncWinButtons() {
-  document.querySelectorAll("[data-win]").forEach(b => { const id = b.dataset.win;
-    b.setAttribute("aria-pressed", id === "dockL" ? !$("work").classList.contains("noL") : id === "dockR" ? !$("work").classList.contains("noR") : !$(id).hidden); });
+  document.querySelectorAll("[data-win]").forEach(b => { const id = b.dataset.win, on = id === "dockL" ? !$("work").classList.contains("noL") : id === "dockR" ? !$("work").classList.contains("noR") : !$(id).hidden;
+    b.setAttribute(b.getAttribute("role") === "menuitemcheckbox" ? "aria-checked" : "aria-pressed", on); });
 }
+// меню «Окна ▾»: те же кнопки с подписями (видно ниже 1480 px, где значки без слов непонятны)
+$("winMenu").innerHTML = [...document.querySelectorAll(".wins .btn.opt")].map(b => `<button role="menuitemcheckbox" data-win="${b.dataset.win}" title="${esc(b.title)}">${b.querySelector("i, svg").outerHTML}${esc(b.querySelector(".lb").textContent)}</button>`).join("");
+const winMenu = on => { $("winMenu").hidden = !on; $("bMore").setAttribute("aria-expanded", on); if (on) { syncWinButtons(); $("winMenu").querySelector("button")?.focus(); } };
+$("bMore").onclick = e => { e.stopPropagation(); winMenu($("winMenu").hidden); };
+$("winMenu").addEventListener("click", () => winMenu(false));
+$("winMenu").addEventListener("keydown", e => {
+  const items = [...$("winMenu").querySelectorAll("button")], i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") { e.stopPropagation(); winMenu(false); $("bMore").focus(); }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+});
+addEventListener("pointerdown", e => { if (!$("winMenu").hidden && !e.target.closest(".more")) winMenu(false); });
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
   WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize(); reanchor();

@@ -221,6 +221,20 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.16.0: «Окна ▾» menu on a laptop, sheet frame on the map, ТЭП-only sheet.**
+  - Below 1480 px the `.btn.opt` window buttons are hidden and a «Окна ▾» menu lists them with labels and check marks
+    (`role=menuitemcheckbox`, `aria-checked` set by `syncWinButtons`; arrows, Enter, Esc, outside click).
+  - Sheets: button «Рамка» shows the sheet's map frame (map size × scale) as a blue layer on the main map with
+    `ol.interaction.Translate`; `translateend` stores `sheet.center` (lon/lat), «Вернуть» deletes it (then the territory
+    centroid is used as before). The view is fitted so the frame lies in the part of the map not covered by the «Листы»
+    window. The frame goes away when the window closes (MutationObserver on `hidden`) or a project is opened.
+  - Content «таблица ТЭП (все показатели)» → `sheet.kind = "tep"`; `print_io.TepSheetFrame` fills the area above the stamp with
+    all rows in up to three columns of at most 180 mm; the map sheet still takes the first 30 rows. Old projects need no
+    migration (the fields are optional).
+  - «Листы» opens as a strip at the bottom (like «Варианты»); the sheets table is `table-layout: fixed` with a colgroup —
+    before, the row buttons were outside the window at 1280 px and checkboxes stretched to the cell width.
+  - Checked headless at 1280×800: frame dragged, centre stored, ТЭП sheet preview and PDF; e2e +2 steps, print +1 test.
+
 - **2026-09-23, ГРАДО 2 v0.15.0: small queue items — ОГД download percent, ФГИС ТП search by name, toasts, segments, GPU note.**
   - ГИС ОГД: `_http_get(url, progress=)` streams in 256 KB chunks and decompresses gzip on the fly, so progress counts
     uncompressed bytes; the total comes from Content-Length (no gzip) or the middle number of the portal's ETag

@@ -319,6 +319,33 @@ class ColumnFrame(Frame):
         return out
 
 
+class TepSheetFrame(Frame):
+    """Лист «Таблица ТЭП»: все показатели над штампом, при нехватке высоты — во вторую и третью колонку."""
+
+    def __init__(self, rect, sheet):
+        super().__init__(rect)
+        self.sheet = sheet
+
+    def ops(self, ctx):
+        x, y, w, h = self.rect
+        sh, out = self.sheet, []
+        out.append({"op": "text", "x": x, "y": y + 6, "size": 5, "text": sh.get("title") or "Технико-экономические показатели"})
+        rows, top = sh.get("tep") or [], y + 14
+        if not rows:
+            out.append({"op": "text", "x": x, "y": top + 6, "size": 3, "text": "Показатели не посчитаны: задайте территорию и эскиз."})
+            return out
+        per = max(1, int((y + h - top - 8) / TableFrame.ROW_H) - 1)            # строк в колонке (без заголовка таблицы)
+        cols = [rows[i:i + per] for i in range(0, len(rows), per)]
+        gap, n = 8, min(len(cols), 3)
+        cw = min(180, (w - gap * (n - 1)) / n)                                 # одна колонка не растягивается на весь лист
+        for i, part in enumerate(cols[:n]):
+            t = TableFrame((x + i * (cw + gap), top, cw, 0), [("Показатель", cw * .7, "left"), ("Значение", cw * .3, "right")], part)
+            out.extend(t.ops(ctx))
+        if len(cols) > n:
+            out.append({"op": "text", "x": x, "y": y + h - 2, "size": 2.4, "text": f"… не поместилось строк: {sum(map(len, cols[n:]))} — возьмите формат А1"})
+        return out
+
+
 def _wrap(text, n):
     words, lines, cur = str(text).split(), [], ""
     for wd in words:
@@ -354,7 +381,11 @@ def build_document(spec, lib, lgr_dash):
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(SIZES[size])
         map_rect, col_rect = layout(size)
-        page.frames = [PageBorder(page), SketchMapFrame(map_rect, sh, lib, lgr_dash), ColumnFrame(col_rect, sh), StampFrame(page)]
+        if sh.get("kind") == "tep":
+            w, h = SIZES[size]
+            page.frames = [PageBorder(page), TepSheetFrame((25, 10, w - 25 - 10, h - 5 - StampFrame.H - 10 - 3), sh), StampFrame(page)]
+        else:
+            page.frames = [PageBorder(page), SketchMapFrame(map_rect, sh, lib, lgr_dash), ColumnFrame(col_rect, sh), StampFrame(page)]
         doc.pages.append(page)
         doc.sheet_titles.append(sh.get("title", ""))
     return doc

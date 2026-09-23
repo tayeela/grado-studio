@@ -112,7 +112,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   the list menu still shows full names.
 - 2026-09-23: Moscow's own social norms (2151-ПП, 2150-ПП) are not wired; radii are federal СП 42.13330 — say so when a
   Moscow document is prepared.
-- 2026-09-23: sheets take the whole view; per-sheet extent/centre (drag the frame on the map) and a separate ТЭП-only sheet
-  are not there yet.
-- 2026-09-23: below 1480 px wide six header buttons (Слои, Свойства, Показатели, Объём, Сравнение, Таблица) show only icons;
-  tooltips explain them, but a «Окна ▾» menu would be clearer on a laptop.
+- 2026-09-23 (done v0.16.0): a sheet's frame is shown on the map (button in the sheet row) and dragged with the mouse
+  like an AutoCAD viewport; the sheet keeps its own centre («Вернуть» centres it on the territory again). Content «таблица
+  ТЭП» makes a sheet with all indicators in up to three columns. The «Листы» window opens as a strip at the bottom.
+- 2026-09-23 (done v0.16.0): below 1480 px the six rarer windows move into a labelled «Окна ▾» menu with check marks
+  (arrow keys, Enter, Esc work).

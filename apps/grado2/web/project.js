@@ -82,7 +82,7 @@ function applyProject(p) {
     normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     VIEWS.push(...(p.views || []));
-    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "" }, p.album?.meta || {}); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []));
+    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "" }, p.album?.meta || {}); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []));
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }

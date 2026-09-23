@@ -36,6 +36,13 @@ class Print(unittest.TestCase):
         self.assertIn("Существующее положение", svg)
         self.assertIn("Условные обозначения", svg)
 
+    def test_tep_sheet_lists_all_rows_in_columns(self):
+        rows = [[f"Показатель {i}", f"{i},0"] for i in range(60)]
+        svg = print_io.render_preview_svg({"meta": {}, "sheets": [{"title": "ТЭП", "size": "A3", "kind": "tep", "tep": rows}]}, S.REDLN, S.LGR_DASH)
+        self.assertIn("Показатель 0", svg)
+        self.assertIn("Показатель 59", svg)                 # 60 строк на А3 — во второй колонке, ничего не потеряно
+        self.assertNotIn("не поместилось", svg)
+
     def test_map_scale_puts_100m_at_50mm_on_1_2000(self):
         tr = print_io.MapTransform((0, 0, 200, 200), [37.525, 55.7925], 2000)
         x0, _ = tr.mm(37.525, 55.7925)
