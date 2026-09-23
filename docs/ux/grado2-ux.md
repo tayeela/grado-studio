@@ -109,3 +109,5 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   Moscow document is prepared.
 - 2026-09-23: sheets take the whole view; per-sheet extent/centre (drag the frame on the map) and a separate ТЭП-only sheet
   are not there yet.
+- 2026-09-23: below 1480 px wide six header buttons (Слои, Свойства, Показатели, Объём, Сравнение, Таблица) show only icons;
+  tooltips explain them, but a «Окна ▾» menu would be clearer on a laptop.
