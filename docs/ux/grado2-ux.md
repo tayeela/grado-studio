@@ -100,7 +100,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). Not yet — rectangle corner options,
-  ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel. Trim and extend work on lines and contours, not on points; a trimmed
+  ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel.
+  UX audit v0.25.0: ARRAY asks its numbers without a preview of the copies — show ghosts while the numbers are typed. Trim and extend work on lines and contours, not on points; a trimmed
   polygon becomes a line (a GIS polygon cannot be open).
 - 2026-09-23 (v0.23.0, precise drawing): not yet — lengths while dragging a vertex in «Вершины», polar tracking other than
   90°, perpendicular and parallel snaps, a typed rotation for «Перенос»; the first mouse moves right after a click sometimes
