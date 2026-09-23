@@ -96,7 +96,7 @@ Next stages, in order. Estimates are in working sessions.
   for ИЖС; guest parking in urban blocks.
 - Sections move to where the solar ceiling is high: per-building drop under a low ceiling when the density goal is met
   without it (tested: 91 instead of 100 sections) — needs the owner's word, it leaves free yards where neighbours need sun.
-- Insolation: schools and kindergartens as their own norm class (СанПиН: 3 h for group rooms and classrooms), relief height
+- Insolation: schools and kindergartens as their own norm class (hours to be taken from СанПиН 1.2.3685-21 text, not from memory), relief height
   from SRTM under the buildings, the site sun-hours map.
 - A variant can be edited and saved as a named variant; the comparison table keeps accepted and hand-edited variants.
 
