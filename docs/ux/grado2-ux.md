@@ -89,6 +89,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-23 (v0.22.0, acceptance on ТиНАО): the ТЭП density target defaults to 25 everywhere; on a ТиНАО site with ПЗЗ
+  subzones it should come from their density. Urban blocks leave north-side sections under 50 % insolated facades.
 - 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». Open: K1 is straight distance × 1.3, not a walking route; a
   territory across two districts takes the district of its centre; ВРИ cost and social compensation are not computed;
   the «Территория расчёта» block has no «сброс» for territory mode and percentages (only for district values).

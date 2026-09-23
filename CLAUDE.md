@@ -226,6 +226,17 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-23, ГРАДО 2 v0.22.0: acceptance run Э8 on ТиНАО; Genplan nature zones become a ban.** Owner decisions of the
+  day: push to GitHub (private), rounding as implemented, drop buildings under a low ceiling (Э10), no DWG, old studio /
+  wizard / calc-web closed (launchers and `windows-release.yml` removed), ОВЗ places inside the norm, ВРИ cost postponed —
+  recorded in `docs/grado2-plan.md`. `main` pushed (69 commits were local only); `grado2-release.yml` run on GitHub green for
+  tests, Windows installer and macOS DMG. ТиНАО site (Краснопахорский, 44 ha): whole chain to PDF + DXF works, 24 s of
+  program time on warm caches. New constraint «Запрет: природные зоны Генплана» (`CK.gp`, both Genplan layers; natural,
+  green, park, ООПТ; «природно-жилая» is allowed). **Pitfall:** saved `grado2.cons` replaced the whole `use` object, so a new
+  switch came in as off for existing users — `use` is now merged key by key.
+  **Pitfall:** `.claude/launch.json` of the repo points `grado2-test` to the main checkout; for a worktree session it is
+  edited locally and marked `git update-index --skip-worktree` — do not commit it.
+
 - **2026-09-23, ГРАДО 2 v0.21.0: ТЭП по методике «Калькулятор 2.0» (genplan.tech/calc) с московскими нормами.**
   Owner sent the calculator's methodological reference and the rounding rule: math rounding to 3 decimals (SPP to 2),
   people and parking places always up to a whole number.

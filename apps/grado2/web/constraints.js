@@ -6,11 +6,12 @@
    и посадка его больше не учитывает (что видно на карте, то и учитывает генерация).
    Инсоляция — предпроектная оценка по методам ГОСТ Р 57795-2017, не сертифицированный расчёт (см. insol.js). */
 
-const CONS = { norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, insol: true } };
-try { Object.assign(CONS, JSON.parse(localStorage.getItem("grado2.cons") || "{}")); } catch { }
+const CONS = { norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true } };
+// сохранённые настройки кладутся поверх умолчаний; «use» сливается по ключам, иначе новый переключатель у старых настроек выключен
+try { const saved = JSON.parse(localStorage.getItem("grado2.cons") || "{}"); Object.assign(CONS, { ...saved, use: { ...CONS.use, ...saved.use } }); } catch { }
 const CONS_GROUP = "Ограничения";
-const CK = { zouit: "cons:zouit", red: "cons:redlines", fire: "cons:fire", pzz: "cons:pzz0", front: "cons:front", ceil: "cons:ceiling" };
-const EXCLUDE = [CK.zouit, CK.red, CK.fire, CK.pzz];   // слои-запреты: вычитаются из пятна застройки
+const CK = { zouit: "cons:zouit", red: "cons:redlines", fire: "cons:fire", pzz: "cons:pzz0", gp: "cons:gpnature", front: "cons:front", ceil: "cons:ceiling" };
+const EXCLUDE = [CK.zouit, CK.red, CK.fire, CK.pzz, CK.gp];   // слои-запреты: вычитаются из пятна застройки
 
 /* противопожарные разрывы между новым зданием I–II степени огнестойкости (С0) и существующим — СП 4.13130.2013, табл. 1:
    I–III, С0 — 6 м; II–III С1, IV С0 — 8 м; IV–V, С1–С3 (дерево, смешанные) — 10 м. Степень берётся по материалу стен ЕГРН. */
@@ -74,6 +75,14 @@ async function computeConstraints() {
       const zero = polyFeats("gisogd.pzz_sub").filter(f => /не предусмотрено/.test(f.properties["Регламент"] || "")).map(f => clip(f, TERR) && turf.feature(clip(f, TERR).geometry, { "Причина": "ПЗЗ: нулевые параметры", "Номер подзоны": f.properties["Номер подзоны"], "Документ": f.properties["Документ"] })).filter(Boolean);
       consLayer(CK.pzz, "Запрет: ПЗЗ без нового строительства", turf.featureCollection(zero), "poly", { fill: "#8a5a00", stroke: "#8a5a00", hatch: true, width: 1 });
       log.push(DATA["gisogd.pzz_sub"] ? `подзон ПЗЗ без строительства: ${zero.length}` : "ПЗЗ не загружены");
+    }
+    // 4б. Генплан: природные и озеленённые функциональные зоны — жилой застройки там нет (природно-жилая зона её допускает)
+    if (CONS.use.gp) {
+      const natural = v => /природн|озелен|парков|лесопарк|оопт|особо охраняем/i.test(v) && !/жил/i.test(v);
+      const out = [["gisogd.func_zones", "naimfunkzony"], ["gisogd.func_zones_tinao", "Вид зоны"]].flatMap(([k, fld]) => polyFeats(k)
+        .filter(f => natural(String(f.properties[fld] || ""))).map(f => { const c = clip(f, TERR); return c && turf.feature(c.geometry, { "Причина": `Генплан: ${f.properties[fld]}`, "Источник": DATA[k].title }); })).filter(Boolean);
+      consLayer(CK.gp, "Запрет: природные зоны Генплана", turf.featureCollection(out), "poly", { fill: "#2e7d32", stroke: "#2e7d32", hatch: true, width: 1 });
+      log.push(DATA["gisogd.func_zones"] || DATA["gisogd.func_zones_tinao"] ? `природных зон Генплана: ${out.length}` : "функциональные зоны Генплана не загружены");
     }
     await tick();
     // 5–6. инсоляция: фронт существующих жилых окон и солнечный потолок участка
@@ -166,6 +175,7 @@ function renderCons() {
     + chk("red", "Отступ от красных линий", "Буфер от красных линий ГИС ОГД, СП 42.13330.2016")
     + chk("fire", "Сохраняемые здания и противопожарные разрывы", "Все здания, кроме отмеченных «сносим» в реестре. Разрыв 6/8/10 м по материалу стен, СП 4.13130.2013 табл. 1")
     + chk("pzz", "Подзоны ПЗЗ без нового строительства", "Подзоны с нулевыми параметрами (плотность, высота и застроенность — 0)")
+    + chk("gp", "Природные зоны Генплана", "Функциональные зоны Генплана: природные, озеленённые, парковые, в составе ООПТ. Природно-жилая зона застройку допускает и не учитывается.")
     + chk("insol", "Инсоляция окон соседей и солнечный потолок", "Расчётные точки на фасадах сохраняемых жилых домов; потолок — наибольшая высота, при которой соседи не теряют норму")
     + `<div class="sect">Параметры</div><div class="pad">`
     + num("redline", "Отступ от КЛ, м", 0, 30, 1, "Расстояние от красной линии до застройки")

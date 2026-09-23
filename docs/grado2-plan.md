@@ -69,7 +69,22 @@ Moscow norms, district parameters and the owner's rounding rules (v0.21).
 
 Next stages, in order. Estimates are in working sessions.
 
-### Э8. Acceptance of the goal (2 sessions) — first
+### Э8. Acceptance of the goal (2 sessions) — first; partly done 23.09.2026 (v0.22.0)
+Results so far:
+- GitHub run 35852669412 (workflow_dispatch on `main`): unit and browser tests, Windows build with a smoke test and the
+  Inno Setup installer, macOS build with a smoke test and the DMG — all green; artifacts `grado2-windows-latest` (26 MB) and
+  `grado2-macos-latest` (29 MB). Not yet: install on a clean Windows machine (owner).
+- ТиНАО, Краснопахорский, 44.2 ha (a village with ИЖС and a nature zone next to it): 16 sources loaded without errors,
+  constraints, a sketch to the density goal, norms check, 24 variants, accepted sketch, a two-sheet album PDF (0.58 MB) and
+  DXF (0.54 MB) — 24 s of program time with warm caches, console clean. ТЭП took zone 2, K2 0.9, ТиНАО and K1 1.0 by itself.
+- Found and fixed: generation did not respect the Genplan functional zones — a sketch could stand in a nature zone. New ban
+  layer «Запрет: природные зоны Генплана» (natural, green, park and ООПТ zones; «природно-жилая» allows housing); checked on
+  a site crossing the ТиНАО nature zone: 16.8 ha banned, none of 21 buildings on it.
+- Found, not fixed (→ Э9/Э10): the density target is 25 everywhere — in ТиНАО the ПЗЗ subzone density should set it (the
+  sketch reports «не хватает 779 тыс. м²» against an unrealistic goal); urban blocks leave 5 buildings with under 50 % of
+  facades insolated (north sides of blocks).
+- Still to do: first download on a cold cache timed, Хорошёво repeated with the new ТЭП, the owner's own run.
+
 - Done 23.09.2026: `main` pushed, run `grado2-release.yml`, install on a clean Windows machine (owner or a
   Windows VM), build the .app after `sudo xcodebuild -license` (owner's password).
 - ТиНАО greenfield site (e.g. Коммунарка or Былово): boundary → data → constraints → sketch → variants → album PDF + DXF,
