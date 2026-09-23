@@ -101,7 +101,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 ## Queue
 
 - 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): not yet — docking by keyboard; a layout
-  does not remember window sizes inside zones (only which zone).
+  does not remember window sizes inside zones (only which zone). Audit v0.30.0: a toast shown while the «Окна» menu is open
+  covers the menu's lower items (toasts sit above menus).
 - 2026-09-23 (UX audit v0.27–0.28, 840 and 1440 px, e2e green, console clean): a yard left by a dropped section is the
   section's own rectangle — it is not merged with the courtyard next to it, and on the map it looks like an unbuilt plot
   (the reason is only in the attribute «Причина»); the graph node line with the drop count is cut, the full text is in
