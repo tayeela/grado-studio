@@ -226,6 +226,24 @@ function glStyle(l) {
     : { "circle-radius": 2 + st.width * 2, "circle-fill-color": m(1), "circle-stroke-color": css(st.stroke, 1), "circle-stroke-width": 1 };
   return [{ filter: [">=", ["get", SYMK], 0], style }];
 }
+/* Полигон, обрезанный по области выгрузки (ЕГКО): рёбра на рамке — след обрезки, их не обводим, иначе дорога или газон
+   получают «бордюр» по краю области. Точки среза лежат ровно на рамке (clip.py), поэтому сравнение точное. */
+function frameless(ft) {
+  const g = ft.getGeometry(), b = ft.get("_clip"); if (!b || !g) return g;
+  const rev = g.getRevision(); if (ft._fl?.rev === rev) return ft._fl.g;
+  const [x0, y0] = ol.proj.fromLonLat([b[0], b[1]]), [x1, y1] = ol.proj.fromLonLat([b[2], b[3]]);
+  const onFrame = (a, c) => a[0] === c[0] && (a[0] === x0 || a[0] === x1) || a[1] === c[1] && (a[1] === y0 || a[1] === y1);
+  const lines = [], polys = g.getType() === "MultiPolygon" ? g.getCoordinates() : [g.getCoordinates()];
+  for (const p of polys) for (const r of p) {
+    let cur = [];
+    for (let i = 1; i < r.length; i++) {
+      if (onFrame(r[i - 1], r[i])) { if (cur.length > 1) lines.push(cur); cur = []; }
+      else { if (!cur.length) cur.push(r[i - 1]); cur.push(r[i]); }
+    }
+    if (cur.length > 1) lines.push(cur);
+  }
+  ft._fl = { rev, g: new ol.geom.MultiLineString(lines) }; return ft._fl.g;
+}
 function styleFor(l, f, res) {
   const st = l.style;
   const out = [];
@@ -234,15 +252,18 @@ function styleFor(l, f, res) {
     const s = symbolOf(l, f); if (s.hide) return null;
     // слой со смешанной геометрией (вода, транспорт): точка — знаком точки; линия в слое точек — линией, в слое полигонов — цветом контура
     const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
-    const key = `${s.fill}|${s.hatch}|${g}`; let base = l.cache.get(key);
+    const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
+    const key = `${s.fill}|${s.hatch}|${g}|${clip}`; let base = l.cache.get(key);
     if (!base) {
       if (g === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
       else if (g === "pline") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round" }) });
       else if (g === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
+      else if (clip) base = [new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }) }),
+        new ol.style.Style({ geometry: frameless, stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) })];
       else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
       l.cache.set(key, base);
     }
-    out.push(base);
+    Array.isArray(base) ? out.push(...base) : out.push(base);
   }
   if (st.label && res < 4) { const t = labelStyle(l, f); if (t) out.push(t); }
   return out;

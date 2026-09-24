@@ -502,7 +502,9 @@ class GisogdApi(Connector):
             for f in feats:
                 g = clip_geometry(f["geometry"], query)
                 if g:
-                    cut.append({**f, "geometry": g})
+                    # обрезанный полигон: рёбра на рамке — след обрезки, а не граница объекта (карта их не обводит)
+                    clipped = g is not f["geometry"] and "Polygon" in g["type"]
+                    cut.append({**f, "geometry": g, **({"grado_clip": list(query)} if clipped else {})})
             feats = cut
         return make_result(feats, {"code": code, "map": self.map_name, "bbox": ",".join(f"{v:.5f}" for v in query)},
                            source_doc=self.source_doc, notes=notes)

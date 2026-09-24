@@ -46,7 +46,7 @@ function collectProject() {
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
-    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
+    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
     graph: graph.serialize(),
   };
 }
@@ -99,6 +99,11 @@ function applyProject(p) {
   // file — имя файла в папке проектов, в который этот проект сохранялся (у открытого с диска файла его нет):
   // по нему «Сохранить» отличает свой файл от чужого с тем же названием
   PROJ.name = p.name || null; PROJ.file = p.file !== undefined ? p.file : p.name || null; PROJ.dirty = !!p.dirty; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle();
+  // слои ГИС ОГД и ЕГКО из проекта до v0.32 выгружены из GeoJSON портала и стоят на ~7,7 м в стороне: сказать и дать перевыгрузить
+  const ver = (p.app || "").match(/(\d+)\.(\d+)/), old = !ver || +ver[1] === 0 && +ver[2] < 32;
+  window.STALE_OGD = old ? Object.keys(DATA).filter(k => /^(gisogd|egko)\./.test(k) && DATA[k].fetched_at && !DATA[k].shp) : [];
+  if (STALE_OGD.length) { renderSources(); toast(STALE_OGD.length === 1 ? "В проекте слой ГИС ОГД / ЕГКО, выгруженный до v0.32: он стоит на ~7,7 м в стороне. Окно «Данные» → «Выгрузить заново»."
+    : `В проекте ${plural(STALE_OGD.length, ["слой", "слоя", "слоёв"])} ГИС ОГД / ЕГКО, выгруженных до v0.32: они стоят на ~7,7 м в стороне. Окно «Данные» → «Выгрузить заново».`); }
 }
 
 async function saveProject(name) {

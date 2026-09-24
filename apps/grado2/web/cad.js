@@ -245,7 +245,9 @@ const RU = "йцукенгшщзхъфывапролджэячсмитьбю", E
 const toEn = s => [...s.toLowerCase()].map(ch => { const i = RU.indexOf(ch); return i >= 0 ? EN[i] : ch; }).join("");
 const normNum = s => s.replace(/[жЖ]/g, ";").replace(/"/g, "@").replace(/Б/g, "<").replace(/\s*;\s*/g, ";").trim();
 function openInput(mode, ch) {
-  inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [80, 80];
+  // мышь ещё не была над картой — поле у середины карты, а не в её левом верхнем углу
+  const sz = mMain.getSize() || [160, 160];
+  inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [sz[0] / 2 - 18, sz[1] / 2 - 16];
   const below = tipEl.hidden ? 16 : 16 + tipEl.offsetHeight + 4;
   inEl.style.left = `${Math.round(px[0] + 18)}px`; inEl.style.top = `${Math.round(px[1] + below)}px`;
   inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : "значение";

@@ -226,6 +226,22 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.35.0: UX queue, batch 1 (small items).**
+  - Old ОГД/ЕГКО layers: `_layer` marks gisogd/egko layers `shp: true`, the project keeps it; opening a project saved by ≤ 0.31
+    lists such layers without the mark (`STALE_OGD`) — toast + a «Данные» note with «Выгрузить заново» (checks them, loads).
+  - DXF: export writes the header custom property `GRADO_CRS=MSK`; import (`written_system`) takes the file's own system over
+    the «Файлы в метрах» choice; an older ГРАДО 2 DXF ($LASTSAVEDBY ezdxf + «red_lns.shx» in the file, no mark) is read as ОГД.
+    **Pitfall:** ezdxf does not list shape-file styles in `doc.styles` after reading — the name is looked up in the bytes.
+  - ЕГКО clip: a clipped polygon carries `grado_clip` (the query box) → `_clip`; the map strokes it through `frameless`
+    (a geometry function dropping ring edges that lie on the frame — cut points sit exactly on it, so equality is exact).
+  - Status line «портал готовит файл…» while 0 bytes arrived; the re-download toast counts unchanged layers instead of listing
+    them; an empty first download adds no layer and says «Нет объектов в области».
+  - v0.33 Yandex styles left untouched (width 0) get the outline on re-download. Menus (`.menu`) sit above toasts (85 > 80).
+  - Sketch: touching spots of sections dropped under a low ceiling merge (`unionAll`) into kind «свет соседям» (yellow, with
+    «Причина» in the accepted layer); node line shortened. ARRAY/typed box opens mid-map without a mouse position.
+  - «Показатели»: «сбросить тип и проценты» (преобразование, 6 %, 25 %).
+  - Tests: DXF +1, e2e adapted (merged yards ≤ dropped sections); headless check of the stale note and the frame outline.
+
 - **2026-09-24, ГРАДО 2 v0.34.0: Yandex pieces dissolved along tile edges (no shapely).** All pieces of an object go to one
   integer grid of the zoom (`GX = x·8192 + 4096 + px`, 4095 → 4096; a tile edge is a multiple of 8192). Polygon rings are
   oriented (outer positive, holes negative); edges lying on a tile edge are summed per edge line as signed intervals, and only

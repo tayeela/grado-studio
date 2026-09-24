@@ -100,23 +100,20 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
-- 2026-09-24 (v0.34.0, Яндекс): a Yandex layer loaded in v0.33 keeps «Контур 0» after re-download (the style belongs to the layer,
-  a re-download does not reset it). Owner sets the outline in «Стиль»; no automatic style migration was made for a few hours of use.
+- ~~2026-09-24 (v0.34.0, Яндекс): a Yandex layer loaded in v0.33 keeps «Контур 0» after re-download~~ — done v0.35.0: an untouched
+  v0.33 style gets the outline back on re-download.
 - ~~2026-09-24 (v0.33.0, Яндекс): tile seams in the outline of Yandex area layers~~ — done in v0.34.0 (pieces dissolved along tile edges).
-- 2026-09-23 (v0.32.0, МСК): layers of ГИС ОГД and ЕГКO in projects saved before v0.32 stay ~7,7 m off until «Загрузить» is
-  pressed again for them (the program does not say so on opening an old project); objects you edited keep their old
-  geometry after the re-download. DXF files written before v0.32 must be imported with «ГИС ОГД» — nothing tells which
-  system an old DXF is in.
-- 2026-09-23 (v0.31.0, ЕГКО): the clipped road polygon draws its outline along the frame of the area (the cut edge is stroked
-  like a kerb); the first download of a big ЕГКО layer waits minutes before the first byte while the portal prepares the file —
-  the status line shows «0 МБ» all that time. The re-download report toast lists all seven layers in one long message.
+- ~~2026-09-23 (v0.32.0, МСК): old ОГД/ЕГКО layers silently ~7,7 m off; old DXF system unknown~~ — done v0.35.0: opening a project
+  of ≤ 0.31 with such layers says so (toast + «Данные» note with «Выгрузить заново»); DXF of ГРАДО 2 carries GRADO_CRS=MSK,
+  an older ГРАДО 2 DXF (ezdxf + red_lns.shx, no mark) is read as ОГД by itself. Still: objects you edited keep old geometry.
+- ~~2026-09-23 (v0.31.0, ЕГКО): frame outline of clipped polygons; «0 МБ» while the portal prepares; long re-download toast~~ —
+  done v0.35.0 (edges on the clip frame are not stroked; «портал готовит файл…»; unchanged layers are counted, not listed).
+  Still: a GPU-drawn layer (> 20 000 objects) and the PDF sheets stroke the frame edge.
 - 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): not yet — docking by keyboard; a layout
-  does not remember window sizes inside zones (only which zone). Audit v0.30.0: a toast shown while the «Окна» menu is open
-  covers the menu's lower items (toasts sit above menus).
-- 2026-09-23 (UX audit v0.27–0.28, 840 and 1440 px, e2e green, console clean): a yard left by a dropped section is the
-  section's own rectangle — it is not merged with the courtyard next to it, and on the map it looks like an unbuilt plot
-  (the reason is only in the attribute «Причина»); the graph node line with the drop count is cut, the full text is in
-  «Эскиз». The array's typed-value box appears at the top-left when the mouse has not moved over the map yet.
+  does not remember window sizes inside zones (only which zone). ~~Audit v0.30.0: a toast covers the «Окна» menu~~ — done v0.35.0.
+- ~~2026-09-23 (UX audit v0.27–0.28): dropped-section yards, cut node line, array box at the top-left~~ — done v0.35.0: touching
+  spots of dropped sections merge into one, own kind «свет соседям» (yellow) with «Причина» in the accepted layer; node line
+  shortened; the typed-value box opens mid-map when the mouse has not been over the map.
 - 2026-09-23 (done v0.27.0): a selection over 3 000 grips says so in the status bar; ARRAY shows ghost copies while its numbers are typed.
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). Not yet — rectangle corner options,
@@ -130,7 +127,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   subzones it should come from their density. Urban blocks leave north-side sections under 50 % insolated facades.
 - 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». Open: K1 is straight distance × 1.3, not a walking route; a
   territory across two districts takes the district of its centre; ВРИ cost and social compensation are not computed;
-  the «Территория расчёта» block has no «сброс» for territory mode and percentages (only for district values).
+  ~~the «Территория расчёта» block has no «сброс» for territory mode and percentages~~ (done v0.35.0).
 
 - 2026-09-23 (v0.20.0, partly done): on the real Хорошёво site (13.2 ha buildable in 6 irregular parts) plots are now clipped
   by the boundary when ≥ 70 % (ИЖС) / 60 % (blocked) remain and the house fits — use of the site 30 → 45 %; urban blocks are

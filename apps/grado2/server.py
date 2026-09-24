@@ -296,9 +296,11 @@ def _layer(key, result):
     feats = [{"type": "Feature", "geometry": f["geometry"],
               "properties": {**clean_props(present(f.get("properties") or {}) if present else f.get("properties"), f.get("_extra"), SOURCES[key][0] == "nspd"),
                              **({} if present else linetype_props(f.get("properties"))),
-                             **({"_key": f["grado_key"]} if f.get("grado_key") else {})}}
+                             **({"_key": f["grado_key"]} if f.get("grado_key") else {}),
+                             **({"_clip": f["grado_clip"]} if f.get("grado_clip") else {})}}
              for f in result["features"] if f.get("geometry")]
     return {"title": SOURCES[key][2], "source": result.get("source_doc"),
+            **({"shp": True} if SOURCES[key][0] in ("gisogd", "egko") else {}),   # с v0.32 ОГД и ЕГКО — из SHP, в родных координатах
             "fetched_at": result.get("fetched_at") or date.today().isoformat(), "notes": result.get("notes", []),
             "features": {"type": "FeatureCollection", "features": feats}}
 

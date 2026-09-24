@@ -58,6 +58,7 @@ def export_dxf(layers, redln, lgr_colors):
     doc = ezdxf.new("R2018", setup=False)
     doc.header["$INSUNITS"] = 6            # metres
     doc.header["$LTSCALE"] = 1.0
+    doc.header.custom_vars.append("GRADO_CRS", "MSK")    # метка системы: при повторном импорте выбор не нужен
     doc.styles.add_shx("red_lns.shx")
     shapes = {k.upper(): v for k, v in redln["shapes"].items()}
     msp = doc.modelspace()
@@ -128,9 +129,21 @@ def linecode_of(name):
     return None
 
 
+def written_system(doc, data=b""):
+    """Система, в которой файл записал ГРАДО 2: "msk" (метка GRADO_CRS с v0.32), "ogd" (выгрузка ГРАДО 2 до v0.32 —
+    ezdxf, стиль red_lns.shx, без метки) или None (чужой чертёж — решает выбор «Файлы в метрах»)."""
+    mark = str(doc.header.custom_vars.get("GRADO_CRS") or "").upper()
+    if mark in ("MSK", "OGD"):
+        return mark.lower()
+    # стиль-файл форм ezdxf при чтении в таблицу стилей не отдаёт — ищем его имя в самом файле
+    by_grado = str(doc.header.get("$LASTSAVEDBY", "")).lower() == "ezdxf" and b"red_lns.shx" in data.lower()
+    return "ogd" if by_grado else None
+
+
 def import_dxf(data, redln, local="msk"):
     """DXF bytes → (FeatureCollection WGS84, notes). Coordinates: WGS84 degrees or local metres — local="msk" (МСК, as in
-    QGIS) or "ogd" (ГИС ОГД system: the DXF files ГРАДО 2 wrote before v0.32)."""
+    QGIS) or "ogd" (ГИС ОГД system: the DXF files ГРАДО 2 wrote before v0.32). A file written by ГРАДО 2 says its own
+    system (written_system) and wins over the choice."""
     # кодировку файл объявляет сам ($DWGCODEPAGE): чертежи R2000–R2004 из русского AutoCAD — cp1251, а не UTF-8
     from ezdxf import recover
     doc, _ = recover.read(io.BytesIO(data))
@@ -168,6 +181,11 @@ def import_dxf(data, redln, local="msk"):
     if system not in ("wgs", "local"):
         raise ValueError("coordinates are neither Moscow local metres (tens of km) nor WGS84 degrees")
     is_wgs = system == "wgs"
+    own = written_system(doc, data)
+    if own and own != local and not is_wgs:
+        notes.append("файл выгружен ГРАДО 2" + (" до v0.32 — прочитан в системе ГИС ОГД" if own == "ogd" else " в МСК — прочитан в МСК")
+                     + ", а не по выбору «Файлы в метрах»")
+        local = own
     to = (lambda x, y: (x, y)) if is_wgs else file_io.LOCAL[local][0]
     out = []
     for f in feats:

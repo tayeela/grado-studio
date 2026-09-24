@@ -173,7 +173,7 @@ export default async p => {
   if (process.env.E2E_SHOTS) await p.shot(process.env.E2E_SHOTS + "/g15.png");
   await p.ev(`const t=RESULT.tepNode; winOpen("wSketch", false); t.widgets[1].value=window.__was; RESULT.placeNode._ck=null; recompute(true); await new Promise(r=>setTimeout(r,2500)); return 1`);
   p.log(`  цель 15: ${g15[4]}`);
-  check(g15[1] > 0 && g15[1] === g15[2] && Math.abs(g15[3] - 15) / 15 < .1 && g15[5] === 0, `цель 15 набрана и без ${g15[1]} корпусов под низким потолком: их пятна — дворы, плотность ${g15[3]?.toFixed(1)}, соседи не потеряли норму`);
+  check(g15[1] > 0 && g15[2] > 0 && g15[2] <= g15[1] && Math.abs(g15[3] - 15) / 15 < .1 && g15[5] === 0, `цель 15 набрана и без ${g15[1]} корпусов под низким потолком: их пятна (касающиеся — одним) — «свет соседям», плотность ${g15[3]?.toFixed(1)}, соседи не потеряли норму`);
   check(gen[3] === 0, "соседи под потолком не потеряли норму инсоляции");
   check(await p.ev(`const l=lyr("cons:ceiling"); l.visible=false; dataRev++; applyOrder(); recompute(true); await new Promise(r=>setTimeout(r,1500)); const off=RESULT.sketch.reduce((s,b)=>s+b.floors,0); l.visible=true; dataRev++; applyOrder(); recompute(true); await new Promise(r=>setTimeout(r,1500)); return off>0`), "выключенный слой потолка генерация не учитывает");
   check(await p.ev(`winOpen("wVars", true); $("bGen").click(); await new Promise(r=>setTimeout(r,300)); const running=!$("bStopVar").hidden && !$("varProg").hidden;
