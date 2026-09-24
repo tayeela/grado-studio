@@ -3,15 +3,16 @@
 // or on any exception in the page console.
 // steps.mjs: export default async (p) => { ... }  p.ev(js) · p.click(x,y,{shift,meta,dbl}) · p.drag(x0,y0,x1,y1,{shift}) · p.key(key,code,mods) · p.shot(file) · p.sleep(ms) · p.log(...)
 import { spawn } from "node:child_process";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const [url, stepsPath] = process.argv.slice(2);
 const port = 9400 + Math.floor(Math.random() * 500);
 const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const profile = mkdtempSync(join(tmpdir(), "cdp-"));
 const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${mkdtempSync(join(tmpdir(), "cdp-"))}`,
+  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
   "--window-size=1440,900", "--no-first-run", "--no-default-browser-check", "--no-sandbox", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
 let failed = false;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -56,4 +57,10 @@ try {
   try { await steps(p); } catch (e) { console.log("STEP FAILED:", e.message); failed = true; }
   console.log(logs.length ? "CONSOLE:\n" + logs.slice(0, 40).join("\n") : "console clean");
   if (logs.some(l => l.startsWith("EXCEPTION"))) failed = true;
-} finally { ws?.close(); chrome.kill(); process.exitCode = failed ? 1 : 0; }
+} finally {
+  ws?.close(); chrome.kill(); process.exitCode = failed ? 1 : 0;
+  // The temp profile is ~140 MB per run; remove it once Chrome has exited (5 s cap if it never reports exit).
+  if (chrome.exitCode === null && chrome.signalCode === null)
+    await new Promise(r => { const t = setTimeout(r, 5000); chrome.once("exit", () => { clearTimeout(t); r(); }); });
+  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
