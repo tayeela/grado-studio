@@ -13,7 +13,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     cache is `RELIEF_G`. Check top-level names across scripts before adding one.
   - DWG through the free ODA File Converter: import (.dwg → DXF → import_dxf) and export (grado2.dwg next to grado2.dxf);
     without the converter a clear message. Not verified with a real converter here.
-  - Windows dock from the keyboard: Tab to a header, Alt+← → ↓ / Alt+↑. F1 text updated.
+  - Windows dock from the keyboard: Tab to a header, Alt+← → ↓ / Alt+↑. F1 text updated. UX check: moving the header to another zone dropped keyboard focus — it is restored at once.
+  - UX check (screenshots): ИЖС sketch shows outbuildings at the back of plots; one-building «Объём» shadow follows the shape.
   - ИЖС: an outbuilding 4 × 6 m at the back of each plot (ground layer, not in SPP). Blocked rows start at half the leftover of
     a dry run, so the strip is centred; plot clipping is memoised between passes. e2e: ИЖС check counts outbuildings.
 

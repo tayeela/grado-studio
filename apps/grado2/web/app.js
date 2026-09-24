@@ -1400,7 +1400,8 @@ document.querySelectorAll(".win").forEach(w => {
     if (side) { e.preventDefault(); if (narrow() && side !== "b") { (WST[w.id] ||= {}).dock = side; dockWin(w, "b", true); } else dockWin(w, side); }
     else if (e.key === "ArrowUp" && w.classList.contains("docked")) { e.preventDefault(); floatWin(w); placeWin(w); winFront(w); }
     else return;
-    requestAnimationFrame(() => { WIN_OPEN[w.id]?.(); h.focus(); });
+    h.focus();                                          // перенос окна в другую зону снимает фокус — клавиатура остаётся на заголовке
+    requestAnimationFrame(() => WIN_OPEN[w.id]?.());
   });
   h.addEventListener("pointerdown", e => { if (!e.button && !e.target.closest("button,input,select")) dragWin(w, e); });
   h.addEventListener("dblclick", e => {
