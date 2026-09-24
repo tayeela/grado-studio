@@ -150,11 +150,20 @@ export default async p => {
   await type("su"); await enter(); { const [x, y] = await pxOf(4015, 1010); await p.click(x, y); } await enter();
   const holed = await p.ev(`const g=window.__vf.getGeometry(); return [g.getType(), g.getCoordinates().length]`);
   check(holed[0] === "Polygon" && holed[1] === 2, "SU: из прямоугольника вырезан квадрат — полигон с дырой, вычитаемый остался");
+  await type("dr"); await enter(); { const [x, y] = await pxOf(4013, 1008); await p.click(x, y); } await p.key("Escape", "Escape", { vk: 27 });
+  check(await p.ev(`return window.__vf.getGeometry().getCoordinates().length`) === 1, "DR: щелчок в дыре закрыл её");
   await p.ev(`setSel([]); return 1`);
   const pts0 = await p.ev(`const l=LYR.find(x=>x.geom==="point"&&x.key.startsWith("user:")&&x.title==="Точки"); return l?layerSrc[l.key].getFeatures().length:0`);
   await type("div"); await enter(); await type("4"); await enter(); { const [x, y] = await pxOf(4040, 1017); await p.click(x, y); } await enter();
   const pts1 = await p.ev(`const l=LYR.find(x=>x.geom==="point"&&x.key.startsWith("user:")&&x.title==="Точки"); return l?layerSrc[l.key].getFeatures().length:0`);
   check(pts1 - pts0 === 4, `DIV 4 на замкнутом контуре: ${pts1 - pts0} точки в слое «Точки»`);
+  await p.ev(`const l=LYR.find(x=>x.geom==="line"&&x.key.startsWith("user:")); const f=new ol.Feature(new ol.geom.LineString([[4000,1100],[4040,1100]].map(CAD.fromM)));
+    f.setProperties({ _lt: ["L01s18t"], LineCode: "1,-18" }); layerSrc[l.key].addFeature(f); syncFromSource(l.key); window.__rl=f; setSel([{key:l.key,f}]); return 1`);
+  await type("rev"); await enter();
+  check(await p.ev(`const f=window.__rl; return CAD.toM(f.getGeometry().getFirstCoordinate())[0]>4039 && f.get("_lt")[0]==="L01s18b" && f.get("LineCode")==="-1,18"`), "REV: линия развёрнута, засечки красной линии перешли на другую сторону (L01s18t → L01s18b, LineCode 1,-18 → -1,18)");
+  await p.ev(`const f=window.__rl, l=LYR.find(x=>x.geom==="line"&&x.key.startsWith("user:")); const c=[]; for(let i=0;i<=40;i++) c.push(CAD.fromM([4000+i, 1100+(i%2)*0.05])); f.setGeometry(new ol.geom.LineString(c)); syncFromSource(l.key); setSel([{key:l.key,f}]); return 1`);
+  await type("simp"); await enter(); await type("0.2"); await enter();
+  check(await p.ev(`return window.__rl.getGeometry().getCoordinates().length`) <= 3, "SIMP 0,2 м: зубцы 5 см по 41 вершине сняты, осталась прямая");
   await p.ev(`setCurrent(window.__pc); setSel([]); return 1`);
   await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
   check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");

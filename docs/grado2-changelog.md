@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.44.0: reverse, simplify, delete ring.** REV «Развернуть» reverses lines; for REDLN97 red lines the
+  side goes with the direction («+» — object to the right), so `_lt` names swap b ↔ t (also paired `LxxBxxT`), «Тип линии»
+  follows and LineCode signs flip (1,-18 → -1,18). SIMP «Упростить»: tolerance in metres on the ground (Mercator scale
+  at the object's latitude), OpenLayers simplify, vertices before/after reported. DR «Удалить дыру»: click inside a hole —
+  polygons are looked up by bbox, since a point in a hole does not intersect the geometry. All three in «▾ → Полигоны и
+  атрибуты». e2e +3 steps.
+
 - **2026-09-24, ГРАДО 2 v0.43.0: vector work like QGIS — split, merge, subtract, buffer, match properties, divide, measure,
   select similar.** New commands in `web/cad.js` (menu «▾» of the ribbon, section «Полигоны и атрибуты»; the ribbon stays one
   row at 1280 px — a separate button made it two rows, checked):

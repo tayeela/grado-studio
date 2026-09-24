@@ -1233,6 +1233,65 @@ def("similar", "Выбрать подобные", ["SS", "SELECTSIMILAR"], () =>
   return { done: true };
 }));
 
+// развернуть направление линии: у красных линий REDLN97 сторона засечек задана направлением («+» — объект справа),
+// поэтому вместе с вершинами меняется сторона в типе линии (…b ↔ …t) и знаки кодов LineCode
+const flipLt = n => /^L\d\ds\d\d[bt]$/i.test(n) ? n.slice(0, -1) + ({ b: "t", t: "b", B: "T", T: "B" })[n.slice(-1)]
+  : /^L\d\d[bt]\d\d[bt]$/i.test(n) ? n.replace(/[bt]/gi, c => ({ b: "t", t: "b", B: "T", T: "B" })[c]) : n;
+const flipCode = c => String(c).split(",").map(x => x.trim().startsWith("-") ? x.trim().slice(1) : "-" + x.trim()).join(",");
+def("reverse", "Развернуть", ["REV", "REVERSE"], () => selection(items => {
+  const changes = [];
+  for (const it of items) {
+    const g = it.f.getGeometry(), t = g.getType(); if (!/Line/.test(t)) continue;
+    const c = g.getCoordinates(), g2 = t === "LineString" ? new ol.geom.LineString(c.slice().reverse()) : new ol.geom.MultiLineString(c.map(r => r.slice().reverse()));
+    const lt = it.f.get("_lt"), lc = it.f.get("LineCode"), props = {};
+    if (Array.isArray(lt) && lt.length) props._lt = lt.map(flipLt);
+    if (lc != null && lc !== "") props.LineCode = flipCode(lc);
+    if (it.f.get("Тип линии")) props["Тип линии"] = flipLt(it.f.get("Тип линии"));
+    changes.push({ key: it.key, f: it.f, geom: g2, cad: null, props });
+  }
+  if (!changes.length) { note("Разворачиваются линии."); return { done: true }; }
+  edit(changes, [], "разворот"); note(`Развёрнуто линий: ${changes.length}${changes.some(c => c.props._lt) ? "; засечки красных линий перешли на другую сторону" : ""}.`);
+  return { done: true };
+}));
+
+def("simplify", "Упростить", ["SIMP", "SIMPLIFY"], () => selection(items => {
+  let d = window.__cadSimp || 0.5;
+  const run = () => {
+    const changes = []; let before = 0, after = 0;
+    for (const it of items) {
+      const g = it.f.getGeometry(); if (/Point/.test(g.getType())) continue;
+      const n0 = chainsOf(g).reduce((s, c) => s + c.length, 0);
+      // допуск в метрах местности: Дуглас–Пекер в координатах карты с поправкой масштаба Меркатора на широте объекта
+      const k = 1 / Math.cos(ol.proj.toLonLat(ol.extent.getCenter(g.getExtent()))[1] * Math.PI / 180), s2 = g.simplify(d * k);
+      const n1 = chainsOf(s2).reduce((s, c) => s + c.length, 0); if (n1 >= n0) continue;
+      before += n0; after += n1; changes.push({ key: it.key, f: it.f, geom: s2, cad: null });
+    }
+    if (!changes.length) return note(`С допуском ${fmt(d, 2)} м упрощать нечего.`);
+    edit(changes, [], "упрощение"); note(`Упрощено объектов: ${changes.length}, вершин ${before} → ${after} (допуск ${fmt(d, 2)} м).`);
+  };
+  const st = { need: "value", prompt: () => `Допуск упрощения, м — отклонение от исходной линии не больше <${fmt(d, 2)}>`,
+    value: v => { if (!(v > 0)) return note("Допуск — больше нуля."); d = window.__cadSimp = v; run(); st.done = true; },
+    enter: () => { run(); st.done = true; } };
+  return st;
+}));
+
+def("delring", "Удалить дыру", ["DR", "DELRING"], () => ({ need: "point",
+  prompt: () => "Щёлкните внутри дыры полигона, которую нужно закрыть; Esc — завершить", base: () => null, own: () => [],
+  point: w => {
+    const c = fromM(w);
+    for (const l of LYR) { if (!shown(l) || l.geom !== "poly") continue;
+      // точка в дыре геометрии не принадлежит — ищем по габариту полигона
+      const all = []; layerSrc[l.key].forEachFeatureInExtent([c[0], c[1], c[0], c[1]], f => { all.push(f); });
+      for (const f of all) {
+        const g = f.getGeometry(), polys = g.getType() === "Polygon" ? [g.getCoordinates()] : g.getType() === "MultiPolygon" ? g.getCoordinates() : [];
+        const inRing = r => { let o = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const a = r[i], b = r[j]; if ((a[1] > c[1]) !== (b[1] > c[1]) && c[0] < (b[0] - a[0]) * (c[1] - a[1]) / (b[1] - a[1]) + a[0]) o = !o; } return o; };
+        for (const p of polys) { const k = p.findIndex((r, i) => i > 0 && inRing(r)); if (k > 0 && inRing(p[0])) {
+          p.splice(k, 1); const g2 = g.getType() === "Polygon" ? new ol.geom.Polygon(polys[0]) : new ol.geom.MultiPolygon(polys);
+          edit([{ key: l.key, f, geom: g2, cad: null }], [], "удаление дыры"); return note("Дыра закрыта."); } }
+      } }
+    note("Здесь нет дыры полигона.");
+  } }));
+
 const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a => { ALIAS[a] = id; }));
 
 /* ---------- лента и строка состояния ---------- */
@@ -1240,12 +1299,13 @@ const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "p
 const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
-const GIS = ["split", "merge", "subtract", "buffer", "matchprop", "divide", "measure", "similar"];
+const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "matchprop", "divide", "measure", "similar"];
 const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   split: "полигон — линией разреза на части, атрибуты у всех частей", merge: "полигоны одного слоя — в один", subtract: "из выбранных полигонов вырезать другие",
   buffer: "полигоны на заданном расстоянии вокруг объектов (минус — внутрь)", matchprop: "атрибуты образца — другим объектам",
+  delring: "закрыть дыру полигона щелчком внутри неё", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
   divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",
   dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
 const btn = id => `<button class="tl ic" data-cmd="${id}" title="${CMDS[id].title} — ${CMDS[id].alias.join(", ")} и Enter: ${HELP[id]}" aria-label="${CMDS[id].title}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg></button>`;
