@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.46.0: copy/paste between layers, move to current layer, line ↔ polygon, vertex coordinates.**
+  - Ctrl/⌘+C / Ctrl/⌘+V: selected objects to the program's clipboard and into the current layer at the same place (QGIS
+    behaviour), attributes kept, `_key` dropped; `geomFor` adapts the geometry to the layer (polygon → closed lines,
+    closed line → polygon, points only to points); objects that do not fit are counted in the toast. F1 row added.
+  - LMC «В текущий слой» (LAYMCUR): move the selection into the current layer with the same adaptation.
+  - CONV «Линия ↔ полигон»: closed lines become polygons in the own polygon layer and polygons become closed lines.
+  - «Объект»: table «Вершины, МСК» (up to 300 vertices; rings, holes and parts labelled) — typing X or Y moves the vertex,
+    the closing vertex follows the first, undoable.
+  - e2e +3 steps.
+
 - **2026-09-25, ГРАДО 2 v0.45.0: select by condition, ALIGN, topological vertex editing, DXF dimensions.**
   - QS «Выбрать по условию»: «Этажность > 9 и Решение = сносим», «Наименование ~ школ» (contains), «Адрес пусто»; = ≠ > < >= <=,
     «и» / «или», field names case-insensitive and by prefix, «ё» = «е»; current layer or «Все слои». The command box shows an

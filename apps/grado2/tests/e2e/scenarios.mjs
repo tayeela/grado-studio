@@ -180,6 +180,18 @@ export default async p => {
   { const [x, y] = await pxOf(6010, 1010); await p.click(x, y); } await type("@0;5"); await enter();
   check(await p.ev(`return window.__tb.getGeometry().getCoordinates()[0].map(CAD.toM).some(c=>Math.abs(c[0]-6010)<1e-6&&Math.abs(c[1]-1015)<1e-6)`), "ТОПО: общая вершина двух квадратов сдвинута в обоих — граница осталась общей");
   await p.click(...(await p.ev(`const r=document.getElementById("mdTopo").getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]`)));
+  // копировать-вставить между слоями, в текущий слой, линия ↔ полигон, координаты вершин
+  await p.ev(`setCurrent(window.__vfk); setSel([{key:window.__vfk,f:window.__ta}]); return 1`);
+  await p.key("c", "KeyC", { ctrl: true });
+  await p.ev(`window.__lk=LYR.find(x=>x.geom==="line"&&x.key.startsWith("user:")).key; setCurrent(window.__lk); window.__ln0=layerSrc[window.__lk].getFeatures().length; return 1`);
+  await p.key("v", "KeyV", { ctrl: true });
+  check(await p.ev(`const fs=layerSrc[window.__lk].getFeatures(); return fs.length===window.__ln0+1 && fs.slice(-1)[0].getGeometry().getType()==="LineString"`), "Ctrl+C / Ctrl+V: квадрат вставлен в слой линий замкнутой линией");
+  await p.ev(`setSel([{key:window.__lk,f:layerSrc[window.__lk].getFeatures().slice(-1)[0]}]); return 1`);
+  await type("conv"); await enter();
+  check(await p.ev(`return SEL.length===1 && SEL[0].f.getGeometry().getType()==="Polygon" && lyr(SEL[0].key).geom==="poly"`), "CONV: замкнутая линия стала полигоном в слое полигонов");
+  await p.ev(`setSel([{key:window.__vfk,f:window.__tb}]); UIS.rt="obj"; renderRight(); return 1`);
+  const vt = await p.ev(`const i=document.querySelector("[data-vx]"); if(!i) return null; i.value="6100"; i.dispatchEvent(new Event("change",{bubbles:true})); return CAD.toM(window.__tb.getGeometry().getCoordinates()[0][0])[0]`);
+  check(vt !== null && Math.abs(vt - 6100) < 1e-6, "таблица вершин в «Объекте»: X первой вершины введён числом — 6100,000");
   await p.ev(`setCurrent(window.__pc); setSel([]); return 1`);
   await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
   check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");

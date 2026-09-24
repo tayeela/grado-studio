@@ -1353,6 +1353,27 @@ def("align", "Выровнять", ["AL", "ALIGN"], () => selection(items => {
   return st;
 }));
 
+// перенести выбранные объекты в текущий слой (LAYMCUR): атрибуты сохраняются, вид геометрии подстраивается под слой
+def("laymcur", "В текущий слой", ["LMC", "LAYMCUR"], () => selection(items => {
+  const l = lyr(CURKEY()); if (!l) { note("Выберите слой в списке — он станет слоем назначения."); return { done: true }; }
+  const changes = [], adds = []; let skip = 0;
+  for (const it of items) { if (it.key === l.key) continue; const g = geomFor(it.f.getGeometry(), l.geom); if (!g) { skip++; continue; }
+    changes.push({ ...it, remove: true }); adds.push({ key: l.key, f: copyFeat(it.f, g) }); }
+  if (!adds.length) { note(skip ? `Эти объекты не встают в слой «${l.title}» по виду геометрии.` : "Выбранное уже в текущем слое."); return { done: true }; }
+  edit(changes, adds, "в текущий слой"); setSel(adds); note(`Перенесено в «${l.title}»: ${adds.length}${skip ? `, не подошли по виду геометрии: ${skip}` : ""}.`);
+  return { done: true };
+}));
+// замкнутая линия ↔ полигон: объект уходит в слой другого вида (свой слой полигонов или линий), атрибуты сохраняются
+def("convert", "Линия ↔ полигон", ["CONV", "CONVERT"], () => selection(items => {
+  const changes = [], adds = []; let skip = 0;
+  for (const it of items) { const t = it.f.getGeometry().getType(); if (/Point/.test(t)) { skip++; continue; }
+    const to = /Polygon/.test(t) ? "line" : "poly", g = geomFor(it.f.getGeometry(), to); if (!g) { skip++; continue; }
+    const l = targetLayer(to); changes.push({ ...it, remove: true }); adds.push({ key: l.key, f: copyFeat(it.f, g) }); }
+  if (!adds.length) { note("Преобразуются полигоны в линии и замкнутые линии в полигоны."); return { done: true }; }
+  edit(changes, adds, "линия ↔ полигон"); setSel(adds); note(`Преобразовано: ${adds.length}${skip ? `, пропущено (точки или незамкнутые линии): ${skip}` : ""}.`);
+  return { done: true };
+}));
+
 const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a => { ALIAS[a] = id; }));
 
 /* ---------- лента и строка состояния ---------- */
@@ -1360,12 +1381,13 @@ const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "p
 const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
-const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "align", "matchprop", "divide", "measure", "similar", "qselect"];
+const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "align", "matchprop", "divide", "measure", "similar", "qselect", "laymcur", "convert"];
 const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   split: "полигон — линией разреза на части, атрибуты у всех частей", merge: "полигоны одного слоя — в один", subtract: "из выбранных полигонов вырезать другие",
   buffer: "полигоны на заданном расстоянии вокруг объектов (минус — внутрь)", matchprop: "атрибуты образца — другим объектам",
+  laymcur: "перенести выбранное в текущий слой, атрибуты сохраняются", convert: "замкнутую линию — в полигон, полигон — в замкнутые линии",
   delring: "закрыть дыру полигона щелчком внутри неё", align: "перенос и поворот по двум парам точек, масштаб по желанию",
   qselect: "выбрать объекты по условию на атрибуты: Этажность > 9 и Решение = сносим", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
   divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",

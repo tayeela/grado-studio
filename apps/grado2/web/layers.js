@@ -576,6 +576,28 @@ const decisionBar = () => SEL.some(s => fieldsOfKey(s.key).includes(DECISION)) ?
 // этажность выбранных корпусов своего слоя (эскиз, свои слои): − / +, как ручки высоты в TestFit
 const floorsBar = () => { const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность") && !/^(nspd|osm|gisogd)\./.test(s.key)); if (!own.length) return "";
   const v = [...new Set(own.map(s => s.f.get("Этажность")))]; return `<div class="pad" style="padding-top:0"><div class="row" style="margin:0"><label>Этажность</label><button class="btn" data-fl="-1" title="На этаж ниже">−</button><b class="num" style="min-width:48px;text-align:center">${v.length === 1 ? v[0] : "разная"}</b><button class="btn" data-fl="1" title="На этаж выше">+</button></div></div>`; };
+/* координаты вершин в МСК — правка числом (как «Редактор вершин» QGIS): изменение поля сдвигает вершину, замыкающая
+   вершина контура идёт вместе с первой; до 300 вершин, у большего объекта таблица не строится */
+const vPaths = g => { const t = g.getType(), c = g.getCoordinates();
+  if (t === "Point") return [[[], c]]; if (t === "LineString") return c.map((q, i) => [[i], q]);
+  if (t === "MultiLineString" || t === "Polygon") return c.flatMap((r, j) => r.map((q, i) => [[j, i], q]).slice(0, t === "Polygon" ? -1 : undefined));
+  if (t === "MultiPolygon") return c.flatMap((p, k) => p.flatMap((r, j) => r.slice(0, -1).map((q, i) => [[k, j, i], q])));
+  return []; };
+function vertexTable(f) {
+  const g = f.getGeometry(); if (!g || !window.CAD?.toM) return ""; const vs = vPaths(g); if (!vs.length || vs.length > 300) return vs.length ? `<div class="note">Вершин ${vs.length} — таблица координат строится до 300.</div>` : "";
+  let prev = null;
+  return `<div class="sect">Вершины, МСК</div><table class="vt"><tr><th>№</th><th>X</th><th>Y</th></tr>${vs.map(([p, q], n) => { const m = CAD.toM(q), ring = p.slice(0, -1).join(".");
+    const head = ring !== prev && p.length > 1 ? `<tr><td colspan="3" class="vr">${p.length === 3 ? `часть ${p[0] + 1}, ` : ""}${p[p.length - 2] ? `дыра ${p[p.length - 2]}` : g.getType() === "MultiLineString" ? `линия ${p[0] + 1}` : "контур"}</td></tr>` : ""; prev = ring;
+    return head + `<tr><td>${n + 1}</td><td><input type="text" class="num" data-vx="${p.join(",")}" value="${m[0].toFixed(3)}"></td><td><input type="text" class="num" data-vy="${p.join(",")}" value="${m[1].toFixed(3)}"></td></tr>`; }).join("")}</table>`;
+}
+function setVertex(f, path, axis, val) {
+  const g = f.getGeometry(), coords = JSON.parse(JSON.stringify(g.getCoordinates()));
+  let arr = coords; for (const i of path.slice(0, -1)) arr = arr[i];
+  const last = path[path.length - 1], cur = path.length ? arr[last] : coords, m = CAD.toM(cur); m[axis] = val; const c = CAD.fromM(m);
+  if (!path.length) { g.setCoordinates(c); return; }
+  arr[last] = c; if (/Polygon/.test(g.getType()) && last === 0) arr[arr.length - 1] = c.slice();
+  g.setCoordinates(coords);
+}
 function renderObject(el) {
   if (!SEL.length) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы.<br><br>Несколько объектов — Shift+щелчок или рамка с Shift. Все объекты слоя — ${MOD}+A.</div>`; return; }
   if (SEL.length === 1) {
@@ -583,7 +605,7 @@ function renderObject(el) {
     const keys = Object.keys(f.getProperties()).filter(k => !hiddenField(k));
     el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>${decisionBar()}${floorsBar()}
       <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
-      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>`;
+      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>${vertexTable(f)}`;
     return;
   }
   // несколько объектов: сводка и, если они из одного слоя, общая правка атрибутов (как «Изменить атрибуты выбранных» в QGIS)
@@ -630,6 +652,11 @@ document.addEventListener("click", e => {
 });
 function onPaneEdit(e) {
   const t = e.target, pane = $("rightPane"); if (!pane?.contains(t)) return;
+  if ((t.dataset.vx !== undefined || t.dataset.vy !== undefined) && e.type === "change" && SEL.length === 1) {
+    const v = +String(t.value).replace(",", ".").replace(/\s/g, ""); if (!isFinite(v)) { toast("Координата — число, например 7112,692."); return renderRight(); }
+    const { key, f } = SEL[0], path = (t.dataset.vx ?? t.dataset.vy).split(",").filter(x => x !== "").map(Number);
+    pushUndo(featRec(SEL, "координата вершины")); setVertex(f, path, t.dataset.vx !== undefined ? 0 : 1, v); f.set("_edited", true); f.unset?.("_cad"); syncFromSource(key); renderRight(); return;
+  }
   if (t.dataset.attr !== undefined) { if (e.type !== "change" || SEL.length !== 1) return; const { key, f } = SEL[0]; pushUndo(featRec(SEL, `атрибут «${t.dataset.attr}»`)); f.set(t.dataset.attr, numOrText(t.value)); f.set("_edited", true); syncFromSource(key); return; }
   if (t.dataset.battr !== undefined) {
     if (e.type !== "change" || !SEL.length) return; const k = t.dataset.battr, v = numOrText(t.value);
@@ -898,6 +925,32 @@ $("bDelFeat").onclick = () => {
    поэтому отмена на слое в 100 000 объектов мгновенна. Обратная запись снимается в момент отмены. */
 
 const propsOf = f => { const p = { ...f.getProperties() }; delete p[f.getGeometryName()]; return p; };
+/* геометрия под слой другого вида: полигон в слое линий — его контуры замкнутыми линиями, замкнутая линия в слое
+   полигонов — полигоном; точки только в слой точек. null — не переносится */
+function geomFor(g, geom) {
+  const t = g.getType(), closedRing = r => r.length > 3 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1];
+  if (geom === "point") return /Point/.test(t) ? g.clone() : null;
+  if (/Point/.test(t)) return null;
+  if (geom === "line") { if (/Line/.test(t)) return g.clone(); const rings = t === "Polygon" ? g.getCoordinates() : g.getCoordinates().flat();
+    return rings.length === 1 ? new ol.geom.LineString(rings[0]) : new ol.geom.MultiLineString(rings); }
+  if (/Polygon/.test(t)) return g.clone();
+  const lines = (t === "LineString" ? [g.getCoordinates()] : g.getCoordinates()).filter(closedRing);
+  return !lines.length ? null : lines.length === 1 ? new ol.geom.Polygon([lines[0]]) : new ol.geom.MultiPolygon(lines.map(r => [r]));
+}
+// копия объектов в буфере обмена программы (как в QGIS: Ctrl+C, Ctrl+V — в текущий слой на то же место)
+let CLIP = [];
+function copySel() { if (!SEL.length) return toast("Выберите объекты, которые нужно скопировать.");
+  CLIP = SEL.map(({ f }) => ({ g: f.getGeometry().clone(), p: propsOf(f) })); toast(`Скопировано объектов: ${CLIP.length}. ${MOD}+V — вставить в текущий слой на то же место.`); }
+function pasteClip() {
+  const l = lyr(CUR); if (!l) return toast("Выберите слой, в который вставить.");
+  if (!CLIP.length) return toast(`Буфер пуст: сначала выберите объекты и нажмите ${MOD}+C.`);
+  const items = [];
+  CLIP.forEach(c => { const g = geomFor(c.g, l.geom); if (!g) return; const f = new ol.Feature(g); const p = { ...c.p }; delete p._key; delete p[SYMK];
+    f.setProperties({ ...p, _new: true, _edited: true }); items.push({ key: l.key, f }); });
+  if (!items.length) return toast(`В слой «${l.title}» (${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}) эти объекты не встают: ${l.geom === "poly" ? "у линий нет замкнутого контура" : "другой вид геометрии"}.`);
+  pushUndo(featRec(items, `вставка ${items.length} об.`)); items.forEach(({ f }) => layerSrc[l.key].addFeature(f)); syncFromSource(l.key); setSel(items);
+  toast(`Вставлено в «${l.title}»: ${items.length}${items.length < CLIP.length ? `, не подошли по виду геометрии: ${CLIP.length - items.length}` : ""}.`);
+}
 const snapF = (key, f) => layerSrc[key]?.hasFeature(f) ? { g: f.getGeometry()?.clone(), p: propsOf(f) } : null;
 const featRec = (items, label) => ({ kind: "feat", label, items: items.map(({ key, f }) => ({ key, f, s: snapF(key, f) })) });
 const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : [u.key];
@@ -942,6 +995,8 @@ addEventListener("keydown", e => {
   if (mod && code === "KeyZ") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && code === "KeyY") { e.preventDefault(); redo(); return; }
   if (mod && code === "KeyA") { e.preventDefault(); selectAll(); return; }
+  if (mod && code === "KeyC" && !e.shiftKey && !getSelection()?.toString()) { e.preventDefault(); copySel(); return; }
+  if (mod && code === "KeyV" && !e.shiftKey) { e.preventDefault(); pasteClip(); return; }
   if (e.key === "F1" || e.key === "?" || (e.shiftKey && code === "Slash")) { e.preventDefault(); winOpen("wKeys"); return; }
   if (mod || e.altKey) return;
   if ((e.key === "Delete" || e.key === "Backspace") && SEL.length && !window.CAD?.active?.()) { e.preventDefault(); $("bDelFeat").click(); }
@@ -971,7 +1026,7 @@ function renderKeys() {
     + rows("Команды черчения (набрать и Enter или пробел, как в AutoCAD)", Object.entries(CAD.ALIAS).map(([a, id]) => [a, `${CAD.CMDS[id].title}: ${CAD.HELP[id]}`]))
     + rows("Во время команды", [["число, Enter", "следующая точка на этом расстоянии по направлению курсора или по пунктирной линии отслеживания, м"], ["длина<угол", "длина и угол; угол от направления на восток против часовой стрелки"], ["@dx;dy", "смещение от последней точки по X и Y, м"], ["X;Y", "точка в координатах МСК (X — на восток, Y — на север)"], ["буква параметра", "вариант из квадратных скобок в строке состояния: З — замкнуть, О — отменить, Р — радиус…"], ["Enter, пробел, правая кнопка", "завершить шаг или команду; без команды — повторить последнюю"], ["Backspace", "убрать последнюю точку"], ["Esc", "прервать команду"]])
     + rows("Режимы черчения (строка состояния)", [["F3", "объектная привязка: конточка, середина, центр, квадрант, пересечение, продолжение, нормаль, касательная, параллельно (задержите курсор на отрезке — потом ведите параллельно ему), ближайшая (▾ — набор)"], ["F11", "объектное отслеживание: задержите курсор на точке привязки до «+», дальше — пунктирные линии выравнивания и продолжения"], ["F10", "полярное отслеживание: пунктирный луч под углами, кратными шагу (▾ — 90, 45, 30, 15, 10, 5°)"], ["F8", "орто: только по осям X и Y МСК"], ["F12", "динамический ввод: размеры и поле ввода у курсора"], ["F2", "история команд за сеанс"]])
-    + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
+    + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], [`${MOD}+C, ${MOD}+V`, "копировать выбранное и вставить в текущий слой на то же место"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
     + rows("Правка", [["Del, Backspace", "удалить выбранные объекты"], ["двойной щелчок", "завершить полилинию, замер, границу"], ["Вершины", "ручки: тянуть вершину, щелчок по ребру — новая вершина, Alt+щелчок — удалить"], [`${MOD}+Z`, "отменить правку объектов или стиля"], [`${MOD}+Shift+Z, ${MOD}+Y`, "вернуть отменённое"]])
     + rows("Проект и окна", [[`${MOD}+S`, "сохранить проект"], ["F1, ?", "это окно"], ["двойной щелчок по заголовку окна", "встроить в панель / сделать плавающим"],
       ["Alt+← → ↓ на заголовке окна (Tab до него)", "встроить слева / справа / под картой; Alt+↑ — плавающее"]])
