@@ -54,4 +54,6 @@ ok(peq(G.arcEndDir(ta), [0, 1]), "касательная в конце четв�
 const tb = G.tangentArc([0, 0], [1, 0], [10, -10]); ok(tb && eq(tb.sw, -Math.PI / 2) && peq(tb.c, [0, -10]), "дуга вправо — по часовой");
 ok(G.tangentArc([0, 0], [1, 0], [10, 0]) === null, "точка по касательной — прямая, не дуга");
 ok(peq(G.lengthen([[0, 0], [10, 0]], false, 5)[1], [15, 0]) && peq(G.lengthen([[0, 0], [10, 0], [10, 10]], false, -15)[1], [5, 0]), "увеличение: +5 м по концу, −15 м через вершину");
+const el = G.ellipsePts([0, 0], [30, 0], 10, 0.01); ok(G.closed(el) && Math.abs(Math.abs(G.area(el)) - Math.PI * 300) / (Math.PI * 300) < 6e-4 && peq(el[0], [30, 0]), "эллипс 30 × 10: площадь πab, первая точка на большой оси");
+const er = G.ellipsePts([5, 5], [0, 20], 4, 0.01); ok(er.every(p => eq(((p[0] - 5) / 4) ** 2 + ((p[1] - 5) / 20) ** 2, 1, 1e-9)), "повёрнутый эллипс: все точки на кривой");
 console.log("cadcore: " + n + " checks ok");

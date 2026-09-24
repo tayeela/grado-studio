@@ -66,6 +66,12 @@
   const segsFor = (r, sw, tol = 0.01) => Math.min(720, Math.max(8, Math.ceil(Math.abs(sw) / (2 * Math.acos(Math.max(-1, 1 - tol / Math.max(r, tol)))))));
   function arcPts(a, tol) { const n = segsFor(a.r, a.sw, tol), out = []; for (let i = 0; i <= n; i++) out.push(polar(a.c, a.a0 + a.sw * i / n, a.r)); return out; }
   function circlePts(c, r, tol) { const n = Math.max(24, segsFor(r, 2 * Math.PI, tol)), out = []; for (let i = 0; i < n; i++) out.push(polar(c, 2 * Math.PI * i / n, r)); out.push(out[0].slice()); return out; }
+  // эллипс: центр, конец большой полуоси (вектор ax от центра) и малая полуось b; точки с прогибом хорды не больше tol
+  function ellipsePts(c, ax, b, tol = 0.01) {
+    const a = len(ax), u = a ? mul(ax, 1 / a) : [1, 0], v = [-u[1], u[0]], n = Math.max(32, segsFor(Math.max(a, b), 2 * Math.PI, tol)), out = [];
+    for (let i = 0; i < n; i++) { const t = 2 * Math.PI * i / n; out.push(add(c, add(mul(u, a * Math.cos(t)), mul(v, b * Math.sin(t))))); }
+    out.push(out[0].slice()); return out;
+  }
   // правильный многоугольник: вписанный (вершины на окружности) или описанный (середины сторон на окружности)
   function regPoly(c, n, r, a0, inscribed = true) {
     const R = inscribed ? r : r / Math.cos(Math.PI / n), start = inscribed ? a0 : a0 + Math.PI / n, out = [];
@@ -244,6 +250,6 @@
 
   const api = { EPS, sub, add, mul, dot, cross, len, dist, ang, unit, polar, same, closed, norm2pi, inter, foot, segCircle, circleCircle, tangents,
     circle3, arc3, arcPts, circlePts, regPoly, chainLen, area, nearest, offset, side, cutsAlong, sliceChain, trim, breakChain, extend,
-    filletCorner, filletAll, chamferCorner, chamferAll, tangentArc, arcEndDir, lengthen, join, T };
+    ellipsePts, filletCorner, filletAll, chamferCorner, chamferAll, tangentArc, arcEndDir, lengthen, join, T };
   if (typeof module === "object" && module.exports) module.exports = api; else root.CG = api;
 })(typeof globalThis !== "undefined" ? globalThis : this);

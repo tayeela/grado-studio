@@ -118,6 +118,41 @@ export default async p => {
   await p.ev(`setSel([]); return 1`); await type("s"); await enter(); for (const v of ["2095;1035", "2105;1045", "2100;1040", "@0;10"]) { await type(v); await enter(); }
   check((await lines()).includes("2100;1003 2100;1050"), "S: секущая рамка захватила верхнюю вершину, растянуто на 10 м");
 
+  // оформление и новые команды: углы прямоугольника, эллипс, размер, надпись, штриховка, правка массива, история, «Параллельно»
+  await p.ev(`setSel([]); return 1`);
+  const area = `const g=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry(), r=(g.getType()==="Polygon"?g.getCoordinates()[0]:g.getCoordinates()).map(CAD.toM); let a=0; for(let i=0;i+1<r.length;i++) a+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; return Math.abs(a/2)`;
+  await type("rec"); await enter(); await type("с"); await enter(); await type("3"); await enter(); await type("3000;1000"); await enter(); await type("@30;20"); await enter();
+  const recA = await p.ev(area);
+  check(Math.abs(recA - (600 - (4 - Math.PI) * 9)) < 0.2, `REC, сопряжение R 3 м: площадь ${recA.toFixed(2)} ≈ 600 − (4 − π)·9 м² (дуги хордами с прогибом до 1 см)`);
+  await type("rec"); await enter(); await type("с"); await enter(); await type("0"); await enter(); await p.key("Escape", "Escape", { vk: 27 });
+  await type("el"); await enter(); await type("3100;1010"); await enter(); await type("@30;0"); await enter(); await type("10"); await enter();
+  const elA = await p.ev(area);
+  check(Math.abs(elA - Math.PI * 300) / (Math.PI * 300) < 1e-3, `EL: эллипс с полуосями 30 и 10 м, площадь ${elA.toFixed(1)} ≈ π·300`);
+  await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
+  check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");
+  await type("t"); await enter(); await type("3000;1200"); await enter(); await type("Корпус 1"); await enter(); await enter();
+  check(await p.ev(`const l=LYR.find(x=>x.title==="Надписи"); return !!l && layerSrc[l.key].getFeatures().some(f=>f.get("Текст")==="Корпус 1") && l.style.label==="Текст"`), "TEXT: надпись «Корпус 1» в слое «Надписи», подписью слоя");
+  const at3 = (x, y) => p.ev(`sharedView.fit(ol.extent.buffer(ol.extent.boundingExtent([CAD.fromM([2990,990]),CAD.fromM([3140,1040])]),5)); await new Promise(r=>setTimeout(r,200)); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [Math.round(r.left+q[0]), Math.round(r.top+q[1])]`);
+  q = await at3(3015, 1010); await type("h"); await enter(); await p.click(q[0], q[1]); await enter();
+  check(await p.ev(`const l=LYR.find(x=>x.title==="Штриховка"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && l.style.hatch && Math.abs(f.getGeometry().getArea()/${recA}) > 0`), "H: щелчок внутри скруглённого прямоугольника — штриховка в слое «Штриховка»");
+  const at4 = (x, y) => p.ev(`sharedView.fit(ol.extent.buffer(ol.extent.boundingExtent([CAD.fromM([2090,990]),CAD.fromM([2160,1110])]),5)); await new Promise(r=>setTimeout(r,200)); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [Math.round(r.left+q[0]), Math.round(r.top+q[1])]`);
+  const arrN = () => p.ev(`return layerSrc[CUR].getFeatures().filter(f=>f.get("_arr")&&!f.get("_arr").src).length`);
+  check(await arrN() === 5, "AR помнит массив: у пяти копий метка массива");
+  q = await at4(2120, 1080); await type("ae"); await enter(); await p.click(q[0], q[1]); await type("4"); await enter(); await enter(); await enter(); await enter();
+  check(await arrN() === 7 && (await lines()).includes("2130;1063 2130;1110"), "AE: массив пересобран на 4 × 2 с прежними шагами — 7 копий, исходный объект не тронут");
+  await p.key("F2", "F2", { vk: 113 });
+  if (process.env.E2E_DEBUG) p.log(await p.ev(`const h=document.querySelector(".cmdhist"); return (h?.hidden) + " " + h?.textContent.slice(-600)`));
+  check(await p.ev(`const h=document.querySelector(".cmdhist"); return !!h && !h.hidden && h.textContent.includes("ЭЛЛИПС (EL)") && h.textContent.includes("ПРАВКА МАССИВА (AE)")`), "F2: история команд сеанса");
+  await p.key("F2", "F2", { vk: 113 });
+  await type("l"); await enter(); await type("3000;1400"); await enter(); await type("3050;1430"); await enter(); await enter();
+  const at5 = (x, y) => p.ev(`sharedView.fit(ol.extent.buffer(ol.extent.boundingExtent([CAD.fromM([2990,1290]),CAD.fromM([3070,1440])]),5)); await new Promise(r=>setTimeout(r,200)); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [Math.round(r.left+q[0]), Math.round(r.top+q[1])]`);
+  await p.ev(`CAD.ST.otrack=false; CAD.ST.polar=false; return 1`);
+  await type("l"); await enter(); await type("3000;1300"); await enter();
+  q = await at5(3015, 1409); await p.move(q[0] + 1, q[1]); await p.move(q[0], q[1]); await p.sleep(700);
+  const u = [50 / Math.hypot(50, 30), 30 / Math.hypot(50, 30)]; q = await at5(3000 + u[0] * 40, 1300 + u[1] * 40 + 0.4); await p.move(q[0] - 1, q[1]); await p.move(q[0], q[1]); await p.sleep(200);
+  check(await p.ev(`const c=CAD.cur(); return c && c.k==="par" && Math.abs((c.w[1]-1300)/(c.w[0]-3000) - 0.6) < 1e-6`), "«Параллельно»: задержка на отрезке, потом курсор ведётся параллельно ему от последней точки");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+
   // отслеживание: задержка на конце отрезка даёт «+», дальше — пунктирная линия выравнивания
   await p.ev(`CAD.ST.otrack=true; setSel([]); return 1`); await type("l"); await enter(); q = await at(1100, 1025); await p.click(q[0], q[1]);
   const e = await at(1000, 1000); for (let i = 3; i >= 0; i--) await p.move(e[0] + i * 3, e[1] + i * 2); await p.sleep(600);

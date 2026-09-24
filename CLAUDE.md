@@ -226,6 +226,23 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.37.0: UX queue, batch 3 (drawing).** New commands in `web/cad.js`: REC options «Сопряжение»/«Фаска»
+  (remembered like AutoCAD, `RECC`; `G.filletAll`/`chamferAll` on the rectangle), EL (`G.ellipsePts`, cadcore +2 checks),
+  H/BH (click inside a contour → the smallest polygon or closed line around the point is copied into layer «Штриховка»;
+  «Выбрать объекты»), DIM/DAL/DLI (aligned / horizontal / vertical; a line выносная–размерная–выносная in «Размеры», value in
+  «Размер» shown as the layer label), T/DT/TEXT (point + text typed into the command box, need "text", layer «Надписи»).
+  Annotation layers are created on demand without changing the current layer (`annoLayer`). AR marks copies `_arr {id, i}`
+  and the sources `_arr {…params, src}` (edit() now takes `props`); AE (ARRAYEDIT) picks a member, asks the same numbers with
+  the old values and rebuilds the copies (copyFeat drops `_arr` for ordinary copies). F2 — command history of the session
+  (`.cmdhist`). Osnap «Параллельно»: dwell 0.4 s on a segment captures its direction, then a tracking ray from the last
+  point runs parallel to it. Ribbon: ellipse in «Рисование», annotation tools in one «▾» button, AE in the «▾» of editing;
+  group captions hide below 1560 px and the layer select narrows below 1380 px — one ribbon row from 1280 to 1920 px.
+  - **Point labels were hidden** whenever the label's box touched its own marker (the marker is a declutter obstacle): the
+    offset now follows marker size and font size.
+  - **Pitfall:** `forEachFeatureIntersectingExtent` with a point extent does not return a closed LineString around the
+    point (the line does not touch it) — contour lookup uses `forEachFeatureInExtent` (bbox).
+  - e2e +9 steps (REC R3 area, EL area, DIM 40,00, TEXT, H, AR mark, AE 4 × 2 → 7 copies, F2, «Параллельно»).
+
 - **2026-09-24, ГРАДО 2 v0.36.0: UX queue, batch 2 (speed).** `projectJSON` (project.js) writes each layer's `fc`/`original` from a
   WeakMap cache keyed by the object itself (the lazy `fc` getter returns a new object after an edit, the original never
   changes): autosave of an unchanged 100 000-object project 111 → 5 ms, output identical to `JSON.stringify` (checked without

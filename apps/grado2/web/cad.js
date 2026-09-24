@@ -13,8 +13,8 @@ const toM = c => MSK.fromWgs(ol.proj.toLonLat(c)), fromM = w => ol.proj.fromLonL
 const DEG = Math.PI / 180;
 
 /* ---------- режимы ---------- */
-const MODES = { end: "Конточка", mid: "Середина", cen: "Центр", quad: "Квадрант", int: "Пересечение", ext: "Продолжение", perp: "Нормаль", tan: "Касательная", near: "Ближайшая" };
-const ST = { ortho: false, polar: true, polarInc: 45, polarRel: false, osnap: true, otrack: true, dyn: true, modes: { end: true, mid: true, cen: true, quad: false, int: true, ext: true, perp: true, tan: false, near: false } };
+const MODES = { end: "Конточка", mid: "Середина", cen: "Центр", quad: "Квадрант", int: "Пересечение", ext: "Продолжение", perp: "Нормаль", tan: "Касательная", par: "Параллельно", near: "Ближайшая" };
+const ST = { ortho: false, polar: true, polarInc: 45, polarRel: false, osnap: true, otrack: true, dyn: true, modes: { end: true, mid: true, cen: true, quad: false, int: true, ext: true, perp: true, tan: false, par: true, near: false } };
 try { const s = JSON.parse(localStorage.getItem("grado2.cad") || "{}"); Object.assign(ST, { ...s, modes: { ...ST.modes, ...s.modes } }); } catch { }
 const saveST = () => { try { localStorage.setItem("grado2.cad", JSON.stringify(ST)); } catch { } };
 
@@ -27,6 +27,7 @@ const sGone = new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#b3261e
 const sTrack = new ol.style.Style({ stroke: new ol.style.Stroke({ color: TRK, width: 1.1, lineDash: [2, 5] }) });
 const sAcq = new ol.style.Style({ image: new ol.style.RegularShape({ points: 4, radius: 8, radius2: 0, stroke: new ol.style.Stroke({ color: TRK, width: 2.2 }) }) });
 const sBase = new ol.style.Style({ image: new ol.style.Circle({ radius: 3, fill: new ol.style.Fill({ color: ACC }) }) });
+const sPar = new ol.style.Style({ stroke: new ol.style.Stroke({ color: TRK, width: 3, lineDash: [3, 3] }) });
 const MK = new ol.style.Stroke({ color: MRK, width: 2.2 });
 const MARK = {
   end: new ol.style.RegularShape({ points: 4, radius: 10, angle: Math.PI / 4, stroke: MK }),
@@ -38,9 +39,9 @@ const MARK = {
   tan: new ol.style.Circle({ radius: 7, stroke: MK, fill: new ol.style.Fill({ color: "rgba(232,89,12,0.25)" }) }),
   near: new ol.style.RegularShape({ points: 4, radius: 9, radius2: 3, angle: Math.PI / 4, stroke: MK }),
   track: new ol.style.RegularShape({ points: 4, radius: 9, radius2: 0, angle: Math.PI / 4, stroke: new ol.style.Stroke({ color: TRK, width: 2.2 }) }) };
-const KIND = { end: "конточка", mid: "середина", cen: "центр", quad: "квадрант", int: "пересечение", ext: "продолжение", perp: "нормаль", tan: "касательная", near: "ближайшая", track: "отслеживание", track2: "пересечение линий отслеживания", polar: "полярное", ortho: "орто" };
+const KIND = { end: "конточка", mid: "середина", cen: "центр", quad: "квадрант", int: "пересечение", ext: "продолжение", perp: "нормаль", tan: "касательная", near: "ближайшая", track: "отслеживание", track2: "пересечение линий отслеживания", polar: "полярное", ortho: "орто", par: "параллельно" };
 const prevLayer = new ol.layer.Vector({ source: prevSrc, zIndex: 140, updateWhileInteracting: true, updateWhileAnimating: true,
-  style: f => ({ rubber: sRubber, ghost: sGhost, gone: sGone, track: sTrack, acq: sAcq, base: sBase })[f.get("k")] || new ol.style.Style({ image: MARK[f.get("k")] || MARK.end }) });
+  style: f => ({ rubber: sRubber, ghost: sGhost, gone: sGone, track: sTrack, acq: sAcq, base: sBase, parseg: sPar })[f.get("k")] || new ol.style.Style({ image: MARK[f.get("k")] || MARK.end }) });
 mMain.addLayer(prevLayer);
 const fLine = (ws, k) => new ol.Feature({ geometry: new ol.geom.LineString(ws.map(fromM)), k });
 const fPoly = (ring, k) => new ol.Feature({ geometry: new ol.geom.Polygon([ring.map(fromM)]), k });
@@ -136,6 +137,13 @@ function acquire(h) {
   if (i >= 0) ACQ.splice(i, 1); else { ACQ.push({ w: h.w, dir: h.dir }); if (ACQ.length > 7) ACQ.shift(); }
   hover = null; refresh();
 }
+let PAR = null, parHover = null;          // захваченное направление для «Параллельно»: {a, b, d}
+function parTick(seg) {
+  if (!seg) { clearTimeout(parHover?.timer); parHover = null; return; }
+  if (parHover && G.same(parHover.a, seg.a, 1e-6) && G.same(parHover.b, seg.b, 1e-6)) return;
+  clearTimeout(parHover?.timer); const h = { a: seg.a, b: seg.b }; parHover = h;
+  h.timer = setTimeout(() => { if (parHover !== h) return; const d = G.unit(G.sub(h.b, h.a)); PAR = PAR && G.same(PAR.a, h.a, 1e-6) ? null : { a: h.a, b: h.b, d }; parHover = null; refresh(); }, 400);
+}
 function trackLines(base, prev) {
   const out = [], angs = inc => { const a = []; for (let d = 0; d < 360; d += inc) a.push(d * DEG); return a; };
   if (ST.otrack) for (const a of ACQ) {
@@ -144,6 +152,7 @@ function trackLines(base, prev) {
   }
   const rel = ST.polarRel && base && prev && G.dist(prev, base) > 1e-9 ? G.ang(prev, base) : 0;       // «от последнего отрезка», как в AutoCAD
   if (ST.polar && base) for (const t of angs(ST.polarInc)) out.push({ o: base, d: [Math.cos(t + rel), Math.sin(t + rel)], k: "polar", t });
+  if (ST.osnap && ST.modes.par && PAR && base) out.push({ o: base, d: PAR.d, k: "par" }, { o: base, d: G.mul(PAR.d, -1), k: "par" });
   return out;
 }
 
@@ -163,6 +172,8 @@ function resolve(c) {
       if (ST.modes.tan) for (const cv of g.curves) for (const p of G.tangents(base, cv.c, cv.r)) if (cv.t === "circle" || inSweep(G.ang(cv.c, p), cv)) cand(p, "tan", 3);
     }
     if (best) acquireTick(best); else { clearTimeout(hover?.timer); hover = null; }
+    // задержка курсора на отрезке — захват его направления для «Параллельно» (от последней точки)
+    if (!best && base && ST.modes.par) { let seg = null, sd = tol * 0.6; for (const s of g.segs) { const d = G.dist(G.foot(W, s.a, s.b, true), W); if (d < sd) { sd = d; seg = s; } } parTick(seg); }
   }
   const lines = [];
   // орто: точка только на оси X или Y от последней точки; линия отслеживания может лишь указать, где на этой оси остановиться
@@ -186,7 +197,7 @@ function resolve(c) {
         const x = G.inter(a.o, G.add(a.o, a.d), b.o, G.add(b.o, b.d), true);
         if (x && G.dist(x.p, W) <= tol * 1.5) { best = { w: x.p, k: "track2", pr: 3.5, d: 0 }; lines.push(a, b); break; }
       }
-      if (!best && near.length) { const a = near[0]; best = { w: a.p, k: a.k, pr: 4, d: a.off, dir: a.k === "polar" ? a.d : null, t: a.t }; lines.push(a); }
+      if (!best && near.length) { const a = near[0]; best = { w: a.p, k: a.k, pr: 4, d: a.off, dir: a.k === "polar" || a.k === "par" ? a.d : null, t: a.t }; lines.push(a); }
     }
     if (!best && !ortho && snapOn && ST.modes.near) for (const s of g.segs) cand(G.foot(W, s.a, s.b, true), "near", 5);
   }
@@ -204,13 +215,14 @@ function refresh() {
     const size = mMain.getSize() || [1000, 800], far = Math.hypot(size[0], size[1]) * CUR.mpp * 2;
     for (const L of CUR.lines) fs.push(fLine([L.o, G.add(CUR.w, G.mul(L.d, far))], "track"));
     ACQ.forEach(a => fs.push(fPt(a.w, "acq")));
+    if (PAR && ST.modes.par && CMD.need === "point") fs.push(fLine([PAR.a, PAR.b], "parseg"));
     if (CMD.need === "point") {
       const pv = CMD.preview?.(CUR.w) || {};
       (pv.polys || []).forEach(r => r.length > 2 && fs.push(fPoly(r, "rubber")));
       (pv.lines || []).forEach(l => l.length > 1 && fs.push(fLine(l, "rubber")));
       (pv.ghosts || []).forEach(f => fs.push(f));
       (pv.pts || []).forEach(p => fs.push(fPt(p, "base")));
-      if (CUR.k && CUR.k !== "ortho" && CUR.k !== "polar") fs.push(fPt(CUR.w, ["ext", "track", "track2"].includes(CUR.k) ? "track" : CUR.k));
+      if (CUR.k && CUR.k !== "ortho" && CUR.k !== "polar") fs.push(fPt(CUR.w, ["ext", "track", "track2", "par"].includes(CUR.k) ? "track" : CUR.k));
     } else if (CMD.need === "obj") (CMD.previewObj?.(CUR) || []).forEach(f => fs.push(f));
   }
   // неподвижный предпросмотр команды (массив): виден и без движения мыши, следует за набираемым числом
@@ -250,7 +262,7 @@ function openInput(mode, ch) {
   inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [sz[0] / 2 - 18, sz[1] / 2 - 16];
   const below = tipEl.hidden ? 16 : 16 + tipEl.offsetHeight + 4;
   inEl.style.left = `${Math.round(px[0] + 18)}px`; inEl.style.top = `${Math.round(px[1] + below)}px`;
-  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : "значение";
+  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : CMD?.need === "text" ? "текст надписи, Enter" : "значение";
   inEl.hidden = false; inEl.value = ch || ""; inEl.classList.remove("bad"); inEl.focus(); autoc();
 }
 function closeInput() { inEl.hidden = true; inEl.value = ""; acEl.hidden = true; inMode = null; }
@@ -280,6 +292,7 @@ function submit() {
     closeInput(); start(n); return;
   }
   if (!CMD) return closeInput();
+  if (CMD.need === "text") { closeInput(); if (raw) CMD.text(raw); else enter(); after(); return; }
   if (!raw) { closeInput(); enter(); return; }
   const o = matchOpt(raw); if (o) { closeInput(); o.fn(); after(); return; }
   const s = normNum(raw), plain = new RegExp(`^${NUM}$`).test(s);
@@ -311,7 +324,7 @@ const title = () => CMD ? CMDS[CMD.id].title.toUpperCase() : "";
 function start(name, opts = {}) {
   cancel(true); closeInput(); lastNote = null;
   window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
-  CMD = CMDS[name].make(opts); CMD.id = name; LAST = name;
+  CMD = CMDS[name].make(opts); CMD.id = name; LAST = name; hist(`${CMDS[name].title.toUpperCase()} (${CMDS[name].alias[0]})`, true);
   mMain.getTargetElement().style.cursor = "crosshair"; window.syncStart?.();
   if (CMD.done) return finish();
   after();
@@ -323,9 +336,20 @@ function cancel(silent) {
 // итог команды («Соединено: 12 → 2», «Расстояние 25 м») остаётся в строке состояния после её завершения
 function finish() { setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), msg = document.getElementById("stHint")?.textContent || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
 let lastNote = null;
-function note(msg) { setHint(msg); lastNote = msg; if (CMD) showCmd(); }
+function note(msg) { setHint(msg); lastNote = msg; hist(msg); if (CMD) showCmd(); }
+/* история команд, как текстовое окно AutoCAD (F2): запущенные команды и их сообщения за сеанс */
+const HIST = [], histEl = document.createElement("div"); histEl.className = "cmdhist"; histEl.hidden = true; histEl.setAttribute("role", "log");
+function hist(text, cmd) {
+  if (!text || HIST[HIST.length - 1]?.text === text) return;
+  HIST.push({ t: new Date(), text, cmd }); if (HIST.length > 200) HIST.shift(); if (!histEl.hidden) showHist();
+}
+function showHist() {
+  histEl.innerHTML = `<div class="hh"><b>История команд</b><span>F2 — скрыть</span></div>` + (HIST.length ? HIST.slice(-60).map(h => `<div class="${h.cmd ? "hc" : ""}"><time>${h.t.toLocaleTimeString("ru-RU")}</time> ${esc(h.text)}</div>`).join("") : `<div class="empty">Команд в этом сеансе ещё не было.</div>`);
+  histEl.scrollTop = histEl.scrollHeight;
+}
+function toggleHist() { histEl.hidden = !histEl.hidden; if (!histEl.hidden) showHist(); }
 const cmdEl = document.createElement("div"); cmdEl.className = "cmdline"; cmdEl.hidden = true; cmdEl.setAttribute("role", "status");
-mMain.getTargetElement().parentElement.appendChild(cmdEl);
+mMain.getTargetElement().parentElement.appendChild(cmdEl); mMain.getTargetElement().parentElement.appendChild(histEl);
 function showCmd() {
   document.body.classList.toggle("cmdon", !!CMD);
   if (!CMD) { cmdEl.hidden = true; return; }
@@ -337,6 +361,7 @@ function showCmd() {
 function after() {
   if (!CMD) { showCmd(); return; } if (CMD.done) return finish();
   setHint(`${title()} · ${CMD.prompt().replace(/\s*\[[^\]]*\]/g, "")}`); showCmd(); lastNote = null;
+  if (CMD.need === "text" && inEl.hidden) openInput("val");            // текст надписи набирается сразу, без первой буквы-команды
   if (CUR) CUR = resolve(CUR.c); refresh(); syncButtons();
 }
 function enter() { if (!CMD) return; if (CMD.enter) CMD.enter(); else CMD.done = true; after(); }
@@ -378,6 +403,7 @@ mMain.getInteractions().on("add", ev => { if (ev.element !== cadI) { const arr =
 addEventListener("keydown", e => {
   if (e.target === inEl) return;
   if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph")) return;
+  if (e.key === "F2") { e.preventDefault(); toggleHist(); return; }
   const F = { F3: "osnap", F8: "ortho", F10: "polar", F11: "otrack", F12: "dyn" }[e.key];
   if (F) { e.preventDefault(); toggle(F); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -411,7 +437,7 @@ function newFeature(kind, w, prefer, props = {}) {
   const f = new ol.Feature(geom); fieldsOfKey(l.key).forEach(k => f.set(k, "")); f.setProperties({ ...props, _edited: true, _new: true });
   return { key: l.key, f };
 }
-const copyFeat = (f, geom, extra = {}) => { const n = new ol.Feature(geom); const p = { ...propsOf(f), ...extra, _new: true, _edited: true }; delete p._key; if (!extra._cad) delete p._cad; n.setProperties(p); return n; };
+const copyFeat = (f, geom, extra = {}) => { const n = new ol.Feature(geom); const p = { ...propsOf(f), ...extra, _new: true, _edited: true }; delete p._key; if (!extra._cad) delete p._cad; if (!extra._arr) delete p._arr; n.setProperties(p); return n; };
 function addNew(items, label) {
   if (!items.length) return;
   pushUndo(featRec(items, label));
@@ -424,7 +450,7 @@ function edit(changes, adds, label) {
   adds.forEach(a => rec.items.push({ key: a.key, f: a.f, s: null }));
   pushUndo(rec);
   const keys = new Set();
-  changes.forEach(c => { keys.add(c.key); if (c.remove) { layerSrc[c.key].removeFeature(c.f); return; } if (c.geom) c.f.setGeometry(c.geom); if ("cad" in c) { if (c.cad) c.f.set("_cad", c.cad); else c.f.unset("_cad"); } c.f.set("_edited", true); });
+  changes.forEach(c => { keys.add(c.key); if (c.remove) { layerSrc[c.key].removeFeature(c.f); return; } if (c.geom) c.f.setGeometry(c.geom); if (c.props) c.f.setProperties(c.props); if ("cad" in c) { if (c.cad) c.f.set("_cad", c.cad); else c.f.unset("_cad"); } c.f.set("_edited", true); });
   adds.forEach(a => { layerSrc[a.key].addFeature(a.f); keys.add(a.key); });
   keys.forEach(k => syncFromSource(k));
 }
@@ -492,6 +518,19 @@ function boundaries(except, around) {
   return out;
 }
 const CURKEY = () => window.CURKEY?.();
+const ANNO = {
+  text: { title: "Надписи", geom: "point", style: { fill: "#1d1d1f", stroke: "#ffffff", width: 0, opacity: 1, label: "Текст", labelSize: 13 } },
+  dim: { title: "Размеры", geom: "line", style: { fill: "#2b4a7a", width: .8, label: "Размер", labelSize: 11 } },
+  hatch: { title: "Штриховка", geom: "poly", style: { fill: "#5f6368", stroke: "#5f6368", width: .6, hatch: true, opacity: .7 } } };
+function annoLayer(kind) {
+  const a = ANNO[kind], have = LYR.find(l => l.key.startsWith("user:") && l.title === a.title && l.geom === a.geom);
+  if (have) return have;
+  const cur = CURKEY(), l = createLayerQuiet(a.title, a.geom); Object.assign(l.style, a.style); restyle(l);
+  DATA[l.key].fields = kind === "text" ? ["Текст"] : kind === "dim" ? ["Размер"] : ["Наименование"];
+  if (cur && lyr(cur)) setCurrentQuiet(cur);
+  toast(`Создан слой «${a.title}». Оформление слоя — в панели «Стиль».`); return l;
+}
+
 
 /* ---------- команды ---------- */
 const CMDS = {};
@@ -539,15 +578,28 @@ def("pline", "Полилиния", ["PL"], o => {                               
       return poly() && all.length >= 3 ? { polys: [[...all, all[0]]] } : { lines: [all] }; } };
   return st;
 });
-def("rect", "Прямоугольник", ["REC"], o => {                              // по осям МСК или с поворотом
-  let a = null, rot = 0;
-  const ring = b => { const u = [Math.cos(rot), Math.sin(rot)], v = [-u[1], u[0]], d = G.sub(b, a), x = G.dot(d, u), y = G.dot(d, v); return [a, G.add(a, G.mul(u, x)), G.add(G.add(a, G.mul(u, x)), G.mul(v, y)), G.add(a, G.mul(v, y)), a]; };
+const RECC = { kind: null, r: 2, d1: 2, d2: 2 };                         // углы прямоугольника: null, "fillet", "chamfer"
+def("rect", "Прямоугольник", ["REC"], o => {                              // по осям МСК или с поворотом; углы — фаской или сопряжением
+  let a = null, rot = 0, ask = null;
+  const box = b => { const u = [Math.cos(rot), Math.sin(rot)], v = [-u[1], u[0]], d = G.sub(b, a), x = G.dot(d, u), y = G.dot(d, v); return [a, G.add(a, G.mul(u, x)), G.add(G.add(a, G.mul(u, x)), G.mul(v, y)), G.add(a, G.mul(v, y)), a]; };
+  const ring = b => { const r = box(b); if (RECC.kind === "fillet") { const q = G.filletAll(r, RECC.r, 0.01); return q.done === 4 ? q.pts : r; } if (RECC.kind === "chamfer") { const q = G.chamferAll(r, RECC.d1, RECC.d2); return q.done === 4 ? q.pts : r; } return r; };
+  const cornerTxt = () => RECC.kind === "fillet" ? ` · углы: сопряжение R ${f2(RECC.r)} м` : RECC.kind === "chamfer" ? ` · углы: фаска ${f2(RECC.d1)} × ${f2(RECC.d2)} м` : "";
   const st = { need: "point", base: () => a,
-    prompt: () => a ? `Противоположный угол: щелчок или @ширина;высота${optStr(st.opts())}` : "Первый угол",
-    opts: () => a ? [opt("Поворот (П)", ["п", "поворот", "r", "rotation"], () => { st.need = "value"; st.prompt = () => "Угол поворота прямоугольника, °"; })] : [],
-    value: v => { rot = v * DEG; st.need = "point"; st.prompt = () => "Противоположный угол: щелчок или @ширина;высота (в повёрнутых осях)"; },
-    point: w => { if (!a) { a = w; return; } const r = rot ? ring(w) : ring(w); if (Math.abs(G.area(r)) < 1e-6) return; addNew([newFeature("closed", r, o.prefer)], "прямоугольник"); st.done = true; },
-    tip: w => a ? (() => { const r = ring(w); return [`${f2(G.dist(r[0], r[1]))} × ${f2(G.dist(r[1], r[2]))} м`, `площадь ${fmt(Math.abs(G.area(r)), 1)} м²`]; })() : [],
+    prompt: () => ask ? ask.p : a ? `Противоположный угол: щелчок или @ширина;высота${cornerTxt()}${optStr(st.opts())}` : `Первый угол${cornerTxt()}${optStr(st.opts())}`,
+    opts: () => ask ? [] : a ? [opt("Поворот (П)", ["п", "поворот", "r", "rotation"], () => { ask = { p: "Угол поворота прямоугольника, °", k: "rot" }; st.need = "value"; })]
+      : [opt("Сопряжение (С)", ["с", "сопряжение", "f", "fillet"], () => { ask = { p: `Радиус сопряжения углов <${f2(RECC.r)}>, 0 — без`, k: "r" }; st.need = "value"; }),
+        opt("Фаска (Ф)", ["ф", "фаска", "c", "chamfer"], () => { ask = { p: `Первая длина фаски <${f2(RECC.d1)}>, 0 — без`, k: "d1" }; st.need = "value"; })],
+    enter: () => { if (ask) { st.value(ask.k === "rot" ? 0 : RECC[ask.k] ?? 0); return; } st.done = true; },
+    value: v => {
+      const k = ask?.k; ask = null; st.need = "point";
+      if (k === "rot" || !k) { rot = v * DEG; return; }
+      if (v < 0) return note("Нужно число не меньше нуля.");
+      if (k === "r") { RECC.kind = v > 0 ? "fillet" : null; if (v > 0) RECC.r = v; return; }
+      if (k === "d1") { if (!v) { RECC.kind = null; return; } RECC.d1 = v; ask = { p: `Вторая длина фаски <${f2(RECC.d2 || v)}>`, k: "d2" }; st.need = "value"; return; }
+      if (k === "d2") { RECC.d2 = v || RECC.d1; RECC.kind = "chamfer"; }
+    },
+    point: w => { if (!a) { a = w; return; } const r = ring(w); if (Math.abs(G.area(r)) < 1e-6) return; if (RECC.kind && r.length === 5) note("Углы не скруглены: стороны короче, чем нужно для фаски или сопряжения."); addNew([newFeature("closed", r, o.prefer)], "прямоугольник"); st.done = true; },
+    tip: w => a ? (() => { const r = box(w); return [`${f2(G.dist(r[0], r[1]))} × ${f2(G.dist(r[1], r[2]))} м`, `площадь ${fmt(Math.abs(G.area(ring(w))), 1)} м²`]; })() : [],
     preview: w => a ? { polys: [ring(w)] } : {} };
   return st;
 });
@@ -590,6 +642,73 @@ def("polygon", "Многоугольник", ["POL"], o => {                    
     point: w => { if (!c) { c = w; return; } if (G.dist(c, w) < 1e-6) return; addNew([newFeature("closed", ring(w), o.prefer)], "многоугольник"); st.done = true; },
     tip: w => c ? [`R ${f2(G.dist(c, w))} м · сторона ${f2(G.dist(...ring(w).slice(0, 2)))} м`] : [],
     preview: w => c ? { polys: [ring(w)], lines: [[c, w]], pts: [c] } : {} };
+  return st;
+});
+def("ellipse", "Эллипс", ["EL"], o => {                                  // центр, конец оси, вторая полуось
+  let c = null, ax = null;
+  const st = { need: "point", base: () => c,
+    prompt: () => !c ? "Центр эллипса" : !ax ? "Конец первой оси: щелчок или длина по направлению курсора" : "Длина второй полуоси: число или точка",
+    valueFirst: () => !!ax, value: v => { if (v > 0) make(v); },
+    point: w => { if (!c) { c = w; return; } if (!ax) { if (G.dist(c, w) < 1e-6) return; ax = G.sub(w, c); return; } make(Math.abs(G.cross(G.unit(ax), G.sub(w, c)))); },
+    tip: w => c && ax ? [`оси ${f2(2 * G.len(ax))} × ${f2(2 * Math.abs(G.cross(G.unit(ax), G.sub(w, c))))} м`] : c ? [`полуось ${f2(G.dist(c, w))} м`] : [],
+    preview: w => !c ? {} : !ax ? { lines: [[c, w]], pts: [c] } : (() => { const b = Math.abs(G.cross(G.unit(ax), G.sub(w, c))); return b > 1e-6 ? { polys: [G.ellipsePts(c, ax, b, 0.05)], lines: [[c, G.add(c, ax)]], pts: [c] } : { lines: [[c, G.add(c, ax)]] }; })() };
+  const make = b => { if (b < 1e-6) return; addNew([newFeature("closed", G.ellipsePts(c, ax, b, 0.01), o.prefer)], "эллипс"); st.done = true; };
+  return st;
+});
+/* ШТРИХОВКА: щелчок внутри замкнутого контура — самый маленький контур вокруг точки копируется в слой «Штриховка»
+   (стиль слоя — штриховка; сменить её вид можно в панели «Стиль»). Или выбрать контуры объектами. */
+function contourAt(w) {
+  const c = fromM(w); let best = null;
+  for (const l of LYR) {
+    if (!shown(l) || outOfScale(l) || !layerSrc[l.key] || l.title === ANNO.hatch.title) continue;
+    // по габариту: замкнутая линия точку внутри не «пересекает», её находит только габарит
+    layerSrc[l.key].forEachFeatureInExtent([c[0], c[1], c[0], c[1]], f => {
+      const g = f.getGeometry(), t = g.getType(); let poly = null;
+      if (t === "Polygon" || t === "MultiPolygon") poly = t === "Polygon" ? g : g.getPolygons().find(p => p.intersectsCoordinate(c));
+      else if (t === "LineString") { const r = g.getCoordinates(); if (r.length > 3 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1]) poly = new ol.geom.Polygon([r]); }
+      if (!poly || !poly.intersectsCoordinate(c)) return;
+      const a = poly.getArea(); if (!best || a < best.a) best = { a, poly };
+    });
+  }
+  return best?.poly || null;
+}
+def("hatch", "Штриховка", ["H", "BH"], () => {
+  const made = [];
+  const st = { need: "point", base: () => null,
+    prompt: () => `Точка внутри замкнутого контура (штриховок: ${made.length})${optStr(st.opts())}, Enter — завершить`,
+    opts: () => [opt("Выбрать объекты (В)", ["в", "выбрать", "s", "select"], () => { CMD = selection(items => { const l = annoLayer("hatch"), adds = [];
+      for (const it of items) { const g = it.f.getGeometry(), t = g.getType(); if (/Polygon/.test(t)) adds.push({ key: l.key, f: new ol.Feature(g.clone()) }); }
+      if (adds.length) { adds.forEach(a => a.f.setProperties({ "Наименование": "", _new: true, _edited: true })); addNew(adds, "штриховка"); } note(adds.length ? `Штриховка: ${adds.length}.` : "Среди выбранного нет полигонов — штриховать нечего."); return { done: true }; }); CMD.id = "hatch"; })],
+    point: w => { const poly = contourAt(w); if (!poly) return note("Точка не внутри замкнутого контура: щёлкните внутри полигона или замкнутой линии."); const l = annoLayer("hatch"), f = new ol.Feature(poly.clone()); f.setProperties({ "Наименование": "", _new: true, _edited: true }); addNew([{ key: l.key, f }], "штриховка"); made.push(f); },
+    enter: () => { st.done = true; } };
+  return st;
+});
+/* РАЗМЕР: две точки и положение размерной линии; параллельный отрезку (по умолчанию), горизонтальный или вертикальный.
+   Объект — линия выносная–размерная–выносная в слое «Размеры», величина — поле «Размер» (подписью слоя). */
+def("dim", "Размер", ["DIM", "DAL", "DLI"], () => {
+  const pts = []; let mode = "al";
+  const geom = q => { const [p1, p2] = pts; let d1, d2, v;
+    if (mode === "h") { d1 = [p1[0], q[1]]; d2 = [p2[0], q[1]]; v = Math.abs(p2[0] - p1[0]); }
+    else if (mode === "v") { d1 = [q[0], p1[1]]; d2 = [q[0], p2[1]]; v = Math.abs(p2[1] - p1[1]); }
+    else { const u = G.unit(G.sub(p2, p1)), n = [-u[1], u[0]], off = G.dot(G.sub(q, p1), n); d1 = G.add(p1, G.mul(n, off)); d2 = G.add(p2, G.mul(n, off)); v = G.dist(p1, p2); }
+    return { line: [p1, d1, d2, p2], v }; };
+  const st = { need: "point", base: () => pts[pts.length - 1] || null,
+    prompt: () => pts.length < 2 ? (pts.length ? "Вторая точка размера" : "Первая точка размера") : `Положение размерной линии${optStr(st.opts())}`,
+    opts: () => pts.length === 2 ? [opt("Параллельный (П)", ["п", "параллельный", "a", "aligned"], () => { mode = "al"; }), opt("Горизонтальный (Г)", ["г", "горизонтальный", "h", "horizontal"], () => { mode = "h"; }), opt("Вертикальный (В)", ["в", "вертикальный", "v", "vertical"], () => { mode = "v"; })] : [],
+    point: w => { if (pts.length < 2) { if (!pts.length || !G.same(w, pts[0], 1e-6)) pts.push(w); return; }
+      const g = geom(w), l = annoLayer("dim"), f = new ol.Feature(new ol.geom.LineString(g.line.map(fromM)));
+      f.setProperties({ "Размер": fmt(g.v, 2), _new: true, _edited: true }); addNew([{ key: l.key, f }], "размер"); note(`Размер ${fmt(g.v, 2)} м.`); st.done = true; },
+    tip: w => pts.length === 2 ? [`${fmt(geom(w).v, 2)} м`] : pts.length ? [`${f2(G.dist(pts[0], w))} м`] : [],
+    preview: w => pts.length === 2 ? { lines: [geom(w).line], pts } : { lines: pts.length ? [[pts[0], w]] : [], pts } };
+  return st;
+});
+def("text", "Текст", ["T", "DT", "TEXT"], () => {                           // надпись: точка вставки и строка текста
+  let at = null, n = 0;
+  const st = { need: "point", base: () => null,
+    prompt: () => st.need === "text" ? "Текст надписи, Enter — поставить (пустой Enter — завершить)" : `Точка вставки надписи${n ? ` (поставлено: ${n})` : ""}, Enter — завершить`,
+    point: w => { at = w; st.need = "text"; },
+    text: t => { const l = annoLayer("text"), f = new ol.Feature(new ol.geom.Point(fromM(at))); f.setProperties({ "Текст": t, _new: true, _edited: true }); addNew([{ key: l.key, f }], "надпись"); n++; at = null; st.need = "point"; },
+    enter: () => { if (st.need === "text") { at = null; st.need = "point"; return; } st.done = true; } };
   return st;
 });
 def("point", "Точка", ["PO"], () => { const st = { need: "point", base: () => null, prompt: () => "Укажите точку (X;Y в МСК — с клавиатуры), Enter — завершить", point: w => addNew([newFeature("point", w)], "точка"), enter: () => { st.done = true; } }; return st; });
@@ -805,10 +924,11 @@ def("chamfer", "Фаска", ["CHA"], () => {
   return st;
 });
 // МАССИВ: прямоугольный (ряды × столбцы) или круговой (вокруг центра); копии — обычные объекты
-def("array", "Массив", ["AR"], () => selection(items => {
+def("array", "Массив", ["AR"], o => selection(items => {
   const ext = items.reduce((e, it) => ol.extent.extend(e, it.f.getGeometry().getExtent()), ol.extent.createEmpty());
   const lo = toM(ol.extent.getBottomLeft(ext)), hi = toM(ol.extent.getTopRight(ext)), w = Math.max(1, hi[0] - lo[0]), h = Math.max(1, hi[1] - lo[1]);
-  const P = { kind: null, rows: 1, cols: 4, dr: +(h * 1.5).toFixed(2), dc: +(w * 1.5).toFixed(2), n: 6, fill: 360, rot: true, c: null };
+  const P = { kind: null, rows: 1, cols: 4, dr: +(h * 1.5).toFixed(2), dc: +(w * 1.5).toFixed(2), n: 6, fill: 360, rot: true, c: null, ...(o?.edit?.P || {}) };
+  const arrId = o?.edit?.id || "a" + Date.now().toString(36);
   const steps = { rect: ["cols", "rows", "dc", "dr"], polar: ["n", "fill"] }, LBL = { cols: "Число столбцов", rows: "Число рядов", dc: "Расстояние между столбцами, м", dr: "Расстояние между рядами, м", n: "Число элементов", fill: "Угол заполнения, °" };
   let k = 0;
   const cen = toM(ol.extent.getCenter(ext));
@@ -827,9 +947,13 @@ def("array", "Массив", ["AR"], () => selection(items => {
   };
   const make = () => {
     const adds = [];
-    for (const { fn } of fns()) for (const { key, f } of items) { const cad = xformCad(f.get("_cad"), fn); adds.push({ key, f: copyFeat(f, xformGeom(f.getGeometry(), fn), cad ? { _cad: cad } : {}) }); }
+    const par = { id: arrId, kind: P.kind, rows: P.rows, cols: P.cols, dr: P.dr, dc: P.dc, n: P.n, fill: P.fill, rot: P.rot, c: P.c };
+    fns().forEach(({ fn }, i) => { for (const { key, f } of items) { const cad = xformCad(f.get("_cad"), fn); adds.push({ key, f: copyFeat(f, xformGeom(f.getGeometry(), fn), { ...(cad ? { _cad: cad } : {}), _arr: { id: arrId, i: i + 1 } }) }); } });
     if (adds.length > 20000) return note("Больше 20 000 копий — уменьшите массив.");
-    edit([], adds, "массив"); note(`Массив: ${adds.length} копий.`); st.done = true;
+    // массив остаётся массивом: исходные объекты помнят его параметры, копии — номер; AE меняет числа и пересобирает копии
+    const old = (o?.edit?.copies || []).map(x => ({ ...x, remove: true }));
+    edit([...old, ...items.map(({ key, f }) => ({ key, f, props: { _arr: { ...par, src: true } } }))], adds, o?.edit ? "правка массива" : "массив");
+    note(`${o?.edit ? "Массив пересобран" : "Массив"}: ${adds.length} копий. Изменить числа потом — команда AE (правка массива).`); st.done = true;
   };
   const cur = () => steps[P.kind][k];
   const st = { need: "value",
@@ -861,6 +985,21 @@ def("array", "Массив", ["AR"], () => selection(items => {
     } };
   return st;
 }));
+// ПРАВКА МАССИВА (ARRAYEDIT): щелчок по любому элементу массива — те же вопросы с прежними числами, копии пересобираются
+function arrayGroup(id) {
+  const out = { src: [], copies: [] };
+  for (const l of LYR) layerSrc[l.key]?.getFeatures().forEach(f => { const a = f.get("_arr"); if (a?.id === id) (a.src ? out.src : out.copies).push({ key: l.key, f }); });
+  return out;
+}
+def("arrayedit", "Правка массива", ["AE", "ARRAYEDIT"], () => ({ need: "obj",
+  prompt: () => "Щёлкните по любому элементу массива",
+  pick(h) {
+    const a = h.f.get("_arr"); if (!a) return note("Это не элемент массива: массивы, построенные командой AR с этой версии, помнят свои числа.");
+    const g = arrayGroup(a.id); if (!g.src.length) return note("Исходные объекты массива удалены — пересобрать нельзя.");
+    const P = { ...g.src[0].f.get("_arr") }; delete P.src; delete P.id;
+    setSel(g.src); const next = CMDS.array.make({ edit: { id: a.id, P, copies: g.copies } }); next.id = "array"; CMD = next;
+    note(`Массив: ${g.src.length} исходных объектов, ${g.copies.length} копий. Enter — оставить число как было.`);
+  } }));
 // РАСТЯНУТЬ: вершины внутри секущей рамки двигаются, объекты целиком внутри — переносятся
 def("stretch", "Растянуть", ["S"], () => {
   let c1 = null, box = null, base = null, hits = null;
@@ -954,17 +1093,22 @@ def("explode", "Расчленить", ["X"], () => selection(items => {
 const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a => { ALIAS[a] = id; }));
 
 /* ---------- лента и строка состояния ---------- */
-const DRAW = ["line", "pline", "circle", "arc", "rect", "polygon", "point"];
+const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "point"];
+const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
-const MORE = ["chamfer", "break", "join", "explode", "lengthen", "erase"];
-const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
+const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
+const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
 const btn = id => `<button class="tl ic" data-cmd="${id}" title="${CMDS[id].title} — ${CMDS[id].alias.join(", ")} и Enter: ${HELP[id]}" aria-label="${CMDS[id].title}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg></button>`;
 function fillRibbon() {
   const put = (id, list) => { const el = document.getElementById(id); if (el) el.innerHTML = list.map(btn).join(""); };
-  put("rbDraw", DRAW); put("rbModify", MODIFY); put("rbMeasure", ["dist", "area"]); put("rbTerr", ["terr"]);
+  put("rbDraw", DRAW); put("rbModify", MODIFY);
+  // оформление — одной кнопкой с меню: лента должна умещаться в одну строку на 1280 px
+  const anno = document.getElementById("rbAnno");
+  if (anno) { anno.innerHTML = `<button class="tl ic" id="bAnnoCad" title="Оформление: ${ANNOT.map(id => `${CMDS[id].title.toLowerCase()} (${CMDS[id].alias[0]})`).join(", ")}" aria-haspopup="menu" aria-label="Оформление"><svg class="ci" aria-hidden="true"><use href="#ci-dim"/></svg><span class="dd2">▾</span></button>`;
+    anno.querySelector("button").onclick = e => modeMenu(e.currentTarget, ANNOT.map(id => `<button class="mi" data-cmd="${id}" title="${HELP[id]}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join(""), m => m.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { m.remove(); start(b.dataset.cmd); }), true); } put("rbMeasure", ["dist", "area"]); put("rbTerr", ["terr"]);
   const more = document.getElementById("rbMore");
   if (more) { more.innerHTML = `<button class="tl ic" id="bMoreCad" title="Ещё команды редактирования: ${MORE.map(id => CMDS[id].title.toLowerCase()).join(", ")}" aria-haspopup="menu"><span class="dd2">▾</span></button>`;
     more.querySelector("button").onclick = e => modeMenu(e.currentTarget, MORE.map(id => `<button class="mi" data-cmd="${id}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join(""), m => m.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { m.remove(); start(b.dataset.cmd); }), true); }
@@ -1014,6 +1158,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
+window.CAD = { contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();
