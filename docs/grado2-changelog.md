@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.43.0: vector work like QGIS — split, merge, subtract, buffer, match properties, divide, measure,
+  select similar.** New commands in `web/cad.js` (menu «▾» of the ribbon, section «Полигоны и атрибуты»; the ribbon stays one
+  row at 1280 px — a separate button made it two rows, checked):
+  - SPL «Разрезать»: selected polygons by a drawn polyline. The cut side is a large polygon left of the line (ends extended
+    20 km), parts = intersect / difference in Turf — no gap along the cut; every part keeps the attributes; parts selected.
+  - UNI «Объединить»: polygons of one layer into one (MultiPolygon when they do not touch), attributes of the first.
+  - SU «Вычесть»: from the selected polygons cut the clicked ones (cutters stay; holes appear).
+  - BUF «Буфер»: distance in metres on the ground (minus — inward), result in the polygon layer with «Буфер, м».
+  - MA «Копировать свойства»: attributes of a sample object to clicked objects (like MATCHPROP).
+  - DIV «Поделить» / ME «Разметить»: points along a line or contour into «Точки» (N parts / every d m), numbered.
+  - SS «Выбрать подобные»: the same layer and the same category value (or REDLN97 linetype).
+  - e2e +5 steps (SPL 400 + 400 m², UNI 800, BUF 2 m ≈ 1053 m², SU hole, DIV 4 points). **Pitfall in the test:** REC repeats
+    until Esc, so typed commands went into its input.
+
 - **2026-09-24, ГРАДО 2 v0.42.0: guest parking of ИЖС and blocked houses by 945-ПП (owner: «все по 945»).** Permanent places
   1,6 per house (Прил. 5 п. 2, coefficient C for ИЖС and blocked houses; a blocked unit is a house) stay on the own plot (the
   outbuilding/garage); guest places = 10 % of them, rounded up (п. 6.2.3.2), per проезд for the houses facing it (edge rows go

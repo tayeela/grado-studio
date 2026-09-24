@@ -1109,6 +1109,130 @@ def("explode", "Расчленить", ["X"], () => selection(items => {
   return { done: true };
 }));
 
+/* ---------- работа с вектором, как в QGIS: разрезать, объединить, вычесть, буфер, свойства, деление, подобные ----------
+   Геометрия — Turf в градусах (как в графе): площади и буферы в метрах на местности, стыки частей без зазоров. */
+const gjOf = f => GJ.writeFeatureObject(f);
+const polyParts = g => !g ? [] : g.geometry.type === "Polygon" ? [g.geometry.coordinates] : g.geometry.type === "MultiPolygon" ? g.geometry.coordinates : [];
+const olPoly = c => GJ.readGeometry({ type: "Polygon", coordinates: c });
+const polyItems = items => items.filter(it => /Polygon/.test(it.f.getGeometry().getType()));
+const noteSkip = (all, used, what) => all.length > used.length ? ` Пропущено ${all.length - used.length}: ${what}.` : "";
+
+def("split", "Разрезать", ["SPL", "SPLIT"], () => selection(items => {
+  const polys = polyItems(items);
+  if (!polys.length) { note("Разрезаются полигоны: выберите участки или зоны, потом проведите линию разреза."); return { done: true }; }
+  const pts = [];
+  const cut = () => {
+    if (pts.length < 2) return note("Линия разреза — не меньше двух точек.");
+    // сторона разреза — большой многоугольник слева от линии (концы продлены на 20 км): часть в нём и часть вне его
+    const E = 20000, u0 = G.unit(G.sub(pts[0], pts[1])), u1 = G.unit(G.sub(pts[pts.length - 1], pts[pts.length - 2]));
+    const a = G.add(pts[0], G.mul(u0, E)), b = G.add(pts[pts.length - 1], G.mul(u1, E)), d = G.unit(G.sub(b, a)), nrm = [-d[1], d[0]];
+    const ring = [a, ...pts, b, G.add(b, G.mul(nrm, 2 * E)), G.add(a, G.mul(nrm, 2 * E)), a].map(w => ol.proj.toLonLat(fromM(w)));
+    const side = turf.polygon([ring]);
+    const changes = [], adds = []; let n = 0;
+    for (const it of polys) {
+      const f0 = gjOf(it.f), parts = [...polyParts(inter(f0, side)), ...polyParts(diff(f0, side))].filter(c => turf.area(turf.polygon(c)) > .01);
+      if (parts.length < 2) continue;
+      n++; changes.push({ key: it.key, f: it.f, geom: olPoly(parts[0]), cad: null });
+      parts.slice(1).forEach(c => adds.push({ key: it.key, f: copyFeat(it.f, olPoly(c)) }));
+    }
+    if (!n) return note("Линия не пересекает выбранные полигоны насквозь — разрезать нечего.");
+    edit(changes, adds, "разрез"); setSel([...changes, ...adds].map(x => ({ key: x.key, f: x.f })));
+    note(`Разрезано полигонов: ${n}, частей стало ${changes.length + adds.length}. Атрибуты у всех частей — от исходного объекта.`);
+  };
+  const st = { need: "point", base: () => pts[pts.length - 1] || null, own: () => [pts],
+    prompt: () => pts.length ? "Следующая точка линии разреза, Enter — разрезать" : `Первая точка линии разреза (полигонов выбрано ${polys.length}; линию ведите через контур насквозь)`,
+    point: w => { if (!pts.length || !G.same(w, pts[pts.length - 1], 1e-6)) pts.push(w); }, back: () => pts.pop(),
+    enter: () => { cut(); st.done = true; }, dbl: () => st.enter(),
+    preview: w => ({ lines: pts.length ? [[...pts, w]] : [] }) };
+  return st;
+}));
+
+def("merge", "Объединить", ["UNI", "MERGE"], () => selection(items => {
+  const polys = polyItems(items), keys = new Set(polys.map(it => it.key));
+  if (polys.length < 2) { note("Объединяются два и больше полигона одного слоя."); return { done: true }; }
+  if (keys.size > 1) { note("Выбраны полигоны разных слоёв — объединяются только объекты одного слоя."); return { done: true }; }
+  const u = unionAll(polys.map(it => gjOf(it.f)));
+  if (!u) { note("Объединение не получилось: геометрия повреждена."); return { done: true }; }
+  const parts = polyParts(u), g = parts.length === 1 ? olPoly(parts[0]) : GJ.readGeometry({ type: "MultiPolygon", coordinates: parts });
+  edit([{ key: polys[0].key, f: polys[0].f, geom: g, cad: null }, ...polys.slice(1).map(it => ({ ...it, remove: true }))], [], "объединение");
+  setSel([{ key: polys[0].key, f: polys[0].f }]);
+  note(`Объединено ${polys.length} полигонов${parts.length > 1 ? ` (не касаются — один объект из ${parts.length} частей)` : ""}. Атрибуты — первого выбранного.${noteSkip(items, polys, "не полигоны")}`);
+  return { done: true };
+}));
+
+def("subtract", "Вычесть", ["SU", "SUBTRACT"], () => selection(items => {
+  const from = polyItems(items), cutters = [];
+  if (!from.length) { note("Вычитание — из полигонов: выберите, из чего вычитать."); return { done: true }; }
+  const st = { need: "obj", prompt: () => `Щёлкните полигоны, которые нужно вычесть (выбрано ${cutters.length}); Enter — вычесть`,
+    pick: h => { if (!/Polygon/.test(h.f.getGeometry().getType())) return note("Вычитаемый объект — полигон.");
+      if (from.some(it => it.f === h.f)) return note("Этот полигон — среди тех, из которых вычитают.");
+      if (!cutters.includes(h.f)) cutters.push(h.f); },
+    enter: () => {
+      st.done = true; if (!cutters.length) return;
+      const cutU = unionAll(cutters.map(gjOf)), changes = [];
+      for (const it of from) {
+        const r = diff(gjOf(it.f), cutU), parts = polyParts(r);
+        if (!parts.length) { changes.push({ ...it, remove: true }); continue; }
+        changes.push({ key: it.key, f: it.f, geom: parts.length === 1 ? olPoly(parts[0]) : GJ.readGeometry({ type: "MultiPolygon", coordinates: parts }), cad: null });
+      }
+      edit(changes, [], "вычитание"); note(`Вычтено из ${from.length} полигонов; вычитаемые объекты остались на месте (удалить — E).`);
+    } };
+  return st;
+}));
+
+def("buffer", "Буфер", ["BUF", "BUFFER"], () => selection(items => {
+  let d = window.__cadBuf || 10;
+  const run = () => {
+    const l = targetLayer("poly"), adds = [];
+    for (const it of items) { const r = buf(gjOf(it.f), d); polyParts(r).forEach(c => adds.push({ key: l.key, f: copyFeat(it.f, olPoly(c), { "Буфер, м": d }) })); }
+    if (!adds.length) return note(d < 0 ? "Внутренний буфер съел объект целиком." : "Буфер не построен.");
+    addNew(adds, "буфер"); note(`Буфер ${fmt(d, 2)} м: ${adds.length} полигонов в слое «${l.title}», атрибуты исходных объектов сохранены.`);
+  };
+  const st = { need: "value", prompt: () => `Ширина буфера, м (минус — внутрь полигона) <${fmt(d, 2)}>`,
+    value: v => { if (!v) return note("Ширина буфера не может быть нулевой."); d = window.__cadBuf = v; run(); st.done = true; },
+    enter: () => { run(); st.done = true; } };
+  return st;
+}));
+
+def("matchprop", "Копировать свойства", ["MA", "MATCHPROP"], () => {
+  let src = null;
+  const own = p => Object.fromEntries(Object.entries(p).filter(([k]) => !k.startsWith("_") && k !== "gradosym"));
+  const st = { need: "obj", prompt: () => src ? "Щёлкните объекты, которым передать атрибуты; Enter — завершить" : "Щёлкните объект-образец",
+    pick: h => { if (!src) { src = own(propsOf(h.f)); return note(`Образец: полей ${Object.keys(src).length}. Теперь объекты-получатели.`); }
+      edit([{ key: h.key, f: h.f, props: { ...src, _edited: true } }], [], "копирование свойств"); },
+    enter: () => { st.done = true; } };
+  return st;
+});
+
+// деление линии на N равных частей и разметка через шаг — точки в слой точек, как DIVIDE и MEASURE в AutoCAD
+function markCmd(kind) {
+  return () => { let v = kind === "div" ? window.__cadDiv || 5 : window.__cadMeas || 10, ask = true;
+    const st = { need: "value", prompt: () => ask ? (kind === "div" ? `Число частей <${v}>` : `Шаг разметки, м <${fmt(v, 2)}>`) : "Щёлкните линию или контур; Enter — завершить",
+      value: x => { if (kind === "div" ? !(x >= 2 && x <= 1000 && Number.isInteger(x)) : !(x > 0)) return note(kind === "div" ? "Число частей — целое от 2 до 1000." : "Шаг — больше нуля.");
+        v = x; if (kind === "div") window.__cadDiv = x; else window.__cadMeas = x; ask = false; st.need = "obj"; },
+      enter: () => { if (ask) { ask = false; st.need = "obj"; return; } st.done = true; },
+      pick: (h, pos) => { const p = pickChain(h, pos); if (!p) return note("Делится линия или контур.");
+        const L = G.chainLen(p.ch), step = kind === "div" ? L / v : v, n = kind === "div" ? (G.closed(p.ch) ? v : v - 1) : Math.floor(L / step + 1e-9);
+        if (n > 5000) return note("Больше 5 000 точек — увеличьте шаг.");
+        const l = targetLayer("point"), adds = [];
+        for (let i = 1; i <= n; i++) { const s = i * step; if (s >= L - 1e-6 && !G.closed(p.ch)) break; const q = G.sliceChain(p.ch, 0, s); adds.push({ key: l.key, f: newPoint(l, q[q.length - 1], i) }); }
+        addNew(adds, kind === "div" ? "деление" : "разметка"); note(`Точек: ${adds.length} в слое «${l.title}» (длина ${f2(L)} м, шаг ${f2(step)} м).`); } };
+    return st; };
+}
+function newPoint(l, w, i) { const f = new ol.Feature(new ol.geom.Point(fromM(w))); fieldsOfKey(l.key).forEach(k => f.set(k, "")); f.setProperties({ "№": i, _new: true, _edited: true }); return f; }
+def("divide", "Поделить", ["DIV", "DIVIDE"], markCmd("div"));
+def("measure", "Разметить", ["ME", "MEASURE"], markCmd("meas"));
+
+// выбрать подобные: объекты того же слоя с тем же классом стиля (значение поля категорий / правило), как SELECTSIMILAR
+def("similar", "Выбрать подобные", ["SS", "SELECTSIMILAR"], () => selection(items => {
+  const out = [];
+  const keyOf = (l, f) => l.style.mode === "cat" && l.style.cat.field ? "c:" + f.get(l.style.cat.field) : l.style.mode === "lgr" ? "t:" + JSON.stringify(f.get("_lt")) : "*";
+  new Set(items.map(it => it.key)).forEach(k => { const l = lyr(k); if (!l) return; const want = new Set(items.filter(it => it.key === k).map(it => keyOf(l, it.f)));
+    layerSrc[k].getFeatures().forEach(f => { if (visibleIn(l, f) && want.has(keyOf(l, f))) out.push({ key: k, f }); }); });
+  setSel(out); note(`Выбрано подобных: ${out.length} (тот же слой${items.some(it => lyr(it.key)?.style.mode === "cat") ? " и то же значение поля категорий" : ""}).`);
+  return { done: true };
+}));
+
 const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a => { ALIAS[a] = id; }));
 
 /* ---------- лента и строка состояния ---------- */
@@ -1116,9 +1240,13 @@ const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "p
 const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
+const GIS = ["split", "merge", "subtract", "buffer", "matchprop", "divide", "measure", "similar"];
 const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
+  split: "полигон — линией разреза на части, атрибуты у всех частей", merge: "полигоны одного слоя — в один", subtract: "из выбранных полигонов вырезать другие",
+  buffer: "полигоны на заданном расстоянии вокруг объектов (минус — внутрь)", matchprop: "атрибуты образца — другим объектам",
+  divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",
   dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
 const btn = id => `<button class="tl ic" data-cmd="${id}" title="${CMDS[id].title} — ${CMDS[id].alias.join(", ")} и Enter: ${HELP[id]}" aria-label="${CMDS[id].title}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg></button>`;
 function fillRibbon() {
@@ -1129,8 +1257,9 @@ function fillRibbon() {
   if (anno) { anno.innerHTML = `<button class="tl ic" id="bAnnoCad" title="Оформление: ${ANNOT.map(id => `${CMDS[id].title.toLowerCase()} (${CMDS[id].alias[0]})`).join(", ")}" aria-haspopup="menu" aria-label="Оформление"><svg class="ci" aria-hidden="true"><use href="#ci-dim"/></svg><span class="dd2">▾</span></button>`;
     anno.querySelector("button").onclick = e => modeMenu(e.currentTarget, ANNOT.map(id => `<button class="mi" data-cmd="${id}" title="${HELP[id]}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join(""), m => m.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { m.remove(); start(b.dataset.cmd); }), true); } put("rbMeasure", ["dist", "area"]); put("rbTerr", ["terr"]);
   const more = document.getElementById("rbMore");
-  if (more) { more.innerHTML = `<button class="tl ic" id="bMoreCad" title="Ещё команды редактирования: ${MORE.map(id => CMDS[id].title.toLowerCase()).join(", ")}" aria-haspopup="menu"><span class="dd2">▾</span></button>`;
-    more.querySelector("button").onclick = e => modeMenu(e.currentTarget, MORE.map(id => `<button class="mi" data-cmd="${id}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join(""), m => m.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { m.remove(); start(b.dataset.cmd); }), true); }
+  if (more) { more.innerHTML = `<button class="tl ic" id="bMoreCad" title="Ещё команды: ${MORE.map(id => CMDS[id].title.toLowerCase()).join(", ")}; полигоны и атрибуты: ${GIS.map(id => CMDS[id].title.toLowerCase()).join(", ")}" aria-haspopup="menu"><span class="dd2">▾</span></button>`;
+    more.querySelector("button").onclick = e => modeMenu(e.currentTarget, MORE.map(id => `<button class="mi" data-cmd="${id}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join("")
+      + `<div class="mh">Полигоны и атрибуты</div>` + GIS.map(id => `<button class="mi" data-cmd="${id}" title="${HELP[id]}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg>${CMDS[id].title}<kbd>${CMDS[id].alias[0]}</kbd></button>`).join(""), m => m.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { m.remove(); start(b.dataset.cmd); }), true); }
   document.querySelectorAll("[data-cmd]").forEach(b => b.onclick = () => { if (CMD?.id === b.dataset.cmd) return cancel(); start(b.dataset.cmd); });
 }
 fillRibbon();

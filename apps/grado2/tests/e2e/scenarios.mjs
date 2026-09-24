@@ -128,6 +128,34 @@ export default async p => {
   await type("el"); await enter(); await type("3100;1010"); await enter(); await type("@30;0"); await enter(); await type("10"); await enter();
   const elA = await p.ev(area);
   check(Math.abs(elA - Math.PI * 300) / (Math.PI * 300) < 1e-3, `EL: эллипс с полуосями 30 и 10 м, площадь ${elA.toFixed(1)} ≈ π·300`);
+  // работа с вектором: разрезать, объединить, буфер, вычесть, поделить
+  const areasSel = `return SEL.map(s=>{ const r=s.f.getGeometry().getCoordinates()[0].map(CAD.toM); let a=0; for(let i=0;i+1<r.length;i++) a+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; return Math.abs(a/2); }).sort((a,b)=>a-b)`;
+  const pxOf = async (x, y) => p.ev(`const q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])), r=mMain.getTargetElement().getBoundingClientRect(); return [r.left+q[0], r.top+q[1]]`);
+  await p.key("Escape", "Escape", { vk: 27 }); await p.ev(`window.__pc=CUR; const l=LYR.find(x=>x.geom==="poly"&&x.key.startsWith("user:")); if (l) setCurrent(l.key); return 1`);
+  await type("rec"); await enter(); await type("4000;1000"); await enter(); await type("@40;20"); await enter(); await p.key("Escape", "Escape", { vk: 27 });
+  await p.ev(`const f=layerSrc[CUR].getFeatures().slice(-1)[0]; window.__vf=f; setSel([{key:CUR,f}]); sharedView.fit(ol.extent.buffer(f.getGeometry().getExtent(),40)); return 1`);
+  await type("spl"); await enter(); await type("4020;990"); await enter(); await type("4020;1030"); await enter(); await enter();
+  const halves = await p.ev(areasSel);
+  check(halves.length === 2 && halves.every(a => Math.abs(a - 400) < .5), `SPL: прямоугольник 40 × 20 разрезан пополам: ${halves.map(a => a.toFixed(2)).join(" и ")} м²`);
+  await type("uni"); await enter();
+  const whole = await p.ev(areasSel);
+  check(whole.length === 1 && Math.abs(whole[0] - 800) < .5, `UNI: две половины снова одна, ${whole[0]?.toFixed(2)} м²`);
+  const nb0 = await p.ev(`return layerSrc[CUR].getFeatures().length`);
+  await type("buf"); await enter(); await type("2"); await enter();
+  const bufA = await p.ev(`const f=layerSrc[CUR].getFeatures().slice(-1)[0]; window.__bf=f; const r=f.getGeometry().getCoordinates()[0].map(CAD.toM); let a=0; for(let i=0;i+1<r.length;i++) a+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; return [layerSrc[CUR].getFeatures().length, Math.abs(a/2)]`);
+  check(bufA[0] === nb0 + 1 && Math.abs(bufA[1] - (44 * 24 - (4 - Math.PI) * 4)) < 3, `BUF 2 м: новый полигон ${bufA[1].toFixed(1)} м² ≈ 44·24 − (4 − π)·4`);
+  await p.ev(`layerSrc[CUR].removeFeature(window.__bf); syncFromSource(CUR); setSel([]); return 1`);
+  await type("rec"); await enter(); await type("4010;1005"); await enter(); await type("@10;10"); await enter(); await p.key("Escape", "Escape", { vk: 27 });
+  await p.ev(`setSel([{key:CUR,f:window.__vf}]); return 1`);
+  await type("su"); await enter(); { const [x, y] = await pxOf(4015, 1010); await p.click(x, y); } await enter();
+  const holed = await p.ev(`const g=window.__vf.getGeometry(); return [g.getType(), g.getCoordinates().length]`);
+  check(holed[0] === "Polygon" && holed[1] === 2, "SU: из прямоугольника вырезан квадрат — полигон с дырой, вычитаемый остался");
+  await p.ev(`setSel([]); return 1`);
+  const pts0 = await p.ev(`const l=LYR.find(x=>x.geom==="point"&&x.key.startsWith("user:")&&x.title==="Точки"); return l?layerSrc[l.key].getFeatures().length:0`);
+  await type("div"); await enter(); await type("4"); await enter(); { const [x, y] = await pxOf(4040, 1017); await p.click(x, y); } await enter();
+  const pts1 = await p.ev(`const l=LYR.find(x=>x.geom==="point"&&x.key.startsWith("user:")&&x.title==="Точки"); return l?layerSrc[l.key].getFeatures().length:0`);
+  check(pts1 - pts0 === 4, `DIV 4 на замкнутом контуре: ${pts1 - pts0} точки в слое «Точки»`);
+  await p.ev(`setCurrent(window.__pc); setSel([]); return 1`);
   await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
   check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");
   await type("t"); await enter(); await type("3000;1200"); await enter(); await type("Корпус 1"); await enter(); await enter();
