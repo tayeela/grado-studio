@@ -241,14 +241,21 @@ class SketchMapFrame(Frame):
             for poly in parts:
                 out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True, "fill": None,
                             "stroke": (0.7, 0.15, 0.12), "width": 0.6, "dash": [4, 1.2, 0.6, 1.2]})
-        placed = []                                                   # подписи без наложений: первая занявшая место остаётся
+        grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
+        rx, ry, rw, rh = rect
         for x, y, text in labels:
+            if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
+                continue
             text = str(text)[:40]
             bw, bh = 1.3 * len(text), 2.6
             box = (x - bw / 2, y - bh, x + bw / 2, y + 0.6)
-            if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]) for b in placed):
+            cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
+                     for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
+            if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
+                   for c in cells for b in grid.get(c, ())):
                 continue
-            placed.append(box)
+            for c in cells:
+                grid.setdefault(c, []).append(box)
             out.append({"op": "text", "x": x, "y": y, "size": 2.2, "text": text, "color": (0.12, 0.12, 0.12), "anchor": "middle"})
         out.append({"op": "unclip"})
         out.extend(self._frame_marks(rect, k, sh["scale"]))
@@ -297,20 +304,27 @@ class ColumnFrame(Frame):
         if sh.get("legend"):
             out.append({"op": "text", "x": x, "y": yy, "size": 3.2, "text": "Условные обозначения"})
             yy += 6
+        full = False
         for grp in sh.get("legend", []):
-            if yy > y + h - 30:
-                out.append({"op": "text", "x": x, "y": yy, "size": 2.4, "text": "… легенда не поместилась"})
-                yy += 5
+            if full:
                 break
+            if yy > y + h - 30:
+                full = True
             items = grp.get("items") or [grp]
-            if len(items) > 1:
+            if not full and len(items) > 1:
                 out.append({"op": "text", "x": x, "y": yy, "size": 2.6, "text": grp["title"][:60]})
                 yy += 4.5
             for it in items[:14]:
+                if full or yy > y + h - 8:            # место проверяется на каждой строке, иначе легенда наезжает на штамп
+                    full = True
+                    break
                 out.extend(_swatch(x, yy - 3, grp.get("kind", "poly"), it))
                 out.append({"op": "text", "x": x + 13, "y": yy, "size": 2.4, "text": str(it.get("label") or grp["title"])[:int((w - 13) / 1.25)]})
                 yy += 4.8
             yy += 1.5
+        if full:
+            out.append({"op": "text", "x": x, "y": min(yy, y + h - 3), "size": 2.4, "text": "… легенда не поместилась"})
+            yy += 5
         tep = sh.get("tep") or []
         if tep:
             yy += 3

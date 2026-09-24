@@ -430,7 +430,14 @@ def fgistp_catalog(conn=None):
                     path.unlink(missing_ok=True)    # недописанный файл — скачать заново, а не падать неделю
                     return fgistp_catalog(conn)
             return _FG_MEMO["cat"]
-        cat = (conn or FgistpConnector()).catalog()
+        try:
+            cat = (conn or FgistpConnector()).catalog()
+            if not cat:
+                raise ConnectorError("ФГИС ТП вернула пустой каталог")
+        except ConnectorError:
+            if not path.exists():                   # портал недоступен — старый каталог лучше, чем никакого
+                raise
+            return json.loads(gzip.decompress(path.read_bytes()))
         atomic_write(path, gzip.compress(json.dumps(cat, ensure_ascii=False).encode("utf-8")))
         return cat
 
@@ -512,9 +519,9 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
     СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя."""
     e = Engine.from_file(PRESET)
     e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
-                 spp_low_in=spp_low_m2 / 1000, nonres_part=nonres_part, education_zone=2 if int(education_zone) == 2 else 1,
+                 spp_low_in=spp_low_m2 / 1000, nonres_part=max(0.0, min(100.0, float(nonres_part))), education_zone=2 if int(education_zone) == 2 else 1,
                  k1=k1, k2=k2, tinao=1 if tinao else 0, territory_mode=int(territory_mode) if int(territory_mode) in (1, 2, 3) else 1,
-                 unbuilt_share=unbuilt_share)
+                 unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))))
     return {"metrics": e.results(),
             "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
 
@@ -523,7 +530,8 @@ def _norm_name(t):
     t = str(t or "").lower().replace("ё", "е")
     for w in ("муниципальный округ", "поселение", "район", "городской округ", "город"):
         t = t.replace(w, "")
-    return " ".join(t.replace("-", " ").split())
+    # порядок слов не важен: у OSM «Северное Бутово», в таблицах 945-ПП «Бутово Северное»
+    return " ".join(sorted(t.replace("-", " ").split()))
 
 
 def _in_ring(x, y, ring):
@@ -567,9 +575,13 @@ def rail_route(lon, lat, radius=2400):
         _ROUTE_MEMO[key] = None
         return None
     cache = CACHE / "place" / f"walk_{key[0]}_{key[1]}_{radius}.json.gz"
-    if cache.exists():
-        ways = json.loads(gzip.decompress(cache.read_bytes()))
-    else:
+    ways = None
+    if _fresh(cache):
+        try:
+            ways = json.loads(gzip.decompress(cache.read_bytes()))
+        except (OSError, EOFError, ValueError, zlib.error):
+            cache.unlink(missing_ok=True)
+    if ways is None:
         q = f'[out:json][timeout:90];way(around:{radius},{lat},{lon})["highway"~"^({WALK_HW})$"]["access"!~"^(private|no)$"];out geom;'
         res = OsmOverpass()._http_post(q)
         ways = [[[p["lon"], p["lat"]] for p in e.get("geometry", [])] for e in res.get("elements", []) if e.get("type") == "way"]
@@ -623,6 +635,14 @@ def rail_route(lon, lat, radius=2400):
     return best
 
 
+PLACE_TTL = 90 * 86400          # район, станции и улицы меняются редко, но не никогда
+
+
+def _fresh(path):
+    import time
+    return path.exists() and time.time() - path.stat().st_mtime < PLACE_TTL
+
+
 def place_info(lon, lat):
     """Территориальные параметры ТЭП по точке (как маркер «Калькулятора 2.0»): район и округ по OSM, образовательная
     зона (2151-ПП), K2 (945-ПП прил. 3 с границей ТТК), ТиНАО, K1 по расстоянию до ближайшего входа или станции
@@ -632,14 +652,17 @@ def place_info(lon, lat):
     if key in _PLACE_MEMO:
         return _PLACE_MEMO[key]
     cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"
-    if cache.exists():
-        raw = json.loads(cache.read_text("utf-8"))
-    else:
+    raw = None
+    if _fresh(cache):
+        try:
+            raw = json.loads(cache.read_text("utf-8"))
+        except ValueError:
+            cache.unlink(missing_ok=True)
+    if raw is None:
         q = (f"[out:json][timeout:25];is_in({lat},{lon})->.a;area.a[\"boundary\"=\"administrative\"][\"admin_level\"~\"^(5|8)$\"];out tags;"
              f"(node(around:3000,{lat},{lon})[\"railway\"=\"subway_entrance\"];node(around:3000,{lat},{lon})[\"railway\"~\"^(station|halt)$\"];);out;")
         raw = OsmOverpass()._http_post(q)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(raw, ensure_ascii=False), "utf-8")
+        atomic_write(cache, json.dumps(raw, ensure_ascii=False).encode("utf-8"))
     areas = [e.get("tags", {}) for e in raw.get("elements", []) if e.get("type") == "area"]
     okrug = next((a.get("name") for a in areas if a.get("admin_level") == "5"), "")
     dname = next((a.get("name") for a in areas if a.get("admin_level") == "8"), "")
@@ -652,7 +675,7 @@ def place_info(lon, lat):
         k2row = DISTRICTS["k2"][district]
         k2 = (k2row.get("inside_ttk") if inside_ttk else k2row.get("outside_ttk")) if "inside_ttk" in k2row else \
              (k2row["exclave"] if "exclave" in k2row and lon < 37.33 else k2row["value"])
-        zone = 2 if district in DISTRICTS["zone2"] else 1
+        zone = 2 if _norm_name(district) in {_norm_name(z) for z in DISTRICTS["zone2"]} else 1
     else:
         k2, zone = (0.9, 2 if tinao else 1)
         notes.append(f"район «{dname or 'не определён'}» не найден в таблицах 945-ПП и 2151-ПП — K2 и зона приняты {k2} и {zone}, поправьте вручную")
@@ -895,7 +918,10 @@ def code_stamp():
     if FROZEN:
         return json.loads((WEB / "version.json").read_text("utf-8"))["version"]
     here = Path(__file__).resolve().parent
-    return max(p.stat().st_mtime for p in here.glob("*.py"))
+    # ядро тоже: обновление, затронувшее только коннекторы, иначе продолжало бы работать со старым кодом
+    files = [*here.glob("*.py"), *(p for p in (here.parents[1] / "core").rglob("*.py") if "tests" not in p.parts),
+             *(here.parents[1] / "core").rglob("*.json")]
+    return max(p.stat().st_mtime for p in files)
 
 
 STAMP = code_stamp()          # версия кода, с которой этот процесс запущен
