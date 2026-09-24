@@ -135,10 +135,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   houses. Still open: strips stay straight (not bent to the boundary); no outbuildings, garages, guest parking; blocked rows
   packed from one end; the blocked generator takes ~1.1 s on this site; ТЭП preset for ИЖС is rough (no m² per person norm).
 
-- 2026-09-23 (audit v0.18.0, not done): autosave still serialises every layer's `fc` on each save (~0.3 s freeze with 100 000
-  objects): cache each layer's JSON by `rev` and join. «Правила» in the style panel count matches over all objects on each
-  redraw (0.2 s on 100 000). «Проверить нормы» re-runs whole after each edit of a checked sketch; the neighbour steps are not
-  chunked. The attribute table and «Правила» are the next speed items after these.
+- ~~2026-09-23 (audit v0.18.0): autosave, «Правила» counting, norms re-check~~ — done v0.36.0: unchanged layer data is not
+  serialised again (100 000 objects: 111 → 5 ms), rule counts cached per data version and rules, the norms check runs in
+  chunks, keeps the neighbours' baseline and a new edit interrupts the old run.
 
 - 2026-09-23: DWG via the ODA converter (owner has not decided).
 - 2026-09-23 (done v0.15.0): ФГИС ТП has a search by name over the whole catalog (all words, «ё» = «е»). The Moscow

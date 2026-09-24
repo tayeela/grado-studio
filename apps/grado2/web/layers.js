@@ -244,6 +244,12 @@ function frameless(ft) {
   }
   ft._fl = { rev, g: new ol.geom.MultiLineString(lines) }; return ft._fl.g;
 }
+// число объектов под правилом: считается один раз на версию данных слоя и набор правил (панель перерисовывается часто)
+function ruleCount(l, i) {
+  const sig = (DATA[l.key]?.rev ?? 0) + "|" + JSON.stringify(l.style.rules.list);
+  if (l._rc?.sig !== sig) { const fs = layerSrc[l.key]?.getFeatures() || []; l._rc = { sig, n: l.style.rules.list.map(r => fs.filter(f => testRule(r, f)).length) }; }
+  return l._rc.n[i] ?? 0;
+}
 function styleFor(l, f, res) {
   const st = l.style;
   const out = [];
@@ -538,7 +544,7 @@ function renderStyle(el) {
       <table class="cl">${cols.map((c, i) => `<tr><td><span class="sym" style="background:${c}"></span></td><td class="num">${fmt(b[i], 1)} – ${fmt(b[i + 1], 1)}</td></tr>`).join("")}</table>`; }
   } else if (st.mode === "rules") {
     h += st.rules.list.map((r, i) => `<div class="rule"><div class="w"><select data-rule="${i}" data-rk="field" aria-label="Поле">${opts(fields, r.field)}</select><select data-rule="${i}" data-rk="op" aria-label="Условие">${opts(["=", "≠", ">", "<", "≥", "≤", "содержит"], r.op)}</select><input type="text" data-rule="${i}" data-rk="val" value="${esc(r.val)}" aria-label="Значение"></div>
-      <div class="t">${cbtn("rule:" + i, r.fill)}${l.geom === "poly" ? `<label class="inl"><input type="checkbox" data-rule="${i}" data-rk="hatch" ${r.hatch ? "checked" : ""}> штриховка</label>` : ""}<span class="sp"></span><span class="num">${(layerSrc[l.key]?.getFeatures() || []).filter(f => testRule(r, f)).length} об.</span><button class="tb" data-delrule="${i}" title="Удалить правило"><i data-lucide="x"></i></button></div></div>`).join("");
+      <div class="t">${cbtn("rule:" + i, r.fill)}${l.geom === "poly" ? `<label class="inl"><input type="checkbox" data-rule="${i}" data-rk="hatch" ${r.hatch ? "checked" : ""}> штриховка</label>` : ""}<span class="sp"></span><span class="num">${ruleCount(l, i)} об.</span><button class="tb" data-delrule="${i}" title="Удалить правило"><i data-lucide="x"></i></button></div></div>`).join("");
     h += `<div class="row"><button class="btn" data-addrule><i data-lucide="plus"></i>Правило</button></div><div class="rule"><div class="t" style="margin:0">Остальные ${cbtn("else", st.rules.elseFill)}<label class="inl"><input type="checkbox" data-k="rules.elseHide" ${st.rules.elseHide ? "checked" : ""}> скрыть</label></div></div>`;
   }
   h += `<div class="sect" style="margin:8px -8px 8px">Контур, прозрачность, подписи</div>`;

@@ -51,6 +51,20 @@ function collectProject() {
   };
 }
 
+/* Текст проекта для записи: данные слоя, которые не менялись с прошлой записи, не сериализуются заново — их JSON
+   берётся из кэша по самому объекту (после правки у слоя новый объект данных). 100 000 объектов: запись без правок
+   больше не замирает на десятые доли секунды. */
+const JCACHE = new WeakMap();
+const jsonOf = o => { let t = JCACHE.get(o); if (t === undefined) { t = JSON.stringify(o); JCACHE.set(o, t); } return t; };
+function projectJSON(extra) {
+  const p = { ...collectProject(), ...extra }, big = [];
+  p.data = Object.fromEntries(Object.entries(p.data).map(([k, d]) => {
+    const o = { ...d };
+    for (const f of ["fc", "original"]) if (o[f] && typeof o[f] === "object") { big.push(o[f]); o[f] = `@@GRADO_BIG_${big.length - 1}@@`; }
+    return [k, o];
+  }));
+  return JSON.stringify(p).replace(/"@@GRADO_BIG_(\d+)@@"/g, (_, i) => jsonOf(big[+i]));
+}
 function clearProject() {
   PROJ.askName = null;                                           // согласие заменить файл относится к прежнему проекту
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
@@ -123,7 +137,7 @@ async function saveProject(name) {
   }
   PROJ.askName = null;
   const prev = PROJ.name, prevFile = PROJ.file; PROJ.name = name; PROJ.file = name;
-  const tick = PROJ.tick, body = JSON.stringify({ ...collectProject(), dirty: false });
+  const tick = PROJ.tick, body = projectJSON({ dirty: false });
   busy(true);
   try {
     const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", body }); const j = await r.json();
@@ -170,7 +184,7 @@ let autoBusy = false, autoAgain = false;
 async function autosave() {
   if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
   autoBusy = true; const tick = PROJ.tick;
-  try { const r = await fetch("/api/project?autosave=1", { method: "POST", body: JSON.stringify(collectProject()) }); if (r.ok) PROJ.autoTick = tick; } catch { }
+  try { const r = await fetch("/api/project?autosave=1", { method: "POST", body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
   finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }
 }
 setInterval(() => {
@@ -198,7 +212,7 @@ $("projName").addEventListener("keydown", e => { if (e.key === "Enter") saveProj
 $("projNew").onclick = newProject;
 $("projList").addEventListener("click", e => { const b = e.target.closest("[data-open]"); if (b) openProject(b.dataset.open); });
 $("projDownload").onclick = () => {
-  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(collectProject())], { type: "application/json" }));
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([projectJSON()], { type: "application/json" }));
   a.download = (PROJ.name || "проект") + ".grado2"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 };
 $("projFile").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) openProjectFile(f); };

@@ -210,34 +210,51 @@ let CHECK = null;                 // {key} — принятый слой, кот
 function sketchFromLayer(key) {
   return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1, grp: o.get("Блок") || null })).filter(b => /Polygon/.test(b.f.geometry?.type));
 }
+/* Окно не замирает: расчёт идёт порциями по 300 точек с передышкой; состояние соседей до застройки не зависит от эскиза —
+   оно считается один раз на набор сохраняемых домов и параметры (перепроверка после правки эскиза — без него). Новая
+   проверка прерывает незаконченную старую. */
+let checkGen = 0, nbBase = null;
+const yieldUI = () => new Promise(r => setTimeout(r, 0));
+async function evalChunked(pts, ob, paths, opt, gen) {
+  for (let i = 0; i < pts.length; i += 300) {
+    INSOL.evalFront(pts.slice(i, i + 300), ob, paths, opt); await yieldUI();
+    if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой");
+  }
+}
 async function checkNorms(sk, title) {
   if (!TERR) return null;
+  const gen = ++checkGen;
   const fh = CONS.floorH, kept = keptForCheck(), norm = CONS.norm * 60, lat = turf.centroid(TERR).geometry.coordinates[1];
   const paths = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 10));
   const keptP = kept.flatMap(f => prismsOf(f, floorsOf(f) * fh)), newP = sk.flatMap((b, i) => prismsOf(b.f, b.floors * fh).map(p => ({ ...p, i })));
   const out = [], add = (ll, why, normTxt, obj) => out.push(turf.point(ll, { "Нарушение": why, "Норма": normTxt, "Объект": obj }));
   // 1. собственная инсоляция новых домов (жилые — все корпуса эскиза)
   const own = INSOL.frontPoints(newP, 6, CONS.z), obAll = INSOL.obstacleIndex(keptP.concat(newP));
-  for (let i = 0; i < own.length; i += 300) { INSOL.evalFront(own.slice(i, i + 300), obAll, paths, { norm, reveal: CONS.reveal }); await new Promise(r => setTimeout(r, 0)); }
+  await evalChunked(own, obAll, paths, { norm, reveal: CONS.reveal }, gen);
   const ownN = own.filter(p => !p.orient), ownBad = ownN.filter(p => !p.worst.ok);
   // корпус без единого фасада с нормой — нарушение (квартира должна получить солнце хотя бы одной комнатой)
   const byB = new Map(); ownN.forEach(p => { const b = newP[p.b].i; (byB.get(b) || byB.set(b, []).get(b)).push(p); });
   byB.forEach((ps, i) => { const okShare = ps.filter(p => p.worst.ok).length / ps.length; if (okShare < .5) add(turf.centroid(sk[i].f).geometry.coordinates, `инсоляция: норму получают ${Math.round(okShare * 100)} % фасадов корпуса`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, `корпус ${i + 1}, ${sk[i].floors} эт.`); });
   // 2. соседи, потерявшие норму
   const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step * 2, CONS.z);
-  const nb0 = nb.map(p => ({ ...p })); INSOL.evalFront(nb0, INSOL.obstacleIndex(keptP), paths, { norm, reveal: CONS.reveal });
-  INSOL.evalFront(nb, obAll, paths, { norm, reveal: CONS.reveal });
+  const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, kept.length, ...kept.map(f => f.geometry.coordinates.flat(3).slice(0, 2).join(","))].join("|");
+  if (nbBase?.sig !== sig) {
+    const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths, { norm, reveal: CONS.reveal }, gen);
+    nbBase = { sig, nb0 };
+  }
+  const nb0 = nbBase.nb0;
+  await evalChunked(nb, obAll, paths, { norm, reveal: CONS.reveal }, gen);
   const lost = nb.filter((p, n) => !p.orient && nb0[n].worst.ok && !p.worst.ok);
   lost.forEach(p => add(toLL([p.x, p.y]), `инсоляция соседа: было ${Math.round(nb0[nb.indexOf(p)].worst.cont / 6) / 10} ч, стало ${Math.round(p.worst.cont / 6) / 10} ч`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, String(resid[p.b].f.properties["Адрес"] || "существующий дом")));
   // 3. корпус на запрете — только включённые слои-запреты
   EXCLUDE.map(lyr).filter(l => l && shown(l)).forEach(l => layerSrc[l.key].getFeatures().forEach(z => { const zf = GJ.writeFeatureObject(z);
     sk.forEach((b, i) => { const x = inter(b.f, zf); if (x && m2(x) > 5) add(turf.pointOnFeature(x).geometry.coordinates, `корпус на запрете: ${z.get("Причина") || l.title}`, z.get("Норма") || "", `корпус ${i + 1}`); }); }));
   // 4. противопожарный разрыв между новыми корпусами
-  for (let i = 0; i < sk.length; i++) for (let j = i + 1; j < sk.length; j++) {
+  for (let i = 0; i < sk.length; i++) { if (i % 20 === 19) { await yieldUI(); if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой"); } for (let j = i + 1; j < sk.length; j++) {
     if (sk[i].grp && sk[i].grp === sk[j].grp) continue;          // секции одного урбан-блока стоят вплотную — это одно здание
     const a = sk[i].f, b = sk[j].f; if (!safe(() => turf.booleanIntersects(buf(a, 6), b))) continue;
     const x = inter(buf(a, 6), b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
-  }
+  } }
   const key = "cons:check";
   consLayer(key, `Проверка норм: ${title}`, turf.featureCollection(out), "point", { mode: "cat", width: 2.5, cat: { field: "Нарушение", colors: {}, off: [] } });
   const l = lyr(key); l.style.cat.colors = Object.fromEntries(catValues(key, "Нарушение").map(([v]) => [v, /инсоляция/.test(v) ? "#eda100" : "#b3261e"])); restyle(l);
@@ -251,7 +268,7 @@ async function runCheck(key) {
     const r = await checkNorms(sk, key ? lyr(key).title : "эскиз"); CHECK = key ? { key } : null;
     window.LASTCHECK = r; if (!$("wSketch").hidden) renderParams();
     toast(`Проверка норм: ${r.text}. Новые дома: норму инсоляции получают ${r.own} % фасадов (без северных); соседи, потерявшие норму: ${r.lost}.${key ? " Слой перепроверяется после каждой правки." : ""}`);
-  } catch (e) { console.error(e); toast("Проверка не выполнена: " + e.message); } finally { busy(false); }
+  } catch (e) { if (/прервана/.test(e.message)) return; console.error(e); toast("Проверка не выполнена: " + e.message); } finally { busy(false); }
 }
 // правка принятого эскиза — перепроверка через 1,5 с (живой контроль, как проверка правил в САПР)
 let checkT = null;

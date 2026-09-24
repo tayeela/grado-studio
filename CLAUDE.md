@@ -226,6 +226,13 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.36.0: UX queue, batch 2 (speed).** `projectJSON` (project.js) writes each layer's `fc`/`original` from a
+  WeakMap cache keyed by the object itself (the lazy `fc` getter returns a new object after an edit, the original never
+  changes): autosave of an unchanged 100 000-object project 111 → 5 ms, output identical to `JSON.stringify` (checked without
+  `saved_at`). `ruleCount` caches «Правила» counts by `DATA.rev` + rules. `checkNorms`: evaluation in chunks of 300 points with
+  yields, the neighbours' state before development cached by kept buildings + parameters (a re-check after an edit skips it),
+  `checkGen` interrupts a stale run («перепроверка прервана» is silent).
+
 - **2026-09-24, ГРАДО 2 v0.35.0: UX queue, batch 1 (small items).**
   - Old ОГД/ЕГКО layers: `_layer` marks gisogd/egko layers `shp: true`, the project keeps it; opening a project saved by ≤ 0.31
     lists such layers without the mark (`STALE_OGD`) — toast + a «Данные» note with «Выгрузить заново» (checks them, loads).
