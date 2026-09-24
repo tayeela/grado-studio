@@ -253,7 +253,9 @@ $("bLoad").onclick = async () => {
   busy(false); $("bLoad").disabled = false; window.syncStatus?.();
   const ne = Object.keys(ERRORS).length;
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
-  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}${same.length ? ` Без изменений в источнике: ${same.length === 1 ? "«" + same[0] + "»" : plural(same.length, ["слой", "слоя", "слоёв"])}.` : ""}`);
+  const pzzMsg = DATA["gisogd.pzz_sub"] && keys.includes("gisogd.pzz_sub") && RESULT.tepNode?.widgets[1].value === 25 && !RESULT.tepNode.properties?.pzzTarget && takePzzTarget(true)
+    ? ` Цель плотности эскиза взята по ПЗЗ: ${RESULT.tepNode.widgets[1].value} тыс. м²/га (окно «Показатели»).` : "";
+  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}${pzzMsg}${same.length ? ` Без изменений в источнике: ${same.length === 1 ? "«" + same[0] + "»" : plural(same.length, ["слой", "слоя", "слоёв"])}.` : ""}`);
 };
 /* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
    чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся
@@ -514,9 +516,24 @@ function placeLookup(n) {
   const tp = tepParams(n); if (!TERR || tp.rev === TERR_REV || n._placeBusy) return;
   n._placeBusy = true; const rev = TERR_REV, [lon, lat] = turf.centroid(TERR).geometry.coordinates;
   api("/api/place", { lon, lat }).then(r => {
-    tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
+    tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.walkRoute = false; tp.station = ""; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
     if (tp.auto) Object.assign(tp, { zone: r.zone, k1: r.k1, k2: r.k2, tinao: r.tinao });
     recompute(true); renderTep();
+    // K1 по улицам: маршрут по пешеходной сети OSM до входа или станции (первый раз — до пары минут, дальше с диска)
+    if (r.rail_walk_m != null) api("/api/rail_route", { lon, lat }).then(q => {
+      if (tp.rev !== rev || q?.route_m == null) return;
+      tp.walk = q.route_m; tp.walkRoute = true; tp.station = q.station || "";
+      if (tp.auto) tp.k1 = q.route_m < 1200 ? 0.75 : q.route_m <= 2200 ? 0.9 : 1.0;
+      recompute(true); renderTep();
+    }).catch(() => { });
+    // граница в нескольких районах: районы в точках внутри границы, кроме центра
+    const bb = turf.bbox(TERR), c = [lon, lat], pts = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]]
+      .map(q => [c[0] + (q[0] - c[0]) * .7, c[1] + (q[1] - c[1]) * .7]).filter(q => turf.booleanPointInPolygon(q, TERR));
+    Promise.all(pts.map(q => api("/api/place", { lon: q[0], lat: q[1] }).catch(() => null))).then(rs => {
+      if (tp.rev !== rev) return;
+      const other = [...new Set(rs.filter(Boolean).map(x => x.district).filter(d => d && d !== r.district))];
+      if (other.length) { tp.notes = [...(tp.notes || []).filter(x => !/нескольких районах/.test(x)), `граница лежит в нескольких районах: ${[r.district, ...other].join(", ")} — зона, K2 и ТиНАО взяты по району центра («${r.district}»), проверьте`]; renderTep(); }
+    });
   }).catch(e => { tp.rev = rev; tp.notes = ["район не определён: " + e.message + " — задайте зону и K1, K2 вручную"]; renderTep(); }).finally(() => { n._placeBusy = false; });
 }
 /* ТЭП: геометрические части — здесь, нормативная часть — движок ядра на сервере */
@@ -951,6 +968,21 @@ function syncPreview() {
   RES.forEach(r => r.layer.setVisible(r.on !== false && (r.id === "prev" ? open("wGraph") : any)));
   if (typeof renderTree === "function") renderTree();
 }
+/* цель плотности по ПЗЗ: средняя предельная плотность подзон внутри границы, взвешенная по площади (0 — новое
+   строительство не предусмотрено — тоже в счёт); подзоны без числа («-», «Ф») не участвуют, их доля показывается */
+function pzzTarget() {
+  const fs = DATA["gisogd.pzz_sub"]?.fc.features; if (!fs?.length || !TERR) return null;
+  let a = 0, s = 0; const vals = new Set();
+  for (const f of fs) { const v = f.properties["Плотность, тыс. м²/га"]; if (typeof v !== "number") continue; const x = inter(TERR, f); const m = x ? m2(x) : 0; if (m < 1) continue; a += m; s += m * v; vals.add(v); }
+  return a ? { value: s / a, share: a / TERR_M2, vals: [...vals].sort((x, y) => x - y) } : { value: null, share: 0, vals: [] };
+}
+function takePzzTarget(silent) {
+  const t = RESULT.tepNode, pz = pzzTarget(); if (!t || !pz?.value && pz?.value !== 0) return false;
+  const v = Math.max(5, Math.min(45, Math.round(pz.value))); t.widgets[1].value = v; t.properties.pzzTarget = true;
+  if (!silent) toast(`Цель плотности взята по ПЗЗ: ${fmt(pz.value, 1)} тыс. м²/га${v !== Math.round(pz.value) ? ` (ползунок держит ${v}: пределы 5–45)` : ""}; подзоны с числом покрывают ${Math.round(pz.share * 100)} % границы.`);
+  window.markDirty?.(); recompute(true); return true;
+}
+window.takePzzTarget = takePzzTarget;
 const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
@@ -962,17 +994,19 @@ function renderTep() {
       <div class="row"><label>Район</label><b>${esc(tp.district || "определяется…")}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
       <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
       <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}</div>
-      ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3">≈ ${fmt(tp.walk)} м до станции</small></div>` : ""}
+      ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="${tp.walkRoute ? "пешеходный маршрут по улицам и дорожкам OSM от центра территории" : "прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)"}">${tp.walkRoute ? "" : "≈ "}${fmt(tp.walk)} м ${tp.walkRoute ? "пешком по улицам" : "до станции"}${tp.station ? ` · ${esc(tp.station)}` : ""}</small></div>` : ""}
       <div class="row"><label title="945-ПП прил. 3: деловая активность района">K2</label>${sel("k2", [[0.2, "0,2"], [0.5, "0,5"], [0.7, "0,7"], [0.9, "0,9"]], "K2")}<label class="inl"><input type="checkbox" data-tp="tinao" ${tp.tinao ? "checked" : ""}> ТиНАО</label></div>
       <div class="row"><label title="2152-ПП табл. 1.4.2">Жилые территории</label>${sel("mode", Object.entries(MODES), "Тип территории")}</div>
       <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${tp.nonres}" style="width:64px"></div>
       <div class="row"><label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label><input type="number" data-tp="unbuilt" min="0" max="90" value="${tp.unbuilt}" style="width:64px"></div>
       ${tp.auto ? "" : `<button class="btn" data-tp-auto title="Снова взять зону, K1, K2 и ТиНАО по району территории">по району</button>`}
       ${tp.mode !== 1 || tp.nonres !== 6 || tp.unbuilt !== 25 ? `<button class="btn" data-tp-reset title="Преобразование, нежилое 6 %, незастраиваемая 25 % — как в «Калькуляторе 2.0» по умолчанию">сбросить тип и проценты</button>` : ""}
+      ${(() => { const pz = pzzTarget(); if (!pz) return ""; if (pz.value == null) return `<div class="row"><label>Цель по ПЗЗ</label><small>в подзонах внутри границы плотность не установлена числом («-», «Ф»)</small></div>`;
+        return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
       ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
   $("tep").innerHTML = place + `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
     + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)]))).join("")
-    + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — приблизительно: прямое расстояние до станции × 1,3 вместо пешеходной изохроны. ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
+    + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
 $("tep").addEventListener("change", e => {
   const k = e.target.dataset.tp; if (!k || !RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
@@ -983,6 +1017,7 @@ $("tep").addEventListener("change", e => {
 $("tep").addEventListener("click", e => {
   if (!RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
   if (e.target.closest("[data-tp-auto]")) { tp.auto = true; tp.rev = -1; recompute(true); }
+  if (e.target.closest("[data-tp-pzz]")) takePzzTarget();
   if (e.target.closest("[data-tp-reset]")) { Object.assign(tp, { mode: 1, nonres: 6, unbuilt: 25 }); window.markDirty?.(); recompute(true); }
 });
 function renderSketch() {

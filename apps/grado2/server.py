@@ -538,6 +538,91 @@ def _in_ring(x, y, ring):
 _PLACE_MEMO = {}
 
 
+def _rail_nodes(raw):
+    """Входы и станции рельсового каркаса (метро, МЦК, МЦД) из ответа Overpass."""
+    return [e for e in raw.get("elements", []) if e.get("type") == "node"
+            and (e["tags"].get("railway") == "subway_entrance" or e["tags"].get("station") in ("subway", "light_rail", "monorail")
+                 or e["tags"].get("railway") in ("station", "halt") and e["tags"].get("train") == "yes" or "МЦ" in e["tags"].get("network", ""))]
+
+
+# пешеходная сеть для K1: всё, где можно пройти пешком (без автомагистралей и съездов с них)
+WALK_HW = ("footway|path|pedestrian|living_street|residential|service|unclassified|tertiary|tertiary_link|secondary|"
+           "secondary_link|primary|primary_link|steps|cycleway|track|corridor|crossing")
+_ROUTE_MEMO = {}
+
+
+def rail_route(lon, lat, radius=2400):
+    """K1 по улицам (945-ПП прил. 6): длина пешеходного маршрута от точки территории до ближайшего входа или станции
+    метро, МЦК, МЦД по сети улиц и дорожек OSM (Дейкстра). Возвращает {route_m, straight_m, station} или None."""
+    import gzip
+    import heapq
+    import math
+    key = (round(lon, 3), round(lat, 3))
+    if key in _ROUTE_MEMO:
+        return _ROUTE_MEMO[key]
+    place_info(lon, lat)
+    raw = json.loads((CACHE / "place" / f"{key[0]}_{key[1]}.json").read_text("utf-8"))
+    rail = _rail_nodes(raw)
+    if not rail:
+        _ROUTE_MEMO[key] = None
+        return None
+    cache = CACHE / "place" / f"walk_{key[0]}_{key[1]}_{radius}.json.gz"
+    if cache.exists():
+        ways = json.loads(gzip.decompress(cache.read_bytes()))
+    else:
+        q = f'[out:json][timeout:90];way(around:{radius},{lat},{lon})["highway"~"^({WALK_HW})$"]["access"!~"^(private|no)$"];out geom;'
+        res = OsmOverpass()._http_post(q)
+        ways = [[[p["lon"], p["lat"]] for p in e.get("geometry", [])] for e in res.get("elements", []) if e.get("type") == "way"]
+        atomic_write(cache, gzip.compress(json.dumps(ways).encode("utf-8")))
+    kx, ky = 111320 * math.cos(math.radians(lat)), 110540
+    xy = lambda p: ((p[0] - lon) * kx, (p[1] - lat) * ky)
+    ids, pts, adj = {}, [], []
+
+    def node(p):
+        k = (round(p[0], 7), round(p[1], 7))
+        i = ids.get(k)
+        if i is None:
+            i = ids[k] = len(pts)
+            pts.append(xy(p))
+            adj.append([])
+        return i
+    for w in ways:
+        for a, b in zip(w, w[1:]):
+            i, j = node(a), node(b)
+            d = math.dist(pts[i], pts[j])
+            adj[i].append((j, d))
+            adj[j].append((i, d))
+    if not pts:
+        _ROUTE_MEMO[key] = None
+        return None
+    nearest = lambda q: min(range(len(pts)), key=lambda i: (pts[i][0] - q[0]) ** 2 + (pts[i][1] - q[1]) ** 2)
+    start = nearest((0.0, 0.0))
+    dist = [math.inf] * len(pts)
+    dist[start] = math.dist(pts[start], (0.0, 0.0))
+    heap = [(dist[start], start)]
+    while heap:
+        d, i = heapq.heappop(heap)
+        if d > dist[i] or d > radius * 1.6:
+            continue
+        for j, w in adj[i]:
+            if d + w < dist[j]:
+                dist[j] = d + w
+                heapq.heappush(heap, (d + w, j))
+    best = None
+    for e in rail:
+        q = xy((e["lon"], e["lat"]))
+        j = nearest(q)
+        snap = math.dist(pts[j], q)
+        if snap > 150 or dist[j] == math.inf:
+            continue
+        route = dist[j] + snap
+        if best is None or route < best["route_m"]:
+            best = {"route_m": round(route), "straight_m": round(math.dist(q, (0.0, 0.0))),
+                    "station": e["tags"].get("name") or (f"вход {e['tags']['ref']}" if e["tags"].get("ref") else "вход")}
+    _ROUTE_MEMO[key] = best
+    return best
+
+
 def place_info(lon, lat):
     """Территориальные параметры ТЭП по точке (как маркер «Калькулятора 2.0»): район и округ по OSM, образовательная
     зона (2151-ПП), K2 (945-ПП прил. 3 с границей ТТК), ТиНАО, K1 по расстоянию до ближайшего входа или станции
@@ -572,9 +657,7 @@ def place_info(lon, lat):
         k2, zone = (0.9, 2 if tinao else 1)
         notes.append(f"район «{dname or 'не определён'}» не найден в таблицах 945-ПП и 2151-ПП — K2 и зона приняты {k2} и {zone}, поправьте вручную")
     # ближайший вход или станция рельсового каркаса
-    rail = [e for e in raw.get("elements", []) if e.get("type") == "node"
-            and (e["tags"].get("railway") == "subway_entrance" or e["tags"].get("station") in ("subway", "light_rail", "monorail")
-                 or e["tags"].get("railway") in ("station", "halt") and e["tags"].get("train") == "yes" or "МЦ" in e["tags"].get("network", ""))]
+    rail = _rail_nodes(raw)
     kx = 111320 * math.cos(math.radians(lat))
     dist = min((math.hypot((e["lon"] - lon) * kx, (e["lat"] - lat) * 110540) for e in rail), default=None)
     walk = dist * 1.3 if dist is not None else None
@@ -789,6 +872,11 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/place":
                 try:
                     return self._json(200, place_info(float(req["lon"]), float(req["lat"])))
+                except ConnectorError as e:
+                    return self._json(502, {"error": str(e)})
+            if self.path == "/api/rail_route":
+                try:
+                    return self._json(200, rail_route(float(req["lon"]), float(req["lat"])) or {})
                 except ConnectorError as e:
                     return self._json(502, {"error": str(e)})
             return self._json(404, {"error": "no such method"})

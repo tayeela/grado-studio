@@ -153,6 +153,32 @@ class Yandex(unittest.TestCase):
         self.assertIn("в сдаваемые материалы не включать", layers["yandex.buildings"]["source"])
 
 
+class RailRoute(unittest.TestCase):
+    """K1 по улицам: маршрут по пешеходной сети OSM до входа в метро (данные из кэша, без сети)."""
+    def test_route_goes_around_the_block(self):
+        import gzip, json as J, math, tempfile
+        lon, lat = 37.60, 55.75
+        kx, ky = 111320 * math.cos(math.radians(lat)), 110540
+        ll = lambda x, y: [lon + x / kx, lat + y / ky]
+        with tempfile.TemporaryDirectory() as d:
+            old, S.CACHE = S.CACHE, Path(d)
+            S._ROUTE_MEMO.clear(); S._PLACE_MEMO.clear()
+            try:
+                (Path(d) / "place").mkdir()
+                key = (round(lon, 3), round(lat, 3))
+                (Path(d) / "place" / f"{key[0]}_{key[1]}.json").write_text(J.dumps({"elements": [
+                    {"type": "node", "lon": ll(400, 300)[0], "lat": ll(400, 300)[1], "tags": {"railway": "subway_entrance", "ref": "3"}}]}), "utf-8")
+                # улица: от точки на восток 400 м, потом на север 300 м — по прямой 500 м, пешком 700 м
+                ways = [[ll(0, 0), ll(400, 0)], [ll(400, 0), ll(400, 300)]]
+                (Path(d) / "place" / f"walk_{key[0]}_{key[1]}_2400.json.gz").write_bytes(gzip.compress(J.dumps(ways).encode()))
+                r = S.rail_route(lon, lat)
+            finally:
+                S.CACHE = old; S._ROUTE_MEMO.clear(); S._PLACE_MEMO.clear()
+        self.assertEqual(r["route_m"], 700)
+        self.assertEqual(r["straight_m"], 500)
+        self.assertEqual(r["station"], "вход 3")
+
+
 class Projects(unittest.TestCase):
     def setUp(self):
         import tempfile

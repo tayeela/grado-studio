@@ -226,6 +226,15 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.38.0: UX queue, batch 4 (ТЭП and analysis).** Density target from ПЗЗ (`pzzTarget`: subzones with a
+  number inside the boundary, area-weighted, 0 counts) — set on the ПЗЗ download while the slider is the untouched 25,
+  «взять цель» in «Показатели». K1 by walking route: `server.rail_route` — Overpass `way(around:2400)` walkable highways
+  (cached `~/.grado2/cache/place/walk_*.json.gz`), graph on shared OSM nodes, Dijkstra from the territory centre to the nearest
+  entrance/station (snap ≤ 150 m); `/api/rail_route` runs after `/api/place`, K1 follows it while «по району» is on.
+  Measured at Владыкино: 323 m by streets vs 280 m straight (first call ~2 min of Overpass, then from disk). Four points inside
+  the boundary are checked for other districts → a note. «Радиусы обслуживания»: Moscow 2151-ПП / 2152-ПП options with the radius
+  by okrug (ЦАО school «в границах ЦАО» — no radius). Tests: server +1 (route 700 m around a block vs 500 m straight).
+
 - **2026-09-24, ГРАДО 2 v0.37.0: UX queue, batch 3 (drawing).** New commands in `web/cad.js`: REC options «Сопряжение»/«Фаска»
   (remembered like AutoCAD, `RECC`; `G.filletAll`/`chamferAll` on the rectangle), EL (`G.ellipsePts`, cadcore +2 checks),
   H/BH (click inside a contour → the smallest polygon or closed line around the point is copied into layer «Штриховка»;

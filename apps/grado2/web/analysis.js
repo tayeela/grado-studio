@@ -2,8 +2,14 @@
    баланс территории. Каждый узел объясняет результат словами: у объектов его выхода есть поле «Пояснение», оно
    подписывается на карте, пока узел выбран. «В слой» в окне графа делает выход обычным слоем проекта (Bake). */
 
-// радиусы обслуживания — СП 42.13330.2016, табл. 10.1 и 10.2 (сверено по тексту свода; московские 2151-ПП/2150-ПП — отдельно)
+// радиусы обслуживания: московские НГП (2151-ПП табл. 1.4.1–1.4.2 п. 4, 2152-ПП табл. 1.3.1 — радиус зависит от округа
+// территории, округ берётся из «Показателей») и федеральный СП 42.13330.2016, табл. 10.1 и 10.2. Поликлиники по 2150-ПП
+// нормируются временем транспортно-пешеходного маршрута (20 / 30 мин) — радиусом их не проверить, остаётся СП.
+const CAO = ok => /Центральн/i.test(ok || ""), TAO = ok => /Троицк/i.test(ok || "");
 const SERVICES = {
+  "детские сады · Москва (2151-ПП)": { kinds: ["детский сад"], r: ok => CAO(ok) ? 500 : 300, norm: "2151-ПП, табл. 1.4.1 п. 4 (многоквартирная застройка)" },
+  "школы · Москва (2151-ПП)": { kinds: ["школа"], r: ok => CAO(ok) ? null : 1000, norm: "2151-ПП, табл. 1.4.2 п. 4 (многоквартирная застройка)" },
+  "аптеки и магазины · Москва (2152-ПП)": { kinds: ["аптека"], r: ok => TAO(ok) ? 800 : 500, norm: "2152-ПП, табл. 1.3.1 п. 1.1" },
   "детские сады · 300 м": { kinds: ["детский сад"], r: 300, norm: "СП 42.13330.2016, табл. 10.1" },
   "школы · 500 м": { kinds: ["школа"], r: 500, norm: "СП 42.13330.2016, табл. 10.2" },
   "поликлиники · 1000 м": { kinds: ["поликлиника"], r: 1000, norm: "СП 42.13330.2016, табл. 10.1" },
@@ -18,8 +24,10 @@ function NRadius() {
   finish(this, "op", 260);
 }
 NRadius.title = "Радиусы обслуживания"; NRadius.prototype.onExecute = function () {
-  const sv = SERVICES[this.widgets[0].value] || Object.values(SERVICES)[0], r = sv.r * (this.widgets[1].value ? .7 : 1);
+  const sv = SERVICES[this.widgets[0].value] || Object.values(SERVICES)[0], ok = RESULT.tepNode ? tepParams(RESULT.tepNode).okrug : "";
+  const r0 = typeof sv.r === "function" ? sv.r(ok) : sv.r, r = r0 == null ? null : r0 * (this.widgets[1].value ? .7 : 1);
   const pts = socialPoints(sv.kinds), key = [DATA["osm.social"]?.rev, this.widgets[0].value, r, TERR_REV].join("|");
+  if (r == null) { this._ck = key; this._out = [null, null]; this._fc = []; this.setOutputData(0, null); this.setOutputData(1, null); this.info = `в ЦАО школа нормируется «в границах ЦАО» (${sv.norm}) — радиусом не проверяется`; return; }
   if (this._ck !== key) {
     this._ck = key;
     const circles = pts.map(p => turf.circle(p, r, { units: "meters", steps: 48, properties: { "Пояснение": `${p.properties["Название"] || p.properties["Вид"]}: ${Math.round(r)} м` } }));

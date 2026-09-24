@@ -125,10 +125,12 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - ~~2026-09-23 (v0.23.0, precise drawing): lengths in «Вершины», polar angles, perpendicular/parallel snaps, typed rotation~~ —
   done (lengths at vertices v0.25, polar steps and perpendicular v0.24, typed rotation = RO, parallel snap v0.37.0).
   Test note only: the first mouse moves right after a click sometimes do not show the snap marker in headless runs.
-- 2026-09-23 (v0.22.0, acceptance on ТиНАО): the ТЭП density target defaults to 25 everywhere; on a ТиНАО site with ПЗЗ
-  subzones it should come from their density. Urban blocks leave north-side sections under 50 % insolated facades.
-- 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». Open: K1 is straight distance × 1.3, not a walking route; a
-  territory across two districts takes the district of its centre; ВРИ cost and social compensation are not computed;
+- 2026-09-23 (v0.22.0, acceptance on ТиНАО): ~~the ТЭП density target defaults to 25 everywhere~~ — done v0.38.0 (area-weighted
+  ПЗЗ subzone density: taken automatically on the ПЗЗ download while the target is untouched, «взять цель» in «Показатели»).
+  Still: urban blocks leave north-side sections under 50 % insolated facades.
+- 2026-09-23 (v0.21.0): ТЭП follows «Калькулятор 2.0». ~~K1 straight × 1.3; two districts~~ — done v0.38.0 (K1 by a walking
+  route over OSM streets and paths from the territory centre, `/api/rail_route`; a boundary spanning districts is named in a
+  note — zone and K2 still follow the centre). Open: ВРИ cost and social compensation are not computed (owner: data P, Kp, УПКС);
   ~~the «Территория расчёта» block has no «сброс» for territory mode and percentages~~ (done v0.35.0).
 
 - 2026-09-23 (v0.20.0, partly done): on the real Хорошёво site (13.2 ha buildable in 6 irregular parts) plots are now clipped
@@ -167,8 +169,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (done v0.15.0): segmented controls are an even grid; five typologies sit in 3 + 2 equal cells, nothing cut.
 - 2026-09-23 (done v0.14.0): graph node titles, list values and the info line are cut with «…» to the node width;
   the list menu still shows full names.
-- 2026-09-23 (partly done v0.21.0: ТЭП uses 2151-ПП/2150-ПП norms and zones): Moscow's own social norms are not wired into radii; radii are federal СП 42.13330 — say so when a
-  Moscow document is prepared.
+- ~~2026-09-23: Moscow's own social norms are not wired into radii~~ — done v0.38.0: «Радиусы обслуживания» offers 2151-ПП
+  (ДОО 300 м / ЦАО 500 м, школы 1000 м / ЦАО «в границах ЦАО») and 2152-ПП (аптеки 500 м / ТАО 800 м) by the territory's okrug;
+  поликлиники by 2150-ПП are minutes of a transit route — the СП radius stays for them.
 - 2026-09-23 (done v0.16.0): a sheet's frame is shown on the map (button in the sheet row) and dragged with the mouse
   like an AutoCAD viewport; the sheet keeps its own centre («Вернуть» centres it on the territory again). Content «таблица
   ТЭП» makes a sheet with all indicators in up to three columns. The «Листы» window opens as a strip at the bottom.
