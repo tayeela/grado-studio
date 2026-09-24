@@ -856,6 +856,7 @@ function syncRibbon() {
 }
 let hintOverride = null;
 const setHint = t => { hintOverride = t; $("stHint").textContent = t; };
+window.setHint = setHint;                // ход выгрузки из окна «Данные» (app.js) пишется сюда же
 function syncStatus() {
   hintOverride = null; const l = lyr(CUR), n = SEL.length;
   if (UIS.tool === "cmd" && CAD.active()) { $("stHint").textContent = CAD.prompt(); $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; return; }

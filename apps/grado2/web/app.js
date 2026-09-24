@@ -134,9 +134,9 @@ function renderSources() {
   const groups = {}; Object.entries(SOURCES).forEach(([k, s]) => (groups[s.kind] ||= []).push(k));
   const stale = (window.STALE_OGD || []).filter(k => DATA[k] && !DATA[k].shp);
   $("srcList").innerHTML = (stale.length ? `<div class="note warn">${stale.map(k => "«" + esc(DATA[k].title) + "»").join(", ")} ${stale.length === 1 ? "выгружен" : "выгружены"} до v0.32 и ${stale.length === 1 ? "стоит" : "стоят"} на ~7,7 м в стороне (портал отдавал смещённый GeoJSON). Ваши правки объектов сохранятся. <button class="btn" id="bStale">Выгрузить заново</button></div>` : "")
-    + Object.entries(groups).map(([g, ks]) => `<div class="src"><div class="srch"><i data-lucide="database"></i><b>${GROUP[g] || g}</b></div>` + ks.map(k => {
+    + Object.entries(groups).map(([g, ks]) => `<div class="src"><div class="srch"><i data-lucide="database"></i><b>${esc(GROUP[g] || g)}</b></div>` + ks.map(k => {
     const d = DATA[k], e = ERRORS[k];
-    return `<label class="lr"><input type="checkbox" data-src="${k}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${d.fetched_at}${histText(d)}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
+    return `<label class="lr"><input type="checkbox" data-src="${esc(k)}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${esc(d.fetched_at)}${esc(histText(d))}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
   }).join("") + `</div>`).join("") + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
     + `<div id="fgBox">${fgHTML()}</div>`
     + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В графе анализа слои доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
@@ -193,15 +193,19 @@ async function fgPick(uin) {
 async function fgLoad() {
   const [w, s, e, n] = turf.bbox(buf(TERR, 60)); FG.msg = "Загрузка слоёв документа: портал отдаёт документ целиком, может занять минуту…"; fgRender(); busy(true);
   try {
-    const r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: [w, s, e, n] });
-    let n2 = 0; const empty = Object.values(r.layers).filter(v => !v.features.features.length).map(v => v.title.replace("ФГИС ТП: ", ""));
+    const epoch = window.PROJ_EPOCH, r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: [w, s, e, n] });
+    if (epoch !== window.PROJ_EPOCH) { FG.msg = "Выгрузка для прежнего проекта отброшена."; return; }
+    let n2 = 0; const reps = []; const empty = Object.values(r.layers).filter(v => !v.features.features.length).map(v => v.title.replace("ФГИС ТП: ", ""));
     for (const [k, v] of Object.entries(r.layers)) {
       if (!v.features.features.length) continue;                 // пустой в этой области слой не засоряет список
       SOURCES[k] = { title: v.title, kind: "fgistp" };
-      DATA[k] = { ...v, fc: v.features, count: v.features.features.length, fields: [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))], original: v.features };
-      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, v.features); const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l); n2 += DATA[k].count;
+      // повторная загрузка слоя — как перевыгрузка: ваши правки, нарисованное и имя слоя сохраняются
+      const prev = DATA[k], m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
+      if (m) reps.push(`«${prev.title}»: ${m.text}`);
+      DATA[k] = { ...v, title: prev?.title || v.title, fc: m ? m.fc : v.features, count: v.features.features.length, fields: [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))], original: v.features };
+      layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc); const l = ensureLayer(k, v.title); assignCats(l, true); restyle(l); n2 += DATA[k].count;
     }
-    FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}`; dataRev++;
+    FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`; dataRev++;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
 }
 $("bLoad").onclick = async () => {
@@ -216,6 +220,7 @@ $("bLoad").onclick = async () => {
     rest = keys.filter(k => !/^(osm|egko|yandex)\./.test(k)), parts = [rest, osm, egko, yandex].filter(p => p.length);
   const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [], empty = [], same = [];
   ERRORS = {}; $("bLoad").disabled = true; busy(true);
+  const epoch = window.PROJ_EPOCH; let dropped = false;
   const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
   hint();
   // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ): сервер сообщает ход, показываем процент
@@ -229,6 +234,8 @@ $("bLoad").onclick = async () => {
   await Promise.all(parts.map(async part => {
     try {
       const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part });
+      // пока шла выгрузка, открыт или создан другой проект: результат относится к прежнему и в новый не пишется
+      if (epoch !== window.PROJ_EPOCH) { dropped = true; return; }
       Object.assign(ERRORS, r.errors);
       for (const [k, v] of Object.entries(r.layers)) {
         // пустая первая выгрузка не заводит слой в списке: в области этого нет, сказано в итоге
@@ -246,11 +253,12 @@ $("bLoad").onclick = async () => {
         assignCats(l, true); restyle(l); nLayers++;
         if (m) { if (m.counts.added || m.counts.removed || m.counts.changed || !/^\+0 новых, −0 исчезло, 0 изменились$/.test(m.text)) reports.push(`«${v.title}»: ${m.text}`); else same.push(v.title); fresh.push(...layerSrc[k].getFeatures().filter(f => m.mark.has(f.get("_key"))).map(f => ({ key: k, f }))); }
       }
-    } catch (err) { part.forEach(k => { ERRORS[k] = err.message; }); }
+    } catch (err) { if (epoch === window.PROJ_EPOCH) part.forEach(k => { ERRORS[k] = err.message; }); }
     pending.delete(part); dataRev++; renderSources(); if (pending.size) hint();
   }));
   if (poll) clearInterval(poll);
   busy(false); $("bLoad").disabled = false; window.syncStatus?.();
+  if (dropped) return toast("Выгрузка для прежнего проекта отброшена: пока она шла, открыт другой проект.");
   const ne = Object.keys(ERRORS).length;
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
   const pzzMsg = DATA["gisogd.pzz_sub"] && keys.includes("gisogd.pzz_sub") && RESULT.tepNode?.widgets[1].value === 25 && !RESULT.tepNode.properties?.pzzTarget && takePzzTarget(true)
@@ -266,7 +274,8 @@ function mergeDownload(key, prev, fc) {
   const byKey = list => new Map(list.filter(f => f.properties?._key).map(f => [f.properties._key, f]));
   const oldF = prev.original?.features || [], oldBy = byKey(oldF), newBy = byKey(fc.features);
   const cur = writeFC(layerSrc[key].getFeatures()).features, curBy = byKey(cur);
-  if (!oldBy.size || !newBy.size) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
+  // пустая выгрузка с ключами идёт обычным путём: правленные вами объекты остаются с пометкой, счёт «−N исчезло» виден
+  if (!oldBy.size || (!newBy.size && fc.features.length)) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
     const drawn = cur.filter(f => !f.properties?._key);            // слой заменяется, но нарисованное вами в нём остаётся
     return drawn.length ? { fc: { type: "FeatureCollection", features: fc.features.concat(drawn) }, text: `слой заменён новой выгрузкой, нарисованные вами объекты (${drawn.length}) сохранены`, mark: new Set(), counts: {} } : null;
   }
@@ -499,14 +508,19 @@ function densityGoal() {
 function NTep() { this.addInput("посадка", "sketch"); this.addInput("сохраняемые", "geom"); this.addInput("ограничения", "geom"); this.addOutput("ТЭП", "tep");
   this.addWidget("slider", "доля жилья, %", 80, () => { }, { min: 0, max: 100, precision: 0, slider_color: "#c0a6d4" }); this.addWidget("slider", "цель, тыс. м²/га", 25, () => { }, { min: 5, max: 45, precision: 0, slider_color: "#c0a6d4" }); finish(this, "tep", 230); }
 NTep.title = "ТЭП · Москва, «Калькулятор 2.0»"; NTep.prototype.onExecute = function () {
-  const sk = this.getInputData(0) || [], kept = this.getInputData(1), lim = this.getInputData(2), share = this.widgets[0].value / 100, target = this.widgets[1].value;
+  // принятый в проект эскиз (и ваши правки в нём) считается вместо превью графа, пока его слой есть в проекте
+  const bk = this.properties?.baked, bd = bk && DATA[bk];
+  if (bk && !bd) this.properties.baked = null;
+  const sk = bd ? bakedSketch(bd) : this.getInputData(0) || [], kept = this.getInputData(1), lim = this.getInputData(2), share = this.widgets[0].value / 100, target = this.widgets[1].value;
   const tp = tepParams(this); placeLookup(this);
-  const key = [gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
+  const key = [bd ? `${bk}:${bd.rev || 0}:${sk.length}` : gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по принятому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
+const bakedSketch = d => d.fc.features.filter(f => /Polygon/.test(f.geometry?.type)).map(f => ({ f, m2: m2(f), floors: +f.properties["Этажность"] > 0 ? +f.properties["Этажность"] : 1,
+  maxF: /ИЖС|Блокированные/.test(f.properties["Типология"] || "") ? 3 : undefined }));
 
 /* Территориальные параметры ТЭП (как маркер «Калькулятора 2.0»): район → образовательная зона (2151-ПП), K2 (945-ПП прил. 3,
    внутри ТТК 0,2), ТиНАО; K1 — по расстоянию до ближайшей станции. Определяются по центру территории, правятся руками
@@ -927,7 +941,8 @@ function renderParams() {
     const r = e.target.closest("[data-run]"); if (r) {
       if (r.dataset.run === "1" && !TERR) return toast("Эскиз строится внутри границы территории, а её нет. Задайте границу: команда BO (кнопка «Граница» на ленте) или «Пример территории» в окне «Данные».");
       if (r.dataset.run === "1" && !RESULT.site) return toast("Пятно застройки пусто: вся территория занята запретами или сохраняемыми зданиями. Проверьте окно «Ограничения».");
-      pn.properties.run = r.dataset.run === "1"; pn._ck = null; recompute(true); renderParams(); syncPreview(); return; }
+      pn.properties.run = r.dataset.run === "1"; pn._ck = null;
+      if (pn.properties.run && RESULT.tepNode?.properties?.baked) RESULT.tepNode.properties.baked = null;   /* новый эскиз — показатели снова по графу */ recompute(true); renderParams(); syncPreview(); return; }
     if (e.target.closest("[data-bake]")) return bakeSketch();
     if (e.target.closest("[data-check]")) return window.runCheck?.(null);
     const b = e.target.closest("[data-seg]"); if (!b) return; const c = cs[+b.dataset.seg]; c.n.widgets.find(x => x.name === c.w).value = b.dataset.v;
@@ -945,6 +960,7 @@ function bakeSketch() {
   DATA[key] = { title, source: "эскиз из графа, принят " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
   layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
   const l = ensureLayer(key, title, "poly");
+  if (RESULT.tepNode) { (RESULT.tepNode.properties ||= {}).baked = key; RESULT.tepNode._key = null; }   // «Показатели» — по принятому слою
   const many = new Set(sk.map(b => b.floors)).size > 1;          // разная этажность — диапазоны, одна — единый цвет
   l.style = ST({ mode: many ? "grad" : "single", fill: "#6fa6e6", stroke: "#1a4f94", width: .8, opacity: .9, label: "Этажность", grad: { field: "Этажность", n: 4, ramp: "blue", method: "equal" } });
   restyle(l);
@@ -1091,7 +1107,7 @@ $("bGen").onclick = async () => {
   const widthsOf = typ => typ === "ИЖС" ? [base.width] : typ === "Блокированные" ? [12, 14] : typ === "Квартал" ? [14, 18] : typ === "Урбан-блоки" ? [16] : [14, 17];
   const cands = []; for (const typ of TYPOLOGIES) { if (LOWRISE.has(typ) && target > 10) continue;
     for (const width of widthsOf(typ)) for (const angle of [0, 90]) for (const block of typ === "Урбан-блоки" ? [80, 110] : [base.block]) cands.push({ typ, width, angle, block }); }
-  const NINS = 8, total = cands.length + NINS + 1, run = varRun = { stop: false }, tick = () => new Promise(r => setTimeout(r, 0));
+  const NINS = 8, total = cands.length + NINS + 1, run = varRun = { stop: false }, epoch = window.PROJ_EPOCH, tick = () => new Promise(r => setTimeout(r, 0));
   busy(true); $("bGen").hidden = true; $("bStopVar").hidden = false; $("bStopVar").disabled = false; $("varProg").hidden = false; $("bBakeVar").disabled = true; VARS = [];
   $("vlist").innerHTML = `<div class="empty">Подбор идёт: сначала посадка всех ${cands.length} вариантов, потом инсоляция лучших ${NINS}. «Стоп» оставит уже посчитанное.</div>`;
   try {
@@ -1113,6 +1129,7 @@ $("bGen").onclick = async () => {
     VARS.sort((a, b) => a.score - b.score);
     varProgress(total - 1, total, "Показатели лучших вариантов…");
     await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target, tepParams(t)); }));
+    if (epoch !== window.PROJ_EPOCH) { VARS = []; return toast("Подбор вариантов для прежнего проекта отброшен."); }
     varSel = -1; renderVars();
     if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
     const msg = run.stop ? `Подбор остановлен: вариантов ${VARS.length} из ${cands.length}${VARS.some(v => v.own == null) ? ", у части инсоляция не посчитана (—)" : ""}.` : `Вариантов: ${VARS.length}.`;
@@ -1137,7 +1154,7 @@ $("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариан�
 $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-var]"); if (!b) return; varSel = +b.dataset.var; const v = VARS[varSel], p = RESULT.placeNode;
   const setWv = (name, val) => { const w = p.widgets.find(w => w.name === name); if (w) w.value = val; };
   setWv("типология", v.typ); setWv("ширина корпуса, м", v.width); setWv("поворот, °", v.angle); if (v.block) setWv("квартал, м", v.block); setWv("этажность по", FLOOR_MODES[1]);
-  p.properties.run = true; syncPreview(); recompute(); renderParams(); renderVars(); toast(`Вариант «${vName(v)}» перенесён в граф: на карте эскиз этого варианта.`); });
+  p.properties.run = true; p._ck = null; syncPreview(); recompute(true); renderParams(); renderVars(); toast(`Вариант «${vName(v)}» перенесён в граф: на карте эскиз этого варианта.`); });
 
 /* ================= плавающие окна и панели ================= */
 // окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
@@ -1352,7 +1369,9 @@ document.querySelectorAll(".win").forEach(w => {
   h.addEventListener("dblclick", e => {
     if (e.target.closest("button,input,select")) return;
     if (w.classList.contains("docked")) { floatWin(w); placeWin(w); winFront(w); }
-    else { const r = w.getBoundingClientRect(), m = mapBox(); dockWin(w, r.left + r.width / 2 < m.left + m.width / 2 ? "l" : "r"); }
+    else { const r = w.getBoundingClientRect(), m = mapBox(), side = r.left + r.width / 2 < m.left + m.width / 2 ? "l" : "r";
+      // узкое окно: боковая панель не выезжает поверх карты — окно встаёт вкладкой под картой, сторона запоминается
+      if (narrow()) { (WST[w.id] ||= {}).dock = side; dockWin(w, "b", true); } else dockWin(w, side); }
     requestAnimationFrame(() => WIN_OPEN[w.id]?.());
   });
   // высота встроенного окна в боковой панели — за верхнюю кромку
@@ -1399,7 +1418,9 @@ addEventListener("resize", () => {
 });
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
-$("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark"; };
+$("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } };
+try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { }
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS

@@ -2,6 +2,9 @@
    автосохранение с восстановлением после перезагрузки страницы.
    В файле: граница, слои (порядок, стиль, видимость), их данные с исходной выгрузкой, граф, вид карты. */
 
+// litegraph приходит полной сборкой с демо-узлами (сеть, файлы, websocket): из файла проекта их не создать
+Object.keys(LiteGraph.registered_node_types).filter(t => !/^(Данные|Параметры|Геометрия|Эскиз|Показатели|Анализ)\//.test(t))
+  .forEach(t => LiteGraph.unregisterNodeType(t));
 const PROJ = { name: null, file: null, dirty: false, tick: 0, savedTick: 0, autoTick: 0, loading: true };   // loading до projectStart: стартовые пересчёты — не правки
 const PROJ_FORMAT = "grado2", PROJ_VERSION = 2;
 /* Формат проекта с номером версии: файл старой версии при открытии проходит миграции по порядку, файл новее
@@ -41,7 +44,7 @@ function collectProject() {
     format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, file: PROJ.file, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
     territory: TERR,
-    imports: Object.fromEntries(Object.entries(SOURCES).filter(([k]) => k.startsWith("import:"))),
+    imports: Object.fromEntries(Object.entries(SOURCES).filter(([k, s]) => k.startsWith("import:") || s.kind === "fgistp")),
     checked: [...CHECKED],
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
@@ -67,9 +70,12 @@ function projectJSON(extra) {
 }
 function clearProject() {
   PROJ.askName = null;                                           // согласие заменить файл относится к прежнему проекту
+  window.PROJ_EPOCH = (window.PROJ_EPOCH || 0) + 1;              // идущие выгрузки и подбор вариантов относятся к прежнему проекту
+  if (typeof varRun !== "undefined" && varRun) varRun.stop = true;
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
-  Object.keys(SOURCES).filter(k => k.startsWith("import:")).forEach(k => delete SOURCES[k]);
+  Object.keys(SOURCES).filter(k => k.startsWith("import:") || SOURCES[k].kind === "fgistp").forEach(k => delete SOURCES[k]);
+  Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "" });   // штамп нового проекта — не от прежнего
   TERR = null; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ALBUM.sheets.length = 0; ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
@@ -99,7 +105,7 @@ function applyProject(p) {
     (p.layers || []).forEach(s => { const l = lyr(s.key); if (l) l.group = s.group || null; });
     const order = (p.layers || []).map(s => s.key);            // порядок прорисовки — как в файле
     LYR.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
-    normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) restyle(l); });
+    normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== (l._maxDen || 0)) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     VIEWS.push(...(p.views || []));
     Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "" }, p.album?.meta || {}); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []));
@@ -109,13 +115,15 @@ function applyProject(p) {
     if (p.view?.basemap && p.view.basemap !== BASE) setBasemap(p.view.basemap);
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
     applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview();
+    window.renderSheets?.(); window.renderViews?.();
   } finally { PROJ.loading = false; }
   // file — имя файла в папке проектов, в который этот проект сохранялся (у открытого с диска файла его нет):
   // по нему «Сохранить» отличает свой файл от чужого с тем же названием
-  PROJ.name = p.name || null; PROJ.file = p.file !== undefined ? p.file : p.name || null; PROJ.dirty = !!p.dirty; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle();
+  PROJ.name = p.name || null; PROJ.file = p.file !== undefined ? p.file : p.name || null; PROJ.dirty = !!p.dirty; PROJ.autoTick = PROJ.tick;
+  PROJ.savedTick = p.dirty ? -1 : PROJ.tick; syncProjTitle();      // восстановленная несохранённая правка остаётся несохранённой
   // слои ГИС ОГД и ЕГКО из проекта до v0.32 выгружены из GeoJSON портала и стоят на ~7,7 м в стороне: сказать и дать перевыгрузить
-  const ver = (p.app || "").match(/(\d+)\.(\d+)/), old = !ver || +ver[1] === 0 && +ver[2] < 32;
-  window.STALE_OGD = old ? Object.keys(DATA).filter(k => /^(gisogd|egko)\./.test(k) && DATA[k].fetched_at && !DATA[k].shp) : [];
+  // с v0.32 сервер ставит shp всем слоям ГИС ОГД и ЕГКО: слой без метки смещён, в какой бы версии проект ни сохраняли
+  window.STALE_OGD = Object.keys(DATA).filter(k => /^(gisogd|egko)\./.test(k) && DATA[k].fetched_at && !DATA[k].shp);
   if (STALE_OGD.length) { renderSources(); toast(STALE_OGD.length === 1 ? "В проекте слой ГИС ОГД / ЕГКО, выгруженный до v0.32: он стоит на ~7,7 м в стороне. Окно «Данные» → «Выгрузить заново»."
     : `В проекте ${plural(STALE_OGD.length, ["слой", "слоя", "слоёв"])} ГИС ОГД / ЕГКО, выгруженных до v0.32: они стоят на ~7,7 м в стороне. Окно «Данные» → «Выгрузить заново».`); }
 }
@@ -163,6 +171,7 @@ function newProject() {
   PROJ.loading = true;
   try { clearProject(); graph.configure(JSON.parse(DEFAULT_GRAPH)); dataRev++; lastSig = ""; recompute(true); renderParams(); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncStatus(); }
   finally { PROJ.loading = false; }
+  window.renderSheets?.(); window.renderViews?.();
   PROJ.name = PROJ.file = null; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle(); autosave(true);
   toast("Новый проект. Прежний остался в папке проектов, если был сохранён."); winOpen("wProjects", false);
 }
@@ -171,7 +180,7 @@ const DEFAULT_GRAPH = JSON.stringify(graph.serialize());          // граф п
 // несохранённое не теряем молча: второй выбор того же действия в течение 4 с подтверждает
 let lossAt = 0;
 function confirmLoss(what) {
-  if (!PROJ.dirty || PROJ.savedTick === PROJ.tick && PROJ.name) return true;
+  if (!PROJ.dirty) return true;
   if (Date.now() - lossAt < 4000) { lossAt = 0; return true; }
   lossAt = Date.now(); toast(`${what} Несохранённые изменения пропадут — повторите действие, чтобы подтвердить, или сначала сохраните (Ctrl+S).`); return false;
 }
