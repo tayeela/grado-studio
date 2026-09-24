@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.42.0: guest parking of ИЖС and blocked houses by 945-ПП (owner: «все по 945»).** Permanent places
+  1,6 per house (Прил. 5 п. 2, coefficient C for ИЖС and blocked houses; a blocked unit is a house) stay on the own plot (the
+  outbuilding/garage); guest places = 10 % of them, rounded up (п. 6.2.3.2), per проезд for the houses facing it (edge rows go
+  to the nearest проезд). They are 2,5 m lay-bys along the проезд, 6 m per place, in groups at most 400 m apart so that no house
+  is farther than 200 m (п. 6.1.2.5.2); a local street allows guest places on the adjacent side (Прил. 7). What does not fit is
+  said in the node note. The accepted streets layer is styled by «Вид» and carries «Мест» and «Норма». Node info counts plots
+  without outbuildings and shows «гостевых мест N (945-ПП)». Test site: ИЖС 49 places for 289 houses, blocked 173.
+  e2e +1 check. The ТЭП «Гостевые парковки» still comes from the preset formula (flat area / 50 / 2,1 × 0,8 × 10 %).
+
 - **2026-09-24, ГРАДО 2 v0.41.0: UX queue — owner's decisions and the rest.**
   - ТЭП: «Площадь сохранения и ограничений» = ЗОУИТ and other bans ∪ footprints of kept buildings (owner, 24.09.2026); density
     from SPP is new SPP over the land that is really free.

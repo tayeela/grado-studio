@@ -143,7 +143,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   houses. ~~No outbuildings; blocked rows packed from one end; ТЭП for ИЖС without 50 m² per person~~ — done
   (v0.41.0: a 4 × 6 m outbuilding/garage at the back of each ИЖС plot; blocked rows centred in the strip with memoised
   plot clipping; 50 m²/person since v0.21). Still open: strips stay straight (not bent to the boundary — needs a
-  boundary-following layout, not a grid); guest parking for ИЖС needs a norm from the owner (945-ПП gives none for ИЖС).
+  boundary-following layout, not a grid); ~~guest parking for ИЖС~~ (done v0.42.0 by 945-ПП, owner: «все по 945»).
 
 - ~~2026-09-23 (audit v0.18.0): autosave, «Правила» counting, norms re-check~~ — done v0.36.0: unchanged layer data is not
   serialised again (100 000 objects: 111 → 5 ms), rule counts cached per data version and rules, the norms check runs in
