@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.41.0: UX queue — owner's decisions and the rest.**
+  - ТЭП: «Площадь сохранения и ограничений» = ЗОУИТ and other bans ∪ footprints of kept buildings (owner, 24.09.2026); density
+    from SPP is new SPP over the land that is really free.
+  - Insolation: schools and kindergartens (Назначение/Тип/Наименование: школа, гимназия, лицей, детский сад, ясли, OSM school,
+    kindergarten) are protected like housing. Relief: `groundAt` interpolates «Рельеф: горизонтали» (6 nearest vertices, IDW,
+    50 m index); prisms carry `g` and `h = g + height`, front points sit at `g + z`, the ceiling is computed in absolute marks
+    and each cell subtracts its own ground. Without relief the ground is flat as before. insol tests +2.
+    **Pitfall:** `const GROUND` already existed in app.js (ground colours); all scripts share one global scope — the relief
+    cache is `RELIEF_G`. Check top-level names across scripts before adding one.
+  - DWG through the free ODA File Converter: import (.dwg → DXF → import_dxf) and export (grado2.dwg next to grado2.dxf);
+    without the converter a clear message. Not verified with a real converter here.
+  - Windows dock from the keyboard: Tab to a header, Alt+← → ↓ / Alt+↑. F1 text updated.
+  - ИЖС: an outbuilding 4 × 6 m at the back of each plot (ground layer, not in SPP). Blocked rows start at half the leftover of
+    a dry run, so the strip is centred; plot clipping is memoised between passes. e2e: ИЖС check counts outbuildings.
+
 - **2026-09-24, ГРАДО 2 v0.40.0: UX queue — audit leftovers.** «Объём» shadows are the footprint plus one quad per edge,
   filled once (nonzero, quads oriented one way) — courtyards and L/C buildings no longer darken the whole yard. The solar
   ceiling protects neighbours within height/tan 10° (tallest ПЗЗ height in the boundary, 75 m without ПЗЗ), 200…600 m; the log

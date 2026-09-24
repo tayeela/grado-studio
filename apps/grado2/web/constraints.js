@@ -24,7 +24,35 @@ function fireGap(f) {
   if (/смешан|проч|иные|металл/.test(m)) return 8;
   return 6;
 }
-const isResidential = f => { const p = f.properties, s = String(p["Назначение"] || p["Тип здания"] || "").toLowerCase(); return !/нежил/.test(s) && /жил|многокварт|residential|apartments|house|detached|terrace|bungalow|cabin|semi|dormitory/.test(s); };
+const isResidential = f => { const p = f.properties, s = String(p["Назначение"] || p["Тип здания"] || "").toLowerCase(); return !/нежил/.test(s) && /жил|многокварт|residential|apartments|house|detached|terrace|bungalow|cabin|semi|dormitory/.test(s) || isChildren(f); };
+// школы и детские сады нормируются по инсоляции наравне с жильём (СанПиН 1.2.3685-21: групповые, спальни, классы) —
+// раньше они шли как прочее нежилое и солнечный потолок их не защищал
+const isChildren = f => { const p = f.properties, s = [p["Назначение"], p["Тип здания"], p["Наименование"], p["Вид"]].join(" ").toLowerCase();
+  return /школ|гимнази|лице[йя]|детск(ий|ого) сад|дошкол|ясли|school|kindergarten/.test(s); };
+/* Рельеф: отметка земли по горизонталям (слой «Рельеф: горизонтали»), средневзвешенная по ближайшим вершинам. Все высоты
+   инсоляции — от одной отметки (самой низкой горизонтали): дом на склоне выше затеняет и выше получает солнце.
+   Без загруженного рельефа земля плоская, как прежде. */
+let RELIEF_G = null;
+function groundAt(x, y) {
+  const d = DATA["relief.contours"], key = d ? d.rev + ":" + TERR_REV : "none";
+  if (!RELIEF_G || RELIEF_G.key !== key) {
+    const pts = [];
+    (d?.fc.features || []).forEach(f => { const e = +(f.properties["Высота, м"] ?? f.properties.elev); if (!isFinite(e)) return;
+      const g = f.geometry; (g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : []).forEach(l => l.forEach(c => { const q = toXY(c); pts.push([q[0], q[1], e]); })); });
+    const base = pts.length ? Math.min(...pts.map(p => p[2])) : 0, idx = new Map(), C = 50;
+    pts.forEach(p => { const k = Math.floor(p[0] / C) + "," + Math.floor(p[1] / C); (idx.get(k) || idx.set(k, []).get(k)).push(p); });
+    RELIEF_G = { key, pts, base, idx, C };
+  }
+  const G = RELIEF_G; if (!G.pts.length) return 0;
+  let near = [];
+  for (let r = 1; r <= 6 && near.length < 6; r++) { near = [];
+    for (let i = -r; i <= r; i++) for (let j = -r; j <= r; j++) near.push(...(G.idx.get((Math.floor(x / G.C) + i) + "," + (Math.floor(y / G.C) + j)) || [])); }
+  if (!near.length) return 0;
+  near = near.map(p => [p[2], Math.hypot(p[0] - x, p[1] - y)]).sort((a, b) => a[1] - b[1]).slice(0, 6);
+  if (near[0][1] < .5) return near[0][0] - G.base;
+  const w = near.map(n => 1 / n[1] ** 2); return near.reduce((s, n, i) => s + n[0] * w[i], 0) / w.reduce((a, b) => a + b, 0) - G.base;
+}
+const ringMid = r => { let x = 0, y = 0; r.forEach(p => { x += p[0]; y += p[1]; }); return [x / r.length, y / r.length]; };
 const decisionOf = f => String(f.properties["Решение"] || "сохраняем");
 
 function consLayer(key, title, fc, geom, style) {
@@ -99,7 +127,8 @@ async function computeConstraints() {
     if (CONS.use.insol) {
       const t0 = performance.now(), lat = turf.centroid(TERR).geometry.coordinates[1];
       const open = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
-      const prism = f => polys(f).map(p => ({ ring: open(p[0].map(toXY)), holes: p.slice(1).map(h => open(h.map(toXY))), h: floorsOf(f) * CONS.floorH, f }));
+      const prism = f => polys(f).map(p => { const ring = open(p[0].map(toXY)), g = groundAt(...ringMid(ring));
+        return { ring, holes: p.slice(1).map(h => open(h.map(toXY))), g, h: g + floorsOf(f) * CONS.floorH, f }; });
       const obst = kept.flatMap(prism), resid = kept.filter(isResidential).flatMap(prism);
       const ob = INSOL.obstacleIndex(obst), paths = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5));
       const pts = INSOL.frontPoints(resid, CONS.step, CONS.z);
@@ -113,14 +142,16 @@ async function computeConstraints() {
       const tRings = ringsXY(TERR)[0], inPoly = (x, y) => { let c = false; for (let i = 0, j = tRings.length - 1; i < tRings.length; j = i++) { const a = tRings[i], b = tRings[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) grid.inside[j * nx + i] = inPoly(tb[0] + (i + .5) * cell, tb[1] + (j + .5) * cell) ? 1 : 0;
       setHint("Инсоляция: солнечный потолок…"); await tick();
-      const { env, protectedRays } = INSOL.envelope(pts, paths, grid, { norm: CONS.norm * 60, cap: CONS.cap });
+      // потолок считается в отметках от общей базы рельефа; в клетке из него вычитается своя земля
+      const gmax = Math.max(0, ...obst.map(p => p.g || 0)) + 50, capAbs = CONS.cap + gmax;
+      const { env, protectedRays } = INSOL.envelope(pts, paths, grid, { norm: CONS.norm * 60, cap: capAbs });
       // ПЗЗ: предельная высота подзоны (где задана числом) — тоже потолок
       const pzz = polyFeats("gisogd.pzz_sub").filter(f => f.properties["Высота, м"] > 0).map(f => ({ f, h: +f.properties["Высота, м"] }));
       const cells = [];
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
         const n = j * nx + i; if (!grid.inside[n]) continue;
         const x = tb[0] + i * cell, y = tb[1] + j * cell, cx = toLL([x + cell / 2, y + cell / 2]);
-        const hp = pzz.find(z => safe(() => turf.booleanPointInPolygon(cx, z.f)))?.h ?? null, hs = env[n] >= CONS.cap - .01 ? null : Math.max(0, env[n]);
+        const hp = pzz.find(z => safe(() => turf.booleanPointInPolygon(cx, z.f)))?.h ?? null, hs = env[n] >= capAbs - .01 ? null : Math.max(0, env[n] - groundAt(x + cell / 2, y + cell / 2));
         const top = Math.min(hs ?? Infinity, hp ?? Infinity);
         if (top === Infinity) continue;                        // клетка без ограничения по высоте — пустая, карта под ней видна
         cells.push(turf.polygon([[toLL([x, y]), toLL([x + cell, y]), toLL([x + cell, y + cell]), toLL([x, y + cell]), toLL([x, y])]], {
@@ -217,7 +248,8 @@ $("consBody").addEventListener("click", e => { if (e.target.closest("#consRun"))
    · разрыв между новыми корпусами меньше противопожарного 6 м (СП 4.13130, I–II степень).
    Итог — слой точек «Проверка норм» с причиной у каждой точки, сводка в окне «Эскиз». */
 const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
-const prismsOf = (f, h) => polys(f).map(p => ({ ring: openRing(p[0].map(toXY)), holes: p.slice(1).map(q => openRing(q.map(toXY))), h, f }));
+const prismsOf = (f, h) => polys(f).map(p => { const ring = openRing(p[0].map(toXY)), g = groundAt(...ringMid(ring));
+  return { ring, holes: p.slice(1).map(q => openRing(q.map(toXY))), g, h: g + h, f }; });
 const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, protectR()); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
 let CHECK = null;                 // {key} — принятый слой, который перепроверяется после правки
 function sketchFromLayer(key) {
@@ -252,7 +284,7 @@ async function checkNorms(sk, title) {
   // соседи — теми же точками и шагом солнца (5 мин), что и солнечный потолок: иначе эскиз под потолком «терял» бы им норму
   const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step, CONS.z);
   const paths5 = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5)), ek = EXIST_KEY();
-  const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, ek, DATA[ek]?.rev, kept.length].join("|");
+  const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, ek, DATA[ek]?.rev, DATA["relief.contours"]?.rev, kept.length].join("|");
   if (nbBase?.sig !== sig || nbBase.nb0.length !== nb.length) {
     const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths5, { norm, reveal: CONS.reveal }, gen);
     nbBase = { sig, nb0 };

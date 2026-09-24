@@ -69,4 +69,11 @@ const yp = I.frontPoints([yardHouse], 5, 2).filter(p => p.yard);
 ok(yp.length === 16 && yp.every(p => { const cx = p.x - 30, cy = p.y - 30; return p.nx * cx + p.ny * cy < 0; }), `двор: ${yp.length} точек, все смотрят внутрь двора`);
 I.evalFront(yp, I.obstacleIndex([yardHouse]), paths, { norm: 120 });
 ok(yp.every(p => !p.worst.ok), "двор 20×20 м при высоте 30 м — норма во дворе не выполняется (затеняют свои стены)");
+// рельеф: дом на земле 10 м — окна на 10 + z, а стена 30 м на земле 0 затеняет его меньше, чем такой же дом на земле 0
+{ const low = { ring: [[0, -30], [40, -30], [40, -20], [0, -20]], h: 30, g: 0 }, sq = g => ({ ring: [[0, 0], [40, 0], [40, 10], [0, 10]], h: g + 15, g });
+  const pa = I.DATES.map(d => I.sunPath(55.75, d.day, 5));
+  const on = g => { const b = sq(g), pts = I.frontPoints([b], 4, 2).filter(p => p.ny < -0.9); I.evalFront(pts, I.obstacleIndex([low, b]), pa, { norm: 120 }); return pts; };
+  const p0 = on(0), p10 = on(10);
+  ok(p10.every(p => Math.abs(p.z - 12) < 1e-9) && p0.every(p => p.z === 2), "окно встаёт на свою землю: z = g + 2");
+  ok(p10.reduce((s, p) => s + p.worst.cont, 0) > p0.reduce((s, p) => s + p.worst.cont, 0), "дом выше на склоне получает больше солнца за той же стеной"); }
 console.log("все проверки пройдены");

@@ -52,6 +52,18 @@ class DxfRoundTrip(unittest.TestCase):
         texts = [e.dxf.text for e in ezdxf.read(io.StringIO(z.read("grado2.dxf").decode())).modelspace() if e.dxftype() == "TEXT"]
         self.assertEqual(texts, ["40,00"])
 
+    def test_dwg_without_converter_says_how(self):
+        import os
+        old = os.environ.pop("GRADO2_ODA", None)
+        try:
+            if dxf_io.oda_converter():
+                self.skipTest("ODA File Converter установлен")
+            with self.assertRaisesRegex(ValueError, "ODA File Converter"):
+                dxf_io.oda_convert(b"x", "dwg", "DXF")
+        finally:
+            if old:
+                os.environ["GRADO2_ODA"] = old
+
     def test_export_in_msk_matches_proj_and_ogd_import(self):
         sys.path.insert(0, str(HERE.parents[1] / "core/connectors/tests"))
         from test_crs import MSK_PROJ

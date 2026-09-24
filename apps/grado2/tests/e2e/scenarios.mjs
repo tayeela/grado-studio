@@ -222,10 +222,10 @@ export default async p => {
   // малоэтажные типологии и урбан-блоки: свои участки, дворы, улицы; этажность до 3; секции квартала — одно здание
   const low = await p.ev(`const pn=RESULT.placeNode, w0=pn.widgets[5].value; pn.widgets[5].value="заданной"; const out={};
     for (const typ of ["ИЖС","Блокированные","Урбан-блоки"]) { pn.widgets[0].value=typ; pn._ck=null; recompute(true); await new Promise(r=>setTimeout(r,300));
-      const sk=RESULT.sketch; out[typ]={n:sk.length, plots:(sk.plots||[]).length, streets:(sk.streets||[]).length, maxF:Math.max(...sk.map(b=>b.floors)), grp:new Set(sk.map(b=>b.grp)).size}; }
+      const sk=RESULT.sketch; out[typ]={n:sk.length, plots:(sk.plots||[]).filter(q=>q.kind!=="хозпостройка").length, sheds:(sk.plots||[]).filter(q=>q.kind==="хозпостройка").length, streets:(sk.streets||[]).length, maxF:Math.max(...sk.map(b=>b.floors)), grp:new Set(sk.map(b=>b.grp)).size}; }
     await runCheck(null); out.gap=catValues("cons:check","Нарушение").filter(x=>/разрыв/.test(x[0])).length;
     pn.widgets[0].value="Секции"; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return out`);
-  check(low["ИЖС"].n > 0 && low["ИЖС"].plots === low["ИЖС"].n && low["ИЖС"].maxF <= 3, `ИЖС: ${low["ИЖС"].n} домов на своих участках, не выше 3 этажей`);
+  check(low["ИЖС"].n > 0 && low["ИЖС"].plots === low["ИЖС"].n && low["ИЖС"].maxF <= 3 && low["ИЖС"].sheds > low["ИЖС"].n / 2, `ИЖС: ${low["ИЖС"].n} домов на своих участках, не выше 3 этажей, хозпостроек ${low["ИЖС"].sheds}`);
   check(low["Блокированные"].n > 0 && low["Блокированные"].plots > low["Блокированные"].n && low["Блокированные"].maxF <= 3 && low["Блокированные"].streets > 0, `блокированные: ${low["Блокированные"].n} домов, ${low["Блокированные"].plots} участков блоков, проезды`);
   check(low["Урбан-блоки"].n > low["Урбан-блоки"].grp && low["Урбан-блоки"].plots > 0 && low.gap === 0, `урбан-блоки: ${low["Урбан-блоки"].n} секций в ${low["Урбан-блоки"].grp} кварталах, дворы; вплотную стоящие секции квартала — не нарушение разрыва`);
 

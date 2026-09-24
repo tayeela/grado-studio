@@ -563,7 +563,9 @@ async function tepRequest(sketch, kept, lim, share, target, tp = {}) {
   const sppNew = sketch.reduce((s, b) => s + b.m2 * b.floors, 0), fpNew = sketch.reduce((s, b) => s + b.m2, 0);
   const sppKept = keptList.reduce((s, f) => s + m2(f) * floorsOf(f), 0), fpKept = keptList.reduce((s, f) => s + m2(f), 0);
   const ek = EXIST_KEY(), demol = ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry.type) && insideTerr(f) && !keptSet.has(f)) : [];
-  const restrict = m2(inter(TERR, lim)) / 1e4, terr = TERR_M2 / 1e4;
+  // площадь сохранения и ограничений: ЗОУИТ и прочие запреты плюс пятна сохраняемых зданий (решение владельца 24.09.2026) —
+  // новая СПП не раскладывается на землю, занятую домами, которые остаются
+  const restrict = m2(inter(TERR, unionAll([lim, ...keptList].filter(Boolean)))) / 1e4, terr = TERR_M2 / 1e4;
   const sppLow = sketch.filter(b => b.maxF === 3).reduce((s, b) => s + b.m2 * b.floors, 0);        // ИЖС и блокированные: 50 м² квартир на жителя
   const r = await api("/api/tep", { terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept, spp_low_m2: sppLow,
     nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25 });
@@ -724,21 +726,32 @@ function place(site, p) {
             const pl = clipped(part, W(rect(u, r0, u + F, r0 + D)), .7), house = pl && fits(part, W(rect(hu, hv, hu + hw, hv + hh))); if (!house) continue;
             plot(pl, "участок ИЖС", { "Площадь, сот.": Math.round(m2(pl) / 10) / 10 });
             push(house, p.floors, "дом ИЖС", { grp: ++grp });
+            // хозпостройка или гараж 4 × 6 м в глубине участка, 1 м от задней и боковой границ (СП 42.13330, п. 7.1):
+            // в СПП не входит, показывается на участке — где дом и сарай стоят вместе, видно сразу
+            const ov = up ? r0 + 1 : r0 + D - 1 - 6, out1 = polyLL(W(rect(u + 1, ov, u + 5, ov + 6)));
+            if (Math.abs((up ? hv : hv + hh) - (up ? ov + 6 : ov)) >= 6 && m2(inter(pl, out1)) >= m2(out1) * .99)
+              plot(out1, "хозпостройка", { "Площадь, м²": 24 });
           }
         } else {
-          let u = b[0];
-          while (u + 3 * uw <= b[2] + .1) {
-            // ряд блоков: дом целиком на пятне, участки блоков у границы подрезаются (не меньше 60 % площади)
-            const hv = up ? r0 + D - 5 - hd : r0 + 5;
-            // участки блоков считаются по одному разу: сколько подряд помещается — столько блоков в ряду (3–6)
-            const units = []; for (let i = 0; i < 6; i++) { const q = clipped(part, W(rect(u + i * uw, r0, u + (i + 1) * uw, r0 + D)), .6); if (!q) break; units.push(q); }
-            let n = units.length; while (n >= 3 && !fits(part, W(rect(u, hv, u + n * uw, hv + hd)))) n--;
-            if (n < 3) { u += units.length ? uw : 5; continue; }
-            grp++;
-            for (let i = 0; i < n; i++) plot(units[i], "участок блока", { "Площадь, сот.": Math.round(m2(units[i]) / 10) / 10, "Блок": grp });
-            push(polyLL(W(rect(u, hv, u + n * uw, hv + hd))), p.floors, "блокированный дом", { grp, "Блоков": n });
-            u += n * uw + 10;
-          }
+          // ряды раскладываются от середины полосы: пробный проход слева даёт остаток на правом конце,
+          // и начало сдвигается на половину остатка — полоса не «прижата» к одному краю
+          const memo = new Map(), once = (k, fn) => memo.has(k) ? memo.get(k) : (memo.set(k, fn()), memo.get(k));
+          const rowsFrom = (u0, dry) => { let u = u0, last = u0, count = 0;
+            while (u + 3 * uw <= b[2] + .1) {
+              const hv = up ? r0 + D - 5 - hd : r0 + 5;
+              const units = []; for (let i = 0; i < 6; i++) { const x = u + i * uw, q = once("c" + x, () => clipped(part, W(rect(x, r0, x + uw, r0 + D)), .6)); if (!q) break; units.push(q); }
+              let n = units.length; while (n >= 3 && !once("f" + u + ":" + n, () => fits(part, W(rect(u, hv, u + n * uw, hv + hd))))) n--;
+              if (n < 3) { u += units.length ? uw : 5; continue; }
+              count += n; last = u + n * uw;
+              if (!dry) { grp++;
+                for (let i = 0; i < n; i++) plot(units[i], "участок блока", { "Площадь, сот.": Math.round(m2(units[i]) / 10) / 10, "Блок": grp });
+                push(polyLL(W(rect(u, hv, u + n * uw, hv + hd))), p.floors, "блокированный дом", { grp, "Блоков": n }); }
+              u += n * uw + 10;
+            }
+            return { count, slack: b[2] - last }; };
+          const first = rowsFrom(b[0], true), shift = Math.max(0, first.slack / 2);
+          const alt = shift > 1 ? rowsFrom(b[0] + shift, true) : null;
+          rowsFrom(alt && alt.count >= first.count ? b[0] + shift : b[0], false);
         }
       }
     }
@@ -873,7 +886,7 @@ const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
 // участки, дворы и улицы эскиза (ИЖС, блокированные, урбан-блоки) — под корпусами
-const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "свет соседям": ["#fdf0b8", "#d9a400"] };
+const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "хозпостройка": ["#e9e2d6", "#8c7b62"], "свет соседям": ["#fdf0b8", "#d9a400"] };
 const groundSrc = new ol.source.Vector(), groundStyle = f => { const [fill, stroke] = GROUND[f.get("kind")] || ["#eeeeee", "#999999"]; return S(fill, stroke, .8); };
 // результат графа — отдельные слои над данными; видимость переключается в дереве слоёв
 const RES = [
@@ -975,7 +988,7 @@ function bakeSketch() {
     layerSrc[k] = new ol.source.Vector(); setLayerData(k, lfc); delete DATA[k].original;
     const x = ensureLayer(k, name, "poly"); x.style = ST(style); restyle(x); extra.push(k); };
   layerOf(sk.plots, `Эскиз: участки и дворы (${typ.toLowerCase()})`, g => ({ ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}), ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }),
-    { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a" }, off: [] } });
+    { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a", "хозпостройка": "#d9cdb8" }, off: [] } });
   layerOf(sk.streets, `Эскиз: улицы и проезды (${typ.toLowerCase()})`, () => ({}), { fill: "#e4e1da", stroke: "#b7b2a8", width: .8, opacity: .9 });
   // порядок сверху вниз: корпуса, участки и дворы, улицы (новые слои встают наверх — поднимаем в обратном порядке)
   if (extra.length) { [...extra.slice(0, -1).reverse(), key].forEach(k => { const i = LYR.findIndex(x => x.key === k); LYR.unshift(LYR.splice(i, 1)[0]); });
@@ -1379,6 +1392,16 @@ document.querySelectorAll(".win").forEach(w => {
   w.addEventListener("pointerdown", () => winFront(w));
   w.querySelector("[data-close]").onclick = () => winOpen(w.id, false);
   const h = w.querySelector(".wh");
+  // с клавиатуры: заголовок окна достаётся Tab-ом, Alt+стрелка встраивает окно в зону, Alt+↑ делает плавающим
+  h.tabIndex = 0; h.setAttribute("aria-keyshortcuts", "Alt+ArrowLeft Alt+ArrowRight Alt+ArrowDown Alt+ArrowUp");
+  h.addEventListener("keydown", e => {
+    if (!e.altKey || e.target !== h) return;
+    const side = { ArrowLeft: "l", ArrowRight: "r", ArrowDown: "b" }[e.key];
+    if (side) { e.preventDefault(); if (narrow() && side !== "b") { (WST[w.id] ||= {}).dock = side; dockWin(w, "b", true); } else dockWin(w, side); }
+    else if (e.key === "ArrowUp" && w.classList.contains("docked")) { e.preventDefault(); floatWin(w); placeWin(w); winFront(w); }
+    else return;
+    requestAnimationFrame(() => { WIN_OPEN[w.id]?.(); h.focus(); });
+  });
   h.addEventListener("pointerdown", e => { if (!e.button && !e.target.closest("button,input,select")) dragWin(w, e); });
   h.addEventListener("dblclick", e => {
     if (e.target.closest("button,input,select")) return;

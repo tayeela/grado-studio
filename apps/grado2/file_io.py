@@ -274,10 +274,11 @@ def import_files(files, redln=None, local="msk"):
                 continue
         elif suf == ".kml":
             fc, hint = read_kml(b), "wgs"                 # KML всегда в градусах
-        elif suf == ".dxf":
+        elif suf in (".dxf", ".dwg"):
             import dxf_io
-            fc, notes = dxf_io.import_dxf(b, redln, local)
-            out.append({"name": p.stem, "format": "DXF", "features": fc, "notes": notes, "_dir": p.parent.name})
+            dxf = dxf_io.oda_convert(b, "dwg", "DXF") if suf == ".dwg" else b     # DWG — через ODA File Converter
+            fc, notes = dxf_io.import_dxf(dxf, redln, local)
+            out.append({"name": p.stem, "format": suf.lstrip(".").upper(), "features": fc, "notes": notes, "_dir": p.parent.name})
             continue
         else:
             continue
@@ -309,5 +310,5 @@ def import_files(files, redln=None, local="msk"):
         used.add(name)
         o["name"] = name
     if not out:
-        raise ValueError("нет векторных данных: ожидаются GeoJSON, KML/KMZ, Shapefile (.shp с .dbf или zip) или DXF")
+        raise ValueError("нет векторных данных: ожидаются GeoJSON, KML/KMZ, Shapefile (.shp с .dbf или zip), DXF или DWG")
     return out

@@ -101,8 +101,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 ## Queue
 
 - 2026-09-24 (v0.39.0, audit leftovers): ~~3D shadow hull, 200 m protection radius, TR preview on closed contours, partial
-  Yandex areas, pending walking route~~ — done v0.40.0. Still open, needs the owner's decision: ТЭП «площадь сохранения и
-  ограничений» holds only ЗОУИТ — land under kept buildings counts as design territory. Neighbours beyond the 60 m download
+  Yandex areas, pending walking route~~ — done v0.40.0. ~~ТЭП «площадь сохранения и ограничений» holds only ЗОУИТ~~ —
+  done v0.41.0 (owner's decision: footprints of kept buildings are added). Neighbours beyond the 60 m download
   strip are not loaded, so they are not protected even inside the new radius (the log says so).
 - ~~2026-09-24 (v0.34.0, Яндекс): a Yandex layer loaded in v0.33 keeps «Контур 0» after re-download~~ — done v0.35.0: an untouched
   v0.33 style gets the outline back on re-download.
@@ -113,7 +113,8 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - ~~2026-09-23 (v0.31.0, ЕГКО): frame outline of clipped polygons; «0 МБ» while the portal prepares; long re-download toast~~ —
   done v0.35.0 (edges on the clip frame are not stroked; «портал готовит файл…»; unchanged layers are counted, not listed).
   Still: a GPU-drawn layer (> 20 000 objects) and the PDF sheets stroke the frame edge.
-- 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): not yet — docking by keyboard; a layout
+- 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): ~~docking by keyboard~~ (done v0.41.0: Tab to a
+  window header, Alt+← → ↓ docks, Alt+↑ floats); a layout
   ~~does not remember window sizes inside zones~~ (done v0.40.0: «Моя раскладка» keeps heights, widths and the bottom zone). ~~Audit v0.30.0: a toast covers the «Окна» menu~~ — done v0.35.0.
 - ~~2026-09-23 (UX audit v0.27–0.28): dropped-section yards, cut node line, array box at the top-left~~ — done v0.35.0: touching
   spots of dropped sections merge into one, own kind «свет соседям» (yellow) with «Причина» in the accepted layer; node line
@@ -139,14 +140,18 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (v0.20.0, partly done): on the real Хорошёво site (13.2 ha buildable in 6 irregular parts) plots are now clipped
   by the boundary when ≥ 70 % (ИЖС) / 60 % (blocked) remain and the house fits — use of the site 30 → 45 %; urban blocks are
   clipped to the site with a courtyard ≥ 20 % and ≥ 600 m², streets only between placed blocks, no ribbons around existing
-  houses. Still open: strips stay straight (not bent to the boundary); no outbuildings, garages, guest parking; blocked rows
-  packed from one end; the blocked generator takes ~1.1 s on this site; ТЭП preset for ИЖС is rough (no m² per person norm).
+  houses. ~~No outbuildings; blocked rows packed from one end; ТЭП for ИЖС without 50 m² per person~~ — done
+  (v0.41.0: a 4 × 6 m outbuilding/garage at the back of each ИЖС plot; blocked rows centred in the strip with memoised
+  plot clipping; 50 m²/person since v0.21). Still open: strips stay straight (not bent to the boundary — needs a
+  boundary-following layout, not a grid); guest parking for ИЖС needs a norm from the owner (945-ПП gives none for ИЖС).
 
 - ~~2026-09-23 (audit v0.18.0): autosave, «Правила» counting, norms re-check~~ — done v0.36.0: unchanged layer data is not
   serialised again (100 000 objects: 111 → 5 ms), rule counts cached per data version and rules, the norms check runs in
   chunks, keeps the neighbours' baseline and a new edit interrupts the old run.
 
-- 2026-09-23: DWG via the ODA converter (owner has not decided).
+- ~~2026-09-23: DWG via the ODA converter~~ — done v0.41.0: DWG opens and «DXF» also writes grado2.dwg when the free ODA File
+  Converter is installed (not bundled; path override GRADO2_ODA); without it the message says where to get it. Not tested
+  here with a real converter (not installed on this Mac).
 - 2026-09-23 (done v0.15.0): ФГИС ТП has a search by name over the whole catalog (all words, «ё» = «е»). The Moscow
   genplan is not in the ФГИС ТП catalog at all (checked over all 27 993 documents); for a territory in Moscow the window says
   so and points to the ГИС ОГД group.
@@ -157,8 +162,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   the fastest mirror (measured 21 s at maps.mail.ru; overpass-api.de refused, two mirrors 504 after 50–77 s).
 - 2026-09-23 (done v0.15.0): the style panel of a GPU-drawn layer says that labels appear from scale 1:N and hatches
   are a translucent fill at overview.
-- 2026-09-23: insolation — schools and kindergartens are not told apart from other non-residential buildings; relief is flat;
-  one reveal angle for all windows. (Done v0.17.0: the front points merged into the facade line at 1:3000 — the layer is now
+- 2026-09-23: insolation — ~~schools and kindergartens are not told apart; relief is flat~~ (done v0.41.0: schools and
+  kindergartens are protected like housing; ground heights from «Рельеф: горизонтали» raise buildings and windows). Still: one
+  reveal angle for all windows. (Done v0.17.0: the front points merged into the facade line at 1:3000 — the layer is now
   shown only at 1:2500 and larger, by the new per-layer scale visibility.)
 - 2026-09-23: the ceiling makes the sketch lower but not smarter — sections do not move to where the ceiling is high (Э5).
   Tried in v0.16 and not adopted: shifting the whole row grid across rows by 1/5…4/5 of a step and keeping the best

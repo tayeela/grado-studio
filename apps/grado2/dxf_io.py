@@ -8,6 +8,8 @@ REDLN97 linetype names become LineCode again.
 """
 
 import io
+import os
+import subprocess
 import math
 import re
 import sys
@@ -112,12 +114,46 @@ def export_dxf(layers, redln, lgr_colors):
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("grado2.dxf", buf.getvalue().encode("utf-8"))
+        if oda_converter():                      # есть ODA File Converter — рядом кладётся тот же чертёж в DWG
+            try:
+                z.writestr("grado2.dwg", oda_convert(buf.getvalue().encode("utf-8"), "dxf", "DWG"))
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass
         z.write(STANDARD / "RED_LNS.SHX", "red_lns.shx")
         z.write(STANDARD / "REDLN97.LIN", "REDLN97.LIN")
         z.writestr("README.txt", ("Coordinates: MSK - Moscow local system as the QGIS custom CRS 'MSK' "
                                   "(+proj=tmerc +lat_0=55.66666666667 +lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel), metres.\n"
                                   "Red lines use REDLN97 linetypes; keep red_lns.shx next to grado2.dxf.\n").encode())
     return out.getvalue()
+
+
+def oda_converter():
+    """ODA File Converter (бесплатный, opendesign.com) — единственный путь к DWG без AutoCAD; сам не ставится.
+    Путь можно задать переменной GRADO2_ODA."""
+    import glob
+    import shutil
+    cands = [os.environ.get("GRADO2_ODA") or "", "/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter",
+             *glob.glob("/Applications/ODA*/ODAFileConverter.app/Contents/MacOS/ODAFileConverter"),
+             *glob.glob(r"C:\Program Files\ODA\ODAFileConverter*\ODAFileConverter.exe"),
+             shutil.which("ODAFileConverter") or ""]
+    return next((c for c in cands if c and os.path.isfile(c)), None)
+
+
+def oda_convert(data, src_ext, out_fmt):
+    """Файл src_ext (dwg/dxf) → байты DXF или DWG (ACAD2018) через ODA File Converter."""
+    import tempfile
+    exe = oda_converter()
+    if not exe:
+        raise ValueError("DWG читается и пишется через бесплатный ODA File Converter (opendesign.com): установите его "
+                         "или пересохраните чертёж в DXF")
+    with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dst:
+        (Path(src) / f"in.{src_ext}").write_bytes(data)
+        subprocess.run([exe, src, dst, "ACAD2018", out_fmt, "0", "1", f"*.{src_ext.upper()}"],
+                       capture_output=True, timeout=180, check=False)
+        out = next(Path(dst).glob(f"*.{out_fmt.lower()}"), None) or next(Path(dst).glob(f"*.{out_fmt.upper()}"), None)
+        if not out:
+            raise ValueError(f"ODA File Converter не создал {out_fmt}: чертёж повреждён или версия не поддерживается")
+        return out.read_bytes()
 
 
 def _rgb(hexcolor):
