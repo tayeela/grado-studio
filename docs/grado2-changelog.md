@@ -2,6 +2,26 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.39.0: whole-program audit fixed (45 confirmed findings plus most unverified ones).** Audit by
+  parallel reviewers (backend, connectors, ТЭП, front, security, data), verified 3 votes each; fixed by hand in four commits.
+  - Import/export: DXF LINE no longer crashes, bulges flattened (5 cm), Z ignored, points/«Текст» exported as POINT/TEXT;
+    SHP Cyrillic field names, deleted records, NULL dates, upper-case extensions; foreign projections (UTM, ГК, МСК-50) refused
+    instead of landing abroad; cp866/UTF-8 zip names; same stems from two folders kept; repeated import makes a new layer.
+  - Connectors: ОГД zip validated before caching, dBASE 254-byte text restored from the portal GeoJSON by `orbis_id`, NSPD
+    failure raises (no empty layer wiping edits), contours at integer heights, Overpass «runtime error» is a failure, OSM
+    courtyard buildings, Yandex tiles decoded before caching.
+  - Server: zone 2 for Бирюлёво/Бутово (ё, word order), place caches expire (90 days), stale ФГИС ТП catalog as fallback, launcher
+    stamp includes core, clamps; preset: ИЖС SPP not cut by the housing share, plots ≤ residential territory; legend fits the sheet.
+  - Front: downloads and variant search bound to their project (`PROJ_EPOCH`), empty re-download keeps edits, ФГИС ТП reload
+    merges, «Показатели» by the accepted sketch layer, restored unsaved autosave asks before «Новый»/«Открыть», XSS sinks escaped,
+    litegraph demo nodes unregistered, CAD Backspace/grip/TR/J/AR fixes, annotation layers not used for drawing, constraints
+    step/cache/sampling/rounding fixes.
+  - **Pitfall (twice in this batch):** inserting a `//` comment into a one-line statement comments out the rest of the line —
+    use `/* */` in edits of long lines, and run `node --check` right after each edit.
+  - Not fixed (UX queue): kept buildings in the restricted area (owner's decision), 3D shadow hull, 200 m protection radius, TR
+    preview on closed contours, partial Yandex areas.
+  - Token budget: CLAUDE.md files cut from ~440 KB to ~3 KB per turn (`claudeMdExcludes` for the taiLink file).
+
 - **2026-09-24, ГРАДО 2 v0.38.0: UX queue, batch 4 (ТЭП and analysis).** Density target from ПЗЗ (`pzzTarget`: subzones with a
   number inside the boundary, area-weighted, 0 counts) — set on the ПЗЗ download while the slider is the untouched 25,
   «взять цель» in «Показатели». K1 by walking route: `server.rail_route` — Overpass `way(around:2400)` walkable highways

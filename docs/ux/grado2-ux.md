@@ -100,6 +100,12 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-09-24 (v0.39.0, audit leftovers, not fixed): (1) ТЭП «площадь сохранения и ограничений» holds only ЗОУИТ — land under
+  kept buildings counts as design territory; adding it changes the methodology, needs the owner's decision. (2) «Объём» shadows are
+  the convex hull of footprint and offset — courtyards and L/C buildings shade the whole yard; draw one quad per edge instead.
+  (3) Only neighbours within 200 m are protected by the solar ceiling; towers of 12+ floors shade farther at 6:00. (4) TR preview on
+  closed contours shows the wrong part. (5) Yandex objects cut at the edge of the fetched tiles report a partial «Площадь, м²».
+  (6) While `/api/rail_route` runs, «Показатели» could say «маршрут по улицам считается…».
 - ~~2026-09-24 (v0.34.0, Яндекс): a Yandex layer loaded in v0.33 keeps «Контур 0» after re-download~~ — done v0.35.0: an untouched
   v0.33 style gets the outline back on re-download.
 - ~~2026-09-24 (v0.33.0, Яндекс): tile seams in the outline of Yandex area layers~~ — done in v0.34.0 (pieces dissolved along tile edges).

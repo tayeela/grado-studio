@@ -125,8 +125,9 @@ NBalance.title = "Баланс территории"; NBalance.prototype.onExecu
   if (this._ck !== key && TERR) {
     this._ck = key; this._fc = [];
     const fields = [...new Set(src.slice(0, 200).flatMap(f => Object.keys(f.properties || {})))].filter(k => !k.startsWith("_"));
-    const field = this.widgets[0].value || fields.find(k => new Set(src.map(f => f.properties[k])).size > 1 && src.every(f => typeof (f.properties[k] ?? "") === "string")) || fields[0];
-    if (field && !this.widgets[0].value) this.widgets[0].value = field;
+    const want = this.widgets[0].value;                 // поле прежнего слоя на входе не держится, если его здесь нет
+    const field = (want && fields.includes(want) ? want : null) || fields.find(k => new Set(src.map(f => f.properties[k])).size > 1 && src.every(f => typeof (f.properties[k] ?? "") === "string")) || fields[0];
+    if (field && this.widgets[0].value !== field) this.widgets[0].value = field;
     const by = new Map(); src.filter(f => /Polygon/.test(f.geometry?.type)).forEach(f => { const x = inter(f, TERR); if (!x) return; const v = String(f.properties[field] ?? "—"); (by.get(v) || by.set(v, []).get(v)).push(x); });
     const total = TERR_M2, rows = [...by].map(([v, parts]) => { const u = unionAll(parts); return { v, u, a: m2(u) }; }).sort((a, b) => b.a - a.a);
     const covered = rows.reduce((s, r) => s + r.a, 0);

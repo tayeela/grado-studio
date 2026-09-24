@@ -105,7 +105,8 @@
       for (let gx = Math.floor(x0 / G); gx <= Math.floor(x1 / G); gx++) for (let gy = Math.floor(y0 / G); gy <= Math.floor(y1 / G); gy++) { const k = gx + ":" + gy; (grid.get(k) || grid.set(k, []).get(k)).push(bi); } });
     const covered = (x, y, own) => (grid.get(Math.floor(x / G) + ":" + Math.floor(y / G)) || []).some(bi => bi !== own && inRing(x, y, buildings[bi].ring) && !(buildings[bi].holes || []).some(h => inRing(x, y, h)));
     const signed = r => r.reduce((s, p, i) => { const q = r[(i + 1) % r.length]; return s + p[0] * q[1] - q[0] * p[1]; }, 0);
-    buildings.forEach((b, bi) => [b.ring, ...(b.holes || [])].forEach((r0, ri) => {
+    // окна выше крыши не бывает: дом ниже расчётной высоты точек не получает
+    buildings.forEach((b, bi) => b.h > z && [b.ring, ...(b.holes || [])].forEach((r0, ri) => {
       // наружный контур — против часовой, двор — по часовой: тогда справа от ребра всегда воздух, а не здание
       const ring = (signed(r0) < 0) === (ri === 0) ? r0.slice().reverse() : r0;
       for (let i = 0; i < ring.length; i++) {
