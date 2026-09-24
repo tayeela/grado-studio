@@ -80,7 +80,18 @@ function setBasemap(id) {
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
 function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
 const PAT = new Map();
-function hatch(color) { if (PAT.has(color)) return PAT.get(color); const c = document.createElement("canvas"); c.width = c.height = 8; const x = c.getContext("2d"); x.fillStyle = color + "18"; x.fillRect(0, 0, 8, 8); x.strokeStyle = color; x.lineWidth = 1.1; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.moveTo(-4, 4); x.lineTo(4, -4); x.moveTo(4, 12); x.lineTo(12, 4); x.stroke(); const p = x.createPattern(c, "repeat"); PAT.set(color, p); return p; }
+/* штриховка: узор (45, 135, 0 — горизонталь, 90 — вертикаль, x45 — косая сетка, x0 — прямая сетка, dots — точки) и шаг в пикселях */
+const HATCHES = { "45": "косая ／", "135": "косая ＼", "0": "горизонтальная", "90": "вертикальная", "x45": "косая сетка", "x0": "прямая сетка", "dots": "точки" };
+function hatch(color, pat = "45", step = 8) {
+  const k = color + "|" + pat + "|" + step; if (PAT.has(k)) return PAT.get(k);
+  const n = Math.max(4, Math.min(40, Math.round(step))), c = document.createElement("canvas"); c.width = c.height = n; const x = c.getContext("2d");
+  x.fillStyle = color + "18"; x.fillRect(0, 0, n, n); x.strokeStyle = x.fillStyle = color; x.lineWidth = 1.1; x.beginPath();
+  const d45 = () => { x.moveTo(0, n); x.lineTo(n, 0); x.moveTo(-n / 2, n / 2); x.lineTo(n / 2, -n / 2); x.moveTo(n / 2, n * 1.5); x.lineTo(n * 1.5, n / 2); };
+  const d135 = () => { x.moveTo(0, 0); x.lineTo(n, n); x.moveTo(-n / 2, n / 2); x.lineTo(n / 2, n * 1.5); x.moveTo(n / 2, -n / 2); x.lineTo(n * 1.5, n / 2); };
+  const h = () => { x.moveTo(0, n / 2); x.lineTo(n, n / 2); }, v = () => { x.moveTo(n / 2, 0); x.lineTo(n / 2, n); };
+  if (pat === "dots") { x.arc(n / 2, n / 2, 1.2, 0, 2 * Math.PI); x.fill(); }
+  else { ({ "45": [d45], "135": [d135], "0": [h], "90": [v], x45: [d45, d135], x0: [h, v] }[pat] || [d45]).forEach(f => f()); x.stroke(); }
+  const p = x.createPattern(c, "repeat"); PAT.set(k, p); return p; }
 const S = (fill, stroke, w = 1) => new ol.style.Style({ fill: fill && new ol.style.Fill({ color: fill }), stroke: stroke && new ol.style.Stroke({ color: stroke, width: w }) });
 const MAJOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
 

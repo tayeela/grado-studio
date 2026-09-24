@@ -123,7 +123,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). ~~Not yet — rectangle corner options,
   ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel~~ — done v0.37.0 (REC fillet/chamfer,
-  EL, H, DIM, T, AR remembers its numbers + AE, F2 history). Text goes to DXF as TEXT (v0.39.0), dimensions as real DIMENSION entities and back (v0.45.0); hatch patterns are the layer's hatch, not ANSI patterns.
+  EL, H, DIM, T, AR remembers its numbers + AE, F2 history). Text goes to DXF as TEXT (v0.39.0), dimensions as real DIMENSION entities and back (v0.45.0); hatch patterns: seven patterns and a step per layer since v0.47.0 (not the full ANSI set).
   Trim and extend work on lines and contours, not on points; a trimmed
   polygon becomes a line (a GIS polygon cannot be open).
 - ~~2026-09-23 (v0.23.0, precise drawing): lengths in «Вершины», polar angles, perpendicular/parallel snaps, typed rotation~~ —

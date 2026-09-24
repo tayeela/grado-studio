@@ -675,8 +675,66 @@ function contourAt(w) {
       const a = poly.getArea(); if (!best || a < best.a) best = { a, poly };
     });
   }
-  return best?.poly || null;
+  return best?.poly || regionAt(w);
 }
+/* Контур из линий вокруг точки (BOUNDARY AutoCAD): отрезки видимых линий и рёбер полигонов рядом с точкой режутся в
+   местах пересечения, из них строится плоский граф, и обходится грань, в которой лежит точка (грань слева, на каждой
+   вершине — ближайший поворот по часовой от обратного ребра). Окно поиска 150 → 1200 м, пока грань не замкнётся. */
+function regionAt(w) {
+  for (const R of [150, 400, 1200]) { const r = regionIn(w, R); if (r) return r; }
+  return null;
+}
+function regionIn(w, R) {
+  const c = fromM(w), k = 1 / Math.cos(ol.proj.toLonLat(c)[1] * Math.PI / 180), box = ol.extent.buffer([c[0], c[1], c[0], c[1]], R * k);
+  const segs = []; let n = 0;
+  for (const l of LYR) { if (!shown(l) || outOfScale(l) || !layerSrc[l.key] || l.title === ANNO.hatch.title) continue;
+    layerSrc[l.key].forEachFeatureIntersectingExtent(box, f => { if (++n > 3000) return true;
+      chainsOf(f.getGeometry()).forEach(ch => { const m = ch.map(toM); for (let i = 0; i + 1 < m.length; i++) if (!G.same(m[i], m[i + 1], 1e-6)) segs.push([m[i], m[i + 1]]); }); }); }
+  if (segs.length < 3 || segs.length > 20000) return null;
+  // разрезы в пересечениях: сетка 50 м по габаритам отрезков
+  const C = 50, grid = new Map(), cuts = segs.map(() => [0, 1]);
+  segs.forEach(([a, b], i) => { for (let x = Math.floor(Math.min(a[0], b[0]) / C); x <= Math.floor(Math.max(a[0], b[0]) / C); x++) for (let y = Math.floor(Math.min(a[1], b[1]) / C); y <= Math.floor(Math.max(a[1], b[1]) / C); y++) { const kk = x + "," + y; (grid.get(kk) || grid.set(kk, []).get(kk)).push(i); } });
+  const seen = new Set();
+  grid.forEach(list => { for (let u = 0; u < list.length; u++) for (let v = u + 1; v < list.length; v++) { const i = list[u], j = list[v], kk = i < j ? i + ":" + j : j + ":" + i; if (seen.has(kk)) continue; seen.add(kk);
+    const [a, b] = segs[i], [p, q] = segs[j], d = (b[0] - a[0]) * (q[1] - p[1]) - (b[1] - a[1]) * (q[0] - p[0]); if (Math.abs(d) < 1e-12) continue;
+    const t = ((p[0] - a[0]) * (q[1] - p[1]) - (p[1] - a[1]) * (q[0] - p[0])) / d, s2 = ((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) / d;
+    if (t >= -1e-9 && t <= 1 + 1e-9 && s2 >= -1e-9 && s2 <= 1 + 1e-9) { cuts[i].push(Math.min(1, Math.max(0, t))); cuts[j].push(Math.min(1, Math.max(0, s2))); } } });
+  // вершины графа — с точностью 1 мм; рёбра — куски отрезков между разрезами
+  const V = new Map(), vid = p => { const kk = Math.round(p[0] * 1000) + "," + Math.round(p[1] * 1000); if (!V.has(kk)) V.set(kk, { p, out: [] }); return kk; };
+  const E = new Set();
+  segs.forEach(([a, b], i) => { const ts = [...new Set(cuts[i].map(t => Math.round(t * 1e9) / 1e9))].sort((x, y) => x - y);
+    for (let z = 0; z + 1 < ts.length; z++) { const p1 = G.add(a, G.mul(G.sub(b, a), ts[z])), p2 = G.add(a, G.mul(G.sub(b, a), ts[z + 1])), k1 = vid(p1), k2 = vid(p2);
+      if (k1 === k2 || E.has(k1 + ">" + k2)) continue; E.add(k1 + ">" + k2); E.add(k2 + ">" + k1); V.get(k1).out.push(k2); V.get(k2).out.push(k1); } });
+  const ang = (k1, k2) => { const a = V.get(k1).p, b = V.get(k2).p; return Math.atan2(b[1] - a[1], b[0] - a[0]); };
+  V.forEach((v, kk) => v.out.sort((x, y) => ang(kk, x) - ang(kk, y)));
+  // ребро, которое первым пересекает луч от точки на восток
+  let hit = null;
+  E.forEach(e => { const [k1, k2] = e.split(">"); if (k1 > k2) return; const a = V.get(k1).p, b = V.get(k2).p;
+    if ((a[1] > w[1]) === (b[1] > w[1])) return; const x = a[0] + (w[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1]); if (x <= w[0]) return;
+    if (!hit || x < hit.x) hit = { x, k1, k2 }; });
+  if (!hit) return null;
+  // точка должна быть слева от начального ребра: ребро, идущее на север при точке к западу от него
+  let [from, to] = V.get(hit.k2).p[1] > V.get(hit.k1).p[1] ? [hit.k1, hit.k2] : [hit.k2, hit.k1];
+  const start = from + ">" + to, ring = [V.get(from).p];
+  for (let step = 0; step < 20000; step++) {
+    ring.push(V.get(to).p);
+    const out = V.get(to).out, back = out.indexOf(from), next = out[(back - 1 + out.length) % out.length];
+    from = to; to = next; if (from + ">" + to === start) break;
+    if (step === 19999) return null;
+  }
+  if (ring.length < 4) return null;
+  const A = G.area(ring); if (A <= 0) return null;                 // обход по часовой — точка снаружи всех контуров
+  return new ol.geom.Polygon([ring.map(fromM)]);
+}
+def("bpoly", "Контур по щелчку", ["BPOLY", "BOUNDARY"], () => {
+  let n = 0;
+  const st = { need: "point", base: () => null, prompt: () => `Щёлкните внутри области, ограниченной линиями или контурами (построено ${n}); Enter — завершить`,
+    point: w => { const poly = contourAt(w); if (!poly) return note("Вокруг точки нет замкнутой области: линии не смыкаются или область больше 1,2 км.");
+      const l = targetLayer("poly"), f = new ol.Feature(poly.clone()); fieldsOfKey(l.key).forEach(k => f.set(k, "")); f.setProperties({ _new: true, _edited: true });
+      addNew([{ key: l.key, f }], "контур по щелчку"); n++; note(`Контур ${fmt(Math.abs(G.area(poly.getCoordinates()[0].map(toM))), 1)} м² в слое «${l.title}».`); },
+    enter: () => { st.done = true; } };
+  return st;
+});
 def("hatch", "Штриховка", ["H", "BH"], () => {
   const made = [];
   const st = { need: "point", base: () => null,
@@ -1381,13 +1439,13 @@ const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "p
 const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
-const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "align", "matchprop", "divide", "measure", "similar", "qselect", "laymcur", "convert"];
+const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "align", "matchprop", "divide", "measure", "similar", "qselect", "laymcur", "convert", "bpoly"];
 const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   split: "полигон — линией разреза на части, атрибуты у всех частей", merge: "полигоны одного слоя — в один", subtract: "из выбранных полигонов вырезать другие",
   buffer: "полигоны на заданном расстоянии вокруг объектов (минус — внутрь)", matchprop: "атрибуты образца — другим объектам",
-  laymcur: "перенести выбранное в текущий слой, атрибуты сохраняются", convert: "замкнутую линию — в полигон, полигон — в замкнутые линии",
+  bpoly: "полигон из области, ограниченной линиями, — щелчком внутри (как BOUNDARY)", laymcur: "перенести выбранное в текущий слой, атрибуты сохраняются", convert: "замкнутую линию — в полигон, полигон — в замкнутые линии",
   delring: "закрыть дыру полигона щелчком внутри неё", align: "перенос и поворот по двум парам точек, масштаб по желанию",
   qselect: "выбрать объекты по условию на атрибуты: Этажность > 9 и Решение = сносим", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
   divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",

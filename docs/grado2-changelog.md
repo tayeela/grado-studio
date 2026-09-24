@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.47.0: region from lines (BOUNDARY), hatch patterns, arrow-key nudge.**
+  - BPOLY «Контур по щелчку»: a click inside an area bounded by lines and polygon edges makes a polygon. Segments near the point
+    (window 150 → 400 → 1200 m, up to 3 000 objects) are cut at their intersections (50 m grid), joined into a planar graph
+    (vertices at 1 mm), and the face containing the point is walked (face on the left, clockwise-next edge at each vertex),
+    starting from the first edge east of the point; a clockwise result means the point is outside. H (hatch) uses the same
+    fallback when no closed contour is found.
+  - Hatch pattern and step per layer (style panel, when hatching is on): «／», «＼», horizontal, vertical, diagonal grid,
+    square grid, dots; `hatch(color, pat, step)` caches tiles per combination. Sheets/PDF draw the same directions
+    (grids as two families; dots as «／»).
+  - ← → ↑ ↓ move the selection 0,1 m (Shift — 1 m) along МСК axes, undoable; handled in the capture phase so the map does
+    not pan. F1 rows added.
+  - e2e +2 steps (BPOLY 450 m² between crossing lines, nudge 1,1 m). Hatch grid checked by screenshot.
+
 - **2026-09-25, ГРАДО 2 v0.46.0: copy/paste between layers, move to current layer, line ↔ polygon, vertex coordinates.**
   - Ctrl/⌘+C / Ctrl/⌘+V: selected objects to the program's clipboard and into the current layer at the same place (QGIS
     behaviour), attributes kept, `_key` dropped; `geomFor` adapts the geometry to the layer (polygon → closed lines,

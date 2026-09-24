@@ -270,14 +270,14 @@ function styleFor(l, f, res) {
     // слой со смешанной геометрией (вода, транспорт): точка — знаком точки; линия в слое точек — линией, в слое полигонов — цветом контура
     const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
     const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
-    const key = `${s.fill}|${s.hatch}|${g}|${clip}`; let base = l.cache.get(key);
+    const key = `${s.fill}|${s.hatch}|${g}|${clip}|${st.hatchPat || "45"}|${st.hatchStep || 8}`; let base = l.cache.get(key);
     if (!base) {
       if (g === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
       else if (g === "pline") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round" }) });
       else if (g === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
-      else if (clip) base = [new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }) }),
+      else if (clip) base = [new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) }) }),
         new ol.style.Style({ geometry: frameless, stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) })];
-      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
+      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
       l.cache.set(key, base);
     }
     Array.isArray(base) ? out.push(...base) : out.push(base);
@@ -566,6 +566,7 @@ function renderStyle(el) {
   const DENS = [0, 1000, 2000, 2500, 5000, 10000, 25000];
   h += `<div class="row"><label>Виден</label><select data-k="maxDen" data-num aria-label="Видимость слоя по масштабу" title="Как «Видимость в зависимости от масштаба» в QGIS: на более мелком масштабе слой не рисуется ни на карте, ни на листе. На расчёты (граф, ограничения) не влияет">${DENS.map(d => `<option value="${d}" ${(st.maxDen || 0) === d ? "selected" : ""}>${d ? "крупнее 1:" + fmt(d) : "на любом масштабе"}</option>`).join("")}</select></div>`;
   h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${l.layerOpacity}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(l.layerOpacity * 100)}</span></div>
+    ${l.geom === "poly" && (st.hatch || st.rules.list.some(r => r.hatch)) ? `<div class="row"><label>Узор штриховки</label><select data-k="hatchPat">${Object.entries(HATCHES).map(([k, t]) => `<option value="${k}" ${(st.hatchPat || "45") === k ? "selected" : ""}>${t}</option>`).join("")}</select><input type="number" data-k="hatchStep" min="4" max="40" value="${st.hatchStep || 8}" title="шаг штриховки, пикс." style="width:52px"></div>` : ""}
     <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
   el.innerHTML = h;
 }
@@ -997,6 +998,17 @@ function stepHistory(from, to, verb) {
 }
 const undo = () => stepHistory(UNDO, REDO, "Отменено"), redo = () => stepHistory(REDO, UNDO, "Возвращено");
 $("bUndo").onclick = undo; $("bRedo").onclick = redo;
+// стрелки — в фазе перехвата: иначе карта OpenLayers сдвинула бы вид вместе с объектами
+addEventListener("keydown", e => {
+  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph") || e.metaKey || e.ctrlKey || e.altKey) return;
+  // сдвиг выбранного стрелками по осям МСК: 0,1 м, с Shift — 1 м
+  if (/^Arrow/.test(e.key) && SEL.length && !window.CAD?.active?.() && window.CAD?.toM) {
+    e.preventDefault(); e.stopPropagation(); const d = e.shiftKey ? 1 : .1, [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, d], ArrowDown: [0, -d] }[e.key];
+    pushUndo(featRec(SEL, `сдвиг ${fmt(d, 1)} м`));
+    SEL.forEach(({ f }) => { f.getGeometry().applyTransform((inp, out, dim = 2) => { for (let i = 0; i < inp.length; i += dim) { const m = CAD.toM([inp[i], inp[i + 1]]), c = CAD.fromM([m[0] + dx, m[1] + dy]); out[i] = c[0]; out[i + 1] = c[1]; } return out; }); f.set("_edited", true); f.unset("_cad"); });
+    new Set(SEL.map(s => s.key)).forEach(k => syncFromSource(k)); window.CAD.grips?.(); setHint(`Сдвинуто на ${fmt(d, 1)} м (${{ ArrowLeft: "запад", ArrowRight: "восток", ArrowUp: "север", ArrowDown: "юг" }[e.key]} по МСК). ${MOD}+Z — отменить.`); return;
+  }
+}, true);
 addEventListener("keydown", e => {
   if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph")) return;
   // e.code не зависит от раскладки (русская тоже работает); без code — по латинской букве
@@ -1036,7 +1048,7 @@ function renderKeys() {
     + rows("Команды черчения (набрать и Enter или пробел, как в AutoCAD)", Object.entries(CAD.ALIAS).map(([a, id]) => [a, `${CAD.CMDS[id].title}: ${CAD.HELP[id]}`]))
     + rows("Во время команды", [["число, Enter", "следующая точка на этом расстоянии по направлению курсора или по пунктирной линии отслеживания, м"], ["длина<угол", "длина и угол; угол от направления на восток против часовой стрелки"], ["@dx;dy", "смещение от последней точки по X и Y, м"], ["X;Y", "точка в координатах МСК (X — на восток, Y — на север)"], ["буква параметра", "вариант из квадратных скобок в строке состояния: З — замкнуть, О — отменить, Р — радиус…"], ["Enter, пробел, правая кнопка", "завершить шаг или команду; без команды — повторить последнюю"], ["Backspace", "убрать последнюю точку"], ["Esc", "прервать команду"]])
     + rows("Режимы черчения (строка состояния)", [["F3", "объектная привязка: конточка, середина, центр, квадрант, пересечение, продолжение, нормаль, касательная, параллельно (задержите курсор на отрезке — потом ведите параллельно ему), ближайшая (▾ — набор)"], ["F11", "объектное отслеживание: задержите курсор на точке привязки до «+», дальше — пунктирные линии выравнивания и продолжения"], ["F10", "полярное отслеживание: пунктирный луч под углами, кратными шагу (▾ — 90, 45, 30, 15, 10, 5°)"], ["F8", "орто: только по осям X и Y МСК"], ["F12", "динамический ввод: размеры и поле ввода у курсора"], ["F2", "история команд за сеанс"]])
-    + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], [`${MOD}+C, ${MOD}+V`, "копировать выбранное и вставить в текущий слой на то же место"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
+    + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], [`${MOD}+C, ${MOD}+V`, "копировать выбранное и вставить в текущий слой на то же место"], ["← → ↑ ↓, с Shift", "сдвинуть выбранное на 0,1 м, с Shift — на 1 м (оси МСК)"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
     + rows("Правка", [["Del, Backspace", "удалить выбранные объекты"], ["двойной щелчок", "завершить полилинию, замер, границу"], ["Вершины", "ручки: тянуть вершину, щелчок по ребру — новая вершина, Alt+щелчок — удалить"], [`${MOD}+Z`, "отменить правку объектов или стиля"], [`${MOD}+Shift+Z, ${MOD}+Y`, "вернуть отменённое"]])
     + rows("Проект и окна", [[`${MOD}+S`, "сохранить проект"], ["F1, ?", "это окно"], ["двойной щелчок по заголовку окна", "встроить в панель / сделать плавающим"],
       ["Alt+← → ↓ на заголовке окна (Tab до него)", "встроить слева / справа / под картой; Alt+↑ — плавающее"]])

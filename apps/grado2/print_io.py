@@ -206,7 +206,9 @@ class SketchMapFrame(Frame):
                         out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                     "width": w, "dash": None})
                         if f.get("hatch") and f.get("fill"):
-                            out.extend(hatch_ops(rings, spacing=1.6, stroke=hex_to_rgb(f["fill"])))
+                            # узор штриховки слоя: одно направление или сетка из двух; точки на листе — косой штриховкой
+                            for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(f.get("hp"), (45,)):
+                                out.extend(hatch_ops(rings, spacing=1.6, stroke=hex_to_rgb(f["fill"]), angle=ang))
                         if f.get("label"):
                             xs, ys = zip(*rings[0])
                             labels.append((sum(xs) / len(xs), sum(ys) / len(ys), f["label"]))

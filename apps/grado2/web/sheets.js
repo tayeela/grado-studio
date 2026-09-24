@@ -43,7 +43,7 @@ function sheetSpec(sheet) {
       const lab = st.label ? f.get(st.label) : null;
       if (st.mode === "lgr") { const lt = f.get("_lt") || [], miss = f.get("_miss") || []; feats.push({ g, lt, miss, lc: LGRC[ltCode(lt[0] || "")] || LGRC[miss[0]?.[0]] || "#d7191c", w: st.width, label: lab }); return; }
       const s = symbolOf(pl, f); if (s.hide) return;
-      feats.push({ g, fill: s.fill, stroke: pl.geom === "poly" ? st.stroke : s.fill, w: st.width, a: st.opacity * pl.a, hatch: s.hatch, label: lab == null || lab === "" ? null : String(lab), lc: pl.geom === "line" ? s.fill : undefined });
+      feats.push({ g, fill: s.fill, stroke: pl.geom === "poly" ? st.stroke : s.fill, w: st.width, a: st.opacity * pl.a, hatch: s.hatch, hp: st.hatchPat || "45", label: lab == null || lab === "" ? null : String(lab), lc: pl.geom === "line" ? s.fill : undefined });
     });
     layers.push({ title: pl.title, features: feats });
   });

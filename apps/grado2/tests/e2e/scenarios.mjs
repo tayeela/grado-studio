@@ -192,6 +192,16 @@ export default async p => {
   await p.ev(`setSel([{key:window.__vfk,f:window.__tb}]); UIS.rt="obj"; renderRight(); return 1`);
   const vt = await p.ev(`const i=document.querySelector("[data-vx]"); if(!i) return null; i.value="6100"; i.dispatchEvent(new Event("change",{bubbles:true})); return CAD.toM(window.__tb.getGeometry().getCoordinates()[0][0])[0]`);
   check(vt !== null && Math.abs(vt - 6100) < 1e-6, "таблица вершин в «Объекте»: X первой вершины введён числом — 6100,000");
+  // контур по щелчку из линий, сдвиг стрелками
+  await p.ev(`const k=window.__lk, L=(a,b)=>{ const f=new ol.Feature(new ol.geom.LineString([a,b].map(CAD.fromM))); layerSrc[k].addFeature(f); };
+    L([7995,1000],[8045,1000]); L([7995,1030],[8045,1030]); L([8000,995],[8000,1035]); L([8040,995],[8040,1035]); L([8015,990],[8015,1040]); syncFromSource(k);
+    setCurrent(window.__vfk); setSel([]); sharedView.fit([...CAD.fromM([7980,980]), ...CAD.fromM([8060,1050])]); return 1`);
+  await type("bpoly"); await enter(); { const [x, y] = await pxOf(8005, 1010); await p.click(x, y); } await enter();
+  const bp = await p.ev(`const f=layerSrc[window.__vfk].getFeatures().slice(-1)[0]; window.__bp=f; const r=f.getGeometry().getCoordinates()[0].map(CAD.toM); let a=0; for(let i=0;i+1<r.length;i++) a+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1]; return Math.abs(a/2)`);
+  check(Math.abs(bp - 450) < .01, `BPOLY: область между пересекающимися линиями — полигон ${bp.toFixed(2)} м² (15 × 30)`);
+  await p.ev(`setSel([{key:window.__vfk,f:window.__bp}]); window.__bx=CAD.toM(window.__bp.getGeometry().getCoordinates()[0][0])[0]; return 1`);
+  await p.key("ArrowRight", "ArrowRight", { shift: true, vk: 39 }); await p.key("ArrowRight", "ArrowRight", { vk: 39 });
+  check(await p.ev(`return Math.abs(CAD.toM(window.__bp.getGeometry().getCoordinates()[0][0])[0] - window.__bx - 1.1) < 1e-6`), "стрелки: Shift+→ и → сдвинули выбранное на 1,1 м по оси X МСК");
   await p.ev(`setCurrent(window.__pc); setSel([]); return 1`);
   await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
   check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");
