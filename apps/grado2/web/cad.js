@@ -834,6 +834,13 @@ def("trim", "Обрезать", ["TR"], () => {
       const t = info(pos); if (!t) return [];
       const { p, cuts, L } = t, inner = cuts.filter(x => x > 1e-7 && x < L - 1e-7);
       if (!inner.length) return [];
+      const line = (a, b) => new ol.Feature({ geometry: new ol.geom.LineString(G.sliceChain(p.ch, a, b)), k: "gone" });
+      if (G.closed(p.ch)) {                                            // замкнутый контур — то же, что отрежет G.trim
+        if (inner.length < 2) return [];
+        const below = inner.filter(x => x < p.q.s), above = inner.filter(x => x > p.q.s);
+        const a = below.length ? below[below.length - 1] : inner[inner.length - 1], b = above.length ? above[0] : inner[0];
+        return a < b ? [line(a, b)] : [line(a, L), line(0, b)];
+      }
       const s = p.q.s, lo = Math.max(0, ...inner.filter(x => x < s)), hi = Math.min(L, ...inner.filter(x => x > s));
       return [new ol.Feature({ geometry: new ol.geom.LineString(G.sliceChain(p.ch, lo, hi)), k: "gone" })];
     } };

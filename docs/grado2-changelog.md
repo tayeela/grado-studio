@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-24, ГРАДО 2 v0.40.0: UX queue — audit leftovers.** «Объём» shadows are the footprint plus one quad per edge,
+  filled once (nonzero, quads oriented one way) — courtyards and L/C buildings no longer darken the whole yard. The solar
+  ceiling protects neighbours within height/tan 10° (tallest ПЗЗ height in the boundary, 75 m without ПЗЗ), 200…600 m; the log
+  says that houses beyond the 60 m download strip are not loaded. TR preview on closed contours shows exactly what G.trim
+  removes (two cuts needed, wrapping piece in two lines). Yandex polygons reaching the edge of the fetched tiles carry
+  `grado_clip` (frame in the same rounded coordinates, so the cut is not stroked) and «Площадь: только в области выгрузки».
+  «Показатели» says «маршрут по улицам считается…» while `/api/rail_route` runs. DXF: a dimension's value is written as TEXT
+  over the dimension line. «Моя раскладка» remembers window sizes in zones (`_sz`). Tests: DXF +1 check.
+
 - **2026-09-24, ГРАДО 2 v0.39.0: whole-program audit fixed (45 confirmed findings plus most unverified ones).** Audit by
   parallel reviewers (backend, connectors, ТЭП, front, security, data), verified 3 votes each; fixed by hand in four commits.
   - Import/export: DXF LINE no longer crashes, bulges flattened (5 cm), Z ignored, points/«Текст» exported as POINT/TEXT;

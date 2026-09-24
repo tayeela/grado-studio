@@ -100,12 +100,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
-- 2026-09-24 (v0.39.0, audit leftovers, not fixed): (1) ТЭП «площадь сохранения и ограничений» holds only ЗОУИТ — land under
-  kept buildings counts as design territory; adding it changes the methodology, needs the owner's decision. (2) «Объём» shadows are
-  the convex hull of footprint and offset — courtyards and L/C buildings shade the whole yard; draw one quad per edge instead.
-  (3) Only neighbours within 200 m are protected by the solar ceiling; towers of 12+ floors shade farther at 6:00. (4) TR preview on
-  closed contours shows the wrong part. (5) Yandex objects cut at the edge of the fetched tiles report a partial «Площадь, м²».
-  (6) While `/api/rail_route` runs, «Показатели» could say «маршрут по улицам считается…».
+- 2026-09-24 (v0.39.0, audit leftovers): ~~3D shadow hull, 200 m protection radius, TR preview on closed contours, partial
+  Yandex areas, pending walking route~~ — done v0.40.0. Still open, needs the owner's decision: ТЭП «площадь сохранения и
+  ограничений» holds only ЗОУИТ — land under kept buildings counts as design territory. Neighbours beyond the 60 m download
+  strip are not loaded, so they are not protected even inside the new radius (the log says so).
 - ~~2026-09-24 (v0.34.0, Яндекс): a Yandex layer loaded in v0.33 keeps «Контур 0» after re-download~~ — done v0.35.0: an untouched
   v0.33 style gets the outline back on re-download.
 - ~~2026-09-24 (v0.33.0, Яндекс): tile seams in the outline of Yandex area layers~~ — done in v0.34.0 (pieces dissolved along tile edges).
@@ -116,7 +114,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   done v0.35.0 (edges on the clip frame are not stroked; «портал готовит файл…»; unchanged layers are counted, not listed).
   Still: a GPU-drawn layer (> 20 000 objects) and the PDF sheets stroke the frame edge.
 - 2026-09-23 (v0.29–0.30, docking; done v0.30: layouts, splitter under the map): not yet — docking by keyboard; a layout
-  does not remember window sizes inside zones (only which zone). ~~Audit v0.30.0: a toast covers the «Окна» menu~~ — done v0.35.0.
+  ~~does not remember window sizes inside zones~~ (done v0.40.0: «Моя раскладка» keeps heights, widths and the bottom zone). ~~Audit v0.30.0: a toast covers the «Окна» menu~~ — done v0.35.0.
 - ~~2026-09-23 (UX audit v0.27–0.28): dropped-section yards, cut node line, array box at the top-left~~ — done v0.35.0: touching
   spots of dropped sections merge into one, own kind «свет соседям» (yellow) with «Причина» in the accepted layer; node line
   shortened; the typed-value box opens mid-map when the mouse has not been over the map.
@@ -124,8 +122,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-23 (v0.24.0–0.25.0, AutoCAD drawing; done in v0.25.0: PLINE arc segments, CHAMFER, STRETCH, ARRAY rectangular
   and polar, LENGTHEN, polar tracking from the last segment, lengths at grips). ~~Not yet — rectangle corner options,
   ellipse, hatch, dimensions (DIM), text, associative arrays, a command history panel~~ — done v0.37.0 (REC fillet/chamfer,
-  EL, H, DIM, T, AR remembers its numbers + AE, F2 history). Still: dimensions and text do not go to DXF as DIMENSION/TEXT
-  entities (they are lines and points with a label field); hatch patterns are the layer's hatch, not ANSI patterns.
+  EL, H, DIM, T, AR remembers its numbers + AE, F2 history). Text goes to DXF as TEXT (v0.39.0) and a dimension's value as TEXT over its line (v0.40.0), not as a DIMENSION entity; hatch patterns are the layer's hatch, not ANSI patterns.
   Trim and extend work on lines and contours, not on points; a trimmed
   polygon becomes a line (a GIS polygon cannot be open).
 - ~~2026-09-23 (v0.23.0, precise drawing): lengths in «Вершины», polar angles, perpendicular/parallel snaps, typed rotation~~ —

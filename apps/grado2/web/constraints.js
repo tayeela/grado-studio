@@ -38,13 +38,20 @@ function consLayer(key, title, fc, geom, style) {
   return l;
 }
 const clip = (f, terr) => { const r = inter(f, terr); return r && m2(r) > 1 ? r : null; };
+/* Радиус защиты соседей: высокий дом у границы в начале окна (солнце ~10° над горизонтом в 6:00 22 апреля) бросает тень
+   на высоту/tan 10°. Высота — наибольшая по ПЗЗ в границе, без ПЗЗ — 75 м (25 этажей); радиус 200…600 м. */
+function protectR() {
+  const hs = (DATA["gisogd.pzz_sub"]?.fc.features || []).filter(f => f.properties["Высота, м"] > 0 && safe(() => turf.booleanIntersects(f, TERR))).map(f => +f.properties["Высота, м"]);
+  const H = Math.min(CONS.cap, hs.length ? Math.max(...hs) : 75);
+  return Math.max(200, Math.min(600, Math.round(H / Math.tan(10 * Math.PI / 180) / 50) * 50));
+}
 const polyFeats = key => (DATA[key]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type));
 
 /* ---------- расчёт ---------- */
 async function computeConstraints() {
   if (!TERR) return toast("Сначала задайте границу территории (окно «Данные» или инструмент «Граница»).");
   try { localStorage.setItem("grado2.cons", JSON.stringify({ ...CONS, log: undefined })); } catch { }
-  const zone = buf(TERR, 200), log = [], tick = () => new Promise(r => setTimeout(r, 0));
+  const R = protectR(), zone = buf(TERR, R), log = [], tick = () => new Promise(r => setTimeout(r, 0));
   busy(true); const runBtn = $("consRun"); if (runBtn) runBtn.disabled = true;
   try {
     // 1. ЗОУИТ и охранные зоны: каждая зона отдельно, с причиной — «почему здесь нельзя»
@@ -122,7 +129,7 @@ async function computeConstraints() {
       }
       consLayer(CK.ceil, "Потолок застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Потолок, эт.", n: 5, ramp: "green", method: "equal" } });
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
-      log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах; ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
+      log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах в ${R} м от границы (дома дальше полосы выгрузки 60 м не загружены и не защищены); ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
     }
     dataRev++; ensureConsNode(); renderTree();
     CONS.log = log; renderCons(); toast("Ограничения рассчитаны. Выключенный в дереве слой группы «Ограничения» генерация не учитывает.");
@@ -211,7 +218,7 @@ $("consBody").addEventListener("click", e => { if (e.target.closest("#consRun"))
    Итог — слой точек «Проверка норм» с причиной у каждой точки, сводка в окне «Эскиз». */
 const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
 const prismsOf = (f, h) => polys(f).map(p => ({ ring: openRing(p[0].map(toXY)), holes: p.slice(1).map(q => openRing(q.map(toXY))), h, f }));
-const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, 200); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
+const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, protectR()); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
 let CHECK = null;                 // {key} — принятый слой, который перепроверяется после правки
 function sketchFromLayer(key) {
   return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1, grp: o.get("Блок") || null })).filter(b => /Polygon/.test(b.f.geometry?.type));

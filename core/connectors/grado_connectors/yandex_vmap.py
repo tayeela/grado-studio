@@ -411,6 +411,9 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
     Объект — куски одного id с одинаковыми атрибутами со всех тайлов, склеенные по стыкам тайлов (MultiPolygon /
     MultiLineString); площадь и длина — на местности."""
     want = set(layers) - SKIP
+    xs = [x for (x, _y), _ in blobs] or [0]
+    ys = [y for (_x, y), _ in blobs] or [0]
+    gxl, gxr, gyt, gyb = min(xs) * EXTENT, (max(xs) + 1) * EXTENT, min(ys) * EXTENT, (max(ys) + 1) * EXTENT
     objs = {}        # (слой, id, атрибуты) → [тип, атрибуты, куски в общей сетке тайлов]
     for (x, y), data in blobs:
         to = _to_grid(x, y)
@@ -450,6 +453,11 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
 
     m = _grid_to_3395(zoom)
     w, s, e, n = bbox or (-180, -90, 180, 90)
+    # рамка скачанных тайлов в тех же округлённых координатах, что и вершины: объект, дошедший до неё, обрезан —
+    # карта не рисует разрез контуром, а у площади есть пометка, что она неполная
+    lw, ln_ = _ll([m(gxl, gyt)])[0]
+    le, ls = _ll([m(gxr, gyb)])[0]
+    frame = [lw, ls, le, ln_]
     feats, parts_of = [], {}
     for layer, oid, _ in objs:
         parts_of[layer, oid] = parts_of.get((layer, oid), 0) + 1
@@ -464,7 +472,9 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
                 parts = [[m(*p) for p in r] for r in _join(pieces)]
                 flat = [p for r in parts for p in r]
             else:
-                parts = [[_closed([m(*p) for p in r]) for r in poly] for poly in _dissolve(pieces)]
+                dis = _dissolve(pieces)
+                cut = any(p[0] in (gxl, gxr) or p[1] in (gyt, gyb) for poly in dis for p in poly[0])
+                parts = [[_closed([m(*p) for p in r]) for r in poly] for poly in dis]
                 flat = [p for poly in parts for p in poly[0]]
             lo = to_lonlat(min(p[0] for p in flat), min(p[1] for p in flat))
             hi = to_lonlat(max(p[0] for p in flat), max(p[1] for p in flat))
@@ -475,12 +485,14 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
                 extra = {"Длина, м": round(sum(_line_len_m(r) for r in parts), 1)}
             else:
                 geom = {"type": "MultiPolygon", "coordinates": [[_ll(r) for r in poly] for poly in parts]}
-                extra = {"Площадь, м²": round(sum(_poly_area_m2(poly) for poly in parts), 1)}
+                extra = {"Площадь, м²": round(sum(_poly_area_m2(poly) for poly in parts), 1),
+                         **({"Площадь": "только в области выгрузки: объект обрезан её рамкой"} if cut else {})}
         key = f"yandex:{layer}:{oid}"
         if parts_of[layer, oid] > 1:       # часть комплекса: своя метка, устойчивая между выгрузками
             key += ":" + str(props.get("feature_id") or zlib.crc32(repr(pk).encode("utf-8")))
         feats.append({"type": "Feature", "geometry": geom, "grado_key": key,
-                      "properties": {**props, **extra, "grado_layer": layer}})
+                      "properties": {**props, **extra, "grado_layer": layer},
+                      **({"grado_clip": frame} if t not in ("point", "line") and cut else {})})
     return feats
 
 

@@ -46,6 +46,11 @@ class DxfRoundTrip(unittest.TestCase):
         z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Надписи", "features": fc}], S.REDLN, S.LGR_COLORS)))
         d = ezdxf.read(io.StringIO(z.read("grado2.dxf").decode()))
         self.assertEqual(sorted(e.dxftype() for e in d.modelspace()), ["POINT", "TEXT"])
+        dim = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"Размер": "40,00"},
+               "geometry": {"type": "LineString", "coordinates": [[37.6, 55.75], [37.6, 55.7501], [37.6006, 55.7501], [37.6006, 55.75]]}}]}
+        z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Размеры", "features": dim}], S.REDLN, S.LGR_COLORS)))
+        texts = [e.dxf.text for e in ezdxf.read(io.StringIO(z.read("grado2.dxf").decode())).modelspace() if e.dxftype() == "TEXT"]
+        self.assertEqual(texts, ["40,00"])
 
     def test_export_in_msk_matches_proj_and_ogd_import(self):
         sys.path.insert(0, str(HERE.parents[1] / "core/connectors/tests"))

@@ -537,12 +537,15 @@ function placeLookup(n) {
     if (tp.auto) Object.assign(tp, { zone: r.zone, k1: r.k1, k2: r.k2, tinao: r.tinao });
     recompute(true); renderTep();
     // K1 по улицам: маршрут по пешеходной сети OSM до входа или станции (первый раз — до пары минут, дальше с диска)
-    if (r.rail_walk_m != null) api("/api/rail_route", { lon, lat }).then(q => {
-      if (tp.rev !== rev || q?.route_m == null) return;
+    tp.routing = r.rail_walk_m != null;
+    if (tp.routing) api("/api/rail_route", { lon, lat }).then(q => {
+      if (tp.rev !== rev) return;
+      tp.routing = false;
+      if (q?.route_m == null) return renderTep();
       tp.walk = q.route_m; tp.walkRoute = true; tp.station = q.station || "";
       if (tp.auto) tp.k1 = q.route_m < 1200 ? 0.75 : q.route_m <= 2200 ? 0.9 : 1.0;
       recompute(true); renderTep();
-    }).catch(() => { });
+    }).catch(() => { if (tp.rev === rev) { tp.routing = false; renderTep(); } });
     // граница в нескольких районах: районы в точках внутри границы, кроме центра
     const bb = turf.bbox(TERR), c = [lon, lat], pts = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]]
       .map(q => [c[0] + (q[0] - c[0]) * .7, c[1] + (q[1] - c[1]) * .7]).filter(q => turf.booleanPointInPolygon(q, TERR));
@@ -1013,7 +1016,7 @@ function renderTep() {
       <div class="row"><label>Район</label><b>${esc(tp.district || "определяется…")}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
       <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
       <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}</div>
-      ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="${tp.walkRoute ? "пешеходный маршрут по улицам и дорожкам OSM от центра территории" : "прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)"}">${tp.walkRoute ? "" : "≈ "}${fmt(tp.walk)} м ${tp.walkRoute ? "пешком по улицам" : "до станции"}${tp.station ? ` · ${esc(tp.station)}` : ""}</small></div>` : ""}
+      ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="${tp.walkRoute ? "пешеходный маршрут по улицам и дорожкам OSM от центра территории" : "прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)"}">${tp.walkRoute ? "" : "≈ "}${fmt(tp.walk)} м ${tp.walkRoute ? "пешком по улицам" : "до станции"}${tp.station ? ` · ${esc(tp.station)}` : ""}${tp.routing ? " · маршрут по улицам считается (первый раз до 2 минут)…" : ""}</small></div>` : ""}
       <div class="row"><label title="945-ПП прил. 3: деловая активность района">K2</label>${sel("k2", [[0.2, "0,2"], [0.5, "0,5"], [0.7, "0,7"], [0.9, "0,9"]], "K2")}<label class="inl"><input type="checkbox" data-tp="tinao" ${tp.tinao ? "checked" : ""}> ТиНАО</label></div>
       <div class="row"><label title="2152-ПП табл. 1.4.2">Жилые территории</label>${sel("mode", Object.entries(MODES), "Тип территории")}</div>
       <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${tp.nonres}" style="width:64px"></div>
@@ -1074,7 +1077,14 @@ function draw3d() {
   const sun = INSOL.sunAt(turf.centroid(TERR).geometry.coordinates[1], INSOL.declination(+$("sunDay").value), +$("sunTime").value);
   if (sun.alt > 0) {
     x.fillStyle = "rgba(40,40,60,.22)";
-    items.forEach(it => { const d = it.h / sun.tan, off = it.ring.map(p => [p[0] - sun.vx * d, p[1] - sun.vy * d]); poly(hull(it.ring.concat(off)).map(p => T(p)), "rgba(40,40,60,.22)", null); });
+    // тень призмы = основание + по четырёхугольнику на каждое ребро (не выпуклая оболочка: двор и выемки не заливаются целиком);
+    // все части одного обхода и одной заливкой по правилу nonzero — наложения не темнеют дважды
+    const sa = q => q.reduce((acc, p, i) => { const n = q[(i + 1) % q.length]; return acc + p[0] * n[1] - n[0] * p[1]; }, 0);
+    const add = q => { q = q.map(p => T(p)); if (sa(q) < 0) q.reverse(); q.forEach((p, i) => i ? x.lineTo(...p) : x.moveTo(...p)); x.closePath(); };
+    x.beginPath();
+    items.forEach(it => { const d = it.h / sun.tan, sh = p => [p[0] - sun.vx * d, p[1] - sun.vy * d]; add(it.ring);
+      it.ring.forEach((a, i) => { const b = it.ring[(i + 1) % it.ring.length]; add([a, b, sh(b), sh(a)]); }); });
+    x.fill("nonzero");
   }
   $("sunInfo").textContent = `${String(Math.floor(+$("sunTime").value)).padStart(2, "0")}:${String(Math.round(+$("sunTime").value % 1 * 60)).padStart(2, "0")} · солнце ${sun.alt > 0 ? Math.round(sun.alt * 180 / Math.PI) + "°" : "за горизонтом"}`;
   items.forEach(i => { i.d = R(centroid(i.ring)).reduce((a, b) => a + b, 0); }); items.sort((a, b) => b.d - a.d);
@@ -1313,6 +1323,9 @@ const LAYOUTS = {
 };
 const userLayouts = () => WST.layouts ||= {};
 function applyLayout(L) {
+  // своя раскладка помнит и размеры окон в зонах: высоту в боковой, долю ширины внизу, высоту нижней зоны и вкладок
+  const sz = L._sz;
+  if (sz) { Object.entries(sz.w || {}).forEach(([id, v]) => Object.assign(WST[id] ||= {}, v)); ["hb", "zhl", "zhr"].forEach(k => { if (sz[k]) WST[k] = sz[k]; }); }
   Object.keys(W0()).forEach(id => { if (!(id in L) && !$(id).hidden) winOpen(id, false); });
   Object.entries(L).forEach(([id, z]) => { if (!$(id)) return; (WST[id] ||= {}).dock = z; if (!$(id).hidden) winOpen(id, false); winOpen(id, true); });
   saveWins(); layoutChanged();
@@ -1320,6 +1333,7 @@ function applyLayout(L) {
 function saveLayout() {
   const L = {}; Object.keys(W0()).forEach(id => { if (!$(id).hidden) L[id] = $(id).classList.contains("docked") ? dockPref(id) : null; });
   if (!Object.keys(L).length) return toast("Откройте нужные окна и расставьте их — тогда раскладку можно запомнить.");
+  L._sz = { w: Object.fromEntries(Object.keys(L).map(id => [id, { dh: WST[id]?.dh, bw: WST[id]?.bw }])), hb: WST.hb, zhl: WST.zhl, zhr: WST.zhr };
   const U = userLayouts(); let n = 1; while (U["Моя раскладка " + n]) n++; U["Моя раскладка " + n] = L; saveWins(); toast(`Запомнено как «Моя раскладка ${n}» — она в меню «Окна», раздел «Раскладка окон».`);
 }
 function renderWinMenu() {

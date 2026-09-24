@@ -8,12 +8,14 @@ REDLN97 linetype names become LineCode again.
 """
 
 import io
+import math
 import re
 import sys
 import zipfile
 from pathlib import Path
 
 import ezdxf
+from ezdxf.enums import TextEntityAlignment
 
 from grado_connectors import crs
 from grado_render import acad_lin
@@ -96,6 +98,15 @@ def export_dxf(layers, redln, lgr_colors):
                         if code in lgr_colors:
                             a["true_color"] = _rgb(lgr_colors[code])
                     msp.add_lwpolyline(pts, close=closed, dxfattribs=a)
+                dim = props.get("Размер")
+                if dim not in (None, "") and not closed and len(pts) >= 2:
+                    # размер из ГРАДО 2 — ломаная выносная–размерная–выносная; число пишется текстом над серединой размерной
+                    (x0, y0), (x1, y1) = (pts[1], pts[2]) if len(pts) >= 4 else (pts[0], pts[-1])
+                    ang = math.degrees(math.atan2(y1 - y0, x1 - x0))
+                    if ang > 90 or ang < -90:
+                        ang += 180
+                    msp.add_text(str(dim), height=2.5, rotation=ang, dxfattribs={"layer": lname}).set_placement(
+                        ((x0 + x1) / 2, (y0 + y1) / 2), align=TextEntityAlignment.BOTTOM_CENTER)
     buf = io.StringIO()
     doc.write(buf)
     out = io.BytesIO()
