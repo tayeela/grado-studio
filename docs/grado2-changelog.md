@@ -11,6 +11,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   - «Объект»: table «Вершины, МСК» (up to 300 vertices; rings, holes and parts labelled) — typing X or Y moves the vertex,
     the closing vertex follows the first, undoable.
   - e2e +3 steps.
+  - UX audit: «Объект» showed 597,2 м² for a 30 × 20 m rectangle drawn in МСК (ellipsoid area) — `sizeOf` now measures
+    in МСК like drawing, DXF and sheets (600,0 м²). ТЭП and the graph keep their own area measure.
 
 - **2026-09-25, ГРАДО 2 v0.45.0: select by condition, ALIGN, topological vertex editing, DXF dimensions.**
   - QS «Выбрать по условию»: «Этажность > 9 и Решение = сносим», «Наименование ~ школ» (contains), «Адрес пусто»; = ≠ > < >= <=,

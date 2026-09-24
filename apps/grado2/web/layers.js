@@ -570,7 +570,17 @@ function renderStyle(el) {
   el.innerHTML = h;
 }
 const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? +v : v;
-const sizeOf = f => { const g = f.getGeometry(), t = g?.getType() || "", w = GJ.writeFeatureObject(f); return /Polygon/.test(t) ? ["area", turf.area(w)] : /Line/.test(t) ? ["len", turf.length(w, { units: "kilometers" }) * 1000] : ["pt", 0]; };
+// площадь и длина — в МСК, как их чертят, выгружают в DXF и печатают (эллипсоид дал бы 597,2 м² у прямоугольника 30 × 20 м)
+const sizeOf = f => { const g = f.getGeometry(), t = g?.getType() || "";
+  if (!window.CAD?.toM) { const w = GJ.writeFeatureObject(f); return /Polygon/.test(t) ? ["area", turf.area(w)] : /Line/.test(t) ? ["len", turf.length(w, { units: "kilometers" }) * 1000] : ["pt", 0]; }
+  const ring = r => { const m = r.map(CAD.toM); let a = 0; for (let i = 0; i + 1 < m.length; i++) a += m[i][0] * m[i + 1][1] - m[i + 1][0] * m[i][1]; return Math.abs(a / 2); };
+  const len = r => { const m = r.map(CAD.toM); let d = 0; for (let i = 0; i + 1 < m.length; i++) d += Math.hypot(m[i + 1][0] - m[i][0], m[i + 1][1] - m[i][1]); return d; };
+  const c = g?.getCoordinates();
+  if (t === "Polygon") return ["area", c.reduce((a, r, i) => a + (i ? -ring(r) : ring(r)), 0)];
+  if (t === "MultiPolygon") return ["area", c.reduce((a, p) => a + p.reduce((b, r, i) => b + (i ? -ring(r) : ring(r)), 0), 0)];
+  if (t === "LineString") return ["len", len(c)];
+  if (t === "MultiLineString") return ["len", c.reduce((a, r) => a + len(r), 0)];
+  return ["pt", 0]; };
 const DECSHORT = { "сохраняем": "сохраняем", "реконструкция": "реконстр.", "сносим": "сносим" };
 const decisionBar = () => SEL.some(s => fieldsOfKey(s.key).includes(DECISION)) ? `<div class="pad" style="padding-top:0"><div class="seg dec">${Object.keys(DECISIONS).map(v => `<button data-decide="${v}" title="Решение по выбранным зданиям: ${v}"><i style="background:${DECISIONS[v]}"></i>${DECSHORT[v]}</button>`).join("")}</div></div>` : "";
 // этажность выбранных корпусов своего слоя (эскиз, свои слои): − / +, как ручки высоты в TestFit
