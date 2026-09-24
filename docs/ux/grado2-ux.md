@@ -100,8 +100,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
-- 2026-09-24 (v0.33.0, Яндекс): area layers of Yandex are drawn without outline because an object is a MultiPolygon of tile
-  pieces — switching the outline on shows a seam at every tile edge. A real fix is dissolving pieces along tile edges.
+- ~~2026-09-24 (v0.33.0, Яндекс): tile seams in the outline of Yandex area layers~~ — done in v0.34.0 (pieces dissolved along tile edges).
 - 2026-09-23 (v0.32.0, МСК): layers of ГИС ОГД and ЕГКO in projects saved before v0.32 stay ~7,7 m off until «Загрузить» is
   pressed again for them (the program does not say so on opening an old project); objects you edited keep their old
   geometry after the re-download. DXF files written before v0.32 must be imported with «ГИС ОГД» — nothing tells which

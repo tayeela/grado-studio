@@ -43,10 +43,9 @@ function defaultStyle(key, fc) {
     "egko.roads": { fill: "#e4e1da", stroke: "#b7b2a8", width: .5, opacity: .9 },
     "egko.water": { fill: "#b9d6ec", stroke: "#6fa6e6", width: .8, opacity: 1 },
     "egko.green": { fill: "#cfe3b4", stroke: "#8fb573", width: .4, opacity: .7 },
-    // Яндекс — подложка для анализа и эскиза, спокойные тона. Площадные — без контура: объект собран из кусков тайлов,
-    // и контур каждого куска рисует шов по краю тайла поперёк здания
-    "yandex.buildings": { fill: "#d3cdc2", stroke: "#8f897f", width: 0, opacity: 1 },
-    "yandex.hd_roads": { fill: "#e6e3dc", stroke: "#c3beb4", width: 0, opacity: .85 },
+    // Яндекс — подложка для анализа и эскиза, спокойные тона; куски тайлов склеены по стыкам, контур без швов
+    "yandex.buildings": { fill: "#d8d3c9", stroke: "#8f897f", width: .6, opacity: 1 },
+    "yandex.hd_roads": { fill: "#e6e3dc", stroke: "#c3beb4", width: .4, opacity: .85 },
     "yandex.roads": { fill: "#8f887c", width: .9 },       // оси — одним тоном: классы Яндекса («4_link», «8») владельцу ничего не говорят
     "yandex.road_edges": { fill: "#9c968b", width: .6 },
     "yandex.landuse": { mode: "cat", opacity: .3, stroke: "#b8b2a3", width: 0, cat: { field: "ft_type_name", colors: {}, off: [] } },

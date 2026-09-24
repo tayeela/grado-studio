@@ -226,6 +226,20 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.34.0: Yandex pieces dissolved along tile edges (no shapely).** All pieces of an object go to one
+  integer grid of the zoom (`GX = x·8192 + 4096 + px`, 4095 → 4096; a tile edge is a multiple of 8192). Polygon rings are
+  oriented (outer positive, holes negative); edges lying on a tile edge are summed per edge line as signed intervals, and only
+  what is covered in one direction stays (neighbouring pieces run opposite ways there), then rings are walked from the edges
+  (at a touching vertex the leftmost turn keeps contours apart). The cancellation keeps the area exactly — if not, the object
+  stays as pieces. Then steps of 1–2 cells (≈2 cm) on the edge line, where neighbouring tiles rounded the cut point
+  differently, are removed with collinear vertices. Holes are assigned to the outer that contains them (a courtyard cut by an
+  edge comes back as a hole). Lines: pieces are joined end to start on an edge within 2 cells.
+  - Checked on 37.576 55.843 37.594 55.852 against yaexport.py (shapely union): parts per id equal for all 321 building ids and
+    157 road-surface ids, holes 1/1 and 17/17, all 405 buildings valid in shapely, area sums equal (< 0.001 %); lines 3175
+    pieces → 1749, 0 unjoined ends on edges; tiles + dissolve of the area 0.22 s.
+  - Buildings and road surfaces have their thin outline back (no seams). Tests: +7 (`TestDissolve`, part counts from yaexport in
+    `yaexport_ref.json`).
+
 - **2026-09-24, ГРАДО 2 v0.33.1: UX audit of v0.33.0.** A first download with no objects in the area (e.g. «Вода (Яндекс)» at
   Владыкино) no longer adds an empty layer to the tree; the load toast says «Нет объектов в области: …». Yandex road axes are
   one calm tone instead of random colours by Yandex classes («4_link», «8») that mean nothing to the owner.

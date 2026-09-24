@@ -12,8 +12,9 @@
     части комплекса (башни и стилобат); у каждой части свои высота, назначение и feature_id, поэтому объект — куски
     одного id с одинаковыми атрибутами, а ключ части комплекса дополнен её feature_id.
 
-Куски одного объекта не перекрываются, поэтому объект — MultiPolygon / MultiLineString из кусков, а площадь и длина —
-сумма частей (на местности: метры EPSG:3395 делятся на масштаб проекции в точке). Для анализа и эскиза: это
+Куски одного объекта не перекрываются и склеиваются по стыкам тайлов в общей целочисленной сетке (рёбра на стыке
+гасятся встречными; линии соединяются концами), так что здание через стык — один контур без шва; площадь и длина —
+на местности (метры EPSG:3395 делятся на масштаб проекции в точке). Для анализа и эскиза: это
 пользовательская карта Яндекса, в сдаваемые материалы её не включать.
 """
 
@@ -242,15 +243,176 @@ def _ll(r):
     return [[round(c, 9) for c in to_lonlat(x, y)] for x, y in r]
 
 
+# ---------- склейка кусков по стыкам тайлов (без shapely) ----------
+# Все куски объекта переводятся в общую целочисленную сетку тайлов уровня z: GX = x·8192 + 4096 + px (4095 → 4096),
+# GY так же по y. Стык тайлов — линия, кратная 8192. Соседние куски полигона лежат по разные стороны стыка, поэтому их
+# рёбра на стыке идут навстречу друг другу и взаимно гасятся; оставшиеся рёбра собираются в кольца. Точка среза на стыке
+# в соседних тайлах бывает округлена по-разному (на 1 клетку ≈ 2 см) — от этого остаётся ступенька в 1 клетку, её
+# вершины снимаются чисткой почти прямых углов на линии стыка.
+def _to_grid(x, y):
+    ox, oy = x * EXTENT + 4096, y * EXTENT + 4096
+    return lambda px, py: (ox + (4096 if px == 4095 else px), oy + (4096 if py == 4095 else py))
+
+
+def _grid_to_3395(zoom):
+    k = 2 * HALF / 2 ** zoom / EXTENT
+    return lambda gx, gy: (-HALF + gx * k, HALF - gy * k)
+
+
+def _sarea(r):
+    """Знаковая площадь открытого кольца (в клетках сетки)."""
+    n = len(r)
+    return sum(r[i][0] * r[(i + 1) % n][1] - r[(i + 1) % n][0] * r[i][1] for i in range(n)) / 2
+
+
+def _seam(p):
+    return p[0] % EXTENT == 0 or p[1] % EXTENT == 0
+
+
+def _clean(r):
+    """Снять повторы, вершины на прямой и ступеньки в 1–2 клетки на линии стыка."""
+    changed = True
+    while changed and len(r) > 3:
+        changed = False
+        for i in range(len(r)):
+            a, c, b = r[i - 1], r[i], r[(i + 1) % len(r)]
+            if c == a:
+                del r[i]
+                changed = True
+                break
+            cross = (c[0] - a[0]) * (b[1] - c[1]) - (c[1] - a[1]) * (b[0] - c[0])
+            base = math.hypot(b[0] - a[0], b[1] - a[1])
+            if cross == 0 or (_seam(c) and base and abs(cross) / base <= 1.5):
+                del r[i]
+                changed = True
+                break
+    return r
+
+
+def _inside(pt, ring):
+    x, y = pt
+    inside = False
+    for i in range(len(ring)):
+        (x1, y1), (x2, y2) = ring[i - 1], ring[i]
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside
+
+
+def _dissolve(polys):
+    """Куски полигона (открытые кольца в сетке, [внешнее, дыры…]) → полигоны, склеенные по стыкам тайлов.
+    Если склейка не сходится (кольцо не замкнулось, площадь разошлась) — куски как были."""
+    if len(polys) < 2:
+        return polys
+    edges, total = [], 0.0
+    for poly in polys:
+        for i, r in enumerate(poly):
+            a = _sarea(r)
+            if not a:
+                continue
+            if (a > 0) != (i == 0):          # внешнее — против часовой (в осях сетки), дыры — по часовой
+                r, a = r[::-1], -a
+            total += a
+            edges += [(r[k], r[(k + 1) % len(r)]) for k in range(len(r))]
+    seams, rest = {}, []
+    for p, q in edges:
+        if p == q:
+            continue
+        if p[0] == q[0] and p[0] % EXTENT == 0:
+            seams.setdefault((0, p[0]), []).append((p[1], q[1]))
+        elif p[1] == q[1] and p[1] % EXTENT == 0:
+            seams.setdefault((1, p[1]), []).append((p[0], q[0]))
+        else:
+            rest.append((p, q))
+    for (axis, c), segs in seams.items():     # на линии стыка остаётся только то, что покрыто в одну сторону
+        ev = {}
+        for a, b in segs:
+            sgn = 1 if b > a else -1
+            ev[min(a, b)] = ev.get(min(a, b), 0) + sgn
+            ev[max(a, b)] = ev.get(max(a, b), 0) - sgn
+        cov, ts = 0, sorted(ev)
+        for t0, t1 in zip(ts, ts[1:]):
+            cov += ev[t0]
+            if abs(cov) > 1:
+                return polys
+            if cov:
+                a, b = (t0, t1) if cov > 0 else (t1, t0)
+                rest.append(((c, a), (c, b)) if axis == 0 else ((a, c), (b, c)))
+    out = {}
+    for p, q in rest:
+        out.setdefault(p, []).append(q)
+    rings = []
+    while out:
+        start = next(iter(out))
+        ring, prev, cur = [start], None, start
+        while True:
+            cands = out.get(cur)
+            if not cands:
+                return polys
+            if len(cands) > 1 and prev:           # касание в вершине: самый левый поворот держит кольца раздельными
+                dx, dy = cur[0] - prev[0], cur[1] - prev[1]
+                nxt = max(cands, key=lambda q: math.atan2(dx * (q[1] - cur[1]) - dy * (q[0] - cur[0]),
+                                                           dx * (q[0] - cur[0]) + dy * (q[1] - cur[1])))
+            else:
+                nxt = cands[0]
+            cands.remove(nxt)
+            if not cands:
+                del out[cur]
+            if nxt == start:
+                break
+            ring.append(nxt)
+            prev, cur = cur, nxt
+        rings.append(ring)
+    # гашение встречных рёбер сохраняет площадь точно — иначе склейка не сошлась
+    if abs(sum(_sarea(r) for r in rings) - total) > 1e-6:
+        return polys
+    rings = [r for r in (_clean(r) for r in rings) if len(r) >= 3 and _sarea(r)]
+    outers = [r for r in rings if _sarea(r) > 0]
+    result = [[r] for r in outers]
+    for h in (r for r in rings if _sarea(r) < 0):
+        host = next((p for p in result if _inside(h[0], p[0])), None)
+        if host is None:
+            return polys
+        host.append(h)
+    return result or polys
+
+
+def _join(lines):
+    """Куски линии (в сетке) → соединённые по концам на стыке тайлов (с допуском в 2 клетки на округление среза)."""
+    lines = [list(l) for l in lines]
+    near = lambda a, b: abs(a[0] - b[0]) <= 2 and abs(a[1] - b[1]) <= 2
+    joined = True
+    while joined and len(lines) > 1:
+        joined = False
+        for i, a in enumerate(lines):
+            if not _seam(a[-1]):
+                continue
+            for j, b in enumerate(lines):
+                if i == j:
+                    continue
+                if near(a[-1], b[0]) and _seam(b[0]):
+                    a.extend(b[1:])
+                elif near(a[-1], b[-1]) and _seam(b[-1]):
+                    a.extend(b[-2::-1])
+                else:
+                    continue
+                del lines[j]
+                joined = True
+                break
+            if joined:
+                break
+    return lines
+
+
 def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
     """[((x, y), байты тайла)] → объекты GeoJSON (WGS84) выбранных слоёв; с рамкой — только пересекающие её.
 
-    Объект — куски одного id с одинаковыми атрибутами со всех тайлов (MultiPolygon / MultiLineString); площадь и
-    длина — сумма кусков на местности."""
+    Объект — куски одного id с одинаковыми атрибутами со всех тайлов, склеенные по стыкам тайлов (MultiPolygon /
+    MultiLineString); площадь и длина — на местности."""
     want = set(layers) - SKIP
-    objs = {}        # (слой, id, атрибуты) → [тип, атрибуты, куски в метрах EPSG:3395]
+    objs = {}        # (слой, id, атрибуты) → [тип, атрибуты, куски в общей сетке тайлов]
     for (x, y), data in blobs:
-        to = tile_to_3395(zoom, x, y)
+        to = _to_grid(x, y)
         for n, fe in enumerate(decode(data)):
             layer = fe["layer"]
             if layer not in want or "type" not in fe:
@@ -261,8 +423,17 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
             elif t == "line":
                 geom = [[to(*p) for p in r] for r in fe["parts"] if len(r) >= 2]
             else:
-                geom = [[_closed([to(*p) for p in r]) for r in poly if len(r) >= 3] for poly in fe["parts"]]
-                geom = [p for p in geom if p and _ring_area(p[0]) > 0]
+                geom = []
+                for poly in fe["parts"]:
+                    rings = []
+                    for r in poly:
+                        r = [to(*p) for p in r]
+                        if len(r) > 1 and r[0] == r[-1]:
+                            r = r[:-1]
+                        if len(r) >= 3:
+                            rings.append(r)
+                    if rings and _sarea(rings[0]):
+                        geom.append(rings)
             if not geom:
                 continue
             oid = fe.get("id")
@@ -276,28 +447,34 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
             else:
                 o[2].extend(geom)
 
+    m = _grid_to_3395(zoom)
     w, s, e, n = bbox or (-180, -90, 180, 90)
     feats, parts_of = [], {}
     for layer, oid, _ in objs:
         parts_of[layer, oid] = parts_of.get((layer, oid), 0) + 1
     for (layer, oid, pk), (t, props, pieces) in objs.items():
         if t == "point":
-            lon, lat = to_lonlat(*pieces[0])
+            lon, lat = to_lonlat(*m(*pieces[0]))
             if not (w <= lon <= e and s <= lat <= n):
                 continue
             geom, extra = {"type": "Point", "coordinates": [round(lon, 9), round(lat, 9)]}, {}
         else:
-            flat = [p for piece in pieces for p in (piece[0] if t == "polygon" else piece)]
+            if t == "line":
+                parts = [[m(*p) for p in r] for r in _join(pieces)]
+                flat = [p for r in parts for p in r]
+            else:
+                parts = [[_closed([m(*p) for p in r]) for r in poly] for poly in _dissolve(pieces)]
+                flat = [p for poly in parts for p in poly[0]]
             lo = to_lonlat(min(p[0] for p in flat), min(p[1] for p in flat))
             hi = to_lonlat(max(p[0] for p in flat), max(p[1] for p in flat))
             if hi[0] < w or lo[0] > e or hi[1] < s or lo[1] > n:
                 continue
             if t == "line":
-                geom = {"type": "MultiLineString", "coordinates": [_ll(r) for r in pieces]}
-                extra = {"Длина, м": round(sum(_line_len_m(r) for r in pieces), 1)}
+                geom = {"type": "MultiLineString", "coordinates": [_ll(r) for r in parts]}
+                extra = {"Длина, м": round(sum(_line_len_m(r) for r in parts), 1)}
             else:
-                geom = {"type": "MultiPolygon", "coordinates": [[_ll(r) for r in poly] for poly in pieces]}
-                extra = {"Площадь, м²": round(sum(_poly_area_m2(poly) for poly in pieces), 1)}
+                geom = {"type": "MultiPolygon", "coordinates": [[_ll(r) for r in poly] for poly in parts]}
+                extra = {"Площадь, м²": round(sum(_poly_area_m2(poly) for poly in parts), 1)}
         key = f"yandex:{layer}:{oid}"
         if parts_of[layer, oid] > 1:       # часть комплекса: своя метка, устойчивая между выгрузками
             key += ":" + str(props.get("feature_id") or zlib.crc32(repr(pk).encode("utf-8")))

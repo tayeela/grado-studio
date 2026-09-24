@@ -109,6 +109,8 @@ class TestMerge(unittest.TestCase):
             for (ka, ia), (kb, ib) in zip(a, b):
                 self.assertEqual(ka[0], kb[0])
                 self.assertAlmostEqual(ka[1], kb[1], delta=max(0.2, kb[1] * 0.002))
+                if "parts" in ref[ib]:           # склейка по стыкам: столько же контуров, сколько у объединения shapely
+                    self.assertEqual(len(mine[ia]["geometry"]["coordinates"]), ref[ib]["parts"], f"{layer} {ka[0]}: частей")
                 g, rb = mine[ia]["geometry"], ref[ib]["bounds"]
                 flat = [p for part in g["coordinates"] for ring in (part if g["type"] == "MultiPolygon" else [part]) for p in ring]
                 lo = (min(p[0] for p in flat), min(p[1] for p in flat))
@@ -116,17 +118,21 @@ class TestMerge(unittest.TestCase):
                 self.assertLess(metres(*lo, rb[0], rb[1]), 0.01)
                 self.assertLess(metres(*hi, rb[2], rb[3]), 0.01)
 
-    def test_pieces_become_one_multipolygon(self):
-        by_id = {}
-        for f in self.feats:
-            if f["properties"]["grado_layer"] == "building":
-                by_id.setdefault(f["grado_key"], f)
-        spread = [f for f in by_id.values() if len(f["geometry"]["coordinates"]) > 1]
+    def test_pieces_across_seams_become_one_contour(self):
+        pieces = {}
+        for t in TILES:
+            for fe in yv.decode(blob(*t)):
+                if fe["layer"] == "building":
+                    pieces.setdefault(fe.get("id"), set()).add(t)
+        spread = {i for i, ts in pieces.items() if len(ts) > 1}
         self.assertTrue(spread, "в фикстуре есть здания через стык тайлов")
-        for f in spread:
+        merged = [f for f in self.feats if f["properties"]["grado_layer"] == "building" and int(f["grado_key"].split(":")[2]) in spread]
+        self.assertTrue(any(len(f["geometry"]["coordinates"]) == 1 for f in merged), "куски с разных тайлов — один контур")
+        for f in merged:
             self.assertEqual(f["geometry"]["type"], "MultiPolygon")
             for part in f["geometry"]["coordinates"]:
                 self.assertEqual(part[0][0], part[0][-1], "кольцо замкнуто")
+                self.assertFalse(any(abs(p[0] - q[0]) < 1e-12 and abs(p[1] - q[1]) < 1e-12 for p, q in zip(part[0], part[0][1:])), "без повторов")
 
     def test_keys_and_attributes(self):
         keys = [f["grado_key"] for f in self.feats]
@@ -145,6 +151,57 @@ class TestMerge(unittest.TestCase):
         box = tile_bbox(*TILES[0], inset=0.45)
         f = yv.features_from_tiles([(t, blob(*t)) for t in TILES], ["building", "road"], bbox=box)
         self.assertTrue(0 < len(f) < len(self.feats))
+
+
+S = 8192       # стык тайлов в общей сетке — линия, кратная 8192
+
+
+def sq(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+
+
+class TestDissolve(unittest.TestCase):
+    """Склейка кусков полигона по стыкам тайлов в общей целочисленной сетке."""
+    def area(self, polys):
+        return sum(abs(yv._sarea(p[0])) - sum(abs(yv._sarea(h)) for h in p[1:]) for p in polys)
+
+    def test_two_halves_become_one_rectangle(self):
+        r = yv._dissolve([[sq(S - 100, 0, S, 50)], [sq(S, 0, S + 70, 50)]])
+        self.assertEqual(len(r), 1)
+        self.assertEqual(sorted(r[0][0]), sorted(sq(S - 100, 0, S + 70, 50)), "вершины стыка сняты")
+
+    def test_slanted_edge_with_cut_rounded_differently(self):
+        # наклонная грань пересекает стык; соседний тайл округлил точку среза на 1 клетку иначе
+        a = [(S - 400, 0), (S, 0), (S, 201), (S - 400, 100)]
+        b = [(S, 0), (S + 400, 0), (S + 400, 300), (S, 200)]
+        r = yv._dissolve([[a], [b]])
+        self.assertEqual(len(r), 1)
+        self.assertEqual(len(r[0][0]), 4, "ступенька в 1 клетку на стыке снята")
+
+    def test_courtyard_across_seam_becomes_a_hole(self):
+        left = [(S - 100, 0), (S, 0), (S, 30), (S - 50, 30), (S - 50, 70), (S, 70), (S, 100), (S - 100, 100)]
+        right = [(S, 0), (S + 100, 0), (S + 100, 100), (S, 100), (S, 70), (S + 50, 70), (S + 50, 30), (S, 30)]
+        r = yv._dissolve([[left], [right]])
+        self.assertEqual(len(r), 1)
+        self.assertEqual(len(r[0]), 2, "двор — дыра")
+        self.assertEqual(self.area(r), 200 * 100 - 100 * 40)
+
+    def test_four_tiles_around_a_corner(self):
+        parts = [[sq(S - 10, S - 10, S, S)], [sq(S, S - 10, S + 10, S)], [sq(S - 10, S, S, S + 10)], [sq(S, S, S + 10, S + 10)]]
+        r = yv._dissolve(parts)
+        self.assertEqual([sorted(p[0]) for p in r], [sorted(sq(S - 10, S - 10, S + 10, S + 10))])
+
+    def test_touching_at_a_corner_stays_two_contours(self):
+        r = yv._dissolve([[sq(S - 10, 0, S, 10)], [sq(S, 10, S + 10, 20)]])
+        self.assertEqual(len(r), 2)
+
+    def test_clockwise_input_and_own_seam_edge_kept(self):
+        r = yv._dissolve([[sq(S - 10, 0, S, 10)[::-1]], [sq(S - 10, 10, S, 20)]])   # стык не по линии тайла — склеивать нечего
+        self.assertEqual(self.area(r), 200)
+
+    def test_lines_joined_at_seam(self):
+        j = yv._join([[(S - 50, 5), (S, 7)], [(S, 8), (S + 50, 9)], [(0, 0), (1, 1)]])
+        self.assertEqual(sorted(len(l) for l in j), [2, 3])
 
 
 class FakeTransport:
