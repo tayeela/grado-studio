@@ -1,0 +1,385 @@
+"""Яндекс Карты: векторные тайлы vmap3 (обратная разработка, сверено 23.09.2026) — только стандартная библиотека.
+
+Формат (проверено на тайлах района Владыкино):
+  * тайл — protobuf без схемы: поле 2 — все координаты тайла (varint, zigzag, дельты по x и y), поле 3 — длины частей,
+    поле 4 — наборы имён атрибутов, поле 5 — значения атрибутов, поле 6 — слой (имя и объекты);
+  * значение атрибута: 1 — строка, 8 — строка во вложенном сообщении, 5 — float32, 2 — целое со знаком (zigzag:
+    высота 6 в тайле — это 3 м, z_level 1 — это −1; feature_id совпадает с id объекта только после раскодирования),
+    3 и 4 — целые без знака, 6 — флаг;
+  * сетка тайлов — EPSG:3395 (эллипсоидальный Меркатор), НЕ 3857: иначе всё уезжает на ~20 км;
+  * координаты в тайле — сетка 8192 с началом в центре, ось y вниз; 4095 на правом и нижнем краю означает 4096;
+  * id объекта один и тот же во всех тайлах: куски здания на соседних тайлах собираются по id. У зданий id объединяет
+    части комплекса (башни и стилобат); у каждой части свои высота, назначение и feature_id, поэтому объект — куски
+    одного id с одинаковыми атрибутами, а ключ части комплекса дополнен её feature_id.
+
+Куски одного объекта не перекрываются, поэтому объект — MultiPolygon / MultiLineString из кусков, а площадь и длина —
+сумма частей (на местности: метры EPSG:3395 делятся на масштаб проекции в точке). Для анализа и эскиза: это
+пользовательская карта Яндекса, в сдаваемые материалы её не включать.
+"""
+
+import math
+import os
+import ssl
+import struct
+import tempfile
+import time
+import urllib.error
+import urllib.request
+import zlib
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from .contract import Connector, ConnectorError, make_result
+
+URL = ("https://core-renderer-tiles.maps.yandex.net/vmap3/tiles"
+       "?lang=ru_RU&x={x}&y={y}&z={z}&zmin={z}&zmax={z}")
+HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://yandex.ru/maps/"}
+ZOOM = 18                    # полная детализация: z19 отличается на ~1 %, z16 даёт дрожание контура ±1 м
+TTL = 30 * 24 * 3600
+EXTENT = 8192
+R = 6378137.0
+E = 0.0818191908426          # эксцентриситет WGS84
+HALF = math.pi * R
+# служебные слои рендера — не выгружаются (маски во весь тайл, подписи, суша, границы населённых пунктов)
+SKIP = frozenset({"hd_road_interchange", "land", "locality_a", "model_p", "road_label", "roadnet_a_label",
+                  "road_symbol", "place_label"})
+SOURCE_DOC = "Яндекс Карты (векторные тайлы vmap3) — для анализа и эскиза; в сдаваемые материалы не включать"
+
+
+# ---------- protobuf без схемы ----------
+def _varint(b, i):
+    r = s = 0
+    while True:
+        c = b[i]
+        i += 1
+        r |= (c & 0x7F) << s
+        s += 7
+        if c < 0x80:
+            return r, i
+
+
+def _parse(b):
+    """Сообщение → [(поле, тип, значение)]."""
+    i, out, n = 0, [], len(b)
+    while i < n:
+        k, i = _varint(b, i)
+        f, w = k >> 3, k & 7
+        if w == 0:
+            v, i = _varint(b, i)
+        elif w == 1:
+            v, i = b[i:i + 8], i + 8
+        elif w == 5:
+            v, i = b[i:i + 4], i + 4
+        elif w == 2:
+            ln, i = _varint(b, i)
+            v, i = b[i:i + ln], i + ln
+        else:
+            raise ValueError(f"тип поля {w}")
+        out.append((f, w, v))
+    if i != n:
+        raise ValueError("сообщение обрезано")
+    return out
+
+
+def _varints(b):
+    i, out = 0, []
+    while i < len(b):
+        v, i = _varint(b, i)
+        out.append(v)
+    return out
+
+
+def _zz(n):
+    return (n >> 1) ^ -(n & 1)
+
+
+def _value(msg):
+    p = _parse(msg)
+    if not p:
+        return None
+    a, _, v = p[0]
+    if a == 1:
+        return v.decode("utf-8", "replace")
+    if a == 8:
+        inner = _parse(v) if v else []
+        return inner[0][2].decode("utf-8", "replace") if inner else ""
+    if a == 5:
+        return struct.unpack("<f", v)[0]
+    if a == 2:
+        return _zz(v)
+    if isinstance(v, (bytes, bytearray)):
+        return v.hex()
+    return v
+
+
+def decode(buf):
+    """Тайл → [{layer, type: point|line|polygon, parts, id?, props}] в координатах сетки тайла.
+
+    parts: точка — [(x, y)], линия — [кусок, …], полигон — [[кольцо, дыра, …], …]."""
+    if not buf:
+        return []
+    top = _parse(buf)
+    geo = next((v for f, w, v in top if f == 2), b"")
+    lens = next((v for f, w, v in top if f == 3), b"")
+    G, C = _varints(geo), _varints(lens)
+    keys = [[x[2].decode("utf-8", "replace") for x in _parse(v)] for f, w, v in top if f == 4]
+    vals = [_value(v) for f, w, v in top if f == 5]
+    parts, k = [], 0
+    for n in C:
+        x = y = 0
+        ring = []
+        for _ in range(n):
+            x += _zz(G[k])
+            y += _zz(G[k + 1])
+            k += 2
+            ring.append((x, y))
+        parts.append(ring)
+    pi, out = 0, []
+    for f, w, v in top:
+        if f != 6:
+            continue
+        L = _parse(v)
+        layer = L[0][2].decode("utf-8", "replace")
+        for f2, w2, v2 in L[1:]:
+            if f2 != 2:
+                continue
+            fe = {"layer": layer}
+            for a, wa, va in _parse(v2):
+                if a == 1:
+                    fe["type"], fe["parts"] = "point", parts[pi]
+                    pi += 1
+                elif a == 2:
+                    d = {x[0]: x[2] for x in _parse(va)}
+                    fe["type"], fe["parts"] = "line", parts[pi:pi + d[1]]
+                    pi += d[1]
+                elif a == 3:
+                    d = {x[0]: x[2] for x in _parse(va)}
+                    polys, j = [], pi
+                    for rc in d.get(1, b""):
+                        polys.append(parts[j:j + rc])
+                        j += rc
+                    fe["type"], fe["parts"] = "polygon", polys
+                    pi = j + d.get(2, 0)         # поле 2 — контуры обводки, в геометрию не идут
+                elif a == 5:
+                    fe["id"] = va
+                elif a == 6:
+                    d = {x[0]: x[2] for x in _parse(va)}
+                    fe["props"] = {kk: vals[i] for kk, i in zip(keys[d[1]], _varints(d[2]))}
+            out.append(fe)
+    if pi != len(parts):
+        raise ConnectorError(f"тайл Яндекса не разобран: частей {len(parts)}, прочитано {pi}")
+    return out
+
+
+# ---------- EPSG:3395 ↔ WGS84 ----------
+def lonlat_to_3395(lon, lat):
+    p = math.radians(lat)
+    es = E * math.sin(p)
+    return R * math.radians(lon), R * math.log(math.tan(math.pi / 4 + p / 2) * ((1 - es) / (1 + es)) ** (E / 2))
+
+
+def lat_from_3395(y):
+    """Обратный эллипсоидальный Меркатор: широта итерациями до 1e-13 рад (< 1 мм)."""
+    t = math.exp(-y / R)
+    p = math.pi / 2 - 2 * math.atan(t)
+    for _ in range(20):
+        es = E * math.sin(p)
+        q = math.pi / 2 - 2 * math.atan(t * ((1 - es) / (1 + es)) ** (E / 2))
+        if abs(q - p) < 1e-13:
+            return math.degrees(q)
+        p = q
+    return math.degrees(p)
+
+
+def to_lonlat(x, y):
+    return math.degrees(x / R), lat_from_3395(y)
+
+
+def scale_3395(y):
+    """Масштаб проекции в точке: во столько раз метр EPSG:3395 длиннее метра на местности."""
+    p = math.radians(lat_from_3395(y))
+    return math.sqrt(1 - (E * math.sin(p)) ** 2) / math.cos(p)
+
+
+def tile_range(bbox, z=ZOOM):
+    w, s, e, n = bbox
+    size = 2 * HALF / 2 ** z
+    x1, y1 = lonlat_to_3395(w, s)
+    x2, y2 = lonlat_to_3395(e, n)
+    tx = range(int((min(x1, x2) + HALF) // size), int((max(x1, x2) + HALF) // size) + 1)
+    ty = range(int((HALF - max(y1, y2)) // size), int((HALF - min(y1, y2)) // size) + 1)
+    return [(x, y) for x in tx for y in ty]
+
+
+def tile_to_3395(z, x, y):
+    """Функция: точка сетки тайла → метры EPSG:3395. Край 4095 возвращается на 4096 — иначе щель на стыке тайлов."""
+    size = 2 * HALF / 2 ** z
+    cx, cy, k = -HALF + (x + 0.5) * size, HALF - (y + 0.5) * size, size / EXTENT
+    return lambda px, py: (cx + (4096 if px == 4095 else px) * k, cy - (4096 if py == 4095 else py) * k)
+
+
+# ---------- площадь и длина на местности ----------
+def _ring_area(r):
+    return abs(sum(r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1] for i in range(len(r) - 1))) / 2
+
+
+def _poly_area_m2(poly):
+    """Кусок полигона в метрах EPSG:3395 → площадь на местности (масштаб — по средней широте внешнего кольца)."""
+    outer = poly[0]
+    k = scale_3395(sum(p[1] for p in outer) / len(outer))
+    return max(0.0, _ring_area(outer) - sum(_ring_area(h) for h in poly[1:])) / k ** 2
+
+
+def _line_len_m(line):
+    return sum(math.hypot(b[0] - a[0], b[1] - a[1]) / scale_3395((a[1] + b[1]) / 2) for a, b in zip(line, line[1:]))
+
+
+def _closed(r):
+    return r if r[0] == r[-1] else r + [r[0]]
+
+
+def _ll(r):
+    return [[round(c, 9) for c in to_lonlat(x, y)] for x, y in r]
+
+
+def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
+    """[((x, y), байты тайла)] → объекты GeoJSON (WGS84) выбранных слоёв; с рамкой — только пересекающие её.
+
+    Объект — куски одного id с одинаковыми атрибутами со всех тайлов (MultiPolygon / MultiLineString); площадь и
+    длина — сумма кусков на местности."""
+    want = set(layers) - SKIP
+    objs = {}        # (слой, id, атрибуты) → [тип, атрибуты, куски в метрах EPSG:3395]
+    for (x, y), data in blobs:
+        to = tile_to_3395(zoom, x, y)
+        for n, fe in enumerate(decode(data)):
+            layer = fe["layer"]
+            if layer not in want or "type" not in fe:
+                continue
+            t = fe["type"]
+            if t == "point":
+                geom = [to(*fe["parts"][0])] if fe["parts"] else None
+            elif t == "line":
+                geom = [[to(*p) for p in r] for r in fe["parts"] if len(r) >= 2]
+            else:
+                geom = [[_closed([to(*p) for p in r]) for r in poly if len(r) >= 3] for poly in fe["parts"]]
+                geom = [p for p in geom if p and _ring_area(p[0]) > 0]
+            if not geom:
+                continue
+            oid = fe.get("id")
+            props = fe.get("props") or {}
+            # id объединяет части комплекса (башни и стилобат одного id), а высота и назначение у каждой части свои:
+            # объект — куски одного id с одинаковыми атрибутами (так же склеивает эталон yaexport.py)
+            key = (layer, oid if oid is not None else f"{zoom}_{x}_{y}_{n}", tuple(sorted((k, repr(v)) for k, v in props.items())))
+            o = objs.setdefault(key, [t, props, []])
+            if t == "point":
+                o[2] = o[2] or geom
+            else:
+                o[2].extend(geom)
+
+    w, s, e, n = bbox or (-180, -90, 180, 90)
+    feats, parts_of = [], {}
+    for layer, oid, _ in objs:
+        parts_of[layer, oid] = parts_of.get((layer, oid), 0) + 1
+    for (layer, oid, pk), (t, props, pieces) in objs.items():
+        if t == "point":
+            lon, lat = to_lonlat(*pieces[0])
+            if not (w <= lon <= e and s <= lat <= n):
+                continue
+            geom, extra = {"type": "Point", "coordinates": [round(lon, 9), round(lat, 9)]}, {}
+        else:
+            flat = [p for piece in pieces for p in (piece[0] if t == "polygon" else piece)]
+            lo = to_lonlat(min(p[0] for p in flat), min(p[1] for p in flat))
+            hi = to_lonlat(max(p[0] for p in flat), max(p[1] for p in flat))
+            if hi[0] < w or lo[0] > e or hi[1] < s or lo[1] > n:
+                continue
+            if t == "line":
+                geom = {"type": "MultiLineString", "coordinates": [_ll(r) for r in pieces]}
+                extra = {"Длина, м": round(sum(_line_len_m(r) for r in pieces), 1)}
+            else:
+                geom = {"type": "MultiPolygon", "coordinates": [[_ll(r) for r in poly] for poly in pieces]}
+                extra = {"Площадь, м²": round(sum(_poly_area_m2(poly) for poly in pieces), 1)}
+        key = f"yandex:{layer}:{oid}"
+        if parts_of[layer, oid] > 1:       # часть комплекса: своя метка, устойчивая между выгрузками
+            key += ":" + str(props.get("feature_id") or zlib.crc32(repr(pk).encode("utf-8")))
+        feats.append({"type": "Feature", "geometry": geom, "grado_key": key,
+                      "properties": {**props, **extra, "grado_layer": layer}})
+    return feats
+
+
+def _ssl_context():
+    # Сборки Python.org на macOS не видят системные CA (правило 6 CLAUDE.md).
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+class YandexVmap(Connector):
+    """fetch(bbox, layers) → объекты слоёв Яндекса, пересекающие область; свойство grado_layer — слой тайла."""
+    name = "yandex"
+    source = "yandex"
+
+    def __init__(self, transport=None, cache_dir=None, ttl=TTL, zoom=ZOOM, workers=3, pause=0.3, progress=None):
+        self._ctx = None if transport else _ssl_context()
+        self.transport = transport or self._http_get
+        self.cache_dir = Path(cache_dir) if cache_dir else None
+        self.ttl, self.zoom, self.workers, self.pause, self.progress = ttl, zoom, workers, pause, progress
+
+    def _http_get(self, url, timeout=30):
+        req = urllib.request.Request(url, headers=HEADERS)
+        with urllib.request.urlopen(req, timeout=timeout, context=self._ctx) as r:
+            return r.read()
+
+    def _tile(self, x, y):
+        """(данные, скачан ли из сети). Повторы с нарастающей паузой; после каждого скачанного тайла — пауза."""
+        z = self.zoom
+        path = self.cache_dir / f"{z}_{x}_{y}.pbf" if self.cache_dir else None
+        if path and path.exists() and time.time() - path.stat().st_mtime < self.ttl:
+            return path.read_bytes(), False
+        last = None
+        for attempt in range(4):
+            if attempt:
+                time.sleep(2 ** (attempt - 1))
+            try:
+                data = self.transport(URL.format(x=x, y=y, z=z), timeout=30)
+                break
+            except urllib.error.HTTPError as e:
+                if e.code == 404:          # нет данных в тайле
+                    data = b""
+                    break
+                last = e
+            except (OSError, ValueError) as e:
+                last = e
+        else:
+            raise ConnectorError(f"тайл Яндекса {z}/{x}/{y} не скачан: {last}")
+        if path:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".part")
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, path)
+        if self.pause:
+            time.sleep(self.pause)
+        return data, True
+
+    def fetch(self, bbox, layers):
+        want = set(layers) - SKIP
+        tiles = tile_range(bbox, self.zoom)
+        done, net = [0], [0]
+
+        def one(t):
+            data, fresh = self._tile(*t)
+            done[0] += 1
+            net[0] += fresh
+            if self.progress:
+                self.progress(done[0], len(tiles))
+            return t, data
+
+        with ThreadPoolExecutor(max(1, self.workers)) as ex:
+            blobs = list(ex.map(one, tiles))
+
+        feats = features_from_tiles(blobs, want, self.zoom, bbox)
+        notes = [] if net[0] else ["тайлы с диска: повторно Яндекс не запрашивался"]
+        return make_result(feats, {"bbox": list(bbox), "layers": sorted(want), "zoom": self.zoom, "tiles": len(tiles),
+                                   "downloaded": net[0]}, source_doc=SOURCE_DOC, notes=notes)

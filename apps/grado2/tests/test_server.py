@@ -105,6 +105,54 @@ class Egko(unittest.TestCase):
         self.assertTrue(all(p["_key"].startswith("base2:") for p in props))
 
 
+class Yandex(unittest.TestCase):
+    """Яндекс Карты — девять источников из тайлов vmap3; все слои одним проходом по тайлам, поля — по-русски."""
+    FIX = Path(__file__).resolve().parents[3] / "core/connectors/tests/fixtures/yandex"
+
+    def test_sources_and_limit(self):
+        keys = [k for k in S.SOURCES if k.startswith("yandex.")]
+        self.assertEqual(set(keys), {"yandex.hd_roads", "yandex.buildings", "yandex.roads", "yandex.road_edges", "yandex.landuse",
+                                     "yandex.green", "yandex.water", "yandex.parking", "yandex.transport"})
+        self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
+        self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
+        self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")
+        self.assertEqual(S.LIMIT_KM2["yandex"], 4.0)
+        layers, errors = S.fetch([37.5, 55.8, 37.6, 55.9], ["yandex.buildings"])
+        self.assertIn("больше допустимых 4", errors["yandex.buildings"])
+
+    def test_fetch_one_pass_and_readable_fields(self):
+        from grado_connectors import yandex_vmap as yv
+        fix, calls = self.FIX, []
+
+        class Offline(yv.YandexVmap):
+            def __init__(self, **kw):
+                calls.append(kw)
+                super().__init__(transport=self.read, pause=0)
+
+            def read(self, url, timeout=None):
+                q = dict(p.split("=") for p in url.split("?")[1].split("&"))
+                f = fix / f"{q['z']}_{q['x']}_{q['y']}.pbf"
+                return f.read_bytes() if f.exists() else b""
+        # три тайла фикстуры углом; четвёртый тайл рамки отдаётся пустым
+        (w, n), (e, s_) = yv.to_lonlat(*yv.tile_to_3395(18, 158445, 82054)(-3000, -3000)), yv.to_lonlat(*yv.tile_to_3395(18, 158446, 82055)(3000, 3000))
+        old, S.YandexVmap = S.YandexVmap, Offline
+        try:
+            layers, errors = S.fetch([w, s_, e, n], ["yandex.buildings", "yandex.hd_roads", "yandex.roads"])
+        finally:
+            S.YandexVmap = old
+        self.assertEqual(errors, {})
+        self.assertEqual(len(calls), 1, "тайлы качаются один раз на все слои Яндекса")
+        self.assertTrue(str(calls[0]["cache_dir"]).endswith("yandex"))
+        b = [f["properties"] for f in layers["yandex.buildings"]["features"]["features"]]
+        self.assertTrue(b and all(p["_key"].startswith("yandex:building:") for p in b))
+        self.assertTrue(all(isinstance(p["Высота, м"], int) for p in b if "Высота, м" in p))
+        self.assertTrue(all("Назначение" in p and "Площадь, м²" in p and "grado_layer" not in p for p in b))
+        r = [f["properties"] for f in layers["yandex.hd_roads"]["features"]["features"]]
+        self.assertTrue(r and all("Тип" in p and "type" not in p for p in r))
+        self.assertTrue(all("Длина, м" in f["properties"] for f in layers["yandex.roads"]["features"]["features"]))
+        self.assertIn("в сдаваемые материалы не включать", layers["yandex.buildings"]["source"])
+
+
 class Projects(unittest.TestCase):
     def setUp(self):
         import tempfile

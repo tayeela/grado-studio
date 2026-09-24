@@ -15,11 +15,12 @@ from .nspd import NSPD_CATEGORIES, NspdCapture, NspdDirect
 from .osm import OSM_SETS, OsmOverpass
 from .store import SnapshotStore, StoreError, Subscriptions
 from .terrain import TerrainContours
+from .yandex_vmap import YandexVmap
 
 __all__ = ["Connector", "ConnectorError", "FgistpConnector", "GisogdZip",
            "GISOGD_API_LAYERS", "GisogdApi",
            "NSPD_CATEGORIES", "NspdCapture", "NspdDirect",
-           "OSM_SETS", "OsmOverpass", "TerrainContours",
+           "OSM_SETS", "OsmOverpass", "TerrainContours", "YandexVmap",
            "SnapshotStore", "StoreError", "Subscriptions",
            "diff", "has_changes", "import_snapshot"]
 __version__ = "0.1.0"

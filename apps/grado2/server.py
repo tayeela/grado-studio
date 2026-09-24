@@ -40,6 +40,7 @@ from grado_connectors.gisogd_api import GISOGD_API_LAYERS, GisogdApi  # noqa: E4
 from grado_connectors.nspd import NspdDirect                       # noqa: E402
 from grado_connectors.osm import OsmOverpass                       # noqa: E402
 from grado_connectors.terrain import TerrainContours               # noqa: E402
+from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
@@ -84,9 +85,20 @@ SOURCES["egko.water"] = ("egko", {"hidrograf": None}, "Водная поверх
 SOURCES["egko.fences"] = ("egko", {"fence2k": None}, "Заборы (ЕГКО)")
 SOURCES["egko.addresses"] = ("egko", {"adres": None}, "Адреса (ЕГКО)")
 EGKO_EXTRA = {"egko.buildings": "Состояние", "egko.green": "Вид"}     # куда пишется значение кода слоя
+# Яндекс Карты — векторные тайлы vmap3 (core/connectors/grado_connectors/yandex_vmap.py): слои тайла → ключ ГРАДО 2.
+# Для анализа и эскиза; в сдаваемые материалы не включать. POI и организации не выгружаются (решение владельца).
+SOURCES["yandex.hd_roads"] = ("yandex", ["hd_road_surface"], "Проезжая часть (Яндекс)")
+SOURCES["yandex.buildings"] = ("yandex", ["building"], "Здания (Яндекс)")
+SOURCES["yandex.roads"] = ("yandex", ["road"], "Оси дорог и дорожек (Яндекс)")
+SOURCES["yandex.road_edges"] = ("yandex", ["hd_road_surface_border"], "Кромки проезжей части (Яндекс)")
+SOURCES["yandex.landuse"] = ("yandex", ["landuse_a"], "Функциональные зоны (Яндекс)")
+SOURCES["yandex.green"] = ("yandex", ["vegetation", "vegetation_planned", "hd_road_vegetation"], "Озеленение (Яндекс)")
+SOURCES["yandex.water"] = ("yandex", ["hydro_a", "hydro_l"], "Вода (Яндекс)")
+SOURCES["yandex.parking"] = ("yandex", ["parking_p"], "Парковки (Яндекс)")
+SOURCES["yandex.transport"] = ("yandex", ["transport_p", "transport_way"], "Транспорт (Яндекс)")
 
 # НСПД отдаёт тяжёлые ответы в плотной застройке, ОГД режется из кэша слоя
-LIMIT_KM2 = {"nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0}
+LIMIT_KM2 = {"nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0, "yandex": 4.0}
 
 # читаемые имена полей; остальные поля проходят как есть
 LABELS = {
@@ -102,7 +114,7 @@ LABELS = {
     "landuse": "Землепользование", "leisure": "Отдых", "natural": "Природа", "waterway": "Водоток",
 }
 NUMERIC = {"Этажность", "Год постройки", "Площадь, м²", "Площадь участка, м²", "Кадастровая стоимость, ₽",
-           "Подземных этажей", "Год ввода", "Площадь уточнённая, м²"}
+           "Подземных этажей", "Год ввода", "Площадь уточнённая, м²", "Высота, м", "Длина, м", "Уровень"}
 
 
 def bbox_km2(b):
@@ -243,13 +255,23 @@ def egko_address_props(p):
     return {"Адрес": _v(p.get("full_addr")), "Угол подписи, °": _v(p.get("angl"))}
 
 
+# ---------- Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даёт коннектор ----------
+def _renamed(names):
+    return lambda p: {names.get(k, k): v for k, v in p.items()}
+
+
 # ключ источника → свойства портала в читаемые поля (служебные поля портала не нужны в таблице)
 PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, "gisogd.okn": okn_props,
            "gisogd.demolition": demolition_props, "relief.contours": lambda p: {"Высота, м": p.get("elev")},
            "osm.social": social_props,
            "egko.buildings": egko_building_props, "egko.roads": egko_road_props, "egko.paths": egko_path_props,
            "egko.green": egko_green_props, "egko.water": egko_water_props, "egko.fences": lambda p: {},
-           "egko.addresses": egko_address_props}
+           "egko.addresses": egko_address_props,
+           "yandex.hd_roads": _renamed({"type": "Тип", "struct": "Конструкция", "z_level": "Уровень"}),
+           "yandex.buildings": _renamed({"height": "Высота, м", "ft_type_name": "Назначение"})}
+for _k in SOURCES:
+    if _k.startswith("yandex.") and _k not in PRESENT:
+        PRESENT[_k] = dict              # без переименования; поле LineCode у Яндекса не бывает
 
 
 REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))
@@ -349,13 +371,30 @@ def fetch(bbox, keys):
             finally:
                 PROGRESS.pop(k, None)
 
+    def run_yandex(ks):
+        """Все слои Яндекса одним проходом: тайлы качаются и разбираются один раз (3 потока, пауза, кэш на диске)."""
+        def tell(got, total):
+            for k in ks:
+                PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": "tiles"}
+        try:
+            res = YandexVmap(cache_dir=CACHE / "yandex", progress=tell).fetch(bbox, [n for k in ks for n in SOURCES[k][1]])
+            for k in ks:
+                part = [f for f in res["features"] if f["properties"].get("grado_layer") in SOURCES[k][1]]
+                # вид слоя на карте берётся по первому объекту: площадные — первыми, затем линии, точки — последними
+                part.sort(key=lambda f: ("Polygon" not in f["geometry"]["type"]) + (f["geometry"]["type"] == "Point"))
+                layers[k] = _layer(k, {**res, "features": part})
+        finally:
+            for k in ks:
+                PROGRESS.pop(k, None)
+
     def run_terrain(k):
         layers[k] = _layer(k, TerrainContours().fetch(bbox))
 
     by = lambda kind: [k for k in keys if SOURCES[k][0] == kind]
     jobs = [(by("osm"), run_osm), (by("nspd"), run_nspd)] + \
         [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd")] + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")] + \
-        ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else [])
+        ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else []) + \
+        ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else [])
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
             try:

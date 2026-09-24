@@ -226,6 +226,35 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.33.0: Яндекс Карты (векторные тайлы vmap3) — new source group, nine layers, stdlib only.**
+  - Connector `core/connectors/grado_connectors/yandex_vmap.py` (decoder ported from the owner's `~/yandex-hdroads`): tiles z18
+    from `core-renderer-tiles.maps.yandex.net/vmap3` (User-Agent + Referer yandex.ru/maps, no key), disk cache
+    `~/.grado2/cache/yandex/{z}_{x}_{y}.pbf` (TTL 30 days), 3 threads, 0.3 s pause after each downloaded tile, 4 attempts
+    with growing pauses, SSL as in gisogd_api. Tile grid EPSG:3395 (NOT 3857), inverse ellipsoidal Mercator by iteration;
+    grid 8192 centred, y down, 4095 on the right/bottom edge = 4096. Service layers are never exported (SKIP).
+  - **The reference decoder had a bug:** attribute value type 2 is a zigzag signed integer. Proof: building `feature_id` equals
+    the object id only after decoding (287 of 376), all raw values even, `z_level` −1 appears. yaexport.py reports heights
+    doubled (median 1.7 × ЕГКО h; decoded 0.85 — Yandex height is floors × 3 m).
+  - **An id groups the parts of a complex** (towers + stylobate, each with its own height, type and feature_id): an object is
+    the pieces of one id with equal attributes (as yaexport.py does); a part's key gets `:feature_id`. Pieces become one
+    MultiPolygon / MultiLineString (no shapely); «Площадь, м²» / «Длина, м» on the ground = sum of pieces / Mercator scale.
+    Objects are kept when their bbox touches the request; pieces beyond the covering tiles are cut at the tile edge.
+  - Server: `yandex.hd_roads` (hd_road_surface; «Тип», «Конструкция», «Уровень»), `yandex.buildings` («Высота, м»,
+    «Назначение»), `yandex.roads`, `yandex.road_edges`, `yandex.landuse`, `yandex.green` (vegetation, vegetation_planned,
+    hd_road_vegetation), `yandex.water` (hydro_a + hydro_l), `yandex.parking`, `yandex.transport` (transport_p +
+    transport_way); all attributes kept; LIMIT 4 km²; all Yandex keys in one job (tiles fetched once); progress «тайлы N из M».
+    No POI or organisations (owner's decision). Not in CHECKED by default; group title in «Данные» says «Яндекс Карты, для
+    анализа и эскиза; в сдаваемые материалы не включать».
+  - Front: styles after OSM in PREFERRED; area layers without outline — each tile piece would draw a seam across the building
+    (checked by screenshot); a mixed layer draws points as points and lines in a polygon layer in the outline colour.
+  - Checked: area 37.576 55.843 37.594 55.852 via /api/fetch against yaexport.py (EPSG:4326): buildings 345 (270 ids),
+    hd_road_surface 144, road 1289 (1273 ids) — equal; area/length sums differ < 0.001 %; tiles byte-identical to the
+    reference cache. WGS84 of tile points against pyproj < 1 cm (test). First download 182 tiles 23.4 s, repeat 0.21 s.
+    Shift of Yandex buildings (median of centroids): to OSM X +1.0 m Y +0.6 m, to ЕГРН X +4.3 m Y +3.9 m — source
+    discrepancy, NOT compensated.
+  - Tests: connectors +16 (`test_yandex_vmap.py`, fixtures: three z18 tiles + `yaexport_ref.json` from yaexport code and
+    pyproj), server +2.
+
 - **2026-09-23, ГРАДО 2 v0.32.0: coordinates as in the owner's QGIS («МСК»); ГИС ОГД and ЕГКО read from SHP.** Owner's scheme,
   not to be discussed or «calibrated»: two Moscow systems on one datum — «МСК (как в QGIS)» (`crs.MSK_PROJ4`, x_0 = y_0 = 0) and
   «система ГИС ОГД (Бессель со смещением)» (`OGD_PROJ4`, x_0 = 16.098, y_0 = 14.512); МСК = ОГД − `OGD_SHIFT` exactly.

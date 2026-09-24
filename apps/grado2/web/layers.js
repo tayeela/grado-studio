@@ -11,7 +11,9 @@ const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i
 const ST = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
 // порядок по умолчанию: сверху вниз (первый — самый верхний)
-const PREFERRED = ["gisogd.red_lines", "egko.addresses", "gisogd.demolition", "nspd.buildings", "osm.buildings", "egko.buildings", "egko.fences", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "egko.paths", "egko.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "egko.water", "relief.contours", "osm.landuse", "egko.green"];
+const PREFERRED = ["gisogd.red_lines", "egko.addresses", "gisogd.demolition", "nspd.buildings", "osm.buildings", "egko.buildings", "egko.fences", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "egko.paths", "egko.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "egko.water", "relief.contours", "osm.landuse", "egko.green",
+  // Яндекс — после слоёв OSM по тому же смыслу: здания и линии выше, площадные зоны внизу
+  "yandex.transport", "yandex.parking", "yandex.buildings", "yandex.road_edges", "yandex.roads", "yandex.hd_roads", "yandex.water", "yandex.green", "yandex.landuse"];
 function defaultStyle(key, fc) {
   const zones = lib => { const colors = {}; fc.features.forEach(f => { const v = String(f.properties.naimfunkzony ?? f.properties.naimfunkzo ?? f.properties["Вид зоны"] ?? ""); const z = lib[v.toLowerCase()]; if (z) colors[v] = z.fill; }); return colors; };
   return ST(({
@@ -41,6 +43,17 @@ function defaultStyle(key, fc) {
     "egko.roads": { fill: "#e4e1da", stroke: "#b7b2a8", width: .5, opacity: .9 },
     "egko.water": { fill: "#b9d6ec", stroke: "#6fa6e6", width: .8, opacity: 1 },
     "egko.green": { fill: "#cfe3b4", stroke: "#8fb573", width: .4, opacity: .7 },
+    // Яндекс — подложка для анализа и эскиза, спокойные тона. Площадные — без контура: объект собран из кусков тайлов,
+    // и контур каждого куска рисует шов по краю тайла поперёк здания
+    "yandex.buildings": { fill: "#d3cdc2", stroke: "#8f897f", width: 0, opacity: 1 },
+    "yandex.hd_roads": { fill: "#e6e3dc", stroke: "#c3beb4", width: 0, opacity: .85 },
+    "yandex.roads": { mode: "cat", width: 1.1, cat: { field: "class", colors: {}, off: [] } },
+    "yandex.road_edges": { fill: "#9c968b", width: .6 },
+    "yandex.landuse": { mode: "cat", opacity: .3, stroke: "#b8b2a3", width: 0, cat: { field: "ft_type_name", colors: {}, off: [] } },
+    "yandex.green": { fill: "#cfe4b3", stroke: "#9cbf80", width: 0, opacity: .7 },
+    "yandex.water": { fill: "#bcd8ee", stroke: "#78aee6", width: 0, opacity: 1 },
+    "yandex.parking": { fill: "#5b7bb0", stroke: "#ffffff", width: .6, opacity: 1 },
+    "yandex.transport": { fill: "#7a5c99", stroke: "#ffffff", width: .8, opacity: 1 },
   })[key] || (fc.features.some(f => f.properties._lt) ? { mode: "lgr" } : { fill: CAT[LYR.length % CAT.length], stroke: "#3d3d3d" }));
 }
 
@@ -220,10 +233,13 @@ function styleFor(l, f, res) {
   if (st.mode === "lgr") { out.push(redLineStyle(f)); }
   else {
     const s = symbolOf(l, f); if (s.hide) return null;
-    const key = `${s.fill}|${s.hatch}`; let base = l.cache.get(key);
+    // слой со смешанной геометрией (вода, транспорт): точка — знаком точки; линия в слое точек — линией, в слое полигонов — цветом контура
+    const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
+    const key = `${s.fill}|${s.hatch}|${g}`; let base = l.cache.get(key);
     if (!base) {
-      if (l.geom === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
-      else if (l.geom === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
+      if (g === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
+      else if (g === "pline") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round" }) });
+      else if (g === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
       else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
       l.cache.set(key, base);
     }
