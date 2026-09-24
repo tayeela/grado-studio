@@ -133,7 +133,7 @@ export default async p => {
   const pxOf = async (x, y) => p.ev(`const q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])), r=mMain.getTargetElement().getBoundingClientRect(); return [r.left+q[0], r.top+q[1]]`);
   await p.key("Escape", "Escape", { vk: 27 }); await p.ev(`window.__pc=CUR; const l=LYR.find(x=>x.geom==="poly"&&x.key.startsWith("user:")); if (l) setCurrent(l.key); return 1`);
   await type("rec"); await enter(); await type("4000;1000"); await enter(); await type("@40;20"); await enter(); await p.key("Escape", "Escape", { vk: 27 });
-  await p.ev(`const f=layerSrc[CUR].getFeatures().slice(-1)[0]; window.__vf=f; setSel([{key:CUR,f}]); sharedView.fit(ol.extent.buffer(f.getGeometry().getExtent(),40)); return 1`);
+  await p.ev(`const f=layerSrc[CUR].getFeatures().slice(-1)[0]; window.__vf=f; window.__vfk=CUR; setSel([{key:CUR,f}]); sharedView.fit(ol.extent.buffer(f.getGeometry().getExtent(),40)); return 1`);
   await type("spl"); await enter(); await type("4020;990"); await enter(); await type("4020;1030"); await enter(); await enter();
   const halves = await p.ev(areasSel);
   check(halves.length === 2 && halves.every(a => Math.abs(a - 400) < .5), `SPL: прямоугольник 40 × 20 разрезан пополам: ${halves.map(a => a.toFixed(2)).join(" и ")} м²`);
@@ -164,6 +164,22 @@ export default async p => {
   await p.ev(`const f=window.__rl, l=LYR.find(x=>x.geom==="line"&&x.key.startsWith("user:")); const c=[]; for(let i=0;i<=40;i++) c.push(CAD.fromM([4000+i, 1100+(i%2)*0.05])); f.setGeometry(new ol.geom.LineString(c)); syncFromSource(l.key); setSel([{key:l.key,f}]); return 1`);
   await type("simp"); await enter(); await type("0.2"); await enter();
   check(await p.ev(`return window.__rl.getGeometry().getCoordinates().length`) <= 3, "SIMP 0,2 м: зубцы 5 см по 41 вершине сняты, осталась прямая");
+  // выбор по условию, выравнивание, топологическое редактирование
+  await p.ev(`window.__vf.set("Наименование","Школа № 5"); setCurrent(window.__vfk); setSel([]); return 1`);
+  await type("qs"); await enter(); await type("наименование ~ школ"); await enter();
+  check(await p.ev(`return SEL.length===1 && SEL[0].f===window.__vf`), "QS: «наименование ~ школ» выбрал ровно этот полигон");
+  const ext = `const c=window.__vf.getGeometry().getCoordinates()[0].map(CAD.toM), xs=c.map(q=>q[0]), ys=c.map(q=>q[1]); return [Math.max(...xs)-Math.min(...xs), Math.max(...ys)-Math.min(...ys), Math.max(...xs)]`, al0 = await p.ev(ext);
+  await type("al"); await enter();
+  for (const v of ["4000;1000", "5000;1000", "4040;1000", "5000;1040"]) { await type(v); await enter(); }
+  await enter();
+  const alx = await p.ev(ext);
+  check(Math.abs(alx[0] - al0[1]) < .001 && Math.abs(alx[1] - al0[0]) < .001 && Math.abs(alx[2] - 5000) < .001, `AL: полигон перенесён и повёрнут на 90° по двум парам точек (${alx[0].toFixed(2)} × ${alx[1].toFixed(2)} м)`);
+  await p.ev(`const k=CUR, sq=(x)=>{ const f=new ol.Feature(new ol.geom.Polygon([[[x,1000],[x+10,1000],[x+10,1010],[x,1010],[x,1000]].map(CAD.fromM)])); layerSrc[k].addFeature(f); return f; };
+    window.__ta=sq(6000); window.__tb=sq(6010); syncFromSource(k); sharedView.fit(ol.extent.buffer(window.__ta.getGeometry().getExtent(), 30)); setSel([{key:k,f:window.__ta}]); return 1`);
+  await p.click(...(await p.ev(`const b=document.getElementById("mdTopo"); const r=b.getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]`)));
+  { const [x, y] = await pxOf(6010, 1010); await p.click(x, y); } await type("@0;5"); await enter();
+  check(await p.ev(`return window.__tb.getGeometry().getCoordinates()[0].map(CAD.toM).some(c=>Math.abs(c[0]-6010)<1e-6&&Math.abs(c[1]-1015)<1e-6)`), "ТОПО: общая вершина двух квадратов сдвинута в обоих — граница осталась общей");
+  await p.click(...(await p.ev(`const r=document.getElementById("mdTopo").getBoundingClientRect(); return [r.left+r.width/2, r.top+r.height/2]`)));
   await p.ev(`setCurrent(window.__pc); setSel([]); return 1`);
   await type("dim"); await enter(); for (const v of ["3000;1100", "3040;1100", "3020;1110"]) { await type(v); await enter(); }
   check(await p.ev(`const l=LYR.find(x=>x.title==="Размеры"); const f=l&&layerSrc[l.key].getFeatures()[0]; return !!f && f.get("Размер")==="40,00" && f.getGeometry().getCoordinates().length===4 && CUR!==l.key`), "DIM: размер 40,00 м в слое «Размеры», текущий слой не сменился");

@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.45.0: select by condition, ALIGN, topological vertex editing, DXF dimensions.**
+  - QS «Выбрать по условию»: «Этажность > 9 и Решение = сносим», «Наименование ~ школ» (contains), «Адрес пусто»; = ≠ > < >= <=,
+    «и» / «или», field names case-insensitive and by prefix, «ё» = «е»; current layer or «Все слои». The command box shows an
+    example as its placeholder (`CMD.placeholder`).
+  - AL «Выровнять»: first pair moves, second pair rotates; «Да» scales by the pairs; Enter after the first pair — move only.
+  - ТОПО (status bar): dragging a grip moves the same vertex (within 1 mm on the ground) of every visible line/polygon —
+    neighbouring parcels keep one boundary; preview shows all affected objects. Off by default, remembered.
+  - DXF: a ГРАДО 2 dimension (4-point line with «Размер») is written as a linear DIMENSION (angle of the dimension line,
+    2 decimals, comma separator) instead of a polyline + text; DIMENSION types 0/1 are read back as the same 4-point line
+    with «Размер». test_dxf round trip.
+  - DIV/ME no longer switch the current layer to «Точки».
+  - e2e +3 steps. **Pitfall in the check:** extents of a map (Mercator) bbox converted to МСК are inflated by meridian
+    convergence (40 × 20 m read as 40,00 × 20,07) — compare МСК vertices, not bbox corners.
+
 - **2026-09-24, ГРАДО 2 v0.44.0: reverse, simplify, delete ring.** REV «Развернуть» reverses lines; for REDLN97 red lines the
   side goes with the direction («+» — object to the right), so `_lt` names swap b ↔ t (also paired `LxxBxxT`), «Тип линии»
   follows and LineCode signs flip (1,-18 → -1,18). SIMP «Упростить»: tolerance in metres on the ground (Mercator scale

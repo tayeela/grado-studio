@@ -14,7 +14,7 @@ const DEG = Math.PI / 180;
 
 /* ---------- режимы ---------- */
 const MODES = { end: "Конточка", mid: "Середина", cen: "Центр", quad: "Квадрант", int: "Пересечение", ext: "Продолжение", perp: "Нормаль", tan: "Касательная", par: "Параллельно", near: "Ближайшая" };
-const ST = { ortho: false, polar: true, polarInc: 45, polarRel: false, osnap: true, otrack: true, dyn: true, modes: { end: true, mid: true, cen: true, quad: false, int: true, ext: true, perp: true, tan: false, par: true, near: false } };
+const ST = { topo: false, ortho: false, polar: true, polarInc: 45, polarRel: false, osnap: true, otrack: true, dyn: true, modes: { end: true, mid: true, cen: true, quad: false, int: true, ext: true, perp: true, tan: false, par: true, near: false } };
 try { const s = JSON.parse(localStorage.getItem("grado2.cad") || "{}"); Object.assign(ST, { ...s, modes: { ...ST.modes, ...s.modes } }); } catch { }
 const saveST = () => { try { localStorage.setItem("grado2.cad", JSON.stringify(ST)); } catch { } };
 
@@ -262,7 +262,7 @@ function openInput(mode, ch) {
   inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [sz[0] / 2 - 18, sz[1] / 2 - 16];
   const below = tipEl.hidden ? 16 : 16 + tipEl.offsetHeight + 4;
   inEl.style.left = `${Math.round(px[0] + 18)}px`; inEl.style.top = `${Math.round(px[1] + below)}px`;
-  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : CMD?.need === "text" ? "текст надписи, Enter" : "значение";
+  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : CMD?.need === "text" ? (CMD.placeholder?.() || "текст надписи, Enter") : "значение";
   inEl.hidden = false; inEl.value = ch || ""; inEl.classList.remove("bad"); inEl.focus(); autoc();
 }
 function closeInput() { inEl.hidden = true; inEl.value = ""; acEl.hidden = true; inMode = null; }
@@ -424,7 +424,7 @@ function toggle(k) {
   ST[k] = !ST[k]; if (k === "ortho" && ST.ortho) ST.polar = false; if (k === "polar" && ST.polar) ST.ortho = false;
   if (k === "otrack" && !ST.otrack) ACQ.length = 0;
   saveST(); syncModes();
-  setHint(`${({ osnap: "Объектная привязка", ortho: "Орто", polar: "Полярное отслеживание", otrack: "Объектное отслеживание", dyn: "Динамический ввод" })[k]} ${ST[k] ? "включено" : "выключено"} (${({ osnap: "F3", ortho: "F8", polar: "F10", otrack: "F11", dyn: "F12" })[k]}).`);
+  setHint(`${({ osnap: "Объектная привязка", topo: "Топологическое редактирование", ortho: "Орто", polar: "Полярное отслеживание", otrack: "Объектное отслеживание", dyn: "Динамический ввод" })[k]} ${ST[k] ? "включено" : "выключено"} (${({ osnap: "F3", ortho: "F8", polar: "F10", otrack: "F11", dyn: "F12" })[k]}).`);
   if (CUR && CMD) { CUR = resolve(CUR.c); refresh(); }
 }
 
@@ -1075,14 +1075,24 @@ def("grip", "Ручка", [], o => {
     const g2 = orig.clone(); g2.setCoordinates(coords); return g2;
   };
   let skip = true;
+  /* ТОПО: та же вершина у соседних объектов (в пределах 1 мм на местности) переносится вместе — граница двух участков
+     остаётся общей, без щели и нахлёста, как в топологическом редактировании QGIS */
+  const oldC = fromM(baseW), tol = .001 / Math.cos(ol.proj.toLonLat(oldC)[1] * Math.PI / 180);
+  const mates = mid || !path.length || !ST.topo ? [] : (() => { const out = [];
+    for (const l of LYR) { if (!shown(l) || outOfScale(l)) continue;
+      layerSrc[l.key].forEachFeatureInExtent(ol.extent.buffer([oldC[0], oldC[1], oldC[0], oldC[1]], tol), o => { if (o === f || /Point/.test(o.getGeometry().getType())) return; out.push({ key: l.key, f: o }); }); }
+    return out; })();
+  const shared = c => mates.map(m => { const cc = JSON.parse(JSON.stringify(m.f.getGeometry().getCoordinates())); let hit = false;
+    const walk = a => { if (typeof a[0] === "number") { if (Math.abs(a[0] - oldC[0]) <= tol && Math.abs(a[1] - oldC[1]) <= tol) { a[0] = c[0]; a[1] = c[1]; hit = true; } return; } a.forEach(walk); };
+    walk(cc); if (!hit) return null; const g2 = m.f.getGeometry().clone(); g2.setCoordinates(cc); return { key: m.key, f: m.f, geom: g2, cad: null }; }).filter(Boolean);
   const st = { need: "point", base: () => baseW,
     prompt: () => mid ? "Новая вершина: щелчок, @dx;dy или X;Y (Esc — отмена)" : `Новое положение вершины: щелчок, @dx;dy или X;Y${optStr(st.opts())} (Esc — отмена)`,
     opts: () => mid || !path.length ? [] : [opt("Удалить вершину (У)", ["у", "удалить", "d", "delete"], () => {
       const n = g.get("n"), min = closed ? 3 : 2; if (n <= min) return note(`Удалить нельзя: у ${closed ? "контура" : "линии"} останется меньше ${min} вершин.`);
       edit([{ key, f, geom: build(null, true), cad: null }], [], "удаление вершины"); st.done = true; })],
-    point: (w, how) => { if (skip && how?.click && !st.moved) { skip = false; return; } edit([{ key, f, geom: build(fromM(w)), cad: null }], [], mid ? "новая вершина" : "перенос вершины"); st.done = true; },
+    point: (w, how) => { if (skip && how?.click && !st.moved) { skip = false; return; } edit([{ key, f, geom: build(fromM(w)), cad: null }, ...shared(fromM(w))], [], mid ? "новая вершина" : "перенос вершины"); st.done = true; },
     enter: () => { st.done = true; },
-    preview: w => ({ ghosts: [new ol.Feature({ geometry: build(fromM(w)), k: "ghost" })], lines: [[baseW, w]] }) };
+    preview: w => ({ ghosts: [new ol.Feature({ geometry: build(fromM(w)), k: "ghost" }), ...shared(fromM(w)).map(x => new ol.Feature({ geometry: x.geom, k: "ghost" }))], lines: [[baseW, w]] }) };
   return st;
 });
 def("join", "Соединить", ["J"], () => selection(items => {
@@ -1214,7 +1224,8 @@ function markCmd(kind) {
       pick: (h, pos) => { const p = pickChain(h, pos); if (!p) return note("Делится линия или контур.");
         const L = G.chainLen(p.ch), step = kind === "div" ? L / v : v, n = kind === "div" ? (G.closed(p.ch) ? v : v - 1) : Math.floor(L / step + 1e-9);
         if (n > 5000) return note("Больше 5 000 точек — увеличьте шаг.");
-        const l = targetLayer("point"), adds = [];
+        const cur0 = CURKEY(), l = targetLayer("point"), adds = [];
+        if (cur0 && lyr(cur0)) setCurrentQuiet(cur0);             // точки разметки — в слой точек, текущий слой не меняется
         for (let i = 1; i <= n; i++) { const s = i * step; if (s >= L - 1e-6 && !G.closed(p.ch)) break; const q = G.sliceChain(p.ch, 0, s); adds.push({ key: l.key, f: newPoint(l, q[q.length - 1], i) }); }
         addNew(adds, kind === "div" ? "деление" : "разметка"); note(`Точек: ${adds.length} в слое «${l.title}» (длина ${f2(L)} м, шаг ${f2(step)} м).`); } };
     return st; };
@@ -1292,6 +1303,56 @@ def("delring", "Удалить дыру", ["DR", "DELRING"], () => ({ need: "poi
     note("Здесь нет дыры полигона.");
   } }));
 
+/* выбор по условию на атрибуты (как QSELECT AutoCAD и «Выбрать по выражению» QGIS): «Этажность > 9», «Решение = сносим»,
+   «Наименование ~ школ» (содержит), «Адрес пусто»; условия соединяются «и» / «или». Слой — текущий, «Все» — все видимые. */
+const normTxt = v => String(v ?? "").toLowerCase().replace(/ё/g, "е").trim();
+function condOf(text, fields) {
+  const one = c => { const m = c.match(/^(.+?)\s*(>=|<=|!=|≠|=|>|<|~|не пусто|пусто)\s*(.*)$/i); if (!m) return null;
+    const want = normTxt(m[1]), f = fields.find(x => normTxt(x) === want) || fields.find(x => normTxt(x).startsWith(want)); if (!f) return { bad: m[1] };
+    const op = m[2].toLowerCase(), v = m[3].trim().replace(/^["«']|["»']$/g, ""), nv = +v.replace(",", ".");
+    return { f, test: p => { const x = p[f], nx = typeof x === "number" ? x : +String(x ?? "").replace(",", "."), num = v !== "" && isFinite(nv) && x !== "" && x != null && isFinite(nx);
+      switch (op) { case "пусто": return x == null || x === ""; case "не пусто": return !(x == null || x === "");
+        case "~": return normTxt(x).includes(normTxt(v)); case "=": return num ? nx === nv : normTxt(x) === normTxt(v); case "!=": case "≠": return num ? nx !== nv : normTxt(x) !== normTxt(v);
+        case ">": return num && nx > nv; case "<": return num && nx < nv; case ">=": return num && nx >= nv; case "<=": return num && nx <= nv; } return false; } }; };
+  const ors = text.split(/\s+или\s+/i).map(g => g.split(/\s+и\s+/i).map(one));
+  const bad = ors.flat().find(c => !c || c.bad); if (bad !== undefined) return { error: bad ? `нет поля «${bad.bad}»` : "не понял условие" };
+  return { test: p => ors.some(g => g.every(c => c.test(p))) };
+}
+def("qselect", "Выбрать по условию", ["QS", "QSELECT"], () => {
+  let all = false;
+  const st = { need: "text", placeholder: () => "Этажность > 9 и Решение = сносим · Наименование ~ школ · Адрес пусто",
+    prompt: () => `Условие выбора (${all ? "все видимые слои" : `слой «${lyr(CURKEY())?.title || "—"}»`}): поле, знак (= ≠ > < >= <= ~ пусто), значение; «и», «или»${optStr(st.opts())}`,
+    opts: () => [opt(all ? "Текущий слой (Т)" : "Все слои (В)", all ? ["т", "текущий", "c", "current"] : ["в", "все", "a", "all"], () => { all = !all; })],
+    text: t => {
+      const layers = all ? LYR.filter(l => shown(l) && !outOfScale(l)) : [lyr(CURKEY())].filter(Boolean);
+      if (!layers.length) return note("Нет текущего слоя: выберите слой в списке.");
+      const out = []; let err = null;
+      layers.forEach(l => { const c = condOf(t, DATA[l.key]?.fields || []); if (c.error) { err ||= `${c.error} в слое «${l.title}» (поля: ${(DATA[l.key]?.fields || []).slice(0, 12).join(", ")})`; return; }
+        layerSrc[l.key].getFeatures().forEach(f => { if (visibleIn(l, f) && c.test(f.getProperties())) out.push({ key: l.key, f }); }); });
+      if (!out.length && err) return note(err);
+      setSel(out); note(`Выбрано по условию «${t}»: ${out.length}${err && all ? ` (${err})` : ""}.`); st.done = true; },
+    enter: () => { st.done = true; } };
+  return st;
+});
+
+/* выравнивание по двум парам точек (ALIGN): первая пара переносит, вторая поворачивает; масштаб — по желанию */
+def("align", "Выровнять", ["AL", "ALIGN"], () => selection(items => {
+  const P = [], names = ["Первая исходная точка", "Первая точка назначения", "Вторая исходная точка (Enter — только перенос)", "Вторая точка назначения"];
+  const fnOf = scale => { const [s1, d1, s2, d2] = P; if (!s2) return w => G.add(d1, G.sub(w, s1));
+    const a = G.ang(d1, d2) - G.ang(s1, s2), k = scale ? G.dist(d1, d2) / (G.dist(s1, s2) || 1) : 1, c = Math.cos(a), sn = Math.sin(a);
+    return w => { const v = G.mul(G.sub(w, s1), k); return G.add(d1, [v[0] * c - v[1] * sn, v[0] * sn + v[1] * c]); }; };
+  const apply = scale => { const fn = fnOf(scale), k = P[2] && scale ? G.dist(P[1], P[3]) / (G.dist(P[0], P[2]) || 1) : 1;
+    edit(items.map(({ key, f }) => ({ key, f, geom: xformGeom(f.getGeometry(), fn), cad: xformCad(f.get("_cad"), fn, k) })), [], "выравнивание");
+    setSel(items); note(`Выровнено объектов: ${items.length}${scale && k !== 1 ? `, масштаб ${fmt(k, 4)}` : ""}.`); st.done = true; };
+  const st = { need: "point", base: () => P.length % 2 ? P[P.length - 1] : null,
+    prompt: () => P.length < 4 ? names[P.length] : `Масштабировать по точкам выравнивания?${optStr(st.opts())} Enter — нет`,
+    opts: () => P.length === 4 ? [opt("Да (Д)", ["д", "да", "y", "yes"], () => apply(true)), opt("Нет (Н)", ["н", "нет", "n", "no"], () => apply(false))] : [],
+    point: w => { if (P.length < 4) P.push(w); if (P.length === 4) st.need = "point"; },
+    enter: () => { if (P.length === 2) return apply(false); if (P.length === 4) return apply(false); st.done = true; },
+    preview: w => { if (P.length === 1 || P.length === 3) return { lines: [[P[P.length - 1], w]] }; return {}; } };
+  return st;
+}));
+
 const ALIAS = {}; Object.entries(CMDS).forEach(([id, c]) => c.alias.forEach(a => { ALIAS[a] = id; }));
 
 /* ---------- лента и строка состояния ---------- */
@@ -1299,13 +1360,14 @@ const DRAW = ["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "p
 const ANNOT = ["hatch", "dim", "text"];
 const MODIFY = ["move", "copy", "rotate", "mirror", "scale", "offset", "trim", "extend", "fillet", "array", "stretch"];
 const MORE = ["chamfer", "break", "join", "explode", "lengthen", "arrayedit", "erase"];
-const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "matchprop", "divide", "measure", "similar"];
+const GIS = ["split", "merge", "subtract", "delring", "buffer", "simplify", "reverse", "align", "matchprop", "divide", "measure", "similar", "qselect"];
 const HELP = { line: "отдельные отрезки", pline: "одна ломаная; в слое полигонов Enter замыкает контур", circle: "центр и радиус или три точки", arc: "по трём точкам или центр, начало, конец", rect: "по двум углам, по осям МСК; углы — фаской или сопряжением", ellipse: "центр, конец оси, вторая полуось", hatch: "щелчок внутри контура или выбор объектов — в слой «Штриховка»", dim: "две точки и положение размерной линии — в слой «Размеры»", text: "точка и строка — в слой «Надписи»", arrayedit: "изменить числа массива и пересобрать копии", polygon: "правильный, по числу сторон", point: "точки щелчком или по координатам",
   move: "базовая точка, затем вторая", copy: "несколько копий подряд", rotate: "вокруг базовой точки на угол", mirror: "по оси из двух точек", scale: "от базовой точки, в том числе по опорному отрезку", offset: "параллельная копия на расстоянии", trim: "по пересечениям с другими объектами", extend: "до ближайшего объекта", fillet: "радиусом; все углы полилинии", break: "между двумя точками", join: "линии с общими концами — в одну", explode: "полилинию и контур — на отрезки", erase: "выбранные объекты",
   chamfer: "срез угла двумя длинами; на всех углах полилинии", array: "прямоугольный: ряды и столбцы; круговой: вокруг центра", stretch: "вершины внутри секущей рамки сдвигаются", lengthen: "конец линии на приращение или до полной длины",
   split: "полигон — линией разреза на части, атрибуты у всех частей", merge: "полигоны одного слоя — в один", subtract: "из выбранных полигонов вырезать другие",
   buffer: "полигоны на заданном расстоянии вокруг объектов (минус — внутрь)", matchprop: "атрибуты образца — другим объектам",
-  delring: "закрыть дыру полигона щелчком внутри неё", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
+  delring: "закрыть дыру полигона щелчком внутри неё", align: "перенос и поворот по двум парам точек, масштаб по желанию",
+  qselect: "выбрать объекты по условию на атрибуты: Этажность > 9 и Решение = сносим", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
   divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",
   dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
 const btn = id => `<button class="tl ic" data-cmd="${id}" title="${CMDS[id].title} — ${CMDS[id].alias.join(", ")} и Enter: ${HELP[id]}" aria-label="${CMDS[id].title}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg></button>`;
@@ -1327,7 +1389,7 @@ function syncModes() {
   const set = (id, on, text) => { const b = document.getElementById(id); if (!b) return; b.setAttribute("aria-pressed", !!on); if (text) b.querySelector(".t").textContent = text; };
   // на узком окне подписи короче: строке состояния нужно место для подсказки, что делать дальше
   const n = innerWidth <= 1180;
-  set("mdOrtho", ST.ortho); set("mdPolar", ST.polar, n ? `${ST.polarInc}°` : `ПОЛЯР ${ST.polarInc}°`); set("mdOsnap", ST.osnap, n ? "ПРИВ" : "ПРИВЯЗКА"); set("mdOtrack", ST.otrack, n ? "ОТСЛ" : "ОТСЛЕЖ"); set("mdDyn", ST.dyn);
+  set("mdOrtho", ST.ortho); set("mdPolar", ST.polar, n ? `${ST.polarInc}°` : `ПОЛЯР ${ST.polarInc}°`); set("mdOsnap", ST.osnap, n ? "ПРИВ" : "ПРИВЯЗКА"); set("mdOtrack", ST.otrack, n ? "ОТСЛ" : "ОТСЛЕЖ"); set("mdDyn", ST.dyn); set("mdTopo", ST.topo);
 }
 addEventListener("resize", () => syncModes());
 function modeMenu(anchor, html, bind, below) {
@@ -1339,9 +1401,9 @@ function modeMenu(anchor, html, bind, below) {
 function buildModes() {
   const footer = document.querySelector("footer.status"); if (!footer || document.getElementById("mdOrtho")) return;
   const box = document.createElement("span"); box.className = "modes";
-  box.innerHTML = `<button id="mdOsnap" title="Объектная привязка (F3). ▾ или правая кнопка — какие привязки включены"><span class="t">ПРИВЯЗКА</span><i class="dd">▾</i></button><button id="mdOtrack" title="Объектное отслеживание (F11): задержите курсор на точке привязки, пока не появится «+», и ведите — пунктирные линии выравнивания и продолжения"><span class="t">ОТСЛЕЖ</span></button><button id="mdPolar" title="Полярное отслеживание (F10): пунктирный луч от последней точки под углами, кратными шагу. ▾ — шаг угла"><span class="t">ПОЛЯР</span><i class="dd">▾</i></button><button id="mdOrtho" title="Орто (F8): только по осям X и Y МСК"><span class="t">ОРТО</span></button><button id="mdDyn" title="Динамический ввод (F12): размеры и поле ввода у курсора"><span class="t">ДИН</span></button>`;
+  box.innerHTML = `<button id="mdOsnap" title="Объектная привязка (F3). ▾ или правая кнопка — какие привязки включены"><span class="t">ПРИВЯЗКА</span><i class="dd">▾</i></button><button id="mdOtrack" title="Объектное отслеживание (F11): задержите курсор на точке привязки, пока не появится «+», и ведите — пунктирные линии выравнивания и продолжения"><span class="t">ОТСЛЕЖ</span></button><button id="mdPolar" title="Полярное отслеживание (F10): пунктирный луч от последней точки под углами, кратными шагу. ▾ — шаг угла"><span class="t">ПОЛЯР</span><i class="dd">▾</i></button><button id="mdOrtho" title="Орто (F8): только по осям X и Y МСК"><span class="t">ОРТО</span></button><button id="mdDyn" title="Динамический ввод (F12): размеры и поле ввода у курсора"><span class="t">ДИН</span></button><button id="mdTopo" title="Топологическое редактирование: вершина, общая для нескольких объектов (граница соседних участков, зон), двигается во всех сразу"><span class="t">ТОПО</span></button>`;
   footer.insertBefore(box, document.getElementById("stXY"));
-  box.querySelector("#mdOrtho").onclick = () => toggle("ortho"); box.querySelector("#mdOtrack").onclick = () => toggle("otrack"); box.querySelector("#mdDyn").onclick = () => toggle("dyn");
+  box.querySelector("#mdOrtho").onclick = () => toggle("ortho"); box.querySelector("#mdOtrack").onclick = () => toggle("otrack"); box.querySelector("#mdDyn").onclick = () => toggle("dyn"); box.querySelector("#mdTopo").onclick = () => toggle("topo");
   const osnapMenu = b => modeMenu(b, `<div class="mh">Объектные привязки</div>` + Object.entries(MODES).map(([k, t]) => `<label><input type="checkbox" data-m="${k}" ${ST.modes[k] ? "checked" : ""}> ${t}</label>`).join("") + `<div class="mm"><button data-all="1">все</button><button data-all="0">снять все</button></div>`, m => {
     m.addEventListener("change", e => { ST.modes[e.target.dataset.m] = e.target.checked; saveST(); });
     m.querySelectorAll("[data-all]").forEach(x => x.onclick = () => { Object.keys(ST.modes).forEach(k => { ST.modes[k] = x.dataset.all === "1"; }); m.querySelectorAll("[data-m]").forEach(c => { c.checked = x.dataset.all === "1"; }); saveST(); });

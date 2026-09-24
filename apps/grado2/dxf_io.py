@@ -17,7 +17,6 @@ import zipfile
 from pathlib import Path
 
 import ezdxf
-from ezdxf.enums import TextEntityAlignment
 
 from grado_connectors import crs
 from grado_render import acad_lin
@@ -84,6 +83,15 @@ def export_dxf(layers, redln, lgr_colors):
                     if text:
                         msp.add_text(str(text), height=2.5, dxfattribs={"layer": lname, "insert": pt})
                 continue
+            dimv = props.get("Размер")
+            if dimv not in (None, "") and geom["type"] == "LineString" and len(geom["coordinates"]) == 4:
+                # размер ГРАДО 2 (выносная–размерная–выносная) — настоящий размер AutoCAD: число пересчитывается при правке
+                p1, d1, d2, p2 = [crs.wgs84_to_msk(x, y) for x, y, *_ in geom["coordinates"]]
+                ang = math.degrees(math.atan2(d2[1] - d1[1], d2[0] - d1[0]))
+                msp.add_linear_dim(base=d1, p1=p1, p2=p2, angle=ang, dimstyle="Standard", dxfattribs={"layer": lname},
+                                   override={"dimtxt": 2.5, "dimasz": 2.0, "dimexe": 1.0, "dimexo": 0.5, "dimdec": 2,
+                                             "dimdsep": 44, "dimgap": 0.6}).render()
+                continue
             for ring, closed in _rings(geom):
                 pts = [crs.wgs84_to_msk(x, y) for x, y, *_ in ring]
                 if closed and len(pts) > 1 and pts[0] == pts[-1]:
@@ -100,15 +108,6 @@ def export_dxf(layers, redln, lgr_colors):
                         if code in lgr_colors:
                             a["true_color"] = _rgb(lgr_colors[code])
                     msp.add_lwpolyline(pts, close=closed, dxfattribs=a)
-                dim = props.get("Размер")
-                if dim not in (None, "") and not closed and len(pts) >= 2:
-                    # размер из ГРАДО 2 — ломаная выносная–размерная–выносная; число пишется текстом над серединой размерной
-                    (x0, y0), (x1, y1) = (pts[1], pts[2]) if len(pts) >= 4 else (pts[0], pts[-1])
-                    ang = math.degrees(math.atan2(y1 - y0, x1 - x0))
-                    if ang > 90 or ang < -90:
-                        ang += 180
-                    msp.add_text(str(dim), height=2.5, rotation=ang, dxfattribs={"layer": lname}).set_placement(
-                        ((x0 + x1) / 2, (y0 + y1) / 2), align=TextEntityAlignment.BOTTOM_CENTER)
     buf = io.StringIO()
     doc.write(buf)
     out = io.BytesIO()
@@ -222,6 +221,16 @@ def import_dxf(data, redln, local="msk"):
                 pts = pts[:-1]
         elif t == "LINE":
             pts, closed = [(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)], False
+        elif t == "DIMENSION" and e.dimtype in (0, 1):
+            # линейный и параллельный размер → ломаная выносная–размерная–выносная с полем «Размер», как рисует DIM
+            p1, p2, b = e.dxf.defpoint2, e.dxf.defpoint3, e.dxf.defpoint
+            a = math.radians(e.dxf.get("angle", 0.0)) if e.dimtype == 0 else math.atan2(p2.y - p1.y, p2.x - p1.x)
+            ux, uy = math.cos(a), math.sin(a)
+            foot = lambda p: (b.x + ((p.x - b.x) * ux + (p.y - b.y) * uy) * ux, b.y + ((p.x - b.x) * ux + (p.y - b.y) * uy) * uy)
+            pts, closed = [(p1.x, p1.y), foot(p1), foot(p2), (p2.x, p2.y)], False
+            meas = abs((p2.x - p1.x) * ux + (p2.y - p1.y) * uy)
+            feats.append({"pts": pts, "closed": False, "layer": e.dxf.layer, "lt": None, "dim": f"{meas:.2f}".replace(".", ",")})
+            continue
         else:
             skipped += 1
             continue
@@ -250,7 +259,7 @@ def import_dxf(data, redln, local="msk"):
         ring = [list(to(x, y)) for x, y in f["pts"]]
         geom = {"type": "Polygon", "coordinates": [ring + [ring[0]]]} if f["closed"] and len(ring) > 2 \
             else {"type": "LineString", "coordinates": ring}
-        props = {"Слой DXF": f["layer"]}
+        props = {"Слой DXF": f["layer"], **({"Размер": f["dim"]} if f.get("dim") else {})}
         if f["lt"]:
             props.update({"Тип линии": f["lt"], "LineCode": linecode_of(f["lt"]), "_lt": [f["lt"]], "_miss": []})
             geom = {"type": "LineString", "coordinates": geom["coordinates"][0]} if geom["type"] == "Polygon" else geom

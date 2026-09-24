@@ -49,8 +49,15 @@ class DxfRoundTrip(unittest.TestCase):
         dim = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"Размер": "40,00"},
                "geometry": {"type": "LineString", "coordinates": [[37.6, 55.75], [37.6, 55.7501], [37.6006, 55.7501], [37.6006, 55.75]]}}]}
         z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Размеры", "features": dim}], S.REDLN, S.LGR_COLORS)))
-        texts = [e.dxf.text for e in ezdxf.read(io.StringIO(z.read("grado2.dxf").decode())).modelspace() if e.dxftype() == "TEXT"]
-        self.assertEqual(texts, ["40,00"])
+        ents = ezdxf.read(io.StringIO(z.read("grado2.dxf").decode())).modelspace()
+        dims = [e for e in ents if e.dxftype() == "DIMENSION"]
+        self.assertEqual(len(dims), 1)
+        self.assertTrue(37 < dims[0].get_measurement() < 38.2)
+        back, _ = dxf_io.import_dxf(z.read("grado2.dxf"), S.REDLN)
+        d = [f for f in back["features"] if f["properties"].get("Размер")]
+        self.assertEqual(len(d), 1)
+        self.assertEqual(len(d[0]["geometry"]["coordinates"]), 4)
+        self.assertEqual(d[0]["properties"]["Размер"], f"{dims[0].get_measurement():.2f}".replace(".", ","))
 
     def test_dwg_without_converter_says_how(self):
         import os
