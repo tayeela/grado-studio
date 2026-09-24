@@ -10,6 +10,9 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   `grado_clip` (frame in the same rounded coordinates, so the cut is not stroked) and «Площадь: только в области выгрузки».
   «Показатели» says «маршрут по улицам считается…» while `/api/rail_route` runs. DXF: a dimension's value is written as TEXT
   over the dimension line. «Моя раскладка» remembers window sizes in zones (`_sz`). Tests: DXF +1 check.
+  - **Bug found in the UX check:** graph «Слой» (and «Объединить») set `properties = {_src}` on the union result, and the union
+    of one object is that object itself — a layer with one building lost its «Этажность», so ТЭП and «Объём» took it as
+    1 floor. The result is now a copy.
 
 - **2026-09-24, ГРАДО 2 v0.39.0: whole-program audit fixed (45 confirmed findings plus most unverified ones).** Audit by
   parallel reviewers (backend, connectors, ТЭП, front, security, data), verified 3 votes each; fixed by hand in four commits.

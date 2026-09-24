@@ -423,7 +423,7 @@ NLayer.title = "Слой"; NLayer.prototype.onExecute = function () {
     // него остаются, обновляется только список объектов для ТЭП. Объединение 3 000 зданий и буфер — полсекунды
     const gs = geomSig(list);
     if (this._out && gs === this._gsig && TERR_REV === this._terr) this._out.properties = { _src: list };
-    else { const u = unionAll(list.map(asArea)); if (u) u.properties = { _src: list }; this._out = u; this._gsig = gs; this._terr = TERR_REV; }
+    else { let u = unionAll(list.map(asArea)); if (u) u = { ...u, properties: { _src: list } };   /* объединение одного объекта — он сам: копия, иначе его атрибуты затёрлись бы */ this._out = u; this._gsig = gs; this._terr = TERR_REV; }
     this._n = [list.length, d.count];
   }
   this.setOutputData(0, this._out);
@@ -461,7 +461,7 @@ NDiff.title = "Вычесть"; NDiff.prototype.onExecute = function () { const 
 LiteGraph.registerNodeType("Геометрия/Вычесть", NDiff);
 function NUnion() { this.addInput("A", "geom"); this.addInput("B", "geom"); this.addOutput("A ∪ B", "geom"); finish(this, "op", 150); }
 NUnion.title = "Объединить"; NUnion.prototype.onExecute = function () { const a = this.getInputData(0), b = this.getInputData(1);
-  const r = cached(this, gid(a) + gid(b), () => { const u = unionAll([a, b]); if (u) u.properties = { _src: [...(a?.properties?._src || []), ...(b?.properties?._src || [])] }; return u; }); this.setOutputData(0, r); this.info = ha(r); };
+  const r = cached(this, gid(a) + gid(b), () => { let u = unionAll([a, b]); if (u) u = { ...u, properties: { _src: [...(a?.properties?._src || []), ...(b?.properties?._src || [])] } }; return u; }); this.setOutputData(0, r); this.info = ha(r); };
 LiteGraph.registerNodeType("Геометрия/Объединить", NUnion);
 function NInter() { this.addInput("A", "geom"); this.addInput("B", "geom"); this.addOutput("A ∩ B", "geom"); finish(this, "op", 150); }
 NInter.title = "Пересечь"; NInter.prototype.onExecute = function () { const a = this.getInputData(0), b = this.getInputData(1); const r = cached(this, gid(a) + gid(b), () => inter(a, b)); this.setOutputData(0, r); this.info = ha(r); };
