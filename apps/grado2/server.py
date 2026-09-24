@@ -783,7 +783,7 @@ class Handler(SimpleHTTPRequestHandler):
             except ConnectorError as e:
                 return self._json(502, {"error": str(e)})
             except (KeyError, ValueError) as e:
-                return self._json(400, {"error": f"bad request: {e}"})
+                return self._json(400, {"error": _bad(e)})
             except Exception as e:      # любой сбой — ответ с причиной, а не оборванное соединение
                 return self._json(500, {"error": f"{type(e).__name__}: {e}"})
             except OSError as e:
@@ -904,13 +904,19 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(502, {"error": str(e)})
             return self._json(404, {"error": "no such method"})
         except (KeyError, ValueError, TypeError) as e:
-            return self._json(400, {"error": f"bad request: {e}"})
+            return self._json(400, {"error": _bad(e)})
         except Exception as e:      # битый DXF и т.п.: ответ с причиной, а не оборванное соединение
             return self._json(422, {"error": f"{type(e).__name__}: {e}"})
 
     def log_message(self, fmt, *args):     # тише: только ошибки
         if len(args) > 1 and str(args[1])[:1] in "45":
             super().log_message(fmt, *args)
+
+
+def _bad(e):
+    """Причина отказа для владельца: русское сообщение — как есть, техническое — с пометкой bad request (тело JSON, не заголовок)."""
+    t = str(e)
+    return t if re.search("[а-яё]", t, re.I) else f"bad request: {t}"
 
 
 def code_stamp():

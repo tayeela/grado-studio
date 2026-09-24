@@ -20,6 +20,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     use `/* */` in edits of long lines, and run `node --check` right after each edit.
   - Not fixed (UX queue): kept buildings in the restricted area (owner's decision), 3D shadow hull, 200 m protection radius, TR
     preview on closed contours, partial Yandex areas.
+  - UX audit: a Russian reason of a refused request (e.g. a UTM file) reaches the toast without the English «bad request:» prefix.
   - Token budget: CLAUDE.md files cut from ~440 KB to ~3 KB per turn (`claudeMdExcludes` for the taiLink file).
 
 - **2026-09-24, ГРАДО 2 v0.38.0: UX queue, batch 4 (ТЭП and analysis).** Density target from ПЗЗ (`pzzTarget`: subzones with a
