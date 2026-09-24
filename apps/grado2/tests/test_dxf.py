@@ -33,6 +33,20 @@ class DxfRoundTrip(unittest.TestCase):
         self.assertAlmostEqual(x, 37.52, places=8)
         self.assertAlmostEqual(y, 55.79, places=8)
 
+    def test_line_and_bulge_import_points_export(self):
+        doc = ezdxf.new("R2018"); msp = doc.modelspace()
+        msp.add_line((1000, 2000), (1100, 2000))
+        msp.add_lwpolyline([(1000, 3000, 0, 0, 1), (1100, 3000)], format="xyseb")   # полукруг R50
+        buf = io.StringIO(); doc.write(buf)
+        back, _ = dxf_io.import_dxf(buf.getvalue().encode(), S.REDLN)
+        self.assertEqual(len(back["features"]), 2)
+        self.assertGreater(len(back["features"][1]["geometry"]["coordinates"]), 20)     # дуга, а не хорда
+        fc = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"Текст": "Школа"},
+              "geometry": {"type": "Point", "coordinates": [37.6, 55.75, 140]}}]}
+        z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Надписи", "features": fc}], S.REDLN, S.LGR_COLORS)))
+        d = ezdxf.read(io.StringIO(z.read("grado2.dxf").decode()))
+        self.assertEqual(sorted(e.dxftype() for e in d.modelspace()), ["POINT", "TEXT"])
+
     def test_export_in_msk_matches_proj_and_ogd_import(self):
         sys.path.insert(0, str(HERE.parents[1] / "core/connectors/tests"))
         from test_crs import MSK_PROJ

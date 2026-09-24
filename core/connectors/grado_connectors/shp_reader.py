@@ -11,7 +11,7 @@ import struct
 from pathlib import Path
 
 
-def _dbf_fields(fh):
+def _dbf_fields(fh, encoding="cp1251"):
     """Заголовок .dbf → (число записей, длина записи, поля [(имя, тип, длина)]); fh стоит на первой записи."""
     head = fh.read(32)
     if len(head) < 32:
@@ -22,7 +22,11 @@ def _dbf_fields(fh):
     rest = fh.read(header_size - 32)
     fields, pos = [], 0
     while pos + 32 <= len(rest) and rest[pos] != 0x0D:
-        name = rest[pos:pos + 11].split(b"\x00")[0].decode("ascii", "replace")
+        # имена полей пишутся в кодировке файла: «Адрес» в cp1251/UTF-8, а не ASCII
+        name = rest[pos:pos + 11].split(b"\x00")[0].decode(encoding, "replace").strip()
+        base, k = name, 2
+        while any(f[0] == name for f in fields):          # одинаковые имена не затирают друг друга
+            name, k = f"{base}_{k}", k + 1
         fields.append((name, chr(rest[pos + 11]), rest[pos + 16]))
         pos += 32
     return num_records, record_size, fields
@@ -43,25 +47,24 @@ def _dbf_row(rec, fields, encoding):
                 except ValueError:
                     val = None
         elif ftype == "L":
-            val = (True if val in "YyTt" else
-                   False if val in "NnFf" else None)
+            val = (True if val and val in "YyTt" else
+                   False if val and val in "NnFf" else None)
         elif ftype == "D":                    # дата dBASE «ГГГГММДД» → «ГГГГ-ММ-ДД», как её отдавал GeoJSON портала
-            val = f"{val[:4]}-{val[4:6]}-{val[6:8]}" if len(val) == 8 and val.isdigit() else (val or None)
+            val = None if not val.strip("0") else f"{val[:4]}-{val[4:6]}-{val[6:8]}" if len(val) == 8 and val.isdigit() else (val or None)
         row[name] = val
     return row
 
 
 def _read_dbf(path, encoding):
     with open(path, "rb") as fh:
-        num, size, fields = _dbf_fields(fh)
+        num, size, fields = _dbf_fields(fh, encoding)
         records = []
-        for _ in range(num):
+        for _ in range(num if size > 0 else 0):
             rec = fh.read(size)
             if len(rec) < size:
                 break
-            if rec[:1] == b"\x2a":            # запись помечена удалённой
-                continue
-            records.append(_dbf_row(rec, fields, encoding))
+            # удалённая запись остаётся на своём месте (None): геометрия сопоставляется с атрибутами по порядку
+            records.append(None if rec[:1] == b"\x2a" else _dbf_row(rec, fields, encoding))
     return records
 
 
@@ -138,7 +141,7 @@ def read_shp(shp_path):
         geoms.append(_shape(data[pos + 8:pos + 8 + rec_len]))
         pos += 8 + rec_len
     return [{"geometry": g, "properties": attrs[i] if i < len(attrs) else {}}
-            for i, g in enumerate(geoms)]
+            for i, g in enumerate(geoms) if not (i < len(attrs) and attrs[i] is None)]
 
 
 def iter_records(shp_fh, dbf_fh=None, encoding="cp1251"):
@@ -149,7 +152,7 @@ def iter_records(shp_fh, dbf_fh=None, encoding="cp1251"):
     num = size = 0
     fields = []
     if dbf_fh is not None:
-        num, size, fields = _dbf_fields(dbf_fh)
+        num, size, fields = _dbf_fields(dbf_fh, encoding)
     i = 0
     while True:
         head = shp_fh.read(8)
@@ -159,7 +162,7 @@ def iter_records(shp_fh, dbf_fh=None, encoding="cp1251"):
         geom = _shape(shp_fh.read(rec_len))
         props, deleted = {}, False
         if dbf_fh is not None and i < num:
-            rec = dbf_fh.read(size)
+            rec = dbf_fh.read(size) if size > 0 else b""
             deleted = rec[:1] == b"\x2a"
             props = _dbf_row(rec, fields, encoding) if len(rec) == size else {}
         i += 1

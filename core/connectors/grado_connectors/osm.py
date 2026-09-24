@@ -29,7 +29,8 @@ _UA = "grado-studio/0.1 (local single-user desktop tool for urban planning)"
 # при сборке запроса.
 OSM_SETS = {
     "roads": ['way["highway"]'],
-    "buildings": ['way["building"]'],
+    # здания с внутренним двором в OSM — мультиполигон-relation, у его контуров тега building нет
+    "buildings": ['way["building"]', 'relation["building"]["type"="multipolygon"]'],
     "landuse": ['way["landuse"]',
                 'way["leisure"~"^(park|garden|pitch|playground)$"]',
                 'way["natural"~"^(wood|scrub|grassland|heath)$"]',
@@ -255,7 +256,11 @@ class OsmOverpass(Connector):
                 req = urllib.request.Request(url, data=data, headers={"User-Agent": _UA})
                 try:
                     with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
-                        return json.loads(r.read().decode("utf-8"))
+                        d = json.loads(r.read().decode("utf-8"))
+                    # таймаут или нехватка памяти Overpass приходят как 200 с неполным ответом — это отказ, не данные
+                    if "runtime error" in (d.get("remark") or ""):
+                        raise ConnectorError("Overpass: " + d["remark"][:200])
+                    return d
                 except urllib.error.HTTPError as e:
                     if e.code not in (429, 504) or attempt == 2:
                         raise

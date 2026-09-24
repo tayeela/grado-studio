@@ -27,6 +27,7 @@ GeoJSON, пересчитанный сервером портала, стоит 
 """
 
 import gzip
+import io
 import json
 import math
 import os
@@ -36,6 +37,7 @@ import ssl
 import threading
 import time
 import urllib.error
+import zipfile
 import urllib.request
 import zlib
 from pathlib import Path
@@ -529,11 +531,38 @@ class GisogdApi(Connector):
             raw = self.transport(url)
         if self.progress:
             self.progress(code, len(raw), len(raw), "parse")
+        if not zipfile.is_zipfile(io.BytesIO(raw)):       # страница ошибки портала не должна лечь в кэш на неделю
+            raise ConnectorError(f"ГИС ОГД: слой {code} — ответ портала не архив SHP, попробуйте позже")
         if path:
             with _tmp_beside(path) as tmp:         # свой временный файл: две вкладки не склеят чужие хвосты
                 tmp.write_bytes(gzip.compress(raw, 6))
         time.sleep(_PAUSE)
         return raw, False
+
+    def _restore_long_text(self, code, feats):
+        """dBASE режет текст на 254 байтах: списки ВРИ ПЗЗ и ограничения ОКН приходят обрезанными. Если в слое есть
+        такие значения, полные строки берутся из выгрузки GeoJSON того же слоя (по orbis_id); геометрия остаётся из SHP —
+        GeoJSON портала смещён на ~7,7 м."""
+        cut = lambda v: isinstance(v, str) and len(v.encode("utf-8")) >= 250
+        if not any(cut(v) for f in feats for v in (f.get("properties") or {}).values()):
+            return
+        try:
+            full = json.loads(self.transport(f"{self.base}/layers/{code}/export/?format=geojson"))
+        except Exception:                          # без полных строк слой всё равно нужен — остаются обрезанные
+            return
+        finally:
+            time.sleep(_PAUSE)
+        by_id = {str((g.get("properties") or {}).get("orbis_id")): g.get("properties") or {}
+                 for g in full.get("features") or []}
+        for f in feats:
+            props = f.get("properties") or {}
+            src = by_id.get(str(props.get("orbis_id")))
+            if not src:
+                continue
+            for k, v in props.items():
+                w = src.get(k)
+                if cut(v) and isinstance(w, str) and len(w) > len(v) and w.startswith(v.rstrip()[:50]):
+                    props[k] = w
 
     def _lines_path(self, code):
         return self.cache_dir / f"{code}.shp.lines.gz" if self.cache_dir else None
@@ -584,9 +613,12 @@ class GisogdApi(Connector):
         raw, cached = self._layer_bytes(code)
         try:
             data = {"features": list(_shp_features(_zip_of(raw, code), code, full_names=True))}
-        except ConnectorError:
-            raise
+            self._restore_long_text(code, data["features"])
         except Exception as e:
+            if cached and self._cache_path(code):
+                self._cache_path(code).unlink(missing_ok=True)   # следующая попытка скачает заново
+            if isinstance(e, ConnectorError):
+                raise
             raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {e}") from None
 
         out, notes, rows = [], [], []

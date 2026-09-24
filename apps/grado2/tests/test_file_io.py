@@ -38,7 +38,7 @@ def _shp_polygon(ring):
 def _dbf(name, value):
     hdr = bytearray(32); hdr[0] = 3
     struct.pack_into("<I", hdr, 4, 1); struct.pack_into("<H", hdr, 8, 32 + 32 + 1); struct.pack_into("<H", hdr, 10, 1 + 20)
-    fd = bytearray(32); fd[0:len(name)] = name.encode(); fd[11] = ord("C"); fd[16] = 20
+    fd = bytearray(32); nb = name.encode("cp1251"); fd[0:len(nb)] = nb; fd[11] = ord("C"); fd[16] = 20
     return bytes(hdr) + bytes(fd) + b"\r" + b" " + value.encode("cp1251").ljust(20) + b"\x1a"
 
 
@@ -105,6 +105,35 @@ class FileImport(unittest.TestCase):
         x, y = lay["features"]["features"][0]["geometry"]["coordinates"][0][0]
         self.assertAlmostEqual(x, LON, places=7); self.assertAlmostEqual(y, LAT, places=7)
         self.assertIn("ГИС ОГД", lay["notes"][0])
+
+    def test_shapefile_upper_case_extensions_and_cyrillic_field(self):
+        ring = [(MX, MY), (MX + 100, MY), (MX + 100, MY + 100)]
+        [lay] = file_io.import_files({"ROADS.SHP": _shp_polygon(ring), "ROADS.DBF": _dbf("Адрес", "Тверская 1")})
+        self.assertEqual(lay["features"]["features"][0]["properties"], {"Адрес": "Тверская 1"})
+
+    def test_foreign_projection_prj_is_refused(self):
+        prj = 'PROJCS["Pulkovo_1942_GK_Zone_7",GEOGCS["GCS_Pulkovo_1942"],PROJECTION["Gauss_Kruger"],' \
+              'PARAMETER["Central_Meridian",39.0],PARAMETER["Latitude_Of_Origin",0.0]]'
+        with self.assertRaisesRegex(ValueError, "не поддерживается"):
+            file_io.import_files({"a.shp": _shp_polygon([(7400000, 6180000), (7400100, 6180000), (7400100, 6180100)]),
+                                  "a.dbf": _dbf("N", "1"), "a.prj": prj.encode()})
+
+    def test_utm_without_crs_is_not_read_as_mercator(self):
+        with self.assertRaises(ValueError):
+            file_io.import_files({"u.geojson": _fc({"type": "Point", "coordinates": [410000, 6180000]})})
+        with self.assertRaisesRegex(ValueError, "не поддерживается"):
+            file_io.import_files({"u.geojson": json.dumps({"type": "FeatureCollection", "crs": {"type": "name",
+                "properties": {"name": "urn:ogc:def:crs:EPSG::32637"}}, "features": []}).encode()})
+
+    def test_same_stem_in_two_folders_keeps_both(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            for d in ("Существующее", "Проект"):
+                z.writestr(f"{d}/Здания.geojson", _fc({"type": "Point", "coordinates": [LON, LAT, 150]}))
+            z.writestr("metadata.json", b"[1, 2]")
+        lays = file_io.import_files({"p.zip": buf.getvalue()})
+        self.assertEqual(sorted(l["name"] for l in lays), ["Проект/Здания", "Существующее/Здания"])
+        self.assertEqual(lays[0]["features"]["features"][0]["geometry"]["coordinates"], [LON, LAT])   # Z снят
 
     def test_nothing_readable_raises(self):
         with self.assertRaises(ValueError):

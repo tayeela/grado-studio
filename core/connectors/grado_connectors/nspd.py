@@ -213,4 +213,7 @@ class NspdDirect(Connector):
             "categories": sorted(int(c) for c in categories)}
         result["source_doc"] = "НСПД (nspd.gov.ru), выгрузка по экстенту"
         result["notes"].extend(notes)
+        if notes:
+            # отказ геопортала — ошибка, а не пустой слой: пустой ответ при повторной выгрузке затёр бы слой с правками
+            raise ConnectorError("; ".join(notes))
         return result

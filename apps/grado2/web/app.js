@@ -313,7 +313,10 @@ async function importFiles(fileList) {
     if (!r.ok) throw new Error(j.error);
     const ex = ol.extent.createEmpty(), msgs = [];
     for (const lay of j.layers) {
-      const key = "import:" + lay.name + "." + lay.format.toLowerCase(), title = `${lay.name} (${lay.format})`, fc = lay.features;
+      // повторный импорт файла с тем же именем — новый слой рядом, а не замена прежнего вместе с правками
+      let key = "import:" + lay.name + "." + lay.format.toLowerCase(), title = `${lay.name} (${lay.format})`, n = 2;
+      while (DATA[key]) { key = `import:${lay.name} (${n}).${lay.format.toLowerCase()}`; title = `${lay.name} (${n}) (${lay.format})`; n++; }
+      const fc = lay.features;
       SOURCES[key] = { title, kind: "import" }; CHECKED.add(key);
       DATA[key] = { title, source: "файл " + lay.name + "." + lay.format.toLowerCase(), fetched_at: new Date().toISOString().slice(0, 10), notes: lay.notes, fc, count: fc.features.length, fields: [...new Set(fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties)))] };
       layerSrc[key] ||= new ol.source.Vector(); delete DATA[key].original; setLayerData(key, fc); ensureLayer(key, title);

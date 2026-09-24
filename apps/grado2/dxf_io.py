@@ -71,8 +71,17 @@ def export_dxf(layers, redln, lgr_colors):
             names = [n for n in props.get("_lt") or [] if n in redln["linetypes"]]
             for n in names:
                 _add_linetype(doc, n, redln["linetypes"][n], shapes)
-            for ring, closed in _rings(f["geometry"]):
-                pts = [crs.wgs84_to_msk(x, y) for x, y in ring]
+            geom = f["geometry"]
+            if geom["type"] in ("Point", "MultiPoint"):
+                text = props.get("Текст")
+                for x, y, *_ in ([geom["coordinates"]] if geom["type"] == "Point" else geom["coordinates"]):
+                    pt = crs.wgs84_to_msk(x, y)
+                    msp.add_point(pt, dxfattribs={"layer": lname})
+                    if text:
+                        msp.add_text(str(text), height=2.5, dxfattribs={"layer": lname, "insert": pt})
+                continue
+            for ring, closed in _rings(geom):
+                pts = [crs.wgs84_to_msk(x, y) for x, y, *_ in ring]
                 if closed and len(pts) > 1 and pts[0] == pts[-1]:
                     pts = pts[:-1]
                 attrs = {"layer": lname}
@@ -145,7 +154,7 @@ def import_dxf(data, redln, local="msk"):
     QGIS) or "ogd" (ГИС ОГД system: the DXF files ГРАДО 2 wrote before v0.32). A file written by ГРАДО 2 says its own
     system (written_system) and wins over the choice."""
     # кодировку файл объявляет сам ($DWGCODEPAGE): чертежи R2000–R2004 из русского AutoCAD — cp1251, а не UTF-8
-    from ezdxf import recover
+    from ezdxf import recover, path as ezpath
     doc, _ = recover.read(io.BytesIO(data))
     # кодовая страница бывает потеряна (ANSI_1252 по умолчанию при байтах cp1251): имена слоёв выходят «Êðàñíûå».
     # Русский текст, прочитанный как cp1252, — это сплошь буквы À…ÿ; тогда файл перечитывается как cp1251
@@ -158,12 +167,14 @@ def import_dxf(data, redln, local="msk"):
     for e in doc.modelspace():
         t = e.dxftype()
         # вершины полилинии хранятся в её собственной системе (OCS): у зеркальной полилинии x с обратным знаком
-        if t == "LWPOLYLINE":
-            pts, closed = [tuple(p)[:2] for p in e.vertices_in_wcs()], e.closed
-        elif t == "POLYLINE" and not e.is_3d_polyline:
-            pts, closed = [tuple(p)[:2] for p in e.points_in_wcs()], e.is_closed
+        # дуги полилиний (bulge) раскладываются в хорды до 5 см: иначе скругление красной линии становится прямой
+        if t in ("LWPOLYLINE", "POLYLINE") and not (t == "POLYLINE" and e.is_3d_polyline):
+            closed = e.closed if t == "LWPOLYLINE" else e.is_closed
+            pts = [(v.x, v.y) for v in ezpath.make_path(e).flattening(0.05)]
+            if closed and len(pts) > 2 and pts[0] == pts[-1]:
+                pts = pts[:-1]
         elif t == "LINE":
-            pts, closed = [tuple(e.dxf.start[:2]), tuple(e.dxf.end[:2])], False
+            pts, closed = [(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)], False
         else:
             skipped += 1
             continue
@@ -175,11 +186,11 @@ def import_dxf(data, redln, local="msk"):
             lt = layer.dxf.linetype if layer else "CONTINUOUS"
         feats.append({"pts": pts, "closed": closed, "layer": e.dxf.layer, "lt": upper.get(lt.upper())})
     if not feats:
-        return {"type": "FeatureCollection", "features": []}, [f"no lines or polylines (skipped {skipped})"]
+        return {"type": "FeatureCollection", "features": []}, [f"нет линий и полилиний (пропущено объектов: {skipped} — блоки, окружности, тексты)"]
     import file_io
     system = file_io.system_of([p for f in feats for p in f["pts"]][:2000])
     if system not in ("wgs", "local"):
-        raise ValueError("coordinates are neither Moscow local metres (tens of km) nor WGS84 degrees")
+        raise ValueError("координаты не похожи ни на местные московские метры, ни на градусы WGS84")
     is_wgs = system == "wgs"
     own = written_system(doc, data)
     if own and own != local and not is_wgs:
@@ -198,5 +209,5 @@ def import_dxf(data, redln, local="msk"):
             geom = {"type": "LineString", "coordinates": geom["coordinates"][0]} if geom["type"] == "Polygon" else geom
         out.append({"type": "Feature", "geometry": geom, "properties": props})
     notes.append(f"координаты: {'WGS84' if is_wgs else file_io.LOCAL[local][1]}; объектов {len(out)}"
-                 + (f", other entities skipped: {skipped}" if skipped else ""))
+                 + (f", пропущено прочих объектов: {skipped}" if skipped else ""))
     return {"type": "FeatureCollection", "features": out}, notes

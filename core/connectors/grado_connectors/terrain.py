@@ -219,6 +219,7 @@ def _contours(grid, px0, py0, stride, z, interval, base=0.0):
     result = []
     for k in range(k0, k1 + 1):
         level = base + k * interval
+        lv = level + 1e-6
         segs = []
         for r in range(nrows - 1):
             row0, row1 = grid[r], grid[r + 1]
@@ -235,9 +236,10 @@ def _contours(grid, px0, py0, stride, z, interval, base=0.0):
                     cmax = bl
                 if br > cmax:
                     cmax = br
-                if level < cmin or level > cmax:
+                # уровень чуть сдвинут с данных: высоты тайлов целые, и угол ровно на уровне терял бы отрезки
+                if lv < cmin or lv > cmax:
                     continue
-                segs.extend(_cell_segments(tl, tr, br, bl, c, r, level))
+                segs.extend(_cell_segments(tl, tr, br, bl, c, r, lv))
         if not segs:
             continue
         # grid-координаты (col,row) → глобальный пиксель → lon/lat

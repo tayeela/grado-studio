@@ -18,6 +18,7 @@
 пользовательская карта Яндекса, в сдаваемые материалы её не включать.
 """
 
+import http.client
 import math
 import os
 import ssl
@@ -274,18 +275,17 @@ def _clean(r):
     changed = True
     while changed and len(r) > 3:
         changed = False
-        for i in range(len(r)):
+        i = 0
+        while i < len(r) and len(r) > 3:           # один проход с шагом назад после удаления, без перезапуска
             a, c, b = r[i - 1], r[i], r[(i + 1) % len(r)]
-            if c == a:
-                del r[i]
-                changed = True
-                break
             cross = (c[0] - a[0]) * (b[1] - c[1]) - (c[1] - a[1]) * (b[0] - c[0])
             base = math.hypot(b[0] - a[0], b[1] - a[1])
-            if cross == 0 or (_seam(c) and base and abs(cross) / base <= 1.5):
+            if c == a or cross == 0 or (_seam(c) and base and abs(cross) / base <= 1.5):
                 del r[i]
                 changed = True
-                break
+                i = max(i - 1, 0)
+                continue
+            i += 1
     return r
 
 
@@ -370,7 +370,8 @@ def _dissolve(polys):
     outers = [r for r in rings if _sarea(r) > 0]
     result = [[r] for r in outers]
     for h in (r for r in rings if _sarea(r) < 0):
-        host = next((p for p in result if _inside(h[0], p[0])), None)
+        # самый внутренний контур: дыра острова внутри пруда принадлежит острову, а не внешнему полигону
+        host = min((p for p in result if _inside(h[0], p[0])), key=lambda p: abs(_sarea(p[0])), default=None)
         if host is None:
             return polys
         host.append(h)
@@ -520,13 +521,15 @@ class YandexVmap(Connector):
                 time.sleep(2 ** (attempt - 1))
             try:
                 data = self.transport(URL.format(x=x, y=y, z=z), timeout=30)
+                if data:
+                    decode(data)           # капча или обрезанный ответ — повтор, а не кэш на 30 дней
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 404:          # нет данных в тайле
                     data = b""
                     break
                 last = e
-            except (OSError, ValueError) as e:
+            except (OSError, ValueError, IndexError, http.client.HTTPException) as e:
                 last = e
         else:
             raise ConnectorError(f"тайл Яндекса {z}/{x}/{y} не скачан: {last}")

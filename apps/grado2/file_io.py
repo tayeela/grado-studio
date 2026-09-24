@@ -8,6 +8,7 @@ QGIS «МСК») unless the user chose «ГИС ОГД» for the import, or a Sh
 """
 
 import io
+import re
 import json
 import tempfile
 import xml.etree.ElementTree as ET
@@ -75,11 +76,18 @@ def to_wgs84(fc, hint=None, local="msk"):
     if not pts:
         return fc, "нет координат"
     kind = hint or system_of(pts)
+    if kind == "merc" and not hint:
+        # без сведений о системе метры в миллионах — это Web Mercator только если точки попадают в Россию;
+        # UTM и Гаусс–Крюгер тоже дают миллионы, но при чтении как Mercator уезжают за тысячи километров
+        ll = [crs.merc_to_wgs84(x, y) for x, y in pts[:200]]
+        if not all(19 <= lon <= 180 and 41 <= lat <= 82 for lon, lat in ll):
+            raise ValueError("координаты в метрах, но не Web Mercator и не местная московская система "
+                             "(похоже на UTM или Гаусс–Крюгер) — пересохраните слой в WGS84 или МСК")
     if kind is None:
         raise ValueError("координаты не похожи ни на градусы WGS84, ни на местные московские метры (десятки км), ни на Web Mercator")
     if kind == "local":
         kind = local
-    fn = {"wgs": None, "merc": crs.merc_to_wgs84, "msk": LOCAL["msk"][0], "ogd": LOCAL["ogd"][0]}[kind]
+    fn = {"wgs": lambda x, y: (x, y), "merc": crs.merc_to_wgs84, "msk": LOCAL["msk"][0], "ogd": LOCAL["ogd"][0]}[kind]
     if fn:
         for f in fc["features"]:
             if (f.get("geometry") or {}).get("coordinates"):
@@ -93,6 +101,12 @@ def _clean(props):
 
 def read_geojson(data):
     obj = json.loads(data.decode("utf-8-sig"))
+    if not isinstance(obj, dict):
+        raise ValueError("это не GeoJSON: нет FeatureCollection")
+    code = str(((obj.get("crs") or {}).get("properties") or {}).get("name") or "")
+    num = re.search(r"(\d+)\s*$", code)
+    if num and "CRS84" not in code.upper() and num.group(1) not in ("4326", "3857", "900913", "3395"):
+        raise ValueError(f"система координат файла ({code}) не поддерживается — пересохраните слой в WGS84 или МСК")
     if obj.get("type") == "Feature":
         obj = {"type": "FeatureCollection", "features": [obj]}
     elif obj.get("type") in ("Polygon", "MultiPolygon", "LineString", "MultiLineString", "Point", "MultiPoint"):
@@ -173,14 +187,26 @@ def _prj_hint(text):
         return "wgs"
     if "MOSCOW_BESSEL" in t:
         return "ogd"                # выгрузка ГИС ОГД: родные координаты портала
-    return None                     # прочие местные системы: решает выбор пользователя (по умолчанию МСК)
+    # местная московская система (МСК из QGIS владельца): осевой меридиан 37,5°, начало широт 55°40′ —
+    # решает выбор «Файлы в метрах». Любая другая проекция (UTM, Гаусс–Крюгер, МСК-50) не поддерживается:
+    # прочитать её как Web Mercator значило бы молча унести слой во Францию или Казахстан
+    par = dict(re.findall(r'PARAMETER\["([A-Z_]+)",\s*(-?[\d.]+)', t))
+    try:
+        cm, lat0 = float(par.get("CENTRAL_MERIDIAN", "nan")), float(par.get("LATITUDE_OF_ORIGIN", "nan"))
+    except ValueError:
+        cm = lat0 = float("nan")
+    if t.startswith("PROJCS") and not (abs(cm - 37.5) < 1e-6 and abs(lat0 - 55.6666667) < 1e-4):
+        name = re.match(r'PROJCS\["([^"]*)"', t)
+        raise ValueError(f"система координат файла «{name.group(1) if name else 'неизвестная'}» не поддерживается — "
+                         "пересохраните слой в WGS84 или МСК")
+    return None
 
 
 def read_shp_set(files):
     """{name: bytes} of one Shapefile (.shp, .dbf, .prj, .cpg, …) → FeatureCollection."""
     with tempfile.TemporaryDirectory() as td:
-        for name, b in files.items():
-            (Path(td) / Path(name).name).write_bytes(b)
+        for name, b in files.items():                  # расширение в нижний регистр: ROADS.SHP из старых выгрузок
+            (Path(td) / (Path(name).stem + Path(name).suffix.lower())).write_bytes(b)
         shp = next(Path(td).glob("*.shp"))
         rows = read_shp(shp)
         prj = shp.with_suffix(".prj")
@@ -215,7 +241,14 @@ def import_files(files, redln=None, local="msk"):
                 members = [i for i in z.infolist() if not i.is_dir() and not Path(i.filename).name.startswith(".")]
                 _check_unpacked(name, len(b), members)
                 for i in members:
-                    expanded[i.filename] = z.read(i)
+                    fname = i.filename
+                    if not i.flag_bits & 0x800:               # имя без флага UTF-8: Finder пишет UTF-8, русская Windows — cp866
+                        raw = fname.encode("cp437", "replace")
+                        try:
+                            fname = raw.decode("utf-8")
+                        except UnicodeDecodeError:
+                            fname = raw.decode("cp866", "replace")
+                    expanded[fname] = z.read(i)
         elif suf == ".kmz":
             with zipfile.ZipFile(io.BytesIO(b)) as z:
                 kml = next((i for i in z.infolist() if i.filename.lower().endswith(".kml")), None)
@@ -224,7 +257,7 @@ def import_files(files, redln=None, local="msk"):
                     expanded[Path(name).stem + ".kml"] = z.read(kml)
         else:
             expanded[name] = b
-    out, shp_sets = [], {}
+    out, shp_sets, skipped = [], {}, []
     for name, b in expanded.items():
         p, suf = Path(name), Path(name).suffix.lower()
         if suf in (".shp", ".dbf", ".prj", ".cpg", ".shx"):
@@ -232,18 +265,24 @@ def import_files(files, redln=None, local="msk"):
             continue
         hint = None
         if suf in (".geojson", ".json"):
-            fc = read_geojson(b)
+            try:
+                fc = read_geojson(b)
+            except (ValueError, AttributeError):
+                if len(expanded) == 1:
+                    raise
+                skipped.append(p.name)                # metadata.json рядом со слоями не мешает остальным
+                continue
         elif suf == ".kml":
             fc, hint = read_kml(b), "wgs"                 # KML всегда в градусах
         elif suf == ".dxf":
             import dxf_io
             fc, notes = dxf_io.import_dxf(b, redln, local)
-            out.append({"name": p.stem, "format": "DXF", "features": fc, "notes": notes})
+            out.append({"name": p.stem, "format": "DXF", "features": fc, "notes": notes, "_dir": p.parent.name})
             continue
         else:
             continue
         fc, system = to_wgs84(fc, hint, local)
-        out.append({"name": p.stem, "format": suf.lstrip(".").upper(), "features": fc,
+        out.append({"name": p.stem, "_dir": p.parent.name, "format": suf.lstrip(".").upper(), "features": fc,
                     "notes": [f"координаты: {system}; объектов {len(fc['features'])}"]})
     for stem, group in shp_sets.items():
         if not any(n.lower().endswith(".shp") for n in group):
@@ -253,7 +292,22 @@ def import_files(files, redln=None, local="msk"):
         notes = [f"координаты: {system}; объектов {len(fc['features'])}"]
         if not any(n.lower().endswith(".dbf") for n in group):
             notes.append("нет файла .dbf — атрибутов нет")
-        out.append({"name": Path(stem).name, "format": "SHP", "features": fc, "notes": notes})
+        out.append({"name": Path(stem).name, "_dir": Path(stem).parent.name, "format": "SHP", "features": fc, "notes": notes})
+    if skipped and out:
+        out[0]["notes"].append("не GeoJSON, пропущено: " + ", ".join(skipped))
+    # одинаковые имена слоёв из разных папок: к имени добавляется папка, иначе второй слой затёр бы первый
+    count = {}
+    for o in out:
+        count[o["name"]] = count.get(o["name"], 0) + 1
+    used = set()
+    for o in out:
+        folder = o.pop("_dir", "")
+        name = f"{folder}/{o['name']}" if count[o["name"]] > 1 and folder else o["name"]
+        base, k = name, 2
+        while name in used:
+            name, k = f"{base} ({k})", k + 1
+        used.add(name)
+        o["name"] = name
     if not out:
         raise ValueError("нет векторных данных: ожидаются GeoJSON, KML/KMZ, Shapefile (.shp с .dbf или zip) или DXF")
     return out
