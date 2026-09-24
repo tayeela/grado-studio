@@ -209,7 +209,7 @@ $("bLoad").onclick = async () => {
   // Яндекс — тоже отдельно: первая выгрузка тайлов идёт с паузами, до минуты на 1 км²
   const osm = keys.filter(k => k.startsWith("osm.")), egko = keys.filter(k => k.startsWith("egko.")), yandex = keys.filter(k => k.startsWith("yandex.")),
     rest = keys.filter(k => !/^(osm|egko|yandex)\./.test(k)), parts = [rest, osm, egko, yandex].filter(p => p.length);
-  const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [];
+  const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [], empty = [];
   ERRORS = {}; $("bLoad").disabled = true; busy(true);
   const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
   hint();
@@ -226,6 +226,8 @@ $("bLoad").onclick = async () => {
       const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part });
       Object.assign(ERRORS, r.errors);
       for (const [k, v] of Object.entries(r.layers)) {
+        // пустая первая выгрузка не заводит слой в списке: в области этого нет, сказано в итоге
+        if (!DATA[k] && !v.features.features.length) { empty.push(v.title); continue; }
         const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
         const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
         // имя, данное слою вами, переживает перевыгрузку: по нему слой находят узлы графа
@@ -242,7 +244,7 @@ $("bLoad").onclick = async () => {
   busy(false); $("bLoad").disabled = false; window.syncStatus?.();
   const ne = Object.keys(ERRORS).length;
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
-  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}`);
+  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}`);
 };
 /* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
    чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся

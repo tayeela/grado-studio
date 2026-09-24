@@ -47,7 +47,7 @@ function defaultStyle(key, fc) {
     // и контур каждого куска рисует шов по краю тайла поперёк здания
     "yandex.buildings": { fill: "#d3cdc2", stroke: "#8f897f", width: 0, opacity: 1 },
     "yandex.hd_roads": { fill: "#e6e3dc", stroke: "#c3beb4", width: 0, opacity: .85 },
-    "yandex.roads": { mode: "cat", width: 1.1, cat: { field: "class", colors: {}, off: [] } },
+    "yandex.roads": { fill: "#8f887c", width: .9 },       // оси — одним тоном: классы Яндекса («4_link», «8») владельцу ничего не говорят
     "yandex.road_edges": { fill: "#9c968b", width: .6 },
     "yandex.landuse": { mode: "cat", opacity: .3, stroke: "#b8b2a3", width: 0, cat: { field: "ft_type_name", colors: {}, off: [] } },
     "yandex.green": { fill: "#cfe4b3", stroke: "#9cbf80", width: 0, opacity: .7 },

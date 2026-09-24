@@ -226,6 +226,10 @@ docs/            architecture.md, fixes-geometry-layout.md, roadmap.md, ui-spec.
 
 ## Правки этой сессии (сверх снимка выше)
 
+- **2026-09-24, ГРАДО 2 v0.33.1: UX audit of v0.33.0.** A first download with no objects in the area (e.g. «Вода (Яндекс)» at
+  Владыкино) no longer adds an empty layer to the tree; the load toast says «Нет объектов в области: …». Yandex road axes are
+  one calm tone instead of random colours by Yandex classes («4_link», «8») that mean nothing to the owner.
+
 - **2026-09-24, ГРАДО 2 v0.33.0: Яндекс Карты (векторные тайлы vmap3) — new source group, nine layers, stdlib only.**
   - Connector `core/connectors/grado_connectors/yandex_vmap.py` (decoder ported from the owner's `~/yandex-hdroads`): tiles z18
     from `core-renderer-tiles.maps.yandex.net/vmap3` (User-Agent + Referer yandex.ru/maps, no key), disk cache
