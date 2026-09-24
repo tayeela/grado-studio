@@ -9,6 +9,9 @@
 const CONS = { norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true } };
 // сохранённые настройки кладутся поверх умолчаний; «use» сливается по ключам, иначе новый переключатель у старых настроек выключен
 try { const saved = JSON.parse(localStorage.getItem("grado2.cons") || "{}"); Object.assign(CONS, { ...saved, use: { ...CONS.use, ...saved.use } }); } catch { }
+// шаг точек 0 или пусто давал бесконечный цикл по фасаду: сохранённое значение тоже проверяется
+if (!(CONS.step >= 2 && CONS.step <= 20)) CONS.step = 4;
+if (!(CONS.cell >= 4 && CONS.cell <= 20)) CONS.cell = 8;
 const CONS_GROUP = "Ограничения";
 const CK = { zouit: "cons:zouit", red: "cons:redlines", fire: "cons:fire", pzz: "cons:pzz0", gp: "cons:gpnature", front: "cons:front", ceil: "cons:ceiling" };
 const EXCLUDE = [CK.zouit, CK.red, CK.fire, CK.pzz, CK.gp];   // слои-запреты: вычитаются из пятна застройки
@@ -21,7 +24,7 @@ function fireGap(f) {
   if (/смешан|проч|иные|металл/.test(m)) return 8;
   return 6;
 }
-const isResidential = f => { const p = f.properties, s = String(p["Назначение"] || p["Тип здания"] || "").toLowerCase(); return !/нежил/.test(s) && /жил|многокварт|residential|apartments|house|dormitory/.test(s); };
+const isResidential = f => { const p = f.properties, s = String(p["Назначение"] || p["Тип здания"] || "").toLowerCase(); return !/нежил/.test(s) && /жил|многокварт|residential|apartments|house|detached|terrace|bungalow|cabin|semi|dormitory/.test(s); };
 const decisionOf = f => String(f.properties["Решение"] || "сохраняем");
 
 function consLayer(key, title, fc, geom, style) {
@@ -114,8 +117,8 @@ async function computeConstraints() {
         const top = Math.min(hs ?? Infinity, hp ?? Infinity);
         if (top === Infinity) continue;                        // клетка без ограничения по высоте — пустая, карта под ней видна
         cells.push(turf.polygon([[toLL([x, y]), toLL([x + cell, y]), toLL([x + cell, y + cell]), toLL([x, y + cell]), toLL([x, y])]], {
-          "Потолок, м": top === Infinity ? null : Math.round(top * 10) / 10, "Потолок, эт.": top === Infinity ? null : Math.floor(top / CONS.floorH),
-          "По инсоляции, м": hs == null ? null : Math.round(hs * 10) / 10, "По ПЗЗ, м": hp, "Почему": hs != null && (hp == null || hs <= hp) ? "тень на окна соседей" : hp != null ? "высота по ПЗЗ" : "не ограничено" }));
+          "Потолок, м": top === Infinity ? null : Math.floor(top * 10) / 10, "Потолок, эт.": top === Infinity ? null : Math.floor(top / CONS.floorH),
+          "По инсоляции, м": hs == null ? null : Math.floor(hs * 10) / 10, "По ПЗЗ, м": hp, "Почему": hs != null && (hp == null || hs <= hp) ? "тень на окна соседей" : hp != null ? "высота по ПЗЗ" : "не ограничено" }));
       }
       consLayer(CK.ceil, "Потолок застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Потолок, эт.", n: 5, ramp: "green", method: "equal" } });
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
@@ -130,17 +133,17 @@ async function computeConstraints() {
 /* ---------- узел графа «Ограничения»: читает включённые слои группы ---------- */
 function consExclude() {
   const on = EXCLUDE.map(lyr).filter(l => l && shown(l));
-  return unionAll(on.flatMap(l => layerSrc[l.key].getFeatures().map(f => GJ.writeFeatureObject(f)).filter(f => /Polygon/.test(f.geometry?.type))));
+  return unionAll(on.flatMap(l => layerSrc[l.key].getFeatures().filter(f => visibleIn(l, f)).map(f => GJ.writeFeatureObject(f)).filter(f => /Polygon/.test(f.geometry?.type))));
 }
 // потолок корпуса: наименьший «Потолок, м» среди клеток, которые задевает пятно корпуса; null — не ограничен
 function consCeiling() {
   const l = lyr(CK.ceil); if (!l || !shown(l)) return null;
   const src = layerSrc[CK.ceil];
-  return f => { let top = Infinity; const ex = GJ.readFeature(f).getGeometry().getExtent(); src.forEachFeatureIntersectingExtent(ex, c => { const v = c.get("Потолок, м"); if (v != null && v < top && safe(() => turf.booleanIntersects(f, GJ.writeFeatureObject(c)))) top = v; }); return top === Infinity ? null : top; };
+  return f => { let top = Infinity; const ex = GJ.readFeature(f).getGeometry().getExtent(); src.forEachFeatureIntersectingExtent(ex, c => { if (!visibleIn(l, c)) return; const v = c.get("Потолок, м"); if (v != null && v < top && safe(() => turf.booleanIntersects(f, GJ.writeFeatureObject(c)))) top = v; }); return top === Infinity ? null : top; };
 }
 function NCons() { this.addOutput("запреты", "geom"); this.addOutput("потолок", "cap"); finish(this, "src", 220); }
 NCons.title = "Ограничения"; NCons.prototype.onExecute = function () {
-  const vis = [...EXCLUDE, CK.ceil].map(k => { const l = lyr(k); return l ? (shown(l) ? 1 : 0) + ":" + DATA[k]?.rev : "-"; }).join(",");
+  const vis = [...EXCLUDE, CK.ceil].map(k => { const l = lyr(k); return l ? (shown(l) ? 1 : 0) + ":" + DATA[k]?.rev + ":" + JSON.stringify([l.style.mode, l.style.cat?.off, l.style.rules]) : "-"; }).join(",");
   if (this._ck !== vis) { this._ck = vis; this._ex = consExclude(); this._cap = consCeiling(); if (this._ex) this._ex.properties = {}; if (this._cap) this._cap._id = Math.random().toString(36).slice(2); }
   this.setOutputData(0, this._ex); this.setOutputData(1, this._cap);
   const n = EXCLUDE.filter(k => lyr(k) && shown(lyr(k))).length;
@@ -191,7 +194,10 @@ function renderCons() {
   icons();
 }
 $("consBody").addEventListener("change", e => {
-  const t = e.target; if (t.dataset.cu) CONS.use[t.dataset.cu] = t.checked; if (t.dataset.cn) CONS[t.dataset.cn] = +t.value;
+  const t = e.target; if (t.dataset.cu) CONS.use[t.dataset.cu] = t.checked;
+  if (t.dataset.cn) { const k = t.dataset.cn, v = +t.value;       /* пустое и вне пределов поля не принимается */
+    if (t.value === "" || !isFinite(v)) { t.value = CONS[k]; return; }
+    CONS[k] = Math.min(t.max === "" ? Infinity : +t.max, Math.max(t.min === "" ? -Infinity : +t.min, v)); t.value = CONS[k]; }
   try { localStorage.setItem("grado2.cons", JSON.stringify({ ...CONS, log: undefined })); } catch { }
 });
 $("consBody").addEventListener("click", e => { if (e.target.closest("#consRun")) computeConstraints(); });
@@ -236,24 +242,28 @@ async function checkNorms(sk, title) {
   const byB = new Map(); ownN.forEach(p => { const b = newP[p.b].i; (byB.get(b) || byB.set(b, []).get(b)).push(p); });
   byB.forEach((ps, i) => { const okShare = ps.filter(p => p.worst.ok).length / ps.length; if (okShare < .5) add(turf.centroid(sk[i].f).geometry.coordinates, `инсоляция: норму получают ${Math.round(okShare * 100)} % фасадов корпуса`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, `корпус ${i + 1}, ${sk[i].floors} эт.`); });
   // 2. соседи, потерявшие норму
-  const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step * 2, CONS.z);
-  const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, kept.length, ...kept.map(f => f.geometry.coordinates.flat(3).slice(0, 2).join(","))].join("|");
-  if (nbBase?.sig !== sig) {
-    const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths, { norm, reveal: CONS.reveal }, gen);
+  // соседи — теми же точками и шагом солнца (5 мин), что и солнечный потолок: иначе эскиз под потолком «терял» бы им норму
+  const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step, CONS.z);
+  const paths5 = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5)), ek = EXIST_KEY();
+  const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, ek, DATA[ek]?.rev, kept.length].join("|");
+  if (nbBase?.sig !== sig || nbBase.nb0.length !== nb.length) {
+    const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths5, { norm, reveal: CONS.reveal }, gen);
     nbBase = { sig, nb0 };
   }
   const nb0 = nbBase.nb0;
-  await evalChunked(nb, obAll, paths, { norm, reveal: CONS.reveal }, gen);
+  await evalChunked(nb, obAll, paths5, { norm, reveal: CONS.reveal }, gen);
   const lost = nb.filter((p, n) => !p.orient && nb0[n].worst.ok && !p.worst.ok);
   lost.forEach(p => add(toLL([p.x, p.y]), `инсоляция соседа: было ${Math.round(nb0[nb.indexOf(p)].worst.cont / 6) / 10} ч, стало ${Math.round(p.worst.cont / 6) / 10} ч`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, String(resid[p.b].f.properties["Адрес"] || "существующий дом")));
   // 3. корпус на запрете — только включённые слои-запреты
-  EXCLUDE.map(lyr).filter(l => l && shown(l)).forEach(l => layerSrc[l.key].getFeatures().forEach(z => { const zf = GJ.writeFeatureObject(z);
+  EXCLUDE.map(lyr).filter(l => l && shown(l)).forEach(l => layerSrc[l.key].getFeatures().filter(z => visibleIn(l, z)).forEach(z => { const zf = GJ.writeFeatureObject(z);
     sk.forEach((b, i) => { const x = inter(b.f, zf); if (x && m2(x) > 5) add(turf.pointOnFeature(x).geometry.coordinates, `корпус на запрете: ${z.get("Причина") || l.title}`, z.get("Норма") || "", `корпус ${i + 1}`); }); }));
   // 4. противопожарный разрыв между новыми корпусами
-  for (let i = 0; i < sk.length; i++) { if (i % 20 === 19) { await yieldUI(); if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой"); } for (let j = i + 1; j < sk.length; j++) {
+  const bbs = sk.map(b => safe(() => turf.bbox(b.f))), bba = bbs.map(bb => bb && [bb[0] - 1e-4, bb[1] - 1e-4, bb[2] + 1e-4, bb[3] + 1e-4]), bufs = [];
+  for (let i = 0; i < sk.length; i++) { if (!bba[i]) continue; if (i % 20 === 19) { await yieldUI(); if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой"); } for (let j = i + 1; j < sk.length; j++) {
     if (sk[i].grp && sk[i].grp === sk[j].grp) continue;          // секции одного урбан-блока стоят вплотную — это одно здание
-    const a = sk[i].f, b = sk[j].f; if (!safe(() => turf.booleanIntersects(buf(a, 6), b))) continue;
-    const x = inter(buf(a, 6), b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
+    if (!bbs[j] || !ol.extent.intersects(bba[i], bbs[j])) continue;       /* пары далеко друг от друга не буферятся */
+    const a = bufs[i] ||= buf(sk[i].f, 6), b = sk[j].f; if (!safe(() => turf.booleanIntersects(a, b))) continue;
+    const x = inter(a, b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
   } }
   const key = "cons:check";
   consLayer(key, `Проверка норм: ${title}`, turf.featureCollection(out), "point", { mode: "cat", width: 2.5, cat: { field: "Нарушение", colors: {}, off: [] } });

@@ -8,7 +8,16 @@ const CAT = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "
 const RAMPS = { blue: ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94", "#0f3363"], brick: ["#fbe4d8", "#f5b698", "#ec875b", "#cf5a2c", "#933717", "#5e200c"], green: ["#e1f2e3", "#b2dcb7", "#7ec188", "#3f9a4f", "#1f6e31", "#10461e"], grey: ["#f2f2f2", "#d4d4d4", "#aaaaaa", "#7a7a7a", "#4d4d4d", "#262626"] };
 const PICK = [...CAT, "#1d1d1f", "#5f6368", "#9aa1a8", "#d4d4d4", "#ffffff", "#b3261e", "#1f7a4d", "#7a4b2a", ...RAMPS.blue.slice(0, 4), ...RAMPS.brick.slice(0, 4)];
 const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i) => RAMPS[n][Math.round(i * (RAMPS[n].length - 1) / Math.max(1, k - 1))]);
-const ST = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
+// цвет стиля из чужого файла проекта пишется в атрибуты разметки — только настоящий цвет, иначе значение по умолчанию
+const HEX = /^#[0-9a-f]{3,8}$/i, okc = (c, d) => typeof c === "string" && HEX.test(c) ? c : d;
+function cleanStyle(st) {
+  st.fill = okc(st.fill, "#9aa1a8"); st.stroke = okc(st.stroke, "#5f6368");
+  st.rules.elseFill = okc(st.rules.elseFill, "#dddddd"); (st.rules.list || []).forEach(r => { r.fill = okc(r.fill, "#9aa1a8"); });
+  Object.keys(st.cat.colors || {}).forEach(k => { st.cat.colors[k] = okc(st.cat.colors[k], "#9aa1a8"); });
+  return st;
+}
+const ST = o => cleanStyle(stDefaults(o));
+const stDefaults = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
 // порядок по умолчанию: сверху вниз (первый — самый верхний)
 const PREFERRED = ["gisogd.red_lines", "egko.addresses", "gisogd.demolition", "nspd.buildings", "osm.buildings", "egko.buildings", "egko.fences", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "egko.paths", "egko.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "egko.water", "relief.contours", "osm.landuse", "egko.green",
@@ -159,6 +168,7 @@ function setLayerData(key, fc, keepUndo = false) {
   }
   layerSrc[key].clear(true); layerSrc[key].addFeatures(GJ.readFeatures(fc));
   syncFromSource(key, false); d.fc = fc;
+  if (SEL.some(x => x.key === key)) setSel(SEL);                  // выбор старых объектов слоя снимается: правка ушла бы в никуда
 }
 /* правка на карте → DATA, которым питается граф */
 function syncFromSource(key, edited = true) {
@@ -168,7 +178,8 @@ function syncFromSource(key, edited = true) {
   d.edited = fs.reduce((n, f) => n + (f.get("_edited") ? 1 : 0), 0);
   if (edited) dataRev++;
   const l = lyr(key);
-  if (l) { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) symAll(l, true); }
+  if (l) { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) { symAll(l, true);            // номера классов пересчитаны — таблица цветов GPU тоже
+    ALLMAPS.forEach(m => m.getLayers().forEach(x => { if (x.get("key") === l.key && x.get("gl")) x.setStyle(glStyle(l)); })); } }
   renderTree(); renderTable();
   if (edited) window.onLayerEdited?.(key);
 }
@@ -287,9 +298,10 @@ function symHTML(l, color) {
   const st = l.style;
   if (st.mode === "lgr" && !color) return `<span class="sym line" style="border-top-color:#d7191c"></span>`;
   const c = color || (st.mode === "single" ? st.fill : st.mode === "cat" ? (Object.values(st.cat.colors)[0] || OTHER) : st.mode === "grad" ? ramp(st.grad.ramp, 3)[1] : (st.rules.list[0]?.fill || st.rules.elseFill));
+  const c0 = c; { const c = esc(c0);
   if (l.geom === "line") return `<span class="sym line" style="border-top-color:${c}"></span>`;
   if (l.geom === "point") return `<span class="sym pt" style="background:${c}"></span>`;
-  return `<span class="sym" style="${st.hatch && !color ? `background:repeating-linear-gradient(135deg,${c} 0 1px,transparent 1px 4px);border-color:${c}` : st.mode === "single" && st.opacity === 0 && !color ? `background:transparent;border-color:${st.stroke}` : `background:${c}`}"></span>`;
+  return `<span class="sym" style="${st.hatch && !color ? `background:repeating-linear-gradient(135deg,${c} 0 1px,transparent 1px 4px);border-color:${c}` : st.mode === "single" && st.opacity === 0 && !color ? `background:transparent;border-color:${esc(st.stroke)}` : `background:${c}`}"></span>`; }
 }
 function legendItems(l) {
   const st = l.style;
@@ -469,7 +481,7 @@ function layerMenu(anchor, key) {
 document.addEventListener("pointerdown", e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest("[data-more],[data-gmore]")) closeMenu(); });
 // window.confirm в браузере-вьюере не работает: подтверждение — повторным выбором пункта в течение 4 с
 let pendingConfirm = null;
-function confirmInline(anchor, text) { const now = Date.now(); if (pendingConfirm && now - pendingConfirm < 4000) { pendingConfirm = null; return true; } pendingConfirm = now; toast(text + " Выберите пункт ещё раз, чтобы подтвердить."); return false; }
+function confirmInline(anchor, text) { const now = Date.now(); if (pendingConfirm && pendingConfirm.text === text && now - pendingConfirm.t < 4000) { pendingConfirm = null; return true; } pendingConfirm = { t: now, text }; toast(text + " Выберите пункт ещё раз, чтобы подтвердить."); return false; }
 // «Выше/Ниже» — внутри своей группы или среди слоёв без группы; группы целиком — перетаскиванием
 function moveLayer(key, d) {
   const l = lyr(key), peers = LYR.filter(x => x.group === l.group), i = peers.indexOf(l), j = i + d; if (j < 0 || j >= peers.length) return;
@@ -517,7 +529,7 @@ $("nlName").addEventListener("keydown", e => { if (e.key === "Enter") $("nlOk").
 
 /* ---------- правая панель: оформление и объект ---------- */
 const UIS = { rt: "style", tool: "select", sort: null, filter: "" };
-const cbtn = (key, c) => `<button class="cbtn" data-color="${key}" aria-label="Выбрать цвет"><i style="background:${c}"></i></button>`;
+const cbtn = (key, c) => `<button class="cbtn" data-color="${esc(key)}" aria-label="Выбрать цвет"><i style="background:${esc(c)}"></i></button>`;
 const opts = (list, cur) => list.map(v => `<option ${String(v) === String(cur) ? "selected" : ""}>${esc(v)}</option>`).join("");
 function renderRight() {
   document.querySelectorAll("[data-rtab]").forEach(b => b.setAttribute("aria-selected", b.dataset.rtab === UIS.rt));
@@ -716,7 +728,8 @@ function setSel(list) {
 }
 function select(key, f) { setSel(f ? [{ key, f }] : []); }
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
-function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
+function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`);
+  if (outOfScale(l)) return toast(`Слой «${l.title}» не виден на этом масштабе (крупнее 1:${fmt(l.style.maxDen)}).`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
   toast(`Выбраны все видимые объекты слоя «${l.title}»: ${fmt(SEL.length)}.${vis.length < all.length ? ` Скрытые стилем (${fmt(all.length - vis.length)}) не выбраны.` : ""}`); }
 const keyOf = f => SEL.find(s => s.f === f)?.key || LYR.find(l => layerSrc[l.key]?.hasFeature(f))?.key;
 // объект под курсором: холст отвечает сам; крупный слой в обзоре (видеокарта) — поиск по его данным
@@ -726,7 +739,7 @@ function hitAt(pixel) {
   if (hit) return hit;
   const c = mMain.getCoordinateFromPixel(pixel), res = sharedView.getResolution(), tol = 5 * res;
   for (const l of LYR) {
-    if (!l.gl || !shown(l) || res < glSwitchRes(l)) continue;
+    if (!l.gl || !shown(l) || outOfScale(l) || res < glSwitchRes(l)) continue;
     const src = layerSrc[l.key];
     if (l.geom === "poly") { const f = src.getFeaturesAtCoordinate(c).pop(); if (f && symVisible(f)) return { key: l.key, f }; }
     else { const f = src.getClosestFeatureToCoordinate(c, x => symVisible(x)); if (f && ol.coordinate.distance(c, f.getGeometry().getClosestPoint(c)) <= tol) return { key: l.key, f }; }
@@ -757,7 +770,7 @@ dragBox.on("boxend", e => {
 });
 mMain.addInteraction(dragBox);
 function setCurrent(key) {
-  if (!lyr(key)) return; CUR = key; renderTree(); renderRight(); renderTable();
+  if (!lyr(key)) return; CUR = key; renderTree(); renderRight(); renderTable(); window.syncStatus?.();
   // инструмент рисования остаётся, если геометрия слоя подходит, иначе — инструмент под его геометрию
   if (UIS.tool === "vertex") setTool("vertex");                    // команда черчения продолжается: новый объект попадёт в новый текущий слой
 }
@@ -778,12 +791,14 @@ const TOOLS = {
 // слой для рисования: текущий, если геометрия подходит; иначе свой слой той же геометрии; иначе новый
 function targetLayer(geom) {
   const cur = lyr(CUR); if (cur?.geom === geom) return cur;
-  const own = LYR.find(l => l.geom === geom && l.key.startsWith("user:"));
+  const own = LYR.find(l => l.geom === geom && l.key.startsWith("user:") && !isAnno(l));
   if (own) { setCurrentQuiet(own.key); return own; }
   const l = createLayerQuiet({ point: "Точки", line: "Линии", poly: "Полигоны" }[geom], geom);
   toast(`Создан слой «${l.title}»: новые объекты попадут в него. Переименовать — двойной щелчок в списке слоёв.`); return l;
 }
-const setCurrentQuiet = key => { CUR = key; renderTree(); renderRight(); renderTable(); };
+const setCurrentQuiet = key => { CUR = key; renderTree(); renderRight(); renderTable(); window.syncStatus?.(); };
+// слои «Размеры», «Надписи», «Штриховка» заводят команды оформления; обычное черчение в них не попадает
+const isAnno = l => typeof ANNO !== "undefined" && Object.values(ANNO).some(a => a.title === l.title && a.geom === l.geom);
 function createLayerQuiet(name, geom) { const key = "user:" + Date.now().toString(36);
   DATA[key] = { title: name, source: "создан в проекте", fetched_at: new Date().toISOString().slice(0, 10), fc: { type: "FeatureCollection", features: [] }, count: 0, fields: ["Наименование", "Примечание"] };
   ensureLayer(key, name, geom); setCurrentQuiet(key); return lyr(key); }
@@ -818,7 +833,7 @@ function placeTools(list) {                  // инструменты — пе�
 }
 // прежние имена инструментов — команды черчения (cad.js); «Вершины» — ручки OpenLayers
 const CMD_OF = { point: "point", line: "pline", poly: "pline", rect: "rect", mlen: "dist", marea: "area", terr: "terr", move: "move" };
-function clearTools() { toolI.forEach(i => mMain.removeInteraction(i)); toolI = []; toolClean.forEach(fn => fn()); toolClean = []; SNAPS.forEach(c => c.snap.setActive(false)); }
+function clearTools() { toolI.forEach(i => { mMain.removeInteraction(i); i.dispose(); });   /* Modify держит подписки на объекты до dispose */ toolI = []; toolClean.forEach(fn => fn()); toolClean = []; SNAPS.forEach(c => c.snap.setActive(false)); }
 window.clearTools = clearTools;
 window.CURKEY = () => CUR;
 function setTool(t) {
@@ -929,7 +944,7 @@ addEventListener("keydown", e => {
   if (mod && code === "KeyA") { e.preventDefault(); selectAll(); return; }
   if (e.key === "F1" || e.key === "?" || (e.shiftKey && code === "Slash")) { e.preventDefault(); winOpen("wKeys"); return; }
   if (mod || e.altKey) return;
-  if ((e.key === "Delete" || e.key === "Backspace") && SEL.length) { e.preventDefault(); $("bDelFeat").click(); }
+  if ((e.key === "Delete" || e.key === "Backspace") && SEL.length && !window.CAD?.active?.()) { e.preventDefault(); $("bDelFeat").click(); }
   else if (e.key === "Escape") {
     // Esc по очереди: открытое меню → подбор вариантов → выбор и инструмент → верхнее плавающее окно
     const menu = document.querySelector(".cadmenu"); if (menu) { menu.remove(); return; }

@@ -323,8 +323,11 @@ let CMD = null, LAST = null;
 const title = () => CMD ? CMDS[CMD.id].title.toUpperCase() : "";
 function start(name, opts = {}) {
   cancel(true); closeInput(); lastNote = null;
+  // правка ручкой — не команда: Enter/Пробел после неё не повторяет её (у неё нет объекта) и её нет в истории F2
+  if (name === "grip" && !opts?.g) return;
   window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
-  CMD = CMDS[name].make(opts); CMD.id = name; LAST = name; hist(`${CMDS[name].title.toUpperCase()} (${CMDS[name].alias[0]})`, true);
+  CMD = CMDS[name].make(opts); CMD.id = name;
+  if (CMDS[name].alias.length) { LAST = name; hist(`${CMDS[name].title.toUpperCase()} (${CMDS[name].alias[0]})`, true); }
   mMain.getTargetElement().style.cursor = "crosshair"; window.syncStart?.();
   if (CMD.done) return finish();
   after();
@@ -410,7 +413,8 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && CMD) { e.preventDefault(); e.stopImmediatePropagation(); cancel(); return; }
   if ((e.key === "Enter" || e.key === " ") && (CMD || LAST)) { e.preventDefault(); e.stopImmediatePropagation(); CMD ? enter() : start(LAST); return; }
   if ((e.key === "Delete" || e.key === "Backspace") && CMD?.id === "grip") { e.preventDefault(); e.stopImmediatePropagation(); const o = CMD.opts()[0]; if (o) { o.fn(); after(); } return; }
-  if (e.key === "Backspace" && CMD?.back) { e.preventDefault(); e.stopImmediatePropagation(); CMD.back(); after(); return; }
+  // во время команды Backspace убирает последнюю точку (если есть что убирать), но никогда не удаляет выбранное
+  if ((e.key === "Backspace" || e.key === "Delete") && CMD) { e.preventDefault(); e.stopImmediatePropagation(); if (e.key === "Backspace" && CMD.back) { CMD.back(); after(); } return; }
   if (e.key.length !== 1 || e.key === "?" || e.key === "/") return;
   if (CMD && CMD.need !== "sel") { e.preventDefault(); e.stopImmediatePropagation(); openInput("val", e.key); }
   else if (/^Key[A-Z]$/.test(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); openInput("cmd", e.code.slice(3)); }
@@ -557,6 +561,7 @@ def("pline", "Полилиния", ["PL"], o => {                               
   const arcTo = w => { const P = pts(); return P.length ? G.tangentArc(P[P.length - 1], endDir(), w) : null; };
   const commit = close => {
     const P = pts(), p = P.filter((q, i) => !i || !G.same(q, P[i - 1], 1e-6));
+    if ((close || poly()) && p.length > 3 && G.same(p[0], p[p.length - 1], 1e-6)) p.pop();   /* замыкание щелчком в начало — без двойной вершины */
     if (close || poly()) { if (p.length < 3) { note("Для замкнутого контура нужно не меньше трёх точек."); return false; } addNew([newFeature("closed", [...p, p[0]], o.prefer || null)], "полилиния"); }
     else { if (p.length < 2) { note("Для полилинии нужно не меньше двух точек."); return false; } addNew([newFeature("line", p)], "полилиния"); }
     return true;
@@ -818,7 +823,9 @@ def("trim", "Обрезать", ["TR"], () => {
       if (!pieces) return note("Здесь нечего отрезать: у этого участка нет пересечений с другими объектами.");
       if (/Polygon/.test(p.t)) {                                   // контур после обрезки не замкнут — уходит в слой линий
         const lk = targetLayer("line").key;
-        edit([{ key: p.key, f: p.f, remove: true }], pieces.map(c => ({ key: lk, f: copyFeat(p.f, new ol.geom.LineString(c)) })), "обрезка");
+        // остальные кольца и части объекта (двор-дыра, второй участок мультиполигона) переходят в линии целиком
+        const rest = chainsOf(p.f.getGeometry()).filter((c, i) => i !== p.i && c.length > 1);
+        edit([{ key: p.key, f: p.f, remove: true }], [...pieces, ...rest].map(c => ({ key: lk, f: copyFeat(p.f, new ol.geom.LineString(c)) })), "обрезка");
         toast("Обрезанный контур больше не замкнут — он перенесён в слой линий."); return;
       }
       piecesEdit(p, pieces, "обрезка");
@@ -948,7 +955,9 @@ def("array", "Массив", ["AR"], o => selection(items => {
   const make = () => {
     const adds = [];
     const par = { id: arrId, kind: P.kind, rows: P.rows, cols: P.cols, dr: P.dr, dc: P.dc, n: P.n, fill: P.fill, rot: P.rot, c: P.c };
-    fns().forEach(({ fn }, i) => { for (const { key, f } of items) { const cad = xformCad(f.get("_cad"), fn); adds.push({ key, f: copyFeat(f, xformGeom(f.getGeometry(), fn), { ...(cad ? { _cad: cad } : {}), _arr: { id: arrId, i: i + 1 } }) }); } });
+    const list = fns();
+    if (list.length * items.length > 20000) return note("Больше 20 000 копий — уменьшите массив.");
+    list.forEach(({ fn }, i) => { for (const { key, f } of items) { const cad = xformCad(f.get("_cad"), fn); adds.push({ key, f: copyFeat(f, xformGeom(f.getGeometry(), fn), { ...(cad ? { _cad: cad } : {}), _arr: { id: arrId, i: i + 1 } }) }); } });
     if (adds.length > 20000) return note("Больше 20 000 копий — уменьшите массив.");
     // массив остаётся массивом: исходные объекты помнят его параметры, копии — номер; AE меняет числа и пересобирает копии
     const old = (o?.edit?.copies || []).map(x => ({ ...x, remove: true }));
@@ -1072,10 +1081,13 @@ def("grip", "Ручка", [], o => {
 def("join", "Соединить", ["J"], () => selection(items => {
   const lines = items.filter(it => /LineString/.test(it.f.getGeometry().getType()));
   if (lines.length < 2) { note("Для соединения выберите две и больше линии с общими концами."); return { done: true }; }
-  const chains = lines.flatMap(it => worldChains(it.f)), merged = G.join(chains, 0.001);
-  if (merged.length >= chains.length) { note("У выбранных линий нет общих концов (допуск 1 мм)."); return { done: true }; }
-  const key = lines[0].key, adds = merged.map(c => ({ key, f: copyFeat(lines[0].f, new ol.geom.LineString(c.map(fromM))) }));
-  edit(lines.map(it => ({ ...it, remove: true })), adds, "соединение"); setSel(adds); note(`Соединено: ${chains.length} → ${merged.length}.`);
+  // соединяются только линии, у которых есть общий конец с другой выбранной; остальные остаются как были, со своими полями и слоем
+  const ends = it => worldChains(it.f).flatMap(c => [c[0], c[c.length - 1]]);
+  const part = lines.filter(a => lines.some(b => b !== a && ends(a).some(p => ends(b).some(q => G.same(p, q, 0.001)))));
+  const chains = part.flatMap(it => worldChains(it.f)), merged = G.join(chains, 0.001);
+  if (part.length < 2 || merged.length >= chains.length) { note("У выбранных линий нет общих концов (допуск 1 мм)."); return { done: true }; }
+  const key = part[0].key, adds = merged.map(c => ({ key, f: copyFeat(part[0].f, new ol.geom.LineString(c.map(fromM))) }));
+  edit(part.map(it => ({ ...it, remove: true })), adds, "соединение"); setSel(adds); note(`Соединено: ${chains.length} → ${merged.length}.`);
   return { done: true };
 }));
 def("explode", "Расчленить", ["X"], () => selection(items => {
