@@ -316,6 +316,7 @@ def _layer(key, result):
 
 MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
+OGD_JOB, OGD_LOCK = [], threading.Lock()   # «Всё из ГИС ОГД в DWG»: одна фоновая выгрузка за раз (ogd_all.py)
 EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ, еженедельно перекачивать незачем
 
 
@@ -852,6 +853,19 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION})
         if self.path == "/api/progress":
             return self._json(200, dict(PROGRESS))
+        if self.path == "/api/ogd_all/status":
+            return self._json(200, OGD_JOB[0].state if OGD_JOB else {"running": False})
+        if self.path == "/api/ogd_all/file":
+            job = OGD_JOB[0] if OGD_JOB else None
+            if not job or not job.file or not job.file.exists():
+                return self._json(404, {"error": "no file"})
+            body = job.file.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{job.file.name}"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return self.wfile.write(body)
         if self.path.startswith("/api/fgistp/"):
             q = parse_qs(urlparse(self.path).query)
             try:
@@ -955,6 +969,22 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)
+            if self.path == "/api/ogd_all/start":
+                import ogd_all
+                bbox = [float(v) for v in req["bbox"]]
+                if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
+                    return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
+                if bbox_km2(bbox) > LIMIT_KM2["gisogd"]:
+                    return self._json(400, {"error": f"область больше {LIMIT_KM2['gisogd']:g} км²"})
+                with OGD_LOCK:
+                    if OGD_JOB and OGD_JOB[0].state["running"]:
+                        return self._json(409, {"error": "выгрузка уже идёт"})
+                    OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all")]
+                return self._json(200, OGD_JOB[0].state)
+            if self.path == "/api/ogd_all/cancel":
+                if OGD_JOB:
+                    OGD_JOB[0].cancel.set()
+                return self._json(200, {"ok": True})
             if self.path == "/api/export/dxf":
                 import dxf_io
                 body = dxf_io.export_dxf(req["layers"], REDLN, LGR_COLORS)

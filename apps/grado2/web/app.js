@@ -383,6 +383,35 @@ $("bExport").onclick = async () => {
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
+/* «Всё ОГД в DWG»: все слои ГИС ОГД в границе территории + 60 м одним чертежом; выгрузка идёт на сервере фоном,
+   повторное нажатие во время выгрузки её останавливает */
+let ogdPoll = null;
+$("bOgdAll").onclick = async () => {
+  const btn = $("bOgdAll");
+  if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
+  if (!TERR) return toast("Сначала задайте границу территории: чертёж собирается по ней.");
+  try { await api("/api/ogd_all/start", { bbox: turf.bbox(buf(TERR, 60)), boundary: TERR.geometry }); }
+  catch (err) { return toast("Выгрузка не началась: " + err.message); }
+  btn.lastChild.textContent = "Остановить";
+  const min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
+  ogdPoll = setInterval(async () => {
+    let st; try { st = await api("/api/ogd_all/status"); } catch { return; }
+    if (st.running) {
+      const left = st.done ? (Date.now() / 1000 - st.started) / st.done * (st.total - st.done) : 0;
+      window.setHint?.(`ГИС ОГД: слой ${st.done} из ${st.total || "…"}${st.current ? ` — «${st.current}»` : ""}${st.message ? ` (${st.message})` : ""}. `
+        + `С объектами в области: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
+      return;
+    }
+    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "Всё ОГД в DWG"; window.setHint?.("");
+    if (!st.file) return toast(st.message || "Выгрузка остановлена.");
+    const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
+    const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
+    toast(`Готово: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}, МСК. `
+      + `${st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (для DWG нужен ODA File Converter)"} и таблицы атрибутов.`
+      + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
+  }, 1500);
+};
+
 /* ================= граф анализа (litegraph.js) ================= */
 Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: "#d6dade", NODE_DEFAULT_BGCOLOR: "#f7f7f5", NODE_DEFAULT_BOXCOLOR: "#8a8d91", NODE_TITLE_COLOR: "#1d1d1f", NODE_SELECTED_TITLE_COLOR: "#000", NODE_TEXT_COLOR: "#333", NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11,
   WIDGET_BGCOLOR: "#ffffff", WIDGET_OUTLINE_COLOR: "#b5b8bc", WIDGET_TEXT_COLOR: "#1d1d1f", WIDGET_SECONDARY_TEXT_COLOR: "#6b6f75", LINK_COLOR: "#7a7e84", CONNECTING_LINK_COLOR: "#2f6fc4", NODE_TITLE_HEIGHT: 24, NODE_SLOT_HEIGHT: 20, NODE_WIDGET_HEIGHT: 20 });

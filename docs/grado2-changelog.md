@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.54.0: «Всё ОГД в DWG» — every ГИС ОГД layer inside the territory in one drawing.**
+  - Button «Всё ОГД в DWG» next to DXF. Takes the territory boundary + 60 m, walks the whole ИСОГД catalogue (layers and
+    «virtual» layers, 716 on 2026-09-25) and writes one drawing in МСК: each portal layer on its own drawing layer
+    `ОГД-<ИСОГД section number>-<parent folder>-<layer>` (e.g. `ОГД-11-Приаэродромная территория аэропорта Внуково-Пятая
+    подзона`), empty layers skipped, objects clipped to the frame, boundary on «Граница области».
+    Attributes go to XDATA (app `GISOGD`, `field=value`) and to one CSV per layer (`атрибуты/*.csv`, column Handle).
+    DWG is added next to DXF when ODA File Converter is installed.
+  - Runs in the background on the server (`apps/grado2/ogd_all.py`, `/api/ogd_all/start|status|file|cancel`), one job at a
+    time; the status line shows layer N of M and the time left, a second click stops it.
+  - Why not the portal's own area export: `POST /isogd/front/api/orbisclient/export` needs a mos.ru login (401), and the open
+    API ignores `bbox` (rechecked 2026-09-25). So layers are fetched whole once via `GisogdApi` (one by one, with pauses)
+    and cut locally. First full download on 2026-09-25: 69 min, 1.6 GB cache; after that 716 layers take ~10 s.
+  - Six layers the portal does not give (HTTP 500: t_1320, t_1321, virtual125, virtual3185; engineering networks
+    lines_pp/polygon_pp — connection dropped at 10 min) are remembered in `ogd_all_failed.json` in the cache and skipped
+    for a day; the final message names them.
+
 - **2026-09-25, ГРАДО 2 v0.53.0: tidy canvas — reference-plan layer order, one buildings layer, УДС as polygons.**
   - New default order (`PREFERRED`, top to bottom): red lines and annotations, buildings, transport points and axes, constraint
     zones (hatch/outline), parcels, surfaces (road surface, water, green), planning zones at the bottom. The old order put the
