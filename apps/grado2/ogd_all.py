@@ -57,25 +57,57 @@ def _save_failed(cache_dir, failed):
         pass
 
 
-def layer_list(cat):
-    """Слои каталога (обычные и «виртуальные» — оба выгружаются) с именем слоя чертежа
-    «ОГД-<номер раздела ИСОГД>-<папка слоя>-<слой>»: в AutoCAD слои встают по разделам. Путь в каталоге —
-    «Слои / 11 Сводный план … / … / папка / слой» или «Территория / ВАО / Районы ВАО / район»."""
-    out, used = [], set()
+def catalog_tree(cat):
+    """Дерево каталога в порядке портала: [{"name", "num", "code"?, "children"}]. num — номер по дереву («11.02.04»):
+    под корнем «Слои» — от раздела (номера разделов совпадают с порталом), под «Территория» — с приставкой «Т».
+    Без id/parent_id (старый формат каталога) — плоский список слоёв в порядке каталога."""
+    if not any(x.get("id") is not None for x in cat):
+        return [{"name": x.get("name") or x["code"], "num": f"{i + 1:03d}", "code": x["code"], "path": x.get("path") or "", "children": []}
+                for i, x in enumerate(x for x in cat if x.get("type") in ("layer", "virtual") and x.get("code"))]
+    ids = {x.get("id") for x in cat}
+    kids = {}
     for x in cat:
-        if x.get("type") not in ("layer", "virtual") or not x.get("code"):
-            continue
-        parts = [p.strip() for p in (x.get("path") or "").split(" / ") if p.strip()]
-        if parts and parts[0] == "Слои":
-            parts = parts[1:]
-        m = re.match(r"(\d+)\s", parts[0]) if len(parts) > 1 else None
-        head = [f"{int(m.group(1)):02d}" if m else parts[0]] if len(parts) > 1 else []
-        folder = [parts[-2]] if len(parts) > 2 else []
-        name = _BAD.sub("_", "-".join(["ОГД", *head, *folder, x.get("name") or x["code"]])).strip()[:_NAME_MAX].strip()
-        if name.lower() in used:                       # одинаковые имена в разных папках — различаются кодом
-            name = f"{name[:_NAME_MAX - len(x['code']) - 3].strip()} ({x['code']})"
-        used.add(name.lower())
-        out.append({"code": x["code"], "title": x.get("name") or x["code"], "path": x.get("path") or "", "dxf": name})
+        kids.setdefault(x.get("parent_id") if x.get("parent_id") in ids else None, []).append(x)
+
+    def build(pid, prefix, path):
+        out = []
+        for i, x in enumerate(kids.get(pid, [])):
+            num = f"{prefix}.{i + 1:02d}" if prefix else f"{i + 1:02d}"
+            name = x.get("name") or x.get("code") or ""
+            node = {"name": name, "num": num, "path": " / ".join([*path, name]), "children": build(x.get("id"), num, [*path, name])}
+            if x.get("type") in ("layer", "virtual") and x.get("code"):
+                node["code"] = x["code"]
+            out.append(node)
+        return out
+    roots = []
+    for x in kids.get(None, []):
+        pre = "" if x.get("name") == "Слои" else "Т"      # «Слои / 11 …» → 11.…, «Территория / ВАО …» → Т.02.…
+        roots.append({"name": x.get("name") or "", "num": pre, "path": x.get("name") or "",
+                      "children": build(x.get("id"), pre, [x.get("name") or ""])})
+    return roots
+
+
+def layer_list(cat, codes=None):
+    """Слои каталога в порядке портала (обычные и «виртуальные») с именем слоя чертежа
+    «ОГД <номер по дереву> <папка> - <слой>»: AutoCAD сортирует слои по имени, номер держит порядок ГИС ОГД.
+    codes — выгрузить только эти слои."""
+    out, used = [], set()
+
+    def walk(nodes, parent):
+        for n in nodes:
+            if n.get("code") and (codes is None or n["code"] in codes):
+                num = n["num"].lstrip(".")
+                name = _BAD.sub("_", f"ОГД {num} {parent + ' - ' if parent else ''}{n['name']}").strip()
+                if len(name) > _NAME_MAX:                  # длинное — режется имя папки (или она уходит), номер и слой остаются
+                    head, tail = f"ОГД {num} ", _BAD.sub("_", n["name"])
+                    room = _NAME_MAX - len(head) - len(tail) - 3
+                    name = (head + (_BAD.sub("_", parent)[:room].strip() + " - " if room >= 12 else "") + tail)[:_NAME_MAX].strip()
+                if name.lower() in used:
+                    name = f"{name[:_NAME_MAX - len(n['code']) - 3].strip()} ({n['code']})"
+                used.add(name.lower())
+                out.append({"code": n["code"], "title": n["name"], "path": n.get("path", ""), "dxf": name})
+            walk(n["children"], n["name"] if n["children"] else parent)
+    walk(catalog_tree(cat), "")
     return out
 
 
@@ -252,12 +284,26 @@ def _save_json(path, data):
         pass
 
 
+def scan(bbox, cache_dir, cat):
+    """Сколько объектов каждого слоя на листе — только из кэша на диске (портал не трогается): {code: n};
+    слоя нет в кэше или он устарел — None (узнать можно только выгрузкой)."""
+    api = GisogdApi(cache_dir=cache_dir)
+    counts = {}
+    for it in layer_list(cat):
+        try:
+            feats = api._from_lines(it["code"], tuple(bbox))
+        except Exception:
+            feats = None
+        counts[it["code"]] = None if feats is None else sum(1 for f in feats if f.get("geometry") and clip_geometry(f["geometry"], tuple(bbox)))
+    return counts
+
+
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None):
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None):
         """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None."""
-        self.sheet, self.styles = sheet, styles
+        self.sheet, self.styles, self.codes = sheet, styles, (set(codes) if codes is not None else None)
         bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
         self.name = re.sub(r'[<>/\\":;?*|=`\s]+', "_", name).strip("_")[:60] or "gisogd"
@@ -271,7 +317,7 @@ class Job:
     def _run(self):
         st = self.state
         try:
-            todo = layer_list(catalog())
+            todo = layer_list(catalog(), self.codes)
             st["total"] = len(todo)
 
             def tell(code, got, total, stage):

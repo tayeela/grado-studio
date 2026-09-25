@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.58.0: «Слои ГИС ОГД в DXF» — choose the layers; DXF layers in the portal's folder order.**
+  - «DXF ГИС ОГД» (sheet bar or header) opens a dialog (`web/ogdpick.js`): the ГИС ОГД catalogue as a folder tree in
+    the portal's own order (roots «Слои» with sections 1–21 and «Территория»), checkboxes on layers and folders
+    (a folder toggles its shown layers and stays open), search, «только с объектами на листе», «С объектами (N)»,
+    «Снять все», and the number of objects of each layer on this sheet. Counts come from the disk cache only
+    (`POST /api/ogd_all/scan`, ~9 s for 716 layers; «?» — layer not cached). Default: the project's previous choice
+    (`album.meta.ogdCodes`), else the layers with objects on the sheet. Only the chosen layers are fetched and drawn.
+  - DXF layer names carry the tree number: `ОГД 11.01.01.02 <folder> - <layer>` («Т.» for «Территория»), so
+    AutoCAD's alphabetical layer list follows the ГИС ОГД order; long folder names are shortened, the number and the
+    layer name stay. `catalog()` now also returns `id` and `parent_id`; `GET /api/ogd_all/tree` gives the tree
+    (catalogue cached in memory for an hour).
+
 - **2026-09-25, ГРАДО 2 v0.57.0: one kind of sheet — a sheet drawn on the map is an album sheet; loading follows the sheets.**
   - The «Лист» tool now creates an album sheet (`ALBUM.sheets`), not a separate map frame: it appears in «Листы» at once,
     prints to PDF and exports to DXF. Every map sheet of the album is a frame on the map with grips and the bar

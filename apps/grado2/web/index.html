@@ -384,6 +384,24 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .framebar input.ti{width:120px}
 .framebar label{display:flex;align-items:center;gap:2px;color:var(--muted)}
 .framebar .vs{width:1px;height:18px;background:var(--line);margin:0 2px}
+/* окно «Слои ГИС ОГД в DXF» (ogdpick.js) */
+dialog.ogdpick{width:min(760px,calc(100vw - 32px));height:min(720px,calc(100vh - 48px));padding:0;border:1px solid var(--line-2);border-radius:8px;background:var(--panel);color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+dialog.ogdpick[open]{display:flex;flex-direction:column}
+dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
+.ogdpick header,.ogdpick .bar,.ogdpick footer{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line)}
+.ogdpick footer{border-top:1px solid var(--line);border-bottom:0}
+.ogdpick .sp{flex:1}.ogdpick .sub{color:var(--muted);font-size:12px}
+.ogdpick .bar input[type=search]{flex:0 1 260px;height:26px;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:3px;padding:0 6px}
+.ogdpick .bar label{display:flex;align-items:center;gap:4px;color:var(--muted);white-space:nowrap}
+.ogdpick .tree{flex:1;overflow:auto;padding:4px 0;font-size:12.5px}
+.ogdpick summary,.ogdpick label.ly{display:flex;align-items:center;gap:6px;padding:2px 12px 2px calc(12px + var(--d) * 16px);cursor:default}
+.ogdpick summary:hover,.ogdpick label.ly:hover{background:var(--hover)}
+.ogdpick label.ly{padding-left:calc(30px + var(--d) * 16px)}
+.ogdpick .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ogdpick .nm b{font-weight:500;color:var(--faint);font-variant-numeric:tabular-nums}
+.ogdpick summary .nm{font-weight:600}
+.ogdpick .n{color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ogdpick .n.has{color:var(--text);font-weight:600}
 </style>
 
 <div class="app">
@@ -395,7 +413,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
       <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Окна, которые не поместились в шапку, и раскладки окон под задачу: существующее положение, анализ, эскиз, листы"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
     </nav>
     <span class="vs"></span>
-    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МСК, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button><button class="btn" id="bOgdAll" title="Все слои ГИС ОГД внутри листа на карте (выбранного или последнего) — чертёж DXF в МСК для передачи: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном в масштабе. Листа нет — включится инструмент «Лист»"><i data-lucide="layers"></i>DXF ГИС ОГД</button>
+    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МСК, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button><button class="btn" id="bOgdAll" title="Слои ГИС ОГД внутри листа на карте (выбранного или последнего) — чертёж DXF в МСК для передачи. Откроется окно выбора слоёв: дерево папок в порядке ГИС ОГД, число объектов на листе. Листа нет — включится инструмент «Лист»"><i data-lucide="layers"></i>DXF ГИС ОГД</button>
     <button class="tb" id="bKeys" title="Справка: как работать, клавиши и приёмы мыши (F1)"><i data-lucide="circle-help"></i></button><button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
   </header>
 
@@ -517,4 +535,5 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <script src="views.js"></script>
 <script src="sheets.js"></script>
 <script src="frames.js"></script>
+<script src="ogdpick.js"></script>
 <script src="project.js"></script>

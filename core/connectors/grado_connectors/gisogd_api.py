@@ -270,8 +270,9 @@ def catalog(transport=None, map_name="isogd"):
             guard += 1
         return " / ".join(p for p in parts if p)
 
-    return [{"code": x.get("code"), "name": x.get("name"),
-             "type": x.get("type"), "path": path(x)} for x in arr]
+    # id и parent_id — для дерева папок в порядке портала (массив портал отдаёт уже в своём порядке)
+    return [{"code": x.get("code"), "name": x.get("name"), "type": x.get("type"), "path": path(x),
+             "id": x.get("id"), "parent_id": x.get("parent_id")} for x in arr]
 
 
 # Имена полей .dbf обрезаны до 10 знаков. Для слоёв ИСОГД из SOURCES возвращаются прежние полные имена, как в GeoJSON

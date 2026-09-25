@@ -423,14 +423,18 @@ $("bExport").onclick = async () => {
    слой портала на своём слое, лист бумаги с видовым экраном в масштабе. Кнопка в шапке берёт выбранный лист или
    последний; листа нет — включает инструмент «Лист». Выгрузка идёт на сервере фоном, повторное нажатие её останавливает. */
 let ogdPoll = null;
-async function exportOgd(fr) {
+function ogdSheet(fr) {
+  const scale = Math.round(sheetScale(fr)), map = frameMM(fr), paper = isPaper(fr.size) ? paperMM(fr) : map, g = sheetMsk(fr);
+  return { c: g.c, w: g.wh[0], h: g.wh[1], paper, map, scale, title: `${ALBUM.sheets.indexOf(fr) + 1}` };
+}
+window.ogdSheet = ogdSheet;
+async function runOgd(fr, codes) {
   const btn = $("bOgdAll");
   if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
   // лист бумаги в DXF: у листа без штампа — вся бумага, у ГОСТ и слайдов — только поле карты; видовой экран — поле карты
-  const i = ALBUM.sheets.indexOf(fr), scale = Math.round(sheetScale(fr)), map = frameMM(fr), paper = isPaper(fr.size) ? paperMM(fr) : map, g = sheetMsk(fr);
-  const sheet = { c: g.c, w: g.wh[0], h: g.wh[1], paper, map, scale, title: `${i + 1}` };
+  const i = ALBUM.sheets.indexOf(fr), sheet = ogdSheet(fr), scale = sheet.scale;
   const where = `листу ${i + 1} «${fr.title}» (${SIZE_T[fr.size] || fr.size}, 1:${fmt(scale)})`;
-  try { await api("/api/ogd_all/start", { sheet, boundary: TERR?.geometry || null, name: `ОГД ${fr.title || `лист ${i + 1}`} 1-${scale}` }); }
+  try { await api("/api/ogd_all/start", { sheet, codes, boundary: TERR?.geometry || null, name: `ОГД ${fr.title || `лист ${i + 1}`} 1-${scale}` }); }
   catch (err) { return toast("Выгрузка не началась: " + err.message); }
   toast(`Выгрузка всех слоёв ГИС ОГД по ${where}.`);
   btn.lastChild.textContent = "Остановить";
@@ -452,11 +456,11 @@ async function exportOgd(fr) {
       + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
   }, 1500);
 }
-window.exportOgd = exportOgd;
+window.runOgd = runOgd; window.exportOgd = fr => ogdPoll ? runOgd(null) : window.openOgdPicker(fr);   // сначала окно выбора слоёв (ogdpick.js)
 $("bOgdAll").onclick = () => {
-  if (ogdPoll) return exportOgd(null);
+  if (ogdPoll) return runOgd(null);
   const fr = window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
-  if (fr) return exportOgd(fr);
+  if (fr) return window.exportOgd(fr);
   window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «DXF ГИС ОГД» над листом.");
 };
 

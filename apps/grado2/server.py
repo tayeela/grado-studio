@@ -316,6 +316,18 @@ def _layer(key, result):
 
 MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
+_OGD_CAT = {}
+
+
+def ogd_catalog():
+    """Каталог ГИС ОГД для окна выбора слоёв: час в памяти (дерево открывается при каждой выгрузке)."""
+    import time as _t
+    from grado_connectors.gisogd_api import catalog
+    if not _OGD_CAT or _t.time() - _OGD_CAT["at"] > 3600:
+        _OGD_CAT.update(at=_t.time(), cat=catalog())
+    return _OGD_CAT["cat"]
+
+
 OGD_JOB, OGD_LOCK = [], threading.Lock()   # «Всё из ГИС ОГД в DWG»: одна фоновая выгрузка за раз (ogd_all.py)
 EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ, еженедельно перекачивать незачем
 
@@ -853,6 +865,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION})
         if self.path == "/api/progress":
             return self._json(200, dict(PROGRESS))
+        if self.path == "/api/ogd_all/tree":
+            import ogd_all
+            try:
+                return self._json(200, {"tree": ogd_all.catalog_tree(ogd_catalog())})
+            except ConnectorError as e:
+                return self._json(502, {"error": str(e)})
         if self.path == "/api/ogd_all/status":
             return self._json(200, OGD_JOB[0].state if OGD_JOB else {"running": False})
         if self.path == "/api/ogd_all/file":
@@ -983,8 +1001,14 @@ class Handler(SimpleHTTPRequestHandler):
                         return self._json(409, {"error": "выгрузка уже идёт"})
                     OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
                                                str(req.get("name") or "gisogd"), sheet=sheet,
-                                               styles=ogd_all.portal_styles(CACHE / "gisogd"))]
+                                               styles=ogd_all.portal_styles(CACHE / "gisogd"),
+                                               codes=req.get("codes"))]
                 return self._json(200, OGD_JOB[0].state)
+            if self.path == "/api/ogd_all/scan":
+                import ogd_all
+                sheet = req.get("sheet")
+                bbox = ogd_all.sheet_bbox_wgs(sheet) if sheet else [float(v) for v in req["bbox"]]
+                return self._json(200, {"counts": ogd_all.scan(bbox, CACHE / "gisogd", ogd_catalog())})
             if self.path == "/api/ogd_all/cancel":
                 if OGD_JOB:
                     OGD_JOB[0].cancel.set()

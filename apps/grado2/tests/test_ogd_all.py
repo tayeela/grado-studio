@@ -17,31 +17,38 @@ except ImportError:              # ezdxf lives in the ГРАДО 2 venv (require
     ogd_all = None
 
 CAT = [
-    {"code": "f1", "name": "Генплан", "type": "folder", "path": "Генплан"},
-    {"code": "virtual1", "name": "Функциональные зоны", "type": "layer", "path": "Генплан / Функциональные зоны"},
-    {"code": "virtual2", "name": "Функциональные зоны", "type": "layer", "path": "ПЗЗ / Функциональные зоны"},
-    {"code": "virtual2_virtual", "name": "Граница: подзона", "type": "virtual", "path": "Генплан / Граница: подзона"},
-    {"code": "far", "name": "Далеко", "type": "layer", "path": "Генплан / Далеко"},
+    {"id": 1, "parent_id": 0, "code": "f0", "name": "Слои", "type": "folder", "path": "Слои"},
+    {"id": 2, "parent_id": 1, "code": "f1", "name": "1 Генплан", "type": "folder", "path": "Слои / 1 Генплан"},
+    {"id": 3, "parent_id": 2, "code": "virtual1", "name": "Функциональные зоны", "type": "layer", "path": "Слои / 1 Генплан / Функциональные зоны"},
+    {"id": 4, "parent_id": 1, "code": "f2", "name": "3 ПЗЗ", "type": "folder", "path": "Слои / 3 ПЗЗ"},
+    {"id": 5, "parent_id": 4, "code": "virtual2", "name": "Функциональные зоны", "type": "layer", "path": "Слои / 3 ПЗЗ / Функциональные зоны"},
+    {"id": 6, "parent_id": 2, "code": "virtual2_virtual", "name": "Граница: подзона", "type": "virtual", "path": "Слои / 1 Генплан / Граница: подзона"},
+    {"id": 7, "parent_id": 0, "code": "t0", "name": "Территория", "type": "folder", "path": "Территория"},
+    {"id": 8, "parent_id": 7, "code": "far", "name": "Далеко", "type": "layer", "path": "Территория / Далеко"},
 ]
 SQUARE = {"type": "Polygon", "coordinates": [[[37.60, 55.70], [37.62, 55.70], [37.62, 55.72], [37.60, 55.72], [37.60, 55.70]]]}
 
 
 @unittest.skipIf(ogd_all is None, "ezdxf not installed")
 class OgdAll(unittest.TestCase):
-    def test_layer_names_are_unique_and_valid_for_autocad(self):
-        names = [x["dxf"] for x in ogd_all.layer_list(CAT)]
-        self.assertEqual(len(names), 4)                          # папки не выгружаются, «виртуальные» слои — да
-        self.assertEqual(len({n.lower() for n in names}), 4)
-        self.assertIn("ОГД-Генплан-Граница_ подзона", names)
-        self.assertEqual(ogd_all.layer_list([{"code": "c", "name": "Пятая подзона", "type": "layer",
-            "path": "Слои / 11 Сводный план / 2.4 Приаэродромные / Внуково / Пятая подзона"}])[0]["dxf"], "ОГД-11-Внуково-Пятая подзона")
+    def test_layer_names_follow_portal_tree_order_and_are_valid_for_autocad(self):
+        L = ogd_all.layer_list(CAT)
+        names = [x["dxf"] for x in L]
+        self.assertEqual([x["code"] for x in L], ["virtual1", "virtual2_virtual", "virtual2", "far"])   # порядок портала
+        self.assertEqual(names, sorted(names))                  # AutoCAD сортирует по имени — порядок тот же
+        self.assertEqual(names[0], "ОГД 01.01 1 Генплан - Функциональные зоны")
+        self.assertEqual(names[3], "ОГД Т.01 Территория - Далеко")
         self.assertFalse(any(set(n) & set('<>/\\":;?*|=`') for n in names))
+        self.assertEqual([x["code"] for x in ogd_all.layer_list(CAT, {"far", "virtual1"})], ["virtual1", "far"])
+        tree = ogd_all.catalog_tree(CAT)
+        self.assertEqual([n["name"] for n in tree], ["Слои", "Территория"])
+        self.assertEqual(tree[0]["children"][1]["children"][0]["code"], "virtual2")
 
     def test_xdata_strings_fit_autocad_255_bytes(self):
         tags = ogd_all._xdata({"vri": "Размещение жилых домов " * 30, "n": 1})
         self.assertTrue(all(len(v.encode("utf-8")) <= 255 for _, v in tags))
         self.assertTrue(tags[0][1].startswith("vri=Размещение"))
-        long = ogd_all.layer_list([{"code": "c1", "name": "Я" * 300, "type": "layer", "path": "Слои / 1 А / Б / " + "Я" * 300}])
+        long = ogd_all.layer_list([{"id": 1, "parent_id": 0, "name": "Б" * 300, "type": "folder"}, {"id": 2, "parent_id": 1, "code": "c1", "name": "Я" * 300, "type": "layer"}])
         self.assertLessEqual(len(long[0]["dxf"]), 100)
 
     def test_drawing_has_layer_per_portal_layer_with_attributes(self):
