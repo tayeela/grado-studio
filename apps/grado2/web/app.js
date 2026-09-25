@@ -383,7 +383,7 @@ $("bExport").onclick = async () => {
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
-/* «Всё ОГД в DWG»: все слои ГИС ОГД в границе территории + 60 м одним чертежом; выгрузка идёт на сервере фоном,
+/* «Всё ОГД в DXF»: все слои ГИС ОГД в границе территории + 60 м одним чертежом; выгрузка идёт на сервере фоном,
    повторное нажатие во время выгрузки её останавливает */
 let ogdPoll = null;
 $("bOgdAll").onclick = async () => {
@@ -402,12 +402,12 @@ $("bOgdAll").onclick = async () => {
         + `С объектами в области: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
       return;
     }
-    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "Всё ОГД в DWG"; window.setHint?.("");
+    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "Всё ОГД в DXF"; window.setHint?.("");
     if (!st.file) return toast(st.message || "Выгрузка остановлена.");
     const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
     toast(`Готово: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}, МСК. `
-      + `${st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (для DWG нужен ODA File Converter)"} и таблицы атрибутов.`
+      + `${st.dwg ? "В архиве DWG, DXF" : "В архиве чертёж DXF (AutoCAD открывает его, в DWG — «Сохранить как»)"} и таблицы атрибутов.`
       + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
   }, 1500);
 };

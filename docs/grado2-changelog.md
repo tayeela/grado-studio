@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.54.1: button renamed «Всё ОГД в DXF».**
+  - opendesign.com answers «Access restricted» from Russia (browser and curl, 2026-09-25), so ODA File Converter cannot be
+    installed here; the owner chose to keep DXF. The button and the final message now say DXF and point to «Сохранить как»
+    in AutoCAD. The DWG branch stays: if ODA File Converter is ever installed, DWG is added to the archive by itself.
+
 - **2026-09-25, ГРАДО 2 v0.54.0: «Всё ОГД в DWG» — every ГИС ОГД layer inside the territory in one drawing.**
   - Button «Всё ОГД в DWG» next to DXF. Takes the territory boundary + 60 m, walks the whole ИСОГД catalogue (layers and
     «virtual» layers, 716 on 2026-09-25) and writes one drawing in МСК: each portal layer on its own drawing layer
