@@ -165,6 +165,31 @@ function radiiSheet(out) {
 
 /* Раздел 1 «Существующее положение» — слайды 16:9 по составу альбома ППТ: каждый лист знает свои слои, подложку,
    оформление и рамку содержания; «Собрать раздел» выгружает недостающие слои на всю площадь рамок и строит листы. */
+const ROADS_WHITE = { "calc.uds_osm": { mode: "single", fill: "#ffffff", stroke: "#a3a3a3", width: 0, opacity: 1 } };   // на цветных зонах
+/* УДС полигонами. Холст — «УДС (Яндекс)»: проезжая часть HD, а где её нет (hd_covered = 0) — проезды по осям Яндекса с
+   шириной по классу дороги. Листы — «УДС (OSM)»: оси OSM с шириной по типу дороги: Яндекс — пользовательская карта,
+   в сдаваемые материалы её данные не включаются (yandex_vmap.py). Ширины — типовые полосы движения, не обмер. */
+const UDS_YA_W = { 4: 14, 5: 12, 6: 10, 7: 7, 8: 6 };                       // класс дороги Яндекса (fc) → ширина, м
+const UDS_OSM_W = { motorway: 24, trunk: 20, primary: 16, secondary: 14, tertiary: 12, unclassified: 7, residential: 8, living_street: 6, service: 5,
+  motorway_link: 8, trunk_link: 8, primary_link: 7, secondary_link: 7, tertiary_link: 7 };
+const DERIVED = { "calc.uds_osm": ["osm.roads"], "calc.uds_ya": ["yandex.hd_roads", "yandex.roads"] };
+function udsLayer(key, title, polys, axes, widthOf, src) {
+  const out = polys.filter(f => /Polygon/.test(f.geometry?.type)).map(f => ({ type: "Feature", geometry: f.geometry, properties: { "Вид": "проезжая часть", "Источник": src } }));
+  axes.forEach(f => { const w = /LineString/.test(f.geometry?.type) && widthOf(f.properties || {}); if (!w) return;
+    const b = safe(() => turf.buffer(f, w / 2000, { units: "kilometers", steps: 2 }));
+    if (b?.geometry) out.push({ type: "Feature", geometry: b.geometry, properties: { "Вид": "по оси", "Ширина, м": w, "Источник": src } }); });
+  if (!out.length) return;
+  const fc = { type: "FeatureCollection", features: out };
+  DATA[key] = { title, fc, count: out.length, fields: ["Вид", "Ширина, м", "Источник"], original: fc };
+  layerSrc[key] ||= new ol.source.Vector(); setLayerData(key, fc); restyle(ensureLayer(key, title));
+}
+function buildUds() {
+  if (DATA["yandex.hd_roads"] || DATA["yandex.roads"])
+    udsLayer("calc.uds_ya", "УДС: проезжая часть и проезды (Яндекс)", DATA["yandex.hd_roads"]?.fc.features || [], DATA["yandex.roads"]?.fc.features || [],
+      p => String(p.hd_covered) === "0" ? UDS_YA_W[+p.fc] : 0, "Яндекс Карты");
+  if (DATA["osm.roads"]) udsLayer("calc.uds_osm", "УДС по осям (OSM)", [], DATA["osm.roads"].fc.features, p => UDS_OSM_W[p["Тип дороги"]], "OpenStreetMap");
+}
+
 const SEC1 = [
   { kind: "title", title: "Подготовка проекта планировки территории" },
   { title: "Месторасположение рассматриваемой территории", panels: [
@@ -176,13 +201,14 @@ const SEC1 = [
   { title: "Существующее состояние и использование территории с имеющимися ограничениями",
     // зоны ограничений — внизу бледной заливкой с контуром (альфы в PDF нет: сверху они закрыли бы здания), ОКН штриховкой
     // и красные линии — поверх
-    keys: ["nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "egko.roads", "nspd.parcels", "nspd.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
-    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 } } },
+    // УДС — полигоны по осям OSM (белые с серой кромкой, поверх зон); застройка — одна, из ЕГКО
+    keys: ["nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "calc.uds_osm", "nspd.parcels", "egko.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
+    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 }, ...ROADS_WHITE } },
   { title: "Существующее использование территории с характеристикой по землепользованию", basemap: "sat", keys: ["nspd.parcels"], fit: "terr", ctx: 1.5, extra: "parcels",
     styles: { "nspd.parcels": { mode: "single", opacity: 0, stroke: "#2b3cc4", width: 1.6, label: "" } } },
   // фотофиксация: снимки добавляет пользователь, точки съёмки берутся из GPS снимка
-  { kind: "photos", title: "Материалы фотофиксации", keys: ["egko.buildings", "osm.roads"], fit: "terr", ctx: 1.8,
-    styles: { "osm.roads": { mode: "single", fill: "#9a9a9a", width: .8, label: "Название", labelSize: 9 } },
+  { kind: "photos", title: "Материалы фотофиксации", keys: ["calc.uds_osm", "egko.buildings", "osm.roads"], fit: "terr", ctx: 1.8,
+    styles: { "osm.roads": { mode: "single", fill: "#d4d4d4", width: .3, label: "Название", labelSize: 9 } },
     only: { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } } },
   { title: "Фрагменты схем Генерального плана города Москвы", keys: ["gisogd.func_zones", "gisogd.func_zones_tinao"], fit: "terr", ctx: 1.6, extra: "genplan",
     labelFn: { "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" }, labelMM: { "gisogd.func_zones": 3.6, "gisogd.func_zones_tinao": 3.6 } },
@@ -192,25 +218,39 @@ const SEC1 = [
     { keys: ["gisogd.pzz_sub"], fit: "terr", ctx: 1.5, labelFn: { "gisogd.pzz_sub": "pzz" }, styles: { "gisogd.pzz_sub": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#8a5a2b", width: 1 } },
       caption: "Границы подзон территориальных зон и параметры разрешённого использования земельных участков и объектов капитального строительства" }],
     note: "Подписи зон — коды видов разрешённого использования. Подписи подзон: плотность, тыс. м²/га / высота, м / застроенность, %; Ф — по фактическому использованию" },
-  { title: "Схема об утверждённой и разрабатываемой документации", keys: ["egko.buildings", "gisogd.gpzu", "gisogd.krt", "gisogd.ppt"], fit: "terr", ctx: 2 },
+  { title: "Схема об утверждённой и разрабатываемой документации", keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.krt", "gisogd.ppt"], fit: "terr", ctx: 2 },
   { title: "Объекты социальной инфраструктуры и радиусы обслуживания", keys: ["egko.buildings", "osm.social"], fit: "terr", pad: 700, extra: "radii" },
 ];
 async function buildSection() {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
+  const before = new Set(LYR.map(l => l.key));
   const sheets = SEC1.map((t, i) => ({ id: "sec1_" + i, size: ALBUM.meta.slide || "P", legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
   // административное деление — для рамок «округ» и «район» его нужно получить первым
   if (!DATA["gisogd.admin"]) { toast("Раздел: административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], turf.bbox(buf(TERR, 60))); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
-  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
+  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k] && !k.startsWith("yandex.")).forEach(k => {
     const cur = need.get(k); need.set(k, cur ? [Math.min(cur[0], bb[0]), Math.min(cur[1], bb[1]), Math.max(cur[2], bb[2]), Math.max(cur[3], bb[3])] : bb); }); });
+  // холст: УДС Яндекса — вокруг территории (для анализа; на листы не идёт)
+  ["yandex.hd_roads", "yandex.roads"].forEach(k => need.set(k, turf.bbox(buf(TERR, 400))));
+  // НСПД и Яндекс отдают не больше 4 км² за раз: рамку такого слоя сжимаем к территории (квадрат 4 км²)
+  const LIM = { nspd: 4, yandex: 4 };
+  need.forEach((bb, k) => { const lim = LIM[k.split(".")[0]]; if (!lim) return;
+    const [w, s, e, n] = bb, c = turf.centroid(TERR).geometry.coordinates, kx = 111.32 * Math.cos(c[1] * Math.PI / 180), ky = 110.54, a = (e - w) * kx * (n - s) * ky;
+    if (a <= lim * .97) return; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;
+    need.set(k, [c[0] - hx, c[1] - hy, c[0] + hx, c[1] + hy]); });
   const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
   for (const { bb, keys } of groups.values()) { keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb); }
+  buildUds();
   // пересборка раздела не теряет добавленные снимки
   const old = new Map(ALBUM.sheets.filter(s => s.photos).map(s => [s.kind + s.title, s.photos]));
   sheets.forEach(s => { if (s.kind === "photos") s.photos = old.get(s.kind + s.title) || []; });
   ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith("sec1_")).concat(sheets);
-  window.markDirty?.(); renderSheets(); toast(`Раздел «Существующее положение»: ${sheets.length} слайдов 16:9. «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
+  // холст — опорный план: тематические слои раздела (зоны, ПЗЗ, Генплан, документация, соцобъекты) выключены — они
+  // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
+  const used = sheets.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
+  tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
+  window.markDirty?.(); renderSheets(); toast(`Раздел «Существующее положение»: ${sheets.length} слайдов, формат «${SIZE_T[ALBUM.meta.slide || "P"]}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }

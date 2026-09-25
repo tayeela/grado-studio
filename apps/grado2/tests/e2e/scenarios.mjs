@@ -325,6 +325,20 @@ export default async p => {
     applyProject(v1); return LYR.length===1 && GROUPS.length===0 && ALBUM.sheets.length===0`), "проект формата 1 открывается миграцией");
   check(await p.ev(`try { applyProject({format:"grado2",version:99}); return false; } catch (e) { return /новой версией/.test(e.message); }`), "файл новее программы не открывается, с понятной причиной");
 
+  // перевыгрузка другой области: объекты прежней выгрузки вне новой рамки остаются, «исчезнувшими» не считаются
+  const mg = await p.ev(`const sq=(x,k)=>({type:"Feature",geometry:{type:"Polygon",coordinates:[[[x,55],[x+.001,55],[x+.001,55.001],[x,55.001],[x,55]]]},properties:{_key:k}});
+    const oldFc={type:"FeatureCollection",features:[sq(37.00,"a"),sq(37.10,"b")]}, key="t.merge"; DATA[key]={title:"m",fc:oldFc,original:oldFc,bbox:[36.99,54.99,37.12,55.01]};
+    layerSrc[key]=new ol.source.Vector(); setLayerData(key, oldFc);
+    const m=mergeDownload(key, DATA[key], {type:"FeatureCollection",features:[sq(37.10,"b"),sq(37.20,"c")]}, [37.05,54.99,37.25,55.01]);
+    const keys=m.fc.features.map(f=>f.properties._key).sort().join(""); delete DATA[key]; return [keys, m.counts.removed, m.counts.added]`);
+  check(mg[0] === "abc" && mg[1] === 0 && mg[2] === 0, `перевыгрузка сдвинутой рамки: объекты ${mg[0]}, исчезло ${mg[1]}, «новых» ${mg[2]}`);
+  // «Упорядочить слои»: из нескольких слоёв застройки виден один, зоны ниже застройки
+  const td = await p.ev(`const mk=k=>{ DATA[k]={title:k,fc:{type:"FeatureCollection",features:[]}}; layerSrc[k]=new ol.source.Vector(); ensureLayer(k,k,"poly").visible=true; };
+    ["gisogd.func_zones","nspd.buildings","egko.buildings"].forEach(mk); tidyLayers(); const i=k=>LYR.findIndex(l=>l.key===k);
+    const r=[lyr("egko.buildings").visible, lyr("nspd.buildings").visible, i("egko.buildings") < i("gisogd.func_zones")];
+    ["gisogd.func_zones","nspd.buildings","egko.buildings"].forEach(k=>{ LYR.splice(i(k),1); delete DATA[k]; }); applyOrder(); renderTree(); return r`);
+  check(td[0] && !td[1] && td[2], "«Упорядочить слои»: застройка ЕГКО видна, повтор НСПД выключен, зоны Генплана под застройкой");
+
   // крупный слой: 100 000 объектов — выбор всего и отмена правки
   const big = await p.ev(`const n=100000, side=Math.ceil(Math.sqrt(n)), d=0.00018, fs=[]; for(let i=0;i<n;i++){ const x=37.50+(i%side)*d, y=55.78+Math.floor(i/side)*d*0.56; fs.push({type:"Feature",geometry:{type:"Polygon",coordinates:[[[x,y],[x+d*.7,y],[x+d*.7,y+d*.4],[x,y+d*.4],[x,y]]]},properties:{"N":i}}); }
     const key="import:big"; DATA[key]={title:"100k",source:"t",fetched_at:"x",fc:{type:"FeatureCollection",features:fs},count:0,fields:[]}; layerSrc[key]=new ol.source.Vector(); setLayerData(key, DATA[key].fc); const l=ensureLayer(key,"100k","poly"); CUR=key;

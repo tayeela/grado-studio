@@ -251,15 +251,18 @@ async function loadKeys(keys, bb) {
         // пустая первая выгрузка не заводит слой в списке: в области этого нет, сказано в итоге
         if (!DATA[k] && !v.features.features.length) { empty.push(v.title); continue; }
         const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
-        const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features) : null;
+        const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features, [w, s, e, n]) : null;
+        const cover = prev?.bbox ? [Math.min(prev.bbox[0], w), Math.min(prev.bbox[1], s), Math.max(prev.bbox[2], e), Math.max(prev.bbox[3], n)] : [w, s, e, n];
         // имя, данное слою вами, переживает перевыгрузку: по нему слой находят узлы графа
-        DATA[k] = { ...v, title: prev?.title || v.title, fc: m ? m.fc : v.features, count: v.features.features.length, fields, original: v.features,
+        DATA[k] = { ...v, title: prev?.title || v.title, fc: m ? m.fc : v.features, count: (m ? m.fc : v.features).features.length, fields, original: m?.original || v.features, bbox: cover,
           history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };
         layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, DATA[k].fc);
         const l = ensureLayer(k, v.title);
         // v0.33 рисовал площадные слои Яндекса без контура (швы тайлов); с v0.34 куски склеены — нетронутый стиль получает контур
         if ({ "yandex.buildings": "#d3cdc2", "yandex.hd_roads": "#e6e3dc" }[k] === l.style.fill && l.style.mode === "single" && l.style.width === 0)
           l.style.width = defaultStyle(k, DATA[k].fc).width;
+        // v0.53: нетронутая проезжая часть прежнего бледного тона получает новый, видимый на холсте
+        if (k === "yandex.hd_roads" && l.style.mode === "single" && l.style.fill === "#e6e3dc") Object.assign(l.style, { fill: "#d5dae0", stroke: "#9ea7b1", width: .6, opacity: 1 });
         assignCats(l, true); restyle(l); nLayers++;
         if (m) { if (m.counts.added || m.counts.removed || m.counts.changed || !/^\+0 новых, −0 исчезло, 0 изменились$/.test(m.text)) reports.push(`«${v.title}»: ${m.text}`); else same.push(v.title); fresh.push(...layerSrc[k].getFeatures().filter(f => m.mark.has(f.get("_key"))).map(f => ({ key: k, f }))); }
       }
@@ -278,35 +281,47 @@ async function loadKeys(keys, bb) {
 /* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
    чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся
    удалённым, нарисованное вами остаётся. */
-function mergeDownload(key, prev, fc) {
+function mergeDownload(key, prev, fc, bb) {
   const clean = p => Object.fromEntries(Object.entries(p || {}).filter(([k]) => !k.startsWith("_")));
   const sig = f => JSON.stringify([f.geometry, clean(f.properties)]);
   const byKey = list => new Map(list.filter(f => f.properties?._key).map(f => [f.properties._key, f]));
-  const oldF = prev.original?.features || [], oldBy = byKey(oldF), newBy = byKey(fc.features);
+  // выгрузка другой области: объекты прежней выгрузки вне новой рамки остаются как были (не «исчезли»), а объекты,
+  // которых прежняя область не покрывала, — не «новые в источнике», а просто дальше по карте
+  const fb = f => { try { return turf.bbox(f); } catch { return null; } };
+  const hits = (f, r) => { const b = fb(f); return !!b && !(b[2] < r[0] || b[0] > r[2] || b[3] < r[1] || b[1] > r[3]); };
+  const inNew = f => !bb || hits(f, bb), oldCover = prev.bbox || null;
+  const keepOut = bb ? (prev.original?.features || []).filter(f => !inNew(f)) : [];
+  const outKeys = new Set(keepOut.map(f => f.properties?._key).filter(Boolean));
+  const oldF = (prev.original?.features || []).filter(f => !outKeys.has(f.properties?._key)), oldBy = byKey(oldF), newBy = byKey(fc.features);
   const cur = writeFC(layerSrc[key].getFeatures()).features, curBy = byKey(cur);
   // пустая выгрузка с ключами идёт обычным путём: правленные вами объекты остаются с пометкой, счёт «−N исчезло» виден
-  if (!oldBy.size || (!newBy.size && fc.features.length)) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
+  if (!byKey(prev.original?.features || []).size || (!newBy.size && fc.features.length)) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
     const drawn = cur.filter(f => !f.properties?._key);            // слой заменяется, но нарисованное вами в нём остаётся
     return drawn.length ? { fc: { type: "FeatureCollection", features: fc.features.concat(drawn) }, text: `слой заменён новой выгрузкой, нарисованные вами объекты (${drawn.length}) сохранены`, mark: new Set(), counts: {} } : null;
   }
-  const added = [...newBy.keys()].filter(k => !oldBy.has(k)), removed = [...oldBy.keys()].filter(k => !newBy.has(k));
+  const added = [...newBy.keys()].filter(k => !oldBy.has(k) && !outKeys.has(k) && (!oldCover || hits(newBy.get(k), oldCover))), removed = [...oldBy.keys()].filter(k => !newBy.has(k));
   const changed = [...newBy.keys()].filter(k => oldBy.has(k) && sig(oldBy.get(k)) !== sig(newBy.get(k)));
   const mine = cur.filter(f => f.properties?._edited && f.properties._key && newBy.has(f.properties._key));
   const gone = new Set([...oldBy.keys()].filter(k => !curBy.has(k)));
   const drawn = cur.filter(f => !f.properties?._key);
+  // объекты прежней области вне новой рамки — в том виде, как сейчас на карте (с вашими правками); из новой выгрузки
+  // такие же (на стыке рамок) не дублируются
+  const outside = cur.filter(f => outKeys.has(f.properties?._key));
+  fc = { ...fc, features: fc.features.filter(f => !outKeys.has(f.properties?._key)) };
   // поля, которых нет в источнике (добавлены вами, например «Решение» реестра), переносятся на новую версию объекта
   const srcFields = new Set(fc.features.slice(0, 500).flatMap(f => Object.keys(f.properties || {})));
   const own = [...new Set(cur.slice(0, 500).flatMap(f => Object.keys(f.properties || {})))].filter(k => !srcFields.has(k) && !k.startsWith("_"));
   // правленный вами объект, которого в источнике больше нет, не пропадает молча: остаётся с пометкой
-  const orphan = cur.filter(f => f.properties?._edited && f.properties._key && !newBy.has(f.properties._key)).map(f => ({ ...f, properties: { ...f.properties, "Нет в источнике": "да" } }));
+  const orphan = cur.filter(f => f.properties?._edited && f.properties._key && !newBy.has(f.properties._key) && !outKeys.has(f.properties._key)).map(f => ({ ...f, properties: { ...f.properties, "Нет в источнике": "да" } }));
   const out = fc.features.filter(f => !gone.has(f.properties?._key)).map(f => { const c = curBy.get(f.properties?._key); if (c?.properties._edited) return c;
-    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(drawn, orphan);
+    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(outside, drawn, orphan);
   const conflict = mine.filter(f => changed.includes(f.properties._key)).length;
   const parts = [`+${added.length} новых`, `−${removed.length} исчезло`, `${changed.length} изменились`];
   if (mine.length) parts.push(`ваши правки (${mine.length}) сохранены${conflict ? `, из них ${conflict} изменились и в источнике — сверьте` : ""}`);
   if (gone.size) parts.push(`удалённые вами (${gone.size}) не вернулись`);
   if (orphan.length) parts.push(`правленные вами, но исчезнувшие из источника (${orphan.length}) оставлены с пометкой «Нет в источнике»`);
-  return { fc: { type: "FeatureCollection", features: out }, text: parts.join(", "), mark: new Set([...added, ...changed]),
+  if (outside.length) parts.push(`вне новой рамки оставлено как было: ${outside.length}`);
+  return { fc: { type: "FeatureCollection", features: out }, original: { type: "FeatureCollection", features: fc.features.concat(keepOut) }, text: parts.join(", "), mark: new Set([...added, ...changed]),
     counts: { added: added.length, removed: removed.length, changed: changed.length } };
 }
 const EXIST_KEY = () => DATA["nspd.buildings"] ? "nspd.buildings" : DATA["osm.buildings"] ? "osm.buildings" : null;

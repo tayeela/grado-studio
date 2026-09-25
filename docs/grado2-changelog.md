@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.53.0: tidy canvas — reference-plan layer order, one buildings layer, УДС as polygons.**
+  - New default order (`PREFERRED`, top to bottom): red lines and annotations, buildings, transport points and axes, constraint
+    zones (hatch/outline), parcels, surfaces (road surface, water, green), planning zones at the bottom. The old order put the
+    Yandex road surface under every zone, so it was never visible.
+  - «Упорядочить слои» button in the layers panel: re-sorts downloads by that order (own layers and imports stay on top), and
+    of several buildings layers (ЕГКО, НСПД, Яндекс, OSM) keeps one visible — ЕГКО first. Nothing is deleted.
+  - Building section 1 now leaves the canvas as a reference plan: section layers used only by slides (zones, ПЗЗ, Genplan,
+    documentation, social objects, administrative division) are switched off; red lines, buildings, УДС, water, green and
+    parcels stay on.
+  - УДС as polygons. Canvas: «УДС: проезжая часть и проезды (Яндекс)» — Yandex HD road surface plus, where there is none
+    (`hd_covered = 0`), driveways buffered from Yandex axes by road class (6–14 m). HD surface covers only major streets, the
+    axes fill in the driveways. Slides: «УДС по осям (OSM)» — OSM axes buffered by highway type (5–24 m), white over the
+    zones on the restrictions slide: Yandex is a user map and its data is not put into delivered sheets.
+  - Road surface on the canvas is a cool grey with an edge (`#d5dae0`), no longer the invisible `#e6e3dc`.
+  - Re-downloading a layer for a different frame keeps the objects of the earlier download outside the new frame and does not
+    count them as «исчезло»; objects beyond the earlier area are not flagged as new in the source (`DATA[k].bbox` keeps the
+    covered area). Before, rebuilding the section in another slide format dropped thousands of buildings outside the new frame.
+
 - **2026-09-25, ГРАДО 2 v0.52.0: slides in А4, А3 and А2 as well as 16:9, chosen in «Листы».**
   - New sheet formats «слайд А4 / А3 / А2» (`SLIDES` in `print_io.py`: landscape 297 × 210, 420 × 297, 594 × 420 mm) with the
     same design as 16:9: title with arrow, project header, legend column, slide number. Margins and header type grow with the

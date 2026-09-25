@@ -19,10 +19,32 @@ function cleanStyle(st) {
 const ST = o => cleanStyle(stDefaults(o));
 const stDefaults = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke: "#5f6368", width: 1, opacity: .7, hatch: false, label: "", labelSize: 11,
   cat: { field: "", colors: {}, off: [] }, grad: { field: "", n: 5, ramp: "blue", method: "quantile" }, rules: { list: [], elseFill: "#dddddd", elseHide: false } }, o);
-// порядок по умолчанию: сверху вниз (первый — самый верхний)
-const PREFERRED = ["gisogd.red_lines", "egko.addresses", "gisogd.demolition", "nspd.buildings", "osm.buildings", "egko.buildings", "egko.fences", "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.pzz_zones", "osm.roads", "egko.paths", "egko.roads", "nspd.parcels", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.water", "egko.water", "relief.contours", "osm.landuse", "egko.green",
-  // Яндекс — после слоёв OSM по тому же смыслу: здания и линии выше, площадные зоны внизу
-  "yandex.transport", "yandex.parking", "yandex.buildings", "yandex.road_edges", "yandex.roads", "yandex.hd_roads", "yandex.water", "yandex.green", "yandex.landuse"];
+// порядок по умолчанию: сверху вниз (первый — самый верхний), как на опорном плане: линии и подписи, застройка,
+// оси и точки транспорта, зоны ограничений (штриховка и контур — прозрачны), участки, покрытия (проезжая часть, вода,
+// озеленение), внизу — площадные зоны планирования. Прежний порядок клал проезжую часть Яндекса под все зоны — её не было видно.
+const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "egko.addresses", "egko.fences", "relief.contours",
+  "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings",
+  "yandex.transport", "yandex.parking", "osm.social", "yandex.roads", "osm.roads", "egko.paths", "yandex.road_edges",
+  "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.gpzu", "gisogd.krt",
+  "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
+  "gisogd.admin", "gisogd.pzz_zones", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.landuse", "yandex.landuse"];
+// застройка из разных источников — одна и та же: на холсте видна одна, по этому порядку (ЕГКО — самая полная)
+const BUILDINGS = ["egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings"];
+// опорный план на холсте после сборки раздела: остальные выгруженные слои есть в дереве, но выключены
+const CANVAS_BASE = ["gisogd.red_lines", "calc.uds_ya", "egko.roads", "egko.water", "egko.green", "nspd.parcels"];
+/* «Упорядочить слои»: выгрузки встают по опорному порядку (свои слои и импорт — сверху, как были), из нескольких
+   слоёв застройки остаётся видимым один. Ничего не удаляется. */
+function tidyLayers(fresh) {
+  const rank = k => { const i = PREFERRED.indexOf(k); return i < 0 ? -1 : i; };
+  const order = LYR.map((l, i) => [l, i]).sort((a, b) => (rank(a[0].key) - rank(b[0].key)) || (a[1] - b[1])).map(x => x[0]);
+  LYR.splice(0, LYR.length, ...order);
+  if (fresh) LYR.forEach(l => { if (fresh.has(l.key)) l.visible = CANVAS_BASE.includes(l.key) || BUILDINGS.includes(l.key); });
+  let hidden = [];
+  const on = BUILDINGS.map(lyr).filter(l => l?.visible);
+  on.slice(1).forEach(l => { l.visible = false; hidden.push(l.title); });
+  normGroups(); dataRev++; applyOrder(); renderTree(); renderRight();
+  return { buildings: on[0]?.title, hidden };
+}
 function defaultStyle(key, fc) {
   const zones = lib => { const colors = {}; fc.features.forEach(f => { const v = String(f.properties.naimfunkzony ?? f.properties.naimfunkzo ?? f.properties["Вид зоны"] ?? ""); const z = lib[v.toLowerCase()]; if (z) colors[v] = z.fill; }); return colors; };
   return ST(({
@@ -59,7 +81,11 @@ function defaultStyle(key, fc) {
     "egko.green": { fill: "#cfe3b4", stroke: "#8fb573", width: .4, opacity: .7 },
     // Яндекс — подложка для анализа и эскиза, спокойные тона; куски тайлов склеены по стыкам, контур без швов
     "yandex.buildings": { fill: "#d8d3c9", stroke: "#8f897f", width: .6, opacity: 1 },
-    "yandex.hd_roads": { fill: "#e6e3dc", stroke: "#c3beb4", width: .4, opacity: .85 },
+    // проезжая часть — холодный серый с кромкой: тёплые здания и светлый фон с ней не сливаются (прежний #e6e3dc был не виден)
+    "yandex.hd_roads": { fill: "#d5dae0", stroke: "#9ea7b1", width: .6, opacity: 1 },
+    // УДС полигонами (листы раздела): без контура — стыки проезжей части и проездов по осям не видны
+    "calc.uds_ya": { fill: "#d5dae0", stroke: "#9ea7b1", width: 0, opacity: 1 },
+    "calc.uds_osm": { fill: "#dfe2e6", stroke: "#a3a3a3", width: 0, opacity: 1 },
     "yandex.roads": { fill: "#8f887c", width: .9 },       // оси — одним тоном: классы Яндекса («4_link», «8») владельцу ничего не говорят
     "yandex.road_edges": { fill: "#9c968b", width: .6 },
     "yandex.landuse": { mode: "cat", opacity: .3, stroke: "#b8b2a3", width: 0, cat: { field: "ft_type_name", colors: {}, off: [] } },
@@ -750,6 +776,8 @@ $("attrBody").addEventListener("dblclick", e => {
 $("attrFilter").oninput = e => { UIS.filter = e.target.value; renderTable(); };
 $("attrSelOnly").onchange = e => { UIS.selOnly = e.target.checked; renderTable(); };
 $("bTable").onclick = () => openTable();
+$("bTidy").onclick = () => { const r = tidyLayers(); window.markDirty?.();
+  toast(`Слои упорядочены как на опорном плане.${r.hidden.length ? ` Застройка — «${r.buildings}»; выключены повторы: ${r.hidden.map(t => `«${t}»`).join(", ")}.` : ""}`); };
 
 /* ---------- выбор: щелчок, Shift+щелчок, рамка ---------- */
 const MOD = /Mac/.test(navigator.platform) ? "⌘" : "Ctrl";

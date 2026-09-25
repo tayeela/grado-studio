@@ -188,3 +188,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   (arrow keys, Enter, Esc work).
 - 2026-09-25 (done v0.49.0): the «Листы» table no longer squeezes the title column to zero in a narrow window (it scrolls
   sideways); section sheets say «слои раздела». Street labels along lines, the territory callout and wrapped legend lines — done v0.50.0.
+- 2026-09-25 (done v0.53.0): the canvas was cluttered after building section 1 (all slide layers on, buildings from three
+  sources, roads hidden under zones). Now a reference plan with one buildings layer and УДС polygons; «Упорядочить слои».
+  Open: the ОКН legend shows a category «0» (portal value without a zone name); УДС polygons are not dissolved, so a white
+  road with an edge would show seams — on slides they are drawn without an edge.
