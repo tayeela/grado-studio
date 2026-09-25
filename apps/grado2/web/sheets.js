@@ -3,14 +3,25 @@
    считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его
    собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте. */
 const ALBUM = { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] };
-const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 25000, 50000, 100000, 200000, 500000, 1000000];
-const FRAME_MM = { A3: [275, 224], A1: [636, 521], P: [238.67, 156.5], P2: [116.33, 148.5], PF: [112, 156.5] };   // размер карты на листе (как layout() и panel_rects() в print_io.py)
-const SIZE_T = { A3: "A3", A1: "A1", P: "16:9" };
+const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000, 100000, 200000, 500000, 1000000];
+const FRAME_MM = { A3: [275, 224], A1: [636, 521] };   // размер карты на листе по ГОСТ (как layout() в print_io.py)
+// слайды: 16:9 и альбомные А4, А3, А2 с одинаковым оформлением (SLIDES в print_io.py)
+const SLIDE = { P: [338.67, 190.5], PA4: [297, 210], PA3: [420, 297], PA2: [594, 420] };
+const SIZE_T = { A3: "A3 (ГОСТ)", A1: "A1 (ГОСТ)", P: "слайд 16:9", PA4: "слайд А4", PA3: "слайд А3", PA2: "слайд А2" };
+const isSlide = size => size in SLIDE;
+// рамка карты в мм: как layout(), panel_rects() и photo_map_rect() в print_io.py
+function frameMM(sheet) {
+  if (!isSlide(sheet.size)) return FRAME_MM[sheet.size] || FRAME_MM.A3;
+  const [w, h] = SLIDE[sheet.size], k = w / SLIDE.P[0], col = w < 500 ? 80 : 110, mw = w - 14 * k - col - 6, mh = h - 34 * k;
+  if (sheet.part === "half") return [(mw - 6) / 2, mh - 11];
+  if (sheet.kind === "photos" || sheet.part === "photo") return [mw * .47, mh];
+  return [mw, mh];
+}
 const newSheet = () => ({ id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), title: VIEWS.find(v => v.id === VIEW_CUR)?.name || "Существующее положение", size: "A3", view: VIEW_CUR || "", scale: 0, legend: true, tep: false });
 
-function autoScale(size, bb) {
+function autoScale(frame, bb) {
   if (!TERR && !bb) return 2000;
-  const [w, s, e, n] = bb || turf.bbox(TERR), mx = (e - w) * 111320 * Math.cos((s + n) / 2 * Math.PI / 180), my = (n - s) * 110540, [fw, fh] = FRAME_MM[size];
+  const [w, s, e, n] = bb || turf.bbox(TERR), mx = (e - w) * 111320 * Math.cos((s + n) / 2 * Math.PI / 180), my = (n - s) * 110540, [fw, fh] = frame;
   const need = Math.max(mx / fw, my / fh) * 1000 * 1.08;
   return SCALES.find(v => v >= need) || SCALES[SCALES.length - 1];
 }
@@ -28,8 +39,7 @@ function viewLayers(sheet) {
 }
 const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
   : TERR ? turf.centroid(TERR).geometry.coordinates : ol.proj.toLonLat(sharedView.getCenter()));
-const mapSize = sheet => sheet.kind === "photos" ? "PF" : sheet.size;          // у слайда фотофиксации карта — левая часть
-const sheetScale = sheet => sheet.scale || autoScale(mapSize(sheet), sheet.fit ? fitBox(sheet) : null);
+const sheetScale = sheet => sheet.scale || autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null);
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {
   const t = RESULT.tepNode?._tep; if (!t) return [];
@@ -42,19 +52,19 @@ function sheetSpec(sheet) {
   if (sheet.kind === "title") return { title: sheet.title, size: sheet.size, kind: "title" };
   // две карты на слайде: у каждой свои слои, рамка и масштаб; легенда общая
   if (sheet.panels) {
-    const subs = sheet.panels.map(p => sheetSpec({ ...p, size: "P2", legend: sheet.legend })), legend = [];
+    const subs = sheet.panels.map(p => sheetSpec({ ...p, size: sheet.size, part: "half", legend: sheet.legend })), legend = [];
     subs.forEach(x => x.legend.forEach(g => { if (!legend.some(y => y.title === g.title)) legend.push(g); }));
     const c = TERR && turf.centroid(TERR), okr = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "округ" && safe(() => turf.booleanPointInPolygon(c, x)));
     const on = okr ? LABEL_FN.adm({ get: k => okr.properties[k] }) : "административного округа";
-    return { title: sheet.title, size: "P", panels: subs.map((x, j) => ({ ...x, caption: (sheet.panels[j].caption || "").replace("{okr}", on) })), legend, note: sheet.note || "" };
+    return { title: sheet.title, size: sheet.size, panels: subs.map((x, j) => ({ ...x, caption: (sheet.panels[j].caption || "").replace("{okr}", on) })), legend, note: sheet.note || "" };
   }
   if (sheet.kind === "photos") {
-    const out = sheetSpec({ ...sheet, kind: "map", size: "PF" }), pts = (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, fill: "#2e8b3a", stroke: "#ffffff", w: 5, a: 1, label: String(i + 1) } : null).filter(Boolean);
+    const out = sheetSpec({ ...sheet, kind: "map", part: "photo" }), pts = (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, fill: "#2e8b3a", stroke: "#ffffff", w: 5, a: 1, label: String(i + 1) } : null).filter(Boolean);
     out.layers.push({ title: "Точки съёмки", features: pts });
     if (pts.length) out.legend.push({ title: "Точки съёмки", kind: "point", items: [{ label: "Точка съёмки и номер снимка", fill: "#2e8b3a" }] });
-    return { ...out, size: "P", kind: "photos", photos: (sheet.photos || []).map(ph => ({ data: ph.data, w: ph.w, h: ph.h })) };
+    return { ...out, kind: "photos", photos: (sheet.photos || []).map(ph => ({ data: ph.data, w: ph.w, h: ph.h })) };
   }
-  const size = sheet.size, scale = sheetScale(sheet), [fw, fh] = FRAME_MM[size];
+  const size = sheet.size, scale = sheetScale(sheet), [fw, fh] = frameMM(sheet);
   const center = sheetCenter(sheet);
   const half = [fw / 2 / 1000 * scale * 1.15, fh / 2 / 1000 * scale * 1.15], c3 = ol.proj.fromLonLat(center), stretch = 1 / Math.cos(center[1] * Math.PI / 180);
   const ext = [c3[0] - half[0] * stretch, c3[1] - half[1] * stretch, c3[0] + half[0] * stretch, c3[1] + half[1] * stretch];
@@ -80,7 +90,7 @@ function sheetSpec(sheet) {
   });
   const tep = sheet.tep ? tepRows(false) : [];
   const out = { title: sheet.title, size, scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "" };
-  if (/^P/.test(size)) out.terrStyle = ["okrug", "moscow"].includes(sheet.fit) ? { stroke: "#e0158c", width: .9, fill: "#e0158c" } : { stroke: "#e0158c", width: .9 };
+  if (isSlide(size)) out.terrStyle = ["okrug", "moscow"].includes(sheet.fit) ? { stroke: "#e0158c", width: .9, fill: "#e0158c" } : { stroke: "#e0158c", width: .9 };
   if (sheet.extra === "parcels") Object.assign(out, parcelsSheet(layers));
   if (sheet.extra === "radii") radiiSheet(out);
   if (sheet.extra === "genplan") genplanTable(out);
@@ -88,7 +98,7 @@ function sheetSpec(sheet) {
   // выноска на карте района: «проектируемая территория» и район, где она лежит
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
     out.callout = ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
-  if (/^P/.test(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `Граница разработки проекта планировки (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
+  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `Граница разработки проекта планировки (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   return out;
 }
 const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(sheetSpec) });
@@ -187,12 +197,12 @@ const SEC1 = [
 ];
 async function buildSection() {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
-  const sheets = SEC1.map((t, i) => ({ id: "sec1_" + i, size: "P", legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
+  const sheets = SEC1.map((t, i) => ({ id: "sec1_" + i, size: ALBUM.meta.slide || "P", legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
   // административное деление — для рамок «округ» и «район» его нужно получить первым
   if (!DATA["gisogd.admin"]) { toast("Раздел: административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], turf.bbox(buf(TERR, 60))); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
-  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: "P2" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
+  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
     const cur = need.get(k); need.set(k, cur ? [Math.min(cur[0], bb[0]), Math.min(cur[1], bb[1]), Math.max(cur[2], bb[2]), Math.max(cur[3], bb[3])] : bb); }); });
   const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
   for (const { bb, keys } of groups.values()) { keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb); }
@@ -232,15 +242,15 @@ function renderSheets() {
   const tepS = s => s.kind === "tep" ? "disabled" : "";
   el.innerHTML = `<div class="pad"><div class="note" style="padding:0 0 6px">Основная надпись</div><div class="meta4">${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия кратко: ПП, П, Р")}${inp("org", "Организация")}</div></div>`
     + `<div class="sect">Листы альбома</div>`
-    + (ALBUM.sheets.length ? `<table class="at sheets"><colgroup><col style="width:26px"><col><col style="width:58px"><col style="width:20%"><col style="width:19%"><col style="width:36px"><col style="width:36px"><col style="width:176px"></colgroup><thead><tr><th>№</th><th>Название</th><th>Формат</th><th>Содержание</th><th>Масштаб</th><th title="Легенда вида">Лег.</th><th title="Таблица ТЭП">ТЭП</th><th></th></tr></thead><tbody>${ALBUM.sheets.map((s, i) => `<tr data-sh="${i}">
+    + (ALBUM.sheets.length ? `<table class="at sheets"><colgroup><col style="width:26px"><col><col style="width:104px"><col style="width:20%"><col style="width:19%"><col style="width:36px"><col style="width:36px"><col style="width:176px"></colgroup><thead><tr><th>№</th><th>Название</th><th>Формат</th><th>Содержание</th><th>Масштаб</th><th title="Легенда вида">Лег.</th><th title="Таблица ТЭП">ТЭП</th><th></th></tr></thead><tbody>${ALBUM.sheets.map((s, i) => `<tr data-sh="${i}">
         <td class="num">${i + 1}</td><td><input type="text" data-sk="title" value="${esc(s.title)}" aria-label="Название листа"></td>
-        <td><select data-sk="size" aria-label="Формат">${["A3", "A1", "P"].map(v => `<option value="${v}" ${v === s.size ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select></td>
+        <td><select data-sk="size" aria-label="Формат">${Object.keys(SIZE_T).map(v => `<option value="${v}" ${v === s.size ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select></td>
         <td>${s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
         <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${SCALES.map(v => `<option value="${v}" ${v === s.scale ? "selected" : ""}>1:${fmt(v)}</option>`).join("")}</select></td>
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><button class="btn" id="shSec1" title="Слайды 16:9 раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><span class="sp" style="flex:1"></span><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><span class="sp" style="flex:1"></span><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }
@@ -248,6 +258,9 @@ const shEl = () => $("sheetsBody");
 shEl().addEventListener("change", e => {
   const t = e.target, row = t.closest("[data-sh]");
   if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; window.markDirty?.(); return; }
+  // формат слайдов раздела: новый раздел строится в нём, собранные слайды переводятся сразу (масштаб — заново, по рамке)
+  if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });
+    window.markDirty?.(); if (FRAME) showFrame(FRAME.i); renderSheets(); return; }
   if (!row || !t.dataset.sk) return; const s = ALBUM.sheets[+row.dataset.sh], k = t.dataset.sk;
   if (k === "view") { s.kind = t.value === "__tep" ? "tep" : "map"; s.view = s.kind === "tep" ? "" : t.value; if (s.kind === "tep") { s.title = s.title === newSheet().title || !s.title ? "Технико-экономические показатели" : s.title; if (FRAME?.i === +row.dataset.sh) showFrame(null); } }
   else s[k] = t.type === "checkbox" ? t.checked : k === "scale" ? +t.value : t.value;
@@ -314,7 +327,7 @@ async function addPhotoFiles(i, list) {
    Сдвиг запоминается в листе (center), без сдвига лист стоит по центру территории. */
 let FRAME = null;
 function frameGeom(sh) {
-  const [fw, fh] = FRAME_MM[mapSize(sh)], scale = sheetScale(sh), c = sheetCenter(sh), c3 = ol.proj.fromLonLat(c), k = 1 / Math.cos(c[1] * Math.PI / 180);
+  const [fw, fh] = frameMM(sh), scale = sheetScale(sh), c = sheetCenter(sh), c3 = ol.proj.fromLonLat(c), k = 1 / Math.cos(c[1] * Math.PI / 180);
   const hx = fw / 2 / 1000 * scale * k, hy = fh / 2 / 1000 * scale * k;
   return new ol.geom.Polygon([[[c3[0] - hx, c3[1] - hy], [c3[0] + hx, c3[1] - hy], [c3[0] + hx, c3[1] + hy], [c3[0] - hx, c3[1] + hy], [c3[0] - hx, c3[1] - hy]]]);
 }

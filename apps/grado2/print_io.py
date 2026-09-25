@@ -17,8 +17,15 @@ from grado_layout.model import Frame
 from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
 
-SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE, "P": (338.67, 190.5)}   # P — слайд презентации 16:9 (13,33 × 7,5 дюйма)
-COLUMN = {"A3": 110, "A1": 170, "P": 80}    # правая колонка: легенда и ТЭП
+# слайды презентации: P — 16:9 (13,33 × 7,5 дюйма), PA4/PA3/PA2 — альбомные листы А4, А3, А2 с тем же оформлением
+SLIDES = {"P": (338.67, 190.5), "PA4": (297, 210), "PA3": (420, 297), "PA2": (594, 420)}
+SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE, **SLIDES}
+COLUMN = {"A3": 110, "A1": 170}             # правая колонка: легенда и ТЭП
+
+
+def slide_k(size):
+    """Во сколько раз оформление слайда (поля, заголовок, шапка) крупнее, чем на 16:9: растёт с шириной листа."""
+    return SLIDES[size][0] / SLIDES["P"][0]
 PX_MM = 0.26                                 # толщина с экрана (пиксели 96 dpi) → мм листа
 
 
@@ -26,9 +33,9 @@ def layout(size):
     """Прямоугольники листа (мм): карта, колонка легенды. Карта кончается над штампом (185×55); у слайда
     презентации штампа нет — сверху заголовок со стрелкой и шапка проекта, снизу номер слайда."""
     w, h = SIZES[size]
-    if size == "P":
-        col = COLUMN[size]
-        return (14, 24, w - 14 - col - 6, h - 24 - 10), (w - col - 4, 24, col - 4, h - 24 - 10)
+    if size in SLIDES:
+        k, col = slide_k(size), (80 if w < 500 else 110)
+        return (14 * k, 24 * k, w - 14 * k - col - 6, h - 34 * k), (w - col - 4, 24 * k, col - 4, h - 34 * k)
     col = COLUMN[size]
     map_rect = (25, 10, w - 5 - col - 25 - 5, h - 5 - StampFrame.H - 10 - 3)
     col_rect = (w - 5 - col, 10, col - 5, h - 5 - StampFrame.H - 10 - 3)
@@ -535,29 +542,36 @@ class SlideFrame(Frame):
         w, h = self.rect[2], self.rect[3]
         sh, m, out = self.sheet, self.meta, []
         ink = (0.1, 0.1, 0.1)
+        k = slide_k(sh.get("size")) if sh.get("size") in SLIDES else 1   # на А3 и А2 оформление крупнее, как увеличенный слайд
         if sh.get("kind") == "title":
             yy = h * .36
             for line in _wrap(m.get("object") or sh.get("title", ""), 44):
-                out.append({"op": "text", "x": 16, "y": yy, "size": 7.2, "text": line, "color": ink, "font_family": "serif"})
-                yy += 9
+                out.append({"op": "text", "x": 16 * k, "y": yy, "size": 7.2 * k, "text": line, "color": ink, "font_family": "serif"})
+                yy += 9 * k
             if m.get("place"):
-                out.append({"op": "text", "x": 16, "y": yy + 3, "size": 5.2, "text": f"({m['place']})", "color": ink, "font_family": "serif"})
+                out.append({"op": "text", "x": 16 * k, "y": yy + 3 * k, "size": 5.2 * k, "text": f"({m['place']})", "color": ink, "font_family": "serif"})
             if m.get("date"):
-                out.append({"op": "text", "x": 16, "y": h - 26, "size": 5.2, "text": m["date"], "color": ink, "font_family": "serif"})
+                out.append({"op": "text", "x": 16 * k, "y": h - 26 * k, "size": 5.2 * k, "text": m["date"], "color": ink, "font_family": "serif"})
             return out
         short = m.get("short") or m.get("object") or ""
         if short:
-            out.append({"op": "text", "x": w - 8, "y": 9, "size": 3.4, "text": short, "color": ink, "anchor": "end", "font_family": "serif"})
+            out.append({"op": "text", "x": w - 8 * k, "y": 9 * k, "size": 3.4 * k, "text": short, "color": ink, "anchor": "end", "font_family": "serif"})
         if m.get("place"):
-            out.append({"op": "text", "x": w - 8, "y": 13.6, "size": 3.4, "text": f"({m['place']})", "color": ink, "anchor": "end", "font_family": "serif"})
-        out.append({"op": "path", "closed": False, "fill": None, "stroke": ink, "width": .5, "dash": None,
-                    "rings": [[(0, 19), (16, 19)], [(13.5, 17.6), (16, 19), (13.5, 20.4)]]})
-        out.append({"op": "text", "x": 19, "y": 20.2, "size": 3.8, "text": sh.get("title", ""), "color": ink, "font_family": "serif"})
-        out.append({"op": "text", "x": w - 8, "y": h - 4, "size": 3.0, "text": ctx.get("page_no", ""), "color": (0.4, 0.4, 0.4), "anchor": "end"})
+            out.append({"op": "text", "x": w - 8 * k, "y": 13.6 * k, "size": 3.4 * k, "text": f"({m['place']})", "color": ink, "anchor": "end", "font_family": "serif"})
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": ink, "width": .5 * k, "dash": None,
+                    "rings": [[(0, 19 * k), (16 * k, 19 * k)], [(13.5 * k, 17.6 * k), (16 * k, 19 * k), (13.5 * k, 20.4 * k)]]})
+        out.append({"op": "text", "x": 19 * k, "y": 20.2 * k, "size": 3.8 * k, "text": sh.get("title", ""), "color": ink, "font_family": "serif"})
+        out.append({"op": "text", "x": w - 8 * k, "y": h - 4 * k, "size": 3.0 * k, "text": ctx.get("page_no", ""), "color": (0.4, 0.4, 0.4), "anchor": "end"})
         return out
 
 
-def panel_rects(rect, n, gap=6, cap=8):
+def photo_map_rect(size):
+    """Слайд фотофиксации: карта — левые 47 % места под картой, справа снимки."""
+    x, y, w, h = layout(size)[0]
+    return (x, y, w * .47, h)
+
+
+def panel_rects(rect, n, gap=6, cap=11):
     """Несколько карт на одном слайде (схемы ПЗЗ, округ и район): рамки в ряд, над каждой — подпись."""
     x, y, w, h = rect
     pw = (w - gap * (n - 1)) / n
@@ -570,7 +584,7 @@ class PanelFrame(SketchMapFrame):
     def ops(self, ctx):
         out = super().ops(ctx)
         x, y, w, _ = self.rect
-        for i, line in enumerate(_wrap(self.sheet.get("caption", ""), int(w / 1.45))[:2][::-1]):
+        for i, line in enumerate(_wrap(self.sheet.get("caption", ""), int(w / 1.45))[:3][::-1]):
             out.append({"op": "text", "x": x + w / 2, "y": y - 2 - i * 3.4, "size": 2.9, "text": line, "anchor": "middle",
                         "color": (0.1, 0.1, 0.1), "font_family": "serif"})
         return out
@@ -617,14 +631,14 @@ def build_document(spec, lib, lgr_dash, tiles=None):
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(SIZES[size])
         map_rect, col_rect = layout(size)
-        if size == "P":
+        if size in SLIDES:
             meta_p = {**meta, **(spec.get("meta") or {})}
             if sh.get("kind") == "title":
                 page.frames = [SlideFrame(page, sh, meta_p)]
             elif sh.get("kind") == "photos":
                 w, h = SIZES[size]
-                mr = (14, 24, 112, h - 24 - 10)
-                page.frames = [SketchMapFrame(mr, sh, lib, lgr_dash, tiles), PhotoGridFrame((mr[0] + mr[2] + 5, 24, w - 8 - mr[0] - mr[2] - 5, h - 24 - 10), sh),
+                mr = photo_map_rect(size)
+                page.frames = [SketchMapFrame(mr, sh, lib, lgr_dash, tiles), PhotoGridFrame((mr[0] + mr[2] + 5, mr[1], w - 8 - mr[0] - mr[2] - 5, mr[3]), sh),
                                SlideFrame(page, sh, meta_p)]
             elif sh.get("panels"):
                 page.frames = [PanelFrame(r, p, lib, lgr_dash, tiles) for r, p in zip(panel_rects(map_rect, len(sh["panels"])), sh["panels"])] + \

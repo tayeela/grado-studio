@@ -156,5 +156,18 @@ class SlideLabels(unittest.TestCase):
         self.assertIn("С", [o.get("text") for o in a3 if o["op"] == "text"])     # на листе А3 по ГОСТ — остаются
 
 
+    def test_a_format_slides_keep_the_slide_design(self):
+        for size, wh in (("PA4", (297, 210)), ("PA3", (420, 297)), ("PA2", (594, 420))):
+            sh = {"size": size, "title": "Ортофотоплан", "scale": 2000, "center": [37.65, 55.80], "layers": [], "legend": [], "territory": None}
+            doc = print_io.build_document({"meta": {"place": "СВАО"}, "sheets": [sh]}, {}, {})
+            self.assertEqual(doc.pages[0].size, wh)
+            ops = print_io.document_pages_ops(doc, None)[0][2]
+            title = next(o for o in ops if o.get("text") == "Ортофотоплан")
+            self.assertAlmostEqual(title["size"], 3.8 * wh[0] / 338.67, places=3)   # оформление растёт с листом
+            m, c = print_io.layout(size)
+            self.assertLess(m[0] + m[2], c[0])                                      # карта не заходит под легенду
+            self.assertLessEqual(c[0] + c[2], wh[0])
+
+
 if __name__ == "__main__":
     unittest.main()

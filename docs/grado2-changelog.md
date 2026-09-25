@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.52.0: slides in А4, А3 and А2 as well as 16:9, chosen in «Листы».**
+  - New sheet formats «слайд А4 / А3 / А2» (`SLIDES` in `print_io.py`: landscape 297 × 210, 420 × 297, 594 × 420 mm) with the
+    same design as 16:9: title with arrow, project header, legend column, slide number. Margins and header type grow with the
+    sheet width; map labels and the legend keep their size in mm, so a bigger sheet shows more of the map at the same scale.
+  - A select next to «Раздел 1: существующее положение» sets the slide format of the section; changing it converts the section
+    slides already built (scale re-picked for the new frame). Each sheet's «Формат» offers the same formats plus А3/А1 by ГОСТ.
+  - Frame sizes on the map follow the format (`frameMM` in `sheets.js` mirrors `layout`, `panel_rects`, `photo_map_rect`).
+    Two-map captions get three lines. Scales 1:15 000 and 1:20 000 added.
+
 - **2026-09-25, ГРАДО 2 v0.51.0: slides without north arrow and scale bar; boundary in the legend as a line with its area.**
   - 16:9 slides draw only the map frame — no north arrow, no scale bar (owner's request, as in the section example); A3/A1
     sheets by ГОСТ keep both.
