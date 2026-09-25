@@ -32,6 +32,11 @@ the queue at the bottom with a date.
    graph/sketch windows are open; «Принять в проект» turns the sketch into a normal layer that can
    be edited, styled, saved and exported.
 10. **Windows version is mandatory** — nothing Mac-only in the UI (hotkeys show Ctrl on Windows).
+11. **A tool, not a template** (owner, 25.09.2026: «не задавай строгую логику, делай приложение инструментом, а не
+    макетом»). Direct manipulation first: an object on the map with grips and a context bar beats a form in a window.
+    Nothing requires a territory boundary: a sheet drawn on the map is enough to load data and export. Analogues:
+    Figma frame (F, presets, drag to draw, bar over selection), AutoCAD viewport on a layout, QGIS «Export Project to
+    DXF» (layer per layer, extent drawn on canvas).
 
 ## Scenarios
 

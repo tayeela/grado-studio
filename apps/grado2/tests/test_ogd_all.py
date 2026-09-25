@@ -66,6 +66,22 @@ class OgdAll(unittest.TestCase):
         self.assertIn(poly.dxf.handle, csv_text)
         self.assertIn("Жилая зона", csv_text)
 
+    def test_sheet_drawing_is_cut_in_msk_and_has_paper_layout_at_scale(self):
+        c = list(ogd_all.crs.wgs84_to_msk(37.61, 55.71))
+        sheet = {"c": c, "w": 840, "h": 594, "paper": [420, 297], "scale": 2000, "title": "Опорный"}
+        layers = [{"dxf": "ОГД-Зоны", "title": "Зоны", "code": "v1", "color": "#ff8800",
+                   "features": [{"geometry": SQUARE, "properties": {"a": 1}}]}]
+        with mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            body, _ = ogd_all.build_drawing(layers, None, sheet=sheet)
+        doc = ezdxf.read(io.StringIO(zipfile.ZipFile(io.BytesIO(body)).read("gisogd.dxf").decode("utf-8")))
+        pts = [p for p in doc.modelspace().query('LWPOLYLINE[layer=="ОГД-Зоны"]')[0].get_points("xy")]
+        self.assertLessEqual(max(p[0] for p in pts) - min(p[0] for p in pts), 840.001)     # полигон 1,2 км обрезан по листу
+        self.assertEqual(doc.layers.get("ОГД-Зоны").rgb, (255, 136, 0))
+        lay = doc.layouts.get("Лист Опорный 1-2000")
+        vp = lay.query("VIEWPORT")[-1]
+        self.assertAlmostEqual(vp.dxf.height / vp.dxf.view_height * 1000, 1000 / 2000 * 1000)   # 297 мм на 594 м = 1:2000
+        self.assertEqual(ogd_all.portal_color("line-color: #0a4;\npolygon-fill: #ffffff;"), "#00aa44")
+
     def test_job_clips_skips_empty_and_survives_a_broken_layer(self):
         class FakeApi:
             def __init__(self, **kw):

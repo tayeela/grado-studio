@@ -28,6 +28,7 @@ import ezdxf
 from grado_connectors import crs
 from grado_connectors.clip import clip_geometry
 from grado_connectors.contract import ConnectorError
+from grado_connectors.crs import transform_geom
 from grado_connectors.gisogd_api import GisogdApi, catalog
 
 import dxf_io
@@ -97,28 +98,65 @@ def _xdata(props):
     return tags
 
 
-def build_drawing(layers, boundary=None, frame=None):
-    """layers: [{"dxf", "title", "code", "features": [GeoJSON WGS84]}] → байты zip: DXF, DWG (если есть ODA), CSV."""
+def sheet_box(sheet):
+    """Лист в МСК: центр c=[X, Y], размер на местности w × h, м → (x0, y0, x1, y1)."""
+    (cx, cy), w, h = sheet["c"], float(sheet["w"]), float(sheet["h"])
+    return cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+
+
+def sheet_bbox_wgs(sheet):
+    """Прямоугольник WGS84, накрывающий лист МСК целиком (углы и середины сторон)."""
+    x0, y0, x1, y1 = sheet_box(sheet)
+    pts = [crs.msk_to_wgs84(x, y) for x in (x0, (x0 + x1) / 2, x1) for y in (y0, (y0 + y1) / 2, y1)]
+    return (min(p[0] for p in pts) - 1e-5, min(p[1] for p in pts) - 1e-5,
+            max(p[0] for p in pts) + 1e-5, max(p[1] for p in pts) + 1e-5)
+
+
+_CSS_COLOR = re.compile(r"(?:line|polygon|marker)-(?:color|fill)\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3})\b")
+
+
+def portal_color(css):
+    """Цвет слоя как на карте портала: первый цвет линии, заливки или значка из его CartoCSS."""
+    m = _CSS_COLOR.search(css or "")
+    if not m:
+        return None
+    c = m.group(1)
+    return "#" + "".join(ch * 2 for ch in c[1:]) if len(c) == 4 else c
+
+
+def build_drawing(layers, boundary=None, frame=None, sheet=None):
+    """layers: [{"dxf", "title", "code", "features": [GeoJSON WGS84], "color"?}] → байты zip: DXF, DWG (если есть ODA), CSV.
+
+    sheet — лист, нарисованный на карте: {c, w, h (МСК, м), paper [ширина, высота] мм, scale, title}. Тогда объекты
+    режутся точно по листу в МСК, в модели есть слой «Рамка листа», а в чертеже — лист бумаги нужного формата с
+    видовым экраном в масштабе листа (как лист AutoCAD). frame — прежний прямоугольник WGS84 без листа бумаги."""
     doc = ezdxf.new("R2018", setup=False)
     doc.header["$INSUNITS"] = 6
     doc.header.custom_vars.append("GRADO_CRS", "MSK")
     doc.appids.new("GISOGD")
     msp = doc.modelspace()
+    box = sheet_box(sheet) if sheet else None
     tables = {}
     for i, layer in enumerate(layers):
-        doc.layers.add(layer["dxf"], color=1 + i % 254)
+        la = doc.layers.add(layer["dxf"], color=1 + i % 254)
+        if layer.get("color"):
+            la.rgb = tuple(int(layer["color"][k:k + 2], 16) for k in (1, 3, 5))
         rows, fields = [], {}
         for f in layer["features"]:
             props = f.get("properties") or {}
-            geom = f["geometry"]
+            geom = transform_geom(f["geometry"], crs.wgs84_to_msk)
+            if box:
+                geom = clip_geometry(geom, box)
+                if not geom:
+                    continue
             attrs = {"layer": layer["dxf"]}
             ents = []
             if geom["type"] in ("Point", "MultiPoint"):
                 for x, y, *_ in ([geom["coordinates"]] if geom["type"] == "Point" else geom["coordinates"]):
-                    ents.append(msp.add_point(crs.wgs84_to_msk(x, y), dxfattribs=attrs))
+                    ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:
                 for ring, closed in dxf_io._rings(geom):
-                    pts = [crs.wgs84_to_msk(x, y) for x, y, *_ in ring]
+                    pts = [(x, y) for x, y, *_ in ring]
                     if closed and len(pts) > 1 and pts[0] == pts[-1]:
                         pts = pts[:-1]
                     if len(pts) > 1:
@@ -129,17 +167,34 @@ def build_drawing(layers, boundary=None, frame=None):
                     e.set_xdata("GISOGD", tags)
                 rows.append({"Handle": e.dxf.handle, **props})
             fields.update(dict.fromkeys(props))
-        tables[layer["dxf"]] = (["Handle", *fields], rows)
-    if boundary:
+        if rows:
+            tables[layer["dxf"]] = (["Handle", *fields], rows)
+    bnd = transform_geom(boundary, crs.wgs84_to_msk) if boundary else None
+    bnd = clip_geometry(bnd, box) if bnd and box else bnd      # на листе — только часть границы внутри листа
+    if bnd:
         doc.layers.add("Граница территории", color=1)
-        for ring, closed in dxf_io._rings(boundary):
-            msp.add_lwpolyline([crs.wgs84_to_msk(x, y) for x, y, *_ in ring][:-1], close=True,
-                               dxfattribs={"layer": "Граница территории"})
+        for ring, closed in dxf_io._rings(bnd):
+            pts = [(x, y) for x, y, *_ in ring]
+            msp.add_lwpolyline(pts[:-1] if pts[0] == pts[-1] else pts, close=True, dxfattribs={"layer": "Граница территории"})
     if frame:                                          # рамка листа: по ней обрезаны все слои
         w, s, e, n = frame
         doc.layers.add("Рамка листа", color=5)
         msp.add_lwpolyline([crs.wgs84_to_msk(x, y) for x, y in ((w, s), (e, s), (e, n), (w, n))], close=True,
                            dxfattribs={"layer": "Рамка листа"})
+    if sheet:
+        x0, y0, x1, y1 = box
+        doc.layers.add("Рамка листа", color=5)
+        msp.add_lwpolyline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], close=True, dxfattribs={"layer": "Рамка листа"})
+        # лист бумаги: формат листа, видовой экран на весь лист в его масштабе (мм бумаги на метр модели = 1000 / M)
+        pw, ph = (float(v) for v in sheet["paper"])
+        name = _BAD.sub("_", f"Лист {sheet.get('title') or ''} 1-{int(sheet['scale'])}").strip()[:60]
+        lay = doc.layouts.new(name)
+        lay.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
+        lay.add_viewport(center=(pw / 2, ph / 2), size=(pw, ph), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2),
+                         view_height=y1 - y0, dxfattribs={"layer": "Рамка листа"})
+        lay.add_lwpolyline([(0, 0), (pw, 0), (pw, ph), (0, ph)], close=True, dxfattribs={"layer": "Рамка листа"})
+        if "Layout1" in doc.layouts:                       # пустой лист по умолчанию не нужен: в чертеже один лист — наш
+            doc.layouts.delete("Layout1")
     buf = io.StringIO()
     doc.write(buf)
     dxf = buf.getvalue().encode("utf-8")
@@ -163,10 +218,44 @@ def build_drawing(layers, boundary=None, frame=None):
     return out.getvalue(), bool(dwg)
 
 
+def portal_styles(cache_dir, get=None):
+    """styles(code) → CartoCSS слоя портала (GET /layers/{code}/, поле css_style). Кэш на диске 30 дней: цвета нужны
+    только слоям с объектами на листе, первый раз — по запросу на слой с паузой."""
+    from grado_connectors import gisogd_api
+    get = get or gisogd_api._http_get
+    path = cache_dir / "ogd_all_styles.json"
+    try:
+        known = json.loads(path.read_text("utf-8"))
+    except (OSError, ValueError):
+        known = {}
+
+    def styles(code):
+        hit = known.get(code)
+        if hit and time.time() - hit["at"] < 30 * 24 * 3600:
+            return hit["css"]
+        meta = json.loads(get(f"{gisogd_api.BASE}/layers/{code}/", timeout=30))
+        known[code] = {"at": time.time(), "css": meta.get("css_style") or ""}
+        _save_json(path, known)
+        time.sleep(0.3)
+        return known[code]["css"]
+    return styles
+
+
+def _save_json(path, data):
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+    except OSError:
+        pass
+
+
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd"):
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None):
+        """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None."""
+        self.sheet, self.styles = sheet, styles
+        bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
         self.name = re.sub(r'[<>/\\":;?*|=`\s]+', "_", name).strip("_")[:60] or "gisogd"
         self.state = {"running": True, "done": 0, "total": 0, "current": "", "found": 0, "objects": 0,
@@ -218,7 +307,16 @@ class Job:
                 st["done"] += 1
             _save_failed(self.cache_dir, failed)
             st.update(current="", message="Сборка чертежа…")
-            body, dwg = build_drawing(found, self.boundary, self.bbox)
+            if self.styles:
+                st.update(current="", message="Цвета слоёв, как на карте портала…")
+                for it in found:
+                    try:
+                        it["color"] = portal_color(self.styles(it["code"]))
+                    except Exception:              # без цвета слой остаётся со своим номером цвета
+                        pass
+            st.update(message="Сборка чертежа…")
+            body, dwg = (build_drawing(found, self.boundary, sheet=self.sheet) if self.sheet
+                         else build_drawing(found, self.boundary, self.bbox))
             self.out_dir.mkdir(parents=True, exist_ok=True)
             path = self.out_dir / f"{self.name}-{datetime.now():%Y%m%d-%H%M%S}.zip"
             path.write_bytes(body)

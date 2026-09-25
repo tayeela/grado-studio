@@ -397,6 +397,7 @@ const cadI = new ol.interaction.Interaction({ handleEvent: e => {
   if (e.type === "dblclick") return false;                         // без приближения карты во время команды
   return true;
 } });
+cadI.set("gradoTop", true);                 // по метке лист (frames.js) встаёт сразу под перехватом команд
 mMain.addInteraction(cadI);
 mMain.getViewport().addEventListener("contextmenu", e => { if (CMD) { e.preventDefault(); enter(); } });   // правая кнопка — Enter, как в AutoCAD
 // перехват держится последним, чтобы получать события раньше остальных взаимодействий карты

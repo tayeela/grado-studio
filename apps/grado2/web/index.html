@@ -377,6 +377,12 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 @media (max-width:1180px){.status .modes #mdPolar .t{min-width:2.4em}}
 .implocal{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid var(--line);color:var(--muted)}.implocal span{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#impLocal{height:24px;flex:0 0 auto}
+/* панель над выбранным листом на карте (frames.js) */
+.framebar{display:flex;flex-wrap:wrap;align-items:center;gap:4px;max-width:var(--fbw,560px);padding:4px 6px;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,.18);white-space:nowrap;font-size:12px;color:var(--text)}
+.framebar select,.framebar input{height:26px;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:3px;font:inherit}
+.framebar input{width:64px;padding:0 4px}
+.framebar label{display:flex;align-items:center;gap:2px;color:var(--muted)}
+.framebar .vs{width:1px;height:18px;background:var(--line);margin:0 2px}
 </style>
 
 <div class="app">
@@ -388,7 +394,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
       <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Окна, которые не поместились в шапку, и раскладки окон под задачу: существующее положение, анализ, эскиз, листы"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
     </nav>
     <span class="vs"></span>
-    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МСК, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button><button class="btn" id="bOgdAll" title="Все слои ГИС ОГД (около 700) по рамке первого листа альбома (формат и масштаб листа; листов нет — А3 вокруг территории) — одним чертежом DXF в МСК (AutoCAD открывает его сам, в DWG — «Сохранить как»): каждый слой портала на своём слое чертежа, атрибуты в XDATA и таблицах CSV. Первый раз слои качаются целиком и долго, дальше берутся с диска."><i data-lucide="layers"></i>Всё ОГД в DXF</button>
+    <button class="btn" data-win="wSheets" title="Листы и альбом PDF: рамка и штамп по ГОСТ, масштаб, легенда вида, ТЭП"><i data-lucide="printer"></i><span class="lb">Листы</span></button><button class="btn" id="bExport" title="Выгрузить слои, границу и эскиз в DXF (МСК, типы линий REDLN97)"><i data-lucide="file-down"></i>DXF</button><button class="btn" id="bOgdAll" title="Все слои ГИС ОГД внутри листа на карте (выбранного или последнего) — чертёж DXF в МСК для передачи: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном в масштабе. Листа нет — включится инструмент «Лист»"><i data-lucide="layers"></i>DXF ГИС ОГД</button>
     <button class="tb" id="bKeys" title="Справка: как работать, клавиши и приёмы мыши (F1)"><i data-lucide="circle-help"></i></button><button class="tb" id="bTheme" title="Светлая или тёмная тема"><i data-lucide="sun-moon"></i></button>
   </header>
 
@@ -400,7 +406,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
     <label class="tgt" title="Слой, в который попадают новые объекты: открытые фигуры — в линии, замкнутые — в полигоны">в слой <select id="curLayer" aria-label="Текущий слой"></select></label><span class="vs"></span>
     <span class="rl">Редактирование</span><div class="g" id="rbModify"></div><div class="g" id="rbMore"></div>
     <div class="g"><button class="tl ic" data-tool="vertex" title="Ручки: тянуть вершины выбранных объектов, щелчок по ребру — новая вершина, Alt+щелчок — удалить вершину" aria-label="Ручки"><svg class="ci" aria-hidden="true"><use href="#ci-grips"/></svg></button><button class="tl ic" id="bDelFeat" title="Удалить выбранные объекты (Del; команда E)" aria-label="Удалить"><svg class="ci" aria-hidden="true"><use href="#ci-erase"/></svg></button><button class="tl ic" id="bUndo" title="Отменить правку (Ctrl+Z)" aria-label="Отменить"><i data-lucide="undo-2"></i></button><button class="tl ic" id="bRedo" title="Вернуть отменённое (Ctrl+Shift+Z)" aria-label="Вернуть"><i data-lucide="redo-2"></i></button></div><span class="vs"></span>
-    <div class="g" id="rbMeasure"></div><span class="vs"></span><div class="g" id="rbTerr"></div>
+    <div class="g" id="rbMeasure"></div><span class="vs"></span><div class="g" id="rbTerr"></div><span class="vs"></span><div class="g"><button class="btn" id="bFrame" aria-pressed="false" title="Лист: тяните прямоугольник по карте — пропорции формата (А3) держатся сами, масштаб считается из размера. Выбранный лист тянется и масштабируется за углы; над ним — формат, масштаб, «Загрузить сюда» и «DXF ГИС ОГД»"><i data-lucide="frame"></i>Лист</button></div>
   </div>
 
   <main class="work" id="work">
@@ -509,4 +515,5 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 <script src="constraints.js"></script>
 <script src="views.js"></script>
 <script src="sheets.js"></script>
+<script src="frames.js"></script>
 <script src="project.js"></script>

@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.56.0: «Лист» — a sheet drawn on the map, the DXF of ГИС ОГД is cut by it; «Листы» button fixed.**
+  - «Листы» in the header did nothing: it stands outside the «Окна» group and only that group had the click handler.
+    The handler now sits on the whole header.
+  - New ribbon tool «Лист» (`web/frames.js`, like a Figma frame / AutoCAD viewport): drag a rectangle on the map — the
+    paper proportions (A3 landscape by default) hold, the scale follows the size; a click makes a sheet 60 % of the
+    screen. A selected sheet moves by dragging inside, resizes by a corner (opposite corner stays), and shows a bar
+    above it: format А4–А0, orientation, scale (typed or from the list), «Загрузить сюда», «DXF ГИС ОГД», delete.
+    A click inside a sheet selects it unless a drawing object is under the cursor; Esc deselects, Del deletes.
+    Sheets live in МСК (centre and size in metres) and are saved in the project (`album.frames`). No boundary needed.
+  - «DXF ГИС ОГД» (bar and header button — the selected or last sheet; none → the tool starts): all ГИС ОГД layers
+    cut exactly by the sheet in МСК, layer colours from the portal CartoCSS (`/layers/{code}/css_style`, cached
+    30 days), frame on «Рамка листа», boundary clipped to the sheet, and a paper layout «Лист N 1-M» of the sheet
+    format with a viewport at the sheet scale (checked: A3, viewport 420 × 297 mm on 840 × 594 m = 1:2000).
+  - «Загрузить» covers the sheets on the map too and works without a boundary.
+  - The frame interaction sits right under the CAD command interceptor (`gradoTop` mark in cad.js); both keeping
+    themselves last looped forever.
+
 - **2026-09-25, ГРАДО 2 v0.55.0: data and the ОГД drawing follow the sheet frames, not the site boundary; DXF opens in AutoCAD.**
   - «Всё ОГД в DXF» made a drawing AutoCAD refused to open: XDATA strings were cut at 250 characters, and Cyrillic takes
     2 bytes, so 90 strings were up to 464 bytes (AutoCAD limit 255 bytes). Now cut by bytes without splitting a letter;

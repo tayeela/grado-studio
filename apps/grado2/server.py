@@ -972,7 +972,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.wfile.write(body)
             if self.path == "/api/ogd_all/start":
                 import ogd_all
-                bbox = [float(v) for v in req["bbox"]]
+                sheet = req.get("sheet")                  # лист, нарисованный на карте (МСК), или прежний bbox WGS84
+                bbox = ogd_all.sheet_bbox_wgs(sheet) if sheet else [float(v) for v in req["bbox"]]
                 if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
                     return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
                 if bbox_km2(bbox) > LIMIT_KM2["gisogd"]:
@@ -981,7 +982,8 @@ class Handler(SimpleHTTPRequestHandler):
                     if OGD_JOB and OGD_JOB[0].state["running"]:
                         return self._json(409, {"error": "выгрузка уже идёт"})
                     OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
-                                               str(req.get("name") or "gisogd"))]
+                                               str(req.get("name") or "gisogd"), sheet=sheet,
+                                               styles=ogd_all.portal_styles(CACHE / "gisogd"))]
                 return self._json(200, OGD_JOB[0].state)
             if self.path == "/api/ogd_all/cancel":
                 if OGD_JOB:

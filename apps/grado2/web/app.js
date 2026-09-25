@@ -149,16 +149,20 @@ function coverSheets() {
   return sh.length ? sh : [newSheet()];
 }
 function coverBox() {
-  const bs = [...coverSheets().map(frameBox), turf.bbox(buf(TERR, 60))];
+  const fs = ALBUM.frames || [];
+  const bs = [...fs.map(frameBoxWgs), ...(TERR ? [...(ALBUM.sheets.length || !fs.length ? coverSheets().map(frameBox) : []), turf.bbox(buf(TERR, 60))] : [])];
+  if (!bs.length) return null;
   return [Math.min(...bs.map(b => b[0])), Math.min(...bs.map(b => b[1])), Math.max(...bs.map(b => b[2])), Math.max(...bs.map(b => b[3]))];
 }
 function updateCover() {
-  coverSrc.clear(); if (!TERR) return;
-  const b = coverBox(), n = coverSheets(), own = n[0].id && ALBUM.sheets.includes(n[0]);
+  coverSrc.clear(); const b = coverBox(); $("bLoad").disabled = !b;
+  if (!b) { $("terrInfo").textContent = "Нарисуйте лист (кнопка «Лист» на ленте) или границу территории — данные загружаются на них."; return; }
+  const n = coverSheets(), own = n[0].id && ALBUM.sheets.includes(n[0]), nf = (ALBUM.frames || []).length;
   coverSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(b).transform("EPSG:4326", "EPSG:3857")));
   const km = (b[2] - b[0]) * 111.32 * Math.cos((b[1] + b[3]) / 2 * Math.PI / 180), kmy = (b[3] - b[1]) * 110.54;
-  $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Данные загружаются на ${own ? (n.length === 1 ? "рамку листа" : `рамки ${plural(n.length, ["листа", "листов", "листов"])}`) : "рамку листа А3 вокруг территории (листов в альбоме пока нет)"}: `
-    + `${fmt(km, 1)} × ${fmt(kmy, 1)} км, на карте — синий пунктир.`;
+  const what = [nf ? (nf === 1 ? "лист на карте" : `${plural(nf, ["лист", "листа", "листов"])} на карте`) : "",
+    TERR && (own || !nf) ? (own ? (n.length === 1 ? "рамку листа альбома" : `рамки ${plural(n.length, ["листа", "листов", "листов"])} альбома`) : "рамку А3 вокруг территории") : ""].filter(Boolean).join(" и ");
+  $("terrInfo").textContent = `${TERR ? `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. ` : ""}Данные загружаются на ${what}: ${fmt(km, 1)} × ${fmt(kmy, 1)} км, на карте — синий пунктир.`;
 }
 window.updateCover = updateCover;
 new MutationObserver(() => {
@@ -252,7 +256,7 @@ async function fgLoad() {
     FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`; dataRev++;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
 }
-$("bLoad").onclick = () => { if (!TERR) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], coverBox()); };
+$("bLoad").onclick = () => { const b = coverBox(); if (!b) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], b); };
 /* выгрузка источников по прямоугольнику: кнопка «Загрузить» — граница + 60 м; листы раздела — вся площадь своих рамок */
 async function loadKeys(keys, bb) {
   const [w, s, e, n] = bb;
@@ -416,17 +420,18 @@ $("bExport").onclick = async () => {
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
-/* «Всё ОГД в DXF»: все слои ГИС ОГД по рамке листа одним чертежом для передачи — рамка первого листа-карты альбома
-   (формат, масштаб, сдвиг), листов нет — лист А3 в автомасштабе вокруг территории. Выгрузка идёт на сервере фоном,
-   повторное нажатие во время выгрузки её останавливает */
+/* «DXF ГИС ОГД»: все слои ГИС ОГД внутри листа, нарисованного на карте (frames.js), — чертёж для передачи: МСК,
+   слой портала на своём слое, лист бумаги с видовым экраном в масштабе. Кнопка в шапке берёт выбранный лист или
+   последний; листа нет — включает инструмент «Лист». Выгрузка идёт на сервере фоном, повторное нажатие её останавливает. */
 let ogdPoll = null;
-$("bOgdAll").onclick = async () => {
+async function exportOgd(fr) {
   const btn = $("bOgdAll");
   if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
-  if (!TERR) return toast("Сначала задайте границу территории: чертёж собирается по ней.");
-  const sh = coverSheets()[0], own = ALBUM.sheets.includes(sh), where = own ? `рамке листа ${ALBUM.sheets.indexOf(sh) + 1} «${sh.title}», ${SIZE_T[sh.size] || sh.size}, 1:${fmt(sheetScale(sh))}`
-    : `рамке листа А3 1:${fmt(sheetScale(sh))} вокруг территории`;
-  try { await api("/api/ogd_all/start", { bbox: frameBox(sh), boundary: TERR.geometry, name: `ОГД ${own ? sh.title : "лист А3"} 1-${sheetScale(sh)}` }); }
+  const i = ALBUM.frames.indexOf(fr), [pw, ph] = (({ A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] })[fr.paper] || [420, 297]);
+  const paper = fr.orient === "P" ? [ph, pw] : [pw, ph], scale = Math.round(fr.scale);
+  const sheet = { c: fr.c, w: paper[0] * fr.scale / 1000, h: paper[1] * fr.scale / 1000, paper, scale, title: `${i + 1}` };
+  const where = `листу ${i + 1} (${fr.paper.replace("A", "А")}, 1:${fmt(scale)})`;
+  try { await api("/api/ogd_all/start", { sheet, boundary: TERR?.geometry || null, name: `ОГД лист ${i + 1} ${fr.paper} 1-${scale}` }); }
   catch (err) { return toast("Выгрузка не началась: " + err.message); }
   toast(`Выгрузка всех слоёв ГИС ОГД по ${where}.`);
   btn.lastChild.textContent = "Остановить";
@@ -435,18 +440,25 @@ $("bOgdAll").onclick = async () => {
     let st; try { st = await api("/api/ogd_all/status"); } catch { return; }
     if (st.running) {
       const left = st.done ? (Date.now() / 1000 - st.started) / st.done * (st.total - st.done) : 0;
-      window.setHint?.(`ГИС ОГД: слой ${st.done} из ${st.total || "…"}${st.current ? ` — «${st.current}»` : ""}${st.message ? ` (${st.message})` : ""}. `
-        + `С объектами в области: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
+      window.setHint?.(`ГИС ОГД по ${where}: слой ${st.done} из ${st.total || "…"}${st.current ? ` — «${st.current}»` : ""}${st.message ? ` (${st.message})` : ""}. `
+        + `С объектами на листе: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
       return;
     }
-    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "Всё ОГД в DXF"; window.setHint?.("");
+    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "DXF ГИС ОГД"; window.setHint?.("");
     if (!st.file) return toast(st.message || "Выгрузка остановлена.");
     const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
-    toast(`Готово по ${where}: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}, МСК. `
-      + `${st.dwg ? "В архиве DWG, DXF" : "В архиве чертёж DXF (AutoCAD открывает его, в DWG — «Сохранить как»)"} и таблицы атрибутов.`
+    toast(`Готово по ${where}: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}. `
+      + `${st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (в AutoCAD — вкладка листа с видовым экраном; в DWG — «Сохранить как»)"} и таблицы атрибутов.`
       + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
   }, 1500);
+}
+window.exportOgd = exportOgd;
+$("bOgdAll").onclick = () => {
+  if (ogdPoll) return exportOgd(null);
+  const fr = window.selectedFrame?.() || ALBUM.frames.at(-1);
+  if (fr) return exportOgd(fr);
+  window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «DXF ГИС ОГД» над листом.");
 };
 
 /* ================= граф анализа (litegraph.js) ================= */
@@ -1504,7 +1516,8 @@ document.querySelectorAll("[data-gut]").forEach(g => g.addEventListener("pointer
   const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); g.classList.remove("on"); saveWins(); mMain.updateSize(); };
   g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
 }));
-$("work").parentElement.querySelector(".wins").addEventListener("click", e => { const b = e.target.closest("[data-win]"); if (!b) return; const id = b.dataset.win;
+// кнопки окон — и в группе «Окна», и справа в шапке («Листы» стоит отдельно от группы: без этого она молчала)
+document.querySelector("header.top").addEventListener("click", e => { const b = e.target.closest("[data-win]"); if (!b) return; const id = b.dataset.win;
   if (id === "dockL" || id === "dockR") toggleDock(id.slice(4)); else winOpen(id); });
 document.querySelectorAll(".drawerx").forEach(b => b.onclick = () => toggleDock(b.dataset.dock, false));   // крестик выезжающей панели на узком окне
 document.querySelectorAll(".win").forEach(w => {
