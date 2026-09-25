@@ -151,6 +151,16 @@ class _tmp_beside:
         return False
 
 
+class _nowhere:
+    """Пустой контекст вместо файла, когда кэша на диске нет."""
+
+    def __enter__(self):
+        return None
+
+    def __exit__(self, *_):
+        return False
+
+
 def _expected_size(headers):
     """Размер слоя без сжатия, если портал его сообщает: Content-Length без gzip или число в ETag «мтайм-размер-inode»."""
     if headers.get("Content-Encoding") != "gzip" and headers.get("Content-Length", "").isdigit():
@@ -540,30 +550,59 @@ class GisogdApi(Connector):
         time.sleep(_PAUSE)
         return raw, False
 
-    def _restore_long_text(self, code, feats):
-        """dBASE режет текст на 254 байтах: списки ВРИ ПЗЗ и ограничения ОКН приходят обрезанными. Если в слое есть
-        такие значения, полные строки берутся из выгрузки GeoJSON того же слоя (по orbis_id); геометрия остаётся из SHP —
-        GeoJSON портала смещён на ~7,7 м."""
-        cut = lambda v: isinstance(v, str) and len(v.encode("utf-8")) >= 250
-        if not any(cut(v) for f in feats for v in (f.get("properties") or {}).values()):
-            return
+    @staticmethod
+    def _cut(v):
+        return isinstance(v, str) and len(v.encode("utf-8")) >= 250
+
+    def _long_texts(self, code, ids):
+        """dBASE режет текст на 254 байтах: списки ВРИ ПЗЗ и ограничения ОКН приходят обрезанными. Полные строки
+        берутся из выгрузки GeoJSON того же слоя (по orbis_id), но только для объектов ids. GeoJSON читается
+        ПОТОКОМ по одному объекту: слой «Земельные участки» целиком в json.loads не помещался в 3 ГБ сервера
+        (OOM 25.09.2026). Неудача — пустой словарь: слой всё равно нужен, тексты остаются обрезанными."""
+        import codecs
+        out = {}
         try:
-            full = json.loads(self.transport(f"{self.base}/layers/{code}/export/?format=geojson"))
-        except Exception:                          # без полных строк слой всё равно нужен — остаются обрезанные
-            return
+            dec, text = json.JSONDecoder(), codecs.getincrementaldecoder("utf-8")()
+            buf, started = "", False
+            for chunk in self._chunks(f"{self.base}/layers/{code}/export/?format=geojson", code):
+                buf += text.decode(chunk)
+                if not started:
+                    k = buf.find('"features"')
+                    b = buf.find("[", k) if k >= 0 else -1
+                    if b < 0:
+                        buf = buf[-64:]
+                        continue
+                    buf, started = buf[b + 1:], True
+                while True:
+                    rest = buf.lstrip(" \r\n\t,")
+                    if not rest or rest[0] == "]":
+                        buf = rest
+                        break
+                    try:
+                        obj, end = dec.raw_decode(rest)
+                    except ValueError:              # объект ещё не докачан
+                        buf = rest
+                        break
+                    buf = rest[end:]
+                    props = obj.get("properties") or {}
+                    oid = str(props.get("orbis_id"))
+                    if oid in ids:
+                        out[oid] = {k: v for k, v in props.items() if isinstance(v, str) and len(v) > 200}
+        except Exception:
+            return {}
         finally:
             time.sleep(_PAUSE)
-        by_id = {str((g.get("properties") or {}).get("orbis_id")): g.get("properties") or {}
-                 for g in full.get("features") or []}
-        for f in feats:
-            props = f.get("properties") or {}
-            src = by_id.get(str(props.get("orbis_id")))
-            if not src:
-                continue
-            for k, v in props.items():
-                w = src.get(k)
-                if cut(v) and isinstance(w, str) and len(w) > len(v) and w.startswith(v.rstrip()[:50]):
-                    props[k] = w
+        return out
+
+    def _restore(self, props, full):
+        src = full.get(str(props.get("orbis_id")))
+        if not src:
+            return props
+        for k, v in props.items():
+            w = src.get(k)
+            if self._cut(v) and isinstance(w, str) and len(w) > len(v) and w.startswith(v.rstrip()[:50]):
+                props[k] = w
+        return props
 
     def _lines_path(self, code):
         return self.cache_dir / f"{code}.shp.lines.gz" if self.cache_dir else None
@@ -591,16 +630,6 @@ class GisogdApi(Connector):
             return None
         return out
 
-    def _write_lines(self, code, rows):
-        lp = self._lines_path(code)
-        if not lp:
-            return
-        with _tmp_beside(lp) as tmp, gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) as fh:
-            for fb, key, f in rows:
-                fh.write(",".join(repr(v) for v in fb) + "\t" + key + "\t"
-                         + json.dumps({"geometry": f.get("geometry"), "properties": f.get("properties") or {}},
-                                      ensure_ascii=False, separators=(",", ":")) + "\n")
-
     def fetch(self, bbox, code):
         """bbox = (west, south, east, north) WGS84; code — код слоя портала."""
         west, south, east, north = map(float, bbox)
@@ -612,9 +641,31 @@ class GisogdApi(Connector):
             return make_result(fast, {"code": code, "bbox": ",".join(f"{v:.5f}" for v in query)},
                                source_doc="ГИС ОГД Москвы (gisogd.mos.ru), выгрузка по экстенту", notes=[])
         raw, cached = self._layer_bytes(code)
+        # слой идёт двумя проходами по SHP, без списка всех объектов в памяти: 1) какие объекты с обрезанным текстом;
+        # 2) объекты по одному → строка построчного кэша (сразу на диск) и, если в области, в ответ
+        out, count = [], 0
         try:
-            data = {"features": list(_shp_features(_zip_of(raw, code), code, full_names=True))}
-            self._restore_long_text(code, data["features"])
+            zf = _zip_of(raw, code)
+            _prj, recs = iter_zip(zf)
+            cut_ids = {str(_full_names(r["properties"]).get("orbis_id")) for r in recs
+                       if any(self._cut(v) for v in r["properties"].values())}
+            full = self._long_texts(code, cut_ids) if cut_ids else {}
+            lp = self._lines_path(code)
+            with (_tmp_beside(lp) if lp else _nowhere()) as tmp, \
+                    (gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) if lp else _nowhere()) as fh:
+                for i, f in enumerate(_shp_features(zf, code, full_names=True)):
+                    count += 1
+                    geom = f.get("geometry")
+                    fb = _geom_bbox(geom)
+                    if not fb:
+                        continue
+                    props = self._restore(f.get("properties") or {}, full)
+                    key = f"{code}:{norm_id(props.get('orbis_id') or props.get('id') or i)}"
+                    if fh:
+                        fh.write(",".join(repr(v) for v in fb) + "\t" + key + "\t"
+                                 + json.dumps({"geometry": geom, "properties": props}, ensure_ascii=False, separators=(",", ":")) + "\n")
+                    if _overlaps(fb, query):
+                        out.append({"type": "Feature", "geometry": geom, "properties": dict(props), "grado_key": key})
         except Exception as e:
             if cached and self._cache_path(code):
                 self._cache_path(code).unlink(missing_ok=True)   # следующая попытка скачает заново
@@ -622,23 +673,9 @@ class GisogdApi(Connector):
                 raise
             raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {e}") from None
 
-        out, notes, rows = [], [], []
-        for i, f in enumerate(data["features"]):
-            geom = f.get("geometry")
-            fb = _geom_bbox(geom)
-            if not fb:
-                continue
-            props = f.get("properties") or {}
-            key = f"{code}:{norm_id(props.get('orbis_id') or props.get('id') or f.get('id') or i)}"
-            rows.append((fb, key, f))
-            if not _overlaps(fb, query):
-                continue
-            out.append({"type": "Feature", "geometry": geom,
-                        "properties": dict(props),
-                        "grado_key": key})
-        self._write_lines(code, rows)
+        notes = []
         if not cached:
-            notes.append(f"слой {code} загружен целиком ({len(data['features'])} об., "
+            notes.append(f"слой {code} загружен целиком ({count} об., "
                          f"{len(raw)/1e6:.0f} МБ) — портал не фильтрует по области; "
                          f"дальше берётся из кэша")
         return make_result(

@@ -175,3 +175,31 @@ class GisogdProgress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LongTexts(unittest.TestCase):
+    """dBASE режет строки на 254 байтах; полный текст берётся из GeoJSON слоя потоком (OOM сервера 25.09.2026)."""
+
+    VRI = "Размещение жилых домов, " * 40              # ~ 1 000 знаков, в .dbf обрезается
+
+    def layer(self):
+        return {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": _poly(37.60, 55.75, 37.61, 55.76), "properties": {"orbis_id": 7, "vri": self.VRI}},
+            {"type": "Feature", "geometry": _poly(37.605, 55.752, 37.606, 55.753), "properties": {"orbis_id": 8, "vri": "коротко"}}]}
+
+    def test_full_text_restored_from_geojson_stream_in_small_pieces(self):
+        layer = self.layer()
+        gj = json.dumps(layer, ensure_ascii=False).encode("utf-8")
+
+        def transport(url, timeout=None):
+            return gj if "format=geojson" in url else shp_zip(layer)
+        with tempfile.TemporaryDirectory() as td:
+            conn = GisogdApi(transport=transport, cache_dir=td)
+            # GeoJSON кусками по 7 байт: объекты и русские буквы рвутся посередине
+            conn._chunks = lambda url, code: (gj[i:i + 7] for i in range(0, len(gj), 7))
+            r = conn.fetch(BBOX, "virtual130")
+            by = {f["properties"]["orbis_id"]: f["properties"]["vri"] for f in r["features"]}
+            self.assertEqual(by[7], self.VRI)
+            self.assertEqual(by[8], "коротко")
+            again = GisogdApi(transport=lambda *a, **k: self.fail("второй раз — из кэша"), cache_dir=td).fetch(BBOX, "virtual130")
+            self.assertEqual({f["properties"]["orbis_id"]: f["properties"]["vri"] for f in again["features"]}[7], self.VRI)

@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.3: big ГИС ОГД layers no longer run the server out of memory.**
+  - On grado.tailink.tech (3 GB limit) «Земельные участки» (`zu_29_06_2021`, 71 MB zip) was OOM-killed four times:
+    `GisogdApi.fetch` kept every object in a list, parsed the layer's whole GeoJSON with `json.loads` to restore texts
+    cut by dBASE at 254 bytes, and built a second list for the line cache.
+  - Now: pass 1 over the SHP finds objects with cut texts; the GeoJSON is read as a stream (one object at a time,
+    `raw_decode` over incremental UTF-8) keeping only those objects' long strings; pass 2 writes the line cache
+    straight to disk and keeps only objects in the area. Measured on the same layer: peak 810 MB (was >3 GB + 1.9 GB
+    swap). Test: GeoJSON in 7-byte pieces restores a 1 000-character ВРИ list.
+
 - **2026-09-26, ГРАДО 2 v0.58.2: scale hints no longer hang on the map; one-command server update.**
   - The sheet bar's scale field had a `datalist`; the bar is re-rendered on change, and Yandex Browser left the open
     hint list (5000, 25000) floating over the map. Now: a plain field plus a small «▾» select of standard scales.
