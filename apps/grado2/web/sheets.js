@@ -85,6 +85,9 @@ function sheetSpec(sheet) {
   if (sheet.extra === "radii") radiiSheet(out);
   if (sheet.extra === "genplan") genplanTable(out);
   if (sheet.note) out.note = sheet.note;
+  // выноска на карте района: «проектируемая территория» и район, где она лежит
+  if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
+    out.callout = ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
   if (/^P/.test(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "poly", items: [{ label: "Граница разработки проекта планировки", fill: "#ffffff", stroke: "#e0158c", a: 0 }] });
   return out;
 }
@@ -156,9 +159,9 @@ const SEC1 = [
   { kind: "title", title: "Подготовка проекта планировки территории" },
   { title: "Месторасположение рассматриваемой территории", panels: [
     { keys: ["gisogd.admin"], fit: "moscow", caption: "Административные округа города Москвы", only: { "gisogd.admin": { field: "Уровень", values: ["округ"] } }, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } },
-    { keys: ["gisogd.admin"], fit: "okrug", caption: "Районы {okr}", only: { "gisogd.admin": { field: "Уровень", values: ["район"] } }, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } }] },
+    { keys: ["gisogd.admin"], fit: "okrug", caption: "Районы {okr}", callout: true, only: { "gisogd.admin": { field: "Уровень", values: ["район"] } }, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } }] },
   { title: "Ортофотоплан", basemap: "sat", keys: ["gisogd.admin"], fit: "district", styles: { "gisogd.admin": { stroke: "#ffffff", labelSize: 13 } }, labelFn: { "gisogd.admin": "adm" } },
-  { title: "Ортофотоплан", basemap: "sat", keys: ["osm.roads"], fit: "terr", ctx: 3, styles: { "osm.roads": { mode: "single", fill: "#f5d58a", width: 1.4, label: "Название", labelSize: 11 } },
+  { title: "Ортофотоплан", basemap: "sat", keys: ["osm.roads"], fit: "terr", ctx: 3, styles: { "osm.roads": { mode: "single", fill: "#f5d58a", width: 1.4, label: "Название", labelSize: 11 } }, labelMM: { "osm.roads": 2.8 },
     only: { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"] } } },
   { title: "Существующее состояние и использование территории с имеющимися ограничениями",
     // зоны ограничений — внизу бледной заливкой с контуром (альфы в PDF нет: сверху они закрыли бы здания), ОКН штриховкой

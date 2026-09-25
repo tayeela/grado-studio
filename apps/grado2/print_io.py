@@ -224,7 +224,7 @@ class SketchMapFrame(Frame):
         sh, rect = self.sheet, self.rect
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
-        out, labels = [{"op": "clip", "rect": tuple(rect)}], []
+        out, labels, along = [{"op": "clip", "rect": tuple(rect)}], [], {}
         if sh.get("basemap") == "sat" and self.tiles:
             out.extend(tile_ops(tr, rect, sh["scale"], self.tiles, sh["center"][1]))
         for layer in sh.get("layers", []):
@@ -268,8 +268,14 @@ class SketchMapFrame(Frame):
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": None, "rings": [pts]})
                         if f.get("label"):
-                            m = pts[len(pts) // 2]
-                            labels.append((m[0], m[1], f["label"], f.get("ls")))
+                            # подпись вдоль линии (улица): на самом длинном отрезке внутри рамки; одно название — один раз
+                            for a, b in zip(pts, pts[1:]):
+                                mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+                                if not (rect[0] < mx < rect[0] + rect[2] and rect[1] < my < rect[1] + rect[3]):
+                                    continue
+                                d = math.hypot(b[0] - a[0], b[1] - a[1])
+                                if d > along.get(f["label"], (0,))[0]:
+                                    along[f["label"]] = (d, mx, my, math.atan2(b[1] - a[1], b[0] - a[0]), f.get("ls"))
                 elif kind == "point":
                     for p in parts:
                         x, y = tr.mm(*p[:2])
@@ -287,6 +293,35 @@ class SketchMapFrame(Frame):
                             "dash": None if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
+
+        def take(box):
+            cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
+                     for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
+            if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
+                   for c in cells for b in grid.get(c, ())):
+                return False
+            for c in cells:
+                grid.setdefault(c, []).append(box)
+            return True
+
+        callout = self._callout(sh, tr, rect) if sh.get("callout") and sh.get("territory") else None
+        if callout:
+            take(callout[0])
+        ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
+        for text, (d, x, y, ang, ls) in sorted(along.items(), key=lambda t: -t[1][0]):
+            ls = float(ls or 2.2)
+            text = str(text)[:40]
+            tw = ls * .55 * len(text)
+            if d < tw * .5:
+                continue                                                # отрезок короче половины подписи — не подписывать
+            if ang > math.pi / 2 or ang < -math.pi / 2:
+                ang += math.pi                                          # не вверх ногами
+            ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
+            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            if not take((x - ex, y - ey, x + ex, y + ey)):
+                continue
+            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
+                        "color": ink, "anchor": "middle", "angle": ang})
         for x, y, text, ls in labels:
             ls = float(ls or 2.2)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -295,19 +330,37 @@ class SketchMapFrame(Frame):
             lh = ls * 1.23
             y -= (len(lines) - 1) * lh / 2
             bw, bh = ls * .6 * max(len(ln) for ln in lines), ls * 1.2
-            box = (x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)
-            cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
-                     for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
-            if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
-                   for c in cells for b in grid.get(c, ())):
+            if not take((x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)):
                 continue
-            for c in cells:
-                grid.setdefault(c, []).append(box)
             for i, line in enumerate(lines):
-                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "color": (0.12, 0.12, 0.12), "anchor": "middle"})
+                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "color": ink, "anchor": "middle"})
+        if callout:
+            out.extend(callout[1])
         out.append({"op": "unclip"})
         out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
         return out
+
+    @staticmethod
+    def _callout(sh, tr, rect):
+        """Выноска «проектируемая территория»: рамка с текстом сбоку от территории и линия к ней."""
+        ring = [tr.mm(*p[:2]) for p in _parts(sh["territory"])[1][0][0]]
+        cx, cy = sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
+        rx, ry, rw, rh = rect
+        lines, ls = [str(t) for t in sh["callout"]][:3], 2.6
+        w, h = max(len(t) for t in lines) * ls * .55 + 5, len(lines) * ls * 1.3 + 2.6
+        left = cx > rx + rw / 2
+        bx = cx - 16 - w if left else cx + 16
+        bx = min(max(bx, rx + 3), rx + rw - w - 3)
+        by = min(max(cy - 22 - h / 2, ry + 3), ry + rh - h - 3)
+        ex, ey = (bx + w if left else bx), by + h / 2                # линия — к ближней стороне рамки
+        ops = [{"op": "path", "closed": False, "fill": None, "stroke": (0, 0, 0), "width": .25, "dash": None, "rings": [[(cx, cy), (ex, ey)]]},
+               {"op": "circle", "x": cx, "y": cy, "r": .7, "fill": (0, 0, 0), "stroke": None, "width": 0},
+               {"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": (0, 0, 0), "width": .3, "dash": None,
+                "rings": [[(bx, by), (bx + w, by), (bx + w, by + h), (bx, by + h)]]}]
+        for i, t in enumerate(lines):
+            ops.append({"op": "text", "x": bx + w / 2, "y": by + 1.3 + ls * 1.05 + i * ls * 1.3, "size": ls, "text": t, "anchor": "middle",
+                        "color": (0.1, 0.1, 0.1)})
+        return (bx, by, bx + w, by + h), ops
 
     @staticmethod
     def _frame_marks(rect, k, scale, small=False):
@@ -373,15 +426,22 @@ class ColumnFrame(Frame):
                 full = True
             items = grp.get("items") or [grp]
             if not full and len(items) > 1:
-                out.append({"op": "text", "x": x, "y": yy, "size": 2.6, "text": grp["title"][:60]})
-                yy += 4.5
+                for line in _wrap(grp["title"], int(w / 1.45))[:2]:
+                    out.append({"op": "text", "x": x, "y": yy, "size": 2.6, "text": line})
+                    yy += 3.4
+                yy += 1.1
             for it in items[:14]:
                 if full or yy > y + h - 8:            # место проверяется на каждой строке, иначе легенда наезжает на штамп
                     full = True
                     break
                 out.extend(_swatch(x, yy - 3, grp.get("kind", "poly"), it))
-                out.append({"op": "text", "x": x + 13, "y": yy, "size": 2.4, "text": str(it.get("label") or grp["title"])[:int((w - 13) / 1.25)]})
-                yy += 4.8
+                # длинная строка легенды переносится (до трёх строк), а не обрезается
+                lines = _wrap(str(it.get("label") or grp["title"]), int((w - 13) / 1.3))
+                if len(lines) > 3:
+                    lines = lines[:2] + [lines[2][:max(1, int((w - 13) / 1.3) - 1)] + "…"]
+                for i, line in enumerate(lines):
+                    out.append({"op": "text", "x": x + 13, "y": yy + i * 3, "size": 2.4, "text": line})
+                yy += 4.8 + (len(lines) - 1) * 3
             yy += 1.5
         if full:
             out.append({"op": "text", "x": x, "y": min(yy, y + h - 3), "size": 2.4, "text": "… легенда не поместилась"})

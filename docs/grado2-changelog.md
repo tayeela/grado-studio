@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.50.0: street names along the streets, a callout for the territory, legend lines wrap.**
+  - Line labels on sheets (streets on the ortho slides, any labelled line on A3/A1) run along the line on its longest segment
+    inside the frame, never upside down; one label per name; skipped where the segment is shorter than half the label. On
+    satellite slides labels are white.
+  - The districts map of «Месторасположение» has a callout: a framed «проектируемая территория / район …» beside the territory
+    with a leader line; map labels keep clear of it.
+  - Long legend entries and group titles wrap (up to three lines, then «…») instead of being cut.
+
 - **2026-09-25, ГРАДО 2 v0.49.0: section 1 slides closer to the owner's example — two maps on one slide, photo slide,
   Genplan table.**
   - A slide can hold several maps side by side (`panels`, `print_io.panel_rects` / `PanelFrame`), each with its own layers,

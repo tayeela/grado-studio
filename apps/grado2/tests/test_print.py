@@ -1,5 +1,6 @@
 """Sheets of ГРАДО 2: a sheet from styled objects renders to PDF and SVG through the core renderer."""
 
+import math
 import sys
 import unittest
 from pathlib import Path
@@ -118,6 +119,33 @@ class SlidePanelsAndPhotos(unittest.TestCase):
         self.assertTrue(all(abs(o["w"] / o["h"] - 8 / 6) < 1e-6 and o["x"] > 130 for o in imgs))   # пропорции снимка, справа от карты
         self.assertTrue({"1", "2", "3"} <= {o.get("text") for o in ops if o["op"] == "text"})
         self.assertTrue(print_io.render_pdf(spec, {}, {}).startswith(b"%PDF"))
+
+
+class SlideLabels(unittest.TestCase):
+    def _ops(self, **kw):
+        sh = {"size": "P", "title": "Т", "scale": 5000, "center": [37.65, 55.80], "legend": [], "territory": None, **kw}
+        return print_io.document_pages_ops(print_io.build_document({"meta": {}, "sheets": [sh]}, {}, {}), None)[0][2]
+
+    def test_street_label_runs_along_the_line_once(self):
+        road = lambda y: {"g": {"type": "LineString", "coordinates": [[37.640, y], [37.660, y + .004]]}, "stroke": "#f5d58a", "w": 1, "label": "Кулаков переулок"}
+        ops = self._ops(layers=[{"title": "Улицы", "features": [road(55.799), road(55.797)]}])
+        lab = [o for o in ops if o["op"] == "text" and o.get("text") == "Кулаков переулок"]
+        self.assertEqual(len(lab), 1)                                   # одно название — одна подпись
+        self.assertLess(abs(lab[0]["angle"]), math.pi / 2)              # не вверх ногами
+        self.assertNotAlmostEqual(lab[0]["angle"], 0, places=2)         # повёрнута по линии
+
+    def test_callout_box_and_leader(self):
+        terr = {"type": "Polygon", "coordinates": [[[37.649, 55.799], [37.651, 55.799], [37.651, 55.801], [37.649, 55.799]]]}
+        ops = self._ops(layers=[], territory=terr, callout=["проектируемая территория", "район Алексеевский"])
+        texts = [o.get("text") for o in ops if o["op"] == "text"]
+        self.assertIn("проектируемая территория", texts)
+        self.assertIn("район Алексеевский", texts)
+
+    def test_long_legend_line_wraps(self):
+        long = "Граница зоны регулирования застройки и хозяйственной деятельности объекта культурного наследия"
+        ops = self._ops(layers=[], legend=[{"title": "ОКН", "kind": "poly", "items": [{"label": long, "fill": "#cc0000"}, {"label": "б", "fill": "#00cc00"}]}])
+        texts = [o.get("text") for o in ops if o["op"] == "text"]
+        self.assertTrue(any(t and t.endswith("наследия") for t in texts))   # конец строки не потерян
 
 
 if __name__ == "__main__":
