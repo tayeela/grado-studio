@@ -210,3 +210,33 @@ class Projects(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicHost(unittest.TestCase):
+    """За обратным прокси сервер принимает имя из GRADO2_PUBLIC_HOST, чужие имена и чужие страницы — нет."""
+
+    def ask(self, host, origin=None):
+        import os
+        import threading
+        import urllib.request
+        srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            req = urllib.request.Request(f"http://127.0.0.1:{srv.server_address[1]}/api/health", headers={"Host": host, **({"Origin": origin} if origin else {})})
+            try:
+                return urllib.request.urlopen(req, timeout=5).status
+            except urllib.error.HTTPError as e:
+                return e.code
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_public_host_from_env(self):
+        import os
+        from unittest import mock
+        self.assertEqual(self.ask("grado.tailink.tech"), 403)
+        with mock.patch.dict(os.environ, {"GRADO2_PUBLIC_HOST": "grado.tailink.tech"}):
+            self.assertEqual(self.ask("grado.tailink.tech"), 200)
+            self.assertEqual(self.ask("grado.tailink.tech", "https://grado.tailink.tech"), 200)
+            self.assertEqual(self.ask("grado.tailink.tech", "https://evil.example"), 403)
+            self.assertEqual(self.ask("evil.example"), 403)

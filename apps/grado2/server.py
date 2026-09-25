@@ -923,10 +923,16 @@ class Handler(SimpleHTTPRequestHandler):
         (Origin). Такой сайт мог бы молча перезаписать проект обычной формой — сервер ему не отвечает."""
         port = self.server.server_address[1]
         ok = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        origins = {"http://" + h for h in ok}
+        # сервер за обратным прокси (grado.tailink.tech): имя сайта задаёт GRADO2_PUBLIC_HOST, вход — пароль прокси
+        public = os.environ.get("GRADO2_PUBLIC_HOST")
+        if public:
+            ok.add(public)
+            origins.add("https://" + public)
         if (self.headers.get("Host") or "") not in ok:
             return True
         origin = self.headers.get("Origin")
-        return origin is not None and origin not in {"http://" + h for h in ok}
+        return origin is not None and origin not in origins
 
     def _deny(self):
         self.send_response(403)

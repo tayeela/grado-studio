@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.1: the server can run behind a reverse proxy (`GRADO2_PUBLIC_HOST`).**
+  - The Host/Origin guard accepted only 127.0.0.1/localhost. With `GRADO2_PUBLIC_HOST=grado.tailink.tech` it also accepts
+    that Host and the `https://` origin of it; other hosts and pages are still refused. Used by the server deployment
+    at grado.tailink.tech (password on the proxy).
+
 - **2026-09-25, ГРАДО 2 v0.58.0: «Слои ГИС ОГД в DXF» — choose the layers; DXF layers in the portal's folder order.**
   - «DXF ГИС ОГД» (sheet bar or header) opens a dialog (`web/ogdpick.js`): the ГИС ОГД catalogue as a folder tree in
     the portal's own order (roots «Слои» with sections 1–21 and «Территория»), checkboxes on layers and folders
