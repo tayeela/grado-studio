@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.51.0: slides without north arrow and scale bar; boundary in the legend as a line with its area.**
+  - 16:9 slides draw only the map frame — no north arrow, no scale bar (owner's request, as in the section example); A3/A1
+    sheets by ГОСТ keep both.
+  - The legend shows the project boundary as a magenta line «Граница разработки проекта планировки (S = 16,64 га)», area in
+    hectares to two decimals; non-breaking spaces keep «S = … га» on one line when the entry wraps.
+  - Genplan table: shorter title, «тыс. м²» header, names cut to fit the column.
+
 - **2026-09-25, ГРАДО 2 v0.50.0: street names along the streets, a callout for the territory, legend lines wrap.**
   - Line labels on sheets (streets on the ortho slides, any labelled line on A3/A1) run along the line on its longest segment
     inside the frame, never upside down; one label per name; skipped where the segment is shorter than half the label. On

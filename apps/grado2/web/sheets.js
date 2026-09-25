@@ -88,7 +88,7 @@ function sheetSpec(sheet) {
   // выноска на карте района: «проектируемая территория» и район, где она лежит
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
     out.callout = ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
-  if (/^P/.test(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "poly", items: [{ label: "Граница разработки проекта планировки", fill: "#ffffff", stroke: "#e0158c", a: 0 }] });
+  if (/^P/.test(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `Граница разработки проекта планировки (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   return out;
 }
 const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(sheetSpec) });
@@ -138,8 +138,8 @@ const cut = (t, n) => { t = String(t); return t.length > n ? t.slice(0, n - 1) +
 function genplanTable(out) {
   const z = ["gisogd.func_zones", "gisogd.func_zones_tinao"].flatMap(k => DATA[k]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => { const x = inter(f, TERR); return x && m2(x) > 20; }));
   if (!z.length) return;
-  out.table = { title: "Функциональные зоны в границах проекта (фонд — тыс. м²)", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .53, "left"], ["Фонд", .2, "right"]],
-    rows: z.map(f => { const p = f.properties; return [String(p.n != null ? +p.n || p.n : "—"), String(p.fztip || "—"), cut(p.naimfunkzony || p["Вид зоны"] || p.name || "—", 26), p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : "—"]; }) };
+  out.table = { title: "Функциональные зоны на территории", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .5, "left"], ["тыс. м²", .23, "right"]],
+    rows: z.map(f => { const p = f.properties; return [String(p.n != null ? +p.n || p.n : "—"), String(p.fztip || "—"), cut(p.naimfunkzony || p["Вид зоны"] || p.name || "—", 23), p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : "—"]; }) };
 }
 // социальная инфраструктура: объекты OSM и их радиусы обслуживания по нормам Москвы (2151-ПП) и СП 42.13330
 function radiiSheet(out) {

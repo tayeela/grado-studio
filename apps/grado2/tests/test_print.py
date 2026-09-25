@@ -148,5 +148,13 @@ class SlideLabels(unittest.TestCase):
         self.assertTrue(any(t and t.endswith("наследия") for t in texts))   # конец строки не потерян
 
 
+    def test_slide_has_no_north_arrow_or_scale_bar(self):
+        texts = [o.get("text") for o in self._ops(layers=[]) if o["op"] == "text"]
+        self.assertNotIn("С", texts)
+        self.assertFalse(any(t and "М 1:" in t for t in texts))
+        a3 = print_io.document_pages_ops(print_io.build_document({"meta": {}, "sheets": [sheet()]}, S.REDLN, S.LGR_DASH), None)[0][2]
+        self.assertIn("С", [o.get("text") for o in a3 if o["op"] == "text"])     # на листе А3 по ГОСТ — остаются
+
+
 if __name__ == "__main__":
     unittest.main()

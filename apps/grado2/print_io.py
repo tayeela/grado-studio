@@ -337,7 +337,13 @@ class SketchMapFrame(Frame):
         if callout:
             out.extend(callout[1])
         out.append({"op": "unclip"})
-        out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
+        if str(sh.get("size", "")).startswith("P"):
+            # слайд презентации: только рамка карты — без стрелки севера и линейки (как в альбоме раздела)
+            x, y, w, h = rect
+            out.append({"op": "path", "closed": True, "fill": None, "stroke": (0, 0, 0), "width": 0.5, "dash": None,
+                        "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]})
+        else:
+            out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
         return out
 
     @staticmethod
@@ -491,14 +497,15 @@ class TepSheetFrame(Frame):
 
 
 def _wrap(text, n):
-    words, lines, cur = str(text).split(), [], ""
+    # неразрывный пробел (U+00A0) держит вместе «S = 16,64 га»; в строке он печатается обычным пробелом
+    words, lines, cur = [w for w in str(text).replace("\n", " ").split(" ") if w], [], ""
     for wd in words:
         if len(cur) + len(wd) + 1 > n and cur:
             lines.append(cur)
             cur = wd
         else:
             cur = (cur + " " + wd).strip()
-    return lines + ([cur] if cur else [])
+    return [ln.replace("\u00a0", " ") for ln in lines + ([cur] if cur else [])]
 
 
 def _swatch(x, y, kind, it):
