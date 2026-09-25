@@ -7,6 +7,7 @@
 линейка, рамка и основная надпись по ГОСТ Р 21.101 (рамка и штамп — фреймы ядра).
 """
 
+import base64
 import math
 
 from grado_connectors import crs
@@ -249,7 +250,7 @@ class SketchMapFrame(Frame):
                                 out.extend(hatch_ops(rings, spacing=1.6, stroke=hex_to_rgb(f["fill"]), angle=ang))
                         if f.get("label"):
                             xs, ys = zip(*rings[0])
-                            labels.append((sum(xs) / len(xs), sum(ys) / len(ys), f["label"]))
+                            labels.append((sum(xs) / len(xs), sum(ys) / len(ys), f["label"], f.get("ls")))
                 elif kind == "line":
                     color = hex_to_rgb(f.get("lc") or f.get("stroke") or f.get("fill") or "#333333")
                     for line in parts:
@@ -268,14 +269,14 @@ class SketchMapFrame(Frame):
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": None, "rings": [pts]})
                         if f.get("label"):
                             m = pts[len(pts) // 2]
-                            labels.append((m[0], m[1], f["label"]))
+                            labels.append((m[0], m[1], f["label"], f.get("ls")))
                 elif kind == "point":
                     for p in parts:
                         x, y = tr.mm(*p[:2])
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
                         if f.get("label"):
-                            labels.append((x, y - 2, f["label"]))
+                            labels.append((x, y - 2, f["label"], f.get("ls")))
         if sh.get("territory"):
             _, parts = _parts(sh["territory"])
             for poly in parts:
@@ -286,12 +287,15 @@ class SketchMapFrame(Frame):
                             "dash": None if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
-        for x, y, text in labels:
+        for x, y, text, ls in labels:
+            ls = float(ls or 2.2)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
                 continue
-            text = str(text)[:40]
-            bw, bh = 1.3 * len(text), 2.6
-            box = (x - bw / 2, y - bh, x + bw / 2, y + 0.6)
+            lines = [ln[:40] for ln in str(text).split("\n")[:8]]         # подпись в несколько строк: номер и индекс зоны, коды ВРИ
+            lh = ls * 1.23
+            y -= (len(lines) - 1) * lh / 2
+            bw, bh = ls * .6 * max(len(ln) for ln in lines), ls * 1.2
+            box = (x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)
             cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
                      for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
             if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
@@ -299,13 +303,14 @@ class SketchMapFrame(Frame):
                 continue
             for c in cells:
                 grid.setdefault(c, []).append(box)
-            out.append({"op": "text", "x": x, "y": y, "size": 2.2, "text": text, "color": (0.12, 0.12, 0.12), "anchor": "middle"})
+            for i, line in enumerate(lines):
+                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "color": (0.12, 0.12, 0.12), "anchor": "middle"})
         out.append({"op": "unclip"})
-        out.extend(self._frame_marks(rect, k, sh["scale"]))
+        out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
         return out
 
     @staticmethod
-    def _frame_marks(rect, k, scale):
+    def _frame_marks(rect, k, scale, small=False):
         x, y, w, h = rect
         out = [{"op": "path", "closed": True, "fill": None, "stroke": (0, 0, 0), "width": 0.5, "dash": None,
                 "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]}]
@@ -317,7 +322,7 @@ class SketchMapFrame(Frame):
                     "rings": [[(nx, ny), (nx - 3, ny + 10), (nx, ny + 7.5)]]})
         out.append({"op": "text", "x": nx, "y": ny - 1.5, "size": 3.2, "text": "С", "anchor": "middle"})
         # масштабная линейка: около 50 мм, четыре деления
-        m = _nice(50 / k)
+        m = _nice((30 if small else 50) / k)
         L, bx, by = m * k, x + 6, y + h - 8
         for i in range(4):
             out.append({"op": "path", "closed": True, "fill": (0, 0, 0) if i % 2 == 0 else (1, 1, 1), "stroke": (0, 0, 0), "width": 0.2,
@@ -325,7 +330,7 @@ class SketchMapFrame(Frame):
         for i in (0, 2, 4):
             v = m * i / 4
             out.append({"op": "text", "x": bx + L * i / 4, "y": by - 1, "size": 2.2, "text": f"{v:g}", "anchor": "middle"})
-        out.append({"op": "text", "x": bx + L + 3, "y": by + 1.5, "size": 2.2, "text": f"м   М 1:{scale:g}"})
+        out.append({"op": "text", "x": bx + L + 3, "y": by + 1.5, "size": 2.2, "text": f"м   М 1:{int(scale):,}".replace(",", " ")})
         return out
 
 
@@ -353,7 +358,7 @@ class ColumnFrame(Frame):
             cols = tbl.get("cols") or [("", w, "left")]
             t = TableFrame((x, yy, w, 0), [(c[0], w * c[1], c[2]) for c in cols], rows, title=tbl.get("title", ""))
             out.extend(t.ops(ctx))
-            yy += (len(rows) + 2) * TableFrame.ROW_H + 4
+            yy += (len(rows) + 2) * TableFrame.ROW_H + 7
             if len(rows) < len(tbl["rows"]):
                 out.append({"op": "text", "x": x, "y": yy - 2, "size": 2.2, "text": f"… ещё {len(tbl['rows']) - len(rows)} строк"})
                 yy += 3
@@ -485,6 +490,57 @@ class SlideFrame(Frame):
         return out
 
 
+def panel_rects(rect, n, gap=6, cap=8):
+    """Несколько карт на одном слайде (схемы ПЗЗ, округ и район): рамки в ряд, над каждой — подпись."""
+    x, y, w, h = rect
+    pw = (w - gap * (n - 1)) / n
+    return [(x + i * (pw + gap), y + cap, pw, h - cap) for i in range(n)]
+
+
+class PanelFrame(SketchMapFrame):
+    """Одна из карт слайда с подписью над рамкой."""
+
+    def ops(self, ctx):
+        out = super().ops(ctx)
+        x, y, w, _ = self.rect
+        for i, line in enumerate(_wrap(self.sheet.get("caption", ""), int(w / 1.45))[:2][::-1]):
+            out.append({"op": "text", "x": x + w / 2, "y": y - 2 - i * 3.4, "size": 2.9, "text": line, "anchor": "middle",
+                        "color": (0.1, 0.1, 0.1), "font_family": "serif"})
+        return out
+
+
+class PhotoGridFrame(Frame):
+    """Материалы фотофиксации: снимки сеткой с номерами (номера — те же, что у точек съёмки на карте)."""
+
+    def __init__(self, rect, sheet):
+        super().__init__(rect)
+        self.sheet = sheet
+
+    def ops(self, ctx):
+        x, y, w, h = self.rect
+        photos = [p for p in self.sheet.get("photos", []) if p.get("data")][:12]
+        if not photos:
+            return [{"op": "text", "x": x + w / 2, "y": y + h / 2, "size": 3.2, "anchor": "middle", "color": (0.45, 0.45, 0.45),
+                     "text": "Снимки не добавлены: окно «Листы», кнопка с фотоаппаратом у этого слайда"}]
+        n = len(photos)
+        cols = 1 if n == 1 else 2 if n <= 4 else 3
+        rows = math.ceil(n / cols)
+        gap = 2.5
+        cw, ch = (w - gap * (cols - 1)) / cols, (h - gap * (rows - 1)) / rows
+        out = []
+        for i, p in enumerate(photos):
+            cx, cy = x + (i % cols) * (cw + gap), y + (i // cols) * (ch + gap)
+            pw, ph = float(p.get("w") or 4), float(p.get("h") or 3)
+            k = min(cw / pw, ch / ph)                                  # снимок целиком, по центру ячейки
+            iw, ih = pw * k, ph * k
+            ix, iy = cx + (cw - iw) / 2, cy
+            out.append({"op": "image", "data": base64.b64decode(p["data"]), "x": ix, "y": iy, "w": iw, "h": ih})
+            out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
+                        "rings": [[(ix, iy), (ix + 6, iy), (ix + 6, iy + 5), (ix, iy + 5)]]})
+            out.append({"op": "text", "x": ix + 3, "y": iy + 3.8, "size": 3, "text": str(i + 1), "anchor": "middle", "color": (0.1, 0.1, 0.1)})
+        return out
+
+
 def build_document(spec, lib, lgr_dash, tiles=None):
     meta = {"object": spec.get("meta", {}).get("object", ""), "code": spec.get("meta", {}).get("code", ""),
             "stage": spec.get("meta", {}).get("stage", ""), "org": spec.get("meta", {}).get("org", "")}
@@ -496,8 +552,18 @@ def build_document(spec, lib, lgr_dash, tiles=None):
         map_rect, col_rect = layout(size)
         if size == "P":
             meta_p = {**meta, **(spec.get("meta") or {})}
-            page.frames = [SlideFrame(page, sh, meta_p)] if sh.get("kind") == "title" else \
-                [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
+            if sh.get("kind") == "title":
+                page.frames = [SlideFrame(page, sh, meta_p)]
+            elif sh.get("kind") == "photos":
+                w, h = SIZES[size]
+                mr = (14, 24, 112, h - 24 - 10)
+                page.frames = [SketchMapFrame(mr, sh, lib, lgr_dash, tiles), PhotoGridFrame((mr[0] + mr[2] + 5, 24, w - 8 - mr[0] - mr[2] - 5, h - 24 - 10), sh),
+                               SlideFrame(page, sh, meta_p)]
+            elif sh.get("panels"):
+                page.frames = [PanelFrame(r, p, lib, lgr_dash, tiles) for r, p in zip(panel_rects(map_rect, len(sh["panels"])), sh["panels"])] + \
+                    [ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
+            else:
+                page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
         elif sh.get("kind") == "tep":
             w, h = SIZES[size]
             page.frames = [PageBorder(page), TepSheetFrame((25, 10, w - 25 - 10, h - 5 - StampFrame.H - 10 - 3), sh), StampFrame(page)]

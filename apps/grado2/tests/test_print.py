@@ -67,18 +67,10 @@ class Clip(unittest.TestCase):
         self.assertEqual(print_io.clip_ring([(500, 500), (600, 500), (600, 600)], (0, 0, 100, 100)), [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class PresentationSlides(unittest.TestCase):
     def test_title_and_map_slide_with_table_and_satellite(self):
-        try:
-            import io
-            from PIL import Image
-        except ImportError:
-            self.skipTest("Pillow нужен, чтобы сделать тестовый тайл JPEG")
-        buf = io.BytesIO(); Image.new("RGB", (8, 8), (40, 90, 40)).save(buf, "JPEG"); jpeg = buf.getvalue()
+        import base64
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
         seen = []
         tiles = lambda z, x, y: (seen.append((z, x, y)), jpeg)[1]
         spec = {"meta": {"object": "Проект планировки квартала", "short": "ППТ Квартал", "place": "СВАО, район Алексеевский", "date": "Сентябрь 2026"},
@@ -97,3 +89,36 @@ class PresentationSlides(unittest.TestCase):
         self.assertIn("77:02:0023014:42", texts)
         self.assertTrue(print_io.render_pdf(spec, {}, {}, tiles).startswith(b"%PDF"))
 
+
+
+class SlidePanelsAndPhotos(unittest.TestCase):
+    JPEG = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAAGAAgDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAwX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCAARn/2Q=="      # JPEG 8 × 6 из canvas браузера (профиль ICC вырезан)
+
+    def test_two_maps_on_one_slide_with_captions(self):
+        panel = lambda cap: {"scale": 5000, "center": [37.65, 55.80], "layers": [{"title": "Зоны", "features": [
+            {"g": {"type": "Polygon", "coordinates": [[[37.649, 55.799], [37.651, 55.799], [37.651, 55.801], [37.649, 55.799]]]},
+             "fill": "#ffffff", "stroke": "#333333", "w": 1, "a": 0, "label": "3.5.1, 4.4\n12.0.2"}]}], "territory": None, "caption": cap}
+        spec = {"meta": {}, "sheets": [{"size": "P", "title": "ПЗЗ", "panels": [panel("Зоны и ВРИ"), panel("Подзоны")], "legend": [], "note": ""}]}
+        ops = print_io.document_pages_ops(print_io.build_document(spec, {}, {}), None)[0][2]
+        texts = [o.get("text") for o in ops if o["op"] == "text"]
+        self.assertIn("Зоны и ВРИ", texts)
+        self.assertIn("Подзоны", texts)
+        self.assertEqual(texts.count("12.0.2"), 2)                              # подпись в две строки — в каждой карте
+        clips = [o["rect"] for o in ops if o["op"] == "clip"]
+        self.assertEqual(len(clips), 2)
+        self.assertLess(clips[0][0] + clips[0][2], clips[1][0])                  # карты рядом, не наезжают
+
+    def test_photo_slide_places_pictures_and_numbers(self):
+        ph = {"data": self.JPEG, "w": 8, "h": 6}
+        spec = {"meta": {}, "sheets": [{"size": "P", "kind": "photos", "title": "Материалы фотофиксации", "scale": 2000, "center": [37.65, 55.80],
+                                         "layers": [], "legend": [], "territory": None, "photos": [ph, ph, ph]}]}
+        ops = print_io.document_pages_ops(print_io.build_document(spec, {}, {}), None)[0][2]
+        imgs = [o for o in ops if o["op"] == "image"]
+        self.assertEqual(len(imgs), 3)
+        self.assertTrue(all(abs(o["w"] / o["h"] - 8 / 6) < 1e-6 and o["x"] > 130 for o in imgs))   # пропорции снимка, справа от карты
+        self.assertTrue({"1", "2", "3"} <= {o.get("text") for o in ops if o["op"] == "text"})
+        self.assertTrue(print_io.render_pdf(spec, {}, {}).startswith(b"%PDF"))
+
+
+if __name__ == "__main__":
+    unittest.main()

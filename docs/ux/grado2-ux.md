@@ -186,3 +186,6 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   ТЭП» makes a sheet with all indicators in up to three columns. The «Листы» window opens as a strip at the bottom.
 - 2026-09-23 (done v0.16.0): below 1480 px the six rarer windows move into a labelled «Окна ▾» menu with check marks
   (arrow keys, Enter, Esc work).
+- 2026-09-25 (done v0.49.0): the «Листы» table no longer squeezes the title column to zero in a narrow window (it scrolls
+  sideways); section sheets say «слои раздела». Still open for section 1: street name labels along lines on ortho slides,
+  a callout box «проектируемая территория» on the location slide, legend lines wrap instead of being cut.

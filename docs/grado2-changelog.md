@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.49.0: section 1 slides closer to the owner's example — two maps on one slide, photo slide,
+  Genplan table.**
+  - A slide can hold several maps side by side (`panels`, `print_io.panel_rects` / `PanelFrame`), each with its own layers,
+    frame and scale and a caption over it; the legend is shared. «Месторасположение» is now Moscow okrugs + the districts of
+    the territory's okrug, and the ПЗЗ slides are merged into one: zones with ВРИ codes on the left, subzones with
+    «density / height / coverage» on the right (as in 120-ПП fragments).
+  - The okrug and the district containing the territory are filled pink (`hilite`); okrugs are labelled by abbreviation.
+  - ПЗЗ zones are labelled by ВРИ codes only («3.5.1, 4.4 …», wrapped); subzones without parameters read «Ф».
+  - Genplan: each zone labelled «number / index» in large type; a table of the zones on the territory (number, index, name,
+    total floor area) in the right column.
+  - New slide «Материалы фотофиксации»: map on the left, photos in a grid on the right with numbers. Photos are added with the
+    camera button in the sheet row (up to 12, reduced to 1600 px JPEG, kept in the project and across section rebuilds); the
+    shooting point comes from the photo's EXIF GPS and is drawn on the map with the same number.
+  - Sheet labels may span several lines and have their own size; scale 1:7 500 and 1:1 000 000 added; scale bar text
+    without exponent notation.
+  - «Листы» window: the table scrolls sideways instead of squeezing the title column to nothing; section sheets show
+    «слои раздела» instead of a misleading «текущая карта»; the title slide and two-map slides have no frame button.
+
 - **2026-09-25, ГРАДО 2 v0.48.0: presentation slides 16:9 and section 1 «Существующее положение» by the owner's example
   (ППТ Мытищинская).** «Листы» → «Раздел 1: существующее положение» builds 11 slides and downloads what they need.
   - Format «16:9» (338,67 × 190,5 mm, `SIZES["P"]`): arrow and title top-left, project short name and place top-right, slide
