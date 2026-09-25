@@ -37,21 +37,29 @@ class OgdAll(unittest.TestCase):
             "path": "Слои / 11 Сводный план / 2.4 Приаэродромные / Внуково / Пятая подзона"}])[0]["dxf"], "ОГД-11-Внуково-Пятая подзона")
         self.assertFalse(any(set(n) & set('<>/\\":;?*|=`') for n in names))
 
+    def test_xdata_strings_fit_autocad_255_bytes(self):
+        tags = ogd_all._xdata({"vri": "Размещение жилых домов " * 30, "n": 1})
+        self.assertTrue(all(len(v.encode("utf-8")) <= 255 for _, v in tags))
+        self.assertTrue(tags[0][1].startswith("vri=Размещение"))
+        long = ogd_all.layer_list([{"code": "c1", "name": "Я" * 300, "type": "layer", "path": "Слои / 1 А / Б / " + "Я" * 300}])
+        self.assertLessEqual(len(long[0]["dxf"]), 100)
+
     def test_drawing_has_layer_per_portal_layer_with_attributes(self):
         layers = [{"dxf": "ОГД-Генплан-Зоны", "title": "Зоны", "code": "v1",
                    "features": [{"geometry": SQUARE, "properties": {"naimfunkzony": "Жилая зона", "summfondpersp": 12.5}}]},
                   {"dxf": "ОГД-Точки", "title": "Точки", "code": "v2",
                    "features": [{"geometry": {"type": "Point", "coordinates": [37.61, 55.71]}, "properties": {"id": 7}}]}]
         with mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
-            body, dwg = ogd_all.build_drawing(layers, SQUARE)
+            body, dwg = ogd_all.build_drawing(layers, SQUARE, (37.59, 55.69, 37.63, 55.73))
         self.assertFalse(dwg)
         z = zipfile.ZipFile(io.BytesIO(body))
         doc = ezdxf.read(io.StringIO(z.read("gisogd.dxf").decode("utf-8")))
         msp = doc.modelspace()
         poly = msp.query('LWPOLYLINE[layer=="ОГД-Генплан-Зоны"]')[0]
         self.assertIn((1000, "naimfunkzony=Жилая зона"), list(poly.get_xdata("GISOGD")))
+        self.assertEqual(len(msp.query('LWPOLYLINE[layer=="Рамка листа"]')), 1)
         self.assertEqual(len(msp.query('POINT[layer=="ОГД-Точки"]')), 1)
-        self.assertEqual(len(msp.query('LWPOLYLINE[layer=="Граница области"]')), 1)
+        self.assertEqual(len(msp.query('LWPOLYLINE[layer=="Граница территории"]')), 1)
         x, y = poly.get_points("xy")[0]                        # МСК: метры в сотнях–тысячах от начала, не градусы
         self.assertGreater(abs(x) + abs(y), 1000)
         csv_text = z.read("атрибуты/ОГД-Генплан-Зоны.csv").decode("utf-8-sig")

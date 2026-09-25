@@ -275,6 +275,7 @@ async function albumPdf() {
   } catch (e) { toast("PDF не собран: " + e.message); } finally { busy(false); }
 }
 function renderSheets() {
+  window.updateCover?.();                  // рамки листов — это и область загрузки данных
   const el = $("sheetsBody"); if (!el) return;
   const m = ALBUM.meta, inp = (k, ph) => `<input type="text" data-meta="${k}" value="${esc(m[k] || "")}" placeholder="${ph}" aria-label="${ph}">`;
   const vopts = s => `<option value="" ${s.kind !== "tep" && !s.view ? "selected" : ""}>текущая карта</option>` + VIEWS.map(v => `<option value="${v.id}" ${s.kind !== "tep" && v.id === s.view ? "selected" : ""}>вид «${esc(v.name)}»</option>`).join("")

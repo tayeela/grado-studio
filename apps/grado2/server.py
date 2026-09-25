@@ -862,7 +862,8 @@ class Handler(SimpleHTTPRequestHandler):
             body = job.file.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Disposition", f'attachment; filename="{job.file.name}"')
+            from urllib.parse import quote       # имя с названием листа — по-русски; заголовок HTTP — только латиница
+            self.send_header("Content-Disposition", f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(job.file.name)}")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             return self.wfile.write(body)
@@ -979,7 +980,8 @@ class Handler(SimpleHTTPRequestHandler):
                 with OGD_LOCK:
                     if OGD_JOB and OGD_JOB[0].state["running"]:
                         return self._json(409, {"error": "выгрузка уже идёт"})
-                    OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all")]
+                    OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
+                                               str(req.get("name") or "gisogd"))]
                 return self._json(200, OGD_JOB[0].state)
             if self.path == "/api/ogd_all/cancel":
                 if OGD_JOB:

@@ -5,7 +5,8 @@
 целиком с портала (по одному, с паузой), дальше с диска, и режется по рамке здесь. Первая полная выгрузка идёт
 долго (сотни слоёв), следующие площадки — из кэша.
 
-Чертёж: DXF R2018 в МСК (как в QGIS), метры; рядом тот же чертёж в DWG, если стоит ODA File Converter.
+Область — рамка листа (формат × масштаб, как на листе альбома), а не граница территории: чертёж для передачи.
+Чертёж: DXF R2018 в МСК (как в QGIS), метры; слои «Рамка листа» и «Граница территории»; рядом тот же чертёж в DWG, если стоит ODA File Converter.
 Атрибуты объекта — в XDATA приложения GISOGD («поле=значение») и в таблицах CSV по слоям (столбец Handle —
 дескриптор объекта в чертеже).
 
@@ -33,6 +34,8 @@ import dxf_io
 
 _BAD = re.compile(r'[<>/\\":;?*|=`]')
 _XDATA_LIMIT = 15000            # AutoCAD: не больше 16 КБ XDATA на объект
+_XDATA_STR = 250                # и не больше 255 БАЙТ в строке XDATA: русская буква — 2 байта (с 464 байтами AutoCAD не открывал чертёж)
+_NAME_MAX = 100                 # имя слоя: AutoCAD допускает 255 знаков, но старые версии и конвертеры считают байты
 # Слои, которые портал не отдаёт (HTTP 500 у четырёх слоёв, сети lines_pp/polygon_pp не отдаются и за 4 минуты —
 # 25.09.2026), иначе каждая выгрузка ждала бы их заново до 15 минут на слой. Повтор — через сутки.
 _FAILED_FILE, _FAILED_TTL = "ogd_all_failed.json", 24 * 3600
@@ -67,12 +70,18 @@ def layer_list(cat):
         m = re.match(r"(\d+)\s", parts[0]) if len(parts) > 1 else None
         head = [f"{int(m.group(1)):02d}" if m else parts[0]] if len(parts) > 1 else []
         folder = [parts[-2]] if len(parts) > 2 else []
-        name = _BAD.sub("_", "-".join(["ОГД", *head, *folder, x.get("name") or x["code"]])).strip()[:200]
+        name = _BAD.sub("_", "-".join(["ОГД", *head, *folder, x.get("name") or x["code"]])).strip()[:_NAME_MAX].strip()
         if name.lower() in used:                       # одинаковые имена в разных папках — различаются кодом
-            name = f"{name[:180]} ({x['code']})"
+            name = f"{name[:_NAME_MAX - len(x['code']) - 3].strip()} ({x['code']})"
         used.add(name.lower())
         out.append({"code": x["code"], "title": x.get("name") or x["code"], "path": x.get("path") or "", "dxf": name})
     return out
+
+
+def _cut_bytes(s, limit):
+    """Строка не длиннее limit байт UTF-8, без разрезанной посередине буквы."""
+    b = s.encode("utf-8")
+    return s if len(b) <= limit else b[:limit].decode("utf-8", "ignore")
 
 
 def _xdata(props):
@@ -80,7 +89,7 @@ def _xdata(props):
     for k, v in props.items():
         if v in (None, ""):
             continue
-        s = f"{k}={v}".replace("\n", " ")[:250]
+        s = _cut_bytes(f"{k}={v}".replace("\n", " ").replace("\r", " "), _XDATA_STR)
         size += len(s.encode("utf-8")) + 4
         if size > _XDATA_LIMIT:
             break
@@ -88,7 +97,7 @@ def _xdata(props):
     return tags
 
 
-def build_drawing(layers, boundary=None):
+def build_drawing(layers, boundary=None, frame=None):
     """layers: [{"dxf", "title", "code", "features": [GeoJSON WGS84]}] → байты zip: DXF, DWG (если есть ODA), CSV."""
     doc = ezdxf.new("R2018", setup=False)
     doc.header["$INSUNITS"] = 6
@@ -122,10 +131,15 @@ def build_drawing(layers, boundary=None):
             fields.update(dict.fromkeys(props))
         tables[layer["dxf"]] = (["Handle", *fields], rows)
     if boundary:
-        doc.layers.add("Граница области", color=1)
+        doc.layers.add("Граница территории", color=1)
         for ring, closed in dxf_io._rings(boundary):
             msp.add_lwpolyline([crs.wgs84_to_msk(x, y) for x, y, *_ in ring][:-1], close=True,
-                               dxfattribs={"layer": "Граница области"})
+                               dxfattribs={"layer": "Граница территории"})
+    if frame:                                          # рамка листа: по ней обрезаны все слои
+        w, s, e, n = frame
+        doc.layers.add("Рамка листа", color=5)
+        msp.add_lwpolyline([crs.wgs84_to_msk(x, y) for x, y in ((w, s), (e, s), (e, n), (w, n))], close=True,
+                           dxfattribs={"layer": "Рамка листа"})
     buf = io.StringIO()
     doc.write(buf)
     dxf = buf.getvalue().encode("utf-8")
@@ -152,8 +166,9 @@ def build_drawing(layers, boundary=None):
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir):
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd"):
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
+        self.name = re.sub(r'[<>/\\":;?*|=`\s]+', "_", name).strip("_")[:60] or "gisogd"
         self.state = {"running": True, "done": 0, "total": 0, "current": "", "found": 0, "objects": 0,
                       "errors": [], "file": None, "dwg": False, "message": "Каталог слоёв портала…",
                       "started": time.time()}
@@ -203,9 +218,9 @@ class Job:
                 st["done"] += 1
             _save_failed(self.cache_dir, failed)
             st.update(current="", message="Сборка чертежа…")
-            body, dwg = build_drawing(found, self.boundary)
+            body, dwg = build_drawing(found, self.boundary, self.bbox)
             self.out_dir.mkdir(parents=True, exist_ok=True)
-            path = self.out_dir / f"gisogd-{datetime.now():%Y%m%d-%H%M%S}.zip"
+            path = self.out_dir / f"{self.name}-{datetime.now():%Y%m%d-%H%M%S}.zip"
             path.write_bytes(body)
             self.file = path
             st.update(running=False, file=path.name, dwg=dwg, message="Готово.")

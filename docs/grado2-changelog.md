@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.55.0: data and the ОГД drawing follow the sheet frames, not the site boundary; DXF opens in AutoCAD.**
+  - «Всё ОГД в DXF» made a drawing AutoCAD refused to open: XDATA strings were cut at 250 characters, and Cyrillic takes
+    2 bytes, so 90 strings were up to 464 bytes (AutoCAD limit 255 bytes). Now cut by bytes without splitting a letter;
+    layer names ≤ 100 characters.
+  - The drawing is for handing over, so its area is the sheet frame: the first map sheet of the album (format, scale,
+    shift), or, with no sheets, an A3 sheet at auto scale around the territory. Only ОГД layers, clipped to the frame,
+    plus «Рамка листа» and «Граница территории». The archive is named after the sheet and scale.
+  - «Загрузить» (and ФГИС ТП documents) cover all sheet frames of the album instead of boundary + 60 m: union of the
+    frames of map sheets (overview schemes of Moscow/district and two-map sheets load their own data when a section is
+    built), or the A3 frame when there are no sheets. The area is drawn as a blue dashed rectangle «область загрузки
+    данных» while «Данные» is open (the map zooms out if it is off screen), and the window says its size in km.
+    Large frames can exceed a source's area limit (НСПД, Яндекс 4 km²); that source then reports the limit.
+
 - **2026-09-25, ГРАДО 2 v0.54.1: button renamed «Всё ОГД в DXF».**
   - opendesign.com answers «Access restricted» from Russia (browser and curl, 2026-09-25), so ODA File Converter cannot be
     installed here; the owner chose to keep DXF. The button and the final message now say DXF and point to «Сохранить как»

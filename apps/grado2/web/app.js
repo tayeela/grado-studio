@@ -130,10 +130,43 @@ function setTerritory(feature) {
   TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR); TERR_REV++;
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
-  $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Загружается прямоугольник вокруг границы.`;
+  updateCover();
   $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.(); if (!$("wData").hidden) renderSources(); if (!$("wSketch").hidden) renderParams(); if (!$("w3d").hidden) draw3d();
   sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
 }
+/* Область загрузки данных = рамки листов альбома (карты в своём формате и масштабе, со сдвигом), а не граница
+   участка: всё, что попадёт на листы, должно быть загружено. Обзорные схемы (Москва, округ, район) и листы из двух карт
+   грузят своё сами при сборке раздела. Листов нет — рамка листа А3 в автомасштабе вокруг территории.
+   Пока открыто окно «Данные», область показана на карте синим пунктиром. */
+const coverSrc = new ol.source.Vector();
+const coverStyle = new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
+  text: new ol.style.Text({ text: "область загрузки данных", font: "12px system-ui, sans-serif", placement: "line", fill: new ol.style.Fill({ color: "#1a5fb4" }),
+    stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
+const coverLayer = new ol.layer.Vector({ source: coverSrc, style: coverStyle, zIndex: 105, visible: false });
+mMain.addLayer(coverLayer);
+function coverSheets() {
+  const sh = (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels);
+  return sh.length ? sh : [newSheet()];
+}
+function coverBox() {
+  const bs = [...coverSheets().map(frameBox), turf.bbox(buf(TERR, 60))];
+  return [Math.min(...bs.map(b => b[0])), Math.min(...bs.map(b => b[1])), Math.max(...bs.map(b => b[2])), Math.max(...bs.map(b => b[3]))];
+}
+function updateCover() {
+  coverSrc.clear(); if (!TERR) return;
+  const b = coverBox(), n = coverSheets(), own = n[0].id && ALBUM.sheets.includes(n[0]);
+  coverSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(b).transform("EPSG:4326", "EPSG:3857")));
+  const km = (b[2] - b[0]) * 111.32 * Math.cos((b[1] + b[3]) / 2 * Math.PI / 180), kmy = (b[3] - b[1]) * 110.54;
+  $("terrInfo").textContent = `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. Данные загружаются на ${own ? (n.length === 1 ? "рамку листа" : `рамки ${plural(n.length, ["листа", "листов", "листов"])}`) : "рамку листа А3 вокруг территории (листов в альбоме пока нет)"}: `
+    + `${fmt(km, 1)} × ${fmt(kmy, 1)} км, на карте — синий пунктир.`;
+}
+window.updateCover = updateCover;
+new MutationObserver(() => {
+  coverLayer.setVisible(!$("wData").hidden); if ($("wData").hidden) return; updateCover();
+  // область целиком за краем экрана не видна — карта отдаляется, чтобы пунктир было видно весь
+  const ex = coverSrc.getExtent(); if (coverSrc.getFeatures().length && !ol.extent.containsExtent(sharedView.calculateExtent(mMain.getSize()), ex))
+    sharedView.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
+}).observe($("wData"), { attributes: true, attributeFilter: ["hidden"] });
 $("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
 const GROUP = { gisogd_admin: "ГИС ОГД — административное деление", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
@@ -202,7 +235,7 @@ async function fgPick(uin) {
   catch (err) { FG.msg = "Состав документа не получен: " + err.message; } finally { busy(false); fgRender(); }
 }
 async function fgLoad() {
-  const [w, s, e, n] = turf.bbox(buf(TERR, 60)); FG.msg = "Загрузка слоёв документа: портал отдаёт документ целиком, может занять минуту…"; fgRender(); busy(true);
+  const [w, s, e, n] = coverBox(); FG.msg = "Загрузка слоёв документа: портал отдаёт документ целиком, может занять минуту…"; fgRender(); busy(true);
   try {
     const epoch = window.PROJ_EPOCH, r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: [w, s, e, n] });
     if (epoch !== window.PROJ_EPOCH) { FG.msg = "Выгрузка для прежнего проекта отброшена."; return; }
@@ -219,7 +252,7 @@ async function fgLoad() {
     FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`; dataRev++;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
 }
-$("bLoad").onclick = () => { if (!TERR) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], turf.bbox(buf(TERR, 60))); };
+$("bLoad").onclick = () => { if (!TERR) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], coverBox()); };
 /* выгрузка источников по прямоугольнику: кнопка «Загрузить» — граница + 60 м; листы раздела — вся площадь своих рамок */
 async function loadKeys(keys, bb) {
   const [w, s, e, n] = bb;
@@ -383,15 +416,19 @@ $("bExport").onclick = async () => {
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
-/* «Всё ОГД в DXF»: все слои ГИС ОГД в границе территории + 60 м одним чертежом; выгрузка идёт на сервере фоном,
+/* «Всё ОГД в DXF»: все слои ГИС ОГД по рамке листа одним чертежом для передачи — рамка первого листа-карты альбома
+   (формат, масштаб, сдвиг), листов нет — лист А3 в автомасштабе вокруг территории. Выгрузка идёт на сервере фоном,
    повторное нажатие во время выгрузки её останавливает */
 let ogdPoll = null;
 $("bOgdAll").onclick = async () => {
   const btn = $("bOgdAll");
   if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
   if (!TERR) return toast("Сначала задайте границу территории: чертёж собирается по ней.");
-  try { await api("/api/ogd_all/start", { bbox: turf.bbox(buf(TERR, 60)), boundary: TERR.geometry }); }
+  const sh = coverSheets()[0], own = ALBUM.sheets.includes(sh), where = own ? `рамке листа ${ALBUM.sheets.indexOf(sh) + 1} «${sh.title}», ${SIZE_T[sh.size] || sh.size}, 1:${fmt(sheetScale(sh))}`
+    : `рамке листа А3 1:${fmt(sheetScale(sh))} вокруг территории`;
+  try { await api("/api/ogd_all/start", { bbox: frameBox(sh), boundary: TERR.geometry, name: `ОГД ${own ? sh.title : "лист А3"} 1-${sheetScale(sh)}` }); }
   catch (err) { return toast("Выгрузка не началась: " + err.message); }
+  toast(`Выгрузка всех слоёв ГИС ОГД по ${where}.`);
   btn.lastChild.textContent = "Остановить";
   const min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
   ogdPoll = setInterval(async () => {
@@ -406,7 +443,7 @@ $("bOgdAll").onclick = async () => {
     if (!st.file) return toast(st.message || "Выгрузка остановлена.");
     const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
-    toast(`Готово: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}, МСК. `
+    toast(`Готово по ${where}: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}, МСК. `
       + `${st.dwg ? "В архиве DWG, DXF" : "В архиве чертёж DXF (AutoCAD открывает его, в DWG — «Сохранить как»)"} и таблицы атрибутов.`
       + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
   }, 1500);
