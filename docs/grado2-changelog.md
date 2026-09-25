@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.2: scale hints no longer hang on the map; one-command server update.**
+  - The sheet bar's scale field had a `datalist`; the bar is re-rendered on change, and Yandex Browser left the open
+    hint list (5000, 25000) floating over the map. Now: a plain field plus a small «▾» select of standard scales.
+  - `tools/deploy-server.sh`: sends HEAD (apps/grado2, core, docs/standards) to grado.tailink.tech via AEZA-US, swaps
+    `/opt/grado/app`, installs requirements when they change, restarts `grado`, waits for `/api/health` with the new
+    version and rolls back to the previous copy if it does not come up.
+
 - **2026-09-26, ГРАДО 2 v0.58.1: the server can run behind a reverse proxy (`GRADO2_PUBLIC_HOST`).**
   - The Host/Origin guard accepted only 127.0.0.1/localhost. With `GRADO2_PUBLIC_HOST=grado.tailink.tech` it also accepts
     that Host and the `https://` origin of it; other hosts and pages are still refused. Used by the server deployment

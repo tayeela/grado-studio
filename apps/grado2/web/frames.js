@@ -58,8 +58,10 @@
     bar.innerHTML = `<input data-k="title" class="ti" value="${esc(SELF.title || "")}" aria-label="Название листа" title="Название листа — печатается на листе">`
       + `<select data-k="size" title="Формат листа: без штампа — карта на весь лист; ГОСТ — со штампом и легендой; слайды — для презентации">${Object.keys(SIZE_T).map(k => `<option value="${k}" ${k === SELF.size ? "selected" : ""}>${SIZE_T[k]}</option>`).join("")}</select>`
       + (pap ? `<button class="tb" data-a="orient" title="${SELF.orient === "P" ? "Книжная — сделать альбомной" : "Альбомная — сделать книжной"}"><i data-lucide="${SELF.orient === "P" ? "rectangle-vertical" : "rectangle-horizontal"}"></i></button>` : "")
-      + `<label title="Масштаб листа: впишите число или тяните угол рамки">1:<input data-k="scale" list="frScales" value="${sc}" inputmode="numeric"></label>`
-      + `<datalist id="frScales">${ROUND.map(v => `<option value="${v}">`).join("")}</datalist>`
+      // типовые масштабы — обычный список, не datalist: подсказки datalist оставались висеть на карте, когда панель
+      // перерисовывалась после ввода (25.09.2026, Яндекс Браузер)
+      + `<label title="Масштаб листа: впишите число или тяните угол рамки">1:<input data-k="scale" value="${sc}" inputmode="numeric"></label>`
+      + `<select data-k="scale" class="sc" aria-label="Типовой масштаб" title="Типовой масштаб"><option value="">▾</option>${ROUND.map(v => `<option value="${v}">1:${fmt(v)}</option>`).join("")}</select>`
       + `<span class="vs"></span><button class="btn" data-a="load" title="Загрузить отмеченные в окне «Данные» источники на этот лист"><i data-lucide="download"></i>Загрузить сюда</button>`
       + `<button class="btn primary" data-a="ogd" title="Все слои ГИС ОГД внутри листа — чертёж DXF в МСК: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном 1:${fmt(sc)}"><i data-lucide="file-down"></i>DXF ГИС ОГД</button>`
       + `<button class="tb" data-a="prev" title="Просмотр листа (окно «Листы»)"><i data-lucide="eye"></i></button>`
