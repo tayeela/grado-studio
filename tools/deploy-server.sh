@@ -23,6 +23,14 @@ git archive --format=tar HEAD apps/grado2 core docs/standards | gzip | \
 ssh -o ConnectTimeout=20 vps "ssh -o BatchMode=yes grado 'bash -s' -- $VER" <<'REMOTE'
 set -uo pipefail
 VER="$1"; A=/opt/grado/app
+# сервер занят (идёт первая выгрузка слоя или «DXF ГИС ОГД») — перезапуск её оборвал бы: откладываем
+H='Host: 127.0.0.1:8650'
+busy=$(curl -s -m 5 -H "$H" http://127.0.0.1:8650/api/progress | python3 -c 'import sys,json;print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+job=$(curl -s -m 5 -H "$H" http://127.0.0.1:8650/api/ogd_all/status | python3 -c 'import sys,json;print(int(bool(json.load(sys.stdin).get("running"))))' 2>/dev/null || echo 0)
+if [ "${busy:-0}" != 0 ] || [ "${job:-0}" != 0 ]; then
+  echo "Сервер занят выгрузкой — не перезапускаю, чтобы её не оборвать. Обновление отложено: повторите tools/deploy-server.sh позже."
+  rm -rf $A.new; exit 3
+fi
 if ! cmp -s $A/apps/grado2/requirements.txt $A.new/apps/grado2/requirements.txt; then
   /opt/grado/venv/bin/pip install -q -r $A.new/apps/grado2/requirements.txt || { echo "зависимости не поставились — сервер не тронут"; rm -rf $A.new; exit 1; }
 fi

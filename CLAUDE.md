@@ -27,6 +27,10 @@ no emoji, describe results as what appears on screen.
 - Commit each step as `grado2 vX.Y.Z: …` (version in `apps/grado2/web/version.json`), merge ff into `main`,
   push branch and `main`. One entry per change on top of `docs/grado2-changelog.md`; UX items in `docs/ux/grado2-ux.md`.
 - Stop hook: after grado2 changes do a short UX audit, tell the owner 2–3 lines.
+- Server grado.tailink.tech updates itself: git hooks `post-commit`/`post-merge` (`core.hooksPath=tools/git-hooks`)
+  run `tools/deploy-server.sh` when `main` gets program changes. Read its output and tell the owner the result;
+  «Сервер занят выгрузкой… отложено» or a failure means the server still runs the old version — rerun
+  `tools/deploy-server.sh` later. `GRADO_NO_DEPLOY=1` skips it for one commit.
 - No new dependencies in core and apps/grado2. Do not touch the owner's QGIS DB or plugin
   (`~/Library/Application Support/QGIS`). Ask before deleting caches in `~/.grado2/cache`.
 - Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, at most 3 retries.
