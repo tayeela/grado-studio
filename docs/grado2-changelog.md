@@ -2,6 +2,27 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.48.0: presentation slides 16:9 and section 1 «Существующее положение» by the owner's example
+  (ППТ Мытищинская).** «Листы» → «Раздел 1: существующее положение» builds 11 slides and downloads what they need.
+  - Format «16:9» (338,67 × 190,5 mm, `SIZES["P"]`): arrow and title top-left, project short name and place top-right, slide
+    number bottom-right, map left, legend right; title slide with the object name, place and month. No ГОСТ stamp.
+  - Satellite basemap on sheets: Esri World Imagery JPEG tiles (`server.esri_tile`, cache `~/.grado2/cache/tiles/esri`, 90 days,
+    one at a time with a pause), each tile as an image quad in sheet mm (МСК is rotated to Mercator); zoom from the scale.
+  - Slides (SEC1 in `sheets.js`): location (okrugs and districts), district ortho, territory ortho with main streets, existing
+    use with restrictions, land use with numbered ЕГРН parcels and their table, Genplan, ПЗЗ zones/ВРИ, ПЗЗ subzones labelled
+    «density / height / coverage» (Ф — by the existing use), approved and developing documentation (ПП, ГПЗУ, КРТ), social
+    objects with Moscow service radii. Each slide has its own layers, overrides of their style, basemap and content frame
+    (territory with margins, the district, the okrug); the scale is picked to fit the frame.
+  - Downloads cover the whole slide frame, not the boundary + 60 m: per layer the largest frame where it is used, layers with the
+    same frame in one request (`loadKeys(keys, bbox)` extracted from «Загрузить»).
+  - New ОГД sources: «Проекты планировки» (9 portal layers, kind in «Вид зоны»), «ГПЗУ», «КРТ», and «Административные округа
+    и районы» (all 12 prefect layers + the districts of the okrug containing the area, from the portal catalog).
+  - Print: a fully transparent fill no longer prints white; on satellite slides fills under 60 % are outline only (the core
+    PDF writer has no alpha); sheet tables (`table`) and a note under the legend; territory outline configurable (`terrStyle`).
+  - Checked on the example area (16,6 ha, СВАО, Алексеевский): all layers downloaded, 11 slides, PDF 2,8 MB in ~11 s. Not done:
+    photo fixation slide (needs photos), Genplan zone number/index table, two ПЗЗ maps on one slide.
+  - Test: test_print +1 (slides, satellite quads, table, page number).
+
 - **2026-09-25, ГРАДО 2 v0.47.0: region from lines (BOUNDARY), hatch patterns, arrow-key nudge.**
   - BPOLY «Контур по щелчку»: a click inside an area bounded by lines and polygon edges makes a polygon. Segments near the point
     (window 150 → 400 → 1200 m, up to 3 000 objects) are cut at their intersections (50 m grid), joined into a planar graph

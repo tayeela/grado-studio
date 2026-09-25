@@ -69,3 +69,31 @@ class Clip(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PresentationSlides(unittest.TestCase):
+    def test_title_and_map_slide_with_table_and_satellite(self):
+        try:
+            import io
+            from PIL import Image
+        except ImportError:
+            self.skipTest("Pillow нужен, чтобы сделать тестовый тайл JPEG")
+        buf = io.BytesIO(); Image.new("RGB", (8, 8), (40, 90, 40)).save(buf, "JPEG"); jpeg = buf.getvalue()
+        seen = []
+        tiles = lambda z, x, y: (seen.append((z, x, y)), jpeg)[1]
+        spec = {"meta": {"object": "Проект планировки квартала", "short": "ППТ Квартал", "place": "СВАО, район Алексеевский", "date": "Сентябрь 2026"},
+                "sheets": [{"kind": "title", "size": "P", "title": "Титул"},
+                           {"size": "P", "title": "Ортофотоплан", "scale": 2000, "center": [37.65, 55.80], "basemap": "sat", "layers": [], "legend": [], "tep": [],
+                            "territory": None, "table": {"title": "Участки", "cols": [["№", .1, "left"], ["Номер", .9, "left"]], "rows": [["1", "77:02:0023014:42"]]}}]}
+        doc = print_io.build_document(spec, {}, {}, tiles)
+        self.assertEqual([p.size for p in doc.pages], [(338.67, 190.5)] * 2)
+        pages = print_io.document_pages_ops(doc, None)
+        self.assertTrue(seen and all(z >= 15 for z, _, _ in seen))                   # 1:2000 — крупные тайлы
+        self.assertTrue(any(o["op"] == "image" and "quad" in o for o in pages[1][2]))
+        texts = [o.get("text") for o in pages[1][2] if o["op"] == "text"]
+        self.assertIn("Ортофотоплан", texts)
+        self.assertIn("(СВАО, район Алексеевский)", texts)
+        self.assertIn("2", texts)                                                       # номер слайда
+        self.assertIn("77:02:0023014:42", texts)
+        self.assertTrue(print_io.render_pdf(spec, {}, {}, tiles).startswith(b"%PDF"))
+

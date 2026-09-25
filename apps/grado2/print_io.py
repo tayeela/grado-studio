@@ -16,14 +16,18 @@ from grado_layout.model import Frame
 from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
 
-SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE}
-COLUMN = {"A3": 110, "A1": 170}             # правая колонка: легенда и ТЭП
+SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE, "P": (338.67, 190.5)}   # P — слайд презентации 16:9 (13,33 × 7,5 дюйма)
+COLUMN = {"A3": 110, "A1": 170, "P": 80}    # правая колонка: легенда и ТЭП
 PX_MM = 0.26                                 # толщина с экрана (пиксели 96 dpi) → мм листа
 
 
 def layout(size):
-    """Прямоугольники листа (мм): карта, колонка легенды. Карта кончается над штампом (185×55)."""
+    """Прямоугольники листа (мм): карта, колонка легенды. Карта кончается над штампом (185×55); у слайда
+    презентации штампа нет — сверху заголовок со стрелкой и шапка проекта, снизу номер слайда."""
     w, h = SIZES[size]
+    if size == "P":
+        col = COLUMN[size]
+        return (14, 24, w - 14 - col - 6, h - 24 - 10), (w - col - 4, 24, col - 4, h - 24 - 10)
     col = COLUMN[size]
     map_rect = (25, 10, w - 5 - col - 25 - 5, h - 5 - StampFrame.H - 10 - 3)
     col_rect = (w - 5 - col, 10, col - 5, h - 5 - StampFrame.H - 10 - 3)
@@ -180,18 +184,48 @@ def linetype_ops(pts, name, k, color, width, lib):
     return out
 
 
+def tile_ops(tr, rect, scale, tiles, lat):
+    """Спутниковая подложка (тайлы Web Mercator, JPEG) под объектами листа: каждый тайл — картинка по трём углам,
+    пересчитанным в мм листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом)."""
+    fx, fy, fw, fh = rect
+    half_x, half_y = fw / 2 / tr.k * 1.25, fh / 2 / tr.k * 1.25                 # метры на местности с запасом на поворот
+    lon0, lat0 = tr.lon0, tr.lat0
+    dlon, dlat = half_x / (111320 * math.cos(math.radians(lat0))), half_y / 110540
+    mpp = scale * 0.00025                                                        # метров на пиксель тайла: ~100 dpi на листе
+    z = max(10, min(19, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
+    n = 2 ** z
+    tx = lambda lon: int((lon + 180) / 360 * n)
+    ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
+    lon_of = lambda x: x / n * 360 - 180
+    lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+    x0, x1, y0, y1 = tx(lon0 - dlon), tx(lon0 + dlon), ty(lat0 + dlat), ty(lat0 - dlat)
+    if (x1 - x0 + 1) * (y1 - y0 + 1) > 600:
+        return []
+    out = []
+    for x in range(x0, x1 + 1):
+        for y in range(y0, y1 + 1):
+            data = tiles(z, x, y)
+            if not data:
+                continue
+            tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
+            out.append({"op": "image", "data": data, "quad": (tl, trr, bl)})
+    return out
+
+
 class SketchMapFrame(Frame):
     """Карта листа из уже оформленных объектов клиента."""
 
-    def __init__(self, rect, sheet, lib, lgr_dash):
+    def __init__(self, rect, sheet, lib, lgr_dash, tiles=None):
         super().__init__(rect)
-        self.sheet, self.lib, self.lgr_dash = sheet, lib, lgr_dash
+        self.sheet, self.lib, self.lgr_dash, self.tiles = sheet, lib, lgr_dash, tiles
 
     def ops(self, ctx):
         sh, rect = self.sheet, self.rect
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
         out, labels = [{"op": "clip", "rect": tuple(rect)}], []
+        if sh.get("basemap") == "sat" and self.tiles:
+            out.extend(tile_ops(tr, rect, sh["scale"], self.tiles, sh["center"][1]))
         for layer in sh.get("layers", []):
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])
@@ -202,7 +236,11 @@ class SketchMapFrame(Frame):
                         rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
                         if not rings:
                             continue
-                        fill = None if f.get("hatch") or f.get("fill") is None else _mix(f["fill"], f.get("a"))
+                        a = f.get("a")
+                        # прозрачная заливка — не «белая»: в PDF-писателе ядра альфы нет, и полупрозрачный цвет смешивается
+                        # с белым; на спутнике такая заливка закрыла бы снимок — там рисуется только контур
+                        see_through = a is not None and (a <= .02 or (sh.get("basemap") == "sat" and a < .6))
+                        fill = None if f.get("hatch") or f.get("fill") is None or see_through else _mix(f["fill"], a)
                         out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                     "width": w, "dash": None})
                         if f.get("hatch") and f.get("fill"):
@@ -241,8 +279,11 @@ class SketchMapFrame(Frame):
         if sh.get("territory"):
             _, parts = _parts(sh["territory"])
             for poly in parts:
-                out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True, "fill": None,
-                            "stroke": (0.7, 0.15, 0.12), "width": 0.6, "dash": [4, 1.2, 0.6, 1.2]})
+                ts = sh.get("terrStyle") or {}                        # слайды раздела: граница ППТ — сплошная пурпурная
+                out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True,
+                            "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
+                            "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
+                            "dash": None if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
         for x, y, text in labels:
@@ -291,18 +332,31 @@ class SketchMapFrame(Frame):
 class ColumnFrame(Frame):
     """Правая колонка: заголовок листа, легенда вида, таблица ТЭП (что влезет по высоте)."""
 
-    def __init__(self, rect, sheet):
+    def __init__(self, rect, sheet, title=True):
         super().__init__(rect)
-        self.sheet = sheet
+        self.sheet, self.title = sheet, title
 
     def ops(self, ctx):
         x, y, w, h = self.rect
         sh, out = self.sheet, []
         yy = y + 5
-        for line in _wrap(sh.get("title", ""), int(w / 2.4)):
-            out.append({"op": "text", "x": x, "y": yy, "size": 4.2, "text": line})
-            yy += 6
-        yy += 3
+        if self.title:
+            for line in _wrap(sh.get("title", ""), int(w / 2.4)):
+                out.append({"op": "text", "x": x, "y": yy, "size": 4.2, "text": line})
+                yy += 6
+            yy += 3
+        tbl = sh.get("table")
+        if tbl and tbl.get("rows"):
+            # таблица листа (участки ЕГРН, функциональные зоны): над легендой, сколько поместится
+            room = max(0, int((h * .55) / TableFrame.ROW_H) - 1)
+            rows = tbl["rows"][:room]
+            cols = tbl.get("cols") or [("", w, "left")]
+            t = TableFrame((x, yy, w, 0), [(c[0], w * c[1], c[2]) for c in cols], rows, title=tbl.get("title", ""))
+            out.extend(t.ops(ctx))
+            yy += (len(rows) + 2) * TableFrame.ROW_H + 4
+            if len(rows) < len(tbl["rows"]):
+                out.append({"op": "text", "x": x, "y": yy - 2, "size": 2.2, "text": f"… ещё {len(tbl['rows']) - len(rows)} строк"})
+                yy += 3
         if sh.get("legend"):
             out.append({"op": "text", "x": x, "y": yy, "size": 3.2, "text": "Условные обозначения"})
             yy += 6
@@ -327,6 +381,10 @@ class ColumnFrame(Frame):
         if full:
             out.append({"op": "text", "x": x, "y": min(yy, y + h - 3), "size": 2.4, "text": "… легенда не поместилась"})
             yy += 5
+        if sh.get("note") and yy < y + h - 8:
+            for line in _wrap(sh["note"], int(w / 1.3)):
+                out.append({"op": "text", "x": x, "y": yy + 2, "size": 2.3, "text": line, "color": (0.3, 0.3, 0.3)})
+                yy += 3.4
         tep = sh.get("tep") or []
         if tep:
             yy += 3
@@ -393,7 +451,41 @@ def _swatch(x, y, kind, it):
     return out
 
 
-def build_document(spec, lib, lgr_dash):
+class SlideFrame(Frame):
+    """Оформление слайда презентации (как «ППТ …» в альбоме раздела): стрелка и заголовок слева сверху, шапка
+    проекта справа сверху, номер слайда справа снизу; у титульного слайда — название проекта крупно и дата."""
+
+    def __init__(self, page, sheet, meta):
+        super().__init__((0, 0) + tuple(page.size))
+        self.sheet, self.meta = sheet, meta
+
+    def ops(self, ctx):
+        w, h = self.rect[2], self.rect[3]
+        sh, m, out = self.sheet, self.meta, []
+        ink = (0.1, 0.1, 0.1)
+        if sh.get("kind") == "title":
+            yy = h * .36
+            for line in _wrap(m.get("object") or sh.get("title", ""), 44):
+                out.append({"op": "text", "x": 16, "y": yy, "size": 7.2, "text": line, "color": ink, "font_family": "serif"})
+                yy += 9
+            if m.get("place"):
+                out.append({"op": "text", "x": 16, "y": yy + 3, "size": 5.2, "text": f"({m['place']})", "color": ink, "font_family": "serif"})
+            if m.get("date"):
+                out.append({"op": "text", "x": 16, "y": h - 26, "size": 5.2, "text": m["date"], "color": ink, "font_family": "serif"})
+            return out
+        short = m.get("short") or m.get("object") or ""
+        if short:
+            out.append({"op": "text", "x": w - 8, "y": 9, "size": 3.4, "text": short, "color": ink, "anchor": "end", "font_family": "serif"})
+        if m.get("place"):
+            out.append({"op": "text", "x": w - 8, "y": 13.6, "size": 3.4, "text": f"({m['place']})", "color": ink, "anchor": "end", "font_family": "serif"})
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": ink, "width": .5, "dash": None,
+                    "rings": [[(0, 19), (16, 19)], [(13.5, 17.6), (16, 19), (13.5, 20.4)]]})
+        out.append({"op": "text", "x": 19, "y": 20.2, "size": 3.8, "text": sh.get("title", ""), "color": ink, "font_family": "serif"})
+        out.append({"op": "text", "x": w - 8, "y": h - 4, "size": 3.0, "text": ctx.get("page_no", ""), "color": (0.4, 0.4, 0.4), "anchor": "end"})
+        return out
+
+
+def build_document(spec, lib, lgr_dash, tiles=None):
     meta = {"object": spec.get("meta", {}).get("object", ""), "code": spec.get("meta", {}).get("code", ""),
             "stage": spec.get("meta", {}).get("stage", ""), "org": spec.get("meta", {}).get("org", "")}
     doc = Document(meta["object"] or "Альбом", meta=meta)
@@ -402,7 +494,11 @@ def build_document(spec, lib, lgr_dash):
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(SIZES[size])
         map_rect, col_rect = layout(size)
-        if sh.get("kind") == "tep":
+        if size == "P":
+            meta_p = {**meta, **(spec.get("meta") or {})}
+            page.frames = [SlideFrame(page, sh, meta_p)] if sh.get("kind") == "title" else \
+                [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
+        elif sh.get("kind") == "tep":
             w, h = SIZES[size]
             page.frames = [PageBorder(page), TepSheetFrame((25, 10, w - 25 - 10, h - 5 - StampFrame.H - 10 - 3), sh), StampFrame(page)]
         else:
@@ -412,10 +508,10 @@ def build_document(spec, lib, lgr_dash):
     return doc
 
 
-def render_pdf(spec, lib, lgr_dash):
-    return PdfBackend(None).render(document_pages_ops(build_document(spec, lib, lgr_dash), None))
+def render_pdf(spec, lib, lgr_dash, tiles=None):
+    return PdfBackend(None).render(document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None))
 
 
-def render_preview_svg(spec, lib, lgr_dash, index=0):
-    w, h, ops = document_pages_ops(build_document(spec, lib, lgr_dash), None)[index]
+def render_preview_svg(spec, lib, lgr_dash, index=0, tiles=None):
+    w, h, ops = document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None)[index]
     return render_svg(w, h, ops)

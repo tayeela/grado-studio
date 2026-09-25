@@ -74,6 +74,15 @@ SOURCES["gisogd.pzz_zones"] = ("gisogd", {"virtual90": None, "virtual130": None}
 SOURCES["gisogd.okn"] = ("gisogd", {"virtual500": None, "virtual502": None, "virtual504": None, "virtual508": None}, "Объекты культурного наследия и их зоны (ОГД)")
 SOURCES["gisogd.demolition"] = ("gisogd", {"t_1322": None}, "Уведомления о сносе (ОГД)")
 SOURCES["relief.contours"] = ("terrain", None, "Рельеф: горизонтали (SRTM)")
+# для листов раздела «Существующее положение»: утверждённая документация по планировке и административное деление
+SOURCES["gisogd.ppt"] = ("gisogd", {"ppppppt": "ПП территории", "pppppptpu": "ПП транспортно-пересадочного узла",
+                                    "ppppppulom": "ПП линейного объекта метрополитена", "ppppppulot": "ПП линейного объекта трамвая",
+                                    "pppppplois": "ПП линейного объекта инженерных сооружений",
+                                    "ppppppulouds": "ПП участка улично-дорожной сети", "ppppppulozhd": "ПП участка железной дороги",
+                                    "pptppr": "ПП по программе реновации", "ppppppt2": "ПП КРТ"}, "Проекты планировки (ОГД)")
+SOURCES["gisogd.gpzu"] = ("gisogd", {"gpzu": None}, "Градостроительные планы земельных участков (ОГД)")
+SOURCES["gisogd.krt"] = ("gisogd", {"pzz_krt_virtual": None}, "Комплексное развитие территорий (ОГД)")
+SOURCES["gisogd.admin"] = ("gisogd_admin", None, "Административные округа и районы (ОГД)")
 # ЕГКО Москвы — векторная картооснова портала ГИС ОГД (карта base2, коды сверены 23.09.2026). Значение кода — состояние
 # здания: оно идёт в поле «Состояние», как тип зоны в «Вид зоны» у функциональных зон ТиНАО.
 SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "virtual15": "строящееся", "virtual16": "разрушенное",
@@ -98,7 +107,7 @@ SOURCES["yandex.parking"] = ("yandex", ["parking_p"], "Парковки (Янд�
 SOURCES["yandex.transport"] = ("yandex", ["transport_p", "transport_way"], "Транспорт (Яндекс)")
 
 # НСПД отдаёт тяжёлые ответы в плотной застройке, ОГД режется из кэша слоя
-LIMIT_KM2 = {"nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0, "yandex": 4.0}
+LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0, "yandex": 4.0}
 
 # читаемые имена полей; остальные поля проходят как есть
 LABELS = {
@@ -300,7 +309,7 @@ def _layer(key, result):
                              **({"_clip": f["grado_clip"]} if f.get("grado_clip") else {})}}
              for f in result["features"] if f.get("geometry")]
     return {"title": SOURCES[key][2], "source": result.get("source_doc"),
-            **({"shp": True} if SOURCES[key][0] in ("gisogd", "egko") else {}),   # с v0.32 ОГД и ЕГКО — из SHP, в родных координатах
+            **({"shp": True} if SOURCES[key][0] in ("gisogd", "egko", "gisogd_admin") else {}),   # с v0.32 ОГД и ЕГКО — из SHP, в родных координатах
             "fetched_at": result.get("fetched_at") or date.today().isoformat(), "notes": result.get("notes", []),
             "features": {"type": "FeatureCollection", "features": feats}}
 
@@ -308,6 +317,55 @@ def _layer(key, result):
 MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
 EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ, еженедельно перекачивать незачем
+
+
+_TILE_LOCK = threading.Lock()
+
+
+def esri_tile(z, x, y):
+    """Тайл спутника Esri World Imagery (JPEG) для листа: с диска (~/.grado2/cache/tiles/esri, 90 дней), иначе
+    скачать по одному, с паузой 0,1 с — портал не долбим; неудача — пустое место, лист всё равно собирается."""
+    import ssl
+    import time
+    import urllib.request
+    path = CACHE / "tiles" / "esri" / f"{z}_{x}_{y}.jpg"
+    if path.exists() and time.time() - path.stat().st_mtime < 90 * 86400:
+        return path.read_bytes()
+    url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    try:
+        import certifi
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    with _TILE_LOCK:
+        for attempt in range(3):
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "grado2/1.0 (planning sheets)"})
+                with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+                    data = r.read()
+                if data[:2] != b"\xff\xd8":                 # не JPEG (заглушка или ошибка) — на лист не идёт и в кэш не пишется
+                    return None
+                atomic_write(path, data)
+                time.sleep(.1)
+                return data
+            except OSError:
+                time.sleep(1 + attempt)
+    return None
+
+
+def _point_in(g, x, y):
+    """Точка внутри Polygon / MultiPolygon GeoJSON (чётно-нечётное правило по всем кольцам)."""
+    if not g:
+        return False
+    polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"] if g["type"] == "MultiPolygon" else []
+    inside = False
+    for poly in polys:
+        for ring in poly:
+            for i in range(len(ring)):
+                (x1, y1), (x2, y2) = ring[i - 1][:2], ring[i][:2]
+                if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                    inside = not inside
+    return inside
 
 
 def fetch(bbox, keys):
@@ -389,12 +447,36 @@ def fetch(bbox, keys):
             for k in ks:
                 PROGRESS.pop(k, None)
 
+    def run_admin(k):
+        """Все округа Москвы и районы округа, в котором лежит область: для листа «Месторасположение» нужна вся
+        Москва, а не прямоугольник выгрузки. Слои портала качаются по одному (по одному слою на округ и на район)."""
+        from grado_connectors.gisogd_api import catalog
+        api, moscow, feats = GisogdApi(cache_dir=CACHE / "gisogd"), (36.8, 55.1, 38.0, 56.1), []
+        cat = catalog()
+        cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
+        home = None
+        for it in (x for x in cat if str(x.get("code", "")).startswith("prefect_")):
+            okr = it["name"]
+            for f in api.fetch(moscow, it["code"])["features"]:
+                f["_extra"] = {"Уровень": "округ", "Округ": okr, "Наименование": okr}
+                feats.append(f)
+                if home is None and _point_in(f.get("geometry"), cx, cy):
+                    home = okr
+        if home:
+            for it in (x for x in cat if x.get("type") == "layer" and f"Районы {home} /" in str(x.get("path", ""))):
+                for f in api.fetch(moscow, it["code"])["features"]:
+                    f["_extra"] = {"Уровень": "район", "Округ": home, "Наименование": it["name"]}
+                    feats.append(f)
+        layers[k] = _layer(k, {"features": feats, "source_doc": "ГИС ОГД Москвы: административные округа и районы",
+                               "notes": [] if home else ["область вне административных округов Москвы"]})
+
     def run_terrain(k):
         layers[k] = _layer(k, TerrainContours().fetch(bbox))
 
     by = lambda kind: [k for k in keys if SOURCES[k][0] == kind]
     jobs = [(by("osm"), run_osm), (by("nspd"), run_nspd)] + \
         [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd")] + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")] + \
+        [([k], lambda k=k: run_admin(k)) for k in by("gisogd_admin")] + \
         ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else []) + \
         ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else [])
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -858,7 +940,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"layers": layers, "errors": errors})
             if self.path == "/api/print/pdf":
                 import print_io
-                body = print_io.render_pdf(req, REDLN, LGR_DASH)
+                body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile)
                 self.send_response(200)
                 self.send_header("Content-Type", "application/pdf")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
@@ -867,7 +949,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.wfile.write(body)
             if self.path == "/api/print/svg":
                 import print_io
-                body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0))).encode("utf-8")
+                body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0)), esri_tile).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))

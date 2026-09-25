@@ -136,7 +136,7 @@ function setTerritory(feature) {
 }
 $("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
-const GROUP = { fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
+const GROUP = { gisogd_admin: "ГИС ОГД — административное деление", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
   egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф",
   yandex: "Яндекс Карты, для анализа и эскиза; в сдаваемые материалы не включать (область до 4 км²; первая выгрузка 1 км² — около минуты, дальше с диска)" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
@@ -219,11 +219,10 @@ async function fgLoad() {
     FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`; dataRev++;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
 }
-$("bLoad").onclick = async () => {
-  if (!TERR) return;
-  const keys = [...CHECKED];
-  if (!keys.length) return toast("Отметьте источники.");
-  const [w, s, e, n] = turf.bbox(buf(TERR, 60));
+$("bLoad").onclick = () => { if (!TERR) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], turf.bbox(buf(TERR, 60))); };
+/* выгрузка источников по прямоугольнику: кнопка «Загрузить» — граница + 60 м; листы раздела — вся площадь своих рамок */
+async function loadKeys(keys, bb) {
+  const [w, s, e, n] = bb;
   // OSM (Overpass) отвечает от секунд до минуты — отдельным запросом, чтобы остальные слои появились сразу
   // ЕГКО — тоже отдельно: первая выгрузка слоя всей Москвы идёт минутами
   // Яндекс — тоже отдельно: первая выгрузка тайлов идёт с паузами, до минуты на 1 км²

@@ -44,6 +44,11 @@ function defaultStyle(key, fc) {
     "gisogd.okn": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", colors: {}, off: [] } },
     "gisogd.demolition": { fill: "#b3261e", stroke: "#b3261e", hatch: true, width: 1.4 },
     "relief.contours": { fill: "#a0663a", width: .8, label: "Высота, м", labelSize: 10 },
+    // документация по планировке и административное деление (листы раздела «Существующее положение»)
+    "gisogd.ppt": { mode: "cat", hatch: true, width: 1.2, hatchPat: "135", cat: { field: "Вид зоны", colors: {}, off: [] } },
+    "gisogd.gpzu": { fill: "#35c2d6", stroke: "#1b8a99", width: .8, opacity: .35 },
+    "gisogd.krt": { fill: "#e0892f", stroke: "#b35d00", hatch: true, hatchPat: "45", width: 1.2 },
+    "gisogd.admin": { mode: "cat", opacity: 0, fill: "#ffffff", stroke: "#3c3c3c", width: 1, label: "Наименование", labelSize: 11, cat: { field: "Уровень", colors: { "округ": "#3c3c3c", "район": "#8a8a8a" }, off: [] } },
     // ЕГКО — картооснова: те же тона, что у зданий НСПД/OSM, улиц эскиза и воды OSM, чтобы подложка не спорила с проектом
     "egko.buildings": { fill: "#d6d1c7", stroke: "#6f6a62", width: .7, opacity: 1 },
     "egko.fences": { fill: "#5f5a52", width: .7 },
