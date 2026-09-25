@@ -149,19 +149,18 @@ function coverSheets() {
   return sh.length ? sh : [newSheet()];
 }
 function coverBox() {
-  const fs = ALBUM.frames || [];
-  const bs = [...fs.map(frameBoxWgs), ...(TERR ? [...(ALBUM.sheets.length || !fs.length ? coverSheets().map(frameBox) : []), turf.bbox(buf(TERR, 60))] : [])];
+  const own = typeof ALBUM !== "undefined" && coverSheets()[0] && ALBUM.sheets.includes(coverSheets()[0]);
+  const bs = [...(own || TERR ? coverSheets().map(frameBox) : []), ...(TERR ? [turf.bbox(buf(TERR, 60))] : [])];
   if (!bs.length) return null;
   return [Math.min(...bs.map(b => b[0])), Math.min(...bs.map(b => b[1])), Math.max(...bs.map(b => b[2])), Math.max(...bs.map(b => b[3]))];
 }
 function updateCover() {
   coverSrc.clear(); const b = coverBox(); $("bLoad").disabled = !b;
   if (!b) { $("terrInfo").textContent = "Нарисуйте лист (кнопка «Лист» на ленте) или границу территории — данные загружаются на них."; return; }
-  const n = coverSheets(), own = n[0].id && ALBUM.sheets.includes(n[0]), nf = (ALBUM.frames || []).length;
+  const n = coverSheets(), own = ALBUM.sheets.includes(n[0]);
   coverSrc.addFeature(new ol.Feature(ol.geom.Polygon.fromExtent(b).transform("EPSG:4326", "EPSG:3857")));
   const km = (b[2] - b[0]) * 111.32 * Math.cos((b[1] + b[3]) / 2 * Math.PI / 180), kmy = (b[3] - b[1]) * 110.54;
-  const what = [nf ? (nf === 1 ? "лист на карте" : `${plural(nf, ["лист", "листа", "листов"])} на карте`) : "",
-    TERR && (own || !nf) ? (own ? (n.length === 1 ? "рамку листа альбома" : `рамки ${plural(n.length, ["листа", "листов", "листов"])} альбома`) : "рамку А3 вокруг территории") : ""].filter(Boolean).join(" и ");
+  const what = own ? (n.length === 1 ? "рамку листа" : `рамки ${plural(n.length, ["листа", "листов", "листов"])}`) : "рамку листа А3 вокруг территории (листов пока нет — нарисуйте инструментом «Лист»)";
   $("terrInfo").textContent = `${TERR ? `Площадь ${fmt(TERR_M2 / 1e4, 2)} га. ` : ""}Данные загружаются на ${what}: ${fmt(km, 1)} × ${fmt(kmy, 1)} км, на карте — синий пунктир.`;
 }
 window.updateCover = updateCover;
@@ -427,11 +426,11 @@ let ogdPoll = null;
 async function exportOgd(fr) {
   const btn = $("bOgdAll");
   if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
-  const i = ALBUM.frames.indexOf(fr), [pw, ph] = (({ A4: [297, 210], A3: [420, 297], A2: [594, 420], A1: [841, 594], A0: [1189, 841] })[fr.paper] || [420, 297]);
-  const paper = fr.orient === "P" ? [ph, pw] : [pw, ph], scale = Math.round(fr.scale);
-  const sheet = { c: fr.c, w: paper[0] * fr.scale / 1000, h: paper[1] * fr.scale / 1000, paper, scale, title: `${i + 1}` };
-  const where = `листу ${i + 1} (${fr.paper.replace("A", "А")}, 1:${fmt(scale)})`;
-  try { await api("/api/ogd_all/start", { sheet, boundary: TERR?.geometry || null, name: `ОГД лист ${i + 1} ${fr.paper} 1-${scale}` }); }
+  // лист бумаги в DXF: у листа без штампа — вся бумага, у ГОСТ и слайдов — только поле карты; видовой экран — поле карты
+  const i = ALBUM.sheets.indexOf(fr), scale = Math.round(sheetScale(fr)), map = frameMM(fr), paper = isPaper(fr.size) ? paperMM(fr) : map, g = sheetMsk(fr);
+  const sheet = { c: g.c, w: g.wh[0], h: g.wh[1], paper, map, scale, title: `${i + 1}` };
+  const where = `листу ${i + 1} «${fr.title}» (${SIZE_T[fr.size] || fr.size}, 1:${fmt(scale)})`;
+  try { await api("/api/ogd_all/start", { sheet, boundary: TERR?.geometry || null, name: `ОГД ${fr.title || `лист ${i + 1}`} 1-${scale}` }); }
   catch (err) { return toast("Выгрузка не началась: " + err.message); }
   toast(`Выгрузка всех слоёв ГИС ОГД по ${where}.`);
   btn.lastChild.textContent = "Остановить";
@@ -456,7 +455,7 @@ async function exportOgd(fr) {
 window.exportOgd = exportOgd;
 $("bOgdAll").onclick = () => {
   if (ogdPoll) return exportOgd(null);
-  const fr = window.selectedFrame?.() || ALBUM.frames.at(-1);
+  const fr = window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
   if (fr) return exportOgd(fr);
   window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «DXF ГИС ОГД» над листом.");
 };

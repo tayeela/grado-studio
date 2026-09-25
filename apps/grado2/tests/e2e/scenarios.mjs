@@ -311,9 +311,15 @@ export default async p => {
   check(pdf[0] === 200 && pdf[1] > 20000, `альбом PDF: ${pdf[1]} байт`);
   // рамка листа на карте: тянется мышью, центр листа запоминается
   await p.ev(`document.querySelector("[data-shframe='0']").click(); await new Promise(r=>setTimeout(r,500)); return 1`);
-  const fp = await p.ev(`const e=FRAME.layer.getSource().getFeatures()[0].getGeometry().getExtent(), px=mMain.getPixelFromCoordinate([e[0]+(e[2]-e[0])*.3,(e[1]+e[3])/2]), r=mMain.getTargetElement().getBoundingClientRect(); return [r.left+px[0], r.top+px[1]]`);
+  // рамку рисует frames.js: выбранный лист тянется за середину
+  const fp = await p.ev(`const px=mMain.getPixelFromCoordinate(ol.proj.fromLonLat(sheetCenter(ALBUM.sheets[0]))), r=mMain.getTargetElement().getBoundingClientRect(); return [r.left+px[0], r.top+px[1]]`);
   await p.drag(fp[0], fp[1], fp[0] + 80, fp[1] - 40);
   check(await p.ev(`return !!ALBUM.sheets[0].center`), "рамка листа сдвинута мышью, лист запомнил свой центр");
+  // инструмент «Лист»: прямоугольник по карте — новый лист альбома без штампа, пропорции А3, масштаб из размера
+  const nl = await p.ev(`const r=mMain.getTargetElement().getBoundingClientRect(); $("bFrame").click(); return [r.left+r.width*.3, r.top+r.height*.3, r.left+r.width*.6, r.top+r.height*.6]`);
+  await p.drag(nl[0], nl[1], nl[2], nl[3]);
+  check(await p.ev(`const s=ALBUM.sheets.at(-1), [w,h]=frameMM(s); const ok=ALBUM.sheets.length===2 && s.size==="BA3" && s.scale>100 && Math.abs(w/h-420/297)<1e-9 && document.querySelectorAll("#sheetsBody tr[data-sh]").length===2;
+    ALBUM.sheets.pop(); redrawFrames(); return ok`), "инструмент «Лист»: новый лист альбома А3 без штампа, в таблице «Листы»");
   check(await p.ev(`$("shAdd").click(); await new Promise(r=>setTimeout(r,500)); const sel=document.querySelector("[data-sh='1'] [data-sk='view']"); sel.value="__tep"; sel.dispatchEvent(new Event("change",{bubbles:true}));
     const r=await fetch("/api/print/svg",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...albumSpec([ALBUM.sheets[1]]),index:0})}); const t=await r.text();
     ALBUM.sheets.splice(1,1); winOpen("wSheets", false); await new Promise(r=>setTimeout(r,50)); return r.status===200 && t.includes("Плотность") && !FRAME`), "лист «Таблица ТЭП» собирается; закрытое окно убирает рамку с карты");

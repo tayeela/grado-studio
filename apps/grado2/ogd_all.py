@@ -186,13 +186,16 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None):
         doc.layers.add("Рамка листа", color=5)
         msp.add_lwpolyline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], close=True, dxfattribs={"layer": "Рамка листа"})
         # лист бумаги: формат листа, видовой экран на весь лист в его масштабе (мм бумаги на метр модели = 1000 / M)
+        # map — поле карты на бумаге (мм): у листа без штампа бумага с полями, у ГОСТ и слайдов бумага = поле карты
         pw, ph = (float(v) for v in sheet["paper"])
+        mw, mh = (float(v) for v in sheet.get("map") or sheet["paper"])
         name = _BAD.sub("_", f"Лист {sheet.get('title') or ''} 1-{int(sheet['scale'])}").strip()[:60]
         lay = doc.layouts.new(name)
         lay.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
-        lay.add_viewport(center=(pw / 2, ph / 2), size=(pw, ph), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2),
+        lay.add_viewport(center=(pw / 2, ph / 2), size=(mw, mh), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2),
                          view_height=y1 - y0, dxfattribs={"layer": "Рамка листа"})
-        lay.add_lwpolyline([(0, 0), (pw, 0), (pw, ph), (0, ph)], close=True, dxfattribs={"layer": "Рамка листа"})
+        mx, my = (pw - mw) / 2, (ph - mh) / 2
+        lay.add_lwpolyline([(mx, my), (mx + mw, my), (mx + mw, my + mh), (mx, my + mh)], close=True, dxfattribs={"layer": "Рамка листа"})
         if "Layout1" in doc.layouts:                       # пустой лист по умолчанию не нужен: в чертеже один лист — наш
             doc.layouts.delete("Layout1")
     buf = io.StringIO()

@@ -19,7 +19,35 @@ from grado_render.scene import hatch_ops
 
 # слайды презентации: P — 16:9 (13,33 × 7,5 дюйма), PA4/PA3/PA2 — альбомные листы А4, А3, А2 с тем же оформлением
 SLIDES = {"P": (338.67, 190.5), "PA4": (297, 210), "PA3": (420, 297), "PA2": (594, 420)}
-SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE, **SLIDES}
+# листы без штампа (инструмент «Лист» на карте): карта на весь лист, поля по 2 % — пропорции бумаги сохраняются;
+# ориентация — поле листа orient ("P" книжная)
+PAPER = {"BA4": (297, 210), "BA3": (420, 297), "BA2": (594, 420), "BA1": (841, 594), "BA0": (1189, 841)}
+PAPER_MARGIN = 0.02
+SIZES = {"A3": A3_LANDSCAPE, "A1": A1_LANDSCAPE, **SLIDES, **PAPER}
+
+
+def page_size(size, orient=None):
+    w, h = SIZES[size]
+    return (h, w) if size in PAPER and orient == "P" else (w, h)
+
+
+class PaperFrame(Frame):
+    """Оформление листа без штампа: тонкая рамка карты и подпись в правом нижнем углу («название · М 1:…»)."""
+
+    def __init__(self, rect, sheet):
+        super().__init__(rect)
+        self.sheet = sheet
+
+    def ops(self, ctx):
+        x, y, w, h = self.rect
+        sh, ink = self.sheet, (0.1, 0.1, 0.1)
+        text = " · ".join(v for v in (sh.get("title") or "", f"М 1:{int(round(sh['scale'])):,}".replace(",", " ")) if v)
+        size = max(2.6, min(w, h) / 90)
+        tw = len(text) * size * 0.55 + size * 1.6
+        bx, by = x + w - tw - size * 0.6, y + h - size * 2.2 - size * 0.6
+        return [{"op": "path", "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]], "closed": True, "fill": None, "stroke": ink, "width": 0.35, "dash": None},
+                {"op": "path", "rings": [[(bx, by), (bx + tw, by), (bx + tw, by + size * 2.2), (bx, by + size * 2.2)]], "closed": True, "fill": (1, 1, 1), "stroke": ink, "width": 0.25, "dash": None},
+                {"op": "text", "x": bx + size * 0.8, "y": by + size * 1.5, "size": size, "text": text, "color": ink}]
 COLUMN = {"A3": 110, "A1": 170}             # правая колонка: легенда и ТЭП
 
 
@@ -33,6 +61,8 @@ def layout(size):
     """Прямоугольники листа (мм): карта, колонка легенды. Карта кончается над штампом (185×55); у слайда
     презентации штампа нет — сверху заголовок со стрелкой и шапка проекта, снизу номер слайда."""
     w, h = SIZES[size]
+    if size in PAPER:
+        return (w * PAPER_MARGIN, h * PAPER_MARGIN, w * (1 - 2 * PAPER_MARGIN), h * (1 - 2 * PAPER_MARGIN)), None
     if size in SLIDES:
         k, col = slide_k(size), (80 if w < 500 else 110)
         return (14 * k, 24 * k, w - 14 * k - col - 6, h - 34 * k), (w - col - 4, 24 * k, col - 4, h - 34 * k)
@@ -629,7 +659,14 @@ def build_document(spec, lib, lgr_dash, tiles=None):
     doc.sheet_titles = []
     for sh in spec["sheets"]:
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
-        page = Page(SIZES[size])
+        page = Page(page_size(size, sh.get("orient")))
+        if size in PAPER:
+            w, h = page.size
+            map_rect = (w * PAPER_MARGIN, h * PAPER_MARGIN, w * (1 - 2 * PAPER_MARGIN), h * (1 - 2 * PAPER_MARGIN))
+            page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), PaperFrame(map_rect, sh)]
+            doc.pages.append(page)
+            doc.sheet_titles.append(sh.get("title", ""))
+            continue
         map_rect, col_rect = layout(size)
         if size in SLIDES:
             meta_p = {**meta, **(spec.get("meta") or {})}

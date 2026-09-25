@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-25, ГРАДО 2 v0.57.0: one kind of sheet — a sheet drawn on the map is an album sheet; loading follows the sheets.**
+  - The «Лист» tool now creates an album sheet (`ALBUM.sheets`), not a separate map frame: it appears in «Листы» at once,
+    prints to PDF and exports to DXF. Every map sheet of the album is a frame on the map with grips and the bar
+    (name, format, orientation, scale, «Загрузить сюда», «DXF ГИС ОГД», preview, delete); dragging sets
+    `sheet.center`, resizing sets `sheet.scale` (any value; the table keeps a non-standard scale). Section sheets
+    (built from the territory) show dashed grey only while «Листы» is open; overview schemes, ТЭП and title sheets
+    have no frame. The old per-sheet «рамка» button now selects that sheet's frame and zooms to it.
+  - New formats «А4–А0 без штампа» (`BA4`…`BA0`, `orient` L/P): the map fills the page with 2 % margins (paper
+    proportions kept), thin frame and a caption «название · М 1:…» (print_io `PAPER`, `PaperFrame`). The tool draws
+    А3 without stamp by default, or the format of the last own sheet.
+  - DXF of a sheet: the layout page is the paper (plain sheets) or the map field (ГОСТ, slides); the viewport is the
+    map field at the sheet scale (checked: page 420 × 297, viewport 403.2 × 285.1 mm, 1:1612).
+  - «Загрузить» covers the frames of all own map sheets (plus boundary + 60 m when there is a boundary); without sheets
+    — the A3 frame around the territory. Sheets from v0.56 (`album.frames`) migrate to album sheets on open.
+
 - **2026-09-25, ГРАДО 2 v0.56.0: «Лист» — a sheet drawn on the map, the DXF of ГИС ОГД is cut by it; «Листы» button fixed.**
   - «Листы» in the header did nothing: it stands outside the «Окна» group and only that group had the click handler.
     The handler now sits on the whole header.

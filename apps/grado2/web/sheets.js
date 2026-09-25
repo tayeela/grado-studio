@@ -7,10 +7,16 @@ const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 200
 const FRAME_MM = { A3: [275, 224], A1: [636, 521] };   // размер карты на листе по ГОСТ (как layout() в print_io.py)
 // слайды: 16:9 и альбомные А4, А3, А2 с одинаковым оформлением (SLIDES в print_io.py)
 const SLIDE = { P: [338.67, 190.5], PA4: [297, 210], PA3: [420, 297], PA2: [594, 420] };
-const SIZE_T = { A3: "A3 (ГОСТ)", A1: "A1 (ГОСТ)", P: "слайд 16:9", PA4: "слайд А4", PA3: "слайд А3", PA2: "слайд А2" };
+// лист без штампа (инструмент «Лист» на карте): карта на весь лист с полями 2 %, ориентация — sheet.orient ("P" книжная)
+const PAPER = { BA4: [297, 210], BA3: [420, 297], BA2: [594, 420], BA1: [841, 594], BA0: [1189, 841] };
+const SIZE_T = { BA4: "А4 без штампа", BA3: "А3 без штампа", BA2: "А2 без штампа", BA1: "А1 без штампа", BA0: "А0 без штампа",
+  A3: "A3 (ГОСТ)", A1: "A1 (ГОСТ)", P: "слайд 16:9", PA4: "слайд А4", PA3: "слайд А3", PA2: "слайд А2" };
+const isPaper = size => size in PAPER;
+const paperMM = sheet => { const [a, b] = PAPER[sheet.size] || PAPER.BA3; return sheet.orient === "P" ? [b, a] : [a, b]; };
 const isSlide = size => size in SLIDE;
 // рамка карты в мм: как layout(), panel_rects() и photo_map_rect() в print_io.py
 function frameMM(sheet) {
+  if (isPaper(sheet.size)) return paperMM(sheet).map(v => v * .96);          // как PAPER_MARGIN в print_io.py
   if (!isSlide(sheet.size)) return FRAME_MM[sheet.size] || FRAME_MM.A3;
   const [w, h] = SLIDE[sheet.size], k = w / SLIDE.P[0], col = w < 500 ? 80 : 110, mw = w - 14 * k - col - 6, mh = h - 34 * k;
   if (sheet.part === "half") return [(mw - 6) / 2, mh - 11];
@@ -89,7 +95,7 @@ function sheetSpec(sheet) {
     legend.push({ title: pl.title, kind: pl.geom, items: items.length ? items : [{ label: pl.title, fill: st.fill, stroke: st.stroke, hatch: st.hatch, a: st.opacity }] });
   });
   const tep = sheet.tep ? tepRows(false) : [];
-  const out = { title: sheet.title, size, scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "" };
+  const out = { title: sheet.title, size, orient: sheet.orient || "L", scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "" };
   if (isSlide(size)) out.terrStyle = ["okrug", "moscow"].includes(sheet.fit) ? { stroke: "#e0158c", width: .9, fill: "#e0158c" } : { stroke: "#e0158c", width: .9 };
   if (sheet.extra === "parcels") Object.assign(out, parcelsSheet(layers));
   if (sheet.extra === "radii") radiiSheet(out);
@@ -275,7 +281,7 @@ async function albumPdf() {
   } catch (e) { toast("PDF не собран: " + e.message); } finally { busy(false); }
 }
 function renderSheets() {
-  window.updateCover?.();                  // рамки листов — это и область загрузки данных
+  window.redrawFrames?.(true);             // рамки листов на карте и область загрузки данных
   const el = $("sheetsBody"); if (!el) return;
   const m = ALBUM.meta, inp = (k, ph) => `<input type="text" data-meta="${k}" value="${esc(m[k] || "")}" placeholder="${ph}" aria-label="${ph}">`;
   const vopts = s => `<option value="" ${s.kind !== "tep" && !s.view ? "selected" : ""}>текущая карта</option>` + VIEWS.map(v => `<option value="${v.id}" ${s.kind !== "tep" && v.id === s.view ? "selected" : ""}>вид «${esc(v.name)}»</option>`).join("")
@@ -287,7 +293,7 @@ function renderSheets() {
         <td class="num">${i + 1}</td><td><input type="text" data-sk="title" value="${esc(s.title)}" aria-label="Название листа"></td>
         <td><select data-sk="size" aria-label="Формат">${Object.keys(SIZE_T).map(v => `<option value="${v}" ${v === s.size ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select></td>
         <td>${s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
-        <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${SCALES.map(v => `<option value="${v}" ${v === s.scale ? "selected" : ""}>1:${fmt(v)}</option>`).join("")}</select></td>
+        <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(s.scale && !SCALES.includes(s.scale) ? [s.scale, ...SCALES] : SCALES).map(v => `<option value="${v}" ${v === s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select></td>
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
@@ -364,8 +370,8 @@ async function addPhotoFiles(i, list) {
     toast(`Снимков добавлено: ${files.length}${geo < files.length ? `; без GPS — ${files.length - geo} (точки на карте нет, только снимок)` : ""}.`);
   } catch (e) { toast("Снимок не прочитан: " + e.message); } finally { busy(false); }
 }
-/* Рамка листа на карте (как видовой экран листа в AutoCAD): размер = карта листа × масштаб, тянется мышью.
-   Сдвиг запоминается в листе (center), без сдвига лист стоит по центру территории. */
+/* Рамки листов на карте рисует и правит frames.js (инструмент «Лист»): каждый лист-карта альбома — рамка с ручками.
+   Кнопка рамки в строке листа выбирает его рамку и показывает её на карте. */
 let FRAME = null;
 function frameGeom(sh) {
   const [fw, fh] = frameMM(sh), scale = sheetScale(sh), c = sheetCenter(sh), c3 = ol.proj.fromLonLat(c), k = 1 / Math.cos(c[1] * Math.PI / 180);
@@ -373,21 +379,10 @@ function frameGeom(sh) {
   return new ol.geom.Polygon([[[c3[0] - hx, c3[1] - hy], [c3[0] + hx, c3[1] - hy], [c3[0] + hx, c3[1] + hy], [c3[0] - hx, c3[1] + hy], [c3[0] - hx, c3[1] - hy]]]);
 }
 function showFrame(i) {
-  if (FRAME) { mMain.removeLayer(FRAME.layer); mMain.removeInteraction(FRAME.tr); FRAME = null; }
-  if (i == null || !ALBUM.sheets[i] || ["tep", "title"].includes(ALBUM.sheets[i].kind)) return;
-  const sh = ALBUM.sheets[i], f = new ol.Feature(frameGeom(sh)), scale = sheetScale(sh);
-  const layer = new ol.layer.Vector({ source: new ol.source.Vector({ features: [f] }), zIndex: 10000, style: new ol.style.Style({
-    stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 2.5 }), fill: new ol.style.Fill({ color: "rgba(26,95,180,.07)" }),
-    text: new ol.style.Text({ text: `Лист ${i + 1} «${sh.title}», ${sh.size}, 1:${fmt(scale)}\nтяните рамку, чтобы сдвинуть`, font: "600 12px system-ui, sans-serif", fill: new ol.style.Fill({ color: "#1a5fb4" }),
-      stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), overflow: true }) }) });
-  const tr = new ol.interaction.Translate({ layers: [layer] });
-  tr.on("translateend", () => { sh.center = ol.proj.toLonLat(ol.extent.getCenter(f.getGeometry().getExtent())); window.markDirty?.(); renderSheets(); });
-  mMain.addLayer(layer); mMain.addInteraction(tr); FRAME = { i, layer, tr };
-  // рамку — в ту часть карты, которую не закрывает окно «Листы» (обычно оно полосой внизу)
-  const m = mMain.getTargetElement().getBoundingClientRect(), w = $("wSheets").getBoundingClientRect(), pad = [24, 24, 24, 24];
-  if (w.top > m.top + m.height * .3) pad[2] = Math.max(24, m.bottom - w.top + 16); else if (w.bottom < m.bottom - m.height * .3) pad[0] = Math.max(24, w.bottom - m.top + 16);
-  mMain.getView().fit(f.getGeometry().getExtent(), { padding: pad, duration: 250 });
+  const sh = i == null ? null : ALBUM.sheets[i];
+  FRAME = sh && window.sheetOnMap?.(sh, true) ? { i } : null;
+  window.selectSheetFrame?.(FRAME ? sh : null, true);
 }
-// окно «Листы» закрыто — рамка с карты уходит
-new MutationObserver(() => { if ($("wSheets").hidden && FRAME) showFrame(null); }).observe($("wSheets"), { attributes: true, attributeFilter: ["hidden"] });
-window.renderSheets = renderSheets; window.hideSheetFrame = () => showFrame(null);
+// окно «Листы» закрыто — листы раздела уходят с карты (свои листы остаются)
+new MutationObserver(() => { if ($("wSheets").hidden && FRAME) showFrame(null); window.redrawFrames?.(); }).observe($("wSheets"), { attributes: true, attributeFilter: ["hidden"] });
+window.previewSheet = previewSheet; window.renderSheets = renderSheets; window.hideSheetFrame = () => showFrame(null);

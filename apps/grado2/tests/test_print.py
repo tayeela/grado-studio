@@ -26,6 +26,15 @@ def sheet(**kw):
 
 
 class Print(unittest.TestCase):
+    def test_plain_paper_sheet_fills_the_page_in_both_orientations(self):
+        for orient, size in (("L", (420, 297)), ("P", (297, 420))):
+            doc = print_io.build_document({"sheets": [sheet(size="BA3", orient=orient, title="Лист 1")]}, S.REDLN, S.LGR_DASH)
+            page = doc.pages[0]
+            self.assertEqual(tuple(page.size), size)
+            x, y, w, h = page.frames[0].rect                     # карта: поля по 2 %, пропорции бумаги
+            self.assertAlmostEqual(w / h, size[0] / size[1], places=6)
+        self.assertTrue(print_io.render_pdf({"sheets": [sheet(size="BA3", orient="P")]}, S.REDLN, S.LGR_DASH).startswith(b"%PDF"))
+
     def test_pdf_album_of_two_sheets(self):
         pdf = print_io.render_pdf({"meta": {"object": "Хорошёво"}, "sheets": [sheet(), sheet(size="A1", title="Эскиз")]}, S.REDLN, S.LGR_DASH)
         self.assertTrue(pdf.startswith(b"%PDF"))
