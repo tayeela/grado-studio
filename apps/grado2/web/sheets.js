@@ -16,6 +16,7 @@ const paperMM = sheet => { const [a, b] = PAPER[sheet.size] || PAPER.BA3; return
 const isSlide = size => size in SLIDE;
 // рамка карты в мм: как layout(), panel_rects() и photo_map_rect() в print_io.py
 function frameMM(sheet) {
+  if (sheet.rect) return [sheet.rect[2], sheet.rect[3]];                      // карта альбома по шаблону: своя рамка в мм листа
   if (isPaper(sheet.size)) return paperMM(sheet).map(v => v * .96);          // как PAPER_MARGIN в print_io.py
   if (!isSlide(sheet.size)) return FRAME_MM[sheet.size] || FRAME_MM.A3;
   const [w, h] = SLIDE[sheet.size], k = w / SLIDE.P[0], col = w < 500 ? 80 : 110, mw = w - 14 * k - col - 6, mh = h - 34 * k;
@@ -25,10 +26,11 @@ function frameMM(sheet) {
 }
 const newSheet = () => ({ id: "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), title: VIEWS.find(v => v.id === VIEW_CUR)?.name || "Существующее положение", size: "A3", view: VIEW_CUR || "", scale: 0, legend: true, tep: false });
 
-function autoScale(frame, bb) {
+function autoScale(frame, bb, exact = false) {
   if (!TERR && !bb) return 2000;
   const [w, s, e, n] = bb || turf.bbox(TERR), mx = (e - w) * 111320 * Math.cos((s + n) / 2 * Math.PI / 180), my = (n - s) * 110540, [fw, fh] = frame;
   const need = Math.max(mx / fw, my / fh) * 1000 * 1.08;
+  if (exact) return Math.ceil(need / 1000) * 1000;           // схема (Москва, округ): заполняет рамку, стандартный масштаб не нужен
   return SCALES.find(v => v >= need) || SCALES[SCALES.length - 1];
 }
 // состояние слоя в виде (или как сейчас на карте)
@@ -45,7 +47,7 @@ function viewLayers(sheet) {
 }
 const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
   : TERR ? turf.centroid(TERR).geometry.coordinates : ol.proj.toLonLat(sharedView.getCenter()));
-const sheetScale = sheet => sheet.scale || autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null);
+const sheetScale = sheet => sheet.scale || autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm);
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {
   const t = RESULT.tepNode?._tep; if (!t) return [];
@@ -54,15 +56,16 @@ function tepRows(all) {
     .concat((all ? ms : ms.slice(0, 30)).map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + m.unit]));
 }
 function sheetSpec(sheet) {
+  if (sheet.adm) return admPanelSpec(sheet);                               // схемы административного деления альбомов (albums.js)
   if (sheet.kind === "tep") return { title: sheet.title, size: sheet.size, kind: "tep", tep: tepRows(true) };
-  if (sheet.kind === "title") return { title: sheet.title, size: sheet.size, kind: "title" };
+  if (sheet.kind === "title") return { title: sheet.title, size: sheet.size, kind: "title", ...albumExtra(sheet) };
   // две карты на слайде: у каждой свои слои, рамка и масштаб; легенда общая
   if (sheet.panels) {
     const subs = sheet.panels.map(p => sheetSpec({ ...p, size: sheet.size, part: "half", legend: sheet.legend })), legend = [];
     subs.forEach(x => x.legend.forEach(g => { if (!legend.some(y => y.title === g.title)) legend.push(g); }));
     const c = TERR && turf.centroid(TERR), okr = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "округ" && safe(() => turf.booleanPointInPolygon(c, x)));
     const on = okr ? LABEL_FN.adm({ get: k => okr.properties[k] }) : "административного округа";
-    return { title: sheet.title, size: sheet.size, panels: subs.map((x, j) => ({ ...x, caption: (sheet.panels[j].caption || "").replace("{okr}", on) })), legend, note: sheet.note || "" };
+    return { title: sheet.title, size: sheet.size, panels: subs.map((x, j) => ({ ...x, caption: (sheet.panels[j].caption || "").replace("{okr}", on) })), legend, note: sheet.note || "", ...albumExtra(sheet) };
   }
   if (sheet.kind === "photos") {
     const out = sheetSpec({ ...sheet, kind: "map", part: "photo" }), pts = (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, fill: "#2e8b3a", stroke: "#ffffff", w: 5, a: 1, label: String(i + 1) } : null).filter(Boolean);
@@ -75,12 +78,14 @@ function sheetSpec(sheet) {
   const half = [fw / 2 / 1000 * scale * 1.15, fh / 2 / 1000 * scale * 1.15], c3 = ol.proj.fromLonLat(center), stretch = 1 / Math.cos(center[1] * Math.PI / 180);
   const ext = [c3[0] - half[0] * stretch, c3[1] - half[1] * stretch, c3[0] + half[0] * stretch, c3[1] + half[1] * stretch];
   const tc = TERR ? turf.centroid(TERR) : null;
+  const homeOkr = sheet.homeOkrug ? (h => h.okrug?.properties["Округ"] || h.okrug?.properties["Наименование"])(homeAdm()) : null;
   const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
   vl.slice().reverse().forEach(pl => {                                   // снизу вверх, как рисует карта
     const st = pl.style, feats = [];
     layerSrc[pl.key]?.forEachFeatureInExtent(ext, f => {
       const g = GJ.writeFeatureObject(f).geometry; if (!g) return;
       const only = sheet.only?.[pl.key]; if (only && !only.values.includes(f.get(only.field))) return;
+      if (homeOkr && pl.key === "gisogd.admin" && f.get("Уровень") === "район" && f.get("Округ") !== homeOkr) return;   // «Районы …» — только своего округа
       const lab = sheet.labelFn?.[pl.key] ? LABEL_FN[sheet.labelFn[pl.key]](f) : st.label ? f.get(st.label) : null;
       // подсветка: округ и район, в которых лежит территория
       const hl = sheet.hilite?.[pl.key] && tc && /Polygon/.test(g.type) && safe(() => turf.booleanPointInPolygon(tc, g)) ? sheet.hilite[pl.key] : null;
@@ -99,7 +104,8 @@ function sheetSpec(sheet) {
     legend.push({ title: pl.title, kind: pl.geom, items: items.length ? items : [{ label: pl.title, fill: st.fill, stroke: st.stroke, hatch: st.hatch, a: st.opacity }] });
   });
   const tep = sheet.tep ? tepRows(false) : [];
-  const out = { title: sheet.title, size, orient: sheet.orient || "L", scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "" };
+  const out = { title: sheet.title, size, orient: sheet.orient || "L", scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "",
+    ...(sheet.rect ? { rect: sheet.rect } : {}), ...albumExtra(sheet) };
   if (isSlide(size)) out.terrStyle = ["okrug", "moscow"].includes(sheet.fit) ? { stroke: "#e0158c", width: .9, fill: "#e0158c" } : { stroke: "#e0158c", width: .9 };
   if (sheet.extra === "parcels") Object.assign(out, parcelsSheet(layers));
   if (sheet.extra === "radii") radiiSheet(out);
@@ -216,7 +222,7 @@ const SEC1 = [
   { kind: "title", title: "Подготовка проекта планировки территории" },
   { title: "Месторасположение рассматриваемой территории", panels: [
     { keys: ["gisogd.admin"], fit: "moscow", caption: "Административные округа города Москвы", only: { "gisogd.admin": { field: "Уровень", values: ["округ"] } }, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } },
-    { keys: ["gisogd.admin"], fit: "okrug", caption: "Районы {okr}", callout: true, only: { "gisogd.admin": { field: "Уровень", values: ["район"] } }, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } }] },
+    { keys: ["gisogd.admin"], fit: "okrug", caption: "Районы {okr}", callout: true, only: { "gisogd.admin": { field: "Уровень", values: ["район"] } }, homeOkrug: true, hilite: { "gisogd.admin": "#f6b3d6" }, labelFn: { "gisogd.admin": "adm" } }] },
   { title: "Ортофотоплан", basemap: "sat", keys: ["gisogd.admin"], fit: "district", styles: { "gisogd.admin": { stroke: "#ffffff", labelSize: 13 } }, labelFn: { "gisogd.admin": "adm" } },
   { title: "Ортофотоплан", basemap: "sat", keys: ["osm.roads"], fit: "terr", ctx: 3, styles: { "osm.roads": { mode: "single", fill: "#f5d58a", width: 1.4, label: "Название", labelSize: 11 } }, labelMM: { "osm.roads": 2.8 },
     only: { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street", "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"] } } },
@@ -243,12 +249,18 @@ const SEC1 = [
   { title: "Схема об утверждённой и разрабатываемой документации", keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.krt", "gisogd.ppt"], fit: "terr", ctx: 2 },
   { title: "Объекты социальной инфраструктуры и радиусы обслуживания", keys: ["egko.buildings", "osm.social"], fit: "terr", pad: 700, extra: "radii" },
 ];
-async function buildSection() {
+/* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
+   (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
+async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»") {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
   const before = new Set(LYR.map(l => l.key));
-  const sheets = SEC1.map((t, i) => ({ id: "sec1_" + i, size: ALBUM.meta.slide || "P", legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
-  // административное деление — для рамок «округ» и «район» его нужно получить первым
-  if (!DATA["gisogd.admin"]) { toast("Раздел: административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], turf.bbox(buf(TERR, 60))); }
+  const sheets = tpl.map((t, i) => ({ id: prefix + i, size, legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
+  // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
+  // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 137). Область выгрузки — вся
+  // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
+  const adm = DATA["gisogd.admin"]?.fc.features || [];
+  if (adm.filter(f => f.properties["Уровень"] === "район").length < 100) {
+    toast("Административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
   sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k] && !k.startsWith("yandex.")).forEach(k => {
@@ -275,12 +287,12 @@ async function buildSection() {
   // пересборка раздела не теряет добавленные снимки
   const old = new Map(ALBUM.sheets.filter(s => s.photos).map(s => [s.kind + s.title, s.photos]));
   sheets.forEach(s => { if (s.kind === "photos") s.photos = old.get(s.kind + s.title) || []; });
-  ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith("sec1_")).concat(sheets);
+  ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith(prefix)).concat(sheets);
   // холст — опорный план: тематические слои раздела (зоны, ПЗЗ, Генплан, документация, соцобъекты) выключены — они
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
   const used = sheets.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
   tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
-  window.markDirty?.(); renderSheets(); toast(`${lost.length ? `Не загрузились после повтора: ${lost.join("; ")} — слайды с ними неполные, повторите «Раздел 1» позже. ` : ""}Раздел «Существующее положение»: ${sheets.length} слайдов, формат «${SIZE_T[ALBUM.meta.slide || "P"]}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
+  window.markDirty?.(); renderSheets(); toast(`${lost.length ? `Не загрузились после повтора: ${lost.join("; ")} — слайды с ними неполные, повторите сборку позже. ` : ""}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }
@@ -321,7 +333,7 @@ function renderSheets() {
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><span class="sp" style="flex:1"></span><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка): листы собираются по одному вместе с вами — сейчас титул и месторасположение"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }
@@ -343,6 +355,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shAdd") { ALBUM.sheets.push(newSheet()); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1); }
   if (b.id === "shPdf") albumPdf();
   if (b.id === "shSec1") buildSection();
+  if (b.id === "shPptKrt") window.buildAlbum?.("pptkrt");
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);
   if (b.dataset.shphoto) addPhotos(+b.dataset.shphoto);
   if (b.dataset.shphotox) { const i = +b.dataset.shphotox; if (confirmInline(b, `Убрать ${ALBUM.sheets[i].photos.length} снимков со слайда?`)) { ALBUM.sheets[i].photos = []; window.markDirty?.(); renderSheets(); } }

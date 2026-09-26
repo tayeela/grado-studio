@@ -114,6 +114,21 @@ class MapTransform:
         return (fx + fw / 2 + x * self.k, fy + fh / 2 - y * self.k)
 
 
+def _ring_centroid(ring):
+    """Центр тяжести кольца (мм листа) и его площадь: подпись встаёт в середину фигуры, а не в среднее её вершин
+    (у извилистой границы округа вершины скучены по краю)."""
+    a = cx = cy = 0.0
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+        cr = x1 * y2 - x2 * y1
+        a += cr
+        cx += (x1 + x2) * cr
+        cy += (y1 + y2) * cr
+    if abs(a) < 1e-9:
+        xs, ys = zip(*ring)
+        return sum(xs) / len(xs), sum(ys) / len(ys), 0.0
+    return cx / (3 * a), cy / (3 * a), abs(a) / 2
+
+
 def clip_ring(ring, rect, pad=2.0):
     """Кольцо по прямоугольнику листа (Сазерленд — Ходжмен): штриховка и заливка огромной зоны (водоохранная,
     СЗЗ на километры) считаются только в пределах рамки — иначе штриховка перебирает все её вершины на
@@ -262,8 +277,10 @@ class SketchMapFrame(Frame):
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
         out, labels, along, placed = [{"op": "clip", "rect": tuple(rect)}], [], {}, []
-        if sh.get("basemap") == "sat" and self.tiles:
-            out.extend(tile_ops(tr, rect, sh["scale"], self.tiles, sh["center"][1]))
+        if sh.get("basemap") in ("sat", "light") and self.tiles:
+            kind = sh["basemap"]
+            get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
+            out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
         for layer in sh.get("layers", []):
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])
@@ -271,6 +288,7 @@ class SketchMapFrame(Frame):
                 stroke = hex_to_rgb(f.get("stroke")) if f.get("stroke") else None
                 dash = [max(0.1, float(d) * PX_MM) for d in f["dash"]] if f.get("dash") else None   # штрих карты (пикс.) → мм
                 if kind == "poly":
+                    best = None                                                 # подпись — одна на объект: у самой большой части
                     for poly in parts:
                         rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
                         if not rings:
@@ -289,8 +307,11 @@ class SketchMapFrame(Frame):
                             out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                         "width": w, "dash": dash})
                         if f.get("label"):
-                            xs, ys = zip(*rings[0])
-                            labels.append((sum(xs) / len(xs), sum(ys) / len(ys), f["label"], f.get("ls")))
+                            c = _ring_centroid(rings[0])
+                            if best is None or c[2] > best[2]:
+                                best = c
+                    if f.get("label") and best:
+                        labels.append((best[0], best[1], f["label"], f.get("ls"), f))
                 elif kind == "line":
                     color = hex_to_rgb(f.get("lc") or f.get("stroke") or f.get("fill") or "#333333")
                     for line in parts:
@@ -326,8 +347,13 @@ class SketchMapFrame(Frame):
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
                         if f.get("label"):
-                            labels.append((x, y - 2, f["label"], f.get("ls")))
-        if sh.get("territory"):
+                            labels.append((x, y - 2, f["label"], f.get("ls"), f))
+        if sh.get("territory") and sh.get("terrPoint"):
+            # мелкая схема (вся Москва, округ): территория в доли миллиметра — точкой, как в шаблоне ППТ КРТ
+            ring = [tr.mm(*p[:2]) for p in _parts(sh["territory"])[1][0][0]]
+            cx, cy = sum(p[0] for p in ring) / len(ring), sum(p[1] for p in ring) / len(ring)
+            out.append({"op": "circle", "x": cx, "y": cy, "r": float(sh["terrPoint"]), "fill": (0, 0, 0), "stroke": None, "width": 0})
+        elif sh.get("territory"):
             _, parts = _parts(sh["territory"])
             for poly in parts:
                 ts = sh.get("terrStyle") or {}                        # слайды раздела: граница ППТ — сплошная пурпурная
@@ -380,7 +406,7 @@ class SketchMapFrame(Frame):
                 continue
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang})
-        for x, y, text, ls in labels:
+        for x, y, text, ls, f in labels:
             ls = float(ls or 2.2)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
                 continue
@@ -390,12 +416,17 @@ class SketchMapFrame(Frame):
             bw, bh = ls * .6 * max(len(ln) for ln in lines), ls * 1.2
             if not take((x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)):
                 continue
+            # оформление подписи из листа: шрифт (lf), ореол (lh, мм), цвет (lcol) — альбомы по шаблонам
+            extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
             for i, line in enumerate(lines):
-                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "color": ink, "anchor": "middle"})
+                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "anchor": "middle",
+                            "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra})
         if callout:
             out.extend(callout[1])
         out.append({"op": "unclip"})
-        if str(sh.get("size", "")).startswith("P"):
+        if sh.get("noFrame"):
+            pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
+        elif str(sh.get("size", "")).startswith("P"):
             # слайд презентации: только рамка карты — без стрелки севера и линейки (как в альбоме раздела)
             x, y, w, h = rect
             out.append({"op": "path", "closed": True, "fill": None, "stroke": (0, 0, 0), "width": 0.5, "dash": None,
@@ -684,6 +715,14 @@ def build_document(spec, lib, lgr_dash, tiles=None):
     for sh in spec["sheets"]:
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(page_size(size, sh.get("orient")))
+        if sh.get("style") == "pptkrt":                     # альбом по шаблону ППТ КРТ владельца (album_io.py)
+            import album_io
+            meta_p = {**meta, **(spec.get("meta") or {})}
+            page.frames = album_io.build_pptkrt(page, sh, meta_p, lib, lgr_dash, tiles,
+                                                lambda rect, s: SketchMapFrame(rect, s, lib, lgr_dash, tiles))
+            doc.pages.append(page)
+            doc.sheet_titles.append(sh.get("title", ""))
+            continue
         if size in PAPER:
             w, h = page.size
             map_rect = (w * PAPER_MARGIN, h * PAPER_MARGIN, w * (1 - 2 * PAPER_MARGIN), h * (1 - 2 * PAPER_MARGIN))

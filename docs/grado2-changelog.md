@@ -2,6 +2,25 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.0: album «План реализации ППТ КРТ» by the owner's PowerPoint template — title and
+  location sheets.**
+  - The owner gave two references: a ППТ КРТ template (.pptx, A3 landscape, red header) and the concept «ГК Царицыно»
+    (PDF). Decision: both as separate albums, built sheet by sheet with the owner. The Moscow scheme was already to
+    scale (checked: transform error 0.00 mm; ТАО 1 077 km², НАО 357 km² by ГИС ОГД) — the template picture is to
+    scale too; its layout is what was missing.
+  - `album_io.py`: ППТ КРТ page — header wave (image from the template, `docs/standards/albums/pptkrt-header.jpg`),
+    «ППТ КРТ … (АО, район)», red Montserrat title with arrow, page number on the red tab; title page (red block,
+    white frame). Location sheet: whole Moscow (districts thin grey, okrugs black with one label each, own okrug red),
+    own okrug with districts on the Esri light grey basemap and its name top right, dotted callout «рассматриваемая
+    территория / Район …» with leaders to both maps. Montserrat (SIL OFL, downloaded with the owner's consent from
+    JulietaUla/Montserrat) in `docs/standards/fonts`.
+  - `albums.js`: templates `PPTKRT`, button «Альбом ППТ КРТ» in «Листы»; `buildSection(tpl, prefix, size, name)`
+    generalised. Schemes (`adm`) fill their frame with an exact scale; territory drawn as a point on small-scale maps.
+  - Print: label halo (PDF text stroke), label font and colour per feature, one label per multi-part polygon at the
+    centroid of its largest part, maps without frame (`noFrame`), Esri light basemap (`esri_tile(kind="light")`).
+  - Administrative division loads districts of all okrugs over the whole of Moscow (137); «Районы …» panels keep
+    only the own okrug by «Округ».
+
 - **2026-09-26, ГРАДО 2 v0.64.1: PDF printing on the server — bundled fonts.** AEZA-GRADO has no system fonts at
   all, so `find_font` raised «не найден TTF с кириллицей» and «PDF альбома» failed on grado.tailink.tech. PT Sans and
   PT Serif (regular and bold, ParaType free licence, extracted from the macOS copies) now live in

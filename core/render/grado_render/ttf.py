@@ -19,6 +19,9 @@ _WIN_FONTS = os.path.join(_WINDIR, "Fonts")
 # шаблона ППТ КРТ (там Palatino), PT Sans — к подписям (там Arial и Tahoma). Жирные — ui-bold и serif-bold.
 BUNDLED = Path(__file__).resolve().parents[3] / "docs" / "standards" / "fonts"
 CANDIDATES = {
+    # Montserrat (SIL OFL) — заголовки и номера листов альбомов: шаблон ППТ КРТ набран им, концепция — Century Gothic
+    "sans": [str(BUNDLED / "Montserrat-Regular.ttf")],
+    "sans-bold": [str(BUNDLED / "Montserrat-Bold.ttf")],
     "ui-bold": [str(BUNDLED / "PTSans-Bold.ttf")],
     "serif-bold": [str(BUNDLED / "PTSerif-Bold.ttf")],
     "ui": [

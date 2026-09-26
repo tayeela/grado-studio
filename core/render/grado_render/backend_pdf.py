@@ -51,7 +51,7 @@ class PdfBackend:
         self._img_names = {}
 
     def _font_for(self, family):
-        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold") else "ui"
+        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold") else "ui"
         if family not in self._fonts:
             self._fonts[family] = Font(
                 self._font_paths.get(family) or find_font(family))
@@ -144,7 +144,13 @@ class PdfBackend:
                   f"{_f(x + off * ca)} {_f(y + off * sa)}")
         else:
             tm = f"1 0 0 1 {_f(x + off)} {_f(y)}"  # горизонталь — прежний путь
-        return (f"{color}BT\n/{self._font_name(family)} {_f(size)} Tf\n"
+        halo = ""
+        if o.get("halo"):
+            # ореол подписи (как «свечение» в PowerPoint): сначала обводка букв цветом фона, поверх — сами буквы
+            hc = self._color(o.get("halo_color", (1, 1, 1)), stroke=True)
+            halo = (f"q\n{hc}{_f(o['halo'] * MM2PT * 2)} w 1 j\nBT\n/{self._font_name(family)} {_f(size)} Tf\n1 Tr\n"
+                    f"{tm} Tm\n<{hexstr}> Tj\nET\nQ\n")
+        return (halo + f"{color}BT\n/{self._font_name(family)} {_f(size)} Tf\n"
                 f"{tm} Tm\n<{hexstr}> Tj\nET\n")
 
     def _page_stream(self, w, h, ops):

@@ -376,16 +376,21 @@ EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ,
 _TILE_LOCK = threading.Lock()
 
 
-def esri_tile(z, x, y):
-    """Тайл спутника Esri World Imagery (JPEG) для листа: с диска (~/.grado2/cache/tiles/esri, 90 дней), иначе
-    скачать по одному, с паузой 0,1 с — портал не долбим; неудача — пустое место, лист всё равно собирается."""
+ESRI_SERVICES = {"sat": ("esri", "World_Imagery"), "light": ("esri-light", "Canvas/World_Light_Gray_Base")}
+
+
+def esri_tile(z, x, y, kind="sat"):
+    """Тайл Esri (JPEG) для листа: спутник World Imagery или светлая серая подложка (kind="light", правая карта
+    «округ и районы» шаблона ППТ КРТ). С диска (~/.grado2/cache/tiles/<вид>, 90 дней), иначе скачать по одному,
+    с паузой 0,1 с — портал не долбим; неудача — пустое место, лист всё равно собирается."""
+    folder, service = ESRI_SERVICES.get(kind, ESRI_SERVICES["sat"])
     import ssl
     import time
     import urllib.request
-    path = CACHE / "tiles" / "esri" / f"{z}_{x}_{y}.jpg"
+    path = CACHE / "tiles" / folder / f"{z}_{x}_{y}.jpg"
     if path.exists() and time.time() - path.stat().st_mtime < 90 * 86400:
         return path.read_bytes()
-    url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+    url = f"https://server.arcgisonline.com/ArcGIS/rest/services/{service}/MapServer/tile/{z}/{y}/{x}"
     try:
         import certifi
         ctx = ssl.create_default_context(cafile=certifi.where())
@@ -584,13 +589,18 @@ def fetch(bbox, keys):
                 feats.append(f)
                 if home is None and _point_in(f.get("geometry"), cx, cy):
                     home = okr
-        if home:
-            # у ТАО, НАО и ЮЗАО папка «районы …» со строчной буквы, а в ТАО и НАО слои районов — типа virtual (26.09.2026)
-            for it in (x for x in cat if x.get("type") in ("layer", "virtual")
-                       and f"районы {home.lower()} /" in str(x.get("path", "")).lower()):
-                for f in api.fetch(moscow, it["code"])["features"]:
-                    f["_extra"] = {"Уровень": "район", "Округ": home, "Наименование": it["name"]}
-                    feats.append(f)
+        # районы всех округов: схема Москвы в шаблоне ППТ КРТ рисует их тонкой линией, листы «Районы …» отбирают районы
+        # своего округа по полю «Округ». У ТАО, НАО и ЮЗАО папка «районы …» со строчной буквы, а в ТАО и НАО слои
+        # районов — типа virtual (26.09.2026)
+        okrugs = [x["name"] for x in cat if str(x.get("code", "")).startswith("prefect_")]
+        for it in (x for x in cat if x.get("type") in ("layer", "virtual") and "районы " in str(x.get("path", "")).lower()):
+            path = str(it.get("path", "")).lower()
+            okr = next((o for o in okrugs if f"районы {o.lower()} /" in path), None)
+            if not okr:
+                continue
+            for f in api.fetch(moscow, it["code"])["features"]:
+                f["_extra"] = {"Уровень": "район", "Округ": okr, "Наименование": it["name"]}
+                feats.append(f)
         layers[k] = _layer(k, {"features": feats, "source_doc": "ГИС ОГД Москвы: административные округа и районы",
                                "notes": [] if home else ["область вне административных округов Москвы"]})
 

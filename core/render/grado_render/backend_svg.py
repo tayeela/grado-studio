@@ -12,6 +12,8 @@ _FONT_FAMILIES = {
     "ui": "Arial, sans-serif",
     "serif": "Georgia, 'Times New Roman', serif",
     "ui-bold": "'PT Sans', Arial, sans-serif",
+    "sans": "Montserrat, 'Century Gothic', Arial, sans-serif",
+    "sans-bold": "Montserrat, 'Century Gothic', Arial, sans-serif",
     "serif-bold": "'PT Serif', Georgia, serif",
     "mono": "'Courier New', monospace",
 }
@@ -91,12 +93,14 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                   f'{o["x"]:.3f} {o["y"]:.3f})"') if ang else ""
             family = o.get("font_family")
             weight = ' font-weight="bold"' if str(family or "").endswith("-bold") else ""
+            halo = (f' stroke="{_css(o.get("halo_color", (1, 1, 1)))}" stroke-width="{o["halo"] * 2:.3f}" '
+                    f'paint-order="stroke" stroke-linejoin="round"') if o.get("halo") else ""
             op_font = (font_family if family in (None, "ui") else
                        _FONT_FAMILIES.get(family, font_family))
             body.append(
                 f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
                 f'font-size="{o["size"]}" font-family="{op_font}"'
-                f'{weight} '
+                f'{weight}{halo} '
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
     body.extend("</g>" * open_groups)
