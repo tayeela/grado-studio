@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.64.1: PDF printing on the server — bundled fonts.** AEZA-GRADO has no system fonts at
+  all, so `find_font` raised «не найден TTF с кириллицей» and «PDF альбома» failed on grado.tailink.tech. PT Sans and
+  PT Serif (regular and bold, ParaType free licence, extracted from the macOS copies) now live in
+  `docs/standards/fonts` and are found first: the same sheet on Mac and server. New families `ui-bold` and
+  `serif-bold` for the album templates (PT Serif stands in for Palatino of the ППТ КРТ template).
+
 - **2026-09-26, ГРАДО 2 v0.64.0: section «Существующее положение» checked end to end on КРТ 3141 (Вороново, ТАО).**
   - Run on a copy of the owner's project, territory = КРТ 3141 (54.61 ha): 11 slides, first build 2 min 48 s, PDF
     11 pages 2.6 MB in 2 s. Found and fixed:

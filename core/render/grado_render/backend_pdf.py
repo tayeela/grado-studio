@@ -51,7 +51,7 @@ class PdfBackend:
         self._img_names = {}
 
     def _font_for(self, family):
-        family = family if family in ("ui", "serif", "mono") else "ui"
+        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold") else "ui"
         if family not in self._fonts:
             self._fonts[family] = Font(
                 self._font_paths.get(family) or find_font(family))
@@ -227,7 +227,7 @@ class PdfBackend:
                 f"{g} [{_f(f.advance(g) * scale)}]" for g in widths)
             bbox = " ".join(str(int(v * scale)) for v in f.bbox)
             base = f"GradoEmbedded{self._font_name(family)}"
-            flags = 33 if family == "mono" else (34 if family == "serif" else 32)
+            flags = 33 if family == "mono" else (34 if family.startswith("serif") else 32)
             objs[type0] = (
                 f"<< /Type /Font /Subtype /Type0 /BaseFont /{base} "
                 f"/Encoding /Identity-H /DescendantFonts [{cid} 0 R] >>"

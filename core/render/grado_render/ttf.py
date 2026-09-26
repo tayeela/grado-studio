@@ -14,8 +14,15 @@ from pathlib import Path
 # TTC намеренно не используем: минимальный парсер ниже читает только TTF.
 _WINDIR = os.environ.get("WINDIR") or os.environ.get("SystemRoot") or r"C:\Windows"
 _WIN_FONTS = os.path.join(_WINDIR, "Fonts")
+# Шрифты в составе ГРАДО (docs/standards/fonts, свободная лицензия ParaType): одинаковый вид листа на Mac и на
+# сервере, где системных шрифтов нет вовсе (AEZA-GRADO, 26.09.2026: печать PDF падала). PT Serif — к заголовкам
+# шаблона ППТ КРТ (там Palatino), PT Sans — к подписям (там Arial и Tahoma). Жирные — ui-bold и serif-bold.
+BUNDLED = Path(__file__).resolve().parents[3] / "docs" / "standards" / "fonts"
 CANDIDATES = {
+    "ui-bold": [str(BUNDLED / "PTSans-Bold.ttf")],
+    "serif-bold": [str(BUNDLED / "PTSerif-Bold.ttf")],
     "ui": [
+        str(BUNDLED / "PTSans-Regular.ttf"),
         "/System/Library/Fonts/Supplemental/Arial.ttf",
         "/System/Library/Fonts/Supplemental/Verdana.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -26,6 +33,7 @@ CANDIDATES = {
         os.path.join(_WIN_FONTS, "calibri.ttf"),
     ],
     "serif": [
+        str(BUNDLED / "PTSerif-Regular.ttf"),
         "/System/Library/Fonts/Supplemental/Georgia.ttf",
         "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
@@ -59,6 +67,8 @@ def find_font(family="ui"):
     for path in CANDIDATES[family]:
         if Path(path).exists():
             return path
+    if family.endswith("-bold"):
+        return find_font(family[:-5])
     if family != "ui":
         return find_font("ui")
     raise FontError("не найден TTF с кириллицей; укажите путь явно")

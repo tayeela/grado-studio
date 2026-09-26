@@ -11,6 +11,8 @@ _CLIP_COUNTER = [0]
 _FONT_FAMILIES = {
     "ui": "Arial, sans-serif",
     "serif": "Georgia, 'Times New Roman', serif",
+    "ui-bold": "'PT Sans', Arial, sans-serif",
+    "serif-bold": "'PT Serif', Georgia, serif",
     "mono": "'Courier New', monospace",
 }
 
@@ -88,11 +90,13 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             tf = (f' transform="rotate({math.degrees(ang):.2f} '
                   f'{o["x"]:.3f} {o["y"]:.3f})"') if ang else ""
             family = o.get("font_family")
+            weight = ' font-weight="bold"' if str(family or "").endswith("-bold") else ""
             op_font = (font_family if family in (None, "ui") else
                        _FONT_FAMILIES.get(family, font_family))
             body.append(
                 f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
-                f'font-size="{o["size"]}" font-family="{op_font}" '
+                f'font-size="{o["size"]}" font-family="{op_font}"'
+                f'{weight} '
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
     body.extend("</g>" * open_groups)
