@@ -273,10 +273,10 @@ def portal_color(css, geom=None):
     return None
 
 
-def _label(msp, xy, text, props, attrs, k=1.0):
+def _label(msp, xy, text, props, attrs):
     """Подпись ГИС ОГД (слои «Надписи …»: text, textangle, textheight) → TEXT по центру точки. Угол в ГИС ОГД идёт
-    по часовой стрелке; подпись разворачивается так, чтобы не стоять вверх ногами. Высота textheight — метры на
-    местности для М 1:2000 (2 мм на бумаге); k — во сколько раз мельче масштаб листа, чтобы на бумаге осталось 2 мм."""
+    по часовой стрелке; подпись разворачивается так, чтобы не стоять вверх ногами. Высота — textheight ГИС ОГД
+    как есть (метры на местности): подписи расставлены порталом под неё, крупнее они налезают друг на друга."""
     try:
         ang = -float(props.get("textangle") or 0)
     except (TypeError, ValueError):
@@ -286,7 +286,7 @@ def _label(msp, xy, text, props, attrs, k=1.0):
         h = float(props.get("textheight") or 0) or 4.0
     except (TypeError, ValueError):
         h = 4.0
-    t = msp.add_text(text[:250], height=h * k, rotation=ang, dxfattribs={**attrs, "style": "GISOGD"})
+    t = msp.add_text(text[:250], height=h, rotation=ang, dxfattribs={**attrs, "style": "GISOGD"})
     t.set_placement(xy, align=TextEntityAlignment.MIDDLE_CENTER)
     return t
 
@@ -311,7 +311,6 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
         doc.header["$LTSCALE"] = 1.0
         doc.styles.add_shx("red_lns.shx")
         shapes = {k.upper(): v for k, v in redln["lib"]["shapes"].items()}
-    k = max(1.0, float(sheet["scale"]) / 2000) if sheet else 1.0
     doc.styles.add("GISOGD", font="arial.ttf")             # кириллица: у стандартного txt.shx её нет
     tables = {}
     for i, layer in enumerate(layers):
@@ -332,7 +331,7 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                 text = str(props.get("text") or "").strip()
                 for x, y, *_ in ([geom["coordinates"]] if geom["type"] == "Point" else geom["coordinates"]):
                     if text:                                   # слои «Надписи …»: подпись линии на её месте
-                        ents.append(_label(msp, (x, y), text, props, attrs, k))
+                        ents.append(_label(msp, (x, y), text, props, attrs))
                     else:
                         ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:

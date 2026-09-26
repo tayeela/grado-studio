@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.59.1: ГИС ОГД labels at their own height.** Owner: labels scaled up for the sheet
+  (×4.8 at 1:9542) crowd the drawing in AutoCAD. Labels now keep textheight of ГИС ОГД as is (metres in the model);
+  the portal places them for that size.
+
 - **2026-09-26, ГРАДО 2 v0.59.0: «DXF ГИС ОГД» — technical zones in colour and dashed, СПРИТ labels as text.**
   - Layer colour from the portal CartoCSS now comes from the block of the layer's geometry type
     (`['mapnik::geometry_type'=N]`), white skipped: technical zones (l29) were white because the first colour in their
