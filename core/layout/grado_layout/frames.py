@@ -123,15 +123,27 @@ class TableFrame(Frame):
             cx += cw
             out.append(_vline(cx, yy, yy + h))
 
+        def fit(val, cw, size):
+            """Текст в ширину ячейки: шрифт мельче до 65 %, дальше — обрезка с многоточием (ширина знака ≈ 0,55 кегля)."""
+            val, room = str(val), max(1.0, cw - 3)
+            if len(val) * size * .55 <= room:
+                return val, size
+            small = max(size * .65, room / (len(val) * .55))
+            if len(val) * small * .55 <= room + 1e-6:
+                return val, small
+            n = max(1, int(room / (small * .55)) - 1)
+            return val[:n].rstrip() + "…", small
+
         def put_row(row_y, values, size):
             cx = x
-            for (header, cw, align), val in zip(self.columns, values):
+            for (header, cw, align), raw in zip(self.columns, values):
+                val, size_ = fit(raw, cw, size)
                 if align == "right":
-                    out.append(_text(cx + cw - 2, row_y, size, val, anchor="end"))
+                    out.append(_text(cx + cw - 2, row_y, size_, val, anchor="end"))
                 elif align == "center":
-                    out.append(_text(cx + cw / 2, row_y, size, val, anchor="middle"))
+                    out.append(_text(cx + cw / 2, row_y, size_, val, anchor="middle"))
                 else:
-                    out.append(_text(cx + 2, row_y, size, val))
+                    out.append(_text(cx + 2, row_y, size_, val))
                 cx += cw
 
         put_row(yy + 4.8, [c[0] for c in self.columns], 3.0)

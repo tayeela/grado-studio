@@ -85,7 +85,7 @@ async function computeConstraints() {
     // 1. ЗОУИТ и охранные зоны: каждая зона отдельно, с причиной — «почему здесь нельзя»
     if (CONS.use.zouit) {
       const out = [];
-      [["nspd.zouit", f => f.properties["Вид зоны"] || f.properties["Наименование"] || "ЗОУИТ (ЕГРН)"], ["gisogd.szz", f => f.properties["Вид зоны"] || "СЗЗ"], ["gisogd.vodookhr", () => "Водоохранная зона"],
+      [["nspd.zouit", f => f.properties["Вид зоны"] || f.properties["Наименование"] || "ЗОУИТ (ЕГРН)"], ["gisogd.szz", f => f.properties["Вид зоны"] || "СЗЗ"], ["gisogd.vodookhr", () => "Водоохранная зона"], ["gisogd.zouit", f => f.properties["Вид зоны"] || "ЗОУИТ (ОГД)"],
         ["gisogd.okn", f => /регулирован/i.test(f.properties["Вид зоны"] || "") ? null : `ОКН: ${f.properties["Вид зоны"] || "зона"}`]]
         .forEach(([k, why]) => polyFeats(k).forEach(f => { const w = why(f); if (!w) return; const c = clip(f, TERR); if (c) out.push(turf.feature(c.geometry, { "Причина": w, "Источник": DATA[k].title, "Наименование": f.properties["Наименование"] || "" })); }));
       consLayer(CK.zouit, "Запрет: ЗОУИТ и охранные зоны", turf.featureCollection(out), "poly", { mode: "cat", hatch: true, width: 1.2, cat: { field: "Причина", colors: {}, off: [] } });

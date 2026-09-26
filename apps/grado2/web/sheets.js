@@ -120,11 +120,16 @@ const placeText = () => { const tp = RESULT.tepNode ? tepParams(RESULT.tepNode) 
 // подписи листов, собранные из нескольких полей: подзона ПЗЗ — «плотность / высота / застроенность», Ф — по факту
 const codes = t => [...new Set(String(t || "").match(/\d{1,2}(\.\d{1,2}){1,3}/g) || [])];
 const wrapLab = (parts, n) => parts.reduce((ls, p) => { const l = ls[ls.length - 1]; if (l && (l + ", " + p).length <= n) ls[ls.length - 1] = l + ", " + p; else ls.push(p); return ls; }, []).join("\n");
+// Генплан: номер и индекс зоны. Старая Москва — n и fztip; ТиНАО — number_fz (ОО РР ННН: округ, район, номер зоны —
+// на схеме подписывается номер в районе) и fz_type (тип зоны); фонд ТиНАО — интервал interval_fo, тыс. м²
+const gpNum = p => p.n != null && p.n !== "" ? String(+p.n || p.n) : p.number_fz ? String(+String(p.number_fz).slice(-3) || p.number_fz) : "";
+const gpIdx = p => p.fztip || (p.fz_type != null && p.fz_type !== "" ? String(p.fz_type) : "");
+const gpFund = p => p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : p.interval_fo && p.interval_fo !== "*" ? String(p.interval_fo).replace(/\s*-\s*/, "–") : "—";
 const LABEL_FN = {
   // ПЗЗ, территориальные зоны: коды ВРИ, как на схеме 120-ПП (полные названия — в карточке объекта)
   vri: f => { const c = codes(f.get("ВРИ (коды)") || f.get("ВРИ")); return c.length ? wrapLab(c.length > 24 ? c.slice(0, 23).concat("…") : c, 26) : null; },
   // Генплан: номер функциональной зоны над индексом
-  gp: f => { const n = f.get("n"), t = f.get("fztip"); return n != null || t ? [n != null ? String(+n || n) : "", t || ""].filter(Boolean).join("\n") : null; },
+  gp: f => { const n = gpNum(f.getProperties()), t = gpIdx(f.getProperties()); return n || t ? [n, t].filter(Boolean).join("\n") : null; },
   // административное деление: округ — сокращением (СВАО), район — названием
   adm: f => f.get("Уровень") === "округ" ? OKR[String(f.get("Наименование") || "").replace(/\s*административный округ/i, "").trim()] || f.get("Наименование") : String(f.get("Наименование") || "").replace(/^район\s+/i, ""),
   pzz: f => { const p = f.get("Плотность, тыс. м²/га"), h = f.get("Высота, м"), z = f.get("Застроенность, %");
@@ -144,14 +149,17 @@ function fitBox(sheet) {
   const [w, s, e, n] = turf.bbox(TERR), k = (sheet.ctx || 1.4) / 2, cx = (w + e) / 2, cy = (s + n) / 2;
   return [cx - (e - w) * k, cy - (n - s) * k, cx + (e - w) * k, cy + (n - s) * k];
 }
+// вид права в таблице — привычными сокращениями, чтобы влезал в столбец без обрезки
+const shortRight = t => String(t).length <= 20 ? String(t) : String(t).replace(/Российской Федерации/gi, "РФ").replace(/собственность/gi, "собств.").replace(/Государственная/g, "Гос.")
+  .replace(/муниципальная/gi, "муницип.").replace(/\s+/g, " ").trim();
 // землепользование: участки ЕГРН, задевающие территорию, пронумерованы по убыванию площади; таблица — справа
 function parcelsSheet(layers) {
   const pl = (DATA["nspd.parcels"]?.fc.features || []).filter(f => { if (!/Polygon/.test(f.geometry?.type)) return false; const x = safe(() => inter(f, TERR)); return !!x && m2(x) > Math.min(50, m2(f) * .05); });
   pl.sort((a, b) => m2(b) - m2(a));
   const no = new Map(pl.map((f, i) => [f.properties["Кадастровый номер"] || i, i + 1]));
   layers.push({ title: "Номера участков", features: pl.map((f, i) => ({ g: turf.pointOnFeature(f).geometry, fill: "#ffffff", stroke: "#2b3cc4", w: 0, a: 0, label: String(i + 1) })) });
-  return { table: { title: "Земельные участки в границах проекта", cols: [["№", .07, "left"], ["Кадастровый номер", .43, "left"], ["Площадь, м²", .2, "right"], ["Вид права", .3, "left"]],
-    rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь участка, м²"] || Math.round(m2(f))), String(f.properties["Вид права"] || f.properties["Форма собственности"] || "—").slice(0, 28)]) } };
+  return { table: { title: "Земельные участки в границах проекта", cols: [["№", .06, "left"], ["Кадастровый номер", .41, "left"], ["Площадь, м²", .22, "right"], ["Вид права", .31, "left"]],
+    rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь участка, м²"] || Math.round(m2(f))), shortRight(f.properties["Вид права"] || f.properties["Форма собственности"] || "—")]) } };   // длинное печать ещё и ужмёт
 }
 const cut = (t, n) => { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 // Генплан: функциональные зоны на территории — номер, индекс, наименование, суммарный поэтажный фонд
@@ -159,7 +167,7 @@ function genplanTable(out) {
   const z = ["gisogd.func_zones", "gisogd.func_zones_tinao"].flatMap(k => DATA[k]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => { const x = inter(f, TERR); return x && m2(x) > 20; }));
   if (!z.length) return;
   out.table = { title: "Функциональные зоны на территории", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .5, "left"], ["тыс. м²", .23, "right"]],
-    rows: z.map(f => { const p = f.properties; return [String(p.n != null ? +p.n || p.n : "—"), String(p.fztip || "—"), cut(p.naimfunkzony || p["Вид зоны"] || p.name || "—", 23), p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : "—"]; }) };
+    rows: z.map(f => { const p = f.properties; return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p)]; }) };
 }
 // социальная инфраструктура: объекты OSM и их радиусы обслуживания по нормам Москвы (2151-ПП) и СП 42.13330
 function radiiSheet(out) {
@@ -169,6 +177,10 @@ function radiiSheet(out) {
   (DATA["osm.social"]?.fc.features || []).filter(f => f.geometry?.type === "Point" && R[f.properties["Вид"]]).forEach(f => {
     const c = safe(() => turf.circle(f.geometry.coordinates, R[f.properties["Вид"]] / 1000, { steps: 64 }));
     if (c) feats.push({ g: c.geometry, fill: col[f.properties["Вид"]], stroke: col[f.properties["Вид"]], w: 1, a: .06, hatch: false, label: null }); });
+  if (!feats.length) {                    // пустые обозначения радиусов вводили бы в заблуждение: говорим прямо
+    out.note = [out.note, "В OpenStreetMap в пределах листа нет школ, детских садов и поликлиник. Добавьте их точками в слой «Школы, детсады, поликлиники (OSM)» (поле «Вид»: школа, детский сад, поликлиника) — радиусы построятся сами."].filter(Boolean).join(" ");
+    return;
+  }
   out.layers.unshift({ title: "Радиусы обслуживания", features: feats });
   out.legend.push({ title: "Радиусы обслуживания", kind: "poly", items: Object.entries(R).filter(([, r]) => r).map(([k, r]) => ({ label: `${k} — ${r} м`, fill: col[k], stroke: col[k], a: .15 })) });
 }
@@ -212,8 +224,8 @@ const SEC1 = [
     // зоны ограничений — внизу бледной заливкой с контуром (альфы в PDF нет: сверху они закрыли бы здания), ОКН штриховкой
     // и красные линии — поверх
     // УДС — полигоны по осям OSM (белые с серой кромкой, поверх зон); застройка — одна, из ЕГКО
-    keys: ["nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "calc.uds_osm", "nspd.parcels", "egko.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
-    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 }, ...ROADS_WHITE } },
+    keys: ["nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "calc.uds_osm", "nspd.parcels", "egko.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
+    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 }, "gisogd.zouit": { hatch: false, opacity: .14, width: 1 }, ...ROADS_WHITE } },
   { title: "Существующее использование территории с характеристикой по землепользованию", basemap: "sat", keys: ["nspd.parcels"], fit: "terr", ctx: 1.5, extra: "parcels",
     styles: { "nspd.parcels": { mode: "single", opacity: 0, stroke: "#2b3cc4", width: 1.6, label: "" } } },
   // фотофиксация: снимки добавляет пользователь, точки съёмки берутся из GPS снимка
@@ -251,7 +263,14 @@ async function buildSection() {
     if (a <= lim * .97) return; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;
     need.set(k, [c[0] - hx, c[1] - hy, c[0] + hx, c[1] + hy]); });
   const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
-  for (const { bb, keys } of groups.values()) { keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb); }
+  // ошибки каждой выгрузки (loadKeys начинает с чистого списка) копятся здесь; упавший слой повторяется один раз
+  const failed = new Map();
+  for (const { bb, keys } of groups.values()) {
+    keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb);
+    keys.filter(k => ERRORS[k]).forEach(k => failed.set(k, { bb, why: ERRORS[k] }));
+  }
+  for (const [k, { bb }] of [...failed]) { await loadKeys([k], bb); if (!ERRORS[k]) failed.delete(k); else failed.get(k).why = ERRORS[k]; }
+  const lost = [...failed].map(([k, x]) => `«${SOURCES[k]?.title || k}» (${x.why})`);
   buildUds();
   // пересборка раздела не теряет добавленные снимки
   const old = new Map(ALBUM.sheets.filter(s => s.photos).map(s => [s.kind + s.title, s.photos]));
@@ -261,7 +280,7 @@ async function buildSection() {
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
   const used = sheets.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
   tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
-  window.markDirty?.(); renderSheets(); toast(`Раздел «Существующее положение»: ${sheets.length} слайдов, формат «${SIZE_T[ALBUM.meta.slide || "P"]}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
+  window.markDirty?.(); renderSheets(); toast(`${lost.length ? `Не загрузились после повтора: ${lost.join("; ")} — слайды с ними неполные, повторите «Раздел 1» позже. ` : ""}Раздел «Существующее положение»: ${sheets.length} слайдов, формат «${SIZE_T[ALBUM.meta.slide || "P"]}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }

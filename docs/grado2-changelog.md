@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.64.0: section «Существующее положение» checked end to end on КРТ 3141 (Вороново, ТАО).**
+  - Run on a copy of the owner's project, territory = КРТ 3141 (54.61 ha): 11 slides, first build 2 min 48 s, PDF
+    11 pages 2.6 MB in 2 s. Found and fixed:
+  - Districts of ТАО, НАО and ЮЗАО were missing (slide «Районы ТАО» empty): their portal folder is «районы …» in
+    lower case and ТАО/НАО district layers are `virtual`; the match is now case-insensitive and takes both types.
+  - A failed source vanished silently: `loadKeys` clears ERRORS, so an Overpass failure in an earlier group was lost
+    and OSM roads were missing on three slides. `buildSection` keeps errors of every group, retries each failed layer
+    once and names what still did not load.
+  - Restrictions slide had no ГИС ОГД zones in ТиНАО (Генплан «Водоохранная зона» virtual1747 is empty there). New
+    source `gisogd.zouit` — 17 СПРИТ layers (water protection, coastal and shore strips, flooding, power, communication,
+    ООЗТ, military, radio …) with «Вид зоны» and Эталон colours; a layer the portal refuses is skipped with a note
+    (`ZONES_TOLERANT`). On the restrictions slide and in the «Ограничения» window.
+  - Genplan table of ТиНАО: number from `number_fz`, index `fz_type`, fund `interval_fo` (was «—»); labels likewise.
+  - Social slide with no OSM objects now says so instead of an empty radius legend.
+  - Tables fit their cells (smaller type down to 65 %, then «…»; cadastral numbers stay whole), ownership kinds
+    abbreviated; white outlines in the legend of satellite slides drawn grey.
+
 - **2026-09-26, ГРАДО 2 v0.63.1: readiness check before real work; project versions.**
   - Check on a copy of the owner's project «Безобразово» (36 layers, sheet A1 1:5053) on the test server: opens in
     7 s, Эталон styles and label angles applied, PDF 14 s (6 272 objects), «DXF ГИС ОГД» of 34 layers 85 s — ezdxf

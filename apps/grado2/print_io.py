@@ -574,8 +574,11 @@ def _swatch(x, y, kind, it):
     if kind == "point":
         return [{"op": "circle", "x": x + 5.5, "y": y + 1.8, "r": 1.2, "fill": hex_to_rgb(fill or "#666666"), "stroke": (0.2, 0.2, 0.2), "width": 0.15}]
     rect = [[(x + 1, y), (x + 10, y), (x + 10, y + 3.6), (x + 1, y + 3.6)]]
+    edge = hex_to_rgb(stroke or fill or "#555555")
+    if min(edge) > .92:                                   # белая граница (слайды на снимке) на белой легенде не видна
+        edge = (0.6, 0.6, 0.6)
     out = [{"op": "path", "closed": True, "fill": None if it.get("hatch") else _mix(fill or "#dddddd", it.get("a", 1)),
-            "stroke": hex_to_rgb(stroke or fill or "#555555"), "width": 0.2, "dash": None, "rings": rect}]
+            "stroke": edge, "width": 0.2, "dash": None, "rings": rect}]
     if it.get("hatch") and fill:
         out.extend(hatch_ops(rect, spacing=1.0, stroke=hex_to_rgb(fill)))
     return out

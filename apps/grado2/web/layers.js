@@ -25,7 +25,7 @@ const stDefaults = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke:
 const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "egko.addresses", "egko.fences", "relief.contours",
   "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings",
   "yandex.transport", "yandex.parking", "osm.social", "yandex.roads", "osm.roads", "egko.paths", "yandex.road_edges",
-  "gisogd.okn", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.gpzu", "gisogd.krt",
+  "gisogd.okn", "nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.gpzu", "gisogd.krt",
   "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
   "gisogd.admin", "gisogd.pzz_zones", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.landuse", "yandex.landuse"];
 // застройка из разных источников — одна и та же: на холсте видна одна, по этому порядку (ЕГКО — самая полная)
@@ -59,6 +59,14 @@ function defaultStyle(key, fc) {
     "gisogd.func_zones_tinao": { mode: "cat", opacity: .8, stroke: "#3c3c3c", width: .5, cat: { field: "Вид зоны", colors: zones(NMZ), off: [] } },
     "gisogd.szz": { fill: "#4a3aa7", stroke: "#4a3aa7", hatch: true, width: 1.2 },
     "gisogd.vodookhr": { fill: "#2a78d6", stroke: "#2a78d6", hatch: true, width: 1.2 },
+    // ЗОУИТ по СПРИТ: вид зоны — цветом штриховки знака Эталона ЛГР (береговые — синим контуром знака)
+    "gisogd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: {
+      "Водоохранная зона": "#0669b2", "Прибрежная защитная полоса": "#3a86d4", "Береговая полоса": "#0018b8", "Зона затопления": "#5b8fd9",
+      "Зона сильного подтопления": "#8f63a8", "Зона умеренного подтопления": "#6fa4e0", "Зона слабого подтопления": "#5fb89c",
+      "Санитарно-защитная зона (ПЗЗ)": "#62a51b", "Зона охраняемого объекта": "#694720", "Зона военного объекта": "#e3007b",
+      "Охранная зона радиотехнического объекта": "#eb880e", "Охранная зона ООПТ": "#b8a800", "Охранная зона объектов электроэнергетики": "#eb880e",
+      "Охранная зона линий и сооружений связи": "#b8a800", "Охранная зона пунктов наблюдений": "#694720", "Охранная зона геодезических пунктов": "#694720",
+      "Особо охраняемая зелёная территория": "#009f3c" } } },
     "gisogd.red_lines": { mode: "lgr", fill: "#d7191c", width: 1.3 },
     // ПЗЗ: подзоны окрашены по предельной плотности — она задана чаще высоты (серые — не установлена или «по факту»); зоны — контуром
     "gisogd.pzz_sub": { mode: "grad", opacity: .45, stroke: "#8a5a00", width: .6, grad: { field: "Плотность, тыс. м²/га", n: 5, ramp: "brick", method: "quantile" } },

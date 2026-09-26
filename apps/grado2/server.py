@@ -72,6 +72,18 @@ for _k in ("gisogd.func_zones", "gisogd.func_zones_tinao", "gisogd.szz", "gisogd
 SOURCES["gisogd.pzz_sub"] = ("gisogd", {"virtual98": None, "virtual132": None}, "ПЗЗ: подзоны — плотность, высота, застроенность (ОГД)")
 SOURCES["gisogd.pzz_zones"] = ("gisogd", {"virtual90": None, "virtual130": None}, "ПЗЗ: территориальные зоны и ВРИ (ОГД)")
 SOURCES["gisogd.okn"] = ("gisogd", {"virtual500": None, "virtual502": None, "virtual504": None, "virtual508": None}, "Объекты культурного наследия и их зоны (ОГД)")
+# ЗОУИТ и зоны ограничений по Сводному плану (СПРИТ, раздел 11: 2.x и 3.5) — по всей Москве, включая ТиНАО; слой
+# Генплана «Водоохранная зона» (gisogd.vodookhr) в ТиНАО пуст (сверено 26.09.2026 на КРТ 3141, Вороново).
+# Слой, который портал не отдал, пропускается с пометкой — остальные зоны приходят (ZONES_TOLERANT).
+SOURCES["gisogd.zouit"] = ("gisogd", {
+    "virtual109": "Водоохранная зона", "virtual111": "Прибрежная защитная полоса", "virtual1521": "Береговая полоса",
+    "virtual2386": "Зона затопления", "virtual2385": "Зона сильного подтопления", "virtual2384": "Зона умеренного подтопления",
+    "virtual2383": "Зона слабого подтопления", "virtual115": "Санитарно-защитная зона (ПЗЗ)", "virtual13": "Зона охраняемого объекта",
+    "virtual120": "Зона военного объекта", "virtual121": "Охранная зона радиотехнического объекта", "virtual122": "Охранная зона ООПТ",
+    "virtual123": "Охранная зона объектов электроэнергетики", "virtual124": "Охранная зона линий и сооружений связи",
+    "virtual126": "Охранная зона пунктов наблюдений", "virtual3097": "Охранная зона геодезических пунктов",
+    "oozt_08_12_2017": "Особо охраняемая зелёная территория"}, "ЗОУИТ и зоны ограничений (ОГД)")
+ZONES_TOLERANT = {"gisogd.zouit"}
 SOURCES["gisogd.demolition"] = ("gisogd", {"t_1322": None}, "Уведомления о сносе (ОГД)")
 SOURCES["relief.contours"] = ("terrain", None, "Рельеф: горизонтали (SRTM)")
 # для листов раздела «Существующее положение»: утверждённая документация по планировке и административное деление
@@ -489,14 +501,24 @@ def fetch(bbox, keys):
         def tell(code, got, total, stage):
             PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage}
         api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell)
+        missed = []
         for code, zone in SOURCES[k][1].items():
-            res = api.fetch(bbox, code)
+            try:
+                res = api.fetch(bbox, code)
+            except ConnectorError as e:
+                if k not in ZONES_TOLERANT:
+                    raise
+                missed.append(f"{zone or code}: {e}")
+                continue
             doc, notes = res["source_doc"], notes + res["notes"]
             for f in res["features"]:
                 if zone:
                     f["_extra"] = {"Вид зоны": zone}
                 feats.append(f)
         PROGRESS.pop(k, None)
+        if missed and len(missed) == len(SOURCES[k][1]):
+            raise ConnectorError("; ".join(missed))
+        notes += [f"портал не отдал — {m}" for m in missed]
         if k.startswith("ogd.") and any(str((f.get("properties") or {}).get("text") or "").strip() for f in feats[:20]):
             feats = ogd_label_angles(k[4:], feats, bbox, api)     # надписи — вдоль границ своей папки
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
@@ -563,7 +585,9 @@ def fetch(bbox, keys):
                 if home is None and _point_in(f.get("geometry"), cx, cy):
                     home = okr
         if home:
-            for it in (x for x in cat if x.get("type") == "layer" and f"Районы {home} /" in str(x.get("path", ""))):
+            # у ТАО, НАО и ЮЗАО папка «районы …» со строчной буквы, а в ТАО и НАО слои районов — типа virtual (26.09.2026)
+            for it in (x for x in cat if x.get("type") in ("layer", "virtual")
+                       and f"районы {home.lower()} /" in str(x.get("path", "")).lower()):
                 for f in api.fetch(moscow, it["code"])["features"]:
                     f["_extra"] = {"Уровень": "район", "Округ": home, "Наименование": it["name"]}
                     feats.append(f)
