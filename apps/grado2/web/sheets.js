@@ -239,8 +239,9 @@ async function buildSection() {
     const cur = need.get(k); need.set(k, cur ? [Math.min(cur[0], bb[0]), Math.min(cur[1], bb[1]), Math.max(cur[2], bb[2]), Math.max(cur[3], bb[3])] : bb); }); });
   // холст: УДС Яндекса — вокруг территории (для анализа; на листы не идёт)
   ["yandex.hd_roads", "yandex.roads"].forEach(k => need.set(k, turf.bbox(buf(TERR, 400))));
-  // НСПД и Яндекс отдают не больше 4 км² за раз: рамку такого слоя сжимаем к территории (квадрат 4 км²)
-  const LIM = { nspd: 4, yandex: 4 };
+  // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую
+  // область сервер берёт по частям и склеивает
+  const LIM = { yandex: 40 };
   need.forEach((bb, k) => { const lim = LIM[k.split(".")[0]]; if (!lim) return;
     const [w, s, e, n] = bb, c = turf.centroid(TERR).geometry.coordinates, kx = 111.32 * Math.cos(c[1] * Math.PI / 180), ky = 110.54, a = (e - w) * kx * (n - s) * ky;
     if (a <= lim * .97) return; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;

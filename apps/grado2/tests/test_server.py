@@ -1,5 +1,6 @@
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -46,7 +47,7 @@ class Egko(unittest.TestCase):
             self.assertIn("ЕГКО", S.SOURCES[k][2])
         self.assertEqual(set(S.SOURCES["egko.buildings"][1]), {"virtual6", "virtual15", "virtual16", "virtual17"})
         self.assertEqual(set(S.SOURCES["egko.green"][1]), {"gazons", "forest"})
-        self.assertEqual(S.LIMIT_KM2["egko"], 25.0)
+        self.assertEqual(S.LIMIT_KM2["egko"], 150.0)
         # существующие источники ГИС ОГД не тронуты
         self.assertEqual(S.SOURCES["gisogd.pzz_sub"][1], {"virtual98": None, "virtual132": None})
 
@@ -116,9 +117,9 @@ class Yandex(unittest.TestCase):
         self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
         self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
         self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")
-        self.assertEqual(S.LIMIT_KM2["yandex"], 4.0)
-        layers, errors = S.fetch([37.5, 55.8, 37.6, 55.9], ["yandex.buildings"])
-        self.assertIn("больше допустимых 4", errors["yandex.buildings"])
+        self.assertEqual(S.LIMIT_KM2["yandex"], 40.0)
+        layers, errors = S.fetch([37.3, 55.6, 37.6, 55.9], ["yandex.buildings"])
+        self.assertIn("больше допустимых 40", errors["yandex.buildings"])
 
     def test_fetch_one_pass_and_readable_fields(self):
         from grado_connectors import yandex_vmap as yv
@@ -240,3 +241,56 @@ class PublicHost(unittest.TestCase):
             self.assertEqual(self.ask("grado.tailink.tech", "https://grado.tailink.tech"), 200)
             self.assertEqual(self.ask("grado.tailink.tech", "https://evil.example"), 403)
             self.assertEqual(self.ask("evil.example"), 403)
+
+
+class SplitArea(unittest.TestCase):
+    """Область больше, чем НСПД или Overpass отдают за раз: части по очереди, объекты склеиваются."""
+
+    def test_split_bbox_covers_area_with_small_parts(self):
+        b = (37.50, 55.70, 37.62, 55.76)                       # ~7,5 × 6,6 км
+        cells = S.split_bbox(b, 4.0)
+        self.assertTrue(all(S.bbox_km2(c) <= 4.0 for c in cells))
+        self.assertAlmostEqual(sum(S.bbox_km2(c) for c in cells), S.bbox_km2(b), places=3)
+        self.assertEqual((min(c[0] for c in cells), max(c[3] for c in cells)), (b[0], b[3]))
+
+    def test_nspd_over_limit_goes_by_parts_and_merges_duplicates(self):
+        calls = []
+
+        class FakeNspd:
+            def fetch(self, bbox, cats):
+                calls.append(tuple(bbox))
+                f = lambda key: {"type": "Feature", "grado_key": key, "geometry": {"type": "Point", "coordinates": [37.55, 55.72]},
+                                 "properties": {"cad_num": key}}
+                return {"features": [f("77:01:1"), f(f"77:01:{len(calls) + 1}")], "notes": [], "source_doc": "НСПД"}
+        with mock.patch.object(S, "NspdDirect", FakeNspd):
+            layers, errors = S.fetch([37.50, 55.70, 37.56, 55.73], ["nspd.parcels"])   # ~3,8 × 3,3 км
+        self.assertEqual(errors, {})
+        self.assertGreater(len(calls), 1)
+        keys = [f["properties"]["_key"] for f in layers["nspd.parcels"]["features"]["features"]]
+        self.assertEqual(len(keys), len(set(keys)))
+        self.assertEqual(len(keys), len(calls) + 1)             # общий для всех частей участок — один раз
+        self.assertEqual(S.PROGRESS, {})
+
+
+class AnyOgdLayer(unittest.TestCase):
+    """Любой слой каталога ГИС ОГД загружается в проект ключом «ogd.<код>» (окно «Исходные данные»)."""
+
+    def test_ogd_key_fetches_that_layer(self):
+        asked = []
+
+        class FakeApi:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                asked.append(code)
+                return {"features": [{"geometry": {"type": "Point", "coordinates": [37.6, 55.75]}, "properties": {"text": "т.з."}}],
+                        "source_doc": "ГИС ОГД", "notes": []}
+        cat = [{"code": "virtual25", "name": "Надписи технических зон", "type": "layer"}]
+        with mock.patch.object(S, "ogd_catalog", return_value=cat), mock.patch.object(S, "GisogdApi", FakeApi):
+            layers, errors = S.fetch([37.59, 55.74, 37.61, 55.76], ["ogd.virtual25", "ogd.nope"])
+        self.assertEqual(errors, {})
+        self.assertEqual(asked, ["virtual25"])
+        self.assertEqual(layers["ogd.virtual25"]["title"], "Надписи технических зон (ОГД)")
+        self.assertNotIn("ogd.nope", layers)
+        S.SOURCES.pop("ogd.virtual25", None)

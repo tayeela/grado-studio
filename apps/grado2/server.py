@@ -106,8 +106,12 @@ SOURCES["yandex.water"] = ("yandex", ["hydro_a", "hydro_l"], "Вода (Янде
 SOURCES["yandex.parking"] = ("yandex", ["parking_p"], "Парковки (Яндекс)")
 SOURCES["yandex.transport"] = ("yandex", ["transport_p", "transport_way"], "Транспорт (Яндекс)")
 
-# НСПД отдаёт тяжёлые ответы в плотной застройке, ОГД режется из кэша слоя
-LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 4.0, "osm": 25.0, "gisogd": 25.0, "egko": 25.0, "terrain": 60.0, "yandex": 4.0}
+# Предел области выгрузки. НСПД и Overpass за один запрос берут не больше TILE_KM2: область больше делится на равные
+# части, они запрашиваются по очереди, объекты склеиваются (общие для двух частей — по ключу объекта, один раз).
+# ОГД и ЕГКО режутся из кэша слоя на диске; Яндекс сам склеивает тайлы, предел у него — время первой выгрузки
+# (около минуты на 1 км²).
+LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 150.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0}
+TILE_KM2 = {"nspd": 4.0, "osm": 25.0}
 
 # читаемые имена полей; остальные поля проходят как есть
 LABELS = {
@@ -129,6 +133,30 @@ NUMERIC = {"Этажность", "Год постройки", "Площадь, �
 def bbox_km2(b):
     w, s, e, n = b
     return abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2)) * abs(n - s) * 110.54
+
+
+def split_bbox(b, tile_km2):
+    """Прямоугольник WGS84 → равные части, каждая не больше tile_km2 (с запасом 3 %)."""
+    w, s, e, n = b
+    kx = 111.32 * math.cos(math.radians((s + n) / 2))
+    side = math.sqrt(tile_km2 * 0.97)
+    nx, ny = max(1, math.ceil(abs(e - w) * kx / side)), max(1, math.ceil(abs(n - s) * 110.54 / side))
+    dx, dy = (e - w) / nx, (n - s) / ny
+    return [(w + i * dx, s + j * dy, w + (i + 1) * dx, s + (j + 1) * dy) for j in range(ny) for i in range(nx)]
+
+
+def merge_layers(parts):
+    """Слои одного источника из нескольких частей области → один слой. Объект на стыке частей приходит в обеих:
+    он берётся один раз по ключу источника (_key), без ключа — по геометрии и полям."""
+    seen, feats = set(), []
+    for p in parts:
+        for f in p["features"]["features"]:
+            sig = f["properties"].get("_key") or json.dumps([f["geometry"], f["properties"]], sort_keys=True, ensure_ascii=False)
+            if sig not in seen:
+                seen.add(sig)
+                feats.append(f)
+    notes = list(dict.fromkeys(n for p in parts for n in p.get("notes") or []))
+    return {**parts[0], "notes": notes, "features": {"type": "FeatureCollection", "features": feats}}
 
 
 def clean_props(props, extra=None, only_labeled=False):
@@ -382,7 +410,16 @@ def _point_in(g, x, y):
 
 
 def fetch(bbox, keys):
-    """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors)."""
+    """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors).
+    Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»)."""
+    for k in keys:
+        if k.startswith("ogd.") and k not in SOURCES:
+            try:
+                it = next((x for x in ogd_catalog() if x.get("code") == k[4:] and x.get("type") in ("layer", "virtual")), None)
+            except ConnectorError:
+                it = None
+            if it:
+                SOURCES[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
     keys = [k for k in keys if k in SOURCES]
     area = bbox_km2(bbox)
     layers, errors = {}, {}
@@ -391,6 +428,29 @@ def fetch(bbox, keys):
         if area > lim:
             errors[k] = f"область {area:.1f} км² больше допустимых {lim:g} км² для источника"
     keys = [k for k in keys if k not in errors]
+    split = [k for k in keys if area > TILE_KM2.get(SOURCES[k][0], float("inf"))]
+    keys = [k for k in keys if k not in split]
+
+    def run_split(ks):
+        """Область больше, чем источник отдаёт за раз: части по очереди, объекты склеиваются."""
+        cells = split_bbox(bbox, TILE_KM2[SOURCES[ks[0]][0]])
+        parts = {k: [] for k in ks}
+        try:
+            for i, cell in enumerate(cells):
+                for k in ks:
+                    PROGRESS[k] = {"title": SOURCES[k][2], "got": i, "total": len(cells), "stage": "cells"}
+                got, bad = fetch(cell, ks)
+                for k in ks:
+                    if k in bad:
+                        errors.setdefault(k, f"часть {i + 1} из {len(cells)}: {bad[k]}")
+                    elif k in got:
+                        parts[k].append(got[k])
+            for k in ks:
+                if k not in errors and parts[k]:
+                    layers[k] = merge_layers(parts[k])
+        finally:
+            for k in ks:
+                PROGRESS.pop(k, None)
 
     def run_osm():
         osm_keys = [k for k in keys if SOURCES[k][0] == "osm"]
@@ -422,6 +482,15 @@ def fetch(bbox, keys):
                 feats.append(f)
         PROGRESS.pop(k, None)
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
+
+    def run_ogd(ks):
+        """Слои портала, выбранные в окне «Исходные данные», — по очереди: портал не долбим параллельно."""
+        for k in ks:
+            try:
+                run_gisogd(k)
+            except ConnectorError as e:
+                PROGRESS.pop(k, None)
+                errors[k] = str(e)
 
     def run_egko(ks):
         """ЕГКО — по очереди, один слой за другим: первая выгрузка газонов — 1,3 ГБ, портал не долбим параллельно."""
@@ -488,10 +557,14 @@ def fetch(bbox, keys):
 
     by = lambda kind: [k for k in keys if SOURCES[k][0] == kind]
     jobs = [(by("osm"), run_osm), (by("nspd"), run_nspd)] + \
-        [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd")] + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")] + \
+        [([k], lambda k=k: run_gisogd(k)) for k in by("gisogd") if not k.startswith("ogd.")] + \
+        ([(ogd, lambda: run_ogd(ogd))] if (ogd := [k for k in by("gisogd") if k.startswith("ogd.")]) else []) + [([k], lambda k=k: run_terrain(k)) for k in by("terrain")] + \
         [([k], lambda k=k: run_admin(k)) for k in by("gisogd_admin")] + \
         ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else []) + \
-        ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else [])
+        ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else []) + \
+        [(ks, lambda ks=ks: run_split(ks)) for ks in ([k for k in split if SOURCES[k][0] == kind] for kind in TILE_KM2) if ks]
+    if not jobs:
+        return layers, errors
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         for job_keys, fut in [(ks, pool.submit(fn)) for ks, fn in jobs]:
             try:

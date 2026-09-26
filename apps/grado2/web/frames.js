@@ -62,7 +62,7 @@
       // перерисовывалась после ввода (25.09.2026, Яндекс Браузер)
       + `<label title="Масштаб листа: впишите число или тяните угол рамки">1:<input data-k="scale" value="${sc}" inputmode="numeric"></label>`
       + `<select data-k="scale" class="sc" aria-label="Типовой масштаб" title="Типовой масштаб"><option value="">▾</option>${ROUND.map(v => `<option value="${v}">1:${fmt(v)}</option>`).join("")}</select>`
-      + `<span class="vs"></span><button class="btn" data-a="load" title="Загрузить отмеченные в окне «Данные» источники на этот лист"><i data-lucide="download"></i>Загрузить сюда</button>`
+      + `<span class="vs"></span><button class="btn" data-a="load" title="Выбрать, что загрузить на этот лист: окно «Исходные данные»"><i data-lucide="download"></i>Загрузить сюда</button>`
       + `<button class="btn primary" data-a="ogd" title="Все слои ГИС ОГД внутри листа — чертёж DXF в МСК: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном 1:${fmt(sc)}"><i data-lucide="file-down"></i>DXF ГИС ОГД</button>`
       + `<button class="tb" data-a="prev" title="Просмотр листа (окно «Листы»)"><i data-lucide="eye"></i></button>`
       + `<button class="tb" data-a="del" title="Удалить лист (Del)"><i data-lucide="trash-2"></i></button>`;
@@ -103,8 +103,7 @@
     toast(`Лист ${i + 1} «${sh.title}» удалён.`);
   }
   function loadHere(sh) {
-    if (!CHECKED.size) { winOpen("wData", true); return toast("Отметьте источники в окне «Данные» — затем «Загрузить сюда» на листе или «Загрузить» в окне."); }
-    loadKeys([...CHECKED], frameBox(sh));
+    window.openSources({ fr: sh });              // окно «Исходные данные»: что загрузить на этот лист
   }
   window.selectedFrame = () => SELF;
   window.selectSheetFrame = (sh, fit) => {

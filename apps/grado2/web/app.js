@@ -174,23 +174,26 @@ $("bDraw").onclick = () => setTool("terr");
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
 const GROUP = { gisogd_admin: "ГИС ОГД — административное деление", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
   egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф",
-  yandex: "Яндекс Карты, для анализа и эскиза; в сдаваемые материалы не включать (область до 4 км²; первая выгрузка 1 км² — около минуты, дальше с диска)" };
+  yandex: "Яндекс Карты, для анализа и эскиза; в сдаваемые материалы не включать (область до 40 км²; первая выгрузка 1 км² — около минуты, дальше с диска)" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
 const histText = d => { const h = d.history || [], x = h[h.length - 1]; return h.length > 1 && x.added != null ? ` · выгрузок ${h.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
+/* окно «Данные»: что уже в проекте — по группам источников, с числом объектов, датой и ошибкой выгрузки. Выбор
+   источников — окно «Исходные данные» (ogdpick.js), кнопка «Выбрать и загрузить…» */
 function renderSources() {
-  const groups = {}; Object.entries(SOURCES).forEach(([k, s]) => (groups[s.kind] ||= []).push(k));
+  Object.keys(DATA).filter(k => k.startsWith("ogd.") && !SOURCES[k]).forEach(k => { SOURCES[k] = { title: DATA[k].title, kind: "gisogd" }; });
+  const groups = {}; Object.entries(SOURCES).filter(([k]) => DATA[k] || ERRORS[k]).forEach(([k, s]) => (groups[s.kind] ||= []).push(k));
   const stale = (window.STALE_OGD || []).filter(k => DATA[k] && !DATA[k].shp);
   $("srcList").innerHTML = (stale.length ? `<div class="note warn">${stale.map(k => "«" + esc(DATA[k].title) + "»").join(", ")} ${stale.length === 1 ? "выгружен" : "выгружены"} до v0.32 и ${stale.length === 1 ? "стоит" : "стоят"} на ~7,7 м в стороне (портал отдавал смещённый GeoJSON). Ваши правки объектов сохранятся. <button class="btn" id="bStale">Выгрузить заново</button></div>` : "")
     + Object.entries(groups).map(([g, ks]) => `<div class="src"><div class="srch"><i data-lucide="database"></i><b>${esc(GROUP[g] || g)}</b></div>` + ks.map(k => {
     const d = DATA[k], e = ERRORS[k];
-    return `<label class="lr"><input type="checkbox" data-src="${esc(k)}" ${CHECKED.has(k) ? "checked" : ""}><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></label>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${esc(d.fetched_at)}${esc(histText(d))}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
-  }).join("") + `</div>`).join("") + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
+    return `<div class="lr"><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></div>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${esc(d.fetched_at)}${esc(histText(d))}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
+  }).join("") + `</div>`).join("") + (Object.keys(groups).length ? "" : `<div class="note">В проекте пока нет загруженных данных. «Выбрать и загрузить…» — окно всех источников: ЕГРН, ГИС ОГД (все слои портала), ЕГКО, OpenStreetMap, Яндекс, рельеф.</div>`) + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
     + `<div id="fgBox">${fgHTML()}</div>`
     + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В графе анализа слои доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
   icons();
 }
 $("srcList").addEventListener("click", e => {
-  if (e.target.closest("#bStale")) { CHECKED.clear(); (window.STALE_OGD || []).forEach(k => CHECKED.add(k)); renderSources(); $("bLoad").click(); }
+  if (e.target.closest("#bStale")) { const b = coverBox(); if (b) loadKeys((window.STALE_OGD || []).filter(k => DATA[k]), b); }
 });
 $("srcList").addEventListener("change", e => {
   const k = e.target.dataset.src; if (k) e.target.checked ? CHECKED.add(k) : CHECKED.delete(k);
@@ -255,7 +258,8 @@ async function fgLoad() {
     FG.msg = `Загружено слоёв: ${Object.keys(r.layers).length - empty.length}, объектов в области: ${n2}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`; dataRev++;
   } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { busy(false); renderSources(); }
 }
-$("bLoad").onclick = () => { const b = coverBox(); if (!b) return; if (!CHECKED.size) return toast("Отметьте источники."); return loadKeys([...CHECKED], b); };
+$("bLoad").onclick = () => window.openSources();
+window.renderSources = renderSources;
 /* выгрузка источников по прямоугольнику: кнопка «Загрузить» — граница + 60 м; листы раздела — вся площадь своих рамок */
 async function loadKeys(keys, bb) {
   const [w, s, e, n] = bb;
@@ -269,12 +273,13 @@ async function loadKeys(keys, bb) {
   const epoch = window.PROJ_EPOCH; let dropped = false;
   const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
   hint();
-  // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ): сервер сообщает ход, показываем процент
+  // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ), НСПД и OSM большую область берут по частям: сервер
+  // сообщает ход, показываем его
   const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0);
-  const poll = (rest.some(k => SOURCES[k]?.kind === "gisogd") || egko.length || yandex.length) && setInterval(async () => {
+  const poll = setInterval(async () => {
     try { const pr = Object.values(await api("/api/progress")); if (!pr.length || !pending.size) return;
       const ya = pr.filter(x => x.stage === "tiles"), big = pr.filter(x => x.stage !== "tiles");
-      window.setHint?.([big.length ? "Первая выгрузка слоя целиком: " + big.map(x => `«${x.title}» — ${x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке" : !x.got ? "портал готовит файл (у крупных слоёв ЕГКО — до нескольких минут)" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") : "",
+      window.setHint?.([big.length ? (big.every(x => x.stage === "cells") ? "Большая область, выгрузка по частям: " : "Первая выгрузка слоя целиком: ") + big.map(x => `«${x.title}» — ${x.stage === "cells" ? `часть ${x.got + 1} из ${x.total}` : x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке" : !x.got ? "портал готовит файл (у крупных слоёв ЕГКО — до нескольких минут)" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") : "",
         ya.length ? `Яндекс: тайлы ${ya[0].got} из ${ya[0].total}` : ""].filter(Boolean).join(". ") + ". Работать можно дальше."); } catch { }
   }, 800);
   await Promise.all(parts.map(async part => {
@@ -470,10 +475,11 @@ function watchOgd() {
 }
 $("bOgdAll").dataset.title = $("bOgdAll").title;
 api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { });   // открыли страницу во время выгрузки
+window.ogdFrame = () => window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
 window.runOgd = runOgd; window.exportOgd = fr => ogdPoll ? runOgd(null) : window.openOgdPicker(fr);   // сначала окно выбора слоёв (ogdpick.js)
 $("bOgdAll").onclick = () => {
   if (ogdPoll) return runOgd(null);
-  const fr = window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
+  const fr = window.ogdFrame();
   if (fr) return window.exportOgd(fr);
   window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «DXF ГИС ОГД» над листом.");
 };

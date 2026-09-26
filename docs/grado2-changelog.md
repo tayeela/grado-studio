@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.60.0: one «Исходные данные» window; large areas loaded by parts.**
+  - `web/ogdpick.js` is now the single source picker: one tree — ЕГРН · НСПД, ГИС ОГД curated sets, all 716 layers of
+    the ГИС ОГД portal in its order (key `ogd.<code>`), ЕГКО, OpenStreetMap, Яндекс, relief; search, folder checkboxes,
+    object counts of portal layers in the area. Buttons «Загрузить в проект» (sheet or coverage of all sheets) and
+    «DXF ГИС ОГД» (portal layers, sheet). Opened by «Выбрать и загрузить…» in «Данные», «Загрузить сюда» on a sheet
+    and «DXF ГИС ОГД». Selection lives in CHECKED (saved with the project); the former DXF choice
+    (`ALBUM.meta.ogdCodes`) is taken over. «Данные» lists what is already in the project, without checkboxes.
+  - Server: any catalog layer loads by `ogd.<code>` (registered in SOURCES on first use, loaded one after another).
+  - Area limits: НСПД and Overpass over TILE_KM2 (4 and 25 km²) are fetched in equal parts one by one and merged
+    (`split_bbox`, `merge_layers`: object on a seam once, by `_key`); progress «часть i из n». Limits now 150 km²
+    (Яндекс 40 km²: it glues tiles itself, the limit is the first-load time). Sheets no longer shrink the НСПД frame.
+
 - **2026-09-26, ГРАДО 2 v0.59.1: ГИС ОГД labels at their own height.** Owner: labels scaled up for the sheet
   (×4.8 at 1:9542) crowd the drawing in AutoCAD. Labels now keep textheight of ГИС ОГД as is (metres in the model);
   the portal places them for that size.

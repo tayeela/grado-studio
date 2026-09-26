@@ -197,3 +197,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   sources, roads hidden under zones). Now a reference plan with one buildings layer and УДС polygons; «Упорядочить слои».
   Open: the ОКН legend shows a category «0» (portal value without a zone name); УДС polygons are not dissolved, so a white
   road with an edge would show seams — on slides they are drawn without an edge.
+
+- 2026-09-26 (v0.60.0): one window for source data. Choosing what to load and what goes to the ГИС ОГД DXF happens
+  in a single tree («Исходные данные»), opened from «Данные», from a sheet and from «DXF ГИС ОГД»; the «Данные»
+  window only shows what the project already has.
