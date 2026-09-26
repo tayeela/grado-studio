@@ -2,6 +2,8 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.3: okrug map without basemap tiles — white outside the okrug** (owner).
+
 - **2026-09-26, ГРАДО 2 v0.65.2: okrug map of the location sheet as in the template.** Owner: the right scheme is
   wrong, check the template. The template shows a detailed colour base map inside the okrug (grey buildings, green,
   blue water, white streets) and a washed-out one outside, district boundaries in black. Now: `print_io.egko_ops`

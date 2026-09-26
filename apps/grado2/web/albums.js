@@ -37,7 +37,7 @@ const okrAbbr = f => f ? LABEL_FN.adm({ get: k => f.properties[k] }) : "";
 
 /* Карта административного деления в шаблоне ППТ КРТ. adm: "moscow" — вся Москва: районы тонко серым, округа чёрным
    с подписями, свой округ красным с заливкой; "okrug" — свой округ: внутри цветная картооснова ЕГКО (рисует сервер
-   по маске mask), снаружи бледная подложка, районы чёрным с названиями, контур округа жирно — как в шаблоне.
+   по маске mask), снаружи белый фон, районы чёрным с названиями, контур округа жирно — как в шаблоне.
    Территория — точкой (terrPoint): в масштабе Москвы она меньше миллиметра. */
 function admPanelSpec(p) {
   const { adm, okrug } = homeAdm(), abbr = okrAbbr(okrug), scale = sheetScale(p), center = sheetCenter(p);
@@ -79,7 +79,7 @@ const PPTKRT = [
   { kind: "title", style: "pptkrt", title: "Титульный лист" },
   { style: "pptkrt", title: "Месторасположение рассматриваемой территории", legend: false, callout: true, panels: [
     { keys: ["gisogd.admin"], adm: "moscow", fit: "moscow", rect: [25, 48, 174, 229], noFrame: true },
-    { keys: ["gisogd.admin"], adm: "okrug", fit: "okrug", rect: [212, 48, 188, 229], basemap: "light", okrugTitle: true, noFrame: true }] },
+    { keys: ["gisogd.admin"], adm: "okrug", fit: "okrug", rect: [212, 48, 188, 229], okrugTitle: true, noFrame: true }] },   // за округом — белый фон (владелец)
 ];
 
 async function buildAlbum(kind) {
