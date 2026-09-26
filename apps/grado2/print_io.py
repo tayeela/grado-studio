@@ -284,7 +284,7 @@ class SketchMapFrame(Frame):
                             # узор штриховки слоя: одно направление или сетка из двух; шаг — как на карте (Эталон ЛГР: 2 мм)
                             step = max(0.8, float(f["hs"]) * PX_MM) if f.get("hs") else 1.6
                             for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(f.get("hp"), (45,)):
-                                out.extend(hatch_ops(rings, spacing=step, stroke=hex_to_rgb(f["fill"]), angle=ang, width=max(0.1, w * .6)))
+                                out.extend(hatch_ops(rings, spacing=step, stroke=hex_to_rgb(f["fill"]), angle=ang, width=0.13))   # тонкая, как на карте
                         if fill or (stroke and f.get("w", 1) > 0):          # контур поверх штриховки, как на карте
                             out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
                                         "width": w, "dash": dash})

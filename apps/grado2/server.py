@@ -908,10 +908,35 @@ def atomic_write(path, body):
         raise
 
 
+VERSIONS_KEEP = 40                                    # прежних версий на проект (сжатых, ~3 МБ каждая)
+VERSIONS_EVERY = {True: 3600, False: 600}             # не чаще: автосохранение — раз в час, «Сохранить» — раз в 10 мин
+
+
+def keep_version(path, auto):
+    """Прежний файл проекта перед перезаписью — в .versions/<проект>/ГГГГММДД-ЧЧММ.grado2.gz (последние 40).
+    Защита от ошибки в работе: удалённый слой, испорченная правка, чужая вкладка. С сервера копия не уходит."""
+    import gzip
+    import time as _t
+    if not path.exists():
+        return
+    d = PROJECTS / ".versions" / path.stem
+    old = sorted(d.glob("*.grado2.gz")) if d.exists() else []
+    if old and _t.time() - old[-1].stat().st_mtime < VERSIONS_EVERY[auto]:
+        return
+    stamp = _t.strftime("%Y%m%d-%H%M", _t.localtime(path.stat().st_mtime))
+    atomic_write(d / f"{stamp}.grado2.gz", gzip.compress(path.read_bytes(), 6))
+    for p in sorted(d.glob("*.grado2.gz"))[:-VERSIONS_KEEP]:
+        p.unlink(missing_ok=True)
+
+
 def save_project(name, body):
     json.loads(body)                                  # в файл идёт только целый JSON
     path = project_path(name)
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
+        try:
+            keep_version(path, name == AUTOSAVE)
+        except OSError:
+            pass                                      # версия не записалась — сохранение важнее
         atomic_write(path, body)
     return path
 

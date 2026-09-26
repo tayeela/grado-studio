@@ -332,8 +332,11 @@ function styleFor(l, f, res) {
    сохраняется с проектом, дальше оформление ваше. Линии с кодом линии ГИС ОГД — знаками ЛГР (REDLN97). */
 // Оформление, которое владелец задал слою сам (земельные участки — синий контур), сервер отдаёт с номером правки rev:
 // слой, оформленный по прежней правке, перекрашивается один раз заново
+let portalRun = null;                  // один проход за раз: проект открывается и догружается почти одновременно
 async function portalStyles() {
-  await portalStylesOnce(); await labelAngles();
+  if (portalRun) return portalRun;
+  portalRun = (async () => { try { await portalStylesOnce(); await labelAngles(); } finally { portalRun = null; } })();
+  return portalRun;
 }
 async function portalStylesOnce() {
   const all = LYR.filter(l => l.key.startsWith("ogd."));

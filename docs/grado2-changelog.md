@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.63.1: readiness check before real work; project versions.**
+  - Check on a copy of the owner's project «Безобразово» (36 layers, sheet A1 1:5053) on the test server: opens in
+    7 s, Эталон styles and label angles applied, PDF 14 s (6 272 objects), «DXF ГИС ОГД» of 34 layers 85 s — ezdxf
+    audit 0 errors, 125 labels all rotated, 20 hatches; save and reopen 3 s, 16 MB.
+  - Project versions: before a project file is overwritten the previous one is kept gzip-compressed in
+    `.versions/<project>/YYYYMMDD-HHMM.grado2.gz` (manual save at most every 10 min, autosave every hour, last 40).
+  - Print: hatch lines 0.13 mm (were tied to the outline width and came out heavy); client runs the portal-style and
+    label-angle pass once at a time (it ran twice on project open).
+
 - **2026-09-26, ГРАДО 2 v0.63.0: sheet print and DXF look like the map; ГИС ОГД labels run along their borders.**
   - Owner: the sheet export has other styles; labels are not everywhere parallel to the lines.
   - Labels: `ogd_all.label_angles` — angle of the nearest segment (≤ 30 m) of the layers in the same portal folder

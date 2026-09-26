@@ -1,4 +1,5 @@
 import sys
+import os
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -294,3 +295,25 @@ class AnyOgdLayer(unittest.TestCase):
         self.assertEqual(layers["ogd.virtual25"]["title"], "Надписи технических зон (ОГД)")
         self.assertNotIn("ogd.nope", layers)
         S.SOURCES.pop("ogd.virtual25", None)
+
+
+class ProjectVersions(unittest.TestCase):
+    """Перед перезаписью проекта прежний файл сохраняется сжатой версией в .versions/<проект>/."""
+
+    def test_previous_file_is_kept_and_old_versions_pruned(self):
+        import gzip
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "PROJECTS", Path(d)):
+            S.save_project("Участок", b'{"v": 1}')
+            self.assertFalse((Path(d) / ".versions").exists())            # первой записи нечего хранить
+            S.save_project("Участок", b'{"v": 2}')
+            vs = list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))
+            self.assertEqual([gzip.decompress(v.read_bytes()) for v in vs], [b'{"v": 1}'])
+            S.save_project("Участок", b'{"v": 3}')                        # 10 минут не прошло — новой версии нет
+            self.assertEqual(len(list((Path(d) / ".versions" / "Участок").glob("*"))), 1)
+            with mock.patch.object(S, "VERSIONS_EVERY", {True: 0, False: 0}), mock.patch.object(S, "VERSIONS_KEEP", 1):
+                os.utime(vs[0], (0, 0))
+                S.save_project("Участок", b'{"v": 4}')
+            left = list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))
+            self.assertEqual(len(left), 1)
+            self.assertEqual(gzip.decompress(left[0].read_bytes()), b'{"v": 3}')
