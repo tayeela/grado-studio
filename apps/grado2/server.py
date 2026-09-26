@@ -1009,7 +1009,7 @@ class Handler(SimpleHTTPRequestHandler):
                                                str(req.get("name") or "gisogd"), sheet=sheet,
                                                styles=ogd_all.portal_styles(CACHE / "gisogd"),
                                                codes=req.get("codes"), where=req.get("where"),
-                                               redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS})]
+                                               redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
                 return self._json(200, OGD_JOB[0].state)
             if self.path == "/api/ogd_all/scan":
                 import ogd_all

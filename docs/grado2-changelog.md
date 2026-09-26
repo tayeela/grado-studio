@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.59.0: «DXF ГИС ОГД» — technical zones in colour and dashed, СПРИТ labels as text.**
+  - Layer colour from the portal CartoCSS now comes from the block of the layer's geometry type
+    (`['mapnik::geometry_type'=N]`), white skipped: technical zones (l29) were white because the first colour in their
+    CSS is the white fill of the point marker.
+  - Line codes without a REDLN97 linetype (29 technical zones, 3, 41, 45 …) get a dashed `LGR_NN` linetype from the
+    ЛГР Эталон (dash_mm × 2 m, same as the PDF print) and the ЛГР colour.
+  - Label layers «Надписи …» (points with text, textangle, textheight) become TEXT at the point, centred, style
+    GISOGD (arial.ttf, Cyrillic). The ГИС ОГД angle is clockwise (checked against the nearest border line: −textangle
+    matches in 115–139 of 150 samples); upside-down labels are turned. Height textheight is metres for 1:2000 and is
+    scaled up on smaller-scale sheets to keep 2 mm on paper.
+
 - **2026-09-26, ГРАДО 2 v0.58.9: natural complex border signs face their territory.**
   - Owner: some ПК triangles still look outward. In ГИС ОГД the sign of code 18 does not tell the side: across Moscow
     the polygon of «Природные и озеленённые территории» lies to the right of nearly every l18 line, both «18» and

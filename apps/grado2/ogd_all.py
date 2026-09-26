@@ -25,6 +25,7 @@ import zipfile
 from datetime import datetime
 
 import ezdxf
+from ezdxf.enums import TextEntityAlignment
 
 from grado_connectors import crs
 from grado_connectors.clip import clip_geometry
@@ -114,11 +115,20 @@ def layer_list(cat, codes=None):
 
 
 def _linetypes(props, redln):
-    """Код линии ГИС ОГД объекта → имена типов REDLN97 (пусто, если кода нет или типа под код нет)."""
+    """Код линии ГИС ОГД объекта → имена типов линий: REDLN97, а для кодов, которых в REDLN97 нет (29 — технические
+    зоны и др.), — штриховой LGR_NN по Эталону ЛГР (redln["dash"], метры). Пусто, если кода нет."""
     from grado_render import acad_lin
     code = next((v for k, v in props.items() if k.lower() in ("linelineco", "linecode")), None)
     pairs = acad_lin.parse_line_codes(code)
-    return acad_lin.linetypes_for_codes(pairs, redln["lib"]["linetypes"], redln["idx"]) if pairs else []
+    if not pairs:
+        return []
+    names = acad_lin.linetypes_for_codes(pairs, redln["lib"]["linetypes"], redln["idx"])
+    dash = redln.get("dash") or {}
+    return names + [f"LGR_{c:02d}" for c, _ in acad_lin.missing_codes(pairs, redln["lib"]["linetypes"], redln["idx"]) if c in dash]
+
+
+def _lgr_code(name):
+    return int(name[4:]) if name.startswith("LGR_") else dxf_io._code_of(name)
 
 
 # Слой границ → (слой полигонов той же папки ГИС ОГД, код линии, чья сторона смотрит на эти полигоны).
@@ -244,16 +254,41 @@ def sheet_bbox_wgs(sheet):
             max(p[0] for p in pts) + 1e-5, max(p[1] for p in pts) + 1e-5)
 
 
-_CSS_COLOR = re.compile(r"(?:line|polygon|marker)-(?:color|fill)\s*:\s*(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3})\b")
+_KIND = {"Point": 1, "MultiPoint": 1, "LineString": 2, "MultiLineString": 2, "Polygon": 3, "MultiPolygon": 3}
+_CSS_ORDER = ("text-fill", "line-color", "marker-line-color", "polygon-fill", "marker-fill")
 
 
-def portal_color(css):
-    """Цвет слоя как на карте портала: первый цвет линии, заливки или значка из его CartoCSS."""
-    m = _CSS_COLOR.search(css or "")
-    if not m:
-        return None
-    c = m.group(1)
-    return "#" + "".join(ch * 2 for ch in c[1:]) if len(c) == 4 else c
+def portal_color(css, geom=None):
+    """Цвет слоя как на карте портала из его CartoCSS. geom — тип геометрии слоя: берётся блок стиля
+    ['mapnik::geometry_type'=N] этого типа (у линий технических зон в нём красный, а первый цвет в CSS — белая
+    заливка значка точки). Внутри — цвет подписи, линии, обводки значка, заливки; белый пропускается."""
+    css = css or ""
+    m = re.search(r"geometry_type'\s*=\s*%d\]\s*\{([^}]*)\}" % _KIND[geom], css) if geom in _KIND else None
+    for part in ([m.group(1)] if m else []) + [css]:
+        for prop in _CSS_ORDER:
+            for c in re.findall(prop + r"\s*:\s*(#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b)", part):
+                c = "#" + "".join(ch * 2 for ch in c[1:]) if len(c) == 4 else c
+                if c.lower() != "#ffffff":
+                    return c.lower()
+    return None
+
+
+def _label(msp, xy, text, props, attrs, k=1.0):
+    """Подпись ГИС ОГД (слои «Надписи …»: text, textangle, textheight) → TEXT по центру точки. Угол в ГИС ОГД идёт
+    по часовой стрелке; подпись разворачивается так, чтобы не стоять вверх ногами. Высота textheight — метры на
+    местности для М 1:2000 (2 мм на бумаге); k — во сколько раз мельче масштаб листа, чтобы на бумаге осталось 2 мм."""
+    try:
+        ang = -float(props.get("textangle") or 0)
+    except (TypeError, ValueError):
+        ang = 0.0
+    ang = (ang + 90) % 180 - 90
+    try:
+        h = float(props.get("textheight") or 0) or 4.0
+    except (TypeError, ValueError):
+        h = 4.0
+    t = msp.add_text(text[:250], height=h * k, rotation=ang, dxfattribs={**attrs, "style": "GISOGD"})
+    t.set_placement(xy, align=TextEntityAlignment.MIDDLE_CENTER)
+    return t
 
 
 def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
@@ -276,6 +311,8 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
         doc.header["$LTSCALE"] = 1.0
         doc.styles.add_shx("red_lns.shx")
         shapes = {k.upper(): v for k, v in redln["lib"]["shapes"].items()}
+    k = max(1.0, float(sheet["scale"]) / 2000) if sheet else 1.0
+    doc.styles.add("GISOGD", font="arial.ttf")             # кириллица: у стандартного txt.shx её нет
     tables = {}
     for i, layer in enumerate(layers):
         la = doc.layers.add(layer["dxf"], color=1 + i % 254)
@@ -292,12 +329,23 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
             attrs = {"layer": layer["dxf"]}
             ents = []
             if geom["type"] in ("Point", "MultiPoint"):
+                text = str(props.get("text") or "").strip()
                 for x, y, *_ in ([geom["coordinates"]] if geom["type"] == "Point" else geom["coordinates"]):
-                    ents.append(msp.add_point((x, y), dxfattribs=attrs))
+                    if text:                                   # слои «Надписи …»: подпись линии на её месте
+                        ents.append(_label(msp, (x, y), text, props, attrs, k))
+                    else:
+                        ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:
                 lts = _linetypes(props, redln) if redln else []
                 for n in lts:
-                    dxf_io._add_linetype(doc, n, redln["lib"]["linetypes"][n], shapes)
+                    if n in doc.linetypes:
+                        continue
+                    if n.startswith("LGR_"):
+                        d = redln["dash"][int(n[4:])]
+                        doc.linetypes.add(n, pattern=[sum(d)] + [v if k % 2 == 0 else -v for k, v in enumerate(d)],
+                                          description=f"ЛГР код {int(n[4:])}")
+                    else:
+                        dxf_io._add_linetype(doc, n, redln["lib"]["linetypes"][n], shapes)
                 for ring, closed in dxf_io._rings(geom):
                     pts = [(x, y) for x, y, *_ in ring]
                     if closed and len(pts) > 1 and pts[0] == pts[-1]:
@@ -309,7 +357,7 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                         if n:
                             a["linetype"] = n
                             a["flags"] = dxf_io.PLINEGEN
-                            code = dxf_io._code_of(n)
+                            code = _lgr_code(n)
                             if code in redln["colors"]:
                                 a["true_color"] = dxf_io._rgb(redln["colors"][code])
                         ents.append(msp.add_lwpolyline(pts, close=closed, dxfattribs=a))
@@ -499,7 +547,7 @@ class Job:
                 st.update(current="", message="Цвета слоёв, как на карте портала…")
                 for it in found:
                     try:
-                        it["color"] = portal_color(self.styles(it["code"]))
+                        it["color"] = portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
                     except Exception:              # без цвета слой остаётся со своим номером цвета
                         pass
             st.update(message="Сборка чертежа…")

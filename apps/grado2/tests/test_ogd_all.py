@@ -132,6 +132,31 @@ class OgdAll(unittest.TestCase):
         zone = doc.modelspace().query('LWPOLYLINE[layer=="ОГД Зоны"]')[0]
         self.assertFalse(zone.dxf.hasattr("linetype"))            # без кода линии — обычная линия слоя
 
+    def test_tech_zone_lines_get_lgr_dash_and_labels_become_text(self):
+        redln = {"lib": S.REDLN, "idx": S.REDLN_IDX, "colors": S.LGR_COLORS, "dash": S.LGR_DASH}
+        line = {"type": "LineString", "coordinates": [[37.60, 55.70], [37.62, 55.72]]}
+        layers = [{"dxf": "ОГД Техзоны", "title": "Техзоны", "code": "l29",
+                   "features": [{"geometry": line, "properties": {"linelineco": "-29"}}]},
+                  {"dxf": "ОГД Надписи", "title": "Надписи", "code": "virtual25",
+                   "features": [{"geometry": {"type": "Point", "coordinates": [37.61, 55.71]},
+                                 "properties": {"text": "техническая зона", "textangle": 332.0, "textheight": 4.0}}]}]
+        with mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            body, _ = ogd_all.build_drawing(layers, None, (37.59, 55.69, 37.63, 55.73), redln=redln)
+        doc = ezdxf.read(io.StringIO(zipfile.ZipFile(io.BytesIO(body)).read("gisogd.dxf").decode("utf-8")))
+        tz = doc.modelspace().query('LWPOLYLINE[layer=="ОГД Техзоны"]')[0]
+        self.assertEqual(tz.dxf.linetype, "LGR_29")
+        self.assertTrue(tz.dxf.hasattr("true_color"))
+        t = doc.modelspace().query("TEXT")[0]
+        self.assertEqual(t.dxf.text, "техническая зона")
+        self.assertAlmostEqual(t.dxf.rotation, 28.0)                # по часовой 332° = против часовой 28°
+        self.assertEqual(t.dxf.style, "GISOGD")
+
+    def test_portal_color_takes_the_block_of_the_layer_geometry(self):
+        css = "['mapnik::geometry_type'=1] { marker-fill: #ffffff; marker-line-color: #19ba19; }\n" \
+              "['mapnik::geometry_type'=2] { line-color: #df0024; }"
+        self.assertEqual(ogd_all.portal_color(css, "LineString"), "#df0024")
+        self.assertEqual(ogd_all.portal_color("text-fill: #df0024; marker-fill: #ffffff;", "Point"), "#df0024")
+
     def test_job_clips_skips_empty_and_survives_a_broken_layer(self):
         class FakeApi:
             def __init__(self, **kw):
