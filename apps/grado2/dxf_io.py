@@ -25,6 +25,18 @@ ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))   # �
 STANDARD = ROOT / "docs/standards/redln97"
 
 
+# Символы, которых AutoCAD не допускает в именах слоёв, листов и прочих таблиц: < > / \ " : ; ? * | , = `
+# (ЗАПЯТАЯ тоже: 26.09.2026 выгрузка со слоем «…геодезической, нивелирной, …» в AutoCAD не открывалась вовсе,
+# без ошибки; QGIS такие имена читает). Длина — не больше 255 знаков.
+_ACAD_BAD = re.compile(r'[<>/\\":;?*|,=`\x00-\x1f]')
+
+
+def acad_name(text, limit=255):
+    """Имя, которое AutoCAD примет: запрещённые знаки → «_», повторы пробелов схлопнуты, без пробелов по краям."""
+    name = re.sub(r"\s+", " ", _ACAD_BAD.sub("_", str(text))).strip()[:limit].strip()
+    return name or "_"
+
+
 def _pattern_string(lt, shapes):
     parts = ["A"]
     for e in lt["pattern"]:
@@ -66,7 +78,7 @@ def export_dxf(layers, redln, lgr_colors):
     shapes = {k.upper(): v for k, v in redln["shapes"].items()}
     msp = doc.modelspace()
     for layer in layers:
-        lname = re.sub(r'[<>/\\":;?*|=`]', "_", layer["name"])[:120]
+        lname = acad_name(layer["name"], 120)
         if lname not in doc.layers:
             doc.layers.add(lname, true_color=_rgb(layer.get("color", "#808080")))
         for f in layer["features"]["features"]:
@@ -108,6 +120,7 @@ def export_dxf(layers, redln, lgr_colors):
                         if code in lgr_colors:
                             a["true_color"] = _rgb(lgr_colors[code])
                     msp.add_lwpolyline(pts, close=closed, dxfattribs=a)
+    fit_view(doc)
     buf = io.StringIO()
     doc.write(buf)
     out = io.BytesIO()
@@ -124,6 +137,22 @@ def export_dxf(layers, redln, lgr_colors):
                                   "(+proj=tmerc +lat_0=55.66666666667 +lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel), metres.\n"
                                   "Red lines use REDLN97 linetypes; keep red_lns.shx next to grado2.dxf.\n").encode())
     return out.getvalue()
+
+
+def fit_view(doc):
+    """Границы чертежа и вид модели — на данные. Без этого в заголовке остаются «пустые» границы (1e20), а вид —
+    центр 0,0 и высота 1000 м: объекты в МСК лежат в километрах от начала, и AutoCAD открывает файл без ошибки,
+    но с пустым экраном (QGIS сам приближается к данным и этого не видно; жалоба владельца 26.09.2026)."""
+    from ezdxf import bbox
+    ext = bbox.extents(doc.modelspace(), fast=True)
+    if not ext.has_data:
+        return
+    (x0, y0, _), (x1, y1, _) = ext.extmin, ext.extmax
+    msp = doc.modelspace()                  # ezdxf пишет $EXTMIN/$EXTMAX из самой модели, заголовок перезаписывается
+    msp.reset_extents((x0, y0, 0), (x1, y1, 0))
+    msp.reset_limits((x0, y0), (x1, y1))
+    w, h = max(x1 - x0, 1.0), max(y1 - y0, 1.0)
+    doc.set_modelspace_vport(height=max(h, w * 0.7) * 1.05, center=((x0 + x1) / 2, (y0 + y1) / 2))
 
 
 def oda_converter():

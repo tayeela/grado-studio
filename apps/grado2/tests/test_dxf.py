@@ -132,3 +132,18 @@ class LinetypeProps(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipIf(dxf_io is None, "ezdxf not installed")
+class AcadNames(unittest.TestCase):
+    def test_layer_names_have_no_chars_autocad_refuses(self):
+        fc = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[37.52, 55.79], [37.53, 55.791]]}, "properties": {}}]}
+        z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Школы, детсады: поликлиники (OSM)", "features": fc}], S.REDLN, S.LGR_COLORS)))
+        doc = ezdxf.read(io.StringIO(z.read("grado2.dxf").decode("utf-8")))
+        names = [l.dxf.name for l in doc.layers]
+        self.assertIn("Школы_ детсады_ поликлиники (OSM)", names)
+        self.assertFalse(any(set(n) & set('<>/\\":;?*|,=`') for n in names))
+        ext0 = doc.header["$EXTMIN"]
+        self.assertLess(abs(ext0[0]), 1e7)                 # границы чертежа заданы, а не «пустые» 1e20
+

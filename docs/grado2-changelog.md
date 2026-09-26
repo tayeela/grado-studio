@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.6: DXF opens in AutoCAD — no commas in layer names; extents and view set.**
+  - AutoCAD (Mac and Windows) did not open the DXF at all, without an error, while QGIS read it: 6 of 68 layer names
+    had commas («…геодезической, нивелирной, …»), and AutoCAD forbids `,` in symbol table names just like
+    `< > / \ " : ; ? * | = \``. v0.55 had wrongly allowed the comma. The plain DXF export had the same hole
+    («Школы, детсады, поликлиники (OSM)»). Now one rule, `dxf_io.acad_name`, for both exports and the sheet layout:
+    forbidden characters and control codes → «_», repeated spaces collapsed, length limit.
+  - Also: `$EXTMIN/$EXTMAX` and limits are set from the model (ezdxf rewrites the header from the model on save, so
+    `msp.reset_extents`), the model view opens on the data (the sheet frame for «DXF ГИС ОГД»), and the sheet layout
+    reuses the default «Layout1» (renamed) instead of deleting it (tab order 1, no *Paper_Space swap).
+
 - **2026-09-26, ГРАДО 2 v0.58.5: the server keeps the ГИС ОГД cache warm by itself.**
   - `apps/grado2/ogd_warm.py`: walks the catalogue, re-downloads layers older than 6 days (TTL is 7) one by one with
     the connector's pause, skips fresh ones without reading them, waits while the program itself is downloading, and

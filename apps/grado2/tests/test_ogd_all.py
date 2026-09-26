@@ -38,7 +38,12 @@ class OgdAll(unittest.TestCase):
         self.assertEqual(names, sorted(names))                  # AutoCAD сортирует по имени — порядок тот же
         self.assertEqual(names[0], "ОГД 01.01 1 Генплан - Функциональные зоны")
         self.assertEqual(names[3], "ОГД Т.01 Территория - Далеко")
-        self.assertFalse(any(set(n) & set('<>/\\":;?*|=`') for n in names))
+        self.assertFalse(any(set(n) & set('<>/\\":;?*|,=`') for n in names))
+        comma = ogd_all.layer_list([{"id": 1, "parent_id": 0, "name": "Слои", "type": "folder"},
+                                    {"id": 2, "parent_id": 1, "code": "c", "type": "layer",
+                                     "name": "Границы зон (монорельс,  канатная дорога, фуникулер)"}])[0]["dxf"]
+        self.assertNotIn(",", comma)                       # AutoCAD не открывает файл со слоем с запятой
+        self.assertNotIn("  ", comma)
         self.assertEqual([x["code"] for x in ogd_all.layer_list(CAT, {"far", "virtual1"})], ["virtual1", "far"])
         tree = ogd_all.catalog_tree(CAT)
         self.assertEqual([n["name"] for n in tree], ["Слои", "Территория"])
@@ -88,6 +93,14 @@ class OgdAll(unittest.TestCase):
         vp = lay.query("VIEWPORT")[-1]
         self.assertAlmostEqual(vp.dxf.height / vp.dxf.view_height * 1000, 1000 / 2000 * 1000)   # 297 мм на 594 м = 1:2000
         self.assertEqual(ogd_all.portal_color("line-color: #0a4;\npolygon-fill: #ffffff;"), "#00aa44")
+        # AutoCAD открывает сохранённый вид: границы и вид модели — на лист, а не 0,0 (иначе пустой экран)
+        ex0, ex1 = doc.header["$EXTMIN"], doc.header["$EXTMAX"]
+        self.assertTrue(ex0[0] < c[0] < ex1[0] and ex0[1] < c[1] < ex1[1])
+        vp = doc.viewports.get("*Active")[0]
+        self.assertAlmostEqual(vp.dxf.center[0], c[0], delta=1)
+        self.assertGreater(vp.dxf.height, 594)
+        self.assertEqual([l.name for l in doc.layouts], ["Model", "Лист Опорный 1-2000"])
+        self.assertEqual(doc.layouts.get("Лист Опорный 1-2000").dxf_layout.dxf.taborder, 1)
 
     def test_job_clips_skips_empty_and_survives_a_broken_layer(self):
         class FakeApi:

@@ -33,7 +33,7 @@ from grado_connectors.gisogd_api import GisogdApi, catalog
 
 import dxf_io
 
-_BAD = re.compile(r'[<>/\\":;?*|=`]')
+_BAD = dxf_io._ACAD_BAD                 # те же запрещённые знаки, что у acad_name (с запятой)
 _XDATA_LIMIT = 15000            # AutoCAD: не больше 16 КБ XDATA на объект
 _XDATA_STR = 250                # и не больше 255 БАЙТ в строке XDATA: русская буква — 2 байта (с 464 байтами AutoCAD не открывал чертёж)
 _NAME_MAX = 100                 # имя слоя: AutoCAD допускает 255 знаков, но старые версии и конвертеры считают байты
@@ -102,6 +102,7 @@ def layer_list(cat, codes=None):
                     head, tail = f"ОГД {num} ", _BAD.sub("_", n["name"])
                     room = _NAME_MAX - len(head) - len(tail) - 3
                     name = (head + (_BAD.sub("_", parent)[:room].strip() + " - " if room >= 12 else "") + tail)[:_NAME_MAX].strip()
+                name = dxf_io.acad_name(name, _NAME_MAX)        # и повторы пробелов из названий портала
                 if name.lower() in used:
                     name = f"{name[:_NAME_MAX - len(n['code']) - 3].strip()} ({n['code']})"
                 used.add(name.lower())
@@ -221,15 +222,20 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None):
         # map — поле карты на бумаге (мм): у листа без штампа бумага с полями, у ГОСТ и слайдов бумага = поле карты
         pw, ph = (float(v) for v in sheet["paper"])
         mw, mh = (float(v) for v in sheet.get("map") or sheet["paper"])
-        name = _BAD.sub("_", f"Лист {sheet.get('title') or ''} 1-{int(sheet['scale'])}").strip()[:60]
-        lay = doc.layouts.new(name)
+        name = dxf_io.acad_name(f"Лист {sheet.get('title') or ''} 1-{int(sheet['scale'])}", 60)
+        # лист по умолчанию «Layout1» переименовывается, а не удаляется: удаление оставляло лист с порядком вкладки 3 и
+        # сменой *Paper_Space — структуру, какой AutoCAD сам не пишет
+        doc.layouts.rename("Layout1", name)
+        lay = doc.layouts.get(name)
         lay.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
         lay.add_viewport(center=(pw / 2, ph / 2), size=(mw, mh), view_center_point=((x0 + x1) / 2, (y0 + y1) / 2),
                          view_height=y1 - y0, dxfattribs={"layer": "Рамка листа"})
         mx, my = (pw - mw) / 2, (ph - mh) / 2
         lay.add_lwpolyline([(mx, my), (mx + mw, my), (mx + mw, my + mh), (mx, my + mh)], close=True, dxfattribs={"layer": "Рамка листа"})
-        if "Layout1" in doc.layouts:                       # пустой лист по умолчанию не нужен: в чертеже один лист — наш
-            doc.layouts.delete("Layout1")
+    dxf_io.fit_view(doc)
+    if sheet:                                               # открывается на рамке листа, а не на всём, что обрезано вокруг
+        x0, y0, x1, y1 = box
+        doc.set_modelspace_vport(height=(y1 - y0) * 1.08, center=((x0 + x1) / 2, (y0 + y1) / 2))
     buf = io.StringIO()
     doc.write(buf)
     dxf = buf.getvalue().encode("utf-8")
