@@ -96,7 +96,7 @@
   });
   bar.addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); e.stopPropagation(); });
 
-  function changed() { window.markDirty?.(); redraw(); }
+  function changed() { window.markDirty?.(); redraw(); if (BY_SHEET) renderTree(); }      // папки листов в дереве слоёв
   function remove(sh) {
     const i = ALBUM.sheets.indexOf(sh); if (i < 0) return;
     ALBUM.sheets.splice(i, 1); SELF = null; changed();

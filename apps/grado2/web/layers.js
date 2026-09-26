@@ -374,8 +374,89 @@ function legendItems(l) {
   if (st.mode === "rules") return st.rules.list.map(r => ({ v: `${r.field} ${r.op} ${r.val}`, c: r.fill })).concat(st.rules.elseHide ? [] : [{ v: "остальные", c: st.rules.elseFill }]);
   return [];
 }
+// строка слоя в дереве (и в режиме «По листам»: extra — кнопка «убрать с листа»)
+function rowHTML(l, ind, drag, extra = "") {
+  const d = DATA[l.key], items = l.open ? legendItems(l).slice(0, 60) : [];
+  return `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="${drag}" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
+      <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
+      <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
+      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
+      ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
+      ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
+      <span class="meta num">${fmt(d?.count ?? 0)}</span>
+      ${extra}<button class="tw more" data-more="${esc(l.key)}" aria-label="Меню слоя"><i data-lucide="more-horizontal"></i></button></div>`
+      + items.map(it => `<div class="tn leg${ind} ${it.off ? "off" : ""}">${it.check ? `<input type="checkbox" data-catoff="${esc(l.key)}|${esc(it.v)}" ${it.off ? "" : "checked"} aria-label="Показывать">` : ""}${symHTML(l, it.c)}<span class="nm">${esc(it.v || "—")}</span>${it.n != null ? `<span class="meta num">${it.n}</span>` : ""}</div>`).join("");
+}
+/* Режим дерева «По листам»: папка на каждый лист альбома, в ней ровно слои этого листа — у листа раздела его набор,
+   у листа с видом видимые слои вида, у листа «текущая карта» видимые слои карты. Слой, нужный нескольким листам,
+   стоит в нескольких папках: это один и тот же слой, видимость и оформление у него общие. Добавить слой на лист
+   и убрать с листа можно прямо в папке — меняется состав листа (набор листа раздела или его вид). */
+let BY_SHEET = false;
+const SHEET_SHUT = new Set();
+function sheetKeys(sh) {
+  if (sh.panels) return [...new Set(sh.panels.flatMap(p => p.keys || []))];
+  if (sh.keys) return sh.keys.slice();
+  const v = sh.view && VIEWS.find(x => x.id === sh.view);
+  return v ? v.layers.filter(x => x.visible).map(x => x.key) : null;      // null — лист показывает текущую карту
+}
+const sheetView = sh => !sh.keys && !sh.panels && sh.view ? VIEWS.find(x => x.id === sh.view) : null;
+const sheetEditable = sh => !sh.panels && !!(sh.keys || sheetView(sh));
+const mapSheets = () => ALBUM.sheets.filter(s => s.kind !== "title" && s.kind !== "tep");
+function sheetTreeHTML() {
+  const used = new Set(), sheets = mapSheets();
+  const folder = (id, name, n, tools, note) => `<div class="tn gr" data-shk="${esc(id)}">
+      <button class="tw" data-shtw="${esc(id)}" aria-label="${SHEET_SHUT.has(id) ? "Развернуть" : "Свернуть"} папку листа"><i data-lucide="${SHEET_SHUT.has(id) ? "chevron-right" : "chevron-down"}"></i></button>
+      <i data-lucide="${SHEET_SHUT.has(id) ? "folder" : "folder-open"}" class="gi"></i><span class="nm" title="${esc(note || name)}">${esc(name)}</span><span class="meta num">${n}</span>${tools}</div>`;
+  let h = sheets.length ? "" : `<div class="note">Листов пока нет: нарисуйте лист инструментом «Лист» или соберите раздел в окне «Листы». Папки слоёв появятся по листам.</div>`;
+  sheets.forEach(sh => {
+    const ks = sheetKeys(sh), ls = ks ? LYR.filter(l => ks.includes(l.key)) : LYR.filter(l => l.visible), ed = sheetEditable(sh);
+    ls.forEach(l => used.add(l.key));
+    const tools = `${ks ? `<button class="tw" data-shshow="${esc(sh.id)}" title="Показать на карте только слои этого листа"><i data-lucide="eye"></i></button>` : ""}<button class="tw more" data-shmore="${esc(sh.id)}" aria-label="Меню папки листа"><i data-lucide="more-horizontal"></i></button>`;
+    h += folder(sh.id, `${ALBUM.sheets.indexOf(sh) + 1}. ${sh.title}`, ls.length, tools,
+      ks ? (ed ? "Слои листа. Добавить слой — меню «…» папки, убрать — крестик у слоя" : "Слои листа раздела заданы шаблоном раздела") : "Лист показывает текущую карту: здесь видимые слои. Меню «…» → «Закрепить состав листа»");
+    if (SHEET_SHUT.has(sh.id)) return;
+    ls.forEach(l => { h += rowHTML(l, " in", false, ed ? `<button class="tw" data-shrm="${esc(sh.id)}|${esc(l.key)}" title="Убрать слой с листа «${esc(sh.title)}» (слой остаётся в проекте)"><i data-lucide="x"></i></button>` : ""); });
+  });
+  const rest = LYR.filter(l => !used.has(l.key));
+  if (rest.length) {
+    h += folder("_rest", "Не на листах", rest.length, "", "Слои, которых нет ни на одном листе");
+    if (!SHEET_SHUT.has("_rest")) rest.forEach(l => { h += rowHTML(l, " in", false); });
+  }
+  return h;
+}
+function showSheet(sh) {
+  const v = sheetView(sh); if (v) return applyView(v);
+  const ks = sheetKeys(sh); if (!ks) return;
+  LYR.forEach(l => { l.visible = ks.includes(l.key); }); GROUPS.forEach(g => { g.visible = true; });
+  dataRev++; applyOrder(); renderTree(); window.markDirty?.();
+}
+function sheetSet(sh, key, on) {
+  if (sh.keys) sh.keys = on ? [key, ...sh.keys.filter(k => k !== key)] : sh.keys.filter(k => k !== key);
+  else {
+    const v = sheetView(sh), l = lyr(key); if (!v || !l) return;
+    const x = v.layers.find(y => y.key === key);
+    if (x) x.visible = on; else if (on) v.layers.push({ key, visible: true, style: JSON.parse(JSON.stringify(l.style)), layerOpacity: l.layerOpacity });
+  }
+  window.markDirty?.(); renderTree(); window.renderSheets?.();
+}
+function sheetMenu(anchor, id) {
+  const sh = ALBUM.sheets.find(s => s.id === id); if (!sh) return;
+  const ks = sheetKeys(sh);
+  showMenu(anchor, [
+    ks ? ["Показать только слои листа", () => showSheet(sh)] : null,
+    sh.center ? ["Найти лист на карте", () => window.selectSheetFrame?.(sh, true)] : null,
+    !ks ? ["Закрепить состав листа: видимые сейчас слои", () => { const v = captureView(sh.title, false); VIEWS.push(v); sh.view = v.id; window.markDirty?.(); renderViews(); renderTree(); window.renderSheets?.(); toast(`Состав листа «${sh.title}» закреплён: вид «${sh.title}». Теперь слои листа меняются в его папке.`); }] : null,
+    ...(sheetEditable(sh) ? LYR.filter(l => !ks.includes(l.key)).map(l => [`Добавить на лист: ${l.title}`, () => sheetSet(sh, l.key, true)]) : []),
+  ].filter(Boolean));
+}
+function setBySheet(on) {
+  BY_SHEET = on; ALBUM.meta.treeBySheet = on || undefined; const b = $("bBySheet"); if (b) b.setAttribute("aria-pressed", on);
+  renderTree();
+}
+window.setBySheet = setBySheet;
 function renderTree() {
   const el = $("layerTree"); if (!el) return;
+  if (BY_SHEET && LYR.length) { el.innerHTML = sheetTreeHTML(); syncCurSelect(); syncStart(); icons(); return; }
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Граф», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Принять в проект».">Предпросмотр графа${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
   if (!LYR.length) { el.innerHTML = `<div class="note">Слоёв пока нет. Нажмите «+» над списком и рисуйте, выберите инструмент рисования на панели сверху (слой появится сам) или загрузите источники в окне «Данные».</div>` + res; icons(); syncStart(); syncCurSelect(); return; }
   let h = "", prevG = null;
@@ -391,16 +472,7 @@ function renderTree() {
     }
     prevG = l.group;
     if (g && !g.open) return;
-    const d = DATA[l.key], items = l.open ? legendItems(l).slice(0, 60) : [], ind = g ? " in" : "";
-    h += `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="true" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
-      <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
-      <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
-      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
-      ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
-      ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
-      <span class="meta num">${fmt(d?.count ?? 0)}</span>
-      <button class="tw more" data-more="${esc(l.key)}" aria-label="Меню слоя"><i data-lucide="more-horizontal"></i></button></div>`
-      + items.map(it => `<div class="tn leg${ind} ${it.off ? "off" : ""}">${it.check ? `<input type="checkbox" data-catoff="${esc(l.key)}|${esc(it.v)}" ${it.off ? "" : "checked"} aria-label="Показывать">` : ""}${symHTML(l, it.c)}<span class="nm">${esc(it.v || "—")}</span>${it.n != null ? `<span class="meta num">${it.n}</span>` : ""}</div>`).join("");
+    h += rowHTML(l, g ? " in" : "", true);
   });
   el.innerHTML = h + res;
   syncCurSelect(); syncStart();
@@ -410,6 +482,10 @@ const tree = () => $("layerTree");
 document.addEventListener("click", e => {
   const t = e.target;
   if (!tree()?.contains(t)) return;
+  const shtw = t.closest("[data-shtw]"); if (shtw) { const id = shtw.dataset.shtw; SHEET_SHUT.has(id) ? SHEET_SHUT.delete(id) : SHEET_SHUT.add(id); renderTree(); return; }
+  const shshow = t.closest("[data-shshow]"); if (shshow) { const sh = ALBUM.sheets.find(s => s.id === shshow.dataset.shshow); if (sh) showSheet(sh); return; }
+  const shmore = t.closest("[data-shmore]"); if (shmore) { sheetMenu(shmore, shmore.dataset.shmore); return; }
+  const shrm = t.closest("[data-shrm]"); if (shrm) { const [id, k] = shrm.dataset.shrm.split("|"); const sh = ALBUM.sheets.find(s => s.id === id); if (sh) sheetSet(sh, k, false); return; }
   const tw = t.closest("[data-tw]"); if (tw) { const l = lyr(tw.dataset.tw); l.open = !l.open; renderTree(); return; }
   const gtw = t.closest("[data-gtw]"); if (gtw) { const g = grp(gtw.dataset.gtw); g.open = !g.open; window.markDirty?.(); renderTree(); return; }
   const more = t.closest("[data-more]"); if (more) { layerMenu(more, more.dataset.more); return; }
@@ -575,6 +651,7 @@ function removeLayer(key) {
 $("bNewLayer").onclick = () => {
   const box = $("newLayerBox"); box.hidden = !box.hidden; if (!box.hidden) $("nlName").focus();
 };
+$("bBySheet").onclick = () => setBySheet(!BY_SHEET);
 $("bNewGroup").onclick = () => {
   if (!CUR) return toast("Группа собирается из слоёв: выберите слой в списке, затем «Новая группа». Слои переносятся в группу перетаскиванием.");
   const id = newGroup([CUR]); setTimeout(() => renameGroup(id), 0);

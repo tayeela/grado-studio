@@ -114,7 +114,7 @@ function applyProject(p) {
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }
     if (p.view?.basemap && p.view.basemap !== BASE) setBasemap(p.view.basemap);
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
-    applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview(); portalStyles();
+    applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview(); portalStyles(); setBySheet(!!ALBUM.meta.treeBySheet);
     window.renderSheets?.(); window.renderViews?.();
   } finally { PROJ.loading = false; }
   // file — имя файла в папке проектов, в который этот проект сохранялся (у открытого с диска файла его нет):

@@ -201,3 +201,6 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-26 (v0.60.0): one window for source data. Choosing what to load and what goes to the ГИС ОГД DXF happens
   in a single tree («Исходные данные»), opened from «Данные», from a sheet and from «DXF ГИС ОГД»; the «Данные»
   window only shows what the project already has.
+
+- 2026-09-26 (v0.62.0): the layer tree can be read by sheets. «По листам» shows a folder per sheet with only its
+  layers; a layer of several sheets is listed in each of them. Sheet content is edited right in its folder.

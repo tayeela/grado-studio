@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.62.0: layer tree «По листам» — a folder per sheet with exactly that sheet's layers.**
+  - Owner: the functional-zoning slide should have its own folder with only the layers shown on it; a layer used by
+    several sheets sits in several folders.
+  - Button «По листам» over the tree (`bBySheet`, saved as `ALBUM.meta.treeBySheet`). Folder content: section sheet —
+    its keys (panels — union), sheet with a view — visible layers of the view, «текущая карта» — visible map layers
+    (menu «Закрепить состав листа» turns them into the sheet's own view). Same layer object in every folder
+    (visibility and style shared). Eye — show only that sheet's layers; «…» — add a layer to the sheet; cross at a
+    row — remove it from the sheet (keys or view change, the layer stays in the project). «Не на листах» — the rest.
+  - `rowHTML` extracted from `renderTree`; frames re-render the tree in this mode.
+
 - **2026-09-26, ГРАДО 2 v0.61.0: ЛГР layers of ГИС ОГД drawn by the ЛГР Эталон (приказ № 65).**
   - Owner: береговые полосы — blue dashed outline, no fill, labels in the same colour; everything by the СПРИТ Эталон.
   - `ogd_all.etalon_code`: ГИС ОГД layer → Эталон code from `zonelineco`/`textlineco`, else by layer and folder name
