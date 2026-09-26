@@ -306,15 +306,18 @@ async function previewSheet(i) {
     img.src = url; img.dataset.url = url; img.hidden = false;
   } catch (e) { toast("Лист не собран: " + e.message); } finally { busy(false); }
 }
-async function albumPdf() {
+// альбом файлом: PDF для печати или PPTX — та же вёрстка редактируемой презентацией PowerPoint (подписи — текстом,
+// карты — фигурами по слоям, снимки — рисунками)
+async function albumFile(kind = "pdf") {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
   busy(true);
   try {
-    const r = await fetch("/api/print/pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(ALBUM.sheets)) });
+    const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(ALBUM.sheets)) });
     if (!r.ok) throw new Error((await r.json()).error);
-    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (ALBUM.meta.object || PROJ.name || "альбом") + ".pdf"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast(`Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`);
-  } catch (e) { toast("PDF не собран: " + e.message); } finally { busy(false); }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
+      : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`);
+  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); }
 }
 function renderSheets() {
   window.redrawFrames?.(true);             // рамки листов на карте и область загрузки данных
@@ -333,7 +336,7 @@ function renderSheets() {
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка): листы собираются по одному вместе с вами — сейчас титул и месторасположение"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка): листы собираются по одному вместе с вами — сейчас титул и месторасположение"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }
@@ -353,7 +356,8 @@ shEl().addEventListener("change", e => {
 shEl().addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.id === "shAdd") { ALBUM.sheets.push(newSheet()); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1); }
-  if (b.id === "shPdf") albumPdf();
+  if (b.id === "shPdf") albumFile("pdf");
+  if (b.id === "shPptx") albumFile("pptx");
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt") window.buildAlbum?.("pptkrt");
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);

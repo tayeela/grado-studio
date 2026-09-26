@@ -1,4 +1,4 @@
-"""Листы и альбом ГРАДО 2: PDF и SVG через рендер и вёрстку ядра (core/render, core/layout).
+"""Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
 Клиент присылает для каждого листа уже оформленные объекты — так лист повторяет карту на экране (стиль
 считает тот же код, что рисует слои). Здесь: пересчёт WGS84 → МСК (метры, как в QGIS и в DXF), масштаб листа,
@@ -351,13 +351,16 @@ class SketchMapFrame(Frame):
         k = tr.k
         out, labels, along, placed = [{"op": "clip", "rect": tuple(rect)}], [], {}, []
         if sh.get("basemap") in ("sat", "light") and self.tiles:
+            out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
             get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
             out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
         egko = getattr(self.tiles, "egko", None)
         if sh.get("mask") and egko:
+            out.append({"op": "layer", "name": "Картооснова ЕГКО"})
             out.extend(egko_ops(tr, rect, sh["mask"], egko))
         for layer in sh.get("layers", []):
+            out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])
                 w = max(0.08, (f.get("w") or 1) * PX_MM)
@@ -424,6 +427,8 @@ class SketchMapFrame(Frame):
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
                         if f.get("label"):
                             labels.append((x, y - 2, f["label"], f.get("ls"), f))
+        if sh.get("territory"):
+            out.append({"op": "layer", "name": "Граница территории"})
         if sh.get("territory") and sh.get("terrPoint"):
             # мелкая схема (вся Москва, округ): территория в доли миллиметра — точкой, как в шаблоне ППТ КРТ
             ring = [tr.mm(*p[:2]) for p in _parts(sh["territory"])[1][0][0]]
@@ -454,6 +459,7 @@ class SketchMapFrame(Frame):
         if callout:
             take(callout[0])
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
+        out.append({"op": "layer", "name": "Подписи"})
         for text, (d, x, y, ang, ls) in sorted(along.items(), key=lambda t: -t[1][0]):
             ls = float(ls or 2.2)
             text = str(text)[:40]
@@ -500,6 +506,10 @@ class SketchMapFrame(Frame):
         if callout:
             out.extend(callout[1])
         out.append({"op": "unclip"})
+        for o in out:                                                   # изломы контуров — скруглённые, без острых «шипов»
+            if o["op"] == "path":
+                o.setdefault("join", "round")
+        out.append({"op": "layer", "name": "Рамка"})
         if sh.get("noFrame"):
             pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
         elif str(sh.get("size", "")).startswith("P"):
@@ -833,6 +843,24 @@ def build_document(spec, lib, lgr_dash, tiles=None):
 
 def render_pdf(spec, lib, lgr_dash, tiles=None):
     return PdfBackend(None).render(document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None))
+
+
+# рамки листа → группы фигур в PPTX
+PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
+               "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
+               "TepSheetFrame": "ТЭП", "LegendFrame": "Легенда", "TableFrame": "Таблица"}
+
+
+def render_pptx(spec, lib, lgr_dash, tiles=None):
+    """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом."""
+    from grado_layout.compose import _ctx, sheet_titles
+    from grado_render.backend_pptx import PptxBackend
+    doc = build_document(spec, lib, lgr_dash, tiles)
+    titles, pages = sheet_titles(doc), []
+    for i, page in enumerate(doc.pages, start=1):
+        ctx = _ctx(doc, None, None, None, i, titles[i - 1])
+        pages.append((page.size[0], page.size[1], [(PPTX_GROUPS.get(type(f).__name__, "Оформление"), f.ops(ctx)) for f in page.frames]))
+    return PptxBackend(doc.title).render(pages)
 
 
 def render_preview_svg(spec, lib, lgr_dash, index=0, tiles=None):

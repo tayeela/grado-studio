@@ -70,6 +70,7 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
         elif o["op"] == "path":
             dash = (f' stroke-dasharray="{",".join(str(d) for d in o["dash"])}"'
                     if o.get("dash") else "")
+            join = ' stroke-linejoin="round"' if o.get("join") == "round" else ""
             d = ""
             for ring in o["rings"]:
                 d += f"M {_pts(ring[:1])} L {_pts(ring[1:])} "
@@ -83,7 +84,7 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             body.append(
                 f'<path d="{d.strip()}" fill="{_css(o.get("fill"))}"{eo} '
                 f'stroke="{_css(o.get("stroke"))}" '
-                f'stroke-width="{o.get("width", 0.3)}"{dash}/>')
+                f'stroke-width="{o.get("width", 0.3)}"{dash}{join}/>')
         elif o["op"] == "circle":
             body.append(
                 f'<circle cx="{o["x"]:.3f}" cy="{o["y"]:.3f}" r="{o["r"]}" '

@@ -180,3 +180,24 @@ class SlideLabels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Pptx(unittest.TestCase):
+    """Альбом в редактируемый PPTX: те же листы, рамки листа — группами, подписи — текстом."""
+
+    def test_album_to_pptx(self):
+        import io
+        import zipfile
+        spec = {"meta": {"object": "Проект планировки квартала", "short": "ППТ Квартал", "place": "СВАО, район Алексеевский"},
+                "sheets": [{"kind": "title", "size": "PA3", "style": "pptkrt", "title": "Титул"},
+                           {"size": "PA3", "style": "pptkrt", "title": "Месторасположение", "legend": [], "rect": [24, 44, 263, 233],
+                            "scale": 2000, "center": [37.65, 55.80], "layers": [
+                                {"title": "Участки", "features": [{"g": {"type": "Polygon", "coordinates": [[[37.649, 55.799], [37.651, 55.799], [37.651, 55.801], [37.649, 55.799]]]},
+                                                                   "fill": None, "stroke": "#0000ff", "w": 1, "a": 0}]}]}]}
+        data = print_io.render_pptx(spec, {}, {})
+        z = zipfile.ZipFile(io.BytesIO(data))
+        s2 = z.read("ppt/slides/slide2.xml").decode("utf-8")
+        self.assertIn("Месторасположение", s2)
+        self.assertIn('name="Карта"', s2)
+        self.assertIn('name="Участки"', s2)
+        self.assertIn('<a:round/>', s2)                                  # изломы контуров карты скруглены

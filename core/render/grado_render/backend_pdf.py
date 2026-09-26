@@ -90,6 +90,7 @@ class PdfBackend:
         if o.get("stroke") is not None:
             out += self._color(o["stroke"], stroke=True)
             out += f"{_f(o.get('width', 0.3) * MM2PT)} w\n"
+            out += "1 j\n" if o.get("join") == "round" else "0 j\n"   # скруглённые изломы — без острых «шипов» на контурах карты
             dash = o.get("dash")
             out += (f"[{' '.join(_f(d * MM2PT) for d in dash)}] 0 d\n"
                     if dash else "[] 0 d\n")

@@ -4,7 +4,8 @@
   POST /api/fetch  {bbox:[w,s,e,n], sources:[ключ,...]} → реальные слои по области
   POST /api/tep    {terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2} → ТЭП (методика КРТ)
   POST /api/import/files {files:[{name, b64}]} → слои из GeoJSON, KML/KMZ, Shapefile, DXF (WGS84)
-  POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/svg → лист для просмотра
+  POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
+  редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
@@ -1133,6 +1134,15 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/pdf")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path == "/api/print/pptx":
+                import print_io
+                body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+                self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pptx"')
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)

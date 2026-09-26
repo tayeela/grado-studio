@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-27, ГРАДО 2 v0.66.0: album to editable PPTX; rounded joins on map outlines.** Owner: the presentation must
+  be available not only as PDF but as a live, editable PPTX. New `core/render/grado_render/backend_pptx.py` runs the
+  same op list as the PDF and SVG backends and writes an OOXML package with zipfile (no new dependencies): paths become
+  freeform shapes (custGeom), labels real text boxes (font, size, rotation, halo as glow), tiles and photos pictures.
+  Each frame of the sheet is a named group (Карта, Легенда, Оформление, Выноска…), inside the map one group per layer
+  (new no-op `layer` marker in SketchMapFrame, ignored by PDF/SVG). PowerPoint has no clipping, so clips are done by
+  geometry: polygons cut by the frame rectangle (fill and outline separately, no false edges along the frame),
+  polylines cut, pictures cropped with srcRect, labels and points outside dropped; a ring clip (ЕГКО basemap inside the
+  okrug) becomes a white mask on top (rectangle with the okrug cut out). Hole rings wind opposite to outer rings, so holes
+  stay empty under any fill rule. Consecutive unfilled lines of one style merge into one shape (hatches). Button «PPTX»
+  next to «PDF альбома», endpoint `/api/print/pptx`. Checked: LibreOffice renders the album like the PDF. The PowerPoint
+  check did not run (the app waited on a dialog; control of it was not granted). Owner: the okrug nodes on the Moscow
+  scheme looked too sharp — map outlines now use round joins (`join: "round"`, PDF `1 j`, SVG `stroke-linejoin`);
+  PDF default miter joins drew spikes up to 10× the half-width at acute nodes. Tests `test_pptx.py`, `Pptx`.
 - **2026-09-27, ГРАДО 2 v0.65.7: administrative boundaries from the owner's reference.** The owner supplied his QGIS
   set «Новые районы и округа» (МСК of ГИС ОГД, OGD_PROJ4): 12 okrugs and 132 districts after the ТиНАО reform (ЗАО has
   12 districts — «Внуково» went to НАО). Checked before use: per-okrug district files equal «Границы_исх», every okrug
