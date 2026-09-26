@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.5: the server keeps the ГИС ОГД cache warm by itself.**
+  - `apps/grado2/ogd_warm.py`: walks the catalogue, re-downloads layers older than 6 days (TTL is 7) one by one with
+    the connector's pause, skips fresh ones without reading them, waits while the program itself is downloading, and
+    records layers the portal refuses in the same failure list as «DXF ГИС ОГД». Run nightly by the `grado-warm`
+    timer on grado.tailink.tech. The Mac's cache (716 layers) was copied to the server once.
+
 - **2026-09-26, ГРАДО 2 v0.58.4: a running ГИС ОГД export is always visible.**
   - Progress lived only in the tab that started the export: after a reload (or from another tab) the page showed
     nothing, and a new click answered «Выгрузка не началась: выгрузка уже идёт». Now the page picks up a running
