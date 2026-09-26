@@ -314,6 +314,7 @@ for _k in SOURCES:
 REDLN = json.loads((STYLES / "redln97.json").read_text("utf-8"))
 REDLN_IDX = acad_lin.lgr_index(REDLN["linetypes"])
 _LGR = json.loads((STYLES / "moscow_lgr.json").read_text("utf-8"))["styles"].values()
+LGR_BY_CODE = {int(v["lgr_code"]): v for v in _LGR if v.get("lgr_code") is not None}
 LGR_COLORS = {int(v["lgr_code"]): v["stroke"] for v in _LGR if v.get("lgr_code") is not None and v.get("stroke")}
 LGR_DASH = {int(v["lgr_code"]): [d * 2 for d in v["dash_mm"]] for v in _LGR if v.get("lgr_code") is not None and v.get("dash_mm")}   # мм на 1:2000 → метры
 
@@ -1087,16 +1088,29 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/ogd_all/styles":
                 # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
                 import ogd_all
-                styles, out = ogd_all.portal_styles(CACHE / "gisogd"), {}
-                for code, geom in list((req.get("layers") or {}).items())[:800]:
+                # слои ЛГР (зоны, границы, надписи СПРИТ и ЗОУИТ) — по Эталону ЛГР (moscow_lgr.json), код — из атрибута слоя
+                # (field) или по названию слоя и папки; своё оформление владельца (OWN_STYLE) — сильнее всего
+                styles, out, rev = ogd_all.portal_styles(CACHE / "gisogd"), {}, {}
+                try:
+                    cat = {x["code"]: x for x in ogd_catalog()}
+                except ConnectorError:
+                    cat = {}
+                for code, spec in list((req.get("layers") or {}).items())[:800]:
+                    geom, field = (spec, None) if isinstance(spec, str) else (list(spec) + [None, None])[:2]
                     if geom not in ("poly", "line", "point"):
                         continue
+                    it = cat.get(code) or {}
+                    parent = str(it.get("path", "")).rsplit(" / ", 2)[-2] if " / " in str(it.get("path", "")) else ""
+                    lgr = LGR_BY_CODE.get(ogd_all.etalon_code(it.get("name", ""), parent, field))
                     try:
-                        own = ogd_all.OWN_STYLE.get(code)
-                        out[code] = ogd_all.layer_style(code, "" if own else styles(str(code)), geom)
+                        if code in ogd_all.OWN_STYLE and geom == "poly":
+                            out[code], rev[code] = ogd_all.layer_style(code, "", geom), ogd_all.OWN_STYLE[code]["rev"]
+                        elif lgr:
+                            out[code], rev[code] = ogd_all.etalon_style(lgr, geom), ogd_all.ETALON_REV
+                        else:
+                            out[code], rev[code] = ogd_all.portal_style(styles(str(code)), geom), 1
                     except (OSError, ValueError, ConnectorError):
                         pass                            # портал не ответил — слой остаётся в своём оформлении
-                rev = {c: v["rev"] for c, v in ogd_all.OWN_STYLE.items()}
                 return self._json(200, {"styles": out, "rev": rev})
             if self.path == "/api/ogd_all/scan":
                 import ogd_all

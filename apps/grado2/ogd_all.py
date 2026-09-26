@@ -311,6 +311,76 @@ def _num(v, d):
 OWN_STYLE = {"zu_29_06_2021": {"rev": 2, "style": {"fill": "#0000ff", "stroke": "#0000ff", "width": 1.0, "opacity": 0, "hatch": False}}}
 
 
+# Слой ГИС ОГД → код ЛГР Эталона (приказ Москомархитектуры № 65) по названию слоя и его папки: у зон и надписей
+# кода линии в атрибутах часто нет. Порядок важен — частное раньше общего. Код из атрибутов (zonelineco,
+# textlineco, linelineco) сильнее названия.
+_ETALON_WORDS = [
+    ("берегов", 41), ("прибрежн", 17), ("водоохран", 16), ("затоплен", 22),
+    ("сильного подтоп", 64), ("сильное подтоп", 64), ("умеренного подтоп", 65), ("умеренное подтоп", 65),
+    ("слабого подтоп", 66), ("слабое подтоп", 66), ("приаэродром", 50), ("воздушных подход", 51),
+    ("охраняемого объекта", 44), ("1а пояса", 59), ("1б пояса", 60), ("жесткая зона", 15), ("жёсткая зона", 15),
+    ("3 пояса", 61), ("iii пояса", 61), ("2 пояса", 14), ("ii пояса", 14), ("1 пояса", 13), ("i пояса", 13),
+    ("расчетн", 62), ("расчётн", 62), ("ориентировочн", 63), ("санитарно-защит", 5), ("сзз", 5),
+    ("военн", 30), ("радиотехнич", 31), ("охранные зоны оопт", 19), ("охранных зон оопт", 19), ("сооружений связи", 34), ("гидроэнерг", 32), ("окс на оопт", 57), ("режимов особой охраны", 7), ("подзона", 50), ("электроэнерг", 32),
+    ("линий связи", 34), ("тепловых сет", 40), ("минимальных расстоян", 39), ("трубопровод", 35),
+    ("пунктов наблюд", 37), ("геодезич", 38), ("метрополитен", 36), ("технические зоны", 29), ("технических зон", 29),
+    ("памятник", 55), ("размещения окс на оопт", 57), ("резерв", 46), ("особо охраняемых зелен", 47),
+    ("режимы особой охраны", 7), ("режимами регулирования", 21), ("природного комплекса", 18), ("пк ", 18),
+    ("оопт", 8), ("особо охраняемые природные", 8), ("полос отвода", 6), ("полосы отвода", 6),
+    ("внеуличных пешеход", 45), ("линии застройки", 26), ("линий застройки", 26), ("транспортных сооружен", 25),
+    ("транспортных коммуникац", 58), ("лесопарков", 49), ("регулирования застройки", 23),
+    ("охраняемого природного ландшафта", 11), ("охранных зон объектов культурного", 10), ("защитных зон объектов культурного", 20), ("охранной зоны", 10),
+    ("защитные зоны", 20), ("защитная зона", 20), ("охранные зоны объектов культурного", 10),
+    ("территорий объектов культурного", 9), ("территории объектов культурного", 9),
+]
+
+
+def etalon_code(name, path="", field=None):
+    """Код ЛГР Эталона слоя: из атрибута (field), иначе по названию слоя, затем по названию его папки."""
+    try:
+        if field not in (None, ""):
+            return abs(int(float(str(field).split(",")[0])))
+    except ValueError:
+        pass
+    for head, code in (("1.1.", 1), ("1.2.", 2), ("1.3.", 3), ("1.4.1", 25), ("1.4.", 4)):   # папки красных линий
+        if (path or "").startswith(head):
+            return code
+    for text in (name, path):
+        t = (text or "").lower().replace("ё", "е")
+        for word, code in _ETALON_WORDS:
+            if word.replace("ё", "е") in t:
+                return code
+    return None
+
+
+# Оформление зон по Эталону владельца вместо Эталона: береговые полосы — синий штриховой контур без заливки
+ETALON_NO_FILL = {41}
+ETALON_REV = 3          # номер правки оформления «по Эталону» (см. OWN_STYLE: слой перекрашивается один раз)
+
+
+def etalon_style(lgr, geom):
+    """Запись Эталона ЛГР (moscow_lgr.json) → оформление слоя ГРАДО 2: контур цветом и штрихом знака, штриховка зоны
+    её цветом и углом, подписи («Надписи …») — цветом знака, по углу из ГИС ОГД, без значка точки."""
+    stroke = lgr.get("stroke") or "#ff0000"
+    dash = [round(v, 2) for v in lgr.get("dash_px") or []]
+    width = max(1.0, round(float(lgr.get("width_px") or 1), 2))
+    if geom == "point":
+        return {"fill": stroke, "stroke": stroke, "width": 0, "opacity": 1, "marker": False,
+                "label": "text", "labelSize": 11, "labelColor": stroke, "labelAngle": "textangle"}
+    if geom == "line":
+        return {"fill": stroke, "width": width, "dash": dash}
+    out = {"fill": stroke, "stroke": stroke, "strokeOwn": True, "width": width, "dash": dash, "opacity": 0, "hatch": False}
+    h = lgr.get("hatch") or {}
+    if int(lgr.get("lgr_code") or 0) not in ETALON_NO_FILL:
+        if h.get("color"):
+            ang = str(int(h["angle"] if h.get("angle") is not None else 45))
+            out.update(fill=h["color"], hatch=True, hatchPat=("x" + ("45" if ang in ("45", "135") else "0")) if h.get("cross") else ang,
+                       hatchStep=round(float(h.get("spacing_px") or 8), 1))
+        elif lgr.get("fill"):
+            out.update(fill=lgr["fill"], opacity=0.35)
+    return out
+
+
 def layer_style(code, css, geom):
     """Оформление слоя портала в проекте: своё (OWN_STYLE), иначе — как на карте портала."""
     own = OWN_STYLE.get(code)
@@ -447,6 +517,9 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                         ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:
                 lts = _linetypes(props, redln) if redln else []
+                if redln and not lts and layer.get("lgr") and geom["type"] in ("Polygon", "MultiPolygon") \
+                        and layer["lgr"] not in (1, 2, 3, 4):    # контур зоны — штрихом знака Эталона (у линий — свой код)
+                    lts = _linetypes({"linecode": str(layer["lgr"])}, redln)
                 for n in lts:
                     if n in doc.linetypes:
                         continue
@@ -653,12 +726,18 @@ class Job:
                         except ConnectorError:          # полигонов нет — стороны остаются, как в ГИС ОГД
                             pass
             st.update(current="", message="Сборка чертежа…")
+            for it in found:                            # знак Эталона ЛГР слоя: цвет слоя и тип контура зон
+                field = next((p.get("zonelineco") or p.get("textlineco") for p in (f["properties"] for f in it["features"][:50])
+                              if p.get("zonelineco") or p.get("textlineco")), None)
+                parent = it.get("path", "").rsplit(" / ", 2)[-2] if " / " in it.get("path", "") else ""
+                it["lgr"] = etalon_code(it["title"], parent, field)
             if self.styles:
                 st.update(current="", message="Цвета слоёв, как на карте портала…")
                 for it in found:
                     try:
                         own = OWN_STYLE.get(it["code"])
-                        it["color"] = own["style"]["stroke"] if own else portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
+                        lgr_color = (self.redln or {}).get("colors", {}).get(it["lgr"]) if it.get("lgr") else None
+                        it["color"] = own["style"]["stroke"] if own else lgr_color or portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
                     except Exception:              # без цвета слой остаётся со своим номером цвета
                         pass
             st.update(message="Сборка чертежа…")

@@ -250,7 +250,12 @@ function symbolOf(l, f) {
 }
 const rgba = (hex, a) => { const c = [...ol.color.asArray(hex)]; c[3] = a; return c; };
 const css = (hex, a) => `rgba(${rgba(hex, a).join(",")})`;
-const labelStyle = (l, f) => { const st = l.style, t = f.get(st.label); return t == null || t === "" ? null : new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", offsetY: l.geom === "point" ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false }) }); };   // у точки подпись над знаком с зазором: знак — помеха для разведения подписей, задетая рамкой подпись скрывалась
+// labelColor — цвет подписи (надписи ЛГР — цветом знака), labelAngle — поле угла подписи (ГИС ОГД: по часовой стрелке),
+// marker: false — слой подписей без значка точки: подпись стоит на самой точке
+const upright = a => { a = ((a % 360) + 360) % 360; return a > 90 && a < 270 ? a - 180 : a; };
+const labelStyle = (l, f) => { const st = l.style, t = f.get(st.label); if (t == null || t === "") return null;
+  const ang = st.labelAngle ? upright(+f.get(st.labelAngle) || 0) * Math.PI / 180 : 0, bare = st.marker === false;
+  return new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle, offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false }) }); };   // у точки подпись над знаком с зазором: знак — помеха для разведения подписей, задетая рамкой подпись скрывалась
 // крупный слой: номер цвета в таблице l.pal у каждого объекта (-1 — скрыт категорией или правилом)
 function symAll(l, notify) {
   const idx = new Map(); l.pal = [];
@@ -302,13 +307,16 @@ function styleFor(l, f, res) {
     const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
     const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
     const key = `${s.fill}|${s.hatch}|${g}|${clip}|${st.hatchPat || "45"}|${st.hatchStep || 8}`; let base = l.cache.get(key);
+    // контур цветом знака при штриховке (Эталон ЛГР: граница — своим цветом, штриховка — своим) и штрих контура
+    const edge = s.hatch && !st.strokeOwn ? s.fill : st.stroke, dash = st.dash?.length ? st.dash : undefined;
     if (!base) {
-      if (g === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: "round", lineJoin: "round" }) });
-      else if (g === "pline") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round" }) });
+      if (g === "line") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: s.fill, width: st.width, lineCap: dash ? "butt" : "round", lineJoin: "round", lineDash: dash }) });
+      else if (g === "pline") base = new ol.style.Style({ stroke: new ol.style.Stroke({ color: edge, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round", lineDash: dash }) });
+      else if (g === "point" && st.marker === false) base = [];
       else if (g === "point") base = new ol.style.Style({ image: new ol.style.Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new ol.style.Fill({ color: s.fill }), stroke: new ol.style.Stroke({ color: st.stroke, width: 1 }) }) });
       else if (clip) base = [new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) }) }),
-        new ol.style.Style({ geometry: frameless, stroke: new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) })];
-      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: s.hatch ? s.fill : st.stroke, width: st.width }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
+        new ol.style.Style({ geometry: frameless, stroke: new ol.style.Stroke({ color: edge, width: st.width, lineDash: dash }) })];
+      else base = new ol.style.Style({ fill: new ol.style.Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) }), stroke: st.width > 0 ? new ol.style.Stroke({ color: edge, width: st.width, lineDash: dash }) : undefined });   // толщина 0 — без контура (холст с 0 рисует прежней толщиной)
       l.cache.set(key, base);
     }
     Array.isArray(base) ? out.push(...base) : out.push(base);
@@ -324,7 +332,9 @@ function styleFor(l, f, res) {
 async function portalStyles() {
   const all = LYR.filter(l => l.key.startsWith("ogd."));
   if (!all.length) return;
-  let r; try { r = await api("/api/ogd_all/styles", { layers: Object.fromEntries(all.map(l => [l.key.slice(4), l.geom])) }); } catch { return; }
+  // код знака ЛГР из атрибутов слоя (зоны — zonelineco, надписи — textlineco), если он там есть
+  const field = l => { for (const f of DATA[l.key]?.fc.features.slice(0, 50) || []) { const p = f.properties, v = p.zonelineco ?? p.textlineco; if (v != null && v !== "" && +v) return v; } return null; };
+  let r; try { r = await api("/api/ogd_all/styles", { layers: Object.fromEntries(all.map(l => [l.key.slice(4), [l.geom, field(l)]])) }); } catch { return; }
   const rev = l => r.rev?.[l.key.slice(4)] || 1, done = l => l.style.portal === true ? 1 : l.style.portal || 0;
   const todo = all.filter(l => done(l) < rev(l));
   if (!todo.length) return;

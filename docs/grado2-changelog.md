@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.61.0: ЛГР layers of ГИС ОГД drawn by the ЛГР Эталон (приказ № 65).**
+  - Owner: береговые полосы — blue dashed outline, no fill, labels in the same colour; everything by the СПРИТ Эталон.
+  - `ogd_all.etalon_code`: ГИС ОГД layer → Эталон code from `zonelineco`/`textlineco`, else by layer and folder name
+    (red-line folders 1.1–1.4.1 by number). `etalon_style`: outline in the sign colour with its dash (dash_px), hatch
+    in the Эталон hatch colour and angle, labels («Надписи …») in the sign colour without a point marker, rotated by
+    `textangle` (clockwise in ГИС ОГД, turned upright). Береговые полосы (41): no hatch (`ETALON_NO_FILL`).
+  - Client style gained `dash`, `strokeOwn` (outline keeps its colour next to the hatch), `marker:false`,
+    `labelColor`, `labelAngle`. `/api/ogd_all/styles` takes `[geom, code field]` and answers `rev` 3 for Эталон
+    layers — layers styled by v0.60 restyle once on project open.
+  - «DXF ГИС ОГД»: layer colour of zones and labels from the Эталон; zone outlines get the sign linetype.
+
 - **2026-09-26, ГРАДО 2 v0.60.2: land parcels (zu_29_06_2021) — pure blue outline, no hatching.** Owner's choice
   instead of the portal pattern: `ogd_all.OWN_STYLE` (rgb 0 0 255, fill 0, width 1) for the project and the layer
   colour of «DXF ГИС ОГД». Own styles carry a revision: `/api/ogd_all/styles` returns `rev`, the client restyles a
