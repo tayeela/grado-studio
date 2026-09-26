@@ -429,33 +429,47 @@ function ogdSheet(fr) {
 }
 window.ogdSheet = ogdSheet;
 async function runOgd(fr, codes) {
-  const btn = $("bOgdAll");
-  if (ogdPoll) { await api("/api/ogd_all/cancel", {}); return; }
+  if (ogdPoll) { await api("/api/ogd_all/cancel", {}); window.setHint?.("Остановка: текущий слой дочитывается, потом выгрузка встанет."); return; }
   // лист бумаги в DXF: у листа без штампа — вся бумага, у ГОСТ и слайдов — только поле карты; видовой экран — поле карты
   const i = ALBUM.sheets.indexOf(fr), sheet = ogdSheet(fr), scale = sheet.scale;
   const where = `листу ${i + 1} «${fr.title}» (${SIZE_T[fr.size] || fr.size}, 1:${fmt(scale)})`;
-  try { await api("/api/ogd_all/start", { sheet, codes, boundary: TERR?.geometry || null, name: `ОГД ${fr.title || `лист ${i + 1}`} 1-${scale}` }); }
-  catch (err) { return toast("Выгрузка не началась: " + err.message); }
-  toast(`Выгрузка всех слоёв ГИС ОГД по ${where}.`);
-  btn.lastChild.textContent = "Остановить";
-  const min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
-  ogdPoll = setInterval(async () => {
+  try { await api("/api/ogd_all/start", { sheet, codes, where, boundary: TERR?.geometry || null, name: `ОГД ${fr.title || `лист ${i + 1}`} 1-${scale}` }); }
+  catch (err) {
+    // выгрузка уже идёт (запущена раньше, из другой вкладки или до обновления страницы) — показываем её ход
+    if (/уже идёт/.test(err.message)) { toast("Выгрузка ГИС ОГД уже идёт — показываю её ход на кнопке и в строке состояния. Новая начнётся, когда эта закончится."); return watchOgd(); }
+    return toast("Выгрузка не началась: " + err.message);
+  }
+  toast(`Выгрузка всех слоёв ГИС ОГД по ${where}. Ход — на кнопке «DXF ГИС ОГД» и в строке состояния; работать можно дальше.`);
+  watchOgd();
+}
+/* ход выгрузки: кнопка показывает «слой N из M», строка состояния — подробности; по окончании архив скачивается.
+   Подключается и к выгрузке, начатой раньше (при открытии страницы и на повторное нажатие). */
+function watchOgd() {
+  const btn = $("bOgdAll"), lb = btn.lastChild, min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
+  clearInterval(ogdPoll);
+  const tick = async () => {
     let st; try { st = await api("/api/ogd_all/status"); } catch { return; }
+    const where = st.where || "листу";
     if (st.running) {
       const left = st.done ? (Date.now() / 1000 - st.started) / st.done * (st.total - st.done) : 0;
+      lb.textContent = `ГИС ОГД ${st.done}/${st.total || "…"} · стоп`; btn.classList.add("busy");
+      btn.title = `Идёт выгрузка ГИС ОГД по ${where}. Нажмите, чтобы остановить.`;
       window.setHint?.(`ГИС ОГД по ${where}: слой ${st.done} из ${st.total || "…"}${st.current ? ` — «${st.current}»` : ""}${st.message ? ` (${st.message})` : ""}. `
         + `С объектами на листе: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
       return;
     }
-    clearInterval(ogdPoll); ogdPoll = null; btn.lastChild.textContent = "DXF ГИС ОГД"; window.setHint?.("");
+    clearInterval(ogdPoll); ogdPoll = null; lb.textContent = "DXF ГИС ОГД"; btn.classList.remove("busy"); btn.title = btn.dataset.title || btn.title; window.setHint?.("");
     if (!st.file) return toast(st.message || "Выгрузка остановлена.");
     const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
     toast(`Готово по ${where}: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}. `
       + `${st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (в AutoCAD — вкладка листа с видовым экраном; в DWG — «Сохранить как»)"} и таблицы атрибутов.`
       + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
-  }, 1500);
+  };
+  ogdPoll = setInterval(tick, 1500); tick();
 }
+$("bOgdAll").dataset.title = $("bOgdAll").title;
+api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { });   // открыли страницу во время выгрузки
 window.runOgd = runOgd; window.exportOgd = fr => ogdPoll ? runOgd(null) : window.openOgdPicker(fr);   // сначала окно выбора слоёв (ogdpick.js)
 $("bOgdAll").onclick = () => {
   if (ogdPoll) return runOgd(null);

@@ -1008,7 +1008,7 @@ class Handler(SimpleHTTPRequestHandler):
                     OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
                                                str(req.get("name") or "gisogd"), sheet=sheet,
                                                styles=ogd_all.portal_styles(CACHE / "gisogd"),
-                                               codes=req.get("codes"))]
+                                               codes=req.get("codes"), where=req.get("where"))]
                 return self._json(200, OGD_JOB[0].state)
             if self.path == "/api/ogd_all/scan":
                 import ogd_all

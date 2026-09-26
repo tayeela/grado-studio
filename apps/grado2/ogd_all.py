@@ -301,13 +301,13 @@ def scan(bbox, cache_dir, cat):
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None):
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where=""):
         """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None."""
         self.sheet, self.styles, self.codes = sheet, styles, (set(codes) if codes is not None else None)
         bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
         self.name = re.sub(r'[<>/\\":;?*|=`\s]+', "_", name).strip("_")[:60] or "gisogd"
-        self.state = {"running": True, "done": 0, "total": 0, "current": "", "found": 0, "objects": 0,
+        self.state = {"running": True, "where": str(where or "")[:200], "done": 0, "total": 0, "current": "", "found": 0, "objects": 0,
                       "errors": [], "file": None, "dwg": False, "message": "Каталог слоёв портала…",
                       "started": time.time()}
         self.cancel = threading.Event()

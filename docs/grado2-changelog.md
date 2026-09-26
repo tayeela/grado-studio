@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.4: a running ГИС ОГД export is always visible.**
+  - Progress lived only in the tab that started the export: after a reload (or from another tab) the page showed
+    nothing, and a new click answered «Выгрузка не началась: выгрузка уже идёт». Now the page picks up a running
+    export on open and on that answer; the button shows «ГИС ОГД N/M · стоп», the status line names the sheet
+    (`where` kept in the server job), and the archive downloads when it ends.
+
 - **2026-09-26, ГРАДО 2 v0.58.3: big ГИС ОГД layers no longer run the server out of memory.**
   - On grado.tailink.tech (3 GB limit) «Земельные участки» (`zu_29_06_2021`, 71 MB zip) was OOM-killed four times:
     `GisogdApi.fetch` kept every object in a list, parsed the layer's whole GeoJSON with `json.loads` to restore texts
