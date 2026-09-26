@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-27, ГРАДО 2 v0.65.6: okrug = sum of its districts, a district is in one okrug only.** Owner's rule and
+  marks: the ЗАО boundary at Солнцево runs along the НАО line (the 10.5 km² strip south of Солнцево is ЗАО), the НАО
+  boundary at Бутово runs along the ЮЗАО edge, ЗАО «Внуково» stays in ЗАО. `okrugsByDistricts`: old-Moscow districts
+  as in ГИС ОГД; new ТиНАО districts minus the old districts they overlap; okrug = union of its districts; land inside
+  ТиНАО (precise ЕГКО settlements) covered by no district goes to the okrug with the longest common border (area of a
+  30 m band around the gap inside the okrug) — gives both of the owner's marks. `turf.union` of all 125 districts at
+  once fails (SweepLine error) and `booleanIntersects` on big outlines cost 39 s: step-by-step differences with a
+  bounding-box check instead — the whole assembly 6.8 s. ЗАО 203.0, НАО 359.2, ТАО 1 070.0, ЮЗАО 110.9 km².
+
 - **2026-09-26, ГРАДО 2 v0.65.5: okrug boundaries by a reference assembly — no crossings at Солнцево and
   Ново-Переделкино.** Owner: okrug boundaries cross wrongly there. The new ТиНАО districts of ГИС ОГД (virtualterr_*)
   are schematic (straight lines across the land): they overlap old Moscow and leave a gap at Московский (25 % of it
