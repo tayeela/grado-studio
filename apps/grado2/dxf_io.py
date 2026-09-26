@@ -49,6 +49,12 @@ def _pattern_string(lt, shapes):
     return ",".join(parts)
 
 
+# LWPOLYLINE flag «linetype generation»: the pattern runs continuously along the whole polyline. Without it AutoCAD
+# restarts the pattern at every vertex, and on dense ГИС ОГД boundaries (segments under 1 m, pattern 20 m) the
+# REDLN97 signs vanish or turn along random short segments.
+PLINEGEN = 128
+
+
 def _add_linetype(doc, name, lt, shapes):
     if name in doc.linetypes:
         return
@@ -116,6 +122,7 @@ def export_dxf(layers, redln, lgr_colors):
                     a = dict(attrs)
                     if n:
                         a["linetype"] = n
+                        a["flags"] = PLINEGEN
                         code = _code_of(n)
                         if code in lgr_colors:
                             a["true_color"] = _rgb(lgr_colors[code])

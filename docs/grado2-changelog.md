@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.8: REDLN97 signs run continuously along ГИС ОГД lines in AutoCAD.**
+  - Owner: natural complex markers point in different directions and break off. Cause: polylines had no «linetype
+    generation» flag, so AutoCAD restarted the 20 m pattern at every vertex; ГИС ОГД boundaries have segments of
+    0.2–1 m, so the triangles vanished or turned along random short segments. Lines with a REDLN97 linetype now carry
+    PLINEGEN (flag 128) in both «DXF ГИС ОГД» and the plain DXF export.
+
 - **2026-09-26, ГРАДО 2 v0.58.7: «DXF ГИС ОГД» draws СПРИТ lines with the owner's REDLN97 linetypes.**
   - Objects with a ГИС ОГД line code (`linelineco`/`LineCode`: layers l1…l57 and virtual2950 — red lines, building
     regulation lines, zone borders of section 11) get the REDLN97 linetype and the ЛГР colour, exactly like the plain

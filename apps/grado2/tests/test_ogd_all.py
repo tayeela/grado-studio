@@ -118,6 +118,7 @@ class OgdAll(unittest.TestCase):
         self.assertIn(red.dxf.linetype, doc.linetypes)
         self.assertTrue(red.dxf.linetype.upper().startswith("L"))
         self.assertTrue(red.dxf.hasattr("true_color"))            # цвет ЛГР
+        self.assertTrue(red.dxf.flags & 128)                       # образец идёт по всей полилинии, а не с каждой вершины
         zone = doc.modelspace().query('LWPOLYLINE[layer=="ОГД Зоны"]')[0]
         self.assertFalse(zone.dxf.hasattr("linetype"))            # без кода линии — обычная линия слоя
 

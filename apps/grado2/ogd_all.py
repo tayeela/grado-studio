@@ -217,6 +217,7 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                         a = dict(attrs)
                         if n:
                             a["linetype"] = n
+                            a["flags"] = dxf_io.PLINEGEN
                             code = dxf_io._code_of(n)
                             if code in redln["colors"]:
                                 a["true_color"] = dxf_io._rgb(redln["colors"][code])
