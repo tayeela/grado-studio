@@ -6,56 +6,62 @@
 const OKR_FULL = { ЦАО: "Центральный", САО: "Северный", СВАО: "Северо-Восточный", ВАО: "Восточный", ЮВАО: "Юго-Восточный", ЮАО: "Южный",
   ЮЗАО: "Юго-Западный", ЗАО: "Западный", СЗАО: "Северо-Западный", ЗелАО: "Зеленоградский", НАО: "Новомосковский", ТАО: "Троицкий" };
 
-/* Граница округа — по его районам (решение владельца 26.09.2026). В ГИС ОГД слои округов (prefect_*, и ЕГКО
-   «Границы административных округов») собраны из старых 21 поселения ТиНАО, а районы ТиНАО — новые, и граница ТАО/НАО
-   у них расходится на 56–90 км². Контур округа собирается объединением его районов (turf.union); щели между районами
-   старой Москвы (дыры меньше 0,5 км²) отбрасываются — у округов нет анклавов внутри. */
-const ADM_REV = "по районам, 3";                  // метка сборки: другая — административное деление берётся заново
+/* Округа и районы по эталону (решения владельца 26.09.2026). Слои округов ГИС ОГД (prefect_*, ЕГКО «Границы
+   административных округов») собраны из старых 21 поселения ТиНАО; новые районы ТиНАО (слои virtualterr_*) делят его
+   иначе, но нарисованы схематично — прямыми через местность, с заходами на старую Москву и щелью у Солнцева.
+   Сборка:
+   · ТиНАО целиком — точные поселения ЕГКО «Границы районов» (уровень «поселение», сервер) и старые районы,
+     целиком (≥ 90 %) лежащие в новых районах ТиНАО (ЗАО «Внуково» → НАО);
+   · ТАО = ТиНАО ∩ новые районы ТАО, НАО = ТиНАО − ТАО: внешний контур и стык со старой Москвой точные, граница
+     ТАО/НАО внутри — по новым районам (другой нет);
+   · новые районы обрезаются по своему округу, старые — как в ГИС ОГД; округа старой Москвы — объединение их районов.
+   Обрезки меньше 1 га и дыры меньше 0,5 км² отбрасываются. Поселения после сборки из слоя уходят. */
+const ADM_REV = "эталон 4";                       // метка сборки: другая — административное деление берётся заново
+const isPoly = f => /Polygon/.test(f?.geometry?.type);
+const isNewD = f => String(f.properties._key || "").startsWith("virtualterr_");
+function geoClean(g, holes = 5e5) {
+  if (!g) return null;
+  const polys = (g.geometry.type === "Polygon" ? [g.geometry.coordinates] : g.geometry.coordinates)
+    .map(p => [p[0], ...p.slice(1).filter(r => safe(() => turf.area(turf.polygon([r]))) > holes)])
+    .filter(p => safe(() => turf.area(turf.polygon(p))) > 1e4);
+  if (!polys.length) return null;
+  return polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys };
+}
+const geoFeat = g => g && { type: "Feature", properties: {}, geometry: g.geometry || g };
+function geoUnite(fs) { fs = fs.filter(Boolean); if (!fs.length) return null; if (fs.length === 1) return geoFeat(fs[0]);
+  try { return turf.union(turf.featureCollection(fs.map(geoFeat))); } catch { return null; } }
+function geoCut(a, b, op) { if (!a || !b) return op === "difference" ? a : null;
+  try { return turf[op](turf.featureCollection([geoFeat(a), geoFeat(b)])); } catch { return op === "difference" ? a : null; } }
+
 function okrugsByDistricts(fc) {
-  const fs = trimOldDistricts(fc.features || []), out = [];
-  for (const f of fs) {
-    if (f.properties["Уровень"] !== "округ") { out.push(f); continue; }
-    const name = f.properties["Наименование"], ds = fs.filter(d => d.properties["Уровень"] === "район" && d.properties["Округ"] === name && /Polygon/.test(d.geometry?.type));
-    let u = null;
-    if (ds.length) try { u = ds.length === 1 ? ds[0] : turf.union(turf.featureCollection(ds)); } catch { u = null; }
-    if (!u) { out.push(f); continue; }
-    const polys = (u.geometry.type === "Polygon" ? [u.geometry.coordinates] : u.geometry.coordinates)
-      .map(p => [p[0], ...p.slice(1).filter(r => safe(() => turf.area(turf.polygon([r]))) > 5e5)]);
-    out.push({ ...f, geometry: polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys },
-      properties: { ...f.properties, "Граница": ADM_REV } });
+  const all = fc.features || [], lvl = (f, l) => f.properties["Уровень"] === l && isPoly(f);
+  const settl = all.filter(f => lvl(f, "поселение")), newD = all.filter(f => lvl(f, "район") && isNewD(f));
+  const oldD = all.filter(f => lvl(f, "район") && !isNewD(f));
+  const newU = geoUnite(newD);
+  const moved = new Set(newU ? oldD.filter(d => { const x = geoCut(d, newU, "intersect"); return x && turf.area(x) >= .9 * turf.area(d); }) : []);
+  const geomOf = {};                                       // округ → точная геометрия
+  if (settl.length && newD.length) {
+    const tinao = geoUnite([...settl, ...moved]);
+    const tao = geoCut(tinao, geoUnite(newD.filter(d => d.properties["Округ"] === "ТАО")), "intersect");
+    geomOf["ТАО"] = geoClean(tao); geomOf["НАО"] = geoClean(geoCut(tinao, tao, "difference"));
   }
-  return { ...fc, features: out };
+  const districts = [];
+  for (const d of oldD) if (!moved.has(d)) districts.push(d);
+  for (const d of newD) {                                  // новый район — в границах своего (точного) округа
+    const og = geomOf[d.properties["Округ"]];
+    const g = og ? geoClean(geoCut(d, { geometry: og }, "intersect")) : d.geometry;
+    if (g) districts.push({ ...d, geometry: g });
+  }
+  const out = [];
+  for (const f of all) {
+    if (f.properties["Уровень"] !== "округ") continue;
+    const name = f.properties["Наименование"];
+    const g = geomOf[name] || geoClean(geoUnite(districts.filter(d => d.properties["Округ"] === name)));
+    out.push(g ? { ...f, geometry: g, properties: { ...f.properties, "Граница": ADM_REV } } : f);
+  }
+  return { ...fc, features: [...out, ...districts, ...all.filter(f => !["округ", "район", "поселение"].includes(f.properties["Уровень"]))] };
 }
 window.okrugsByDistricts = okrugsByDistricts;
-
-/* Районы старой Москвы в ГИС ОГД прежние, а новые районы ТиНАО (слои virtualterr_*) забрали у них часть территории:
-   ЗАО «Внуково» целиком внутри НАО «Внуково», ЮЗАО «Южное Бутово» заходит в НАО «Щербинку» на 7,8 км² (сверено
-   26.09.2026). Где новый район перекрывает старый, прав новый: перекрытие вычитается, обрезки меньше 1 га
-   отбрасываются, район, от которого осталось меньше 5 га, убирается. */
-function trimOldDistricts(fs) {
-  const isNew = f => String(f.properties._key || "").startsWith("virtualterr_");
-  const nw = fs.filter(f => f.properties["Уровень"] === "район" && isNew(f) && /Polygon/.test(f.geometry?.type));
-  const out = [];
-  for (const f of fs) {
-    if (f.properties["Уровень"] !== "район" || isNew(f) || !/Polygon/.test(f.geometry?.type)) { out.push(f); continue; }
-    let g = f, cut = false;
-    for (const x of nw) {
-      if (!g || !safe(() => turf.booleanIntersects(g, x))) continue;
-      let r;
-      try { r = turf.difference(turf.featureCollection([g, x])); } catch { continue; }   // сбой вычитания — район как был
-      g = r; cut = true;                                                             // null — район целиком внутри нового
-    }
-    if (!cut) { out.push(f); continue; }
-    if (!g) continue;
-    const polys = (g.geometry.type === "Polygon" ? [g.geometry.coordinates] : g.geometry.coordinates).filter(p => safe(() => turf.area(turf.polygon(p))) > 1e4);
-    const left = polys.reduce((s, p) => s + turf.area(turf.polygon(p)), 0);
-    if (!polys.length || left < 5e4) continue;
-    if (turf.area(f) - left < 1e4) { out.push(f); continue; }        // только касание границей — район как был
-    out.push({ ...f, geometry: polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys },
-      properties: { ...f.properties, "Граница": "без территории ТиНАО" } });
-  }
-  return out;
-}
 
 // округ и район, где лежит территория (административное деление ГИС ОГД)
 function homeAdm() {

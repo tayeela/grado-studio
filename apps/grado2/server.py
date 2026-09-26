@@ -610,6 +610,18 @@ def fetch(bbox, keys):
             for f in api.fetch(moscow, it["code"])["features"]:
                 f["_extra"] = {"Уровень": "район", "Округ": okr, "Наименование": it["name"]}
                 feats.append(f)
+        # точные границы поселений ТиНАО (21) из эталона картоосновы ЕГКО «Границы районов»: новые районы ТиНАО в ГИС
+        # ОГД нарисованы схематично (прямые через местность), а по поселениям — внешний контур ТиНАО и его стык со
+        # старой Москвой без щелей и заходов (сборка округов — okrugsByDistricts в albums.js)
+        try:
+            egko = GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=True, ttl=EGKO_TTL)
+            for f in egko.fetch(moscow, "raions")["features"]:
+                code = str((f.get("properties") or {}).get("codemr") or "")
+                if code[:2] in ("11", "12"):
+                    f["_extra"] = {"Уровень": "поселение", "Код": code, "Наименование": str(f["properties"].get("name") or "").title()}
+                    feats.append(f)
+        except ConnectorError:
+            pass
         layers[k] = _layer(k, {"features": feats, "source_doc": "ГИС ОГД Москвы: административные округа и районы",
                                "notes": [] if home else ["область вне административных округов Москвы"]})
 

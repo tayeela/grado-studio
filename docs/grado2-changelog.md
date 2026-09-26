@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.5: okrug boundaries by a reference assembly — no crossings at Солнцево and
+  Ново-Переделкино.** Owner: okrug boundaries cross wrongly there. The new ТиНАО districts of ГИС ОГД (virtualterr_*)
+  are schematic (straight lines across the land): they overlap old Moscow and leave a gap at Московский (25 % of it
+  in no new district); they also re-cut settlements (Первомайское NAO/TAO, Десеновское → ТАО). No precise layer of
+  the new districts exists (checked both portal maps; other map codes 404/403). Assembly now (`okrugsByDistricts`):
+  ТиНАО = precise settlements of ЕГКО «Границы районов» (server adds them as «поселение») + old districts lying ≥ 90 %
+  inside new ТиНАО districts (ЗАО «Внуково» → НАО); ТАО = ТиНАО ∩ new ТАО districts, НАО = ТиНАО − ТАО (outer outline
+  and the joint with old Moscow precise, the ТАО/НАО line inside by the new districts); new districts clipped to
+  their okrug; old-Moscow okrugs = union of their districts as in ГИС ОГД (the partial cut of Южное Бутово in v0.65.4
+  was an artefact of the schematic line and is gone). ТАО 1 070 km², НАО 384.8 km², ЗАО 177.5 km², ЮЗАО 110.9 km².
+
 - **2026-09-26, ГРАДО 2 v0.65.4: ЗАО and ЮЗАО boundaries without the territory given to НАО.** Owner: ЗАО and ЮЗАО
   boundaries on the Moscow scheme are old. The old-Moscow district layers of ГИС ОГД were not updated after the
   ТиНАО district reform: ЗАО «Внуково» (two parts, 15 km²) lies wholly inside the new НАО «Внуково», ЮЗАО «Южное
