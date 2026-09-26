@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.2: okrug map of the location sheet as in the template.** Owner: the right scheme is
+  wrong, check the template. The template shows a detailed colour base map inside the okrug (grey buildings, green,
+  blue water, white streets) and a washed-out one outside, district boundaries in black. Now: `print_io.egko_ops`
+  draws ЕГКО base2 (forest, lawns, water, road polygons, buildings) from the server cache, clipped to the okrug
+  outline (`mask`), over a light fill; the Esri light grey tiles stay outside. Buildings under 0.3 mm on paper are
+  skipped, outlines simplified to 0.12 mm (`_simplify`, Douglas–Peucker; closed rings split at the farthest point):
+  ТАО at 1:243 000 — 9.5 k shapes, 136 k vertices, 7.6 s. Backends gained a clip by rings (PDF `W*`, SVG clipPath).
+  `esri_tile.egko` hands `egko_features` to the printer. District lines black.
+
 - **2026-09-26, ГРАДО 2 v0.65.1: okrug boundary = union of its districts (ТАО/НАО).** Owner: the ТАО/НАО boundary
   is wrong. In ГИС ОГД the okrug layers (`prefect_*`, and ЕГКО «Границы административных округов») are made of the
   old 21 settlements of ТиНАО, while the ТиНАО districts («Территория / районы ТАО / НАО»: Бекасово, Вороново,

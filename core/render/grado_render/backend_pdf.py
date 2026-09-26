@@ -173,6 +173,15 @@ class PdfBackend:
                          o["x"] * MM2PT, (h - o["y"] - o["h"]) * MM2PT)
                 out += (f"q\n{' '.join(_f(v) for v in m)} cm\n"
                         f"/{name} Do\nQ\n")
+            elif o["op"] == "clip" and o.get("rings"):
+                # обрезка по контуру (округ на схеме шаблона ППТ КРТ): кольца, правило чётности — дыры остаются вне
+                path = ""
+                for ring in o["rings"]:
+                    for i, (x, y) in enumerate(ring):
+                        path += f"{_f(x * MM2PT)} {_f((h - y) * MM2PT)} {'m' if i == 0 else 'l'}\n"
+                    path += "h\n"
+                out += f"q\n{path}W* n\n"
+                clip_depth += 1
             elif o["op"] == "clip":
                 x, y, cw, ch = o["rect"]
                 out += (f"q\n{_f(x * MM2PT)} {_f((h - y - ch) * MM2PT)} "

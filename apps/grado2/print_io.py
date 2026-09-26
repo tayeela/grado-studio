@@ -114,6 +114,79 @@ class MapTransform:
         return (fx + fw / 2 + x * self.k, fy + fh / 2 - y * self.k)
 
 
+def _simplify(pts, tol):
+    """Упрощение ломаной (Дуглас — Пекер) до допуска tol мм листа: подробный контур леса или реки на мелкой схеме
+    весит в PDF в десятки раз больше, чем видно глазу."""
+    if len(pts) < 4:
+        return pts
+    x0, y0 = pts[0]
+    if math.hypot(pts[-1][0] - x0, pts[-1][1] - y0) < 1e-9:
+        # замкнутое кольцо: концы совпадают, отрезка-основы нет — делим кольцо по самой дальней от начала точке
+        m = max(range(len(pts)), key=lambda i: (pts[i][0] - x0) ** 2 + (pts[i][1] - y0) ** 2)
+        return _simplify(pts[:m + 1], tol)[:-1] + _simplify(pts[m:], tol)
+    keep, stack = [0, len(pts) - 1], [(0, len(pts) - 1)]
+    while stack:
+        i, j = stack.pop()
+        (x1, y1), (x2, y2) = pts[i], pts[j]
+        dx, dy = x2 - x1, y2 - y1
+        L = math.hypot(dx, dy) or 1e-9
+        best, bi = 0.0, None
+        for k in range(i + 1, j):
+            d = abs(dy * (pts[k][0] - x1) - dx * (pts[k][1] - y1)) / L
+            if d > best:
+                best, bi = d, k
+        if bi is not None and best > tol:
+            keep.append(bi)
+            stack += [(i, bi), (bi, j)]
+    return [pts[k] for k in sorted(keep)]
+
+
+# Картооснова ЕГКО внутри округа (правая схема «Месторасположения» шаблона ППТ КРТ): цвета — как в шаблоне
+EGKO_BASE = (("forest", "#c5dcb0", None), ("gazons", "#c5dcb0", None), ("hidrograf", "#a9cfe5", None),
+             ("dorogi_pol", "#ffffff", "#d7d7d7"), ("virtual6", "#cdcdcd", None))
+
+
+def egko_ops(tr, rect, mask, egko):
+    """Цветная основа ЕГКО только внутри контура mask (GeoJSON округа): светлый фон, леса и газоны, вода, дороги,
+    здания. Снаружи остаётся бледная подложка. Здания мельче 0,3 мм на листе пропускаются, контуры упрощаются до
+    0,12 мм — схема округа в масштабе 1:100 000–1:250 000 иначе весила бы десятки мегабайт."""
+    kind, parts = _parts(mask)
+    rings = [[tr.mm(*p[:2]) for p in r] for poly in parts for r in poly]
+    if not rings:
+        return []
+    out = [{"op": "clip", "rings": rings},
+           {"op": "path", "rings": rings, "closed": True, "fill": hex_to_rgb("#f3f3f1"), "stroke": None, "width": 0, "dash": None}]
+    # охват маски в градусах — для выборки ЕГКО из кэша
+    lons = [p[0] for poly in parts for r in poly for p in r]
+    lats = [p[1] for poly in parts for r in poly for p in r]
+    bbox = (min(lons), min(lats), max(lons), max(lats))
+    small = 0.3 / tr.k                                                  # 0,3 мм листа в метрах
+    kx = 111320 * math.cos(math.radians((bbox[1] + bbox[3]) / 2))
+    for code, fill, edge in EGKO_BASE:
+        try:
+            feats = egko(bbox, code)
+        except Exception:                                               # ЕГКО не отдала слой — схема без него
+            continue
+        for f in feats:
+            if not (f.get("geometry") or {}).get("coordinates"):
+                continue
+            _, fparts = _parts(f["geometry"])
+            for poly in fparts:
+                if not poly or len(poly[0]) < 3:
+                    continue
+                if code == "virtual6":
+                    lo = [p[0] for p in poly[0]]
+                    la = [p[1] for p in poly[0]]
+                    if (max(lo) - min(lo)) * kx < small and (max(la) - min(la)) * 110540 < small:
+                        continue
+                prs = [r for r in (_simplify([tr.mm(*p[:2]) for p in ring], 0.12) for ring in poly) if len(r) >= 3]
+                if prs:
+                    out.append({"op": "path", "rings": prs, "closed": True, "fill": hex_to_rgb(fill),
+                                "stroke": hex_to_rgb(edge) if edge else None, "width": 0.08, "dash": None})
+    out.append({"op": "unclip"})
+    return out
+
+
 def _ring_centroid(ring):
     """Центр тяжести кольца (мм листа) и его площадь: подпись встаёт в середину фигуры, а не в среднее её вершин
     (у извилистой границы округа вершины скучены по краю)."""
@@ -281,6 +354,9 @@ class SketchMapFrame(Frame):
             kind = sh["basemap"]
             get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
             out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+        egko = getattr(self.tiles, "egko", None)
+        if sh.get("mask") and egko:
+            out.extend(egko_ops(tr, rect, sh["mask"], egko))
         for layer in sh.get("layers", []):
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])

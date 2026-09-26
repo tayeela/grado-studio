@@ -36,7 +36,8 @@ function homeAdm() {
 const okrAbbr = f => f ? LABEL_FN.adm({ get: k => f.properties[k] }) : "";
 
 /* Карта административного деления в шаблоне ППТ КРТ. adm: "moscow" — вся Москва: районы тонко серым, округа чёрным
-   с подписями, свой округ красным с заливкой; "okrug" — свой округ с районами и их названиями на светлой подложке.
+   с подписями, свой округ красным с заливкой; "okrug" — свой округ: внутри цветная картооснова ЕГКО (рисует сервер
+   по маске mask), снаружи бледная подложка, районы чёрным с названиями, контур округа жирно — как в шаблоне.
    Территория — точкой (terrPoint): в масштабе Москвы она меньше миллиметра. */
 function admPanelSpec(p) {
   const { adm, okrug } = homeAdm(), abbr = okrAbbr(okrug), scale = sheetScale(p), center = sheetCenter(p);
@@ -54,11 +55,11 @@ function admPanelSpec(p) {
     const home = okrug?.properties["Округ"] || okrug?.properties["Наименование"];
     const dists = adm.filter(f => poly(f) && f.properties["Уровень"] === "район" && f.properties["Округ"] === home);
     layers = [
-      { title: "районы", features: dists.map(f => ({ g: f.geometry, fill: null, stroke: "#3b3b3b", w: .8, a: 0, label: LABEL_FN.adm({ get: k => f.properties[k] }), ls: 2.5, ...lab })) },
-      { title: "округ", features: okrug ? [{ g: okrug.geometry, fill: null, stroke: "#111111", w: 2.4, a: 0 }] : [] }];
+      { title: "районы", features: dists.map(f => ({ g: f.geometry, fill: null, stroke: "#111111", w: .9, a: 0, label: LABEL_FN.adm({ get: k => f.properties[k] }), ls: 2.5, ...lab })) },
+      { title: "округ", features: okrug ? [{ g: okrug.geometry, fill: null, stroke: "#111111", w: 2.6, a: 0 }] : [] }];
   }
   return { title: "", size: p.size, scale, center, layers, legend: [], territory: TERR?.geometry || null, terrPoint: 1.0, noFrame: !!p.noFrame,
-    basemap: p.basemap || "", rect: p.rect, ...(p.okrugTitle && abbr ? { okrugTitle: `${OKR_FULL[abbr] || abbr} административный округ` } : {}) };
+    basemap: p.basemap || "", rect: p.rect, ...(p.adm === "okrug" && okrug ? { mask: okrug.geometry } : {}), ...(p.okrugTitle && abbr ? { okrugTitle: `${OKR_FULL[abbr] || abbr} административный округ` } : {}) };
 }
 
 // поля листа шаблона сверх обычной карты: стиль, выноска «рассматриваемая территория / Район …»

@@ -37,10 +37,14 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
         if o["op"] == "clip":
             _CLIP_COUNTER[0] += 1
             cid = f"clip{_CLIP_COUNTER[0]}"
-            x, y, cw, ch = o["rect"]
-            defs.append(f'<clipPath id="{cid}">'
-                        f'<rect x="{x}" y="{y}" width="{cw}" height="{ch}"/>'
-                        f"</clipPath>")
+            if o.get("rings"):
+                d = " ".join("M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in r) + " Z" for r in o["rings"])
+                defs.append(f'<clipPath id="{cid}"><path d="{d}" clip-rule="evenodd"/></clipPath>')
+            else:
+                x, y, cw, ch = o["rect"]
+                defs.append(f'<clipPath id="{cid}">'
+                            f'<rect x="{x}" y="{y}" width="{cw}" height="{ch}"/>'
+                            f"</clipPath>")
             body.append(f'<g clip-path="url(#{cid})">')
             open_groups += 1
         elif o["op"] == "unclip":

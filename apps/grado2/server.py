@@ -379,6 +379,12 @@ _TILE_LOCK = threading.Lock()
 ESRI_SERVICES = {"sat": ("esri", "World_Imagery"), "light": ("esri-light", "Canvas/World_Light_Gray_Base")}
 
 
+def egko_features(bbox, code):
+    """Объекты слоя ЕГКО (картооснова base2) в прямоугольнике — для цветной основы схемы округа (print_io.egko_ops).
+    Только из кэша на диске и с портала по обычным правилам коннектора; ошибка — слой пропускается."""
+    return GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=True, ttl=EGKO_TTL).fetch(bbox, code)["features"]
+
+
 def esri_tile(z, x, y, kind="sat"):
     """Тайл Esri (JPEG) для листа: спутник World Imagery или светлая серая подложка (kind="light", правая карта
     «округ и районы» шаблона ППТ КРТ). С диска (~/.grado2/cache/tiles/<вид>, 90 дней), иначе скачать по одному,
@@ -410,6 +416,9 @@ def esri_tile(z, x, y, kind="sat"):
             except OSError:
                 time.sleep(1 + attempt)
     return None
+
+
+esri_tile.egko = egko_features          # печать берёт цветную основу ЕГКО через тот же вход, что и тайлы
 
 
 def _point_in(g, x, y):
