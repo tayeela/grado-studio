@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.4: ЗАО and ЮЗАО boundaries without the territory given to НАО.** Owner: ЗАО and ЮЗАО
+  boundaries on the Moscow scheme are old. The old-Moscow district layers of ГИС ОГД were not updated after the
+  ТиНАО district reform: ЗАО «Внуково» (two parts, 15 km²) lies wholly inside the new НАО «Внуково», ЮЗАО «Южное
+  Бутово» overlaps НАО «Щербинка» by 7.8 km². `trimOldDistricts` (albums.js): where a new ТиНАО district
+  (`virtualterr_*`) overlaps an old one, the new one wins — the overlap is subtracted (turf.difference), scraps
+  under 1 ha dropped, a district with less than 5 ha left removed; districts that only touch keep their outline.
+  Okrugs are then unions of the trimmed districts (ЗАО 177.5 km², ЮЗАО 103 km²). Build marker `ADM_REV` reloads
+  older data.
+
 - **2026-09-26, ГРАДО 2 v0.65.3: okrug map without basemap tiles — white outside the okrug** (owner).
 
 - **2026-09-26, ГРАДО 2 v0.65.2: okrug map of the location sheet as in the template.** Owner: the right scheme is

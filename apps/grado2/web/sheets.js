@@ -259,7 +259,7 @@ async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slid
   // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 137). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
   const adm = DATA["gisogd.admin"]?.fc.features || [];
-  if (adm.filter(f => f.properties["Уровень"] === "район").length < 100 || adm.some(f => f.properties["Уровень"] === "округ" && !f.properties["Граница"])) {
+  if (adm.filter(f => f.properties["Уровень"] === "район").length < 100 || adm.some(f => f.properties["Уровень"] === "округ" && f.properties["Граница"] !== ADM_REV)) {
     toast("Административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
