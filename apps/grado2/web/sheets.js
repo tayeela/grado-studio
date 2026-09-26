@@ -101,7 +101,9 @@ function sheetSpec(sheet) {
   });
   if (sheet.legend) vl.forEach(pl => {
     const st = pl.style, items = st.mode === "lgr" ? [{ label: "красные линии и ЛГР (REDLN97)", fill: "#d7191c" }] : legendItems(pl).filter(it => !it.off).slice(0, 14).map(it => ({ label: it.v, fill: it.c, stroke: pl.geom === "poly" ? st.stroke : it.c, hatch: st.hatch, a: st.opacity }));
-    legend.push({ title: pl.title, kind: pl.geom, items: items.length ? items : [{ label: pl.title, fill: st.fill, stroke: st.stroke, hatch: st.hatch, a: st.opacity }] });
+    // альбом по шаблону: в легенде без источника в скобках («Здания», а не «Здания (ЕГКО)»); свои названия — legendTitle
+    const title = sheet.legendTitle?.[pl.key] || (sheet.style ? pl.title.replace(/\s*\((ОГД|ЕГКО|ЕГРН|OSM|НСПД|Яндекс)\)$/, "") : pl.title);
+    legend.push({ title, kind: pl.geom, items: items.length ? items : [{ label: title, fill: st.fill, stroke: st.stroke, hatch: st.hatch, a: st.opacity }] });
   });
   const tep = sheet.tep ? tepRows(false) : [];
   const out = { title: sheet.title, size, orient: sheet.orient || "L", scale, center, layers, legend, tep, territory: TERR?.geometry || null, basemap: sheet.basemap || "",
@@ -110,11 +112,14 @@ function sheetSpec(sheet) {
   if (sheet.extra === "parcels") Object.assign(out, parcelsSheet(layers));
   if (sheet.extra === "radii") radiiSheet(out);
   if (sheet.extra === "genplan") genplanTable(out);
+  if (sheet.docs) { const [lo, la] = ol.proj.toLonLat([ext[0], ext[1]]), [hi, ha] = ol.proj.toLonLat([ext[2], ext[3]]), k = 1 / 1.15;   // рамка без запаса
+    docsSheet(out, sheet, [center[0] - (center[0] - lo) * k, center[1] - (center[1] - la) * k, center[0] + (hi - center[0]) * k, center[1] + (ha - center[1]) * k]); }
   if (sheet.note) out.note = sheet.note;
   // выноска на карте района: «проектируемая территория» и район, где она лежит
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
-    out.callout = ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
-  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `Граница разработки проекта планировки (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
+    out.callout = sheet.style === "pptkrt" ? ["Рассматриваемая территория", `S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га`]   // как в шаблоне ППТ КРТ
+      : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
+  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   return out;
 }
 const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(sheetSpec) });
@@ -174,6 +179,30 @@ function genplanTable(out) {
   if (!z.length) return;
   out.table = { title: "Функциональные зоны на территории", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .5, "left"], ["тыс. м²", .23, "right"]],
     rows: z.map(f => { const p = f.properties; return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p)]; }) };
+}
+// документы на листе (ППТ и ПМТ, ГПЗУ и АГР — как в «ГК Царицыно»): номер у документа на карте и нумерованный список
+// «Название №… от … г.» в колонке листа; ближние к территории — первыми, нумерация сквозная по группам
+const dateRu = d => /^\d{4}-\d{2}-\d{2}/.test(String(d || "")) ? String(d).slice(0, 10).split("-").reverse().join(".") : String(d || "");
+function docsSheet(out, sheet, bb) {
+  const c = TERR ? turf.centroid(TERR) : null, box = turf.bboxPolygon(bb), lists = [], pts = [];
+  let no = 0;
+  for (const d of sheet.docs) {
+    const seen = new Map();
+    (DATA[d.key]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, box))).forEach(f => {
+      const p = f.properties, id = p.document_n || p.document_g || p._key, part = safe(() => inter(f, box)) || f;
+      const at = safe(() => turf.pointOnFeature(part)), dist = c && at ? turf.distance(c, at) : 0;
+      if (at && (!seen.has(id) || dist < seen.get(id).dist)) seen.set(id, { f, at, dist });
+    });
+    const docs = [...seen.values()].sort((a, b) => a.dist - b.dist).slice(0, d.max || 12);
+    if (!docs.length) continue;
+    lists.push({ title: d.title, items: docs.map(({ f, at }) => {
+      const p = f.properties, n = String(++no);
+      pts.push({ g: at.geometry, nm: true, nudge: true, label: n, ls: 3.6, lf: "ui-bold", lh: .6, lcol: "#141414" });
+      return `${n}. ${[d.pre || p.document_1 || "", p.document_n ? "№" + p.document_n : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ")}`; }) });
+  }
+  if (!pts.length) { out.note = [out.note, "В ГИС ОГД в пределах листа таких документов нет."].filter(Boolean).join(" "); return; }
+  out.layers.push({ title: "Номера документов", features: pts });
+  out.lists = lists;
 }
 // социальная инфраструктура: объекты OSM и их радиусы обслуживания по нормам Москвы (2151-ПП) и СП 42.13330
 function radiiSheet(out) {
@@ -336,7 +365,7 @@ function renderSheets() {
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка): листы собираются по одному вместе с вами — сейчас титул и месторасположение"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }

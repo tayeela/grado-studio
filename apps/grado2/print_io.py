@@ -334,6 +334,10 @@ def tile_ops(tr, rect, scale, tiles, lat):
             if not data:
                 continue
             tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
+            # тайлы внахлёст на пиксель: иначе на стыках снимков просвечивают белые точки
+            e, ux, uy, vx, vy = 1 / 256, trr[0] - tl[0], trr[1] - tl[1], bl[0] - tl[0], bl[1] - tl[1]
+            tl, trr, bl = ((tl[0] - (ux + vx) * e, tl[1] - (uy + vy) * e), (trr[0] + (ux - vx) * e, trr[1] + (uy - vy) * e),
+                           (bl[0] + (vx - ux) * e, bl[1] + (vy - uy) * e))
             out.append({"op": "image", "data": data, "quad": (tl, trr, bl)})
     return out
 
@@ -421,7 +425,7 @@ class SketchMapFrame(Frame):
                         x, y = tr.mm(*p[:2])
                         if f.get("nm"):                                 # слой надписей: подпись на самой точке, без значка
                             if f.get("label"):
-                                placed.append((x, y, str(f["label"]), f.get("ls"), f.get("la"), f.get("lcol")))
+                                placed.append((x, y, str(f["label"]), f.get("ls"), f.get("la"), f.get("lcol"), f))
                             continue
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
@@ -474,7 +478,7 @@ class SketchMapFrame(Frame):
                 continue
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": ink, "anchor": "middle", "angle": ang})
-        for x, y, text, ls, deg, col in placed:
+        for x, y, text, ls, deg, col, pf in placed:
             # надписи ГИС ОГД: на своём месте и под своим углом (вдоль границы), цветом знака ЛГР; наложения не пропускаются
             ls = float(ls or 2.0)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -484,10 +488,16 @@ class SketchMapFrame(Frame):
             tw = ls * .55 * len(text)
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-            if not take((x - ex, y - ey, x + ex, y + ey)):
+            # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём
+            for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4)) if pf.get("nudge") else ((0, 0),):
+                if take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey)):
+                    x, y = x + dx, y + dy
+                    break
+            else:
                 continue
+            extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
-                        "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang})
+                        "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for x, y, text, ls, f in labels:
             ls = float(ls or 2.2)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -631,6 +641,25 @@ class ColumnFrame(Frame):
             for line in _wrap(sh["note"], int(w / 1.3)):
                 out.append({"op": "text", "x": x, "y": yy + 2, "size": 2.3, "text": line, "color": (0.3, 0.3, 0.3)})
                 yy += 3.4
+        # нумерованные списки документов (ППТ и ПМТ, ГПЗУ и АГР): номер — тот же, что у документа на карте
+        for blk in sh.get("lists") or []:
+            if yy > y + h - 12:
+                break
+            yy += 3
+            for line in _wrap(blk["title"], int(w / 1.45))[:2]:
+                out.append({"op": "text", "x": x, "y": yy, "size": 2.8, "text": line, "font_family": "ui-bold"})
+                yy += 3.8
+            for n, item in enumerate(blk["items"]):
+                lines = _wrap(item, int(w / 1.12))[:4]
+                if yy + len(lines) * 2.9 > y + h - 3:
+                    out.append({"op": "text", "x": x, "y": min(yy + 1, y + h - 1), "size": 2.3, "color": (0.3, 0.3, 0.3),
+                                "text": f"… ещё {len(blk['items']) - n} — на карте их номера есть"})
+                    yy = y + h
+                    break
+                for line in lines:
+                    out.append({"op": "text", "x": x, "y": yy, "size": 2.3, "text": line})
+                    yy += 2.9
+                yy += 1.1
         tep = sh.get("tep") or []
         if tep:
             yy += 3
@@ -847,7 +876,7 @@ def render_pdf(spec, lib, lgr_dash, tiles=None):
 
 # рамки листа → группы фигур в PPTX
 PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
-               "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
+               "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "MapNoteFrame": "Округ и район", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
                "TepSheetFrame": "ТЭП", "LegendFrame": "Легенда", "TableFrame": "Таблица"}
 
 

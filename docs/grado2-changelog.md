@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-27, ГРАДО 2 v0.67.0: album «План реализации ППТ КРТ» — sheets 3–9 by the composition of «ГК Царицыно».**
+  Owner: keep the ППТ КРТ template design, take the sheet list from the Царицыно concept. New sheets (definitions in
+  albums.js, layers and styles as in section 1): 3 Ортофотоплан (streets, district boundary red dashed), 4 Материалы
+  фотофиксации (map left, photos right), 5 Схема существующего использования территорий с границами ЗОУИТ, 6 Генплан —
+  фрагмент «Карта функциональных зон» (table of zones), 7 Обеспеченность документацией ППТ и ПМТ, 8 … ГПЗУ и АГР,
+  9 Существующие землепользователи (table of parcels). Layout (album_io): map in the frame of template slide 4
+  (24, 44, 263 × 233 mm), legend and lists in a right column, okrug and district in the map corner (MapNoteFrame),
+  long red titles shrink to fit (down to 12 pt). New ГИС ОГД sources `gisogd.pmt` (pmtgk, quarters with ПМТ) and
+  `gisogd.agr` (suagr). Sheets 7 and 8: documents crossing the frame are numbered from the territory outwards, numbers
+  on the map (moved off occupied places), numbered list «Название №… от … г.» in the column (`docsSheet`, `lists` in
+  ColumnFrame). Callout «Рассматриваемая территория S = … га» and legend «Граница территории рассмотрения» as in the
+  template; legend titles without source tags for template albums; `legendTitle` override. Satellite tiles overlap by
+  one pixel — white specks at tile corners are gone. Tests `PptKrtSheets`.
 - **2026-09-27, ГРАДО 2 v0.66.0: album to editable PPTX; rounded joins on map outlines.** Owner: the presentation must
   be available not only as PDF but as a live, editable PPTX. New `core/render/grado_render/backend_pptx.py` runs the
   same op list as the PDF and SVG backends and writes an OOXML package with zipfile (no new dependencies): paths become

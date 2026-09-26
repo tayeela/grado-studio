@@ -18,6 +18,9 @@ RED = (0xE9 / 255, 0x39 / 255, 0x39 / 255)
 RED_TITLE = (0xE7 / 255, 0x39 / 255, 0x39 / 255)
 INK = (0.08, 0.08, 0.08)
 PT = 0.3528                                     # мм в пункте
+# листы с картой (состав — по «ГК Царицыно»): карта слева, как в шаблоне, справа колонка легенды и списков; у листа
+# фотофиксации карта уже, справа снимки
+MAP_RECT, PHOTO_MAP_RECT, RIGHT = (24, 44, 263, 233), (24, 44, 170, 233), 412
 
 
 def _header():
@@ -41,6 +44,17 @@ def _wrap(text, n):
 def _text(x, y, size_pt, text, color=INK, family="sans-bold", anchor="start"):
     return {"op": "text", "x": x, "y": y, "size": size_pt * PT, "text": str(text), "color": color, "anchor": anchor,
             "font_family": family}
+
+
+def _fit_pt(text, family, size_pt, width_mm, min_pt=12):
+    """Кегль заголовка, при котором строка влезает в ширину: длинные названия листов «Царицыно» (до 100 знаков)
+    на 18 пт вышли бы за край листа."""
+    try:
+        from grado_render import Font, find_font
+        w = Font(find_font(family)).text_width(str(text), size_pt * PT)
+    except Exception:
+        return size_pt
+    return size_pt if w <= width_mm else max(min_pt, size_pt * width_mm / w)
 
 
 def _tab(x, y, w, h):
@@ -94,7 +108,7 @@ class PptKrtFrame(Frame):
                     "rings": [[(0, 35), (45.5, 35)]]})
         out.append({"op": "path", "closed": True, "fill": RED, "stroke": None, "width": 0, "dash": None,
                     "rings": [[(44, 33), (49, 35), (44, 37)]]})
-        out.append(_text(51, 37.4, 18, sh.get("title", ""), RED))
+        out.append(_text(51, 37.4, _fit_pt(sh.get("title", ""), "sans-bold", 18, w - 51 - 8), sh.get("title", ""), RED))
         out.append({"op": "path", "closed": True, "fill": RED, "stroke": None, "width": 0, "dash": None,
                     "rings": [_tab(399, 278.7, 17.8, 12.7)]})
         out.append(_text(407.9, 288, 20, ctx.get("page_no", ""), (1, 1, 1), "sans-bold", "middle"))
@@ -127,6 +141,19 @@ class CalloutFrame(Frame):
             out.append(_text(x + w / 2, y + h / 2 + (i - (n - 1) / 2) * 4.2 + 1.2, 9, t, INK, "ui-bold" if bold else "ui",
                              "middle"))
         return out
+
+
+class MapNoteFrame(Frame):
+    """Округ и район в левом верхнем углу карты («Южный административный округ / район Царицыно»), с ореолом —
+    читается и на снимке."""
+
+    def __init__(self, rect, lines):
+        super().__init__(rect)
+        self.lines = lines
+
+    def ops(self, ctx):
+        x, y, _, _ = self.rect
+        return [{**_text(x + 4, y + 7 + i * 4.6, 11, line, INK, "ui-bold"), "halo": 0.7} for i, line in enumerate(self.lines)]
 
 
 class OkrugTitleFrame(Frame):
@@ -166,6 +193,18 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
                 pts.append(tr.mm(*sh["territory_lonlat"]))
             box = tuple(sh.get("calloutBox") or (187, 185, 47, 21))
             frames.append(CalloutFrame(box, [(t, i > 0) for i, t in enumerate(sh["callout"])], pts))
-    elif sh.get("rect"):
-        frames.append(map_frame(tuple(sh["rect"]), sh))
+    elif sh.get("kind") == "photos":
+        from print_io import PhotoGridFrame
+        r = tuple(sh.get("rect") or PHOTO_MAP_RECT)
+        gx = r[0] + r[2] + 6
+        frames += [map_frame(r, sh), PhotoGridFrame((gx, r[1], RIGHT - gx, r[3]), sh)]
+    else:
+        from print_io import ColumnFrame
+        r = tuple(sh.get("rect") or MAP_RECT)
+        frames.append(map_frame(r, sh))
+        cx = r[0] + r[2] + 7
+        if sh.get("legend") or sh.get("table") or sh.get("lists") or sh.get("note"):
+            frames.append(ColumnFrame((cx, r[1] + 2, RIGHT - cx, r[3] - 2), sh, title=False))
+    if sh.get("mapNote") and not sh.get("panels"):
+        frames.append(MapNoteFrame(tuple(sh.get("rect") or (PHOTO_MAP_RECT if sh.get("kind") == "photos" else MAP_RECT)), sh["mapNote"]))
     return frames + [deco]

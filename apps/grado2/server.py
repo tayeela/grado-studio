@@ -95,6 +95,9 @@ SOURCES["gisogd.ppt"] = ("gisogd", {"ppppppt": "ПП территории", "ppp
                                     "pptppr": "ПП по программе реновации", "ppppppt2": "ПП КРТ"}, "Проекты планировки (ОГД)")
 SOURCES["gisogd.gpzu"] = ("gisogd", {"gpzu": None}, "Градостроительные планы земельных участков (ОГД)")
 SOURCES["gisogd.krt"] = ("gisogd", {"pzz_krt_virtual": None}, "Комплексное развитие территорий (ОГД)")
+# листы «Обеспеченность документацией» по образцу «ГК Царицыно»: ПМТ (кварталы с проектами межевания) и АГР
+SOURCES["gisogd.pmt"] = ("gisogd", {"pmtgk": None}, "Проекты межевания территории (ОГД)")
+SOURCES["gisogd.agr"] = ("gisogd", {"suagr": None}, "Свидетельства об утверждении АГР (ОГД)")
 SOURCES["gisogd.admin"] = ("gisogd_admin", None, "Административные округа и районы")
 # эталон административного деления (run_admin); метка ADMIN_REV — в albums.js та же: другая метка в проекте — слой берётся заново
 ADMIN_FILE, ADMIN_REV = ROOT / "docs" / "standards" / "admin" / "moscow-adm.geojson", "эталон 27.09.2026"

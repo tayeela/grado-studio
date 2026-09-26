@@ -1,7 +1,7 @@
 /* ГРАДО 2 · альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint
    (А3 альбомный, красная шапка; оформление листа — album_io.py) и «Градостроительная концепция» — по образцу
    «ГК Царицыно». Листы собираются той же сборкой, что раздел 1 (buildSection в sheets.js), со своим префиксом id.
-   Состав наращивается по листам вместе с владельцем: сейчас титул и месторасположение. */
+   Состав листов — по «ГК Царицыно» (решение владельца 27.09.2026), оформление — шаблон ППТ КРТ. */
 
 const OKR_FULL = { ЦАО: "Центральный", САО: "Северный", СВАО: "Северо-Восточный", ВАО: "Восточный", ЮВАО: "Юго-Восточный", ЮАО: "Южный",
   ЮЗАО: "Юго-Западный", ЗАО: "Западный", СЗАО: "Северо-Западный", ЗелАО: "Зеленоградский", НАО: "Новомосковский", ТАО: "Троицкий" };
@@ -54,15 +54,45 @@ function albumExtra(sheet) {
     out.callout = ["рассматриваемая территория", `Район ${district ? LABEL_FN.adm({ get: k => district.properties[k] }) : "—"}`];
     out.territory_lonlat = turf.centroid(TERR).geometry.coordinates;
   }
+  // на картах листов — округ и район в углу, как в «ГК Царицыно»
+  if (sheet.kind !== "title" && !sheet.panels && TERR) {
+    const { okrug, district } = homeAdm(), abbr = okrAbbr(okrug);
+    out.mapNote = [okrug ? `${OKR_FULL[abbr] || abbr} административный округ` : "", district ? "район " + LABEL_FN.adm({ get: k => district.properties[k] }) : ""].filter(Boolean);
+  }
   return out;
 }
 
-/* План реализации ППТ КРТ (шаблон владельца). Рамки карт — в мм листа А3 (420 × 297), как в шаблоне. */
+/* План реализации ППТ КРТ: оформление — шаблон владельца, состав листов — «ГК Царицыно» (9 листов). Рамки карт — в мм
+   листа А3 (420 × 297): схемы Москвы и округа — как в шаблоне; карта остальных листов — рамка слайда 4 шаблона
+   (album_io.MAP_RECT), справа колонка легенды и списков. Слои, подложка и оформление — как у слайдов раздела 1. */
+const PK = { style: "pptkrt", rect: [24, 44, 263, 233], callout: true };
+const PK_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"];
 const PPTKRT = [
   { kind: "title", style: "pptkrt", title: "Титульный лист" },
   { style: "pptkrt", title: "Месторасположение рассматриваемой территории", legend: false, callout: true, panels: [
     { keys: ["gisogd.admin"], adm: "moscow", fit: "moscow", rect: [25, 48, 174, 229], noFrame: true },
     { keys: ["gisogd.admin"], adm: "okrug", fit: "okrug", rect: [212, 48, 188, 229], okrugTitle: true, noFrame: true }] },   // за округом — белый фон (владелец)
+  { ...PK, title: "Ортофотоплан", basemap: "sat", keys: ["osm.roads", "gisogd.admin"], fit: "terr", ctx: 3,
+    styles: { "osm.roads": { mode: "single", fill: "#f5d58a", width: 1.4, label: "Название", labelSize: 11 },
+      "gisogd.admin": { mode: "single", opacity: 0, fill: "#e93939", stroke: "#e93939", width: 1.6, dash: [8, 4], label: "" } },
+    labelMM: { "osm.roads": 2.8 }, legendTitle: { "gisogd.admin": "Граница района", "osm.roads": "Улицы, дороги и проезды" },
+    only: { "osm.roads": { field: "Тип дороги", values: [...PK_ROADS, "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"] },
+      "gisogd.admin": { field: "Уровень", values: ["район"] } } },
+  { ...PK, kind: "photos", rect: [24, 44, 170, 233], callout: false, title: "Материалы фотофиксации", keys: ["calc.uds_osm", "egko.buildings", "osm.roads"], fit: "terr", ctx: 1.8,
+    styles: { "osm.roads": { mode: "single", fill: "#d4d4d4", width: .3, label: "Название", labelSize: 9 } }, only: { "osm.roads": { field: "Тип дороги", values: PK_ROADS } } },
+  { ...PK, title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
+    keys: ["nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "calc.uds_osm", "nspd.parcels", "egko.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
+    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 },
+      "gisogd.zouit": { hatch: false, opacity: .14, width: 1 }, ...ROADS_WHITE } },
+  { ...PK, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»", keys: ["gisogd.func_zones", "gisogd.func_zones_tinao"], fit: "terr", ctx: 1.6,
+    extra: "genplan", labelFn: { "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" }, labelMM: { "gisogd.func_zones": 3.6, "gisogd.func_zones_tinao": 3.6 } },
+  { ...PK, title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ", keys: ["calc.uds_osm", "egko.buildings", "gisogd.pmt", "gisogd.ppt"], fit: "terr", ctx: 2,
+    styles: ROADS_WHITE, docs: [{ key: "gisogd.ppt", title: "Проекты планировки территории" }, { key: "gisogd.pmt", title: "Проекты межевания территории", pre: "Проект межевания территории" }] },
+  { ...PK, title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР", keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.agr"], fit: "terr", ctx: 2,
+    styles: { ...ROADS_WHITE, "gisogd.gpzu": { fill: "#5c6bc0", stroke: "#3949ab", hatch: true, hatchPat: "135", width: .8, opacity: 1 } },
+    docs: [{ key: "gisogd.gpzu", title: "Градостроительные планы земельных участков", pre: "ГПЗУ" }, { key: "gisogd.agr", title: "Свидетельства об утверждении АГР", pre: "АГР" }] },
+  { ...PK, title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat", keys: ["nspd.parcels"], fit: "terr", ctx: 1.5, extra: "parcels",
+    styles: { "nspd.parcels": { mode: "single", opacity: 0, stroke: "#2b3cc4", width: 1.6, label: "" } } },
 ];
 
 async function buildAlbum(kind) {

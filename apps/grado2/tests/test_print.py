@@ -201,3 +201,32 @@ class Pptx(unittest.TestCase):
         self.assertIn('name="Карта"', s2)
         self.assertIn('name="Участки"', s2)
         self.assertIn('<a:round/>', s2)                                  # изломы контуров карты скруглены
+
+
+class PptKrtSheets(unittest.TestCase):
+    """Листы альбома ППТ КРТ по составу «ГК Царицыно»: карта слева (рамка шаблона), справа легенда и списки документов,
+    в углу карты — округ и район; длинный заголовок уменьшается, а не вылезает за лист."""
+
+    def test_map_sheet_with_legend_lists_and_note(self):
+        title = "Схема существующего использования территорий с границами зон с особыми условиями использования территорий"
+        spec = {"meta": {"short": "№ 3141", "place": "ТАО, район Вороново"},
+                "sheets": [{"size": "PA3", "style": "pptkrt", "title": title, "rect": [24, 44, 263, 233], "scale": 10000, "center": [37.2, 55.4],
+                            "layers": [], "legend": [{"title": "Границы", "kind": "line", "items": [{"label": "Граница территории рассмотрения", "fill": "#e0158c"}]}],
+                            "lists": [{"title": "Проекты планировки территории", "items": ["1. Об утверждении проекта планировки №1218-ПП от 03.08.2021 г."]}],
+                            "mapNote": ["Троицкий административный округ", "район Вороново"]}]}
+        doc = print_io.build_document(spec, {}, {})
+        ops = print_io.document_pages_ops(doc, None)[0][2]
+        texts = [o["text"] for o in ops if o["op"] == "text"]
+        for t in ("Условные обозначения", "Проекты планировки территории", "Троицкий административный округ", "район Вороново"):
+            self.assertIn(t, texts)
+        self.assertTrue(any(t.startswith("1. Об утверждении") for t in texts))
+        head = next(o for o in ops if o["op"] == "text" and o["text"] == title)
+        self.assertLess(head["size"], 18 * 0.3528)                     # 100 знаков на 18 пт не влезли бы
+
+    def test_photo_sheet_has_map_and_photo_grid(self):
+        spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "kind": "photos", "title": "Материалы фотофиксации", "rect": [24, 44, 170, 233],
+                            "scale": 2000, "center": [37.2, 55.4], "layers": [], "legend": [], "photos": []}]}
+        doc = print_io.build_document(spec, {}, {})
+        names = [type(f).__name__ for f in doc.pages[0].frames]
+        self.assertIn("SketchMapFrame", names)
+        self.assertIn("PhotoGridFrame", names)
