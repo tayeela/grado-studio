@@ -17,6 +17,7 @@ POST /api/ogd_all/cancel.
 import csv
 import io
 import json
+import math
 import re
 import threading
 import time
@@ -118,6 +119,96 @@ def _linetypes(props, redln):
     code = next((v for k, v in props.items() if k.lower() in ("linelineco", "linecode")), None)
     pairs = acad_lin.parse_line_codes(code)
     return acad_lin.linetypes_for_codes(pairs, redln["lib"]["linetypes"], redln["idx"]) if pairs else []
+
+
+# Слой границ → (слой полигонов той же папки ГИС ОГД, код линии, чья сторона смотрит на эти полигоны).
+_AREA_OF = {"l18": ("virtual138", 18), "l21": ("virtual139", 21)}
+
+
+def _polys(features):
+    """GeoJSON-объекты → [(bbox, [кольца])] полигонов."""
+    out = []
+    for f in features:
+        g = f.get("geometry") or {}
+        for rings in ([g["coordinates"]] if g.get("type") == "Polygon" else g.get("coordinates") or [] if g.get("type") == "MultiPolygon" else []):
+            xs = [p[0] for p in rings[0]]
+            ys = [p[1] for p in rings[0]]
+            out.append(((min(xs), min(ys), max(xs), max(ys)), rings))
+    return out
+
+
+def _inside(x, y, rings):
+    """Точка внутри полигона с дырами (чёт-нечет по всем кольцам)."""
+    hit = False
+    for ring in rings:
+        for (x1, y1, *_), (x2, y2, *_) in zip(ring, ring[1:] + ring[:1]):
+            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+                hit = not hit
+    return hit
+
+
+def orient_lines(lines, areas, code):
+    """Развернуть линии границ так, чтобы сторона кода линии code смотрела на свои полигоны.
+
+    В ГИС ОГД у границы природного комплекса знак кода (18 — объект справа, −18 — слева по ходу линии) местами
+    не совпадает с тем, где на самом деле лежит территория: знаки REDLN97 тогда смотрят наружу. Сторона
+    проверяется по полигонам того же объекта (слой «Природные и озеленённые территории»): у середин самых длинных
+    отрезков берётся точка в 0,5 м слева и справа. Если территория явно с другой стороны, линия разворачивается —
+    вместе с ней меняют сторону и остальные коды линии, их взаимное положение сохраняется. Линия с кодом на обе
+    стороны (18,−18) или без явного ответа остаётся как есть. Возвращает число развёрнутых линий."""
+    polys = _polys(areas)
+    grid = {}
+    cell = 0.005
+    for i, (b, _) in enumerate(polys):
+        for gx in range(int(b[0] // cell), int(b[2] // cell) + 1):
+            for gy in range(int(b[1] // cell), int(b[3] // cell) + 1):
+                grid.setdefault((gx, gy), []).append(i)
+
+    def covered(x, y):
+        for i in grid.get((int(x // cell), int(y // cell)), ()):
+            b, rings = polys[i]
+            if b[0] <= x <= b[2] and b[1] <= y <= b[3] and _inside(x, y, rings):
+                return True
+        return False
+
+    flipped = 0
+    for f in lines:
+        props = f.get("properties") or {}
+        raw = next((v for k, v in props.items() if k.lower() in ("linelineco", "linecode")), None)
+        signs = set()
+        for part in str(raw or "").split(","):
+            try:
+                n = int(float(part))
+            except ValueError:
+                continue
+            if abs(n) == code:
+                signs.add(1 if n > 0 else -1)
+        g = f.get("geometry") or {}
+        if len(signs) != 1 or g.get("type") not in ("LineString", "MultiLineString"):
+            continue
+        sign = signs.pop()
+        parts = [g["coordinates"]] if g["type"] == "LineString" else g["coordinates"]
+        vote = 0.0
+        for line in parts:
+            segs = []
+            for (x1, y1, *_), (x2, y2, *_) in zip(line, line[1:]):
+                kx = 111320 * math.cos(math.radians(y1))            # градусы → метры на месте
+                dx, dy = (x2 - x1) * kx, (y2 - y1) * 110540
+                ln = math.hypot(dx, dy)
+                if ln > 1.5:
+                    segs.append((ln, x1, y1, x2, y2, dx, dy, kx))
+            for ln, x1, y1, x2, y2, dx, dy, kx in sorted(segs, reverse=True)[:7]:
+                mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+                nx, ny = dy / ln * 0.5, -dx / ln * 0.5               # 0,5 м вправо по ходу линии
+                right = covered(mx + nx / kx, my + ny / 110540)
+                left = covered(mx - nx / kx, my - ny / 110540)
+                if right != left:
+                    vote += ln if right else -ln
+        if vote * sign < 0:
+            f["geometry"] = ({"type": "LineString", "coordinates": parts[0][::-1]} if g["type"] == "LineString"
+                             else {"type": "MultiLineString", "coordinates": [p[::-1] for p in parts[::-1]]})
+            flipped += 1
+    return flipped
 
 
 def _cut_bytes(s, limit):
@@ -393,6 +484,16 @@ class Job:
                     st["errors"].append(f"{it['title']}: {type(e).__name__}: {e}")
                 st["done"] += 1
             _save_failed(self.cache_dir, failed)
+            if self.redln:                              # знаки границ ПК — в сторону своих полигонов
+                st.update(current="", message="Стороны границ природного комплекса…")
+                have = {it["code"]: it for it in found}
+                for code, (area, lc) in _AREA_OF.items():
+                    if code in have:
+                        try:
+                            feats = have[area]["features"] if area in have else api.fetch(self.bbox, area)["features"]
+                            orient_lines(have[code]["features"], feats, lc)
+                        except ConnectorError:          # полигонов нет — стороны остаются, как в ГИС ОГД
+                            pass
             st.update(current="", message="Сборка чертежа…")
             if self.styles:
                 st.update(current="", message="Цвета слоёв, как на карте портала…")

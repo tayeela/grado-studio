@@ -102,6 +102,16 @@ class OgdAll(unittest.TestCase):
         self.assertEqual([l.name for l in doc.layouts], ["Model", "Лист Опорный 1-2000"])
         self.assertEqual(doc.layouts.get("Лист Опорный 1-2000").dxf_layout.dxf.taborder, 1)
 
+    def test_nature_borders_turn_their_side_to_the_polygons(self):
+        sq = {"type": "Polygon", "coordinates": [[[37.60, 55.75], [37.61, 55.75], [37.61, 55.76], [37.60, 55.76], [37.60, 55.75]]]}
+        edge = [[37.60, 55.75], [37.61, 55.75]]                  # нижний край, на восток: территория слева
+        line = lambda code: {"geometry": {"type": "LineString", "coordinates": list(edge)}, "properties": {"linelineco": code}}
+        right, left, both = line("1,18"), line("-18"), line("18,-18")
+        self.assertEqual(ogd_all.orient_lines([right, left, both], [{"geometry": sq}], 18), 1)
+        self.assertEqual(right["geometry"]["coordinates"], edge[::-1])    # «18» — справа: линия развёрнута
+        self.assertEqual(left["geometry"]["coordinates"], edge)           # «−18» уже слева
+        self.assertEqual(both["geometry"]["coordinates"], edge)           # на обе стороны — как есть
+
     def test_sprit_lines_get_redln97_linetypes_and_shx(self):
         redln = {"lib": S.REDLN, "idx": S.REDLN_IDX, "colors": S.LGR_COLORS}
         line = {"type": "LineString", "coordinates": [[37.605, 55.705], [37.615, 55.715]]}

@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.9: natural complex border signs face their territory.**
+  - Owner: some ПК triangles still look outward. In ГИС ОГД the sign of code 18 does not tell the side: across Moscow
+    the polygon of «Природные и озеленённые территории» lies to the right of nearly every l18 line, both «18» and
+    «−18» (10 762 of 12 215 «−18» lines disagree with the geometry).
+  - `ogd_all.orient_lines`: before drawing, each l18 line is tested against virtual138 polygons (l21 against
+    virtual139, code 21): points 0.5 m left and right of the midpoints of the longest segments. When the territory is
+    clearly on the other side of the code's sign, the line is reversed (other codes keep their relative side).
+    Lines with both signs (18,−18) or without a clear answer stay as in ГИС ОГД. Polygons come from the cache even
+    when their layer is not selected. Owner's sheet 1:9542: 327 borders inward, 56 unclear, 0 outward.
+
 - **2026-09-26, ГРАДО 2 v0.58.8: REDLN97 signs run continuously along ГИС ОГД lines in AutoCAD.**
   - Owner: natural complex markers point in different directions and break off. Cause: polylines had no «linetype
     generation» flag, so AutoCAD restarted the 20 m pattern at every vertex; ГИС ОГД boundaries have segments of
