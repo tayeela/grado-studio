@@ -141,7 +141,7 @@ const LABEL_FN = {
   pzz: f => { const p = f.get("Плотность, тыс. м²/га"), h = f.get("Высота, м"), z = f.get("Застроенность, %");
   if (/не предусмотрено/.test(f.get("Регламент") || "")) return "0 / 0 / 0"; const v = x => x == null || x === "" ? "Ф" : String(x).replace(".", ",");
   return [p, h, z].every(x => x == null || x === "") ? "Ф" : `${v(p)} / ${v(h)} / ${v(z)}`; } };
-// рамка содержания листа: территория с полями, район или округ территории (из слоя административного деления ОГД)
+// рамка содержания листа: территория с полями, район или округ территории (из слоя административного деления)
 function fitBox(sheet) {
   if (!TERR) return null;
   const c = turf.centroid(TERR).geometry.coordinates, adm = DATA["gisogd.admin"]?.fc.features || [];
@@ -256,11 +256,11 @@ async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slid
   const before = new Set(LYR.map(l => l.key));
   const sheets = tpl.map((t, i) => ({ id: prefix + i, size, legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
   // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
-  // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 137). Область выгрузки — вся
+  // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 132). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
   const adm = DATA["gisogd.admin"]?.fc.features || [];
   if (adm.filter(f => f.properties["Уровень"] === "район").length < 100 || adm.some(f => f.properties["Уровень"] === "округ" && f.properties["Граница"] !== ADM_REV)) {
-    toast("Административное деление Москвы (ГИС ОГД)…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
+    toast("Административное деление Москвы…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
   sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k] && !k.startsWith("yandex.")).forEach(k => {

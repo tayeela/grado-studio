@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-27, ГРАДО 2 v0.65.7: administrative boundaries from the owner's reference.** The owner supplied his QGIS
+  set «Новые районы и округа» (МСК of ГИС ОГД, OGD_PROJ4): 12 okrugs and 132 districts after the ТиНАО reform (ЗАО has
+  12 districts — «Внуково» went to НАО). Checked before use: per-okrug district files equal «Границы_исх», every okrug
+  equals the union of its districts, the districts cover «Москва» with no gaps or overlaps. Converted once with QGIS
+  ogr2ogr to WGS84 (6 decimals) into `docs/standards/admin/moscow-adm.geojson` (2.9 MB). `run_admin` now serves this
+  file (no portal downloads, 0.03 s) with the tag `ADMIN_REV`; albums.js `ADM_REV` is the same tag, so projects with
+  the old layer reload it. The browser assembly `okrugsByDistricts` (v0.65.4–0.65.6) is removed: its gap rule gave
+  wrong okrugs (ЗАО 203.0 vs the reference 188.8 km², ЮЗАО 110.9 vs 103.8). Test `AdminReference`.
 - **2026-09-27, ГРАДО 2 v0.65.6: okrug = sum of its districts, a district is in one okrug only.** Owner's rule and
   marks: the ЗАО boundary at Солнцево runs along the НАО line (the 10.5 km² strip south of Солнцево is ЗАО), the НАО
   boundary at Бутово runs along the ЮЗАО edge, ЗАО «Внуково» stays in ЗАО. `okrugsByDistricts`: old-Moscow districts

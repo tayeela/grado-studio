@@ -94,7 +94,9 @@ SOURCES["gisogd.ppt"] = ("gisogd", {"ppppppt": "ПП территории", "ppp
                                     "pptppr": "ПП по программе реновации", "ppppppt2": "ПП КРТ"}, "Проекты планировки (ОГД)")
 SOURCES["gisogd.gpzu"] = ("gisogd", {"gpzu": None}, "Градостроительные планы земельных участков (ОГД)")
 SOURCES["gisogd.krt"] = ("gisogd", {"pzz_krt_virtual": None}, "Комплексное развитие территорий (ОГД)")
-SOURCES["gisogd.admin"] = ("gisogd_admin", None, "Административные округа и районы (ОГД)")
+SOURCES["gisogd.admin"] = ("gisogd_admin", None, "Административные округа и районы")
+# эталон административного деления (run_admin); метка ADMIN_REV — в albums.js та же: другая метка в проекте — слой берётся заново
+ADMIN_FILE, ADMIN_REV = ROOT / "docs" / "standards" / "admin" / "moscow-adm.geojson", "эталон 27.09.2026"
 # ЕГКО Москвы — векторная картооснова портала ГИС ОГД (карта base2, коды сверены 23.09.2026). Значение кода — состояние
 # здания: оно идёт в поле «Состояние», как тип зоны в «Вид зоны» у функциональных зон ТиНАО.
 SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "virtual15": "строящееся", "virtual16": "разрушенное",
@@ -584,45 +586,22 @@ def fetch(bbox, keys):
                 PROGRESS.pop(k, None)
 
     def run_admin(k):
-        """Все округа Москвы и районы округа, в котором лежит область: для листа «Месторасположение» нужна вся
-        Москва, а не прямоугольник выгрузки. Слои портала качаются по одному (по одному слою на округ и на район)."""
-        from grado_connectors.gisogd_api import catalog
-        api, moscow, feats = GisogdApi(cache_dir=CACHE / "gisogd"), (36.8, 55.1, 38.0, 56.1), []
-        cat = catalog()
+        """Все округа и районы Москвы для листа «Месторасположение» (схема Москвы и схема своего округа).
+        Источник — эталон владельца (27.09.2026, docs/standards/admin/moscow-adm.geojson): 12 округов и 132 района
+        после реформы ТиНАО, каждый район целиком в одном округе, округ — ровно сумма его районов, районы покрывают
+        Москву без щелей и наложений. В ГИС ОГД округа ТиНАО собраны из старых поселений, а новые районы нарисованы
+        схематично — собирать из них границы не получилось (v0.65.4–0.65.6)."""
+        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
         cx, cy = (bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2
-        home = None
-        for it in (x for x in cat if str(x.get("code", "")).startswith("prefect_")):
-            okr = it["name"]
-            for f in api.fetch(moscow, it["code"])["features"]:
-                f["_extra"] = {"Уровень": "округ", "Округ": okr, "Наименование": okr}
-                feats.append(f)
-                if home is None and _point_in(f.get("geometry"), cx, cy):
-                    home = okr
-        # районы всех округов: схема Москвы в шаблоне ППТ КРТ рисует их тонкой линией, листы «Районы …» отбирают районы
-        # своего округа по полю «Округ». У ТАО, НАО и ЮЗАО папка «районы …» со строчной буквы, а в ТАО и НАО слои
-        # районов — типа virtual (26.09.2026)
-        okrugs = [x["name"] for x in cat if str(x.get("code", "")).startswith("prefect_")]
-        for it in (x for x in cat if x.get("type") in ("layer", "virtual") and "районы " in str(x.get("path", "")).lower()):
-            path = str(it.get("path", "")).lower()
-            okr = next((o for o in okrugs if f"районы {o.lower()} /" in path), None)
-            if not okr:
-                continue
-            for f in api.fetch(moscow, it["code"])["features"]:
-                f["_extra"] = {"Уровень": "район", "Округ": okr, "Наименование": it["name"]}
-                feats.append(f)
-        # точные границы поселений ТиНАО (21) из эталона картоосновы ЕГКО «Границы районов»: новые районы ТиНАО в ГИС
-        # ОГД нарисованы схематично (прямые через местность), а по поселениям — внешний контур ТиНАО и его стык со
-        # старой Москвой без щелей и заходов (сборка округов — okrugsByDistricts в albums.js)
-        try:
-            egko = GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=True, ttl=EGKO_TTL)
-            for f in egko.fetch(moscow, "raions")["features"]:
-                code = str((f.get("properties") or {}).get("codemr") or "")
-                if code[:2] in ("11", "12"):
-                    f["_extra"] = {"Уровень": "поселение", "Код": code, "Наименование": str(f["properties"].get("name") or "").title()}
-                    feats.append(f)
-        except ConnectorError:
-            pass
-        layers[k] = _layer(k, {"features": feats, "source_doc": "ГИС ОГД Москвы: административные округа и районы",
+        home, feats = None, []
+        for f in doc["features"]:
+            props = dict(f["properties"])
+            if props["Уровень"] == "округ":
+                props["Граница"] = ADMIN_REV
+                if home is None and _point_in(f["geometry"], cx, cy):
+                    home = props["Округ"]
+            feats.append({"geometry": f["geometry"], "properties": {}, "_extra": props})
+        layers[k] = _layer(k, {"features": feats, "source_doc": "Административные округа и районы Москвы (эталон 27.09.2026)",
                                "notes": [] if home else ["область вне административных округов Москвы"]})
 
     def run_terrain(k):

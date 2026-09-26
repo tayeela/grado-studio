@@ -317,3 +317,19 @@ class ProjectVersions(unittest.TestCase):
             left = list((Path(d) / ".versions" / "Участок").glob("*.grado2.gz"))
             self.assertEqual(len(left), 1)
             self.assertEqual(gzip.decompress(left[0].read_bytes()), b'{"v": 3}')
+
+
+class AdminReference(unittest.TestCase):
+    """Административное деление — эталон владельца: район целиком в одном округе, округ — сумма его районов."""
+
+    def test_okrugs_and_districts_from_reference(self):
+        layers, errors = S.fetch((37.10, 55.40, 37.12, 55.41), ["gisogd.admin"])   # Вороново, ТАО
+        self.assertEqual(errors, {})
+        fs = layers["gisogd.admin"]["features"]["features"]
+        okrugs = {f["properties"]["Наименование"] for f in fs if f["properties"]["Уровень"] == "округ"}
+        districts = [f for f in fs if f["properties"]["Уровень"] == "район"]
+        self.assertEqual(len(okrugs), 12)
+        self.assertEqual(len(districts), 132)
+        self.assertTrue(all(d["properties"]["Округ"] in okrugs for d in districts))
+        self.assertTrue(all(f["properties"]["Граница"] == S.ADMIN_REV for f in fs if f["properties"]["Уровень"] == "округ"))
+        self.assertEqual(layers["gisogd.admin"]["notes"], [])
