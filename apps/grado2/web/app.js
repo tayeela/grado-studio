@@ -289,6 +289,7 @@ async function loadKeys(keys, bb) {
       if (epoch !== window.PROJ_EPOCH) { dropped = true; return; }
       Object.assign(ERRORS, r.errors);
       for (const [k, v] of Object.entries(r.layers)) {
+        if (k === "gisogd.admin") v.features = okrugsByDistricts(v.features);   // граница округа — по его районам (albums.js)
         // пустая первая выгрузка не заводит слой в списке: в области этого нет, сказано в итоге
         if (!DATA[k] && !v.features.features.length) { empty.push(v.title); continue; }
         const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];

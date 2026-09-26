@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.65.1: okrug boundary = union of its districts (ТАО/НАО).** Owner: the ТАО/НАО boundary
+  is wrong. In ГИС ОГД the okrug layers (`prefect_*`, and ЕГКО «Границы административных округов») are made of the
+  old 21 settlements of ТиНАО, while the ТиНАО districts («Территория / районы ТАО / НАО»: Бекасово, Вороново,
+  Краснопахорский, Троицк; Внуково, Коммунарка, Щербинка, Филимонковский) are new — the two disagree by 56–90 km².
+  The owner chose the district version. `okrugsByDistricts` (albums.js) rebuilds every okrug polygon by `turf.union`
+  of its districts when «Административные округа и районы» is loaded (holes under 0.5 km² — gaps between old-Moscow
+  districts — dropped); marker «Граница: по районам» makes albums reload older data. ТАО 1 070 km², НАО 382 km².
+
 - **2026-09-26, ГРАДО 2 v0.65.0: album «План реализации ППТ КРТ» by the owner's PowerPoint template — title and
   location sheets.**
   - The owner gave two references: a ППТ КРТ template (.pptx, A3 landscape, red header) and the concept «ГК Царицыно»

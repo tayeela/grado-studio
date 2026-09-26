@@ -6,6 +6,27 @@
 const OKR_FULL = { ЦАО: "Центральный", САО: "Северный", СВАО: "Северо-Восточный", ВАО: "Восточный", ЮВАО: "Юго-Восточный", ЮАО: "Южный",
   ЮЗАО: "Юго-Западный", ЗАО: "Западный", СЗАО: "Северо-Западный", ЗелАО: "Зеленоградский", НАО: "Новомосковский", ТАО: "Троицкий" };
 
+/* Граница округа — по его районам (решение владельца 26.09.2026). В ГИС ОГД слои округов (prefect_*, и ЕГКО
+   «Границы административных округов») собраны из старых 21 поселения ТиНАО, а районы ТиНАО — новые, и граница ТАО/НАО
+   у них расходится на 56–90 км². Контур округа собирается объединением его районов (turf.union); щели между районами
+   старой Москвы (дыры меньше 0,5 км²) отбрасываются — у округов нет анклавов внутри. */
+function okrugsByDistricts(fc) {
+  const fs = fc.features || [], out = [];
+  for (const f of fs) {
+    if (f.properties["Уровень"] !== "округ") { out.push(f); continue; }
+    const name = f.properties["Наименование"], ds = fs.filter(d => d.properties["Уровень"] === "район" && d.properties["Округ"] === name && /Polygon/.test(d.geometry?.type));
+    let u = null;
+    if (ds.length) try { u = ds.length === 1 ? ds[0] : turf.union(turf.featureCollection(ds)); } catch { u = null; }
+    if (!u) { out.push(f); continue; }
+    const polys = (u.geometry.type === "Polygon" ? [u.geometry.coordinates] : u.geometry.coordinates)
+      .map(p => [p[0], ...p.slice(1).filter(r => safe(() => turf.area(turf.polygon([r]))) > 5e5)]);
+    out.push({ ...f, geometry: polys.length === 1 ? { type: "Polygon", coordinates: polys[0] } : { type: "MultiPolygon", coordinates: polys },
+      properties: { ...f.properties, "Граница": "по районам" } });
+  }
+  return { ...fc, features: out };
+}
+window.okrugsByDistricts = okrugsByDistricts;
+
 // округ и район, где лежит территория (административное деление ГИС ОГД)
 function homeAdm() {
   const adm = DATA["gisogd.admin"]?.fc.features || [], c = TERR && turf.centroid(TERR);
