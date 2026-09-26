@@ -151,6 +151,20 @@ class OgdAll(unittest.TestCase):
         self.assertAlmostEqual(t.dxf.rotation, 28.0)                # по часовой 332° = против часовой 28°
         self.assertEqual(t.dxf.style, "GISOGD")
 
+    def test_portal_style_reads_fill_hatch_line_and_label(self):
+        css = """[zoom>14] {
+    ['mapnik::geometry_type'=2] { line-color: #c133c1; line-width: 2; }
+    // [угол наклона 0º, цвет штриховки #009f3c]
+    ['mapnik::geometry_type'=3] { polygon-fill: #009f3c; polygon-pattern-file: url("img/p10_hatchv23.svg"); }
+}"""
+        poly = ogd_all.portal_style(css, "poly")
+        self.assertEqual((poly["fill"], poly["hatch"], poly["hatchPat"]), ("#009f3c", True, "0"))
+        self.assertEqual(ogd_all.portal_style(css, "line"), {"fill": "#c133c1", "width": 2.0})
+        flat = ogd_all.portal_style("[zoom>15] { polygon-fill: #f2f2fb; polygon-opacity: 0; line-color: rgb(0,168,132); line-width: 1.2; }", "poly")
+        self.assertEqual((flat["stroke"], flat["opacity"]), ("#00a884", 0))
+        lab = ogd_all.portal_style("marker-fill: #ffffff;\n::text [zoom >= 16] { text-name: [text]; text-fill: #df0024; }", "point")
+        self.assertEqual((lab["fill"], lab["label"]), ("#df0024", "text"))
+
     def test_portal_color_takes_the_block_of_the_layer_geometry(self):
         css = "['mapnik::geometry_type'=1] { marker-fill: #ffffff; marker-line-color: #19ba19; }\n" \
               "['mapnik::geometry_type'=2] { line-color: #df0024; }"

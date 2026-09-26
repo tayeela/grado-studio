@@ -316,6 +316,23 @@ function styleFor(l, f, res) {
   if (st.label && res < 4) { const t = labelStyle(l, f); if (t) out.push(t); }
   return out;
 }
+/* слои портала ГИС ОГД (ключ «ogd.<код>», окно «Исходные данные») — в оформлении карты портала: сервер переводит
+   CartoCSS слоя в стиль ГРАДО (заливка, контур, штриховка, подпись). Один раз на слой: отметка style.portal
+   сохраняется с проектом, дальше оформление ваше. Линии с кодом линии ГИС ОГД — знаками ЛГР (REDLN97). */
+async function portalStyles() {
+  const todo = LYR.filter(l => l.key.startsWith("ogd.") && !l.style.portal);
+  if (!todo.length) return;
+  let r; try { r = await api("/api/ogd_all/styles", { layers: Object.fromEntries(todo.map(l => [l.key.slice(4), l.geom])) }); } catch { return; }
+  todo.forEach(l => {
+    const s = r.styles[l.key.slice(4)]; if (!s || !Object.keys(s).length) { l.style.portal = true; return; }
+    const lgr = l.geom === "line" && DATA[l.key]?.fc.features.some(f => f.properties._lt || f.properties._miss);
+    l.style = ST({ ...s, ...(lgr ? { mode: "lgr" } : {}), portal: true });
+    if (l.style.mode === "cat") assignCats(l, true);
+    l.cache.clear(); restyle(l);
+  });
+  renderTree(); renderRight(); window.markDirty?.();
+}
+window.portalStyles = portalStyles;
 function restyle(l) {
   l.cache.clear(); l._br = null;
   if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== l._maxDen) rebuildLayer(l);

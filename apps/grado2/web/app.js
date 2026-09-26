@@ -312,6 +312,7 @@ async function loadKeys(keys, bb) {
   }));
   if (poll) clearInterval(poll);
   busy(false); $("bLoad").disabled = false; window.syncStatus?.();
+  portalStyles();
   if (dropped) return toast("Выгрузка для прежнего проекта отброшена: пока она шла, открыт другой проект.");
   const ne = Object.keys(ERRORS).length;
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором

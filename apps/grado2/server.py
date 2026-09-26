@@ -1084,6 +1084,18 @@ class Handler(SimpleHTTPRequestHandler):
                                                codes=req.get("codes"), where=req.get("where"),
                                                redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
                 return self._json(200, OGD_JOB[0].state)
+            if self.path == "/api/ogd_all/styles":
+                # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
+                import ogd_all
+                styles, out = ogd_all.portal_styles(CACHE / "gisogd"), {}
+                for code, geom in list((req.get("layers") or {}).items())[:800]:
+                    if geom not in ("poly", "line", "point"):
+                        continue
+                    try:
+                        out[code] = ogd_all.portal_style(styles(str(code)), geom)
+                    except (OSError, ValueError, ConnectorError):
+                        pass                            # портал не ответил — слой остаётся в своём оформлении
+                return self._json(200, {"styles": out})
             if self.path == "/api/ogd_all/scan":
                 import ogd_all
                 sheet = req.get("sheet")

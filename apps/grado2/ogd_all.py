@@ -273,6 +273,106 @@ def portal_color(css, geom=None):
     return None
 
 
+_DECL = re.compile(r"([a-z-]+)\s*:\s*([^;{}]+);")
+
+
+def _decls(body):
+    """Объявления CartoCSS верхнего уровня блока (вложенные блоки — категории, ::text — не входят)."""
+    flat, depth = [], 0
+    for ch in body:
+        depth += ch == "{"
+        if depth == 0:
+            flat.append(ch)
+        depth -= ch == "}"
+    return {k: v.strip().strip("'\"") for k, v in _DECL.findall("".join(flat))}
+
+
+def _hex(v):
+    """Цвет CartoCSS (#abc, #aabbcc, rgb(…), rgba(…)) → #aabbcc."""
+    r = re.match(r"rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", (v or "").strip())
+    if r:
+        return "#" + "".join(f"{min(255, int(x)):02x}" for x in r.groups())
+    m = re.match(r"#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b", (v or "").strip())
+    if not m:
+        return None
+    c = m.group(1)
+    return "#" + (c if len(c) == 6 else "".join(ch * 2 for ch in c)).lower()
+
+
+def _num(v, d):
+    try:
+        return float(str(v).split()[0])
+    except (TypeError, ValueError, IndexError):
+        return d
+
+
+def portal_style(css, geom):
+    """CartoCSS слоя портала ГИС ОГД → оформление слоя ГРАДО 2 (как на карте портала): заливка и её прозрачность,
+    контур и толщина, штриховка (polygon-pattern-file; угол — из описания условного знака в комментарии),
+    категории по полю ([поле='значение'] { … }), подпись (text-name). geom — "poly" | "line" | "point".
+    Пусто, если в стиле нет цвета."""
+    css = css or ""
+    angle = re.search(r"угол наклона\s*(\d+)", css)
+    css = re.sub(r"//[^\n]*", "", css)
+    n = {"point": 1, "line": 2, "poly": 3}[geom]
+    m = re.search(r"geometry_type'\s*=\s*%d\]\s*\{" % n, css)
+    if m:                                               # блок своего типа геометрии: до парной скобки
+        depth, i = 1, m.end()
+        while i < len(css) and depth:
+            depth += {"{": 1, "}": -1}.get(css[i], 0)
+            i += 1
+        body = css[m.end():i - 1]
+    else:
+        body = css
+        while True:                                     # внешние обёртки [zoom>14] { … } снимаются
+            w = re.fullmatch(r"\s*\[[^\]]*zoom[^\]]*\]\s*\{(.*)\}\s*", body, re.S)
+            if not w:
+                break
+            body = w.group(1)
+    d = _decls(body)
+    text = re.search(r"text-name\s*:\s*\[(\w+)\]", body)
+    text_fill = _hex((re.search(r"text-fill\s*:\s*([^;]+);", body) or [None, ""])[1])
+    out = {}
+    if geom == "poly":
+        fill, stroke = _hex(d.get("polygon-fill")), _hex(d.get("line-color"))
+        hatch = "polygon-pattern-file" in d
+        fill = fill or (stroke if hatch else None)      # узор-картинка без цвета — штриховка цветом контура
+        op = _num(d.get("polygon-opacity"), 1.0)
+        if not fill and not stroke:
+            return {}
+        out = {"fill": fill or stroke or "#9aa1a8", "stroke": stroke or fill, "width": round(_num(d.get("line-width"), 1.0), 2),
+               "opacity": round(op, 2) if fill else 0}
+        if not stroke and not hatch:
+            out["width"] = 0.8
+        if hatch:
+            out.update(hatch=True, hatchPat={"0": "0", "90": "90", "135": "135"}.get(angle.group(1) if angle else "", "45"))
+        elif fill and op >= 0.99:
+            out["opacity"] = 0.35                       # сплошная заливка портала прозрачнее: под ней видно подложку
+    elif geom == "line":
+        c = _hex(d.get("line-color"))
+        if not c:
+            return {}
+        out = {"fill": c, "width": round(_num(d.get("line-width"), 1.0), 2)}
+    else:
+        c = text_fill or _hex(d.get("marker-line-color")) or _hex(d.get("marker-fill"))
+        if not c or c == "#ffffff":
+            return {}
+        out = {"fill": c, "stroke": "#ffffff", "width": 0.5, "opacity": 1}
+    cats = re.findall(r"\[\s*(\w+)\s*=\s*['\"]([^'\"]*)['\"]\s*\]\s*\{([^{}]*)\}", body)
+    colors = {}
+    for field, value, block in cats:
+        dd = _decls(block)
+        c = _hex(dd.get("polygon-fill") if geom == "poly" else dd.get("line-color")) or _hex(dd.get("line-color")) or _hex(dd.get("text-fill"))
+        if c:
+            colors.setdefault(field, {})[value] = c
+    if colors:
+        field = max(colors, key=lambda k: len(colors[k]))
+        out.update(mode="cat", cat={"field": field, "colors": colors[field], "off": []})
+    if text and geom == "point":                        # подписи площадных слоёв портал даёт только вблизи — не включаются
+        out.update(label=text.group(1), labelSize=11)
+    return out
+
+
 def _label(msp, xy, text, props, attrs):
     """Подпись ГИС ОГД (слои «Надписи …»: text, textangle, textheight) → TEXT по центру точки. Угол в ГИС ОГД идёт
     по часовой стрелке; подпись разворачивается так, чтобы не стоять вверх ногами. Высота — textheight ГИС ОГД

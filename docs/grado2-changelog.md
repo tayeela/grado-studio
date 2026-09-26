@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.60.1: ГИС ОГД portal layers in the project look as on the portal map.**
+  - Owner: layers loaded from «Исходные данные» got random palette colours with 70 % fill and covered the map.
+  - `ogd_all.portal_style(css, geom)`: CartoCSS of the layer → ГРАДО style: block of the geometry type, fill and
+    polygon-opacity (solid portal fill shown at 35 %), outline colour and width, hatching for pattern fills (angle from
+    the sign description in the CSS comment; image pattern without colour — hatch in the outline colour), rgb()/rgba()
+    colours, categories `[field='value']`, label field of point layers («Надписи …»). `POST /api/ogd_all/styles`.
+  - Client `portalStyles()` applies it once per `ogd.*` layer after loading and on project open (mark `style.portal`
+    saved with the project; later changes are yours). Lines with a ГИС ОГД line code use the ЛГР mode (REDLN97).
+
 - **2026-09-26, ГРАДО 2 v0.60.0: one «Исходные данные» window; large areas loaded by parts.**
   - `web/ogdpick.js` is now the single source picker: one tree — ЕГРН · НСПД, ГИС ОГД curated sets, all 716 layers of
     the ГИС ОГД portal in its order (key `ogd.<code>`), ЕГКО, OpenStreetMap, Яндекс, relief; search, folder checkboxes,
