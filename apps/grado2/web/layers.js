@@ -319,14 +319,19 @@ function styleFor(l, f, res) {
 /* слои портала ГИС ОГД (ключ «ogd.<код>», окно «Исходные данные») — в оформлении карты портала: сервер переводит
    CartoCSS слоя в стиль ГРАДО (заливка, контур, штриховка, подпись). Один раз на слой: отметка style.portal
    сохраняется с проектом, дальше оформление ваше. Линии с кодом линии ГИС ОГД — знаками ЛГР (REDLN97). */
+// Оформление, которое владелец задал слою сам (земельные участки — синий контур), сервер отдаёт с номером правки rev:
+// слой, оформленный по прежней правке, перекрашивается один раз заново
 async function portalStyles() {
-  const todo = LYR.filter(l => l.key.startsWith("ogd.") && !l.style.portal);
+  const all = LYR.filter(l => l.key.startsWith("ogd."));
+  if (!all.length) return;
+  let r; try { r = await api("/api/ogd_all/styles", { layers: Object.fromEntries(all.map(l => [l.key.slice(4), l.geom])) }); } catch { return; }
+  const rev = l => r.rev?.[l.key.slice(4)] || 1, done = l => l.style.portal === true ? 1 : l.style.portal || 0;
+  const todo = all.filter(l => done(l) < rev(l));
   if (!todo.length) return;
-  let r; try { r = await api("/api/ogd_all/styles", { layers: Object.fromEntries(todo.map(l => [l.key.slice(4), l.geom])) }); } catch { return; }
   todo.forEach(l => {
-    const s = r.styles[l.key.slice(4)]; if (!s || !Object.keys(s).length) { l.style.portal = true; return; }
+    const s = r.styles[l.key.slice(4)]; if (!s || !Object.keys(s).length) { l.style.portal = rev(l); return; }
     const lgr = l.geom === "line" && DATA[l.key]?.fc.features.some(f => f.properties._lt || f.properties._miss);
-    l.style = ST({ ...s, ...(lgr ? { mode: "lgr" } : {}), portal: true });
+    l.style = ST({ ...s, ...(lgr ? { mode: "lgr" } : {}), portal: rev(l) });
     if (l.style.mode === "cat") assignCats(l, true);
     l.cache.clear(); restyle(l);
   });

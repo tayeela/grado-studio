@@ -1092,10 +1092,12 @@ class Handler(SimpleHTTPRequestHandler):
                     if geom not in ("poly", "line", "point"):
                         continue
                     try:
-                        out[code] = ogd_all.portal_style(styles(str(code)), geom)
+                        own = ogd_all.OWN_STYLE.get(code)
+                        out[code] = ogd_all.layer_style(code, "" if own else styles(str(code)), geom)
                     except (OSError, ValueError, ConnectorError):
                         pass                            # портал не ответил — слой остаётся в своём оформлении
-                return self._json(200, {"styles": out})
+                rev = {c: v["rev"] for c, v in ogd_all.OWN_STYLE.items()}
+                return self._json(200, {"styles": out, "rev": rev})
             if self.path == "/api/ogd_all/scan":
                 import ogd_all
                 sheet = req.get("sheet")

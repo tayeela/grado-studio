@@ -165,6 +165,10 @@ class OgdAll(unittest.TestCase):
         lab = ogd_all.portal_style("marker-fill: #ffffff;\n::text [zoom >= 16] { text-name: [text]; text-fill: #df0024; }", "point")
         self.assertEqual((lab["fill"], lab["label"]), ("#df0024", "text"))
 
+    def test_land_parcels_are_a_pure_blue_outline(self):
+        st = ogd_all.layer_style("zu_29_06_2021", "polygon-pattern-file: url('img/gor_green_1.png'); line-color: #06b882;", "poly")
+        self.assertEqual((st["stroke"], st["opacity"], st["hatch"]), ("#0000ff", 0, False))
+
     def test_portal_color_takes_the_block_of_the_layer_geometry(self):
         css = "['mapnik::geometry_type'=1] { marker-fill: #ffffff; marker-line-color: #19ba19; }\n" \
               "['mapnik::geometry_type'=2] { line-color: #df0024; }"

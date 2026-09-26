@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.60.2: land parcels (zu_29_06_2021) — pure blue outline, no hatching.** Owner's choice
+  instead of the portal pattern: `ogd_all.OWN_STYLE` (rgb 0 0 255, fill 0, width 1) for the project and the layer
+  colour of «DXF ГИС ОГД». Own styles carry a revision: `/api/ogd_all/styles` returns `rev`, the client restyles a
+  layer once when its `style.portal` is older (so parcels already styled by v0.60.1 turn blue on project open).
+
 - **2026-09-26, ГРАДО 2 v0.60.1: ГИС ОГД portal layers in the project look as on the portal map.**
   - Owner: layers loaded from «Исходные данные» got random palette colours with 70 % fill and covered the map.
   - `ogd_all.portal_style(css, geom)`: CartoCSS of the layer → ГРАДО style: block of the geometry type, fill and

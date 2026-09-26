@@ -306,6 +306,17 @@ def _num(v, d):
         return d
 
 
+# Оформление, заданное владельцем вместо карты портала (и в проекте, и в DXF). rev — номер правки: слой, оформленный
+# по прежней правке, в проекте перекрашивается один раз заново.
+OWN_STYLE = {"zu_29_06_2021": {"rev": 2, "style": {"fill": "#0000ff", "stroke": "#0000ff", "width": 1.0, "opacity": 0, "hatch": False}}}
+
+
+def layer_style(code, css, geom):
+    """Оформление слоя портала в проекте: своё (OWN_STYLE), иначе — как на карте портала."""
+    own = OWN_STYLE.get(code)
+    return dict(own["style"]) if own and geom == "poly" else portal_style(css, geom)
+
+
 def portal_style(css, geom):
     """CartoCSS слоя портала ГИС ОГД → оформление слоя ГРАДО 2 (как на карте портала): заливка и её прозрачность,
     контур и толщина, штриховка (polygon-pattern-file; угол — из описания условного знака в комментарии),
@@ -646,7 +657,8 @@ class Job:
                 st.update(current="", message="Цвета слоёв, как на карте портала…")
                 for it in found:
                     try:
-                        it["color"] = portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
+                        own = OWN_STYLE.get(it["code"])
+                        it["color"] = own["style"]["stroke"] if own else portal_color(self.styles(it["code"]), it["features"][0]["geometry"]["type"])
                     except Exception:              # без цвета слой остаётся со своим номером цвета
                         pass
             st.update(message="Сборка чертежа…")
