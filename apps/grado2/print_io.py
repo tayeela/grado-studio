@@ -261,7 +261,7 @@ class SketchMapFrame(Frame):
         sh, rect = self.sheet, self.rect
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
-        out, labels, along = [{"op": "clip", "rect": tuple(rect)}], [], {}
+        out, labels, along, placed = [{"op": "clip", "rect": tuple(rect)}], [], {}, []
         if sh.get("basemap") == "sat" and self.tiles:
             out.extend(tile_ops(tr, rect, sh["scale"], self.tiles, sh["center"][1]))
         for layer in sh.get("layers", []):
@@ -269,6 +269,7 @@ class SketchMapFrame(Frame):
                 kind, parts = _parts(f["g"])
                 w = max(0.08, (f.get("w") or 1) * PX_MM)
                 stroke = hex_to_rgb(f.get("stroke")) if f.get("stroke") else None
+                dash = [max(0.1, float(d) * PX_MM) for d in f["dash"]] if f.get("dash") else None   # штрих карты (пикс.) → мм
                 if kind == "poly":
                     for poly in parts:
                         rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
@@ -279,12 +280,14 @@ class SketchMapFrame(Frame):
                         # с белым; на спутнике такая заливка закрыла бы снимок — там рисуется только контур
                         see_through = a is not None and (a <= .02 or (sh.get("basemap") == "sat" and a < .6))
                         fill = None if f.get("hatch") or f.get("fill") is None or see_through else _mix(f["fill"], a)
-                        out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
-                                    "width": w, "dash": None})
                         if f.get("hatch") and f.get("fill"):
-                            # узор штриховки слоя: одно направление или сетка из двух; точки на листе — косой штриховкой
+                            # узор штриховки слоя: одно направление или сетка из двух; шаг — как на карте (Эталон ЛГР: 2 мм)
+                            step = max(0.8, float(f["hs"]) * PX_MM) if f.get("hs") else 1.6
                             for ang in {"0": (0,), "90": (90,), "135": (135,), "x45": (45, 135), "x0": (0, 90)}.get(f.get("hp"), (45,)):
-                                out.extend(hatch_ops(rings, spacing=1.6, stroke=hex_to_rgb(f["fill"]), angle=ang))
+                                out.extend(hatch_ops(rings, spacing=step, stroke=hex_to_rgb(f["fill"]), angle=ang, width=max(0.1, w * .6)))
+                        if fill or (stroke and f.get("w", 1) > 0):          # контур поверх штриховки, как на карте
+                            out.append({"op": "path", "rings": rings, "closed": True, "fill": fill, "stroke": stroke if f.get("w", 1) > 0 else None,
+                                        "width": w, "dash": dash})
                         if f.get("label"):
                             xs, ys = zip(*rings[0])
                             labels.append((sum(xs) / len(xs), sum(ys) / len(ys), f["label"], f.get("ls")))
@@ -303,7 +306,7 @@ class SketchMapFrame(Frame):
                                 out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w, 0.25),
                                             "dash": [d * k for d in dash] if dash else None, "rings": [pts]})
                         else:
-                            out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": None, "rings": [pts]})
+                            out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
                         if f.get("label"):
                             # подпись вдоль линии (улица): на самом длинном отрезке внутри рамки; одно название — один раз
                             for a, b in zip(pts, pts[1:]):
@@ -316,6 +319,10 @@ class SketchMapFrame(Frame):
                 elif kind == "point":
                     for p in parts:
                         x, y = tr.mm(*p[:2])
+                        if f.get("nm"):                                 # слой надписей: подпись на самой точке, без значка
+                            if f.get("label"):
+                                placed.append((x, y, str(f["label"]), f.get("ls"), f.get("la"), f.get("lcol")))
+                            continue
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
                         if f.get("label"):
@@ -359,6 +366,20 @@ class SketchMapFrame(Frame):
                 continue
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": ink, "anchor": "middle", "angle": ang})
+        for x, y, text, ls, deg, col in placed:
+            # надписи ГИС ОГД: на своём месте и под своим углом (вдоль границы), цветом знака ЛГР; наложения не пропускаются
+            ls = float(ls or 2.0)
+            if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
+                continue
+            ang = -math.radians(float(deg or 0))              # на листе ось Y вниз: против часовой на карте — «минус»
+            text = text[:60]
+            tw = ls * .55 * len(text)
+            ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
+            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            if not take((x - ex, y - ey, x + ex, y + ey)):
+                continue
+            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
+                        "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang})
         for x, y, text, ls in labels:
             ls = float(ls or 2.2)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):

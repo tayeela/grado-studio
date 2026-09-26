@@ -169,6 +169,19 @@ class OgdAll(unittest.TestCase):
         st = ogd_all.layer_style("zu_29_06_2021", "polygon-pattern-file: url('img/gor_green_1.png'); line-color: #06b882;", "poly")
         self.assertEqual((st["stroke"], st["opacity"], st["hatch"]), ("#0000ff", 0, False))
 
+    def test_labels_turn_along_the_nearest_border(self):
+        line = {"geometry": {"type": "LineString", "coordinates": [[37.600, 55.750], [37.601, 55.751]]}}   # на северо-восток
+        pts = [(37.6005, 55.7505), (37.7, 55.8)]
+        angs = ogd_all.label_angles(pts, [line])
+        self.assertIsNone(angs[1])                                       # рядом линии нет
+        self.assertAlmostEqual(angs[0], 60.5, delta=0.5)                  # вдоль линии, против часовой от востока
+        back = {"geometry": {"type": "LineString", "coordinates": [[37.601, 55.751], [37.600, 55.750]]}}
+        self.assertAlmostEqual(ogd_all.label_angles(pts[:1], [back])[0], angs[0], delta=0.01)   # не вверх ногами
+
+    def test_etalon_zone_gets_hatch_in_dxf(self):
+        self.assertEqual(ogd_all.dxf_hatch(29)[:2], ("#3d107b", 45))
+        self.assertIsNone(ogd_all.dxf_hatch(41))                         # береговые полосы — без заливки
+
     def test_portal_color_takes_the_block_of_the_layer_geometry(self):
         css = "['mapnik::geometry_type'=1] { marker-fill: #ffffff; marker-line-color: #19ba19; }\n" \
               "['mapnik::geometry_type'=2] { line-color: #df0024; }"

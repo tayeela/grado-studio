@@ -410,6 +410,21 @@ def _point_in(g, x, y):
     return inside
 
 
+def ogd_label_angles(code, feats, bbox, api=None):
+    """Подписям слоя надписей ГИС ОГД — угол вдоль ближайшей границы из той же папки портала (поле _angle)."""
+    import ogd_all
+    api = api or GisogdApi(cache_dir=CACHE / "gisogd")
+    w, s_, e, n = bbox
+    wide = (w - 0.001, s_ - 0.001, e + 0.001, n + 0.001)          # граница чуть за краем области тоже годится
+    sib = []
+    try:
+        for c in ogd_all.label_siblings(ogd_catalog(), code):
+            sib += api.fetch(wide, c)["features"]
+    except ConnectorError:
+        return feats
+    return ogd_all.set_label_angles(feats, sib)
+
+
 def fetch(bbox, keys):
     """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors).
     Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»)."""
@@ -482,6 +497,8 @@ def fetch(bbox, keys):
                     f["_extra"] = {"Вид зоны": zone}
                 feats.append(f)
         PROGRESS.pop(k, None)
+        if k.startswith("ogd.") and any(str((f.get("properties") or {}).get("text") or "").strip() for f in feats[:20]):
+            feats = ogd_label_angles(k[4:], feats, bbox, api)     # надписи — вдоль границ своей папки
         layers[k] = _layer(k, {"features": feats, "source_doc": doc, "notes": notes})
 
     def run_ogd(ks):
@@ -1085,6 +1102,15 @@ class Handler(SimpleHTTPRequestHandler):
                                                codes=req.get("codes"), where=req.get("where"),
                                                redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
                 return self._json(200, OGD_JOB[0].state)
+            if self.path == "/api/ogd_all/label_angles":
+                # подписи слоя, загруженного до v0.63, — угол вдоль границы своей папки
+                pts = [p[:2] for p in req.get("points") or []][:20000]
+                if not pts:
+                    return self._json(200, {"angles": []})
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                feats = [{"geometry": {"type": "Point", "coordinates": p}, "properties": {"text": "x"}} for p in pts]
+                ogd_label_angles(str(req.get("code") or ""), feats, (min(xs), min(ys), max(xs), max(ys)))
+                return self._json(200, {"angles": [f["properties"].get("_angle") for f in feats]})
             if self.path == "/api/ogd_all/styles":
                 # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
                 import ogd_all

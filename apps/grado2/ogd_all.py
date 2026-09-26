@@ -22,6 +22,7 @@ import re
 import threading
 import time
 import zipfile
+from pathlib import Path
 from datetime import datetime
 
 import ezdxf
@@ -358,6 +359,28 @@ ETALON_NO_FILL = {41}
 ETALON_REV = 3          # номер правки оформления «по Эталону» (см. OWN_STYLE: слой перекрашивается один раз)
 
 
+_LGR_FILE = Path(__file__).resolve().parents[2] / "core/render/grado_render/styles/moscow_lgr.json"
+_LGR_BY_CODE = {}
+
+
+def lgr_entry(code):
+    """Запись Эталона ЛГР по коду (moscow_lgr.json, читается один раз)."""
+    if not _LGR_BY_CODE:
+        for v in json.loads(_LGR_FILE.read_text("utf-8"))["styles"].values():
+            if v.get("lgr_code") is not None:
+                _LGR_BY_CODE[int(v["lgr_code"])] = v
+    return _LGR_BY_CODE.get(code) if code is not None else None
+
+
+def dxf_hatch(code):
+    """Штриховка зоны Эталона для DXF: (цвет, угол, сетка, шаг мм на бумаге) или None."""
+    v = lgr_entry(code)
+    h = (v or {}).get("hatch") or {}
+    if not h.get("color") or code in ETALON_NO_FILL:
+        return None
+    return h["color"], int(h["angle"] if h.get("angle") is not None else 45), bool(h.get("cross")), float(h.get("spacing_mm") or 2)
+
+
 def etalon_style(lgr, geom):
     """Запись Эталона ЛГР (moscow_lgr.json) → оформление слоя ГРАДО 2: контур цветом и штрихом знака, штриховка зоны
     её цветом и углом, подписи («Надписи …») — цветом знака, по углу из ГИС ОГД, без значка точки."""
@@ -366,7 +389,7 @@ def etalon_style(lgr, geom):
     width = max(1.0, round(float(lgr.get("width_px") or 1), 2))
     if geom == "point":
         return {"fill": stroke, "stroke": stroke, "width": 0, "opacity": 1, "marker": False,
-                "label": "text", "labelSize": 11, "labelColor": stroke, "labelAngle": "textangle"}
+                "label": "text", "labelSize": 11, "labelColor": stroke, "labelAngle": "_angle"}
     if geom == "line":
         return {"fill": stroke, "width": width, "dash": dash}
     out = {"fill": stroke, "stroke": stroke, "strokeOwn": True, "width": width, "dash": dash, "opacity": 0, "hatch": False}
@@ -454,12 +477,90 @@ def portal_style(css, geom):
     return out
 
 
+def label_siblings(cat, code):
+    """Слои той же папки ГИС ОГД, что и слой надписей code (границы и зоны), — по ним подпись ставится вдоль линии."""
+    me = next((x for x in cat if x.get("code") == code), None)
+    if not me:
+        return []
+    return [x["code"] for x in cat if x.get("parent_id") == me.get("parent_id") and x["code"] != code
+            and x.get("type") in ("layer", "virtual") and not str(x.get("name", "")).lower().startswith("надпис")]
+
+
+def label_angles(points, features, tol=30.0):
+    """Угол подписи вдоль ближайшей линии: points — [(lon, lat)], features — GeoJSON соседних слоёв (границы — линии,
+    зоны — их контуры). Для каждой точки — угол ближайшего отрезка не дальше tol метров, в градусах против часовой
+    стрелки от востока, развёрнутый так, чтобы подпись не стояла вверх ногами (−90…90]; None — линии рядом нет."""
+    if not points:
+        return []
+    lat0 = sum(p[1] for p in points) / len(points)
+    kx, ky = 111320 * math.cos(math.radians(lat0)), 110540
+    cell, grid = 50.0, {}
+    for f in features:
+        g = f.get("geometry") or {}
+        t, c = g.get("type"), g.get("coordinates")
+        lines = ([c] if t == "LineString" else c if t == "MultiLineString" else
+                 [r for r in c] if t == "Polygon" else [r for p in c for r in p] if t == "MultiPolygon" else [])
+        for line in lines:
+            for (x1, y1, *_), (x2, y2, *_) in zip(line, line[1:]):
+                a, b = (x1 * kx, y1 * ky), (x2 * kx, y2 * ky)
+                for gx in range(int(min(a[0], b[0]) // cell), int(max(a[0], b[0]) // cell) + 1):
+                    for gy in range(int(min(a[1], b[1]) // cell), int(max(a[1], b[1]) // cell) + 1):
+                        grid.setdefault((gx, gy), []).append((a, b))
+    out = []
+    for lon, lat, *_ in points:
+        x, y = lon * kx, lat * ky
+        best = None
+        for gx in range(int(x // cell) - 1, int(x // cell) + 2):
+            for gy in range(int(y // cell) - 1, int(y // cell) + 2):
+                for a, b in grid.get((gx, gy), ()):
+                    dx, dy = b[0] - a[0], b[1] - a[1]
+                    L2 = dx * dx + dy * dy
+                    if L2 < 1e-6:
+                        continue
+                    t = max(0.0, min(1.0, ((x - a[0]) * dx + (y - a[1]) * dy) / L2))
+                    d = math.hypot(a[0] + t * dx - x, a[1] + t * dy - y)
+                    if d <= tol and (best is None or d < best[0]):
+                        best = (d, dx, dy)
+        if best is None:
+            out.append(None)
+            continue
+        ang = math.degrees(math.atan2(best[2], best[1]))
+        out.append(round((ang + 90) % 180 - 90 if (ang + 90) % 180 - 90 != -90 else 90, 2))
+    return out
+
+
+def set_label_angles(features, siblings):
+    """Подписям (точкам с text) — угол вдоль ближайшей границы своей папки в поле _angle (градусы против часовой)."""
+    pts = [(i, f["geometry"]["coordinates"]) for i, f in enumerate(features)
+           if (f.get("geometry") or {}).get("type") == "Point" and str((f.get("properties") or {}).get("text") or "").strip()]
+    for (i, _), ang in zip(pts, label_angles([p for _, p in pts], siblings)):
+        if ang is not None:
+            features[i].setdefault("properties", {})["_angle"] = ang
+    return features
+
+
+def _zone_hatch(msp, geom, layer, sheet):
+    """Штриховка зоны по Эталону ЛГР (HATCH): цвет штриховки знака, угол, шаг — мм на бумаге в масштабе листа
+    (без листа — М 1:2000, масштаб Эталона). ANSI31 — косые через 3,175 единицы под 45°, поворачивается до угла знака."""
+    color, angle, cross, step = layer["hatch"]
+    scale = float(sheet["scale"]) if sheet else 2000.0
+    h = msp.add_hatch(dxfattribs={"layer": layer["dxf"]})
+    h.rgb = tuple(int(color[k:k + 2], 16) for k in (1, 3, 5))
+    h.set_pattern_fill("ANSI37" if cross else "ANSI31", scale=step * scale / 1000 / 3.175, angle=angle - 45)
+    for rings in ([geom["coordinates"]] if geom["type"] == "Polygon" else geom["coordinates"]):
+        for ring in rings:
+            pts = [(x, y) for x, y, *_ in ring]
+            if len(pts) >= 3:
+                h.paths.add_polyline_path(pts, is_closed=True)
+    return h
+
+
 def _label(msp, xy, text, props, attrs):
     """Подпись ГИС ОГД (слои «Надписи …»: text, textangle, textheight) → TEXT по центру точки. Угол в ГИС ОГД идёт
     по часовой стрелке; подпись разворачивается так, чтобы не стоять вверх ногами. Высота — textheight ГИС ОГД
     как есть (метры на местности): подписи расставлены порталом под неё, крупнее они налезают друг на друга."""
-    try:
-        ang = -float(props.get("textangle") or 0)
+    try:                                               # вдоль своей границы (_angle), иначе — угол ГИС ОГД
+        ang = float(props["_angle"]) if props.get("_angle") is not None else -float(props.get("textangle") or 0)
     except (TypeError, ValueError):
         ang = 0.0
     ang = (ang + 90) % 180 - 90
@@ -544,6 +645,8 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
                             if code in redln["colors"]:
                                 a["true_color"] = dxf_io._rgb(redln["colors"][code])
                         ents.append(msp.add_lwpolyline(pts, close=closed, dxfattribs=a))
+            if layer.get("hatch") and geom["type"] in ("Polygon", "MultiPolygon"):
+                ents.append(_zone_hatch(msp, geom, layer, sheet))
             tags = _xdata(props)
             for e in ents:
                 if tags:
@@ -677,7 +780,8 @@ class Job:
     def _run(self):
         st = self.state
         try:
-            todo = layer_list(catalog(), self.codes)
+            cat = catalog()
+            todo = layer_list(cat, self.codes)
             st["total"] = len(todo)
 
             def tell(code, got, total, stage):
@@ -726,11 +830,23 @@ class Job:
                         except ConnectorError:          # полигонов нет — стороны остаются, как в ГИС ОГД
                             pass
             st.update(current="", message="Сборка чертежа…")
+            have = {it["code"]: it for it in found}
+            for it in found:                            # подписи — вдоль границ своей папки
+                if any(str((f.get("properties") or {}).get("text") or "").strip() for f in it["features"][:20]):
+                    sib = []
+                    for c in label_siblings(cat, it["code"]):
+                        try:
+                            sib += have[c]["features"] if c in have else api.fetch(self.bbox, c)["features"]
+                        except ConnectorError:
+                            pass
+                    set_label_angles(it["features"], sib)
             for it in found:                            # знак Эталона ЛГР слоя: цвет слоя и тип контура зон
                 field = next((p.get("zonelineco") or p.get("textlineco") for p in (f["properties"] for f in it["features"][:50])
                               if p.get("zonelineco") or p.get("textlineco")), None)
                 parent = it.get("path", "").rsplit(" / ", 2)[-2] if " / " in it.get("path", "") else ""
                 it["lgr"] = etalon_code(it["title"], parent, field)
+                if any((f.get("geometry") or {}).get("type") in ("Polygon", "MultiPolygon") for f in it["features"][:20]):
+                    it["hatch"] = dxf_hatch(it["lgr"])   # зона Эталона — со штриховкой, как на карте
             if self.styles:
                 st.update(current="", message="Цвета слоёв, как на карте портала…")
                 for it in found:

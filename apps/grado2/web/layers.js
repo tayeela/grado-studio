@@ -252,9 +252,12 @@ const rgba = (hex, a) => { const c = [...ol.color.asArray(hex)]; c[3] = a; retur
 const css = (hex, a) => `rgba(${rgba(hex, a).join(",")})`;
 // labelColor — цвет подписи (надписи ЛГР — цветом знака), labelAngle — поле угла подписи (ГИС ОГД: по часовой стрелке),
 // marker: false — слой подписей без значка точки: подпись стоит на самой точке
-const upright = a => { a = ((a % 360) + 360) % 360; return a > 90 && a < 270 ? a - 180 : a; };
+const upright = a => { a = ((a % 360) + 360) % 360; return a > 90 && a <= 270 ? a - 180 : a > 270 ? a - 360 : a; };
+// угол подписи в градусах против часовой стрелки: _angle — вдоль границы своей папки (сервер), иначе угол ГИС ОГД
+// textangle (он по часовой); ol.style.Text поворачивает по часовой — знак меняется
+const labelDeg = f => f.get("_angle") != null ? +f.get("_angle") : -(+f.get("textangle") || 0);
 const labelStyle = (l, f) => { const st = l.style, t = f.get(st.label); if (t == null || t === "") return null;
-  const ang = st.labelAngle ? upright(+f.get(st.labelAngle) || 0) * Math.PI / 180 : 0, bare = st.marker === false;
+  const ang = st.labelAngle ? -upright(labelDeg(f)) * Math.PI / 180 : 0, bare = st.marker === false;
   return new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle, offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false }) }); };   // у точки подпись над знаком с зазором: знак — помеха для разведения подписей, задетая рамкой подпись скрывалась
 // крупный слой: номер цвета в таблице l.pal у каждого объекта (-1 — скрыт категорией или правилом)
 function symAll(l, notify) {
@@ -330,6 +333,9 @@ function styleFor(l, f, res) {
 // Оформление, которое владелец задал слою сам (земельные участки — синий контур), сервер отдаёт с номером правки rev:
 // слой, оформленный по прежней правке, перекрашивается один раз заново
 async function portalStyles() {
+  await portalStylesOnce(); await labelAngles();
+}
+async function portalStylesOnce() {
   const all = LYR.filter(l => l.key.startsWith("ogd."));
   if (!all.length) return;
   // код знака ЛГР из атрибутов слоя (зоны — zonelineco, надписи — textlineco), если он там есть
@@ -346,6 +352,18 @@ async function portalStyles() {
     l.cache.clear(); restyle(l);
   });
   renderTree(); renderRight(); window.markDirty?.();
+}
+/* подписи слоёв надписей ГИС ОГД, загруженных до v0.63, — угол вдоль границы своей папки (сервер считает по кэшу) */
+async function labelAngles() {
+  for (const l of LYR.filter(l => l.key.startsWith("ogd.") && l.style.labelAngle && l.geom === "point")) {
+    const d = DATA[l.key], fs = d?.fc.features || [];
+    if (!fs.length || fs.some(f => f.properties._angle != null)) continue;
+    let r; try { r = await api("/api/ogd_all/label_angles", { code: l.key.slice(4), points: fs.map(f => f.geometry?.type === "Point" ? f.geometry.coordinates : [0, 0]) }); } catch { continue; }
+    if (!r.angles.some(a => a != null)) continue;
+    const fc = { ...d.fc, features: fs.map((f, i) => r.angles[i] == null ? f : { ...f, properties: { ...f.properties, _angle: r.angles[i] } }) };
+    if (d.original === d.fc) d.original = fc;
+    d.fc = fc; setLayerData(l.key, fc, true); l.cache.clear(); restyle(l);
+  }
 }
 window.portalStyles = portalStyles;
 function restyle(l) {

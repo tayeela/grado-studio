@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.63.0: sheet print and DXF look like the map; ГИС ОГД labels run along their borders.**
+  - Owner: the sheet export has other styles; labels are not everywhere parallel to the lines.
+  - Labels: `ogd_all.label_angles` — angle of the nearest segment (≤ 30 m) of the layers in the same portal folder
+    (borders and zone outlines), counter-clockwise, upright; stored as `_angle`. Set on load of `ogd.*` label layers,
+    for older projects by `POST /api/ogd_all/label_angles` (client `labelAngles()` once per layer), and in
+    «DXF ГИС ОГД». Map, print and DXF read `_angle`, else −textangle.
+  - Print (`print_io` + `sheetSpec`): outline dash, outline colour next to hatch (`strokeOwn`), hatch step as on the
+    map (Эталон 2 mm), outline drawn over hatch, label layers without markers — text on the point, in the sign colour,
+    at its angle, without overlaps.
+  - DXF: Эталон zones get a HATCH in the hatch colour and angle, 2 mm on paper at the sheet scale (ANSI31/ANSI37).
+
 - **2026-09-26, ГРАДО 2 v0.62.0: layer tree «По листам» — a folder per sheet with exactly that sheet's layers.**
   - Owner: the functional-zoning slide should have its own folder with only the layers shown on it; a layer used by
     several sheets sits in several folders.

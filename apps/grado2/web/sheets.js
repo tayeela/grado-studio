@@ -86,7 +86,11 @@ function sheetSpec(sheet) {
       const hl = sheet.hilite?.[pl.key] && tc && /Polygon/.test(g.type) && safe(() => turf.booleanPointInPolygon(tc, g)) ? sheet.hilite[pl.key] : null;
       if (st.mode === "lgr") { const lt = f.get("_lt") || [], miss = f.get("_miss") || []; feats.push({ g, lt, miss, lc: LGRC[ltCode(lt[0] || "")] || LGRC[miss[0]?.[0]] || "#d7191c", w: st.width, label: lab }); return; }
       const s = symbolOf(pl, f); if (s.hide) return;
-      feats.push({ g, fill: hl || s.fill, stroke: pl.geom === "poly" ? st.stroke : s.fill, w: st.width, a: hl ? 1 : st.opacity * pl.a, hatch: s.hatch, hp: st.hatchPat || "45", label: lab == null || lab === "" ? null : String(lab), ls: sheet.labelMM?.[pl.key], lc: pl.geom === "line" ? s.fill : undefined });
+      // как на карте: контур при штриховке — цветом штриховки, если у слоя нет своего цвета контура (Эталон ЛГР);
+      // штрих контура и шаг штриховки — в пикселях карты; подписи надписей ГИС ОГД — своим цветом, под своим углом, без значка
+      feats.push({ g, fill: hl || s.fill, stroke: pl.geom === "poly" ? (s.hatch && !st.strokeOwn ? s.fill : st.stroke) : s.fill, w: st.width, a: hl ? 1 : st.opacity * pl.a, hatch: s.hatch, hp: st.hatchPat || "45",
+        hs: st.hatchStep, dash: st.dash?.length ? st.dash : undefined, nm: st.marker === false || undefined, lcol: st.labelColor, la: st.labelAngle ? upright(labelDeg(f)) : undefined,
+        label: lab == null || lab === "" ? null : String(lab), ls: sheet.labelMM?.[pl.key], lc: pl.geom === "line" ? s.fill : undefined });
     });
     layers.push({ title: pl.title, features: feats });
   });
