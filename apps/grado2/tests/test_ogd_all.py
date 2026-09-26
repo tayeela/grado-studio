@@ -102,6 +102,25 @@ class OgdAll(unittest.TestCase):
         self.assertEqual([l.name for l in doc.layouts], ["Model", "Лист Опорный 1-2000"])
         self.assertEqual(doc.layouts.get("Лист Опорный 1-2000").dxf_layout.dxf.taborder, 1)
 
+    def test_sprit_lines_get_redln97_linetypes_and_shx(self):
+        redln = {"lib": S.REDLN, "idx": S.REDLN_IDX, "colors": S.LGR_COLORS}
+        line = {"type": "LineString", "coordinates": [[37.605, 55.705], [37.615, 55.715]]}
+        layers = [{"dxf": "ОГД 11.01.01.02 Красные линии", "title": "Красные линии", "code": "l1",
+                   "features": [{"geometry": line, "properties": {"linelineco": "1"}}]},
+                  {"dxf": "ОГД Зоны", "title": "Зоны", "code": "v", "features": [{"geometry": SQUARE, "properties": {}}]}]
+        with mock.patch.object(ogd_all.dxf_io, "oda_converter", return_value=None):
+            body, _ = ogd_all.build_drawing(layers, None, (37.59, 55.69, 37.63, 55.73), redln=redln)
+        z = zipfile.ZipFile(io.BytesIO(body))
+        self.assertIn("red_lns.shx", z.namelist())
+        self.assertIn("REDLN97.LIN", z.namelist())
+        doc = ezdxf.read(io.StringIO(z.read("gisogd.dxf").decode("utf-8")))
+        red = doc.modelspace().query('LWPOLYLINE[layer=="ОГД 11.01.01.02 Красные линии"]')[0]
+        self.assertIn(red.dxf.linetype, doc.linetypes)
+        self.assertTrue(red.dxf.linetype.upper().startswith("L"))
+        self.assertTrue(red.dxf.hasattr("true_color"))            # цвет ЛГР
+        zone = doc.modelspace().query('LWPOLYLINE[layer=="ОГД Зоны"]')[0]
+        self.assertFalse(zone.dxf.hasattr("linetype"))            # без кода линии — обычная линия слоя
+
     def test_job_clips_skips_empty_and_survives_a_broken_layer(self):
         class FakeApi:
             def __init__(self, **kw):

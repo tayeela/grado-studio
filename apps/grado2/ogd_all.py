@@ -112,6 +112,14 @@ def layer_list(cat, codes=None):
     return out
 
 
+def _linetypes(props, redln):
+    """Код линии ГИС ОГД объекта → имена типов REDLN97 (пусто, если кода нет или типа под код нет)."""
+    from grado_render import acad_lin
+    code = next((v for k, v in props.items() if k.lower() in ("linelineco", "linecode")), None)
+    pairs = acad_lin.parse_line_codes(code)
+    return acad_lin.linetypes_for_codes(pairs, redln["lib"]["linetypes"], redln["idx"]) if pairs else []
+
+
 def _cut_bytes(s, limit):
     """Строка не длиннее limit байт UTF-8, без разрезанной посередине буквы."""
     b = s.encode("utf-8")
@@ -157,18 +165,26 @@ def portal_color(css):
     return "#" + "".join(ch * 2 for ch in c[1:]) if len(c) == 4 else c
 
 
-def build_drawing(layers, boundary=None, frame=None, sheet=None):
+def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
     """layers: [{"dxf", "title", "code", "features": [GeoJSON WGS84], "color"?}] → байты zip: DXF, DWG (если есть ODA), CSV.
 
     sheet — лист, нарисованный на карте: {c, w, h (МСК, м), paper [ширина, высота] мм, scale, title}. Тогда объекты
     режутся точно по листу в МСК, в модели есть слой «Рамка листа», а в чертеже — лист бумаги нужного формата с
-    видовым экраном в масштабе листа (как лист AutoCAD). frame — прежний прямоугольник WGS84 без листа бумаги."""
+    видовым экраном в масштабе листа (как лист AutoCAD). frame — прежний прямоугольник WGS84 без листа бумаги.
+    redln — {"lib", "idx", "colors"} типов линий REDLN97 владельца: у объектов с кодом линии ГИС ОГД (LineCode,
+    в .dbf linelineco — линии СПРИТ l1…l57) линия получает тип REDLN97 и цвет ЛГР, как в обычной выгрузке DXF;
+    RED_LNS.SHX и REDLN97.LIN кладутся в архив рядом с чертежом."""
     doc = ezdxf.new("R2018", setup=False)
     doc.header["$INSUNITS"] = 6
     doc.header.custom_vars.append("GRADO_CRS", "MSK")
     doc.appids.new("GISOGD")
     msp = doc.modelspace()
     box = sheet_box(sheet) if sheet else None
+    shapes = {}
+    if redln:
+        doc.header["$LTSCALE"] = 1.0
+        doc.styles.add_shx("red_lns.shx")
+        shapes = {k.upper(): v for k, v in redln["lib"]["shapes"].items()}
     tables = {}
     for i, layer in enumerate(layers):
         la = doc.layers.add(layer["dxf"], color=1 + i % 254)
@@ -188,12 +204,23 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None):
                 for x, y, *_ in ([geom["coordinates"]] if geom["type"] == "Point" else geom["coordinates"]):
                     ents.append(msp.add_point((x, y), dxfattribs=attrs))
             else:
+                lts = _linetypes(props, redln) if redln else []
+                for n in lts:
+                    dxf_io._add_linetype(doc, n, redln["lib"]["linetypes"][n], shapes)
                 for ring, closed in dxf_io._rings(geom):
                     pts = [(x, y) for x, y, *_ in ring]
                     if closed and len(pts) > 1 and pts[0] == pts[-1]:
                         pts = pts[:-1]
-                    if len(pts) > 1:
-                        ents.append(msp.add_lwpolyline(pts, close=closed, dxfattribs=attrs))
+                    if len(pts) < 2:
+                        continue
+                    for n in lts or [None]:              # несколько кодов у линии — по линии на каждый тип (как в DXF ГРАДО)
+                        a = dict(attrs)
+                        if n:
+                            a["linetype"] = n
+                            code = dxf_io._code_of(n)
+                            if code in redln["colors"]:
+                                a["true_color"] = dxf_io._rgb(redln["colors"][code])
+                        ents.append(msp.add_lwpolyline(pts, close=closed, dxfattribs=a))
             tags = _xdata(props)
             for e in ents:
                 if tags:
@@ -250,6 +277,9 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None):
         if dwg:
             z.writestr("gisogd.dwg", dwg)
         z.writestr("gisogd.dxf", dxf)
+        if redln and any(lt.dxf.name not in ("ByBlock", "ByLayer", "Continuous") for lt in doc.linetypes):
+            z.write(dxf_io.STANDARD / "RED_LNS.SHX", "red_lns.shx")          # без .shx AutoCAD не рисует знаки на линиях
+            z.write(dxf_io.STANDARD / "REDLN97.LIN", "REDLN97.LIN")
         for name, (cols, rows) in tables.items():
             s = io.StringIO()
             w = csv.DictWriter(s, cols, delimiter=";", extrasaction="ignore")
@@ -307,9 +337,10 @@ def scan(bbox, cache_dir, cat):
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
-    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where=""):
-        """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None."""
-        self.sheet, self.styles, self.codes = sheet, styles, (set(codes) if codes is not None else None)
+    def __init__(self, bbox, boundary, cache_dir, out_dir, name="gisogd", sheet=None, styles=None, codes=None, where="", redln=None):
+        """bbox WGS84 или sheet — лист МСК (см. build_drawing); styles(code) → CartoCSS слоя портала или None;
+        redln — типы линий REDLN97 (см. build_drawing)."""
+        self.sheet, self.styles, self.codes, self.redln = sheet, styles, (set(codes) if codes is not None else None), redln
         bbox = sheet_bbox_wgs(sheet) if sheet else bbox
         self.bbox, self.boundary, self.cache_dir, self.out_dir = bbox, boundary, cache_dir, out_dir
         self.name = re.sub(r'[<>/\\":;?*|=`\s]+', "_", name).strip("_")[:60] or "gisogd"
@@ -370,8 +401,8 @@ class Job:
                     except Exception:              # без цвета слой остаётся со своим номером цвета
                         pass
             st.update(message="Сборка чертежа…")
-            body, dwg = (build_drawing(found, self.boundary, sheet=self.sheet) if self.sheet
-                         else build_drawing(found, self.boundary, self.bbox))
+            body, dwg = (build_drawing(found, self.boundary, sheet=self.sheet, redln=self.redln) if self.sheet
+                         else build_drawing(found, self.boundary, self.bbox, redln=self.redln))
             self.out_dir.mkdir(parents=True, exist_ok=True)
             path = self.out_dir / f"{self.name}-{datetime.now():%Y%m%d-%H%M%S}.zip"
             path.write_bytes(body)

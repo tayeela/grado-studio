@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-26, ГРАДО 2 v0.58.7: «DXF ГИС ОГД» draws СПРИТ lines with the owner's REDLN97 linetypes.**
+  - Objects with a ГИС ОГД line code (`linelineco`/`LineCode`: layers l1…l57 and virtual2950 — red lines, building
+    regulation lines, zone borders of section 11) get the REDLN97 linetype and the ЛГР colour, exactly like the plain
+    DXF export (one polyline per linetype when a line carries several codes); `red_lns.shx` and `REDLN97.LIN` go into
+    the archive next to the drawing. Codes without a REDLN97 linetype stay plain lines of their layer.
+  - Checked on the owner's sheet 1:9542: 13 СПРИТ layers, 3 723 objects, 21 linetypes (L00s01s red lines, L00s06s
+    railway right-of-way, L00s18t/b natural complex …).
+
 - **2026-09-26, ГРАДО 2 v0.58.6: DXF opens in AutoCAD — no commas in layer names; extents and view set.**
   - AutoCAD (Mac and Windows) did not open the DXF at all, without an error, while QGIS read it: 6 of 68 layer names
     had commas («…геодезической, нивелирной, …»), and AutoCAD forbids `,` in symbol table names just like
