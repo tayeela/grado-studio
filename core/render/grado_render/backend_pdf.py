@@ -51,7 +51,7 @@ class PdfBackend:
         self._img_names = {}
 
     def _font_for(self, family):
-        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold") else "ui"
+        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold", "gothic", "gothic-bold") else "ui"
         if family not in self._fonts:
             self._fonts[family] = Font(
                 self._font_paths.get(family) or find_font(family))
@@ -151,8 +151,14 @@ class PdfBackend:
             hc = self._color(o.get("halo_color", (1, 1, 1)), stroke=True)
             halo = (f"q\n{hc}{_f(o['halo'] * MM2PT * 2)} w 1 j\nBT\n/{self._font_name(family)} {_f(size)} Tf\n1 Tr\n"
                     f"{tm} Tm\n<{hexstr}> Tj\nET\nQ\n")
+        under = ""
+        if o.get("underline") and not angle:
+            # подчёркнутая строка (заголовки групп легенды «ГК Царицыно»): черта по ширине текста этим же шрифтом
+            uy = y - size * 0.14
+            under = (f"q\n{self._color(o.get('color', (0, 0, 0)), stroke=True)}{_f(size * 0.05)} w\n[] 0 d\n"
+                     f"{_f(x + off)} {_f(uy)} m\n{_f(x + off + w)} {_f(uy)} l\nS\nQ\n")
         return (halo + f"{color}BT\n/{self._font_name(family)} {_f(size)} Tf\n"
-                f"{tm} Tm\n<{hexstr}> Tj\nET\n")
+                f"{tm} Tm\n<{hexstr}> Tj\nET\n" + under)
 
     def _page_stream(self, w, h, ops):
         out = ""

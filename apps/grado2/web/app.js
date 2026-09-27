@@ -96,11 +96,11 @@ const S = (fill, stroke, w = 1) => new ol.style.Style({ fill: fill && new ol.sty
 const MAJOR = new Set(["motorway", "trunk", "primary", "secondary", "tertiary"]);
 
 /* ---------- знаки: ЛГР (коды, цвета, штрих) и Генплан — из библиотек ядра ---------- */
-const LGRC = {}, LGRD = {}, GPZ = {}, NMZ = {};
+const LGRC = {}, LGRD = {}, LGRT = {}, GPZ = {}, NMZ = {};
 async function loadStyleLibs() {
   await Linetypes.load();
   const [lgr, gp] = await Promise.all(["/styles/moscow_lgr.json", "/styles/moscow_genplan.json"].map(u => fetch(u).then(r => r.json())));
-  Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) { LGRC[+s.lgr_code] = s.stroke; if (s.dash_mm) LGRD[+s.lgr_code] = s.dash_mm.map(v => v * 2); } }); // мм на 1:2000 → метры
+  Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) { LGRC[+s.lgr_code] = s.stroke; LGRT[+s.lgr_code] = s.title; if (s.dash_mm) LGRD[+s.lgr_code] = s.dash_mm.map(v => v * 2); } }); // мм на 1:2000 → метры
   Object.values(gp.styles).forEach(s => { if (s.gp_zone) GPZ[s.gp_zone.toLowerCase()] = s; if (s.nm_zone) NMZ[s.nm_zone.toLowerCase()] = s; });
 }
 const ltCode = n => { const m = /^L(\d\d)s(\d\d)/i.exec(n) || /^L(\d\d)[bt](\d\d)/i.exec(n); return m ? (/^L\d\ds/i.test(n) ? +m[2] : +m[1]) : null; };

@@ -401,7 +401,9 @@ class SketchMapFrame(Frame):
                         pts = [tr.mm(*p[:2]) for p in line]
                         if len(pts) < 2:
                             continue
-                        if f.get("lt"):
+                        if f.get("nl"):
+                            pass                                    # линия не рисуется, только подпись (улицы на снимке)
+                        elif f.get("lt"):
                             for name in f["lt"]:
                                 out.extend(linetype_ops(pts, name, k, color, max(w, 0.25), self.lib))
                         elif f.get("miss"):
@@ -419,13 +421,23 @@ class SketchMapFrame(Frame):
                                     continue
                                 d = math.hypot(b[0] - a[0], b[1] - a[1])
                                 if d > along.get(f["label"], (0,))[0]:
-                                    along[f["label"]] = (d, mx, my, math.atan2(b[1] - a[1], b[0] - a[0]), f.get("ls"))
+                                    along[f["label"]] = (d, mx, my, math.atan2(b[1] - a[1], b[0] - a[0]), f.get("ls"), f)
                 elif kind == "point":
                     for p in parts:
                         x, y = tr.mm(*p[:2])
                         if f.get("nm"):                                 # слой надписей: подпись на самой точке, без значка
                             if f.get("label"):
                                 placed.append((x, y, str(f["label"]), f.get("ls"), f.get("la"), f.get("lcol"), f))
+                            continue
+                        if f.get("nodot"):                               # подпись-плашка без значка (кадастровый номер)
+                            if f.get("label"):
+                                labels.append((x, y, f["label"], f.get("ls"), f))
+                            continue
+                        if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
+                            out.extend(_view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf")))
+                            if f.get("label"):
+                                b = math.radians(float(f.get("dir") or 0))
+                                labels.append((x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8, f["label"], f.get("ls"), f))
                             continue
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
@@ -445,7 +457,7 @@ class SketchMapFrame(Frame):
                 out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True,
                             "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
                             "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
-                            "dash": None if ts else [4, 1.2, 0.6, 1.2]})
+                            "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
 
@@ -462,9 +474,11 @@ class SketchMapFrame(Frame):
         callout = self._callout(sh, tr, rect) if sh.get("callout") and sh.get("territory") else None
         if callout:
             take(callout[0])
+        if sh.get("mapNote"):
+            take((rx, ry, rx + 102, ry + 7 + 5.4 * (len(sh["mapNote"]) + 1)))    # угол с округом и районом — без подписей карты
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
-        for text, (d, x, y, ang, ls) in sorted(along.items(), key=lambda t: -t[1][0]):
+        for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
             ls = float(ls or 2.2)
             text = str(text)[:40]
             tw = ls * .55 * len(text)
@@ -476,8 +490,9 @@ class SketchMapFrame(Frame):
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
             if not take((x - ex, y - ey, x + ex, y + ey)):
                 continue
+            extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
-                        "color": ink, "anchor": "middle", "angle": ang})
+                        "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
         for x, y, text, ls, deg, col, pf in placed:
             # надписи ГИС ОГД: на своём месте и под своим углом (вдоль границы), цветом знака ЛГР; наложения не пропускаются
             ls = float(ls or 2.0)
@@ -500,6 +515,7 @@ class SketchMapFrame(Frame):
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for x, y, text, ls, f in labels:
             ls = float(ls or 2.2)
+            y += float(f.get("ldy") or 0)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
                 continue
             lines = [ln[:40] for ln in str(text).split("\n")[:8]]         # подпись в несколько строк: номер и индекс зоны, коды ВРИ
@@ -508,11 +524,22 @@ class SketchMapFrame(Frame):
             bw, bh = ls * .6 * max(len(ln) for ln in lines), ls * 1.2
             if not take((x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)):
                 continue
-            # оформление подписи из листа: шрифт (lf), ореол (lh, мм), цвет (lcol) — альбомы по шаблонам
+            # оформление подписи из листа: шрифт (lf, у каждой строки — lfs), ореол (lh, мм; цвет — lhc), цвет (lcol),
+            # белая плашка под текстом (lbox) — альбомы по шаблонам
             extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
+            if f.get("lhc"):
+                extra["halo_color"] = hex_to_rgb(f["lhc"])
+            if f.get("lbox"):
+                pad = ls * .45
+                out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
+                            "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, y - ls - pad * .6), (x + bw / 2 + pad, y - ls - pad * .6),
+                                                                    (x + bw / 2 + pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6),
+                                                                    (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
+            fams = f.get("lfs") or []
             for i, line in enumerate(lines):
+                fam = {"font_family": fams[i]} if i < len(fams) and fams[i] else {}
                 out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "anchor": "middle",
-                            "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra})
+                            "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam})
         if callout:
             out.extend(callout[1])
         out.append({"op": "unclip"})
@@ -712,6 +739,15 @@ def _wrap(text, n):
     return [ln.replace("\u00a0", " ") for ln in lines + ([cur] if cur else [])]
 
 
+def _view_mark(x, y, bearing, color):
+    """Точка съёмки как в «ГК Царицыно»: синяя стрелка-наконечник по направлению снимка (азимут от севера по часовой)."""
+    b = math.radians(bearing)
+    ux, uy, px, py = math.sin(b), -math.cos(b), math.cos(b), math.sin(b)       # вдоль направления и поперёк (лист: y вниз)
+    pt = lambda a, c: (x + ux * a + px * c, y + uy * a + py * c)
+    return [{"op": "path", "closed": True, "fill": color, "stroke": (1, 1, 1), "width": 0.25, "dash": None,
+             "rings": [[pt(3.8, 0), pt(-2.3, 3.2), pt(-0.9, 0), pt(-2.3, -3.2)]]}]
+
+
 def _swatch(x, y, kind, it):
     fill, stroke = it.get("fill"), it.get("stroke")
     if kind == "line":
@@ -876,7 +912,7 @@ def render_pdf(spec, lib, lgr_dash, tiles=None):
 
 # рамки листа → группы фигур в PPTX
 PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
-               "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "MapNoteFrame": "Округ и район", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
+               "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "MapNoteFrame": "Округ и район", "ConceptColumnFrame": "Легенда", "OrthoLegendFrame": "Легенда", "ConceptPhotoFrame": "Фотографии", "StampFrame": "Штамп", "PageBorder": "Рамка листа",
                "TepSheetFrame": "ТЭП", "LegendFrame": "Легенда", "TableFrame": "Таблица"}
 
 

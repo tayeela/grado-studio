@@ -22,6 +22,7 @@ EMU = 36000                                          # EMU в мм
 # семейство операции → гарнитура PowerPoint и жирность (те же шрифты, что встраивает PDF)
 FONTS = {"ui": ("PT Sans", False), "ui-bold": ("PT Sans", True), "serif": ("PT Serif", False),
          "serif-bold": ("PT Serif", True), "sans": ("Montserrat", False), "sans-bold": ("Montserrat", True),
+         "gothic": ("Century Gothic", False), "gothic-bold": ("Century Gothic", True),
          "mono": ("Courier New", False)}
 NS = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
@@ -307,7 +308,7 @@ class _Slide:
             glow = (f'<a:effectLst><a:glow rad="{self.e(float(o["halo"]) * 1.6)}">'
                     f'<a:srgbClr val="{_hex(o.get("halo_color", (1, 1, 1)))}"/></a:glow></a:effectLst>')
         sz = max(100, int(round(size / 0.3528 * self.k * 100)))
-        b = ' b="1"' if bold else ""
+        b = (' b="1"' if bold else "") + (' u="sng"' if o.get("underline") else "")
         self.add(f'<p:sp><p:nvSpPr><p:cNvPr id="{self.nid()}" name="Надпись"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>'
                  f'<a:xfrm{rot}><a:off x="{x}" y="{y}"/><a:ext cx="{ew}" cy="{eh}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
                  f'<a:noFill/></p:spPr><p:txBody><a:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" rtlCol="0" anchor="t">'

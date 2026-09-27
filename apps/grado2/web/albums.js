@@ -62,37 +62,221 @@ function albumExtra(sheet) {
   return out;
 }
 
-/* План реализации ППТ КРТ: оформление — шаблон владельца, состав листов — «ГК Царицыно» (9 листов). Рамки карт — в мм
-   листа А3 (420 × 297): схемы Москвы и округа — как в шаблоне; карта остальных листов — рамка слайда 4 шаблона
-   (album_io.MAP_RECT), справа колонка легенды и списков. Слои, подложка и оформление — как у слайдов раздела 1. */
-const PK = { style: "pptkrt", rect: [24, 44, 263, 233], callout: true };
-const PK_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"];
+/* ===== Листы 3–9: шапка ППТ КРТ, остальное — как в «ГК Царицыно» (решение владельца 27.09.2026) =====
+   Карта слева без рамки (7, 44, 279 × 239 мм), справа колонка: «Условные обозначения», группы с подчёркнутым
+   заголовком, списки документов в рамках, карточки участков (album_io.ConceptColumnFrame). Подписи — Century Gothic
+   жирный с белым ореолом: улицы вдоль оси, названия территорий из OSM, округ и район в углу. Граница территории —
+   пурпурный пунктир. Листы 5–9 — одна и та же рамка и масштаб, как в образце. */
+const C_TERR = "#ff00ff", C_ROAD = "#a6a6a6";
+const C_LBL = { lf: "gothic-bold", lh: .55, lcol: "#141414" };
+const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false,
+  labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 4.3, "osm.landuse": 4.3 },
+  labelStyle: { "osm.roads": C_LBL, "osm.landuse": C_LBL } };
+const C_NAMES = { "osm.landuse": { mode: "single", fill: "#ffffff", stroke: "#ffffff", width: 0, opacity: 0, label: "Название" } };
+const C_STREETS = (fill = C_ROAD) => ({ "osm.roads": { mode: "single", fill, width: 0, label: "Название", lineOff: true } });
+const C_PLAN = { "calc.uds_osm": { mode: "single", fill: C_ROAD, stroke: C_ROAD, width: 0, opacity: 1 },
+  "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#8c8c8c", width: 1, opacity: 0 } };
+const C_ONLY = { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } };
+const PPTKRT_C = [
+  { ...C_BASE, concept: "ortho", title: "Ортофотоплан", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], ctx: 2.2,
+    keys: ["osm.landuse", "osm.roads", "gisogd.admin"],
+    styles: { ...C_NAMES, "osm.roads": { mode: "single", fill: "#f3d98c", width: 7, label: "Название" },
+      "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: 2, label: "" } },
+    only: { ...C_ONLY, "gisogd.admin": { field: "Уровень", values: ["район"] } } },
+  { ...C_BASE, concept: "photos", kind: "photos", title: "Материалы фотофиксации", rect: [7, 44, 198, 152], ctx: 1.3,
+    keys: ["calc.uds_osm", "egko.buildings", "osm.landuse", "osm.roads"],
+    styles: { ...C_NAMES, ...C_STREETS("#ffffff"), "calc.uds_osm": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
+      "egko.buildings": C_PLAN["egko.buildings"] }, only: C_ONLY },
+  { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
+    keys: ["calc.uds_osm", "egko.buildings", "nspd.parcels", "gisogd.red_lines", "osm.landuse", "osm.roads"],
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
+  { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
+    keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "calc.uds_osm", "egko.buildings", "osm.landuse", "osm.roads"], extra: "genplan",
+    styles: { ...C_NAMES, ...C_STREETS(), "calc.uds_osm": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
+      "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 0 } },
+    labelFn: { ...C_BASE.labelFn, "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" },
+    labelMM: { ...C_BASE.labelMM, "gisogd.func_zones": 8.5, "gisogd.func_zones_tinao": 8.5 },
+    labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["gothic", "gothic-bold"], lcol: "#ffffff", lh: .18, lhc: "#3a3a3a" },
+      "gisogd.func_zones_tinao": { lfs: ["gothic", "gothic-bold"], lcol: "#ffffff", lh: .18, lhc: "#3a3a3a" } }, only: C_ONLY },
+  { ...C_BASE, concept: "ppt", title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
+    keys: ["calc.uds_osm", "egko.buildings", "gisogd.ppt", "gisogd.pmt", "osm.landuse", "osm.roads"],
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } }, only: C_ONLY },
+  { ...C_BASE, concept: "gpzu", title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР",
+    keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.agr", "osm.landuse", "osm.roads"],
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN,
+      "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", width: 1, opacity: 1 },
+      "gisogd.agr": { mode: "single", fill: "#ff3b3b", stroke: "#ff3b3b", hatch: true, hatchPat: "135", width: 1, opacity: 1 } }, only: C_ONLY },
+  { ...C_BASE, concept: "parcels", title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat",
+    keys: ["nspd.parcels", "osm.landuse", "osm.roads"],
+    styles: { ...C_NAMES, ...C_STREETS(), "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
+];
+
+// подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
+const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
+const STREET_ABBR = [[W_("улица"), "ул."], [W_("проезд"), "пр-д"], [W_("бульвар"), "бульв."], [W_("шоссе"), "ш."], [W_("переулок"), "пер."],
+  [W_("проспект"), "просп."], [W_("набережная"), "наб."], [W_("площадь"), "пл."], [W_("тупик"), "туп."]];
+LABEL_FN.street = f => { let n = String(f.get("Название") || "").trim(); if (!n) return null;
+  for (const [re, ab] of STREET_ABBR) if (re.test(n)) { n = n.replace(re, " ").replace(/\s+/g, " ").trim(); return ab === "ул." || ab === "пл." || ab === "просп." ? `${ab} ${n}` : `${n} ${ab}`; }
+  return n; };
+LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim(); if (!n) return null;
+  const words = n.split(/\s+/), lines = [""]; words.forEach(w => { const l = lines.length - 1; if (lines[l] && (lines[l] + " " + w).length > 26) lines.push(w); else lines[l] = (lines[l] + " " + w).trim(); });
+  return lines.slice(0, 3).join("\n"); };
+
+/* Вид функционального использования участков — по ВРИ участков ЕГРН (классификатор видов функционального
+   использования Москвы; цвета — как в легенде «ГК Царицыно»). Участок без понятного ВРИ не закрашивается. */
+const LAND_USE = [
+  ["территории автодорог, улиц, местных проездов", "#ffffff", /улично-дорожн|автомобильн[а-яё]* дорог|12\.0\.1|\b7\.2\b/i],
+  ["территории внешнего транспорта", "#a59c98", /железнодорож|\b7\.[1345]\b|аэропорт|трубопровод/i],
+  ["коммунально-складского вида", "#dcd6b4", /склад|\b6\.9\b|хранени/i],
+  ["производственного вида", "#d0d0ec", /производств|промышлен|\b6\.\d\b|предприяти|недропольз/i],
+  ["жилищно-коммунального вида", "#d6c2bd", /коммунальн|\b3\.1\b/i],
+  ["торгово-бытового вида", "#f4b393", /магазин|торгов|рын(о|к)|общественн[а-яё]* питан|бытов|\b4\.[2346]\b|\b3\.3\b/i],
+  ["административно-делового вида", "#c9adc9", /делов|административ|офис|\b4\.1\b|\b3\.8\b|управлени/i],
+  ["культурно-просветительского вида", "#f29c9c", /культур|\b3\.6\b|религиоз|\b3\.7\b/i],
+  ["учебно-воспитательного вида", "#f5c7dc", /образован|школ|детск[а-яё]* сад|дошкольн|\b3\.5/i],
+  ["лечебно-оздоровительного вида", "#c9e3f2", /здравоохран|медицин|больниц|поликлиник|\b3\.4/i],
+  ["спортивного вида", "#bfe0bf", /спорт|\b5\.1/i],
+  ["жилых домов многоквартирного вида", "#f5e39a", /многоквартир|среднеэтаж|многоэтаж|\b2\.[56]\b|\b2\.1\.1\b/i],
+  ["индивидуальной жилой застройки", "#fbe3c6", /индивидуальн[а-яё]* жил|(^|[^а-яё])ижс([^а-яё]|$)|блокирован|личного подсобного|\b2\.[123]\b/i],
+  ["садоводческих и огороднических территорий", "#e3edc7", /садовод|огородн|дачн|\b13\.\d/i],
+  ["сельскохозяйственного использования", "#eef2d6", /сельскохоз|крестьян|фермер|\b1\.\d{1,2}\b/i],
+  ["природных и озеленённых территорий", "#cfe6c0", /рекреац|природн|озелен|лесн|парк|\b5\.0\b|\b9\.\d|12\.0\.2/i]];
+const landUseOf = p => { const v = String(p["ВРИ"] || p["Разрешенное использование"] || ""); return v ? LAND_USE.find(([, , re]) => re.test(v)) : null; };
+
+const C_PALETTE = ["#f5a623", "#00c8e0", "#7b2d8e", "#f0503c", "#ff3fb4", "#2e9d4f", "#1565c0", "#8d6e63", "#ff8f00", "#00897b"];
+function conceptDocs(out, bb, groups) {
+  // документы в рамке: номер на карте (жирный 10 мм с белым ореолом) и список в рамках цвета документа, ближние к
+  // территории — первыми; groups: [{key, title, color (одна на группу) | palette, text(p) → строка списка}]
+  const c = TERR ? turf.centroid(TERR) : null, box = turf.bboxPolygon(bb), lists = [], pts = [];
+  let no = 0, pi = 0;
+  for (const g of groups) {
+    const layer = out.layers.find(l => l.key === g.key), seen = new Map();
+    (layer?.features || []).forEach(ft => {
+      const f = { type: "Feature", geometry: ft.g, properties: ft.props || {} }; if (!/Polygon/.test(ft.g?.type)) return;
+      const part = safe(() => inter(f, box)); if (!part) return;
+      const id = f.properties.document_n || f.properties.document_g || f.properties._key, at = safe(() => turf.pointOnFeature(part));
+      const dist = c && at ? turf.distance(c, at) : 0;
+      if (!seen.has(id)) seen.set(id, { f, at, dist, fts: [] });
+      const cur = seen.get(id); cur.fts.push(ft); if (at && dist < cur.dist) Object.assign(cur, { at, dist });
+    });
+    const docs = [...seen.values()].filter(d => d.at).sort((a, b) => a.dist - b.dist).slice(0, g.max || 12);
+    if (!docs.length) continue;
+    const items = docs.map(d => {
+      const n = String(++no), color = g.color || C_PALETTE[pi++ % C_PALETTE.length];
+      d.fts.forEach(ft => { ft.fill = color; ft.stroke = color; });
+      pts.push({ g: d.at.geometry, nm: true, nudge: true, label: n, ls: 10, lf: "gothic-bold", lh: .8, lcol: "#141414" });
+      return { text: `${n}. ${g.text(d.f.properties, d)}`, color };
+    });
+    lists.push({ title: g.title, items });
+  }
+  if (pts.length) out.layers.push({ title: "Номера документов", features: pts });
+  return lists;
+}
+const docLine = p => [p.document_1 || "", p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ");
+
+function conceptSheet(out, sheet, bb) {
+  const ha = fmt(m2(TERR) / 1e4, 2), terr = { kind: "line", stroke: C_TERR, width: 1.1, dash: [1.1, 1.1], label: `территории рассмотрения (${ha} га)` };
+  out.look = "concept"; out.noFrame = true; out.callout = undefined; out.bleed = !!sheet.bleed;
+  out.terrStyle = { stroke: C_TERR, width: 1.1, dash: [1.1, 1.1] };
+  const L = key => out.layers.find(l => l.key === key), bounds = { title: "Границы", items: [terr] };
+  const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
+  const k = sheet.concept;
+  if (k === "ortho") {
+    const s = turf.bbox(TERR), c = turf.centroid(TERR).geometry.coordinates;
+    out.layers.push({ title: "Подпись территории", features: [{ g: { type: "Point", coordinates: [c[0], s[1]] }, nodot: true,
+      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 3.2, lf: "gothic", lcol: "#231f20", lbox: true, ldy: 8 }] });
+    out.cLegend = [{ items: [terr, { kind: "line", stroke: "#e30613", width: .5, label: "района" },
+      { kind: "line", stroke: "#f3d98c", width: 1.6, label: "территории автодорог, улиц и местных проездов" }] }];
+  }
+  if (k === "photos") {
+    const tc = turf.centroid(TERR);
+    // точки съёмки — синие стрелки по направлению снимка (EXIF), без направления — в сторону территории
+    out.layers.push({ title: "Точки съёмки", features: (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, mk: "view", fill: "#1f3fbf",
+      dir: ph.dir ?? turf.bearing(turf.point(ph.at), tc), label: String(i + 1), ls: 5.4, lf: "gothic-bold", lcol: "#1f3fbf", lh: .5 } : null).filter(Boolean) });
+    out.legend = [];
+  }
+  if (k === "use") {
+    const pl = L("nspd.parcels"), use = [], seen = new Map();
+    (pl?.features || []).forEach(ft => { const u = ft.props && landUseOf(ft.props); if (!u || !inFrame(ft)) return;
+      use.push({ g: ft.g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); });
+    out.layers.unshift({ title: "Вид функционального использования", features: use });
+    const lgr = new Map();
+    (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return; (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); }); });
+    out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
+      { title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] },
+      ...(seen.size ? [{ title: "Вид функционального использования участков территории (по ВРИ участков ЕГРН)",
+        items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a", label: n })) }] : []),
+      ...(lgr.size ? [{ title: "Линии градостроительного регулирования, действующие",
+        items: [...lgr].sort((a, b) => a[0] - b[0]).map(([c, n]) => ({ kind: "lt", name: n, stroke: LGRC[c] || "#ff0000", label: LGRT[c] || n })) }] : [])];
+  }
+  if (k === "gp") {
+    // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой
+    ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
+      const c = String(ft.fill || "#888888").replace("#", ""), [r, g, b] = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
+      if (.3 * r + .59 * g + .11 * b > .62) Object.assign(ft, { lcol: "#3a3a3a", lhc: "#ffffff", lh: .45 }); }));
+    const zones = out.legend.filter(g => /функц/i.test(g.title)).flatMap(g => g.items);
+    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => ({ kind: "fill", fill: it.fill, stroke: it.stroke || it.fill, a: it.a ?? 1, label: String(it.label).toLowerCase() })),
+      { kind: "text", sample: "10", family: "gothic", underline: true, label: "номера функциональных зон" },
+      { kind: "text", sample: "500", family: "gothic-bold", label: "индексы функциональных зон" }] }];
+    if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры",
+      cols: ["Номер функц. зоны", "Индекс функц. зоны", "Тип функц. зоны", "Прогнозируемый фонд застройки функц. зоны, тыс. кв. м"],
+      rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[3]]) };
+    out.table = undefined;
+  }
+  if (k === "ppt") {
+    out.cLists = conceptDocs(out, bb, [{ key: "gisogd.ppt", title: "Проекты планировки территории", text: docLine },
+      { key: "gisogd.pmt", title: "Проекты межевания территории", color: "#00d000", text: p => p.document_1 ? docLine(p) : ["Проект межевания территории", p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ") }]);
+    out.cLegend = [bounds, { title: "Разработанная документация", items: [{ kind: "fill", hatch: true, fill: "#222222", stroke: "#222222", angle: 135, label: "проекты планировки территории" },
+      { kind: "fill", stroke: "#00d000", width: .5, label: "проекты межевания территории" }] }];
+  }
+  if (k === "gpzu") {
+    // ГПЗУ с номером на карте; свидетельство АГР на том же участке — второй строкой того же пункта, как в образце
+    const agr = (L("gisogd.agr")?.features || []).filter(inFrame).map(ft => ({ type: "Feature", geometry: ft.g, properties: ft.props || {} }));
+    const used = new Set();
+    const lists = conceptDocs(out, bb, [{ key: "gisogd.gpzu", title: "ГПЗУ и свидетельства об утверждении АГР", color: "#231f20", text: (p, d) => {
+      const a = agr.find((x, i) => !used.has(i) && safe(() => { const y = inter(x, d.f); return y && m2(y) > m2(x) * .5; }));
+      if (a) used.add(agr.indexOf(a));
+      const q = a?.properties;
+      return `ГПЗУ ${p.document_n ? "№" + p.document_n : ""} ${p.document_d ? `от ${dateRu(p.document_d)} г.` : ""}`.replace(/\s+/g, " ").trim()
+        + (q ? `\nАГР ${q.document_n ? "№" + q.document_n : ""} ${q.document_d ? `от ${dateRu(q.document_d)} г.` : ""}`.replace(/\s+$/, "") : ""); } }]);
+    (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
+    out.cLists = lists;
+    out.cLegend = [bounds, { title: "Разработанная документация", items: [
+      { kind: "fill", hatch: true, fill: "#ff3b3b", stroke: "#ff3b3b", angle: 135, label: "архитектурно-градостроительное решение" },
+      { kind: "fill", hatch: true, fill: "#7b7bf2", stroke: "#7b7bf2", angle: 45, label: "градостроительный план земельного участка" }] }];
+  }
+  if (k === "parcels") {
+    const pl = L("nspd.parcels"), cards = [], marks = [];
+    (pl?.features || []).forEach(ft => {
+      const f = { type: "Feature", geometry: ft.g, properties: ft.props || {} }, x = /Polygon/.test(ft.g?.type) && safe(() => inter(f, TERR));
+      if (!x || m2(x) < Math.min(50, m2(f) * .05)) return;
+      ft.stroke = "#0000ff"; ft.fill = "#0000ff"; ft.w = 2.6;
+      const p = f.properties, kn = p["Кадастровый номер"] || "—";
+      cards.push({ area: m2(f), rows: [["Кадастровый номер", kn], ["Адрес", p["Адрес"] || "—"],
+        ["Площадь (га)", fmt((+p["Площадь участка, м²"] || m2(f)) / 1e4, 4)], ["Вид разрешённого использования", p["ВРИ"] || "—"],
+        ["Форма собственности", String(p["Форма собственности"] || p["Вид права"] || "—").toLowerCase()]] });
+      const at = safe(() => turf.pointOnFeature(x));
+      if (at) marks.push({ g: at.geometry, nodot: true, label: `Кадастровый номер\n${kn}`, ls: 3.2, lf: "gothic-bold", lcol: "#231f20", lbox: true });
+    });
+    pl && out.layers.push({ title: "Кадастровые номера", features: marks });
+    cards.sort((a, b) => b.area - a.area);
+    out.cCards = { title: "Сведения о земельных участках в границах территории рассмотрения", items: cards.map(c => c.rows) };
+    out.cLegend = [{ title: "Границы", items: [terr,
+      { kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" },
+      { kind: "line", stroke: "#0000ff", width: .7, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" }] }];
+  }
+  out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
+  if (!out.cLegend && k !== "photos") out.cLegend = [bounds];
+}
+window.conceptSheet = conceptSheet;
+
+/* План реализации ППТ КРТ: шапка и листы 1–2 — по шаблону владельца, листы 3–9 — как в «ГК Царицыно». */
 const PPTKRT = [
   { kind: "title", style: "pptkrt", title: "Титульный лист" },
   { style: "pptkrt", title: "Месторасположение рассматриваемой территории", legend: false, callout: true, panels: [
     { keys: ["gisogd.admin"], adm: "moscow", fit: "moscow", rect: [25, 48, 174, 229], noFrame: true },
     { keys: ["gisogd.admin"], adm: "okrug", fit: "okrug", rect: [212, 48, 188, 229], okrugTitle: true, noFrame: true }] },   // за округом — белый фон (владелец)
-  { ...PK, title: "Ортофотоплан", basemap: "sat", keys: ["osm.roads", "gisogd.admin"], fit: "terr", ctx: 3,
-    styles: { "osm.roads": { mode: "single", fill: "#f5d58a", width: 1.4, label: "Название", labelSize: 11 },
-      "gisogd.admin": { mode: "single", opacity: 0, fill: "#e93939", stroke: "#e93939", width: 1.6, dash: [8, 4], label: "" } },
-    labelMM: { "osm.roads": 2.8 }, legendTitle: { "gisogd.admin": "Граница района", "osm.roads": "Улицы, дороги и проезды" },
-    only: { "osm.roads": { field: "Тип дороги", values: [...PK_ROADS, "motorway_link", "trunk_link", "primary_link", "secondary_link", "tertiary_link"] },
-      "gisogd.admin": { field: "Уровень", values: ["район"] } } },
-  { ...PK, kind: "photos", rect: [24, 44, 170, 233], callout: false, title: "Материалы фотофиксации", keys: ["calc.uds_osm", "egko.buildings", "osm.roads"], fit: "terr", ctx: 1.8,
-    styles: { "osm.roads": { mode: "single", fill: "#d4d4d4", width: .3, label: "Название", labelSize: 9 } }, only: { "osm.roads": { field: "Тип дороги", values: PK_ROADS } } },
-  { ...PK, title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
-    keys: ["nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "egko.green", "egko.water", "calc.uds_osm", "nspd.parcels", "egko.buildings", "gisogd.okn", "gisogd.red_lines"], fit: "terr", ctx: 1.6,
-    styles: { "nspd.zouit": { hatch: false, opacity: .14, width: 1 }, "gisogd.szz": { hatch: false, opacity: .14, width: 1 }, "gisogd.vodookhr": { hatch: false, opacity: .14, width: 1 },
-      "gisogd.zouit": { hatch: false, opacity: .14, width: 1 }, ...ROADS_WHITE } },
-  { ...PK, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»", keys: ["gisogd.func_zones", "gisogd.func_zones_tinao"], fit: "terr", ctx: 1.6,
-    extra: "genplan", labelFn: { "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" }, labelMM: { "gisogd.func_zones": 3.6, "gisogd.func_zones_tinao": 3.6 } },
-  { ...PK, title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ", keys: ["calc.uds_osm", "egko.buildings", "gisogd.pmt", "gisogd.ppt"], fit: "terr", ctx: 2,
-    styles: ROADS_WHITE, docs: [{ key: "gisogd.ppt", title: "Проекты планировки территории" }, { key: "gisogd.pmt", title: "Проекты межевания территории", pre: "Проект межевания территории" }] },
-  { ...PK, title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР", keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.agr"], fit: "terr", ctx: 2,
-    styles: { ...ROADS_WHITE, "gisogd.gpzu": { fill: "#5c6bc0", stroke: "#3949ab", hatch: true, hatchPat: "135", width: .8, opacity: 1 } },
-    docs: [{ key: "gisogd.gpzu", title: "Градостроительные планы земельных участков", pre: "ГПЗУ" }, { key: "gisogd.agr", title: "Свидетельства об утверждении АГР", pre: "АГР" }] },
-  { ...PK, title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat", keys: ["nspd.parcels"], fit: "terr", ctx: 1.5, extra: "parcels",
-    styles: { "nspd.parcels": { mode: "single", opacity: 0, stroke: "#2b3cc4", width: 1.6, label: "" } } },
+  ...PPTKRT_C,
 ];
 
 async function buildAlbum(kind) {

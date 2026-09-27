@@ -68,8 +68,8 @@ function sheetSpec(sheet) {
     return { title: sheet.title, size: sheet.size, panels: subs.map((x, j) => ({ ...x, caption: (sheet.panels[j].caption || "").replace("{okr}", on) })), legend, note: sheet.note || "", ...albumExtra(sheet) };
   }
   if (sheet.kind === "photos") {
-    const out = sheetSpec({ ...sheet, kind: "map", part: "photo" }), pts = (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, fill: "#2e8b3a", stroke: "#ffffff", w: 5, a: 1, label: String(i + 1) } : null).filter(Boolean);
-    out.layers.push({ title: "Точки съёмки", features: pts });
+    const out = sheetSpec({ ...sheet, kind: "map", part: "photo" }), pts = sheet.look ? [] : (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, fill: "#2e8b3a", stroke: "#ffffff", w: 5, a: 1, label: String(i + 1) } : null).filter(Boolean);
+    if (!sheet.look) out.layers.push({ title: "Точки съёмки", features: pts });   // у листа «Царицыно» — свои стрелки (conceptSheet)
     if (pts.length) out.legend.push({ title: "Точки съёмки", kind: "point", items: [{ label: "Точка съёмки и номер снимка", fill: "#2e8b3a" }] });
     return { ...out, kind: "photos", photos: (sheet.photos || []).map(ph => ({ data: ph.data, w: ph.w, h: ph.h })) };
   }
@@ -78,6 +78,9 @@ function sheetSpec(sheet) {
   const half = [fw / 2 / 1000 * scale * 1.15, fh / 2 / 1000 * scale * 1.15], c3 = ol.proj.fromLonLat(center), stretch = 1 / Math.cos(center[1] * Math.PI / 180);
   const ext = [c3[0] - half[0] * stretch, c3[1] - half[1] * stretch, c3[0] + half[0] * stretch, c3[1] + half[1] * stretch];
   const tc = TERR ? turf.centroid(TERR) : null;
+  // рамка листа в градусах (без запаса выборки): для списков документов и листов по образцу «ГК Царицыно»
+  const frameLL = (() => { const [lo, la] = ol.proj.toLonLat([ext[0], ext[1]]), [hi, ha] = ol.proj.toLonLat([ext[2], ext[3]]), k = 1 / 1.15;
+    return [center[0] - (center[0] - lo) * k, center[1] - (center[1] - la) * k, center[0] + (hi - center[0]) * k, center[1] + (ha - center[1]) * k]; })();
   const homeOkr = sheet.homeOkrug ? (h => h.okrug?.properties["Округ"] || h.okrug?.properties["Наименование"])(homeAdm()) : null;
   const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
   vl.slice().reverse().forEach(pl => {                                   // снизу вверх, как рисует карта
@@ -95,9 +98,10 @@ function sheetSpec(sheet) {
       // штрих контура и шаг штриховки — в пикселях карты; подписи надписей ГИС ОГД — своим цветом, под своим углом, без значка
       feats.push({ g, fill: hl || s.fill, stroke: pl.geom === "poly" ? (s.hatch && !st.strokeOwn ? s.fill : st.stroke) : s.fill, w: st.width, a: hl ? 1 : st.opacity * pl.a, hatch: s.hatch, hp: st.hatchPat || "45",
         hs: st.hatchStep, dash: st.dash?.length ? st.dash : undefined, nm: st.marker === false || undefined, lcol: st.labelColor, la: st.labelAngle ? upright(labelDeg(f)) : undefined,
-        label: lab == null || lab === "" ? null : String(lab), ls: sheet.labelMM?.[pl.key], lc: pl.geom === "line" ? s.fill : undefined });
+        label: lab == null || lab === "" ? null : String(lab), ls: sheet.labelMM?.[pl.key], lc: pl.geom === "line" ? s.fill : undefined,
+        nl: st.lineOff || undefined, props: sheet.look ? (({ geometry, ...p }) => p)(f.getProperties()) : undefined, ...(sheet.labelStyle?.[pl.key] || {}) });   // props — листам «Царицыно», в печать не уходят
     });
-    layers.push({ title: pl.title, features: feats });
+    layers.push({ key: pl.key, title: pl.title, features: feats });
   });
   if (sheet.legend) vl.forEach(pl => {
     const st = pl.style, items = st.mode === "lgr" ? [{ label: "красные линии и ЛГР (REDLN97)", fill: "#d7191c" }] : legendItems(pl).filter(it => !it.off).slice(0, 14).map(it => ({ label: it.v, fill: it.c, stroke: pl.geom === "poly" ? st.stroke : it.c, hatch: st.hatch, a: st.opacity }));
@@ -112,14 +116,14 @@ function sheetSpec(sheet) {
   if (sheet.extra === "parcels") Object.assign(out, parcelsSheet(layers));
   if (sheet.extra === "radii") radiiSheet(out);
   if (sheet.extra === "genplan") genplanTable(out);
-  if (sheet.docs) { const [lo, la] = ol.proj.toLonLat([ext[0], ext[1]]), [hi, ha] = ol.proj.toLonLat([ext[2], ext[3]]), k = 1 / 1.15;   // рамка без запаса
-    docsSheet(out, sheet, [center[0] - (center[0] - lo) * k, center[1] - (center[1] - la) * k, center[0] + (hi - center[0]) * k, center[1] + (ha - center[1]) * k]); }
+  if (sheet.docs && !sheet.look) docsSheet(out, sheet, frameLL);
   if (sheet.note) out.note = sheet.note;
   // выноска на карте района: «проектируемая территория» и район, где она лежит
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
     out.callout = sheet.style === "pptkrt" ? ["Рассматриваемая территория", `S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га`]   // как в шаблоне ППТ КРТ
       : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
   if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
+  if (sheet.look === "concept") conceptSheet(out, sheet, frameLL);           // шапка ППТ КРТ, остальное — как в «ГК Царицыно» (albums.js)
   return out;
 }
 const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(sheetSpec) });
@@ -411,7 +415,9 @@ function exifGps(buf) {
       const ref = id => { const e = tag(gp, id); return e == null ? "" : String.fromCharCode(v.getUint8(t + e + 8)); };
       const la = tag(gp, 2), lo = tag(gp, 4); if (la == null || lo == null) return null;
       const lat = deg(la) * (ref(1) === "S" ? -1 : 1), lon = deg(lo) * (ref(3) === "W" ? -1 : 1);
-      return lat || lon ? [lon, lat] : null;
+      const di = tag(gp, 0x11), dir = di == null ? null : (a => u32(a) / (u32(a + 4) || 1))(u32(di + 8));   // направление съёмки, градусы от севера
+      if (!(lat || lon)) return null;
+      const at = [lon, lat]; at.dir = dir; return at;
     }
     if ((m & 0xFF00) !== 0xFF00) break;
     o += 2 + len;
@@ -431,9 +437,9 @@ async function addPhotoFiles(i, list) {
   try {
     for (const f of files) {
       const buf = await f.arrayBuffer(), gps = (() => { try { return exifGps(buf); } catch { return null; } })();
-      const bm = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bm.width, bm.height)), c = document.createElement("canvas");
+      const bm = await createImageBitmap(f), k = Math.min(1, 1600 / Math.max(bm.width, bm.height)), c = document.createElement("canvas"), dir = gps?.dir ?? null;
       c.width = Math.round(bm.width * k); c.height = Math.round(bm.height * k); c.getContext("2d").drawImage(bm, 0, 0, c.width, c.height);
-      (sh.photos ||= []).push({ name: f.name, data: c.toDataURL("image/jpeg", .82).split(",")[1], w: c.width, h: c.height, at: gps });
+      (sh.photos ||= []).push({ name: f.name, data: c.toDataURL("image/jpeg", .82).split(",")[1], w: c.width, h: c.height, at: gps ? [gps[0], gps[1]] : null, dir });
       if (gps) geo++;
     }
     window.markDirty?.(); renderSheets(); previewSheet(i);

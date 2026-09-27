@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-27, ГРАДО 2 v0.68.0: ППТ КРТ album sheets 3–9 exactly like «ГК Царицыно» under the template header.**
+  Owner: «делай в точь как в Царицыно», then chose «шапка ППТ КРТ, остальное как Царицыно»; sheets 1–2 (approved)
+  unchanged. Layout measured from the sample PDF: map without frame at 7, 44, 279 × 239 mm (sheets 5–9 share frame and
+  scale), right column from x 293: «Условные обозначения» Century Gothic 12 pt bold, underlined group titles, 8 × 3 mm
+  swatches, 10 pt text; okrug and district in the map corner. Sheet 3 ortho bleeds under the header, white legend plate
+  bottom-right, «Территория рассмотрения (S га)» plate under the territory. Sheet 4: map 198 × 152, photos 94 × 71 in
+  the sample grid (2 + 2 right, 4 below, cropped to fill), number plates, blue view arrows (EXIF GPSImgDirection, else
+  towards the territory). Sheet 5: land use coloured by ЕГРН parcel ВРИ (Moscow functional-use classes, sample colours),
+  roads grey, buildings outlined, parcels blue, ЛГР by REDLN97 with titles from the ЛГР catalogue. Sheet 6: zone number
+  and index large on the zone, legend samples, table «Функциональные зоны и их параметры». Sheets 7–8: every document its
+  own colour, big numbers, list items boxed in the document colour; АГР joined to the ГПЗУ it lies on (second line).
+  Sheet 9: parcels inside thick blue with «Кадастровый номер» plates, outside light, cards of parcel data. Map labels:
+  streets abbreviated («ул. Садовая», «Калужское ш.»), territory names from OSM landuse. New font family `gothic`
+  (PPTX: Century Gothic, PDF: bundled Montserrat), text `underline` in PDF/SVG/PPTX, label options `lbox`, `ldy`, `lfs`,
+  `lhc`, `nodot`, line `nl`, view marker `mk: "view"`. Tests `ConceptSheets`.
 - **2026-09-27, ГРАДО 2 v0.67.0: album «План реализации ППТ КРТ» — sheets 3–9 by the composition of «ГК Царицыно».**
   Owner: keep the ППТ КРТ template design, take the sheet list from the Царицыно concept. New sheets (definitions in
   albums.js, layers and styles as in section 1): 3 Ортофотоплан (streets, district boundary red dashed), 4 Материалы
