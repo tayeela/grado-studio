@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-29, ГРАДО 2 v0.69.0: ППТ КРТ album — sheet 3 remarks applied to all sheets.** Owner on sheet 3: roads as
+  polygons from Yandex or ЕГКО; rivers labelled blue with a white outline; Montserrat everywhere; okrug and district in
+  the corner dark red, «Троицкий» and «административный округ» on separate lines; thicker territory boundary. Roads:
+  `calc.uds_ya` (Yandex carriageway, axes widened by class where there is no HD) under `egko.roads` instead of the
+  OSM-axis bands; ЕГКО has only 4 road polygons in the КРТ 3141 frame, so Yandex carries the rural roads. The album now
+  loads Yandex roads for the sheet frames (within the 40 km² limit), not only 400 m around the territory. Rivers: new
+  source `egko.water_labels` (ЕГКО «Подписи к водной поверхности», «Подписи к тонким рекам и ручьям»), one label per
+  name nearest to the territory, generic «пр.»/«ручей» dropped; blue #1f8fe0 with white halo. The Century Gothic family
+  is removed: every album text is Montserrat (PDF and PPTX). Corner note blocks `[[«Троицкий», «административный
+  округ»], [«район Вороново»]]`, dark red #9e1717. Territory 1.6 mm, dash 1.6/1.6. Ortho legend wraps its labels clear of
+  the page-number plate.
 - **2026-09-28, ГРАДО 2 v0.68.1: label halos are solid again.** Owner: place-name labels had a dotted white outline
   instead of a plain one. The PDF halo strokes the glyphs (text render mode 1) inside q…Q and inherited the dash pattern
   of the previous path — the dotted territory boundary [1.1, 1.1]. The halo now resets the dash (`[] 0 d`). Test

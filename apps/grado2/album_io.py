@@ -165,14 +165,18 @@ class CalloutFrame(Frame):
                     "dash": [0.5, 0.9], "rings": [ring]})
         n = len(self.lines)
         for i, (t, bold) in enumerate(self.lines):
-            out.append(_text(x + w / 2, y + h / 2 + (i - (n - 1) / 2) * 4.2 + 1.2, 9, t, INK, "ui-bold" if bold else "ui",
+            out.append(_text(x + w / 2, y + h / 2 + (i - (n - 1) / 2) * 4.2 + 1.2, 9, t, INK, "sans-bold" if bold else "sans",
                              "middle"))
         return out
 
 
+DARK_RED = (0x9E / 255, 0x17 / 255, 0x17 / 255)
+
+
 class MapNoteFrame(Frame):
-    """Округ и район в левом верхнем углу карты, как в «ГК Царицыно»: «Южный административный / округ» и ниже
-    «район Царицыно», строки по центру, Century Gothic 15 пт жирный с белым ореолом — читается и на снимке."""
+    """Округ и район в левом верхнем углу карты: «Троицкий / административный округ» и ниже «район Вороново»
+    (владелец 29.09.2026), строки по центру, Montserrat жирный тёмно-красным с белым ореолом — читается и на снимке.
+    Каждый блок — список строк; строка-текст переносится по 25 знаков."""
 
     def __init__(self, rect, lines):
         super().__init__(rect)
@@ -181,11 +185,11 @@ class MapNoteFrame(Frame):
     def ops(self, ctx):
         x, y, _, _ = self.rect
         out, yy = [], y + 7.7
-        for n, text in enumerate(self.lines):
+        for n, block in enumerate(self.lines):
             if n:
                 yy += 3.0                                              # район — отбит от округа
-            for line in _wrap(text, 25):
-                out.append({**_text(x + 50, yy, 14.3, line, INK, "gothic-bold", "middle"), "halo": 0.6})
+            for line in (block if isinstance(block, list) else _wrap(block, 25)):
+                out.append({**_text(x + 50, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
                 yy += 5.4
         return out
 
@@ -221,7 +225,7 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
     elif k == "text":
         out.append({**_text(x + w / 2, y + h, float(it.get("size", 10)), it.get("sample", ""), _rgb(it.get("color"), INK),
-                            it.get("family", "gothic-bold"), "middle"), **({"underline": True} if it.get("underline") else {})})
+                            it.get("family", "sans-bold"), "middle"), **({"underline": True} if it.get("underline") else {})})
     else:
         fill = it.get("fill")
         if fill and not it.get("hatch"):
@@ -249,84 +253,84 @@ class ConceptColumnFrame(Frame):
         yy = y + S12
         full = False
         if sh.get("cLegend"):
-            out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "gothic-bold"))
+            out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "sans-bold"))
             yy += 8
             for g in sh["cLegend"]:
                 if g.get("title"):
-                    for line in _wrap_mm(g["title"], "gothic", S10, w):          # длинный заголовок группы — в две строки
-                        out.append({**_text(x, yy, 10, line, INK2, "gothic"), "underline": True})
+                    for line in _wrap_mm(g["title"], "sans", S10, w):          # длинный заголовок группы — в две строки
+                        out.append({**_text(x, yy, 10, line, INK2, "sans"), "underline": True})
                         yy += 4.4
                     yy += 2.1
                 for it in g.get("items", []):
-                    lines = _wrap_mm(it.get("label", ""), "gothic", S10, w - 10.5)
+                    lines = _wrap_mm(it.get("label", ""), "sans", S10, w - 10.5)
                     if yy + (len(lines) - 1) * 4.2 > bottom - 2:
                         full = True
                         break
                     out.extend(concept_swatch(x, yy - 2.8, it, self.lib))
                     for i, line in enumerate(lines):
-                        out.append(_text(x + 10.5, yy + i * 4.2, 10, line, INK2, "gothic"))
+                        out.append(_text(x + 10.5, yy + i * 4.2, 10, line, INK2, "sans"))
                     yy += 6.5 + (len(lines) - 1) * 4.2
                 if full:
                     break
         tbl = sh.get("gpTable")
         if tbl and tbl.get("rows") and not full:
             yy += 5
-            out.append(_text(x, yy, 12.3, tbl.get("title", ""), INK, "gothic-bold"))
+            out.append(_text(x, yy, 12.3, tbl.get("title", ""), INK, "sans-bold"))
             yy += 5
             widths = [w * c for c in tbl.get("widths", [.2, .2, .28, .32])]
-            heads = [_wrap_mm(c, "gothic-bold", S10, cw - 2) for c, cw in zip(tbl["cols"], widths)]
+            heads = [_wrap_mm(c, "sans-bold", S10, cw - 2) for c, cw in zip(tbl["cols"], widths)]
             hh = max(len(t) for t in heads) * 4.2 + 3
             out.append({"op": "path", "closed": True, "fill": (0.9, 0.9, 0.9), "stroke": None, "width": 0, "dash": None,
                         "rings": [[(x, yy), (x + w, yy), (x + w, yy + hh), (x, yy + hh)]]})
             cx = x
             for t, cw in zip(heads, widths):
                 for i, line in enumerate(t):
-                    out.append(_text(cx + cw / 2, yy + 1.5 + S10 * .8 + i * 4.2 + (hh - 3 - len(t) * 4.2) / 2, 10, line, INK2, "gothic-bold", "middle"))
+                    out.append(_text(cx + cw / 2, yy + 1.5 + S10 * .8 + i * 4.2 + (hh - 3 - len(t) * 4.2) / 2, 10, line, INK2, "sans-bold", "middle"))
                 cx += cw
             yy += hh + 2
             for row in tbl["rows"]:
-                cells = [_wrap_mm(v, "gothic", S10, cw - 2) for v, cw in zip(row, widths)]
+                cells = [_wrap_mm(v, "sans", S10, cw - 2) for v, cw in zip(row, widths)]
                 rh = max(len(c) for c in cells) * 4.2 + 2
                 if yy + rh > bottom:
                     break
                 cx = x
                 for c, cw in zip(cells, widths):
                     for i, line in enumerate(c):
-                        out.append(_text(cx + cw / 2, yy + S10 * .8 + i * 4.2 + (rh - 2 - len(c) * 4.2) / 2, 10, line, INK2, "gothic", "middle"))
+                        out.append(_text(cx + cw / 2, yy + S10 * .8 + i * 4.2 + (rh - 2 - len(c) * 4.2) / 2, 10, line, INK2, "sans", "middle"))
                     cx += cw
                 yy += rh
         for blk in sh.get("cLists") or []:
             if full or yy > bottom - 12:
                 break
             yy += 7
-            for line in _wrap_mm(blk["title"], "gothic-bold", S12, w):
-                out.append(_text(x, yy, 12.3, line, INK, "gothic-bold"))
+            for line in _wrap_mm(blk["title"], "sans-bold", S12, w):
+                out.append(_text(x, yy, 12.3, line, INK, "sans-bold"))
                 yy += 5
             yy += 1.5
             for n, it in enumerate(blk["items"]):
-                lines = _wrap_mm(it["text"], "gothic", S10, w - 4)
+                lines = _wrap_mm(it["text"], "sans", S10, w - 4)
                 bh = len(lines) * 4.2 + 2.6
                 if yy + bh > bottom:
-                    out.append(_text(x, min(yy + 3, bottom), 9, f"… ещё {len(blk['items']) - n}: их номера есть на карте", (0.35, 0.35, 0.35), "gothic"))
+                    out.append(_text(x, min(yy + 3, bottom), 9, f"… ещё {len(blk['items']) - n}: их номера есть на карте", (0.35, 0.35, 0.35), "sans"))
                     full = True
                     break
                 out.append({"op": "path", "closed": True, "fill": None, "stroke": _rgb(it.get("color"), INK), "width": 0.3, "dash": None,
                             "rings": [[(x, yy), (x + w, yy), (x + w, yy + bh), (x, yy + bh)]]})
                 for i, line in enumerate(lines):
-                    out.append(_text(x + 1.8, yy + 1.2 + S10 * .8 + i * 4.2, 10, line, INK2, "gothic"))
+                    out.append(_text(x + 1.8, yy + 1.2 + S10 * .8 + i * 4.2, 10, line, INK2, "sans"))
                 yy += bh + 3.2
         cards = sh.get("cCards")
         if cards and cards.get("items") and not full:
             yy += 7
-            for line in _wrap_mm(cards["title"], "gothic-bold", S12, w):
-                out.append(_text(x, yy, 12.3, line, INK, "gothic-bold"))
+            for line in _wrap_mm(cards["title"], "sans-bold", S12, w):
+                out.append(_text(x, yy, 12.3, line, INK, "sans-bold"))
                 yy += 5
             yy += 2
             for n, card in enumerate(cards["items"]):
-                rows = [(_wrap_mm(k, "gothic-bold", S10, w * .3), _wrap_mm(v, "gothic", S10, w * .64)) for k, v in card]
+                rows = [(_wrap_mm(k, "sans-bold", S10, w * .3), _wrap_mm(v, "sans", S10, w * .64)) for k, v in card]
                 ch = sum(max(len(a), len(b)) * 4.2 + 2.2 for a, b in rows)
                 if yy + ch > bottom:
-                    out.append(_text(x, min(yy + 3, bottom), 9, f"… и ещё участков: {len(cards['items']) - n} (кадастровые номера — на схеме)", (0.35, 0.35, 0.35), "gothic"))
+                    out.append(_text(x, min(yy + 3, bottom), 9, f"… и ещё участков: {len(cards['items']) - n} (кадастровые номера — на схеме)", (0.35, 0.35, 0.35), "sans"))
                     break
                 if n:
                     out.append({"op": "path", "closed": False, "fill": None, "stroke": (0.75, 0.75, 0.75), "width": 0.2, "dash": None,
@@ -334,9 +338,9 @@ class ConceptColumnFrame(Frame):
                 for a, b in rows:
                     rh = max(len(a), len(b)) * 4.2
                     for i, line in enumerate(a):
-                        out.append(_text(x + 1, yy + 1.5 + i * 4.2 + (rh - len(a) * 4.2) / 2, 10, line, INK2, "gothic-bold"))
+                        out.append(_text(x + 1, yy + 1.5 + i * 4.2 + (rh - len(a) * 4.2) / 2, 10, line, INK2, "sans-bold"))
                     for i, line in enumerate(b):
-                        out.append(_text(x + w * .34, yy + 1.5 + i * 4.2 + (rh - len(b) * 4.2) / 2, 10, line, INK2, "gothic"))
+                        out.append(_text(x + w * .34, yy + 1.5 + i * 4.2 + (rh - len(b) * 4.2) / 2, 10, line, INK2, "sans"))
                     yy += rh + 2.2
                 yy += 3
         return out
@@ -352,18 +356,22 @@ class OrthoLegendFrame(Frame):
     def ops(self, ctx):
         x, y, w, h = self.rect
         groups = self.sheet.get("cLegend") or []
-        items = [it for g in groups for it in g.get("items", [])]
-        top = y + h - (13 + 6 * len(items))
+        # подписи переносятся так, чтобы не заходить под плашку номера листа шаблона (x ≥ 399 мм)
+        items = [(it, _wrap_mm(it.get("label", ""), "sans", 9 * PT, 396 - (x + 21.6))) for g in groups for it in g.get("items", [])]
+        body = 6.5 + 5.7 + sum(5.8 + (len(lines) - 1) * 3.8 for _, lines in items) + 4.5
+        top = y + h - body
         out = [{"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
                 "rings": [[(x, top), (x + w, top), (x + w, y + h), (x, y + h)]]}]
         yy = top + 6.5
-        out.append(_text(x + 3.6, yy, 12.2, "Условные обозначения", INK, "gothic-bold"))
+        out.append(_text(x + 3.6, yy, 12.2, "Условные обозначения", INK, "sans-bold"))
         yy += 5.7
-        out.append(_text(x + 3.6, yy, 9, "Границы:", INK2, "gothic-bold"))
-        for it in items:
+        out.append(_text(x + 3.6, yy, 9, "Границы:", INK2, "sans-bold"))
+        for it, lines in items:
             yy += 5.8
             out.extend(concept_swatch(x + 3.6, yy - 2.6, it, None, w=15, h=3))
-            out.append(_text(x + 21.6, yy, 9, it.get("label", ""), INK2, "gothic"))
+            for i, line in enumerate(lines):
+                out.append(_text(x + 21.6, yy + i * 3.8, 9, line, INK2, "sans"))
+            yy += (len(lines) - 1) * 3.8
         return out
 
 
@@ -380,7 +388,7 @@ class ConceptPhotoFrame(Frame):
         photos = [p for p in self.sheet.get("photos", []) if p.get("data")][:len(PHOTO_SLOTS)]
         if not photos:
             return [_text(313, 160, 11, "Снимки не добавлены: окно «Листы», кнопка с фотоаппаратом у этого листа", (0.45, 0.45, 0.45),
-                          "gothic", "middle")]
+                          "sans", "middle")]
         out = []
         for i, p in enumerate(photos):
             sx, sy = PHOTO_SLOTS[i]
@@ -392,7 +400,7 @@ class ConceptPhotoFrame(Frame):
                     {"op": "unclip"},
                     {"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
                      "rings": [[(sx, sy), (sx + 8.6, sy), (sx + 8.6, sy + 7.6), (sx, sy + 7.6)]]},
-                    _text(sx + 4.3, sy + 6.2, 19, str(i + 1), INK2, "gothic-bold", "middle")]
+                    _text(sx + 4.3, sy + 6.2, 19, str(i + 1), INK2, "sans-bold", "middle")]
         return out
 
 

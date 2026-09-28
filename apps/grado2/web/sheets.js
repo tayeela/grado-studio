@@ -296,10 +296,11 @@ async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slid
     toast("Административное деление Москвы…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
-  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k] && !k.startsWith("yandex.")).forEach(k => {
+  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
     const cur = need.get(k); need.set(k, cur ? [Math.min(cur[0], bb[0]), Math.min(cur[1], bb[1]), Math.max(cur[2], bb[2]), Math.max(cur[3], bb[3])] : bb); }); });
-  // холст: УДС Яндекса — вокруг территории (для анализа; на листы не идёт)
-  ["yandex.hd_roads", "yandex.roads"].forEach(k => need.set(k, turf.bbox(buf(TERR, 400))));
+  // УДС Яндекса: вокруг территории (холст, анализ) и по рамкам листов, где дороги — полигоны Яндекса (альбом ППТ КРТ)
+  ["yandex.hd_roads", "yandex.roads"].forEach(k => { const t = turf.bbox(buf(TERR, 400)), cur = need.get(k);
+    need.set(k, cur ? [Math.min(cur[0], t[0]), Math.min(cur[1], t[1]), Math.max(cur[2], t[2]), Math.max(cur[3], t[3])] : t); });
   // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую
   // область сервер берёт по частям и склеивает
   const LIM = { yandex: 40 };

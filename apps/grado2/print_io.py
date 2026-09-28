@@ -475,7 +475,8 @@ class SketchMapFrame(Frame):
         if callout:
             take(callout[0])
         if sh.get("mapNote"):
-            take((rx, ry, rx + 102, ry + 7 + 5.4 * (len(sh["mapNote"]) + 1)))    # угол с округом и районом — без подписей карты
+            n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNote"])
+            take((rx, ry, rx + 102, ry + 7 + 5.4 * n + 3))                  # угол с округом и районом — без подписей карты
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
         for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):

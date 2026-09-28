@@ -14,8 +14,6 @@ _FONT_FAMILIES = {
     "ui-bold": "'PT Sans', Arial, sans-serif",
     "sans": "Montserrat, 'Century Gothic', Arial, sans-serif",
     "sans-bold": "Montserrat, 'Century Gothic', Arial, sans-serif",
-    "gothic": "'Century Gothic', Montserrat, Arial, sans-serif",
-    "gothic-bold": "'Century Gothic', Montserrat, Arial, sans-serif",
     "serif-bold": "'PT Serif', Georgia, serif",
     "mono": "'Courier New', monospace",
 }

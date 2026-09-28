@@ -51,7 +51,7 @@ class PdfBackend:
         self._img_names = {}
 
     def _font_for(self, family):
-        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold", "gothic", "gothic-bold") else "ui"
+        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold") else "ui"
         if family not in self._fonts:
             self._fonts[family] = Font(
                 self._font_paths.get(family) or find_font(family))

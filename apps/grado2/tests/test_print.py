@@ -252,7 +252,7 @@ class ConceptSheets(unittest.TestCase):
             self.assertIn(t, texts)
         boxes = [o for o in ops if o["op"] == "path" and o.get("stroke") and abs(o["stroke"][0] - 0xF5 / 255) < .01 and o.get("closed")]
         self.assertTrue(boxes)                                            # рамка пункта списка — цветом документа
-        self.assertTrue(all(o.get("font_family", "").startswith("gothic") for o in ops if o["op"] == "text" and o["text"] == "Условные обозначения"))
+        self.assertTrue(all(o.get("font_family", "") == "sans-bold" for o in ops if o["op"] == "text" and o["text"] == "Условные обозначения"))
         self.assertIn("ConceptColumnFrame", [type(f).__name__ for f in doc.pages[0].frames])
 
     def test_photo_grid_like_the_sample(self):
@@ -279,3 +279,9 @@ class ConceptSheets(unittest.TestCase):
         self.assertEqual(len(arrows), 1)
         self.assertFalse(any(o["op"] == "circle" for o in ops))           # плашка без точки-значка
         self.assertIn("77:22:1", [o["text"] for o in ops if o["op"] == "text"])
+
+    def test_corner_note_dark_red_on_separate_lines(self):
+        _, ops = self._ops({"title": "Карта", "mapNote": [["Троицкий", "административный округ"], ["район Вороново"]]})
+        note = [o for o in ops if o["op"] == "text" and o["text"] in ("Троицкий", "административный округ", "район Вороново")]
+        self.assertEqual([o["text"] for o in note], ["Троицкий", "административный округ", "район Вороново"])
+        self.assertTrue(all(o["color"][0] > .5 and o["color"][1] < .2 and o.get("font_family") == "sans-bold" for o in note))

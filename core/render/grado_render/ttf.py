@@ -22,9 +22,6 @@ CANDIDATES = {
     # Montserrat (SIL OFL) — заголовки и номера листов альбомов: шаблон ППТ КРТ набран им, концепция — Century Gothic
     "sans": [str(BUNDLED / "Montserrat-Regular.ttf")],
     "sans-bold": [str(BUNDLED / "Montserrat-Bold.ttf")],
-    # листы по образцу «ГК Царицыно» набраны Century Gothic: в PPTX идёт он (есть в Office), в PDF — близкий Montserrat
-    "gothic": [str(BUNDLED / "Montserrat-Regular.ttf")],
-    "gothic-bold": [str(BUNDLED / "Montserrat-Bold.ttf")],
     "ui-bold": [str(BUNDLED / "PTSans-Bold.ttf")],
     "serif-bold": [str(BUNDLED / "PTSerif-Bold.ttf")],
     "ui": [

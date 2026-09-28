@@ -22,7 +22,6 @@ EMU = 36000                                          # EMU в мм
 # семейство операции → гарнитура PowerPoint и жирность (те же шрифты, что встраивает PDF)
 FONTS = {"ui": ("PT Sans", False), "ui-bold": ("PT Sans", True), "serif": ("PT Serif", False),
          "serif-bold": ("PT Serif", True), "sans": ("Montserrat", False), "sans-bold": ("Montserrat", True),
-         "gothic": ("Century Gothic", False), "gothic-bold": ("Century Gothic", True),
          "mono": ("Courier New", False)}
 NS = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
