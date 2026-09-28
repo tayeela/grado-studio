@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-28, ГРАДО 2 v0.68.1: label halos are solid again.** Owner: place-name labels had a dotted white outline
+  instead of a plain one. The PDF halo strokes the glyphs (text render mode 1) inside q…Q and inherited the dash pattern
+  of the previous path — the dotted territory boundary [1.1, 1.1]. The halo now resets the dash (`[] 0 d`). Test
+  `PdfHalo`.
 - **2026-09-27, ГРАДО 2 v0.68.0: ППТ КРТ album sheets 3–9 exactly like «ГК Царицыно» under the template header.**
   Owner: «делай в точь как в Царицыно», then chose «шапка ППТ КРТ, остальное как Царицыно»; sheets 1–2 (approved)
   unchanged. Layout measured from the sample PDF: map without frame at 7, 44, 279 × 239 mm (sheets 5–9 share frame and

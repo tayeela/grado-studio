@@ -149,7 +149,8 @@ class PdfBackend:
         if o.get("halo"):
             # ореол подписи (как «свечение» в PowerPoint): сначала обводка букв цветом фона, поверх — сами буквы
             hc = self._color(o.get("halo_color", (1, 1, 1)), stroke=True)
-            halo = (f"q\n{hc}{_f(o['halo'] * MM2PT * 2)} w 1 j\nBT\n/{self._font_name(family)} {_f(size)} Tf\n1 Tr\n"
+            # сплошная: штрих ([] 0 d) сбрасывается — иначе обводка букв брала пунктир предыдущей линии (граница территории)
+            halo = (f"q\n{hc}{_f(o['halo'] * MM2PT * 2)} w 1 j [] 0 d\nBT\n/{self._font_name(family)} {_f(size)} Tf\n1 Tr\n"
                     f"{tm} Tm\n<{hexstr}> Tj\nET\nQ\n")
         under = ""
         if o.get("underline") and not angle:
