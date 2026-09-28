@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-29, ГРАДО 2 v0.69.1: river names along the water, on the larger water body; bolder boundary.** Owner: the
+  river name must run parallel to the river, names are better tied to larger water bodies (the big pond), the boundary
+  bolder still. `waterLabels` (albums.js): per ЕГКО name, the largest ЕГКО water polygon within 400 m of that name's
+  label points (a polygon with another name is skipped, one polygon — one name) gets the label; a pond or lake gets it
+  at its centre along its principal axis, a river at the ЕГКО label point along the local course (principal axis of
+  river vertices within 200 m); near-vertical names read bottom to top. КРТ 3141: «р. Поляница» now sits along the
+  17.6 ha pond (ЕГКО has no name for it; the nearest labels there are generic «пр.»). `egko.water` is loaded invisibly
+  for this. Territory boundary 2.4 mm, dash 2.4/2.4.
 - **2026-09-29, ГРАДО 2 v0.69.0: ППТ КРТ album — sheet 3 remarks applied to all sheets.** Owner on sheet 3: roads as
   polygons from Yandex or ЕГКО; rivers labelled blue with a white outline; Montserrat everywhere; okrug and district in
   the corner dark red, «Троицкий» and «административный округ» on separate lines; thicker territory boundary. Roads:
