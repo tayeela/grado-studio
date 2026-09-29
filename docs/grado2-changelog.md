@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.76.0: obligatory street names straight on their road.** Owner: street names must lie wholly on
+  straight road parts or deviate minimally; «ул. Придорожная» was crooked. Streets missing in OSM are no longer placed as a
+  point with the angle of a point cloud: every ЕГКО address votes for its nearest OSM road (up to 60 m), the winning roads
+  get the name (in Безобразово the village part of OSM «Сипягинское шоссе» is Придорожная by the addresses) and the usual
+  street rule places the label — straight run without junctions, along it. Obligatory streets (`must`) are never dropped:
+  runs where the whole label fits come first, nearest to the street's houses (`mustAt`), and the label slides along the run
+  towards the houses and into the frame; runs near the frame edge count too.
 - **2026-09-30, ГРАДО 2 v0.75.1: shore strip is natural territory.** Owner: «внутри береговой все природные и озеленённые
   территории». On sheet 5 the shore-strip polygons of ГИС ОГД («Береговая полоса») are filled as natural and green
   territory over parcels and OSM land use; water and carriageway stay on top. Rule first.

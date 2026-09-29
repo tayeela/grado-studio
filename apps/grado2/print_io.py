@@ -401,7 +401,7 @@ class SketchMapFrame(Frame):
         sh, rect = self.sheet, self.rect
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
-        out, labels, along, placed = [{"op": "clip", "rect": tuple(rect)}], [], {}, []
+        out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -480,6 +480,8 @@ class SketchMapFrame(Frame):
                             # подпись на нём не пересекает поперечные улицы; одно название — один раз
                             keys = [(round(q[0], 6), round(q[1], 6)) for q in line]
                             for d, mx, my, ang in _straight_runs(pts, [junctions.get(k, 0) > 1 for k in keys]):
+                                if f.get("must"):
+                                    runs.setdefault(f["label"], []).append((d, mx, my, ang, f))   # запасные места обязательных улиц
                                 if not (rect[0] < mx < rect[0] + rect[2] and rect[1] < my < rect[1] + rect[3]):
                                     continue
                                 if d > along.get(f["label"], (0,))[0]:
@@ -564,19 +566,39 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
+        for t_, rr in runs.items():                                     # обязательная улица с участками только у края рамки
+            if t_ not in along:
+                b = max(rr, key=lambda r: r[0])
+                along[t_] = (b[0], b[1], b[2], b[3], b[4].get("ls"), b[4])
         for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
             ls = float(ls or 2.2)
             text = str(text)[:40]
             tw = _text_w(text, af.get("lf"), ls)
-            if d < tw * 1.1:
+            if d < tw * 1.1 and not af.get("must"):
                 continue                                                # подпись не влезает в прямой участок улицы — улица мала, не подписывается
-            if ang > math.pi / 2 or ang < -math.pi / 2:
-                ang += math.pi                                          # не вверх ногами
-            ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
-            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-            if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
-                continue                                                # подпись улицы — целиком в рамке
-            if not take((x - ex, y - ey, x + ex, y + ey)):
+            # обязательная улица (правила подписей: «ул. Придорожная») — и на коротком участке, строго по его направлению;
+            # если лучший участок занят или у края рамки — следующие прямые участки по убыванию длины
+            cands = [(d, x, y, ang)]
+            if af.get("must"):                                          # сдвиг вдоль прямого участка — чтобы войти в рамку
+                # сначала участки, где подпись влезает целиком, ближе к домам этой улицы; затем остальные — длинные раньше
+                hx, hy = tr.mm(*af["mustAt"]) if af.get("mustAt") else (x, y)
+                order = sorted(runs.get(text, []), key=lambda r: (r[0] < tw * 1.1, math.hypot(r[1] - hx, r[2] - hy) if r[0] >= tw * 1.1 else -r[0]))
+                def shifts(rd, rx0, ry0, ra):                           # ближе к домам, не сходя с прямого участка
+                    m = max(0.0, (rd - tw) / 2)
+                    t0 = max(-m, min(m, (hx - rx0) * math.cos(ra) + (hy - ry0) * math.sin(ra)))
+                    return [t0] + [k * m / 3 for k in (0, -3, -2, -1, 1, 2, 3)]
+                cands = [(rd, rx0 + math.cos(ra) * t, ry0 + math.sin(ra) * t, ra)
+                         for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)]
+            for _d, x, y, ang in cands:
+                if ang > math.pi / 2 or ang < -math.pi / 2:
+                    ang += math.pi                                      # не вверх ногами
+                ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
+                ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+                if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
+                    continue                                            # подпись улицы — целиком в рамке
+                if take((x - ex, y - ey, x + ex, y + ey)):
+                    break
+            else:
                 continue
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,

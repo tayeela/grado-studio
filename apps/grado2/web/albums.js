@@ -335,18 +335,28 @@ function namedPlaces(out, bb) {
     const m = /^(.*?(улица|переулок|проезд|шоссе|тупик|бульвар|площадь|набережная|проспект|аллея)(?:\s+[А-ЯЁа-яё-]+)?)[,\s]+\d/i.exec(String(ft.props?.["Адрес"] || ""));
     if (!m) return; const n = m[1].trim(); if (known.has(n.toLowerCase())) return;
     (streets.get(n) || streets.set(n, []).get(n)).push(ft.g.coordinates); });
-  const roads = (L("osm.roads")?.features || []).filter(ft => /Line/.test(ft.g?.type)).flatMap(ft => ft.g.type === "LineString" ? [ft.g.coordinates] : ft.g.coordinates);
+  // название — на безымянные дороги OSM у домов этой улицы (вершина ближе 80 м к дому): дальше подпись ставит печать по
+  // правилу улиц — на самом длинном прямом участке без перекрёстков, по его направлению (владелец 30.09.2026: подпись
+  // «ул. Придорожная» шла криво). Обязательная: на коротком участке тоже ставится, строго вдоль него
+  // дом голосует за ближайшую дорогу OSM (до 60 м); улица — дороги, набравшие голоса её домов. В деревне участок
+  // названной в OSM дороги («Сипягинское шоссе») подписывается местным названием по адресам («ул. Придорожная»)
+  const ways = (L("osm.roads")?.features || []).filter(ft => /Line/.test(ft.g?.type))
+    .map(ft => ({ ft, parts: (ft.g.type === "LineString" ? [ft.g.coordinates] : ft.g.coordinates).filter(l => l.length > 1).map(l => turf.lineString(l)) }));
   const axis = pts => { let mx = 0, my = 0; pts.forEach(([x, y]) => { mx += x * kx; my += y; }); mx /= pts.length; my /= pts.length;
     let sxx = 0, syy = 0, sxy = 0; pts.forEach(([x, y]) => { const dx = x * kx - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
     let a = .5 * Math.atan2(2 * sxy, sxx - syy) * 180 / Math.PI; if (a > 90) a -= 180; if (a <= -90) a += 180; return a; };
   streets.forEach((pts, n) => {
+    const label = LABEL_FN.street({ get: () => n }), votes = new Map();
+    pts.forEach(p => { let best = null;
+      ways.forEach(w => w.parts.forEach(ls => { const d = safe(() => turf.pointToLineDistance(p, ls, { units: "meters" })) ?? Infinity;
+        if (d < 60 && (!best || d < best.d)) best = { d, w }; }));
+      if (best) votes.set(best.w, (votes.get(best.w) || 0) + 1); });
+    const win = [...votes].filter(([, v]) => v >= Math.max(2, pts.length * .25)).map(([w]) => w);
+    const mid = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    if (win.length) { win.forEach(w => Object.assign(w.ft, { label, must: true, mustAt: mid })); return; }   // mustAt — у домов
     const c = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
-    let best = null;                                           // ближайшая дорога в 60 м от середины ряда зданий
-    roads.forEach(line => { const pt = safe(() => turf.nearestPointOnLine(turf.lineString(line), c, { units: "meters" }));
-      if (pt && pt.properties.dist < 60 && (!best || pt.properties.dist < best.d)) best = { d: pt.properties.dist, at: pt.geometry.coordinates, line }; });
-    const at = best ? best.at : c, near = best ? best.line.filter(q => turf.distance(q, at, { units: "meters" }) < 120) : pts;
-    let a = near.length >= 2 ? axis(near) : 0; if (a < -60) a += 180;
-    feats.push({ g: { type: "Point", coordinates: at }, nm: true, label: LABEL_FN.street({ get: () => n }), ls: 3.8, lf: "sans-bold", lh: .55, lcol: "#141414", la: a, nudge: true }); });
+    let a = pts.length >= 2 ? axis(pts) : 0; if (a < -60) a += 180;        // дороги в OSM нет — вдоль ряда домов
+    feats.push({ g: { type: "Point", coordinates: c }, nm: true, label, ls: 3.8, lf: "sans-bold", lh: .55, lcol: "#141414", la: a, nudge: true }); });
   ["egko.place_labels", "egko.addresses"].forEach(k => { const l = L(k); if (l) l.features = []; });
   if (feats.length) out.layers.unshift({ title: "Населённые пункты и улицы", features: feats });
 }
