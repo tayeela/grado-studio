@@ -351,11 +351,13 @@ function conceptSheet(out, sheet, bb) {
     // под проезжей частью, — территория автодорог (владелец 30.09.2026: участки под дорогами должны быть белыми)
     const roadPolys = ["calc.uds_ya", "egko.roads"].flatMap(key => L(key)?.features || []).filter(inFrame)
       .map(ft => ({ f: { type: "Feature", geometry: ft.g, properties: {} }, b: turf.bbox(ft.g) }));
-    const underRoads = ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, b = turf.bbox(f), a = m2(f); let r = 0;
+    // доля участка под проезжей частью; больше половины — территория автодорог при любом ВРИ (внутренние проезды СНТ
+    // стоят на учёте как «для ведения садоводства»), без ВРИ — больше десятой доли (узкие полосы вдоль шоссе)
+    const roadShare = ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, b = turf.bbox(f), a = m2(f); let r = 0;
       roadPolys.forEach(x => { if (x.b[2] < b[0] || x.b[0] > b[2] || x.b[3] < b[1] || x.b[1] > b[3]) return; const y = safe(() => inter(f, x.f)); if (y) r += m2(y); });
-      return a > 0 && r > a / 3; };
-    (pl?.features || []).forEach(ft => { if (!inFrame(ft)) return;
-      const u = ft.props && (landUseOf(ft.props) || (!ft.props["ВРИ"] && underRoads(ft) ? LAND_USE[0] : null)); if (u) put(ft.g, u); });
+      return a > 0 ? r / a : 0; };
+    (pl?.features || []).forEach(ft => { if (!inFrame(ft) || !ft.props) return;
+      const sh = roadShare(ft), u = sh > .5 || (!ft.props["ВРИ"] && sh > .1) ? LAND_USE[0] : landUseOf(ft.props); if (u) put(ft.g, u); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // территории автодорог — белые, в легенде всегда
     // линии Сводного плана: код знака каждой линии; зона, у которой есть своя линия, по контуру второй раз не рисуется
@@ -366,17 +368,50 @@ function conceptSheet(out, sheet, bb) {
     // ЗОУИТ — как в «ГК Царицыно»: только граница зоны красным типом линии REDLN97 своего кода Эталона ЛГР, засечки
     // внутрь (кольцо против часовой — зона слева, вариант «t»); кода без типа линии — штрихом знака. Без штриховки
     const zk = new Map();
+    // зоны одного вида сначала сливаются в одну фигуру (в пределах рамки с запасом): полосы подтопления ГИС ОГД идут
+    // внахлёст, и на общей границе засечки смотрели в обе стороны (владелец 30.09.2026)
+    const clip = turf.bboxPolygon([bb[0] - (bb[2] - bb[0]) * .05, bb[1] - (bb[3] - bb[1]) * .05, bb[2] + (bb[2] - bb[0]) * .05, bb[3] + (bb[3] - bb[1]) * .05]);
+    const byCode = new Map();
     ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => { const l = L(key); if (!l) return;
-      l.features = l.features.filter(inFrame).map(ft => {
-        const c = zouitCode(key, ft.props || {}), lt = c != null ? Linetypes.forCode(ZONE_LINE[c]?.lt ?? c, -1) : null;
-        if (c != null && lgr.has(c)) return null;               // граница уже есть линией Сводного плана
-        const lines = safe(() => turf.polygonToLine(turf.rewind({ type: "Feature", geometry: ft.g, properties: {} })));
-        const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
-        if (!g) return null;
-        if (c != null && !zk.has(c)) zk.set(c, lt || null);
-        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3,
-          ll: lt || c == null ? undefined : LGRS[c]?.line_label };
-      }).filter(Boolean); });
+      l.features.filter(inFrame).forEach(ft => { const c = zouitCode(key, ft.props || {});
+        if (c != null && lgr.has(c)) return;                     // граница уже есть линией Сводного плана
+        const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, clip)); if (!part) return;
+        const k = c ?? "?"; byCode.set(k, [...(byCode.get(k) || []), part]); });
+      l.features = []; });
+    // подтопление вложено: слабое включает умеренное и сильное, умеренное — сильное; без этого граница слабого шла
+    // по границе умеренного с засечками в другую сторону (владелец 30.09.2026)
+    const nested = { 66: [65, 64], 65: [64] };
+    Object.entries(nested).forEach(([k, inner]) => { if (byCode.has(+k)) byCode.set(+k, [...byCode.get(+k), ...inner.flatMap(c => byCode.get(c) || [])]); });
+    const zoneFeats = [];
+    byCode.forEach((parts, k) => {
+      const c = k === "?" ? null : k, lt = c != null ? Linetypes.forCode(ZONE_LINE[c]?.lt ?? c, -1) : null;
+      const one = parts.slice(1).reduce((acc, p) => safe(() => turf.union(turf.featureCollection([acc, p]))) || acc, parts[0]);
+      const lines = safe(() => turf.polygonToLine(turf.rewind(one)));
+      const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
+      if (!g) return;
+      if (c != null && !zk.has(c)) zk.set(c, lt || null);
+      zoneFeats.push({ code: c, g: g.type === "LineString" ? { type: "MultiLineString", coordinates: [g.coordinates] } : g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3,
+        ll: lt || c == null ? undefined : LGRS[c]?.line_label }); });
+    // контуры зон подтопления ГИС ОГД совпадают неточно: после слияния остаются щели, и граница слабого местами идёт
+    // вдоль границы умеренного. Участки границы слабее, чем в 3 м от границы более сильной зоны, не рисуются
+    const stronger = { 66: [65, 64], 65: [64] };
+    const orig = new Map(zoneFeats.map(f => [f.code, f.g]));          // сравнение — с исходными границами, до обрезки
+    zoneFeats.forEach(f => { const near = (stronger[f.code] || []).flatMap(c => orig.get(c)?.coordinates || []).filter(l => l.length > 1)
+        .map(l => { const ls = turf.lineString(l); return { ls, b: turf.bbox(ls) }; });
+      if (!near.length) return;
+      const d = 3 / 111320;                                            // 3 м в градусах — запас габаритов
+      const keep = [];
+      f.g.coordinates.forEach(line => { let run = [];
+        for (let i = 1; i < line.length; i++) {
+          const mid = [(line[i - 1][0] + line[i][0]) / 2, (line[i - 1][1] + line[i][1]) / 2];
+          const close = near.some(n => mid[0] > n.b[0] - 2 * d && mid[0] < n.b[2] + 2 * d && mid[1] > n.b[1] - d && mid[1] < n.b[3] + d
+            && (safe(() => turf.pointToLineDistance(mid, n.ls, { units: "meters" })) ?? Infinity) < 3);
+          if (close) { if (run.length > 1) keep.push(run); run = []; } else { if (!run.length) run.push(line[i - 1]); run.push(line[i]); }
+        }
+        if (run.length > 1) keep.push(run); });
+      f.g = { type: "MultiLineString", coordinates: keep }; });
+    if (L("gisogd.zouit")) L("gisogd.zouit").features = zoneFeats;
+    else out.layers.push({ title: "ЗОУИТ и зоны ограничений (ОГД)", features: zoneFeats });
     out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
       { title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] },
       ...((L("egko.water")?.features || []).some(inFrame) ? [{ title: "Природные объекты", items: [{ kind: "fill", fill: "#bfe0f5", stroke: "#bfe0f5", label: "водные объекты" }] }] : []),
@@ -385,7 +420,7 @@ function conceptSheet(out, sheet, bb) {
       ...(lgr.size || zk.size ? [{ title: "Линии градостроительного регулирования, действующие",
         items: [...[...lgr].map(([c, n]) => [c, n, LGR_LEG[c] || "граница " + zoneGen(LGRT[c] || "")]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
           .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5),
-            ll: n ? undefined : LGRS[c]?.line_label, label: t })) }] : [])];
+            ll: n || (LGRS[c]?.line_label || "").length > 12 ? undefined : LGRS[c]?.line_label, label: t })) }] : [])];   // длинная надпись в знак 8 мм не входит
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой

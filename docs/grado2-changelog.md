@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.74.1: flooding ticks on one side, more road parcels white.** Owner: weak flooding had ticks on
+  both sides, some parcels under roads were still not white. Zones of one kind are merged within the frame before their
+  boundary is drawn; flooding zones are nested (weak ⊇ moderate ⊇ strong), and because ГИС ОГД outlines do not match
+  exactly, boundary pieces of a weaker zone closer than 3 m to a stronger zone's boundary are dropped. Parcels more than
+  half under the carriageway are road territory at any ВРИ (SNT internal driveways are registered «для ведения
+  садоводства»); without ВРИ from a tenth (narrow strips along the highway). Legend keeps the Эталон line text only when
+  it fits the 8 mm sign. ГИС ОГД has no УДС red lines inside the sheet 5 frame (checked, see v0.74.0).
 - **2026-09-30, ГРАДО 2 v0.74.0: sheet 5 roads and all Сводный план lines.** Owner: roads were grey outlines without fill,
   parcels under roads were not white, УДС red lines, техзоны and others missing. Now: carriageway filled grey (#b4b4b4, no
   outline) as in «ГК Царицыно»; a parcel without ВРИ (NSPD «обособленный участок» of a single land use — the ВРИ is on
