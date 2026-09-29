@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.75.0: obligatory village and street names, smaller names, thinner parcels.** Owner: «д.
+  Безобразово и ул. Придорожная обязательно на всех листах», «топонимы и гидронимы кегль чуть меньше», «границы ЗУ чуть
+  тоньше». OSM has only a hamlet point and no Придорожная street at all (checked). New source `egko.place_labels`
+  (ЕГКО «Пояснительные подписи»: «Д. БЕЗОБРАЗОВО»): villages are labelled «д. Безобразово», bold 4.6 mm, first on every
+  concept sheet. Streets that OSM lacks are taken from ЕГКО building addresses («Придорожная улица 7 соор.1») and
+  labelled along the nearest OSM road within 60 m of those buildings (else along the row of buildings) — «ул.
+  Придорожная», «ул. Центральная». Names of territories, streets and rivers 3.8 mm (was 4.3). Parcel boundaries on sheet
+  5 width 0.7 px. Rules first.
 - **2026-09-30, ГРАДО 2 v0.74.1: flooding ticks on one side, more road parcels white.** Owner: weak flooding had ticks on
   both sides, some parcels under roads were still not white. Zones of one kind are merged within the frame before their
   boundary is drawn; flooding zones are nested (weak ⊇ moderate ⊇ strong), and because ГИС ОГД outlines do not match

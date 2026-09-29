@@ -119,6 +119,8 @@ SOURCES["egko.water"] = ("egko", {"hidrograf": None, "tonkie_reki": None}, "Во
 # подписи рек и водоёмов картоосновы («р. Моча», «пр.») — точки с текстом, как их ставит ЕГКО
 SOURCES["egko.water_labels"] = ("egko", {"podpisi_k_vodnoj_poverhnosti": None, "podpisi_k_tonkim_rekam_i_ruchjam": None},
                                 "Подписи рек и водоёмов (ЕГКО)")
+# пояснительные подписи картоосновы: деревни и СНТ («Д. БЕЗОБРАЗОВО») — населённые пункты подписываются на листах всегда
+SOURCES["egko.place_labels"] = ("egko", {"pojasnitelnye_podpisi": None}, "Пояснительные подписи (ЕГКО)")
 SOURCES["egko.fences"] = ("egko", {"fence2k": None}, "Заборы (ЕГКО)")
 SOURCES["egko.addresses"] = ("egko", {"adres": None}, "Адреса (ЕГКО)")
 EGKO_EXTRA = {"egko.buildings": "Состояние", "egko.green": "Вид"}     # куда пишется значение кода слоя
@@ -331,7 +333,7 @@ PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, 
            "osm.social": social_props,
            "egko.buildings": egko_building_props, "egko.roads": egko_road_props, "egko.paths": egko_path_props,
            "egko.green": egko_green_props, "egko.water": egko_water_props, "egko.fences": lambda p: {},
-           "egko.addresses": egko_address_props, "egko.water_labels": lambda p: {"Подпись": _v(p.get("text"))},
+           "egko.addresses": egko_address_props, "egko.water_labels": lambda p: {"Подпись": _v(p.get("text"))}, "egko.place_labels": lambda p: {"Подпись": _v(p.get("value_n"))},
            "yandex.hd_roads": _renamed({"type": "Тип", "struct": "Конструкция", "z_level": "Уровень"}),
            "yandex.buildings": _renamed({"height": "Высота, м", "ft_type_name": "Назначение"})}
 for _k in SOURCES:

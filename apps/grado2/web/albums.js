@@ -71,7 +71,7 @@ function albumExtra(sheet) {
 const C_TERR = "#ff00ff", C_ROAD = "#a6a6a6", C_TW = 2.4;              // граница территории — жирный пунктир (владелец 29.09.2026)
 const C_LBL = { lf: "sans-bold", lh: .55, lcol: "#141414" };
 const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false,
-  labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 4.3, "osm.landuse": 4.3, "egko.water_labels": 4.3 },
+  labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 3.8, "osm.landuse": 3.8, "egko.water_labels": 3.8 },   // кегль чуть меньше (владелец 30.09.2026)
   labelStyle: { "osm.roads": C_LBL, "osm.landuse": C_LBL, "egko.water_labels": { lf: "sans-bold", lh: .55 } } };
 // реки и водоёмы — подписями ЕГКО, голубым с белой обводкой (владелец 29.09.2026)
 const C_WATER = { "egko.water_labels": { mode: "single", fill: "#1f8fe0", width: 1, marker: false, label: "Подпись", labelColor: "#1f8fe0" },
@@ -98,7 +98,7 @@ const PPTKRT_C = [
     // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
     // заливка, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
     keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: 1, opacity: 0, label: "" },
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: .7, opacity: 0, label: "" },   // тоньше (владелец 30.09.2026)
       ...C_ROADS("#b4b4b4"), ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
@@ -121,6 +121,11 @@ const PPTKRT_C = [
     keys: ["nspd.parcels", "osm.landuse", "osm.roads", "egko.water", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
 ];
+
+// деревни и улицы без названия в OSM — на всех листах обязательно (правила подписей): подписи и адреса картоосновы ЕГКО
+const C_HIDDEN = { mode: "single", fill: "#141414", stroke: "#141414", width: 0, opacity: 0, marker: false, label: "" };
+PPTKRT_C.forEach(sh => { sh.keys.push("egko.place_labels", "egko.addresses");
+  sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN }; });
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -276,7 +281,7 @@ function waterLabels(out, bb) {
     return at && { at, ang }; };
   const thin = (c, ls) => ls.filter(l => l.v.some(q => turf.distance(c, q) < .15));
   byName.forEach((fts, t) => {
-    const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates)), ls = +fts[0].ls || 4.3;
+    const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates)), ls = +fts[0].ls || 3.8;
     const inFrame = pts.filter(pt => inBox(pt.geometry.coordinates));
     const cand = polys.filter(p => !used.has(p) && (!p.name || p.name.toLowerCase() === base) && pts.some(pt => dist(pt, p) < .4));
     let res = null;
@@ -310,6 +315,42 @@ function waterLabels(out, bb) {
   wl.features = labels;
 }
 
+/* Обязательные подписи (владелец 30.09.2026: «д. Безобразово и ул. Придорожная на всех листах»): деревни и посёлки —
+   по пояснительным подписям ЕГКО, на своём месте; улицы, которых нет среди названий OSM на листе, — по адресам зданий
+   ЕГКО («Придорожная улица 7»): вдоль ближайшей дороги OSM рядом со зданиями, иначе вдоль ряда зданий. Слой — первым:
+   эти подписи ставятся раньше всех. */
+const PLACE_RE = /^(д|дер|с|п|пос|рп|х|село|деревня)\.?\s+(.+)$/i;
+const titleRu = t => t.toLowerCase().replace(/(^|[\s-])([а-яё])/g, (m, a, b) => a + b.toUpperCase());
+function namedPlaces(out, bb) {
+  const L = key => out.layers.find(l => l.key === key), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
+  const feats = [], kx = Math.cos(bb[1] * Math.PI / 180);
+  (L("egko.place_labels")?.features || []).forEach(ft => { const t = String(ft.props?.["Подпись"] || ft.label || "").trim(), m = PLACE_RE.exec(t);
+    if (!m || ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
+    const pre = /^(с|село)$/i.test(m[1]) ? "с." : /^(п|пос|рп)$/i.test(m[1]) ? "пос." : "д.";
+    feats.push({ g: ft.g, nm: true, label: `${pre} ${titleRu(m[2].replace(/["«»]/g, ""))}`, ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); });
+  // улицы из адресов: «Придорожная улица 7 соор.1» → «Придорожная улица»
+  const known = new Set((L("osm.roads")?.features || []).map(ft => String(ft.props?.["Название"] || "").toLowerCase()).filter(Boolean));
+  const streets = new Map();
+  (L("egko.addresses")?.features || []).forEach(ft => { if (ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
+    const m = /^(.*?(улица|переулок|проезд|шоссе|тупик|бульвар|площадь|набережная|проспект|аллея)(?:\s+[А-ЯЁа-яё-]+)?)[,\s]+\d/i.exec(String(ft.props?.["Адрес"] || ""));
+    if (!m) return; const n = m[1].trim(); if (known.has(n.toLowerCase())) return;
+    (streets.get(n) || streets.set(n, []).get(n)).push(ft.g.coordinates); });
+  const roads = (L("osm.roads")?.features || []).filter(ft => /Line/.test(ft.g?.type)).flatMap(ft => ft.g.type === "LineString" ? [ft.g.coordinates] : ft.g.coordinates);
+  const axis = pts => { let mx = 0, my = 0; pts.forEach(([x, y]) => { mx += x * kx; my += y; }); mx /= pts.length; my /= pts.length;
+    let sxx = 0, syy = 0, sxy = 0; pts.forEach(([x, y]) => { const dx = x * kx - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+    let a = .5 * Math.atan2(2 * sxy, sxx - syy) * 180 / Math.PI; if (a > 90) a -= 180; if (a <= -90) a += 180; return a; };
+  streets.forEach((pts, n) => {
+    const c = [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+    let best = null;                                           // ближайшая дорога в 60 м от середины ряда зданий
+    roads.forEach(line => { const pt = safe(() => turf.nearestPointOnLine(turf.lineString(line), c, { units: "meters" }));
+      if (pt && pt.properties.dist < 60 && (!best || pt.properties.dist < best.d)) best = { d: pt.properties.dist, at: pt.geometry.coordinates, line }; });
+    const at = best ? best.at : c, near = best ? best.line.filter(q => turf.distance(q, at, { units: "meters" }) < 120) : pts;
+    let a = near.length >= 2 ? axis(near) : 0; if (a < -60) a += 180;
+    feats.push({ g: { type: "Point", coordinates: at }, nm: true, label: LABEL_FN.street({ get: () => n }), ls: 3.8, lf: "sans-bold", lh: .55, lcol: "#141414", la: a, nudge: true }); });
+  ["egko.place_labels", "egko.addresses"].forEach(k => { const l = L(k); if (l) l.features = []; });
+  if (feats.length) out.layers.unshift({ title: "Населённые пункты и улицы", features: feats });
+}
+
 function conceptSheet(out, sheet, bb) {
   const ha = fmt(m2(TERR) / 1e4, 2), terr = { kind: "line", stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW], label: `территории рассмотрения (${ha} га)` };
   out.look = "concept"; out.noFrame = true; out.callout = undefined; out.bleed = !!sheet.bleed;
@@ -318,6 +359,7 @@ function conceptSheet(out, sheet, bb) {
   const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
   const k = sheet.concept;
   waterLabels(out, bb);
+  namedPlaces(out, bb);
   if (k === "ortho") {
     // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
     // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)

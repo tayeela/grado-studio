@@ -26,7 +26,7 @@ const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "egko.addresses", "e
   "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings",
   "yandex.transport", "yandex.parking", "osm.social", "yandex.roads", "osm.roads", "egko.paths", "yandex.road_edges",
   "gisogd.okn", "nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.pmt", "gisogd.agr", "gisogd.gpzu", "gisogd.krt",
-  "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water_labels", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
+  "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water_labels", "egko.place_labels", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
   "gisogd.admin", "gisogd.pzz_zones", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.landuse", "yandex.landuse"];
 // застройка из разных источников — одна и та же: на холсте видна одна, по этому порядку (ЕГКО — самая полная)
 const BUILDINGS = ["egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings"];
@@ -78,6 +78,7 @@ function defaultStyle(key, fc) {
     "gisogd.ppt": { mode: "cat", hatch: true, width: 1.2, hatchPat: "135", cat: { field: "Вид зоны", colors: {}, off: [] } },
     "gisogd.gpzu": { fill: "#35c2d6", stroke: "#1b8a99", width: .8, opacity: .35 },
     "egko.water_labels": { fill: "#1f8fe0", width: 1, label: "Подпись", labelSize: 11, marker: false, labelColor: "#1f8fe0" },
+    "egko.place_labels": { fill: "#141414", width: 1, label: "Подпись", labelSize: 11, marker: false, labelColor: "#141414" },
     "gisogd.pmt": { fill: "#2f9e44", stroke: "#2f9e44", width: 1.6, opacity: 0 },
     "gisogd.agr": { fill: "#d6336c", stroke: "#b3261e", hatch: true, hatchPat: "45", width: 1 },
     "gisogd.krt": { fill: "#e0892f", stroke: "#b35d00", hatch: true, hatchPat: "45", width: 1.2 },
