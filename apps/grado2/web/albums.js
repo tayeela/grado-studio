@@ -267,12 +267,13 @@ function conceptSheet(out, sheet, bb) {
   const k = sheet.concept;
   waterLabels(out, bb);
   if (k === "ortho") {
-    // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки под территорией, серый текст в три строки,
-    // белый пунктир от плашки к точке внутри территории у её южного края
-    const [w, s, e, n] = turf.bbox(TERR), south = safe(() => inter(TERR, turf.bboxPolygon([w, s, e, s + (n - s) * .3])));
-    const tgt = (south && safe(() => turf.pointOnFeature(south))) || turf.pointOnFeature(TERR), [tx] = tgt.geometry.coordinates;
-    out.layers.push({ title: "Выноска территории", features: [{ g: { type: "Point", coordinates: [tx, s] }, nodot: true, lead: tgt.geometry.coordinates,
-      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 3.2, lf: "sans", lcol: "#4a4a4a", lbox: true, lboxAlpha: .75, ldy: 12 }] });
+    // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
+    // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)
+    const [w, s, e, n] = turf.bbox(TERR), up = (bb[3] - n) * 110540 / ((out.scale || 2000) / 1000) >= 35;
+    const edge = safe(() => inter(TERR, turf.bboxPolygon(up ? [w, n - (n - s) * .3, e, n] : [w, s, e, s + (n - s) * .3])));
+    const tgt = (edge && safe(() => turf.pointOnFeature(edge))) || turf.pointOnFeature(TERR), [tx] = tgt.geometry.coordinates;
+    out.layers.push({ title: "Выноска территории", features: [{ g: { type: "Point", coordinates: [tx, up ? n : s] }, nodot: true, lead: tgt.geometry.coordinates,
+      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 4.5, lf: "sans", lcol: "#4a4a4a", lbox: true, lboxAlpha: .75, ldy: up ? -22 : 16 }] });
     // граница района — в легенде, только если она видна на листе
     const box = turf.bboxPolygon(bb), dist = (L("gisogd.admin")?.features || []).some(ft => /Polygon/.test(ft.g?.type)
       && safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.some(l => turf.booleanIntersects(l, box))));

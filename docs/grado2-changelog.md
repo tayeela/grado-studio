@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.4: territory callout larger and above the territory.** Owner: «выноска крупнее и сверху
+  от территории, там больше места». The callout plate goes above the territory unless the top edge of the sheet is
+  closer than 35 mm (then below), text 4.5 mm; the dashed leader starts at the plate edge facing the territory and
+  ends at a point inside the territory near that edge. Rule updated in `docs/standards/albums/label-rules.md`.
 - **2026-09-30, ГРАДО 2 v0.69.3: label rules written down and applied; Tsaritsyno-style territory callout.** Owner:
   the legend showed a district boundary that is not on the sheet; «ул. Речная» crossed roads — small streets may stay
   unlabelled; formulate the graphic label rules including his remarks and apply them; the area callout differs from

@@ -611,8 +611,9 @@ class SketchMapFrame(Frame):
                 top = y - ls - pad * .6
                 if f.get("lead"):                                       # выноска: белый пунктир от плашки к точке территории
                     tx, ty = tr.mm(*f["lead"][:2])
+                    bottom = y + ls * .35 + (len(lines) - 1) * lh + pad * .6
                     out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": [1.4, 0.9],
-                                "rings": [[(x, top), (tx, ty)]]})
+                                "rings": [[(x, top if ty < top else bottom), (tx, ty)]]})
                     out.append({"op": "circle", "x": tx, "y": ty, "r": 0.7, "fill": (1, 1, 1), "stroke": None, "width": 0})
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": f.get("lboxAlpha"),
                             "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
