@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.77.1: palette from «ВРИ земельных участков_RGB» first.** Owner sent the second DXF and said
+  «ВРИ РГБ приоритет»; ИЖС and gardening are there. The file has coded functional zones (1001…7000) and a «ВРИ_NN» colouring;
+  order of sources now: its coded zones, then its ВРИ_NN, then the «ЗИО сущ» legend. Changes: ИЖС #e5e57f (2001), gardening
+  #e5e57f (ВРИ_13, same as ИЖС), agriculture #d2e19f (ВРИ_32), natural #c0e3b5 (4001), sport #b9e592 (ВРИ_9), health
+  #b0d9d5 (ВРИ_4), external transport #ada4a0 (ВРИ_19); new class «специального назначения» #c7d1c7 (3003; cemeteries,
+  communications, defence). Buildings stay white with grey outline (owner). Rules first.
 - **2026-09-30, ГРАДО 2 v0.77.0: land-use palette from the owner's legend; no thin rivers on the ortho sheet.** Owner sent
   «УСЛОВКИ от Генплана.dxf» (ten legend columns; «Схема ЗИО» and «ЗИО сущ» match sheet 5) and MapInfo examples
   «Функц_зонир_Хатминки» (Генплан-type zones by FZtip) and «ЗУ_ФЗ» (parcels coloured by actual functional use, not by
