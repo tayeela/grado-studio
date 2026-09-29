@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.73.0: sheet 5 ЗОУИТ and legend like «ГК Царицыно».** Owner: «условки должны быть как в примере
+  по Царицыно, названий штриховок не должно быть». In the sample the zones are boundaries only (red REDLN97 lines with
+  ticks) listed under «Линии градостроительного регулирования, действующие» as «граница …». Now: ГИС ОГД zones are
+  drawn as their boundaries with the REDLN97 linetype of their Эталон ЛГР code (ring counter-clockwise, ticks inward,
+  variant «t»), codes without a linetype — dashed in the sign colour; no hatches, no separate zone group; legend labels
+  in the genitive («граница водоохранных зон»). ЛГР linetypes on sheets are now constant on paper (`LT_MM` = 0.25 mm
+  per pattern unit, ticks every 5 mm as in the sample); before, the pattern was in ground metres and at 1:10 000 a zone
+  boundary merged into a solid line. Legend samples fit two patterns into the 8 mm sign. Rules updated first.
+  Yandex satellite tiles for AutoCAD are downloaded one by one again (project rule: no parallel portal requests).
 - **2026-09-30, ГРАДО 2 v0.72.0: satellite for AutoCAD in full detail and without extra steps.** Owner: the script worked,
   but «разрешение плохое» and everything must load automatically. Detail: always Yandex z18 (the finest real level
   around Moscow, ~0.34 m; z19 is z18 stretched, checked near Вороново), output 0.3 m per pixel, cut into pieces of at

@@ -219,7 +219,9 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
                     "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
     elif k == "lt":
         if lib and it.get("name"):
-            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], 0.5, _rgb(it.get("stroke"), (1, 0, 0)), 0.3, lib))
+            # как на карте, но не крупнее, чем нужно для двух шаблонов на 8 мм знака — иначе знак сплошной
+            n = float((lib.get("linetypes", {}).get(it["name"]) or {}).get("length") or 1)
+            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], min(0.25, w / (2.05 * n)), _rgb(it.get("stroke"), (1, 0, 0)), 0.3, lib))
         else:
             out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.45,
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})

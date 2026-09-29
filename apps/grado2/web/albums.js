@@ -170,6 +170,10 @@ const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежна
   "Зона сильного подтопления": 64, "Зона умеренного подтопления": 65, "Зона слабого подтопления": 66, "Санитарно-защитная зона (ПЗЗ)": 5,
   "Зона охраняемого объекта": 44, "Зона военного объекта": 30, "Охранная зона радиотехнического объекта": 31, "Охранная зона ООПТ": 19,
   "Охранная зона объектов электроэнергетики": 32, "Охранная зона линий и сооружений связи": 34, "Особо охраняемая зелёная территория": 47 };
+// «Водоохранные зоны» → «водоохранных зон», «СЗЗ (установленная)» → «санитарно-защитных зон (установленных)» — для «граница …»
+const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
+const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
+  return t.toLowerCase().split(/\s+/).map(w => w.replace(/(ые|ие)$/, "ых").replace(/зоны$/, "зон").replace(/полосы$/, "полос").replace(/ая$/, "ой").replace(/зона$/, "зоны").replace(/территории$/, "территорий")).join(" "); };
 const zouitCode = (key, p) => key === "gisogd.vodookhr" ? 16 : key === "gisogd.szz" ? (/расч/i.test(p["Вид зоны"] || "") ? 62 : /ориент/i.test(p["Вид зоны"] || "") ? 63 : 5) : ZOUIT_LGR[p["Вид зоны"]];
 
 const C_PALETTE = ["#f5a623", "#00c8e0", "#7b2d8e", "#f0503c", "#ff3fb4", "#2e9d4f", "#1565c0", "#8d6e63", "#ff8f00", "#00897b"];
@@ -341,17 +345,18 @@ function conceptSheet(out, sheet, bb) {
     (pl?.features || []).forEach(ft => { const u = ft.props && landUseOf(ft.props); if (u && inFrame(ft)) put(ft.g, u); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // УДС — белые, в легенде всегда
-    // ЗОУИТ — знаком Эталона ЛГР: контур цветом и штрихом знака, штриховка цветом, углом и шагом знака
+    // ЗОУИТ — как в «ГК Царицыно»: только граница зоны красным типом линии REDLN97 своего кода Эталона ЛГР, засечки
+    // внутрь (кольцо против часовой — зона слева, вариант «t»); кода без типа линии — штрихом знака. Без штриховки
     const zk = new Map();
-    ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => (L(key)?.features || []).forEach(ft => {
-      if (!inFrame(ft)) { ft.w = 0; ft.fill = null; return; }
-      const c = zouitCode(key, ft.props || {}), e = LGRS[c], h = e?.hatch;
-      Object.assign(ft, { stroke: e?.stroke || "#ff0000", w: 1.4, dash: e ? e.dash_px || undefined : [11.34, 3.78], a: 1,
-        fill: h?.color && c !== 41 ? h.color : null, hatch: !!(h?.color && c !== 41), hp: h ? (h.cross ? "x" + (h.angle % 90 ? "45" : "0") : String(h.angle ?? 45)) : "45", hs: h?.spacing_px });
-      const name = e?.title || String(ft.props?.["Вид зоны"] || "зона ограничений");
-      if (!zk.has(name)) zk.set(name, { kind: "fill", fill: ft.fill || undefined, hatch: ft.hatch, hatch_color: ft.fill, angle: h?.angle ?? 45, spacing: h?.spacing_mm ? h.spacing_mm * .5 : 1,
-        stroke: ft.stroke, width: .3, dash: (e?.dash_mm || [3, 1]).map(v => v * .5), label: name.toLowerCase() });
-    }));
+    ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => { const l = L(key); if (!l) return;
+      l.features = l.features.filter(inFrame).map(ft => {
+        const c = zouitCode(key, ft.props || {}), lt = c != null ? Linetypes.forCode(c, -1) : null;
+        const lines = safe(() => turf.polygonToLine(turf.rewind({ type: "Feature", geometry: ft.g, properties: {} })));
+        const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
+        if (!g) return null;
+        if (c != null && !zk.has(c)) zk.set(c, lt || null);
+        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: LGRC[c] || "#ff0000", w: 1.3 };
+      }).filter(Boolean); });
     const lgr = new Map();
     (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return; (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); }); });
     out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
@@ -359,9 +364,9 @@ function conceptSheet(out, sheet, bb) {
       ...((L("egko.water")?.features || []).some(inFrame) ? [{ title: "Природные объекты", items: [{ kind: "fill", fill: "#bfe0f5", stroke: "#bfe0f5", label: "водные объекты" }] }] : []),
       ...(seen.size ? [{ title: "Вид функционального использования участков территории",
         items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a", label: n })) }] : []),
-      ...(zk.size ? [{ title: "Зоны с особыми условиями использования территорий", items: [...zk.values()] }] : []),
-      ...(lgr.size ? [{ title: "Линии градостроительного регулирования, действующие",
-        items: [...lgr].sort((a, b) => a[0] - b[0]).map(([c, n]) => ({ kind: "lt", name: n, stroke: LGRC[c] || "#ff0000", label: LGRT[c] || n })) }] : [])];
+      ...(lgr.size || zk.size ? [{ title: "Линии градостроительного регулирования, действующие",
+        items: [...[...lgr].map(([c, n]) => [c, n, LGRT[c] || n]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
+          .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5), label: t })) }] : [])];
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой

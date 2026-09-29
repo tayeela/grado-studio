@@ -287,6 +287,12 @@ def _parts(g):
     return None, []
 
 
+# Рисунок типов линий ЛГР на листе — постоянный на бумаге при любом масштабе (как PSLTSCALE в AutoCAD): единица шаблона
+# REDLN97 = 0,25 мм, засечки границ зон — через 5 мм, как в образце «ГК Царицыно» (владелец 30.09.2026). Прежде шаблон
+# шёл в метрах местности, и в 1:10 000 граница зоны сливалась в сплошную линию.
+LT_MM = 0.25
+
+
 def linetype_ops(pts, name, k, color, width, lib):
     """Сложный тип линии AutoCAD (REDLN97) вдоль ломаной в мм листа; k — мм на метр чертежа.
     Короче двух длин шаблона — сплошная линия (правило AutoCAD, как на экране)."""
@@ -458,12 +464,12 @@ class SketchMapFrame(Frame):
                             pass                                    # линия не рисуется, только подпись (улицы на снимке)
                         elif f.get("lt"):
                             for name in f["lt"]:
-                                out.extend(linetype_ops(pts, name, k, color, max(w, 0.25), self.lib))
+                                out.extend(linetype_ops(pts, name, LT_MM, color, max(w, 0.25), self.lib))
                         elif f.get("miss"):
                             for code, _sign in f["miss"]:
                                 dash = self.lgr_dash.get(int(code))
                                 out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w, 0.25),
-                                            "dash": [d * k for d in dash] if dash else None, "rings": [pts]})
+                                            "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts]})
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
                         if f.get("label"):

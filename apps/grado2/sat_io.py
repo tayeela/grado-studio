@@ -26,7 +26,6 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from grado_connectors import crs
@@ -58,7 +57,7 @@ def _ctx():
 class YandexSat:
     """Тайлы спутника Яндекса: с диска (90 дней), иначе скачать с паузой; нет тайла — серое место."""
 
-    def __init__(self, cache_dir, pause=0.2, transport=None):
+    def __init__(self, cache_dir, pause=0.1, transport=None):
         self.cache_dir, self.pause = Path(cache_dir), pause
         self._ctx = None if transport else _ctx()
         self.transport = transport or self._get
@@ -112,7 +111,7 @@ def bbox_msk(bbox):
     return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
 
 
-def export_sat(frame, cache_dir, base="", progress=None, tiles=None, mpp=MPP, z=ZOOM, workers=3):
+def export_sat(frame, cache_dir, base="", progress=None, tiles=None, mpp=MPP, z=ZOOM):
     """frame — рамка в МСК; base — полный путь папки, куда распакуется архив (для путей в DXF). → zip (bytes)."""
     from PIL import Image
     x0, y0, x1, y1 = frame
@@ -136,8 +135,8 @@ def export_sat(frame, cache_dir, base="", progress=None, tiles=None, mpp=MPP, z=
         done[0] += 1
         if progress:
             progress(done[0], len(need))
-    with ThreadPoolExecutor(workers) as ex:              # три потока с паузой — как у векторных тайлов Яндекса
-        list(ex.map(get, need))
+    for t in need:                                           # по одному, с паузой: порталы не долбим (правило проекта)
+        get(t)
     cache, order = {}, []
 
     def tile(x, y):                                          # последние ~64 тайла держатся в памяти
