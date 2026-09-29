@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.78.0: sheet 5 coloured by the owner's ВРИ template; names off the territory boundary.** Owner:
+  «крась по вот этому шаблону и включи его в программу и запомни» (layer «plan_organiz_ex» of «ВРИ земельных
+  участков_RGB»), water still wrong, some names lie over the boundary. Both owner DXF templates are stored in
+  `docs/standards/albums/`. Land use now uses the template's 28 classes (`VRI_T`: colour, ВРИ codes) — a parcel's class
+  comes from the ВРИ code in its text (4.9.1.1 → 4.9.1 → 4.9), else from ordered words (`VRI_WORDS`; fixed traps:
+  «физкультурно» is sport not culture, «транспортировки» is not sport, Latin «C» in «Cадоводство», АЗС, gas). Water
+  is class 22 #336699; land without parcels: OSM forest/meadow → 18, fields → 25, the rest → 24 «отсутствие
+  хозяйственной деятельности». Legend «Виды разрешённого использования земельных участков, территорий» in template
+  order. Print: names of territories and villages avoid the territory boundary (`take(..., avoid)` with Liang–Barsky
+  segment test, padding by boundary width), nudged labels have a last try without it. Memory note written.
 - **2026-09-30, ГРАДО 2 v0.77.1: palette from «ВРИ земельных участков_RGB» first.** Owner sent the second DXF and said
   «ВРИ РГБ приоритет»; ИЖС and gardening are there. The file has coded functional zones (1001…7000) and a «ВРИ_NN» colouring;
   order of sources now: its coded zones, then its ВРИ_NN, then the «ЗИО сущ» legend. Changes: ИЖС #e5e57f (2001), gardening

@@ -221,6 +221,25 @@ def _straight_runs(pts, junction, tol=0.6):
     return out
 
 
+def _seg_box(p, q, box):
+    """Отрезок p–q (мм) задевает прямоугольник box (x0, y0, x1, y1): отсечение Лианга — Барски."""
+    (x0, y0), (x1, y1) = p, q
+    dx, dy, t0, t1 = x1 - x0, y1 - y0, 0.0, 1.0
+    for pp, qq in ((-dx, x0 - box[0]), (dx, box[2] - x0), (-dy, y0 - box[1]), (dy, box[3] - y0)):
+        if pp == 0:
+            if qq < 0:
+                return False
+            continue
+        r = qq / pp
+        if pp < 0:
+            t0 = max(t0, r)
+        else:
+            t1 = min(t1, r)
+        if t0 > t1:
+            return False
+    return True
+
+
 def _in_ring(x, y, ring):
     inside = False
     for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
@@ -524,8 +543,19 @@ class SketchMapFrame(Frame):
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
+        # граница территории — препятствие для названий территорий и деревень (правила подписей, владелец 30.09.2026)
+        tsegs, tpad = [], float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2 + 0.4
+        if sh.get("territory") and not sh.get("terrPoint"):
+            for poly in _parts(sh["territory"])[1]:
+                for r in poly:
+                    pts = [tr.mm(*p[:2]) for p in r]
+                    tsegs.extend(zip(pts, pts[1:]))
 
-        def take(box):
+        def take(box, avoid=False):
+            if avoid and tsegs:
+                b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
+                if any(_seg_box(p, q, b) for p, q in tsegs):
+                    return False
             cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
                      for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
             if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
@@ -556,9 +586,12 @@ class SketchMapFrame(Frame):
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
             # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём; подпись — целиком в рамке
-            for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4)) if pf.get("nudge") else ((0, 0),):
+            # сдвигаемые подписи (номера, деревни) обходят границу территории; последняя попытка — без этого условия
+            moves = [(dx, dy, True) for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4),
+                                                   (0, -8), (0, 8), (-10, 0), (10, 0))] + [(0, 0, False)] if pf.get("nudge") else [(0, 0, False)]
+            for dx, dy, av in moves:
                 if (x + dx - ex >= rx and x + dx + ex <= rx + rw and y + dy - ey >= ry and y + dy + ey <= ry + rh
-                        and take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey))):
+                        and take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey), avoid=av)):
                     x, y = x + dx, y + dy
                     break
             else:
@@ -626,7 +659,7 @@ class SketchMapFrame(Frame):
                 cy = min(max(y + dy, ry + up + 1), ry + rh - down - 1)
                 if ring and n < len(steps) and not _in_ring(cx, cy, ring):
                     continue
-                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down)):
+                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down), avoid=n < len(steps)):   # последняя попытка — как есть
                     spot = (cx, cy)
                     break
             if not spot:
