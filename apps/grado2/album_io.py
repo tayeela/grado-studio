@@ -285,28 +285,31 @@ class ConceptColumnFrame(Frame):
         tbl = sh.get("gpTable")
         if tbl and tbl.get("rows") and not full:
             yy += 5
-            out.append(_text(x, yy, 12.3, tbl.get("title", ""), INK, "sans-bold"))
-            yy += 5
+            for line in _wrap_mm(tbl.get("title", ""), "sans-bold", S12, w):     # длинный заголовок — в несколько строк
+                out.append(_text(x, yy, 12.3, line, INK, "sans-bold"))
+                yy += 5
+            fs = float(tbl.get("fs", 10))                                    # кегль таблицы: у широких — мельче
+            T10, lh_ = fs * PT, fs * .42
             widths = [w * c for c in tbl.get("widths", [.2, .2, .28, .32])]
-            heads = [_wrap_mm(c, "sans-bold", S10, cw - 2) for c, cw in zip(tbl["cols"], widths)]
-            hh = max(len(t) for t in heads) * 4.2 + 3
+            heads = [_wrap_mm(c, "sans-bold", T10, cw - 2) for c, cw in zip(tbl["cols"], widths)]
+            hh = max(len(t) for t in heads) * lh_ + 3
             out.append({"op": "path", "closed": True, "fill": (0.9, 0.9, 0.9), "stroke": None, "width": 0, "dash": None,
                         "rings": [[(x, yy), (x + w, yy), (x + w, yy + hh), (x, yy + hh)]]})
             cx = x
             for t, cw in zip(heads, widths):
                 for i, line in enumerate(t):
-                    out.append(_text(cx + cw / 2, yy + 1.5 + S10 * .8 + i * 4.2 + (hh - 3 - len(t) * 4.2) / 2, 10, line, INK2, "sans-bold", "middle"))
+                    out.append(_text(cx + cw / 2, yy + 1.5 + T10 * .8 + i * lh_ + (hh - 3 - len(t) * lh_) / 2, fs, line, INK2, "sans-bold", "middle"))
                 cx += cw
             yy += hh + 2
             for row in tbl["rows"]:
-                cells = [_wrap_mm(v, "sans", S10, cw - 2) for v, cw in zip(row, widths)]
-                rh = max(len(c) for c in cells) * 4.2 + 2
+                cells = [_wrap_mm(v, "sans", T10, cw - 2) for v, cw in zip(row, widths)]
+                rh = max(len(c) for c in cells) * lh_ + 2
                 if yy + rh > bottom:
                     break
                 cx = x
                 for c, cw in zip(cells, widths):
                     for i, line in enumerate(c):
-                        out.append(_text(cx + cw / 2, yy + S10 * .8 + i * 4.2 + (rh - 2 - len(c) * 4.2) / 2, 10, line, INK2, "sans", "middle"))
+                        out.append(_text(cx + cw / 2, yy + T10 * .8 + i * lh_ + (rh - 2 - len(c) * lh_) / 2, fs, line, INK2, "sans", "middle"))
                     cx += cw
                 yy += rh
         for blk in sh.get("cLists") or []:

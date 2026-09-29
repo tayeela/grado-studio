@@ -250,7 +250,10 @@ function conceptDocs(out, bb, groups) {
     const items = docs.map(d => {
       const n = String(++no), color = g.color || C_PALETTE[pi++ % C_PALETTE.length];
       d.fts.forEach(ft => { ft.fill = color; ft.stroke = color; });
-      pts.push({ g: d.at.geometry, nm: true, nudge: true, label: n, ls: 10, lf: "sans-bold", lh: .8, lcol: "#141414" });
+      // номер — 5 мм; внутри документа, если помещается, иначе рядом с выноской к нему (владелец 30.09.2026: цифры огромные
+      // и непонятно, к чему относятся)
+      const k2 = 1000 / (out.scale || 2000), big = m2(safe(() => inter(d.f, box)) || d.f) * k2 * k2 > 5 * 5 * n.length * 8;
+      pts.push({ g: d.at.geometry, nodot: true, leader: true, inside: big, label: n, ls: 5, lf: "sans-bold", lh: .6, lcol: "#141414" });
       return { text: `${n}. ${g.text(d.f.properties, d)}`, color };
     });
     lists.push({ title: g.title, items });
@@ -562,11 +565,15 @@ function conceptSheet(out, sheet, bb) {
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой
+    // цвета — основная (насыщенная) палитра Эталона Генплана, без прозрачности, как на официальной «Карте функциональных
+    // зон» и в «ГК Царицыно»; пастель Новой Москвы — только для рабочей карты (владелец 30.09.2026: «цвета блеклые»)
+    const gpFill = name => GPZ[String(name || "").toLowerCase()]?.fill;
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
+      const f0 = gpFill(ft.props?.["Вид зоны"] || ft.props?.naimfunkzony || ft.props?.naimfunkzo); if (f0) ft.fill = f0; ft.a = 1;
       const c = String(ft.fill || "#888888").replace("#", ""), [r, g, b] = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
       if (.3 * r + .59 * g + .11 * b > .62) Object.assign(ft, { lcol: "#3a3a3a", lhc: "#ffffff", lh: .45 }); }));
     const zones = out.legend.filter(g => /функц/i.test(g.title)).flatMap(g => g.items);
-    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => ({ kind: "fill", fill: it.fill, stroke: it.stroke || it.fill, a: it.a ?? 1, label: String(it.label).toLowerCase() })),
+    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => ({ kind: "fill", fill: gpFill(it.label) || it.fill, stroke: "#3c3c3c", a: 1, label: String(it.label).toLowerCase() })),
       { kind: "text", sample: "10", family: "sans", underline: true, label: "номера функциональных зон" },
       { kind: "text", sample: "500", family: "sans-bold", label: "индексы функциональных зон" }] }];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры",
@@ -607,13 +614,20 @@ function conceptSheet(out, sheet, bb) {
         ["Площадь (га)", fmt((+p["Площадь участка, м²"] || m2(f)) / 1e4, 4)], ["Вид разрешённого использования", p["ВРИ"] || "—"],
         ["Форма собственности", String(p["Форма собственности"] || p["Вид права"] || "—").toLowerCase()]] });
       const at = safe(() => turf.pointOnFeature(x));
-      if (at) marks.push({ g: at.geometry, nodot: true, label: `Кадастровый номер\n${kn}`, ls: 3.2, lf: "sans-bold", lcol: "#231f20", lbox: true });
+      // все участки территории — с выноской к участку (владелец 30.09.2026: «непонятно, где ещё 7 участков»)
+      if (at) marks.push({ g: at.geometry, nodot: true, leader: true, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 900,
+        label: `Кадастровый номер\n${kn}`, ls: 3.2, lf: "sans-bold", lcol: "#231f20", lbox: true });
     });
     pl && out.layers.push({ title: "Кадастровые номера", features: marks });
     // участки территории пронумерованы, как в примере «Хатминки», — номер в карточке, на карте не показывается
     // (владелец 30.09.2026: «пронумеруй, но не отображай»); порядок — от большего участка к меньшему
     cards.sort((a, b) => b.area - a.area);
-    out.cCards = { title: "Сведения о земельных участках в границах территории рассмотрения", items: cards.map((c, i) => [["Участок", "№" + (i + 1)], ...c.rows]) };
+    // все участки — одной таблицей (карточки не помещались); номер — только в таблице, на схеме — кадастровый номер
+    const val = (c, k) => (c.rows.find(r => r[0] === k) || [, "—"])[1];
+    out.gpTable = { title: "Сведения о земельных участках в границах территории рассмотрения",
+      cols: ["№", "Кадастровый номер", "Площадь, га", "Вид разрешённого использования", "Форма собственности"], widths: [.06, .27, .13, .33, .21], fs: 8,
+      rows: cards.map((c, i) => [String(i + 1), val(c, "Кадастровый номер"), val(c, "Площадь (га)"), val(c, "Вид разрешённого использования"), val(c, "Форма собственности")]) };
+    out.veil = .35;                                             // белая дымка на снимке — границы участков не сливаются
     out.cLegend = [{ title: "Границы", items: [terr,
       { kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" },
       { kind: "line", stroke: "#0000ff", width: .7, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" }] }];

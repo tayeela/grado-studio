@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.82.0: sheets 6–9 after the owner's review.** Sheet 6: colours were the Новая Москва pastel at 80 %;
+  now the base (saturated) Эталон Генплана palette at 100 %, map and legend (`GPZ` by zone name). Sheets 7–8: document numbers
+  5 mm (were 10) with leader callouts — inside the document when it fits, otherwise placed around it (radii 9–32 mm, 16
+  directions) with a thin line and a dot on the document (new `leader`/`inside` in the label loop of print). Sheet 9: every
+  parcel of the territory has its cadastral plate with a leader; all parcels in one table (№, cadastral number, area, ВРИ,
+  ownership; `gpTable` gets `fs`, wrapped title) instead of cards; a 35 % white veil over the satellite (`veil`). Rules first.
 - **2026-09-30, ГРАДО 2 v0.81.2: no mask on the documentation sheets.** Comparing sheets 6–9 with «ГК Царицыно»: documents
   on sheets 7–8 lie almost all outside the territory and faded under the mask; neither sample masks these sheets. Owner
   chose: mask only on sheets 4 and 5.

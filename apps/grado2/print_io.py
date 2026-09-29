@@ -460,6 +460,10 @@ class SketchMapFrame(Frame):
             kind = sh["basemap"]
             get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
             out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+            if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
+                fx, fy, fw, fh = rect
+                out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
+                            "dash": None, "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]]})
         egko = getattr(self.tiles, "egko", None)
         if sh.get("mask") and egko:
             out.append({"op": "layer", "name": "Картооснова ЕГКО"})
@@ -694,8 +698,12 @@ class SketchMapFrame(Frame):
             up, down = ls * 1.0, ls * .3 + (len(lines) - 1) * lh              # коробка подписи: y − up … y + down
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 if ring else [])
+            ax, ay = x, y + (len(lines) - 1) * lh / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
+            if f.get("leader"):                                             # выноска: подпись рядом, тонкая линия к объекту
+                steps = ([(0, 0)] if f.get("inside") else []) + [(r * math.cos(a), r * math.sin(a)) for r in (9, 13, 18, 24, 32)
+                                                                  for a in [k * math.pi / 8 for k in (14, 2, 10, 6, 15, 1, 9, 7, 12, 4, 13, 3, 11, 5, 0, 8)]]
             spot = None
-            for n, (dx, dy) in enumerate(steps + ([(0, 0)] if ring else [])):   # последняя попытка — центр, даже вне контура
+            for n, (dx, dy) in enumerate(steps + ([(0, 0)] if ring or f.get("leader") else [])):   # последняя попытка — на месте
                 cx = min(max(x + dx, rx + bw / 2 + 1), rx + rw - bw / 2 - 1)
                 cy = min(max(y + dy, ry + up + 1), ry + rh - down - 1)
                 if ring and n < len(steps) and not _in_ring(cx, cy, ring):
@@ -711,6 +719,19 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
             if f.get("lhc"):
                 extra["halo_color"] = hex_to_rgb(f["lhc"])
+            if f.get("leader") and math.hypot(x - ax, y - ay) > ls:           # линия от края подписи к объекту и точка на объекте
+                pad = ls * .45 if f.get("lbox") else ls * .15
+                x0b, x1b = x - bw / 2 - pad, x + bw / 2 + pad
+                y0b, y1b = y - up - pad * .6, y + down + pad * .6
+                vx, vy = ax - x, ay - y
+                t = min([v for v in ((x1b - x) / vx if vx > 0 else (x0b - x) / vx if vx < 0 else 9e9,
+                                     (y1b - y) / vy if vy > 0 else (y0b - y) / vy if vy < 0 else 9e9) if v > 0] or [0])
+                lc = hex_to_rgb(f.get("lcol") or "#231f20")
+                out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.7, "dash": None,
+                            "rings": [[(x + vx * t, y + vy * t), (ax, ay)]]})
+                out.append({"op": "path", "closed": False, "fill": None, "stroke": lc, "width": 0.25, "dash": None,
+                            "rings": [[(x + vx * t, y + vy * t), (ax, ay)]]})
+                out.append({"op": "circle", "x": ax, "y": ay, "r": 0.6, "fill": lc, "stroke": (1, 1, 1), "width": 0.2})
             if f.get("lbox"):
                 pad = ls * .45
                 top = y - ls - pad * .6
