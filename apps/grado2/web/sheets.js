@@ -353,18 +353,30 @@ async function albumFile(kind = "pdf") {
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`);
   } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); }
 }
-// спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS): архив с DXF, JPG и JGW
-async function satFile(i) {
-  const sh = ALBUM.sheets[i], s = albumSpec([sh]).sheets[0];
-  const req = s.rect && s.center ? { center: s.center, rect: s.rect, scale: s.scale } : { bbox: frameBox(sh) };
+// спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF
+// сразу, только если путь к нему полный: папку загрузок браузера программа спрашивает один раз, архив называется
+// уникально (sputnik_<лист>_<время>), и двойной щелчок по нему в папке загрузок распаковывает его ровно туда
+function dlDir(ask) {
+  let d = ""; try { d = localStorage.getItem("grado2.dlDir") || ""; } catch { }
+  if (!d || ask) {
+    const v = prompt("Папка, куда браузер сохраняет скачанные файлы — полный путь (один раз). Например: /Users/имя/Downloads", d || "/Users/");
+    if (!v) return null; d = v.trim().replace(/[\\/]+$/, ""); try { localStorage.setItem("grado2.dlDir", d); } catch { }
+  }
+  return d;
+}
+async function satFile(i, ask) {
+  const sh = ALBUM.sheets[i], s = albumSpec([sh]).sheets[0], dir = dlDir(ask); if (!dir) return;
+  const t = new Date(), p2 = n => String(n).padStart(2, "0");
+  const stem = `sputnik_${i + 1}_${t.getFullYear()}${p2(t.getMonth() + 1)}${p2(t.getDate())}-${p2(t.getHours())}${p2(t.getMinutes())}${p2(t.getSeconds())}`;
+  const req = { ...(s.rect && s.center ? { center: s.center, rect: s.rect, scale: s.scale } : { bbox: frameBox(sh) }), base: dir + "/" + stem };
   busy(true); window.setHint?.("Спутник Яндекса: скачиваются снимки рамки листа.");
-  const poll = setInterval(async () => { try { const p = (await api("/api/progress")).sat; if (p) window.setHint?.(`Спутник Яндекса: снимки ${p.got} из ${p.total}. Первая выгрузка идёт с паузами, повтор берётся с диска.`); } catch { } }, 1000);
+  const poll = setInterval(async () => { try { const p = (await api("/api/progress")).sat; if (p) window.setHint?.(`Спутник Яндекса: снимки ${p.got} из ${p.total}. Первая выгрузка идёт минуты, повтор берётся с диска.`); } catch { } }, 1000);
   try {
     const r = await fetch("/api/export/sat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(req) });
     if (!r.ok) throw new Error((await r.json()).error);
-    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = `Спутник Яндекса — ${sh.title || "лист " + (i + 1)}.zip`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("Спутник Яндекса в МСК: распакуйте архив в одну папку, откройте в AutoCAD sputnik_yandex.dxf (там рамка снимка), команда SCRIPT → sputnik_yandex.scr — снимок встанет на своё место. Только для работы, в сдаваемые материалы не включать.");
-  } catch (e) { toast("Снимок не собран: " + (/too large|too many/.test(e.message) ? "рамка слишком велика для подробного снимка" : e.message)); }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = stem + ".zip"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`Спутник Яндекса в МСК: ${stem}.zip. Распакуйте его двойным щелчком в папке загрузок (${dir}) и откройте sputnik_yandex.dxf — снимок уже на месте. Другая папка загрузок — Shift+щелчок по кнопке. Только для работы, в сдаваемые материалы не включать.`);
+  } catch (e) { toast("Снимок не собран: " + (/too large|too many/.test(e.message) ? "рамка слишком велика — не больше 6 × 6 км" : e.message)); }
   finally { clearInterval(poll); busy(false); window.setHint?.(""); }
 }
 function renderSheets() {
@@ -382,7 +394,7 @@ function renderSheets() {
         <td>${s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
         <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(s.scale && !SCALES.includes(s.scale) ? [s.scale, ...SCALES] : SCALES).map(v => `<option value="${v}" ${v === s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select></td>
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
-        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК: снимок JPG, сценарий AutoCAD, который вставляет его на своё место, рамка DXF и файл привязки JGW"><i data-lucide="satellite"></i></button>`}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
+        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
     + `<div class="pad row"><button class="btn" id="shAdd"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${v}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${SIZE_T[v]}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
@@ -409,7 +421,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt") window.buildAlbum?.("pptkrt");
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);
-  if (b.dataset.shsat) satFile(+b.dataset.shsat);
+  if (b.dataset.shsat) satFile(+b.dataset.shsat, e.shiftKey);
   if (b.dataset.shphoto) addPhotos(+b.dataset.shphoto);
   if (b.dataset.shphotox) { const i = +b.dataset.shphotox; if (confirmInline(b, `Убрать ${ALBUM.sheets[i].photos.length} снимков со слайда?`)) { ALBUM.sheets[i].photos = []; window.markDirty?.(); renderSheets(); } }
   if (b.dataset.shframe) { const i = +b.dataset.shframe; showFrame(FRAME?.i === i ? null : i); renderSheets(); }

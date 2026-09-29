@@ -5,8 +5,15 @@
 выходной растр режется на блоки, углы каждого блока пересчитываются МСК → WGS84 → 3395 → пиксели тайлов, и блок
 берётся из мозаики сеткой четырёхугольников (Pillow, Image.MESH) — ошибка меньше пикселя.
 
-Архив: sputnik_yandex.jpg + sputnik_yandex.jgw (файл привязки: МСК, метры) + sputnik_yandex.scr (сценарий AutoCAD:
-вставляет снимок командой -IMAGE на своё место) + sputnik_yandex.dxf (рамка снимка в МСК).
+Подробность: всегда z18 — самый подробный настоящий уровень Яндекса в Москве и области (~0,34 м на пиксель; z19 —
+растянутый z18, сверено 30.09.2026 у Вороново), выход — 0,3 м на пиксель. Большой лист режется на куски не больше
+4096 px: каждый кусок — свой JPEG со своим файлом привязки.
+
+Архив — одна папка <имя>/: куски sputnik_yandex_NN.jpg + .jgw (МСК, метры), sputnik_yandex.dxf (растры IMAGE на своих
+местах и рамка), sputnik_yandex.scr (запасной путь: вставка командой -IMAGE), README. AutoCAD показывает растр из DXF
+при открытии, только если путь к снимку полный (с относительным — «Unreferenced» до ручной перезагрузки, владелец
+30.09.2026; ezdxf discussions #845), поэтому в DXF пишется полный путь: папка загрузок браузера (её задаёт владелец
+один раз) / имя архива / файл — туда архив и распаковывается двойным щелчком.
 Снимки Яндекса — для работы и эскиза, в сдаваемые материалы не включать (как слои Яндекса, решение владельца).
 """
 
@@ -19,15 +26,19 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from grado_connectors import crs
-from grado_connectors.yandex_vmap import HALF, HEADERS, lonlat_to_3395, scale_3395
+from grado_connectors.yandex_vmap import HALF, HEADERS, lonlat_to_3395
 
 URL = "https://core-sat.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}&scale=1&lang=ru_RU"
 TTL = 90 * 24 * 3600
-MAX_PX = 80_000_000          # выходной снимок: 80 Мп (0,5 м/пикс — около 9 × 9 км)
-MAX_TILES = 4000
+ZOOM = 18
+MPP = 0.3                    # метров на пиксель выхода
+MAX_PX = 400_000_000         # весь снимок: 400 Мп (0,3 м/пикс — около 6 × 6 км)
+MAX_TILES = 12000
+CHUNK = 4096                 # кусок снимка, пикселей по стороне
 BLOCK = 256                  # блок пересборки, пикселей выхода
 NAME = "sputnik_yandex"
 
@@ -45,9 +56,9 @@ def _ctx():
 
 
 class YandexSat:
-    """Тайлы спутника Яндекса: с диска (90 дней), иначе по одному с паузой; нет тайла — серое место."""
+    """Тайлы спутника Яндекса: с диска (90 дней), иначе скачать с паузой; нет тайла — серое место."""
 
-    def __init__(self, cache_dir, pause=0.15, transport=None):
+    def __init__(self, cache_dir, pause=0.2, transport=None):
         self.cache_dir, self.pause = Path(cache_dir), pause
         self._ctx = None if transport else _ctx()
         self.transport = transport or self._get
@@ -101,28 +112,13 @@ def bbox_msk(bbox):
     return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
 
 
-def auto_mpp(frame, limit=25_000_000):
-    """Самый подробный пиксель из 0,5 / 1 / 2 / 4 м, при котором снимок не больше limit пикселей."""
-    area = (frame[2] - frame[0]) * (frame[3] - frame[1])
-    return next((m for m in (0.5, 1.0, 2.0, 4.0) if area / m / m <= limit), 4.0)
-
-
-def zoom_for(mpp, lat):
-    """Самый мелкий уровень тайлов, у которого пиксель на местности не крупнее mpp (не больше 19)."""
-    k = scale_3395(lonlat_to_3395(0, lat)[1])
-    z = math.ceil(math.log2(2 * HALF / 256 / (mpp * k)))
-    return max(10, min(19, z))
-
-
-def export_sat(frame, mpp, cache_dir, progress=None, tiles=None):
-    """frame — рамка в МСК, mpp — метров на пиксель выхода. → zip (bytes)."""
+def export_sat(frame, cache_dir, base="", progress=None, tiles=None, mpp=MPP, z=ZOOM, workers=3):
+    """frame — рамка в МСК; base — полный путь папки, куда распакуется архив (для путей в DXF). → zip (bytes)."""
     from PIL import Image
     x0, y0, x1, y1 = frame
     W, H = max(1, round((x1 - x0) / mpp)), max(1, round((y1 - y0) / mpp))
     if W * H > MAX_PX:
-        raise SatError(f"too large: {W}x{H} px; choose a coarser resolution")
-    lat = crs.msk_to_wgs84((x0 + x1) / 2, (y0 + y1) / 2)[1]
-    z = zoom_for(mpp, lat)
+        raise SatError(f"too large: {W}x{H} px")
     size = 2 * HALF / 2 ** z
     gp = lambda X, Y: (lambda m: ((m[0] + HALF) / size * 256, (HALF - m[1]) / size * 256))(lonlat_to_3395(*crs.msk_to_wgs84(X, Y)))
     # пиксели мозаики по краям рамки (с шагом — края в 3395 слегка изогнуты)
@@ -131,13 +127,17 @@ def export_sat(frame, mpp, cache_dir, progress=None, tiles=None):
     ty0, ty1 = int(min(p[1] for p in edge) // 256), int(max(p[1] for p in edge) // 256)
     need = [(x, y) for y in range(ty0, ty1 + 1) for x in range(tx0, tx1 + 1)]
     if len(need) > MAX_TILES:
-        raise SatError(f"too many tiles: {len(need)}; choose a coarser resolution")
+        raise SatError(f"too many tiles: {len(need)}")
     tiles = tiles or YandexSat(Path(cache_dir))
-    for i, (x, y) in enumerate(need):
-        tiles.ensure(z, x, y)
+    done = [0]
+
+    def get(t):
+        tiles.ensure(z, *t)
+        done[0] += 1
         if progress:
-            progress(i + 1, len(need))
-    out = Image.new("RGB", (W, H), (200, 200, 200))
+            progress(done[0], len(need))
+    with ThreadPoolExecutor(workers) as ex:              # три потока с паузой — как у векторных тайлов Яндекса
+        list(ex.map(get, need))
     cache, order = {}, []
 
     def tile(x, y):                                          # последние ~64 тайла держатся в памяти
@@ -152,68 +152,80 @@ def export_sat(frame, mpp, cache_dir, progress=None, tiles=None):
                 cache.pop(order.pop(0), None)
         return cache[(x, y)]
 
-    sub = BLOCK // 4                                         # четырёхугольник сетки — 64 пикселя выхода
-    for by in range(0, H, BLOCK):
-        for bx in range(0, W, BLOCK):
-            bw, bh = min(BLOCK, W - bx), min(BLOCK, H - by)
-            X = lambda px: x0 + (bx + px) * mpp
-            Y = lambda py: y1 - (by + py) * mpp
-            corners = [gp(X(px), Y(py)) for px in (0, bw) for py in (0, bh)]
-            mx0, my0 = int(min(c[0] for c in corners) // 256), int(min(c[1] for c in corners) // 256)
-            mx1, my1 = int(max(c[0] for c in corners) // 256), int(max(c[1] for c in corners) // 256)
-            mosaic = Image.new("RGB", ((mx1 - mx0 + 1) * 256, (my1 - my0 + 1) * 256), (200, 200, 200))
-            for ty in range(my0, my1 + 1):
-                for tx in range(mx0, mx1 + 1):
-                    t = tile(tx, ty)
-                    if t:
-                        mosaic.paste(t, ((tx - mx0) * 256, (ty - my0) * 256))
-            ox, oy = mx0 * 256, my0 * 256
-            mesh = []
-            for sy in range(0, bh, sub):
-                for sx in range(0, bw, sub):
-                    ex, ey = min(sx + sub, bw), min(sy + sub, bh)
-                    q = [gp(X(a), Y(b)) for a, b in ((sx, sy), (sx, ey), (ex, ey), (ex, sy))]   # NW, SW, SE, NE — порядок MESH
-                    mesh.append(((sx, sy, ex, ey), tuple(v for c in q for v in (c[0] - ox, c[1] - oy))))
-            out.paste(mosaic.transform((bw, bh), Image.MESH, mesh, Image.BILINEAR), (bx, by))
-    jpg = io.BytesIO()
-    out.save(jpg, "JPEG", quality=88, optimize=True)
-    return _package(jpg.getvalue(), frame, mpp, W, H, z)
+    def render(cx, cy, cw, ch):                              # кусок снимка: пиксели выхода cx…cx+cw, cy…cy+ch
+        out = Image.new("RGB", (cw, ch), (200, 200, 200))
+        sub = BLOCK // 4
+        for by in range(0, ch, BLOCK):
+            for bx in range(0, cw, BLOCK):
+                bw, bh = min(BLOCK, cw - bx), min(BLOCK, ch - by)
+                X = lambda px: x0 + (cx + bx + px) * mpp
+                Y = lambda py: y1 - (cy + by + py) * mpp
+                corners = [gp(X(px), Y(py)) for px in (0, bw) for py in (0, bh)]
+                mx0, my0 = int(min(c[0] for c in corners) // 256), int(min(c[1] for c in corners) // 256)
+                mx1, my1 = int(max(c[0] for c in corners) // 256), int(max(c[1] for c in corners) // 256)
+                mosaic = Image.new("RGB", ((mx1 - mx0 + 1) * 256, (my1 - my0 + 1) * 256), (200, 200, 200))
+                for ty in range(my0, my1 + 1):
+                    for tx in range(mx0, mx1 + 1):
+                        t = tile(tx, ty)
+                        if t:
+                            mosaic.paste(t, ((tx - mx0) * 256, (ty - my0) * 256))
+                ox, oy, mesh = mx0 * 256, my0 * 256, []
+                for sy in range(0, bh, sub):
+                    for sx in range(0, bw, sub):
+                        ex_, ey = min(sx + sub, bw), min(sy + sub, bh)
+                        q = [gp(X(a), Y(b)) for a, b in ((sx, sy), (sx, ey), (ex_, ey), (ex_, sy))]   # NW, SW, SE, NE — порядок MESH
+                        mesh.append(((sx, sy, ex_, ey), tuple(v for c in q for v in (c[0] - ox, c[1] - oy))))
+                out.paste(mosaic.transform((bw, bh), Image.MESH, mesh, Image.BILINEAR), (bx, by))
+        buf = io.BytesIO()
+        out.save(buf, "JPEG", quality=90)
+        return buf.getvalue()
+
+    # куски: слева направо, сверху вниз; у каждого — рамка в МСК (левый нижний угол и размер)
+    parts = []
+    for cy in range(0, H, CHUNK):
+        for cx in range(0, W, CHUNK):
+            cw, ch = min(CHUNK, W - cx), min(CHUNK, H - cy)
+            parts.append({"jpg": render(cx, cy, cw, ch), "x": x0 + cx * mpp, "y": y1 - (cy + ch) * mpp, "w": cw, "h": ch})
+    return _package(parts, frame, mpp, W, H, z, base)
 
 
-def _package(jpg, frame, mpp, W, H, z):
-    """Архив для AutoCAD. Растр IMAGE прямо в DXF AutoCAD 2025 (Mac) отбрасывает при открытии (владелец 30.09.2026:
-    снимок «Unreferenced», Reload не помог), поэтому снимок вставляет штатная команда -IMAGE из сценария .scr:
-    точка вставки — левый нижний угол рамки в МСК, масштаб — ширина снимка в метрах (у JPEG без разрешения базовая
-    ширина — 1 единица). В DXF — только рамка снимка, чтобы ZOOM E сразу показал место."""
+def _package(parts, frame, mpp, W, H, z, base=""):
+    """Архив для AutoCAD: одна папка с кусками снимка, DXF (растры на местах, полный путь base/<файл>), сценарий .scr."""
     import ezdxf
     import dxf_io
     x0, y0, x1, y1 = frame
-    w, h = W * mpp, H * mpp
-    jgw = f"{mpp:.6f}\n0.0\n0.0\n{-mpp:.6f}\n{x0 + mpp / 2:.4f}\n{y1 - mpp / 2:.4f}\n"
-    # сценарий: каждая строка — ответ на запрос команды; имя снимка без пробелов, путь — папка текущего чертежа
-    scr = (f"-IMAGE\nA\n{NAME}.jpg\n{x0:.3f},{y0:.3f}\n{w:.3f}\n0\nZOOM\nE\n")
+    folder = Path(base).name if base else NAME
+    names = [f"{NAME}_{i + 1:02d}.jpg" if len(parts) > 1 else f"{NAME}.jpg" for i in range(len(parts))]
     doc = ezdxf.new("R2018")
-    layer = dxf_io.acad_name("Рамка снимка Яндекса")
-    doc.layers.add(layer, color=1)
-    doc.modelspace().add_lwpolyline([(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)], close=True, dxfattribs={"layer": layer})
+    doc.header["$PROJECTNAME"] = ""                        # искать снимки сначала в папке чертежа
+    lay_img, lay_fr = dxf_io.acad_name("Спутник Яндекс"), dxf_io.acad_name("Рамка снимка Яндекса")
+    doc.layers.add(lay_img)
+    doc.layers.add(lay_fr, color=1)
+    msp = doc.modelspace()
+    scr = []
+    for n, p in zip(names, parts):
+        w, h = p["w"] * mpp, p["h"] * mpp
+        img = doc.add_image_def(filename=(base.rstrip("/\\") + "/" + n) if base else n, size_in_pixel=(p["w"], p["h"]))
+        msp.add_image(img, insert=(p["x"], p["y"]), size_in_units=(w, h), rotation=0, dxfattribs={"layer": lay_img})
+        scr += ["-IMAGE", "A", n, f"{p['x']:.3f},{p['y']:.3f}", f"{w:.3f}", "0"]
+    msp.add_lwpolyline([(x0, y0), (x1, y0), (x1, y1), (x0, y1)], close=True, dxfattribs={"layer": lay_fr})
     dxf_io.fit_view(doc)
     buf = io.StringIO()
     doc.write(buf)
-    dxf = buf.getvalue().encode("utf-8")
     out = io.BytesIO()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{NAME}.jpg", jpg)
-        zf.writestr(f"{NAME}.jgw", jgw)
-        zf.writestr(f"{NAME}.dxf", dxf)
-        zf.writestr(f"{NAME}.scr", scr.encode("utf-8"))
-        zf.writestr("README.txt", (
+        for n, p in zip(names, parts):
+            zf.writestr(f"{folder}/{n}", p["jpg"])
+            zf.writestr(f"{folder}/{n[:-4]}.jgw", f"{mpp:.6f}\n0.0\n0.0\n{-mpp:.6f}\n{p['x'] + mpp / 2:.4f}\n{p['y'] + p['h'] * mpp - mpp / 2:.4f}\n")
+        zf.writestr(f"{folder}/{NAME}.dxf", buf.getvalue().encode("utf-8"))
+        zf.writestr(f"{folder}/{NAME}.scr", ("\n".join(scr + ["ZOOM", "E"]) + "\n").encode("utf-8"))
+        zf.writestr(f"{folder}/README.txt", (
             "Yandex satellite image of the sheet frame, resampled to MSK (QGIS custom CRS 'MSK': +proj=tmerc +lat_0=55.66666666667 "
             "+lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel), metres.\n"
-            f"Pixel {mpp} m, {W} x {H} px, Yandex tiles z{z}. Frame: X {x0:.2f}..{x0 + w:.2f}, Y {y0:.2f}..{y0 + h:.2f}.\n\n"
-            "AutoCAD, quick way: unzip everything into one folder, open sputnik_yandex.dxf from it (it holds the red frame of the "
-            "image), run command SCRIPT and choose sputnik_yandex.scr - the image is attached in place.\n"
-            "In your own drawing: save it into this folder first and run the same script, or attach by hand: IMAGEATTACH, "
-            f"file sputnik_yandex.jpg, insertion point X {x0:.3f} Y {y0:.3f}, scale {w:.3f}, rotation 0.\n"
-            "QGIS and AutoCAD Map 3D read the world file sputnik_yandex.jgw.\n"
+            f"Pixel {mpp} m, {W} x {H} px in {len(parts)} piece(s), Yandex tiles z{z}. Frame: X {x0:.2f}..{x1:.2f}, Y {y0:.2f}..{y1:.2f}.\n\n"
+            f"AutoCAD: open {NAME}.dxf - the images are linked by full path{(' ' + base) if base else ''}; unzip the archive "
+            "exactly there (double click in the downloads folder does it).\n"
+            f"If the images show as not found: run command SCRIPT with {NAME}.scr while {NAME}.dxf is open.\n"
+            "QGIS and AutoCAD Map 3D read the world files .jgw.\n"
             "For working drawings only; not for submitted materials.\n").encode("utf-8"))
     return out.getvalue()

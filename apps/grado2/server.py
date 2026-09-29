@@ -4,7 +4,7 @@
   POST /api/fetch  {bbox:[w,s,e,n], sources:[ключ,...]} → реальные слои по области
   POST /api/tep    {terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2} → ТЭП (методика КРТ)
   POST /api/import/files {files:[{name, b64}]} → слои из GeoJSON, KML/KMZ, Shapefile, DXF (WGS84)
-  POST /api/export/sat {center, rect, scale | bbox, mpp?} → спутник Яндекса по рамке листа в МСК для AutoCAD (zip: JPG, JGW, DXF)
+  POST /api/export/sat {center, rect, scale | bbox, base} → спутник Яндекса по рамке листа в МСК для AutoCAD (zip: JPG, JGW, DXF)
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
@@ -1160,9 +1160,9 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     frame = (sat_io.frame_msk(req["center"], req["rect"], float(req["scale"])) if req.get("rect")
                              else sat_io.bbox_msk(req["bbox"]))
-                    mpp = min(5.0, max(0.25, float(req["mpp"]))) if req.get("mpp") else sat_io.auto_mpp(frame)
                     prog = lambda got, total: PROGRESS.__setitem__("sat", {"title": "Спутник Яндекса", "got": got, "total": total, "stage": "tiles"})
-                    body = sat_io.export_sat(frame, mpp, CACHE / "tiles" / "yandex-sat", prog)
+                    base = str(req.get("base") or "")[:400]      # полный путь папки распаковки на компьютере владельца
+                    body = sat_io.export_sat(frame, CACHE / "tiles" / "yandex-sat", base, prog)
                 except (KeyError, TypeError, ValueError) as e:
                     return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
                 finally:

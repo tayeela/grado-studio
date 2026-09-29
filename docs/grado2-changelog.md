@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.72.0: satellite for AutoCAD in full detail and without extra steps.** Owner: the script worked,
+  but «разрешение плохое» and everything must load automatically. Detail: always Yandex z18 (the finest real level
+  around Moscow, ~0.34 m; z19 is z18 stretched, checked near Вороново), output 0.3 m per pixel, cut into pieces of at
+  most 4096 px, each with its own world file; tiles in three threads with pauses (sheet 3, 4.2 × 2.5 km: 12 pieces,
+  40 MB, 2.5 min first time). Automatic: AutoCAD shows a DXF raster on opening only with a full path (relative →
+  «Unreferenced» until reload; ezdxf discussion #845), so the DXF links the pieces by full path «downloads folder /
+  archive name / file». The app asks the browser downloads folder once (Shift+click changes it), names the archive
+  uniquely (`sputnik_<sheet>_<time>`) with one folder inside, so a double click in the downloads folder unpacks it
+  exactly where the DXF looks. `$PROJECTNAME` is blank; the `-IMAGE` script stays as a fallback. Not yet confirmed in
+  AutoCAD by the owner.
 - **2026-09-30, ГРАДО 2 v0.71.1: satellite for AutoCAD placed by a script, not by an IMAGE entity in DXF.** Owner: AutoCAD
   2025 (Mac) opened `sputnik_yandex.dxf` with the image «Unreferenced», Reload did not help — AutoCAD dropped the IMAGE
   entity on load. The archive now has `sputnik_yandex.scr` (`-IMAGE` Attach, insertion point = lower-left frame corner
