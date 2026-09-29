@@ -460,10 +460,9 @@ function conceptSheet(out, sheet, bb) {
     // внутри береговой полосы — всё природные и озеленённые территории (владелец 30.09.2026), поверх участков
     (L("gisogd.zouit")?.features || []).forEach(ft => { if (ft.props?.["Вид зоны"] !== "Береговая полоса" || !/Polygon/.test(ft.g?.type)) return;
       const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, turf.bboxPolygon(bb))); if (part) put(part.geometry, NATURE_USE); });
-    // дороги и их территории — выше и в приоритете (владелец 30.09.2026: зелёные зоны перекрывали Калужское шоссе): белые
-    // участки дорог и белая полоса 6 м вокруг проезжей части — там, где участка под дорогой нет (мост через реку)
+    // участки, сформированные под дороги, — выше и в приоритете над зонами рек (владелец 30.09.2026); белым — только они,
+    // без выдуманных полос вокруг проезжей части (владелец 30.09.2026: «убери обводку у всех дорог»)
     roadLots.forEach(g => put(g, ROAD_USE));
-    roadPolys.forEach(x => { const b = safe(() => turf.buffer(x.f, 6, { units: "meters" })); if (b) put(b.geometry, ROAD_USE); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(ROAD_USE[0], ROAD_USE[1]);                         // территории улиц и дорог — белые, в легенде всегда
     if ((L("egko.water")?.features || []).some(inFrame)) seen.set(WATER_USE[0], WATER_USE[1]);   // вода — класс 22 шаблона

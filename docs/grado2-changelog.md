@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.79.1: no white band around roads.** Owner: «убери обводку у всех дорог, белым должны быть только
+  зоны, если для дороги сформирован земельный участок». The 6 m white buffer around the carriageway (v0.79.0) is removed;
+  only parcels formed for roads are white, above other fills.
 - **2026-09-30, ГРАДО 2 v0.79.0: no «no activity» fill, road corridor on top, white mask outside the territory.** Owner
   (with example «Хатминки», IRGA): no class 24 and no white spots, green zones still covered white road land, add an
   automatic semi-transparent white mask outside the territory. Default land without parcels/OSM is now class 18
