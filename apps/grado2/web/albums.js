@@ -95,8 +95,11 @@ const PPTKRT_C = [
     styles: { ...C_NAMES, ...C_STREETS("#ffffff"), ...C_WATER, ...C_WATER_VIS, "calc.uds_ya": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
       "egko.roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 }, "egko.buildings": C_PLAN["egko.buildings"] }, only: C_ONLY },
   { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
-    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
+    // ЗОУИТ и зоны ограничений ГИС ОГД — знаками Эталона ЛГР (оформление каждой зоны задаёт conceptSheet); белые — только УДС
+    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: 1, opacity: 0, label: "" },
+      "calc.uds_ya": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 }, "egko.roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
+      ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, ...C_WATER_VIS, "calc.uds_ya": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
@@ -126,12 +129,15 @@ const STREET_ABBR = [[W_("улица"), "ул."], [W_("проезд"), "пр-д"
 LABEL_FN.street = f => { let n = String(f.get("Название") || "").trim(); if (!n) return null;
   for (const [re, ab] of STREET_ABBR) if (re.test(n)) { n = n.replace(re, " ").replace(/\s+/g, " ").trim(); return ab === "ул." || ab === "пл." || ab === "просп." ? `${ab} ${n}` : `${n} ${ab}`; }
   return n; };
-LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim(); if (!n) return null;
-  const words = n.split(/\s+/), lines = [""]; words.forEach(w => { const l = lines.length - 1; if (lines[l] && (lines[l] + " " + w).length > 26) lines.push(w); else lines[l] = (lines[l] + " " + w).trim(); });
-  return lines.slice(0, 3).join("\n"); };
+// длинное название — в две строки примерно равной длины (владелец 30.09.2026), не больше двух
+LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim().replace(/\s+/g, " "); if (!n) return null;
+  const w = n.split(" "); if (n.length <= 14 || w.length < 2) return n;
+  let best = 1, d = Infinity;
+  for (let i = 1; i < w.length; i++) { const x = Math.abs(w.slice(0, i).join(" ").length - w.slice(i).join(" ").length); if (x < d) { d = x; best = i; } }
+  return w.slice(0, best).join(" ") + "\n" + w.slice(best).join(" "); };
 
 /* Вид функционального использования участков — по ВРИ участков ЕГРН (классификатор видов функционального
-   использования Москвы; цвета — как в легенде «ГК Царицыно»). Участок без понятного ВРИ не закрашивается. */
+   использования Москвы; цвета — как в легенде «ГК Царицыно»). Участок без понятного ВРИ и земля без участка — по OSM. */
 const LAND_USE = [
   ["территории автодорог, улиц, местных проездов", "#ffffff", /улично-дорожн|автомобильн[а-яё]* дорог|12\.0\.1|\b7\.2\b/i],
   ["территории внешнего транспорта", "#a59c98", /железнодорож|\b7\.[1345]\b|аэропорт|трубопровод/i],
@@ -150,6 +156,21 @@ const LAND_USE = [
   ["садоводческих и огороднических территорий", "#e3edc7", /садовод|огородн|дачн|\b13\.\d/i],
   ["природных и озеленённых территорий", "#cfe6c0", /рекреац|природн|озелен|лесн|парк|\b5\.0\b|\b9\.\d|12\.0\.2/i]];
 const landUseOf = p => { const v = String(p["ВРИ"] || p["Разрешенное использование"] || ""); return v ? LAND_USE.find(([, , re]) => re.test(v)) : null; };
+// земля без участка ЕГРН и участок с непонятным ВРИ — по землепользованию OSM (владелец 30.09.2026: белым только УДС)
+const OSM_USE = [[/^(farmland|farmyard|orchard|plant_nursery|greenhouse_horticulture|vineyard|animal_keeping)$/, "сельскохозяйственного использования"],
+  [/^(forest|wood|scrub|grassland|heath|meadow|grass|park|garden|recreation_ground|village_green|nature_reserve|cemetery)$/, "природных и озеленённых территорий"],
+  [/^allotments$/, "садоводческих и огороднических территорий"], [/^residential$/, "индивидуальной жилой застройки"],
+  [/^(industrial|quarry|landfill|brownfield|construction)$/, "производственного вида"], [/^(commercial|retail)$/, "торгово-бытового вида"],
+  [/^(garages|depot|storage)$/, "коммунально-складского вида"], [/^railway$/, "территории внешнего транспорта"], [/^religious$/, "культурно-просветительского вида"],
+  [/^education$/, "учебно-воспитательного вида"], [/^(pitch|playground)$/, "спортивного вида"]];
+const LAND_BASE = "природных и озеленённых территорий";           // всё, что не закрыто ни участком, ни OSM
+const osmUseOf = p => { for (const v of [p["Землепользование"], p["Природа"], p["Отдых"]]) { const hit = v && OSM_USE.find(([re]) => re.test(v)); if (hit) return LAND_USE.find(([n]) => n === hit[1]); } return null; };
+/* ЗОУИТ ГИС ОГД → код знака Эталона ЛГР (moscow_lgr.json); вид зоны без знака — красным пунктиром без штриховки */
+const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежная защитная полоса": 17, "Береговая полоса": 41, "Зона затопления": 22,
+  "Зона сильного подтопления": 64, "Зона умеренного подтопления": 65, "Зона слабого подтопления": 66, "Санитарно-защитная зона (ПЗЗ)": 5,
+  "Зона охраняемого объекта": 44, "Зона военного объекта": 30, "Охранная зона радиотехнического объекта": 31, "Охранная зона ООПТ": 19,
+  "Охранная зона объектов электроэнергетики": 32, "Охранная зона линий и сооружений связи": 34, "Особо охраняемая зелёная территория": 47 };
+const zouitCode = (key, p) => key === "gisogd.vodookhr" ? 16 : key === "gisogd.szz" ? (/расч/i.test(p["Вид зоны"] || "") ? 62 : /ориент/i.test(p["Вид зоны"] || "") ? 63 : 5) : ZOUIT_LGR[p["Вид зоны"]];
 
 const C_PALETTE = ["#f5a623", "#00c8e0", "#7b2d8e", "#f0503c", "#ff3fb4", "#2e9d4f", "#1565c0", "#8d6e63", "#ff8f00", "#00897b"];
 function conceptDocs(out, bb, groups) {
@@ -182,24 +203,45 @@ function conceptDocs(out, bb, groups) {
 }
 const docLine = p => [p.document_1 || "", p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ");
 
-/* Подписи рек и водоёмов (владелец 29.09.2026): одна на название, на самом большом водоёме этой реки рядом с её
+/* Подписи рек и водоёмов (владелец 29–30.09.2026): одна на название, на самом большом водоёме этой реки рядом с её
    подписями в ЕГКО (до 400 м; контур с другим названием не берётся, один контур — одно название). Пруд или озеро
-   подписывается по центру вдоль своей длины (главная ось контура), река — у подписи ЕГКО вдоль русла около неё.
-   Общие слова («пр.», «ручей») не подписываются. */
+   подписывается по центру вдоль своей длины (главная ось контура). Река — прямо на русле: центр подписи на средней
+   линии русла (середина поперечного сечения контура), поворот — по направлению русла в этом месте; узкая река без
+   контура — на линии тонкой реки ЕГКО. Общие слова («пр.», «ручей») не подписываются. */
 const WATER_GENERIC = /^(пр\.?|ручей|пруд|р\.|кан\.?|оз\.?|вдхр\.?)$/i;
 function waterLabels(out, bb) {
   const wl = out.layers.find(l => l.key === "egko.water_labels"); if (!wl) return;
   const box = turf.bboxPolygon(bb), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
-  const polys = (out.layers.find(l => l.key === "egko.water")?.features || []).filter(ft => /Polygon/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box)))
+  const water = (out.layers.find(l => l.key === "egko.water")?.features || []).filter(ft => safe(() => turf.booleanIntersects(ft.g, box)));
+  const polys = water.filter(ft => /Polygon/.test(ft.g?.type))
     .map(ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, pr = ft.props || {};
-      return { f, a: m2(f), v: turf.coordAll(f), name: String(pr["Название"] || "").trim(), river: /река|ручей|канал/i.test(pr["Вид"] || "") }; });
-  const kx = Math.cos(bb[1] * Math.PI / 180);
+      return { f, a: m2(f), v: turf.coordAll(f), b: turf.bbox(f), name: String(pr["Название"] || "").trim(), river: /река|ручей|канал/i.test(pr["Вид"] || "") }; });
+  const lines = water.filter(ft => /LineString/.test(ft.g?.type))
+    .flatMap(ft => turf.flatten({ type: "Feature", geometry: ft.g, properties: {} }).features.map(f => ({ f, v: f.geometry.coordinates, name: String(ft.props?.["Название"] || "").trim() })));
+  const kx = Math.cos(bb[1] * Math.PI / 180), mx = 111320 * kx, my = 110540, k = (out.scale || 2000) / 1000;
+  const norm = a => { if (a > 90) a -= 180; if (a <= -90) a += 180; return a; };
   const axis = pts => {                                        // главная ось облака точек: градусы против часовой от востока
     if (pts.length < 3) return 0;
-    let mx = 0, my = 0; pts.forEach(([x, y]) => { mx += x * kx; my += y; }); mx /= pts.length; my /= pts.length;
-    let sxx = 0, syy = 0, sxy = 0; pts.forEach(([x, y]) => { const dx = x * kx - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
-    let a = .5 * Math.atan2(2 * sxy, sxx - syy) * 180 / Math.PI; if (a > 90) a -= 180; if (a <= -90) a += 180; return a; };
+    let cx = 0, cy = 0; pts.forEach(([x, y]) => { cx += x * kx; cy += y; }); cx /= pts.length; cy /= pts.length;
+    let sxx = 0, syy = 0, sxy = 0; pts.forEach(([x, y]) => { const dx = x * kx - cx, dy = y - cy; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
+    return norm(.5 * Math.atan2(2 * sxy, sxx - syy) * 180 / Math.PI); };
   const dist = (pt, p) => safe(() => turf.booleanPointInPolygon(pt, p.f)) ? 0 : Math.min(...p.v.map(c => turf.distance(pt, c)));
+  // середина русла у точки c: поперечное сечение контура перпендикуляром к направлению a, отрезок воды ближе всего к c
+  const midChannel = (c, a, ps) => {
+    const r = a * Math.PI / 180, nx = -Math.sin(r), ny = Math.cos(r), R = 300;
+    const cut = turf.lineString([[c[0] - nx * R / mx, c[1] - ny * R / my], [c[0] + nx * R / mx, c[1] + ny * R / my]]);
+    let best = null;
+    ps.forEach(p => {
+      const ts = (safe(() => turf.lineIntersect(cut, p.f).features) || []).map(q => ((q.geometry.coordinates[0] - c[0]) * mx * nx + (q.geometry.coordinates[1] - c[1]) * my * ny))
+        .sort((x, y) => x - y);
+      for (let i = 0; i + 1 < ts.length; i++) {
+        const m = (ts[i] + ts[i + 1]) / 2, at = [c[0] + nx * m / mx, c[1] + ny * m / my];
+        if (ts[i + 1] - ts[i] < .5 || !safe(() => turf.booleanPointInPolygon(at, p.f))) continue;
+        const d = ts[i] <= 0 && ts[i + 1] >= 0 ? 0 : Math.min(Math.abs(ts[i]), Math.abs(ts[i + 1]));
+        if (!best || d < best.d) best = { d, at };
+      }
+    });
+    return best && best.d < 30 ? best.at : null; };
   const byName = new Map();
   wl.features.forEach(ft => { const t = String(ft.label || "").trim(); if (!t || WATER_GENERIC.test(t) || ft.g?.type !== "Point") return;
     (byName.get(t) || byName.set(t, []).get(t)).push(ft); });
@@ -210,7 +252,6 @@ function waterLabels(out, bb) {
   const roads = ["calc.uds_ya", "egko.roads"].flatMap(key => out.layers.find(l => l.key === key)?.features || [])
     .filter(ft => /Polygon/.test(ft.g?.type)).map(ft => ({ g: ft.g, b: turf.bbox(ft.g) }));
   turf.flatten(turf.polygonToLine(TERR)).features.forEach(l => roads.push({ g: l.geometry, b: turf.bbox(l) }));   // и границу территории
-  const mx = 111320 * kx, my = 110540, k = (out.scale || 2000) / 1000;
   const rect = (c, ang, text, ls) => {
     const L = text.length * .62 * ls * k / 2 + ls * k * .4, H = ls * .75 * k, a = ang * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a);
     const pts = [[-L, -H], [L, -H], [L, H], [-L, H]].map(([u, v]) => [c[0] + (u * ux - v * uy) / mx, c[1] + (u * uy + v * ux) / my]);
@@ -219,44 +260,43 @@ function waterLabels(out, bb) {
   const hits = r => { const b = turf.bbox(r);
     if (b[0] < bb[0] || b[2] > bb[2] || b[1] < bb[1] || b[3] > bb[3]) return Infinity;
     return roads.filter(x => !(x.b[2] < b[0] || x.b[0] > b[2] || x.b[3] < b[1] || x.b[1] > b[3]) && safe(() => turf.booleanIntersects(x.g, r))).length; };
+  // лучшее место на русле из списка мест [[x, y], угол]: меньше пересечений, при равенстве — ближе к территории
+  const pick = (spots, t, ls) => { let bestHit = Infinity, at = null, ang = 0;
+    spots.sort((x, y) => turf.distance(x[0], tc) - turf.distance(y[0], tc));
+    for (const [c, a] of spots) { const n = hits(rect(c, a, t, ls)); if (n < bestHit) { bestHit = n; at = turf.point(c); ang = a; } if (n === 0) break; }
+    return at && { at, ang }; };
+  const thin = (c, ls) => ls.filter(l => l.v.some(q => turf.distance(c, q) < .15));
   byName.forEach((fts, t) => {
-    const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates));
+    const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates)), ls = +fts[0].ls || 4.3;
     const inFrame = pts.filter(pt => inBox(pt.geometry.coordinates));
     const cand = polys.filter(p => !used.has(p) && (!p.name || p.name.toLowerCase() === base) && pts.some(pt => dist(pt, p) < .4));
-    let at = null, ang = 0;
+    let res = null;
     if (cand.length) {
       const best = cand.reduce((x, y) => y.a > x.a ? y : x), part = safe(() => inter(best.f, box)) || best.f;
       used.add(best);
       if (!best.river) {                                       // пруд, озеро — по центру, вдоль длины
-        const c = safe(() => turf.centerOfMass(part)); at = c && safe(() => turf.booleanPointInPolygon(c, part)) ? c : turf.pointOnFeature(part);
-        ang = axis(turf.coordAll(part));
-      } else {                                                 // река — вдоль русла, ближе к территории, не поперёк дорог
-        const rv = polys.filter(p => p.river && (p === best || (best.name && p.name === best.name))).flatMap(p => p.v).filter(inBox);
-        const step = Math.max(1, Math.ceil(rv.length / 120));
-        const spots = [...inFrame.filter(pt => dist(pt, best) < .15), ...rv.filter((_, i) => i % step === 0).map(c => turf.point(c))]
-          .sort((x, y) => turf.distance(x, tc) - turf.distance(y, tc));
-        const ls = +fts[0].ls || 4.3;
-        let bestHit = Infinity;
-        search: for (const pt of spots) {
-          const a = axis(rv.filter(c => turf.distance(pt, c) < .2)), r = a * Math.PI / 180, [x0, y0] = pt.geometry.coordinates;
-          for (const off of [0, 25, -25, 50, -50]) {           // вдоль русла, при нужде — чуть в сторону от него (м)
-            const c = [x0 - Math.sin(r) * off / mx, y0 + Math.cos(r) * off / my], n = hits(rect(c, a, t, ls));
-            if (n < bestHit) { bestHit = n; at = turf.point(c); ang = a; }
-            if (n === 0) break search;
-          }
-        }
-        if (!at) {                                             // места в рамке нет — у подписи ЕГКО
-          const own = inFrame.filter(pt => dist(pt, best) < .15);
-          at = own.length ? nearest(own) : turf.pointOnFeature(part);
-          ang = axis(rv.filter(c => turf.distance(at, c) < .2));
-        }
+        const c = safe(() => turf.centerOfMass(part));
+        res = { at: c && safe(() => turf.booleanPointInPolygon(c, part)) ? c : turf.pointOnFeature(part), ang: axis(turf.coordAll(part)) };
+      } else {                                                 // река — на середине русла, вдоль него
+        const ps = polys.filter(p => p.river && (p === best || (best.name && p.name === best.name)));
+        const rv = ps.flatMap(p => p.v).filter(inBox), step = Math.max(1, Math.ceil(rv.length / 120)), spots = [];
+        [...inFrame.map(pt => pt.geometry.coordinates), ...rv.filter((_, i) => i % step === 0)].forEach(c => {
+          const a = axis(rv.filter(q => turf.distance(c, q) < .2)), m = midChannel(c, a, ps);
+          if (m && inBox(m)) spots.push([m, a]); });
+        res = pick(spots, t, ls);
       }
-    } else if (inFrame.length) {
-      at = nearest(inFrame);
-      ang = axis(polys.flatMap(p => p.v).filter(c => turf.distance(at, c) < .2));
     }
-    if (ang < -60) ang += 180;                                 // почти вертикальная подпись читается снизу вверх
-    if (at) labels.push({ ...fts[0], g: at.geometry, la: ang, nudge: true });
+    if (!res) {                                                // узкая река — на линии тонкой реки ЕГКО рядом с подписью
+      const near = [...new Set(pts.flatMap(pt => thin(pt.geometry.coordinates, lines)))].filter(l => !l.name || l.name.toLowerCase() === base);
+      const rv = near.flatMap(l => l.v).filter(inBox), step = Math.max(1, Math.ceil(rv.length / 120));
+      res = pick(rv.filter((_, i) => i % step === 0).map(c => [c, axis(rv.filter(q => turf.distance(c, q) < .15))]), t, ls);
+    }
+    if (!res && inFrame.length) {                              // ни контура, ни линии — у подписи ЕГКО
+      const at = nearest(inFrame); res = { at, ang: axis(polys.flatMap(p => p.v).filter(c => turf.distance(at, c) < .2)) };
+    }
+    if (!res) return;
+    let ang = res.ang; if (ang < -60) ang += 180;              // почти вертикальная подпись читается снизу вверх
+    labels.push({ ...fts[0], g: res.at.geometry, la: ang, nudge: false });
   });
   wl.features = labels;
 }
@@ -291,17 +331,35 @@ function conceptSheet(out, sheet, bb) {
     out.legend = [];
   }
   if (k === "use") {
-    const pl = L("nspd.parcels"), use = [], seen = new Map();
-    (pl?.features || []).forEach(ft => { const u = ft.props && landUseOf(ft.props); if (!u || !inFrame(ft)) return;
-      use.push({ g: ft.g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); });
+    // снизу вверх: вся рамка — природные территории, поверх — землепользование OSM (крупные раньше мелких), поверх —
+    // участки ЕГРН по ВРИ; УДС белые сверху. Белых пятен, кроме улиц и дорог, нет (владелец 30.09.2026)
+    const pl = L("nspd.parcels"), use = [], seen = new Map(), base = LAND_USE.find(([n]) => n === LAND_BASE);
+    const put = (g, u) => { use.push({ g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); };
+    put(turf.bboxPolygon(bb).geometry, base);
+    (L("osm.landuse")?.features || []).filter(inFrame).map(ft => ({ ft, u: ft.props && osmUseOf(ft.props), a: m2({ type: "Feature", geometry: ft.g, properties: {} }) }))
+      .filter(x => x.u && /Polygon/.test(x.ft.g.type)).sort((x, y) => y.a - x.a).forEach(x => put(x.ft.g, x.u));
+    (pl?.features || []).forEach(ft => { const u = ft.props && landUseOf(ft.props); if (u && inFrame(ft)) put(ft.g, u); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
+    seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // УДС — белые, в легенде всегда
+    // ЗОУИТ — знаком Эталона ЛГР: контур цветом и штрихом знака, штриховка цветом, углом и шагом знака
+    const zk = new Map();
+    ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => (L(key)?.features || []).forEach(ft => {
+      if (!inFrame(ft)) { ft.w = 0; ft.fill = null; return; }
+      const c = zouitCode(key, ft.props || {}), e = LGRS[c], h = e?.hatch;
+      Object.assign(ft, { stroke: e?.stroke || "#ff0000", w: 1.4, dash: e ? e.dash_px || undefined : [11.34, 3.78], a: 1,
+        fill: h?.color && c !== 41 ? h.color : null, hatch: !!(h?.color && c !== 41), hp: h ? (h.cross ? "x" + (h.angle % 90 ? "45" : "0") : String(h.angle ?? 45)) : "45", hs: h?.spacing_px });
+      const name = e?.title || String(ft.props?.["Вид зоны"] || "зона ограничений");
+      if (!zk.has(name)) zk.set(name, { kind: "fill", fill: ft.fill || undefined, hatch: ft.hatch, hatch_color: ft.fill, angle: h?.angle ?? 45, spacing: h?.spacing_mm ? h.spacing_mm * .5 : 1,
+        stroke: ft.stroke, width: .3, dash: (e?.dash_mm || [3, 1]).map(v => v * .5), label: name.toLowerCase() });
+    }));
     const lgr = new Map();
     (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return; (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); }); });
     out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
       { title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] },
       ...((L("egko.water")?.features || []).some(inFrame) ? [{ title: "Природные объекты", items: [{ kind: "fill", fill: "#bfe0f5", stroke: "#bfe0f5", label: "водные объекты" }] }] : []),
-      ...(seen.size ? [{ title: "Вид функционального использования участков территории (по ВРИ участков ЕГРН)",
+      ...(seen.size ? [{ title: "Вид функционального использования участков территории",
         items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a", label: n })) }] : []),
+      ...(zk.size ? [{ title: "Зоны с особыми условиями использования территорий", items: [...zk.values()] }] : []),
       ...(lgr.size ? [{ title: "Линии градостроительного регулирования, действующие",
         items: [...lgr].sort((a, b) => a[0] - b[0]).map(([c, n]) => ({ kind: "lt", name: n, stroke: LGRC[c] || "#ff0000", label: LGRT[c] || n })) }] : [])];
   }

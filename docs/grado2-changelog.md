@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.71.0: Yandex satellite of a sheet frame for AutoCAD in МСК.** Owner: «придумай выгрузку листа
+  спутника яндекс в автокад в координатах, как делали из QGIS». New button on every map sheet; `POST /api/export/sat`
+  (`sat_io.py`). Yandex tiles are EPSG:3395 and turned against МСК, so the image is rebuilt on the МСК grid block by
+  block (corners МСК → WGS84 → 3395 → tile pixels, Pillow MESH, error under a pixel). The zip holds
+  `sputnik_yandex.dxf` (IMAGE entity in place), the JPEG, the world file `.jgw` and a README; DWG too if ODA File
+  Converter is installed. Pixel 0.5–4 m chosen so the image stays under 25 Mpx; tiles cached for 90 days, downloaded
+  one by one with pauses. Checked on sheet 3 of КРТ 3141: Yandex road polygons fall exactly on the roads of the image.
+  For working drawings only, like the other Yandex layers. Tests `test_sat.py`.
+- **2026-09-30, ГРАДО 2 v0.70.0: owner's remarks on sheets 4–5.** Rules first (`docs/standards/albums/label-rules.md`),
+  then code. Place names wrap into two lines of about equal length (never more than two). River names sit on the
+  channel itself: the centre is the middle of the channel cross-section (perpendicular to the local direction), the
+  label follows the channel; no more sideways offsets. Narrow streams without a water polygon are labelled on the ЕГКО
+  thin-river lines (`tonkie_reki`, now part of `egko.water`). Sheet 5 has no white patches: the whole frame is natural
+  land, OSM land use goes over it (large first), ЕГРН parcels by ВРИ on top, only roads are white. All ГИС ОГД zones
+  (СПРИТ `gisogd.zouit`, `gisogd.szz`, `gisogd.vodookhr`) are drawn with the Эталон ЛГР sign of each kind (stroke colour
+  and dash, hatch colour, angle and spacing); the legend lists the kinds visible on the sheet. Test run on КРТ 3141.
 - **2026-09-30, ГРАДО 2 v0.69.7: NSPD area limit 250 km².** Owner's decision after a 195 km² sheet failed: NSPD
   takes up to 250 km² (still in 4 km² tiles with pauses, so a large first load takes many minutes).
 - **2026-09-30, ГРАДО 2 v0.69.6: load message names the failed layers and why.** Owner: NSPD layers did not load on a

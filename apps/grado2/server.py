@@ -4,6 +4,7 @@
   POST /api/fetch  {bbox:[w,s,e,n], sources:[ключ,...]} → реальные слои по области
   POST /api/tep    {terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2} → ТЭП (методика КРТ)
   POST /api/import/files {files:[{name, b64}]} → слои из GeoJSON, KML/KMZ, Shapefile, DXF (WGS84)
+  POST /api/export/sat {center, rect, scale | bbox, mpp?} → спутник Яндекса по рамке листа в МСК для AutoCAD (zip: JPG, JGW, DXF)
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
@@ -108,7 +109,8 @@ SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "vir
 SOURCES["egko.roads"] = ("egko", {"dorogi_pol": None}, "Дороги (ЕГКО)")
 SOURCES["egko.paths"] = ("egko", {"tropinki": None}, "Пешеходные дороги (ЕГКО)")
 SOURCES["egko.green"] = ("egko", {"gazons": "газон", "forest": "растительность"}, "Газоны и растительность (ЕГКО)")
-SOURCES["egko.water"] = ("egko", {"hidrograf": None}, "Водная поверхность (ЕГКО)")
+# тонкие реки и ручьи — линиями: по ним ставятся подписи узких рек (подпись на русле, владелец 30.09.2026)
+SOURCES["egko.water"] = ("egko", {"hidrograf": None, "tonkie_reki": None}, "Водная поверхность (ЕГКО)")
 # подписи рек и водоёмов картоосновы («р. Моча», «пр.») — точки с текстом, как их ставит ЕГКО
 SOURCES["egko.water_labels"] = ("egko", {"podpisi_k_vodnoj_poverhnosti": None, "podpisi_k_tonkim_rekam_i_ruchjam": None},
                                 "Подписи рек и водоёмов (ЕГКО)")
@@ -1149,6 +1151,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_response(200)
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pptx"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path == "/api/export/sat":
+                # спутник Яндекса по рамке листа — в МСК для AutoCAD (снимок, файл привязки, DXF с растром на месте)
+                import sat_io
+                try:
+                    frame = (sat_io.frame_msk(req["center"], req["rect"], float(req["scale"])) if req.get("rect")
+                             else sat_io.bbox_msk(req["bbox"]))
+                    mpp = min(5.0, max(0.25, float(req["mpp"]))) if req.get("mpp") else sat_io.auto_mpp(frame)
+                    prog = lambda got, total: PROGRESS.__setitem__("sat", {"title": "Спутник Яндекса", "got": got, "total": total, "stage": "tiles"})
+                    body = sat_io.export_sat(frame, mpp, CACHE / "tiles" / "yandex-sat", prog)
+                except (KeyError, TypeError, ValueError) as e:
+                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
+                finally:
+                    PROGRESS.pop("sat", None)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", 'attachment; filename="sputnik_yandex_msk.zip"')
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)
