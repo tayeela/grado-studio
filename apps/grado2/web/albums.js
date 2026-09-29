@@ -204,8 +204,9 @@ const OSM_USE = [[/^(farmland|orchard|plant_nursery|greenhouse_horticulture|vine
   [/^(forest|wood|scrub|grassland|heath|meadow|grass|park|garden|recreation_ground|village_green)$/, 18], [/^nature_reserve$/, 19],
   [/^(cemetery|quarry|landfill|military)$/, 15], [/^allotments$/, 12], [/^residential$/, 12],
   [/^industrial$/, 14], [/^(commercial|retail)$/, 2], [/^garages$/, 16], [/^(depot|storage)$/, 17], [/^railway$/, 20],
-  [/^religious$/, 7], [/^education$/, 5], [/^(pitch|playground)$/, 9], [/^(brownfield|construction)$/, 24]];
-const LAND_BASE = VRI_CLS(24)[0];                             // всё, что не закрыто ни участком, ни OSM
+  [/^religious$/, 7], [/^education$/, 5], [/^(pitch|playground)$/, 9], [/^(brownfield|construction)$/, 14]];
+const LAND_BASE = VRI_CLS(18)[0];                             // всё, что не закрыто ни участком, ни OSM: белых пятен и «отсутствия
+                                                              // хозяйственной деятельности» быть не должно (владелец 30.09.2026)
 const NATURE_USE = VRI_CLS(18);                               // береговая полоса — природно-рекреационная
 const osmUseOf = p => { for (const v of [p["Землепользование"], p["Природа"], p["Отдых"]]) { const hit = v && OSM_USE.find(([re]) => re.test(v)); if (hit) return VRI_CLS(hit[1]); } return null; };
 /* ЗОУИТ ГИС ОГД → код знака Эталона ЛГР (moscow_lgr.json); вид зоны без знака — красным пунктиром без штриховки */
@@ -402,6 +403,9 @@ function namedPlaces(out, bb) {
 function conceptSheet(out, sheet, bb) {
   const ha = fmt(m2(TERR) / 1e4, 2), terr = { kind: "line", stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW], label: `территории рассмотрения (${ha} га)` };
   out.look = "concept"; out.noFrame = true; out.callout = undefined; out.bleed = !!sheet.bleed;
+  // полупрозрачная белая маска за границей территории — на схемах с белой основой, как в примере «Хатминки»; на снимке и
+  // на фрагменте Генплана её нет (владелец 30.09.2026)
+  out.terrMask = sheet.basemap !== "sat" && !["gp", "ortho"].includes(sheet.concept) ? .55 : undefined;
   out.terrStyle = { stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW] };
   const L = key => out.layers.find(l => l.key === key), bounds = { title: "Границы", items: [terr] };
   const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
@@ -456,8 +460,10 @@ function conceptSheet(out, sheet, bb) {
     // внутри береговой полосы — всё природные и озеленённые территории (владелец 30.09.2026), поверх участков
     (L("gisogd.zouit")?.features || []).forEach(ft => { if (ft.props?.["Вид зоны"] !== "Береговая полоса" || !/Polygon/.test(ft.g?.type)) return;
       const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, turf.bboxPolygon(bb))); if (part) put(part.geometry, NATURE_USE); });
-    // дороги и их территории — выше и в приоритете (владелец 30.09.2026: береговая перекрывала Калужское шоссе)
+    // дороги и их территории — выше и в приоритете (владелец 30.09.2026: зелёные зоны перекрывали Калужское шоссе): белые
+    // участки дорог и белая полоса 6 м вокруг проезжей части — там, где участка под дорогой нет (мост через реку)
     roadLots.forEach(g => put(g, ROAD_USE));
+    roadPolys.forEach(x => { const b = safe(() => turf.buffer(x.f, 6, { units: "meters" })); if (b) put(b.geometry, ROAD_USE); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(ROAD_USE[0], ROAD_USE[1]);                         // территории улиц и дорог — белые, в легенде всегда
     if ((L("egko.water")?.features || []).some(inFrame)) seen.set(WATER_USE[0], WATER_USE[1]);   // вода — класс 22 шаблона

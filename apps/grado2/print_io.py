@@ -535,6 +535,11 @@ class SketchMapFrame(Frame):
             out.append({"op": "circle", "x": cx, "y": cy, "r": float(sh["terrPoint"]), "fill": (0, 0, 0), "stroke": None, "width": 0})
         elif sh.get("territory"):
             _, parts = _parts(sh["territory"])
+            if sh.get("terrMask"):                                    # всё за границей территории — под белой полупрозрачной маской
+                fx, fy, fw, fh = rect
+                holes = [[tr.mm(*p[:2]) for p in poly[0]] for poly in parts]
+                out.append({"op": "path", "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]] + holes, "closed": True,
+                            "fill": (1, 1, 1), "alpha": float(sh["terrMask"]), "stroke": None, "width": 0, "dash": None, "evenodd": True})
             for poly in parts:
                 ts = sh.get("terrStyle") or {}                        # слайды раздела: граница ППТ — сплошная пурпурная
                 out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True,

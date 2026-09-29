@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.79.0: no «no activity» fill, road corridor on top, white mask outside the territory.** Owner
+  (with example «Хатминки», IRGA): no class 24 and no white spots, green zones still covered white road land, add an
+  automatic semi-transparent white mask outside the territory. Default land without parcels/OSM is now class 18
+  (natural-recreational); class 24 only for parcels with code 12.3. Road land is on top: white road parcels plus a white
+  6 m buffer around the carriageway (bridge over the river at Калужское шоссе had no parcel). New `terrMask` (0.55): frame
+  minus territory, white with alpha, even-odd, drawn under the territory boundary and labels — on white-base sheets
+  4–8 except the Генплан fragment and satellite sheets (the example masks the same sheets). Key is `terrMask`, not
+  `mask` (taken by the ЕГКО base mask of the okrug scheme). Checked in PDF and PPTX. Rules first.
 - **2026-09-30, ГРАДО 2 v0.78.0: sheet 5 coloured by the owner's ВРИ template; names off the territory boundary.** Owner:
   «крась по вот этому шаблону и включи его в программу и запомни» (layer «plan_organiz_ex» of «ВРИ земельных
   участков_RGB»), water still wrong, some names lie over the boundary. Both owner DXF templates are stored in
