@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.5: sheets 4–5 checked against the label rules.** Water is drawn light blue (#bfe0f5)
+  under the roads on the white schemes (sheets 4–8) — the river names no longer hang over empty paper; on the ortho
+  sheets water stays invisible (only for placing names). River labels also avoid the territory boundary
+  («р. Вороновка» crossed it on sheet 4). Sheet 5: legend «Природные объекты — водные объекты» when water is on the
+  sheet; land use by ВРИ checks agriculture first — «для ведения сельскохозяйственного производства» was coloured as
+  industrial and «ЛПХ на полевых участках (1.16)» as housing. Rules file updated.
 - **2026-09-30, ГРАДО 2 v0.69.4: territory callout larger and above the territory.** Owner: «выноска крупнее и сверху
   от территории, там больше места». The callout plate goes above the territory unless the top edge of the sheet is
   closer than 35 mm (then below), text 4.5 mm; the dashed leader starts at the plate edge facing the territory and
