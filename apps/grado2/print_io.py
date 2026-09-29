@@ -203,6 +203,24 @@ def _text_w(text, family, size):
     return font.text_width(str(text), size) if font else size * .6 * len(str(text))
 
 
+def _straight_runs(pts, junction, tol=0.6):
+    """Прямые участки ломаной (мм листа): подряд идущие вершины, отклонение которых от хорды не больше tol, без
+    перекрёстка внутри участка. Возвращает (длина, середина x, середина y, угол) каждого участка."""
+    out, i, n = [], 0, len(pts)
+    while i < n - 1:
+        j = i + 1
+        while j + 1 < n and not junction[j]:
+            (x0, y0), (x1, y1) = pts[i], pts[j + 1]
+            L = math.hypot(x1 - x0, y1 - y0) or 1e-9
+            if max(abs((y1 - y0) * (pts[k][0] - x0) - (x1 - x0) * (pts[k][1] - y0)) / L for k in range(i + 1, j + 1)) > tol:
+                break
+            j += 1
+        (x0, y0), (x1, y1) = pts[i], pts[j]
+        out.append((math.hypot(x1 - x0, y1 - y0), (x0 + x1) / 2, (y0 + y1) / 2, math.atan2(y1 - y0, x1 - x0)))
+        i = j
+    return out
+
+
 def _in_ring(x, y, ring):
     inside = False
     for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
@@ -387,6 +405,17 @@ class SketchMapFrame(Frame):
         if sh.get("mask") and egko:
             out.append({"op": "layer", "name": "Картооснова ЕГКО"})
             out.extend(egko_ops(tr, rect, sh["mask"], egko))
+        # перекрёстки: вершина, общая для двух линий (или дважды у одной) — подпись улицы через неё не проходит
+        junctions = {}
+        for layer in sh.get("layers", []):
+            for f in layer.get("features", []):
+                if f.get("label") or f.get("nl"):
+                    kind, parts = _parts(f["g"])
+                    if kind == "line":
+                        for line in parts:
+                            for q in line:
+                                k2 = (round(q[0], 6), round(q[1], 6))
+                                junctions[k2] = junctions.get(k2, 0) + 1
         for layer in sh.get("layers", []):
             out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             for f in layer.get("features", []):
@@ -438,14 +467,14 @@ class SketchMapFrame(Frame):
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
                         if f.get("label"):
-                            # подпись вдоль линии (улица): на самом длинном отрезке внутри рамки; одно название — один раз
-                            for a, b in zip(pts, pts[1:]):
-                                mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
+                            # подпись вдоль линии (улица): на самом длинном прямом участке без перекрёстков внутри —
+                            # подпись на нём не пересекает поперечные улицы; одно название — один раз
+                            keys = [(round(q[0], 6), round(q[1], 6)) for q in line]
+                            for d, mx, my, ang in _straight_runs(pts, [junctions.get(k, 0) > 1 for k in keys]):
                                 if not (rect[0] < mx < rect[0] + rect[2] and rect[1] < my < rect[1] + rect[3]):
                                     continue
-                                d = math.hypot(b[0] - a[0], b[1] - a[1])
                                 if d > along.get(f["label"], (0,))[0]:
-                                    along[f["label"]] = (d, mx, my, math.atan2(b[1] - a[1], b[0] - a[0]), f.get("ls"), f)
+                                    along[f["label"]] = (d, mx, my, ang, f.get("ls"), f)
                 elif kind == "point":
                     for p in parts:
                         x, y = tr.mm(*p[:2])
@@ -503,23 +532,8 @@ class SketchMapFrame(Frame):
             take((rx, ry, rx + 102, ry + 7 + 5.4 * n + 3))                  # угол с округом и районом — без подписей карты
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
-        for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
-            ls = float(ls or 2.2)
-            text = str(text)[:40]
-            tw = _text_w(text, af.get("lf"), ls)
-            if d < tw * .4:
-                continue                                                # отрезок короче 0,4 подписи — не подписывать
-            if ang > math.pi / 2 or ang < -math.pi / 2:
-                ang += math.pi                                          # не вверх ногами
-            ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
-            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-            if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
-                continue                                                # подпись улицы — целиком в рамке
-            if not take((x - ex, y - ey, x + ex, y + ey)):
-                continue
-            extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
-            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
-                        "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
+        # порядок при нехватке места (правила подписей, docs/standards/albums/label-rules.md): надписи на своих местах —
+        # реки, номера документов, надписи ГИС ОГД; затем улицы; затем названия территорий, крупные раньше мелких
         for x, y, text, ls, deg, col, pf in placed:
             # надписи ГИС ОГД: на своём месте и под своим углом (вдоль границы), цветом знака ЛГР; наложения не пропускаются
             ls = float(ls or 2.0)
@@ -541,6 +555,23 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
+        for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
+            ls = float(ls or 2.2)
+            text = str(text)[:40]
+            tw = _text_w(text, af.get("lf"), ls)
+            if d < tw * 1.1:
+                continue                                                # подпись не влезает в прямой участок улицы — улица мала, не подписывается
+            if ang > math.pi / 2 or ang < -math.pi / 2:
+                ang += math.pi                                          # не вверх ногами
+            ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
+            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
+                continue                                                # подпись улицы — целиком в рамке
+            if not take((x - ex, y - ey, x + ex, y + ey)):
+                continue
+            extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
+            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
+                        "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
         # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
         # рядом внутри своего контура (названия СНТ не пропадают из-за подписи улицы)
         labels.sort(key=lambda t: -(t[6] if len(t) > 6 else 0))
@@ -577,8 +608,15 @@ class SketchMapFrame(Frame):
                 extra["halo_color"] = hex_to_rgb(f["lhc"])
             if f.get("lbox"):
                 pad = ls * .45
-                out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
-                            "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, y - ls - pad * .6), (x + bw / 2 + pad, y - ls - pad * .6),
+                top = y - ls - pad * .6
+                if f.get("lead"):                                       # выноска: белый пунктир от плашки к точке территории
+                    tx, ty = tr.mm(*f["lead"][:2])
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": [1.4, 0.9],
+                                "rings": [[(x, top), (tx, ty)]]})
+                    out.append({"op": "circle", "x": tx, "y": ty, "r": 0.7, "fill": (1, 1, 1), "stroke": None, "width": 0})
+                out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": f.get("lboxAlpha"),
+                            "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
+                            "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, top), (x + bw / 2 + pad, top),
                                                                     (x + bw / 2 + pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6),
                                                                     (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
             for i, line in enumerate(lines):

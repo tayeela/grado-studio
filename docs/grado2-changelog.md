@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.3: label rules written down and applied; Tsaritsyno-style territory callout.** Owner:
+  the legend showed a district boundary that is not on the sheet; «ул. Речная» crossed roads — small streets may stay
+  unlabelled; formulate the graphic label rules including his remarks and apply them; the area callout differs from
+  the sample. Rules: `docs/standards/albums/label-rules.md` (fonts, white halo, inside the frame, no overlaps, no road
+  crossings, priority order, rivers, streets, territory names, corner note, callout, boundary). Street labels
+  (print_io `_straight_runs`): the label sits on the longest straight stretch (vertices within 0.6 mm of the chord)
+  with no junction inside (a vertex shared by two street lines) and must fit it with 10 % to spare — short streets are
+  not labelled, labels never run across a side street. Priority: labels at fixed places (rivers, document numbers,
+  ГИС ОГД) first, then streets, then area names largest first. Legend «района» only when the district boundary
+  crosses the sheet. Callout like «ГК Царицыно»: translucent white plate without border (`lboxAlpha` 0.75), grey
+  text in three lines, white dashed leader with a dot to a point inside the territory near its south edge (`lead`).
 - **2026-09-30, ГРАДО 2 v0.69.2: labels stay in the frame and off the roads; every large СНТ named; translucent ortho
   legend.** Owner on sheet 3: «р. Вороновка» crossed roads; some large СНТ were not labelled; a label on the left ran
   past the frame; the legend plate should be wider (one line per item) and more transparent. River labels (albums.js

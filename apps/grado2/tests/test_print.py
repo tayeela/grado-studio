@@ -305,3 +305,10 @@ class LabelsInFrame(unittest.TestCase):
         pdf = PdfBackend().render([(100, 60, [{"op": "path", "rings": [[(0, 0), (50, 0), (50, 20), (0, 20)]], "closed": True,
                                                 "fill": (1, 1, 1), "alpha": .72, "stroke": None, "width": 0, "dash": None}])])
         self.assertIn(b"/ExtGState << /GA1 << /ca 0.72 >>", pdf)
+
+    def test_street_label_runs_stop_at_junctions_and_bends(self):
+        pts = [(0, 0), (10, 0), (20, 0.2), (30, 0), (30, 20)]           # прямо 30 мм, затем поворот
+        runs = print_io._straight_runs(pts, [False] * 5)
+        self.assertAlmostEqual(max(r[0] for r in runs), 30, places=1)
+        runs = print_io._straight_runs(pts, [False, False, True, False, False])   # перекрёсток на 20 мм
+        self.assertAlmostEqual(max(r[0] for r in runs), 20, delta=.1)

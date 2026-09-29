@@ -267,10 +267,16 @@ function conceptSheet(out, sheet, bb) {
   const k = sheet.concept;
   waterLabels(out, bb);
   if (k === "ortho") {
-    const s = turf.bbox(TERR), c = turf.centroid(TERR).geometry.coordinates;
-    out.layers.push({ title: "Подпись территории", features: [{ g: { type: "Point", coordinates: [c[0], s[1]] }, nodot: true,
-      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 3.2, lf: "sans", lcol: "#231f20", lbox: true, ldy: 8 }] });
-    out.cLegend = [{ items: [terr, { kind: "line", stroke: "#e30613", width: .5, label: "района" },
+    // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки под территорией, серый текст в три строки,
+    // белый пунктир от плашки к точке внутри территории у её южного края
+    const [w, s, e, n] = turf.bbox(TERR), south = safe(() => inter(TERR, turf.bboxPolygon([w, s, e, s + (n - s) * .3])));
+    const tgt = (south && safe(() => turf.pointOnFeature(south))) || turf.pointOnFeature(TERR), [tx] = tgt.geometry.coordinates;
+    out.layers.push({ title: "Выноска территории", features: [{ g: { type: "Point", coordinates: [tx, s] }, nodot: true, lead: tgt.geometry.coordinates,
+      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 3.2, lf: "sans", lcol: "#4a4a4a", lbox: true, lboxAlpha: .75, ldy: 12 }] });
+    // граница района — в легенде, только если она видна на листе
+    const box = turf.bboxPolygon(bb), dist = (L("gisogd.admin")?.features || []).some(ft => /Polygon/.test(ft.g?.type)
+      && safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.some(l => turf.booleanIntersects(l, box))));
+    out.cLegend = [{ items: [terr, ...(dist ? [{ kind: "line", stroke: "#e30613", width: .5, label: "района" }] : []),
       { kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: "территории автодорог, улиц и местных проездов" }] }];
   }
   if (k === "photos") {
