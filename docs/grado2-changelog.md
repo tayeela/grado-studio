@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.73.1: flooding zones told apart.** Owner: moderate and weak flooding looked the same. In the
+  Эталон ЛГР codes 64/65/66 differ only by hatch colour, and hatches are gone from sheet 5. Now all three use the ticked
+  linetype of code 64; strong stays red, moderate is blue #2f7fd8, weak green #2e9e78 (each sign's hatch colour,
+  darkened), on the map and in the legend (`ZONE_LINE` in albums.js). Rule written first.
 - **2026-09-30, ГРАДО 2 v0.73.0: sheet 5 ЗОУИТ and legend like «ГК Царицыно».** Owner: «условки должны быть как в примере
   по Царицыно, названий штриховок не должно быть». In the sample the zones are boundaries only (red REDLN97 lines with
   ticks) listed under «Линии градостроительного регулирования, действующие» as «граница …». Now: ГИС ОГД zones are

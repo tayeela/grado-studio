@@ -174,6 +174,9 @@ const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежна
 const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
   return t.toLowerCase().split(/\s+/).map(w => w.replace(/(ые|ие)$/, "ых").replace(/зоны$/, "зон").replace(/полосы$/, "полос").replace(/ая$/, "ой").replace(/зона$/, "зоны").replace(/территории$/, "территорий")).join(" "); };
+// зоны подтопления в Эталоне различаются только штриховкой: без неё граница умеренного и слабого — типом линии сильного
+// (с засечками) цветом штриховки своего знака, затемнённым (владелец 30.09.2026)
+const ZONE_LINE = { 65: { lt: 64, color: "#2f7fd8" }, 66: { lt: 64, color: "#2e9e78" } };
 const zouitCode = (key, p) => key === "gisogd.vodookhr" ? 16 : key === "gisogd.szz" ? (/расч/i.test(p["Вид зоны"] || "") ? 62 : /ориент/i.test(p["Вид зоны"] || "") ? 63 : 5) : ZOUIT_LGR[p["Вид зоны"]];
 
 const C_PALETTE = ["#f5a623", "#00c8e0", "#7b2d8e", "#f0503c", "#ff3fb4", "#2e9d4f", "#1565c0", "#8d6e63", "#ff8f00", "#00897b"];
@@ -350,12 +353,12 @@ function conceptSheet(out, sheet, bb) {
     const zk = new Map();
     ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => { const l = L(key); if (!l) return;
       l.features = l.features.filter(inFrame).map(ft => {
-        const c = zouitCode(key, ft.props || {}), lt = c != null ? Linetypes.forCode(c, -1) : null;
+        const c = zouitCode(key, ft.props || {}), lt = c != null ? Linetypes.forCode(ZONE_LINE[c]?.lt ?? c, -1) : null;
         const lines = safe(() => turf.polygonToLine(turf.rewind({ type: "Feature", geometry: ft.g, properties: {} })));
         const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
         if (!g) return null;
         if (c != null && !zk.has(c)) zk.set(c, lt || null);
-        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: LGRC[c] || "#ff0000", w: 1.3 };
+        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3 };
       }).filter(Boolean); });
     const lgr = new Map();
     (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return; (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); }); });
@@ -366,7 +369,7 @@ function conceptSheet(out, sheet, bb) {
         items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a", label: n })) }] : []),
       ...(lgr.size || zk.size ? [{ title: "Линии градостроительного регулирования, действующие",
         items: [...[...lgr].map(([c, n]) => [c, n, LGRT[c] || n]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
-          .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5), label: t })) }] : [])];
+          .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5), label: t })) }] : [])];
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой
