@@ -2,6 +2,8 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.7: NSPD area limit 250 km².** Owner's decision after a 195 km² sheet failed: NSPD
+  takes up to 250 km² (still in 4 km² tiles with pauses, so a large first load takes many minutes).
 - **2026-09-30, ГРАДО 2 v0.69.6: load message names the failed layers and why.** Owner: NSPD layers did not load on a
   sheet A3 at 1:38 216 (0 loaded, 3 errors). Cause: the sheet covers about 195 km² and NSPD is limited to 150 km²
   (`LIMIT_KM2`); a small NSPD request from the server works. The message said only «с ошибкой: 3»; it now lists up to
