@@ -347,31 +347,33 @@ class ConceptColumnFrame(Frame):
 
 
 class OrthoLegendFrame(Frame):
-    """Легенда ортофотоплана «ГК Царицыно»: белая плашка в правом нижнем углу листа поверх снимка."""
+    """Легенда ортофотоплана «ГК Царицыно»: полупрозрачная белая плашка в правом нижнем углу листа поверх снимка,
+    подписи — в одну строку (владелец 30.09.2026)."""
 
     def __init__(self, sheet, page_w, page_h):
         super().__init__((page_w - 122, page_h - 36, 122, 36))
         self.sheet = sheet
 
     def ops(self, ctx):
-        x, y, w, h = self.rect
+        _, y, w, h = self.rect
+        right = self.rect[0] + w
         groups = self.sheet.get("cLegend") or []
-        # подписи переносятся так, чтобы не заходить под плашку номера листа шаблона (x ≥ 399 мм)
-        items = [(it, _wrap_mm(it.get("label", ""), "sans", 9 * PT, 396 - (x + 21.6))) for g in groups for it in g.get("items", [])]
-        body = 6.5 + 5.7 + sum(5.8 + (len(lines) - 1) * 3.8 for _, lines in items) + 4.5
+        items = [it for g in groups for it in g.get("items", [])]
+        # плашка растягивается влево, чтобы каждая подпись шла одной строкой и не заходила под номер листа (x ≥ 399 мм)
+        text_w = max([_tw(it.get("label", ""), "sans", 9 * PT) for it in items] + [_tw("Условные обозначения", "sans-bold", 12.2 * PT) - 18])
+        x = min(right - 122, 396 - text_w - 21.6)
+        body = 6.5 + 5.7 + 5.8 * len(items) + 4.5
         top = y + h - body
-        out = [{"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
-                "rings": [[(x, top), (x + w, top), (x + w, y + h), (x, y + h)]]}]
+        out = [{"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": 0.72, "stroke": None, "width": 0, "dash": None,
+                "rings": [[(x, top), (right, top), (right, y + h), (x, y + h)]]}]
         yy = top + 6.5
         out.append(_text(x + 3.6, yy, 12.2, "Условные обозначения", INK, "sans-bold"))
         yy += 5.7
         out.append(_text(x + 3.6, yy, 9, "Границы:", INK2, "sans-bold"))
-        for it, lines in items:
+        for it in items:
             yy += 5.8
             out.extend(concept_swatch(x + 3.6, yy - 2.6, it, None, w=15, h=3))
-            for i, line in enumerate(lines):
-                out.append(_text(x + 21.6, yy + i * 3.8, 9, line, INK2, "sans"))
-            yy += (len(lines) - 1) * 3.8
+            out.append(_text(x + 21.6, yy, 9, it.get("label", ""), INK2, "sans"))
         return out
 
 

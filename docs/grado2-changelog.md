@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.2: labels stay in the frame and off the roads; every large СНТ named; translucent ortho
+  legend.** Owner on sheet 3: «р. Вороновка» crossed roads; some large СНТ were not labelled; a label on the left ran
+  past the frame; the legend plate should be wider (one line per item) and more transparent. River labels (albums.js
+  `waterLabels`) now search along the river for a spot whose text rectangle (label length at the sheet scale) lies
+  inside the frame and crosses no road polygon (`calc.uds_ya`, `egko.roads`), shifting up to 50 m off the course if
+  needed. Map labels (print_io): widths measured with the real font (`_text_w`); area labels sorted largest first, an
+  occupied spot is retried at offsets inside the label's own polygon, every label is pulled fully inside the frame;
+  street and ГИС ОГД labels that would leave the frame are skipped. КРТ 3141: СНТ «Победа», «Поляница-2», «Родничок»,
+  «Пролетарий» are back (they collided with street labels and the corner note). Fill transparency: path `alpha`
+  (PDF ExtGState `/ca`, SVG `fill-opacity`, PPTX `a:alpha`); the ortho legend plate is 72 % white and widens left so
+  each item is one line clear of the page-number plate. Tests `LabelsInFrame`.
 - **2026-09-29, ГРАДО 2 v0.69.1: river names along the water, on the larger water body; bolder boundary.** Owner: the
   river name must run parallel to the river, names are better tied to larger water bodies (the big pond), the boundary
   bolder still. `waterLabels` (albums.js): per ЕГКО name, the largest ЕГКО water polygon within 400 m of that name's

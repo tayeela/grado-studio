@@ -203,6 +203,19 @@ function waterLabels(out, bb) {
     (byName.get(t) || byName.set(t, []).get(t)).push(ft); });
   const tc = turf.centroid(TERR), used = new Set(), labels = [];
   const nearest = arr => arr.reduce((x, y) => turf.distance(y, tc) < turf.distance(x, tc) ? y : x);
+  // место подписи: прямоугольник текста на местности (ширина по числу знаков, кегль из листа) целиком в рамке и не
+  // поперёк дорог — дороги-полигоны листа (владелец 30.09.2026: «р. Вороновка» пересекала дороги)
+  const roads = ["calc.uds_ya", "egko.roads"].flatMap(key => out.layers.find(l => l.key === key)?.features || [])
+    .filter(ft => /Polygon/.test(ft.g?.type)).map(ft => ({ g: ft.g, b: turf.bbox(ft.g) }));
+  const mx = 111320 * kx, my = 110540, k = (out.scale || 2000) / 1000;
+  const rect = (c, ang, text, ls) => {
+    const L = text.length * .62 * ls * k / 2 + ls * k * .4, H = ls * .75 * k, a = ang * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a);
+    const pts = [[-L, -H], [L, -H], [L, H], [-L, H]].map(([u, v]) => [c[0] + (u * ux - v * uy) / mx, c[1] + (u * uy + v * ux) / my]);
+    return turf.polygon([[...pts, pts[0]]]); };
+  // сколько дорог пересекает подпись (Infinity — не влезает в рамку)
+  const hits = r => { const b = turf.bbox(r);
+    if (b[0] < bb[0] || b[2] > bb[2] || b[1] < bb[1] || b[3] > bb[3]) return Infinity;
+    return roads.filter(x => !(x.b[2] < b[0] || x.b[0] > b[2] || x.b[3] < b[1] || x.b[1] > b[3]) && safe(() => turf.booleanIntersects(x.g, r))).length; };
   byName.forEach((fts, t) => {
     const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates));
     const inFrame = pts.filter(pt => inBox(pt.geometry.coordinates));
@@ -214,10 +227,26 @@ function waterLabels(out, bb) {
       if (!best.river) {                                       // пруд, озеро — по центру, вдоль длины
         const c = safe(() => turf.centerOfMass(part)); at = c && safe(() => turf.booleanPointInPolygon(c, part)) ? c : turf.pointOnFeature(part);
         ang = axis(turf.coordAll(part));
-      } else {                                                 // река — у подписи ЕГКО, вдоль русла около неё
-        const own = inFrame.filter(pt => dist(pt, best) < .15);
-        at = own.length ? nearest(own) : turf.pointOnFeature(part);
-        ang = axis(polys.filter(p => p.river && (p === best || p.name === best.name)).flatMap(p => p.v).filter(c => turf.distance(at, c) < .2));
+      } else {                                                 // река — вдоль русла, ближе к территории, не поперёк дорог
+        const rv = polys.filter(p => p.river && (p === best || (best.name && p.name === best.name))).flatMap(p => p.v).filter(inBox);
+        const step = Math.max(1, Math.ceil(rv.length / 120));
+        const spots = [...inFrame.filter(pt => dist(pt, best) < .15), ...rv.filter((_, i) => i % step === 0).map(c => turf.point(c))]
+          .sort((x, y) => turf.distance(x, tc) - turf.distance(y, tc));
+        const ls = +fts[0].ls || 4.3;
+        let bestHit = Infinity;
+        search: for (const pt of spots) {
+          const a = axis(rv.filter(c => turf.distance(pt, c) < .2)), r = a * Math.PI / 180, [x0, y0] = pt.geometry.coordinates;
+          for (const off of [0, 25, -25, 50, -50]) {           // вдоль русла, при нужде — чуть в сторону от него (м)
+            const c = [x0 - Math.sin(r) * off / mx, y0 + Math.cos(r) * off / my], n = hits(rect(c, a, t, ls));
+            if (n < bestHit) { bestHit = n; at = turf.point(c); ang = a; }
+            if (n === 0) break search;
+          }
+        }
+        if (!at) {                                             // места в рамке нет — у подписи ЕГКО
+          const own = inFrame.filter(pt => dist(pt, best) < .15);
+          at = own.length ? nearest(own) : turf.pointOnFeature(part);
+          ang = axis(rv.filter(c => turf.distance(at, c) < .2));
+        }
       }
     } else if (inFrame.length) {
       at = nearest(inFrame);

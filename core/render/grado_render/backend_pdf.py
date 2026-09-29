@@ -49,6 +49,7 @@ class PdfBackend:
         self.used_gids = self._used_gids["ui"]
         self._used_families = set()
         self._img_names = {}
+        self._alphas = {}                                   # прозрачность заливки → имя ExtGState (/GA1 …)
 
     def _font_for(self, family):
         family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold") else "ui"
@@ -199,7 +200,12 @@ class PdfBackend:
                 out += "Q\n"
                 clip_depth -= 1
             elif o["op"] == "path":
-                out += self._path_ops(o, h)
+                a = o.get("alpha")
+                if a is not None and a < 1:                        # полупрозрачная заливка (подложка легенды на снимке)
+                    name = self._alphas.setdefault(round(float(a), 3), f"GA{len(self._alphas) + 1}")
+                    out += f"q\n/{name} gs\n" + self._path_ops(o, h) + "Q\n"
+                else:
+                    out += self._path_ops(o, h)
             elif o["op"] == "circle":
                 out += self._circle_ops(o, h)
             elif o["op"] == "text":
@@ -231,7 +237,8 @@ class PdfBackend:
                         f"Im{len(self._img_names) + 1}", None)
 
         # Сначала строим потоки: именно здесь обнаруживаются реально
-        # использованные семейства и глифы.
+        # использованные семейства, глифы и степени прозрачности.
+        self._alphas = {}
         page_streams = [self._page_stream(w, h, ops) for w, h, ops in pages]
 
         # 1 — каталог, 2 — дерево страниц; по четыре объекта на каждый TTF:
@@ -297,9 +304,11 @@ class PdfBackend:
             fonts = " ".join(
                 f"/{self._font_name(family)} {font_refs[family]} 0 R"
                 for family in self._font_order if family in font_refs)
+            gs = ("/ExtGState << " + " ".join(f"/{nm} << /ca {_f(a)} >>" for a, nm in self._alphas.items()) + " >> "
+                  if self._alphas else "")
             objs[pnum] = (f"<< /Type /Page /Parent 2 0 R "
                           f"/MediaBox [0 0 {_f(w * MM2PT)} {_f(h * MM2PT)}] "
-                          f"/Resources << /Font << {fonts} >> {xobj}>> "
+                          f"/Resources << /Font << {fonts} >> {xobj}{gs}>> "
                           f"/Contents {snum} 0 R >>").encode()
             objs[snum] = stream_obj(stream)
             page_nums.append(pnum)

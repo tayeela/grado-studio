@@ -187,6 +187,30 @@ def egko_ops(tr, rect, mask, egko):
     return out
 
 
+_TW_FONTS = {}
+
+
+def _text_w(text, family, size):
+    """Ширина строки в мм тем шрифтом, которым её напечатает PDF (для рамки подписи и проверки «целиком в рамке»)."""
+    family = family or "ui"
+    if family not in _TW_FONTS:
+        try:
+            from grado_render import Font, find_font
+            _TW_FONTS[family] = Font(find_font(family))
+        except Exception:
+            _TW_FONTS[family] = None
+    font = _TW_FONTS[family]
+    return font.text_width(str(text), size) if font else size * .6 * len(str(text))
+
+
+def _in_ring(x, y, ring):
+    inside = False
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside
+
+
 def _ring_centroid(ring):
     """Центр тяжести кольца (мм листа) и его площадь: подпись встаёт в середину фигуры, а не в среднее её вершин
     (у извилистой границы округа вершины скучены по краю)."""
@@ -392,9 +416,9 @@ class SketchMapFrame(Frame):
                         if f.get("label"):
                             c = _ring_centroid(rings[0])
                             if best is None or c[2] > best[2]:
-                                best = c
+                                best = (*c, rings[0])
                     if f.get("label") and best:
-                        labels.append((best[0], best[1], f["label"], f.get("ls"), f))
+                        labels.append((best[0], best[1], f["label"], f.get("ls"), f, best[3], abs(best[2])))
                 elif kind == "line":
                     color = hex_to_rgb(f.get("lc") or f.get("stroke") or f.get("fill") or "#333333")
                     for line in parts:
@@ -482,13 +506,15 @@ class SketchMapFrame(Frame):
         for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
             ls = float(ls or 2.2)
             text = str(text)[:40]
-            tw = ls * .55 * len(text)
-            if d < tw * .5:
-                continue                                                # отрезок короче половины подписи — не подписывать
+            tw = _text_w(text, af.get("lf"), ls)
+            if d < tw * .4:
+                continue                                                # отрезок короче 0,4 подписи — не подписывать
             if ang > math.pi / 2 or ang < -math.pi / 2:
                 ang += math.pi                                          # не вверх ногами
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
+                continue                                                # подпись улицы — целиком в рамке
             if not take((x - ex, y - ey, x + ex, y + ey)):
                 continue
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
@@ -501,12 +527,13 @@ class SketchMapFrame(Frame):
                 continue
             ang = -math.radians(float(deg or 0))              # на листе ось Y вниз: против часовой на карте — «минус»
             text = text[:60]
-            tw = ls * .55 * len(text)
+            tw = _text_w(text, pf.get("lf"), ls)
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-            # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём
+            # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём; подпись — целиком в рамке
             for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4)) if pf.get("nudge") else ((0, 0),):
-                if take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey)):
+                if (x + dx - ex >= rx and x + dx + ex <= rx + rw and y + dy - ey >= ry and y + dy + ey <= ry + rh
+                        and take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey))):
                     x, y = x + dx, y + dy
                     break
             else:
@@ -514,7 +541,11 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
-        for x, y, text, ls, f in labels:
+        # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
+        # рядом внутри своего контура (названия СНТ не пропадают из-за подписи улицы)
+        labels.sort(key=lambda t: -(t[6] if len(t) > 6 else 0))
+        for x, y, text, ls, f, *more in labels:
+            ring = more[0] if more else None
             ls = float(ls or 2.2)
             y += float(f.get("ldy") or 0)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -522,9 +553,23 @@ class SketchMapFrame(Frame):
             lines = [ln[:40] for ln in str(text).split("\n")[:8]]         # подпись в несколько строк: номер и индекс зоны, коды ВРИ
             lh = ls * 1.23
             y -= (len(lines) - 1) * lh / 2
-            bw, bh = ls * .6 * max(len(ln) for ln in lines), ls * 1.2
-            if not take((x - bw / 2, y - bh, x + bw / 2, y + ls * .3 + (len(lines) - 1) * lh)):
+            fams = f.get("lfs") or []
+            bw = max(_text_w(ln, (fams[i] if i < len(fams) and fams[i] else f.get("lf")), ls) for i, ln in enumerate(lines))
+            up, down = ls * 1.0, ls * .3 + (len(lines) - 1) * lh              # коробка подписи: y − up … y + down
+            steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
+                                if ring else [])
+            spot = None
+            for n, (dx, dy) in enumerate(steps + ([(0, 0)] if ring else [])):   # последняя попытка — центр, даже вне контура
+                cx = min(max(x + dx, rx + bw / 2 + 1), rx + rw - bw / 2 - 1)
+                cy = min(max(y + dy, ry + up + 1), ry + rh - down - 1)
+                if ring and n < len(steps) and not _in_ring(cx, cy, ring):
+                    continue
+                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down)):
+                    spot = (cx, cy)
+                    break
+            if not spot:
                 continue
+            x, y = spot
             # оформление подписи из листа: шрифт (lf, у каждой строки — lfs), ореол (lh, мм; цвет — lhc), цвет (lcol),
             # белая плашка под текстом (lbox) — альбомы по шаблонам
             extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
@@ -536,7 +581,6 @@ class SketchMapFrame(Frame):
                             "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, y - ls - pad * .6), (x + bw / 2 + pad, y - ls - pad * .6),
                                                                     (x + bw / 2 + pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6),
                                                                     (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
-            fams = f.get("lfs") or []
             for i, line in enumerate(lines):
                 fam = {"font_family": fams[i]} if i < len(fams) and fams[i] else {}
                 out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "anchor": "middle",

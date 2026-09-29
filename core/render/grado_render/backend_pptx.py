@@ -155,6 +155,7 @@ class _Slide:
         self.names = [None]
         self.clips = []
         self.pending = None                                # подряд идущие линии одного вида — одной фигурой
+        self.alpha = None                                  # прозрачность заливки текущей фигуры
 
     def e(self, v):
         return int(round(v * EMU * self.k))
@@ -249,7 +250,9 @@ class _Slide:
                       + "".join(f'<a:lnTo><a:pt x="{x - x0}" y="{y - y0}"/></a:lnTo>' for x, y in r[1:])
                       + ("<a:close/>" if closed else "") for r in pts)
         nofill = "" if fill is not None else ' fill="none"'
-        fill_xml = f'<a:solidFill><a:srgbClr val="{_hex(fill)}"/></a:solidFill>' if fill is not None else "<a:noFill/>"
+        alpha = f'<a:alpha val="{int(self.alpha * 100000)}"/>' if fill is not None and self.alpha is not None and self.alpha < 1 else ""
+        clr = f'<a:srgbClr val="{_hex(fill)}">{alpha}</a:srgbClr>' if alpha else f'<a:srgbClr val="{_hex(fill)}"/>' if fill is not None else ""
+        fill_xml = f'<a:solidFill>{clr}</a:solidFill>' if fill is not None else "<a:noFill/>"
         self.add(f'<p:sp><p:nvSpPr><p:cNvPr id="{self.nid()}" name="{_t(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>'
                  f'<a:xfrm><a:off x="{x0}" y="{y0}"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>'
                  f'<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/>'
@@ -425,7 +428,9 @@ class PptxBackend:
                     s.open(o.get("name") or "Слой")
                     depth = 1
                 elif t == "path":
+                    s.alpha = o.get("alpha")
                     s.path(o["rings"], o.get("closed"), o.get("fill"), o.get("stroke"), o.get("width", 0.3), o.get("dash"), o.get("join"))
+                    s.alpha = None
                 elif t == "circle":
                     s.circle(o)
                 elif t == "text":

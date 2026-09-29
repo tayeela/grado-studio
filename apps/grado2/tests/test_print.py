@@ -285,3 +285,23 @@ class ConceptSheets(unittest.TestCase):
         note = [o for o in ops if o["op"] == "text" and o["text"] in ("Троицкий", "административный округ", "район Вороново")]
         self.assertEqual([o["text"] for o in note], ["Троицкий", "административный округ", "район Вороново"])
         self.assertTrue(all(o["color"][0] > .5 and o["color"][1] < .2 and o.get("font_family") == "sans-bold" for o in note))
+
+
+class LabelsInFrame(unittest.TestCase):
+    """Подпись территории — целиком в рамке; занятое место ищется внутри своего контура; подложка легенды снимка —
+    полупрозрачная (ExtGState в PDF)."""
+
+    def test_area_label_is_pulled_inside_the_frame(self):
+        sq = lambda x0, y0, d: {"type": "Polygon", "coordinates": [[[x0, y0], [x0 + d, y0], [x0 + d, y0 + d], [x0, y0 + d], [x0, y0]]]}
+        sheet = {"size": "PA3", "style": "pptkrt", "look": "concept", "title": "Карта", "scale": 10000, "center": [37.2, 55.4], "rect": [0, 44, 420, 253],
+                 "noFrame": True, "legend": [], "layers": [{"title": "СНТ", "features": [
+                     {"g": sq(37.1650, 55.398, .004), "fill": None, "stroke": "#ffffff", "w": 0, "a": 0, "label": "СНТ «Очень длинное название»", "ls": 4.3, "lf": "sans-bold"}]}]}
+        ops = print_io.document_pages_ops(print_io.build_document({"sheets": [sheet]}, {}, {}), None)[0][2]
+        t = next(o for o in ops if o["op"] == "text" and o["text"].startswith("СНТ"))
+        self.assertGreaterEqual(t["x"] - print_io._text_w(t["text"], "sans-bold", 4.3) / 2, 0)
+
+    def test_translucent_legend_plate(self):
+        from grado_render import PdfBackend
+        pdf = PdfBackend().render([(100, 60, [{"op": "path", "rings": [[(0, 0), (50, 0), (50, 20), (0, 20)]], "closed": True,
+                                                "fill": (1, 1, 1), "alpha": .72, "stroke": None, "width": 0, "dash": None}])])
+        self.assertIn(b"/ExtGState << /GA1 << /ca 0.72 >>", pdf)
