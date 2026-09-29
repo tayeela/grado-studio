@@ -221,6 +221,40 @@ def _straight_runs(pts, junction, tol=0.6):
     return out
 
 
+# Знаки подтопления из примера владельца «Хатминки» (30.09.2026), мм листа: (штрих, пробел) и места засечек в периоде
+FLOOD = {64: (None, 0.9, (0.45,)), 65: ((3.0, 1.0), 4.0, (1.2, 2.0)), 66: ((2.0, 1.2), 3.2, ())}
+
+
+def flood_ops(pts, code, color, width=0.35, tick=0.6, side=1):
+    """Граница зоны подтопления по коду знака (64 сильное, 65 умеренное, 66 слабое): штрих и засечки длиной tick.
+    side=1 — засечки справа по ходу в мм листа (ось y вниз), side=-1 — слева: для кольца против часовой в градусах
+    (оно и на листе идёт против часовой) это внутрь зоны."""
+    dash, period, ticks = FLOOD.get(code, FLOOD[66])
+    out = [{"op": "path", "closed": False, "fill": None, "stroke": color, "width": width, "dash": list(dash) if dash else None, "rings": [pts]}]
+    if not ticks:
+        return out
+    segs, t0 = [], 0.0
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        d = math.hypot(x1 - x0, y1 - y0)
+        if d > 1e-9:
+            segs.append((x0, y0, (x1 - x0) / d, (y1 - y0) / d, t0, d))
+            t0 += d
+    rings, k = [], 0
+    while k * period < t0:
+        for off in ticks:
+            t = k * period + off
+            if t >= t0:
+                break
+            x0, y0, ux, uy, s0, d = next((sg for sg in segs if sg[4] <= t <= sg[4] + sg[5]), segs[-1])
+            x, y = x0 + ux * (t - s0), y0 + uy * (t - s0)
+            nx, ny = -uy * side, ux * side
+            rings.append([(x, y), (x + nx * tick, y + ny * tick)])
+        k += 1
+    if rings:
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": width * .8, "dash": None, "rings": rings})
+    return out
+
+
 def _seg_box(p, q, box):
     """Отрезок p–q (мм) задевает прямоугольник box (x0, y0, x1, y1): отсечение Лианга — Барски."""
     (x0, y0), (x1, y1) = p, q
@@ -481,6 +515,8 @@ class SketchMapFrame(Frame):
                             continue
                         if f.get("nl"):
                             pass                                    # линия не рисуется, только подпись (улицы на снимке)
+                        elif f.get("flood"):
+                            out.extend(flood_ops(pts, int(f["flood"]), color, side=f.get("fside", -1)))
                         elif f.get("lt"):
                             for name in f["lt"]:
                                 out.extend(linetype_ops(pts, name, LT_MM, color, max(w, 0.25), self.lib))

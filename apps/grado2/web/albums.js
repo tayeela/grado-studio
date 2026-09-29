@@ -97,9 +97,10 @@ const PPTKRT_C = [
   { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
     // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
     // заливка, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
-    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
+    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: .7, opacity: 0, label: "" },   // тоньше (владелец 30.09.2026)
       ...C_ROADS("#e3e3e3"), "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
+      "gisogd.airfield": { mode: "single", fill: "#000000", stroke: "#000000", width: 0, opacity: 0, label: "" },   // только надпись под легендой
       ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
@@ -213,13 +214,16 @@ const osmUseOf = p => { for (const v of [p["Землепользование"], 
 const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежная защитная полоса": 17, "Береговая полоса": 41, "Зона затопления": 22,
   "Зона сильного подтопления": 64, "Зона умеренного подтопления": 65, "Зона слабого подтопления": 66, "Санитарно-защитная зона (ПЗЗ)": 5,
   "Зона охраняемого объекта": 44, "Зона военного объекта": 30, "Охранная зона радиотехнического объекта": 31, "Охранная зона ООПТ": 19,
-  "Охранная зона объектов электроэнергетики": 32, "Охранная зона линий и сооружений связи": 34, "Особо охраняемая зелёная территория": 47 };
+  "Охранная зона объектов электроэнергетики": 32, "Охранная зона линий и сооружений связи": 34, "Особо охраняемая зелёная территория": 47,
+  "Охранная зона трубопровода": 35, "Зона минимальных расстояний до трубопроводов": 39 };
 // «Водоохранные зоны» → «водоохранных зон», «СЗЗ (установленная)» → «санитарно-защитных зон (установленных)» — для «граница …»
 // подписи линий в легенде, как в «ГК Царицыно»
 const LGR_LEG = { 1: "красные линии, обозначающие границы территорий общего пользования улично-дорожной сети города Москвы" };
 const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
   return t.toLowerCase().split(/\s+/).map(w => w.replace(/(ые|ие)$/, "ых").replace(/зоны$/, "зон").replace(/полосы$/, "полос").replace(/ая$/, "ой").replace(/зона$/, "зоны").replace(/территории$/, "территорий")).join(" "); };
+// зоны подтопления — знаками примера «Хатминки» (владелец 30.09.2026: «скопируй условные зон подтопления»); рисует печать
+const FLOOD_C = "#038240", FLOOD_T = { 64: "сильное подтопление (0–0,3 м)", 65: "умеренное подтопление (0,3–2,0 м)", 66: "слабое подтопление (2,0–3,0 м)" };
 // зоны подтопления в Эталоне различаются только штриховкой: без неё граница умеренного и слабого — типом линии сильного
 // (с засечками) цветом штриховки своего знака, затемнённым (владелец 30.09.2026)
 const ZONE_LINE = { 65: { lt: 64, color: "#2f7fd8" }, 66: { lt: 64, color: "#2e9e78" } };
@@ -509,8 +513,10 @@ function conceptSheet(out, sheet, bb) {
       const lines = safe(() => turf.polygonToLine(turf.rewind(one)));
       const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
       if (!g) return;
-      if (c != null && !zk.has(c)) zk.set(c, lt || null);
-      zoneFeats.push({ code: c, g: g.type === "LineString" ? { type: "MultiLineString", coordinates: [g.coordinates] } : g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3,
+      if (c != null && !zk.has(c) && !FLOOD_T[c]) zk.set(c, lt || null);
+      const ml = g.type === "LineString" ? { type: "MultiLineString", coordinates: [g.coordinates] } : g;
+      if (FLOOD_T[c]) { zoneFeats.push({ code: c, g: ml, flood: c, lc: FLOOD_C, w: 1.3 }); return; }   // подтопление — знаками «Хатминки»
+      zoneFeats.push({ code: c, g: ml, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: LGRC[c] || "#ff0000", w: 1.3,
         ll: lt || c == null ? undefined : LGRS[c]?.line_label }); });
     // контуры зон подтопления ГИС ОГД совпадают неточно: после слияния остаются щели, и граница слабого местами идёт
     // вдоль границы умеренного. Участки границы слабее, чем в 3 м от границы более сильной зоны, не рисуются
@@ -540,6 +546,18 @@ function conceptSheet(out, sheet, bb) {
         items: [...[...lgr].map(([c, n]) => [c, n, LGR_LEG[c] || "граница " + zoneGen(LGRT[c] || "")]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
           .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5),
             ll: n || (LGRS[c]?.line_label || "").length > 12 ? undefined : LGRS[c]?.line_label, label: t })) }] : [])];   // длинная надпись в знак 8 мм не входит
+    // подтопление — своей группой, знаками и подписями примера «Хатминки»
+    const fl = [64, 65, 66].filter(c => zoneFeats.some(f => f.flood === c && f.g.coordinates.length));
+    if (fl.length) out.cLegend.push({ title: "Зона подтопления от паводка 1% обеспеченности (глубина залегания грунтовых вод)",
+      items: fl.map(c => ({ kind: "flood", code: c, stroke: FLOOD_C, label: FLOOD_T[c] })) });
+    // приаэродромная территория — надписью под легендой, как в «Хатминки»: подзоны, которые пересекают территорию
+    const af = L("gisogd.airfield"), air = new Map();
+    (af?.features || []).forEach(ft => { const [port, n] = String(ft.props?.["Вид зоны"] || "").split("|");
+      if (port && n && safe(() => turf.booleanIntersects({ type: "Feature", geometry: ft.g, properties: {} }, TERR))) (air.get(port) || air.set(port, new Set()).get(port)).add(+n); });
+    if (af) af.features = [];
+    const ord = n => ({ 1: "1-й", 2: "2-й", 3: "3-ей", 4: "4-ой", 5: "5-ой", 6: "6-ой" })[n] || n + "-й";
+    air.forEach((ns, port) => { const list = [...ns].sort((a, b) => a - b).map(ord);
+      out.cLegend.push({ items: [{ kind: "note", label: `Территория находится в ${list.length > 1 ? list.slice(0, -1).join(", ") + " и " + list.at(-1) : list[0]} подзон${list.length > 1 ? "ах" : "е"} приаэродромной территории аэропорта «${port}»` + (port === "Внуково" ? ". Приказ Росавиации от 17.04.2020 № 394-П" : "") }] }); });
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой

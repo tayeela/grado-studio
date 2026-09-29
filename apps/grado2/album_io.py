@@ -228,6 +228,9 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
         if it.get("ll"):                        # надпись знака над линией — как в образце «ГК Царицыно»
             size_mm = min(1.25, (w + 1) / (len(it["ll"]) * .56))      # не шире знака: длинная надпись — мельче
             out.append({**_text(x + w / 2, y + h / 2 - .45, size_mm / PT, it["ll"], _rgb(it.get("stroke"), (1, 0, 0)), "sans", "middle")})
+    elif k == "flood":                                   # подтопление — знаки примера «Хатминки», засечки вниз
+        from print_io import flood_ops
+        out.extend(flood_ops([(x, y + h / 2 - .4), (x + w, y + h / 2 - .4)], int(it["code"]), _rgb(it.get("stroke"), (0.01, 0.51, 0.25)), side=1))
     elif k == "text":
         out.append({**_text(x + w / 2, y + h, float(it.get("size", 10)), it.get("sample", ""), _rgb(it.get("color"), INK),
                             it.get("family", "sans-bold"), "middle"), **({"underline": True} if it.get("underline") else {})})
@@ -267,13 +270,15 @@ class ConceptColumnFrame(Frame):
                         yy += 4.4
                     yy += 2.1
                 for it in g.get("items", []):
-                    lines = _wrap_mm(it.get("label", ""), "sans", S10, w - 10.5)
+                    note = it.get("kind") == "note"                    # пояснение под легендой (приаэродромная территория) — без знака
+                    lines = _wrap_mm(it.get("label", ""), "sans", S10, w if note else w - 10.5)
                     if yy + (len(lines) - 1) * 4.2 > bottom - 2:
                         full = True
                         break
-                    out.extend(concept_swatch(x, yy - 2.8, it, self.lib))
+                    if not note:
+                        out.extend(concept_swatch(x, yy - 2.8, it, self.lib))
                     for i, line in enumerate(lines):
-                        out.append(_text(x + 10.5, yy + i * 4.2, 10, line, INK2, "sans"))
+                        out.append(_text(x + (0 if note else 10.5), yy + i * 4.2, 10, line, INK2, "sans"))
                     yy += 6.5 + (len(lines) - 1) * 4.2
                 if full:
                     break

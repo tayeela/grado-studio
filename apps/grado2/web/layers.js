@@ -25,7 +25,7 @@ const stDefaults = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke:
 const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "egko.addresses", "egko.fences", "relief.contours",
   "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings",
   "yandex.transport", "yandex.parking", "osm.social", "yandex.roads", "osm.roads", "egko.paths", "yandex.road_edges",
-  "gisogd.okn", "nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.pmt", "gisogd.agr", "gisogd.gpzu", "gisogd.krt",
+  "gisogd.okn", "nspd.zouit", "gisogd.zouit", "gisogd.airfield", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.pmt", "gisogd.agr", "gisogd.gpzu", "gisogd.krt",
   "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water_labels", "egko.place_labels", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
   "gisogd.admin", "gisogd.pzz_zones", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.landuse", "yandex.landuse"];
 // застройка из разных источников — одна и та же: на холсте видна одна, по этому порядку (ЕГКО — самая полная)
@@ -58,6 +58,7 @@ function defaultStyle(key, fc) {
     "gisogd.func_zones": { mode: "cat", opacity: .8, stroke: "#3c3c3c", width: .5, cat: { field: "naimfunkzony", colors: zones(GPZ), off: [] } },
     "gisogd.func_zones_tinao": { mode: "cat", opacity: .8, stroke: "#3c3c3c", width: .5, cat: { field: "Вид зоны", colors: zones(NMZ), off: [] } },
     "gisogd.szz": { fill: "#4a3aa7", stroke: "#4a3aa7", hatch: true, width: 1.2 },
+    "gisogd.airfield": { mode: "cat", opacity: 0, width: 1, cat: { field: "Вид зоны", colors: {}, off: [] } },
     "gisogd.vodookhr": { fill: "#2a78d6", stroke: "#2a78d6", hatch: true, width: 1.2 },
     // ЗОУИТ по СПРИТ: вид зоны — цветом штриховки знака Эталона ЛГР (береговые — синим контуром знака)
     "gisogd.zouit": { mode: "cat", hatch: true, width: 1.2, cat: { field: "Вид зоны", off: [], colors: {

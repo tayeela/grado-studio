@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.81.0: flooding signs from «Хатминки», pipeline zones, airfield note; layers audit.** Owner:
+  copy the flooding legend from «Хатминки», check which layers are missing, check sanitary protection zones in the frame.
+  Flooding (codes 64/65/66) is drawn with the example's signs (green #038240, 0.35 mm; strong — solid with dense ticks,
+  moderate — 3/1 mm dashes with two ticks, weak — 2/1.2 mm dashes; ticks inside the zone) by `flood_ops` in print and in
+  the legend, in its own legend group with the example's labels. `gisogd.zouit` adds pipeline protection zones
+  (`virtual521`) and minimum-distance zones (`virtual`), Эталон signs 35/39 (Сводный план layers 2.16/2.19 answer HTTP
+  500). New `gisogd.airfield` (Внуково, Шереметьево, Остафьево subzones): a note under the legend, like the example,
+  only for subzones that cross the territory; legend items of kind `note` have no sample. Audit of КРТ 3141 frame: no
+  СЗЗ in ГИС ОГД (Генплан, Сводный план) nor ЕГРН (nearest of 9 СЗЗ is 2.1 km away); ЕГРН has Внуково airfield
+  territory and subzones 3 and 5 (the territory itself is outside), two gas main minimum-distance zones, a power line
+  zone. Rules first.
 - **2026-09-30, ГРАДО 2 v0.80.0: gaps continue the nearest zones; light-grey carriageway.** After analysing the examples
   (IRGA «Хатминки» sheet 5 and MapInfo «ЗУ_ФЗ» leave land without parcels and streets unfilled; only parcels are coloured,
   no outlines on fills) the owner decided: land without parcels — by OSM where it knows, elsewhere extrapolate the
