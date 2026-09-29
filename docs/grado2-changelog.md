@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.71.1: satellite for AutoCAD placed by a script, not by an IMAGE entity in DXF.** Owner: AutoCAD
+  2025 (Mac) opened `sputnik_yandex.dxf` with the image «Unreferenced», Reload did not help — AutoCAD dropped the IMAGE
+  entity on load. The archive now has `sputnik_yandex.scr` (`-IMAGE` Attach, insertion point = lower-left frame corner
+  in МСК, scale = image width in metres, rotation 0, then ZOOM E); the DXF holds only the red frame of the image. Manual
+  IMAGEATTACH values are in README. Not yet confirmed in AutoCAD by the owner.
 - **2026-09-30, ГРАДО 2 v0.71.0: Yandex satellite of a sheet frame for AutoCAD in МСК.** Owner: «придумай выгрузку листа
   спутника яндекс в автокад в координатах, как делали из QGIS». New button on every map sheet; `POST /api/export/sat`
   (`sat_io.py`). Yandex tiles are EPSG:3395 and turned against МСК, so the image is rebuilt on the МСК grid block by

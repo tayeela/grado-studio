@@ -5,8 +5,8 @@
 выходной растр режется на блоки, углы каждого блока пересчитываются МСК → WGS84 → 3395 → пиксели тайлов, и блок
 берётся из мозаики сеткой четырёхугольников (Pillow, Image.MESH) — ошибка меньше пикселя.
 
-Архив: sputnik_yandex.jpg + sputnik_yandex.jgw (файл привязки: МСК, метры) + sputnik_yandex.dxf (растр IMAGE на своём
-месте в МСК, AutoCAD находит снимок рядом с чертежом) + .dwg, если стоит ODA File Converter.
+Архив: sputnik_yandex.jpg + sputnik_yandex.jgw (файл привязки: МСК, метры) + sputnik_yandex.scr (сценарий AutoCAD:
+вставляет снимок командой -IMAGE на своё место) + sputnik_yandex.dxf (рамка снимка в МСК).
 Снимки Яндекса — для работы и эскиза, в сдаваемые материалы не включать (как слои Яндекса, решение владельца).
 """
 
@@ -181,15 +181,21 @@ def export_sat(frame, mpp, cache_dir, progress=None, tiles=None):
 
 
 def _package(jpg, frame, mpp, W, H, z):
+    """Архив для AutoCAD. Растр IMAGE прямо в DXF AutoCAD 2025 (Mac) отбрасывает при открытии (владелец 30.09.2026:
+    снимок «Unreferenced», Reload не помог), поэтому снимок вставляет штатная команда -IMAGE из сценария .scr:
+    точка вставки — левый нижний угол рамки в МСК, масштаб — ширина снимка в метрах (у JPEG без разрешения базовая
+    ширина — 1 единица). В DXF — только рамка снимка, чтобы ZOOM E сразу показал место."""
     import ezdxf
     import dxf_io
     x0, y0, x1, y1 = frame
+    w, h = W * mpp, H * mpp
     jgw = f"{mpp:.6f}\n0.0\n0.0\n{-mpp:.6f}\n{x0 + mpp / 2:.4f}\n{y1 - mpp / 2:.4f}\n"
+    # сценарий: каждая строка — ответ на запрос команды; имя снимка без пробелов, путь — папка текущего чертежа
+    scr = (f"-IMAGE\nA\n{NAME}.jpg\n{x0:.3f},{y0:.3f}\n{w:.3f}\n0\nZOOM\nE\n")
     doc = ezdxf.new("R2018")
-    doc.layers.add(dxf_io.acad_name("Спутник Яндекс"))
-    img = doc.add_image_def(filename=f"{NAME}.jpg", size_in_pixel=(W, H))
-    doc.modelspace().add_image(img, insert=(x0, y0), size_in_units=(W * mpp, H * mpp), rotation=0,
-                               dxfattribs={"layer": dxf_io.acad_name("Спутник Яндекс")})
+    layer = dxf_io.acad_name("Рамка снимка Яндекса")
+    doc.layers.add(layer, color=1)
+    doc.modelspace().add_lwpolyline([(x0, y0), (x0 + w, y0), (x0 + w, y0 + h), (x0, y0 + h)], close=True, dxfattribs={"layer": layer})
     dxf_io.fit_view(doc)
     buf = io.StringIO()
     doc.write(buf)
@@ -199,17 +205,15 @@ def _package(jpg, frame, mpp, W, H, z):
         zf.writestr(f"{NAME}.jpg", jpg)
         zf.writestr(f"{NAME}.jgw", jgw)
         zf.writestr(f"{NAME}.dxf", dxf)
-        if dxf_io.oda_converter():
-            try:
-                zf.writestr(f"{NAME}.dwg", dxf_io.oda_convert(dxf, "dxf", "DWG"))
-            except (OSError, ValueError):
-                pass
+        zf.writestr(f"{NAME}.scr", scr.encode("utf-8"))
         zf.writestr("README.txt", (
             "Yandex satellite image of the sheet frame, resampled to MSK (QGIS custom CRS 'MSK': +proj=tmerc +lat_0=55.66666666667 "
             "+lon_0=37.5 +k=1 +x_0=0 +y_0=0 +ellps=bessel), metres.\n"
-            f"Pixel {mpp} m, {W} x {H} px, Yandex tiles z{z}. Frame: X {x0:.2f}..{x1:.2f}, Y {y0:.2f}..{y1:.2f}.\n"
-            f"AutoCAD: open {NAME}.dxf (the image lies in place; keep {NAME}.jpg next to the drawing), or insert {NAME}.jpg "
-            f"with insertion point X {x0:.2f} Y {y0:.2f}, scale {W * mpp:.2f}, rotation 0.\n"
-            f"QGIS and AutoCAD Map 3D read the world file {NAME}.jgw.\n"
+            f"Pixel {mpp} m, {W} x {H} px, Yandex tiles z{z}. Frame: X {x0:.2f}..{x0 + w:.2f}, Y {y0:.2f}..{y0 + h:.2f}.\n\n"
+            "AutoCAD, quick way: unzip everything into one folder, open sputnik_yandex.dxf from it (it holds the red frame of the "
+            "image), run command SCRIPT and choose sputnik_yandex.scr - the image is attached in place.\n"
+            "In your own drawing: save it into this folder first and run the same script, or attach by hand: IMAGEATTACH, "
+            f"file sputnik_yandex.jpg, insertion point X {x0:.3f} Y {y0:.3f}, scale {w:.3f}, rotation 0.\n"
+            "QGIS and AutoCAD Map 3D read the world file sputnik_yandex.jgw.\n"
             "For working drawings only; not for submitted materials.\n").encode("utf-8"))
     return out.getvalue()

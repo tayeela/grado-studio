@@ -46,17 +46,23 @@ class SatExport(unittest.TestCase):
             frame = sat_io.frame_msk((37.162, 55.341), [0, 0, 60, 40], 10000)   # 600 × 400 м
             data = sat_io.export_sat(frame, 2.0, d, tiles=FakeTiles(d))
         z = zipfile.ZipFile(io.BytesIO(data))
-        self.assertTrue({"sputnik_yandex.jpg", "sputnik_yandex.jgw", "sputnik_yandex.dxf", "README.txt"} <= set(z.namelist()))
+        self.assertTrue({"sputnik_yandex.jpg", "sputnik_yandex.jgw", "sputnik_yandex.dxf", "sputnik_yandex.scr", "README.txt"} <= set(z.namelist()))
         from PIL import Image
         self.assertEqual(Image.open(io.BytesIO(z.read("sputnik_yandex.jpg"))).size, (300, 200))
         jgw = z.read("sputnik_yandex.jgw").decode().split()
         self.assertAlmostEqual(float(jgw[4]), frame[0] + 1.0, places=3)
         self.assertAlmostEqual(float(jgw[5]), frame[3] - 1.0, places=3)
+        scr = z.read("sputnik_yandex.scr").decode().split("\n")
+        self.assertEqual(scr[:3], ["-IMAGE", "A", "sputnik_yandex.jpg"])
+        x, y = map(float, scr[3].split(","))
+        self.assertAlmostEqual(x, frame[0], places=2)
+        self.assertAlmostEqual(y, frame[1], places=2)
+        self.assertAlmostEqual(float(scr[4]), 600, places=2)          # масштаб = ширина снимка, м
         import ezdxf
         doc = ezdxf.read(io.StringIO(z.read("sputnik_yandex.dxf").decode("utf-8")))
-        img = next(e for e in doc.modelspace() if e.dxftype() == "IMAGE")
-        self.assertAlmostEqual(img.dxf.insert[0], frame[0], places=3)
-        self.assertAlmostEqual(img.dxf.insert[1], frame[1], places=3)
+        self.assertFalse([e for e in doc.modelspace() if e.dxftype() == "IMAGE"])
+        pl = next(e for e in doc.modelspace() if e.dxftype() == "LWPOLYLINE")
+        self.assertAlmostEqual(pl.get_points()[0][0], frame[0], places=3)
 
     def test_too_large(self):
         with self.assertRaises(sat_io.SatError):
