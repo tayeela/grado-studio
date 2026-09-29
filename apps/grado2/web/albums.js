@@ -95,11 +95,11 @@ const PPTKRT_C = [
     styles: { ...C_NAMES, ...C_STREETS("#ffffff"), ...C_WATER, ...C_WATER_VIS, "calc.uds_ya": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
       "egko.roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 }, "egko.buildings": C_PLAN["egko.buildings"] }, only: C_ONLY },
   { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
-    // ЗОУИТ и зоны ограничений ГИС ОГД — знаками Эталона ЛГР (оформление каждой зоны задаёт conceptSheet); белые — только УДС
+    // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
+    // заливка, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
     keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: 1, opacity: 0, label: "" },
-      "calc.uds_ya": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 }, "egko.roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
-      ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
+      ...C_ROADS("#b4b4b4"), ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, ...C_WATER_VIS, "calc.uds_ya": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
@@ -171,6 +171,8 @@ const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежна
   "Зона охраняемого объекта": 44, "Зона военного объекта": 30, "Охранная зона радиотехнического объекта": 31, "Охранная зона ООПТ": 19,
   "Охранная зона объектов электроэнергетики": 32, "Охранная зона линий и сооружений связи": 34, "Особо охраняемая зелёная территория": 47 };
 // «Водоохранные зоны» → «водоохранных зон», «СЗЗ (установленная)» → «санитарно-защитных зон (установленных)» — для «граница …»
+// подписи линий в легенде, как в «ГК Царицыно»
+const LGR_LEG = { 1: "красные линии, обозначающие границы территорий общего пользования улично-дорожной сети города Москвы" };
 const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
   return t.toLowerCase().split(/\s+/).map(w => w.replace(/(ые|ие)$/, "ых").replace(/зоны$/, "зон").replace(/полосы$/, "полос").replace(/ая$/, "ой").replace(/зона$/, "зоны").replace(/территории$/, "территорий")).join(" "); };
@@ -345,31 +347,45 @@ function conceptSheet(out, sheet, bb) {
     put(turf.bboxPolygon(bb).geometry, base);
     (L("osm.landuse")?.features || []).filter(inFrame).map(ft => ({ ft, u: ft.props && osmUseOf(ft.props), a: m2({ type: "Feature", geometry: ft.g, properties: {} }) }))
       .filter(x => x.u && /Polygon/.test(x.ft.g.type)).sort((x, y) => y.a - x.a).forEach(x => put(x.ft.g, x.u));
-    (pl?.features || []).forEach(ft => { const u = ft.props && landUseOf(ft.props); if (u && inFrame(ft)) put(ft.g, u); });
+    // участок без ВРИ («обособленный участок» единого землепользования — ВРИ в карточке родителя), больше чем на треть
+    // под проезжей частью, — территория автодорог (владелец 30.09.2026: участки под дорогами должны быть белыми)
+    const roadPolys = ["calc.uds_ya", "egko.roads"].flatMap(key => L(key)?.features || []).filter(inFrame)
+      .map(ft => ({ f: { type: "Feature", geometry: ft.g, properties: {} }, b: turf.bbox(ft.g) }));
+    const underRoads = ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, b = turf.bbox(f), a = m2(f); let r = 0;
+      roadPolys.forEach(x => { if (x.b[2] < b[0] || x.b[0] > b[2] || x.b[3] < b[1] || x.b[1] > b[3]) return; const y = safe(() => inter(f, x.f)); if (y) r += m2(y); });
+      return a > 0 && r > a / 3; };
+    (pl?.features || []).forEach(ft => { if (!inFrame(ft)) return;
+      const u = ft.props && (landUseOf(ft.props) || (!ft.props["ВРИ"] && underRoads(ft) ? LAND_USE[0] : null)); if (u) put(ft.g, u); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
-    seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // УДС — белые, в легенде всегда
+    seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // территории автодорог — белые, в легенде всегда
+    // линии Сводного плана: код знака каждой линии; зона, у которой есть своя линия, по контуру второй раз не рисуется
+    const lgr = new Map();
+    (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return;
+      (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); });
+      (ft.miss || []).forEach(([c]) => { if (c != null && !lgr.has(+c)) lgr.set(+c, null); }); });
     // ЗОУИТ — как в «ГК Царицыно»: только граница зоны красным типом линии REDLN97 своего кода Эталона ЛГР, засечки
     // внутрь (кольцо против часовой — зона слева, вариант «t»); кода без типа линии — штрихом знака. Без штриховки
     const zk = new Map();
     ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => { const l = L(key); if (!l) return;
       l.features = l.features.filter(inFrame).map(ft => {
         const c = zouitCode(key, ft.props || {}), lt = c != null ? Linetypes.forCode(ZONE_LINE[c]?.lt ?? c, -1) : null;
+        if (c != null && lgr.has(c)) return null;               // граница уже есть линией Сводного плана
         const lines = safe(() => turf.polygonToLine(turf.rewind({ type: "Feature", geometry: ft.g, properties: {} })));
         const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
         if (!g) return null;
         if (c != null && !zk.has(c)) zk.set(c, lt || null);
-        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3 };
+        return { g, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", w: 1.3,
+          ll: lt || c == null ? undefined : LGRS[c]?.line_label };
       }).filter(Boolean); });
-    const lgr = new Map();
-    (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return; (ft.lt || []).forEach(n => { const c = ltCode(n); if (c != null && !lgr.has(c)) lgr.set(c, n); }); });
     out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
       { title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] },
       ...((L("egko.water")?.features || []).some(inFrame) ? [{ title: "Природные объекты", items: [{ kind: "fill", fill: "#bfe0f5", stroke: "#bfe0f5", label: "водные объекты" }] }] : []),
       ...(seen.size ? [{ title: "Вид функционального использования участков территории",
         items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a", label: n })) }] : []),
       ...(lgr.size || zk.size ? [{ title: "Линии градостроительного регулирования, действующие",
-        items: [...[...lgr].map(([c, n]) => [c, n, LGRT[c] || n]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
-          .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5), label: t })) }] : [])];
+        items: [...[...lgr].map(([c, n]) => [c, n, LGR_LEG[c] || "граница " + zoneGen(LGRT[c] || "")]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
+          .sort((a, b) => a[0] - b[0]).map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5),
+            ll: n ? undefined : LGRS[c]?.line_label, label: t })) }] : [])];
   }
   if (k === "gp") {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой

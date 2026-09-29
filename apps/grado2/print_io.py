@@ -470,6 +470,9 @@ class SketchMapFrame(Frame):
                                 dash = self.lgr_dash.get(int(code))
                                 out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w, 0.25),
                                             "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts]})
+                            if f.get("ll"):                     # надпись знака вдоль линии (Эталон ЛГР: «техническая зона», «береговая»)
+                                from grado_render.scene import line_label_ops
+                                out.extend(dict(t, font_family="sans") for t in line_label_ops([tuple(p) for p in pts], f["ll"], color, 1.6, False))
                         else:
                             out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": w, "dash": dash, "rings": [pts]})
                         if f.get("label"):

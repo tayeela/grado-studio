@@ -92,7 +92,10 @@ function sheetSpec(sheet) {
       const lab = sheet.labelFn?.[pl.key] ? LABEL_FN[sheet.labelFn[pl.key]](f) : st.label ? f.get(st.label) : null;
       // подсветка: округ и район, в которых лежит территория
       const hl = sheet.hilite?.[pl.key] && tc && /Polygon/.test(g.type) && safe(() => turf.booleanPointInPolygon(tc, g)) ? sheet.hilite[pl.key] : null;
-      if (st.mode === "lgr") { const lt = f.get("_lt") || [], miss = f.get("_miss") || []; feats.push({ g, lt, miss, lc: LGRC[ltCode(lt[0] || "")] || LGRC[miss[0]?.[0]] || "#d7191c", w: st.width, label: lab }); return; }
+      if (st.mode === "lgr") { const lt = f.get("_lt") || [], miss = f.get("_miss") || [];
+        // код без типа линии REDLN97 (техзоны, береговые и др.) — штрих знака и надпись знака вдоль линии, по Эталону ЛГР
+        const ll = miss.map(([c]) => LGRS[+c]?.line_label).find(Boolean);
+        feats.push({ g, lt, miss, lc: LGRC[ltCode(lt[0] || "")] || LGRC[miss[0]?.[0]] || "#d7191c", w: st.width, label: lab, ll }); return; }
       const s = symbolOf(pl, f); if (s.hide) return;
       // как на карте: контур при штриховке — цветом штриховки, если у слоя нет своего цвета контура (Эталон ЛГР);
       // штрих контура и шаг штриховки — в пикселях карты; подписи надписей ГИС ОГД — своим цветом, под своим углом, без значка

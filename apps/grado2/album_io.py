@@ -225,6 +225,9 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
         else:
             out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.45,
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
+        if it.get("ll"):                        # надпись знака над линией — как в образце «ГК Царицыно»
+            size_mm = min(1.25, (w + 1) / (len(it["ll"]) * .56))      # не шире знака: длинная надпись — мельче
+            out.append({**_text(x + w / 2, y + h / 2 - .45, size_mm / PT, it["ll"], _rgb(it.get("stroke"), (1, 0, 0)), "sans", "middle")})
     elif k == "text":
         out.append({**_text(x + w / 2, y + h, float(it.get("size", 10)), it.get("sample", ""), _rgb(it.get("color"), INK),
                             it.get("family", "sans-bold"), "middle"), **({"underline": True} if it.get("underline") else {})})

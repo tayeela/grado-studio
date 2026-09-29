@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.74.0: sheet 5 roads and all Сводный план lines.** Owner: roads were grey outlines without fill,
+  parcels under roads were not white, УДС red lines, техзоны and others missing. Now: carriageway filled grey (#b4b4b4, no
+  outline) as in «ГК Царицыно»; a parcel without ВРИ (NSPD «обособленный участок» of a single land use — the ВРИ is on
+  the parent card, checked on 50:27:0030236:16) lying more than a third under the carriageway is a road territory, white.
+  `gisogd.red_lines` now loads all 14 line layers of Сводный план (l1 l2 l3 l4 l25 l16 l17 l7 l57 l8 l41 l18 l21 l29), not
+  only l1; a zone that has its own Сводный план line is not drawn again by its outline. Codes without a REDLN97
+  linetype (29 техзоны, 41 береговые and others) get the Эталон dash plus the Эталон line text along the line
+  («техническая зона», «береговая»; core `line_label_ops`), also in the legend sample, fitted to the sign width.
+  Legend label of code 1 as in the sample. Checked on КРТ 3141: inside the sheet 5 frame ГИС ОГД has 28 shore-strip
+  lines, but no УДС red lines and no техзоны — the nearest (16 and 8 lines) are 1.5–2 km north and south of the frame.
 - **2026-09-30, ГРАДО 2 v0.73.1: flooding zones told apart.** Owner: moderate and weak flooding looked the same. In the
   Эталон ЛГР codes 64/65/66 differ only by hatch colour, and hatches are gone from sheet 5. Now all three use the ticked
   linetype of code 64; strong stays red, moderate is blue #2f7fd8, weak green #2e9e78 (each sign's hatch colour,
