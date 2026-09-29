@@ -318,7 +318,9 @@ async function loadKeys(keys, bb) {
   if (fresh.length) setSel(fresh);          // новое и изменённое в источнике — подсвечено выбором
   const pzzMsg = DATA["gisogd.pzz_sub"] && keys.includes("gisogd.pzz_sub") && RESULT.tepNode?.widgets[1].value === 25 && !RESULT.tepNode.properties?.pzzTarget && takePzzTarget(true)
     ? ` Цель плотности эскиза взята по ПЗЗ: ${RESULT.tepNode.widgets[1].value} тыс. м²/га (окно «Показатели»).` : "";
-  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne}` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}${pzzMsg}${same.length ? ` Без изменений в источнике: ${same.length === 1 ? "«" + same[0] + "»" : plural(same.length, ["слой", "слоя", "слоёв"])}.` : ""}`);
+  // причина видна сразу: «Земельные участки (ЕГРН): область 195 км² больше допустимых 150 км²…»
+  const why = Object.entries(ERRORS).slice(0, 3).map(([k, m]) => `${SOURCES[k]?.title || k}: ${m}`).join("; ");
+  toast(`Загружено слоёв: ${nLayers}${ne ? `, с ошибкой: ${ne} (${why})` : ""}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reports.length ? " Перевыгрузка — " + reports.join("; ") + (fresh.length ? ". Новое и изменённое выделено." : ".") : ""}${pzzMsg}${same.length ? ` Без изменений в источнике: ${same.length === 1 ? "«" + same[0] + "»" : plural(same.length, ["слой", "слоя", "слоёв"])}.` : ""}`);
 };
 /* Повторная выгрузка слоя: сравнение с прошлой по ключу объекта источника (_key) и слияние с ручной правкой,
    чтобы ничего не пропало молча: ваша правка объекта сильнее новой версии источника, удалённое вами остаётся

@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.69.6: load message names the failed layers and why.** Owner: NSPD layers did not load on a
+  sheet A3 at 1:38 216 (0 loaded, 3 errors). Cause: the sheet covers about 195 km² and NSPD is limited to 150 km²
+  (`LIMIT_KM2`); a small NSPD request from the server works. The message said only «с ошибкой: 3»; it now lists up to
+  three layers with the reason.
 - **2026-09-30, ГРАДО 2 v0.69.5: sheets 4–5 checked against the label rules.** Water is drawn light blue (#bfe0f5)
   under the roads on the white schemes (sheets 4–8) — the river names no longer hang over empty paper; on the ortho
   sheets water stays invisible (only for placing names). River labels also avoid the territory boundary
