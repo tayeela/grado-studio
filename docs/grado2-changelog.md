@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.80.0: gaps continue the nearest zones; light-grey carriageway.** After analysing the examples
+  (IRGA «Хатминки» sheet 5 and MapInfo «ЗУ_ФЗ» leave land without parcels and streets unfilled; only parcels are coloured,
+  no outlines on fills) the owner decided: land without parcels — by OSM where it knows, elsewhere extrapolate the
+  nearest zones; carriageway without a parcel — light grey like the base; parcels outside the territory stay coloured
+  under the mask. Sheet 5: points every ≥8 m (≤6000 per sheet, deduplicated to ~1 m) along the boundaries of coloured
+  parcels and OSM areas → Voronoi cells (turf) in the colour of their outline, drawn under all fills, so only gaps show
+  them; bbox padded 2 % (points on the edge or coincident points break turf.voronoi). Carriageway #e3e3e3 (the owner's
+  «внутриквартальные проезды» colour). Rules first.
 - **2026-09-30, ГРАДО 2 v0.79.1: no white band around roads.** Owner: «убери обводку у всех дорог, белым должны быть только
   зоны, если для дороги сформирован земельный участок». The 6 m white buffer around the carriageway (v0.79.0) is removed;
   only parcels formed for roads are white, above other fills.

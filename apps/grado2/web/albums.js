@@ -99,7 +99,7 @@ const PPTKRT_C = [
     // заливка, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
     keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: .7, opacity: 0, label: "" },   // тоньше (владелец 30.09.2026)
-      ...C_ROADS("#b4b4b4"), "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
+      ...C_ROADS("#e3e3e3"), "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
       ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
@@ -440,10 +440,11 @@ function conceptSheet(out, sheet, bb) {
     // снизу вверх: вся рамка — природные территории, поверх — землепользование OSM (крупные раньше мелких), поверх —
     // участки ЕГРН по ВРИ; УДС белые сверху. Белых пятен, кроме улиц и дорог, нет (владелец 30.09.2026)
     const pl = L("nspd.parcels"), use = [], seen = new Map(), base = LAND_USE.find(([n]) => n === LAND_BASE);
-    const put = (g, u) => { use.push({ g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); };
+    const seeds = [];                                            // закрашенные участки и контуры OSM — для продолжения зон
+    const put = (g, u, seed) => { use.push({ g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); if (seed) seeds.push({ g, u }); };
     put(turf.bboxPolygon(bb).geometry, base);
     (L("osm.landuse")?.features || []).filter(inFrame).map(ft => ({ ft, u: ft.props && osmUseOf(ft.props), a: m2({ type: "Feature", geometry: ft.g, properties: {} }) }))
-      .filter(x => x.u && /Polygon/.test(x.ft.g.type)).sort((x, y) => y.a - x.a).forEach(x => put(x.ft.g, x.u));
+      .filter(x => x.u && /Polygon/.test(x.ft.g.type)).sort((x, y) => y.a - x.a).forEach(x => put(x.ft.g, x.u, true));
     // участок без ВРИ («обособленный участок» единого землепользования — ВРИ в карточке родителя), больше чем на треть
     // под проезжей частью, — территория автодорог (владелец 30.09.2026: участки под дорогами должны быть белыми)
     const roadPolys = ["calc.uds_ya", "egko.roads"].flatMap(key => L(key)?.features || []).filter(inFrame)
@@ -456,13 +457,26 @@ function conceptSheet(out, sheet, bb) {
     const roadLots = [];                                          // территории дорог — поверх береговой полосы (ниже)
     (pl?.features || []).forEach(ft => { if (!inFrame(ft) || !ft.props) return;
       const sh = roadShare(ft), u = sh > .5 || (!ft.props["ВРИ"] && sh > .1) ? ROAD_USE : landUseOf(ft.props); if (!u) return;
-      put(ft.g, u); if (u === ROAD_USE) roadLots.push(ft.g); });
+      put(ft.g, u, u !== ROAD_USE && u !== WATER_USE); if (u === ROAD_USE) roadLots.push(ft.g); });
     // внутри береговой полосы — всё природные и озеленённые территории (владелец 30.09.2026), поверх участков
     (L("gisogd.zouit")?.features || []).forEach(ft => { if (ft.props?.["Вид зоны"] !== "Береговая полоса" || !/Polygon/.test(ft.g?.type)) return;
       const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, turf.bboxPolygon(bb))); if (part) put(part.geometry, NATURE_USE); });
     // участки, сформированные под дороги, — выше и в приоритете над зонами рек (владелец 30.09.2026); белым — только они,
     // без выдуманных полос вокруг проезжей части (владелец 30.09.2026: «убери обводку у всех дорог»)
     roadLots.forEach(g => put(g, ROAD_USE));
+    // где ни участка, ни OSM — продолжение ближайших зон (владелец 30.09.2026: «экстраполировать ближайшие зоны»): точки по
+    // границам закрашенных контуров → ячейки ближайшего соседа (Вороного) цветом своего контура, под всеми заливками
+    const pts = [], seenPt = new Set(), per = seeds.reduce((a, x) => a + (safe(() => turf.length(turf.polygonToLine({ type: "Feature", geometry: x.g, properties: {} }), { units: "meters" })) || 0), 0);
+    const step = Math.max(8, per / 6000);                         // не больше ~6000 точек на лист
+    seeds.forEach(({ g, u }) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates).forEach(poly => {
+      const ring = turf.lineString(poly[0]), L0 = turf.length(ring, { units: "meters" });
+      for (let d = 0; d < L0; d += step) { const c = turf.along(ring, d, { units: "meters" }).geometry.coordinates;
+        if (c[0] < bb[0] || c[0] > bb[2] || c[1] < bb[1] || c[1] > bb[3]) continue;
+        const key = c[0].toFixed(5) + "," + c[1].toFixed(5); if (seenPt.has(key)) continue; seenPt.add(key);   // ~1 м: совпадающие точки ломают ячейки
+        pts.push(turf.point(c, { fill: u[1] })); } }));
+    const dx = (bb[2] - bb[0]) * .02, dy = (bb[3] - bb[1]) * .02;          // рамка с запасом: точки на краю ломают ячейки
+    const cells = pts.length > 2 ? safe(() => turf.voronoi(turf.featureCollection(pts), { bbox: [bb[0] - dx, bb[1] - dy, bb[2] + dx, bb[3] + dy] })) : null;
+    if (cells) use.splice(1, 0, ...cells.features.map((c, i) => c && ({ g: c.geometry, fill: pts[i].properties.fill, stroke: pts[i].properties.fill, w: .6, a: 1 })).filter(Boolean));
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(ROAD_USE[0], ROAD_USE[1]);                         // территории улиц и дорог — белые, в легенде всегда
     if ((L("egko.water")?.features || []).some(inFrame)) seen.set(WATER_USE[0], WATER_USE[1]);   // вода — класс 22 шаблона
