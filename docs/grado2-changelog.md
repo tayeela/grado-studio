@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.75.1: shore strip is natural territory.** Owner: «внутри береговой все природные и озеленённые
+  территории». On sheet 5 the shore-strip polygons of ГИС ОГД («Береговая полоса») are filled as natural and green
+  territory over parcels and OSM land use; water and carriageway stay on top. Rule first.
 - **2026-09-30, ГРАДО 2 v0.75.0: obligatory village and street names, smaller names, thinner parcels.** Owner: «д.
   Безобразово и ул. Придорожная обязательно на всех листах», «топонимы и гидронимы кегль чуть меньше», «границы ЗУ чуть
   тоньше». OSM has only a hamlet point and no Придорожная street at all (checked). New source `egko.place_labels`

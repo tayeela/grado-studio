@@ -400,6 +400,9 @@ function conceptSheet(out, sheet, bb) {
       return a > 0 ? r / a : 0; };
     (pl?.features || []).forEach(ft => { if (!inFrame(ft) || !ft.props) return;
       const sh = roadShare(ft), u = sh > .5 || (!ft.props["ВРИ"] && sh > .1) ? LAND_USE[0] : landUseOf(ft.props); if (u) put(ft.g, u); });
+    // внутри береговой полосы — всё природные и озеленённые территории (владелец 30.09.2026), поверх участков
+    (L("gisogd.zouit")?.features || []).forEach(ft => { if (ft.props?.["Вид зоны"] !== "Береговая полоса" || !/Polygon/.test(ft.g?.type)) return;
+      const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, turf.bboxPolygon(bb))); if (part) put(part.geometry, base); });
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(LAND_USE[0][0], LAND_USE[0][1]);                   // территории автодорог — белые, в легенде всегда
     // линии Сводного плана: код знака каждой линии; зона, у которой есть своя линия, по контуру второй раз не рисуется
