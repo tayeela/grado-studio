@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.81.1: parcels numbered in the cards; design rules summarised.** Owner: «пронумеруй, но не
+  отображай; запомни и сформулируй основные правила оформления». Sheet 9 cards start with «Участок №N» (largest first,
+  like «Хатминки»); numbers are not drawn on the map. `label-rules.md` opens with a summary «Основные правила оформления»:
+  working order (analyse the owner's samples first, ask when unclear, invent nothing), list of samples, seven main rules.
 - **2026-09-30, ГРАДО 2 v0.81.0: flooding signs from «Хатминки», pipeline zones, airfield note; layers audit.** Owner:
   copy the flooding legend from «Хатминки», check which layers are missing, check sanitary protection zones in the frame.
   Flooding (codes 64/65/66) is drawn with the example's signs (green #038240, 0.35 mm; strong — solid with dense ticks,
