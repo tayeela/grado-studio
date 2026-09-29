@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.81.2: no mask on the documentation sheets.** Comparing sheets 6–9 with «ГК Царицыно»: documents
+  on sheets 7–8 lie almost all outside the territory and faded under the mask; neither sample masks these sheets. Owner
+  chose: mask only on sheets 4 and 5.
 - **2026-09-30, ГРАДО 2 v0.81.1: parcels numbered in the cards; design rules summarised.** Owner: «пронумеруй, но не
   отображай; запомни и сформулируй основные правила оформления». Sheet 9 cards start with «Участок №N» (largest first,
   like «Хатминки»); numbers are not drawn on the map. `label-rules.md` opens with a summary «Основные правила оформления»:

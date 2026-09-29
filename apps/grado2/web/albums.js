@@ -409,7 +409,8 @@ function conceptSheet(out, sheet, bb) {
   out.look = "concept"; out.noFrame = true; out.callout = undefined; out.bleed = !!sheet.bleed;
   // полупрозрачная белая маска за границей территории — на схемах с белой основой, как в примере «Хатминки»; на снимке и
   // на фрагменте Генплана её нет (владелец 30.09.2026)
-  out.terrMask = sheet.basemap !== "sat" && !["gp", "ortho"].includes(sheet.concept) ? .55 : undefined;
+  // листы документации (7, 8) — без маски: документы почти все снаружи (владелец 30.09.2026, как в образцах)
+  out.terrMask = sheet.basemap !== "sat" && ["photos", "use"].includes(sheet.concept) ? .55 : undefined;
   out.terrStyle = { stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW] };
   const L = key => out.layers.find(l => l.key === key), bounds = { title: "Границы", items: [terr] };
   const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
