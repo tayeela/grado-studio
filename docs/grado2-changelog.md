@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.77.0: land-use palette from the owner's legend; no thin rivers on the ortho sheet.** Owner sent
+  «УСЛОВКИ от Генплана.dxf» (ten legend columns; «Схема ЗИО» and «ЗИО сущ» match sheet 5) and MapInfo examples
+  «Функц_зонир_Хатминки» (Генплан-type zones by FZtip) and «ЗУ_ФЗ» (parcels coloured by actual functional use, not by
+  the ВРИ text). The legend and «ЗУ_ФЗ» agree; sheet 5 now uses their colours: многоквартирные #f9e79f, учебно-
+  воспитательного #cde1b7, культурно-просветительского #f99f9f, торгово-бытового #f4b598, административно-делового
+  #cbb2cc, производственного #cfd1eb, коммунально-складского #dcd5b6, жилищно-коммунального #d7c6c1 (garages, fuel
+  stations), лечебно-оздоровительного #a5e5df, внешнего транспорта #999999, природных #9ab970; new classes смешанного
+  общественно-производственного #ad84ae and смешанно-производственного #b1b5e1. Classes absent from the legend (ИЖС,
+  gardening, agriculture, sport) keep their colours. Owner: blue lines appeared on sheet 3 — ЕГКО thin-river lines
+  (v0.70.0) are no longer drawn on satellite sheets, only used to place stream names. Rules first.
 - **2026-09-30, ГРАДО 2 v0.76.0: obligatory street names straight on their road.** Owner: street names must lie wholly on
   straight road parts or deviate minimally; «ул. Придорожная» was crooked. Streets missing in OSM are no longer placed as a
   point with the angle of a point cloud: every ЕГКО address votes for its nearest OSM road (up to 60 m), the winning roads
