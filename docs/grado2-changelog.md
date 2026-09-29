@@ -10,8 +10,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   «Unreferenced» until reload; ezdxf discussion #845), so the DXF links the pieces by full path «downloads folder /
   archive name / file». The app asks the browser downloads folder once (Shift+click changes it), names the archive
   uniquely (`sputnik_<sheet>_<time>`) with one folder inside, so a double click in the downloads folder unpacks it
-  exactly where the DXF looks. `$PROJECTNAME` is blank; the `-IMAGE` script stays as a fallback. Not yet confirmed in
-  AutoCAD by the owner.
+  exactly where the DXF looks. `$PROJECTNAME` is blank; the `-IMAGE` script stays as a fallback. Confirmed by the owner
+  in AutoCAD 2025 (Mac): the image opens at once, in place.
 - **2026-09-30, ГРАДО 2 v0.71.1: satellite for AutoCAD placed by a script, not by an IMAGE entity in DXF.** Owner: AutoCAD
   2025 (Mac) opened `sputnik_yandex.dxf` with the image «Unreferenced», Reload did not help — AutoCAD dropped the IMAGE
   entity on load. The archive now has `sputnik_yandex.scr` (`-IMAGE` Attach, insertion point = lower-left frame corner
