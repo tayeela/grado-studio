@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.0: sheet 6 like «Хатминки», circled numbers on sheets 7–9.** Owner: callouts unreadable,
+  text competes; the Генплан sheet is wrong — zone boundaries must be on top, colours wrong. Analysed the owner's
+  «Хатминки» Генплан sheet (same Новая Москва zones): zone colours sampled from its map (общественно-жилая #ff9062,
+  жилая #fed44c, природно-жилая #c8c64f, природная #2ad092, общественно-производственно-жилая #d67c7c,
+  общественно-производственная #bb84b0), black zone boundaries drawn above roads and buildings (separate layer),
+  black bold labels with the number underlined (`ul0`), water #00689d. Owner chose «Хатминки» numbering for sheets 7–9:
+  a short number in a white circle with an outline (`circle` in print), inside the object or on a leader; the cadastral
+  plates on sheet 9 are gone; parcel numbers blue #1f3fbf at the centre of mass of the largest part. Rules first.
 - **2026-09-30, ГРАДО 2 v0.82.0: sheets 6–9 after the owner's review.** Sheet 6: colours were the Новая Москва pastel at 80 %;
   now the base (saturated) Эталон Генплана palette at 100 %, map and legend (`GPZ` by zone name). Sheets 7–8: document numbers
   5 mm (were 10) with leader callouts — inside the document when it fits, otherwise placed around it (radii 9–32 mm, 16

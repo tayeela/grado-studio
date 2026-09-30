@@ -696,6 +696,9 @@ class SketchMapFrame(Frame):
             fams = f.get("lfs") or []
             bw = max(_text_w(ln, (fams[i] if i < len(fams) and fams[i] else f.get("lf")), ls) for i, ln in enumerate(lines))
             up, down = ls * 1.0, ls * .3 + (len(lines) - 1) * lh              # коробка подписи: y − up … y + down
+            if f.get("circle"):                                             # номер в кружке («Хатминки»): коробка — круг
+                cr = max(bw / 2 + ls * .25, ls * .62)
+                bw, up, down = cr * 2, ls * .35 + cr, cr - ls * .35
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 if ring else [])
             ax, ay = x, y + (len(lines) - 1) * lh / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
@@ -719,7 +722,19 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
             if f.get("lhc"):
                 extra["halo_color"] = hex_to_rgb(f["lhc"])
-            if f.get("leader") and math.hypot(x - ax, y - ay) > ls:           # линия от края подписи к объекту и точка на объекте
+            if f.get("circle"):                                             # кружок: центр — на высоте середины цифр
+                ccy = y - ls * .35
+                if math.hypot(x - ax, y - ay) > ls:
+                    lc = hex_to_rgb(f.get("lcol") or "#231f20")
+                    d_ = math.hypot(ax - x, ay - ccy) or 1
+                    sx, sy = x + (ax - x) / d_ * cr, ccy + (ay - ccy) / d_ * cr
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.9, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": lc, "width": 0.35, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
+                    out.append({"op": "circle", "x": ax, "y": ay, "r": 0.7, "fill": lc, "stroke": (1, 1, 1), "width": 0.25})
+                out.append({"op": "circle", "x": x, "y": ccy, "r": cr, "fill": (1, 1, 1), "stroke": hex_to_rgb(f.get("lcol") or "#231f20"), "width": 0.35})
+                f = {**f, "lh": None}                                       # на белом кружке обводка не нужна
+                extra = {k: v for k, v in (("font_family", f.get("lf")),) if v}
+            elif f.get("leader") and math.hypot(x - ax, y - ay) > ls:         # линия от края подписи к объекту и точка на объекте
                 pad = ls * .45 if f.get("lbox") else ls * .15
                 x0b, x1b = x - bw / 2 - pad, x + bw / 2 + pad
                 y0b, y1b = y - up - pad * .6, y + down + pad * .6
@@ -748,8 +763,9 @@ class SketchMapFrame(Frame):
                                                                     (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
             for i, line in enumerate(lines):
                 fam = {"font_family": fams[i]} if i < len(fams) and fams[i] else {}
+                ul = {"underline": True} if i == 0 and f.get("ul0") else {}   # номер зоны Генплана — подчёркнут
                 out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "anchor": "middle",
-                            "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam})
+                            "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam, **ul})
         if callout:
             out.extend(callout[1])
         out.append({"op": "unclip"})

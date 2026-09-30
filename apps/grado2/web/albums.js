@@ -104,13 +104,14 @@ const PPTKRT_C = [
       ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, ...C_WATER_VIS, "calc.uds_ya": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "egko.water": { mode: "single", fill: "#00689d", stroke: "#00689d", width: 0, opacity: 1, label: "" },   // вода — как в «Хатминки»
+      "calc.uds_ya": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
       "egko.roads": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
       "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 0 } },
     labelFn: { ...C_BASE.labelFn, "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" },
     labelMM: { ...C_BASE.labelMM, "gisogd.func_zones": 8.5, "gisogd.func_zones_tinao": 8.5 },
-    labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["sans", "sans-bold"], lcol: "#ffffff", lh: .18, lhc: "#3a3a3a" },
-      "gisogd.func_zones_tinao": { lfs: ["sans", "sans-bold"], lcol: "#ffffff", lh: .18, lhc: "#3a3a3a" } }, only: C_ONLY },
+    labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" },
+      "gisogd.func_zones_tinao": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" } }, only: C_ONLY },
   { ...C_BASE, concept: "ppt", title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
     keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "gisogd.ppt", "gisogd.pmt", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } }, only: C_ONLY },
@@ -252,8 +253,8 @@ function conceptDocs(out, bb, groups) {
       d.fts.forEach(ft => { ft.fill = color; ft.stroke = color; });
       // номер — 5 мм; внутри документа, если помещается, иначе рядом с выноской к нему (владелец 30.09.2026: цифры огромные
       // и непонятно, к чему относятся)
-      const k2 = 1000 / (out.scale || 2000), big = m2(safe(() => inter(d.f, box)) || d.f) * k2 * k2 > 5 * 5 * n.length * 8;
-      pts.push({ g: d.at.geometry, nodot: true, leader: true, inside: big, label: n, ls: 5, lf: "sans-bold", lh: .6, lcol: "#141414" });
+      const k2 = 1000 / (out.scale || 2000), big = m2(safe(() => inter(d.f, box)) || d.f) * k2 * k2 > 120;   // кружок ~6 мм помещается
+      pts.push({ g: d.at.geometry, nodot: true, leader: true, circle: true, inside: big, label: n, ls: 3.6, lf: "sans-bold", lcol: "#141414" });
       return { text: `${n}. ${g.text(d.f.properties, d)}`, color };
     });
     lists.push({ title: g.title, items });
@@ -567,14 +568,20 @@ function conceptSheet(out, sheet, bb) {
     // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой
     // цвета — основная (насыщенная) палитра Эталона Генплана, без прозрачности, как на официальной «Карте функциональных
     // зон» и в «ГК Царицыно»; пастель Новой Москвы — только для рабочей карты (владелец 30.09.2026: «цвета блеклые»)
-    const gpFill = name => GPZ[String(name || "").toLowerCase()]?.fill;
+    const GP_HAT = { "общественно-жилая зона": "#ff9062", "жилая зона": "#fed44c", "природно-жилая зона": "#c8c64f", "природная зона": "#2ad092",
+      "общественно-производственно-жилая зона": "#d67c7c", "общественно-производственная зона": "#bb84b0" };   // карта образца «Хатминки»
+    const gpFill = name => GP_HAT[String(name || "").toLowerCase()] || GPZ[String(name || "").toLowerCase()]?.fill;
+    const zoneEdges = [];
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
       const f0 = gpFill(ft.props?.["Вид зоны"] || ft.props?.naimfunkzony || ft.props?.naimfunkzo); if (f0) ft.fill = f0; ft.a = 1;
-      const c = String(ft.fill || "#888888").replace("#", ""), [r, g, b] = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255);
-      if (.3 * r + .59 * g + .11 * b > .62) Object.assign(ft, { lcol: "#3a3a3a", lhc: "#ffffff", lh: .45 }); }));
+      if (/Polygon/.test(ft.g?.type)) zoneEdges.push(...safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.map(l => l.geometry)) || []);
+      ft.w = 0; Object.assign(ft, { lcol: "#141414", lhc: "#ffffff", lh: .4, ul0: true });   // номер и индекс — чёрные, номер подчёркнут
+    }));
+    // границы зон — чёрные, поверх дорог и застройки (владелец 30.09.2026: «границы зон должны быть выше»)
+    out.layers.push({ title: "Границы функциональных зон", features: zoneEdges.map(g => ({ g, fill: "#000000", stroke: "#000000", w: 1.3 })) });
     const zones = out.legend.filter(g => /функц/i.test(g.title)).flatMap(g => g.items);
     out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => ({ kind: "fill", fill: gpFill(it.label) || it.fill, stroke: "#3c3c3c", a: 1, label: String(it.label).toLowerCase() })),
-      { kind: "text", sample: "10", family: "sans", underline: true, label: "номера функциональных зон" },
+      { kind: "text", sample: "10", family: "sans-bold", underline: true, label: "номера функциональных зон" },
       { kind: "text", sample: "500", family: "sans-bold", label: "индексы функциональных зон" }] }];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры",
       cols: ["Номер функц. зоны", "Индекс функц. зоны", "Тип функц. зоны", "Прогнозируемый фонд застройки функц. зоны, тыс. кв. м"],
@@ -613,15 +620,18 @@ function conceptSheet(out, sheet, bb) {
       cards.push({ area: m2(f), rows: [["Кадастровый номер", kn], ["Адрес", p["Адрес"] || "—"],
         ["Площадь (га)", fmt((+p["Площадь участка, м²"] || m2(f)) / 1e4, 4)], ["Вид разрешённого использования", p["ВРИ"] || "—"],
         ["Форма собственности", String(p["Форма собственности"] || p["Вид права"] || "—").toLowerCase()]] });
-      const at = safe(() => turf.pointOnFeature(x));
-      // все участки территории — с выноской к участку (владелец 30.09.2026: «непонятно, где ещё 7 участков»)
-      if (at) marks.push({ g: at.geometry, nodot: true, leader: true, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 900,
-        label: `Кадастровый номер\n${kn}`, ls: 3.2, lf: "sans-bold", lcol: "#231f20", lbox: true });
+      // номер — в глубине самой большой части участка (центр масс, если он внутри), а не на узком краю
+      const big = x.geometry.type === "MultiPolygon" ? x.geometry.coordinates.map(c => turf.polygon(c)).reduce((a, b) => m2(b) > m2(a) ? b : a) : x;
+      const cm = safe(() => turf.centerOfMass(big)), at = cm && safe(() => turf.booleanPointInPolygon(cm, big)) ? cm : safe(() => turf.pointOnFeature(big));
+      cards[cards.length - 1].at = at && { g: at.geometry, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 120 };
     });
     pl && out.layers.push({ title: "Кадастровые номера", features: marks });
     // участки территории пронумерованы, как в примере «Хатминки», — номер в карточке, на карте не показывается
     // (владелец 30.09.2026: «пронумеруй, но не отображай»); порядок — от большего участка к меньшему
     cards.sort((a, b) => b.area - a.area);
+    // номер участка в синем кружке, как в «Хатминки»; сведения — в таблице по номеру (владелец 30.09.2026)
+    cards.forEach((c, i) => c.at && marks.push({ g: c.at.g, nodot: true, leader: true, circle: true, inside: c.at.inside,
+      label: String(i + 1), ls: 4.2, lf: "sans-bold", lcol: "#1f3fbf" }));
     // все участки — одной таблицей (карточки не помещались); номер — только в таблице, на схеме — кадастровый номер
     const val = (c, k) => (c.rows.find(r => r[0] === k) || [, "—"])[1];
     out.gpTable = { title: "Сведения о земельных участках в границах территории рассмотрения",
