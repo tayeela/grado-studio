@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.6: photo points on sheet 4 always numbered and on top.** The owner sent 8 Yandex panorama
+  links for sheet 4. Frames were cut from the panoramas (point and direction from each link, tiles one by one with a
+  pause, perspective view 85°, GPS and direction written to EXIF) and added through the ordinary photo button path —
+  the program read coordinates and directions itself. On the map the view arrows sat under the 55 % mask and the
+  territory dashes, and the numbers next to them were dropped near the boundary: arrows are now drawn after the mask
+  and boundary, numbers try positions up to 8.5 mm around the arrow and are always shown (as in «ГК Царицыно»).
 - **2026-09-30, ГРАДО 2 v0.84.5: sheet 7 title by content.** The same rule as for АГР on sheet 8: «…документацией ППТ и
   ПМТ» loses «и ПМТ» when no ПМТ is in the frame (and «ППТ и» when no ППТ). Full album built on the test copy: PDF and
   PPTX, 9 sheets each. Rules first.

@@ -529,6 +529,7 @@ class SketchMapFrame(Frame):
         k = tr.k
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
+        late = []                                                       # знаки поверх границы территории (точки съёмки)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
@@ -635,7 +636,8 @@ class SketchMapFrame(Frame):
                                 labels.append((x, y, f["label"], f.get("ls"), f))
                             continue
                         if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
-                            out.extend(_view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf")))
+                            # поверх маски и границы территории: стрелка у границы не бледнеет и не прячется под пунктиром
+                            late.extend(_view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf")))
                             if f.get("label"):
                                 b = math.radians(float(f.get("dir") or 0))
                                 labels.append((x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8, f["label"], f.get("ls"), f))
@@ -664,6 +666,7 @@ class SketchMapFrame(Frame):
                             "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
                             "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
+        out.extend(late)
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
         mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
@@ -886,7 +889,8 @@ class SketchMapFrame(Frame):
                 cr = max(bw / 2 + ls * .25, ls * .62)
                 bw, up, down = cr * 2, ls * .35 + cr, cr - ls * .35
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
-                                if ring else [])
+                                if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.5, 4.5, 6.5, 8.5) for k in range(8)]
+                                if f.get("mk") == "view" else [])   # номер точки съёмки — рядом со стрелкой, как в «ГК Царицыно»
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
             if f.get("circle"):
                 ax, ay = mk[0], mk[1]
@@ -912,7 +916,8 @@ class SketchMapFrame(Frame):
                 was = mem.get(("a", str(text)))
                 # названия территорий: сначала места без проездов под текстом (правило 11), потом любые в контуре
                 tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + ([(dx, dy, 2) for dx, dy in steps] if ring else []) \
-                    + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
+                    + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") or f.get("mk") == "view" else []) \
+                    + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else [])   # номер снимка есть всегда
             spot = None
             for dx, dy, lvl in tries:
                 cx = min(max(x + dx, rx + bw / 2 + MAP_PAD), rx + rw - bw / 2 - MAP_PAD)
