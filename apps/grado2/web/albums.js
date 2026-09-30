@@ -326,11 +326,23 @@ function waterLabels(out, bb) {
   const hits = r => { const b = turf.bbox(r);
     if (b[0] < bb[0] || b[2] > bb[2] || b[1] < bb[1] || b[3] > bb[3]) return Infinity;
     return roads.filter(x => !(x.b[2] < b[0] || x.b[0] > b[2] || x.b[3] < b[1] || x.b[1] > b[3]) && safe(() => turf.booleanIntersects(x.g, r))).length; };
-  // лучшее место на русле из списка мест [[x, y], угол]: меньше пересечений, при равенстве — ближе к территории
-  const pick = (spots, t, ls) => { let bestHit = Infinity, at = null, ang = 0;
+  // доля оси подписи, лежащая на воде (11 точек по длине текста): на извилистой реке прямая подпись по среднему
+  // направлению уходит с русла (владелец 30.09.2026: «р. Вороновка подписана криво»)
+  const onWater = (c, ang, t, ls, wet) => { if (!wet) return 1;
+    const L = t.length * .62 * ls * k / 2, a = ang * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a); let n = 0;
+    for (let i = 0; i <= 10; i++) { const u = -L + 2 * L * i / 10; if (wet([c[0] + u * ux / mx, c[1] + u * uy / my])) n++; }
+    return n / 11; };
+  // лучшее место на русле из списка мест [[x, y], угол]: меньше пересечений с дорогами и границей, затем подпись
+  // целиком на воде (направление уточняется поворотом до ±24°), при равенстве — ближе к территории
+  const pick = (spots, t, ls, wet) => { let best = null;
     spots.sort((x, y) => turf.distance(x[0], tc) - turf.distance(y[0], tc));
-    for (const [c, a] of spots) { const n = hits(rect(c, a, t, ls)); if (n < bestHit) { bestHit = n; at = turf.point(c); ang = a; } if (n === 0) break; }
-    return at && { at, ang }; };
+    for (const [c, a0] of spots) for (const da of [0, -8, 8, -16, 16, -24, 24]) {
+      const a = norm(a0 + da), n = hits(rect(c, a, t, ls)); if (n === Infinity) continue;
+      const w = onWater(c, a, t, ls, wet), sc = n * 2 + (1 - w) + Math.abs(da) / 240;   // одна дорога весит как две длины подписи мимо воды
+      if (!best || sc < best.sc - 1e-9) best = { sc, at: turf.point(c), ang: a };
+      if (n === 0 && w === 1 && !da) break;
+    }
+    return best && { at: best.at, ang: best.ang }; };
   const thin = (c, ls) => ls.filter(l => l.v.some(q => turf.distance(c, q) < .15));
   byName.forEach((fts, t) => {
     const base = t.replace(/^(р\.|оз\.|пр\.)\s*/i, "").toLowerCase(), pts = fts.map(ft => turf.point(ft.g.coordinates)), ls = +fts[0].ls || 3.8;
@@ -349,13 +361,16 @@ function waterLabels(out, bb) {
         [...inFrame.map(pt => pt.geometry.coordinates), ...rv.filter((_, i) => i % step === 0)].forEach(c => {
           const a = axis(rv.filter(q => turf.distance(c, q) < .2)), m = midChannel(c, a, ps);
           if (m && inBox(m)) spots.push([m, a]); });
-        res = pick(spots, t, ls);
+        res = pick(spots, t, ls, q => ps.some(p => safe(() => turf.booleanPointInPolygon(q, p.f))));
       }
     }
     if (!res) {                                                // узкая река — на линии тонкой реки ЕГКО рядом с подписью
       const near = [...new Set(pts.flatMap(pt => thin(pt.geometry.coordinates, lines)))].filter(l => !l.name || l.name.toLowerCase() === base);
       const rv = near.flatMap(l => l.v).filter(inBox), step = Math.max(1, Math.ceil(rv.length / 120));
-      res = pick(rv.filter((_, i) => i % step === 0).map(c => [c, axis(rv.filter(q => turf.distance(c, q) < .15))]), t, ls);
+      const segs = near.flatMap(l => l.v.slice(1).map((q, i) => [l.v[i], q])), tol = ls * k * .35;   // на линии — в пределах полувысоты букв
+      const onLine = q => segs.some(([u, v]) => { const ax = (v[0] - u[0]) * mx, ay = (v[1] - u[1]) * my, bx = (q[0] - u[0]) * mx, by = (q[1] - u[1]) * my,
+        tt = Math.max(0, Math.min(1, (ax * bx + ay * by) / (ax * ax + ay * ay || 1))); return Math.hypot(bx - ax * tt, by - ay * tt) < tol; });
+      res = pick(rv.filter((_, i) => i % step === 0).map(c => [c, axis(rv.filter(q => turf.distance(c, q) < .15))]), t, ls, onLine);
     }
     if (!res && inFrame.length) {                              // ни контура, ни линии — у подписи ЕГКО
       const at = nearest(inFrame); res = { at, ang: axis(polys.flatMap(p => p.v).filter(c => turf.distance(at, c) < .2)) };

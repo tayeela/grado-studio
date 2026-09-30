@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.1: river labels lie on the channel along their whole length.** Owner: «р. Вороновка
+  подписана криво». The label centre was mid-channel, but the direction was the average of the river within 200 m, so
+  on a meandering river the straight label left the water. Now each candidate spot is tried with the direction turned
+  by up to ±24°, and the spot is scored by road/boundary crossings first, then by the share of the label axis on the
+  water (11 points; for thin ЕГКО rivers — within half a letter height of the line), then by the turn and the distance
+  to the territory. Rules first.
 - **2026-09-30, ГРАДО 2 v0.84.0: collaboration (hub mode).** Off by default: the owner's Mac and grado.tailink.tech
   work as before until the server runs with `GRADO2_HUB=1` (or `--hub`). Hub mode: accounts with invite-only
   registration (`apps/grado2/hub.py`, scrypt, sessions, login throttling, admin CLI `hub.py adduser|passwd|invite|list`),
