@@ -9,6 +9,7 @@
 import hashlib
 import json
 import os
+import re
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,9 @@ class StoreError(RuntimeError):
     pass
 
 
+_SID_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
 class SnapshotStore:
     def __init__(self, root):
         self.root = Path(root)
@@ -29,6 +33,16 @@ class SnapshotStore:
         # параллельном идентичном импорте) вместо идемпотентного возврата.
         self._lock = threading.Lock()
 
+    def _dir(self, sid):
+        """Каталог снимка: идентификатор проверен (без «..», ведущей точки, разделителей) и остаётся внутри root."""
+        if (not isinstance(sid, str) or not _SID_RE.fullmatch(sid)
+                or ".." in sid or sid.startswith(".")):
+            raise StoreError("недопустимый идентификатор снимка")
+        p = self.root / sid
+        if not p.resolve().is_relative_to(self.root.resolve()):
+            raise StoreError("идентификатор снимка выходит за каталог хранилища")
+        return p
+
     def save(self, connector, result):
         data = json.dumps(
             {"type": "FeatureCollection", "features": result["features"]},
@@ -36,7 +50,7 @@ class SnapshotStore:
         sha = hashlib.sha256(data).hexdigest()
         fetched_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         sid = f"{connector.name}-{fetched_at[:10].replace('-', '')}-{sha[:8]}"
-        target = self.root / sid
+        target = self._dir(sid)
         manifest = {
             "id": sid, "connector": connector.name, "source": connector.source,
             "params": result["params"], "source_doc": result.get("source_doc"),
@@ -60,14 +74,14 @@ class SnapshotStore:
         return sid
 
     def manifest(self, sid):
-        path = self.root / sid / "manifest.json"
+        path = self._dir(sid) / "manifest.json"
         if not path.exists():
             raise StoreError(f"нет снимка {sid}")
         return json.loads(path.read_text(encoding="utf-8"))
 
     def features(self, sid):
         self.manifest(sid)
-        data = (self.root / sid / "data.geojson").read_text(encoding="utf-8")
+        data = (self._dir(sid) / "data.geojson").read_text(encoding="utf-8")
         return json.loads(data)["features"]
 
     def load(self, sid):
@@ -75,7 +89,7 @@ class SnapshotStore:
 
     def verify(self, sid):
         m = self.manifest(sid)
-        actual = hashlib.sha256((self.root / sid / "data.geojson").read_bytes()).hexdigest()
+        actual = hashlib.sha256((self._dir(sid) / "data.geojson").read_bytes()).hexdigest()
         if actual != m["sha256"]:
             raise StoreError(f"снимок {sid} изменён после сохранения (sha256 не совпадает)")
         return True

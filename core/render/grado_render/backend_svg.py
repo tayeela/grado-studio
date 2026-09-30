@@ -19,6 +19,15 @@ _FONT_FAMILIES = {
 }
 
 
+def _num(v):
+    """Числовой атрибут разметки: число остаётся как есть (вывод прежний
+    байт-в-байт), всё остальное приводится float() — строка с разметкой
+    не пройдёт (ValueError/TypeError), а не попадёт в атрибут."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return v
+    return float(v)
+
+
 def _css(c):
     if c is None:
         return "none"
@@ -30,6 +39,8 @@ def _pts(ring):
 
 
 def render_svg(w, h, ops, font_family="Arial, sans-serif"):
+    w, h = _num(w), _num(h)
+    font_family = _esc(str(font_family))
     body = []
     defs = []
     open_groups = 0
@@ -41,7 +52,7 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                 d = " ".join("M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in r) + " Z" for r in o["rings"])
                 defs.append(f'<clipPath id="{cid}"><path d="{d}" clip-rule="evenodd"/></clipPath>')
             else:
-                x, y, cw, ch = o["rect"]
+                x, y, cw, ch = (_num(v) for v in o["rect"])
                 defs.append(f'<clipPath id="{cid}">'
                             f'<rect x="{x}" y="{y}" width="{cw}" height="{ch}"/>'
                             f"</clipPath>")
@@ -68,7 +79,7 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                     f'width="{o["w"]:.3f}" height="{o["h"]:.3f}" '
                     f'preserveAspectRatio="none" {href}/>')
         elif o["op"] == "path":
-            dash = (f' stroke-dasharray="{",".join(str(d) for d in o["dash"])}"'
+            dash = (f' stroke-dasharray="{",".join(str(_num(d)) for d in o["dash"])}"'
                     if o.get("dash") else "")
             join = ' stroke-linejoin="round"' if o.get("join") == "round" else ""
             d = ""
@@ -81,16 +92,16 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             # (в данных портала направление обхода не гарантировано)
             eo = (' fill-rule="evenodd"'
                   if (o.get("evenodd") or len(o["rings"]) > 1) else "")
-            fo = f' fill-opacity="{o["alpha"]}"' if o.get("alpha") is not None and o["alpha"] < 1 else ""
+            fo = f' fill-opacity="{_num(o["alpha"])}"' if o.get("alpha") is not None and _num(o["alpha"]) < 1 else ""
             body.append(
                 f'<path d="{d.strip()}" fill="{_css(o.get("fill"))}"{eo}{fo} '
                 f'stroke="{_css(o.get("stroke"))}" '
-                f'stroke-width="{o.get("width", 0.3)}"{dash}{join}/>')
+                f'stroke-width="{_num(o.get("width", 0.3))}"{dash}{join}/>')
         elif o["op"] == "circle":
             body.append(
-                f'<circle cx="{o["x"]:.3f}" cy="{o["y"]:.3f}" r="{o["r"]}" '
+                f'<circle cx="{o["x"]:.3f}" cy="{o["y"]:.3f}" r="{_num(o["r"])}" '
                 f'fill="{_css(o.get("fill"))}" stroke="{_css(o.get("stroke"))}" '
-                f'stroke-width="{o.get("width", 0.3)}"/>')
+                f'stroke-width="{_num(o.get("width", 0.3))}"/>')
         elif o["op"] == "text":
             anchor = {"middle": "middle", "end": "end"}.get(o.get("anchor"), "start")
             ang = o.get("angle", 0.0)
@@ -99,14 +110,14 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
                   f'{o["x"]:.3f} {o["y"]:.3f})"') if ang else ""
             family = o.get("font_family")
             weight = ' font-weight="bold"' if str(family or "").endswith("-bold") else ""
-            halo = (f' stroke="{_css(o.get("halo_color", (1, 1, 1)))}" stroke-width="{o["halo"] * 2:.3f}" '
+            halo = (f' stroke="{_css(o.get("halo_color", (1, 1, 1)))}" stroke-width="{_num(o["halo"]) * 2:.3f}" '
                     f'paint-order="stroke" stroke-linejoin="round"') if o.get("halo") else ""
             under = ' text-decoration="underline"' if o.get("underline") else ""
             op_font = (font_family if family in (None, "ui") else
                        _FONT_FAMILIES.get(family, font_family))
             body.append(
                 f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
-                f'font-size="{o["size"]}" font-family="{op_font}"'
+                f'font-size="{_num(o["size"])}" font-family="{op_font}"'
                 f'{weight}{halo}{under} '
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
@@ -117,4 +128,5 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
 
 
 def _esc(s):
-    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    return (str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;").replace("'", "&#x27;"))

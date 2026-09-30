@@ -8,6 +8,8 @@
 
 Лист задаёт стиль полем style: "pptkrt" или "concept"; build_document в print_io передаёт такие листы сюда."""
 
+import base64
+import binascii
 from pathlib import Path
 
 from grado_layout.model import Frame
@@ -21,6 +23,22 @@ PT = 0.3528                                     # мм в пункте
 # листы с картой (состав — по «ГК Царицыно»): карта слева, как в шаблоне, справа колонка легенды и списков; у листа
 # фотофиксации карта уже, справа снимки
 MAP_RECT, PHOTO_MAP_RECT, RIGHT = (24, 44, 263, 233), (24, 44, 170, 233), 412
+
+
+MAX_PHOTO_B64 = 25 * 2**20                      # снимок в запросе — base64 не длиннее 25 МБ (JPEG из canvas — сотни КБ)
+
+
+def photo_bytes(p):
+    """Байты снимка из поля data (base64) или None: слишком длинный, не base64 или не JPEG/PNG по первым байтам.
+    Такой снимок пропускается — в PDF пишутся только настоящие изображения."""
+    data = p.get("data")
+    if not isinstance(data, str) or len(data) > MAX_PHOTO_B64:
+        return None
+    try:
+        raw = base64.b64decode(data)
+    except (binascii.Error, ValueError):
+        return None
+    return raw if raw[:3] == b"\xff\xd8\xff" or raw[:8] == b"\x89PNG\r\n\x1a\n" else None
 
 
 def _header():
@@ -399,19 +417,18 @@ class ConceptPhotoFrame(Frame):
         self.sheet = sheet
 
     def ops(self, ctx):
-        import base64
-        photos = [p for p in self.sheet.get("photos", []) if p.get("data")][:len(PHOTO_SLOTS)]
+        photos = [(p, raw) for p, raw in ((p, photo_bytes(p)) for p in self.sheet.get("photos", []) if p.get("data")) if raw][:len(PHOTO_SLOTS)]
         if not photos:
             return [_text(313, 160, 11, "Снимки не добавлены: окно «Листы», кнопка с фотоаппаратом у этого листа", (0.45, 0.45, 0.45),
                           "sans", "middle")]
         out = []
-        for i, p in enumerate(photos):
+        for i, (p, raw) in enumerate(photos):
             sx, sy = PHOTO_SLOTS[i]
             pw, ph = float(p.get("w") or 4), float(p.get("h") or 3)
             k = max(94 / pw, 71 / ph)
             iw, ih = pw * k, ph * k
             out += [{"op": "clip", "rect": (sx, sy, 94, 71)},
-                    {"op": "image", "data": base64.b64decode(p["data"]), "x": sx + (94 - iw) / 2, "y": sy + (71 - ih) / 2, "w": iw, "h": ih},
+                    {"op": "image", "data": raw, "x": sx + (94 - iw) / 2, "y": sy + (71 - ih) / 2, "w": iw, "h": ih},
                     {"op": "unclip"},
                     {"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
                      "rings": [[(sx, sy), (sx + 8.6, sy), (sx + 8.6, sy + 7.6), (sx, sy + 7.6)]]},

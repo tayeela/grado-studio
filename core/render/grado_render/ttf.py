@@ -81,10 +81,17 @@ class Font:
     def __init__(self, path):
         self.path = str(path)
         self.data = Path(path).read_bytes()
-        self.tables = self._table_directory()
-        self._parse_head()
-        self._parse_hhea_hmtx()
-        self._parse_cmap()
+        try:
+            self.tables = self._table_directory()
+            self._parse_head()
+            self._parse_hhea_hmtx()
+            self._parse_cmap()
+        except FontError:
+            raise
+        except (struct.error, IndexError, KeyError, ValueError, OverflowError) as e:
+            raise FontError(f"повреждённый шрифт TTF {self.path}: {type(e).__name__}") from None
+        if self.units_per_em <= 0:
+            raise FontError(f"повреждённый шрифт TTF {self.path}: нулевой unitsPerEm")
 
     def _table_directory(self):
         (num_tables,) = struct.unpack_from(">H", self.data, 4)
@@ -145,7 +152,10 @@ class Font:
                     return (c + self._delta[i]) & 0xFFFF
                 pos = (self._range_off_pos + 2 * i + self._range_off[i]
                        + 2 * (c - self._start[i]))
-                (gid,) = struct.unpack_from(">H", self.data, pos)
+                try:
+                    (gid,) = struct.unpack_from(">H", self.data, pos)
+                except struct.error:   # rangeOffset указывает за файл — глиф не найден
+                    return 0
                 return (gid + self._delta[i]) & 0xFFFF if gid else 0
         return 0
 

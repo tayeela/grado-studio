@@ -48,6 +48,22 @@ _RESERVED_COLS = {"id", "geom", "source", "source_date", "source_doc",
                    "style_id", "grado_key", "curve"}
 
 
+# предел размера открываемого файла проекта; полная проверка целостности
+# (quick_check) — только для файлов поменьше, на больших она слишком долгая
+_MAX_PROJECT_BYTES = 4 * 1024 ** 3
+_QUICK_CHECK_BYTES = 256 * 1024 ** 2
+# значения атрибутов, которые можно положить в колонку
+_SCALAR_TYPES = (str, int, float, bool, type(None))
+
+
+def _q(name):
+    """Идентификатор SQL в кавычках (см. gpkg.quote_ident); ошибка — ProjectError."""
+    try:
+        return gpkg.quote_ident(name)
+    except gpkg.GpkgError as e:
+        raise ProjectError(str(e)) from None
+
+
 def _table_name(layer_id):
     # имя таблицы — от layer_id (уникального), не от semantic_class:
     # два слоя одного класса (source.fgistp.func_zones и project.tp.func_zone)
@@ -93,6 +109,14 @@ class Layer:
         # пользовательские поля слоя пропускаем — их схема живёт на слое,
         # значения приводит к типу вызывающий (studio_core при экспорте)
         user_ids = {f["id"] for f in self.user_fields}
+        for key, value in attrs.items():
+            if not isinstance(key, str):
+                raise ProjectError(f"слой {self.code}: имя атрибута должно быть строкой, получено {key!r}")
+            # "arc"/"circle" — внутренний CAD (JSON-строка); остальное — скаляры
+            if not isinstance(value, _SCALAR_TYPES):
+                raise ProjectError(
+                    f"слой {self.code}: значение атрибута {key!r} должно быть строкой, "
+                    f"числом, логическим или пустым, получено {type(value).__name__}")
         # "arc"/"circle" internal CAD (parametric as JSON); not validated as classifier attr
         self.cls.validate_attrs({k: v for k, v in attrs.items() if k not in user_ids and k not in ("arc", "circle")})
         return geom, attrs, source_date or date.today().isoformat()
@@ -106,16 +130,16 @@ class Layer:
         vals = [geometry.gpkg_blob(geom, self.project.srs_id), source,
                 source_date, source_doc, style_id, grado_key, curve]
         for key, value in attrs.items():
-            cols.append(f'"{key}"')
+            cols.append(_q(key))
             vals.append(value)
         if fid is None:
             cur = self.project.conn.execute(
-                f'INSERT INTO "{self.table}" ({",".join(cols)}) VALUES ({",".join("?" * len(vals))})',
+                f'INSERT INTO {_q(self.table)} ({",".join(cols)}) VALUES ({",".join("?" * len(vals))})',
                 vals)
             fid = cur.lastrowid
         else:
             self.project.conn.execute(
-                f'INSERT OR REPLACE INTO "{self.table}" (id, {",".join(cols)}) '
+                f'INSERT OR REPLACE INTO {_q(self.table)} (id, {",".join(cols)}) '
                 f'VALUES ({",".join("?" * (len(vals) + 1))})', [fid] + vals)
         xs = [p[0] for p in _flat_points(geom)]
         ys = [p[1] for p in _flat_points(geom)]
@@ -140,7 +164,7 @@ class Layer:
                            snapshot.get("curve"))
 
     def delete_feature(self, fid):
-        cur = self.project.conn.execute(f'DELETE FROM "{self.table}" WHERE id=?', (fid,))
+        cur = self.project.conn.execute(f'DELETE FROM {_q(self.table)} WHERE id=?', (fid,))
         self.project.conn.commit()
         return cur.rowcount > 0
 
@@ -154,16 +178,16 @@ class Layer:
                    [f["id"] for f in self.user_fields]
         # include internal CAD "arc"/"circle" columns (parametric for arcs, circles/radii/buffers) if present
         try:
-            pragma = self.project.conn.execute(f'PRAGMA table_info("{self.table}")').fetchall()
+            pragma = self.project.conn.execute(f'PRAGMA table_info({_q(self.table)})').fetchall()
             have = {r[1] for r in pragma}
             for ic in ("arc", "circle"):
                 if ic in have and ic not in attr_ids:
                     attr_ids.append(ic)
-        except Exception:
+        except sqlite3.Error:
             pass
-        cols = ", ".join(f'"{a}"' for a in attr_ids)
+        cols = ", ".join(_q(a) for a in attr_ids)
         sql = (f'SELECT id, geom, source, source_date, source_doc, style_id, '
-               f'grado_key, curve{", " + cols if cols else ""} FROM "{self.table}"')
+               f'grado_key, curve{", " + cols if cols else ""} FROM {_q(self.table)}')
         params = ()
         if where_id is not None:
             sql += " WHERE id=?"
@@ -189,7 +213,7 @@ class Layer:
             }
 
     def count(self):
-        (n,) = self.project.conn.execute(f'SELECT count(*) FROM "{self.table}"').fetchone()
+        (n,) = self.project.conn.execute(f'SELECT count(*) FROM {_q(self.table)}').fetchone()
         return n
 
     def area_ha(self):
@@ -238,10 +262,22 @@ class Project:
         path = Path(path)
         if not path.exists():
             raise ProjectError(f"нет файла {path}")
+        size = path.stat().st_size
+        if size > _MAX_PROJECT_BYTES:
+            raise ProjectError(
+                f"{path} — файл слишком велик для проекта ГРАДО ({size} байт)")
         conn = sqlite3.connect(str(path))
         try:
+            # схема чужого файла не должна исполнять произвольные функции
+            # из представлений/триггеров/generated-колонок
+            conn.execute("PRAGMA trusted_schema=OFF")
+            if size <= _QUICK_CHECK_BYTES:
+                res = conn.execute("PRAGMA quick_check").fetchone()
+                if not res or res[0] != "ok":
+                    conn.close()
+                    raise ProjectError(f"{path} — повреждённый файл проекта (quick_check)")
             conn.execute("SELECT 1 FROM grado_meta LIMIT 1")
-        except sqlite3.OperationalError:
+        except sqlite3.DatabaseError:
             # На Windows открытый sqlite-дескриптор блокирует удаление файла.
             # Невалидный проект не возвращает Project, поэтому закрываем его
             # здесь явно, а не оставляем освобождение сборщику мусора.
@@ -283,13 +319,13 @@ class Project:
             conn.execute("ALTER TABLE grado_layers ADD COLUMN fields TEXT")
         for (table_name,) in conn.execute("SELECT table_name FROM grado_layers"):
             fcols = [r[1] for r in conn.execute(
-                f'PRAGMA table_info("{table_name}")')]
+                f'PRAGMA table_info({_q(table_name)})')]
             if "style_id" not in fcols:
-                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN style_id TEXT')
+                conn.execute(f'ALTER TABLE {_q(table_name)} ADD COLUMN style_id TEXT')
             if "grado_key" not in fcols:
-                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN grado_key TEXT')
+                conn.execute(f'ALTER TABLE {_q(table_name)} ADD COLUMN grado_key TEXT')
             if "curve" not in fcols:
-                conn.execute(f'ALTER TABLE "{table_name}" ADD COLUMN curve TEXT')
+                conn.execute(f'ALTER TABLE {_q(table_name)} ADD COLUMN curve TEXT')
         conn.commit()
 
     def meta(self, key):
@@ -314,7 +350,10 @@ class Project:
         схемы классификатора, type в терминах gpkg (string|integer|number)."""
         c = self.classifier.get(code)
         layer_id = layer_id or code
+        if not isinstance(layer_id, str):
+            raise ProjectError(f"layer_id должен быть строкой, получено {layer_id!r}")
         table = _table_name(layer_id)
+        _q(table)  # отвергаем недопустимое имя таблицы до любых записей
         exists = self.conn.execute(
             "SELECT 1 FROM grado_layers WHERE layer_id=?", (layer_id,)).fetchone()
         if exists:
@@ -335,6 +374,8 @@ class Project:
         user_fields, seen = [], set()
         for f in (fields or []):
             fid = f.get("id")
+            if fid:
+                _q(fid)  # не-строка / NUL / слишком длинное имя поля → ProjectError
             if not fid or fid in cls_ids or fid in _RESERVED_COLS or fid in seen:
                 continue
             ftype = f.get("type") if f.get("type") in gpkg._SQL_TYPES else "string"

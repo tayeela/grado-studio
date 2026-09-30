@@ -7,6 +7,7 @@
 """
 
 import ast
+import copy
 import math
 
 def round_half_up(x, n=0):
@@ -47,12 +48,66 @@ class ExpressionError(ValueError):
     pass
 
 
+# пределы против выражений-бомб (вложенность/рекурсия парсера, 9**9**9)
+MAX_EXPR_LEN = 500
+MAX_EXPR_DEPTH = 50
+MAX_POW_EXP = 64
+MAX_POW_BASE = 1e15
+
+
+def _pow(a, b):
+    """Возведение в степень с пределом: |показатель| <= 64, основание конечное."""
+    try:
+        if abs(b) > MAX_POW_EXP:
+            raise ExpressionError(f"показатель степени {b!r} вне предела ±{MAX_POW_EXP}")
+        if isinstance(a, float) and not math.isfinite(a):
+            raise ExpressionError("основание степени должно быть конечным числом")
+        if abs(a) > MAX_POW_BASE:
+            raise ExpressionError(f"основание степени {a!r} вне предела ±{MAX_POW_BASE:g}")
+        return a ** b
+    except OverflowError:
+        raise ExpressionError("переполнение при возведении в степень") from None
+
+
+class _PowGuard(ast.NodeTransformer):
+    """a ** b → __pow__(a, b): возведение идёт через _pow с пределами."""
+
+    def visit_BinOp(self, node):
+        self.generic_visit(node)
+        if isinstance(node.op, ast.Pow):
+            return ast.copy_location(
+                ast.Call(func=ast.Name(id="__pow__", ctx=ast.Load()),
+                         args=[node.left, node.right], keywords=[]), node)
+        return node
+
+
+def _depth(node):
+    """Глубина AST без рекурсии (на глубоком дереве рекурсия сама была бы бомбой)."""
+    deepest, stack = 0, [(node, 1)]
+    while stack:
+        n, d = stack.pop()
+        deepest = max(deepest, d)
+        if d > MAX_EXPR_DEPTH:
+            break
+        stack.extend((c, d + 1) for c in ast.iter_child_nodes(n))
+    return deepest
+
+
 def parse(expr):
     """Разбирает и валидирует выражение, возвращает ast.Expression."""
+    if not isinstance(expr, str):
+        raise ExpressionError(f"выражение должно быть строкой, получено {type(expr).__name__}")
+    if len(expr) > MAX_EXPR_LEN:
+        raise ExpressionError(f"выражение длиннее {MAX_EXPR_LEN} символов")
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
         raise ExpressionError(f"синтаксическая ошибка в выражении {expr!r}: {e}") from None
+    except (RecursionError, MemoryError, ValueError, OverflowError):
+        # ValueError — NUL-байт; Recursion/Memory — слишком вложенное выражение
+        raise ExpressionError("выражение слишком сложное или содержит недопустимые символы") from None
+    if _depth(tree) > MAX_EXPR_DEPTH:
+        raise ExpressionError(f"вложенность выражения больше {MAX_EXPR_DEPTH}")
     for node in ast.walk(tree):
         if not isinstance(node, _ALLOWED_NODES):
             raise ExpressionError(
@@ -79,5 +134,10 @@ def evaluate(expr, values):
     missing = names(tree) - values.keys()
     if missing:
         raise ExpressionError(f"неизвестные имена {sorted(missing)}")
-    code = compile(tree, "<metric>", "eval")
-    return eval(code, {"__builtins__": {}, **FUNCS}, dict(values))
+    try:
+        # копия: разобранное дерево вызывающий может переиспользовать
+        guarded = ast.fix_missing_locations(_PowGuard().visit(copy.deepcopy(tree)))
+        code = compile(guarded, "<metric>", "eval")
+        return eval(code, {"__builtins__": {}, "__pow__": _pow, **FUNCS}, dict(values))
+    except (RecursionError, MemoryError, OverflowError) as e:
+        raise ExpressionError(f"не удалось вычислить выражение: {type(e).__name__}") from None

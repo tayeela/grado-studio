@@ -30,7 +30,7 @@ XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
 
 def _hex(c):
-    return "%02X%02X%02X" % tuple(max(0, min(255, int(round(v * 255)))) for v in c)
+    return "%02X%02X%02X" % tuple(max(0, min(255, int(round(float(v) * 255)))) for v in c)
 
 
 def _t(s):
@@ -158,7 +158,8 @@ class _Slide:
         self.alpha = None                                  # прозрачность заливки текущей фигуры
 
     def e(self, v):
-        return int(round(v * EMU * self.k))
+        # float(): числовой атрибут разметки не должен пропустить строку (v * int повторяет её)
+        return int(round(float(v) * EMU * self.k))
 
     def nid(self):
         self.ids += 1
@@ -250,7 +251,7 @@ class _Slide:
                       + "".join(f'<a:lnTo><a:pt x="{x - x0}" y="{y - y0}"/></a:lnTo>' for x, y in r[1:])
                       + ("<a:close/>" if closed else "") for r in pts)
         nofill = "" if fill is not None else ' fill="none"'
-        alpha = f'<a:alpha val="{int(self.alpha * 100000)}"/>' if fill is not None and self.alpha is not None and self.alpha < 1 else ""
+        alpha = f'<a:alpha val="{int(float(self.alpha) * 100000)}"/>' if fill is not None and self.alpha is not None and float(self.alpha) < 1 else ""
         clr = f'<a:srgbClr val="{_hex(fill)}">{alpha}</a:srgbClr>' if alpha else f'<a:srgbClr val="{_hex(fill)}"/>' if fill is not None else ""
         fill_xml = f'<a:solidFill>{clr}</a:solidFill>' if fill is not None else "<a:noFill/>"
         self.add(f'<p:sp><p:nvSpPr><p:cNvPr id="{self.nid()}" name="{_t(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>'
@@ -266,7 +267,7 @@ class _Slide:
         w = max(0.05, float(width or 0))
         d = ""
         if dash:
-            ds = list(dash) * (2 if len(dash) % 2 else 1)
+            ds = [float(v) for v in dash] * (2 if len(dash) % 2 else 1)
             d = "<a:custDash>" + "".join(f'<a:ds d="{max(1, int(ds[i] / w * 100000))}" sp="{max(1, int(ds[i + 1] / w * 100000))}"/>'
                                          for i in range(0, len(ds), 2)) + "</a:custDash>"
         j = "<a:round/>" if join == "round" else '<a:miter lim="1000000"/>'

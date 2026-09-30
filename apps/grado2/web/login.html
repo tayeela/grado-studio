@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>ГРАДО 2: вход</title>
+<style>
+:root{
+  --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line-2:#bdbdbd; --text:#1d1d1f; --muted:#5f6368;
+  --accent:#2f6fc4; --accent-ink:#fff; --bad:#b3261e;
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line-2:#4a4a4a; --text:#e8e8e8; --muted:#b0b0b0;
+  --accent:#5b9bec; --accent-ink:#0f0f0f; --bad:#ef6b5f;
+}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--text);font:13px/1.4 var(--ui)}
+form{width:min(320px,90vw);background:var(--panel);border:1px solid var(--line-2);border-radius:6px;padding:20px;display:grid;gap:10px}
+h1{margin:0 0 4px;font-size:15px;font-weight:600}
+label{color:var(--muted)}
+input,button{font:inherit;height:30px;border-radius:3px}
+input{border:1px solid var(--line-2);background:var(--field);color:var(--text);padding:0 8px}
+button{border:0;background:var(--accent);color:var(--accent-ink);cursor:pointer}
+button:disabled{opacity:.6;cursor:default}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+#msg{min-height:1.4em;color:var(--bad)}
+</style>
+<form id="f" autocomplete="off">
+  <h1>ГРАДО 2</h1>
+  <label for="t">Ключ доступа</label>
+  <input id="t" type="password" autocomplete="current-password" autofocus required>
+  <button id="b" type="submit">Войти</button>
+  <div id="msg" role="alert"></div>
+</form>
+<script src="login.js"></script>

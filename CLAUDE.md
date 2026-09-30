@@ -41,6 +41,6 @@ no emoji, describe results as what appears on screen.
 2. ЛГР styles (`core/render/grado_render/styles/*.json`) are generated: edit `tools/gen_*.py` and regenerate.
 3. Coordinates: two Moscow systems on one datum — «МСК (как в QGIS)» and «система ГИС ОГД»; МСК = ОГД − `OGD_SHIFT`.
    Everything shown/typed/exported is МСК. Do not discuss or «calibrate» this scheme.
-4. Server error messages are ASCII only. Outgoing HTTPS from python.org Python needs `SSLContext(cafile=certifi.where())`.
+4. Server error messages are ASCII only. Outgoing HTTPS from python.org Python needs `SSLContext(cafile=certifi.where())`. НСПД (nspd.gov.ru) needs the Минцифры root CA files in `~/.grado2/ca/` (or `GRADO_NSPD_CA`); never disable verification.
 5. Route by layer id, never by the first layer of a kind.
 6. Verify visual claims with a screenshot, not DOM numbers; verify signs against the owner's reference picture.

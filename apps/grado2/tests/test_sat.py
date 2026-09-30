@@ -64,6 +64,35 @@ class SatExport(unittest.TestCase):
         scr = z.read(f + "sputnik_yandex.scr").decode().split("\n")
         self.assertEqual(scr[:3], ["-IMAGE", "A", "sputnik_yandex_01.jpg"])
 
+    def test_tile_size_limits(self):
+        """Тайл длиннее 1 МБ в кэш не идёт; чужой размер рисунка (не 256 × 256) в мозаику не берётся."""
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as d:
+            big = b"\xff\xd8" + b"0" * sat_io.MAX_TILE_BYTES
+            ys = sat_io.YandexSat(d, pause=0, transport=lambda url: big)
+            ys.ensure(15, 1, 1)
+            self.assertFalse(ys.path(15, 1, 1).exists())
+            Image.new("RGB", (256, 256)).save(d + "/ok.jpg", "JPEG")
+            ys = sat_io.YandexSat(d, pause=0, transport=lambda url: open(d + "/ok.jpg", "rb").read())
+            ys.ensure(15, 2, 2)
+            self.assertTrue(ys.path(15, 2, 2).exists())
+            # огромный рисунок в файле тайла: читается как «нет тайла» — серое место, а не падение или гигабайты
+            Image.new("RGB", (1024, 1024)).save(ys.path(15, 3, 3), "JPEG")
+            frame = sat_io.frame_msk((37.162, 55.341), [0, 0, 10, 10], 10000)
+            class Only(FakeTiles):
+                def ensure(self, z, x, y):
+                    return True
+            self.assertTrue(sat_io.export_sat(frame, d, tiles=Only(d), z=15))
+
+    def test_base_control_chars_stripped(self):
+        with tempfile.TemporaryDirectory() as d:
+            frame = sat_io.frame_msk((37.162, 55.341), [0, 0, 10, 10], 10000)
+            data = sat_io.export_sat(frame, d, "/Users/x/Down\r\nloads/sp\x00ut", tiles=FakeTiles(d), z=15)
+        z = zipfile.ZipFile(io.BytesIO(data))
+        readme = next(z.read(n).decode() for n in z.namelist() if n.endswith("README.txt"))
+        self.assertIn("/Users/x/Downloads/sput", readme)
+        self.assertNotIn("\x00", readme)
+
     def test_too_large(self):
         with self.assertRaises(sat_io.SatError):
             sat_io.export_sat((0, 0, 20000, 20000), "/nonexistent", tiles=FakeTiles("/nonexistent"))

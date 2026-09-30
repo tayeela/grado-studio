@@ -183,8 +183,12 @@ def oda_convert(data, src_ext, out_fmt):
                          "или пересохраните чертёж в DXF")
     with tempfile.TemporaryDirectory() as src, tempfile.TemporaryDirectory() as dst:
         (Path(src) / f"in.{src_ext}").write_bytes(data)
-        subprocess.run([exe, src, dst, "ACAD2018", out_fmt, "0", "1", f"*.{src_ext.upper()}"],
-                       capture_output=True, timeout=180, check=False)
+        try:
+            subprocess.run([exe, src, dst, "ACAD2018", out_fmt, "0", "1", f"*.{src_ext.upper()}"],
+                           capture_output=True, timeout=180, check=False)
+        except subprocess.TimeoutExpired:          # зависший конвертер — обычная ошибка для пользователя, не 500
+            raise ValueError("ODA File Converter не уложился в 3 минуты: чертёж слишком сложный или повреждён — "
+                             "пересохраните его в DXF") from None
         out = next(Path(dst).glob(f"*.{out_fmt.lower()}"), None) or next(Path(dst).glob(f"*.{out_fmt.upper()}"), None)
         if not out:
             raise ValueError(f"ODA File Converter не создал {out_fmt}: чертёж повреждён или версия не поддерживается")
@@ -237,6 +241,8 @@ def import_dxf(data, redln, local="msk"):
     system (written_system) and wins over the choice."""
     # кодировку файл объявляет сам ($DWGCODEPAGE): чертежи R2000–R2004 из русского AutoCAD — cp1251, а не UTF-8
     from ezdxf import recover, path as ezpath
+    from file_io import check_size
+    check_size("DXF", len(data))                   # recover.read держит файл в памяти целиком, в несколько раз больше размера
     doc, _ = recover.read(io.BytesIO(data))
     # кодовая страница бывает потеряна (ANSI_1252 по умолчанию при байтах cp1251): имена слоёв выходят «Êðàñíûå».
     # Русский текст, прочитанный как cp1252, — это сплошь буквы À…ÿ; тогда файл перечитывается как cp1251

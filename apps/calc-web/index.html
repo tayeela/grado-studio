@@ -47,6 +47,8 @@
 (async () => {
   const preset = await (await fetch("/core/compute/grado_compute/presets/moscow_krt.json")).json();
   const engine = new GradoCompute.MetricEngine(preset);
+  // пресет — данные из файла: всё, что уходит в innerHTML, экранируется
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   document.getElementById("title").textContent = preset.title;
 
   const params = new URLSearchParams(location.search);
@@ -60,11 +62,11 @@
   for (const spec of preset.inputs) {
     const row = document.createElement("div");
     row.className = "input-row";
-    const unit = spec.unit ? ` <span class="unit">(${spec.unit})</span>` : "";
-    row.innerHTML = `<label for="in_${spec.id}">${spec.title}${unit}</label>
+    const unit = spec.unit ? ` <span class="unit">(${esc(spec.unit)})</span>` : "";
+    row.innerHTML = `<label for="in_${esc(spec.id)}">${esc(spec.title)}${unit}</label>
       <div class="controls">
-        <input type="range" id="in_${spec.id}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${engine.values[spec.id]}">
-        <input type="number" id="num_${spec.id}" min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${engine.values[spec.id]}">
+        <input type="range" id="in_${esc(spec.id)}" min="${esc(spec.min)}" max="${esc(spec.max)}" step="${esc(spec.step)}" value="${esc(engine.values[spec.id])}">
+        <input type="number" id="num_${esc(spec.id)}" min="${esc(spec.min)}" max="${esc(spec.max)}" step="${esc(spec.step)}" value="${esc(engine.values[spec.id])}">
       </div>`;
     inputsEl.appendChild(row);
     const range = row.querySelector("input[type=range]");
@@ -89,13 +91,13 @@
     for (const [group, metrics] of engine.groups()) {
       const g = document.createElement("div");
       g.className = "group";
-      g.innerHTML = `<h3>${group}</h3>`;
+      g.innerHTML = `<h3>${esc(group)}</h3>`;
       for (const m of metrics) {
         const row = document.createElement("div");
         row.className = "row" + (engine.values[m.id] === 0 ? " zero" : "");
         row.id = "metric_" + m.id;
-        row.innerHTML = `<span>${m.title}</span>
-          <span class="val">${engine.display(m)}<span class="unit">${m.unit}</span></span>`;
+        row.innerHTML = `<span>${esc(m.title)}</span>
+          <span class="val">${esc(engine.display(m))}<span class="unit">${esc(m.unit)}</span></span>`;
         g.appendChild(row);
       }
       resultsEl.appendChild(g);
@@ -104,7 +106,7 @@
   render();
 
   const src = document.getElementById("sources");
-  src.innerHTML = "<ul>" + preset.sources.map((s) => `<li>${s}</li>`).join("") + "</ul>";
+  src.innerHTML = "<ul>" + preset.sources.map((s) => `<li>${esc(s)}</li>`).join("") + "</ul>";
 })();
 </script>
 </body>

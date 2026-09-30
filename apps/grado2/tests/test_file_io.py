@@ -5,6 +5,7 @@ import json
 import struct
 import sys
 import unittest
+import unittest.mock
 import zipfile
 from pathlib import Path
 
@@ -173,6 +174,28 @@ class Fgistp(unittest.TestCase):
                {"uin": "bad", "stp_name": "без охвата", "stp_extent": ""}]
         docs = server.fgistp_docs([37.4, 55.6, 37.5, 55.7], cat)
         self.assertEqual([d["uin"] for d in docs], ["small", "msk"])
+
+
+class SizeCeiling(unittest.TestCase):
+    def test_big_single_file_rejected_before_parsing(self):
+        with unittest.mock.patch.object(file_io, "MAX_IMPORT_BYTES", 100):
+            with self.assertRaises(ValueError) as cm:
+                file_io.import_files({"big.geojson": b" " * 101})
+            self.assertIn("больше допустимых", str(cm.exception))
+            with self.assertRaises(ValueError):
+                file_io.import_files({"big.dxf": b"0" * 101})
+
+    def test_big_zip_member_rejected(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("a.geojson", b" " * 500)
+        with unittest.mock.patch.object(file_io, "MAX_IMPORT_BYTES", 100):
+            with self.assertRaises(ValueError):
+                file_io.import_files({"x.zip": buf.getvalue()})
+
+    def test_small_file_passes(self):
+        out = file_io.import_files({"a.geojson": _fc({"type": "Point", "coordinates": [LON, LAT]})})
+        self.assertEqual(len(out[0]["features"]["features"]), 1)
 
 
 if __name__ == "__main__":

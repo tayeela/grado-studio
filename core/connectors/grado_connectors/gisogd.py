@@ -9,6 +9,7 @@
 import glob
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -19,8 +20,8 @@ from pathlib import Path
 from .contract import Connector, ConnectorError, make_result
 from .crs import OGD_PROJ4
 
-# Запасные расположения ogr2ogr (GDAL), если его нет в PATH. Основной путь —
-# shutil.which; здесь — типовые установки QGIS по ОС (macOS + Windows).
+# Известные расположения ogr2ogr (GDAL): типовые установки QGIS по ОС (macOS + Windows).
+# Ищутся первыми; PATH (shutil.which) — только последняя очередь, чтобы подложенный в PATH файл не выигрывал.
 _OGR2OGR_FALLBACKS = [
     "/Applications/QGIS-LTR.app/Contents/MacOS/bin/ogr2ogr",
     "/Applications/QGIS.app/Contents/MacOS/bin/ogr2ogr",
@@ -43,13 +44,25 @@ def _windows_ogr2ogr_candidates():
 
 
 def find_ogr2ogr():
-    found = shutil.which("ogr2ogr")
-    if found:
-        return found
     for path in _OGR2OGR_FALLBACKS + _windows_ogr2ogr_candidates():
-        if os.path.exists(path):
+        if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
+    found = shutil.which("ogr2ogr")
+    if found and os.path.isabs(found) and os.path.isfile(found) and os.access(found, os.X_OK):
+        return found
     return None
+
+
+_PATH_RE = re.compile(r"(?<![:\w/])(?:/[^\s/'\"():;,]+){2,}|[A-Za-z]:\\[^\s'\"]+")
+
+
+def clean_msg(text, limit=200, tmp=None):
+    """Текст ошибки для интерфейса: без путей файловой системы и переводов строки, не длиннее limit."""
+    t = str(text)
+    if tmp:
+        t = t.replace(str(tmp), "<tmp>")
+    t = _PATH_RE.sub("<path>", t)
+    return " ".join(t.split())[:limit]
 
 
 def _safe_extract(zip_path, dest, budget):
@@ -147,9 +160,9 @@ class GisogdZip(Connector):
                 members[Path(shp).stem] = self._shp_to_geojson(shp)
             except subprocess.CalledProcessError as e:
                 notes.append(f"{Path(shp).name}: ogr2ogr не смог "
-                             f"({e.stderr.decode(errors='replace')[:200]})")
+                             f"({clean_msg(e.stderr.decode(errors='replace'), tmp=base)})")
             except Exception as e:
-                notes.append(f"{Path(shp).name}: не удалось прочитать SHP ({e})")
+                notes.append(f"{Path(shp).name}: не удалось прочитать SHP ({clean_msg(e, tmp=base)})")
         if not members and not shps:
             notes.append("не найдено ни shp, ни geojson")
         return members, notes

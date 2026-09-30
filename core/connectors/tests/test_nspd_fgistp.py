@@ -1,9 +1,14 @@
 import json
+import os
+import ssl
 import unittest
+import urllib.error
 import urllib.parse
+from unittest import mock
 
 import _paths  # noqa: F401
-from grado_connectors import ConnectorError, FgistpConnector, NspdCapture
+from grado_connectors import ConnectorError, FgistpConnector, NspdCapture, nspd
+from grado_connectors.nspd import NspdDirect
 
 # Захват как его шлёт браузерное расширение: GeoJSON EPSG:3857,
 # вложенный options (иногда строкой), дубликаты геометрии
@@ -140,6 +145,86 @@ class TestFgistp(unittest.TestCase):
         result = self.conn.fetch(UIN, geom_type="001")
         self.assertEqual(result["features"], [])
         self.assertTrue(any("слоёв в документе нет" in n for n in result["notes"]))
+
+
+class _Resp:
+    def __init__(self, body):
+        self._b = body
+
+    def read(self, n=-1):
+        return self._b if n < 0 else self._b[:n]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _cert_error():
+    return urllib.error.URLError(ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED"))
+
+
+class TestNspdCert(unittest.TestCase):
+    def setUp(self):
+        nspd._insecure_warned = False
+        env = {k: v for k, v in os.environ.items() if k != "GRADO_NSPD_INSECURE"}
+        p = mock.patch.dict(os.environ, env, clear=True)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_cert_failure_raises_without_fallback(self):
+        with mock.patch.object(nspd.netutil, "open_url", side_effect=_cert_error()) as m:
+            with self.assertRaises(ConnectorError) as cm:
+                NspdDirect()._http_post("https://nspd.gov.ru/x", {})
+        self.assertEqual(m.call_count, 1, "повтора без проверки быть не должно")
+        self.assertIn(".grado2/ca", str(cm.exception))
+
+    def test_insecure_env_uses_unverified_fallback(self):
+        ctxs = []
+
+        def fake(req, timeout, ctx):
+            ctxs.append(ctx)
+            if len(ctxs) == 1:
+                raise _cert_error()
+            return _Resp(b'{"features": []}')
+        with mock.patch.dict(os.environ, {"GRADO_NSPD_INSECURE": "1"}), \
+                mock.patch.object(nspd.netutil, "open_url", side_effect=fake), \
+                mock.patch("sys.stderr") as err:
+            data = NspdDirect()._http_post("https://nspd.gov.ru/x", {})
+        self.assertEqual(data, {"features": []})
+        self.assertNotEqual(ctxs[0].verify_mode, ssl.CERT_NONE)
+        self.assertEqual(ctxs[1].verify_mode, ssl.CERT_NONE)
+        self.assertTrue(err.write.called, "предупреждение в stderr")
+
+    def test_extra_ca_skips_bad_files(self):
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".pem") as f:
+            f.write("не сертификат")
+            f.flush()
+            with mock.patch.dict(os.environ, {"GRADO_NSPD_CA": f.name}):
+                ctx = nspd._ssl_context()
+        self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
+
+    def test_error_text_truncated(self):
+        err = urllib.error.URLError("a\nb" + "x" * 500)
+        with mock.patch.object(nspd.netutil, "open_url", side_effect=err):
+            with self.assertRaises(ConnectorError) as cm:
+                NspdDirect()._http_post("https://nspd.gov.ru/x", {})
+        self.assertNotIn("\n", str(cm.exception))
+        self.assertLess(len(str(cm.exception)), 260)
+
+
+class TestFgistpBaseUrl(unittest.TestCase):
+    def test_https_and_local_http_ok(self):
+        FgistpConnector(base_url="https://example.org")
+        FgistpConnector(base_url="http://127.0.0.1:8000")
+        FgistpConnector(base_url="http://localhost:8000")
+
+    def test_remote_http_and_other_schemes_rejected(self):
+        for bad in ("http://example.org", "ftp://example.org", "file:///etc/passwd", "example.org"):
+            with self.assertRaises(ConnectorError, msg=bad):
+                FgistpConnector(base_url=bad)
 
 
 if __name__ == "__main__":

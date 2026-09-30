@@ -12,7 +12,7 @@ function captureView(name, withExtent) {
 }
 function applyView(v) {
   const byKey = new Map(v.layers.map(x => [x.key, x]));
-  LYR.forEach(l => { const x = byKey.get(l.key); if (!x) { l.visible = false; return; } l.visible = x.visible; l.layerOpacity = x.layerOpacity ?? 1; l.style = ST(clone(x.style)); restyle(l); });
+  LYR.forEach(l => { const x = byKey.get(l.key); if (!x) { l.visible = false; return; } l.visible = x.visible; l.layerOpacity = okn(x.layerOpacity, 1); l.style = ST(clone(x.style)); restyle(l); });
   v.groups.forEach(x => { const g = grp(x.id); if (g) g.visible = x.visible; });
   if (v.basemap && v.basemap !== BASE) setBasemap(v.basemap);
   if (v.extent) { sharedView.setCenter(ol.proj.fromLonLat(v.extent.center)); sharedView.setZoom(v.extent.zoom); }
@@ -30,7 +30,7 @@ function renderViews() {
   const el = $("viewsBody"); if (!el) return;
   const cur = VIEWS.find(v => v.id === VIEW_CUR);
   el.innerHTML = `<div class="projbar"><input type="text" id="viewName" placeholder="Название вида, например «Ограничения»" aria-label="Название вида"><label class="inl" title="Вид запомнит и масштаб карты"><input type="checkbox" id="viewExt">с масштабом</label><button class="btn primary" id="viewSave" title="Запомнить видимые слои, их оформление и подложку"><i data-lucide="bookmark-plus"></i>Сохранить вид</button></div>`
-    + (VIEWS.length ? `<table class="at"><tbody>${VIEWS.map(v => `<tr class="${v.id === VIEW_CUR ? "sel" : ""}"><td>${esc(v.name)}</td><td class="num">${v.layers.filter(x => x.visible).length} сл.</td><td style="white-space:nowrap"><button class="btn" data-vshow="${v.id}">Показать</button> <button class="tb" data-vupd="${v.id}" title="Заменить вид текущим состоянием карты"><i data-lucide="refresh-cw"></i></button><button class="tb" data-vdel="${v.id}" title="Удалить вид"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
+    + (VIEWS.length ? `<table class="at"><tbody>${VIEWS.map(v => `<tr class="${v.id === VIEW_CUR ? "sel" : ""}"><td>${esc(v.name)}</td><td class="num">${v.layers.filter(x => x.visible).length} сл.</td><td style="white-space:nowrap"><button class="btn" data-vshow="${esc(v.id)}">Показать</button> <button class="tb" data-vupd="${esc(v.id)}" title="Заменить вид текущим состоянием карты"><i data-lucide="refresh-cw"></i></button><button class="tb" data-vdel="${esc(v.id)}" title="Удалить вид"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Видов пока нет. Настройте карту (какие слои видны, их стиль, подложку) и сохраните вид — например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.</div>`)
     + (cur ? `<div class="sect">Легенда вида «${esc(cur.name)}»</div><div class="legend">${legendHTML(cur)}</div>` : "");
   icons();

@@ -10,8 +10,13 @@ const PICK = [...CAT, "#1d1d1f", "#5f6368", "#9aa1a8", "#d4d4d4", "#ffffff", "#b
 const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i) => RAMPS[n][Math.round(i * (RAMPS[n].length - 1) / Math.max(1, k - 1))]);
 // цвет стиля из чужого файла проекта пишется в атрибуты разметки — только настоящий цвет, иначе значение по умолчанию
 const HEX = /^#[0-9a-f]{3,8}$/i, okc = (c, d) => typeof c === "string" && HEX.test(c) ? c : d;
+// числа стиля и прозрачность слоя из чужого файла проекта попадают в value="…" — только конечное число, иначе значение по умолчанию
+const okn = (v, d) => { const n = typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN; return Number.isFinite(n) ? n : d; };
 function cleanStyle(st) {
+  st.width = okn(st.width, 1); st.opacity = okn(st.opacity, .7); st.labelSize = okn(st.labelSize, 11);
+  ["hatchStep", "maxDen"].forEach(k => { if (st[k] != null) { const n = okn(st[k], 0); if (n) st[k] = n; else delete st[k]; } });
   st.fill = okc(st.fill, "#9aa1a8"); st.stroke = okc(st.stroke, "#5f6368");
+  if (st.grad && !Object.hasOwn(RAMPS, st.grad.ramp)) st.grad.ramp = "blue";   // палитра по имени из файла: чужого имени в RAMPS нет
   st.rules.elseFill = okc(st.rules.elseFill, "#dddddd"); (st.rules.list || []).forEach(r => { r.fill = okc(r.fill, "#9aa1a8"); });
   Object.keys(st.cat.colors || {}).forEach(k => { st.cat.colors[k] = okc(st.cat.colors[k], "#9aa1a8"); });
   return st;
@@ -414,8 +419,8 @@ function rowHTML(l, ind, drag, extra = "") {
   return `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="${drag}" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
       <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
       <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
-      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + d.fetched_at : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
-      ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${d.edited}</span>` : ""}
+      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + esc(d.fetched_at) : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
+      ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${esc(d.edited)}</span>` : ""}
       ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
       <span class="meta num">${fmt(d?.count ?? 0)}</span>
       ${extra}<button class="tw more" data-more="${esc(l.key)}" aria-label="Меню слоя"><i data-lucide="more-horizontal"></i></button></div>`
@@ -739,7 +744,7 @@ function renderStyle(el) {
   else h += `<div class="row"><label>${l.geom === "point" ? "Размер" : "Толщина"}</label><input type="number" data-k="width" min=".3" max="10" step=".1" value="${st.width}" style="width:64px" aria-label="Толщина"> пикс.</div>`;
   const DENS = [0, 1000, 2000, 2500, 5000, 10000, 25000];
   h += `<div class="row"><label>Виден</label><select data-k="maxDen" data-num aria-label="Видимость слоя по масштабу" title="Как «Видимость в зависимости от масштаба» в QGIS: на более мелком масштабе слой не рисуется ни на карте, ни на листе. На расчёты (граф, ограничения) не влияет">${DENS.map(d => `<option value="${d}" ${(st.maxDen || 0) === d ? "selected" : ""}>${d ? "крупнее 1:" + fmt(d) : "на любом масштабе"}</option>`).join("")}</select></div>`;
-  h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${l.layerOpacity}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(l.layerOpacity * 100)}</span></div>
+  h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${okn(l.layerOpacity, 1)}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(okn(l.layerOpacity, 1) * 100)}</span></div>
     ${l.geom === "poly" && (st.hatch || st.rules.list.some(r => r.hatch)) ? `<div class="row"><label>Узор штриховки</label><select data-k="hatchPat">${Object.entries(HATCHES).map(([k, t]) => `<option value="${k}" ${(st.hatchPat || "45") === k ? "selected" : ""}>${t}</option>`).join("")}</select><input type="number" data-k="hatchStep" min="4" max="40" value="${st.hatchStep || 8}" title="шаг штриховки, пикс." style="width:52px"></div>` : ""}
     <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
   el.innerHTML = h;
@@ -760,7 +765,7 @@ const DECSHORT = { "сохраняем": "сохраняем", "реконстр
 const decisionBar = () => SEL.some(s => fieldsOfKey(s.key).includes(DECISION)) ? `<div class="pad" style="padding-top:0"><div class="seg dec">${Object.keys(DECISIONS).map(v => `<button data-decide="${v}" title="Решение по выбранным зданиям: ${v}"><i style="background:${DECISIONS[v]}"></i>${DECSHORT[v]}</button>`).join("")}</div></div>` : "";
 // этажность выбранных корпусов своего слоя (эскиз, свои слои): − / +, как ручки высоты в TestFit
 const floorsBar = () => { const own = SEL.filter(s => fieldsOfKey(s.key).includes("Этажность") && !/^(nspd|osm|gisogd)\./.test(s.key)); if (!own.length) return "";
-  const v = [...new Set(own.map(s => s.f.get("Этажность")))]; return `<div class="pad" style="padding-top:0"><div class="row" style="margin:0"><label>Этажность</label><button class="btn" data-fl="-1" title="На этаж ниже">−</button><b class="num" style="min-width:48px;text-align:center">${v.length === 1 ? v[0] : "разная"}</b><button class="btn" data-fl="1" title="На этаж выше">+</button></div></div>`; };
+  const v = [...new Set(own.map(s => s.f.get("Этажность")))]; return `<div class="pad" style="padding-top:0"><div class="row" style="margin:0"><label>Этажность</label><button class="btn" data-fl="-1" title="На этаж ниже">−</button><b class="num" style="min-width:48px;text-align:center">${v.length === 1 ? esc(v[0]) : "разная"}</b><button class="btn" data-fl="1" title="На этаж выше">+</button></div></div>`; };
 /* координаты вершин в МСК — правка числом (как «Редактор вершин» QGIS): изменение поля сдвигает вершину, замыкающая
    вершина контура идёт вместе с первой; до 300 вершин, у большего объекта таблица не строится */
 const vPaths = g => { const t = g.getType(), c = g.getCoordinates();

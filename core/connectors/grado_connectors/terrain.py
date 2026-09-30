@@ -21,6 +21,7 @@ import urllib.error
 import urllib.request
 from collections import defaultdict, deque
 
+from . import netutil
 from .contract import Connector, ConnectorError, make_result
 
 TERRARIUM_URL = ("https://s3.amazonaws.com/elevation-tiles-prod/"
@@ -31,6 +32,7 @@ _MAX_TILES = 12       # страховка на размер мозаики (н�
 _MAX_ZOOM = 13        # выше — интерполяция SRTM без новой детализации
 _MIN_ZOOM = 9
 _MAX_GRID = 260       # рабочая сетка ужимается до этого размера по стороне
+_MAX_LEVELS = 500     # предел числа уровней сечения (страховка от крошечного шага)
 _MAX_CHAINS = 2500    # предел изолиний в одной выгрузке (не раздувать проект)
 
 # «Красивые» шаги сечения рельефа, м — выбираем ближайший, дающий ~15–25 линий.
@@ -126,8 +128,8 @@ def _http_get(z, x, y):
     last = None
     for attempt in range(3):                 # S3 изредка не отвечает на рукопожатие TLS — повторить, а не терять слой
         try:
-            with urllib.request.urlopen(req, timeout=20, context=_SSL_CTX) as resp:
-                return resp.read()
+            with netutil.open_url(req, 20, _SSL_CTX) as resp:
+                return netutil.read_capped(resp)
         except urllib.error.HTTPError as e:
             raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: HTTP {e.code}") from None
         except Exception as e:
@@ -279,7 +281,19 @@ class TerrainContours(Connector):
                 source_doc="AWS Terrain Tiles (terrarium, SRTM/GMTED)",
                 notes=["рельеф ровный: перепад высот < 0.5 м, "
                        "горизонтали не построены"])
-        step = float(interval) if interval else _nice_interval(rng)
+        if interval is not None:
+            try:
+                step = float(interval)
+            except (TypeError, ValueError):
+                step = float("nan")
+            if not math.isfinite(step) or step <= 0:
+                raise ConnectorError("шаг сечения должен быть конечным числом больше нуля")
+            if rng / step > _MAX_LEVELS:
+                raise ConnectorError(
+                    f"слишком мелкий шаг сечения {step:g} м: при перепаде {rng:.0f} м "
+                    f"выйдет больше {_MAX_LEVELS} уровней — увеличьте шаг")
+        else:
+            step = _nice_interval(rng)
         lines = _contours(grid, px0, py0, stride, z, step)
         if len(lines) > _MAX_CHAINS:
             notes.append(f"горизонталей много ({len(lines)}) — оставлены первые "

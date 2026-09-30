@@ -37,6 +37,8 @@ ZOOM = 18
 MPP = 0.3                    # метров на пиксель выхода
 MAX_PX = 400_000_000         # весь снимок: 400 Мп (0,3 м/пикс — около 6 × 6 км)
 MAX_TILES = 12000
+MAX_TILE_BYTES = 2**20       # тайл Яндекса — десятки КБ; больше мегабайта — не тайл (заглушка, чужой ответ)
+MAX_TILE_PX = 512            # настоящий тайл 256 × 256; больший рисунок в мозаику не берётся
 CHUNK = 4096                 # кусок снимка, пикселей по стороне
 BLOCK = 256                  # блок пересборки, пикселей выхода
 NAME = "sputnik_yandex"
@@ -64,7 +66,7 @@ class YandexSat:
 
     def _get(self, url):
         with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30, context=self._ctx) as r:
-            return r.read()
+            return r.read(MAX_TILE_BYTES + 1)              # не больше мегабайта + 1 байт: длиннее отсекает ensure
 
     def path(self, z, x, y):
         return self.cache_dir / f"{z}_{x}_{y}.jpg"
@@ -86,8 +88,8 @@ class YandexSat:
                     break
             except OSError:
                 pass
-        if data and data[:2] == b"\xff\xd8":               # только JPEG: заглушка или капча в кэш не идёт
-            p.parent.mkdir(parents=True, exist_ok=True)
+        if data and len(data) <= MAX_TILE_BYTES and data[:2] == b"\xff\xd8":   # только JPEG и не больше 1 МБ: заглушка или капча в кэш не идёт
+            p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".part")
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
@@ -143,8 +145,11 @@ def export_sat(frame, cache_dir, base="", progress=None, tiles=None, mpp=MPP, z=
         if (x, y) not in cache:
             p = tiles.path(z, x, y)
             try:
-                cache[(x, y)] = Image.open(p).convert("RGB") if p.exists() else None
-            except OSError:
+                im = Image.open(p) if p.exists() else None
+                if im is not None and (im.width > MAX_TILE_PX or im.height > MAX_TILE_PX):
+                    im = None                                # чужой размер: мозаика рассчитана на 256 × 256
+                cache[(x, y)] = im.convert("RGB") if im is not None else None
+            except (OSError, ValueError, SyntaxError):
                 cache[(x, y)] = None
             order.append((x, y))
             if len(order) > 64:
@@ -193,6 +198,7 @@ def _package(parts, frame, mpp, W, H, z, base=""):
     import ezdxf
     import dxf_io
     x0, y0, x1, y1 = frame
+    base = "".join(c for c in (base or "") if c.isprintable())     # путь уходит в DXF и README: без \r, \n и управляющих
     folder = Path(base).name if base else NAME
     names = [f"{NAME}_{i + 1:02d}.jpg" if len(parts) > 1 else f"{NAME}.jpg" for i in range(len(parts))]
     doc = ezdxf.new("R2018")

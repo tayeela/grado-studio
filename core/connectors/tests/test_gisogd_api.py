@@ -6,15 +6,22 @@ bbox, и с bbox 150 м). Поэтому режем по области сами
 Слой приходит zip-архивом SHP в родных координатах ГИС ОГД (тестовый портал — _shpfix).
 """
 
+import gzip
+import io
 import json
+import struct
 import tempfile
 import unittest
+import zipfile
+import zlib
 from pathlib import Path
+from unittest import mock
 
 import _paths  # noqa: F401
 from _shpfix import shp_zip
 from grado_connectors import ConnectorError, GisogdApi
-from grado_connectors.gisogd_api import catalog, norm_id
+from grado_connectors import gisogd_api
+from grado_connectors.gisogd_api import GISOGD_API_LAYERS, catalog, norm_id
 
 
 def _poly(x0, y0, x1, y1):
@@ -172,6 +179,146 @@ class GisogdProgress(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             GisogdApi(transport=lambda url: body, cache_dir=d, progress=lambda *a: seen.append(a)).fetch((0, 0, 1, 1), "x1")
         self.assertEqual(seen, [("x1", len(body), len(body), "parse")])
+
+class _FakeResp:
+    """Ответ портала: отдаёт байты кусками; headers как у http.client."""
+
+    def __init__(self, body, gz=False):
+        self.body, self.pos = body, 0
+        self.headers = {"Content-Encoding": "gzip"} if gz else {}
+
+    def read(self, n=-1):
+        n = len(self.body) - self.pos if n is None or n < 0 else n
+        chunk = self.body[self.pos:self.pos + n]
+        self.pos += len(chunk)
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+class TestLayerCode(unittest.TestCase):
+    """Код слоя идёт в URL и имена файлов кэша — проверяется в самом коннекторе."""
+
+    BAD = ["../x", "..", "a/b", "a\\b", ".hidden", "a..b", "", "virtual1742\n", "/etc/passwd", "a b", "c:x", "x\x00y"]
+
+    def test_bad_codes_rejected_before_network_and_disk(self):
+        for map_name in ("isogd", "base2"):
+            for bad in self.BAD:
+                with tempfile.TemporaryDirectory() as td:
+                    conn = GisogdApi(transport=lambda *a, **k: self.fail("сеть не должна вызываться"),
+                                     cache_dir=td, map_name=map_name)
+                    with self.assertRaises(ConnectorError, msg=repr(bad)):
+                        conn.fetch(BBOX, bad)
+                    self.assertEqual(list(Path(td).iterdir()), [], "ничего не создано в кэше")
+
+    def test_real_layer_codes_match(self):
+        codes = [c for spec in GISOGD_API_LAYERS.values() for c in spec["codes"]]
+        self.assertTrue(codes)
+        for c in codes + ["virtual6", "virtual1742", "layer_12.v2-x"]:
+            self.assertEqual(gisogd_api._check_code(c), c)
+
+    def test_cache_child_stays_under_root(self):
+        with tempfile.TemporaryDirectory() as td:
+            conn = GisogdApi(transport=FakeTransport(), cache_dir=Path(td) / "cache")
+            with self.assertRaises(ConnectorError):
+                conn._cache_child("virtual1", "../escape.gz")
+            self.assertEqual(conn._cache_path("virtual1").parent, Path(td) / "cache")
+
+
+class TestSizeCaps(unittest.TestCase):
+    def test_inflate_respects_room(self):
+        bomb = gzip.compress(b"\0" * 5_000_000)
+        with self.assertRaises(ConnectorError):
+            gisogd_api._inflate(zlib.decompressobj(wbits=31), bomb, 1000)
+        ok = gisogd_api._inflate(zlib.decompressobj(wbits=31), bomb, 5_000_000)
+        self.assertEqual(len(ok), 5_000_000)
+
+    def test_http_get_gzip_bomb_rejected_without_retries(self):
+        resp = _FakeResp(gzip.compress(b"\0" * 5_000_000), gz=True)
+        with mock.patch.object(gisogd_api, "open_url", return_value=resp) as m, \
+                mock.patch.object(gisogd_api, "_MAX_LAYER", 100_000):
+            with self.assertRaises(ConnectorError):
+                gisogd_api._http_get("https://gisogd.mos.ru/x")
+        self.assertEqual(m.call_count, 1, "превышение потолка не повторяется")
+
+    def test_http_get_plain_over_cap_rejected(self):
+        with mock.patch.object(gisogd_api, "open_url", return_value=_FakeResp(b"x" * 500_000)), \
+                mock.patch.object(gisogd_api, "_MAX_LAYER", 100_000):
+            with self.assertRaises(ConnectorError):
+                gisogd_api._http_get("https://gisogd.mos.ru/x")
+
+    def test_http_get_gzip_roundtrip(self):
+        payload = b"hello " * 50_000
+        with mock.patch.object(gisogd_api, "open_url", return_value=_FakeResp(gzip.compress(payload), gz=True)):
+            self.assertEqual(gisogd_api._http_get("https://gisogd.mos.ru/x"), payload)
+
+    def test_http_stream_gzip_bomb_rejected(self):
+        resp = _FakeResp(gzip.compress(b"\0" * 5_000_000), gz=True)
+        with mock.patch.object(gisogd_api, "open_url", return_value=resp), \
+                mock.patch.object(gisogd_api, "_MAX_STREAM", 100_000):
+            _total, it = gisogd_api._http_stream("https://gisogd.mos.ru/x")
+            with self.assertRaises(ConnectorError):
+                list(it)
+
+    def test_stream_build_over_cap_removes_partial_file(self):
+        with tempfile.TemporaryDirectory() as td:
+            conn = GisogdApi(transport=lambda url, timeout=None: b"\0" * 300_000, cache_dir=td, map_name="base2")
+            with mock.patch.object(gisogd_api, "_MAX_STREAM", 100_000):
+                with self.assertRaises(ConnectorError):
+                    conn.fetch(BBOX, "virtual6")
+            self.assertEqual(list(Path(td).iterdir()), [], "ни .zip.part, ни недостроенной сетки")
+
+
+class TestCorruptArchive(unittest.TestCase):
+    """Обрезанная запись в SHP: struct.error/IndexError не выходят наружу сырым текстом."""
+
+    @staticmethod
+    def _bad_zip():
+        shp = bytearray(100)
+        struct.pack_into(">i", shp, 0, 9994)
+        struct.pack_into("<i", shp, 32, 1)
+        shp += struct.pack(">ii", 1, 2) + struct.pack("<i", 1) + b"\0" * 0   # Point с телом в 4 байта: X,Y нет
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("a.shp", bytes(shp))
+        return buf.getvalue()
+
+    def test_isogd_wraps_into_connector_error(self):
+        conn = GisogdApi(transport=FakeTransport(self._bad_zip()))
+        with self.assertRaises(ConnectorError) as cm:
+            conn.fetch(BBOX, "virtual1742")
+        self.assertNotIn("unpack", str(cm.exception))
+        self.assertIn("повреждён", str(cm.exception))
+
+    def test_base2_stream_wraps_into_connector_error(self):
+        with tempfile.TemporaryDirectory() as td:
+            conn = GisogdApi(transport=FakeTransport(self._bad_zip()), cache_dir=td, map_name="base2")
+            with self.assertRaises(ConnectorError) as cm:
+                conn.fetch(BBOX, "virtual6")
+            self.assertNotIn("unpack", str(cm.exception))
+            self.assertEqual(list(Path(td).iterdir()), [], "недостроенный кэш убран")
+
+    def test_shp_features_indexerror_wrapped(self):
+        with mock.patch.object(gisogd_api, "iter_zip", side_effect=IndexError("list index out of range")):
+            with self.assertRaises(ConnectorError) as cm:
+                list(gisogd_api._shp_features(None, "v1"))
+        self.assertNotIn("list index", str(cm.exception))
+
+
+class TestNetworkErrorText(unittest.TestCase):
+    def test_paths_and_newlines_stripped(self):
+        err = OSError("fail\n/Users/tayeela/secret/dir/file.tmp\nsecond")
+        with mock.patch.object(gisogd_api, "open_url", side_effect=err), mock.patch.object(gisogd_api.time, "sleep"):
+            with self.assertRaises(ConnectorError) as cm:
+                gisogd_api._http_get("https://gisogd.mos.ru/x")
+        msg = str(cm.exception)
+        self.assertNotIn("/Users", msg)
+        self.assertNotIn("\n", msg)
+
 
 if __name__ == "__main__":
     unittest.main()

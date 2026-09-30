@@ -1188,8 +1188,9 @@ class PhotoGridFrame(Frame):
         self.sheet = sheet
 
     def ops(self, ctx):
+        import album_io
         x, y, w, h = self.rect
-        photos = [p for p in self.sheet.get("photos", []) if p.get("data")][:12]
+        photos = [(p, raw) for p, raw in ((p, album_io.photo_bytes(p)) for p in self.sheet.get("photos", []) if p.get("data")) if raw][:12]
         if not photos:
             return [{"op": "text", "x": x + w / 2, "y": y + h / 2, "size": 3.2, "anchor": "middle", "color": (0.45, 0.45, 0.45),
                      "text": "Снимки не добавлены: окно «Листы», кнопка с фотоаппаратом у этого слайда"}]
@@ -1199,13 +1200,13 @@ class PhotoGridFrame(Frame):
         gap = 2.5
         cw, ch = (w - gap * (cols - 1)) / cols, (h - gap * (rows - 1)) / rows
         out = []
-        for i, p in enumerate(photos):
+        for i, (p, raw) in enumerate(photos):
             cx, cy = x + (i % cols) * (cw + gap), y + (i // cols) * (ch + gap)
             pw, ph = float(p.get("w") or 4), float(p.get("h") or 3)
             k = min(cw / pw, ch / ph)                                  # снимок целиком, по центру ячейки
             iw, ih = pw * k, ph * k
             ix, iy = cx + (cw - iw) / 2, cy
-            out.append({"op": "image", "data": base64.b64decode(p["data"]), "x": ix, "y": iy, "w": iw, "h": ih})
+            out.append({"op": "image", "data": raw, "x": ix, "y": iy, "w": iw, "h": ih})
             out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
                         "rings": [[(ix, iy), (ix + 6, iy), (ix + 6, iy + 5), (ix, iy + 5)]]})
             out.append({"op": "text", "x": ix + 3, "y": iy + 3.8, "size": 3, "text": str(i + 1), "anchor": "middle", "color": (0.1, 0.1, 0.1)})

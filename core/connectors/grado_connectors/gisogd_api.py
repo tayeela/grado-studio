@@ -34,6 +34,7 @@ import os
 import re
 import shutil
 import ssl
+import struct
 import threading
 import time
 import urllib.error
@@ -45,6 +46,8 @@ from pathlib import Path
 from .clip import clip_geometry
 from .contract import Connector, ConnectorError, make_result
 from .crs import msk50_to_wgs84, transform_geom
+from .gisogd import clean_msg
+from .netutil import open_url
 from .shp_reader import iter_zip
 
 BASE = "https://gisogd.mos.ru/gis/api/2.8/gisogd/isogd"
@@ -118,6 +121,33 @@ GISOGD_API_LAYERS = {
     },
 }
 
+_MAX_LAYER = 512 * 2**20      # потолок слоя, собираемого в памяти (_http_get), — и сжатого, и распакованного
+_MAX_STREAM = 2 * 2**30       # потолок потоковой выгрузки на диск (ЕГКО: газоны — 1,3 ГБ)
+_CODE_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _check_code(code):
+    """Код слоя идёт в URL и имена файлов кэша: только буквы, цифры, «_.-», без «..» и ведущей точки."""
+    if (not isinstance(code, str) or not _CODE_RE.fullmatch(code)
+            or ".." in code or code.startswith(".")):
+        raise ConnectorError("ГИС ОГД: недопустимый код слоя")
+    return code
+
+
+def _inflate(dec, chunk, room):
+    """Распаковать кусок gzip, но не больше room байт (защита от gzip-бомбы) → байты."""
+    out = []
+    while True:
+        data = dec.decompress(chunk, room + 1)      # +1: превышение видно по длине, а не по тому, что выход встал ровно
+        room -= len(data)
+        if room < 0:
+            raise ConnectorError("ГИС ОГД: распакованный ответ больше допустимого")
+        if data:
+            out.append(data)
+        chunk = dec.unconsumed_tail
+        if not chunk:
+            return b"".join(out)
+
 
 def _ssl_context():
     # Сборки Python.org на macOS не видят системные CA (правило 6 CLAUDE.md).
@@ -181,34 +211,41 @@ def _http_get(url, timeout=300, progress=None):
     last = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+            with open_url(req, timeout=timeout, context=ctx) as r:
                 gz = r.headers.get("Content-Encoding") == "gzip"
-                total, parts, got, told = _expected_size(r.headers), [], 0, 0
-                dec = zlib.decompressobj(16 + zlib.MAX_WBITS) if gz else None
+                total, parts, got, told, wire = _expected_size(r.headers), [], 0, 0, 0
+                dec = zlib.decompressobj(wbits=31) if gz else None
                 while True:
                     chunk = r.read(1 << 18)
                     if not chunk:
                         break
-                    chunk = dec.decompress(chunk) if dec else chunk
+                    wire += len(chunk)
+                    if wire > _MAX_LAYER:
+                        raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
+                    chunk = _inflate(dec, chunk, _MAX_LAYER - got) if dec else chunk
                     parts.append(chunk)
                     got += len(chunk)
+                    if got > _MAX_LAYER:
+                        raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
                     if progress and got - told >= 1 << 19:
                         progress(got, total)
                         told = got
                 if dec:
-                    parts.append(dec.flush())
+                    parts.append(_inflate(dec, b"", _MAX_LAYER - got))
                 raw = b"".join(parts)
                 if progress:
                     progress(len(raw), total)
                 return raw
         except urllib.error.HTTPError as e:
             raise ConnectorError(f"ГИС ОГД ответил HTTP {e.code}") from None
+        except ConnectorError:                       # потолок размера, редирект не на https — повтор не поможет
+            raise
         except Exception as e:                       # сеть/таймаут — пробуем ещё
             last = e
             if attempt < 2:
                 time.sleep(1.0 * (attempt + 1))
                 continue
-    raise ConnectorError(f"ГИС ОГД недоступен: {last}")
+    raise ConnectorError(f"ГИС ОГД недоступен: {clean_msg(last)}")
 
 
 def _http_stream(url, timeout=900):
@@ -219,34 +256,40 @@ def _http_stream(url, timeout=900):
     ctx, last = _ssl_context(), None
     for attempt in range(3):
         try:
-            r = urllib.request.urlopen(req, timeout=timeout, context=ctx)
+            r = open_url(req, timeout=timeout, context=ctx)
             break
         except urllib.error.HTTPError as e:
             raise ConnectorError(f"ГИС ОГД ответил HTTP {e.code}") from None
+        except ConnectorError:                       # редирект не на https — повтор не поможет
+            raise
         except Exception as e:
             last = e
             if attempt < 2:
                 time.sleep(1.0 * (attempt + 1))
     else:
-        raise ConnectorError(f"ГИС ОГД недоступен: {last}")
+        raise ConnectorError(f"ГИС ОГД недоступен: {clean_msg(last)}")
 
     def chunks():
         with r:
-            dec = zlib.decompressobj(16 + zlib.MAX_WBITS) if r.headers.get("Content-Encoding") == "gzip" else None
+            dec = zlib.decompressobj(wbits=31) if r.headers.get("Content-Encoding") == "gzip" else None
+            got = 0
             try:
                 while True:
                     c = r.read(1 << 20)
                     if not c:
                         break
-                    c = dec.decompress(c) if dec else c
+                    c = _inflate(dec, c, _MAX_STREAM - got) if dec else c
+                    got += len(c)
+                    if got > _MAX_STREAM:
+                        raise ConnectorError(f"ГИС ОГД: выгрузка больше {_MAX_STREAM // 2**30} ГБ")
                     if c:
                         yield c
                 if dec:
-                    tail = dec.flush()
+                    tail = _inflate(dec, b"", _MAX_STREAM - got)
                     if tail:
                         yield tail
             except (OSError, zlib.error) as e:
-                raise ConnectorError(f"ГИС ОГД: выгрузка прервалась: {e}") from None
+                raise ConnectorError(f"ГИС ОГД: выгрузка прервалась: {clean_msg(e)}") from None
     return _expected_size(r.headers), chunks()
 
 
@@ -269,7 +312,7 @@ def catalog(transport=None, map_name="isogd"):
     except ConnectorError:
         raise
     except Exception as e:
-        raise ConnectorError(f"ГИС ОГД: каталог не разобран: {e}") from None
+        raise ConnectorError(f"ГИС ОГД: каталог не разобран: {clean_msg(e)}") from None
     by_id = {x.get("id"): x for x in arr}
 
     def path(x):
@@ -308,16 +351,19 @@ def _full_names(props):
 
 def _shp_features(zf, code, full_names=False):
     """zip-выгрузка слоя в SHP → объекты GeoJSON в WGS84 (родные координаты ОГД → OGD_PROJ4 → WGS84), по одному."""
+    # испорченный архив (struct.error/IndexError на обрезанной записи, ValueError ридера) — ошибка коннектора без сырого
+    # текста исключения; разбор записей идёт лениво, поэтому try охватывает и сам обход
+    bad = (ValueError, KeyError, IndexError, struct.error, EOFError, zlib.error, zipfile.BadZipFile)
     try:
         _prj, records = iter_zip(zf)
-    except (ValueError, KeyError) as e:
-        raise ConnectorError(f"ГИС ОГД: слой {code} — архив SHP не разобран: {e}") from None
-    for r in records:
-        g = r["geometry"]
-        if g and g.get("type") == "MultiPoint" and not g["coordinates"]:
-            g = None
-        props = _full_names(r["properties"]) if full_names else r["properties"]
-        yield {"type": "Feature", "geometry": transform_geom(g, msk50_to_wgs84) if g else None, "properties": props}
+        for r in records:
+            g = r["geometry"]
+            if g and g.get("type") == "MultiPoint" and not g["coordinates"]:
+                g = None
+            props = _full_names(r["properties"]) if full_names else r["properties"]
+            yield {"type": "Feature", "geometry": transform_geom(g, msk50_to_wgs84) if g else None, "properties": props}
+    except bad:
+        raise ConnectorError(f"ГИС ОГД: слой {code} — архив SHP повреждён или не разобран") from None
 
 
 def _zip_of(raw, code):
@@ -383,8 +429,18 @@ class GisogdApi(Connector):
             self.source_doc = "ЕГКО Москвы (картооснова ГИС ОГД, gisogd.mos.ru), выгрузка по экстенту"
 
     # ---------- ЕГКО: потоковая выгрузка и сетка на диске ----------
+    def _cache_child(self, code, name):
+        """Путь внутри кэша для слоя code: код проверен, результат не выходит из каталога кэша."""
+        _check_code(code)
+        if not self.cache_dir:
+            return None
+        p = self.cache_dir / name
+        if not p.resolve().is_relative_to(self.cache_dir.resolve()):
+            raise ConnectorError("ГИС ОГД: путь кэша вне каталога кэша")
+        return p
+
     def _grid_dir(self, code):
-        return self.cache_dir / f"{self.map_name}.{code}.shp.grid" if self.cache_dir else None
+        return self._cache_child(code, f"{self.map_name}.{code}.shp.grid")
 
     def _grid_fresh(self, code):
         g = self._grid_dir(code)
@@ -413,6 +469,7 @@ class GisogdApi(Connector):
         все — в клетки сетки (если есть кэш). В памяти нет ни архива, ни слоя."""
         import tempfile
         import zipfile
+        _check_code(code)
         url = f"{self.base}/layers/{code}/export/?format=shp"
         grid = self._grid_dir(code)
         tmp = None
@@ -435,7 +492,11 @@ class GisogdApi(Connector):
 
         try:
             with os.fdopen(fd, "wb") as fh:
+                written = 0
                 for chunk in self._chunks(url, code):
+                    written += len(chunk)
+                    if written > _MAX_STREAM:               # частичный файл удалит finally
+                        raise ConnectorError(f"ГИС ОГД: слой {code} больше {_MAX_STREAM // 2**30} ГБ")
                     fh.write(chunk)
             try:
                 zf = zipfile.ZipFile(zpath)
@@ -523,17 +584,19 @@ class GisogdApi(Connector):
                            source_doc=self.source_doc, notes=notes)
 
     def _cache_path(self, code):
-        if not self.cache_dir:
-            return None
-        return self.cache_dir / f"{code}.shp.gz"
+        return self._cache_child(code, f"{code}.shp.gz")
 
     def _layer_bytes(self, code):
         """Слой целиком: из кэша, иначе скачать и закэшировать (gzip на диске)."""
         path = self._cache_path(code)
         if path and path.exists() and (time.time() - path.stat().st_mtime) < self.ttl:
             try:
-                return gzip.decompress(path.read_bytes()), True
-            except (OSError, EOFError, zlib.error):
+                dec = zlib.decompressobj(wbits=31)
+                data = _inflate(dec, path.read_bytes(), _MAX_LAYER)
+                if not dec.eof:
+                    raise EOFError("кэш недописан")
+                return data, True
+            except (OSError, EOFError, zlib.error, ConnectorError):
                 path.unlink(missing_ok=True)       # недописанный кэш — скачать заново, а не падать до конца срока
         url = f"{self.base}/layers/{code}/export/?format=shp"
         if self.progress and self.transport is _http_get:
@@ -605,7 +668,7 @@ class GisogdApi(Connector):
         return props
 
     def _lines_path(self, code):
-        return self.cache_dir / f"{code}.shp.lines.gz" if self.cache_dir else None
+        return self._cache_child(code, f"{code}.shp.lines.gz")
 
     def _from_lines(self, code, query):
         """Быстрый путь по кэшу: строка на объект «w,s,e,n<TAB>ключ<TAB>json».
@@ -634,6 +697,7 @@ class GisogdApi(Connector):
         """bbox = (west, south, east, north) WGS84; code — код слоя портала."""
         west, south, east, north = map(float, bbox)
         query = (west, south, east, north)
+        _check_code(code)
         if self.map_name != "isogd":
             return self._fetch_stream(code, query)
         fast = self._from_lines(code, query)
@@ -671,7 +735,9 @@ class GisogdApi(Connector):
                 self._cache_path(code).unlink(missing_ok=True)   # следующая попытка скачает заново
             if isinstance(e, ConnectorError):
                 raise
-            raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {e}") from None
+            if isinstance(e, (ValueError, KeyError, IndexError, struct.error, zipfile.BadZipFile)):
+                raise ConnectorError(f"ГИС ОГД: слой {code} — архив SHP повреждён или не разобран") from None
+            raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {clean_msg(e)}") from None
 
         notes = []
         if not cached:

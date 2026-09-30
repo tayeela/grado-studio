@@ -82,13 +82,18 @@ function clearProject() {
   $("vlist").innerHTML = `<div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений.</div>`;
 }
 
+// ключи из чужого файла проекта: Object.assign с «__proto__» подменил бы прототип — такие ключи отбрасываются
+const BAD_KEY = /^(__proto__|constructor|prototype)$/;
+const safeObj = o => Object.fromEntries(Object.entries(o && typeof o === "object" && !Array.isArray(o) ? o : {}).filter(([k]) => !BAD_KEY.test(k)));
+// идентификатор вида и листа идёт в атрибуты разметки — только буквы, цифры и «_»; лист ссылается на вид тем же правилом
+const safeId = id => String(id ?? "").replace(/\W/g, "");
 function applyProject(p) {
   if (p?.format !== PROJ_FORMAT) throw new Error("это не файл проекта ГРАДО 2");
   p = migrate(p);
   PROJ.loading = true;
   try {
     clearProject();
-    Object.assign(SOURCES, p.imports || {});
+    Object.entries(safeObj(p.imports)).forEach(([k, s]) => { if (s && typeof s === "object") SOURCES[k] = { ...safeObj(s), title: String(s.title ?? k), kind: String(s.kind ?? "import") }; });
     CHECKED.clear(); (p.checked || []).forEach(k => CHECKED.add(k));
     if (p.territory) setTerritory(p.territory);
     for (const s of p.layers || []) {
@@ -99,7 +104,7 @@ function applyProject(p) {
       if (!d.original) delete DATA[s.key].original;              // свой слой: «исходной выгрузки» у него нет
       if (!d.fc?.features?.length) DATA[s.key].fields = ["Наименование", "Примечание"];
       const l = ensureLayer(s.key, s.title, s.geom);
-      Object.assign(l, { visible: s.visible, layerOpacity: s.layerOpacity ?? 1, open: !!s.open, style: ST(s.style || {}) });
+      Object.assign(l, { visible: s.visible, layerOpacity: okn(s.layerOpacity, 1), open: !!s.open, style: ST(s.style || {}) });
     }
     GROUPS.push(...(p.groups || []).map(g => ({ id: g.id, title: g.title, visible: g.visible !== false, open: g.open !== false })));   // группы — после загрузки слоёв: пока слои приходят по одному, нормализация сочла бы группы пустыми
     (p.layers || []).forEach(s => { const l = lyr(s.key); if (l) l.group = s.group || null; });
@@ -107,8 +112,8 @@ function applyProject(p) {
     LYR.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
     normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== (l._maxDen || 0)) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
-    VIEWS.push(...(p.views || []));
-    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" }, p.album?.meta || {}); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || [])); ALBUM.frames = p.album?.frames; window.migrateFrames?.();   // листы v0.56 → листы альбома
+    VIEWS.push(...(p.views || []).map(v => ({ ...v, id: safeId(v.id) })));
+    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" }, safeObj(p.album?.meta)); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; })); ALBUM.frames = p.album?.frames; window.migrateFrames?.();   // листы v0.56 → листы альбома
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }
@@ -148,7 +153,7 @@ async function saveProject(name) {
   const tick = PROJ.tick, body = projectJSON({ dirty: false });
   busy(true);
   try {
-    const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", body }); const j = await r.json();
+    const r = await fetch("/api/project?name=" + encodeURIComponent(name), { method: "POST", headers: { "Content-Type": "application/json" }, body }); const j = await r.json();
     if (!r.ok) throw new Error(j.error === "bad project name" ? "в названии не должно быть знаков / \\ : * ? \" < > | и точки в начале" : j.error);
     PROJ.savedTick = tick; PROJ.dirty = PROJ.tick !== tick; syncProjTitle(); autosave(true);
     toast(`Проект «${name}» сохранён в папке «${j.saved.split(/[\\/]/).slice(-2, -1)[0] || "проектов"}».`); if (!$("wProjects").hidden) renderProjects();
@@ -193,7 +198,7 @@ let autoBusy = false, autoAgain = false;
 async function autosave() {
   if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
   autoBusy = true; const tick = PROJ.tick;
-  try { const r = await fetch("/api/project?autosave=1", { method: "POST", body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
+  try { const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
   finally { autoBusy = false; if (autoAgain) { autoAgain = false; autosave(); } }
 }
 setInterval(() => {

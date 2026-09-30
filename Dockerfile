@@ -1,3 +1,4 @@
+# TODO: закрепить базовый образ по digest (FROM python:3.13-slim@sha256:...) — ждёт сетевого доступа и решения владельца.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

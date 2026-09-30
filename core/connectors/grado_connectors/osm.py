@@ -13,6 +13,7 @@ import ssl
 import urllib.parse
 import urllib.request
 
+from . import netutil
 from .contract import Connector, ConnectorError, make_result
 
 # Основной инстанс + публичные зеркала: при 429/504 (перегрузка) пробуем
@@ -181,6 +182,7 @@ class _OverpassCache:
 
     def find(self, bbox, sets, max_age):
         import gzip
+        import os
         import zlib
         now, eps = time.time(), 1e-7
         with self.lock:
@@ -190,7 +192,10 @@ class _OverpassCache:
                     continue
                 if b[0] - eps <= bbox[0] and b[1] - eps <= bbox[1] and b[2] + eps >= bbox[2] and b[3] + eps >= bbox[3]:
                     try:
-                        with gzip.open(self.dir / e["file"], "rt", encoding="utf-8") as f:
+                        name = os.path.basename(str(e["file"]))   # имя из index.json — только файл в папке кэша
+                        if name != e["file"] or not name.endswith(".json.gz"):
+                            continue
+                        with gzip.open(self.dir / name, "rt", encoding="utf-8") as f:
                             return json.load(f), e["t"]
                     except (OSError, ValueError, EOFError, zlib.error):
                         continue
@@ -255,8 +260,8 @@ class OsmOverpass(Connector):
             for attempt in range(3):
                 req = urllib.request.Request(url, data=data, headers={"User-Agent": _UA})
                 try:
-                    with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
-                        d = json.loads(r.read().decode("utf-8"))
+                    with netutil.open_url(req, 60, ctx) as r:
+                        d = json.loads(netutil.read_capped(r).decode("utf-8"))
                     # таймаут или нехватка памяти Overpass приходят как 200 с неполным ответом — это отказ, не данные
                     if "runtime error" in (d.get("remark") or ""):
                         raise ConnectorError("Overpass: " + d["remark"][:200])

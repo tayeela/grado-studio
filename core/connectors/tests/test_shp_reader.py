@@ -4,13 +4,17 @@
 QGIS-LTR) на тех же точках — тест фиксирует совпадение с PROJ без GDAL в
 рантайме. Shapefile'ы строятся вручную (struct) — проверка чистого ридера."""
 
+import io
+import signal
 import struct
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
+from grado_connectors import shp_reader
 from grado_connectors.crs import msk50_to_wgs84
-from grado_connectors.shp_reader import read_shp
+from grado_connectors.shp_reader import iter_records, iter_zip, read_shp
 
 
 def _shp_header(shape_type, file_len_words):
@@ -107,6 +111,97 @@ class TestShpReader(unittest.TestCase):
         outer = feats[0]["geometry"]["coordinates"][0]
         self.assertEqual(outer[0], outer[-1])
         self.assertEqual(len(outer), 5)
+
+
+class _NoHang:
+    """Страховка от зависания: без неё регресс (бесконечный цикл) повесил бы весь прогон, а не уронил тест."""
+
+    def __enter__(self):
+        if hasattr(signal, "SIGALRM"):
+            signal.signal(signal.SIGALRM, lambda *a: (_ for _ in ()).throw(AssertionError("ридер завис")))
+            signal.alarm(10)
+
+    def __exit__(self, *a):
+        if hasattr(signal, "SIGALRM"):
+            signal.alarm(0)
+        return False
+
+
+class TestCorruptInput(unittest.TestCase):
+    """Порченые файлы: ValueError, а не бесконечный цикл, read(отрицательное) или struct.error."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.d = Path(self._td.name)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def _shp(self, words):
+        """Заголовок + одна запись с заданной длиной в словах (тело — 8 нулевых байт)."""
+        return bytes(_shp_header(1, 54)) + struct.pack(">ii", 1, words) + b"\0" * 8
+
+    def test_negative_record_length_raises(self):
+        for words in (-4, -1, -(2 ** 31)):
+            (self.d / "neg.shp").write_bytes(self._shp(words))
+            with _NoHang(), self.assertRaises(ValueError):
+                read_shp(self.d / "neg.shp")
+
+    def test_record_past_end_of_file_raises(self):
+        (self.d / "big.shp").write_bytes(self._shp(1000))
+        with _NoHang(), self.assertRaises(ValueError):
+            read_shp(self.d / "big.shp")
+
+    def test_iter_records_negative_and_truncated(self):
+        with _NoHang(), self.assertRaises(ValueError):
+            list(iter_records(io.BytesIO(self._shp(-4))))
+        with _NoHang(), self.assertRaises(ValueError):
+            list(iter_records(io.BytesIO(self._shp(1000))))
+
+    def test_huge_part_counts_raise_value_error(self):
+        body = struct.pack("<i4d2i", 5, 0, 0, 0, 0, 2 ** 30, 2 ** 30) + b"\0" * 16
+        rec = struct.pack(">ii", 1, len(body) // 2) + body
+        (self.d / "h.shp").write_bytes(bytes(_shp_header(5, 60)) + rec)
+        with _NoHang(), self.assertRaises(ValueError):
+            read_shp(self.d / "h.shp")
+
+    def test_dbf_header_shorter_than_32_raises(self):
+        _make_point_shp(self.d / "d.shp", 1.0, 2.0)
+        hdr = bytearray(32)
+        struct.pack_into("<I", hdr, 4, 1)
+        struct.pack_into("<H", hdr, 8, 0)                 # header_size = 0 → read(-32) прочитал бы файл целиком
+        struct.pack_into("<H", hdr, 10, 5)
+        (self.d / "d.dbf").write_bytes(bytes(hdr) + b"x" * 100)
+        with _NoHang(), self.assertRaises(ValueError):
+            read_shp(self.d / "d.shp")
+
+    def _zip(self, members):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for name, data in members.items():
+                zf.writestr(name, data)
+        return zipfile.ZipFile(io.BytesIO(buf.getvalue()))
+
+    def test_zip_meta_member_too_large_rejected(self):
+        zf = self._zip({"a.shp": bytes(_shp_header(1, 50)), "a.prj": b"\0" * (shp_reader.MAX_ZIP_META + 1)})
+        with self.assertRaises(ValueError):
+            iter_zip(zf)
+
+    def test_zip_total_declared_size_rejected_before_read(self):
+        zf = self._zip({"a.shp": bytes(_shp_header(1, 50)) + b"\0" * 4096})
+        old = shp_reader.MAX_ZIP_TOTAL
+        shp_reader.MAX_ZIP_TOTAL = 1000
+        try:
+            with self.assertRaises(ValueError):
+                iter_zip(zf)
+        finally:
+            shp_reader.MAX_ZIP_TOTAL = old
+
+    def test_zip_normal_passes(self):
+        zf = self._zip({"a.shp": bytes(_shp_header(1, 50)), "a.prj": b"PROJCS[]"})
+        prj, recs = iter_zip(zf)
+        self.assertEqual(prj, "PROJCS[]")
+        self.assertEqual(list(recs), [])
 
 
 if __name__ == "__main__":

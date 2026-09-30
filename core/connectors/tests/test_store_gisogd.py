@@ -6,11 +6,13 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 import _paths  # noqa: F401
 from grado_connectors import GisogdZip, NspdCapture, SnapshotStore, StoreError, diff
 from grado_connectors.contract import ConnectorError
-from grado_connectors.gisogd import find_ogr2ogr
+from grado_connectors import gisogd
+from grado_connectors.gisogd import clean_msg, find_ogr2ogr
 from grado_connectors.crs import OGD_PROJ4
 
 GJ = {"type": "FeatureCollection", "features": [
@@ -182,6 +184,79 @@ class TestGisogd(unittest.TestCase):
         lon, lat = result["features"][0]["geometry"]["coordinates"][0][0]
         self.assertAlmostEqual(lon, 37.5, delta=1e-6)
         self.assertAlmostEqual(lat, 55.7, delta=1e-6)
+
+
+class TestSnapshotIdValidation(unittest.TestCase):
+    def test_bad_sid_rejected_everywhere(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = SnapshotStore(Path(td) / "store")
+            outside = Path(td) / "outside"
+            outside.mkdir()
+            (outside / "manifest.json").write_text('{"sha256": "x"}', encoding="utf-8")
+            for bad in ("../outside", "..", ".hidden", "a/b", "", "a\nb", "/etc"):
+                for call in (store.manifest, store.features, store.load, store.verify):
+                    with self.assertRaises(StoreError, msg=f"{call.__name__}({bad!r})"):
+                        call(bad)
+
+    def test_save_with_bad_connector_name_rejected(self):
+        class Evil:
+            name, source = "../../evil", "x"
+        with tempfile.TemporaryDirectory() as td:
+            store = SnapshotStore(Path(td) / "store")
+            with self.assertRaises(StoreError):
+                store.save(Evil(), {"features": [], "params": {}})
+            self.assertFalse((Path(td) / "evil").exists())
+
+    def test_normal_roundtrip_still_works(self):
+        with tempfile.TemporaryDirectory() as td:
+            store = SnapshotStore(td)
+            sid = store.save(NspdCapture(), nspd_result())
+            self.assertRegex(sid, r"^[A-Za-z0-9_.-]+$")
+            self.assertTrue(store.verify(sid))
+            self.assertEqual(store.manifest(sid)["id"], sid)
+
+
+class TestFindOgr2ogr(unittest.TestCase):
+    def _exe(self, d, name="ogr2ogr"):
+        p = Path(d) / name
+        p.write_text("#!/bin/sh\n", encoding="utf-8")
+        p.chmod(0o755)
+        return str(p)
+
+    def test_known_path_wins_over_path_lookup(self):
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            known, onpath = self._exe(a), self._exe(b)
+            with mock.patch.object(gisogd, "_OGR2OGR_FALLBACKS", [known]), \
+                    mock.patch.object(gisogd, "_windows_ogr2ogr_candidates", return_value=[]), \
+                    mock.patch.object(gisogd.shutil, "which", return_value=onpath):
+                self.assertEqual(find_ogr2ogr(), known)
+
+    def test_path_is_last_resort_and_must_be_absolute_executable(self):
+        with tempfile.TemporaryDirectory() as d:
+            onpath = self._exe(d)
+            with mock.patch.object(gisogd, "_OGR2OGR_FALLBACKS", []), \
+                    mock.patch.object(gisogd, "_windows_ogr2ogr_candidates", return_value=[]):
+                with mock.patch.object(gisogd.shutil, "which", return_value=onpath):
+                    self.assertEqual(find_ogr2ogr(), onpath)
+                with mock.patch.object(gisogd.shutil, "which", return_value="ogr2ogr"):
+                    self.assertIsNone(find_ogr2ogr(), "относительный путь отвергается")
+                (Path(onpath)).chmod(0o644)
+                with mock.patch.object(gisogd.shutil, "which", return_value=onpath):
+                    self.assertIsNone(find_ogr2ogr(), "неисполняемый файл отвергается")
+
+
+class TestCleanMsg(unittest.TestCase):
+    def test_tmp_paths_newlines_and_length(self):
+        tmp = "/var/folders/ab/cd/T/grado_ogd_xyz"
+        msg = clean_msg(f"ERROR 1: Unable to open {tmp}/a/b.shp\nnext /Users/me/dir/f.dbf line\n" + "z" * 500, tmp=tmp)
+        self.assertNotIn("/var/folders", msg)
+        self.assertNotIn("/Users", msg)
+        self.assertNotIn("\n", msg)
+        self.assertIn("<tmp>", msg)
+        self.assertLessEqual(len(msg), 200)
+
+    def test_urls_survive(self):
+        self.assertIn("https://gisogd.mos.ru/gis/api", clean_msg("HTTP error https://gisogd.mos.ru/gis/api/x"))
 
 
 if __name__ == "__main__":

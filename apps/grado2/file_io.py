@@ -217,11 +217,21 @@ def read_shp_set(files):
 
 
 MAX_UNPACKED = 1024 * 2**20        # 1 ГБ распакованного: слой ПЗЗ Москвы целиком — 221 МБ
+MAX_IMPORT_BYTES = 512 * 2**20     # потолок одного файла (и одного члена архива): JSON, KML, DXF, SHP целиком читаются в память
+
+
+def check_size(name, size):
+    """Один файл больше потолка (MAX_IMPORT_BYTES) не читается: json.loads, ET и ezdxf держат его в памяти целиком."""
+    if size > MAX_IMPORT_BYTES:
+        raise ValueError(f"файл «{name}» занимает {size / 2**20:.0f} МБ — это больше допустимых {MAX_IMPORT_BYTES // 2**20} МБ; "
+                         "разрежьте слой на части или пересохраните только нужное")
 
 
 def _check_unpacked(name, packed, members):
     """Архив-бомба (сотни КБ, распаковываются в гигабайты) не должна съесть память: проверка по заявленным размерам,
     а zipfile сам остановит член архива, чьё содержимое длиннее заявленного."""
+    for i in members:
+        check_size(f"{name}/{i.filename}", i.file_size)
     total = sum(i.file_size for i in members)
     if total > MAX_UNPACKED or (total > 50 * 2**20 and total > packed * 200):
         raise ValueError(f"архив «{name}» распаковывается в {total / 2**20:.0f} МБ — это больше допустимого; "
@@ -256,6 +266,7 @@ def import_files(files, redln=None, local="msk"):
                     _check_unpacked(name, len(b), [kml])
                     expanded[Path(name).stem + ".kml"] = z.read(kml)
         else:
+            check_size(name, len(b))                          # отдельный DXF/SHP/GeoJSON/KML — тот же потолок, что у членов архива
             expanded[name] = b
     out, shp_sets, skipped = [], {}, []
     for name, b in expanded.items():

@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.2: security hardening after the audit.** No visible change in the UI. NSPD: the silent
+  fallback to an unverified TLS connection is gone; the Минцифры root certificates are read from `GRADO_NSPD_CA`,
+  `~/.grado2/ca/` or `core/connectors/grado_connectors/certs/` (see its README.txt), no certificate gives a clear error,
+  `GRADO_NSPD_INSECURE=1` is the explicit old behaviour. Web: every value from a project file that goes into HTML is
+  escaped or coerced to a number (`fetched_at`, view ids, scale, style numbers), project load sanitises ids and skips
+  `__proto__`. Server: CSP (`script-src 'self'`), X-Frame-Options, nosniff, per-path body limits (32 / 250 / 400 MB),
+  socket timeout, generic text for unexpected errors (details to the log), `saved` returns only the project name,
+  pid check before replacing an old server, projects folder quota 20 GB, optional access token `GRADO2_TOKEN`
+  (login page `/login.html`, off when the variable is empty). Import and connectors: size ceilings for files, tiles,
+  photos and downloads, zip and SHP bounds checks (`read_shp` could loop forever), https-only redirects
+  (`netutil.py`), layer code and snapshot id validated. Core: SQL identifiers quoted, `.grado` opened with
+  `trusted_schema=OFF`, expression length/depth/exponent limits, finite coordinates, SVG/PPTX attribute escaping.
+  Repo: `.env`/keys in `.gitignore`, `pillow>=11.3`, release workflow permissions, `.claude/launch.json` untracked.
+  litegraph.min.js is patched locally (demo nodes via `new Function` off) so the CSP needs no `unsafe-eval`.
 - **2026-09-30, ГРАДО 2 v0.83.1: street labels off the territory boundary, readable number leaders.** Owner: street
   names still sit on the boundary; leaders unreadable, unclear which number belongs to which parcel, circles and
   leaders cross. Street labels: the boundary is checked against the rotated label box (`_obox_hit`), candidates are

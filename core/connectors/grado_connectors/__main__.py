@@ -18,11 +18,19 @@ for mod in ("model", "compute", "reactive"):
     sys.path.insert(0, str(CORE / mod))
 
 from .diff import diff as diff_snapshots  # noqa: E402
-from .fgistp import FgistpConnector  # noqa: E402
+from .contract import ConnectorError  # noqa: E402
+from .fgistp import FgistpConnector, check_base_url  # noqa: E402
 from .gisogd import GisogdZip  # noqa: E402
 from .importer import import_snapshot  # noqa: E402
 from .nspd import NspdCapture  # noqa: E402
 from .store import SnapshotStore  # noqa: E402
+
+
+def _base_url(value):
+    try:
+        return check_base_url(value)
+    except ConnectorError as e:
+        raise argparse.ArgumentTypeError(str(e)) from None
 
 
 def _report_saved(store, sid):
@@ -45,7 +53,7 @@ def main(argv=None):
     p.add_argument("--geom-type", default=None)
     p.add_argument("--status", default=None,
                    help="1 существующие / 2 планируемые; пусто = оба")
-    p.add_argument("--base-url", default=None)
+    p.add_argument("--base-url", default=None, type=_base_url)
     sub.add_parser("list")
     p = sub.add_parser("diff")
     p.add_argument("sid_a")

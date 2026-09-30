@@ -18,6 +18,7 @@ import csv
 import io
 import json
 import math
+import os
 import re
 import threading
 import time
@@ -53,11 +54,7 @@ def _load_failed(cache_dir):
 
 
 def _save_failed(cache_dir, failed):
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        (cache_dir / _FAILED_FILE).write_text(json.dumps(failed, ensure_ascii=False), "utf-8")
-    except OSError:
-        pass
+    _save_json(cache_dir / _FAILED_FILE, failed)
 
 
 def catalog_tree(cat):
@@ -241,9 +238,16 @@ def _xdata(props):
     return tags
 
 
+SHEET_MAX_M = 100_000.0         # сторона листа на местности, м: A0 в 1:50 000 — около 60 км; площадь дальше режет сервер (LIMIT_KM2)
+
+
 def sheet_box(sheet):
-    """Лист в МСК: центр c=[X, Y], размер на местности w × h, м → (x0, y0, x1, y1)."""
+    """Лист в МСК: центр c=[X, Y], размер на местности w × h, м → (x0, y0, x1, y1). Размер — конечное число в (0; SHEET_MAX_M]:
+    nan, inf и отрицательные значения из запроса иначе дают пустую или бесконечную рамку."""
     (cx, cy), w, h = sheet["c"], float(sheet["w"]), float(sheet["h"])
+    cx, cy = float(cx), float(cy)
+    if not all(math.isfinite(v) for v in (cx, cy)) or not all(math.isfinite(v) and 0 < v <= SHEET_MAX_M for v in (w, h)):
+        raise ValueError(f"размер листа: ширина и высота на местности — числа больше 0 и не больше {SHEET_MAX_M / 1000:g} км, центр — конечные числа")
     return cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
 
 
@@ -739,9 +743,12 @@ def portal_styles(cache_dir, get=None):
 
 
 def _save_json(path, data):
+    """Запись целиком через временный файл: оборванная запись не оставляет наполовину записанный JSON."""
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.part")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+        os.replace(tmp, path)
     except OSError:
         pass
 
@@ -816,7 +823,8 @@ class Job:
                     failed[it["code"]] = {"at": time.time(), "why": str(e)[:80]}
                     _save_failed(self.cache_dir, failed)
                 except Exception as e:                  # один битый слой не останавливает остальные
-                    st["errors"].append(f"{it['title']}: {type(e).__name__}: {e}")
+                    print(f"ogd_all: слой {it['code']}: {type(e).__name__}: {e}", flush=True)       # подробности — только в журнал сервера
+                    st["errors"].append(f"{it['title']}: сбой при разборе слоя (подробности в журнале сервера)")
                 st["done"] += 1
             _save_failed(self.cache_dir, failed)
             if self.redln:                              # знаки границ ПК — в сторону своих полигонов
@@ -859,10 +867,13 @@ class Job:
             st.update(message="Сборка чертежа…")
             body, dwg = (build_drawing(found, self.boundary, sheet=self.sheet, redln=self.redln) if self.sheet
                          else build_drawing(found, self.boundary, self.bbox, redln=self.redln))
-            self.out_dir.mkdir(parents=True, exist_ok=True)
+            self.out_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             path = self.out_dir / f"{self.name}-{datetime.now():%Y%m%d-%H%M%S}.zip"
             path.write_bytes(body)
             self.file = path
             st.update(running=False, file=path.name, dwg=dwg, message="Готово.")
-        except Exception as e:
+        except ConnectorError as e:                # текст коннектора — для пользователя
             st.update(running=False, message=f"Выгрузка не удалась: {e}")
+        except Exception as e:                     # пути и типы исключений клиенту не уходят — только в журнал сервера
+            print(f"ogd_all: выгрузка не удалась: {type(e).__name__}: {e}", flush=True)
+            st.update(running=False, message="Выгрузка не удалась: внутренняя ошибка (подробности в журнале сервера)")

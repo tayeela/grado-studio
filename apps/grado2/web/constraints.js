@@ -8,7 +8,12 @@
 
 const CONS = { norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true } };
 // сохранённые настройки кладутся поверх умолчаний; «use» сливается по ключам, иначе новый переключатель у старых настроек выключен
-try { const saved = JSON.parse(localStorage.getItem("grado2.cons") || "{}"); Object.assign(CONS, { ...saved, use: { ...CONS.use, ...saved.use } }); } catch { }
+// из хранилища берутся только известные ключи: числа — через Number (значение идёт в value="…"), переключатели — только true/false
+try {
+  const saved = JSON.parse(localStorage.getItem("grado2.cons") || "{}");
+  Object.keys(CONS).forEach(k => { if (k !== "use" && saved[k] != null && Number.isFinite(Number(saved[k]))) CONS[k] = Number(saved[k]); });
+  Object.keys(CONS.use).forEach(k => { if (typeof saved.use?.[k] === "boolean") CONS.use[k] = saved.use[k]; });
+} catch { }
 // шаг точек 0 или пусто давал бесконечный цикл по фасаду: сохранённое значение тоже проверяется
 if (!(CONS.step >= 2 && CONS.step <= 20)) CONS.step = 4;
 if (!(CONS.cell >= 4 && CONS.cell <= 20)) CONS.cell = 8;
@@ -209,7 +214,7 @@ function ensureConsNode() {
 window.renderCons = renderCons;
 function renderCons() {
   const c = CONS, chk = (k, t, hint) => `<label class="lr" title="${esc(hint)}"><input type="checkbox" data-cu="${k}" ${c.use[k] ? "checked" : ""}><span class="nm">${t}</span></label>`;
-  const num = (k, t, min, max, step, hint) => `<div class="row" title="${esc(hint)}"><label>${t}</label><input type="number" data-cn="${k}" value="${c[k]}" min="${min}" max="${max}" step="${step}" style="width:80px"></div>`;
+  const num = (k, t, min, max, step, hint) => `<div class="row" title="${esc(hint)}"><label>${t}</label><input type="number" data-cn="${k}" value="${Number(c[k])}" min="${min}" max="${max}" step="${step}" style="width:80px"></div>`;
   $("consBody").innerHTML = `<div class="pad"><div class="note" style="padding:0 0 8px">Запреты вычитаются из пятна застройки; потолок ограничивает высоту корпусов. Всё строится из загруженных данных и появляется в группе слоёв «Ограничения»: выключите слой — генерация перестанет его учитывать.</div></div>`
     + `<div class="sect">Что учитывать</div>`
     + chk("zouit", "ЗОУИТ, СЗЗ, водоохранные, зоны ОКН", "Из загруженных слоёв ЕГРН и ГИС ОГД. Зоны регулирования застройки ОКН не запрещают строить и не учитываются.")

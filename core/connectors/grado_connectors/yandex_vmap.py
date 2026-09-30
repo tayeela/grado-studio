@@ -31,6 +31,7 @@ import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from . import netutil
 from .contract import Connector, ConnectorError, make_result
 
 URL = ("https://core-renderer-tiles.maps.yandex.net/vmap3/tiles"
@@ -203,6 +204,9 @@ def scale_3395(y):
     return math.sqrt(1 - (E * math.sin(p)) ** 2) / math.cos(p)
 
 
+MAX_TILES = 2500   # потолок числа тайлов за одну выгрузку (обычная область — сотни)
+
+
 def tile_range(bbox, z=ZOOM):
     w, s, e, n = bbox
     size = 2 * HALF / 2 ** z
@@ -210,6 +214,9 @@ def tile_range(bbox, z=ZOOM):
     x2, y2 = lonlat_to_3395(e, n)
     tx = range(int((min(x1, x2) + HALF) // size), int((max(x1, x2) + HALF) // size) + 1)
     ty = range(int((HALF - max(y1, y2)) // size), int((HALF - min(y1, y2)) // size) + 1)
+    if len(tx) * len(ty) > MAX_TILES:
+        raise ConnectorError(
+            f"слишком большая область: {len(tx) * len(ty)} тайлов Яндекса (предел {MAX_TILES}) — уменьшите область")
     return [(x, y) for x in tx for y in ty]
 
 
@@ -518,8 +525,8 @@ class YandexVmap(Connector):
 
     def _http_get(self, url, timeout=30):
         req = urllib.request.Request(url, headers=HEADERS)
-        with urllib.request.urlopen(req, timeout=timeout, context=self._ctx) as r:
-            return r.read()
+        with netutil.open_url(req, timeout, self._ctx) as r:
+            return netutil.read_capped(r)
 
     def _tile(self, x, y):
         """(данные, скачан ли из сети). Повторы с нарастающей паузой; после каждого скачанного тайла — пауза."""

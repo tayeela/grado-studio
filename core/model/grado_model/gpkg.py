@@ -91,11 +91,27 @@ def create_gpkg(path):
 _SQL_TYPES = {"string": "TEXT", "integer": "INTEGER", "number": "DOUBLE"}
 
 
+class GpkgError(ValueError):
+    pass
+
+
+def quote_ident(name):
+    """SQL-идентификатор в двойных кавычках (кавычка внутри удваивается).
+
+    Реальные id слоёв и полей бывают кириллическими, с пробелами и точками
+    (пользовательские поля), поэтому белый список символов не годится —
+    безопасность даёт экранирование; отвергаем не-строки, пустые, с NUL и
+    слишком длинные имена."""
+    if not isinstance(name, str) or not name or len(name) > 255 or "\x00" in name:
+        raise GpkgError(f"недопустимый идентификатор SQL: {name!r}")
+    return '"' + name.replace('"', '""') + '"'
+
+
 def add_feature_table(conn, table, identifier, geom_type, srs_id, columns, description=""):
     """columns: [(id, json_type)] — атрибуты поверх обязательных полей провенанса."""
-    cols = "".join(f', "{cid}" {_SQL_TYPES[ctype]}' for cid, ctype in columns)
+    cols = "".join(f", {quote_ident(cid)} {_SQL_TYPES[ctype]}" for cid, ctype in columns)
     conn.execute(f"""
-        CREATE TABLE "{table}" (
+        CREATE TABLE {quote_ident(table)} (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             geom BLOB,
             source TEXT NOT NULL DEFAULT 'manual',

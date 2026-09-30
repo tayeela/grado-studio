@@ -18,12 +18,15 @@ nspd.gov.ru при «поиске в области», без авторизац
 
 import hashlib
 import json
+import os
 import ssl
+import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
-from . import crs
+from . import crs, netutil
 from .contract import Connector, ConnectorError, make_result
 
 
@@ -114,26 +117,70 @@ NSPD_CATEGORIES = {
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) grado-studio/0.1"
 
 
+_CERT_HELP = (
+    "НСПД: сертификат nspd.gov.ru не прошёл проверку — корневой сертификат "
+    "НУЦ Минцифры не установлен. Скачайте russian_trusted_root_ca_pem.crt и "
+    "russian_trusted_sub_ca_pem.crt с gu-st.ru/content/Other/doc/ и положите "
+    "их в папку ~/.grado2/ca/ (либо укажите файл PEM в переменной "
+    "GRADO_NSPD_CA). Проверка сертификата отключается только явно: "
+    "GRADO_NSPD_INSECURE=1.")
+
+_insecure_warned = False
+
+
+def _extra_ca_files():
+    """Дополнительные корни: GRADO_NSPD_CA, затем ~/.grado2/ca/, затем certs/ в репозитории."""
+    files = []
+    env = os.environ.get("GRADO_NSPD_CA")
+    if env:
+        files.append(Path(env).expanduser())
+    for d in (Path.home() / ".grado2" / "ca", Path(__file__).parent / "certs"):
+        try:
+            files.extend(sorted(p for p in d.iterdir()
+                                if p.suffix.lower() in (".crt", ".pem")))
+        except OSError:
+            pass
+    return files
+
+
 def _ssl_context():
     # Сборки Python.org на macOS не видят системные CA — без certifi HTTPS
     # падает CERTIFICATE_VERIFY_FAILED (правило 6 CLAUDE.md проекта).
     try:
         import certifi
-        return ssl.create_default_context(cafile=certifi.where())
+        ctx = ssl.create_default_context(cafile=certifi.where())
     except ImportError:
-        return ssl.create_default_context()
+        ctx = ssl.create_default_context()
+    # nspd.gov.ru подписан НУЦ Минцифры, которого нет в certifi: подгружаем
+    # его корни из файлов (битые и нечитаемые пропускаем молча).
+    for f in _extra_ca_files():
+        try:
+            ctx.load_verify_locations(cafile=str(f))
+        except (ssl.SSLError, OSError, ValueError):
+            pass
+    return ctx
 
 
 def _ssl_context_unverified():
-    # nspd.gov.ru подписан НУЦ Минцифры («Russian Trusted Root CA»), которого
-    # нет ни в certifi, ни в системных CA вне РФ-сборок. Проверку пробуем
-    # честно (контекст выше); если цепочка не строится — офиц. рекомендация
-    # Госуслуг либо ставить НУЦ-корень, либо работать без проверки. Данные
-    # справочные и открытые — деградация допустима.
+    # Только по явному GRADO_NSPD_INSECURE=1: соединение без проверки сертификата.
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
     return ctx
+
+
+def _warn_insecure():
+    global _insecure_warned
+    if not _insecure_warned:
+        _insecure_warned = True
+        print("ВНИМАНИЕ: GRADO_NSPD_INSECURE=1 — соединение с НСПД БЕЗ проверки "
+              "сертификата. Установите корни НУЦ Минцифры в ~/.grado2/ca/.",
+              file=sys.stderr)
+
+
+def _short(text):
+    """Текст ответа/исключения для сообщения: без переводов строк, не длиннее 200 знаков."""
+    return " ".join(str(text).split())[:200]
 
 
 class NspdDirect(Connector):
@@ -153,30 +200,32 @@ class NspdDirect(Connector):
         last = None
         for attempt in range(3):
             try:
-                with urllib.request.urlopen(req, timeout=45, context=ctx) as r:
-                    return json.loads(r.read().decode("utf-8"))
+                with netutil.open_url(req, 45, ctx) as r:
+                    return json.loads(netutil.read_capped(r).decode("utf-8"))
             except urllib.error.HTTPError as e:
                 if e.code == 429 and attempt < 2:   # лимит частоты геопортала
                     time.sleep(1.5 * (attempt + 1))
                     last = e
                     continue
                 try:
-                    detail = json.loads(e.read().decode("utf-8")).get("message", "")
+                    detail = _short(json.loads(
+                        netutil.read_capped(e).decode("utf-8")).get("message", ""))
                 except Exception:
                     detail = ""
                 raise ConnectorError(
                     f"НСПД ответил HTTP {e.code}"
                     + (f": {detail}" if detail else "")) from None
             except Exception as e:
-                # сертификат НУЦ Минцифры не строится через certifi (urllib
-                # заворачивает SSLCertVerificationError в URLError) —
-                # деградируем до соединения без проверки
+                # urllib заворачивает SSLCertVerificationError в URLError
                 is_cert = isinstance(e, ssl.SSLCertVerificationError) or \
                     "CERTIFICATE_VERIFY_FAILED" in str(e)
                 if is_cert and ctx.verify_mode != ssl.CERT_NONE:
-                    ctx = _ssl_context_unverified()
-                    continue
-                raise ConnectorError(f"НСПД недоступен: {e}") from None
+                    if os.environ.get("GRADO_NSPD_INSECURE") == "1":
+                        _warn_insecure()
+                        ctx = _ssl_context_unverified()
+                        continue
+                    raise ConnectorError(_CERT_HELP) from None
+                raise ConnectorError(f"НСПД недоступен: {_short(e)}") from None
         raise ConnectorError(f"НСПД: слишком много запросов ({last})")
 
     @staticmethod

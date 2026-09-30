@@ -24,11 +24,12 @@
 """
 
 import json
+import ssl
 import urllib.parse
 import urllib.request
 
 from .contract import Connector, ConnectorError, make_result
-from . import crs
+from . import crs, netutil
 
 DEFAULT_BASE = "https://mnp.economy.gov.ru"
 APP_PATH = "/geo/geomnpn/viewapp"
@@ -44,26 +45,39 @@ STATUS_NAMES = {"1": "существующий", "2": "планируемый"}
 GEOM_TYPES = ("100", "010", "001")   # полигоны / линии / точки
 
 
+def check_base_url(url):
+    """https:// обязателен; http:// допустим только для локального хоста (тесты, отладка)."""
+    p = urllib.parse.urlsplit(str(url))
+    if p.scheme == "https" and p.hostname:
+        return url
+    if p.scheme == "http" and p.hostname in ("127.0.0.1", "localhost", "::1"):
+        return url
+    raise ConnectorError(
+        f"base-url {url!r} отклонён: нужен https:// "
+        "(http:// допустим только для 127.0.0.1/localhost)")
+
+
+def _ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()   # проверяющий контекст, не отключённая проверка
+
+
 class FgistpConnector(Connector):
     name = "fgistp"
     source = "fgistp"
 
     def __init__(self, transport=None, base_url=DEFAULT_BASE):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = check_base_url(base_url).rstrip("/")
         self.transport = transport or self._http_get
 
     def _http_get(self, url):
         req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
         try:
-            ctx = None
-            try:
-                import ssl
-                import certifi
-                ctx = ssl.create_default_context(cafile=certifi.where())
-            except Exception:
-                pass
-            with urllib.request.urlopen(req, timeout=120, context=ctx) as resp:
-                return resp.read()
+            with netutil.open_url(req, 120, _ssl_context()) as resp:
+                return netutil.read_capped(resp)
         except Exception as e:
             raise ConnectorError(f"ФГИС ТП недоступен: {e}") from None
 

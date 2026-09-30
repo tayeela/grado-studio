@@ -333,3 +333,228 @@ class AdminReference(unittest.TestCase):
         self.assertTrue(all(d["properties"]["Округ"] in okrugs for d in districts))
         self.assertTrue(all(f["properties"]["Граница"] == S.ADMIN_REV for f in fs if f["properties"]["Уровень"] == "округ"))
         self.assertEqual(layers["gisogd.admin"]["notes"], [])
+
+
+class HttpHardening(unittest.TestCase):
+    """Заголовки защиты, пределы тела, форма JSON, ответы об ошибках без подробностей, квота папки проектов."""
+
+    def setUp(self):
+        import threading
+        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+    def call(self, path, data=None):
+        import json
+        import urllib.error
+        import urllib.request
+        req = urllib.request.Request(self.base + path, data=data, method="POST" if data is not None else "GET")
+        try:
+            r = urllib.request.urlopen(req, timeout=5)
+        except urllib.error.HTTPError as e:
+            r = e
+        body = r.read()
+        return r.status if hasattr(r, "status") else r.code, r.headers, body, (json.loads(body) if body[:1] == b"{" else None)
+
+    def test_security_headers_everywhere(self):
+        for path, data in (("/api/health", None), ("/", None), ("/api/tep", b"{}"), ("/api/tep", b"[]")):
+            _, h, _, _ = self.call(path, data)
+            self.assertEqual(h["X-Content-Type-Options"], "nosniff", path)
+            self.assertEqual(h["X-Frame-Options"], "DENY", path)
+            self.assertIn("frame-ancestors 'none'", h["Content-Security-Policy"], path)
+        csp = S.CSP
+        self.assertIn("script-src 'self';", csp)
+        self.assertNotIn("unsafe-eval", csp)
+        self.assertNotIn("script-src 'self' 'unsafe", csp)
+        self.assertIn("img-src 'self' data: blob: https:", csp)        # плитки Esri и EOX
+
+    def test_body_limits_per_path(self):
+        self.assertEqual(S.body_limit("/api/project?name=x"), S.MAX_PROJECT_BODY)
+        self.assertEqual(S.body_limit("/api/project?autosave=1"), S.MAX_PROJECT_BODY)
+        self.assertEqual(S.body_limit("/api/import/files"), S.MAX_BIG_BODY)
+        self.assertEqual(S.body_limit("/api/tep"), S.MAX_BODY)
+        self.assertEqual(S.body_limit("/api/fetch"), S.MAX_BODY)
+        self.assertLess(S.MAX_BODY, S.MAX_BIG_BODY)
+
+    def test_oversize_body_is_413_and_project_has_own_limit(self):
+        with mock.patch.object(S, "MAX_BODY", 100):
+            code, _, _, j = self.call("/api/tep", b'{"terr_ha":1,' + b" " * 200 + b"}")
+            self.assertEqual(code, 413)
+            self.assertIn("запрос больше", j["error"])
+            self.assertEqual(self.call("/api/tep", b'{"terr_ha":1,"restrict_ha":0,"spp_new_m2":1,"share":1}')[0], 200)      # в пределе — проходит
+            self.assertNotEqual(self.call("/api/place", b"{" + b" " * 200 + b"}")[0], 200)
+            self.assertNotEqual(self.call("/api/project?name=zzz", b"{" + b" " * 200 + b"}")[0], 413)   # проект — свой предел
+
+    def test_non_object_json_is_400(self):
+        for path in ("/api/print/pdf", "/api/print/svg", "/api/export/dxf", "/api/fgistp/fetch", "/api/tep", "/api/import/files"):
+            for body in (b"[]", b"5", b'"x"', b"null"):
+                code, _, _, j = self.call(path, body)
+                self.assertEqual(code, 400, (path, body))
+                self.assertIn("JSON-объект", j["error"])
+
+    def test_unexpected_error_is_generic_and_logged(self):
+        import io
+        err = io.StringIO()
+        with mock.patch.object(S, "tep", side_effect=RuntimeError("секрет /etc/passwd")), mock.patch("sys.stderr", err):
+            code, _, body, j = self.call("/api/tep", b"{}")
+        self.assertEqual(code, 500)
+        self.assertEqual(j["error"], S.INTERNAL_ERROR)
+        self.assertNotIn(b"passwd", body)
+        self.assertIn("RuntimeError: секрет /etc/passwd", err.getvalue())
+
+    def test_project_save_returns_name_and_quota(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "PROJECTS", Path(d)):
+            code, _, _, j = self.call("/api/project?name=proba", b'{"a":1}')
+            self.assertEqual((code, j["saved"]), (200, "proba"))
+            with mock.patch.object(S, "PROJECTS_CAP", 10):
+                code, _, _, j = self.call("/api/project?name=proba2", b'{"a":1}')
+                self.assertEqual(code, 507)
+                self.assertFalse((Path(d) / "proba2.grado2").exists())
+
+    def test_handler_has_socket_timeout(self):
+        self.assertEqual(S.Handler.timeout, 120)
+
+    def test_kill_only_our_server(self):
+        self.assertFalse(S._is_our_process(os.getpid()))            # процесс тестов — не server.py
+        self.assertFalse(S._is_our_process(None))
+        self.assertFalse(S._is_our_process(1))
+        ok = mock.Mock(stdout="/venv/bin/python apps/grado2/server.py\n")
+        with mock.patch("subprocess.run", return_value=ok):
+            self.assertTrue(S._is_our_process(4242))
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout="nginx: worker process\n")):
+            self.assertFalse(S._is_our_process(4242))
+
+
+class AccessToken(unittest.TestCase):
+    """Необязательный ключ доступа GRADO2_TOKEN: выключен — всё как прежде; включён — без куки или заголовка только вход."""
+    TOKEN = "test-key-for-unit-tests"
+
+    def setUp(self):
+        import threading
+        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.port = self.srv.server_address[1]
+        S._LOGIN_FAILS.clear()
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        S._LOGIN_FAILS.clear()
+
+    def on(self):
+        return mock.patch.object(S, "TOKEN", self.TOKEN)
+
+    def call(self, path, body=None, headers=None, method=None):
+        import http.client
+        import json
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        data = None if body is None else json.dumps(body).encode()
+        c.request(method or ("POST" if data is not None else "GET"), path, body=data, headers={"Content-Type": "application/json", **(headers or {})})
+        r = c.getresponse()
+        raw = r.read()
+        c.close()
+        return r.status, r, (json.loads(raw) if raw[:1] == b"{" else raw)
+
+    def test_off_by_default_nothing_changes(self):
+        self.assertEqual(S.TOKEN, "")                                  # тесты не зависят от окружения владельца
+        self.assertEqual(self.call("/api/sources")[0], 200)
+        self.assertEqual(self.call("/")[0], 200)
+        self.assertEqual(self.call("/api/login", {"token": "x"})[0], 404)   # без ключа такого метода нет
+
+    def test_empty_token_means_off(self):
+        with mock.patch.object(S, "TOKEN", ""):
+            self.assertEqual(self.call("/api/sources")[0], 200)
+
+    def test_health_and_login_page_open(self):
+        with self.on():
+            s, _, body = self.call("/api/health")
+            self.assertEqual(s, 200)
+            self.assertIn("version", body)
+            self.assertEqual(self.call("/login.html")[0], 200)
+            self.assertEqual(self.call("/login.js")[0], 200)
+
+    def test_deploy_probes_work_from_loopback_only_without_proxy_headers(self):
+        with self.on():
+            self.assertEqual(self.call("/api/progress")[0], 200)
+            self.assertEqual(self.call("/api/ogd_all/status")[0], 200)
+            self.assertEqual(self.call("/api/progress", headers={"X-Forwarded-For": "203.0.113.5"})[0], 401)
+            self.assertEqual(self.call("/api/sources")[0], 401)       # остальное чтение закрыто и с loopback
+
+    def test_unauthenticated_page_redirects_and_api_is_401(self):
+        with self.on():
+            for path in ("/", "/index.html"):
+                s, r, _ = self.call(path)
+                self.assertEqual((s, r.getheader("Location")), (302, "/login.html"), path)
+            s, _, body = self.call("/api/sources")
+            self.assertEqual((s, body), (401, {"error": "нужен вход"}))
+            self.assertEqual(self.call("/app.js")[0], 401)
+            self.assertEqual(self.call("/api/tep", {"terr_ha": 1})[0], 401)
+            self.assertEqual(self.call("/", method="HEAD")[0], 302)
+
+    def test_wrong_token_is_401_without_cookie(self):
+        with self.on():
+            s, r, body = self.call("/api/login", {"token": "nope"})
+            self.assertEqual((s, r.getheader("Set-Cookie")), (401, None))
+            self.assertNotIn(self.TOKEN, str(body))
+            self.assertEqual(self.call("/api/login", {"token": 5})[0], 401)
+            self.assertEqual(self.call("/api/login", {})[0], 401)
+
+    def test_right_token_sets_strict_httponly_cookie_which_passes(self):
+        with self.on():
+            s, r, body = self.call("/api/login", {"token": self.TOKEN})
+            self.assertEqual((s, body), (200, {"ok": True}))
+            cookie = r.getheader("Set-Cookie")
+            self.assertIn(f"grado_token={self.TOKEN};", cookie)
+            for part in ("HttpOnly", "SameSite=Strict", "Max-Age=2592000", "Path=/"):
+                self.assertIn(part, cookie)
+            self.assertNotIn("Secure", cookie)                          # прямое http без прокси
+            sent = {"Cookie": cookie.split(";")[0]}
+            self.assertEqual(self.call("/api/sources", headers=sent)[0], 200)
+            self.assertEqual(self.call("/", headers=sent)[0], 200)
+            self.assertEqual(self.call("/api/sources", headers={"Cookie": "a=b; grado_token=wrong"})[0], 401)
+
+    def test_secure_flag_behind_tls_proxy(self):
+        with self.on():
+            _, r, _ = self.call("/api/login", {"token": self.TOKEN}, {"X-Forwarded-Proto": "https"})
+            self.assertIn("; Secure", r.getheader("Set-Cookie"))
+
+    def test_header_passes(self):
+        with self.on():
+            self.assertEqual(self.call("/api/sources", headers={"X-Grado-Token": self.TOKEN})[0], 200)
+            self.assertEqual(self.call("/api/sources", headers={"X-Grado-Token": "x"})[0], 401)
+
+    def test_logout_clears_cookie(self):
+        with self.on():
+            s, r, _ = self.call("/api/logout", {})
+            self.assertEqual(s, 200)
+            self.assertIn("Max-Age=0", r.getheader("Set-Cookie"))
+
+    def test_lockout_after_ten_failures_per_client(self):
+        with self.on():
+            for _ in range(S.LOGIN_TRIES):
+                self.assertEqual(self.call("/api/login", {"token": "bad"}, {"X-Forwarded-For": "198.51.100.7"})[0], 401)
+            self.assertEqual(self.call("/api/login", {"token": "bad"}, {"X-Forwarded-For": "198.51.100.7"})[0], 429)
+            self.assertEqual(self.call("/api/login", {"token": self.TOKEN}, {"X-Forwarded-For": "198.51.100.7"})[0], 429)   # и верный — после минуты
+            self.assertEqual(self.call("/api/login", {"token": self.TOKEN}, {"X-Forwarded-For": "198.51.100.8"})[0], 200)   # другой клиент не задет
+            with mock.patch.object(S.time, "time", return_value=S.time.time() + S.LOGIN_WINDOW + 1):
+                self.assertEqual(self.call("/api/login", {"token": self.TOKEN}, {"X-Forwarded-For": "198.51.100.7"})[0], 200)
+
+    def test_compare_is_constant_time_and_token_not_in_urls_or_logs(self):
+        with self.on(), mock.patch.object(S.hmac, "compare_digest", wraps=S.hmac.compare_digest) as cd:
+            self.call("/api/login", {"token": "bad"})
+            self.call("/api/sources", headers={"X-Grado-Token": "bad"})
+            self.assertGreaterEqual(cd.call_count, 2)
+            for c in cd.call_args_list:
+                self.assertTrue(all(isinstance(a, bytes) for a in c.args))   # сравнение по байтам
+        self.assertTrue(S.same_token("ключ", "ключ"))
+        self.assertFalse(S.same_token("ключ", "ключ2"))
+
+    def test_login_body_limit_and_shape(self):
+        with self.on():
+            self.assertEqual(self.call("/api/login", [1])[0], 400)
+            self.assertEqual(self.call("/api/login", {"token": "x" * 5000})[0], 413)

@@ -15,3 +15,11 @@ apps/studio/style_overrides.json
 apps/studio/style_overrides.tmp
 apps/studio/.hub/
 .claude/.grado2_ux_audited
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials*
+.secrets/
+.claude/launch.json

@@ -223,5 +223,14 @@ class OgdAll(unittest.TestCase):
                 self.assertIn("пропущен", job.state["errors"][0])
 
 
+@unittest.skipIf(ogd_all is None, "ezdxf not installed")
+class SheetValidation(unittest.TestCase):
+    def test_bad_sheet_size_rejected(self):
+        for w, h in ((float("nan"), 100), (100, float("inf")), (0, 100), (-5, 100), (100, ogd_all.SHEET_MAX_M + 1)):
+            with self.assertRaises(ValueError):
+                ogd_all.sheet_box({"c": [100, 100], "w": w, "h": h})
+        self.assertEqual(ogd_all.sheet_box({"c": [100, 100], "w": 840, "h": 594}), (-320.0, -197.0, 520.0, 397.0))
+
+
 if __name__ == "__main__":
     unittest.main()

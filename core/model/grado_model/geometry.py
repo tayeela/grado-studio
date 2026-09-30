@@ -5,6 +5,8 @@
 в C++ ядро; эталонная реализация ограничена линейными типами.
 """
 
+import math
+import numbers
 import struct
 
 WKB_TYPES = {
@@ -22,11 +24,44 @@ class GeometryError(ValueError):
     pass
 
 
+# пределы на вход: глубина вложенности списков (MultiPolygon = 4 уровня +
+# точка) и общее число координатных пар
+MAX_COORD_DEPTH = 6
+MAX_COORD_POINTS = 5_000_000
+
+# сколько уровней списков у координат каждого типа (Point — сама пара)
+_NEST = {"Point": 0, "LineString": 1, "MultiPoint": 1, "Polygon": 2,
+         "MultiLineString": 2, "MultiPolygon": 3}
+
+
+def _check_coords(coords, level, need, counter):
+    """Обход без рекурсии: только конечные числа, ожидаемая вложенность."""
+    stack = [(coords, level)]
+    while stack:
+        node, lvl = stack.pop()
+        if lvl > MAX_COORD_DEPTH:
+            raise GeometryError("слишком глубокая вложенность координат")
+        if lvl == need:  # пара x, y (допускается z)
+            if not isinstance(node, (list, tuple)) or not 2 <= len(node) <= 3:
+                raise GeometryError("координата должна быть парой чисел [x, y]")
+            for v in node:
+                if isinstance(v, bool) or not isinstance(v, numbers.Real) or not math.isfinite(v):
+                    raise GeometryError(f"координата должна быть конечным числом, получено {v!r}")
+            counter[0] += 1
+            if counter[0] > MAX_COORD_POINTS:
+                raise GeometryError("слишком много координат в геометрии")
+        else:
+            if not isinstance(node, (list, tuple)):
+                raise GeometryError("координаты должны быть вложенными списками")
+            stack.extend((c, lvl + 1) for c in node)
+
+
 def validate(geom):
     if not isinstance(geom, dict) or "type" not in geom or "coordinates" not in geom:
         raise GeometryError("геометрия должна быть словарём с type и coordinates")
-    if geom["type"] not in WKB_TYPES:
+    if not isinstance(geom["type"], str) or geom["type"] not in _NEST:
         raise GeometryError(f"неподдерживаемый тип геометрии {geom['type']!r}")
+    _check_coords(geom["coordinates"], 0, _NEST[geom["type"]], [0])
     return geom
 
 

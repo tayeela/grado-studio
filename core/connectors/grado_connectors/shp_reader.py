@@ -10,6 +10,19 @@
 import struct
 from pathlib import Path
 
+# Потолки для недоверенных файлов (выгрузка портала, архив от пользователя)
+MAX_ZIP_TOTAL = 8 * 2**30       # .shp + .dbf в сумме, без сжатия: газоны ЕГКО — архив 1,3 ГБ, внутри заметно больше
+MAX_ZIP_META = 2**20            # .cpg/.prj — крохотные текстовые файлы
+MAX_RECORD = 512 * 2**20        # одна запись .shp в потоковом чтении
+
+
+def _rec_bytes(head):
+    """Длина записи .shp из 8-байтного заголовка (слова по 2 байта) → байты; отрицательная — порча файла."""
+    rec_len = struct.unpack(">i", head[4:8])[0] * 2
+    if rec_len < 0:
+        raise ValueError("SHP повреждён: отрицательная длина записи")
+    return rec_len
+
 
 def _dbf_fields(fh, encoding="cp1251"):
     """Заголовок .dbf → (число записей, длина записи, поля [(имя, тип, длина)]); fh стоит на первой записи."""
@@ -19,6 +32,8 @@ def _dbf_fields(fh, encoding="cp1251"):
     num_records = struct.unpack("<I", head[4:8])[0]
     header_size = struct.unpack("<H", head[8:10])[0]
     record_size = struct.unpack("<H", head[10:12])[0]
+    if header_size < 32:                      # read(отрицательное) прочитало бы файл целиком
+        raise ValueError("DBF повреждён: заголовок короче 32 байт")
     rest = fh.read(header_size - 32)
     fields, pos = [], 0
     while pos + 32 <= len(rest) and rest[pos] != 0x0D:
@@ -95,6 +110,8 @@ def _shape(buf):
     if stype in (3, 5, 13, 15, 23, 25):       # PolyLine / Polygon (+Z/M)
         nparts = struct.unpack("<i", buf[36:40])[0]
         npts = struct.unpack("<i", buf[40:44])[0]
+        if nparts < 0 or npts < 0 or 44 + 4 * nparts + 16 * npts > len(buf):
+            raise ValueError("SHP повреждён: число частей или точек больше записи")
         parts = list(struct.unpack("<%di" % nparts, buf[44:44 + 4 * nparts]))
         pts = _points(buf, 44 + 4 * nparts, npts)
         parts.append(npts)
@@ -117,6 +134,8 @@ def _shape(buf):
         return {"type": "MultiPolygon", "coordinates": polys}
     if stype in (8, 18, 28):                  # MultiPoint (+Z/M)
         npts = struct.unpack("<i", buf[36:40])[0]
+        if npts < 0 or 40 + 16 * npts > len(buf):
+            raise ValueError("SHP повреждён: число точек больше записи")
         return {"type": "MultiPoint", "coordinates": _points(buf, 40, npts)}
     return None                               # неизвестный тип — пропускаем
 
@@ -137,7 +156,9 @@ def read_shp(shp_path):
     attrs = _read_dbf(dbf, enc) if dbf.exists() else []
     geoms, pos, n = [], 100, len(data)
     while pos + 8 <= n:
-        rec_len = struct.unpack(">i", data[pos + 4:pos + 8])[0] * 2
+        rec_len = _rec_bytes(data[pos:pos + 8])
+        if pos + 8 + rec_len > n:
+            raise ValueError("SHP повреждён: запись выходит за конец файла")
         geoms.append(_shape(data[pos + 8:pos + 8 + rec_len]))
         pos += 8 + rec_len
     return [{"geometry": g, "properties": attrs[i] if i < len(attrs) else {}}
@@ -158,8 +179,13 @@ def iter_records(shp_fh, dbf_fh=None, encoding="cp1251"):
         head = shp_fh.read(8)
         if len(head) < 8:
             return
-        rec_len = struct.unpack(">i", head[4:8])[0] * 2
-        geom = _shape(shp_fh.read(rec_len))
+        rec_len = _rec_bytes(head)
+        if rec_len > MAX_RECORD:
+            raise ValueError("SHP повреждён: запись слишком велика")
+        body = shp_fh.read(rec_len)
+        if len(body) < rec_len:
+            raise ValueError("SHP обрезан: запись короче заявленной длины")
+        geom = _shape(body)
         props, deleted = {}, False
         if dbf_fh is not None and i < num:
             rec = dbf_fh.read(size) if size > 0 else b""
@@ -180,6 +206,12 @@ def iter_zip(zf):
     members = {Path(i.filename).suffix.lower(): i for i in zf.infolist() if not i.is_dir()}
     if ".shp" not in members:
         raise ValueError("в архиве нет .shp")
+    # заявленные размеры членов проверяются до чтения: zipfile не читает больше file_size
+    for ext, cap in ((".cpg", MAX_ZIP_META), (".prj", MAX_ZIP_META)):
+        if ext in members and members[ext].file_size > cap:
+            raise ValueError(f"в архиве слишком большой {ext}")
+    if sum(members[e].file_size for e in (".shp", ".dbf") if e in members) > MAX_ZIP_TOTAL:
+        raise ValueError("распакованный SHP в архиве больше допустимого")
     enc = _encoding_of(zf.read(members[".cpg"]).decode("ascii", "replace")) if ".cpg" in members else "cp1251"
     prj = zf.read(members[".prj"]).decode("latin-1", "replace") if ".prj" in members else ""
 

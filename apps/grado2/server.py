@@ -15,18 +15,20 @@
 Запуск: python3 apps/grado2/server.py [порт]   (по умолчанию 8650)
 """
 
+import hmac
 import json
 import math
 import os
 import re
 import sys
 import threading
+import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 # в собранной программе (PyInstaller) всё лежит в папке распаковки sys._MEIPASS: web/, core/…, docs/standards/
 FROZEN = getattr(sys, "frozen", False)
@@ -381,7 +383,24 @@ def _layer(key, result):
             "features": {"type": "FeatureCollection", "features": feats}}
 
 
-MAX_BODY = 1536 * 2**20     # тело запроса: проект со 100 000 объектов ~100 МБ, импорт — несколько файлов в base64
+# Тело запроса читается в память целиком, поэтому предел свой у каждого пути: проект со 100 000 объектов ~100 МБ,
+# импорт — несколько файлов в base64, печать и экспорт несут слои проекта и фото листов; остальное — короткий JSON.
+MAX_PROJECT_BODY = 400 * 2**20
+MAX_BIG_BODY = 250 * 2**20
+MAX_BODY = 32 * 2**20
+
+
+def body_limit(path):
+    """Предел тела POST по пути запроса (байты)."""
+    p = path.split("?")[0]
+    if p == "/api/project":
+        return MAX_PROJECT_BODY
+    if p.startswith(("/api/import/", "/api/print/", "/api/export/")):
+        return MAX_BIG_BODY
+    return MAX_BODY
+
+
+INTERNAL_ERROR = "внутренняя ошибка, подробности в журнале сервера"
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
 _OGD_CAT = {}
 
@@ -987,10 +1006,23 @@ def keep_version(path, auto):
         p.unlink(missing_ok=True)
 
 
+PROJECTS_CAP = 20 * 2**30                              # вся папка проектов вместе с версиями; больше — сохранение отказывает
+
+
+class QuotaExceeded(Exception):
+    pass
+
+
+def projects_size():
+    return sum(p.stat().st_size for p in PROJECTS.rglob("*") if p.is_file()) if PROJECTS.exists() else 0
+
+
 def save_project(name, body):
     json.loads(body)                                  # в файл идёт только целый JSON
     path = project_path(name)
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
+        if projects_size() + len(body) > PROJECTS_CAP:
+            raise QuotaExceeded
         try:
             keep_version(path, name == AUTOSAVE)
         except OSError:
@@ -1006,12 +1038,35 @@ def list_projects():
     return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None}
 
 
+# Скрипты — только свои (без inline и eval); карта берёт плитки Esri и EOX по https (img-src), воркеры OpenLayers — из blob:.
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
+       "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+
+# Ключ доступа (необязательный второй слой за паролем обратного прокси): задан GRADO2_TOKEN — без куки grado_token или
+# заголовка X-Grado-Token сервер отвечает только на вход. Не задан или пуст — всё как прежде (локальная работа).
+TOKEN = os.environ.get("GRADO2_TOKEN") or ""
+TOKEN_COOKIE, TOKEN_HEADER = "grado_token", "X-Grado-Token"
+LOGIN_OPEN = {"/login.html", "/login.js"}               # страница входа и её скрипт (CSP: inline-скриптов нет)
+LOGIN_TRIES, LOGIN_WINDOW = 10, 60                      # промахов с одного адреса за окно в секундах, дальше 429
+_LOGIN_FAILS, _LOGIN_LOCK = {}, threading.Lock()
+
+
+def same_token(a, b):
+    """Сравнение ключей за постоянное время (по байтам), чтобы не выдавать совпавший префикс по времени ответа."""
+    return hmac.compare_digest(str(a).encode("utf-8", "replace"), str(b).encode("utf-8", "replace"))
+
+
 class Handler(SimpleHTTPRequestHandler):
+    timeout = 120       # простой сокета (чтение/запись), а не время работы запроса: долгая выгрузка считается без обмена
+
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=str(WEB), **kw)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-cache")   # после обновления браузер не держит старые app.js
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", CSP)
         super().end_headers()
 
     def _json(self, code, obj):
@@ -1025,6 +1080,8 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self._foreign():
             return self._deny()
+        if self._gate("GET"):
+            return
         name = self.path.split("?")[0].removeprefix("/styles/")
         if self.path.startswith("/styles/") and name in STYLE_FILES:
             body = (STYLES / name).read_bytes()
@@ -1073,10 +1130,12 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(502, {"error": str(e)})
             except (KeyError, ValueError) as e:
                 return self._json(400, {"error": _bad(e)})
-            except Exception as e:      # любой сбой — ответ с причиной, а не оборванное соединение
-                return self._json(500, {"error": f"{type(e).__name__}: {e}"})
             except OSError as e:
-                return self._json(502, {"error": f"ФГИС ТП недоступна: {e}"})
+                self._log_fail(e)
+                return self._json(502, {"error": "ФГИС ТП недоступна"})
+            except Exception as e:      # любой сбой — ответ без подробностей, причина в журнале сервера
+                self._log_fail(e)
+                return self._json(500, {"error": INTERNAL_ERROR})
         if self.path == "/api/projects":
             return self._json(200, list_projects())
         if self.path.startswith("/api/project?"):
@@ -1108,6 +1167,93 @@ class Handler(SimpleHTTPRequestHandler):
         origin = self.headers.get("Origin")
         return origin is not None and origin not in origins
 
+    def _authed(self):
+        """Есть ключ доступа: кука grado_token или заголовок X-Grado-Token (для скриптов)."""
+        if same_token(self.headers.get(TOKEN_HEADER) or "", TOKEN):
+            return True
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == TOKEN_COOKIE and same_token(unquote(v), TOKEN):
+                return True
+        return False
+
+    def _local_probe(self, method, path):
+        """Службы самого сервера (tools/deploy-server.sh спрашивает ход выгрузки перед перезапуском) ходят по loopback
+        с Host 127.0.0.1:порт и без заголовков прокси — им ключ не нужен, но только на трёх чтениях без данных проектов."""
+        return (method == "GET" and path in ("/api/health", "/api/progress", "/api/ogd_all/status")
+                and self.client_address[0] in ("127.0.0.1", "::1")
+                and not any(self.headers.get(h) for h in ("X-Forwarded-For", "Forwarded", "X-Real-IP")))
+
+    def _gate(self, method):
+        """Ключ доступа включён → True, если запрос отвечен здесь (отказ или вход), и дальше идти не надо."""
+        if not TOKEN:
+            return False
+        path = self.path.split("?")[0]
+        if method != "POST" and (path in LOGIN_OPEN or path == "/api/health") or self._local_probe(method, path):
+            return False
+        if method == "POST" and path in ("/api/login", "/api/logout"):
+            return False
+        if self._authed():
+            return False
+        if method != "POST" and (path == "/" or path.endswith(".html")):
+            self.send_response(302)
+            self.send_header("Location", "/login.html")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+        else:
+            self._json(401, {"error": "нужен вход"})
+        return True
+
+    def _cookie(self, value, max_age):
+        """Set-Cookie с ключом; Secure — когда прокси сообщил, что снаружи https."""
+        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
+        return (f"{TOKEN_COOKIE}={quote(value, safe='')}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
+                + ("; Secure" if tls else ""))
+
+    def _client_ip(self):
+        """Адрес клиента для счёта промахов: за прокси — последний в X-Forwarded-For (его дописал наш прокси;
+        первый клиент подделывает), иначе сокет."""
+        fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        return fwd or self.client_address[0]
+
+    def _login(self, n):
+        """POST /api/login {"token": …}: верный ключ → кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
+        if n > 4096:
+            return self._json(413, {"error": "запрос слишком велик"})
+        token = self._read_obj(n).get("token")
+        ip, now = self._client_ip(), time.time()
+        with _LOGIN_LOCK:
+            for k in [k for k, v in _LOGIN_FAILS.items() if not v or now - v[-1] > LOGIN_WINDOW]:
+                del _LOGIN_FAILS[k]                     # старые записи уходят, словарь не растёт
+            fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t <= LOGIN_WINDOW]
+            if len(fails) >= LOGIN_TRIES:
+                return self._json(429, {"error": "слишком много попыток, подождите минуту"})
+            if not isinstance(token, str) or not same_token(token, TOKEN):
+                _LOGIN_FAILS[ip] = fails + [now]
+                return self._json(401, {"error": "неверный ключ"})
+            _LOGIN_FAILS.pop(ip, None)
+        body = b'{"ok": true}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Set-Cookie", self._cookie(token, 2592000))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _logout(self):
+        body = b'{"ok": true}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Set-Cookie", self._cookie("", 0))
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _log_fail(self, e):
+        """Причина сбоя — в журнал сервера (stderr), клиенту она не уходит."""
+        if sys.stderr:
+            sys.stderr.write(f"[{self.log_date_time_string()}] {self.command} {self.path.split('?')[0]}: {type(e).__name__}: {e}\n")
+
     def _deny(self):
         self.send_response(403)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
@@ -1122,19 +1268,28 @@ class Handler(SimpleHTTPRequestHandler):
     def do_HEAD(self):
         if self._foreign():
             return self._deny()
+        if self._gate("HEAD"):
+            return
         return super().do_HEAD()
 
     def do_POST(self):
         if self._foreign():
             return self._deny()
+        if self._gate("POST"):
+            return
         try:
             n = int(self.headers.get("Content-Length") or 0)
-            if not 0 <= n <= MAX_BODY:
-                return self._json(413, {"error": f"запрос больше {MAX_BODY // 2**20} МБ"})
+            limit = body_limit(self.path)
+            if not 0 <= n <= limit:
+                return self._json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
+            if TOKEN and self.path == "/api/login":
+                return self._login(n)
+            if TOKEN and self.path == "/api/logout":
+                return self._logout()
             if self.path == "/api/import/files":
                 import base64
                 import file_io
-                req = json.loads(self.rfile.read(n) or b"{}")
+                req = self._read_obj(n)
                 files = {f["name"]: base64.b64decode(f["b64"]) for f in req.get("files") or []}
                 return self._json(200, {"layers": file_io.import_files(files, REDLN, req.get("local") or "msk")})
             if self.path.split("?")[0] == "/api/import/dxf":
@@ -1142,9 +1297,12 @@ class Handler(SimpleHTTPRequestHandler):
                 fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN, "ogd" if "local=ogd" in self.path else "msk")
                 return self._json(200, {"features": fc, "notes": notes})
             if self.path.startswith("/api/project?"):
-                path = save_project(self._project_name(), self.rfile.read(n))
-                return self._json(200, {"saved": str(path), "modified": path.stat().st_mtime})
-            req = json.loads(self.rfile.read(n) or b"{}")
+                try:
+                    path = save_project(self._project_name(), self.rfile.read(n))
+                except QuotaExceeded:
+                    return self._json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
+                return self._json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
+            req = self._read_obj(n)
             if self.path == "/api/fetch":
                 bbox = [float(v) for v in req["bbox"]]
                 if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
@@ -1290,8 +1448,18 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(404, {"error": "no such method"})
         except (KeyError, ValueError, TypeError) as e:
             return self._json(400, {"error": _bad(e)})
-        except Exception as e:      # битый DXF и т.п.: ответ с причиной, а не оборванное соединение
-            return self._json(422, {"error": f"{type(e).__name__}: {e}"})
+        except Exception as e:      # битый DXF и т.п.: ответ без подробностей, причина в журнале сервера
+            self._log_fail(e)
+            if self.path.startswith("/api/import/"):
+                return self._json(422, {"error": "файл не удалось прочитать, подробности в журнале сервера"})
+            return self._json(500, {"error": INTERNAL_ERROR})
+
+    def _read_obj(self, n):
+        """Тело POST — JSON-объект; список, число или строка вместо него — отказ 400 (ValueError → ответ с причиной)."""
+        req = json.loads(self.rfile.read(n) or b"{}")
+        if not isinstance(req, dict):
+            raise ValueError("тело запроса должно быть JSON-объектом")
+        return req
 
     def log_message(self, fmt, *args):     # тише: только ошибки
         if len(args) > 1 and str(args[1])[:1] in "45":
@@ -1319,13 +1487,19 @@ STAMP = code_stamp()          # версия кода, с которой это�
 VERSION = json.loads((WEB / "version.json").read_text("utf-8"))["version"]
 
 
+def _probe(url):
+    """Запрос к своему серверу на порту: при включённом ключе доступа — с ключом, иначе /api/sources ответил бы 401."""
+    import urllib.request
+    return urllib.request.Request(url, headers={TOKEN_HEADER: TOKEN} if TOKEN else {})
+
+
 def _running(port):
     """Сведения о ГРАДО 2 на порту: {"pid", "stamp"}; {} — ГРАДО, но старый, без /api/health; None — не ГРАДО."""
     import urllib.request
     if not _is_grado(port):
         return None
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as r:
+        with urllib.request.urlopen(_probe(f"http://127.0.0.1:{port}/api/health"), timeout=1) as r:
             return json.loads(r.read())
     except Exception:
         return {}
@@ -1334,11 +1508,27 @@ def _running(port):
 def _is_grado(port):
     import urllib.request
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/sources", timeout=1) as r:
+        with urllib.request.urlopen(_probe(f"http://127.0.0.1:{port}/api/sources"), timeout=1) as r:
             return "nspd.parcels" in json.loads(r.read())
     except Exception:
         return False
 
+
+
+def _is_our_process(pid):
+    """pid из /api/health чужого процесса нельзя слепо убивать: командная строка должна содержать этот server.py
+    (или, в собранном приложении, его исполняемый файл)."""
+    import subprocess
+    if not isinstance(pid, int) or pid <= 1:
+        return False
+    try:
+        cmd = subprocess.run(["ps", "-p", str(pid), "-o", "command="], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    marks = ["grado2/server.py", "grado2\\server.py", str(Path(__file__).resolve())]
+    if FROZEN:
+        marks.append(Path(sys.executable).name)
+    return any(m in cmd for m in marks)
 
 
 class Server(ThreadingHTTPServer):
@@ -1370,6 +1560,9 @@ def main(argv=None):
             if not info.get("pid"):
                 sys.exit(f"На порту {p} работает старая версия ГРАДО 2. Остановите её (Ctrl+C в её окне) и запустите снова.")
             print(f"На порту {p} работает прежняя версия ГРАДО 2 — заменяю её новой.")
+            if not _is_our_process(info.get("pid")):
+                print(f"Порт {p}: процесс {info.get('pid')} не похож на сервер ГРАДО 2, не останавливаю — пробую следующий порт.")
+                continue
             os.kill(info["pid"], signal.SIGTERM)
             for _ in range(30):                           # ждём, пока порт освободится
                 time.sleep(0.1)

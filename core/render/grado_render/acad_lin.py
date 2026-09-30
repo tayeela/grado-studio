@@ -23,8 +23,25 @@ def _s8(b):
     return b - 256 if b > 127 else b
 
 
+# бюджет разбора одной фигуры: сумма длин всех разворачиваемых (под)форм в байтах;
+# без него самоссылающаяся подформа даёт экспоненциальный взрыв
+_DRAW_BUDGET = 2_000_000
+
+
 def read_shx(data):
-    """Bytes of a shape file → {name: {"no": number, "paths": [[[x, y], ...], ...]}}."""
+    """Bytes of a shape file → {name: {"no": number, "paths": [[[x, y], ...], ...]}}.
+
+    Повреждённый/враждебный файл → ValueError (а не IndexError/struct.error)."""
+    try:
+        return _read_shx(data)
+    except ValueError:
+        raise
+    except (IndexError, TypeError, struct.error, ZeroDivisionError, OverflowError,
+            RecursionError, MemoryError) as e:
+        raise ValueError(f"повреждённый файл форм (.shx): {type(e).__name__}") from None
+
+
+def _read_shx(data):
     head = data.index(b"\x1a") + 1
     if not data.startswith(b"AutoCAD-86 shapes"):
         raise ValueError("not an AutoCAD shape file (.shx)")
@@ -43,7 +60,12 @@ def read_shx(data):
     return out
 
 
-def _draw(spec, raw, depth=0):
+def _draw(spec, raw, depth=0, budget=None):
+    if budget is None:
+        budget = [_DRAW_BUDGET]
+    budget[0] -= len(spec) + 1
+    if budget[0] < 0:
+        raise ValueError("повреждённый файл форм (.shx): слишком сложная фигура")
     paths, cur = [], None
     x = y = 0.0
     scale, pen, stack = 1.0, True, []
@@ -86,7 +108,7 @@ def _draw(spec, raw, depth=0):
         elif c == 7:                                  # subshape
             sub = raw.get(spec[i]); i += 1
             if sub and depth < 8:
-                for p in _draw(sub[1], raw, depth + 1):
+                for p in _draw(sub[1], raw, depth + 1, budget):
                     paths.append([[x + px * scale, y + py * scale] for px, py in p])
         elif c == 8:
             move(_s8(spec[i]), _s8(spec[i + 1])); i += 2

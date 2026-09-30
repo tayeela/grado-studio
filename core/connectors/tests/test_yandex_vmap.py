@@ -258,5 +258,11 @@ class TestFetch(unittest.TestCase):
         self.assertEqual(seen[-1], (1, 1))
 
 
+class TestTileCap(unittest.TestCase):
+    def test_huge_area_rejected(self):
+        with self.assertRaises(ConnectorError):
+            yv.tile_range((30.0, 50.0, 40.0, 60.0))
+
+
 if __name__ == "__main__":
     unittest.main()

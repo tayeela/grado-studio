@@ -88,5 +88,24 @@ class OsmCache(unittest.TestCase):
             OsmOverpass(transport=down, cache_dir=self.tmp.name, fresh_s=0).fetch((0, 0, 30, 10), ["buildings"])
 
 
+class OsmCacheIndexPath(unittest.TestCase):
+    def test_index_file_with_path_is_ignored(self):
+        import json
+        import tempfile
+        import time
+        from pathlib import Path
+        from grado_connectors.osm import _OverpassCache
+        with tempfile.TemporaryDirectory() as d:
+            outside = Path(d) / "out.json.gz"
+            cache_dir = Path(d) / "cache"
+            cache_dir.mkdir()
+            import gzip
+            outside.write_bytes(gzip.compress(b'{"elements": []}'))
+            (cache_dir / "index.json").write_text(json.dumps([
+                {"bbox": [0, 0, 10, 10], "sets": ["buildings"], "t": time.time(),
+                 "file": "../out.json.gz"}]), "utf-8")
+            self.assertIsNone(_OverpassCache(cache_dir).find((1, 1, 2, 2), ["buildings"], 3600))
+
+
 if __name__ == "__main__":
     unittest.main()

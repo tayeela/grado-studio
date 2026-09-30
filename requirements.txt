@@ -12,7 +12,7 @@ certifi>=2024.2.2
 # тайлов PNG→JPEG; на macOS это делает системный sips). Без Pillow печать/
 # альбом с подложкой-спутником (ESRI) работает, а с OSM-картой — нет.
 #   Windows: py -m pip install --user Pillow
-# Pillow>=10.0
+# pillow>=11.3
 #
 # Внешний бинарник (не pip-пакет), нужен ТОЛЬКО для импорта ГИС ОГД из
 # shape-файлов МСК-50: ogr2ogr из GDAL (входит в QGIS-LTR/QGIS или ставится

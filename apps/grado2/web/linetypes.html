@@ -28,9 +28,11 @@ canvas{display:block;background:#fff;border-radius:2px}
   const lgr = await (await fetch("/styles/moscow_lgr.json")).json();
   const title = {}; Object.values(lgr.styles).forEach(s => { if (s.lgr_code != null) title[+s.lgr_code] = s.title; });
   const names = Object.keys(lib.linetypes);
+  // имена, подписи и описания приходят из файлов и сервера: в разметку — только экранированными
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const fam = n => (n.match(/^([A-Za-z]+\d*)/) || [0, n])[1].replace(/^L(\d\d).*$/, "L$1");
   const fams = [...new Set(names.map(fam))].sort();
-  document.getElementById("fam").innerHTML += fams.map(f => `<option>${f}</option>`).join("");
+  document.getElementById("fam").innerHTML += fams.map(f => `<option>${esc(f)}</option>`).join("");
   function render() {
     const k = +document.getElementById("k").value, sel = document.getElementById("fam").value;
     document.getElementById("kv").textContent = `≈ 1:${Math.round(1 / (k * 0.000264583) / 10) * 10}`;
@@ -38,12 +40,12 @@ canvas{display:block;background:#fff;border-radius:2px}
     for (const f of fams) {
       if (sel && f !== sel) continue;
       const list = names.filter(n => fam(n) === f);
-      out.insertAdjacentHTML("beforeend", `<h2>${f} · ${list.length}</h2><table><tbody></tbody></table>`);
+      out.insertAdjacentHTML("beforeend", `<h2>${esc(f)} · ${list.length}</h2><table><tbody></tbody></table>`);
       const tb = out.lastElementChild.querySelector("tbody");
       for (const n of list) {
         const m = n.match(/^L\d\ds(\d\d)([bts])$/i), code = m ? +m[1] : null;
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td class="n">${n}</td><td class="t">${code != null ? (title[code] || "код " + code) : ""}${m ? " · " + ({ b: "справа", t: "слева", s: "без стороны" })[m[2].toLowerCase()] : ""}<br><small>${lib.linetypes[n].desc.replace(/</g, "&lt;")}</small></td><td></td>`;
+        tr.innerHTML = `<td class="n">${esc(n)}</td><td class="t">${code != null ? esc(title[code] || "код " + code) : ""}${m ? " · " + ({ b: "справа", t: "слева", s: "без стороны" })[m[2].toLowerCase()] : ""}<br><small>${esc(lib.linetypes[n].desc)}</small></td><td></td>`;
         const cv = document.createElement("canvas"), dpr = devicePixelRatio || 1; cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + "px"; cv.style.height = H + "px";
         const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
         const x0 = 10, y = 24, len = 110 * k;

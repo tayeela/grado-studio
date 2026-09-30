@@ -15,6 +15,13 @@ KAPPA = 0.5522847498
 
 def jpeg_info(data):
     """(width, height, компоненты) из SOF-маркера JPEG."""
+    try:
+        return _jpeg_info(data)
+    except (IndexError, TypeError) as e:
+        raise ValueError(f"повреждённый JPEG: {type(e).__name__}") from None
+
+
+def _jpeg_info(data):
     if data[:2] != b"\xff\xd8":
         raise ValueError("не JPEG (нет SOI)")
     i = 2
