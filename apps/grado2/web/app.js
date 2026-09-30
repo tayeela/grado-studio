@@ -34,7 +34,29 @@ const centroid = r => { let x = 0, y = 0; r.forEach(p => { x += p[0]; y += p[1];
 const polys = f => { const g = f?.geometry; return !g ? [] : g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []; };
 const ringsXY = f => polys(f).map(p => p[0].map(toXY));
 const splitParts = f => polys(f).map(c => turf.polygon(c));
-const m2 = f => f ? turf.area(f) : 0;
+/* Площадь — в плоскости МСК, как в ЕГРН и в документах заказчика. turf.area считает на шаре и под Москвой занижает
+   площадь на ~0,46 % (КРТ 3141: 48,29 га вместо 48,5180 га по документу; владелец 30.09.2026). Точный пересчёт каждой
+   вершины в МСК в 30 раз медленнее, поэтому площадь на шаре умножается на поправку места: отношение площадей в МСК и
+   на шаре для малого квадрата в клетке 0,01° (поправка внутри клетки меняется меньше чем на 1e-5). */
+const M2K = new Map();
+function m2k(lon, lat) {
+  const x = Math.round(lon * 100) / 100, y = Math.round(lat * 100) / 100, key = x + "," + y;
+  let v = M2K.get(key);
+  if (v == null) {
+    const d = .002, sq = [[x, y], [x + d, y], [x + d, y + d], [x, y + d], [x, y]], q = sq.map(c => MSK.fromWgs(c));
+    let a = 0; for (let i = 0; i < 4; i++) a += q[i][0] * q[i + 1][1] - q[i + 1][0] * q[i][1];
+    v = Math.abs(a) / 2 / turf.area(turf.polygon([sq])); M2K.set(key, v);
+  }
+  return v;
+}
+const m2 = f => {
+  if (!f) return 0;
+  if (f.type === "FeatureCollection") return f.features.reduce((s, x) => s + m2(x), 0);
+  const a = turf.area(f), g = f.geometry || f; let c = g?.coordinates;
+  if (!a || !window.MSK || !c) return a;
+  while (Array.isArray(c[0])) c = c[0];
+  return a * m2k(c[0], c[1]);
+};
 const safe = fn => { try { return fn(); } catch (e) { console.warn(e); return null; } };
 /* булевы операции Turf (polygon-clipping) изредка падают на почти совпадающих рёбрах соседних зон
    («Unable to find segment … in SweepLine tree»). Тогда повтор с координатами, округлёнными до ~1 см,
@@ -127,7 +149,7 @@ const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle,
 /* ================= данные территории ================= */
 const mMain = newMap("mMain", [terrLayer()]);
 function setTerritory(feature) {
-  TERR = turf.feature(feature.geometry); TERR_M2 = turf.area(TERR); TERR_REV++;
+  TERR = turf.feature(feature.geometry); TERR_M2 = m2(TERR); TERR_REV++;
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   updateCover();
@@ -171,6 +193,22 @@ new MutationObserver(() => {
     sharedView.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
 }).observe($("wData"), { attributes: true, attributeFilter: ["hidden"] });
 $("bDraw").onclick = () => setTool("terr");
+/* Граница по кадастровым номерам: территория — объединение участков НСПД (владелец 30.09.2026: границу КРТ 3141 —
+   по участкам 50:27:0000000:126 и 77:22:0030223:315, 48,5180 га в документе заказчика). Номера вставляются как есть,
+   из таблицы или письма: берутся все строки вида 00:00:0000000:000. */
+{ const b = document.createElement("button"); b.className = "btn"; b.id = "bParcels"; b.title = "Граница территории — объединение земельных участков по кадастровым номерам";
+  b.innerHTML = '<i data-lucide="grid-2x2"></i>По участкам'; $("bExample").before(b); window.lucide?.createIcons?.();
+  b.onclick = () => {
+    const src = (DATA["nspd.parcels"]?.fc?.features || []).filter(f => /Polygon/.test(f.geometry?.type));
+    if (!src.length) { toast("Земельные участки не загружены: окно «Данные», слой НСПД «Земельные участки»."); return; }
+    const s = prompt("Кадастровые номера участков территории (через запятую, пробел или с новой строки):", "");
+    const want = [...new Set(String(s || "").match(/\d+:\d+:\d+:\d+/g) || [])]; if (!want.length) return;
+    const got = want.map(k => src.filter(f => String(f.properties?.["Кадастровый номер"] || "").trim() === k));
+    const miss = want.filter((k, i) => !got[i].length);
+    if (miss.length) { toast(`Нет среди загруженных участков: ${miss.join(", ")}. Граница не изменена.`); return; }
+    const u = unionAll(got.flat()); if (!u) { toast("Участки не объединились — граница не изменена."); return; }
+    setTerritory(u); toast(`Граница — по ${want.length} участкам: ${fmt(TERR_M2 / 1e4, 4)} га.`);
+  }; }
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
 const GROUP = { gisogd_admin: "Административное деление Москвы (эталон)", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
   egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф",
@@ -770,7 +808,7 @@ function generate(site, p) {
       out = out.filter(b => kept.has(b)); out.plots = plots2; out.streets = streets2; out.note = note2;
       // пятна снятых корпусов, касающиеся друг друга, — одно пятно; вид свой, чтобы не читалось как пустой участок
       const u = unionAll(dropped.map(b => b.f)), parts = u ? polys(u).map(c => turf.polygon(c)) : dropped.map(b => b.f);
-      parts.forEach(f => out.plots.push({ f, kind: "свет соседям", m2: turf.area(f), "Причина": "корпус снят: низкий потолок, соседям нужен свет" }));
+      parts.forEach(f => out.plots.push({ f, kind: "свет соседям", m2: m2(f), "Причина": "корпус снят: низкий потолок, соседям нужен свет" }));
     } else spp = fill(out);
   }
   out.dropped = dropped.length;

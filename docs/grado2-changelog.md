@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.5: territory from cadastral numbers; areas in the МСК plane.** Owner sent the customer's
+  sheet: the КРТ 3141 territory is parcels 50:27:0000000:126 (47,2765 га) and 77:22:0030223:315 (1,2415 га), 48,5180 га.
+  New button «По участкам» next to «Нарисовать границу»: paste cadastral numbers (any separators), the territory becomes
+  the union of those НСПД parcels; missing numbers are named and nothing changes. Found on the way: every area was
+  `turf.area` on a sphere, 0.46 % low near Moscow (48,29 instead of 48,52 га). `m2` now multiplies it by a cached
+  correction per 0.01° cell (ratio of МСК plane area to sphere area for a small square): 48,5174 га, the same as an
+  exact МСК computation to 1e-6; the territory area uses `m2` too.
 - **2026-09-30, ГРАДО 2 v0.83.4: leader point of a parcel that only touches the territory.** Parcel 2 on sheet 9 lies
   mostly outside the territory; inside it is a sliver along the boundary, so its dot sat on the boundary line. The
   albums also pass the whole parcel (`zone2`); when the part in the territory is shallower than 0.6 mm, print anchors
