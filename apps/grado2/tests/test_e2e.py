@@ -50,6 +50,34 @@ class BrowserScenarios(unittest.TestCase):
                 srv.terminate()
                 srv.wait(10)
 
+    def test_collab_scenario(self):
+        """Два браузера, один общий проект (tests/e2e/collab_scenarios.mjs): вход, доступ, живая синхронизация, комментарии, история, роли."""
+        port = _free_port()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "GRADO2_NO_BROWSER": "1", "GRADO2_PROJECTS": str(Path(tmp) / "projects"), "GRADO2_HUB_DIR": str(Path(tmp) / "hub")}
+            hub = str(HERE.parent / "hub.py")
+            admin_pw = "e2e-admin-pass-1"
+            subprocess.run([sys.executable, hub, "adduser", "anna", "--admin", "--name", "Анна"], input=admin_pw + "\n", env=env,
+                           text=True, check=True, capture_output=True)
+            invite = subprocess.run([sys.executable, hub, "invite"], env=env, text=True, check=True, capture_output=True).stdout.strip()
+            srv = subprocess.Popen([sys.executable, str(HERE.parent / "server.py"), str(port), "--hub"], env=env,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(100):
+                    try:
+                        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1)
+                        break
+                    except Exception:
+                        time.sleep(0.1)
+                r = subprocess.run(["node", str(HERE / "e2e/collab_scenarios.mjs"), f"http://127.0.0.1:{port}/"],
+                                   capture_output=True, text=True, timeout=600,
+                                   env={**os.environ, "CHROME": CHROME, "E2E_ADMIN_PW": admin_pw, "E2E_INVITE": invite})
+                print(r.stdout[-4000:])
+                self.assertEqual(r.returncode, 0, r.stdout[-4000:] + r.stderr[-2000:])
+            finally:
+                srv.terminate()
+                srv.wait(10)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -558,3 +558,663 @@ class AccessToken(unittest.TestCase):
         with self.on():
             self.assertEqual(self.call("/api/login", [1])[0], 400)
             self.assertEqual(self.call("/api/login", {"token": "x" * 5000})[0], 413)
+
+
+class HubHttp(unittest.TestCase):
+    """Совместный режим (GRADO2_HUB=1): настоящий сервер на свободном порту, хаб во временной папке.
+    Вход по куке grado_session, проекты с ролями, push и конфликт, события SSE, закрытые локальные проекты."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        cls.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.port = cls.srv.server_address[1]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.patches = [mock.patch.object(S.hubmod, "SCRYPT_N", 2 ** 4)]      # быстрый scrypt: в тестах не нужна стойкость
+        for p in self.patches:
+            p.start()
+        self.hub = S.hubmod.Hub(Path(self.tmp.name) / "hub")
+        self.hub_patch = mock.patch.object(S, "HUB", self.hub)
+        self.hub_patch.start()
+        self.hub.create_user("boss", "password-boss", "Начальник", admin=True)
+        self.hub.create_user("ann", "password-ann", "Анна")
+        self.hub.create_user("vic", "password-vic", "Виктор")
+
+    def tearDown(self):
+        self.hub_patch.stop()
+        for p in self.patches:
+            p.stop()
+        self.tmp.cleanup()
+
+    def call(self, path, body=None, cookie=None, headers=None, method=None, raw=None, ctype="application/json"):
+        import http.client
+        import json
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        data = raw if raw is not None else (None if body is None else json.dumps(body).encode())
+        h = {**({"Content-Type": ctype} if data is not None else {}), **({"Cookie": cookie} if cookie else {}), **(headers or {})}
+        c.request(method or ("POST" if data is not None else "GET"), path, body=data, headers=h)
+        r = c.getresponse()
+        payload = r.read()
+        c.close()
+        return r.status, r, (json.loads(payload) if payload[:1] in (b"{", b"[") else payload)
+
+    def login(self, login, password=None):
+        s, r, j = self.call("/api/hub/login", {"login": login, "password": password or f"password-{login if login != 'boss' else 'boss'}"})
+        self.assertEqual(s, 200, j)
+        return r.getheader("Set-Cookie").split(";")[0]
+
+    def new_project(self, cookie, name="Тест"):
+        s, _, j = self.call("/api/hub/projects", {"name": name}, cookie)
+        self.assertEqual(s, 200, j)
+        return j["id"]
+
+    @staticmethod
+    def layer(title="Слой", n=0):
+        return {"spec": {"title": title, "geom": "poly"}, "data": {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"_uid": f"{i:012x}"}, "geometry": None} for i in range(n)]}}
+
+    # ----- вход и закрытые места -----
+
+    def test_health_has_hub_flag_and_keeps_version_match(self):
+        s, r, j = self.call("/api/health")
+        self.assertEqual((s, j["hub"]), (200, True))
+        with mock.patch.object(S, "HUB", None):
+            j = self.call("/api/health")[2]
+            self.assertIs(j["hub"], False)
+            self.assertIn("pid", j)
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port)
+        c.request("GET", "/api/health")
+        raw = c.getresponse().read().decode()
+        c.close()
+        self.assertIn(f'"version": "{S.VERSION}"', raw)             # по этой строке скрипт выкладки сверяет версию
+
+    def test_everything_but_the_public_list_needs_a_session(self):
+        for path in ("/api/sources", "/api/hub/projects", "/api/hub/users", "/api/progress.x", "/api/hub/project/" + "0" * 16):
+            s, _, j = self.call(path)
+            self.assertEqual((s, j), (401, {"error": "нужен вход"}), path)
+        for path, body in (("/api/tep", {"terr_ha": 1}), ("/api/fetch", {}), ("/api/hub/projects", {"name": "x"}),
+                           ("/api/hub/logout", {}), ("/api/ogd_all/cancel", {}), ("/api/import/files", {})):
+            self.assertEqual(self.call(path, body)[0], 401, path)
+        self.assertEqual(self.call("/api/hub/me")[0], 401)
+        self.assertEqual(self.call("/")[0], 200)                    # статика открыта: из неё строится экран входа
+        self.assertEqual(self.call("/api/health")[0], 200)
+        self.assertEqual(self.call("/api/progress")[0], 200)        # проба выкладки с loopback, как и при ключе доступа
+        self.assertEqual(self.call("/api/progress", headers={"X-Forwarded-For": "203.0.113.5"})[0], 401)
+        self.assertEqual(self.call("/api/hub/me", headers={"Cookie": "grado_session=" + "x" * 40})[0], 401)
+
+    def test_login_cookie_flags_and_me(self):
+        s, r, j = self.call("/api/hub/login", {"login": "ann", "password": "password-ann"})
+        self.assertEqual((s, j), (200, {"user": {"login": "ann", "name": "Анна", "admin": False}}))
+        cookie = r.getheader("Set-Cookie")
+        for part in ("grado_session=", "HttpOnly", "SameSite=Lax", "Max-Age=2592000", "Path=/"):
+            self.assertIn(part, cookie)
+        self.assertNotIn("Secure", cookie)
+        self.assertNotIn("Strict", cookie)
+        _, r2, _ = self.call("/api/hub/login", {"login": "ann", "password": "password-ann"}, headers={"X-Forwarded-Proto": "https"})
+        self.assertIn("; Secure", r2.getheader("Set-Cookie"))
+        self.assertEqual(self.call("/api/hub/me", cookie=cookie.split(";")[0])[2]["user"]["login"], "ann")
+        self.assertEqual(self.call("/api/sources", cookie=cookie.split(";")[0])[0], 200)
+        s, r3, j = self.call("/api/hub/login", {"login": "ann", "password": "nope-nope"})
+        self.assertEqual((s, j["error"], r3.getheader("Set-Cookie")), (401, "неверный логин или пароль", None))
+
+    def test_session_only_from_cookie(self):
+        token = self.login("ann").split("=", 1)[1]
+        for h in ({"X-Grado-Token": token}, {"Authorization": "Bearer " + token}, {"X-Grado-Session": token}):
+            self.assertEqual(self.call("/api/hub/me", headers=h)[0], 401)
+        self.assertEqual(self.call("/api/hub/me?grado_session=" + token)[0], 401)
+
+    def test_logout_ends_session_and_clears_cookie(self):
+        cookie = self.login("ann")
+        s, r, _ = self.call("/api/hub/logout", {}, cookie)
+        self.assertEqual(s, 200)
+        self.assertIn("Max-Age=0", r.getheader("Set-Cookie"))
+        self.assertEqual(self.call("/api/hub/me", cookie=cookie)[0], 401)
+
+    def test_register_by_invite(self):
+        admin = self.login("boss")
+        s, _, j = self.call("/api/hub/invites", {}, admin)
+        self.assertEqual(s, 200)
+        code = j["code"]
+        self.assertEqual(self.call("/api/hub/invites", {}, self.login("ann"))[0], 403)       # приглашения — только администратору
+        s, r, j = self.call("/api/hub/register", {"invite": code, "login": "newbie", "name": "Новичок", "password": "password-new"})
+        self.assertEqual((s, j["user"]["login"]), (200, "newbie"))
+        self.assertIn("grado_session=", r.getheader("Set-Cookie"))
+        self.assertEqual(self.call("/api/hub/register", {"invite": code, "login": "other1", "name": "", "password": "password-new"})[0], 403)
+        self.assertEqual(self.call("/api/hub/me", cookie=r.getheader("Set-Cookie").split(";")[0])[2]["user"]["name"], "Новичок")
+
+    def test_local_project_endpoints_are_closed(self):
+        cookie = self.login("ann")
+        for path, body in (("/api/projects", None), ("/api/project?name=x", None), ("/api/project?autosave=1", b'{"a":1}')):
+            s, _, j = self.call(path, raw=body, cookie=cookie)
+            self.assertEqual(s, 403, path)
+            self.assertIn("Совместные проекты", j["error"])
+        self.assertEqual(self.call("/api/project?name=x")[0], 401)      # без входа — сначала вход
+
+    def test_token_gate_env_is_ignored_in_hub_mode(self):
+        with mock.patch.object(S, "TOKEN", "secret-key-xyz"):
+            s, r, _ = self.call("/")
+            self.assertEqual(s, 200)                                    # не 302 на login.html
+            self.assertEqual(self.call("/api/sources", headers={"X-Grado-Token": "secret-key-xyz"})[0], 401)
+            self.assertEqual(self.call("/api/sources", headers={"Cookie": "grado_token=secret-key-xyz"})[0], 401)
+            self.assertEqual(self.call("/api/login", {"token": "secret-key-xyz"}, cookie=self.login("ann"))[0], 404)
+            cookie = self.login("ann")                                   # вход по учётной записи работает без ключа
+            self.assertEqual(self.call("/api/sources", cookie=cookie)[0], 200)
+
+    # ----- формат запроса и пределы -----
+
+    def test_hub_post_needs_json_content_type(self):
+        cookie = self.login("ann")
+        for ctype in ("text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"):
+            s, _, j = self.call("/api/hub/projects", raw=b'{"name":"x"}', cookie=cookie, ctype=ctype)
+            self.assertEqual(s, 415, ctype)
+        self.assertEqual(self.call("/api/hub/login", raw=b'{"login":"ann","password":"password-ann"}', ctype="text/plain")[0], 415)
+        self.assertEqual(self.call("/api/hub/projects", raw=b'{"name":"x"}', cookie=cookie, ctype="application/json; charset=utf-8")[0], 200)
+
+    def test_foreign_origin_is_denied(self):
+        cookie = self.login("ann")
+        self.assertEqual(self.call("/api/hub/projects", {"name": "x"}, cookie, headers={"Origin": "https://evil.example"})[0], 403)
+        self.assertEqual(self.call("/api/hub/projects", cookie=cookie, headers={"Host": "evil.example"})[0], 403)
+
+    def test_body_limits(self):
+        pid = "a" * 16
+        self.assertEqual(S.body_limit("/api/hub/projects"), S.MAX_PROJECT_BODY)
+        self.assertEqual(S.body_limit(f"/api/hub/project/{pid}/push"), S.MAX_PROJECT_BODY)
+        for p in ("/api/hub/login", f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/comments", f"/api/hub/project/{pid}/members",
+                  f"/api/hub/project/{pid}/push/x", "/api/hub/projects/x"):
+            self.assertEqual(S.body_limit(p), S.MAX_HUB_BODY, p)
+        self.assertEqual(S.MAX_HUB_BODY, 2 ** 20)
+        cookie = self.login("ann")
+        with mock.patch.object(S, "MAX_HUB_BODY", 100):
+            s, _, j = self.call("/api/hub/login", raw=b'{"login":"a",' + b" " * 200 + b'"password":"b"}')
+            self.assertEqual(s, 413)
+            self.assertEqual(self.call("/api/hub/projects", raw=b'{"name":"x"' + b" " * 200 + b"}", cookie=cookie)[0], 200)   # создание — предел проекта
+
+    def test_malformed_body_is_400_without_details(self):
+        cookie = self.login("ann")
+        for raw in (b"{not json", b"[]", b"5"):
+            s, _, j = self.call("/api/hub/projects", raw=raw, cookie=cookie)
+            self.assertEqual(s, 400, raw)
+            self.assertNotIn("Expecting", str(j))
+
+    def test_unexpected_error_is_generic_and_logged(self):
+        import io
+        cookie = self.login("ann")
+        err = io.StringIO()
+        with mock.patch.object(self.hub, "list_projects", side_effect=RuntimeError("секрет /etc/passwd")), mock.patch("sys.stderr", err):
+            s, _, j = self.call("/api/hub/projects", cookie=cookie)
+        self.assertEqual((s, j["error"]), (500, S.INTERNAL_ERROR))
+        self.assertIn("RuntimeError", err.getvalue())
+        err = io.StringIO()
+        with mock.patch.object(self.hub, "list_projects", side_effect=S.hubmod.HubError(500, "файл users.json повреждён")), mock.patch("sys.stderr", err):
+            s, _, j = self.call("/api/hub/projects", cookie=cookie)
+        self.assertEqual((s, j["error"]), (500, S.INTERNAL_ERROR))
+        self.assertIn("users.json", err.getvalue())                   # причина в журнале, клиенту не уходит
+
+    # ----- проекты, роли, запись -----
+
+    def test_project_create_get_push_and_stale_push_conflict(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        s, _, j = self.call("/api/hub/projects", cookie=ann)
+        self.assertEqual([p["id"] for p in j["projects"]], [pid])
+        self.assertEqual(self.call("/api/hub/projects", cookie=vic)[2]["projects"], [])
+        s, _, j = self.call(f"/api/hub/project/{pid}", cookie=ann)
+        self.assertEqual((s, j["role"], j["rev"]), (200, "owner", 1))
+        self.assertIn("meta", j["sections"])
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 403)
+        # доступ: Анна даёт Виктору правку
+        s, _, j = self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "editor"}, ann)
+        self.assertEqual((s, {m["login"]: m["role"] for m in j["members"]}), (200, {"ann": "owner", "vic": "editor"}))
+        s, _, j = self.call(f"/api/hub/project/{pid}/push", {"base_rev": 1, "client": "cA", "sections": {"layer:a": self.layer("А", 2)}}, ann)
+        self.assertEqual((s, j), (200, {"rev": 2}))
+        s, _, j = self.call(f"/api/hub/project/{pid}/push", {"base_rev": 1, "client": "cB", "sections": {"layer:a": self.layer("Б")}}, vic)
+        self.assertEqual(s, 409)
+        self.assertEqual(j["rev"], 2)
+        self.assertEqual(j["conflicts"]["layer:a"]["rev"], 2)
+        self.assertEqual(j["conflicts"]["layer:a"]["value"]["spec"]["title"], "А")
+        self.assertIn("error", j)
+        # после слияния — повторная запись на свежей ревизии проходит
+        s, _, j = self.call(f"/api/hub/project/{pid}/push", {"base_rev": 2, "client": "cB", "sections": {"layer:a": self.layer("Б")}}, vic)
+        self.assertEqual((s, j), (200, {"rev": 3}))
+        s, _, j = self.call(f"/api/hub/project/{pid}/sections?names=layer:a,meta", cookie=ann)
+        self.assertEqual((s, j["rev"], j["sections"]["layer:a"]["spec"]["title"]), (200, 3, "Б"))
+
+    def test_viewer_cannot_push_but_can_comment(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "viewer"}, ann)
+        s, _, j = self.call(f"/api/hub/project/{pid}/push", {"base_rev": 1, "client": "cV", "sections": {"layer:x": self.layer()}}, vic)
+        self.assertEqual(s, 403)
+        self.assertIn("только просмотр", j["error"])
+        s, _, j = self.call(f"/api/hub/project/{pid}/comments", {"text": "Вопрос по границе", "anchor": {"lonlat": [37.6, 55.7]}}, vic)
+        self.assertEqual((s, j["comment"]["author"]), (200, "vic"))
+        cid = j["comment"]["id"]
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/comments", cookie=ann)[2]["comments"][0]["id"], cid)
+        s, _, j = self.call(f"/api/hub/project/{pid}/comments/{cid}/reply", {"text": "Ответ"}, ann)
+        self.assertEqual((s, len(j["comment"]["replies"])), (200, 1))
+        s, _, j = self.call(f"/api/hub/project/{pid}/comments/{cid}", {"resolved": True}, ann)
+        self.assertTrue(j["comment"]["resolved"])
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/comments/{cid}/delete", {}, vic)[0], 200)        # автор удаляет свой
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/comments", cookie=ann)[2]["comments"], [])
+
+    def test_members_route_needs_explicit_role_and_owner(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        s, _, j = self.call(f"/api/hub/project/{pid}/members", {"login": "vic"}, ann)
+        self.assertEqual(s, 400)                                     # пропуск role не означает «убрать»
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "editor"}, vic)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/members", {"login": "ghost", "role": "editor"}, ann)[0], 404)
+
+    def test_rename_history_restore_delete(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann, "Старое")
+        s, _, j = self.call(f"/api/hub/project/{pid}", {"name": "Новое"}, ann)
+        self.assertEqual((s, j), (200, {"name": "Новое"}))
+        self.call(f"/api/hub/project/{pid}/push", {"base_rev": 2, "client": "c1", "sections": {"layer:a": self.layer("А", 1)}}, ann)
+        s, _, j = self.call(f"/api/hub/project/{pid}/history", cookie=ann)
+        self.assertEqual(s, 200)
+        self.assertTrue(j["history"] and {"rev", "t", "login", "size"} <= set(j["history"][0]))
+        s, _, j = self.call(f"/api/hub/project/{pid}/activity", cookie=ann)
+        self.assertTrue(j["activity"])
+        rev = self.call(f"/api/hub/project/{pid}/history", cookie=ann)[2]["history"][-1]["rev"]
+        s, _, j = self.call(f"/api/hub/project/{pid}/history/{rev}/restore", {}, ann)
+        self.assertEqual(s, 200)
+        self.assertIn("rev", j)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/history/x/restore", {}, ann)[0], 400)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/delete", {}, self.login("vic"))[0], 403)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/delete", {}, ann)[0], 200)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 404)
+
+    def test_download_has_ascii_fallback_and_rfc5987_name(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann, "Хорошёво: КРТ №3")
+        s, r, raw = self.call(f"/api/hub/project/{pid}/download", cookie=ann)
+        self.assertEqual(s, 200)
+        disp = r.getheader("Content-Disposition")
+        disp.encode("ascii")                                          # заголовок HTTP — только ASCII
+        self.assertTrue(disp.startswith("attachment; filename=\""))
+        self.assertIn("filename*=UTF-8''", disp)
+        self.assertIn("%D0%A5%D0%BE%D1%80", disp)
+        self.assertEqual(raw["format"], "grado2")
+
+    def test_user_admin_routes(self):
+        boss, ann = self.login("boss"), self.login("ann")
+        s, _, j = self.call("/api/hub/users", cookie=boss)
+        self.assertEqual((s, sorted(u["login"] for u in j["users"])), (200, ["ann", "boss", "vic"]))
+        self.assertEqual(self.call("/api/hub/users", cookie=ann)[0], 403)
+        s, _, j = self.call("/api/hub/users/vic", {"disabled": True}, boss)
+        self.assertEqual((s, j["user"]["disabled"]), (200, True))
+        self.assertEqual(self.call("/api/hub/login", {"login": "vic", "password": "password-vic"})[0], 403)
+        self.assertEqual(self.call("/api/hub/users/vic", {"pw": "x"}, boss)[0], 400)
+        self.assertEqual(self.call("/api/hub/password", {"old": "password-ann", "new": "password-ann-2"}, ann)[0], 200)
+        self.assertEqual(self.call("/api/hub/login", {"login": "ann", "password": "password-ann-2"})[0], 200)
+
+    def test_admin_sees_every_project(self):
+        pid = self.new_project(self.login("ann"))
+        s, _, j = self.call("/api/hub/projects", cookie=self.login("boss"))
+        self.assertEqual([(p["id"], p["role"]) for p in j["projects"]], [(pid, "admin")])
+
+    def test_ogd_job_only_for_starter_or_admin(self):
+        ann, vic, boss = self.login("ann"), self.login("vic"), self.login("boss")
+        with mock.patch.dict(S.OGD_OWNER, {"login": "ann"}), mock.patch.object(S, "OGD_JOB", []):
+            self.assertEqual(self.call("/api/ogd_all/cancel", {}, vic)[0], 403)
+            self.assertEqual(self.call("/api/ogd_all/file", cookie=vic)[0], 403)
+            self.assertEqual(self.call("/api/ogd_all/cancel", {}, ann)[0], 200)
+            self.assertEqual(self.call("/api/ogd_all/file", cookie=ann)[0], 404)       # его файл: доступ есть, файла ещё нет
+            self.assertEqual(self.call("/api/ogd_all/cancel", {}, boss)[0], 200)
+            self.assertEqual(self.call("/api/ogd_all/status", cookie=vic)[0], 200)
+
+    # ----- события -----
+
+    def open_stream(self, pid, cookie):
+        """Поток событий в отдельной нити: возвращает (соединение, ответ, очередь событий)."""
+        import http.client
+        import json
+        import queue
+        import threading
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        c.request("GET", f"/api/hub/project/{pid}/events", headers={"Cookie": cookie})
+        r = c.getresponse()
+        q = queue.Queue()
+
+        def pump():
+            try:
+                while True:
+                    line = r.readline()
+                    if not line:
+                        q.put(None)
+                        return
+                    if line.startswith(b"data: "):
+                        q.put(json.loads(line[6:]))
+                    elif line.startswith(b": ping"):
+                        q.put({"type": "ping"})
+            except (OSError, ValueError):
+                q.put(None)
+        threading.Thread(target=pump, daemon=True).start()
+        return c, r, q
+
+    def test_sse_headers_and_rev_event_from_another_session(self):
+        import queue
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "editor"}, ann)
+        c, r, q = self.open_stream(pid, ann)
+        try:
+            self.assertEqual(r.status, 200)
+            self.assertTrue(r.getheader("Content-Type").startswith("text/event-stream"))
+            self.assertEqual(r.getheader("X-Accel-Buffering"), "no")
+            self.assertEqual(r.getheader("Cache-Control"), "no-cache")
+            self.assertEqual(r.getheader("X-Content-Type-Options"), "nosniff")
+            self.assertIn("frame-ancestors", r.getheader("Content-Security-Policy"))
+            first = q.get(timeout=3)
+            self.assertEqual(first["type"], "presence")                # новая подписка сразу видит, кто в проекте
+            s, _, j = self.call(f"/api/hub/project/{pid}/push", {"base_rev": 1, "client": "cV", "sections": {"layer:z": self.layer("Z", 1)}}, vic)
+            self.assertEqual(s, 200)
+            ev = None
+            for _ in range(10):
+                try:
+                    e = q.get(timeout=3)
+                except queue.Empty:
+                    break
+                if e and e.get("type") == "rev":
+                    ev = e
+                    break
+            self.assertIsNotNone(ev, "событие rev не пришло за 3 с")
+            self.assertEqual((ev["rev"], ev["by"], ev["client"]), (2, "vic", "cV"))
+            self.assertIn("layer:z", ev["sections"])
+        finally:
+            c.close()
+
+    def test_sse_needs_session_and_access_and_ends_on_delete(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/events")[0], 401)
+        s, r, j = self.call(f"/api/hub/project/{pid}/events", cookie=vic)
+        self.assertEqual((s, r.getheader("Content-Type").split(";")[0]), (403, "application/json"))      # отказ обычным ответом, не потоком
+        self.assertEqual(self.call("/api/hub/project/" + "f" * 16 + "/events", cookie=ann)[0], 404)
+        c, r, q = self.open_stream(pid, ann)
+        try:
+            self.assertEqual(q.get(timeout=3)["type"], "presence")
+            self.assertEqual(self.call(f"/api/hub/project/{pid}/delete", {}, ann)[0], 200)
+            seen = []
+            while True:
+                e = q.get(timeout=5)
+                if e is None:
+                    break                                                # поток закрылся сам
+                seen.append(e["type"])
+            self.assertIn("deleted", seen)
+        finally:
+            c.close()
+
+    def test_sse_presence_post(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        c, r, q = self.open_stream(pid, ann)
+        try:
+            q.get(timeout=3)
+            s, _, j = self.call(f"/api/hub/project/{pid}/presence", {"client": "cA", "cursor": [37.6, 55.7], "layer": None, "sel": []}, ann)
+            self.assertEqual(s, 200)
+            got = None
+            for _ in range(6):
+                e = q.get(timeout=3)
+                if e and e.get("type") == "presence" and any(u.get("client") == "cA" for u in e["users"]):
+                    got = e
+                    break
+            self.assertIsNotNone(got)
+            self.assertEqual(got["users"][0]["login"], "ann")
+            self.assertEqual(self.call(f"/api/hub/project/{pid}/presence", {"client": "cA", "cursor": "x"}, ann)[0], 400)
+        finally:
+            c.close()
+
+    # ----- разбор безопасности -----
+
+    def test_client_ip_trusts_forwarded_for_only_from_the_proxy_on_this_host(self):
+        def ip(peer, xff=None):
+            h = S.Handler.__new__(S.Handler)
+            h.client_address = (peer, 5000)
+            h.headers = {"X-Forwarded-For": xff} if xff is not None else {}
+            return h._client_ip()
+        self.assertEqual(ip("127.0.0.1", "6.6.6.6, 203.0.113.9"), "203.0.113.9")     # последний: его дописал наш Caddy
+        self.assertEqual(ip("::1", "203.0.113.9"), "203.0.113.9")
+        self.assertEqual(ip("198.51.100.7", "1.2.3.4"), "198.51.100.7")              # с чужого адреса заголовку не верим
+        self.assertEqual(ip("198.51.100.7"), "198.51.100.7")
+        self.assertEqual(ip("127.0.0.1", "not-an-ip"), "127.0.0.1")                  # мусор — адрес сокета
+        self.assertEqual(ip("127.0.0.1"), "127.0.0.1")
+        self.assertEqual(ip("127.0.0.1", "2001:db8:1:2:aaaa:bbbb:cccc:dddd"), ip("127.0.0.1", "2001:db8:1:2::1"))   # IPv6 — по сети /64
+        self.assertNotEqual(ip("127.0.0.1", "2001:db8:1:2::1"), ip("127.0.0.1", "2001:db8:1:3::1"))
+        self.assertEqual(ip("127.0.0.1", "::ffff:203.0.113.9"), "203.0.113.9")
+
+    def test_ip_throttle_ignores_forged_first_forwarded_entry(self):
+        for i in range(S.hubmod.IP_FAILS):
+            s, _, _ = self.call("/api/hub/login", {"login": f"ghost{i:03d}", "password": "x" * 9},
+                                headers={"X-Forwarded-For": f"10.{i}.0.1, 203.0.113.50"})
+            self.assertEqual(s, 401)
+        s, _, _ = self.call("/api/hub/login", {"login": "ann", "password": "password-ann"},
+                            headers={"X-Forwarded-For": "172.16.0.1, 203.0.113.50"})
+        self.assertEqual(s, 429)                                                      # подделка первого адреса счёт не обнулила
+        s, _, _ = self.call("/api/hub/login", {"login": "ann", "password": "password-ann"},
+                            headers={"X-Forwarded-For": "203.0.113.51"})
+        self.assertEqual(s, 200)
+
+    def test_password_change_ends_other_sessions_keeps_this_one(self):
+        here, elsewhere = self.login("ann"), self.login("ann")
+        self.assertEqual(self.call("/api/hub/password", {"old": "password-ann", "new": "password-ann-2"}, here)[0], 200)
+        self.assertEqual(self.call("/api/hub/me", cookie=here)[0], 200)
+        self.assertEqual(self.call("/api/hub/me", cookie=elsewhere)[0], 401)
+
+    def test_every_post_needs_json_in_hub_mode(self):
+        cookie = self.login("ann")
+        for path in ("/api/tep", "/api/fetch", "/api/export/dxf", "/api/print/svg", "/api/import/files"):
+            for ctype in ("text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"):
+                s, _, j = self.call(path, raw=b'{"terr_ha": 1}', cookie=cookie, ctype=ctype)
+                self.assertEqual(s, 415, (path, ctype))
+        self.assertEqual(self.call("/api/tep", {"terr_ha": 10, "restrict_ha": 1, "spp_new_m2": 1000, "share": 1}, cookie)[0], 200)
+        s, _, _ = self.call("/api/import/dxf", raw=b"garbage", cookie=cookie, ctype="application/octet-stream")
+        self.assertNotEqual(s, 415)                                                   # сырой DXF — единственное исключение
+
+    def test_post_marked_cross_site_by_the_browser_is_denied(self):
+        cookie = self.login("ann")
+        for site in ("cross-site", "same-site"):
+            s, _, _ = self.call("/api/hub/projects", {"name": "x"}, cookie, headers={"Sec-Fetch-Site": site})
+            self.assertEqual(s, 403, site)
+        for site in ("same-origin", "none"):
+            self.assertEqual(self.call("/api/hub/projects", {"name": "x"}, cookie, headers={"Sec-Fetch-Site": site})[0], 200)
+        # переход по ссылке со стороннего сайта — GET, главная страница открывается (данных в ней нет)
+        self.assertEqual(self.call("/", headers={"Sec-Fetch-Site": "cross-site"})[0], 200)
+
+    def test_every_state_changing_hub_route_checks_origin_and_json(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        routes = ["/api/hub/logout", "/api/hub/password", "/api/hub/invites", "/api/hub/users/vic", "/api/hub/projects",
+                  f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/push", f"/api/hub/project/{pid}/members",
+                  f"/api/hub/project/{pid}/presence", f"/api/hub/project/{pid}/comments",
+                  f"/api/hub/project/{pid}/comments/abc", f"/api/hub/project/{pid}/comments/abc/reply",
+                  f"/api/hub/project/{pid}/comments/abc/delete", f"/api/hub/project/{pid}/history/1/restore",
+                  f"/api/hub/project/{pid}/delete"]
+        for path in routes:
+            self.assertEqual(self.call(path, {}, ann, headers={"Origin": "https://evil.example"})[0], 403, path)
+            self.assertEqual(self.call(path, {}, ann, headers={"Host": "evil.example"})[0], 403, path)
+            self.assertEqual(self.call(path, raw=b"{}", cookie=ann, ctype="text/plain")[0], 415, path)
+        self.assertEqual(self.call("/api/hub/me", cookie=ann)[0], 200)                # ничего из этого не сработало
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 200)
+
+    def test_get_routes_have_no_side_effects(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        before = self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"]
+        for path in ("/api/hub/me", "/api/hub/projects", f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/sections?names=meta",
+                     f"/api/hub/project/{pid}/comments", f"/api/hub/project/{pid}/history", f"/api/hub/project/{pid}/activity",
+                     f"/api/hub/project/{pid}/download"):
+            self.call(path, cookie=ann)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"], before)
+        # «опасные» слова в GET не превращаются в действия
+        for path in (f"/api/hub/project/{pid}/delete", f"/api/hub/project/{pid}/push", "/api/hub/logout", f"/api/hub/project/{pid}/members"):
+            self.assertEqual(self.call(path, cookie=ann)[0], 404, path)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 200)
+
+    def test_deeply_nested_json_is_a_plain_400(self):
+        cookie = self.login("ann")
+        for depth in (200_000,):                                 # и разобрать, и записать обратно такую вложенность нельзя
+            deep = b"[" * depth + b"]" * depth
+            body = b'{"name":"x","project":{"format":"grado2","version":2,"layers":[{"key":"a"}],"data":{"a":{"x":' + deep + b"}}}}"
+            s, _, j = self.call("/api/hub/projects", raw=body, cookie=cookie)
+            self.assertEqual(s, 400, depth)
+            self.assertNotIn("Recursion", str(j))
+            self.assertEqual(self.call("/api/hub/login", raw=b'{"login":' + deep + b"}", ctype="application/json")[0], 400)
+        self.assertEqual(self.call("/api/tep", raw=b'{"a":' + b"[" * 200_000 + b"]" * 200_000 + b"}", cookie=cookie)[0], 400)
+
+    def test_quota_answer_is_readable_not_generic(self):
+        cookie = self.login("ann")
+        with mock.patch.object(S.hubmod, "QUOTA_BYTES", 10), mock.patch.object(S.hubmod, "QUOTA_CHECK_FROM", 0):
+            s, _, j = self.call("/api/hub/projects", {"name": "x"}, cookie)
+        self.assertEqual(s, 507)
+        self.assertIn("хранилище", j["error"])
+
+    def test_open_hub_uses_the_projects_quota(self):
+        import tempfile
+        old = S.hubmod.QUOTA_BYTES
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                S.open_hub(Path(d) / "h")
+            self.assertEqual(S.hubmod.QUOTA_BYTES, S.PROJECTS_CAP)
+        finally:
+            S.hubmod.QUOTA_BYTES = old
+
+    def test_sse_stream_count_is_capped_per_user(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        with mock.patch.object(S.hubmod, "SSE_PER_USER", 2):
+            streams = [self.open_stream(pid, ann) for _ in range(2)]
+            try:
+                for c, r, q in streams:
+                    self.assertEqual(q.get(timeout=3)["type"], "presence")
+                s, r, j = self.call(f"/api/hub/project/{pid}/events", cookie=ann)
+                self.assertEqual((s, r.getheader("Content-Type").split(";")[0]), (429, "application/json"))
+                self.assertEqual(self.call(f"/api/hub/project/{pid}/events", cookie=self.login("ann"))[0], 429)    # лимит на человека, а не на сессию
+            finally:
+                for c, _, _ in streams:
+                    c.close()
+
+    def test_sse_stream_ends_after_logout(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        with mock.patch.object(S, "EVENTS_RECHECK", 0.3):
+            c, r, q = self.open_stream(pid, ann)
+            try:
+                self.assertEqual(q.get(timeout=3)["type"], "presence")
+                self.assertEqual(self.call("/api/hub/logout", {}, ann)[0], 200)
+                for _ in range(40):
+                    if q.get(timeout=5) is None:
+                        break
+                else:
+                    self.fail("поток остался открытым после выхода")
+            finally:
+                c.close()
+
+    def test_sse_stream_ends_when_account_disabled(self):
+        boss, vic = self.login("boss"), self.login("vic")
+        pid = self.new_project(self.login("ann"))
+        self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "viewer"}, self.login("ann"))
+        c, r, q = self.open_stream(pid, vic)
+        try:
+            self.assertEqual(q.get(timeout=3)["type"], "presence")
+            self.assertEqual(self.call("/api/hub/users/vic", {"disabled": True}, boss)[0], 200)
+            for _ in range(40):
+                if q.get(timeout=5) is None:
+                    break
+            else:
+                self.fail("поток отключённого пользователя остался открытым")
+        finally:
+            c.close()
+
+    def test_dates_and_paths_do_not_leak_in_errors(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        for path, body in ((f"/api/hub/project/{pid}/push", {"base_rev": "x", "sections": {}, "client": "c"}),
+                           (f"/api/hub/project/{pid}/comments", {"text": 5}),
+                           (f"/api/hub/project/{pid}/members", {"login": "../../etc", "role": "viewer"}),
+                           ("/api/hub/project/..%2f..%2fetc/push", {"base_rev": 0, "sections": {}, "client": "c"}),
+                           (f"/api/hub/project/{pid}/history/99999999999999999999/restore", {})):
+            s, _, j = self.call(path, body, ann)
+            text = str(j)
+            self.assertGreaterEqual(s, 400, path)
+            for bad in ("/Users", "Traceback", str(Path(self.tmp.name)), ".json", "hub.py", "Errno"):
+                self.assertNotIn(bad, text, (path, bad))
+
+    def test_project_id_in_url_is_never_a_path(self):
+        ann = self.login("ann")
+        self.new_project(ann)
+        for pid in ("..", "%2e%2e", "..%2f..", "%2e%2e%2f%2e%2e%2fusers.json", "A" * 16, "0" * 15, "0" * 17, "%00"):
+            for path in (f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/download", f"/api/hub/project/{pid}/comments"):
+                s, _, j = self.call(path, cookie=ann)
+                self.assertIn(s, (400, 404), (path, s))
+        self.assertEqual(self.call("/api/hub/project/" + "0" * 16 + "/comments/%2e%2e%2f%2e%2e/delete", {}, ann)[0] // 100, 4)
+
+
+class DxfUidNotExported(unittest.TestCase):
+    """Служебные поля `_uid` и `_edited` не попадают в DXF: сервер берёт из свойств только названные поля (Текст, Размер, floors, _lt)."""
+
+    def test_uid_and_edited_are_not_in_dxf(self):
+        import io
+        import zipfile
+        import dxf_io
+        fc = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[37.6, 55.7], [37.61, 55.7], [37.61, 55.71], [37.6, 55.7]]]},
+             "properties": {"_uid": "deadbeef0123", "_edited": True, "Этажность": 5}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [37.6, 55.7]},
+             "properties": {"_uid": "cafebabe4567", "Текст": "Подпись"}}]}
+        z = zipfile.ZipFile(io.BytesIO(dxf_io.export_dxf([{"name": "Слой", "features": fc}], S.REDLN, S.LGR_COLORS)))
+        text = z.read("grado2.dxf").decode("utf-8")
+        for needle in ("deadbeef0123", "cafebabe4567", "_uid", "_edited"):
+            self.assertNotIn(needle, text)
+        self.assertIn("Подпись", text)
+
+
+class NonHubUnchanged(unittest.TestCase):
+    """Без GRADO2_HUB хаб не участвует: прежние маршруты, health с hub:false, маршрутов /api/hub/* нет."""
+
+    def setUp(self):
+        import threading
+        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.port = self.srv.server_address[1]
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+
+    def get(self, path, data=None):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("POST" if data is not None else "GET", path, body=data, headers={"Content-Type": "application/json"})
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, body
+
+    def test_default_is_local(self):
+        import json
+        self.assertIsNone(S.HUB)
+        s, body = self.get("/api/health")
+        self.assertEqual((s, json.loads(body)["hub"]), (200, False))
+        self.assertEqual(self.get("/api/projects")[0], 200)
+        self.assertEqual(self.get("/api/sources")[0], 200)
+        self.assertEqual(self.get("/api/hub/projects")[0], 404)
+        self.assertEqual(self.get("/api/hub/login", b"{}")[0], 404)
+
+    def test_hub_switch_parsing(self):
+        self.assertFalse(S.hub_enabled([], {}))
+        self.assertFalse(S.hub_enabled(["8672"], {"GRADO2_HUB": "0"}))
+        self.assertTrue(S.hub_enabled(["8672", "--hub"], {}))
+        self.assertTrue(S.hub_enabled(["--hub"], {}))
+        self.assertTrue(S.hub_enabled([], {"GRADO2_HUB": "1"}))

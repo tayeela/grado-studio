@@ -199,6 +199,12 @@ function normGroups() {
    сохранения и выгрузки) собирается из них лениво, при первом чтении после правки: на слое в 100 000
    объектов правка одного объекта не переписывает весь слой. */
 let revSeq = 0;
+/* Стабильный номер объекта `_uid` (12 знаков hex) — по нему совместная работа (collab.js) сводит правки разных людей.
+   Служебное поле с «_»: в таблицы, списки полей и выгрузки не попадает (hiddenField). Присваивается в двух местах,
+   через которые проходит любой объект слоя: setLayerData (загрузка, импорт, выход графа) и syncFromSource (рисование,
+   вставка, CAD-правки). Повтор номера в слое (вставка копии) получает новый номер. */
+const newUid = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, "0")).join("");
+window.newUid = newUid;
 // у объекта без атрибутов OpenLayers пишет properties: null — дальше код везде ждёт объект
 function writeFC(fs) { const o = GJ.writeFeaturesObject(fs); o.features.forEach(f => { if (f.properties) delete f.properties[SYMK]; else f.properties = {}; }); return o; }
 function bindFC(key) {
@@ -215,6 +221,8 @@ function setLayerData(key, fc, keepUndo = false) {
     const stale = u => u.kind === "feat" && u.items.some(i => i.key === key);
     if (UNDO.some(stale) || REDO.some(stale)) { UNDO.splice(0, UNDO.length, ...UNDO.filter(u => !stale(u))); REDO.splice(0, REDO.length, ...REDO.filter(u => !stale(u))); syncRibbon(); }
   }
+  const seen = new Set();                                          // номера `_uid` ставятся в сам fc: он же уходит в файл и на сервер
+  for (const f of fc.features) { const p = f.properties ||= {}; if (!p._uid || seen.has(p._uid)) p._uid = newUid(); seen.add(p._uid); }
   layerSrc[key].clear(true); layerSrc[key].addFeatures(GJ.readFeatures(fc));
   syncFromSource(key, false); d.fc = fc;
   if (SEL.some(x => x.key === key)) setSel(SEL);                  // выбор старых объектов слоя снимается: правка ушла бы в никуда
@@ -224,7 +232,8 @@ function syncFromSource(key, edited = true) {
   const d = DATA[key], fs = layerSrc[key].getFeatures(); bindFC(key); d.stale();
   d.count = fs.length; d.rev = ++revSeq;
   if (fs.length) d.fields = [...new Set(fs.slice(0, 500).flatMap(f => f.getKeys().filter(k => k !== "geometry" && k !== SYMK)))];
-  d.edited = fs.reduce((n, f) => n + (f.get("_edited") ? 1 : 0), 0);
+  const seen = new Set();                                          // `_uid`: у нового объекта нет номера, у копии он повторяется
+  d.edited = fs.reduce((n, f) => { let u = f.get("_uid"); if (!u || seen.has(u)) f.set("_uid", u = newUid(), true); seen.add(u); return n + (f.get("_edited") ? 1 : 0); }, 0);
   if (edited) dataRev++;
   const l = lyr(key);
   if (l) { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind) rebuildLayer(l); else if (l.gl) { symAll(l, true);            // номера классов пересчитаны — таблица цветов GPU тоже
@@ -1137,7 +1146,7 @@ function pasteClip() {
   const l = lyr(CUR); if (!l) return toast("Выберите слой, в который вставить.");
   if (!CLIP.length) return toast(`Буфер пуст: сначала выберите объекты и нажмите ${MOD}+C.`);
   const items = [];
-  CLIP.forEach(c => { const g = geomFor(c.g, l.geom); if (!g) return; const f = new ol.Feature(g); const p = { ...c.p }; delete p._key; delete p[SYMK];
+  CLIP.forEach(c => { const g = geomFor(c.g, l.geom); if (!g) return; const f = new ol.Feature(g); const p = { ...c.p }; delete p._key; delete p._uid; delete p[SYMK];
     f.setProperties({ ...p, _new: true, _edited: true }); items.push({ key: l.key, f }); });
   if (!items.length) return toast(`В слой «${l.title}» (${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}) эти объекты не встают: ${l.geom === "poly" ? "у линий нет замкнутого контура" : "другой вид геометрии"}.`);
   pushUndo(featRec(items, `вставка ${items.length} об.`)); items.forEach(({ f }) => layerSrc[l.key].addFeature(f)); syncFromSource(l.key); setSel(items);

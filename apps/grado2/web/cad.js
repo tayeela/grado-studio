@@ -442,7 +442,7 @@ function newFeature(kind, w, prefer, props = {}) {
   const f = new ol.Feature(geom); fieldsOfKey(l.key).forEach(k => f.set(k, "")); f.setProperties({ ...props, _edited: true, _new: true });
   return { key: l.key, f };
 }
-const copyFeat = (f, geom, extra = {}) => { const n = new ol.Feature(geom); const p = { ...propsOf(f), ...extra, _new: true, _edited: true }; delete p._key; if (!extra._cad) delete p._cad; if (!extra._arr) delete p._arr; n.setProperties(p); return n; };
+const copyFeat = (f, geom, extra = {}) => { const n = new ol.Feature(geom); const p = { ...propsOf(f), ...extra, _new: true, _edited: true }; delete p._key; delete p._uid; if (!extra._cad) delete p._cad; if (!extra._arr) delete p._arr; n.setProperties(p); return n; };
 function addNew(items, label) {
   if (!items.length) return;
   pushUndo(featRec(items, label));

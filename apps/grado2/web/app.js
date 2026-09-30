@@ -7,6 +7,9 @@ const $ = id => document.getElementById(id);
 const fmt = (n, d = 0) => Number(n).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const icons = () => lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
+// Совместный режим (hub.js ставит window.KEYGUARD): клавиша наблюдателя гасится здесь, в самом первом перехвате окна, —
+// обработчики cad.js и layers.js стоят на том же перехвате и идут позже; в обычном режиме KEYGUARD нет и ничего не происходит
+addEventListener("keydown", e => { if (window.KEYGUARD?.(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 // сообщение внизу по центру; если там стоит окно — над картой сверху, чтобы не закрывать карточки и кнопки окна
 let tT; function toast(t) {
   const el = $("toast"); el.textContent = t; el.classList.remove("top"); el.classList.add("on");
@@ -513,7 +516,7 @@ function watchOgd() {
   ogdPoll = setInterval(tick, 1500); tick();
 }
 $("bOgdAll").dataset.title = $("bOgdAll").title;
-api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { });   // открыли страницу во время выгрузки
+window.ogdResume = () => api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { });   // открыли страницу во время выгрузки; зовёт startApp, когда сервер готов принимать запросы (в совместном режиме — после входа)
 window.ogdFrame = () => window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
 window.runOgd = runOgd; window.exportOgd = fr => ogdPoll ? runOgd(null) : window.openOgdPicker(fr);   // сначала окно выбора слоёв (ogdpick.js)
 $("bOgdAll").onclick = () => {
@@ -1068,7 +1071,7 @@ function recompute(force) {
   lgc.setDirty(true, true); updateAnalysisMap(); renderSketch();
   if (!recompute.once) { recompute.once = true; renderParams(); }
 }
-setInterval(() => recompute(false), 250);
+setInterval(() => { if (window.HUB_MODE === false || window.HUB_IN) recompute(false); }, 250);   // совместный режим: граф считается и ходит на сервер (/api/tep) только после входа
 
 /* ---------- результат графа на основной карте ---------- */
 const prevSrc = new ol.source.Vector(), sketchSrc = new ol.source.Vector(), siteSrc = new ol.source.Vector(), keptSrc = new ol.source.Vector();
@@ -1660,6 +1663,8 @@ try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentEl
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS
 const startApp = async () => {
+  await window.hubGate?.();                       // совместный режим: до первого запроса к серверу — вход (project.js, hub.js); в обычном режиме возвращается сразу
+  window.ogdResume?.();
   try { SOURCES = await api("/api/sources"); await loadStyleLibs(); } catch (e) { toast("Сервер ГРАДО не отвечает: " + e.message); }
   try { window.APP_VERSION = (await api("/version.json")).version; document.querySelector(".brand").title = "ГРАДО 2, версия " + window.APP_VERSION; } catch { }
   renderSources(); icons();

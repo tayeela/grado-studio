@@ -405,10 +405,19 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
 .ogdpick .n{color:var(--faint);font-size:11.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .ogdpick .n.has{color:var(--text);font-weight:600}
 </style>
+<link rel="stylesheet" href="hub.css">
 
 <div class="app">
   <header class="top">
-    <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button><span class="sp"></span>
+    <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button>
+    <div class="hubbar" id="hubBar" hidden>
+      <button class="btn" id="hubProjBtn" data-win="wHubProjects" title="Совместные проекты: открыть, создать, загрузить"><i data-lucide="users"></i><span class="lb" id="hubProjName">Выберите проект</span></button><small class="hubrole" id="hubRole"></small>
+      <span class="hubav" id="hubAv" aria-label="Кто сейчас в проекте"></span>
+      <span class="hubsync" id="hubSync" data-state="saved" role="status" title="Все правки сохранены на сервере"><i class="dot"></i><span id="hubSyncTxt">сохранено</span></span>
+      <button class="btn" id="hubShareBtn" data-win="wShare" title="Доступ: кто может открывать и править проект"><i data-lucide="user-plus"></i><span class="lb">Доступ</span></button><button class="btn" id="hubComBtn" data-win="wComments" title="Комментарии к проекту"><i data-lucide="message-square"></i><span class="lb">Комментарии</span><b class="hubcnt" id="hubComCnt" hidden></b></button><button class="btn" id="hubHistBtn" data-win="wHistory" title="История: версии проекта и кто что менял"><i data-lucide="history"></i><span class="lb">История</span></button>
+      <span class="hubacc"><button class="btn" id="hubAcc" aria-haspopup="menu" aria-expanded="false" aria-controls="hubAccMenu" title="Ваша учётная запись"><i data-lucide="circle-user"></i><span class="lb" id="hubAccName"></span><i data-lucide="chevron-down" class="chev"></i></button>
+        <div class="menu hubmenu" id="hubAccMenu" role="menu" hidden><button role="menuitem" class="hubnarrow" data-hubwin="wShare"><i data-lucide="user-plus"></i>Доступ</button><button role="menuitem" class="hubnarrow" data-hubwin="wComments"><i data-lucide="message-square"></i>Комментарии</button><button role="menuitem" class="hubnarrow" data-hubwin="wHistory"><i data-lucide="history"></i>История</button><hr class="hubnarrow"><button role="menuitem" data-hubact="pw"><i data-lucide="key-round"></i>Сменить пароль</button><button role="menuitem" data-hubact="admin" id="hubAdminItem" hidden><i data-lucide="user-cog"></i>Пользователи и приглашения</button><hr><button role="menuitem" data-hubact="out"><i data-lucide="log-out"></i>Выйти</button></div></span>
+    </div><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
       <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wViews" title="Виды карты: наборы видимых слоёв с оформлением и легендой (как темы карты в QGIS)"><i data-lucide="bookmark"></i><span class="lb">Виды</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Параметрический граф анализа"><i data-lucide="workflow"></i><span class="lb">Граф</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn opt" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn opt" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
@@ -438,8 +447,8 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
       <div class="sb tree" id="layerTree"></div>
       <div class="dz" id="dzL"></div>
     </aside>
-    <div class="center"><div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
-      <div class="mtools"><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
+    <div class="center"><div class="hubhint" id="hubViewHint" role="status" hidden><i data-lucide="eye"></i>Только просмотр: попросите владельца дать права на правку</div><div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
+      <div class="mtools"><button class="tb" id="hubCTool" aria-pressed="false" hidden title="Комментарий: щёлкните по карте, где нужна метка (Esc — отмена)"><i data-lucide="message-square-plus"></i></button><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
       <div class="start" id="start" hidden role="dialog" aria-label="С чего начать"><div class="starth"><b>С чего начать</b><button class="tb" data-close-start title="Закрыть (Esc). Эти действия есть в справке F1" aria-label="Закрыть"><i data-lucide="x"></i></button></div>
         <button class="btn" data-go="example"><i data-lucide="map-pin"></i>Пример территории и выгрузка данных</button>
         <button class="btn" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу территории<kbd>BO</kbd></button>
@@ -522,6 +531,59 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
   <header class="wh"><i data-lucide="circle-help"></i><b>Справка и клавиши</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb" id="keysBody"></div>
 </section>
+<section class="win" id="wHubProjects" hidden aria-label="Совместные проекты">
+  <header class="wh"><i data-lucide="users"></i><b>Совместные проекты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb">
+    <div class="projbar"><input type="text" id="hubNewName" placeholder="Название проекта" maxlength="60" aria-label="Название нового проекта"><button class="btn primary" id="hubNew" title="Создать пустой общий проект"><i data-lucide="file-plus"></i>Создать пустой</button></div>
+    <div class="projbar"><button class="btn" id="hubShareLocal" title="Всё, что сейчас на карте, станет общим проектом на сервере: слои, стили, граф, листы"><i data-lucide="cloud-upload"></i>Сделать общим текущую работу</button><label class="btn" title="Загрузить файл .grado2 с диска как новый общий проект"><i data-lucide="folder-input"></i>Загрузить файл .grado2…<input type="file" id="hubFile" accept=".grado2,.json" hidden></label></div>
+    <div class="sb" id="hubProjList"></div>
+  </div>
+</section>
+<section class="win" id="wShare" hidden aria-label="Доступ к проекту">
+  <header class="wh"><i data-lucide="user-plus"></i><b>Доступ</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="sb" id="hubShareBody"></div></div>
+</section>
+<section class="win" id="wComments" hidden aria-label="Комментарии">
+  <header class="wh"><i data-lucide="message-square"></i><b>Комментарии</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb">
+    <div class="projbar"><button class="btn" id="hubCTool2" aria-pressed="false" title="Щёлкните по карте — там появится метка комментария"><i data-lucide="message-square-plus"></i>Комментарий на карте</button><button class="btn" id="hubCObj" title="Комментарий к объекту, выбранному на карте"><i data-lucide="mouse-pointer-click"></i>К выбранному объекту</button></div>
+    <div class="hubcompose" id="hubCompose" hidden><div class="hubcwhere" id="hubCWhere"></div><textarea id="hubCText" rows="3" maxlength="4000" placeholder="Текст комментария" aria-label="Текст комментария"></textarea><div class="hubrow"><button class="btn primary" id="hubCSend">Отправить</button><button class="btn" id="hubCCancel">Отмена</button></div></div>
+    <div class="stmodes hubfilter" id="hubCFilter" role="group" aria-label="Какие комментарии показывать"><button data-f="open" aria-pressed="true">Открытые</button><button data-f="done" aria-pressed="false">Решённые</button><button data-f="all" aria-pressed="false">Все</button></div>
+    <div class="sb" id="hubCList"></div>
+  </div>
+</section>
+<section class="win" id="wHistory" hidden aria-label="История проекта">
+  <header class="wh"><i data-lucide="history"></i><b>История</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb">
+    <div class="dtabs" role="tablist"><button role="tab" data-htab="ver" aria-selected="true">Версии</button><button role="tab" data-htab="act" aria-selected="false">Кто что менял</button></div>
+    <div class="sb" id="hubHBody"></div>
+  </div>
+</section>
+<section class="win" id="wHubAdmin" hidden aria-label="Пользователи и приглашения">
+  <header class="wh"><i data-lucide="user-cog"></i><b>Пользователи и приглашения</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div class="sb" id="hubAdminBody"></div></div>
+</section>
+<dialog class="hubdlg" id="hubPwDlg" aria-label="Сменить пароль"><form id="hubPwForm" autocomplete="off">
+  <b>Сменить пароль</b>
+  <label>Старый пароль<input type="password" id="hubPwOld" autocomplete="current-password"></label>
+  <label>Новый пароль (не короче 8 знаков)<input type="password" id="hubPwNew" autocomplete="new-password"></label>
+  <label>Новый пароль ещё раз<input type="password" id="hubPwNew2" autocomplete="new-password"></label>
+  <div class="hubmsg" id="hubPwMsg" role="alert"></div>
+  <div class="hubrow"><button type="button" class="btn" id="hubPwCancel">Отмена</button><button type="submit" class="btn primary">Сменить пароль</button></div>
+</form></dialog>
+<div class="hublogin" id="hubLogin" role="dialog" aria-modal="true" aria-label="Вход в ГРАДО 2" hidden>
+  <form id="hubLoginForm" novalidate>
+    <h1>ГРАДО 2</h1>
+    <div class="hubtabs" role="tablist"><button type="button" role="tab" data-lmode="in" aria-selected="true">Вход</button><button type="button" role="tab" data-lmode="reg" aria-selected="false">Регистрация по приглашению</button></div>
+    <label data-lm="reg">Код приглашения<input type="text" id="hubInv" autocomplete="off" spellcheck="false"></label>
+    <label>Логин<input type="text" id="hubLg" autocomplete="username" autocapitalize="off" spellcheck="false"></label>
+    <label data-lm="reg">Ваше имя в проектах<input type="text" id="hubNm" autocomplete="name" maxlength="60"></label>
+    <label>Пароль<input type="password" id="hubPw" autocomplete="current-password"></label>
+    <label data-lm="reg">Пароль ещё раз<input type="password" id="hubPw2" autocomplete="new-password"></label>
+    <button class="btn primary" type="submit" id="hubGo">Войти</button>
+    <div class="hubmsg" id="hubMsg" role="alert"></div>
+  </form>
+</div>
 <div class="toast" id="toast" role="status"></div>
 
 <div class="busy" id="busy" hidden></div>
@@ -540,3 +602,4 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
 <script src="frames.js"></script>
 <script src="ogdpick.js"></script>
 <script src="project.js"></script>
+<script src="collab.js"></script><script src="hub.js"></script>

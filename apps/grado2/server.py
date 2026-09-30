@@ -12,10 +12,11 @@
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
 
-Запуск: python3 apps/grado2/server.py [порт]   (по умолчанию 8650)
+Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 """
 
 import hmac
+import ipaddress
 import json
 import math
 import os
@@ -46,6 +47,7 @@ from grado_connectors.osm import OsmOverpass                       # noqa: E402
 from grado_connectors.terrain import TerrainContours               # noqa: E402
 from grado_connectors.yandex_vmap import YandexVmap                # noqa: E402
 from grado_render import acad_lin                                  # noqa: E402
+import hub as hubmod                                               # noqa: E402  совместный режим (GRADO2_HUB=1)
 
 WEB = ROOT / "web" if FROZEN else Path(__file__).resolve().parent / "web"
 CACHE = Path.home() / ".grado2" / "cache"
@@ -388,6 +390,9 @@ def _layer(key, result):
 MAX_PROJECT_BODY = 400 * 2**20
 MAX_BIG_BODY = 250 * 2**20
 MAX_BODY = 32 * 2**20
+HUB_PROJECT_RE = re.compile(r"/api/hub/project/([^/]+)(?:/(.+))?")
+MAX_HUB_BODY = 2**20            # остальные POST совместного режима: вход, комментарии, доступ — короткий JSON
+HUB_PUSH_RE = re.compile(r"/api/hub/project/[^/]+/push")
 
 
 def body_limit(path):
@@ -395,6 +400,10 @@ def body_limit(path):
     p = path.split("?")[0]
     if p == "/api/project":
         return MAX_PROJECT_BODY
+    if p == "/api/hub/projects" or HUB_PUSH_RE.fullmatch(p):      # создание с готовым файлом и запись проекта — как проект
+        return MAX_PROJECT_BODY
+    if p.startswith("/api/hub/"):
+        return MAX_HUB_BODY
     if p.startswith(("/api/import/", "/api/print/", "/api/export/")):
         return MAX_BIG_BODY
     return MAX_BODY
@@ -1050,6 +1059,27 @@ LOGIN_OPEN = {"/login.html", "/login.js"}               # страница вх�
 LOGIN_TRIES, LOGIN_WINDOW = 10, 60                      # промахов с одного адреса за окно в секундах, дальше 429
 _LOGIN_FAILS, _LOGIN_LOCK = {}, threading.Lock()
 
+# Совместный режим (GRADO2_HUB=1 или --hub): аккаунты и проекты на сервере (hub.py). HUB — экземпляр хаба, None — обычная
+# локальная работа. В этом режиме GRADO2_TOKEN не действует: вход заменяют учётные записи.
+HUB = None
+SESSION_COOKIE = "grado_session"
+BIG_BODY = threading.BoundedSemaphore(3)    # одновременных запросов крупнее MAX_BODY в совместном режиме
+EVENTS_RECHECK = 10               # как часто открытый поток событий заново проверяет сессию и доступ (секунды)
+EVENTS_WRITE_TIMEOUT = 60         # сколько одна запись в поток может ждать читателя
+LOCAL_PROJECTS_OFF = "в совместном режиме проекты хранятся на сервере: окно «Совместные проекты»"
+OGD_OWNER = {"login": None}        # кто запустил выгрузку «Всё из ГИС ОГД»: остановить и забрать файл может он или администратор
+
+
+def hub_enabled(argv=(), env=None):
+    env = os.environ if env is None else env
+    return "--hub" in argv or env.get("GRADO2_HUB") == "1"
+
+
+def open_hub(root=None):
+    """Хаб в каталоге GRADO2_HUB_DIR, по умолчанию <проекты>/.hub."""
+    hubmod.QUOTA_BYTES = PROJECTS_CAP                                 # одна квота и для локальных проектов, и для хаба
+    return hubmod.Hub(root or os.environ.get("GRADO2_HUB_DIR") or PROJECTS / ".hub")
+
 
 def same_token(a, b):
     """Сравнение ключей за постоянное время (по байтам), чтобы не выдавать совпавший префикс по времени ответа."""
@@ -1069,10 +1099,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Security-Policy", CSP)
         super().end_headers()
 
-    def _json(self, code, obj):
+    def _json(self, code, obj, headers=None):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1082,6 +1114,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._deny()
         if self._gate("GET"):
             return
+        if HUB:
+            route = self.path.split("?")[0]
+            if route.startswith("/api/hub/"):
+                return self._hub("GET", route)
+            if route in ("/api/projects", "/api/project"):
+                return self._json(403, {"error": LOCAL_PROJECTS_OFF})
         name = self.path.split("?")[0].removeprefix("/styles/")
         if self.path.startswith("/styles/") and name in STYLE_FILES:
             body = (STYLES / name).read_bytes()
@@ -1093,7 +1131,7 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
         if self.path == "/api/health":
-            return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION})
+            return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
         if self.path == "/api/progress":
             return self._json(200, dict(PROGRESS))
         if self.path == "/api/ogd_all/tree":
@@ -1105,6 +1143,8 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == "/api/ogd_all/status":
             return self._json(200, OGD_JOB[0].state if OGD_JOB else {"running": False})
         if self.path == "/api/ogd_all/file":
+            if not self._ogd_may():
+                return self._json(403, {"error": "выгрузку запустил другой пользователь"})
             job = OGD_JOB[0] if OGD_JOB else None
             if not job or not job.file or not job.file.exists():
                 return self._json(404, {"error": "no file"})
@@ -1165,7 +1205,11 @@ class Handler(SimpleHTTPRequestHandler):
         if (self.headers.get("Host") or "") not in ok:
             return True
         origin = self.headers.get("Origin")
-        return origin is not None and origin not in origins
+        if origin is not None and origin not in origins:
+            return True
+        # запись по запросу, который браузер сам пометил «чужой сайт» или «соседний поддомен», — не от программы
+        # (Origin у POST есть всегда, это вторая защита; GET-переходы по ссылкам извне остаются открытыми)
+        return self.command == "POST" and (self.headers.get("Sec-Fetch-Site") or "").lower() in ("cross-site", "same-site")
 
     def _authed(self):
         """Есть ключ доступа: кука grado_token или заголовок X-Grado-Token (для скриптов)."""
@@ -1186,6 +1230,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _gate(self, method):
         """Ключ доступа включён → True, если запрос отвечен здесь (отказ или вход), и дальше идти не надо."""
+        if HUB:
+            return self._hub_gate(method)
         if not TOKEN:
             return False
         path = self.path.split("?")[0]
@@ -1211,10 +1257,22 @@ class Handler(SimpleHTTPRequestHandler):
                 + ("; Secure" if tls else ""))
 
     def _client_ip(self):
-        """Адрес клиента для счёта промахов: за прокси — последний в X-Forwarded-For (его дописал наш прокси;
-        первый клиент подделывает), иначе сокет."""
-        fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
-        return fwd or self.client_address[0]
+        """Адрес клиента для счёта промахов. X-Forwarded-For верим, только когда запрос пришёл с самого сервера
+        (127.0.0.1/::1, то есть от нашего Caddy) и берём последний адрес: его дописал прокси, первый клиент подделывает.
+        Запрос с чужого адреса считается по адресу сокета. IPv6 сводится к сети /64: иначе адрес меняют на лету."""
+        peer = self.client_address[0]
+        ip = peer
+        if peer in ("127.0.0.1", "::1"):
+            fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+            if fwd:
+                ip = fwd
+        try:
+            a = ipaddress.ip_address(ip)
+        except ValueError:
+            a = ipaddress.ip_address(peer)
+        if a.version == 6:
+            a = a.ipv4_mapped or ipaddress.ip_network(f"{a}/64", strict=False).network_address
+        return str(a)
 
     def _login(self, n):
         """POST /api/login {"token": …}: верный ключ → кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
@@ -1249,6 +1307,211 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ---------- совместный режим (hub.py): вход по сессии, маршруты /api/hub/* ----------
+    def _session_token(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == SESSION_COOKIE:
+                return v
+        return ""
+
+    def _who(self):
+        """Пользователь по куке grado_session ({login, name, admin}) или None; на запрос считается один раз."""
+        if not hasattr(self, "_who_cache"):
+            token = self._session_token()
+            self._who_cache = HUB.session_user(token) if token else None
+        return self._who_cache
+
+    def _hub_gate(self, method):
+        """Совместный режим: открыты здоровье сервера, статика (в ней нет данных), вход, регистрация и «кто я»;
+        остальное — только с сессией. True — запрос уже отвечен (401)."""
+        path = self.path.split("?")[0]
+        if method in ("GET", "HEAD") and (not path.startswith("/api/") or path == "/api/health"):
+            return False
+        if self._local_probe(method, path):
+            return False
+        if method == "POST" and path in ("/api/hub/login", "/api/hub/register"):
+            return False
+        if method == "GET" and path == "/api/hub/me":
+            return False
+        if self._who():
+            return False
+        self._json(401, {"error": "нужен вход"})
+        return True
+
+    def _ogd_may(self):
+        """Выгрузку «Всё из ГИС ОГД» останавливает и забирает тот, кто её начал, или администратор."""
+        if not HUB:
+            return True
+        u = self._who() or {}
+        return bool(u.get("admin")) or (u.get("login") is not None and u.get("login") == OGD_OWNER["login"])
+
+    def _session_cookie(self, value, max_age):
+        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
+        return f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}" + ("; Secure" if tls else "")
+
+    def _hub(self, method, path, n=0):
+        """Маршруты /api/hub/*: HubError → его код и {"error": текст}; Conflict → 409 с телом конфликта; неожиданный сбой —
+        500 без подробностей (причина в журнале сервера)."""
+        try:
+            if method == "POST":
+                if self.headers.get_content_type() != "application/json":
+                    return self._json(415, {"error": "ожидается Content-Type: application/json"})
+                return self._hub_post(path, self._read_obj(n))
+            return self._hub_get(path)
+        except hubmod.Conflict as e:
+            return self._json(409, {**e.payload, "error": e.message})
+        except hubmod.HubError as e:
+            if e.status >= 500 and e.status != 507:         # 507 — «хранилище заполнено»: текст написан для человека
+                self._log_fail(e)
+                return self._json(e.status, {"error": INTERNAL_ERROR})
+            return self._json(e.status, {"error": e.message})
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+        except (KeyError, ValueError, TypeError) as e:
+            self._log_fail(e)
+            return self._json(400, {"error": "некорректный запрос"})
+        except Exception as e:
+            self._log_fail(e)
+            return self._json(500, {"error": INTERNAL_ERROR})
+
+    def _hub_get(self, path):
+        q = parse_qs(urlparse(self.path).query)
+        u = self._who()
+        if path == "/api/hub/me":
+            return self._json(200, {"user": u}) if u else self._json(401, {"error": "нужен вход"})
+        if path == "/api/hub/users":
+            return self._json(200, {"users": HUB.list_users(u)})
+        if path == "/api/hub/invites":
+            return self._json(200, {"invites": HUB.list_invites(u)})
+        if path == "/api/hub/projects":
+            return self._json(200, {"projects": HUB.list_projects(u)})
+        m = HUB_PROJECT_RE.fullmatch(path)
+        if not m:
+            return self._json(404, {"error": "no such method"})
+        pid, rest = unquote(m.group(1)), m.group(2) or ""
+        if rest == "":
+            return self._json(200, HUB.get_project(u, pid))
+        if rest == "sections":
+            names = [x for v in q.get("names", []) for x in v.split(",") if x]
+            return self._json(200, HUB.get_sections(u, pid, names))
+        if rest == "download":
+            name, data = HUB.project_file(u, pid)
+            stem = re.sub(r"[^A-Za-z0-9._-]", "_", name.removesuffix(".grado2"))
+            ascii_name = (stem if re.search("[A-Za-z0-9]", stem) else "project") + ".grado2"
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            return self.wfile.write(data)
+        if rest == "events":
+            return self._hub_events(u, pid)
+        if rest == "comments":
+            return self._json(200, {"comments": HUB.comments(u, pid)})
+        if rest == "history":
+            return self._json(200, {"history": HUB.history(u, pid)})
+        if rest == "activity":
+            return self._json(200, {"activity": HUB.activity(u, pid)})
+        return self._json(404, {"error": "no such method"})
+
+    def _hub_events(self, user, pid):
+        """Поток событий проекта (SSE): одна вкладка — одна подписка. Поток держится, пока клиент читает; каждые 15 с — строка
+        «: ping», её сбой и есть признак, что вкладку закрыли. Подписка закрывается всегда."""
+        sub = HUB.subscribe(user, pid)             # отказ (нет проекта, нет доступа, слишком много потоков) — обычным ответом
+        token = self._session_token()
+        try:
+            # читать из сокета поток не будет, так что таймаут действует только на запись: читатель, который встал и не
+            # принимает данные, не держит нить вечно (пинги идут каждые 15 с, для живого клиента запись не ждёт и секунды)
+            self.connection.settimeout(EVENTS_WRITE_TIMEOUT)
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("X-Accel-Buffering", "no")     # Cache-Control: no-cache добавляет end_headers
+            self.end_headers()
+            self.wfile.flush()
+            checked = time.monotonic()
+            while True:
+                ev = sub.get(min(15, EVENTS_RECHECK))      # не дольше срока проверки сессии; пинг — при каждом пустом круге
+                if time.monotonic() - checked >= EVENTS_RECHECK:     # вышел, сессия истекла, отключили, убрали из проекта
+                    checked = time.monotonic()
+                    who = HUB.session_user(token)
+                    if not who or HUB.role_of(who, pid) is None:
+                        break
+                if ev is None:
+                    if sub.closed:                 # проект удалён или доступ закрыт, очередь выбрана
+                        break
+                    chunk = b": ping\n\n"
+                else:
+                    chunk = b"data: " + json.dumps(ev).encode("ascii") + b"\n\n"
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except OSError:                            # BrokenPipe, ConnectionReset, таймаут записи: клиент ушёл
+            pass
+        finally:
+            sub.close()
+
+    def _hub_post(self, path, req):
+        u = self._who()
+        ip, ua = self._client_ip(), self.headers.get("User-Agent") or ""
+        if path in ("/api/hub/login", "/api/hub/register"):
+            if path == "/api/hub/login":
+                token, user = HUB.login(req.get("login"), req.get("password"), ip, ua)
+            else:
+                token, user = HUB.register(req.get("invite"), req.get("login"), req.get("name"), req.get("password"), ip, ua)
+            return self._json(200, {"user": user}, {"Set-Cookie": self._session_cookie(token, 2592000)})
+        if path == "/api/hub/logout":
+            HUB.logout(self._session_token())
+            return self._json(200, {"ok": True}, {"Set-Cookie": self._session_cookie("", 0)})
+        if path == "/api/hub/password":
+            HUB.change_password(u, req.get("old"), req.get("new"), keep_token=self._session_token())   # остальные входы гасятся
+            return self._json(200, {"ok": True})
+        if path == "/api/hub/invites":
+            return self._json(200, {"code": HUB.create_invite(u)})
+        if path.startswith("/api/hub/users/"):
+            bad = set(req) - {"disabled", "admin", "name"}
+            if bad:
+                raise hubmod.HubError(400, "нельзя менять поля: " + ", ".join(sorted(map(str, bad))))
+            return self._json(200, {"user": HUB.update_user(u, unquote(path[len("/api/hub/users/"):]), **req)})
+        if path == "/api/hub/projects":
+            return self._json(200, HUB.create_project(u, req.get("name"), req.get("project")))
+        m = HUB_PROJECT_RE.fullmatch(path)
+        if not m:
+            return self._json(404, {"error": "no such method"})
+        pid, rest = unquote(m.group(1)), m.group(2) or ""
+        if rest == "":
+            return self._json(200, {"name": HUB.rename_project(u, pid, req.get("name"))})
+        if rest == "delete":
+            HUB.delete_project(u, pid)
+            return self._json(200, {"ok": True})
+        if rest == "push":
+            return self._json(200, HUB.push(u, pid, req.get("base_rev"), req.get("sections"), req.get("client")))
+        if rest == "members":
+            if "role" not in req:                  # без роли «убрать» не выводим: пропуск поля не должен удалять человека
+                raise hubmod.HubError(400, "укажите role: owner, editor, viewer или null")
+            return self._json(200, {"members": HUB.set_member(u, pid, req.get("login"), req["role"])})
+        if rest == "presence":
+            HUB.presence(u, pid, req.get("client"), req.get("cursor"), req.get("layer"), req.get("sel"))
+            return self._json(200, {"ok": True})
+        if rest == "comments":
+            return self._json(200, {"comment": HUB.add_comment(u, pid, req.get("text"), req.get("anchor"))})
+        cm = re.fullmatch(r"comments/([^/]+)(?:/(reply|delete))?", rest)
+        if cm:
+            cid, act = unquote(cm.group(1)), cm.group(2)
+            if act == "reply":
+                return self._json(200, {"comment": HUB.reply(u, pid, cid, req.get("text"))})
+            if act == "delete":
+                HUB.delete_comment(u, pid, cid)
+                return self._json(200, {"ok": True})
+            return self._json(200, {"comment": HUB.update_comment(u, pid, cid, req.get("text"), req.get("resolved"))})
+        hm = re.fullmatch(r"history/([^/]+)/restore", rest)
+        if hm:
+            rev = unquote(hm.group(1))
+            if not (rev.isascii() and rev.isdecimal()):
+                raise hubmod.HubError(400, "некорректный номер версии")
+            return self._json(200, HUB.restore(u, pid, int(rev)))
+        return self._json(404, {"error": "no such method"})
+
     def _log_fail(self, e):
         """Причина сбоя — в журнал сервера (stderr), клиенту она не уходит."""
         if sys.stderr:
@@ -1277,14 +1540,39 @@ class Handler(SimpleHTTPRequestHandler):
             return self._deny()
         if self._gate("POST"):
             return
+        big = False
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+            big = bool(HUB) and n > MAX_BODY
+        except ValueError:
+            pass
+        if big:                                          # тело до 400 МБ читается в память: одновременно их принимается немного
+            if not BIG_BODY.acquire(blocking=False):
+                return self._json(503, {"error": "сервер занят другой большой записью: повторите через минуту"})
+        try:
+            return self._post()
+        finally:
+            if big:
+                BIG_BODY.release()
+
+    def _post(self):
         try:
             n = int(self.headers.get("Content-Length") or 0)
             limit = body_limit(self.path)
             if not 0 <= n <= limit:
                 return self._json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
-            if TOKEN and self.path == "/api/login":
+            if HUB:
+                route = self.path.split("?")[0]
+                if route.startswith("/api/hub/"):
+                    return self._hub("POST", route, n)
+                if route == "/api/project":
+                    return self._json(403, {"error": LOCAL_PROJECTS_OFF})
+                # остальная запись тоже только JSON (кроме сырого DXF): форма с другого сайта так тело не отправит
+                if route != "/api/import/dxf" and self.headers.get_content_type() != "application/json":
+                    return self._json(415, {"error": "ожидается Content-Type: application/json"})
+            if TOKEN and not HUB and self.path == "/api/login":
                 return self._login(n)
-            if TOKEN and self.path == "/api/logout":
+            if TOKEN and not HUB and self.path == "/api/logout":
                 return self._logout()
             if self.path == "/api/import/files":
                 import base64
@@ -1370,6 +1658,7 @@ class Handler(SimpleHTTPRequestHandler):
                                                styles=ogd_all.portal_styles(CACHE / "gisogd"),
                                                codes=req.get("codes"), where=req.get("where"),
                                                redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
+                    OGD_OWNER["login"] = (self._who() or {}).get("login")
                 return self._json(200, OGD_JOB[0].state)
             if self.path == "/api/ogd_all/label_angles":
                 # подписи слоя, загруженного до v0.63, — угол вдоль границы своей папки
@@ -1413,6 +1702,8 @@ class Handler(SimpleHTTPRequestHandler):
                 bbox = ogd_all.sheet_bbox_wgs(sheet) if sheet else [float(v) for v in req["bbox"]]
                 return self._json(200, {"counts": ogd_all.scan(bbox, CACHE / "gisogd", ogd_catalog())})
             if self.path == "/api/ogd_all/cancel":
+                if not self._ogd_may():
+                    return self._json(403, {"error": "выгрузку запустил другой пользователь"})
                 if OGD_JOB:
                     OGD_JOB[0].cancel.set()
                 return self._json(200, {"ok": True})
@@ -1456,7 +1747,10 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _read_obj(self, n):
         """Тело POST — JSON-объект; список, число или строка вместо него — отказ 400 (ValueError → ответ с причиной)."""
-        req = json.loads(self.rfile.read(n) or b"{}")
+        try:
+            req = json.loads(self.rfile.read(n) or b"{}")
+        except RecursionError:                           # вложенность в тысячи уровней: обычный отказ, а не 500
+            raise ValueError("слишком глубокая вложенность JSON") from None
         if not isinstance(req, dict):
             raise ValueError("тело запроса должно быть JSON-объектом")
         return req
@@ -1541,7 +1835,12 @@ def main(argv=None):
     """Запуск: свободный порт от 8650, прежняя версия на порту заменяется, окно браузера открывается само."""
     argv = sys.argv[1:] if argv is None else argv
     import webbrowser
-    port = int(argv[0]) if argv else int(os.environ.get("GRADO2_PORT") or 8650)
+    global HUB
+    if hub_enabled(argv):
+        HUB = open_hub()
+        print(f"ГРАДО 2: совместный режим, хранилище {HUB.root}")
+    nums = [a for a in argv if not a.startswith("--")]
+    port = int(nums[0]) if nums else int(os.environ.get("GRADO2_PORT") or 8650)
     import signal
     import time
     for p in range(port, port + 20):

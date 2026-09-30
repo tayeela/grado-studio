@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.0: collaboration (hub mode).** Off by default: the owner's Mac and grado.tailink.tech
+  work as before until the server runs with `GRADO2_HUB=1` (or `--hub`). Hub mode: accounts with invite-only
+  registration (`apps/grado2/hub.py`, scrypt, sessions, login throttling, admin CLI `hub.py adduser|passwd|invite|list`),
+  projects stored on the server with roles owner/editor/viewer, live sync of several people in one project
+  (sections `meta` and `layer:<key>`, section revisions, server-sent events, 3-way merge by stable object ids `_uid`
+  in `web/collab.js`), presence (avatars, cursors with names, outlines of what others selected, dots on layers),
+  comments pinned to the map or an object with replies and «решено», version history with restore, activity feed,
+  admin window for users and invites (`web/hub.js`, `hub.css`). Security review of the new backend: throttling
+  race, CLI vs server file sync, password change drops other sessions, storage quotas, SSE caps, strict JSON-only
+  POST and Sec-Fetch-Site checks in hub mode. Tests: `test_hub.py`, `HubHttp` in `test_server.py`, `collab_test.js`,
+  two-browser e2e `tests/e2e/collab_scenarios.mjs`. Contract `docs/grado2-collab-spec.md`, owner guide
+  `docs/grado2-collab.md`.
 - **2026-09-30, ГРАДО 2 v0.83.7: thin parcel lines inside the territory on sheet 9.** Owner: make the parcel
   boundaries inside the territory as thin as outside. Blue lines now have the same width as the light ones outside
   (1 instead of 2.6), legend sample 0.35 mm. Rules first.

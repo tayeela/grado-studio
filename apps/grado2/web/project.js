@@ -27,9 +27,10 @@ function migrate(p) {
 window.migrateProject = migrate;
 
 function markDirty() {
-  if (PROJ.loading) return;
+  if (PROJ.loading || window.Collab?.applying) return;           // чужие правки, пришедшие по сети, — не наши правки (collab.js)
   if (PROJ.tick === PROJ.autoTick) PROJ.pendingSince = Date.now();
   PROJ.tick++; PROJ.lastEdit = Date.now(); if (!PROJ.dirty) { PROJ.dirty = true; syncProjTitle(); }
+  window.Collab?.touched();                                      // совместный режим: отправка на сервер с паузой; в локальном — пусто
 }
 function syncProjTitle() {
   const b = $("bProj"); if (!b) return;
@@ -133,7 +134,14 @@ function applyProject(p) {
     : `В проекте ${plural(STALE_OGD.length, ["слой", "слоя", "слоёв"])} ГИС ОГД / ЕГКО, выгруженных до v0.32: они стоят на ~7,7 м в стороне. Окно «Данные» → «Выгрузить заново».`); }
 }
 
+// совместный режим: «Сохранить» и Ctrl+S — немедленная отправка правок на сервер (проекты лежат на сервере, не в папке)
+async function hubSave() {
+  if (!window.Collab?.on || !Collab.pid) return toast("Откройте совместный проект: окно «Проекты».");
+  if (Collab.role === "viewer") return toast("Только просмотр: попросите владельца дать права на правку.");
+  toast(await Collab.flush() ? "Сохранено на сервере" : "Нет связи с сервером: правки сохранятся, когда связь вернётся.");
+}
 async function saveProject(name) {
+  if (window.HUB_MODE) return hubSave();
   name = (name ?? PROJ.name ?? "").trim();
   if (!name) return openProjects(true);
   // другое название, чем у своего файла, и такой проект в папке уже есть (регистр и «ё» не различаются файловой
@@ -196,6 +204,7 @@ function confirmLoss(what) {
    но не реже раза в 15 с при непрерывной работе; одно сохранение за раз */
 let autoBusy = false, autoAgain = false;
 async function autosave() {
+  if (window.HUB_MODE) return;                     // совместный режим: локального автосохранения нет, правки уходят через Collab
   if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
   autoBusy = true; const tick = PROJ.tick;
   try { const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
@@ -220,7 +229,7 @@ function openProjects(focusName) {
   winOpen("wProjects", true); $("projName").value = PROJ.name || ""; renderProjects();
   if (focusName) { $("projName").focus(); $("projName").select(); toast("Назовите проект, чтобы сохранить его."); }
 }
-$("bProj").onclick = () => openProjects(false);
+$("bProj").onclick = () => { if (!window.HUB_MODE) return openProjects(false); (window.HubUI?.openProjects || window.HubUI?.projects)?.(); };   // в совместном режиме — окно хаба, не локальная папка
 $("projSave").onclick = () => saveProject($("projName").value);
 $("projName").addEventListener("keydown", e => { if (e.key === "Enter") saveProject($("projName").value); });
 $("projNew").onclick = newProject;
@@ -235,11 +244,22 @@ window.openProjectFile = async f => {
   try { const p = JSON.parse(await f.text()); p.name ||= f.name.replace(/\.grado2$/i, ""); applyProject(p); PROJ.file = null; PROJ.dirty = true; syncProjTitle(); toast(`Открыт файл «${f.name}». Сохраните проект, чтобы он появился в папке проектов.`); winOpen("wProjects", false); }
   catch (err) { toast("Файл не открылся: " + err.message); }
 };
-addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); saveProject(); } });
+addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); saveProject(); } });   // saveProject сам уходит в hubSave в совместном режиме
 
 /* ---------- старт: восстановить последнюю работу ---------- */
 window.markDirty = markDirty;
+// Режим (обычный или совместный) узнаётся первым делом: на общем сервере без входа отвечают только /api/health и страницы,
+// поэтому startApp (app.js) ждёт hubGate — после входа идут остальные запросы; вход и открытие проекта ведёт hub.js
+let modeP = null;
+window.hubGate = () => modeP ||= (async () => {
+  try { window.HUB_MODE = !!(await (await fetch("/api/health")).json()).hub; } catch { window.HUB_MODE = false; }
+  window.dispatchEvent(new Event("grado:mode"));       // hub.js ждёт режим (вход, окна, движок Collab); один раз за страницу
+  if (window.HUB_MODE) await window.HubUI?.requireSession();
+  window.HUB_IN = true;
+})();
 window.projectStart = async () => {
+  await window.hubGate();
+  if (window.HUB_MODE) { PROJ.loading = false; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle(); window.HubUI?.enter?.(); return; }
   try {
     const list = await (await fetch("/api/projects")).json();       // без автосохранения — без лишнего запроса и 404
     const p = list.autosave ? await (await fetch("/api/project?autosave=1")).json() : null;
