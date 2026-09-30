@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.1: street labels off the territory boundary, readable number leaders.** Owner: street
+  names still sit on the boundary; leaders unreadable, unclear which number belongs to which parcel, circles and
+  leaders cross. Street labels: the boundary is checked against the rotated label box (`_obox_hit`), candidates are
+  every straight run of the street with shifts along it, then beside the road on both sides; a non-obligatory street
+  without a clean spot is not labelled. Numbers: the albums pass the largest part of each document/parcel (`zone`);
+  print finds its deepest point (`_pole`), skips points already covered by labels, and other labels may not cover
+  these points; the circle goes inside only if it fits, else on a leader 0.5 mm with a white halo and a 1 mm dot;
+  circles stay off other parcels and other dots, leaders do not cross each other, other circles or labels
+  (`_seg_cross`); graded fallbacks keep every number visible. Rules first.
 - **2026-09-30, ГРАДО 2 v0.83.0: sheet 6 like «Хатминки», circled numbers on sheets 7–9.** Owner: callouts unreadable,
   text competes; the Генплан sheet is wrong — zone boundaries must be on top, colours wrong. Analysed the owner's
   «Хатминки» Генплан sheet (same Новая Москва zones): zone colours sampled from its map (общественно-жилая #ff9062,

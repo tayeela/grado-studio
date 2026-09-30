@@ -282,6 +282,60 @@ def _in_ring(x, y, ring):
     return inside
 
 
+def _obox_hit(cx, cy, ang, hw, hh, segs):
+    """Повёрнутая коробка подписи (центр, угол, полуширина, полувысота) задевает какой-нибудь отрезок: подпись улицы
+    вдоль наклонной дороги проверяется по своему контуру, а не по описанному прямоугольнику."""
+    ca, sa, r = math.cos(ang), math.sin(ang), hw + hh
+    for (x1, y1), (x2, y2) in segs:
+        if max(x1, x2) < cx - r or min(x1, x2) > cx + r or max(y1, y2) < cy - r or min(y1, y2) > cy + r:
+            continue
+        p = ((x1 - cx) * ca + (y1 - cy) * sa, -(x1 - cx) * sa + (y1 - cy) * ca)
+        q = ((x2 - cx) * ca + (y2 - cy) * sa, -(x2 - cx) * sa + (y2 - cy) * ca)
+        if _seg_box(p, q, (-hw, -hh, hw, hh)):
+            return True
+    return False
+
+
+def _seg_cross(a, b, c, d):
+    """Отрезки a–b и c–d пересекаются (касание концами не считается)."""
+    def s(p, q, r):
+        return (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+    return s(c, d, a) * s(c, d, b) < 0 and s(a, b, c) * s(a, b, d) < 0
+
+
+def _pole(rings, clip):
+    """Самая глубокая точка фигуры (мм листа) внутри рамки и расстояние от неё до края: туда ставится точка выноски
+    или номер, а не на узкий край участка. rings — внешнее кольцо и дыры."""
+    outer = rings[0]
+    edges = [e for r in rings for e in zip(r, r[1:] + r[:1])]
+    x0, y0 = max(min(p[0] for p in outer), clip[0]), max(min(p[1] for p in outer), clip[1])
+    x1, y1 = min(max(p[0] for p in outer), clip[2]), min(max(p[1] for p in outer), clip[3])
+    if x1 <= x0 or y1 <= y0:
+        return None
+
+    def depth(x, y):
+        if not _in_ring(x, y, outer) or any(_in_ring(x, y, h) for h in rings[1:]):
+            return -1.0
+        best = 9e9
+        for (ax, ay), (bx, by) in edges:
+            vx, vy = bx - ax, by - ay
+            t = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy or 1)))
+            best = min(best, math.hypot(x - ax - vx * t, y - ay - vy * t))
+        return best
+    step = max(x1 - x0, y1 - y0) / 32
+    grid = sorted(((depth(x0 + (i + .5) * step, y0 + (j + .5) * step), x0 + (i + .5) * step, y0 + (j + .5) * step)
+                   for i in range(int((x1 - x0) / step) + 1) for j in range(int((y1 - y0) / step) + 1)), reverse=True)
+    if not grid or grid[0][0] <= 0:
+        return []
+    best = grid[0]
+    for _ in range(2):                                              # уточнение вокруг лучшей точки
+        step /= 4
+        best = max([best] + [(depth(best[1] + i * step, best[2] + j * step), best[1] + i * step, best[2] + j * step)
+                             for i in range(-4, 5) for j in range(-4, 5)])
+    # запасные точки — на случай, если лучшая закрыта подписью; по убыванию глубины
+    return [(best[1], best[2], best[0])] + [(x, y, d) for d, x, y in grid[1:60] if d > 0]
+
+
 def _ring_centroid(ring):
     """Центр тяжести кольца (мм листа) и его площадь: подпись встаёт в середину фигуры, а не в среднее её вершин
     (у извилистой границы округа вершины скучены по краю)."""
@@ -539,8 +593,7 @@ class SketchMapFrame(Frame):
                             # подпись на нём не пересекает поперечные улицы; одно название — один раз
                             keys = [(round(q[0], 6), round(q[1], 6)) for q in line]
                             for d, mx, my, ang in _straight_runs(pts, [junctions.get(k, 0) > 1 for k in keys]):
-                                if f.get("must"):
-                                    runs.setdefault(f["label"], []).append((d, mx, my, ang, f))   # запасные места обязательных улиц
+                                runs.setdefault(f["label"], []).append((d, mx, my, ang, f))   # запасные места подписи улицы
                                 if not (rect[0] < mx < rect[0] + rect[2] and rect[1] < my < rect[1] + rect[3]):
                                     continue
                                 if d > along.get(f["label"], (0,))[0]:
@@ -596,11 +649,30 @@ class SketchMapFrame(Frame):
                     pts = [tr.mm(*p[:2]) for p in r]
                     tsegs.extend(zip(pts, pts[1:]))
 
-        def take(box, avoid=False):
+        # номера в кружках (листы 7–9): точка выноски — в глубине своего участка; кружок не закрывает чужие точки,
+        # не стоит на чужом участке, линии выносок не пересекают друг друга и чужие подписи (владелец 30.09.2026)
+        marks, clip = {}, (rx, ry, rx + rw, ry + rh)
+        for x_, y_, _t, _l, f_, *_m in labels:
+            if f_.get("circle"):
+                rings_ = [[tr.mm(*p[:2]) for p in r] for r in f_["zone"]] if f_.get("zone") else None
+                a_ = rings_ and _pole(rings_, clip)
+                marks[id(f_)] = (a_[0][0], a_[0][1], a_[0][2], rings_[0], a_) if a_ else (x_, y_ + float(f_.get("ldy") or 0), 0.0, None, [])
+
+        boxes, leads = [], []                                           # все занятые места и линии выносок
+
+        def take(box, avoid=False, ob=None, own=None):
+            # ob — повёрнутая коробка подписи улицы (центр, угол, полуразмеры): граница территории проверяется по ней;
+            # подписи не закрывают точки выносок номеров (own — свой номер)
+            if avoid and any(k_ != own and box[0] - 1 < m[0] < box[2] + 1 and box[1] - 1 < m[1] < box[3] + 1 for k_, m in marks.items()):
+                return False
             if avoid and tsegs:
-                b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
-                if any(_seg_box(p, q, b) for p, q in tsegs):
-                    return False
+                if ob:
+                    if _obox_hit(ob[0], ob[1], ob[2], ob[3] + tpad, ob[4] + tpad, tsegs):
+                        return False
+                else:
+                    b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
+                    if any(_seg_box(p, q, b) for p, q in tsegs):
+                        return False
             cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
                      for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
             if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
@@ -608,6 +680,7 @@ class SketchMapFrame(Frame):
                 return False
             for c in cells:
                 grid.setdefault(c, []).append(box)
+            boxes.append(box)
             return True
 
         callout = self._callout(sh, tr, rect) if sh.get("callout") and sh.get("territory") else None
@@ -645,7 +718,7 @@ class SketchMapFrame(Frame):
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for t_, rr in runs.items():                                     # обязательная улица с участками только у края рамки
-            if t_ not in along:
+            if t_ not in along and rr[0][4].get("must"):
                 b = max(rr, key=lambda r: r[0])
                 along[t_] = (b[0], b[1], b[2], b[3], b[4].get("ls"), b[4])
         for text, (d, x, y, ang, ls, af) in sorted(along.items(), key=lambda t: -t[1][0]):
@@ -654,27 +727,35 @@ class SketchMapFrame(Frame):
             tw = _text_w(text, af.get("lf"), ls)
             if d < tw * 1.1 and not af.get("must"):
                 continue                                                # подпись не влезает в прямой участок улицы — улица мала, не подписывается
-            # обязательная улица (правила подписей: «ул. Придорожная») — и на коротком участке, строго по его направлению;
-            # если лучший участок занят или у края рамки — следующие прямые участки по убыванию длины
-            cands = [(d, x, y, ang)]
-            if af.get("must"):                                          # сдвиг вдоль прямого участка — чтобы войти в рамку
-                # сначала участки, где подпись влезает целиком, ближе к домам этой улицы; затем остальные — длинные раньше
-                hx, hy = tr.mm(*af["mustAt"]) if af.get("mustAt") else (x, y)
-                order = sorted(runs.get(text, []), key=lambda r: (r[0] < tw * 1.1, math.hypot(r[1] - hx, r[2] - hy) if r[0] >= tw * 1.1 else -r[0]))
-                def shifts(rd, rx0, ry0, ra):                           # ближе к домам, не сходя с прямого участка
-                    m = max(0.0, (rd - tw) / 2)
-                    t0 = max(-m, min(m, (hx - rx0) * math.cos(ra) + (hy - ry0) * math.sin(ra)))
-                    return [t0] + [k * m / 3 for k in (0, -3, -2, -1, 1, 2, 3)]
-                cands = [(rd, rx0 + math.cos(ra) * t, ry0 + math.sin(ra) * t, ra)
-                         for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)]
-            for _d, x, y, ang in cands:
+            # места подписи — прямые участки улицы: сначала на самой дороге, затем рядом с ней вдоль неё; подпись не
+            # заходит на границу территории (правила подписей, владелец 30.09.2026). Обязательная улица («ул. Придорожная»)
+            # подписывается и на коротком участке — ближе к своим домам; если чистого места нет, последний проход — без
+            # проверки границы. Необязательная улица без чистого места не подписывается.
+            hx, hy = tr.mm(*af["mustAt"]) if af.get("mustAt") else (None, None)
+            rl = runs.get(text) or [(d, x, y, ang, af)]
+            if af.get("must"):
+                order = sorted(rl, key=lambda r: (r[0] < tw * 1.1, math.hypot(r[1] - hx, r[2] - hy) if hx is not None and r[0] >= tw * 1.1 else -r[0]))
+            else:
+                order = sorted((r for r in rl if r[0] >= tw * 1.1), key=lambda r: -r[0])
+
+            def shifts(rd, rx0, ry0, ra):                               # сдвиги вдоль прямого участка, не сходя с него
+                m = max(0.0, (rd - tw) / 2)
+                ts = [0.0, -m / 2, m / 2, -m, m]
+                if hx is not None:
+                    ts = [max(-m, min(m, (hx - rx0) * math.cos(ra) + (hy - ry0) * math.sin(ra)))] + [k * m / 3 for k in (0, -3, -2, -1, 1, 2, 3)]
+                return ts
+            off = ls * .95 + tpad
+            cands = [(av, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
+                     for av in ((True, False) if af.get("must") else (True,)) for o in (0.0, off, -off)
+                     for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)]
+            for av, x, y, ang in cands:
                 if ang > math.pi / 2 or ang < -math.pi / 2:
                     ang += math.pi                                      # не вверх ногами
                 ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
                 ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
                 if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
                     continue                                            # подпись улицы — целиком в рамке
-                if take((x - ex, y - ey, x + ex, y + ey)):
+                if take((x - ex, y - ey, x + ex, y + ey), avoid=av, ob=(x, y, ang, tw / 2, ls * .6)):
                     break
             else:
                 continue
@@ -684,8 +765,40 @@ class SketchMapFrame(Frame):
         # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
         # рядом внутри своего контура (названия СНТ не пропадают из-за подписи улицы)
         labels.sort(key=lambda t: -(t[6] if len(t) > 6 else 0))
+        def free(f, cx, cy, cr, ax, ay, lvl):
+            others = [m for k_, m in marks.items() if k_ != id(f)]
+            if any(math.hypot(o[0] - cx, o[1] - cy) < cr + 1.5 for o in others):
+                return False
+            if lvl >= 3 and any(o[3] and _in_ring(cx, cy, o[3]) for o in others):
+                return False
+            box = (cx - cr - .3, cy - cr - .3, cx + cr + .3, cy + cr + .3)
+            if any(_seg_box(p, q, box) for p, q in leads):
+                return False
+            d_ = math.hypot(ax - cx, ay - cy)
+            if d_ > cr + .5:
+                s_ = (cx + (ax - cx) / d_ * cr, cy + (ay - cy) / d_ * cr)
+                if any(_seg_cross(s_, (ax, ay), p, q) for p, q in leads):
+                    return False
+                if lvl >= 2 and any(_seg_box(s_, (ax, ay), (b[0] + .3, b[1] + .3, b[2] - .3, b[3] - .3)) for b in boxes):
+                    return False
+                for o in others:                                        # линия не проходит по чужой точке (общая точка — можно)
+                    if math.hypot(o[0] - ax, o[1] - ay) < 2:
+                        continue
+                    vx, vy = ax - s_[0], ay - s_[1]
+                    t = max(0.0, min(1.0, ((o[0] - s_[0]) * vx + (o[1] - s_[1]) * vy) / (vx * vx + vy * vy or 1)))
+                    if math.hypot(o[0] - s_[0] - vx * t, o[1] - s_[1] - vy * t) < 1.5:
+                        return False
+            return True
+
         for x, y, text, ls, f, *more in labels:
             ring = more[0] if more else None
+            if f.get("circle"):
+                mk = marks[id(f)]
+                for c_ in mk[4]:                                        # точка выноски — не под уже поставленной подписью
+                    if not any(b[0] - .5 < c_[0] < b[2] + .5 and b[1] - .5 < c_[1] < b[3] + .5 for b in boxes):
+                        mk = marks[id(f)] = (c_[0], c_[1], c_[2], mk[3], mk[4])
+                        break
+                x, y = mk[0], mk[1] + float(ls or 2.2) * .35 - float(f.get("ldy") or 0)   # кружок — на точке участка
             ls = float(ls or 2.2)
             y += float(f.get("ldy") or 0)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -702,16 +815,30 @@ class SketchMapFrame(Frame):
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 if ring else [])
             ax, ay = x, y + (len(lines) - 1) * lh / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
+            if f.get("circle"):
+                ax, ay = mk[0], mk[1]
+                inside = mk[2] >= cr + .8 if mk[3] else f.get("inside")     # кружок целиком помещается в свой участок
+            else:
+                inside = f.get("inside")
             if f.get("leader"):                                             # выноска: подпись рядом, тонкая линия к объекту
-                steps = ([(0, 0)] if f.get("inside") else []) + [(r * math.cos(a), r * math.sin(a)) for r in (9, 13, 18, 24, 32)
-                                                                  for a in [k * math.pi / 8 for k in (14, 2, 10, 6, 15, 1, 9, 7, 12, 4, 13, 3, 11, 5, 0, 8)]]
+                steps = ([(0, 0)] if inside else []) + [(r * math.cos(a), r * math.sin(a)) for r in (9, 13, 18, 24, 32, 42)
+                                                        for a in [k * math.pi / 8 for k in (14, 2, 10, 6, 15, 1, 9, 7, 12, 4, 13, 3, 11, 5, 0, 8)]]
+            # уровни попыток: у номеров 3 — строго (не на чужом участке), 2 — линия может задеть чужую подпись, 1 — только
+            # без пересечения выносок и кружков, 0 — только не поверх других подписей, −1 — на месте как есть (номер
+            # участка показывается всегда); у остальных подписей 1 — обычно, 0 — последняя, на месте как есть
+            if f.get("circle"):
+                tries = [(dx, dy, lvl) for lvl in (3, 2, 1, 0) for dx, dy in steps] + [(0, 0, -1)]
+            else:
+                tries = [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
             spot = None
-            for n, (dx, dy) in enumerate(steps + ([(0, 0)] if ring or f.get("leader") else [])):   # последняя попытка — на месте
+            for dx, dy, lvl in tries:
                 cx = min(max(x + dx, rx + bw / 2 + 1), rx + rw - bw / 2 - 1)
                 cy = min(max(y + dy, ry + up + 1), ry + rh - down - 1)
-                if ring and n < len(steps) and not _in_ring(cx, cy, ring):
+                if ring and lvl > 0 and not _in_ring(cx, cy, ring):
                     continue
-                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down), avoid=n < len(steps)):   # последняя попытка — как есть
+                if f.get("circle") and lvl > 0 and not free(f, cx, cy - ls * .35, cr, ax, ay, lvl):
+                    continue
+                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down), avoid=lvl > 0, own=id(f)) or lvl < 0:
                     spot = (cx, cy)
                     break
             if not spot:
@@ -724,14 +851,15 @@ class SketchMapFrame(Frame):
                 extra["halo_color"] = hex_to_rgb(f["lhc"])
             if f.get("circle"):                                             # кружок: центр — на высоте середины цифр
                 ccy = y - ls * .35
-                if math.hypot(x - ax, y - ay) > ls:
-                    lc = hex_to_rgb(f.get("lcol") or "#231f20")
+                lc = hex_to_rgb(f.get("lcol") or "#231f20")
+                if math.hypot(x - ax, ccy - ay) > cr + .5:                  # выноска: линия с белой обводкой и точка в участке
                     d_ = math.hypot(ax - x, ay - ccy) or 1
                     sx, sy = x + (ax - x) / d_ * cr, ccy + (ay - ccy) / d_ * cr
-                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.9, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
-                    out.append({"op": "path", "closed": False, "fill": None, "stroke": lc, "width": 0.35, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
-                    out.append({"op": "circle", "x": ax, "y": ay, "r": 0.7, "fill": lc, "stroke": (1, 1, 1), "width": 0.25})
-                out.append({"op": "circle", "x": x, "y": ccy, "r": cr, "fill": (1, 1, 1), "stroke": hex_to_rgb(f.get("lcol") or "#231f20"), "width": 0.35})
+                    leads.append(((sx, sy), (ax, ay)))
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 1.3, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": lc, "width": 0.5, "dash": None, "rings": [[(sx, sy), (ax, ay)]]})
+                    out.append({"op": "circle", "x": ax, "y": ay, "r": 1.0, "fill": lc, "stroke": (1, 1, 1), "width": 0.35})
+                out.append({"op": "circle", "x": x, "y": ccy, "r": cr, "fill": (1, 1, 1), "stroke": lc, "width": 0.5})
                 f = {**f, "lh": None}                                       # на белом кружке обводка не нужна
                 extra = {k: v for k, v in (("font_family", f.get("lf")),) if v}
             elif f.get("leader") and math.hypot(x - ax, y - ay) > ls:         # линия от края подписи к объекту и точка на объекте

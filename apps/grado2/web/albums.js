@@ -231,6 +231,10 @@ const ZONE_LINE = { 65: { lt: 64, color: "#2f7fd8" }, 66: { lt: 64, color: "#2e9
 const zouitCode = (key, p) => key === "gisogd.vodookhr" ? 16 : key === "gisogd.szz" ? (/расч/i.test(p["Вид зоны"] || "") ? 62 : /ориент/i.test(p["Вид зоны"] || "") ? 63 : 5) : ZOUIT_LGR[p["Вид зоны"]];
 
 const C_PALETTE = ["#f5a623", "#00c8e0", "#7b2d8e", "#f0503c", "#ff3fb4", "#2e9d4f", "#1565c0", "#8d6e63", "#ff8f00", "#00897b"];
+// самая большая часть (мульти)полигона — кольца для печати: там ищется точка выноски номера
+const bigRing = f => { const g = f?.geometry || f; if (!g) return undefined;
+  const ps = g.type === "MultiPolygon" ? g.coordinates : g.type === "Polygon" ? [g.coordinates] : [];
+  return ps.length ? ps.reduce((a, b) => m2(turf.polygon(b)) > m2(turf.polygon(a)) ? b : a) : undefined; };
 function conceptDocs(out, bb, groups) {
   // документы в рамке: номер на карте (жирный 10 мм с белым ореолом) и список в рамках цвета документа, ближние к
   // территории — первыми; groups: [{key, title, color (одна на группу) | palette, text(p) → строка списка}]
@@ -254,7 +258,8 @@ function conceptDocs(out, bb, groups) {
       // номер — 5 мм; внутри документа, если помещается, иначе рядом с выноской к нему (владелец 30.09.2026: цифры огромные
       // и непонятно, к чему относятся)
       const k2 = 1000 / (out.scale || 2000), big = m2(safe(() => inter(d.f, box)) || d.f) * k2 * k2 > 120;   // кружок ~6 мм помещается
-      pts.push({ g: d.at.geometry, nodot: true, leader: true, circle: true, inside: big, label: n, ls: 3.6, lf: "sans-bold", lcol: "#141414" });
+      pts.push({ g: d.at.geometry, nodot: true, leader: true, circle: true, inside: big, zone: bigRing(safe(() => inter(d.f, box)) || d.f),
+        label: n, ls: 3.6, lf: "sans-bold", lcol: "#141414" });
       return { text: `${n}. ${g.text(d.f.properties, d)}`, color };
     });
     lists.push({ title: g.title, items });
@@ -623,14 +628,14 @@ function conceptSheet(out, sheet, bb) {
       // номер — в глубине самой большой части участка (центр масс, если он внутри), а не на узком краю
       const big = x.geometry.type === "MultiPolygon" ? x.geometry.coordinates.map(c => turf.polygon(c)).reduce((a, b) => m2(b) > m2(a) ? b : a) : x;
       const cm = safe(() => turf.centerOfMass(big)), at = cm && safe(() => turf.booleanPointInPolygon(cm, big)) ? cm : safe(() => turf.pointOnFeature(big));
-      cards[cards.length - 1].at = at && { g: at.geometry, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 120 };
+      cards[cards.length - 1].at = at && { g: at.geometry, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 120, zone: bigRing(big) };
     });
     pl && out.layers.push({ title: "Кадастровые номера", features: marks });
     // участки территории пронумерованы, как в примере «Хатминки», — номер в карточке, на карте не показывается
     // (владелец 30.09.2026: «пронумеруй, но не отображай»); порядок — от большего участка к меньшему
     cards.sort((a, b) => b.area - a.area);
     // номер участка в синем кружке, как в «Хатминки»; сведения — в таблице по номеру (владелец 30.09.2026)
-    cards.forEach((c, i) => c.at && marks.push({ g: c.at.g, nodot: true, leader: true, circle: true, inside: c.at.inside,
+    cards.forEach((c, i) => c.at && marks.push({ g: c.at.g, nodot: true, leader: true, circle: true, inside: c.at.inside, zone: c.at.zone,
       label: String(i + 1), ls: 4.2, lf: "sans-bold", lcol: "#1f3fbf" }));
     // все участки — одной таблицей (карточки не помещались); номер — только в таблице, на схеме — кадастровый номер
     const val = (c, k) => (c.rows.find(r => r[0] === k) || [, "—"])[1];
