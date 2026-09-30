@@ -52,8 +52,13 @@ def _wrap(text, n):
     words, lines, cur = str(text or "").split(), [], ""
     for w in words:
         if cur and len(cur) + 1 + len(w) > n:
-            lines.append(cur)
-            cur = w
+            head, _, last = cur.rpartition(" ")
+            if head and len(last) <= 2:                  # короткий предлог или союз не висит в конце строки
+                lines.append(head)
+                cur = last + " " + w
+            else:
+                lines.append(cur)
+                cur = w
         else:
             cur = (cur + " " + w).strip()
     return lines + ([cur] if cur else [])
@@ -80,15 +85,15 @@ def _wrap_mm(text, family, size_mm, width):
     lines = []
     for para in str(text or "").split("\n"):
         cur = ""
-        for w in para.split():
+        for w in [w for w in para.replace("\t", " ").split(" ") if w]:   # неразрывный пробел (\xa0) держит слова вместе
             t = (cur + " " + w).strip()
-            if cur and _tw(t, family, size_mm) > width:
+            if cur and _tw(t.replace("\xa0", " "), family, size_mm) > width:
                 lines.append(cur)
                 cur = w
             else:
                 cur = t
         lines.append(cur)
-    return lines
+    return [ln.replace("\xa0", " ") for ln in lines]
 
 
 def _fit_pt(text, family, size_pt, width_mm, min_pt=12):
@@ -138,7 +143,7 @@ class PptKrtFrame(Frame):
             if place:
                 out.append(_text(24, yy + 5, 20, f"({place})", (1, 1, 1), "sans"))
             if m.get("date"):
-                out.append(_text(26, 268, 22, m["date"], (1, 1, 1), "sans-bold"))
+                out.append(_text(24, 268, 22, m["date"], (1, 1, 1), "sans-bold"))   # общий левый край с текстом
             return out
         hdr = _header()
         out.append({"op": "path", "closed": True, "fill": (0xF2 / 255,) * 3, "stroke": None, "width": 0, "dash": None,
@@ -203,9 +208,7 @@ class MapNoteFrame(Frame):
     def ops(self, ctx):
         x, y, _, _ = self.rect
         out, yy = [], y + 7.7
-        for n, block in enumerate(self.lines):
-            if n:
-                yy += 3.0                                              # район — отбит от округа
+        for n, block in enumerate(self.lines):                        # три строки с равным интервалом, как в образце (правило 11)
             for line in (block if isinstance(block, list) else _wrap(block, 25)):
                 out.append({**_text(x + 50, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
                 yy += 5.4
@@ -239,7 +242,7 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
         if lib and it.get("name"):
             # как на карте, но не крупнее, чем нужно для двух шаблонов на 8 мм знака — иначе знак сплошной
             n = float((lib.get("linetypes", {}).get(it["name"]) or {}).get("length") or 1)
-            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], min(0.25, w / (2.05 * n)), _rgb(it.get("stroke"), (1, 0, 0)), 0.3, lib))
+            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], min(0.25, w / (2.05 * n)), _rgb(it.get("stroke"), (1, 0, 0)), 0.3, lib))   # 0,25 — как на карте
         else:
             out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.45,
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
@@ -249,6 +252,13 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
     elif k == "flood":                                   # подтопление — знаки примера «Хатминки», засечки вниз
         from print_io import flood_ops
         out.extend(flood_ops([(x, y + h / 2 - .4), (x + w, y + h / 2 - .4)], int(it["code"]), _rgb(it.get("stroke"), (0.01, 0.51, 0.25)), side=1))
+    elif k == "num":                                    # номер участка в кружке с выноской, как на карте
+        c_ = _rgb(it.get("stroke"), (0.12, 0.25, 0.75))
+        r_, cx_, cy_ = 1.9, x + w - 2.1, y + h / 2
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": c_, "width": 0.4, "dash": None, "rings": [[(x + .8, cy_), (cx_ - r_, cy_)]]})
+        out.append({"op": "circle", "x": x + .8, "y": cy_, "r": 0.6, "fill": c_, "stroke": (1, 1, 1), "width": 0.2})
+        out.append({"op": "circle", "x": cx_, "y": cy_, "r": r_, "fill": (1, 1, 1), "stroke": c_, "width": 0.4})
+        out.append({**_text(cx_, cy_ + 0.95, 7, it.get("sample", "1"), c_, "sans-bold", "middle")})
     elif k == "text":
         out.append({**_text(x + w / 2, y + h, float(it.get("size", 10)), it.get("sample", ""), _rgb(it.get("color"), INK),
                             it.get("family", "sans-bold"), "middle"), **({"underline": True} if it.get("underline") else {})})
@@ -281,6 +291,9 @@ class ConceptColumnFrame(Frame):
         if sh.get("cLegend"):
             out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "sans-bold"))
             yy += 8
+            # есть типы линий ЗОУИТ — все знаки легенды длиннее (13 мм): в 8 мм рисунок линии не различим (правило 11)
+            lt_ = any(it.get("kind") in ("lt", "flood") for g in sh["cLegend"] for it in g.get("items", []))
+            sw_, ind_ = (13.0, 15.5) if lt_ else (8.0, 10.5)
             for g in sh["cLegend"]:
                 if g.get("title"):
                     for line in _wrap_mm(g["title"], "sans", S10, w):          # длинный заголовок группы — в две строки
@@ -289,14 +302,14 @@ class ConceptColumnFrame(Frame):
                     yy += 2.1
                 for it in g.get("items", []):
                     note = it.get("kind") == "note"                    # пояснение под легендой (приаэродромная территория) — без знака
-                    lines = _wrap_mm(it.get("label", ""), "sans", S10, w if note else w - 10.5)
+                    lines = _wrap_mm(it.get("label", ""), "sans", S10, w if note else w - ind_)
                     if yy + (len(lines) - 1) * 4.2 > bottom - 2:
                         full = True
                         break
                     if not note:
-                        out.extend(concept_swatch(x, yy - 2.8, it, self.lib))
+                        out.extend(concept_swatch(x, yy - 2.8, it, self.lib, w=sw_))
                     for i, line in enumerate(lines):
-                        out.append(_text(x + (0 if note else 10.5), yy + i * 4.2, 10, line, INK2, "sans"))
+                        out.append(_text(x + (0 if note else ind_), yy + i * 4.2, 10, line, INK2, "sans"))
                     yy += 6.5 + (len(lines) - 1) * 4.2
                 if full:
                     break
@@ -347,8 +360,9 @@ class ConceptColumnFrame(Frame):
                     break
                 out.append({"op": "path", "closed": True, "fill": None, "stroke": _rgb(it.get("color"), INK), "width": 0.3, "dash": None,
                             "rings": [[(x, yy), (x + w, yy), (x + w, yy + bh), (x, yy + bh)]]})
+                cap_ = S10 * .7                                       # высота прописных: текст по центру рамки (правило 11)
                 for i, line in enumerate(lines):
-                    out.append(_text(x + 1.8, yy + 1.2 + S10 * .8 + i * 4.2, 10, line, INK2, "sans"))
+                    out.append(_text(x + 1.8, yy + (bh - (len(lines) - 1) * 4.2 - cap_) / 2 + cap_ + i * 4.2, 10, line, INK2, "sans"))
                 yy += bh + 3.2
         cards = sh.get("cCards")
         if cards and cards.get("items") and not full:
@@ -486,6 +500,10 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
                 tr = MapTransform(f.rect, f.sheet["center"], f.sheet["scale"])
                 pts.append(tr.mm(*sh["territory_lonlat"]))
             box = tuple(sh.get("calloutBox") or (187, 185, 47, 21))
+            # рамка — шире самой длинной строки на 3 мм с каждой стороны, по тому же центру (правило 11, лист 2)
+            need = max(_tw(t, "sans-bold" if i else "sans", 9 * PT) for i, t in enumerate(sh["callout"])) + 6
+            if need > box[2]:
+                box = (box[0] - (need - box[2]) / 2, box[1], need, box[3])
             frames.append(CalloutFrame(box, [(t, i > 0) for i, t in enumerate(sh["callout"])], pts))
     elif sh.get("kind") == "photos":
         from print_io import PhotoGridFrame

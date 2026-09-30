@@ -285,6 +285,7 @@ def _in_ring(x, y, ring):
 # места номера вокруг точки выноски: радиусы, мм (ближние — раньше) и направления через 15° (k × 15°, y вниз):
 # сначала диагонали, потом стороны, потом промежуточные
 LEAD_R = (7, 9, 11, 13, 15.5, 18, 21, 24, 28, 32, 42)
+MAP_PAD = 2.5                                                       # поле подписей от края карты, мм (правило 11)
 LEAD_K = (21, 15, 3, 9, 18, 6, 0, 12, 22, 20, 16, 14, 4, 2, 10, 8, 23, 19, 17, 13, 5, 1, 11, 7)
 
 
@@ -309,11 +310,15 @@ def _seg_cross(a, b, c, d):
     return s(c, d, a) * s(c, d, b) < 0 and s(a, b, c) * s(a, b, d) < 0
 
 
-def _pole(rings, clip):
+def _pole(rings, clip, extra=()):
     """Самая глубокая точка фигуры (мм листа) внутри рамки и расстояние от неё до края: туда ставится точка выноски
     или номер, а не на узкий край участка. rings — внешнее кольцо и дыры."""
     outer = rings[0]
     edges = [e for r in rings for e in zip(r, r[1:] + r[:1])]
+    if extra:                                                       # и граница территории: точка не на ней (правило 11)
+        bx0, by0 = min(p[0] for p in outer) - 5, min(p[1] for p in outer) - 5
+        bx1, by1 = max(p[0] for p in outer) + 5, max(p[1] for p in outer) + 5
+        edges += [(a, b) for a, b in extra if not (max(a[0], b[0]) < bx0 or min(a[0], b[0]) > bx1 or max(a[1], b[1]) < by0 or min(a[1], b[1]) > by1)]
     x0, y0 = max(min(p[0] for p in outer), clip[0]), max(min(p[1] for p in outer), clip[1])
     x1, y1 = min(max(p[0] for p in outer), clip[2]), min(max(p[1] for p in outer), clip[3])
     if x1 <= x0 or y1 <= y0:
@@ -523,6 +528,8 @@ class SketchMapFrame(Frame):
         tr = MapTransform(rect, sh["center"], sh["scale"])
         k = tr.k
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
+        roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
+        watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -558,6 +565,8 @@ class SketchMapFrame(Frame):
                     best = None                                                 # подпись — одна на объект: у самой большой части
                     for poly in parts:
                         rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
+                        if layer.get("key") == "egko.water":
+                            watersegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
                         if not rings:
                             continue
                         a = f.get("a")
@@ -585,6 +594,8 @@ class SketchMapFrame(Frame):
                         pts = [tr.mm(*p[:2]) for p in line]
                         if len(pts) < 2:
                             continue
+                        if layer.get("key") == "osm.roads":
+                            roadsegs.extend((a, b, str(f.get("label") or "")) for a, b in zip(pts, pts[1:]))
                         if f.get("nl"):
                             pass                                    # линия не рисуется, только подпись (улицы на снимке)
                         elif f.get("flood"):
@@ -670,14 +681,24 @@ class SketchMapFrame(Frame):
         for x_, y_, _t, _l, f_, *_m in labels:
             if f_.get("circle"):
                 rings_ = [[tr.mm(*p[:2]) for p in r] for r in f_["zone"]] if f_.get("zone") else None
-                a_ = rings_ and _pole(rings_, clip)
-                if f_.get("zone2") and (not a_ or a_[0][2] < .6):   # в территории — узкая кромка: точка в глубине всего участка
+                a_ = rings_ and _pole(rings_, clip, tsegs)
+                if f_.get("zone2") and (not a_ or a_[0][2] < 1.5):   # в территории — узкая кромка: точка в глубине всего участка
                     r2 = [[tr.mm(*p[:2]) for p in r] for r in f_["zone2"]]
-                    b_ = _pole(r2, clip)
+                    b_ = _pole(r2, clip, tsegs)
                     if b_ and b_[0][2] > (a_[0][2] if a_ else 0):
                         rings_, a_ = r2, b_
                 marks[id(f_)] = (a_[0][0], a_[0][1], a_[0][2], rings_[0], a_) if a_ else (x_, y_ + float(f_.get("ldy") or 0), 0.0, None, [])
 
+        # у каждого номера своя точка: совпадающая (ближе 2,5 мм к уже взятой) заменяется следующей по глубине точкой
+        # своего участка (лист 8: «выноски 9, 8, 10 сходятся в одну точку»)
+        seen_ = []
+        for k_, m_ in marks.items():
+            if any(math.hypot(m_[0] - p_[0], m_[1] - p_[1]) < 2.5 for p_ in seen_):
+                for c_ in m_[4]:
+                    if all(math.hypot(c_[0] - p_[0], c_[1] - p_[1]) >= 2.5 for p_ in seen_):
+                        m_ = marks[k_] = (c_[0], c_[1], c_[2], m_[3], m_[4])
+                        break
+            seen_.append(m_)
         boxes, leads = [], []                                           # все занятые места и линии выносок
 
         def take(box, avoid=False, ob=None, own=None):
@@ -725,15 +746,23 @@ class SketchMapFrame(Frame):
             ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
             # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём; подпись — целиком в рамке
             # сдвигаемые подписи (номера, деревни) обходят границу территории; последняя попытка — без этого условия
-            moves = [(dx, dy, True) for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4),
-                                                   (0, -8), (0, 8), (-10, 0), (10, 0))] + [(0, 0, False)] if pf.get("nudge") else [(0, 0, False)]
+            # сдвигаемые подписи (деревни, СНТ, улицы по адресам): сначала места без пересечения проездов, потом любые;
+            # поиск до 25 мм — обязательная подпись не пропадает, если рядом есть место (правило 11)
+            near_ = ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4), (0, -8), (0, 8), (-10, 0), (10, 0))
+            far_ = tuple((r * math.cos(a), r * math.sin(a)) for r in (14, 19, 25) for a in [k * math.pi / 6 for k in range(12)])
+            moves = ([(dx, dy, 2) for dx, dy in near_] + [(dx, dy, 1) for dx, dy in near_ + far_] + [(0, 0, 0)]) if pf.get("nudge") else [(0, 0, 0)]
             was = mem.get(("p", text))
             if was:
-                moves = [(was[0] - x, was[1] - y, True)] + moves
-            for dx, dy, av in moves:
-                if (x + dx - ex >= rx and x + dx + ex <= rx + rw and y + dy - ey >= ry and y + dy + ey <= ry + rh
-                        and take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey), avoid=av)):
-                    x, y = x + dx, y + dy
+                moves = [(was[0] - x, was[1] - y, 1)] + moves
+            M = MAP_PAD
+            for dx, dy, lv in moves:
+                cx_, cy_ = x + dx, y + dy
+                if not (cx_ - ex >= rx + M and cx_ + ex <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M):
+                    continue
+                if lv == 2 and _obox_hit(cx_, cy_, ang, tw / 2, ls * .45, [(a, b) for a, b, _n in roadsegs]):
+                    continue
+                if take((cx_ - ex, cy_ - ey, cx_ + ex, cy_ + ey), avoid=lv > 0):
+                    x, y = cx_, cy_
                     break
             else:
                 continue
@@ -780,8 +809,10 @@ class SketchMapFrame(Frame):
                 ang = (ang + math.pi / 2) % math.pi - math.pi / 2       # не вверх ногами: угол в пределах ±90°
                 ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
                 ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-                if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
-                    continue                                            # подпись улицы — целиком в рамке
+                if x - ex < rx + MAP_PAD or x + ex > rx + rw - MAP_PAD or y - ey < ry + MAP_PAD or y + ey > ry + rh - MAP_PAD:
+                    continue                                            # подпись улицы — целиком в рамке, с полем
+                if av and _obox_hit(x, y, ang, tw / 2, ls * .45, [(a, b) for a, b, n_ in roadsegs if n_ and n_ != text]):
+                    continue                                            # не поперёк другой названной улицы
                 if take((x - ex, y - ey, x + ex, y + ey), avoid=av, ob=(x, y, ang, tw / 2, ls * .6)):
                     break
             else:
@@ -823,7 +854,8 @@ class SketchMapFrame(Frame):
             if f.get("circle"):
                 mk = marks[id(f)]
                 for c_ in mk[4]:                                        # точка выноски — не под уже поставленной подписью
-                    if not any(b[0] - .5 < c_[0] < b[2] + .5 and b[1] - .5 < c_[1] < b[3] + .5 for b in boxes):
+                    if not any(b[0] - .5 < c_[0] < b[2] + .5 and b[1] - .5 < c_[1] < b[3] + .5 for b in boxes) and all(
+                            math.hypot(c_[0] - m2_[0], c_[1] - m2_[1]) >= 2.5 for k2_, m2_ in marks.items() if k2_ != id(f)):
                         mk = marks[id(f)] = (c_[0], c_[1], c_[2], mk[3], mk[4])
                         break
                 x, y = mk[0], mk[1] + float(ls or 2.2) * .35 - float(f.get("ldy") or 0)   # кружок — на точке участка
@@ -833,16 +865,29 @@ class SketchMapFrame(Frame):
                 continue
             lines = [ln[:40] for ln in str(text).split("\n")[:8]]         # подпись в несколько строк: номер и индекс зоны, коды ВРИ
             lh = ls * 1.23
-            y -= (len(lines) - 1) * lh / 2
+            # кегль строки: lss — множители (номер зоны Генплана и индекс крупнее на 15 %, правило 11)
+            sizes = [ls * float((f.get("lss") or [])[i] if i < len(f.get("lss") or []) else 1) for i in range(len(lines))]
+            offs = [0.0]
+            for i in range(1, len(lines)):
+                offs.append(offs[-1] + sizes[i] * 1.2)
+            if f.get("ul0") and ring:
+                # номер зоны Генплана — в самой глубокой точке видимой части зоны, не ближе 6 мм к краю карты и
+                # подальше от берегов; кусок зоны меньше подписи не подписывается (правило 11: «8 / 123» у края)
+                pl_ = _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6), watersegs)
+                need = max(_text_w(ln, f.get("lf"), sizes[i]) for i, ln in enumerate(lines)) / 2
+                if not pl_ or _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6))[0][2] < max(need * .8, (offs[-1] + sizes[0]) * .7):
+                    continue
+                x, y = pl_[0][0], pl_[0][1] + sizes[0] * .35
+            y -= offs[-1] / 2
             fams = f.get("lfs") or []
-            bw = max(_text_w(ln, (fams[i] if i < len(fams) and fams[i] else f.get("lf")), ls) for i, ln in enumerate(lines))
-            up, down = ls * 1.0, ls * .3 + (len(lines) - 1) * lh              # коробка подписи: y − up … y + down
+            bw = max(_text_w(ln, (fams[i] if i < len(fams) and fams[i] else f.get("lf")), sizes[i]) for i, ln in enumerate(lines))
+            up, down = sizes[0] * 1.0, sizes[-1] * .3 + offs[-1]              # коробка подписи: y − up … y + down
             if f.get("circle"):                                             # номер в кружке («Хатминки»): коробка — круг
                 cr = max(bw / 2 + ls * .25, ls * .62)
                 bw, up, down = cr * 2, ls * .35 + cr, cr - ls * .35
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 if ring else [])
-            ax, ay = x, y + (len(lines) - 1) * lh / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
+            ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
             if f.get("circle"):
                 ax, ay = mk[0], mk[1]
                 inside = mk[2] >= cr + .8 if mk[3] else f.get("inside")     # кружок целиком помещается в свой участок
@@ -865,16 +910,22 @@ class SketchMapFrame(Frame):
                 tries = near + [(dx, dy, lvl) for lvl in (1, 0) for dx, dy in steps] + [(0, 0, -1)]
             else:
                 was = mem.get(("a", str(text)))
-                tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
+                # названия территорий: сначала места без проездов под текстом (правило 11), потом любые в контуре
+                tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + ([(dx, dy, 2) for dx, dy in steps] if ring else []) \
+                    + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
             spot = None
             for dx, dy, lvl in tries:
-                cx = min(max(x + dx, rx + bw / 2 + 1), rx + rw - bw / 2 - 1)
-                cy = min(max(y + dy, ry + up + 1), ry + rh - down - 1)
+                cx = min(max(x + dx, rx + bw / 2 + MAP_PAD), rx + rw - bw / 2 - MAP_PAD)
+                cy = min(max(y + dy, ry + up + MAP_PAD), ry + rh - down - MAP_PAD)
                 if ring and lvl > 0 and not _in_ring(cx, cy, ring):
                     continue
                 if f.get("circle") and lvl > 0 and not free(f, cx, cy - ls * .35, cr, ax, ay, lvl):
                     continue
-                if take((cx - bw / 2, cy - up, cx + bw / 2, cy + down), avoid=lvl > 0, own=id(f)) or lvl < 0:
+                if not f.get("circle") and ring and lvl == 2 and any(
+                        _seg_box(a, b, (cx - bw / 2, cy - up, cx + bw / 2, cy + down)) for a, b, _n in roadsegs):
+                    continue
+                g_ = 1.0 if f.get("circle") and lvl > 0 else 0            # кружок — не ближе 1 мм к чужой подписи
+                if take((cx - bw / 2 - g_, cy - up - g_, cx + bw / 2 + g_, cy + down + g_), avoid=lvl > 0, own=id(f)) or lvl < 0:
                     spot = (cx, cy)
                     break
             if not spot:
@@ -930,7 +981,7 @@ class SketchMapFrame(Frame):
             for i, line in enumerate(lines):
                 fam = {"font_family": fams[i]} if i < len(fams) and fams[i] else {}
                 ul = {"underline": True} if i == 0 and f.get("ul0") else {}   # номер зоны Генплана — подчёркнут
-                out.append({"op": "text", "x": x, "y": y + i * lh, "size": ls, "text": line, "anchor": "middle",
+                out.append({"op": "text", "x": x, "y": y + offs[i], "size": sizes[i], "text": line, "anchor": "middle",
                             "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam, **ul})
         if callout:
             out.extend(callout[1])

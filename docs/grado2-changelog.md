@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.3: fixes after the multi-agent album review.** 10 Sonnet agents reviewed sheets 1–9
+  (8 lenses, 2 verifiers): 134 findings, 58 confirmed. Owner: keep the header image, sheet 6 and sheet 5 proposals
+  approved. Rules first (rule 11). Print: labels keep 2.5 mm from the map edge; obligatory moved labels search up to
+  25 mm (sheet 4 lost «д. Безобразово»); street labels do not cross other named OSM streets; territory names prefer
+  spots without driveways under the text; numbered-circle anchors keep off the territory boundary, never share a point
+  (sheet 8: 9/8/10 met in one dot), circles keep 1 mm from other labels; multi-line labels take per-line sizes
+  (`lss`); Genplan zone numbers sit at the deepest point of the visible zone away from the frame edge and water,
+  tiny pieces get no number. Albums: lakes (and wide river water) labelled along the axis of the water area, not of
+  its vertices, and never leaning past vertical; river labels from project data; legends only for what is in the
+  frame (ПМТ, АГР, Genplan zones in the sample order), index block «Индекс типа функционального назначения территории»
+  from the zones' own data, Genplan labels a third smaller with the index 15 % larger, zone edges not drawn along the
+  territory boundary, table widths; ZOUIT outlines smoothed (closing/opening 1.5 m, simplify 1.5 m); «минимальных»
+  spelled out; one wording «территории автодорог, улиц, местных проездов»; document titles cut at 128 chars by ГИС
+  ОГД get «…» and « — »; document layers under roads and buildings; sheet 9 legend has the numbered-circle sign and
+  «с/по» dates do not break. Legend: line-type swatches 13 mm when the sheet has ЗОУИТ lines. Column: text centred in
+  list boxes, equal corner-inscription spacing, callout box on sheet 2 as wide as its text, title date aligned,
+  short words do not hang at line ends.
 - **2026-09-30, ГРАДО 2 v0.84.2: labels stay in place across sheets of the same frame.** Owner: on sheets with the
   same frame and scale labels must be in exactly the same places so they do not jump when paging; «р. Моча» moved
   and vanished between sheets; «Калужское ш.» sat low; leader 12 on sheet 8 was illogically far. Print keeps a label
