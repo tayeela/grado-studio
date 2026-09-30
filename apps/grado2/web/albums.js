@@ -664,8 +664,10 @@ function conceptSheet(out, sheet, bb) {
   if (k === "ppt") {
     out.cLists = conceptDocs(out, bb, [{ key: "gisogd.ppt", title: "Проекты планировки территории", text: docLine },
       { key: "gisogd.pmt", title: "Проекты межевания территории", color: "#00d000", text: p => p.document_1 ? docLine(p) : ["Проект межевания территории", p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ") }]);
-    // легенда — только то, что попало в рамку (правила 7, 11)
+    // легенда и название листа — только то, что попало в рамку (правила 7, 11, 12)
     const has = key => (L(key)?.features || []).some(inFrame);
+    if (!has("gisogd.pmt")) out.title = String(out.title || sheet.title || "").replace(/\s+и\s+ПМТ(?=$|[\s,.»])/, "");
+    if (!has("gisogd.ppt")) out.title = String(out.title || sheet.title || "").replace(/ППТ\s+и\s+(?=ПМТ)/, "");
     out.cLegend = [bounds, { title: "Разработанная документация", items: [
       ...(has("gisogd.ppt") ? [{ kind: "fill", hatch: true, fill: "#222222", stroke: "#222222", angle: 135, label: "проекты планировки территории" }] : []),
       ...(has("gisogd.pmt") ? [{ kind: "fill", stroke: "#00d000", width: .5, label: "проекты межевания территории" }] : [])] }];

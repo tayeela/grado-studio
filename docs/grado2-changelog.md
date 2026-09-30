@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.5: sheet 7 title by content.** The same rule as for АГР on sheet 8: «…документацией ППТ и
+  ПМТ» loses «и ПМТ» when no ПМТ is in the frame (and «ППТ и» when no ППТ). Full album built on the test copy: PDF and
+  PPTX, 9 sheets each. Rules first.
 - **2026-09-30, ГРАДО 2 v0.84.4: titles by content, index in the zone swatch, uniform swatches, typography.** Owner:
   sheet 8 has only ГПЗУ — drop АГР from the names; sheet 6 — write the type index into the zone swatch instead of a
   separate list; legend swatches must be the same size on all sheets (sheets 5/6 differed, the boundary sample length
