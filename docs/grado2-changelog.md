@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.6: areas exactly as in AutoCAD and ЕГРН; sheet 9 table as in the customer's sheet.**
+  Owner: the area on the drawing and by НСПД must match; count areas the way AutoCAD and КУГИС do. `m2` is now the
+  exact polygon area of the vertices converted to МСК (AutoCAD computes a polyline area the same way), remembered per
+  geometry (WeakMap); the per-cell correction of v0.83.5 is gone. Album build on the test project: 6.5 s. Sheet 9
+  table: area from «Площадь уточнённая, м²» (47,2765 and 1,2415 га, as in the customer's sheet; «Площадь участка» was
+  the declared 47,2008), ownership kept as written (no lowercase). The owner's values are entered in the parcel
+  properties; a manual edit survives a НСПД reload. Checked against 57 parcels near КРТ 3141: large parcels come out
+  0.0013–0.0015 % smaller than their ЕГРН area, a steady scale difference between our МСК and the one НСПД used to
+  publish the geometry, not the formula (not calibrated: iron rule 3); small parcels scatter by rounding.
 - **2026-09-30, ГРАДО 2 v0.83.5: territory from cadastral numbers; areas in the МСК plane.** Owner sent the customer's
   sheet: the КРТ 3141 territory is parcels 50:27:0000000:126 (47,2765 га) and 77:22:0030223:315 (1,2415 га), 48,5180 га.
   New button «По участкам» next to «Нарисовать границу»: paste cadastral numbers (any separators), the territory becomes

@@ -34,28 +34,26 @@ const centroid = r => { let x = 0, y = 0; r.forEach(p => { x += p[0]; y += p[1];
 const polys = f => { const g = f?.geometry; return !g ? [] : g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []; };
 const ringsXY = f => polys(f).map(p => p[0].map(toXY));
 const splitParts = f => polys(f).map(c => turf.polygon(c));
-/* Площадь — в плоскости МСК, как в ЕГРН и в документах заказчика. turf.area считает на шаре и под Москвой занижает
-   площадь на ~0,46 % (КРТ 3141: 48,29 га вместо 48,5180 га по документу; владелец 30.09.2026). Точный пересчёт каждой
-   вершины в МСК в 30 раз медленнее, поэтому площадь на шаре умножается на поправку места: отношение площадей в МСК и
-   на шаре для малого квадрата в клетке 0,01° (поправка внутри клетки меняется меньше чем на 1e-5). */
-const M2K = new Map();
-function m2k(lon, lat) {
-  const x = Math.round(lon * 100) / 100, y = Math.round(lat * 100) / 100, key = x + "," + y;
-  let v = M2K.get(key);
-  if (v == null) {
-    const d = .002, sq = [[x, y], [x + d, y], [x + d, y + d], [x, y + d], [x, y]], q = sq.map(c => MSK.fromWgs(c));
-    let a = 0; for (let i = 0; i < 4; i++) a += q[i][0] * q[i + 1][1] - q[i + 1][0] * q[i][1];
-    v = Math.abs(a) / 2 / turf.area(turf.polygon([sq])); M2K.set(key, v);
-  }
-  return v;
+/* Площадь — в плоскости МСК, как её считают AutoCAD (площадь полилинии в координатах чертежа) и ЕГРН: формула
+   площади многоугольника по координатам вершин в МСК. turf.area считает на шаре и под Москвой занижает площадь на
+   ~0,46 % (КРТ 3141: 48,29 га вместо 48,5180 га по документу; владелец 30.09.2026: «считай так же точно, как в КАД»).
+   Пересчёт вершин в МСК дороже, поэтому площадь запоминается у геометрии (геометрии в программе не меняются на месте). */
+const M2C = new WeakMap();
+function planarArea(g) {
+  const ring = r => { let a = 0; const q = r.map(c => MSK.fromWgs(c)), x0 = q[0][0], y0 = q[0][1];
+    for (let k = 0; k < q.length - 1; k++) a += (q[k][0] - x0) * (q[k + 1][1] - y0) - (q[k + 1][0] - x0) * (q[k][1] - y0);
+    return Math.abs(a) / 2; };
+  const poly = rs => rs.reduce((s, r, i) => s + (i ? -1 : 1) * ring(r), 0);
+  return g.type === "Polygon" ? poly(g.coordinates) : g.type === "MultiPolygon" ? g.coordinates.reduce((s, p) => s + poly(p), 0)
+    : g.type === "GeometryCollection" ? g.geometries.reduce((s, x) => s + planarArea(x), 0) : 0;
 }
 const m2 = f => {
   if (!f) return 0;
   if (f.type === "FeatureCollection") return f.features.reduce((s, x) => s + m2(x), 0);
-  const a = turf.area(f), g = f.geometry || f; let c = g?.coordinates;
-  if (!a || !window.MSK || !c) return a;
-  while (Array.isArray(c[0])) c = c[0];
-  return a * m2k(c[0], c[1]);
+  const g = f.geometry || f; if (!g?.type) return 0;
+  if (!window.MSK) return turf.area(g);
+  let v = M2C.get(g); if (v == null) { v = planarArea(g); M2C.set(g, v); }
+  return v;
 };
 const safe = fn => { try { return fn(); } catch (e) { console.warn(e); return null; } };
 /* булевы операции Turf (polygon-clipping) изредка падают на почти совпадающих рёбрах соседних зон
@@ -1384,7 +1382,10 @@ const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoun
   wData: [L, 96, 340, Math.min(560, h - 150)], wGraph: [L, Math.round(h * .38), Math.max(560, mw), Math.round(h * .56)], wSketch: [R - 320, 96, 320, 470],
   wVars: [L, h - 300, Math.min(1180, mw), 260], wTep: [R - 330, 96, 330, Math.min(620, h - 150)], w3d: [L + 40, 110, Math.min(620, mw), 440],
   wCmp: [L + 20, 100, Math.min(1000, mw), 520], wTable: [L, h - 330, Math.max(560, mw), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)] }; };
+  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)],
+  // совместный режим (hub.js): по центру — проекты, доступ, пользователи; справа у карты — комментарии и история
+  wHubProjects: [Math.round(w / 2 - 390), 90, 780, Math.min(520, h - 150)], wShare: [Math.round(w / 2 - 250), 90, 500, Math.min(440, h - 150)], wHubAdmin: [Math.round(w / 2 - 330), 90, 660, Math.min(560, h - 150)],
+  wComments: [R - 380, 104, 380, Math.min(580, h - 150)], wHistory: [R - 560, 104, 560, Math.min(540, h - 150)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
 function placeWin(w) {

@@ -177,7 +177,7 @@ function parcelsSheet(layers) {
   const no = new Map(pl.map((f, i) => [f.properties["Кадастровый номер"] || i, i + 1]));
   layers.push({ title: "Номера участков", features: pl.map((f, i) => ({ g: turf.pointOnFeature(f).geometry, fill: "#ffffff", stroke: "#2b3cc4", w: 0, a: 0, label: String(i + 1) })) });
   return { table: { title: "Земельные участки в границах проекта", cols: [["№", .06, "left"], ["Кадастровый номер", .41, "left"], ["Площадь, м²", .22, "right"], ["Вид права", .31, "left"]],
-    rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь участка, м²"] || Math.round(m2(f))), shortRight(f.properties["Вид права"] || f.properties["Форма собственности"] || "—")]) } };   // длинное печать ещё и ужмёт
+    rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь уточнённая, м²"] || +f.properties["Площадь участка, м²"] || Math.round(m2(f))), shortRight(f.properties["Вид права"] || f.properties["Форма собственности"] || "—")]) } };   // длинное печать ещё и ужмёт
 }
 const cut = (t, n) => { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
 // Генплан: функциональные зоны на территории — номер, индекс, наименование, суммарный поэтажный фонд
