@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.4: leader point of a parcel that only touches the territory.** Parcel 2 on sheet 9 lies
+  mostly outside the territory; inside it is a sliver along the boundary, so its dot sat on the boundary line. The
+  albums also pass the whole parcel (`zone2`); when the part in the territory is shallower than 0.6 mm, print anchors
+  the number in the deepest point of the whole parcel. The deepest-point search retries on a 4× finer grid for thin
+  strips.
 - **2026-09-30, ГРАДО 2 v0.83.3: Минцифры root certificates in the repo.** `russian_trusted_root_ca_pem.crt` and
   `russian_trusted_sub_ca_pem.crt` from gu-st.ru in `core/connectors/grado_connectors/certs/`. SHA-256 936a43fe…6504 and
   f0ae589f…4ea6, the same when downloaded from the Mac and from a host in Russia; the sub CA verifies against the root;
@@ -20,11 +25,6 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   `trusted_schema=OFF`, expression length/depth/exponent limits, finite coordinates, SVG/PPTX attribute escaping.
   Repo: `.env`/keys in `.gitignore`, `pillow>=11.3`, release workflow permissions, `.claude/launch.json` untracked.
   litegraph.min.js is patched locally (demo nodes via `new Function` off) so the CSP needs no `unsafe-eval`.
-- **2026-09-30, ГРАДО 2 v0.83.2: leader point of a parcel that only touches the territory.** Parcel 2 on sheet 9 lies
-  mostly outside the territory; inside it is a sliver along the boundary, so its dot sat on the boundary line. The
-  albums also pass the whole parcel (`zone2`); when the part in the territory is shallower than 0.6 mm, print anchors
-  the number in the deepest point of the whole parcel. The deepest-point search retries on a 4× finer grid for thin
-  strips.
 - **2026-09-30, ГРАДО 2 v0.83.1: street labels off the territory boundary, readable number leaders.** Owner: street
   names still sit on the boundary; leaders unreadable, unclear which number belongs to which parcel, circles and
   leaders cross. Street labels: the boundary is checked against the rotated label box (`_obox_hit`), candidates are
