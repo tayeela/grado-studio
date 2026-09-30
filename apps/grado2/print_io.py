@@ -282,6 +282,12 @@ def _in_ring(x, y, ring):
     return inside
 
 
+# места номера вокруг точки выноски: радиусы, мм (ближние — раньше) и направления через 15° (k × 15°, y вниз):
+# сначала диагонали, потом стороны, потом промежуточные
+LEAD_R = (7, 9, 11, 13, 15.5, 18, 21, 24, 28, 32, 42)
+LEAD_K = (21, 15, 3, 9, 18, 6, 0, 12, 22, 20, 16, 14, 4, 2, 10, 8, 23, 19, 17, 13, 5, 1, 11, 7)
+
+
 def _obox_hit(cx, cy, ang, hw, hh, segs):
     """Повёрнутая коробка подписи (центр, угол, полуширина, полувысота) задевает какой-нибудь отрезок: подпись улицы
     вдоль наклонной дороги проверяется по своему контуру, а не по описанному прямоугольнику."""
@@ -504,9 +510,13 @@ def tile_ops(tr, rect, scale, tiles, lat):
 class SketchMapFrame(Frame):
     """Карта листа из уже оформленных объектов клиента."""
 
-    def __init__(self, rect, sheet, lib, lgr_dash, tiles=None):
+    def __init__(self, rect, sheet, lib, lgr_dash, tiles=None, memo=None):
         super().__init__(rect)
         self.sheet, self.lib, self.lgr_dash, self.tiles = sheet, lib, lgr_dash, tiles
+        # память мест подписей альбома: у листов с той же рамкой и тем же масштабом названия (улицы, реки, деревни,
+        # СНТ, зоны) стоят на тех же местах — при пролистывании не прыгают (владелец 30.09.2026); другое место —
+        # только если своё занято (выноска, номер), тогда подпись сдвигается или пропадает
+        self.memo = memo if memo is not None else {}
 
     def ops(self, ctx):
         sh, rect = self.sheet, self.rect
@@ -645,6 +655,7 @@ class SketchMapFrame(Frame):
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
+        mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
         # граница территории — препятствие для названий территорий и деревень (правила подписей, владелец 30.09.2026)
         tsegs, tpad = [], float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2 + 0.4
         if sh.get("territory") and not sh.get("terrPoint"):
@@ -716,6 +727,9 @@ class SketchMapFrame(Frame):
             # сдвигаемые подписи (номера, деревни) обходят границу территории; последняя попытка — без этого условия
             moves = [(dx, dy, True) for dx, dy in ((0, 0), (0, -4), (0, 4), (-5, 0), (5, 0), (-5, -4), (5, 4), (5, -4), (-5, 4),
                                                    (0, -8), (0, 8), (-10, 0), (10, 0))] + [(0, 0, False)] if pf.get("nudge") else [(0, 0, False)]
+            was = mem.get(("p", text))
+            if was:
+                moves = [(was[0] - x, was[1] - y, True)] + moves
             for dx, dy, av in moves:
                 if (x + dx - ex >= rx and x + dx + ex <= rx + rw and y + dy - ey >= ry and y + dy + ey <= ry + rh
                         and take((x + dx - ex, y + dy - ey, x + dx + ex, y + dy + ey), avoid=av)):
@@ -723,6 +737,7 @@ class SketchMapFrame(Frame):
                     break
             else:
                 continue
+            mem.setdefault(("p", text), (x, y))
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
@@ -744,8 +759,9 @@ class SketchMapFrame(Frame):
             rl = runs.get(text) or [(d, x, y, ang, af)]
             if af.get("must"):
                 order = sorted(rl, key=lambda r: (r[0] < tw * 1.1, math.hypot(r[1] - hx, r[2] - hy) if hx is not None and r[0] >= tw * 1.1 else -r[0]))
-            else:
-                order = sorted((r for r in rl if r[0] >= tw * 1.1), key=lambda r: -r[0])
+            else:                                                       # ближе к середине листа (владелец 30.09.2026: «Калужское ш.» — не у края)
+                hx, hy = rx + rw / 2, ry + rh / 2
+                order = sorted((r for r in rl if r[0] >= tw * 1.1), key=lambda r: math.hypot(r[1] - hx, r[2] - hy))
 
             def shifts(rd, rx0, ry0, ra):                               # сдвиги вдоль прямого участка, не сходя с него
                 m = max(0.0, (rd - tw) / 2)
@@ -757,9 +773,11 @@ class SketchMapFrame(Frame):
             cands = [(av, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
                      for av in ((True, False) if af.get("must") else (True,)) for o in (0.0, off, -off)
                      for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)]
+            was = mem.get(("s", text))
+            if was:
+                cands = [(True, *was)] + cands
             for av, x, y, ang in cands:
-                if ang > math.pi / 2 or ang < -math.pi / 2:
-                    ang += math.pi                                      # не вверх ногами
+                ang = (ang + math.pi / 2) % math.pi - math.pi / 2       # не вверх ногами: угол в пределах ±90°
                 ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
                 ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
                 if x - ex < rx or x + ex > rx + rw or y - ey < ry or y + ey > ry + rh:
@@ -768,6 +786,7 @@ class SketchMapFrame(Frame):
                     break
             else:
                 continue
+            mem.setdefault(("s", text), (x, y, ang))
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
@@ -830,15 +849,23 @@ class SketchMapFrame(Frame):
             else:
                 inside = f.get("inside")
             if f.get("leader"):                                             # выноска: подпись рядом, тонкая линия к объекту
-                steps = ([(0, 0)] if inside else []) + [(r * math.cos(a), r * math.sin(a)) for r in (9, 13, 18, 24, 32, 42)
-                                                        for a in [k * math.pi / 8 for k in (14, 2, 10, 6, 15, 1, 9, 7, 12, 4, 13, 3, 11, 5, 0, 8)]]
+                steps = ([(0, 0)] if inside else []) + [(r * math.cos(a), r * math.sin(a)) for r in LEAD_R
+                                                        for a in [k * math.pi / 12 for k in LEAD_K]]
             # уровни попыток: у номеров 3 — строго (не на чужом участке), 2 — линия может задеть чужую подпись, 1 — только
             # без пересечения выносок и кружков, 0 — только не поверх других подписей, −1 — на месте как есть (номер
             # участка показывается всегда); у остальных подписей 1 — обычно, 0 — последняя, на месте как есть
             if f.get("circle"):
-                tries = [(dx, dy, lvl) for lvl in (3, 2, 1, 0) for dx, dy in steps] + [(0, 0, -1)]
+                # короткая выноска важнее строгости: на каждом радиусе — сначала «не на чужом участке», потом «линия
+                # может задеть чужую подпись»; дальние места — только после ближних (владелец 30.09.2026: «выноска 12
+                # нелогично далеко»)
+                near = [(dx, dy, lvl) for dx, dy in steps[:1] for lvl in (3, 2)] if inside else []
+                ring_ = steps[1:] if inside else steps
+                for r0 in range(0, len(ring_), len(LEAD_K)):
+                    near += [(dx, dy, lvl) for lvl in (3, 2) for dx, dy in ring_[r0:r0 + len(LEAD_K)]]
+                tries = near + [(dx, dy, lvl) for lvl in (1, 0) for dx, dy in steps] + [(0, 0, -1)]
             else:
-                tries = [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
+                was = mem.get(("a", str(text)))
+                tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") else [])
             spot = None
             for dx, dy, lvl in tries:
                 cx = min(max(x + dx, rx + bw / 2 + 1), rx + rw - bw / 2 - 1)
@@ -853,6 +880,8 @@ class SketchMapFrame(Frame):
             if not spot:
                 continue
             x, y = spot
+            if not f.get("circle"):
+                mem.setdefault(("a", str(text)), spot)
             # оформление подписи из листа: шрифт (lf, у каждой строки — lfs), ореол (lh, мм; цвет — lhc), цвет (lcol),
             # белая плашка под текстом (lbox) — альбомы по шаблонам
             extra = {k: v for k, v in (("font_family", f.get("lf")), ("halo", f.get("lh"))) if v}
@@ -1227,6 +1256,7 @@ def build_document(spec, lib, lgr_dash, tiles=None):
             "stage": spec.get("meta", {}).get("stage", ""), "org": spec.get("meta", {}).get("org", "")}
     doc = Document(meta["object"] or "Альбом", meta=meta)
     doc.sheet_titles = []
+    memo = {}                                                       # места подписей, общие для листов одной рамки
     for sh in spec["sheets"]:
         size = sh.get("size") if sh.get("size") in SIZES else "A3"
         page = Page(page_size(size, sh.get("orient")))
@@ -1234,14 +1264,14 @@ def build_document(spec, lib, lgr_dash, tiles=None):
             import album_io
             meta_p = {**meta, **(spec.get("meta") or {})}
             page.frames = album_io.build_pptkrt(page, sh, meta_p, lib, lgr_dash, tiles,
-                                                lambda rect, s: SketchMapFrame(rect, s, lib, lgr_dash, tiles))
+                                                lambda rect, s: SketchMapFrame(rect, s, lib, lgr_dash, tiles, memo))
             doc.pages.append(page)
             doc.sheet_titles.append(sh.get("title", ""))
             continue
         if size in PAPER:
             w, h = page.size
             map_rect = (w * PAPER_MARGIN, h * PAPER_MARGIN, w * (1 - 2 * PAPER_MARGIN), h * (1 - 2 * PAPER_MARGIN))
-            page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), PaperFrame(map_rect, sh)]
+            page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles, memo), PaperFrame(map_rect, sh)]
             doc.pages.append(page)
             doc.sheet_titles.append(sh.get("title", ""))
             continue
@@ -1253,13 +1283,13 @@ def build_document(spec, lib, lgr_dash, tiles=None):
             elif sh.get("kind") == "photos":
                 w, h = SIZES[size]
                 mr = photo_map_rect(size)
-                page.frames = [SketchMapFrame(mr, sh, lib, lgr_dash, tiles), PhotoGridFrame((mr[0] + mr[2] + 5, mr[1], w - 8 - mr[0] - mr[2] - 5, mr[3]), sh),
+                page.frames = [SketchMapFrame(mr, sh, lib, lgr_dash, tiles, memo), PhotoGridFrame((mr[0] + mr[2] + 5, mr[1], w - 8 - mr[0] - mr[2] - 5, mr[3]), sh),
                                SlideFrame(page, sh, meta_p)]
             elif sh.get("panels"):
                 page.frames = [PanelFrame(r, p, lib, lgr_dash, tiles) for r, p in zip(panel_rects(map_rect, len(sh["panels"])), sh["panels"])] + \
                     [ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
             else:
-                page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles), ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
+                page.frames = [SketchMapFrame(map_rect, sh, lib, lgr_dash, tiles, memo), ColumnFrame(col_rect, sh, title=False), SlideFrame(page, sh, meta_p)]
         elif sh.get("kind") == "tep":
             w, h = SIZES[size]
             page.frames = [PageBorder(page), TepSheetFrame((25, 10, w - 25 - 10, h - 5 - StampFrame.H - 10 - 3), sh), StampFrame(page)]

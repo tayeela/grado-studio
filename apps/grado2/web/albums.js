@@ -275,10 +275,16 @@ const docLine = p => [p.document_1 || "", p.document_n ? `№${p.document_n}` : 
    линии русла (середина поперечного сечения контура), поворот — по направлению русла в этом месте; узкая река без
    контура — на линии тонкой реки ЕГКО. Общие слова («пр.», «ручей») не подписываются. */
 const WATER_GENERIC = /^(пр\.?|ручей|пруд|р\.|кан\.?|оз\.?|вдхр\.?)$/i;
+// места подписей рек — одни для всех листов с той же рамкой и тем же масштабом (владелец 30.09.2026: «р. Моча на
+// разных листах в разных местах, на одном листе нет»): считаются по данным проекта, а не по набору слоёв листа
+const WL_MEMO = new Map();
+const dataFts = key => (DATA[key]?.fc?.features || []).map(f => ({ g: f.geometry, props: f.properties || {} }));
 function waterLabels(out, bb) {
   const wl = out.layers.find(l => l.key === "egko.water_labels"); if (!wl) return;
+  const mkey = [...bb.map(v => v.toFixed(6)), out.scale || 2000, dataRev, TERR_REV].join("|");
+  if (WL_MEMO.has(mkey)) { wl.features = WL_MEMO.get(mkey).map(f => ({ ...f })); return; }
   const box = turf.bboxPolygon(bb), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
-  const water = (out.layers.find(l => l.key === "egko.water")?.features || []).filter(ft => safe(() => turf.booleanIntersects(ft.g, box)));
+  const water = dataFts("egko.water").filter(ft => ft.g && safe(() => turf.booleanIntersects(ft.g, box)));
   const polys = water.filter(ft => /Polygon/.test(ft.g?.type))
     .map(ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, pr = ft.props || {};
       return { f, a: m2(f), v: turf.coordAll(f), b: turf.bbox(f), name: String(pr["Название"] || "").trim(), river: /река|ручей|канал/i.test(pr["Вид"] || "") }; });
@@ -315,8 +321,9 @@ function waterLabels(out, bb) {
   const nearest = arr => arr.reduce((x, y) => turf.distance(y, tc) < turf.distance(x, tc) ? y : x);
   // место подписи: прямоугольник текста на местности (ширина по числу знаков, кегль из листа) целиком в рамке и не
   // поперёк дорог — дороги-полигоны листа (владелец 30.09.2026: «р. Вороновка» пересекала дороги)
-  const roads = ["calc.uds_ya", "egko.roads"].flatMap(key => out.layers.find(l => l.key === key)?.features || [])
-    .filter(ft => /Polygon/.test(ft.g?.type)).map(ft => ({ g: ft.g, b: turf.bbox(ft.g) }));
+  const roads = ["calc.uds_ya", "egko.roads"].flatMap(dataFts)
+    .filter(ft => /Polygon/.test(ft.g?.type)).map(ft => ({ g: ft.g, b: turf.bbox(ft.g) }))
+    .filter(x => !(x.b[2] < bb[0] || x.b[0] > bb[2] || x.b[3] < bb[1] || x.b[1] > bb[3]));
   turf.flatten(turf.polygonToLine(TERR)).features.forEach(l => roads.push({ g: l.geometry, b: turf.bbox(l) }));   // и границу территории
   const rect = (c, ang, text, ls) => {
     const L = text.length * .62 * ls * k / 2 + ls * k * .4, H = ls * .75 * k, a = ang * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a);
@@ -380,6 +387,8 @@ function waterLabels(out, bb) {
     labels.push({ ...fts[0], g: res.at.geometry, la: ang, nudge: false });
   });
   wl.features = labels;
+  WL_MEMO.set(mkey, labels.map(f => ({ ...f })));
+  if (WL_MEMO.size > 40) WL_MEMO.delete(WL_MEMO.keys().next().value);
 }
 
 /* Обязательные подписи (владелец 30.09.2026: «д. Безобразово и ул. Придорожная на всех листах»): деревни и посёлки —

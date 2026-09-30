@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.2: labels stay in place across sheets of the same frame.** Owner: on sheets with the
+  same frame and scale labels must be in exactly the same places so they do not jump when paging; «р. Моча» moved
+  and vanished between sheets; «Калужское ш.» sat low; leader 12 on sheet 8 was illogically far. Print keeps a label
+  memory per document, keyed by map rect, centre and scale (`SketchMapFrame.memo`): placed names, street labels and
+  area labels first try the place they got on an earlier sheet of the group; a sheet-specific leader or number can
+  still push one aside. River labels are computed from project data (not the sheet's layer set) and cached per frame
+  (`WL_MEMO`), so sheets 5–9 get identical river labels. Non-obligatory streets prefer the straight run nearest the
+  frame centre. Street label angle is normalised to ±90° (a remembered angle was flipped upside down). Numbered
+  circles: 11 radii from 7 mm, 24 directions, and on every radius strict and relaxed checks before farther radii.
+  Known limit: the on-screen preview of a single sheet has no earlier sheets and may place names differently from the
+  PDF/PPTX. Rules first.
 - **2026-09-30, ГРАДО 2 v0.84.1: river labels lie on the channel along their whole length.** Owner: «р. Вороновка
   подписана криво». The label centre was mid-channel, but the direction was the average of the river within 200 m, so
   on a meandering river the straight label left the water. Now each candidate spot is tried with the direction turned
