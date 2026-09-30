@@ -628,14 +628,15 @@ function conceptSheet(out, sheet, bb) {
       // номер — в глубине самой большой части участка (центр масс, если он внутри), а не на узком краю
       const big = x.geometry.type === "MultiPolygon" ? x.geometry.coordinates.map(c => turf.polygon(c)).reduce((a, b) => m2(b) > m2(a) ? b : a) : x;
       const cm = safe(() => turf.centerOfMass(big)), at = cm && safe(() => turf.booleanPointInPolygon(cm, big)) ? cm : safe(() => turf.pointOnFeature(big));
-      cards[cards.length - 1].at = at && { g: at.geometry, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 120, zone: bigRing(big) };
+      cards[cards.length - 1].at = at && { g: at.geometry, inside: m2(x) * (1000 / (out.scale || 2000)) ** 2 > 120, zone: bigRing(big),
+        zone2: bigRing(f) };                                    // весь участок — если в территории от него лишь узкая кромка
     });
     pl && out.layers.push({ title: "Кадастровые номера", features: marks });
     // участки территории пронумерованы, как в примере «Хатминки», — номер в карточке, на карте не показывается
     // (владелец 30.09.2026: «пронумеруй, но не отображай»); порядок — от большего участка к меньшему
     cards.sort((a, b) => b.area - a.area);
     // номер участка в синем кружке, как в «Хатминки»; сведения — в таблице по номеру (владелец 30.09.2026)
-    cards.forEach((c, i) => c.at && marks.push({ g: c.at.g, nodot: true, leader: true, circle: true, inside: c.at.inside, zone: c.at.zone,
+    cards.forEach((c, i) => c.at && marks.push({ g: c.at.g, nodot: true, leader: true, circle: true, inside: c.at.inside, zone: c.at.zone, zone2: c.at.zone2,
       label: String(i + 1), ls: 4.2, lf: "sans-bold", lcol: "#1f3fbf" }));
     // все участки — одной таблицей (карточки не помещались); номер — только в таблице, на схеме — кадастровый номер
     const val = (c, k) => (c.rows.find(r => r[0] === k) || [, "—"])[1];

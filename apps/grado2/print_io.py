@@ -322,10 +322,14 @@ def _pole(rings, clip):
             t = max(0.0, min(1.0, ((x - ax) * vx + (y - ay) * vy) / (vx * vx + vy * vy or 1)))
             best = min(best, math.hypot(x - ax - vx * t, y - ay - vy * t))
         return best
-    step = max(x1 - x0, y1 - y0) / 32
-    grid = sorted(((depth(x0 + (i + .5) * step, y0 + (j + .5) * step), x0 + (i + .5) * step, y0 + (j + .5) * step)
-                   for i in range(int((x1 - x0) / step) + 1) for j in range(int((y1 - y0) / step) + 1)), reverse=True)
-    if not grid or grid[0][0] <= 0:
+    for n in (32, 128):                                             # узкая полоса проскакивает между узлами крупной сетки
+        step = max(x1 - x0, y1 - y0) / n
+        grid = sorted(((depth(x0 + (i + .5) * step, y0 + (j + .5) * step), x0 + (i + .5) * step, y0 + (j + .5) * step)
+                       for i in range(int((x1 - x0) / step) + 1) for j in range(int((y1 - y0) / step) + 1)
+                       if n == 32 or _in_ring(x0 + (i + .5) * step, y0 + (j + .5) * step, outer)), reverse=True)
+        if grid and grid[0][0] > 0:
+            break
+    else:
         return []
     best = grid[0]
     for _ in range(2):                                              # уточнение вокруг лучшей точки
@@ -656,6 +660,11 @@ class SketchMapFrame(Frame):
             if f_.get("circle"):
                 rings_ = [[tr.mm(*p[:2]) for p in r] for r in f_["zone"]] if f_.get("zone") else None
                 a_ = rings_ and _pole(rings_, clip)
+                if f_.get("zone2") and (not a_ or a_[0][2] < .6):   # в территории — узкая кромка: точка в глубине всего участка
+                    r2 = [[tr.mm(*p[:2]) for p in r] for r in f_["zone2"]]
+                    b_ = _pole(r2, clip)
+                    if b_ and b_[0][2] > (a_[0][2] if a_ else 0):
+                        rings_, a_ = r2, b_
                 marks[id(f_)] = (a_[0][0], a_[0][1], a_[0][2], rings_[0], a_) if a_ else (x_, y_ + float(f_.get("ldy") or 0), 0.0, None, [])
 
         boxes, leads = [], []                                           # все занятые места и линии выносок
