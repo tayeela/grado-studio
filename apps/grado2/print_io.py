@@ -289,6 +289,60 @@ MAP_PAD = 2.5                                                       # поле �
 LEAD_K = (21, 15, 3, 9, 18, 6, 0, 12, 22, 20, 16, 14, 4, 2, 10, 8, 23, 19, 17, 13, 5, 1, 11, 7)
 
 
+def _chains(lines, eps=0.05):
+    """Линии улицы (мм), склеенные по общим концам в непрерывные цепочки."""
+    ch = [list(l) for l in lines if len(l) > 1]
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(ch)):
+            for j in range(i + 1, len(ch)):
+                a, b = ch[i], ch[j]
+                close = lambda p, q: abs(p[0] - q[0]) < eps and abs(p[1] - q[1]) < eps
+                if close(a[-1], b[0]):
+                    ch[i] = a + b[1:]
+                elif close(a[-1], b[-1]):
+                    ch[i] = a + b[::-1][1:]
+                elif close(a[0], b[-1]):
+                    ch[i] = b + a[1:]
+                elif close(a[0], b[0]):
+                    ch[i] = b[::-1] + a[1:]
+                else:
+                    continue
+                del ch[j]
+                merged = True
+                break
+            if merged:
+                break
+    return ch
+
+
+def _axis_windows(chains, L, tol, step=1.0):
+    """Отрезки оси длиной L (мм), на которых ось отходит от хорды не больше tol: (отклонение, x, y, угол хорды)."""
+    out = []
+    for pts in chains:
+        cum = [0.0]
+        for p, q in zip(pts, pts[1:]):
+            cum.append(cum[-1] + math.hypot(q[0] - p[0], q[1] - p[1]))
+        if cum[-1] < L:
+            continue
+
+        def at(s):
+            i = max(0, min(len(cum) - 2, next((k for k in range(len(cum) - 1) if cum[k + 1] >= s), len(cum) - 2)))
+            t = (s - cum[i]) / ((cum[i + 1] - cum[i]) or 1)
+            return pts[i][0] + (pts[i + 1][0] - pts[i][0]) * t, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * t, i
+        s = 0.0
+        while s + L <= cum[-1]:
+            (ax, ay, i0), (bx, by, i1) = at(s), at(s + L)
+            dx, dy = bx - ax, by - ay
+            n = math.hypot(dx, dy) or 1
+            dev = max([abs((pts[k][0] - ax) * dy - (pts[k][1] - ay) * dx) / n for k in range(i0 + 1, i1 + 1)] or [0])
+            if dev <= tol:
+                out.append((dev, (ax + bx) / 2, (ay + by) / 2, math.atan2(dy, dx)))
+            s += step
+    return out
+
+
 def _obox_hit(cx, cy, ang, hw, hh, segs):
     """Повёрнутая коробка подписи (центр, угол, полуширина, полувысота) задевает какой-нибудь отрезок: подпись улицы
     вдоль наклонной дороги проверяется по своему контуру, а не по описанному прямоугольнику."""
@@ -530,6 +584,7 @@ class SketchMapFrame(Frame):
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
         late = []                                                       # знаки поверх границы территории (точки съёмки)
+        streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
@@ -646,6 +701,7 @@ class SketchMapFrame(Frame):
                             # подпись вдоль линии (улица): на самом длинном прямом участке без перекрёстков внутри —
                             # подпись на нём не пересекает поперечные улицы; одно название — один раз
                             keys = [(round(q[0], 6), round(q[1], 6)) for q in line]
+                            streetlines.setdefault(f["label"], []).append(pts)   # ось улицы целиком — для «почти прямых» отрезков
                             for d, mx, my, ang in _straight_runs(pts, [junctions.get(k, 0) > 1 for k in keys]):
                                 runs.setdefault(f["label"], []).append((d, mx, my, ang, f))   # запасные места подписи улицы
                                 if not (rect[0] < mx < rect[0] + rect[2] and rect[1] < my < rect[1] + rect[3]):
@@ -823,31 +879,88 @@ class SketchMapFrame(Frame):
                 hx, hy = rx + rw / 2, ry + rh / 2
                 order = sorted((r for r in rl if r[0] >= tw * 1.1), key=lambda r: math.hypot(r[1] - hx, r[2] - hy))
 
-            def shifts(rd, rx0, ry0, ra):                               # сдвиги вдоль прямого участка, не сходя с него
-                m = max(0.0, (rd - tw) / 2)
-                ts = [0.0, -m / 2, m / 2, -m, m]
-                if hx is not None:
-                    ts = [max(-m, min(m, (hx - rx0) * math.cos(ra) + (hy - ry0) * math.sin(ra)))] + [k * m / 3 for k in (0, -3, -2, -1, 1, 2, 3)]
-                return ts
-            off = ls * .95 + tpad
-            cands = [(av, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
-                     for av in ((True, False) if af.get("must") else (True,)) for o in (0.0, off, -off)
-                     for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)]
-            was = mem.get(("s", text))
-            if was:
-                cands = [(True, *was)] + cands
-            for av, x, y, ang in cands:
-                ang = (ang + math.pi / 2) % math.pi - math.pi / 2       # не вверх ногами: угол в пределах ±90°
-                ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
-                ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
-                if x - ex < rx + MAP_PAD or x + ex > rx + rw - MAP_PAD or y - ey < ry + MAP_PAD or y + ey > ry + rh - MAP_PAD:
-                    continue                                            # подпись улицы — целиком в рамке, с полем
-                if av and _obox_hit(x, y, ang, tw / 2, ls * .45, [(a, b) for a, b, n_ in roadsegs if n_ and n_ != text]):
-                    continue                                            # не поперёк другой названной улицы
-                if take((x - ex, y - ey, x + ex, y + ey), avoid=av, ob=(x, y, ang, tw / 2, ls * .6)):
+            def near_terr(x_, y_):
+                best_ = 9e9
+                for (ax_, ay_), (bx_, by_) in tsegs:
+                    vx_, vy_ = bx_ - ax_, by_ - ay_
+                    t_ = max(0.0, min(1.0, ((x_ - ax_) * vx_ + (y_ - ay_) * vy_) / (vx_ * vx_ + vy_ * vy_ or 1)))
+                    best_ = min(best_, math.hypot(x_ - ax_ - vx_ * t_, y_ - ay_ - vy_ * t_))
+                return best_
+            chains_ = _chains(streetlines.get(text, []))
+            ls0, tw0 = ls, tw
+
+            # отрезки других названных улиц, кроме тех, что упираются в эту улицу (примыкание сбоку подпись не режет)
+            own_ = {(round(p_[0], 1), round(p_[1], 1)) for c_ in chains_ for p_ in c_}
+            others_ = [(a, b) for a, b, n_ in roadsegs if n_ and n_ != text
+                       and (round(a[0], 1), round(a[1], 1)) not in own_ and (round(b[0], 1), round(b[1], 1)) not in own_]
+
+            def place(ls, tw, tol, first, beside=True, chains_=chains_, others_=others_):
+                """Место подписи улицы при кегле ls, ширине tw и допуске отклонения оси tol; None — места нет."""
+                def shifts(rd, rx0, ry0, ra):                               # сдвиги вдоль прямого участка, не сходя с него
+                    m = max(0.0, (rd - tw) / 2)
+                    ts = [0.0, -m / 2, m / 2, -m, m]
+                    if hx is not None:
+                        ts = [max(-m, min(m, (hx - rx0) * math.cos(ra) + (hy - ry0) * math.sin(ra)))] + [k * m / 3 for k in (0, -3, -2, -1, 1, 2, 3)]
+                    return ts
+                off = ls * .95 + tpad
+                # места на самой оси улицы: отрезки длиной с подпись, где ось почти прямая (отклонение не больше четверти
+                # кегля) — подпись лежит на дороге и по её направлению, даже если прямого участка между перекрёстками нет
+                # (владелец 30.09.2026: «ул. Придорожная криво и залезает на границу»); ближе к домам улицы или к середине
+                # обязательная улица — ближе к территории (она подписывается как улица у территории, правило 1), иначе — к
+                # середине листа
+                wins = _axis_windows(chains_, tw * 1.04, tol)
+                if af.get("must") and tsegs:
+                    wins = sorted(wins, key=lambda w_: near_terr(w_[1], w_[2]) + w_[0] * 20)[:400]
+                else:
+                    wins = sorted(wins, key=lambda w_: (math.hypot(w_[1] - hx, w_[2] - hy) if hx is not None else 0) + w_[0] * 20)[:400]
+                cands = [(True, wx, wy, wa) for _dv, wx, wy, wa in wins]
+                cands += [(True, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
+                          for o in ((0.0, off, -off) if beside else (0.0,)) for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)
+                          if o or rd >= tw * 1.04]                          # на коротком прямом участке подпись свисала бы с дороги
+                # граница территории не пересекается никогда, и обязательной улицы тоже (правило 1)
+                was = mem.get(("s", text))
+                if was and first:
+                    cands = [(True, *was)] + cands
+                for av, x, y, ang in cands:
+                    ang = (ang + math.pi / 2) % math.pi - math.pi / 2       # не вверх ногами: угол в пределах ±90°
+                    ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
+                    ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+                    if x - ex < rx + MAP_PAD or x + ex > rx + rw - MAP_PAD or y - ey < ry + MAP_PAD or y + ey > ry + rh - MAP_PAD:
+                        continue                                            # подпись улицы — целиком в рамке, с полем
+                    if av and _obox_hit(x, y, ang, tw / 2, ls * .45, others_):
+                        continue                                            # не поперёк другой названной улицы
+                    if take((x - ex, y - ey, x + ex, y + ey), avoid=av, ob=(x, y, ang, tw / 2, ls * .6)):
+                        return x, y, ang
+                return None
+            # уровни: ось почти прямая (¼ кегля) → чуть изогнутая (0,45 кегля) → обязательная улица кеглем 0,9 и 0,8;
+            # граница территории не пересекается ни на одном уровне (правило 1)
+            # обязательной улице важнее место у территории, чем идеально прямой отрезок: допуск сразу 0,45 кегля
+            # сначала только на самой дороге (мельче до 0,8 кегля), и лишь потом рядом с ней — подпись над домами
+            # выглядит «криво» (владелец 30.09.2026)
+            levels = [(1, .45, False), (.9, .45, False), (.8, .45, False), (1, .45, True)] if af.get("must") else [(1, .25, True), (1, .45, True)]
+            res = None
+            for n_, (k_, tk_, bs_) in enumerate(levels):
+                res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * tk_), n_ == 0, bs_)
+                if res:
+                    ls, tw = ls0 * k_, tw0 * k_
                     break
-            else:
+            if not res and af.get("must"):
+                # обязательная улица короче подписи в этой рамке (лист 4, 1:10 000): подпись продолжает ту же дорогу —
+                # к оси улицы присоединяются примыкающие к её концам дороги (Сипягинское ш. — продолжение Придорожной)
+                ends = [c_[k] for c_ in chains_ for k in (0, -1)]
+                near_ = lambda q: any(abs(q[0] - e[0]) < .3 and abs(q[1] - e[1]) < .3 for e in ends)
+                more = [l_ for n2, ls2 in streetlines.items() if n2 != text for l_ in ls2 if near_(l_[0]) or near_(l_[-1])]
+                ext = _chains([p_ for c_ in chains_ for p_ in [c_]] + more)
+                for k_ in (1, .9, .8):
+                    ev_ = {(round(p_[0], 1), round(p_[1], 1)) for c_ in ext for p_ in c_}
+                    oth2 = [(a, b) for a, b in others_ if (round(a[0], 1), round(a[1], 1)) not in ev_ and (round(b[0], 1), round(b[1], 1)) not in ev_]
+                    res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * .45), False, False, ext, oth2)
+                    if res:
+                        ls, tw = ls0 * k_, tw0 * k_
+                        break
+            if not res:
                 continue
+            x, y, ang = res
             mem.setdefault(("s", text), (x, y, ang))
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,

@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.8: street labels on the road axis, never across the boundary.** Owner, again: «ул.
+  Придорожная криво и залезает на границу». Causes: the street had no straight run between junctions long enough, so
+  the label fell back to a spot beside the road (over the houses) and, for an obligatory street, to a last pass
+  without the boundary check. Now: street lines are merged into chains (`_chains`) and searched for near-straight
+  windows as long as the label (`_axis_windows`, deviation ≤ ¼ of the text size, ½ for obligatory streets); an
+  obligatory street prefers windows nearest the territory, tries on-road spots at 1, 0.9 and 0.8 size before any
+  spot beside the road, and when the street is shorter than the label in the frame continues along the adjoining
+  road; the boundary-free pass is gone. Side streets that only join the street no longer block it. Rules first.
 - **2026-09-30, ГРАДО 2 v0.84.7: one outline for outline-only roads; photo numbers tight in the corner.** Owner: roads
   drawn as outlines looked like many small pieces (the source polygons are cut), make the outline common, graphically
   is fine; the number plate on the photos left a thin strip of the photo at the top and left. Print: layers listed in
