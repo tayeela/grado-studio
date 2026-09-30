@@ -620,7 +620,7 @@ function conceptSheet(out, sheet, bb) {
     (pl?.features || []).forEach(ft => {
       const f = { type: "Feature", geometry: ft.g, properties: ft.props || {} }, x = /Polygon/.test(ft.g?.type) && safe(() => inter(f, TERR));
       if (!x || m2(x) < Math.min(50, m2(f) * .05)) return;
-      ft.stroke = "#0000ff"; ft.fill = "#0000ff"; ft.w = 2.6;
+      ft.stroke = "#0000ff"; ft.fill = "#0000ff"; ft.w = 1;   // толщина — как у участков за границей (владелец 30.09.2026)
       const p = f.properties, kn = p["Кадастровый номер"] || "—";
       cards.push({ area: m2(f), rows: [["Кадастровый номер", kn], ["Адрес", p["Адрес"] || "—"],
         // площадь — уточнённая по ЕГРН (она же площадь границы в МСК), затем площадь из записи, затем посчитанная;
@@ -648,7 +648,7 @@ function conceptSheet(out, sheet, bb) {
     out.veil = .35;                                             // белая дымка на снимке — границы участков не сливаются
     out.cLegend = [{ title: "Границы", items: [terr,
       { kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" },
-      { kind: "line", stroke: "#0000ff", width: .7, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" }] }];
+      { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" }] }];
   }
   out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
   if (!out.cLegend && k !== "photos") out.cLegend = [bounds];

@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.7: thin parcel lines inside the territory on sheet 9.** Owner: make the parcel
+  boundaries inside the territory as thin as outside. Blue lines now have the same width as the light ones outside
+  (1 instead of 2.6), legend sample 0.35 mm. Rules first.
 - **2026-09-30, ГРАДО 2 v0.83.6: areas exactly as in AutoCAD and ЕГРН; sheet 9 table as in the customer's sheet.**
   Owner: the area on the drawing and by НСПД must match; count areas the way AutoCAD and КУГИС do. `m2` is now the
   exact polygon area of the vertices converted to МСК (AutoCAD computes a polyline area the same way), remembered per
