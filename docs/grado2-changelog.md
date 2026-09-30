@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.83.3: Минцифры root certificates in the repo.** `russian_trusted_root_ca_pem.crt` and
+  `russian_trusted_sub_ca_pem.crt` from gu-st.ru in `core/connectors/grado_connectors/certs/`. SHA-256 936a43fe…6504 and
+  f0ae589f…4ea6, the same when downloaded from the Mac and from a host in Russia; the sub CA verifies against the root;
+  nspd.gov.ru passes full verification with them and fails without. NSPD downloads work again with TLS checked.
 - **2026-09-30, ГРАДО 2 v0.83.2: security hardening after the audit.** No visible change in the UI. NSPD: the silent
   fallback to an unverified TLS connection is gone; the Минцифры root certificates are read from `GRADO_NSPD_CA`,
   `~/.grado2/ca/` or `core/connectors/grado_connectors/certs/` (see its README.txt), no certificate gives a clear error,
