@@ -470,7 +470,8 @@ class ConceptPhotoFrame(Frame):
                     {"op": "image", "data": raw, "x": sx + (94 - iw) / 2, "y": sy + (71 - ih) / 2, "w": iw, "h": ih},
                     {"op": "unclip"},
                     {"op": "path", "closed": True, "fill": (1, 1, 1), "stroke": None, "width": 0, "dash": None,
-                     "rings": [[(sx, sy), (sx + 8.6, sy), (sx + 8.6, sy + 7.6), (sx, sy + 7.6)]]},
+                     # плашка номера — вплотную в угол: заходит за край снимка на 0,4 мм, иначе по краю видна полоска снимка
+                     "rings": [[(sx - .4, sy - .4), (sx + 8.6, sy - .4), (sx + 8.6, sy + 7.6), (sx - .4, sy + 7.6)]]},
                     _text(sx + 4.3, sy + 6.2, 19, str(i + 1), INK2, "sans-bold", "middle")]
         return out
 

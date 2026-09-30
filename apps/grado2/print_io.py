@@ -555,7 +555,35 @@ class SketchMapFrame(Frame):
                             for q in line:
                                 k2 = (round(q[0], 6), round(q[1], 6))
                                 junctions[k2] = junctions.get(k2, 0) + 1
+        # дороги без заливки, одним контуром (casing): сначала контуры всех кусков дорог двойной толщины, поверх —
+        # их заливка цветом фона; внутренние стыки кусков закрываются, виден один общий контур (владелец 30.09.2026)
+        casing = set(sh.get("casing") or [])
+        cased = False
         for layer in sh.get("layers", []):
+            if layer.get("key") in casing:
+                if cased:
+                    continue
+                cased = True
+                out.append({"op": "layer", "name": "Дороги"})
+                polys = []
+                for L_ in sh.get("layers", []):
+                    if L_.get("key") not in casing:
+                        continue
+                    for f in L_.get("features", []):
+                        kind, parts = _parts(f["g"])
+                        if kind != "poly":
+                            continue
+                        for poly in parts:
+                            rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
+                            if rings:
+                                polys.append((rings, f))
+                for rings, f in polys:
+                    out.append({"op": "path", "rings": rings, "closed": True, "fill": None, "width": max(0.08, (f.get("w") or 1) * PX_MM) * 2,
+                                "stroke": hex_to_rgb(f.get("stroke") or "#a0a0a0"), "dash": None})
+                for rings, f in polys:
+                    out.append({"op": "path", "rings": rings, "closed": True, "fill": hex_to_rgb(f.get("fill") or "#ffffff"),
+                                "stroke": None, "width": 0, "dash": None})
+                continue
             out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])

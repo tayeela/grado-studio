@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.7: one outline for outline-only roads; photo numbers tight in the corner.** Owner: roads
+  drawn as outlines looked like many small pieces (the source polygons are cut), make the outline common, graphically
+  is fine; the number plate on the photos left a thin strip of the photo at the top and left. Print: layers listed in
+  `sheet.casing` (sheet 4: `calc.uds_ya`, `egko.roads`) are drawn in two passes — all outlines at double width, then
+  all fills in the background colour — so inner seams disappear. The photo number plate extends 0.4 mm past the
+  photo corner. Rules first.
 - **2026-09-30, ГРАДО 2 v0.84.6: photo points on sheet 4 always numbered and on top.** The owner sent 8 Yandex panorama
   links for sheet 4. Frames were cut from the panoramas (point and direction from each link, tiles one by one with a
   pause, perspective view 85°, GPS and direction written to EXIF) and added through the ordinary photo button path —

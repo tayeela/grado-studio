@@ -482,6 +482,7 @@ function conceptSheet(out, sheet, bb) {
       { kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: ROADS_WORD }] }];
   }
   if (k === "photos") {
+    out.casing = ["calc.uds_ya", "egko.roads"];               // дороги контуром — один общий контур на все куски
     const tc = turf.centroid(TERR);
     // точки съёмки — синие стрелки по направлению снимка (EXIF), без направления — в сторону территории
     out.layers.push({ title: "Точки съёмки", features: (sheet.photos || []).map((ph, i) => ph.at ? { g: { type: "Point", coordinates: ph.at }, mk: "view", fill: "#1f3fbf",
