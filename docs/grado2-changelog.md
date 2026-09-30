@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-09-30, ГРАДО 2 v0.84.4: titles by content, index in the zone swatch, uniform swatches, typography.** Owner:
+  sheet 8 has only ГПЗУ — drop АГР from the names; sheet 6 — write the type index into the zone swatch instead of a
+  separate list; legend swatches must be the same size on all sheets (sheets 5/6 differed, the boundary sample length
+  jumped); no hanging prepositions or orphaned abbreviations anywhere («г.» alone on a line on sheet 7); sheet 9 sign
+  «порядковый номер земельного участка в таблице». Rules first (rule 12). Sheet title and list title lose «и АГР» when
+  no АГР is in the frame. Zone swatches carry the index (`num`), the index list is gone. All legend swatches 13 × 3 mm
+  (`SW_W`) in the column and on the satellite plate; dashed samples are fitted to whole dashes. `_glue()` puts
+  non-breaking spaces after prepositions, conjunctions and short words, around «№», «г.», «га», «тыс. кв. м», «ул.»,
+  «р.», «д.» and before dashes; `_wrap` and `_wrap_mm` wrap only at ordinary spaces.
 - **2026-09-30, ГРАДО 2 v0.84.3: fixes after the multi-agent album review.** 10 Sonnet agents reviewed sheets 1–9
   (8 lenses, 2 verifiers): 134 findings, 58 confirmed. Owner: keep the header image, sheet 6 and sheet 5 proposals
   approved. Rules first (rule 11). Print: labels keep 2.5 mm from the map edge; obligatory moved labels search up to

@@ -649,13 +649,13 @@ function conceptSheet(out, sheet, bb) {
       .filter(it => seenZ.has(String(it.label).toLowerCase()))
       .sort((a, b) => { const ia = ORDER.indexOf(String(a.label).toLowerCase()), ib = ORDER.indexOf(String(b.label).toLowerCase()); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
     // индексы типа функционального назначения — только те, что на карте, с названием типа из тех же зон (как в образце)
-    const idx = new Map(); seenZ.forEach((z, nm) => z.idx.forEach(i => idx.set(i, nm.replace(/\s*зона$/, ""))));
-    const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
-    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => ({ kind: "fill", fill: gpFill(it.label) || it.fill, stroke: "#3c3c3c", a: 1, label: String(it.label).toLowerCase() })),
+    // индекс типа функционального назначения — цифрами в прямоугольнике знака своей зоны, без отдельного списка
+    // (владелец 30.09.2026: «впиши цифры в прямоугольник условного обозначения… убрав дублирование»)
+    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => { const z = seenZ.get(String(it.label).toLowerCase());
+        return { kind: "fill", fill: gpFill(it.label) || it.fill, stroke: "#3c3c3c", a: 1, num: z && z.idx.size ? [...z.idx].sort().join(", ") : undefined,
+          label: String(it.label).toLowerCase() }; }),
       { kind: "text", sample: "10", family: "sans-bold", underline: true, label: "номер функциональной зоны" },
       { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }];
-    if (idx.size) out.cLegend.push({ title: "Индекс типа функционального назначения территории",
-      items: [...idx].sort((a, b) => +a[0] - +b[0]).map(([i, t]) => ({ kind: "text", sample: i, family: "sans-bold", label: `– ${cap(t)}` })) });
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры", widths: [.17, .17, .3, .36],
       cols: ["Номер функц. зоны", "Индекс функц. зоны", "Тип функц. зоны", "Прогнозируемый фонд застройки функц. зоны, тыс.\u00a0кв.\u00a0м"],
       rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[3]]) };
@@ -682,6 +682,10 @@ function conceptSheet(out, sheet, bb) {
         + (q ? `\nАГР ${q.document_n ? "№" + q.document_n : ""} ${q.document_d ? `от ${dateRu(q.document_d)} г.` : ""}`.replace(/\s+$/, "") : ""); } }]);
     (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
     out.cLists = lists;
+    if (!agr.length) {                                          // АГР в рамке нет — и в названиях его нет (правило 12)
+      out.title = String(out.title || sheet.title || "").replace(/\s+и\s+АГР(?=$|[\s,.»])/, "");
+      lists.forEach(l => { l.title = String(l.title).replace(/\s+и свидетельства об утверждении АГР$/, ""); });
+    }
     out.cLegend = [bounds, { title: "Разработанная документация", items: [
       ...(agr.length ? [{ kind: "fill", hatch: true, fill: "#ff3b3b", stroke: "#ff3b3b", angle: 135, label: "архитектурно-градостроительное решение" }] : []),   // только если АГР в рамке
       { kind: "fill", hatch: true, fill: "#7b7bf2", stroke: "#7b7bf2", angle: 45, label: "градостроительный план земельного участка" }] }];
@@ -721,7 +725,7 @@ function conceptSheet(out, sheet, bb) {
     out.cLegend = [{ title: "Границы", items: [terr,
       { kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" },
       { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" },
-      { kind: "num", sample: "1", stroke: "#1f3fbf", label: "номер земельного участка (сведения — в таблице)" }] }];   // знак номера, как в «Хатминки» (правило 11)
+      { kind: "num", sample: "1", stroke: "#1f3fbf", label: "порядковый номер земельного участка в таблице" }] }];   // знак номера, как в «Хатминки» (правило 11)
   }
   out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
   if (!out.cLegend && k !== "photos") out.cLegend = [bounds];

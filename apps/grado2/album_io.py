@@ -10,6 +10,7 @@
 
 import base64
 import binascii
+import re
 from pathlib import Path
 
 from grado_layout.model import Frame
@@ -48,20 +49,30 @@ def _header():
         return None
 
 
+_NB = "\xa0"
+_GLUE_AFTER = re.compile(r"(?<![\w.])(№|[А-Яа-яЁёA-Za-z]{1,2}\.?|ул\.|пер\.|пр-д|просп\.|ш\.|р\.|д\.|пос\.|оз\.|тыс\.|им\.|кв\.|т\.) (?=\S)")
+_GLUE_BEFORE = re.compile(r"(?<=\S) (г\.|гг\.|га|м|м²|мм|км|млн|—|–)(?=$|[\s,.;:)»])")
+
+
+def _glue(text):
+    """Общепринятые правила вёрстки (правило 12): предлоги, союзы, частицы и короткие слова не висят в конце строки,
+    сокращения держатся за своё слово («№ 1218», «ул. Садовая», «2021 г.», «тыс. кв. м», «48,52 га»), тире не
+    начинает строку — между ними неразрывный пробел."""
+    t = str(text or "")
+    for _ in range(2):                                   # «с по» и цепочки коротких слов — за два прохода
+        t = _GLUE_AFTER.sub(lambda m: m.group(1) + _NB, t)
+    return _GLUE_BEFORE.sub(lambda m: _NB + m.group(1), t)
+
+
 def _wrap(text, n):
-    words, lines, cur = str(text or "").split(), [], ""
+    words, lines, cur = [w for w in _glue(text).split(" ") if w], [], ""
     for w in words:
         if cur and len(cur) + 1 + len(w) > n:
-            head, _, last = cur.rpartition(" ")
-            if head and len(last) <= 2:                  # короткий предлог или союз не висит в конце строки
-                lines.append(head)
-                cur = last + " " + w
-            else:
-                lines.append(cur)
-                cur = w
+            lines.append(cur)
+            cur = w
         else:
             cur = (cur + " " + w).strip()
-    return lines + ([cur] if cur else [])
+    return [ln.replace(_NB, " ") for ln in lines + ([cur] if cur else [])]
 
 
 def _text(x, y, size_pt, text, color=INK, family="sans-bold", anchor="start"):
@@ -83,7 +94,7 @@ def _tw(text, family, size_mm):
 def _wrap_mm(text, family, size_mm, width):
     """Перенос по словам по настоящей ширине строки (а не по числу знаков)."""
     lines = []
-    for para in str(text or "").split("\n"):
+    for para in _glue(text).split("\n"):
         cur = ""
         for w in [w for w in para.replace("\t", " ").split(" ") if w]:   # неразрывный пробел (\xa0) держит слова вместе
             t = (cur + " " + w).strip()
@@ -230,14 +241,27 @@ def _rgb(c, default=(0.3, 0.3, 0.3)):
     return hex_to_rgb(c) if isinstance(c, str) else tuple(c)
 
 
-def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
+SW_W = 13.0                                              # ширина знака легенды, мм — одна на всех листах (правило 12)
+
+
+def _dash_fit(dash, w):
+    """Пунктир знака — целыми штрихами: шаг подгоняется так, чтобы знак начинался и кончался штрихом."""
+    if not dash:
+        return dash
+    p = sum(dash)
+    n = max(1, round((w - dash[0]) / p))
+    k = w / (n * p + dash[0])
+    return [d * k for d in dash]
+
+
+def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
     """Знак легенды 8 × 3 мм: заливка (с штриховкой), контур, линия (со штрихом), тип линии REDLN97, образец текста."""
     from print_io import _mix, hatch_ops, linetype_ops
     k, out = it.get("kind", "fill"), []
     rect = [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]
     if k == "line":
         out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke")), "width": float(it.get("width", .5)),
-                    "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
+                    "dash": _dash_fit(it.get("dash"), w), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
     elif k == "lt":
         if lib and it.get("name"):
             # как на карте, но не крупнее, чем нужно для двух шаблонов на 8 мм знака — иначе знак сплошной
@@ -271,6 +295,8 @@ def concept_swatch(x, y, it, lib=None, w=8.0, h=3.0):
                                  angle=float(it.get("angle", 45)), width=0.15))
         out.append({"op": "path", "closed": True, "fill": None, "stroke": _rgb(it.get("stroke") or fill or "#555555"),
                     "width": float(it.get("width", .2)), "dash": it.get("dash"), "rings": rect})
+        if it.get("num"):                                # индекс типа зоны Генплана — в прямоугольнике знака (правило 12)
+            out.append({**_text(x + w / 2, y + h / 2 + 0.85, 7, it["num"], INK, "sans-bold", "middle")})
     return out
 
 
@@ -291,9 +317,8 @@ class ConceptColumnFrame(Frame):
         if sh.get("cLegend"):
             out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "sans-bold"))
             yy += 8
-            # есть типы линий ЗОУИТ — все знаки легенды длиннее (13 мм): в 8 мм рисунок линии не различим (правило 11)
-            lt_ = any(it.get("kind") in ("lt", "flood") for g in sh["cLegend"] for it in g.get("items", []))
-            sw_, ind_ = (13.0, 15.5) if lt_ else (8.0, 10.5)
+            # знаки легенды на всех листах одного размера 13 × 3 мм: в 8 мм рисунок линии ЗОУИТ не различим (правила 11, 12)
+            sw_, ind_ = SW_W, SW_W + 2.5
             for g in sh["cLegend"]:
                 if g.get("title"):
                     for line in _wrap_mm(g["title"], "sans", S10, w):          # длинный заголовок группы — в две строки
@@ -406,7 +431,7 @@ class OrthoLegendFrame(Frame):
         items = [it for g in groups for it in g.get("items", [])]
         # плашка растягивается влево, чтобы каждая подпись шла одной строкой и не заходила под номер листа (x ≥ 399 мм)
         text_w = max([_tw(it.get("label", ""), "sans", 9 * PT) for it in items] + [_tw("Условные обозначения", "sans-bold", 12.2 * PT) - 18])
-        x = min(right - 122, 396 - text_w - 21.6)
+        x = min(right - 122, 396 - text_w - (3.6 + SW_W + 2.5))
         body = 6.5 + 5.7 + 5.8 * len(items) + 4.5
         top = y + h - body
         out = [{"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": 0.72, "stroke": None, "width": 0, "dash": None,
@@ -417,8 +442,8 @@ class OrthoLegendFrame(Frame):
         out.append(_text(x + 3.6, yy, 9, "Границы:", INK2, "sans-bold"))
         for it in items:
             yy += 5.8
-            out.extend(concept_swatch(x + 3.6, yy - 2.6, it, None, w=15, h=3))
-            out.append(_text(x + 21.6, yy, 9, it.get("label", ""), INK2, "sans"))
+            out.extend(concept_swatch(x + 3.6, yy - 2.6, it, None, w=SW_W, h=3))   # тот же размер знака, что на других листах
+            out.append(_text(x + 3.6 + SW_W + 2.5, yy, 9, it.get("label", ""), INK2, "sans"))
         return out
 
 
