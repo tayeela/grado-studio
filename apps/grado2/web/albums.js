@@ -68,7 +68,11 @@ function albumExtra(sheet) {
    заголовком, списки документов в рамках, карточки участков (album_io.ConceptColumnFrame). Подписи — Century Gothic
    жирный с белым ореолом: улицы вдоль оси, названия территорий из OSM, округ и район в углу. Граница территории —
    пурпурный пунктир. Листы 5–9 — одна и та же рамка и масштаб, как в образце. */
-const C_TERR = "#ff00ff", C_ROAD = "#a6a6a6", C_TW = 2.4;              // граница территории — жирный пунктир (владелец 29.09.2026)
+const C_TERR = "#ff00ff", C_TW = 2.4;                                  // граница территории — жирный пунктир (владелец 29.09.2026)
+// проезжая часть на листах 5–8 — один серый, сплошной, без контура (владелец 01.10.2026: «Вариант 3: #B4B4B4»)
+const C_ROAD = "#b4b4b4";
+// толщина линии на бумаге в мм → ширина стиля: печать переводит ширину в мм множителем PX_MM = 0,26 (print_io.py)
+const MM = mm => mm / .26;
 const C_LBL = { lf: "sans-bold", lh: .55, lcol: "#141414" };
 const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false,
   labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 3.8, "osm.landuse": 3.8, "egko.water_labels": 3.8 },   // кегль чуть меньше (владелец 30.09.2026)
@@ -82,7 +86,8 @@ const C_WATER_VIS = { "egko.water": { mode: "single", fill: "#bfe0f5", stroke: "
 const C_ROADS = fill => ({ "calc.uds_ya": { mode: "single", fill, stroke: fill, width: 0, opacity: 1 }, "egko.roads": { mode: "single", fill, stroke: fill, width: 0, opacity: 1 } });
 const C_NAMES = { "osm.landuse": { mode: "single", fill: "#ffffff", stroke: "#ffffff", width: 0, opacity: 0, label: "Название" } };
 const C_STREETS = (fill = C_ROAD) => ({ "osm.roads": { mode: "single", fill, width: 0, label: "Название", lineOff: true } });
-const C_PLAN = { ...C_ROADS(C_ROAD), ...C_WATER, ...C_WATER_VIS, "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#8c8c8c", width: 1, opacity: 0 } };
+// застройка — белая с серым контуром на листах 4–8 (правило 3.28; владелец 01.10.2026)
+const C_PLAN = { ...C_ROADS(C_ROAD), ...C_WATER, ...C_WATER_VIS, "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#8c8c8c", width: 1, opacity: 1 } };
 const C_ONLY = { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } };
 const PPTKRT_C = [
   { ...C_BASE, concept: "ortho", title: "Ортофотоплан", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], ctx: 2.2,
@@ -96,27 +101,27 @@ const PPTKRT_C = [
       "egko.roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 }, "egko.buildings": C_PLAN["egko.buildings"] }, only: C_ONLY },
   { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
     // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
-    // заливка, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
+    // заливка C_ROAD, как на листах 6–8, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
     keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: .7, opacity: 0, label: "" },   // тоньше (владелец 30.09.2026)
-      ...C_ROADS("#e3e3e3"), "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: MM(.2), opacity: 0, label: "" },   // 0,2 мм (владелец 30.09.2026: «чуть тоньше»)
+      "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
       "gisogd.airfield": { mode: "single", fill: "#000000", stroke: "#000000", width: 0, opacity: 0, label: "" },   // только надпись под легендой
       ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "egko.water": { mode: "single", fill: "#00689d", stroke: "#00689d", width: 0, opacity: 1, label: "" },   // вода — как в «Хатминки»
-      "calc.uds_ya": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
-      "egko.roads": { mode: "single", fill: "#b4b4b4", stroke: "#b4b4b4", width: 0, opacity: .55 },
-      "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 0 } },
+      ...C_ROADS(C_ROAD), "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 1 } },
     labelFn: { ...C_BASE.labelFn, "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" },
     labelMM: { ...C_BASE.labelMM, "gisogd.func_zones": 5.2, "gisogd.func_zones_tinao": 5.2 },   // на треть мельче; индекс ×1,15 (правило 11)
     labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" },
       "gisogd.func_zones_tinao": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" } }, only: C_ONLY },
   { ...C_BASE, concept: "ppt", title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
-    keys: ["egko.water", "gisogd.ppt", "gisogd.pmt", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"],   // документы — под дорогами и застройкой (правило 11: штриховка поверх проезда)
+    // документы — над всеми слоями карты (дорогами и застройкой), под границей территории (владелец 01.10.2026)
+    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "gisogd.ppt", "gisogd.pmt", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } }, only: C_ONLY },
   { ...C_BASE, concept: "gpzu", title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР",
-    keys: ["egko.water", "gisogd.gpzu", "gisogd.agr", "calc.uds_ya", "egko.roads", "egko.buildings", "osm.landuse", "osm.roads", "egko.water_labels"],   // документы — под дорогами и застройкой (правило 11: штриховка поверх проезда)
+    // документы — над всеми слоями карты, АГР выше ГПЗУ; под границей территории (владелец 01.10.2026)
+    keys: ["egko.water", "calc.uds_ya", "egko.roads", "egko.buildings", "gisogd.gpzu", "gisogd.agr", "osm.landuse", "osm.roads", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN,
       "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", width: 1, opacity: 1 },
       "gisogd.agr": { mode: "single", fill: "#ff3b3b", stroke: "#ff3b3b", hatch: true, hatchPat: "135", width: 1, opacity: 1 } }, only: C_ONLY },
@@ -138,7 +143,8 @@ LABEL_FN.street = f => { let n = String(f.get("Название") || "").trim();
   for (const [re, ab] of STREET_ABBR) if (re.test(n)) { n = n.replace(re, " ").replace(/\s+/g, " ").trim(); return ab === "ул." || ab === "пл." || ab === "просп." ? `${ab} ${n}` : `${n} ${ab}`; }
   return n; };
 // длинное название — в две строки примерно равной длины (владелец 30.09.2026), не больше двух
-LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim().replace(/\s+/g, " "); if (!n) return null;
+// посёлок — «пос.», не «п.» и не полностью (владелец 01.10.2026)
+LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim().replace(/\s+/g, " ").replace(/(^|\s)пос[её]лок(?=\s|$)/i, "$1пос."); if (!n) return null;
   const w = n.split(" "); if (n.length <= 14 || w.length < 2) return n;
   let best = 1, d = Infinity;
   for (let i = 1; i < w.length; i++) { const x = Math.abs(w.slice(0, i).join(" ").length - w.slice(i).join(" ").length); if (x < d) { d = x; best = i; } }
@@ -270,7 +276,8 @@ function conceptDocs(out, bb, groups) {
 // название документа ГИС ОГД хранит не длиннее 128 знаков: обрезанное название помечается многоточием; дефис между
 // словами — тире (правило 11: «…от газорегулято №1218-ПП»)
 const docTitle = t => { t = String(t || "").trim().replace(/\s+-\s+/g, " — "); return t.length >= 120 && !/[.)»"]$/.test(t) ? t + "…" : t; };
-const docLine = p => [docTitle(p.document_1), p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ");
+// «№» отделён от номера неразрывным пробелом (правило 2.26; владелец 01.10.2026)
+const docLine = p => [docTitle(p.document_1), p.document_n ? `№\u00a0${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ");
 
 /* Подписи рек и водоёмов (владелец 29–30.09.2026): одна на название, на самом большом водоёме этой реки рядом с её
    подписями в ЕГКО (до 400 м; контур с другим названием не берётся, один контур — одно название). Пруд или озеро
@@ -614,15 +621,21 @@ function conceptSheet(out, sheet, bb) {
       out.cLegend.push({ items: [{ kind: "note", label: `Территория находится в ${list.length > 1 ? list.slice(0, -1).join(", ") + " и " + list.at(-1) : list[0]} подзон${list.length > 1 ? "ах" : "е"} приаэродромной территории аэропорта «${port}»` + (port === "Внуково" ? ". Приказ Росавиации от 17.04.2020 № 394-П" : "") }] }); });
   }
   if (k === "gp") {
-    // номер и индекс зоны — белые с тёмной обводкой, как в образце; на светлой зоне — тёмные с белой обводкой
-    // цвета — основная (насыщенная) палитра Эталона Генплана, без прозрачности, как на официальной «Карте функциональных
-    // зон» и в «ГК Царицыно»; пастель Новой Москвы — только для рабочей карты (владелец 30.09.2026: «цвета блеклые»)
-    const GP_HAT = { "общественно-жилая зона": "#ff9062", "жилая зона": "#fed44c", "природно-жилая зона": "#c8c64f", "природная зона": "#2ad092",
-      "общественно-производственно-жилая зона": "#d67c7c", "общественно-производственная зона": "#bb84b0" };   // карта образца «Хатминки»
-    const gpFill = name => GP_HAT[String(name || "").toLowerCase()] || GPZ[String(name || "").toLowerCase()]?.fill;
+    // цвета всех зон — по таблице MapInfo функциональных зон ТиНАО владельца (ФункциональныеЗоны_ПрисоединенныеТер.TAB),
+    // по индексу типа зоны (fz_type в ГИС ОГД = ФЗ_тип таблицы), без прозрачности; цвета «Хатминки» отменены
+    // (владелец 01.10.2026: «Всё по таблице ТиНАО»). Зона без индекса — по названию, иначе палитра Эталона Генплана
+    const GP_TINAO = { 100: "#f76767", 120: "#ee8e62", 123: "#c07c7e", 124: "#e8b154", 130: "#ad84ae", 134: "#ca9568", 140: "#d5af29",
+      200: "#f3d357", 230: "#c2a9a2", 240: "#c5c557", 300: "#b1b5e1", 340: "#abb9ab", 400: "#78ce93", 600: "#999999", 800: "#e8f2c7" };
+    const gpName = n => String(n || "").toLowerCase().replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();   // «общественно - жилая  зона»
+    const GP_BY_NAME = { "общественная зона": 100, "общественно-жилая зона": 120, "общественно-производственно-жилая зона": 123,
+      "природно-общественно-жилая зона": 124, "общественно-производственная зона": 130, "природно-общественно-производственная зона": 134,
+      "природно-общественная зона": 140, "жилая зона": 200, "производственно-жилая зона": 230, "природно-жилая зона": 240,
+      "производственная зона": 300, "природно-производственная зона": 340, "природная зона": 400, "зона объектов внешнего транспорта": 600,
+      "сельскохозяйственная зона": 800 };
+    const gpFill = (name, idx) => GP_TINAO[+idx] || GP_TINAO[GP_BY_NAME[gpName(name)]] || GPZ[gpName(name)]?.fill;
     const zoneEdges = [];
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
-      const f0 = gpFill(ft.props?.["Вид зоны"] || ft.props?.naimfunkzony || ft.props?.naimfunkzo); if (f0) ft.fill = f0; ft.a = 1;
+      const f0 = gpFill(ft.props?.["Вид зоны"] || ft.props?.naimfunkzony || ft.props?.naimfunkzo, ft.props?.fz_type); if (f0) ft.fill = f0; ft.a = 1;
       if (/Polygon/.test(ft.g?.type)) zoneEdges.push(...safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.map(l => l.geometry)) || []);
       ft.w = 0; Object.assign(ft, { lcol: "#141414", lhc: "#ffffff", lh: .4, ul0: true, lss: [1, 1.15] });   // номер и индекс — чёрные, номер подчёркнут, индекс крупнее
     }));
@@ -638,7 +651,7 @@ function conceptSheet(out, sheet, bb) {
       if (run.length > 1) cut.push({ type: "LineString", coordinates: run }); });
     zoneEdges.length = 0; zoneEdges.push(...cut);
     // границы зон — чёрные, поверх дорог и застройки (владелец 30.09.2026: «границы зон должны быть выше»)
-    out.layers.push({ title: "Границы функциональных зон", features: zoneEdges.map(g => ({ g, fill: "#000000", stroke: "#000000", w: 1.3 })) });
+    out.layers.push({ title: "Границы функциональных зон", features: zoneEdges.map(g => ({ g, fill: "#000000", stroke: "#000000", w: MM(.35) })) });   // 0,35 мм
     // легенда — только зоны, видимые в рамке (больше 0,5 мм² на бумаге), в порядке образца «Хатминки» (правила 7, 11)
     const kk = (out.scale || 2000) / 1000, seenZ = new Map();
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
@@ -653,18 +666,19 @@ function conceptSheet(out, sheet, bb) {
     // индекс типа функционального назначения — цифрами в прямоугольнике знака своей зоны, без отдельного списка
     // (владелец 30.09.2026: «впиши цифры в прямоугольник условного обозначения… убрав дублирование»)
     out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => { const z = seenZ.get(String(it.label).toLowerCase());
-        return { kind: "fill", fill: gpFill(it.label) || it.fill, stroke: "#3c3c3c", a: 1, num: z && z.idx.size ? [...z.idx].sort().join(", ") : undefined,
+        return { kind: "fill", fill: gpFill(it.label, z && z.idx.size ? [...z.idx].sort()[0] : undefined) || it.fill, stroke: "#3c3c3c", a: 1, num: z && z.idx.size ? [...z.idx].sort().join(", ") : undefined,
           label: String(it.label).toLowerCase() }; }),
       { kind: "text", sample: "10", family: "sans-bold", underline: true, label: "номер функциональной зоны" },
       { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры", widths: [.17, .17, .3, .36],
-      cols: ["Номер функц. зоны", "Индекс функц. зоны", "Тип функц. зоны", "Прогнозируемый фонд застройки функц. зоны, тыс.\u00a0кв.\u00a0м"],
+      // «функц. зоны» не разрывается (владелец 01.10.2026, правило 6.12)
+      cols: ["Номер функц.\u00a0зоны", "Индекс функц.\u00a0зоны", "Тип функц.\u00a0зоны", "Прогнозируемый фонд застройки функц.\u00a0зоны, тыс.\u00a0кв.\u00a0м"],
       rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[3]]) };
     out.table = undefined;
   }
   if (k === "ppt") {
     out.cLists = conceptDocs(out, bb, [{ key: "gisogd.ppt", title: "Проекты планировки территории", text: docLine },
-      { key: "gisogd.pmt", title: "Проекты межевания территории", color: "#00d000", text: p => p.document_1 ? docLine(p) : ["Проект межевания территории", p.document_n ? `№${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ") }]);
+      { key: "gisogd.pmt", title: "Проекты межевания территории", color: "#00d000", text: p => p.document_1 ? docLine(p) : ["Проект межевания территории", p.document_n ? `№\u00a0${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ") }]);
     // легенда и название листа — только то, что попало в рамку (правила 7, 11, 12)
     const has = key => (L(key)?.features || []).some(inFrame);
     if (!has("gisogd.pmt")) out.title = String(out.title || sheet.title || "").replace(/\s+и\s+ПМТ(?=$|[\s,.»])/, "");
@@ -681,8 +695,8 @@ function conceptSheet(out, sheet, bb) {
       const a = agr.find((x, i) => !used.has(i) && safe(() => { const y = inter(x, d.f); return y && m2(y) > m2(x) * .5; }));
       if (a) used.add(agr.indexOf(a));
       const q = a?.properties;
-      return `ГПЗУ ${p.document_n ? "№" + p.document_n : ""} ${p.document_d ? `от ${dateRu(p.document_d)} г.` : ""}`.replace(/\s+/g, " ").trim()
-        + (q ? `\nАГР ${q.document_n ? "№" + q.document_n : ""} ${q.document_d ? `от ${dateRu(q.document_d)} г.` : ""}`.replace(/\s+$/, "") : ""); } }]);
+      return `ГПЗУ ${p.document_n ? "№\u00a0" + p.document_n : ""} ${p.document_d ? `от ${dateRu(p.document_d)} г.` : ""}`.replace(/ +/g, " ").trim()   // / +/: \s съел бы неразрывный пробел
+        + (q ? `\nАГР ${q.document_n ? "№\u00a0" + q.document_n : ""} ${q.document_d ? `от ${dateRu(q.document_d)} г.` : ""}`.replace(/\s+$/, "") : ""); } }]);
     (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
     out.cLists = lists;
     if (!agr.length) {                                          // АГР в рамке нет — и в названиях его нет (правило 12)

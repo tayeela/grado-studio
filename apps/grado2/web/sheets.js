@@ -352,8 +352,11 @@ async function albumFile(kind = "pdf") {
     const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(ALBUM.sheets)) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast(kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
-      : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`);
+    // листы «не готов»: что-то не поместилось, а мельчить и обрывать молча нельзя — пометка серым внизу листа
+    const nr = r.headers.get("X-Grado-Not-Ready");
+    toast((kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
+      : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
+      + (nr ? ` Не готовы листы ${nr.split(",").join(", ")}: не всё поместилось, что именно — серым внизу листа.` : ""));
   } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); }
 }
 // спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF

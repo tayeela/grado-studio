@@ -1601,6 +1601,8 @@ class Handler(SimpleHTTPRequestHandler):
                 import print_io
                 body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile)
                 self.send_response(200)
+                if print_io.not_ready(req):                  # листы «не готов» — номера через запятую (ASCII)
+                    self.send_header("X-Grado-Not-Ready", ",".join(map(str, print_io.not_ready(req))))
                 self.send_header("Content-Type", "application/pdf")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
                 self.send_header("Content-Length", str(len(body)))
@@ -1610,6 +1612,8 @@ class Handler(SimpleHTTPRequestHandler):
                 import print_io
                 body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile)
                 self.send_response(200)
+                if print_io.not_ready(req):                  # листы «не готов» — номера через запятую (ASCII)
+                    self.send_header("X-Grado-Not-Ready", ",".join(map(str, print_io.not_ready(req))))
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pptx"')
                 self.send_header("Content-Length", str(len(body)))

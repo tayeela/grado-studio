@@ -1501,6 +1501,12 @@ def render_pdf(spec, lib, lgr_dash, tiles=None):
     return PdfBackend(None).render(document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None))
 
 
+def not_ready(spec):
+    """Номера листов с пометкой «не готов» (album_io._not_ready): что-то не поместилось, а мельчить и обрывать молча
+    нельзя (владелец 01.10.2026). Читается после сборки PDF или PPTX."""
+    return [i for i, sh in enumerate(spec.get("sheets") or [], start=1) if isinstance(sh, dict) and sh.get("_notReady")]
+
+
 # рамки листа → группы фигур в PPTX
 PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "ColumnFrame": "Легенда", "PhotoGridFrame": "Фотографии",
                "CalloutFrame": "Выноска", "OkrugTitleFrame": "Название округа", "MapNoteFrame": "Округ и район", "ConceptColumnFrame": "Легенда", "OrthoLegendFrame": "Легенда", "ConceptPhotoFrame": "Фотографии", "StampFrame": "Штамп", "PageBorder": "Рамка листа",

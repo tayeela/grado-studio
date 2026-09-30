@@ -205,3 +205,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-09-26 (v0.62.0): the layer tree can be read by sheets. «По листам» shows a folder per sheet with only its
   layers; a layer of several sheets is listed in each of them. Sheet content is edited right in its folder.
 - 2026-09-30 (v0.84.0, hub mode): at 1440 px the hub buttons fold into the account menu below 1400 px; check on the owner's real screen once hub mode is on. Comment pins can sit under sheet frames and make grabbing a frame at that exact spot harder (frames.js:141).
+- 2026-10-01 (v0.84.9): album sheets keep the styles they were built with, so a style change in the program reaches an
+  existing project only after the album is rebuilt; the owner has to remember to press it. Candidate: refresh the
+  template part of «pptkrt_» sheets on project open (keep frame, scale and photos). Sheets that do not fit are now
+  named in the export message and marked «не готов» under the map — check that the owner notices it.

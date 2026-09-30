@@ -91,31 +91,105 @@ def _tw(text, family, size_mm):
     return _FONTS[family].text_width(str(text), size_mm)
 
 
-def _wrap_mm(text, family, size_mm, width):
-    """Перенос по словам по настоящей ширине строки (а не по числу знаков)."""
-    lines = []
-    for para in _glue(text).split("\n"):
-        cur = ""
-        for w in [w for w in para.replace("\t", " ").split(" ") if w]:   # неразрывный пробел (\xa0) держит слова вместе
-            t = (cur + " " + w).strip()
+# место переноса составного слова — после его дефиса между буквами: «природно-/жилая»; слова с цифрами («1218-ПП»,
+# «РФ-77-4-59-…») не делятся (правила 2.17, 2.35)
+_HYPH = re.compile(r"(?<=[А-Яа-яЁёA-Za-z]-)(?=[А-Яа-яЁёA-Za-z])")
+
+
+def _hyph_parts(word):
+    return _HYPH.split(word) if "-" in word and not re.search(r"\d", word) else [word]
+
+
+def _wrap_para(para, family, size_mm, width, hyph=False):
+    lines, cur = [], ""
+    for w in [w for w in para.replace("\t", " ").split(" ") if w]:   # неразрывный пробел (\xa0) держит слова вместе
+        # ячейка таблицы: составное слово шире колонки переносится после своего дефиса (владелец 01.10.2026)
+        parts = _hyph_parts(w) if hyph and _tw(w.replace("\xa0", " "), family, size_mm) > width else [w]
+        for k, piece in enumerate(parts):
+            t = (cur + (" " if k == 0 else "") + piece).strip() if cur else piece
             if cur and _tw(t.replace("\xa0", " "), family, size_mm) > width:
                 lines.append(cur)
-                cur = w
+                cur = piece
             else:
                 cur = t
-        lines.append(cur)
+    return lines + [cur]
+
+
+def _wrap_mm(text, family, size_mm, width, orphan=True, hyph=False):
+    """Перенос по словам по настоящей ширине строки (а не по числу знаков). orphan — последняя строка абзаца не бывает
+    одним словом короче 8 знаков («…на кадастровый / учёт»): два последних слова связываются и переносятся вместе
+    (владелец 01.10.2026, правило 2.22). Ячейки таблиц — без этого (узкая колонка разошлась бы на лишние строки), зато
+    с hyph: составное слово шире колонки переносится после своего дефиса."""
+    lines = []
+    for para in _glue(text).split("\n"):
+        para = para.rstrip()
+        out = _wrap_para(para, family, size_mm, width, hyph)
+        while orphan and len(out) > 1 and len(out[-1].replace("\xa0", " ").split()) < 2 and len(out[-1]) < 8:
+            i = para.rfind(" ")                            # пробел перед последним словом абзаца
+            pair = para[para.rfind(" ", 0, i) + 1:].strip() if i > 0 else ""
+            if i <= 0 or _tw(pair.replace("\xa0", " "), family, size_mm) > width:
+                break
+            para = para[:i] + "\xa0" + para[i + 1:]
+            out = _wrap_para(para, family, size_mm, width, hyph)
+        lines += out
     return [ln.replace("\xa0", " ") for ln in lines]
 
 
-def _fit_pt(text, family, size_pt, width_mm, min_pt=12):
-    """Кегль заголовка, при котором строка влезает в ширину: длинные названия листов «Царицыно» (до 100 знаков)
-    на 18 пт вышли бы за край листа."""
-    try:
-        from grado_render import Font, find_font
-        w = Font(find_font(family)).text_width(str(text), size_pt * PT)
-    except Exception:
-        return size_pt
-    return size_pt if w <= width_mm else max(min_pt, size_pt * width_mm / w)
+def _title_lines(text, size_pt=18, width=361):
+    """Название листа — всегда 18 пт (владелец 01.10.2026): одна строка, если помещается, иначе две строки примерно
+    равной длины (перенос только по пробелам, предлоги и сокращения держатся за своё слово). Не помещается и в две —
+    (две первые строки, False): лист помечается «не готов»."""
+    s, size_mm = _glue(text), size_pt * PT
+    one = s.replace("\xa0", " ")
+    if _tw(one, "sans-bold", size_mm) <= width:
+        return [one], True
+    words, best = [w for w in s.split(" ") if w], None
+    for i in range(1, len(words)):
+        a, b = (" ".join(words[:i]).replace("\xa0", " "), " ".join(words[i:]).replace("\xa0", " "))
+        wa, wb = _tw(a, "sans-bold", size_mm), _tw(b, "sans-bold", size_mm)
+        if wa <= width and wb <= width and (best is None or max(wa, wb) < best[0]):
+            best = (max(wa, wb), [a, b])
+    if best:
+        return best[1], True
+    return _wrap_mm(text, "sans-bold", size_mm, width)[:2], False
+
+
+def _col_widths(widths, cols, rows, size_mm):
+    """Ширины колонок таблицы (правило 6.11): колонка не уже самого длинного неделимого слова плюс 2 мм — недостающее
+    берётся у колонок с запасом, пропорционально запасу. Сначала без переноса слов, если не выходит — с переносом
+    составных слов по дефису (владелец 01.10.2026). None — не помещается и так."""
+    def need(split):
+        out = []
+        for j, head in enumerate(cols):
+            cells = [(head, "sans-bold")] + [(r[j], "sans") for r in rows if j < len(r)]
+            m = 0
+            for text, fam in cells:
+                for w in _glue(str(text)).replace("\n", " ").split(" "):
+                    for piece in (_hyph_parts(w) if split else [w]):
+                        if piece:
+                            m = max(m, _tw(piece.replace("\xa0", " "), fam, size_mm))
+            out.append(m + 2)
+        return out
+    for split in (False, True):
+        nd = need(split)
+        short = sum(max(0, n - w) for n, w in zip(nd, widths))
+        spare = sum(max(0, w - n) for n, w in zip(nd, widths))
+        if short <= spare + 1e-6:
+            if short < 1e-6:
+                return list(widths)
+            return [n if n > w else w - (w - n) * short / spare for n, w in zip(nd, widths)]
+    return None
+
+
+NOTE_GREY = (0x59 / 255,) * 3
+
+
+def _not_ready(sheet, reason):
+    """Пометка «не готов»: лист не выпускается до решения владельца (правила 1.29, 1.43). Сервер сообщает номера
+    таких листов; сама пометка печатается на листе серым 9 пт."""
+    lst = sheet.setdefault("_notReady", [])
+    if reason not in lst:
+        lst.append(reason)
 
 
 def _tab(x, y, w, h):
@@ -169,7 +243,22 @@ class PptKrtFrame(Frame):
                     "rings": [[(0, 35), (45.5, 35)]]})
         out.append({"op": "path", "closed": True, "fill": RED, "stroke": None, "width": 0, "dash": None,
                     "rings": [[(44, 33), (49, 35), (44, 37)]]})
-        out.append(_text(51, 37.4, _fit_pt(sh.get("title", ""), "sans-bold", 18, w - 51 - 8), sh.get("title", ""), RED))
+        # название — всегда 18 пт; длинное — в две строки по центру стрелки (y = 35): стрелка шаблона на месте, вторая
+        # строка кончается выше карты (y = 44) (владелец 01.10.2026, правила 1.27–1.29)
+        lines, fits = _title_lines(sh.get("title", ""), 18, w - 51 - 8)
+        if len(lines) == 1:
+            out.append(_text(51, 37.4, 18, lines[0], RED))
+        else:
+            lead = 7.4
+            b1 = 35 + (0.7 * 18 * PT - lead) / 2                        # середина блока (верх прописных — база 2-й строки) на стрелке
+            for i, line in enumerate(lines):
+                out.append(_text(51, b1 + i * lead, 18, line, RED))
+        if not fits:
+            _not_ready(sh, "название не помещается в две строки по 18 пт")
+        if sh.get("_notReady"):          # пометка «не готов» — под картой слева; рамки листа рисуются раньше шапки
+            note = _wrap_mm("Лист не готов: " + "; ".join(sh["_notReady"]), "sans", 9 * PT, 385)   # целиком: снизу вверх
+            for i, line in enumerate(note):
+                out.append(_text(7, 292 - (len(note) - 1 - i) * 3.8, 9, line, NOTE_GREY, "sans"))
         out.append({"op": "path", "closed": True, "fill": RED, "stroke": None, "width": 0, "dash": None,
                     "rings": [_tab(399, 278.7, 17.8, 12.7)]})
         out.append(_text(407.9, 288, 20, ctx.get("page_no", ""), (1, 1, 1), "sans-bold", "middle"))
@@ -319,16 +408,19 @@ class ConceptColumnFrame(Frame):
             yy += 8
             # знаки легенды на всех листах одного размера 13 × 3 мм: в 8 мм рисунок линии ЗОУИТ не различим (правила 11, 12)
             sw_, ind_ = SW_W, SW_W + 2.5
-            for g in sh["cLegend"]:
+            for gi, g in enumerate(sh["cLegend"]):
                 if g.get("title"):
                     for line in _wrap_mm(g["title"], "sans", S10, w):          # длинный заголовок группы — в две строки
                         out.append({**_text(x, yy, 10, line, INK2, "sans"), "underline": True})
                         yy += 4.4
                     yy += 2.1
-                for it in g.get("items", []):
+                for j, it in enumerate(g.get("items", [])):
                     note = it.get("kind") == "note"                    # пояснение под легендой (приаэродромная территория) — без знака
                     lines = _wrap_mm(it.get("label", ""), "sans", S10, w if note else w - ind_)
                     if yy + (len(lines) - 1) * 4.2 > bottom - 2:
+                        # не обрывать молча и не мельчить: лист помечается «не готов» (владелец 01.10.2026, правило 1.43)
+                        left = len(g["items"]) - j + sum(len(g2.get("items", [])) for g2 in sh["cLegend"][gi + 1:])
+                        _not_ready(sh, f"в колонку не поместились пункты легенды ({left})")
                         full = True
                         break
                     if not note:
@@ -339,6 +431,8 @@ class ConceptColumnFrame(Frame):
                 if full:
                     break
         tbl = sh.get("gpTable")
+        if tbl and tbl.get("rows") and full:
+            _not_ready(sh, f"не выведена таблица «{tbl.get('title', '')}»")
         if tbl and tbl.get("rows") and not full:
             yy += 5
             for line in _wrap_mm(tbl.get("title", ""), "sans-bold", S12, w):     # длинный заголовок — в несколько строк
@@ -347,7 +441,11 @@ class ConceptColumnFrame(Frame):
             fs = float(tbl.get("fs", 10))                                    # кегль таблицы: у широких — мельче
             T10, lh_ = fs * PT, fs * .42
             widths = [w * c for c in tbl.get("widths", [.2, .2, .28, .32])]
-            heads = [_wrap_mm(c, "sans-bold", T10, cw - 2) for c, cw in zip(tbl["cols"], widths)]
+            fit = _col_widths(widths, tbl["cols"], tbl["rows"], T10)
+            if fit is None:                                              # слово шире колонки и после переноса по дефису
+                _not_ready(sh, f"таблица «{tbl.get('title', '')}» не помещается по ширине")
+            widths = fit or widths
+            heads = [_wrap_mm(c, "sans-bold", T10, cw - 2, orphan=False, hyph=True) for c, cw in zip(tbl["cols"], widths)]
             hh = max(len(t) for t in heads) * lh_ + 3
             out.append({"op": "path", "closed": True, "fill": (0.9, 0.9, 0.9), "stroke": None, "width": 0, "dash": None,
                         "rings": [[(x, yy), (x + w, yy), (x + w, yy + hh), (x, yy + hh)]]})
@@ -357,10 +455,12 @@ class ConceptColumnFrame(Frame):
                     out.append(_text(cx + cw / 2, yy + 1.5 + T10 * .8 + i * lh_ + (hh - 3 - len(t) * lh_) / 2, fs, line, INK2, "sans-bold", "middle"))
                 cx += cw
             yy += hh + 2
-            for row in tbl["rows"]:
-                cells = [_wrap_mm(v, "sans", T10, cw - 2) for v, cw in zip(row, widths)]
+            for r, row in enumerate(tbl["rows"]):
+                cells = [_wrap_mm(v, "sans", T10, cw - 2, orphan=False, hyph=True) for v, cw in zip(row, widths)]
                 rh = max(len(c) for c in cells) * lh_ + 2
                 if yy + rh > bottom:
+                    _not_ready(sh, f"не поместились строки таблицы ({len(tbl['rows']) - r})")
+                    full = True
                     break
                 cx = x
                 for c, cw in zip(cells, widths):
@@ -370,7 +470,10 @@ class ConceptColumnFrame(Frame):
                 yy += rh
         for blk in sh.get("cLists") or []:
             if full or yy > bottom - 12:
-                break
+                if blk.get("items"):
+                    _not_ready(sh, f"не выведен список «{blk['title']}» ({len(blk['items'])})")
+                full = True
+                continue
             yy += 7
             for line in _wrap_mm(blk["title"], "sans-bold", S12, w):
                 out.append(_text(x, yy, 12.3, line, INK, "sans-bold"))
@@ -380,7 +483,7 @@ class ConceptColumnFrame(Frame):
                 lines = _wrap_mm(it["text"], "sans", S10, w - 4)
                 bh = len(lines) * 4.2 + 2.6
                 if yy + bh > bottom:
-                    out.append(_text(x, min(yy + 3, bottom), 9, f"… ещё {len(blk['items']) - n}: их номера есть на карте", (0.35, 0.35, 0.35), "sans"))
+                    _not_ready(sh, f"не поместились пункты списка «{blk['title']}» ({len(blk['items']) - n})")
                     full = True
                     break
                 out.append({"op": "path", "closed": True, "fill": None, "stroke": _rgb(it.get("color"), INK), "width": 0.3, "dash": None,
@@ -390,6 +493,8 @@ class ConceptColumnFrame(Frame):
                     out.append(_text(x + 1.8, yy + (bh - (len(lines) - 1) * 4.2 - cap_) / 2 + cap_ + i * 4.2, 10, line, INK2, "sans"))
                 yy += bh + 3.2
         cards = sh.get("cCards")
+        if cards and cards.get("items") and full:
+            _not_ready(sh, f"не выведен блок «{cards['title']}»")
         if cards and cards.get("items") and not full:
             yy += 7
             for line in _wrap_mm(cards["title"], "sans-bold", S12, w):
@@ -400,7 +505,7 @@ class ConceptColumnFrame(Frame):
                 rows = [(_wrap_mm(k, "sans-bold", S10, w * .3), _wrap_mm(v, "sans", S10, w * .64)) for k, v in card]
                 ch = sum(max(len(a), len(b)) * 4.2 + 2.2 for a, b in rows)
                 if yy + ch > bottom:
-                    out.append(_text(x, min(yy + 3, bottom), 9, f"… и ещё участков: {len(cards['items']) - n} (кадастровые номера — на схеме)", (0.35, 0.35, 0.35), "sans"))
+                    _not_ready(sh, f"не поместились участки блока «{cards['title']}» ({len(cards['items']) - n})")
                     break
                 if n:
                     out.append({"op": "path", "closed": False, "fill": None, "stroke": (0.75, 0.75, 0.75), "width": 0.2, "dash": None,

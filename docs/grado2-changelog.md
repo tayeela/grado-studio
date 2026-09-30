@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.84.9: owner's decisions on the album rule register (8.50–8.66) and fixes found by the
+  reviewers.** Rules first: label-rules.md rule 13, slide-layout-rules.md items 1.20, 1.27–1.29, 1.43, 2.17, 2.22, 2.35,
+  3.13, 3.14, 3.24, 3.28, 3.47–3.49, 6.11, 6.12, 7.10, 7.11, register items closed. Sheet title is always 18 pt: a
+  long one (sheet 5) goes into two lines of about equal width centred on the template arrow (`_title_lines`), never
+  smaller; more than two lines marks the sheet «не готов». Genplan zones (sheet 6) take all colours from the owner's
+  MapInfo table of ТиНАО functional zones (`ФункциональныеЗоны_ПрисоединенныеТер.TAB`, read with the ogrinfo that ships
+  with QGIS, no new dependency), keyed by the zone type index `fz_type`; the six «Хатминки» colours are dropped.
+  Roadway on sheets 5–8 is one solid grey #B4B4B4 (owner picked it from three variants). Planning documents (ППТ, ПМТ,
+  ГПЗУ, АГР) are drawn above roads and buildings, under the territory boundary. Buildings on sheets 4–8 are filled
+  white. Line widths are exact: parcel boundaries on sheet 5 0.20 mm, Genplan zone boundaries 0.35 mm (`MM()`). Legend,
+  table, lists and cards no longer stop silently: the sheet gets a grey 9 pt «Лист не готов: …» note under the map, the
+  server returns `X-Grado-Not-Ready` and the export message names those sheets. «№» is followed by a non-breaking
+  space in document lists; the last line of a legend label, list box or block heading is never a lone word shorter
+  than 8 characters (`_wrap_mm`, rule 2.22). Table columns are never narrower than their longest unbreakable word +
+  2 mm (`_col_widths`); in table cells a compound word wider than its column breaks after its own hyphen
+  («природно-/жилая зона», owner's choice when the sheet 6 table needed 122 mm of 120); «функц. зоны» never splits.
+  Посёлок in area names is «пос.». Existing projects get the new look after the album is rebuilt («План реализации ППТ
+  КРТ» again): sheets keep the styles they were built with.
 - **2026-09-30, ГРАДО 2 v0.84.8: street labels on the road axis, never across the boundary.** Owner, again: «ул.
   Придорожная криво и залезает на границу». Causes: the street had no straight run between junctions long enough, so
   the label fell back to a spot beside the road (over the houses) and, for an obligatory street, to a last pass

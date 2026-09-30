@@ -205,7 +205,7 @@ class Pptx(unittest.TestCase):
 
 class PptKrtSheets(unittest.TestCase):
     """Листы альбома ППТ КРТ по составу «ГК Царицыно»: карта слева (рамка шаблона), справа легенда и списки документов,
-    в углу карты — округ и район; длинный заголовок уменьшается, а не вылезает за лист."""
+    в углу карты — округ и район; длинный заголовок — 18 пт в две строки, а не мельче (владелец 01.10.2026)."""
 
     def test_map_sheet_with_legend_lists_and_note(self):
         title = "Схема существующего использования территорий с границами зон с особыми условиями использования территорий"
@@ -220,8 +220,13 @@ class PptKrtSheets(unittest.TestCase):
         for t in ("Условные обозначения", "Проекты планировки территории", "Троицкий административный", "район Вороново"):
             self.assertIn(t, texts)
         self.assertTrue(any(t.startswith("1. Об утверждении") for t in texts))
-        head = next(o for o in ops if o["op"] == "text" and o["text"] == title)
-        self.assertLess(head["size"], 18 * 0.3528)                     # 100 знаков на 18 пт не влезли бы
+        red = [o for o in ops if o["op"] == "text" and o["x"] == 51]   # название листа: x = 51 мм
+        self.assertEqual(len(red), 2)                                  # 100 знаков на 18 пт — две строки
+        self.assertEqual(" ".join(o["text"] for o in red), title)
+        self.assertTrue(all(abs(o["size"] - 18 * 0.3528) < 1e-9 for o in red))   # кегль не уменьшается
+        self.assertLess(red[1]["y"] + 1.6, 44)                         # вторая строка кончается выше карты
+        self.assertGreater(red[0]["y"] - 18 * 0.3528 * .7, 27.9)       # первая — ниже шапки
+        self.assertFalse(print_io.not_ready(spec))
 
     def test_photo_sheet_has_map_and_photo_grid(self):
         spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "kind": "photos", "title": "Материалы фотофиксации", "rect": [24, 44, 170, 233],
@@ -254,6 +259,37 @@ class ConceptSheets(unittest.TestCase):
         self.assertTrue(boxes)                                            # рамка пункта списка — цветом документа
         self.assertTrue(all(o.get("font_family", "") == "sans-bold" for o in ops if o["op"] == "text" and o["text"] == "Условные обозначения"))
         self.assertIn("ConceptColumnFrame", [type(f).__name__ for f in doc.pages[0].frames])
+
+    def test_overflow_marks_sheet_not_ready_instead_of_silent_cut(self):
+        items = [{"kind": "fill", "fill": "#cccccc", "label": f"пункт легенды {i}"} for i in range(60)]
+        spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "look": "concept", "scale": 7500, "center": [37.2, 55.4], "layers": [], "legend": [],
+                            "title": "Схема", "cLegend": [{"title": "Много пунктов", "items": items}],
+                            "cLists": [{"title": "ГПЗУ", "items": [{"text": "1. ГПЗУ № RU77230000-039043 от 24.07.2018 г.", "color": "#231f20"}]}]}]}
+        ops = print_io.document_pages_ops(print_io.build_document(spec, {}, {}), None)[0][2]
+        texts = [o["text"] for o in ops if o["op"] == "text"]
+        self.assertEqual(print_io.not_ready(spec), [1])
+        note = [t for t in texts if t.startswith("Лист не готов")]
+        self.assertEqual(len(note), 1)
+        self.assertIn("пункты легенды", note[0])
+        self.assertTrue(all(o["size"] == 10 * 0.3528 for o in ops if o["op"] == "text" and o["text"].startswith("пункт легенды")))   # не мельче
+
+    def test_last_line_not_a_lonely_short_word_and_table_hyphen_break(self):
+        import album_io as A
+        lines = A._wrap_mm("земельных участков, поставленных на кадастровый учёт", "sans", 10 * A.PT, 120 - 15.5)
+        self.assertGreaterEqual(len(lines[-1].split()), 2)             # не «учёт» одно на строке
+        self.assertEqual(A._wrap_mm("природно-жилая зона", "sans", 10 * A.PT, 25, orphan=False, hyph=True), ["природно-", "жилая зона"])
+        self.assertEqual(A._hyph_parts("1218-ПП"), ["1218-ПП"])        # коды с цифрами не делятся
+        cols = ["Номер функц.\xa0зоны", "Индекс функц.\xa0зоны", "Тип функц.\xa0зоны", "Прогнозируемый фонд застройки функц.\xa0зоны, тыс.\xa0кв.\xa0м"]
+        w = A._col_widths([120 * c for c in (.17, .17, .3, .36)], cols, [["28", "240", "природно-жилая зона", "118–160"]], 10 * A.PT)
+        self.assertAlmostEqual(sum(w), 120, places=6)
+        self.assertGreaterEqual(w[0], A._tw("функц. зоны", "sans-bold", 10 * A.PT) + 2 - 1e-6)   # «функц. зоны» не разрывается
+
+    def test_title_longer_than_two_lines_is_not_shrunk_but_marked(self):
+        import album_io as A
+        lines, fits = A._title_lines("Очень длинное название листа " * 12)
+        self.assertFalse(fits)
+        self.assertEqual(len(lines), 2)
+        self.assertIsNone(A._col_widths([10, 10], ["Прогнозируемый", "Прогнозируемый"], [], 10 * A.PT))   # слово шире таблицы
 
     def test_photo_grid_like_the_sample(self):
         import base64
