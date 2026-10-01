@@ -402,7 +402,7 @@ function integrate(have, revs, by) {
   catch (e) { console.error("collab: применение чужих правок", e); enqueue(() => recover("Чужие правки применились не полностью: проект загружен заново с сервера.")); }
   for (const n of names) { if (nb[n] == null) delete base[n]; else base[n] = nb[n]; if (revs && n in revs) { if (revs[n] === undefined) delete secRev[n]; else secRev[n] = revs[n]; } }
   if (info.conflicts.length) {
-    const lab = { territory: "границе", checked: "наборе источников", groups: "группах слоёв", views: "видах", album: "альбоме", graph: "графе", imports: "источниках", current_order: "порядке слоёв" };
+    const lab = { territory: "границе", checked: "наборе источников", groups: "группах слоёв", views: "видах", album: "альбоме", graph: "схеме расчёта", imports: "источниках", current_order: "порядке слоёв" };
     const what = [...new Set(info.conflicts)].map(k => lab[k] || k).join(", ");
     toast(`Ваши правки в ${what} совпали с правками ${by || "другого участника"}: оставлена их версия.`);
   }

@@ -229,6 +229,7 @@ function openProjects(focusName) {
   winOpen("wProjects", true); $("projName").value = PROJ.name || ""; renderProjects();
   if (focusName) { $("projName").focus(); $("projName").select(); toast("Назовите проект, чтобы сохранить его."); }
 }
+WIN_OPEN.wProjects = () => renderProjects();      // окно, восстановленное открытым после перезагрузки, тоже подгружает список
 $("bProj").onclick = () => { if (!window.HUB_MODE) return openProjects(false); (window.HubUI?.openProjects || window.HubUI?.projects)?.(); };   // в совместном режиме — окно хаба, не локальная папка
 $("projSave").onclick = () => saveProject($("projName").value);
 $("projName").addEventListener("keydown", e => { if (e.key === "Enter") saveProject($("projName").value); });

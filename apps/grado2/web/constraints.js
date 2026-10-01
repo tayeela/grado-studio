@@ -146,7 +146,7 @@ async function computeConstraints() {
       const grid = { x0: tb[0], y0: tb[1], cell, nx, ny, inside: new Uint8Array(nx * ny) };
       const tRings = ringsXY(TERR)[0], inPoly = (x, y) => { let c = false; for (let i = 0, j = tRings.length - 1; i < tRings.length; j = i++) { const a = tRings[i], b = tRings[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) grid.inside[j * nx + i] = inPoly(tb[0] + (i + .5) * cell, tb[1] + (j + .5) * cell) ? 1 : 0;
-      setHint("Инсоляция: солнечный потолок…"); await tick();
+      setHint("Инсоляция: предельная высота по солнцу…"); await tick();
       // потолок считается в отметках от общей базы рельефа; в клетке из него вычитается своя земля
       const gmax = Math.max(0, ...obst.map(p => p.g || 0)) + 50, capAbs = CONS.cap + gmax;
       const { env, protectedRays } = INSOL.envelope(pts, paths, grid, { norm: CONS.norm * 60, cap: capAbs });
@@ -163,7 +163,7 @@ async function computeConstraints() {
           "Потолок, м": top === Infinity ? null : Math.floor(top * 10) / 10, "Потолок, эт.": top === Infinity ? null : Math.floor(top / CONS.floorH),
           "По инсоляции, м": hs == null ? null : Math.floor(hs * 10) / 10, "По ПЗЗ, м": hp, "Почему": hs != null && (hp == null || hs <= hp) ? "тень на окна соседей" : hp != null ? "высота по ПЗЗ" : "не ограничено" }));
       }
-      consLayer(CK.ceil, "Потолок застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Потолок, эт.", n: 5, ramp: "green", method: "equal" } });
+      consLayer(CK.ceil, "Предельная высота застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Потолок, эт.", n: 5, ramp: "green", method: "equal" } });
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
       log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах в ${R} м от границы (дома дальше полосы выгрузки 60 м не загружены и не защищены); ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
     }
@@ -190,7 +190,7 @@ NCons.title = "Ограничения"; NCons.prototype.onExecute = function () 
   if (this._ck !== vis) { this._ck = vis; this._ex = consExclude(); this._cap = consCeiling(); if (this._ex) this._ex.properties = {}; if (this._cap) this._cap._id = Math.random().toString(36).slice(2); }
   this.setOutputData(0, this._ex); this.setOutputData(1, this._cap);
   const n = EXCLUDE.filter(k => lyr(k) && shown(lyr(k))).length;
-  this.info = lyr(CK.zouit) || lyr(CK.ceil) ? `запретов: ${n} слоя · ${ha(this._ex)}${this._cap ? " · потолок" : ""}` : "окно «Ограничения» → Рассчитать";
+  this.info = lyr(CK.zouit) || lyr(CK.ceil) ? `запретов: ${n} слоя · ${ha(this._ex)}${this._cap ? " · предельная высота" : ""}` : "окно «Ограничения» → Рассчитать";
 };
 LiteGraph.registerNodeType("Данные/Ограничения", NCons);
 LIB["Данные"].push("Данные/Ограничения");
@@ -207,7 +207,7 @@ function ensureConsNode() {
   nc.connect(0, nd, 1); nd.connect(0, place, 0);
   if (!place.inputs[2]) place.addInput("потолок", "cap");
   nc.connect(1, place, 2);
-  toast("В граф добавлен узел «Ограничения»: пятно застройки минус запреты, высота корпусов — не выше потолка.");
+  toast("В схему добавлен блок «Ограничения»: пятно застройки минус запреты, высота корпусов — не выше предельной высоты.");
 }
 
 /* ---------- окно ---------- */
@@ -215,23 +215,23 @@ window.renderCons = renderCons;
 function renderCons() {
   const c = CONS, chk = (k, t, hint) => `<label class="lr" title="${esc(hint)}"><input type="checkbox" data-cu="${k}" title="${esc(t)}: ${esc(hint)}" ${c.use[k] ? "checked" : ""}><span class="nm">${t}</span></label>`;
   const num = (k, t, min, max, step, hint) => `<div class="row" title="${esc(hint)}"><label>${t}</label><input type="number" data-cn="${k}" title="${esc(t)}. ${esc(hint)}" aria-label="${esc(t)}" value="${Number(c[k])}" min="${min}" max="${max}" step="${step}"></div>`;
-  $("consBody").innerHTML = `<div class="pad"><div class="note" style="padding:0 0 8px">Запреты вычитаются из пятна застройки; потолок ограничивает высоту корпусов. Всё строится из загруженных данных и появляется в группе слоёв «Ограничения»: выключите слой — генерация перестанет его учитывать.</div></div>`
+  $("consBody").innerHTML = `<div class="pad"><div class="note" style="padding:0 0 8px">Запреты вычитаются из пятна застройки; предельная высота ограничивает высоту корпусов. Всё строится из загруженных данных и появляется в группе слоёв «Ограничения»: выключите слой — генерация перестанет его учитывать.</div></div>`
     + `<div class="sect">Что учитывать</div>`
     + chk("zouit", "ЗОУИТ, СЗЗ, водоохранные, зоны ОКН", "Из загруженных слоёв ЕГРН и ГИС ОГД. Зоны регулирования застройки ОКН не запрещают строить и не учитываются.")
     + chk("red", "Отступ от красных линий", "Буфер от красных линий ГИС ОГД, СП 42.13330.2016")
     + chk("fire", "Сохраняемые здания и противопожарные разрывы", "Все здания, кроме отмеченных «сносим» в реестре. Разрыв 6/8/10 м по материалу стен, СП 4.13130.2013 табл. 1")
     + chk("pzz", "Подзоны ПЗЗ без нового строительства", "Подзоны с нулевыми параметрами (плотность, высота и застроенность — 0)")
     + chk("gp", "Природные зоны Генплана", "Функциональные зоны Генплана: природные, озеленённые, парковые, в составе ООПТ. Природно-жилая зона застройку допускает и не учитывается.")
-    + chk("insol", "Инсоляция окон соседей и солнечный потолок", "Расчётные точки на фасадах сохраняемых жилых домов; потолок — наибольшая высота, при которой соседи не теряют норму")
+    + chk("insol", "Инсоляция окон соседей и предельная высота по солнцу", "Расчётные точки на фасадах сохраняемых жилых домов; предельная высота — наибольшая высота, при которой соседи не теряют норму")
     + `<div class="sect">Параметры</div><div class="pad">`
     + num("redline", "Отступ от КЛ, м", 0, 30, 1, "Отступ от красной линии, м. Расстояние от красной линии до застройки")
     + num("norm", "Норма инсоляции, ч", 1, 3, .5, "Норма инсоляции, часов: оценка по ГОСТ Р 57795-2017; норма выполнена при N часах непрерывно или N + 0,5 ч с перерывом (СанПиН 1.2.3685-21)")
     + num("z", "Высота окна, м", .5, 30, .1, "Высота расчётной точки над землёй: окно нижнего жилого этажа")
     + num("step", "Шаг точек, м", 2, 20, 1, "Через сколько метров по фасаду ставить расчётную точку")
     + num("reveal", "Теневой угол окна, °", 0, 45, 1, "Откосы окна и лоджии: солнце под более острым углом к фасаду в окно не попадает")
-    + num("floorH", "Высота этажа, м", 2.7, 4.5, .1, "Для высоты существующих зданий (по этажности ЕГРН) и перевода потолка в этажи")
-    + num("cell", "Клетка потолка, м", 4, 20, 1, "Размер клетки сетки солнечного потолка")
-    + `</div><div class="pad"><button class="btn primary" id="consRun" title="Построить запреты и потолок высоты из загруженных данных; результат — в группе слоёв «Ограничения»"><i data-lucide="shield-check"></i>Рассчитать ограничения</button></div>`
+    + num("floorH", "Высота этажа, м", 2.7, 4.5, .1, "Для высоты существующих зданий (по этажности ЕГРН) и перевода предельной высоты в этажи")
+    + num("cell", "Шаг сетки предельной высоты, м", 4, 20, 1, "Размер клетки сетки предельной высоты по солнцу")
+    + `</div><div class="pad"><button class="btn primary" id="consRun" title="Построить запреты и предельную высоту из загруженных данных; результат — в группе слоёв «Ограничения»"><i data-lucide="shield-check"></i>Рассчитать ограничения</button></div>`
     + (c.log ? `<div class="sect">Результат</div><div class="note">${c.log.map(esc).join("<br>")}</div>` : "")
     + `<div class="note" style="color:var(--warn)">Инсоляция — предпроектная оценка по методам ГОСТ Р 57795-2017 (22 апреля и 22 августа, солнечное время, без первого часа после восхода и последнего перед заходом). Не заменяет сертифицированный расчёт для экспертизы. Рельеф не учитывается, высота зданий — этажность × высота этажа, школы и детские сады отдельно не выделяются.</div>`;
   icons();
@@ -316,7 +316,7 @@ async function checkNorms(sk, title) {
 }
 async function runCheck(key) {
   const sk = key ? sketchFromLayer(key) : RESULT.sketch.map(b => ({ f: b.f, floors: b.floors, grp: b.grp || null }));
-  if (!sk.length) return toast("Проверять нечего: постройте эскиз или выберите принятый слой эскиза.");
+  if (!sk.length) return toast("Проверять нечего: постройте эскиз или выберите сохранённый слой эскиза.");
   busy(true);
   try {
     const r = await checkNorms(sk, key ? lyr(key).title : "эскиз"); CHECK = key ? { key } : null;

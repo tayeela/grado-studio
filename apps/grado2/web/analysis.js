@@ -143,14 +143,14 @@ $("lib").innerHTML = Object.entries(LIB).map(([c, ts]) => `<div class="cat">${c}
 
 /* «В слой» (Bake): выход выбранного узла — обычный слой проекта; у узлов анализа — с таблицей показателей */
 function bakeNode(n) {
-  if (!n) return toast("Выберите узел в графе.");
+  if (!n) return toast("Выберите блок в схеме расчёта.");
   const out = n.outputs?.findIndex(o => o.type === "geom"), g = out >= 0 ? n.getOutputData(out) : null;
   const feats = n._fc?.length ? n._fc : g ? [turf.feature(g.geometry, { "Узел": n.title })] : [];
   if (!feats.length) return toast("У узла нет геометрии на выходе.");
   const key = "user:" + Date.now().toString(36), title = `Анализ: ${n.title}`, fc = turf.featureCollection(feats.map(f => turf.feature(f.geometry, { ...f.properties })));
-  DATA[key] = { title, source: "выход узла графа, " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: fc.features.length, fields: [] };
+  DATA[key] = { title, source: "выход блока схемы, " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: fc.features.length, fields: [] };
   layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
   const l = ensureLayer(key, title, geomOf(fc)); l.style = ST({ ...l.style, label: "Пояснение", opacity: .35 }); restyle(l); setCurrent(key); dataRev++;
-  toast(`Слой «${title}»: ${plural(feats.length, ["объект", "объекта", "объектов"])} с таблицей показателей. Граф на него больше не влияет.`);
+  toast(`Слой «${title}»: ${plural(feats.length, ["объект", "объекта", "объектов"])} с таблицей показателей. Схема на него больше не влияет.`);
 }
 $("bBakeNode").onclick = () => bakeNode(selNode);

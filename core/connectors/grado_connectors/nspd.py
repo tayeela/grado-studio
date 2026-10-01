@@ -19,10 +19,12 @@ nspd.gov.ru при «поиске в области», без авторизац
 import hashlib
 import json
 import os
+import re
 import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -266,3 +268,129 @@ class NspdDirect(Connector):
             # отказ геопортала — ошибка, а не пустой слой: пустой ответ при повторной выгрузке затёр бы слой с правками
             raise ConnectorError("; ".join(notes))
         return result
+
+
+# --- поиск участка по кадастровому номеру ------------------------------------
+# GET /api/geoportal/v2/search/geoportal?query=<номер>&thematicSearchId=1 —
+# тот же вызов, что делает строка поиска геопортала (проверен 26.09.2026).
+# Ответ — GeoJSON EPSG:3857 с геометрией и атрибутами; дальше путь тот же,
+# что у выгрузки по области (NspdCapture): options → opt_*, координаты → WGS84.
+
+SEARCH_URL = "https://nspd.gov.ru/api/geoportal/v2/search/geoportal"
+CAD_RE = re.compile(r"^[0-9]{2}:[0-9]{2}:[0-9]{6,7}:[0-9]+$")
+SEARCH_MAX = 20
+
+
+class _Retryable(ConnectorError):
+    """Сбой, который стоит повторить: лимит частоты, 5xx, сеть."""
+
+
+def _http_get(url):
+    req = urllib.request.Request(url, headers={
+        "User-Agent": _UA, "Accept": "application/json",
+        "Referer": "https://nspd.gov.ru/map?thematic=PKK",
+        "Origin": "https://nspd.gov.ru"})
+    ctx = _ssl_context()
+    for _ in range(2):                       # второй заход — только для явного GRADO_NSPD_INSECURE=1
+        try:
+            with netutil.open_url(req, 30, ctx) as r:
+                return json.loads(netutil.read_capped(r).decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            cls = _Retryable if e.code == 429 or e.code >= 500 else ConnectorError
+            raise cls(f"НСПД ответил HTTP {e.code}") from None
+        except Exception as e:
+            is_cert = isinstance(e, ssl.SSLCertVerificationError) or \
+                "CERTIFICATE_VERIFY_FAILED" in str(e)
+            if is_cert and ctx.verify_mode != ssl.CERT_NONE:
+                if os.environ.get("GRADO_NSPD_INSECURE") == "1":
+                    _warn_insecure()
+                    ctx = _ssl_context_unverified()
+                    continue
+                raise ConnectorError(_CERT_HELP) from None
+            raise _Retryable(f"НСПД недоступен: {_short(e)}") from None
+    raise ConnectorError("НСПД недоступен")
+
+
+def normalize_cadastral(text_or_list):
+    """Строка (через запятую/пробел/перевод строки) или список → (верные номера без повторов, отброшенное)."""
+    if isinstance(text_or_list, str):
+        parts = re.split(r"[,;\s]+", text_or_list)
+    else:
+        parts = [str(x) for x in text_or_list]
+    good, bad = [], []
+    for p in (x.strip() for x in parts):
+        if not p:
+            continue
+        if CAD_RE.match(p):
+            if p not in good:
+                good.append(p)
+        else:
+            bad.append(p)
+    return good, bad
+
+
+def _search_features(data):
+    """Объекты из ответа поиска: FeatureCollection на верхнем уровне или внутри data."""
+    if isinstance(data, dict):
+        inner = data.get("data")
+        if isinstance(inner, dict) and "features" in inner:
+            data = inner
+        return [f for f in (data.get("features") or []) if isinstance(f, dict)]
+    return []
+
+
+def search_cadastral(numbers, transport=None, pause=0.5, sleep=time.sleep, errors=None, nogeom=None):
+    """Участки по кадастровым номерам → нормализованные объекты (WGS84, свойства как у выгрузки по области).
+
+    Один запрос на номер, строго по очереди, до 3 попыток на номер. Не найденные номера просто
+    отсутствуют в результате; найденные без контура — в nogeom (номера), не молча; сбои порталa (после 3 попыток) складываются в errors как (номер, текст).
+    """
+    nums, _ = normalize_cadastral(numbers)
+    if not nums:
+        raise ConnectorError("нет верных кадастровых номеров")
+    nums = nums[:SEARCH_MAX]
+    get = transport or _http_get
+    out, seen = [], set()
+    for i, num in enumerate(nums):
+        if i:
+            sleep(pause)
+        url = SEARCH_URL + "?" + urllib.parse.urlencode({"query": num, "thematicSearchId": 1})
+        data = None
+        for attempt in range(3):
+            try:
+                data = get(url)
+                break
+            except _Retryable as e:
+                if attempt == 2:
+                    if errors is not None:
+                        errors.append((num, str(e)))
+                else:
+                    sleep(1.5 * (attempt + 1))
+            except ConnectorError as e:
+                if errors is not None:
+                    errors.append((num, str(e)))
+                break
+        if data is None:
+            continue
+        raw = _search_features(data)
+        flat = [_flatten_options(dict(f.get("properties") or {})) for f in raw]
+        hit = [f for f, p in zip(raw, flat)
+               if num in (p.get("opt_cad_num"), p.get("cad_num"), p.get("descr"))]
+        if not hit and len(raw) == 1 and not any(
+                p.get("opt_cad_num") or p.get("cad_num") for p in flat):
+            hit = raw                     # поле номера не пришло, объект один — берём его
+        for f in hit:
+            if not f.get("geometry"):
+                if nogeom is not None and num not in nogeom:
+                    nogeom.append(num)
+                continue
+            f = dict(f)
+            f["id"] = f.get("id") or num
+            f["properties"] = dict(f.get("properties") or {})
+            f["properties"].setdefault("opt_cad_num", num)
+            for g in NspdCapture().fetch(payload={"features": [f]})["features"]:
+                if g["grado_key"] not in seen:
+                    seen.add(g["grado_key"])
+                    g["grado_key"] = num
+                    out.append(g)
+    return out

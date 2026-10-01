@@ -13,7 +13,7 @@ const toM = c => MSK.fromWgs(ol.proj.toLonLat(c)), fromM = w => ol.proj.fromLonL
 const DEG = Math.PI / 180;
 
 /* ---------- режимы ---------- */
-const MODES = { end: "Конточка", mid: "Середина", cen: "Центр", quad: "Квадрант", int: "Пересечение", ext: "Продолжение", perp: "Нормаль", tan: "Касательная", par: "Параллельно", near: "Ближайшая" };
+const MODES = { end: "Конечная точка", mid: "Середина", cen: "Центр", quad: "Квадрант", int: "Пересечение", ext: "Продолжение", perp: "Нормаль", tan: "Касательная", par: "Параллельно", near: "Ближайшая" };
 const ST = { topo: false, ortho: false, polar: true, polarInc: 45, polarRel: false, osnap: true, otrack: true, dyn: true, modes: { end: true, mid: true, cen: true, quad: false, int: true, ext: true, perp: true, tan: false, par: true, near: false } };
 try { const s = JSON.parse(localStorage.getItem("grado2.cad") || "{}"); Object.assign(ST, { ...s, modes: { ...ST.modes, ...s.modes } }); } catch { }
 const saveST = () => { try { localStorage.setItem("grado2.cad", JSON.stringify(ST)); } catch { } };
@@ -39,7 +39,7 @@ const MARK = {
   tan: new ol.style.Circle({ radius: 7, stroke: MK, fill: new ol.style.Fill({ color: "rgba(232,89,12,0.25)" }) }),
   near: new ol.style.RegularShape({ points: 4, radius: 9, radius2: 3, angle: Math.PI / 4, stroke: MK }),
   track: new ol.style.RegularShape({ points: 4, radius: 9, radius2: 0, angle: Math.PI / 4, stroke: new ol.style.Stroke({ color: TRK, width: 2.2 }) }) };
-const KIND = { end: "конточка", mid: "середина", cen: "центр", quad: "квадрант", int: "пересечение", ext: "продолжение", perp: "нормаль", tan: "касательная", near: "ближайшая", track: "отслеживание", track2: "пересечение линий отслеживания", polar: "полярное", ortho: "орто", par: "параллельно" };
+const KIND = { end: "конечная точка", mid: "середина", cen: "центр", quad: "квадрант", int: "пересечение", ext: "продолжение", perp: "нормаль", tan: "касательная", near: "ближайшая", track: "отслеживание", track2: "пересечение линий отслеживания", polar: "полярное", ortho: "орто", par: "параллельно" };
 const prevLayer = new ol.layer.Vector({ source: prevSrc, zIndex: 140, updateWhileInteracting: true, updateWhileAnimating: true,
   style: f => ({ rubber: sRubber, ghost: sGhost, gone: sGone, track: sTrack, acq: sAcq, base: sBase, parseg: sPar })[f.get("k")] || new ol.style.Style({ image: MARK[f.get("k")] || MARK.end }) });
 mMain.addLayer(prevLayer);
@@ -262,7 +262,7 @@ function openInput(mode, ch) {
   inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [sz[0] / 2 - 18, sz[1] / 2 - 16];
   const below = tipEl.hidden ? 16 : 16 + tipEl.offsetHeight + 4;
   inEl.style.left = `${Math.round(px[0] + 18)}px`; inEl.style.top = `${Math.round(px[1] + below)}px`;
-  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y" : CMD?.need === "text" ? (CMD.placeholder?.() || "текст надписи, Enter") : "значение";
+  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y · 0,0" : CMD?.need === "text" ? (CMD.placeholder?.() || "текст надписи, Enter") : "значение";
   inEl.hidden = false; inEl.value = ch || ""; inEl.classList.remove("bad"); inEl.focus(); autoc();
 }
 function closeInput() { inEl.hidden = true; inEl.value = ""; acEl.hidden = true; inMode = null; }
@@ -275,26 +275,29 @@ function autoc() {
 }
 inEl.addEventListener("keydown", e => {
   e.stopPropagation();
-  if (inMode === "cmd" && /^Key[A-Z]$/.test(e.code) && !e.ctrlKey && !e.metaKey) { e.preventDefault(); inEl.value += e.code.slice(3); inEl.classList.remove("bad"); autoc(); return; }
+  if (inMode === "cmd" && /^Key[A-Z]$/.test(e.code) && !e.ctrlKey && !e.metaKey) { e.preventDefault(); const all = inEl.value && inEl.selectionStart === 0 && inEl.selectionEnd === inEl.value.length; inEl.value = (all ? "" : inEl.value) + e.code.slice(3); inEl.classList.remove("bad"); autoc(); return; }
   if (e.key === "Enter" || (e.key === " " && inMode === "cmd")) { e.preventDefault(); submit(); }
   else if (e.key === "Escape") { e.preventDefault(); closeInput(); }
 });
 inEl.addEventListener("input", () => { inEl.classList.remove("bad"); autoc(); if (CMD?.still) refresh(); });
 // число, которое сейчас набирается в поле ввода команды (для живого предпросмотра), иначе null
 function typedNum() { if (inMode !== "val" || inEl.hidden) return null; const s = normNum(inEl.value.trim()); return new RegExp(`^${NUM}$`).test(s) ? num(s) : null; }
-function bad(msg) { inEl.classList.add("bad"); note(msg); }
-const NUM = "(-?\\d+(?:[.,]\\d+)?)", num = s => +s.replace(",", ".");
+function bad(msg) { inEl.classList.add("bad"); inEl.select(); note(msg); }   // текст выделен целиком: следующий ввод заменяет его, а не клеится к нему
+const PN = "(-?\\d+(?:\\.\\d+)?)", NUM = "(-?\\d+(?:[.,]\\d+)?)", num = s => +s.replace(",", ".");
 function submit() {
   const raw = inEl.value.trim();
   if (inMode === "cmd") {
     if (!raw) { closeInput(); if (LAST) start(LAST); return; }
-    const n = ALIAS[raw.toUpperCase()]; if (!n) return bad(`Команды «${raw}» нет. Например: L — отрезок, PL — полилиния, C — круг, TR — обрезать, F1 — все.`);
+    const n = ALIAS[raw.toUpperCase()]; if (!n) return bad(`Команды «${raw}» нет. Например: L — отрезок, PL — полилиния, C — круг, TR — обрезать, ZE — показать всё, F1 — все.`);
     closeInput(); start(n); return;
   }
   if (!CMD) return closeInput();
   if (CMD.need === "text") { closeInput(); if (raw) CMD.text(raw); else enter(); after(); return; }
   if (!raw) { closeInput(); enter(); return; }
   const o = matchOpt(raw); if (o) { closeInput(); o.fn(); after(); return; }
+  // команда ждёт ПЕРВУЮ точку (после «+» слой полигонов сам запускает «Полилинию»): набранный псевдоним — смена команды,
+  // а не неверная точка. Когда точки уже есть, команды не принимаются: так же в AutoCAD.
+  { const al = ALIAS[raw.toUpperCase()]; if (al && CMD.need === "point" && !CMD.base?.()) { closeInput(); start(al); return; } }
   const s = normNum(raw), plain = new RegExp(`^${NUM}$`).test(s);
   if (CMD.need === "value" || (plain && CMD.valueFirst?.())) { if (!plain) return bad("Нужно число."); closeInput(); CMD.value(num(s)); after(); return; }
   if (CMD.need === "point") { const p = parsePoint(s); if (typeof p === "string") return bad(p); closeInput(); CMD.point(p, { typed: true }); after(); return; }
@@ -309,13 +312,19 @@ function parsePoint(s) {
   const base = CMD.base?.(); let m;
   if ((m = s.match(new RegExp(`^@${NUM};${NUM}$`)))) return base ? G.add(base, [num(m[1]), num(m[2])]) : "Смещение @ считается от последней точки: сначала укажите первую.";
   if ((m = s.match(new RegExp(`^${NUM};${NUM}$`)))) return [num(m[1]), num(m[2])];
+  // X,Y как в AutoCAD: запятая между двумя целыми или между числами с десятичной точкой; @X,Y — от последней точки
+  if ((m = s.match(new RegExp(`^(@?)${PN},${PN}$`)))) {
+    const dot = /\./.test(m[2] + m[3]), xy = [+m[2], +m[3]];
+    if (m[1]) return base ? G.add(base, xy) : "Смещение @ считается от последней точки: сначала укажите первую.";
+    if (dot || !base) return xy;                       // после первой точки «25,5» без точки — по-прежнему длина
+  }
   if ((m = s.match(new RegExp(`^@?${NUM}\\s*<\\s*${NUM}$`)))) return base ? G.polar(base, num(m[2]) * DEG, num(m[1])) : "Длина и угол считаются от последней точки: сначала укажите первую.";
   if ((m = s.match(new RegExp(`^${NUM}$`)))) {
     if (!base) return "Одно число — длина от последней точки. Первую точку укажите щелчком или координатами X;Y.";
     if (!CUR?.dir) return "Покажите направление курсором и повторите ввод длины.";
     return G.add(base, G.mul(CUR.dir, num(m[1])));
   }
-  return "Не понял ввод. Примеры: 25 · 25<90 · @10;-5 · 12345,6;6789,1 (X;Y в МСК).";
+  return "Не понял ввод. Примеры: 25 · 25<90 · @10;-5 · 0,0 или 0;0 (точка X,Y в МСК) · 12345,6;6789,1.";
 }
 
 /* ---------- запуск команд ---------- */
@@ -811,6 +820,18 @@ def("text", "Текст", ["T", "DT", "TEXT"], () => {                          
     enter: () => { if (st.need === "text") { at = null; st.need = "point"; return; } st.done = true; } };
   return st;
 });
+// «Показать всё» (Z, ZE, ZOOM): карта вписывается во все видимые слои, границу территории и листы; без анимации
+function zoomAll() {
+  const ex = ol.extent.createEmpty(), add = e => { if (e && isFinite(e[0]) && e[2] >= e[0]) ol.extent.extend(ex, e); };
+  LYR.forEach(l => { if (shown(l) && layerSrc[l.key]?.getFeatures().length) add(layerSrc[l.key].getExtent()); });
+  if (terrSrc.getFeatures().length) add(terrSrc.getExtent());
+  (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).forEach(sh => { if (sh.kind === "title" || sh.kind === "tep") return;
+    try { const { c, wh } = window.sheetMsk(sh); add(ol.extent.boundingExtent([fromM([c[0] - wh[0] / 2, c[1] - wh[1] / 2]), fromM([c[0] + wh[0] / 2, c[1] + wh[1] / 2])])); } catch { } });
+  if (!isFinite(ex[0])) return toast("Показывать нечего: на карте пока нет объектов.");
+  sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18, duration: 0 });
+  note("Показано всё. Колесо — масштаб, перетаскивание — сдвиг.");
+}
+def("zoomall", "Показать всё", ["Z", "ZE", "ZOOM"], () => { zoomAll(); return { done: true }; });
 def("point", "Точка", ["PO"], () => { const st = { need: "point", base: () => null, prompt: () => "Укажите точку (X;Y в МСК — с клавиатуры), Enter — завершить", point: w => addNew([newFeature("point", w)], "точка"), enter: () => { st.done = true; } }; return st; });
 function chainCmd(prompt0, promptN, finishFn, tipFn) {               // замеры и граница: точки по очереди, Enter — итог
   return () => {
@@ -1486,7 +1507,7 @@ const HELP = { line: "отдельные отрезки", pline: "одна ло�
   delring: "закрыть дыру полигона щелчком внутри неё", align: "перенос и поворот по двум парам точек, масштаб по желанию",
   qselect: "выбрать объекты по условию на атрибуты: Этажность > 9 и Решение = сносим", simplify: "меньше вершин с допуском в метрах", reverse: "направление линии; у красных линий — и сторона засечек",
   divide: "точки, делящие линию на N равных частей", measure: "точки вдоль линии через заданный шаг", similar: "все объекты слоя того же класса стиля",
-  dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки" };
+  dist: "расстояние по точкам", area: "площадь и периметр по точкам", terr: "граница территории разработки", zoomall: "вписать карту во все видимые слои, границу и листы" };
 const btn = id => `<button class="tl ic" data-cmd="${id}" title="${CMDS[id].title} — ${CMDS[id].alias.join(", ")} и Enter: ${HELP[id]}" aria-label="${CMDS[id].title}"><svg class="ci" aria-hidden="true"><use href="#ci-${id}"/></svg></button>`;
 function fillRibbon() {
   const put = (id, list) => { const el = document.getElementById(id); if (el) el.innerHTML = list.map(btn).join(""); };
@@ -1545,6 +1566,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? ESC_HINT : "",
+window.CAD = { cmd: () => CMD?.id || null, contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? ESC_HINT : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();

@@ -23,8 +23,8 @@ let tT; function toast(t) {
   clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), /^Восстановлена последняя работа/.test(t) ? 2500 : 4200);   // «Восстановлена…» не должна долго висеть над первой командой
 }
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
-async function api(path, body) {
-  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+async function api(path, body, signal) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal } : signal ? { signal } : {});
   const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
 }
 
@@ -208,18 +208,131 @@ $("bDraw").onclick = () => setTool("terr");
    из таблицы или письма: берутся все строки вида 00:00:0000000:000. */
 { const b = document.createElement("button"); b.className = "btn"; b.id = "bParcels"; b.title = "Граница территории — объединение земельных участков по кадастровым номерам";
   b.innerHTML = '<i data-lucide="grid-2x2"></i>По участкам'; $("bExample").before(b); window.lucide?.createIcons?.();
-  b.onclick = () => {
+  b.onclick = async () => {
     const src = (DATA["nspd.parcels"]?.fc?.features || []).filter(f => /Polygon/.test(f.geometry?.type));
-    if (!src.length) { toast("Земельные участки не загружены: окно «Данные», слой НСПД «Земельные участки»."); return; }
     const s = prompt("Кадастровые номера участков территории (через запятую, пробел или с новой строки):", "");
     const want = [...new Set(String(s || "").match(/\d+:\d+:\d+:\d+/g) || [])]; if (!want.length) return;
+    if (!src.length) return boundaryByNumbers(want.join(", "));   // участков НСПД в проекте нет — берём их у портала по номерам
     const got = want.map(k => src.filter(f => String(f.properties?.["Кадастровый номер"] || "").trim() === k));
     const miss = want.filter((k, i) => !got[i].length);
     if (miss.length) { toast(`Нет среди загруженных участков: ${miss.join(", ")}. Граница не изменена.`); return; }
     const u = unionAll(got.flat()); if (!u) { toast("Участки не объединились — граница не изменена."); return; }
     setTerritory(u); toast(`Граница — по ${want.length} участкам: ${fmt(TERR_M2 / 1e4, 4)} га.`);
   }; }
+/* ---------- поиск над картой: адрес (OpenStreetMap) и кадастровый номер (НСПД); сервер — /api/search ---------- */
+const parcelsWord = n => plural(n, ["участок", "участка", "участков"]);
+const haOf = f => { const a = m2(f) / 1e4; return fmt(a, a < 1 ? 4 : 2) + " га"; };
+const srchErr = e => { const m = String(e?.message || e);
+  return /busy/i.test(m) ? "Поиск занят другим запросом — повторите через минуту"
+    : /NSPD/i.test(m) ? "Портал НСПД не ответил — повторите позже"
+    : /Nominatim/i.test(m) ? "Сервис адресов OpenStreetMap не ответил — повторите позже"
+    : /no valid cadastral/i.test(m) ? "Не похоже на кадастровый номер. Пример: 50:27:0000000:126"
+    : /Failed to fetch|NetworkError|Load failed/i.test(m) ? "Нет связи с программой ГРАДО — повторите" : "Поиск не удался — повторите позже"; };
+const searchApi = (kind, q, signal) => api(`/api/search${kind ? "/" + kind : ""}?q=${encodeURIComponent(q)}`, null, signal);
+/* участки найденные по номерам попадают в слой «Земельные участки (ЕГРН)» как при обычной загрузке: уже стоящие там не дублируются */
+/* один участок — один ключ, откуда бы он ни пришёл: поиск знает номер, выгрузка по области — id объекта портала, поэтому
+   у участков с кадастровым номером ключом служит он (так же в mergeDownload) */
+const cadOf = f => String(f?.properties?.["Кадастровый номер"] || "").trim();
+const parcelKey = f => cadOf(f) || f?.properties?._key || "";
+function addParcels(feats) {
+  const k = "nspd.parcels", prev = DATA[k], have = prev?.fc?.features || [], seen = new Set(have.flatMap(f => [f.properties?._key, cadOf(f)]).filter(Boolean));
+  const add = feats.filter(f => { const a = [f.properties?._key, cadOf(f)].filter(Boolean); if (a.some(x => seen.has(x))) return false; a.forEach(x => seen.add(x)); return true; }).map(f => cadOf(f) ? { ...f, properties: { ...f.properties, _key: cadOf(f) } } : f); if (!add.length && prev) return;
+  const fc = { type: "FeatureCollection", features: [...have, ...add] }, title = prev?.title || SOURCES[k]?.title || "Земельные участки (ЕГРН)";
+  SOURCES[k] ||= { title, kind: "nspd" };
+  DATA[k] = { ...(prev || {}), title, source: prev?.source || "НСПД (nspd.gov.ru), поиск по кадастровому номеру", fetched_at: prev?.fetched_at || new Date().toISOString().slice(0, 10), fc, count: fc.features.length,
+    fields: [...new Set(fc.features.slice(0, 200).flatMap(f => Object.keys(f.properties || {})))], original: { type: "FeatureCollection", features: [...(prev?.original?.features || []), ...add] }, history: prev?.history || [] };
+  layerSrc[k] ||= new ol.source.Vector(); setLayerData(k, fc); const l = ensureLayer(k, title); assignCats(l, true); restyle(l);
+  dataRev++; if (!$("wData").hidden) renderSources(); window.syncStatus?.(); window.markDirty?.();
+}
+/* граница по найденным участкам — тот же путь, что у «По участкам»: объединение участков → setTerritory */
+function parcelsToTerritory(feats) {
+  const polys = feats.filter(f => /Polygon/.test(f.geometry?.type)); if (!polys.length) { toast("У найденных участков нет контура — граница не изменена."); return false; }
+  const u = unionAll(polys); if (!u) { toast("Участки не объединились — граница не изменена."); return false; }
+  addParcels(polys); setTerritory(u); toast(`Граница по участкам: ${parcelsWord(polys.length)}, ${fmt(TERR_M2 / 1e4, 2)} га.`); return true;
+}
+async function boundaryByNumbers(q) {
+  busy(true);
+  try { const r = await searchApi("cadastral", q), feats = (r.features || []).filter(f => /Polygon/.test(f.geometry?.type));
+    if (r.missing?.length) return toast(`Не найдено: ${r.missing.join(", ")}. Граница не изменена.`);
+    if (!feats.length) return toast("Участки не найдены — граница не изменена.");
+    parcelsToTerritory(feats);
+  } catch (e) { toast(srchErr(e) + ". Граница не изменена."); } finally { busy(false); }
+}
+{ const inp = $("sq"), go = $("sqGo"), box = $("sres"), mk = new ol.source.Vector();
+  mMain.addLayer(new ol.layer.Vector({ source: mk, zIndex: 120, style: f => f.getGeometry().getType() === "Point"
+    ? [new ol.style.Style({ image: new ol.style.Circle({ radius: 9, stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 2 }), fill: new ol.style.Fill({ color: "rgba(26,95,180,.12)" }) }) }), new ol.style.Style({ image: new ol.style.Circle({ radius: 2.5, fill: new ol.style.Fill({ color: "#1a5fb4" }) }) })]
+    : new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 2.5 }), fill: new ol.style.Fill({ color: "rgba(26,95,180,.10)" }) }) }));
+  let R = null, act = -1, tok = 0, pend = false, ctl = null, tAsk = null;   // ctl — единственный запрос в полёте: новый поиск, закрытие и правка запроса отменяют прежний
+  const dur = () => matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 250;
+  const fitExt = ext => sharedView.fit(ext, { padding: [60, 60, 60, 60], maxZoom: 18, duration: dur() });
+  const say = (t, bad) => { box.innerHTML = `<div class="srm${bad ? " bad" : ""}" role="status">${esc(t)}</div>`; box.hidden = false; R = null; act = -1; };
+  const clearMark = () => mk.clear();
+  const close = () => { tok++; ctl?.abort(); ctl = null; clearTimeout(tAsk); tAsk = null; box.hidden = true; box.innerHTML = ""; R = null; act = -1; clearMark(); pend = false; go.disabled = false; inp.removeAttribute("aria-busy"); };
+  const marks = () => [...box.querySelectorAll(".sri")];
+  const setAct = i => { const it = marks(); if (!it.length) return; act = (i + it.length) % it.length; it.forEach((el, j) => { el.classList.toggle("act", j === act); el.setAttribute("aria-selected", j === act); }); it[act].scrollIntoView({ block: "nearest" }); };
+  function render() {
+    const notes = (R.notes || []).filter(n => !/^Ничего не найдено/.test(n));
+    if (R.type === "address") {
+      box.innerHTML = R.list.map((x, i) => `<div class="sri" role="option" data-i="${i}"><b>${esc(x.name || x.display)}</b>${x.name && x.display ? `<span>${esc(x.display)}</span>` : ""}</div>`).join("")
+        + notes.map(n => `<div class="srm">${esc(n)}</div>`).join("");
+    } else {
+      box.innerHTML = R.list.map((f, i) => `<div class="sri" role="option" data-i="${i}"><b>${esc(f.properties?.["Кадастровый номер"] || f.properties?._key || "")}</b><span>${haOf(f)}${f.properties?.["ВРИ"] ? " · " + esc(f.properties["ВРИ"]) : ""}</span></div>`).join("")
+        + (R.missing.length ? `<div class="srm bad">Не найдено: ${esc(R.missing.join(", "))}</div>` : "") + notes.map(n => `<div class="srm">${esc(n)}</div>`).join("")
+        + (R.list.length ? `<div class="sra"><button class="btn" data-a="show">Показать на карте</button><button class="btn" data-a="terr">Сделать границей территории</button></div>` : "");
+    }
+    clearTimeout(tAsk); tAsk = null; box.hidden = false; act = -1; window.lucide?.createIcons?.();
+  }
+  function pick(i) {
+    const x = R?.list[i]; if (!x) return; clearMark();
+    if (R.type === "address") {
+      const [w, s, e, n] = x.bbox || [x.lon, x.lat, x.lon, x.lat], c = ol.proj.fromLonLat([x.lon, x.lat]);
+      mk.addFeature(new ol.Feature(new ol.geom.Point(c)));
+      if (w === e || s === n) sharedView.animate({ center: c, zoom: 17, duration: dur() }); else fitExt(ol.proj.transformExtent([w, s, e, n], "EPSG:4326", "EPSG:3857"));
+    } else { const f = toOl(x); mk.addFeature(f); fitExt(f.getGeometry().getExtent()); }
+  }
+  async function run() {
+    const q = inp.value.trim(); if (!q) return;
+    ctl?.abort(); ctl = new AbortController(); const sig = ctl.signal;
+    clearMark(); pend = true; go.disabled = true; inp.setAttribute("aria-busy", "true"); box.hidden = false; say("Ищу…"); const my = ++tok;
+    try { const r = await searchApi("", q, sig); if (my !== tok || sig.aborted) return;
+      if (r.type === "cadastral") { R = { type: "cadastral", list: (r.features || []), missing: r.missing || [], notes: r.notes || [] };
+        if (!R.list.length && !R.missing.length) return say(R.notes[0] || "Ничего не нашлось", true); render(); }
+      else { const list = r.results || []; if (!list.length) return say("Ничего не нашлось в Москве и области"); R = { type: "address", list, notes: r.notes || [] }; render(); }
+    } catch (e) { if (my === tok) say(srchErr(e), true); }
+    finally { if (my === tok) { ctl = null; pend = false; go.disabled = false; inp.removeAttribute("aria-busy"); } }
+  }
+  const tBack = b => { clearTimeout(tAsk); tAsk = null; if (b?.dataset.lb) { b.textContent = b.dataset.lb; delete b.dataset.lb; } };
+  const act2 = (a, btn) => { if (!R || R.type !== "cadastral") return; clearMark();
+    if (a === "terr") {      // чужую границу молча не заменяем: первый щелчок — вопрос на месте (как у «Пример»), второй за 5 с — замена
+      if (TERR && !tAsk) { btn.dataset.lb = btn.textContent; btn.textContent = "Заменить вашу границу участками?"; tAsk = setTimeout(() => tBack(btn), 5000); return; }
+      tBack(btn); if (parcelsToTerritory(R.list)) close(); return; }
+    addParcels(R.list); const ex = ol.extent.createEmpty(); R.list.forEach(f => ol.extent.extend(ex, toOl(f).getGeometry().getExtent())); fitExt(ex); toast(`На карте: ${parcelsWord(R.list.length)} в слое «${DATA["nspd.parcels"]?.title || "Земельные участки (ЕГРН)"}».`); };
+  go.onclick = run;
+  inp.addEventListener("keydown", e => {
+    if (e.isComposing) return;
+    if (e.key === "Enter") { e.preventDefault(); if (act >= 0 && R) pick(act); else run(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") { if (!box.hidden && marks().length) { e.preventDefault(); setAct(act < 0 ? (e.key === "ArrowDown" ? 0 : -1) : act + (e.key === "ArrowDown" ? 1 : -1)); } }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); inp.value = ""; close(); inp.blur(); mMain.getTargetElement()?.focus?.({ preventScroll: true }); }
+  });
+  inp.addEventListener("input", () => { if (R || !box.hidden || pend) close(); });   // правка запроса сбрасывает устаревший список; запрос уходит только по Enter или кнопке
+  box.addEventListener("click", e => { const a = e.target.closest("[data-a]"); if (a) return act2(a.dataset.a, a); const it = e.target.closest(".sri"); if (it) pick(+it.dataset.i); });
+  addEventListener("pointerdown", e => { if (!box.hidden && !$("msearch").contains(e.target)) close(); }, true);
+  addEventListener("keydown", e => { if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.code === "KeyF") {
+    if (!inp.offsetParent) return;                                                     // поле поиска не видно — Ctrl+F остаётся браузеру
+    const t = e.target; if (t !== inp && t?.closest?.("input, textarea, select, [contenteditable]")) return;   // фильтр таблицы и другие поля ввода — свои
+    e.preventDefault(); e.stopImmediatePropagation(); inp.focus(); inp.select(); } }, true);
+}
+/* «Пример» не заменяет границу пользователя молча: первый щелчок превращает кнопку в вопрос, второй в течение 5 с заменяет */
+{ const b = $("bExample"); let ask = null; const back = () => { clearTimeout(ask); ask = null; if (b.dataset.lb) { b.innerHTML = b.dataset.lb; delete b.dataset.lb; window.lucide?.createIcons?.(); } };
+  b.addEventListener("click", e => {
+    if (!TERR || ask) { back(); return; }
+    e.stopImmediatePropagation(); b.dataset.lb = b.innerHTML; b.textContent = "Заменить вашу границу примером?"; ask = setTimeout(back, 5000);
+  }, true); }
 $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
+/* «Выбрать и загрузить…» без границы и листа недоступна: подсказка говорит почему */
+{ const b = $("bLoad"), t0 = b.title, off = "Сначала нарисуйте границу территории или лист — данные загружаются на них.";
+  const sync = () => { const w = b.disabled ? (coverBox() ? "Сейчас идёт выгрузка — дождитесь конца." : off) : t0; if (b.title !== w) b.title = w; };
+  new MutationObserver(sync).observe(b, { attributes: true, attributeFilter: ["disabled"] }); sync(); }
 const GROUP = { gisogd_admin: "Административное деление Москвы (эталон)", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
   egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф",
   yandex: "Яндекс Карты, для анализа и эскиза; в сдаваемые материалы не включать (область до 40 км²; первая выгрузка 1 км² — около минуты, дальше с диска)" };
@@ -237,7 +350,7 @@ function renderSources() {
     return `<div class="lr"><span class="nm" title="${esc(d?.source || "")}">${esc(SOURCES[k].title)}</span><span class="c num">${d ? d.count : ""}</span></div>` + (e ? `<div class="err">${esc(e)}</div>` : "") + (d ? `<div class="err" style="color:var(--faint)">выгрузка ${esc(d.fetched_at)}${esc(histText(d))}${d.notes?.length ? " · " + esc(d.notes[0]) : ""}</div>` : "");
   }).join("") + `</div>`).join("") + (Object.keys(groups).length ? "" : `<div class="note">В проекте пока нет загруженных данных. «Выбрать и загрузить…» — окно всех источников: ЕГРН, ГИС ОГД (все слои портала), ЕГКО, OpenStreetMap, Яндекс, рельеф.</div>`) + (Object.keys(DATA).length ? `<div class="sect">Существующее положение</div>${kv(existingSummary())}` : "")
     + `<div id="fgBox">${fgHTML()}</div>`
-    + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В графе анализа слои доступны узлом «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
+    + `<div class="note">Загруженные слои появляются в списке слоёв; их можно править, исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»). В схеме расчёта слои доступны блоком «Слой». Красные линии рисуются типами линий REDLN97 — <a href="linetypes.html" target="_blank">каталог типов</a>.</div>`;
   icons();
 }
 $("srcList").addEventListener("click", e => {
@@ -375,6 +488,9 @@ async function loadKeys(keys, bb) {
    удалённым, нарисованное вами остаётся. */
 function mergeDownload(key, prev, fc, bb) {
   const clean = p => Object.fromEntries(Object.entries(p || {}).filter(([k]) => !k.startsWith("_")));
+  // участки: найденные по номеру (_key = номер) и выгруженные по области (_key = id портала) — один и тот же объект
+  const canon = list => key === "nspd.parcels" ? list.map(f => cadOf(f) && f.properties?._key !== cadOf(f) ? { ...f, properties: { ...f.properties, _key: cadOf(f) } } : f) : list;
+  fc = { ...fc, features: canon(fc.features) }; if (prev.original) prev = { ...prev, original: { ...prev.original, features: canon(prev.original.features) } };
   const sig = f => JSON.stringify([f.geometry, clean(f.properties)]);
   const byKey = list => new Map(list.filter(f => f.properties?._key).map(f => [f.properties._key, f]));
   // выгрузка другой области: объекты прежней выгрузки вне новой рамки остаются как были (не «исчезли»), а объекты,
@@ -385,7 +501,7 @@ function mergeDownload(key, prev, fc, bb) {
   const keepOut = bb ? (prev.original?.features || []).filter(f => !inNew(f)) : [];
   const outKeys = new Set(keepOut.map(f => f.properties?._key).filter(Boolean));
   const oldF = (prev.original?.features || []).filter(f => !outKeys.has(f.properties?._key)), oldBy = byKey(oldF), newBy = byKey(fc.features);
-  const cur = writeFC(layerSrc[key].getFeatures()).features, curBy = byKey(cur);
+  const cur = canon(writeFC(layerSrc[key].getFeatures()).features), curBy = byKey(cur);
   // пустая выгрузка с ключами идёт обычным путём: правленные вами объекты остаются с пометкой, счёт «−N исчезло» виден
   if (!byKey(prev.original?.features || []).size || (!newBy.size && fc.features.length)) {                               // без ключей источника (старый проект, горизонтали) сравнивать не с чем:
     const drawn = cur.filter(f => !f.properties?._key);            // слой заменяется, но нарисованное вами в нём остаётся
@@ -471,7 +587,7 @@ $("bExport").onclick = async () => {
     const r = await fetch("/api/export/dxf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layers }) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = "grado2-dxf.zip"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МСК (как в QGIS), метры.");
+    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МСК (как в QGIS), метры. Файл сохранён в папку загрузок браузера.");
   } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
 };
 
@@ -520,7 +636,7 @@ function watchOgd() {
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
     toast(`Готово по ${where}: ${plural(st.found, ["слой", "слоя", "слоёв"])}, ${plural(st.objects, ["объект", "объекта", "объектов"])}. `
       + `${st.dwg ? "В архиве DWG, DXF" : "В архиве DXF (в AutoCAD — вкладка листа с видовым экраном; в DWG — «Сохранить как»)"} и таблицы атрибутов.`
-      + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""}`);
+      + `${miss.length ? ` Портал не отдал: ${miss.slice(0, 2).join(", ")}${miss.length > 2 ? ` и ещё ${miss.length - 2}` : ""}.` : ""} Файл сохранён в папку загрузок браузера.`);
   };
   ogdPoll = setInterval(tick, 1500); tick();
 }
@@ -665,7 +781,7 @@ NPlace.title = "Посадка застройки"; NPlace.prototype.onExecute =
   const capped = r.filter(b => b.capped).length, avg = r.length ? r.reduce((s, b) => s + b.floors * b.m2, 0) / r.reduce((s, b) => s + b.m2, 0) : 0;
   const np = r.plots?.filter(g => /^участок/.test(g.kind)).length, ny = r.plots?.filter(g => g.kind === "двор" || g.kind === "свет соседям").length;
   const guest = (r.streets || []).filter(g => g.kind === "гостевая стоянка").reduce((s, g) => s + g["Мест"], 0);
-  this.info = `${plural(r.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${guest ? ` · гостевых мест ${guest} (945-ПП)` : ""}${capped ? ` · ${capped} ниже по потолку` : ""}${r.goal ? ` · ${r.goal}` : ""}${r.note ? ` · ${r.note}` : ""}`;
+  this.info = `${plural(r.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(r.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${guest ? ` · гостевых мест ${guest} (945-ПП)` : ""}${capped ? ` · ${capped} ниже предельной высоты` : ""}${r.goal ? ` · ${r.goal}` : ""}${r.note ? ` · ${r.note}` : ""}`;
 };
 LiteGraph.registerNodeType("Эскиз/Посадка застройки", NPlace);
 const TYPOLOGIES = ["Секции", "Квартал", "Башни", "Точка + секция", "Смешанная", "Урбан-блоки", "Блокированные", "ИЖС"], FLOOR_MODES = ["заданной", "цели плотности"];
@@ -693,7 +809,7 @@ NTep.title = "ТЭП · Москва, «Калькулятор 2.0»"; NTep.prot
   const tp = tepParams(this); placeLookup(this);
   const key = [bd ? `${bk}:${bd.rev || 0}:${sk.length}` : gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по принятому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по сохранённому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
@@ -801,7 +917,7 @@ function generate(site, p) {
     return spp;
   };
   let spp = fill(out);
-  /* цель набрана — корпуса под низким потолком (инсоляция соседей, ПЗЗ) убираются по одному, начиная с самого низкого, пока
+  /* цель набрана — корпуса под низкой предельной высотой (инсоляция соседей, ПЗЗ) убираются по одному, начиная с самого низкого, пока
      остальные добирают цель своей этажностью. Их пятна остаются дворами: там свет нужен соседям. Урбан-блоки, блокированные
      и ИЖС не прореживаются — у них корпус часть квартала, ряда или участка (grp). Решение владельца 23.09.2026 (Э10). */
   const dropped = [];
@@ -818,7 +934,7 @@ function generate(site, p) {
       out = out.filter(b => kept.has(b)); out.plots = plots2; out.streets = streets2; out.note = note2;
       // пятна снятых корпусов, касающиеся друг друга, — одно пятно; вид свой, чтобы не читалось как пустой участок
       const u = unionAll(dropped.map(b => b.f)), parts = u ? polys(u).map(c => turf.polygon(c)) : dropped.map(b => b.f);
-      parts.forEach(f => out.plots.push({ f, kind: "свет соседям", m2: m2(f), "Причина": "корпус снят: низкий потолок, соседям нужен свет" }));
+      parts.forEach(f => out.plots.push({ f, kind: "свет соседям", m2: m2(f), "Причина": "корпус снят: низкая предельная высота, соседям нужен свет" }));
     } else spp = fill(out);
   }
   out.dropped = dropped.length;
@@ -1131,9 +1247,9 @@ function publishedControls() {
     "Урбан-блоки": "сетка кварталов с улицами 20 м, сплошной фронт, углы северной стороны выше, южная сторона ниже — солнце во дворе",
     "Блокированные": "ряды до 6 блоков по 7 м, у каждого блока участок; проезды 12 м; до 3 этажей", "ИЖС": "дом на своём участке, проезды 12 м между парами рядов; до 3 этажей" };
   if (p) out.push({ n: p, w: "типология", type: "seg", opts: TYPOLOGIES, hint: TYP_HINT[typ] || "" });
-  if (p && p.widgets[5]) out.push({ n: p, w: "этажность по", label: "Этажность по", type: "seg", opts: FLOOR_MODES, hint: "цели плотности — этажность подбирается под «Целевую плотность» узла ТЭП, не выше потолка; «Этажность» ниже — наибольшая" });
+  if (p && p.widgets[5]) out.push({ n: p, w: "этажность по", label: "Этажность по", type: "seg", opts: FLOOR_MODES, hint: "цели плотности — этажность подбирается под «Целевую плотность» узла ТЭП, не выше предельной высоты; «Этажность» ниже — наибольшая" });
   const lowF = LOWRISE.has(typ), fr = lowF ? { min: 1, max: 3 } : { min: 3, max: 30 };
-  if (num) out.push({ n: num, w: "значение", label: "Этажность", ...fr, step: 1, hint: lowF ? "до 3 этажей" : "узел «Число» в графе" }); else if (p) out.push({ n: p, w: "этажность", ...fr, step: 1 });
+  if (num) out.push({ n: num, w: "значение", label: "Этажность", ...fr, step: 1, hint: lowF ? "до 3 этажей" : "блок «Число» в схеме" }); else if (p) out.push({ n: p, w: "этажность", ...fr, step: 1 });
   // параметры, которые выбранная типология не использует, в панели не показываются
   if (p && typ === "ИЖС") out.push({ n: p, w: "участок, соток", label: "Участок, соток", min: 4, max: 20, step: 1, hint: "дом до 12 × 12 м: 5 м от проезда, не ближе 3 м к соседним участкам; проезды 12 м между парами рядов" });
   // короче двух корпусов и двора 20 м квартал не бывает — ползунок ниже не опускается
@@ -1145,16 +1261,19 @@ function publishedControls() {
   if (t) out.push({ n: t, w: "доля жилья, %", min: 0, max: 100, step: 5 }, { n: t, w: "цель, тыс. м²/га", label: "Целевая плотность, тыс. м²/га", min: 5, max: 45, step: 1 });
   return out;
 }
+/* «Сравнение»: пока сравнивать нечего — строка-подсказка сверху */
+function syncCmpHint() { const h = $("cmpHint"); if (h) h.hidden = !!(RESULT.sketch?.length && Object.keys(DATA).length); }
 function renderParams() {
+  syncCmpHint();
   const cs = publishedControls(), pn = RESULT.placeNode, on = !!pn?.properties.run;
-  const head = !pn ? `<div class="note">В графе нет узла «Посадка застройки».</div>`
-    : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Принять в проект</button></div>
-      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низким потолком — на их месте пятна «свет соседям» (жёлтые): там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не принят, он виден только при открытых окнах графа и эскиза.` : TERR ? "Выберите типологию и параметры, затем «Построить эскиз». Сам по себе эскиз не строится." : "<b class=\"warnt\">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу командой BO или «Пример территории» в окне «Данные»."}</small></div>`;
+  const head = !pn ? `<div class="note">В схеме расчёта нет блока «Посадка застройки».</div>`
+    : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Сохранить слоем</button></div>
+      <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низкой предельной высотой — на их месте пятна «свет соседям» (жёлтые): там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не сохранён, он виден только при открытых окнах схемы расчёта и эскиза.` : TERR ? "Выберите типологию и параметры, затем «Построить эскиз»: корпуса сами не появляются. Пока окно открыто, на карте виден предварительный просмотр — пятно застройки и сохраняемые здания; «Сохранить слоем» сохраняет построенный эскиз слоем." : "<b class=\"warnt\">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу командой BO или «Пример территории» в окне «Данные»."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${esc(lbl)}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}" title="${esc(lbl)}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
-    + `<div class="note">Параметры узлов графа, вынесенные в панель: правка здесь меняет граф, и наоборот.</div>`;
+    + `<div class="note">Параметры блоков схемы, вынесенные в панель: правка здесь меняет схему, и наоборот.</div>`;
   icons();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
   $("params").onclick = e => {
@@ -1171,13 +1290,13 @@ function renderParams() {
       if (fw && LOWRISE.has(b.dataset.v) && fw.value > 3) fw.value = 2; else if (fw && !LOWRISE.has(b.dataset.v) && fw.value <= 3) fw.value = 12; }
     recompute(true); renderParams(); };            // сначала пересчёт — иначе панель покажет число корпусов прежней типологии
 }
-/* «Принять в проект» (Bake в Grasshopper): снимок эскиза становится обычным слоем и больше не зависит от графа */
+/* «Сохранить слоем» (Bake в Grasshopper): снимок эскиза становится обычным слоем и больше не зависит от графа */
 function bakeSketch() {
   const sk = RESULT.sketch; if (!sk.length) return toast("Эскиз пуст: сначала «Построить эскиз».");
   const typ = RESULT.placeNode.widgets[0].value, fl = [...new Set(sk.map(b => b.floors))].join("/"), key = "user:" + Date.now().toString(36), title = `Эскиз: ${typ.toLowerCase()}, ${fl} эт.`;
   const fc = turf.featureCollection(sk.map((b, i) => turf.feature(b.f.geometry, { "№": i + 1, "Типология": typ, "Корпус": b.kind || "", "Этажность": b.floors, "Площадь застройки, м²": Math.round(b.m2), "СПП, м²": Math.round(b.m2 * b.floors),
     ...(b.grp ? { "Блок": b.grp } : {}), ...(b["Блоков"] ? { "Блоков": b["Блоков"] } : {}), ...(b["1 этаж"] ? { "1 этаж": b["1 этаж"] } : {}) })));
-  DATA[key] = { title, source: "эскиз из графа, принят " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
+  DATA[key] = { title, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
   layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
   const l = ensureLayer(key, title, "poly");
   if (RESULT.tepNode) { (RESULT.tepNode.properties ||= {}).baked = key; RESULT.tepNode._key = null; }   // «Показатели» — по принятому слою
@@ -1188,7 +1307,7 @@ function bakeSketch() {
   const extra = [];
   const layerOf = (list, name, fields, style) => { if (!list?.length) return; const k = "user:" + Date.now().toString(36) + extra.length;
     const lfc = turf.featureCollection(list.map((g, i) => turf.feature(g.f.geometry, { "№": i + 1, "Вид": g.kind, "Площадь, м²": Math.round(g.m2), ...fields(g) })));
-    DATA[k] = { title: name, source: "эскиз из графа, принят " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc: lfc, count: 0, fields: [] };
+    DATA[k] = { title: name, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc: lfc, count: 0, fields: [] };
     layerSrc[k] = new ol.source.Vector(); setLayerData(k, lfc); delete DATA[k].original;
     const x = ensureLayer(k, name, "poly"); x.style = ST(style); restyle(x); extra.push(k); };
   layerOf(sk.plots, `Эскиз: участки и дворы (${typ.toLowerCase()})`, g => ({ ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}), ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }),
@@ -1199,7 +1318,7 @@ function bakeSketch() {
   if (extra.length) { [...extra.slice(0, -1).reverse(), key].forEach(k => { const i = LYR.findIndex(x => x.key === k); LYR.unshift(LYR.splice(i, 1)[0]); });
     newGroup([key, ...extra], `Эскиз: ${typ.toLowerCase()}`); applyOrder(); }
   setCurrent(key); dataRev++;
-  toast(`Эскиз принят слоем «${title}»: ${sk.length} корпусов${sk.plots?.length ? `, участков, дворов и хозпостроек ${sk.plots.length}` : ""}${sk.streets?.length ? `, улиц, проездов и гостевых стоянок ${sk.streets.length}` : ""}. Слои можно править, стилизовать и выгружать; граф на них больше не влияет.`);
+  toast(`Эскиз сохранён слоем «${title}»: ${sk.length} корпусов${sk.plots?.length ? `, участков, дворов и хозпостроек ${sk.plots.length}` : ""}${sk.streets?.length ? `, улиц, проездов и гостевых стоянок ${sk.streets.length}` : ""}. Слои можно править, стилизовать и выгружать; схема на них больше не влияет.`);
 }
 // предпросмотр графа (Preview в Grasshopper): только пока открыты окна графа/эскиза, выход узла — только при открытом графе
 const PREVIEW_WINS = ["wGraph", "wSketch", "wVars", "w3d", "wCmp"];
@@ -1226,6 +1345,7 @@ window.takePzzTarget = takePzzTarget;
 const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
+  if (!TERR) { $("tep").innerHTML = `<div class="empty">Показатели появятся, когда будет граница территории: окно «Данные» → «Нарисовать границу» или «Пример».</div>`; return; }
   const t = RESULT.tepNode?._tep; if (!t) { $("tep").innerHTML = `<div class="empty">${TERR ? "Считаю…" : "Нет территории"}</div>`; return; }
   const tp = tepParams(RESULT.tepNode), sel = (k, opts, lab) => `<select data-tp="${k}" aria-label="${lab}">${opts.map(([v, l]) => `<option value="${v}" ${String(tp[k]) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
   const dCls = t.density > t.target * 1.05 ? "bad" : t.density < t.target * .8 ? "warn" : "good";
@@ -1320,15 +1440,15 @@ new ResizeObserver(() => { if (!$("w3d").hidden) draw3d(); }).observe($("c3d").p
 /* ---------- варианты ---------- */
 let VARS = [], varSel = -1;
 /* Перебор вариантов (как «варианты» в TestFit/Forma, но внутри ограничений): типология × ширина корпуса × поворот
-   (вдоль и поперёк длинной стороны участков), этажность — под цель плотности узла ТЭП, не выше потолка.
+   (вдоль и поперёк длинной стороны участков), этажность — под цель плотности узла ТЭП, не выше предельной высоты.
    Оценка: отклонение плотности от цели и доля фасадов новых домов с нормой инсоляции. Все кандидаты — в таблице,
-   шесть лучших — карточками; выбранный переносит параметры в граф, «Принять в проект» делает его слоем. */
+   шесть лучших — карточками; выбранный переносит параметры в граф, «Сохранить слоем» делает его слоем. */
 let varRun = null;                 // идущий подбор: {stop}
 const varProgress = (done, total, text) => { $("varProg").firstElementChild.style.width = (done / total * 100).toFixed(1) + "%"; $("varMsg").textContent = text; setHint(text); };
 $("bStopVar").onclick = () => { if (varRun) { varRun.stop = true; $("bStopVar").disabled = true; $("varMsg").textContent = "Останавливаю: дорабатывает текущий вариант…"; } };
 $("bGen").onclick = async () => {
-  const p = RESULT.placeNode, t = RESULT.tepNode; if (!p || !RESULT.site) return toast("В графе нет пятна застройки или узла посадки: задайте территорию и загрузите данные.");
-  if (!t) return toast("В графе нет узла «ТЭП КРТ»: варианты сравниваются по его целевой плотности. Добавьте его из группы «Показатели» и соедините с посадкой.");
+  const p = RESULT.placeNode, t = RESULT.tepNode; if (!p || !RESULT.site) return toast("В схеме расчёта нет пятна застройки или блока посадки: задайте территорию и загрузите данные.");
+  if (!t) return toast("В схеме расчёта нет блока «ТЭП КРТ»: варианты сравниваются по его целевой плотности. Добавьте его из группы «Показатели» и соедините с посадкой.");
   const base = placeParams(p), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), goal = densityGoal();
   const sppKept = keptBuildings(kept).reduce((s, f) => s + m2(f) * floorsOf(f), 0), ha = TERR_M2 / 1e4;
   // малоэтажные типологии (ИЖС, блокированные) — только при цели до 10 тыс. м²/га: плотнее они не бывают
@@ -1361,7 +1481,7 @@ $("bGen").onclick = async () => {
     varSel = -1; renderVars();
     if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
     const msg = run.stop ? `Подбор остановлен: вариантов ${VARS.length} из ${cands.length}${VARS.some(v => v.own == null) ? ", у части инсоляция не посчитана (—)" : ""}.` : `Вариантов: ${VARS.length}.`;
-    $("varMsg").textContent = msg; setHint(msg + " Щелчок по карточке или строке таблицы переносит параметры в граф и на карту.");
+    $("varMsg").textContent = msg; setHint(msg + " Щелчок по карточке или строке таблицы переносит параметры в схему и на карту.");
   } catch (e) { console.error(e); toast("Варианты не посчитались: " + e.message); $("varMsg").textContent = "Подбор не удался: " + e.message; }
   finally { varRun = null; busy(false); $("bGen").hidden = false; $("bStopVar").hidden = true; $("varProg").hidden = true; $("bBakeVar").disabled = false; }
 };
@@ -1374,15 +1494,15 @@ function renderVars() {
   const kept = keptBuildings(RESULT.tepNode?.getInputData(1)).flatMap(f => ringsXY(f));
   const cards = VARS.slice(0, 6).map((v, i) => `<button class="vc" data-var="${i}" aria-pressed="${i === varSel}"><svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet"><g transform="scale(1,-1)"><polygon points="${pts(ringsXY(TERR)[0])}" fill="#fff" stroke="#b3261e" stroke-width="${sw * 2}" stroke-dasharray="${sw * 8} ${sw * 4}"/>${kept.map(r => `<polygon points="${pts(r)}" fill="#bdb8b0"/>`).join("")}${v.sk.flatMap(b => ringsXY(b.f)).map(r => `<polygon points="${pts(r)}" fill="#6fa6e6" stroke="#1a4f94" stroke-width="${sw}"/>`).join("")}</g></svg>
       <div class="vt">${i + 1}. ${esc(vName(v))}</div><div class="vm"><span>плотность</span><b style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</b><span>ср. эт.</span><b>${fmt(v.avg, 1)}</b><span>инсоляция</span><b>${v.own == null ? "—" : v.own + " %"}</b><span>население</span><b>${v.tep ? fmt(v.tep.m.population) : "—"}</b></div></button>`).join("");
-  const table = `<table class="at vt-table"><thead><tr><th>№</th><th>Вариант</th><th>Корпусов</th><th>Ср. эт.</th><th>СПП новая, тыс. м²</th><th>Плотность (цель ${fmt(target)})</th><th>Застроенность</th><th>Ниже потолка</th><th title="Доля фасадов новых домов (без северных), получающих норму 22 апреля, предварительно">Инсоляция новых</th></tr></thead><tbody>${VARS.map((v, i) =>
+  const table = `<table class="at vt-table"><thead><tr><th>№</th><th>Вариант</th><th>Корпусов</th><th>Ср. эт.</th><th>СПП новая, тыс. м²</th><th>Плотность (цель ${fmt(target)})</th><th>Застроенность</th><th>Ниже предельной высоты</th><th title="Доля фасадов новых домов (без северных), получающих норму 22 апреля, предварительно">Инсоляция новых</th></tr></thead><tbody>${VARS.map((v, i) =>
     `<tr data-var="${i}" class="${i === varSel ? "sel" : ""}"><td class="num">${i + 1}</td><td>${esc(vName(v))}</td><td class="num">${v.n}</td><td class="num">${fmt(v.avg, 1)}</td><td class="num">${fmt(v.spp / 1000, 1)}</td><td class="num" style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</td><td class="num">${fmt(v.cover * 100, 1)} %</td><td class="num">${v.capped || ""}</td><td class="num">${v.own == null ? "—" : v.own + " %"}</td></tr>`).join("")}</tbody></table>`;
-  $("vlist").innerHTML = `<div class="vcards">${cards}</div><div class="note">Все варианты по оценке — лучшие сверху. Этажность подобрана под цель плотности и не выше потолка ограничений. Инсоляция новых — предварительная оценка по 22 апреля (подробно — «Проверить нормы» в окне «Эскиз»).</div>${table}`;
+  $("vlist").innerHTML = `<div class="vcards">${cards}</div><div class="note">Все варианты по оценке — лучшие сверху. Этажность подобрана под цель плотности и не выше предельной высоты ограничений. Инсоляция новых — предварительная оценка по 22 апреля (подробно — «Проверить нормы» в окне «Эскиз»).</div>${table}`;
 }
 $("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариант в списке — щелчок по карточке.") : bakeSketch();
 $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-var]"); if (!b) return; varSel = +b.dataset.var; const v = VARS[varSel], p = RESULT.placeNode;
   const setWv = (name, val) => { const w = p.widgets.find(w => w.name === name); if (w) w.value = val; };
   setWv("типология", v.typ); setWv("ширина корпуса, м", v.width); setWv("поворот, °", v.angle); if (v.block) setWv("квартал, м", v.block); setWv("этажность по", FLOOR_MODES[1]);
-  p.properties.run = true; p._ck = null; syncPreview(); recompute(true); renderParams(); renderVars(); toast(`Вариант «${vName(v)}» перенесён в граф: на карте эскиз этого варианта.`); });
+  p.properties.run = true; p._ck = null; syncPreview(); recompute(true); renderParams(); renderVars(); toast(`Вариант «${vName(v)}» перенесён в схему: на карте эскиз этого варианта.`); });
 
 /* ================= плавающие окна и панели ================= */
 // окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
@@ -1514,10 +1634,10 @@ function dragWin(w, e, onTap) {
 }
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
-  // при первом открытии граф вписывается читаемо (не мельче 0,8); «Весь граф» ужимает до 0,6
+  // при первом открытии граф вписывается читаемо (не мельче 0,8); «Вся схема» ужимает до 0,6
   wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.8); go.fitted = k; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
-  wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
+  wCmp: () => { syncCmpHint(); if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
 const go = {};
 // лёгкое появление плавающего окна (прозрачность и масштаб, без смены размеров — раскладка не дёргается); не при

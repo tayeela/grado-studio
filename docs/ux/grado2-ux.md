@@ -15,6 +15,12 @@ the queue at the bottom with a date.
    typed by their AutoCAD aliases (L, PL, C, TR…) and Enter or Space in any keyboard layout; Enter/Space repeats the last
    command, right click is Enter. Status bar modes: object snap (F3), object tracking with dashed alignment lines (F11),
    polar tracking (F10), ortho (F8), dynamic input (F12).
+   Coordinates are typed as in AutoCAD too (owner, 01.10.2026). Comma is the Russian decimal separator, so the rule is
+   fixed: where a POINT is expected, `A,B` without spaces is a point X,Y when both parts are integers (`0,0`), or when a
+   part has a dot (`12345.6,6789.1`); `@A,B` is the same relative to the last point. An absolute `A,B` of two integers
+   is a point only while there is no last point (the first point); after it, `25,5` stays the length 25.5 m, use `@`
+   for an offset. Everywhere else comma stays decimal: `12345,6`, `25,5`, `25,5<90`, `12345,6;6789,1`. `X;Y` and
+   `@dx;dy` are unchanged. Where a length or number is expected, `A,B` is a decimal number.
 3. **Every tool says what to do next.** The status bar shows the active tool, the layer it
    draws into, and the next action ("щёлкайте вершины, двойной щелчок завершает").
 4. **A new layer is immediately usable.** After «+ Слой» the drawing tool of its geometry is on.
@@ -29,7 +35,7 @@ the queue at the bottom with a date.
    boundary. Buildings appear after «Построить эскиз» with a chosen typology; they hug each
    part's long side, only whole buildings, gaps by СП 42.13330 п. 7.1 (15/20 m).
 9. **Preview is not the project** (Grasshopper Preview/Bake). Graph results show only while the
-   graph/sketch windows are open; «Принять в проект» turns the sketch into a normal layer that can
+   graph/sketch windows are open; «Сохранить слоем» turns the sketch into a normal layer that can
    be edited, styled, saved and exported.
 10. **Windows version is mandatory** — nothing Mac-only in the UI (hotkeys show Ctrl on Windows).
 11. **A tool, not a template** (owner, 25.09.2026: «не задавай строгую логику, делай приложение инструментом, а не
@@ -47,11 +53,11 @@ B. **Draw without creating a layer.** Type PL and Enter (or the polyline button)
    «Линии» appears and is current; the status bar shows the command prompt with its options in brackets.
 C. **Existing situation.** Open «Данные» → «Пример» territory → load sources → layers appear in
    the tree in a sensible order → drag a layer up → it draws on top.
-D. **Analysis.** Open «Граф» → select a node → its output shows on the main map → change a
+D. **Analysis.** Open «Схема расчёта» → select a node → its output shows on the main map → change a
    buffer → «Эскиз застройки» on the map updates → «Показатели» shows ТЭП.
 D2. **No uninvited sketch.** New project → «Пример» → load → the map shows data and the boundary
    only. «Эскиз» → «Построить эскиз» → sections along the blocks, not over existing houses →
-   «Принять в проект» → a layer «Эскиз: …» appears; close the sketch window → the preview hides,
+   «Сохранить слоем» → a layer «Эскиз: …» appears; close the sketch window → the preview hides,
    the accepted layer stays; restyle it (single / ranges) → the map follows.
 E. **Variants and 3D.** Open «Варианты» → generate 6 → pick one → graph and map follow →
    open «Объём».
@@ -80,11 +86,11 @@ K. **Existing situation, full.** «Пример» → tick «ПЗЗ: подзо�
 
 L. **Constraints.** With buildings (and ideally red lines, ПЗЗ, ОКН) loaded: «Ограничения» → «Рассчитать» → a group
    «Ограничения» appears; the front shows green / red / grey dots on neighbours' facades; the ceiling colours the site.
-   «Эскиз» → «Построить» → some sections are lower («ниже по потолку» in the node). Switch the ceiling layer off → the sketch
+   «Эскиз» → «Построить» → some sections are lower («ниже предельной высоты» in the node). Switch the ceiling layer off → the sketch
    rises back. The window says the insolation is a design-stage estimate by ГОСТ Р 57795-2017, not for expertise.
 
 M. **Generation.** After L: «Эскиз» → «Этажность по: цели плотности» → «Построить» — the node reaches the ТЭП target or says
-   how much is missing. «Варианты» → «Подобрать варианты» → cards and a table; click one → the map shows it → «Принять в проект».
+   how much is missing. «Варианты» → «Подобрать варианты» → cards and a table; click one → the map shows it → «Сохранить слоем».
    Select three buildings → «Этажность +» a few times → the «Проверка норм» layer updates by itself. «Объём» → move the time
    slider → shadows move.
 
@@ -227,4 +233,12 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-10-01 (v0.87.0, UI audit, `docs/ux/audit-2026-10-01.md`): left for later — dark graph canvas (litegraph reads
   colours once), cursor coordinates in the status bar, AutoCAD-style staged ribbon collapse, layer search, undo entries
   of a deleted layer's earlier edits are dropped, focus after re-render in «По листам» mode returns to the first row.
+- 2026-10-01 (v0.88.0, first-run audit): open — graph block socket names and data fields «Потолок, м», «Потолок, эт.»
+  keep the old word (they live in saved projects; renaming needs a migration — owner to decide); a sheet/PDF path for a
+  newcomer still needs the «Листы» window explained; mouse-wheel zoom felt too fast to a novice; the help (F1) is long
+  and has no jump links.
+- 2026-10-01 (v0.88.0, found while checking): a re-download of «Земельные участки (ЕГРН)» keeps the internal `_uid` of
+  only 2 of 1122 unchanged parcels (same on v0.87.0 — not new); collaboration merges and selections rely on `_uid`.
+  The default ГИС ОГД layers in the source picker were empty for the ТАО site, so a newcomer gets ГИС ОГД data only
+  after ticking other layers.
 

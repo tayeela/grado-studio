@@ -618,6 +618,12 @@ class HubHttp(unittest.TestCase):
         self.assertEqual(s, 200, j)
         return r.getheader("Set-Cookie").split(";")[0]
 
+    def test_search_routes_need_session(self):
+        for path in ("/api/search?q=x", "/api/search/address?q=x", "/api/search/cadastral?q=50:27:0000000:126"):
+            with mock.patch.object(S.nspd_mod, "search_cadastral") as m, mock.patch.object(S.geocode_mod, "geocode") as g:
+                self.assertEqual(self.call(path)[0], 401, path)
+                self.assertFalse(m.called or g.called)               # до порталов без входа не доходит
+
     def new_project(self, cookie, name="Тест"):
         s, _, j = self.call("/api/hub/projects", {"name": name}, cookie)
         self.assertEqual(s, 200, j)
@@ -1510,3 +1516,183 @@ class NonHubUnchanged(unittest.TestCase):
         self.assertTrue(S.hub_enabled(["8672", "--hub"], {}))
         self.assertTrue(S.hub_enabled(["--hub"], {}))
         self.assertTrue(S.hub_enabled([], {"GRADO2_HUB": "1"}))
+
+
+class SearchCadastral(unittest.TestCase):
+    """GET /api/search/cadastral: поиск участка по номеру; коннектор подменён, портал не трогаем."""
+
+    def setUp(self):
+        import threading
+        S.CAD_CACHE.clear()
+        S.CAD_FAIL.clear()
+        self.pause = mock.patch.object(S, "CAD_PAUSE", 0)
+        self.pause.start()
+        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.port = self.srv.server_address[1]
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        self.pause.stop()
+        S.CAD_CACHE.clear()
+        S.CAD_FAIL.clear()
+
+    def get(self, q):
+        import http.client
+        import json
+        import urllib.parse
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", "/api/search/cadastral?q=" + urllib.parse.quote(q))
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, json.loads(body)
+
+    @staticmethod
+    def _feat(num):
+        return {"type": "Feature", "grado_key": num,
+                "geometry": {"type": "Polygon", "coordinates": [[[37.6, 55.7], [37.601, 55.7], [37.601, 55.701], [37.6, 55.7]]]},
+                "properties": {"opt_cad_num": num, "opt_specified_area": "1000,5", "opt_land_record_area": 900,
+                               "opt_permitted_use_established_by_document": "жилая", "service_code": 7}}
+
+    def test_garbage_is_400_ascii(self):
+        s, o = self.get("hello, 12:3")
+        self.assertEqual(s, 400)
+        self.assertTrue(o["error"].isascii())
+
+    def test_success_shape_and_cache(self):
+        def fake(nums, errors=None, **kw):
+            return [self._feat(n) for n in nums if n.endswith(":126")]
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake) as m:
+            s, o = self.get("50:27:0000000:126, 77:22:0030223:315")
+            self.assertEqual(s, 200)
+            self.assertEqual(len(o["features"]), 1)
+            p = o["features"][0]["properties"]
+            self.assertEqual(p["Кадастровый номер"], "50:27:0000000:126")
+            self.assertEqual(p["Площадь уточнённая, м²"], 1000.5)
+            self.assertEqual(p["ВРИ"], "жилая")
+            self.assertNotIn("service_code", p)
+            self.assertEqual(o["missing"], ["77:22:0030223:315"])
+            self.assertEqual(self.get("50:27:0000000:126 77:22:0030223:315")[0], 200)
+            self.assertEqual(m.call_count, 2)                       # по одному вызову на номер; второй поиск целиком из кэша
+
+    def test_portal_down_is_502_ascii(self):
+        def fake(nums, errors=None, **kw):
+            errors.extend((n, "x") for n in nums)
+            return []
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake):
+            s, o = self.get("50:27:0000000:126")
+        self.assertEqual(s, 502)
+        self.assertTrue(o["error"].isascii())
+
+    def test_connector_error_is_502_ascii(self):
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=S.ConnectorError("НСПД: что-то")):
+            s, o = self.get("50:27:0000000:126")
+        self.assertEqual(s, 502)
+        self.assertTrue(o["error"].isascii())
+
+    def test_lock_timeout_is_503_but_cache_answers(self):
+        S.CAD_CACHE["50:27:0000000:126"] = (S.time.time(), self._feat("50:27:0000000:126"))
+        with mock.patch.object(S, "CAD_LOCK_TIMEOUT", 0.2), mock.patch.object(S.nspd_mod, "search_cadastral") as m:
+            S.CAD_LOCK.acquire()
+            try:
+                s, o = self.get("77:22:0030223:315")
+                self.assertEqual(s, 503)
+                self.assertEqual(o["error"], "search busy, try again")
+                self.assertEqual(self.get("50:27:0000000:126")[0], 200)     # кэш — до замка, занятость его не держит
+            finally:
+                S.CAD_LOCK.release()
+            self.assertFalse(m.called)
+
+    def test_address_lock_timeout_is_503(self):
+        with mock.patch.object(S.geocode_mod, "geocode", side_effect=S.geocode_mod.Busy("x")):
+            s, o = S.search_addr("Вороново")
+        self.assertEqual((s, o["error"]), (503, "search busy, try again"))
+
+    def test_failure_is_cached_briefly(self):
+        def fake(nums, errors=None, **kw):
+            errors.extend((n, "x") for n in nums)
+            return []
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake) as m:
+            self.assertEqual(self.get("50:27:0000000:126")[0], 502)
+            self.assertEqual(self.get("50:27:0000000:126")[0], 502)
+            self.assertEqual(m.call_count, 1)                     # второй поиск портал не трогает
+            S.CAD_FAIL["50:27:0000000:126"] -= S.CAD_FAIL_SEC + 1
+            self.get("50:27:0000000:126")
+            self.assertEqual(m.call_count, 2)                     # срок вышел — снова спрашиваем
+
+    def test_deadline_reports_unchecked(self):
+        def fake(nums, errors=None, **kw):
+            return [self._feat(n) for n in nums]
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake) as m:
+            s, o = S.search_cad("50:27:0000000:1 50:27:0000000:2", deadline=-1)
+        self.assertEqual(s, 502)                                  # ничего не проверено
+        self.assertFalse(m.called)
+        n = [0]
+
+        def slow(nums, errors=None, **kw):
+            n[0] += 1
+            S.time.sleep(0.05)
+            return [self._feat(x) for x in nums]
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=slow):
+            s, o = S.search_cad("50:27:0000000:1 50:27:0000000:2 50:27:0000000:3", deadline=0.02)
+        self.assertEqual(s, 200)
+        self.assertEqual(len(o["features"]), 1)
+        self.assertTrue(any("50:27:0000000:2, 50:27:0000000:3" in x and "Не проверены" in x for x in o["notes"]))
+
+    def test_parcel_without_contour_is_reported(self):
+        def fake(nums, errors=None, nogeom=None, **kw):
+            nogeom.extend(nums)
+            return []
+        with mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=fake):
+            s, o = self.get("50:27:0000000:126")
+        self.assertEqual(s, 200)
+        self.assertEqual(o["missing"], ["50:27:0000000:126"])
+        self.assertTrue(any("нет контура" in x for x in o["notes"]))
+
+
+class SearchAddress(unittest.TestCase):
+    """GET /api/search/address и /api/search; Nominatim подменён."""
+    setUp, tearDown = SearchCadastral.setUp, SearchCadastral.tearDown
+    _feat = staticmethod(SearchCadastral._feat)
+
+    def get(self, q, path="/api/search/address"):
+        import http.client
+        import json
+        import urllib.parse
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        c.request("GET", path + "?q=" + urllib.parse.quote(q))
+        r = c.getresponse()
+        body = r.read()
+        c.close()
+        return r.status, json.loads(body)
+
+    RES = [{"name": "Vor", "display": "Vor, Moscow", "lon": 37.1, "lat": 55.3, "bbox": [37, 55, 38, 56], "kind": "village"}]
+
+    def test_address_ok_empty_and_long(self):
+        with mock.patch.object(S.geocode_mod, "geocode", return_value=self.RES):
+            s, o = self.get("Вороново")
+        self.assertEqual((s, o["results"], o["notes"]), (200, self.RES, []))
+        s, o = self.get("   ")
+        self.assertEqual(s, 400)
+        self.assertTrue(o["error"].isascii())
+        s, o = self.get("я" * 201)
+        self.assertEqual(s, 400)
+        self.assertTrue(o["error"].isascii())
+
+    def test_address_502(self):
+        with mock.patch.object(S.geocode_mod, "geocode", side_effect=S.ConnectorError("x")):
+            s, o = self.get("Вороново")
+        self.assertEqual(s, 502)
+        self.assertTrue(o["error"].isascii())
+
+    def test_dispatcher(self):
+        with mock.patch.object(S.geocode_mod, "geocode", return_value=self.RES) as g, \
+                mock.patch.object(S.nspd_mod, "search_cadastral", side_effect=lambda n, errors=None, **kw: [self._feat(x) for x in n]) as c:
+            s, o = self.get("Вороново", "/api/search")
+            self.assertEqual((s, o["type"], len(o["results"])), (200, "address", 1))
+            s, o = self.get("50:27:0000000:126", "/api/search")
+            self.assertEqual((s, o["type"], len(o["features"])), (200, "cadastral", 1))
+            self.assertEqual((g.call_count, c.call_count), (1, 1))
+        self.assertEqual(self.get("", "/api/search")[0], 400)

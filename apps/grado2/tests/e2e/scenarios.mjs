@@ -74,7 +74,7 @@ export default async p => {
   await type("po"); await enter(); await type("5000;15000"); await enter(); await enter();
   check(await p.ev(`const c=CAD.toM(layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates()); return Math.abs(c[0]-5000)<1e-4 && Math.abs(c[1]-15000)<1e-4`), "точка по координатам МСК 5000;15000");
   await type("l"); await enter(); await p.click(cx - 160, cy + 140); for (let i = 0; i <= 8; i++) await p.move(cx - 100 + i * 5.25, cy + 90 - i * 3.5); await p.sleep(150);
-  check(await p.ev(`return CAD.cur()?.k === "end" && /конточка/.test(document.querySelector(".cadtip").innerText) && /[0-9]+,[0-9]{2} м · [0-9]/.test(document.querySelector(".cadtip").innerText)`), "у курсора длина, угол и метка привязки к вершине");
+  check(await p.ev(`return CAD.cur()?.k === "end" && /конечная точка/.test(document.querySelector(".cadtip").innerText) && /[0-9]+,[0-9]{2} м · [0-9]/.test(document.querySelector(".cadtip").innerText)`), "у курсора длина, угол и метка привязки к вершине");
   await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
   check(await p.ev(`return /^МСК X/.test($("stXY").textContent)`), "в строке состояния координаты МСК");
   // МСК — как в QGIS: точка, введённая как X;Y, в системе ГИС ОГД лежит на (16,098; 14,512) м дальше
@@ -368,4 +368,88 @@ export default async p => {
   check(await p.ev(`return document.activeElement?.closest?.("#layerTree") != null || true`) && await p.ev(`return !!CAD.active()`), "после щелчка по слою буквы и Enter запускают команду");
   await p.key("Escape", "Escape", { vk: 27 });
   check(await p.ev(`return !CAD.active()`), "Esc прерывает команду, начатую после щелчка по слою");
+  // первый запуск (W1, 01.10.2026): Esc закрывает окно, ввод после ошибки выделен, ZE «Показать всё», фокус после «+» слой
+  await p.key("Escape", "Escape", { vk: 27 });
+  await p.ev(`winOpen("wViews", true); document.activeElement?.blur?.(); return 1`);
+  await p.key("Escape", "Escape", { vk: 27 });
+  check(await p.ev(`return $("wViews").hidden`), "Esc закрывает открытое окно «Виды» (фокус на документе)");
+  await p.ev(`winOpen("wViews", true); $("wViews").querySelector("button")?.focus(); return 1`);
+  await p.key("Escape", "Escape", { vk: 27 });
+  check(await p.ev(`return $("wViews").hidden`), "Esc закрывает окно и при фокусе на кнопке внутри него");
+  await type("pl"); await enter(); await type("5"); await enter();
+  check(await p.ev(`const i=document.querySelector(".cadin"); return i.classList.contains("bad") && i.selectionStart===0 && i.selectionEnd===i.value.length && i.value.length>0`), "после ошибки ввода текст выделен целиком, красная рамка осталась");
+  await type("1"); check(await p.ev(`return document.querySelector(".cadin").value==="1"`), "следующий набор заменяет выделенный неверный ввод");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+  await p.ev(`sharedView.setCenter(ol.proj.fromLonLat([30, 50])); sharedView.setResolution(5000); return 1`);
+  await type("ze"); await enter();
+  check(await p.ev(`const ex=layerSrc["user:kb"].getExtent(); return ol.extent.containsExtent(sharedView.calculateExtent(mMain.getSize()), ex)`), "ZE вписывает карту во все объекты");
+  await p.ev(`$("bNewLayer").click(); $("nlName").value="Проверка фокуса"; $("nlName").focus(); return 1`);
+  await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+  check(await p.ev(`return !$("newLayerBox").hidden === false && !!lyr(CURKEY()) && lyr(CURKEY()).title==="Проверка фокуса" && (document.activeElement===document.body || document.activeElement===document.documentElement)`), "после создания слоя фокус вернулся на документ");
+  // слой полигонов через «+»: «Полилиния» стартует сама и ждёт первую точку; набранный псевдоним — смена команды, не неверная точка
+  await p.ev(`$("bNewLayer").click(); $("nlName").value="Слой для pl"; $("nlGeom").value=[...$("nlGeom").options].find(o => o.value.startsWith("pol")).value; $("nlName").focus(); return 1`);
+  await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+  check(await p.ev(`return window.CAD.cmd() === "pline"`), "после «+» слоя полигонов «Полилиния» запущена сама");
+  await type("pl"); await enter();
+  check(await p.ev(`return window.CAD.cmd() === "pline" && !document.querySelector(".cadin.bad")`), "«pl» + Enter при ожидании первой точки — команда «Полилиния», а не «Не понял ввод»");
+  await type("l"); await enter();
+  check(await p.ev(`return window.CAD.cmd() === "line"`), "псевдоним другой команды на первой точке переключает команду");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+  await p.key("Escape", "Escape", { vk: 27 });
+  await type("pl"); await enter();
+  check(await p.ev(`return !!CAD.active()`), "после создания слоя набор «pl» и Enter запускает полилинию");
+  await p.key("Escape", "Escape", { vk: 27 });
+  // координаты как в AutoCAD (W3, 01.10.2026): «0,0» и «@120,0»; запятая остаётся десятичной вне запроса точки
+  const lastM = () => p.ev(`const g=layerSrc[CURKEY()].getFeatures().slice(-1)[0].getGeometry(), c=g.getType()==="Polygon"?g.getCoordinates()[0]:g.getCoordinates(); return (g.getType()==="Point"?[c]:c).map(CAD.toM).map(q=>q.map(v=>Math.round(v*1e4)/1e4))`);
+  await type("pl"); await enter(); await type("0,0"); await enter(); await type("@120,0"); await enter(); await type("@0,80"); await enter(); await enter();
+  const pl = await lastM();
+  check(JSON.stringify(pl.slice(0, 3)) === JSON.stringify([[0, 0], [120, 0], [120, 80]]) && pl.length >= 3, "PL: 0,0 · @120,0 · @0,80 — вершины (0,0), (120,0), (120,80) в МСК");
+  await type("po"); await enter(); await type("12345,6;6789,1"); await enter(); await enter();
+  check(JSON.stringify((await lastM())[0]) === JSON.stringify([12345.6, 6789.1]), "12345,6;6789,1 по-прежнему точка X=12345,6 Y=6789,1");
+  // «.» без vk уходит как код 46 (Delete), поэтому точку набираем с кодом клавиши
+  const nPts = () => p.ev(`return layerSrc[CURKEY()].getFeatures().length`), nBefore = await nPts();
+  await type("po"); await enter(); for (const ch of "12345.6,6789.1") await p.key(ch, ch === "." ? "Period" : ch === "," ? "Comma" : "Digit" + ch, { text: ch, wait: 25, vk: ch === "." ? 190 : 0 }); await enter(); await enter();
+  check(await nPts() === nBefore + 1 && JSON.stringify((await lastM())[0]) === JSON.stringify([12345.6, 6789.1]), "12345.6,6789.1 — новая точка в тех же координатах");
+  await type("f"); await enter(); await type("р"); await enter(); await type("25,5"); await enter();
+  check(await p.ev(`return window.__cadFillet === 25.5`), "в запросе длины «25,5» — по-прежнему 25,5 (десятичная запятая)");
+  await p.key("Escape", "Escape", { vk: 27 }); await p.ev(`window.__cadFillet = 0; return 1`);
+  // поиск над картой (W6b): сервер подменён заглушкой fetch внутри страницы, порталы не трогаем; Ctrl+F, Enter, список, Esc, «По участкам»
+  const sqParcel = { type: "Feature", geometry: { type: "Polygon", coordinates: [[[37.600, 55.750], [37.604, 55.750], [37.604, 55.753], [37.600, 55.753], [37.600, 55.750]]] },
+    properties: { "Кадастровый номер": "77:01:0000000:1", "ВРИ": "под жилую застройку", _key: "77:01:0000000:1" } };
+  const sqCad = { type: "cadastral", features: [sqParcel], missing: [], notes: [] };
+  const sqAddr = { type: "address", results: [{ name: "Тестовая улица", display: "Москва, Тестовая улица", lon: 37.7, lat: 55.7, bbox: [37.69, 55.69, 37.71, 55.71], kind: "road" }], notes: [] };
+  await p.ev(`window.__f0 = window.fetch; window.__p0 = window.prompt; window.__sq = [];
+    window.fetch = async (u, o) => { u = String(u); if (!u.startsWith("/api/search")) return window.__f0(u, o); window.__sq.push(u);
+      const q = decodeURIComponent(u.split("q=")[1] || ""); return new Response(JSON.stringify(/\\d+:\\d+/.test(q) ? ${JSON.stringify(sqCad)} : ${JSON.stringify(sqAddr)}), { status: 200, headers: { "Content-Type": "application/json" } }); }; return 1`);
+  try {
+    await p.key("Escape", "Escape", { vk: 27 });
+    await p.key("f", "KeyF", { ctrl: true, vk: 70 });
+    check(await p.ev(`return document.activeElement.id === "sq"`), "Ctrl+F ставит курсор в поле поиска над картой");
+    await p.type("pl");
+    check(await p.ev(`return $("sq").value === "pl" && !window.CAD.active()`), "«pl» в поле поиска — просто текст, команда черчения не запущена");
+    await p.ev(`$("sq").value = ""; return 1`); await p.type("Тестовая улица");
+    check(await p.ev(`return !window.__sq.length`), "пока набираешь, запросов к серверу нет");
+    await p.key("Enter", "Enter", { vk: 13 }); await p.sleep(400);
+    check(await p.ev(`return !$("sres").hidden && $("sres").innerText.includes("Тестовая улица") && $("sres").innerText.includes("Москва, Тестовая") && window.__sq.length === 1`), "Enter в поле: один запрос, список адресов с названием и пояснением");
+    const ad = await p.ev(`const r = $("sres").querySelector(".sri").getBoundingClientRect(); return [r.left + 20, r.top + 8]`);
+    await p.click(ad[0], ad[1], { wait: 700 });
+    check(await p.ev(`const c = ol.proj.toLonLat(sharedView.getCenter()); return Math.abs(c[0] - 37.7) < .01 && Math.abs(c[1] - 55.7) < .01`), "щелчок по адресу: карта показывает его район (центр по lon/lat результата)");
+    await p.key("Escape", "Escape", { vk: 27 });
+    await p.ev(`$("sq").focus(); return 1`); await p.key("Escape", "Escape", { vk: 27 });
+    check(await p.ev(`return $("sres").hidden && $("sq").value === "" && document.activeElement.id !== "sq"`), "Esc убирает список, очищает поле и возвращает фокус карте");
+    await p.ev(`$("sq").focus(); return 1`); await p.type("77:01:0000000:1"); await p.key("Enter", "Enter", { vk: 13 }); await p.sleep(400);
+    check(await p.ev(`const t = $("sres").innerText; return t.includes("77:01:0000000:1") && t.includes(" га") && t.includes("под жилую застройку") && t.includes("Сделать границей территории")`), "по кадастровому номеру: номер, площадь в га и ВРИ, действия под списком");
+    const sa = await p.ev(`const r = [...$("sres").querySelectorAll("[data-a]")].find(b => b.dataset.a === "terr").getBoundingClientRect(); return [r.left + 10, r.top + 8]`);
+    await p.click(sa[0], sa[1], { wait: 500 });
+    check(await p.ev(`const f = ${JSON.stringify(sqParcel)}; return !!TERR && Math.abs(TERR_M2 - m2(f)) < 1 && TERR_M2 > 1e4 && layerSrc["nspd.parcels"].getFeatures().length === 1 && /Граница по участкам: 1 участок, /.test($("toast").textContent)`), "«Сделать границей территории»: граница по площади участка, участок в слое ЕГРН");
+    // «По участкам» без загруженных участков берёт их у портала (заглушка)
+    await p.ev(`delete DATA["nspd.parcels"]; setTerritory(turf.polygon([[[37.1, 55.1], [37.11, 55.1], [37.11, 55.11], [37.1, 55.1]]])); window.prompt = () => "77:01:0000000:1"; return 1`);
+    await p.ev(`$("bParcels").click(); await new Promise(r => setTimeout(r, 500)); return 1`);
+    check(await p.ev(`const f = ${JSON.stringify(sqParcel)}; return Math.abs(TERR_M2 - m2(f)) < 1 && !!DATA["nspd.parcels"] && /Граница по участкам: 1 участок, /.test($("toast").textContent)`), "«По участкам» без загруженных участков: граница по найденному участку, тот же путь");
+    // тот же участок под другим ключом (id портала при выгрузке по области): не дубль и не «исчез»
+    await p.ev(`const f = ${JSON.stringify(sqParcel)}; addParcels([{ ...f, properties: { ...f.properties, _key: "portal-id-1" } }]); return 1`);
+    check(await p.ev(`return layerSrc["nspd.parcels"].getFeatures().length === 1 && DATA["nspd.parcels"].fc.features.length === 1`), "участок с тем же кадастровым номером, но другим ключом, не дублируется");
+    check(await p.ev(`const f = ${JSON.stringify(sqParcel)}, m = mergeDownload("nspd.parcels", DATA["nspd.parcels"], { type: "FeatureCollection", features: [{ ...f, properties: { ...f.properties, _key: "portal-id-1" } }] }, null); return m.counts.removed === 0 && m.counts.added === 0`), "выгрузка по области: тот же кадастровый номер — тот же объект, «исчезло» не растёт");
+  } finally { await p.ev(`window.fetch = window.__f0; window.prompt = window.__p0; return 1`); }
+  check(await p.ev(`return window.fetch === window.__f0`), "fetch восстановлен после проверок поиска");
 };

@@ -42,6 +42,8 @@ from grado_connectors import crs                                   # noqa: E402
 from grado_connectors.contract import ConnectorError               # noqa: E402
 from grado_connectors.fgistp import FgistpConnector                # noqa: E402
 from grado_connectors.gisogd_api import GISOGD_API_LAYERS, GisogdApi  # noqa: E402
+from grado_connectors import geocode as geocode_mod                # noqa: E402
+from grado_connectors import nspd as nspd_mod                      # noqa: E402
 from grado_connectors.nspd import NspdDirect                       # noqa: E402
 from grado_connectors.osm import OsmOverpass                       # noqa: E402
 from grado_connectors.terrain import TerrainContours               # noqa: E402
@@ -383,6 +385,112 @@ def _layer(key, result):
             **({"shp": True} if SOURCES[key][0] in ("gisogd", "egko", "gisogd_admin") else {}),   # с v0.32 ОГД и ЕГКО — из SHP, в родных координатах
             "fetched_at": result.get("fetched_at") or date.today().isoformat(), "notes": result.get("notes", []),
             "features": {"type": "FeatureCollection", "features": feats}}
+
+
+# ---------- поиск участка по кадастровому номеру (НСПД) ----------
+CAD_CACHE = {}                    # номер -> (время, объект WGS84 или None); участок за 30 минут не меняется
+CAD_CACHE_SEC = 30 * 60
+CAD_FAIL = {}                     # номер -> время сбоя портала: 45 с повторный поиск отвечает сразу, мёртвый НСПД не долбим
+CAD_FAIL_SEC = 45
+CAD_LOCK = threading.Lock()       # к порталу — по одному запросу за раз, как и везде
+CAD_LOCK_TIMEOUT = 20             # сколько ждать очереди; не дождались — 503
+CAD_PAUSE = 0.5                   # пауза между номерами одного поиска (как в коннекторе)
+SEARCH_DEADLINE = 30              # общий срок одного запроса поиска, с: оставшиеся номера — в notes как не проверенные
+
+
+def search_cad(q, deadline=None, lock_timeout=None):
+    """Строка с номерами → (code, ответ). 400 — нет верных номеров, 502 — НСПД не ответил, 503 — очередь занята
+    (тексты только ASCII). Кэш и недавние сбои отвечают без замка; номера сверх срока — в notes."""
+    deadline = SEARCH_DEADLINE if deadline is None else deadline
+    lock_timeout = CAD_LOCK_TIMEOUT if lock_timeout is None else lock_timeout
+    t0 = time.monotonic()
+    nums, bad = nspd_mod.normalize_cadastral(q)
+    if not nums:
+        return 400, {"error": "no valid cadastral numbers (format 50:27:0000000:126)"}
+    over = nums[nspd_mod.SEARCH_MAX:]
+    nums = nums[:nspd_mod.SEARCH_MAX]
+    feats, missing, failed, unchecked, nogeom = [], [], [], [], []
+    now = time.time()
+    for k, v in list(CAD_CACHE.items()):
+        if now - v[0] > CAD_CACHE_SEC:
+            CAD_CACHE.pop(k, None)
+    for k, v in list(CAD_FAIL.items()):
+        if now - v > CAD_FAIL_SEC:
+            CAD_FAIL.pop(k, None)
+    todo = [n for n in nums if n not in CAD_CACHE and n not in CAD_FAIL]
+    if todo:
+        if not CAD_LOCK.acquire(timeout=max(0.0, min(lock_timeout, deadline - (time.monotonic() - t0)))):
+            return 503, {"error": "search busy, try again"}
+        try:
+            first = True
+            for n in todo:
+                if n in CAD_CACHE:                       # пока ждали замок, соседний поиск уже спросил
+                    continue
+                if time.monotonic() - t0 > deadline:
+                    unchecked.append(n)
+                    continue
+                if not first:
+                    time.sleep(CAD_PAUSE)
+                first = False
+                errs, ng = [], []
+                found = nspd_mod.search_cadastral([n], errors=errs, nogeom=ng)
+                if errs:
+                    CAD_FAIL[n] = time.time()
+                    continue
+                CAD_CACHE[n] = (time.time(), next((f for f in found if f["grado_key"] == n), None))
+                nogeom += ng
+        finally:
+            CAD_LOCK.release()
+    for n in nums:
+        hit = CAD_CACHE.get(n)
+        if n in unchecked:
+            continue
+        if hit is None:
+            if n in CAD_FAIL:
+                failed.append(n)
+        elif hit[1] is None:
+            missing.append(n)
+        else:
+            feats.append(hit[1])
+    if (failed or unchecked) and not feats and not missing:
+        return 502, {"error": "NSPD did not answer, try again later"}
+    layer = _layer("nspd.parcels", {"features": feats, "source_doc": "НСПД (nspd.gov.ru), поиск по кадастровому номеру"})
+    notes = ([f"Не удалось запросить у НСПД: {', '.join(failed)}"] if failed else []) \
+        + ([f"Не проверены, истекло время поиска — повторите: {', '.join(unchecked)}"] if unchecked else []) \
+        + ([f"У участка нет контура на портале: {', '.join(nogeom)}"] if nogeom else []) \
+        + ([f"Не похоже на кадастровый номер: {', '.join(bad)}"] if bad else []) \
+        + ([f"Взяты первые {nspd_mod.SEARCH_MAX} номеров, остальные отброшены: {len(over)}"] if over else [])
+    missing += [n for n in nogeom if n not in missing]
+    return 200, {"features": layer["features"]["features"], "missing": missing, "notes": notes}
+
+
+def search_addr(q):
+    """Строка адреса → (code, ответ). 400 — пусто или длиннее 200, 502 — Nominatim не ответил (тексты только ASCII)."""
+    try:
+        res = geocode_mod.geocode(q)
+    except ValueError as e:
+        return 400, {"error": str(e)}
+    except geocode_mod.Busy:
+        return 503, {"error": "search busy, try again"}
+    except ConnectorError:
+        return 502, {"error": "Nominatim did not answer, try again later"}
+    notes = [] if res else ["Ничего не найдено в Москве и области"]
+    return 200, {"results": res, "notes": notes}
+
+
+def search_any(q):
+    """Одна строка: есть кадастровые номера → поиск участка, иначе адрес. В ответ добавляется type."""
+    nums, _bad = nspd_mod.normalize_cadastral(q[:2000])
+    if nums:
+        try:
+            code, obj = search_cad(q[:2000])
+        except ConnectorError:
+            code, obj = 502, {"error": "NSPD did not answer, try again later"}
+        kind = "cadastral"
+    else:
+        code, obj = search_addr(q)
+        kind = "address"
+    return code, ({**obj, "type": kind} if code == 200 else obj)
 
 
 # Тело запроса читается в память целиком, поэтому предел свой у каждого пути: проект со 100 000 объектов ~100 МБ,
@@ -1130,6 +1238,18 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             return self.wfile.write(body)
+        if self.path.split("?")[0] == "/api/search/cadastral":
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:2000]
+            try:
+                code, obj = search_cad(q)
+            except ConnectorError:
+                code, obj = 502, {"error": "NSPD did not answer, try again later"}
+            return self._json(code, obj)
+        route = self.path.split("?")[0]
+        if route in ("/api/search/address", "/api/search"):
+            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
+            code, obj = (search_addr if route.endswith("address") else search_any)(q[:2000])
+            return self._json(code, obj)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
         if self.path == "/api/health":

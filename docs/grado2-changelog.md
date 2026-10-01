@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.88.0: first-run audit — search on the map, boundary by cadastral numbers, AutoCAD
+  coordinates, clearer words.** Owner: full UX audit through the eyes of a first-time user (a planner colleague who knows
+  QGIS and AutoCAD); report and fix the obvious at once, texts and first steps by the owner. Three novice agents that may
+  not read code or docs walked real goals on an empty install — `docs/ux/first-run-audit-2026-10-01.md`. Where they gave
+  up: no way to get a boundary by cadastral numbers (dead end «По участкам»), no place search, «0,0» rejected, drawings
+  out of view, no visible file after export. Fixed: search field over the map «Адрес или кадастровый номер» (Ctrl+F;
+  НСПД search by number `/api/search/cadastral`, OpenStreetMap Nominatim for addresses with its rules — 1 request a
+  second, only on Enter, cache, Moscow first, then the region; `/api/search` dispatcher); found parcels can be shown or
+  turned into the territory boundary; «По участкам» works without loaded parcels (live: 50:27:0000000:126 +
+  77:22:0030223:315 = 48,52 га). Coordinates «0,0», «@120,0» and «12345.6,6789.1» accepted besides «X;Y» (after the
+  first point «25,5» stays a length). ZE / Z / ZOOM — show all. Esc closes windows, docked ones too. The command input
+  selects the text after an error. Focus returns to the map after a new layer. «Проекты» lists saved files after a
+  reload. «Листы» buttons wrap. «Пример» asks before replacing a boundary. Disabled «Выбрать и загрузить…» says why.
+  Download toasts say the file went to the browser's downloads. Empty states for «Показатели» and «Сравнение».
+  «Слои по листам» without sheets explains itself. Words (owner's choice): «Граф» → «Схема расчёта», «Принять в проект»
+  → «Сохранить слоем», «потолок» → «предельная высота», «конточка» → «конечная точка»; the first screen stays as it is.
 - **2026-10-01, ГРАДО 2 v0.87.0: interface audit — layer tree, ribbon, windows, feedback, one visual system, light
   motion.** Owner: full UI audit, better interaction, «наведи красоту»; start with the ribbon, layers and properties,
   work windows; choose taste from interface catalogues (Mobbin MCP found, paid, not connected; references gathered from
