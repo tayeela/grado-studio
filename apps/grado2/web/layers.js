@@ -502,7 +502,7 @@ function setBySheet(on) {
   renderTree();
 }
 window.setBySheet = setBySheet;
-function renderTree() {
+function renderTree0() {
   const el = $("layerTree"); if (!el) return;
   if (BY_SHEET && LYR.length) { el.innerHTML = sheetTreeHTML(); syncCurSelect(); syncStart(); icons(); return; }
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Граф», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Принять в проект».">Предпросмотр графа${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
@@ -515,7 +515,7 @@ function renderTree() {
       h += `<div class="tn gr ${g.visible ? "" : "off"}" draggable="true" data-gk="${esc(g.id)}" title="Группа слоёв: перетаскивается целиком, двойной щелчок — переименовать">
         <button class="tw" data-gtw="${esc(g.id)}" aria-label="${g.open ? "Свернуть" : "Развернуть"} группу"><i data-lucide="${g.open ? "chevron-down" : "chevron-right"}"></i></button>
         <input type="checkbox" data-gvis="${esc(g.id)}" ${g.visible ? "checked" : ""} aria-label="Видимость группы"><i data-lucide="${g.open ? "folder-open" : "folder"}" class="gi"></i>
-        <span class="nm">${esc(g.title)}</span><span class="meta num">${n}</span>
+        <span class="nm" title="${esc(g.title)}">${esc(g.title)}</span><span class="meta num">${n}</span>
         <button class="tw more" data-gmore="${esc(g.id)}" aria-label="Меню группы"><i data-lucide="more-horizontal"></i></button></div>`;
     }
     prevG = l.group;
@@ -539,13 +539,74 @@ document.addEventListener("click", e => {
   const more = t.closest("[data-more]"); if (more) { layerMenu(more, more.dataset.more); return; }
   const gmore = t.closest("[data-gmore]"); if (gmore) { groupMenu(gmore, gmore.dataset.gmore); return; }
   if (t.matches("input")) return;
-  const row = t.closest("[data-lk]"); if (row) setCurrent(row.dataset.lk);
+  const row = t.closest("[data-lk]"); if (row && row.dataset.lk !== CUR) setCurrent(row.dataset.lk);   // уже текущий слой не перерисовывается: иначе двойной щелчок не доходит до строки
 });
 document.addEventListener("dblclick", e => {
   if (e.target.closest?.("[data-tw],[data-more],[data-gtw],[data-gmore],input")) return;
   const row = e.target.closest?.("#layerTree [data-lk]"); if (row) return renameLayer(row.dataset.lk);
   const gr = e.target.closest?.("#layerTree [data-gk]"); if (gr) renameGroup(gr.dataset.gk);
 });
+/* ---------- дерево слоёв: клавиатура, правый щелчок, роли для чтения с экрана ---------- */
+const ROWS = ".tn[data-lk],.tn[data-gk],.tn[data-shk]";
+const rowId = r => r?.dataset ? (r.dataset.lk ? "l:" + r.dataset.lk : r.dataset.gk ? "g:" + r.dataset.gk : r.dataset.shk ? "s:" + r.dataset.shk : null) : null;
+const rowById = id => id ? [...$("layerTree").querySelectorAll(ROWS)].find(r => rowId(r) === id) : null;
+const focusRow = id => { const r = rowById(id); r?.focus(); return r; };
+let TREE_EDIT = false;                     // идёт переименование в дереве: перерисовка ждёт конца правки, иначе поле пропадёт
+function renderTree() {                // перерисовка не должна ронять фокус клавиатуры: строка находится заново по ключу
+  if (TREE_EDIT && $("layerTree")?.querySelector("input[type=text]")) return;
+  TREE_EDIT = false;                                                    // поле правки пропало (или не появилось) — дерево не замирает
+  const t = $("layerTree"), af = document.activeElement, id = t && af && t.contains(af) ? rowId(af.closest?.(ROWS)) : null;
+  renderTree0(); if (!t) return; decorateTree(t);
+  if (id) rowById(id)?.focus({ preventScroll: true });
+}
+function decorateTree(t) {
+  t.setAttribute("role", "tree"); t.setAttribute("aria-label", "Слои");
+  const rows = [...t.querySelectorAll(ROWS)], cur = rows.find(r => r.dataset.lk && r.dataset.lk === CUR) || rows[0];
+  rows.forEach(r => {
+    r.setAttribute("role", "treeitem"); r.tabIndex = r === cur ? 0 : -1;                // одна строка в порядке Tab, остальные — стрелками
+    if (r.dataset.gk) r.setAttribute("aria-expanded", String(!!grp(r.dataset.gk)?.open));
+    else if (r.dataset.shk) r.setAttribute("aria-expanded", String(!SHEET_SHUT.has(r.dataset.shk)));
+    else if (r.dataset.lk) { const l = lyr(r.dataset.lk); if (l && ["cat", "grad", "rules"].includes(l.style.mode)) r.setAttribute("aria-expanded", String(!!l.open)); }
+    if (!r.hasAttribute("aria-selected")) r.setAttribute("aria-selected", "false");
+  });
+  t.querySelectorAll(".tn.leg").forEach(r => r.setAttribute("role", "none"));
+}
+$("layerTree").addEventListener("focusin", e => { const r = e.target; if (!r.matches?.(ROWS)) return; $("layerTree").querySelectorAll(ROWS).forEach(x => { x.tabIndex = x === r ? 0 : -1; }); });
+// правый щелчок по строке слоя, группы или папки листа — то же меню, что за кнопкой «…», у указателя (на карте правый щелчок = Enter, сюда не доходит)
+document.addEventListener("contextmenu", e => {
+  const row = e.target.closest?.("#layerTree .tn[data-lk],#layerTree .tn[data-gk],#layerTree .tn[data-shk]"); if (!row || e.target.closest("input[type=text]")) return;
+  e.preventDefault(); e.stopPropagation();
+  const at = { getBoundingClientRect: () => ({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY - 2 }) };
+  if (row.dataset.lk) { if (row.dataset.lk !== CUR) setCurrent(row.dataset.lk); layerMenu(at, row.dataset.lk); }
+  else if (row.dataset.gk) groupMenu(at, row.dataset.gk);
+  else sheetMenu(at, row.dataset.shk);
+});
+$("layerTree").addEventListener("keydown", e => {
+  const row = e.target; if (!row.matches?.(ROWS) || e.metaKey || e.ctrlKey || e.altKey) return;      // Ctrl+Z и прочие сочетания — как везде
+  if (!window.treeOwnsKey(e)) return;                                   // после щелчка мышью Пробел/Enter/Delete — как на карте
+  const rows = [...$("layerTree").querySelectorAll(ROWS)], i = rows.indexOf(row), { lk, gk, shk } = row.dataset, k = e.key;
+  const go = j => { const r = rows[Math.max(0, Math.min(rows.length - 1, j))]; if (!r) return; if (r.dataset.lk && r.dataset.lk !== CUR) setCurrent(r.dataset.lk); focusRow(rowId(r)); };   // стрелка = щелчок: слой становится текущим
+  const menu = arm => { e.preventDefault(); const opt = { kbd: true, ret: rowId(row), arm }; lk ? layerMenu(row, lk, opt) : gk ? groupMenu(row, gk, opt) : sheetMenu(row, shk); };
+  const g = gk && grp(gk), l = lk && lyr(lk), legend = l && ["cat", "grad", "rules"].includes(l.style.mode);
+  if (k === "ArrowDown") { e.preventDefault(); go(i + 1); }
+  else if (k === "ArrowUp") { e.preventDefault(); go(i - 1); }
+  else if (k === "Home") { e.preventDefault(); go(0); }
+  else if (k === "End") { e.preventDefault(); go(rows.length - 1); }
+  else if (k === "ArrowRight") { e.preventDefault(); if (g) { if (!g.open) { g.open = true; window.markDirty?.(); renderTree(); } else go(i + 1); } else if (legend && !l.open) { l.open = true; renderTree(); } }
+  else if (k === "ArrowLeft") { e.preventDefault(); if (g?.open) { g.open = false; window.markDirty?.(); renderTree(); } else if (l?.open) { l.open = false; renderTree(); } else if (l?.group) focusRow("g:" + l.group); }
+  else if (k === " ") { if (!l && !g) return; e.preventDefault(); if (l) l.visible = !l.visible; else g.visible = !g.visible; dataRev++; applyOrder(); renderTree(); }
+  else if (k === "F2") { e.preventDefault(); if (lk) renameLayer(lk); else if (gk) renameGroup(gk); }
+  else if (k === "Delete") { if (lk || gk) menu(true); }
+  else if (k === "ContextMenu" || (k === "F10" && e.shiftKey)) menu(false);
+  else if (k === "Enter" && lk) { e.preventDefault(); setCurrent(lk); focusRow(rowId(row)); }
+});
+// рисование в скрытый текущий слой: слой включается, иначе нарисованное не видно (вызывается из CAD.start; не мешает рисовать)
+window.revealCurLayer = name => {
+  if (!["line", "pline", "rect", "circle", "arc", "polygon", "ellipse", "point"].includes(name)) return;
+  const l = lyr(CUR); if (!l || shown(l) || (name === "point") !== (l.geom === "point")) return;
+  l.visible = true; const g = l.group && grp(l.group); if (g) g.visible = true;
+  dataRev++; applyOrder(); renderTree(); toast(`Слой «${l.title}» был скрыт — включён, чтобы было видно, что вы рисуете.`);
+};
 document.addEventListener("change", e => {
   const t = e.target; if (!tree()?.contains(t)) return;
   if (t.dataset.vis) { lyr(t.dataset.vis).visible = t.checked; dataRev++; applyOrder(); renderTree(); }      // видимость слоёв ограничений читает граф
@@ -622,13 +683,13 @@ function newGroup(keys, title) {
   keys.map(lyr).filter(Boolean).forEach(l => { l.group = id; });   // группа встаёт на место верхнего из слоёв
   normGroups(); applyOrder(); renderTree(); return id;
 }
-function groupMenu(anchor, id) {
+function groupMenu(anchor, id, opt) {
   const g = grp(id), ls = LYR.filter(l => l.group === id);
   showMenu(anchor, [
     ["Приблизить к группе", () => { const ex = ol.extent.createEmpty(); ls.forEach(l => ol.extent.extend(ex, layerSrc[l.key].getExtent())); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
     ["Переименовать", () => renameGroup(id)],
     ["Разгруппировать", () => { ls.forEach(l => { l.group = null; }); normGroups(); applyOrder(); renderTree(); }],
-    ["Удалить группу вместе со слоями", () => { if (!confirmInline(anchor, `Удалить группу «${g.title}» и ${ls.length} слоёв в ней?`)) return; ls.forEach(l => dropLayer(l.key)); normGroups(); afterRemove(); }]]);
+    ["Удалить группу вместе со слоями", () => removeLayers(ls.map(l => l.key), `Группа «${g.title}»`), `Точно удалить группу «${g.title}» и слоёв: ${ls.length}?`, "del"]], opt);
 }
 function renameGroup(id) {
   const row = tree().querySelector(`[data-gk="${CSS.escape(id)}"] .nm`); if (!row) return; const g = grp(id);
@@ -637,20 +698,32 @@ function renameGroup(id) {
 
 let menuEl = null, STYLE_CLIP = null;   // буфер стиля, как «Копировать/Вставить стиль» в QGIS
 const closeMenu = () => { menuEl?.remove(); menuEl = null; };
-function showMenu(anchor, items) {
+function showMenu(anchor, items, opt = {}) {      // пункт [текст, действие, «Точно …?», "del"]: первый щелчок меняет текст, второй выполняет; меню не закрывается
   closeMenu(); items = items.filter(Boolean);
   menuEl = document.createElement("div"); menuEl.className = "menu"; menuEl.setAttribute("role", "menu");
-  menuEl.innerHTML = items.map((it, i) => it === "-" ? `<hr>` : `<button data-i="${i}" role="menuitem">${esc(it[0])}</button>`).join("");
+  menuEl.innerHTML = items.map((it, i) => it === "-" ? `<hr>` : `<button data-i="${i}" role="menuitem"${it[3] === "del" || it[3] === "danger" ? ' class="danger"' : ""}>${esc(it[0])}</button>`).join("");
   document.body.appendChild(menuEl); const r = anchor.getBoundingClientRect(); menuEl.style.left = Math.min(r.left, innerWidth - 250) + "px"; menuEl.style.top = Math.max(8, Math.min(r.bottom + 2, innerHeight - menuEl.offsetHeight - 8)) + "px";
-  menuEl.onclick = ev => { const b = ev.target.closest("[data-i]"); if (b) { closeMenu(); items[+b.dataset.i][1](); } };
+  const back = () => { if (opt.ret && !document.activeElement?.matches?.("input,textarea")) focusRow(opt.ret); };
+  menuEl.onclick = ev => {
+    const b = ev.target.closest("[data-i]"); if (!b) return; const it = items[+b.dataset.i];
+    if (it[2] && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = it[2]; b.classList.add("danger"); b.focus(); return; }
+    closeMenu(); it[1](); back();
+  };
+  menuEl.onkeydown = ev => {
+    const bs = [...menuEl.querySelectorAll("button")], i = bs.indexOf(document.activeElement);
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); closeMenu(); back(); }
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") { ev.preventDefault(); bs[(i + (ev.key === "ArrowDown" ? 1 : bs.length - 1)) % bs.length]?.focus(); }
+  };
+  if (opt.arm) menuEl.querySelector(`[data-i="${items.findIndex(it => it && it[3] === "del")}"]`)?.click();   // клавиша Delete: пункт сразу спрашивает «Точно удалить…?»
+  else if (opt.kbd) menuEl.querySelector("button")?.focus();
 }
-function layerMenu(anchor, key) {
+function layerMenu(anchor, key, opt) {
   const l = lyr(key), d = DATA[key], others = GROUPS.filter(g => g.id !== l.group);
   showMenu(anchor, [["Приблизить к слою", () => { const ex = layerSrc[key].getExtent(); if (isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 }); }],
     ["Таблица атрибутов", () => { setCurrent(key); openTable(true); }],
     ["Рисовать в этот слой", () => { setCurrent(key); setTool(GEOMTOOL[l.geom]); }],
     ["Выбрать все объекты слоя", () => { setCurrent(key); selectAll(); }],
-    l.geom === "poly" && !fieldsOfKey(key).includes(DECISION) ? ["Реестр зданий: сохраняем / сносим", () => makeRegister(key)] : null,
+    l.geom === "poly" && !fieldsOfKey(key).includes(DECISION) && (BUILDINGS.includes(key) || fieldsOfKey(key).includes("Этажность")) ? ["Реестр зданий: сохраняем / сносим", () => makeRegister(key)] : null,
     l.geom === "poly" && fieldsOfKey(key).includes("Этажность") && !key.startsWith("nspd.") && !key.startsWith("osm.") ? ["Проверить нормы (инсоляция, запреты, разрывы)", () => runCheck(key)] : null,
     "-",
     ["Копировать стиль", () => { STYLE_CLIP = { style: JSON.parse(JSON.stringify(l.style)), geom: l.geom, from: l.title }; toast(`Стиль «${l.title}» скопирован.`); }],
@@ -662,8 +735,8 @@ function layerMenu(anchor, key) {
     ...others.map(g => [`В группу «${g.title}»`, () => { l.group = g.id; LYR.splice(LYR.indexOf(l), 1); LYR.splice(LYR.findIndex(x => x.group === g.id), 0, l); normGroups(); applyOrder(); renderTree(); }]),
     ["В новую группу", () => { const id = newGroup([key]); setTimeout(() => renameGroup(id), 0); }],
     "-",
-    d?.original ? ["Вернуть исходную выгрузку", () => { if (!confirmInline(anchor, "Отменить все правки слоя и вернуть выгрузку?")) return; pushUndo({ kind: "layer", key, label: `возврат выгрузки «${l.title}»`, fs: layerSrc[key].getFeatures() }); setLayerData(key, d.original, true); dataRev++; }] : null,
-    ["Удалить слой из проекта", () => removeLayer(key)]]);
+    d?.original ? ["Вернуть исходную выгрузку", () => { pushUndo({ kind: "layer", key, label: `возврат выгрузки «${l.title}»`, fs: layerSrc[key].getFeatures() }); setLayerData(key, d.original, true); dataRev++; }, "Точно вернуть исходную выгрузку?", "danger"] : null,
+    ["Удалить слой из проекта", () => removeLayer(key), `Точно удалить «${l.title}»?`, "del"]], opt);
 }
 document.addEventListener("pointerdown", e => { if (menuEl && !menuEl.contains(e.target) && !e.target.closest("[data-more],[data-gmore]")) closeMenu(); });
 // window.confirm в браузере-вьюере не работает: подтверждение — повторным выбором пункта в течение 4 с
@@ -676,25 +749,42 @@ function moveLayer(key, d) {
 }
 function inlineEdit(el, old, apply) {
   el.innerHTML = `<input type="text" value="${esc(old)}" style="width:100%">`; const inp = el.querySelector("input"); inp.focus(); inp.select();
-  let fired = false;
-  const done = ok => { if (fired) return; fired = true; const v = inp.value.trim(); if (ok && v && v !== old) apply(v); renderTree(); };
+  let fired = false; TREE_EDIT = el.closest?.("#layerTree") != null;
+  const done = ok => { if (fired) return; fired = true; TREE_EDIT = false; const v = inp.value.trim(); try { if (ok && v && v !== old) apply(v); } finally { renderTree(); } };
   inp.onkeydown = e => { e.stopPropagation(); if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); }; inp.onblur = () => done(true);
 }
 function renameLayer(key) {
   const row = tree().querySelector(`[data-lk="${CSS.escape(key)}"] .nm`); if (!row) return; const l = lyr(key), old = l.title;
   inlineEdit(row, old, v => { l.title = v; DATA[key].title = v; graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.name === "слой" && w.value === old) w.value = v; })); dataRev++; });
 }
-function dropLayer(key) {
-  const i = LYR.findIndex(l => l.key === key); if (i < 0) return;
+function dropLayer(key) {                 // возвращает снимок для «Ctrl+Z»: сам слой, данные и объекты — по ссылке, без копий
+  const i = LYR.findIndex(l => l.key === key); if (i < 0) return null;
+  const l = LYR[i], g = l.group && grp(l.group), snap = { l, idx: i, data: DATA[key], fs: layerSrc[key] ? layerSrc[key].getFeatures() : [], group: g ? { ...g } : null, gidx: g ? GROUPS.indexOf(g) : -1, cur: CUR === key };
   LYR.splice(i, 1); ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === key).forEach(x => m.removeLayer(x)));
   delete DATA[key]; layerSrc[key]?.clear(); if (CUR === key) CUR = LYR[0]?.key || null;
   setSel(SEL.filter(s => s.key !== key)); UNDO.splice(0, UNDO.length, ...UNDO.filter(u => !undoKeys(u).includes(key))); REDO.length = 0;
+  return snap;
 }
 function afterRemove() { dataRev++; normGroups(); applyOrder(); renderTree(); renderRight(); renderTable(); renderSources?.(); if (UIS.tool !== "cmd") setTool(UIS.tool); }
-function removeLayer(key) {
-  const l = lyr(key); if (!l) return;
-  if (!confirmInline(tree(), `Удалить слой «${l.title}» из проекта?`)) return;
-  dropLayer(key); afterRemove();
+// одно удаление (слой или группа со слоями) = одна запись отмены «rmlayer»: снимки слоёв в порядке удаления
+function removeLayers(keys, groupTitle) {
+  const snaps = keys.map(dropLayer).filter(Boolean); if (!snaps.length) return;
+  const t = snaps[0].l.title;
+  pushUndo({ kind: "rmlayer", label: groupTitle ? `удаление группы ${groupTitle}` : `удаление слоя «${t}»`, snaps });
+  afterRemove();
+  toast(groupTitle ? `${groupTitle} удалена вместе со слоями: ${snaps.length}. ${MOD}+Z — вернуть.` : `Слой «${t}» удалён. ${MOD}+Z — вернуть.`);
+}
+const removeLayer = key => removeLayers([key]);
+function restoreLayers(rec) {             // обратный порядок: каждый слой встаёт на своё место в дереве и в свою группу
+  rec.snaps.slice().reverse().forEach(sn => {
+    const key = sn.l.key; if (lyr(key)) return toast(`Слой «${sn.l.title}» уже есть в проекте — не возвращён.`);
+    DATA[key] = sn.data; layerSrc[key] ||= new ol.source.Vector(); layerSrc[key].clear(true); layerSrc[key].addFeatures(sn.fs);
+    if (sn.group && !grp(sn.group.id)) GROUPS.splice(Math.max(0, Math.min(sn.gidx, GROUPS.length)), 0, { ...sn.group });
+    LYR.splice(Math.min(sn.idx, LYR.length), 0, sn.l); ALLMAPS.forEach(m => attachLayer(m, sn.l));
+    if (sn.cur || !CUR) CUR = key;
+  });
+  normGroups(); applyOrder(); rec.snaps.forEach(sn => { if (lyr(sn.l.key)) syncFromSource(sn.l.key); });
+  dataRev++; renderTree(); renderRight(); renderTable(); renderSources?.();
 }
 $("bNewLayer").onclick = () => {
   const box = $("newLayerBox"); box.hidden = !box.hidden; if (!box.hidden) $("nlName").focus();
@@ -902,7 +992,7 @@ const tableSort = { k: "", rows: [] };
 function renderTable() {
   if ($("wTable").hidden) return; const l = lyr(CUR), el = $("attrBody");
   const selSet = new Set(SEL.map(s => s.f)), nSel = SEL.filter(s => s.key === CUR).length;
-  $("attrTitle").textContent = l ? `${l.title} · ${fmt(DATA[l.key]?.count ?? 0)} объектов${nSel ? ` · выбрано ${fmt(nSel)}` : ""} · двойной щелчок по ячейке — правка` : "Выберите слой в дереве";
+  $("attrTitle").textContent = l ? `${l.title} · ${plural(DATA[l.key]?.count ?? 0, ["объект", "объекта", "объектов"])}${nSel ? ` · выбрано ${fmt(nSel)}` : ""} · двойной щелчок по ячейке — правка` : "Выберите слой в дереве";
   if (!l) { el.innerHTML = ""; return; }
   const cols = fieldsOfKey(l.key); let rows = UIS.selOnly ? SEL.filter(s => s.key === CUR).map(s => s.f) : layerSrc[l.key].getFeatures().slice();
   if (UIS.filter) { const q = UIS.filter.toLowerCase(); rows = rows.filter(f => cols.some(k => String(f.get(k) ?? "").toLowerCase().includes(q))); }
@@ -1004,7 +1094,7 @@ function setCurrent(key) {
 }
 function syncCurSelect() {
   const s = $("curLayer"); if (!s) return;
-  s.innerHTML = LYR.length ? LYR.map(l => `<option value="${esc(l.key)}" ${l.key === CUR ? "selected" : ""}>${esc(l.title)} · ${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}</option>`).join("") : `<option>новый слой</option>`;
+  s.innerHTML = LYR.length ? LYR.map(l => `<option value="${esc(l.key)}" title="${esc(l.title)}" ${l.key === CUR ? "selected" : ""}>${esc(l.title)} · ${{ poly: "полигоны", line: "линии", point: "точки" }[l.geom]}</option>`).join("") : `<option>новый слой</option>`;
   s.title = LYR.length ? `Слой для новых объектов: ${lyr(CUR)?.title || ""}` : "Слоёв нет: первый появится сам, как только начнёте чертить";
   s.disabled = !LYR.length;
 }
@@ -1104,10 +1194,15 @@ function syncStatus() {
   hintOverride = null; const l = lyr(CUR), n = SEL.length;
   if (UIS.tool === "cmd" && CAD.active()) { $("stHint").textContent = CAD.prompt(); $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; return; }
   const what = n ? `выбранных объектов (${fmt(n)})` : `слоя «${l?.title || "—"}»`;
-  $("stHint").textContent = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
+  // в покое — одно короткое предложение (на 840 px длинное обрезается); полный текст — во всплывающей подсказке
+  const full = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
     : UIS.tool === "select" && n && CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: ручек было бы больше ${fmt(CAD.MAXGRIPS)}, поэтому они не показаны — выберите меньше объектов, чтобы править вершины. Команды (M, CO, RO) работают со всем выбором; Esc — снять выбор.`
     : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить; команды: M — перенести, CO — копировать, RO — повернуть, MI — зеркало (буквы и Enter); Esc — снять выбор.`
     : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
+  const short = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: рисуйте инструментами сверху или откройте «Данные». F1 — клавиши."
+    : UIS.tool === "select" && n && !CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: Del — удалить, M, CO, RO — правка, Esc — снять.`
+    : UIS.tool === "select" && !n ? "Выбор: щелчок или рамка." : full;
+  $("stHint").textContent = short; $("stHint").title = short === full ? "" : full;
   $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; $("stLayer").title = l ? `Текущий слой: ${l.title}` : "";
   window.syncStart?.();
 }
@@ -1154,7 +1249,7 @@ function pasteClip() {
 }
 const snapF = (key, f) => layerSrc[key]?.hasFeature(f) ? { g: f.getGeometry()?.clone(), p: propsOf(f) } : null;
 const featRec = (items, label) => ({ kind: "feat", label, items: items.map(({ key, f }) => ({ key, f, s: snapF(key, f) })) });
-const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : [u.key];
+const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : u.kind === "rmlayer" ? u.snaps.map(x => x.l.key) : [u.key];
 function pushUndo(rec) { UNDO.push(rec); if (UNDO.length > 80) UNDO.shift(); REDO.length = 0; syncRibbon(); }
 // ползунок и ввод числа дают десятки событий — одна запись на серию правок одного поля в течение 1,5 с
 function pushStyleUndo(l, tag) {
@@ -1182,15 +1277,23 @@ function applyRec(rec) {
 }
 function stepHistory(from, to, verb) {
   const rec = from.pop(); if (!rec) return toast(from === UNDO ? "Отменять нечего." : "Возвращать нечего.");
+  if (rec.kind === "rmlayer") { restoreLayers(rec); setHint(`${verb}: ${rec.label}.`); syncRibbon(); return; }      // возврат удалённого слоя; «Вернуть» его заново не удаляет
   if (rec.kind !== "feat" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
   const inv = capture(rec); applyRec(rec); to.push(inv);
   setSel(SEL); setHint(`${verb}: ${rec.label}.`); syncRibbon();
 }
 const undo = () => stepHistory(UNDO, REDO, "Отменено"), redo = () => stepHistory(REDO, UNDO, "Возвращено");
 $("bUndo").onclick = undo; $("bRedo").onclick = redo;
+// клавиши, которые разбирает само дерево слоёв или открытое меню; остальные (буквы команд, Esc) работают как везде —
+// строка слоя получает фокус и от щелчка мышью, и команды AutoCAD после этого должны набираться как обычно
+// Пробел, Enter и Delete дерево забирает только при работе с клавиатуры (строка выбрана стрелками, видно кольцо фокуса):
+// после щелчка мышью по слою они, как в AutoCAD, повторяют команду и удаляют выбранные объекты
+const TREE_KEYS = /^(Arrow(Up|Down|Left|Right)|Home|End|F2|ContextMenu|F10)$/, TREE_KBD_KEYS = /^( |Delete|Backspace|Enter)$/;
+const treeKbd = e => !!e.target.closest?.("body > .menu") || !!e.target.matches?.(":focus-visible");
+window.treeOwnsKey = e => !!e.target.closest?.("#layerTree, body > .menu") && (TREE_KEYS.test(e.key) || (TREE_KBD_KEYS.test(e.key) && treeKbd(e)));
 // стрелки — в фазе перехвата: иначе карта OpenLayers сдвинула бы вид вместе с объектами
 addEventListener("keydown", e => {
-  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph") || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph") || treeOwnsKey(e) || e.metaKey || e.ctrlKey || e.altKey) return;
   // сдвиг выбранного стрелками по осям МСК: 0,1 м, с Shift — 1 м
   if (/^Arrow/.test(e.key) && SEL.length && !window.CAD?.active?.() && window.CAD?.toM) {
     e.preventDefault(); e.stopPropagation(); const d = e.shiftKey ? 1 : .1, [dx, dy] = { ArrowLeft: [-d, 0], ArrowRight: [d, 0], ArrowUp: [0, d], ArrowDown: [0, -d] }[e.key];
@@ -1211,6 +1314,7 @@ addEventListener("keydown", e => {
   if (mod && code === "KeyV" && !e.shiftKey) { e.preventDefault(); pasteClip(); return; }
   if (e.key === "F1" || e.key === "?" || (e.shiftKey && code === "Slash")) { e.preventDefault(); winOpen("wKeys"); return; }
   if (mod || e.altKey) return;
+  if (treeOwnsKey(e)) return;      // клавиши дерева слоёв и его меню разбирает само дерево
   if ((e.key === "Delete" || e.key === "Backspace") && SEL.length && !window.CAD?.active?.()) { e.preventDefault(); $("bDelFeat").click(); }
   else if (e.key === "Escape") {
     // Esc по очереди: открытое меню → подбор вариантов → выбор и инструмент → верхнее плавающее окно

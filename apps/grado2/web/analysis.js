@@ -34,7 +34,7 @@ NRadius.title = "Радиусы обслуживания"; NRadius.prototype.onE
     const cover = unionAll(circles), out = TERR ? diff(TERR, cover) : null;
     this._out = [cover, out];
     this._fc = circles.concat(out ? [turf.feature(out.geometry, { "Пояснение": `вне радиуса ${Math.round(r)} м: ${ha2(out)} — здесь ${sv.kinds[0]} не доступен пешком по норме (${sv.norm})` })] : []);
-    this._msg = !DATA["osm.social"] ? "загрузите «Школы, детсады, поликлиники (OSM)» в окне «Данные»" : `${pts.length} объектов · вне радиуса ${out ? ha2(out) : "0 га"} · ${sv.norm}`;
+    this._msg = !DATA["osm.social"] ? "загрузите «Школы, детсады, поликлиники (OSM)» в окне «Данные»" : `${plural(pts.length, ["объект", "объекта", "объектов"])} · вне радиуса ${out ? ha2(out) : "0 га"} · ${sv.norm}`;
   }
   this.setOutputData(0, this._out[0]); this.setOutputData(1, this._out[1]); this.info = this._msg;
 };
@@ -86,7 +86,7 @@ NWalk.title = "Пешая доступность"; NWalk.prototype.onExecute = f
         this._fc = [turf.feature(zone.geometry, { "Пояснение": `${min} мин пешком до: ${sv.kinds[0]} (${pts.length}) — по улицам OSM, 4,5 км/ч` })]
           .concat(out ? [turf.feature(out.geometry, { "Пояснение": `дальше ${min} мин пешком: ${ha2(out)}` })] : []);
       }
-      this._msg = `${pts.length} объектов · ${G.xy.length} узлов улиц · ${this._out ? "зона " + ha2(this._out) : "недостижимо"}`;
+      this._msg = `${plural(pts.length, ["объект", "объекта", "объектов"])} · ${G.xy.length} узлов улиц · ${this._out ? "зона " + ha2(this._out) : "недостижимо"}`;
     }
   }
   this.setOutputData(0, this._out); this.info = this._msg;
@@ -151,6 +151,6 @@ function bakeNode(n) {
   DATA[key] = { title, source: "выход узла графа, " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: fc.features.length, fields: [] };
   layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
   const l = ensureLayer(key, title, geomOf(fc)); l.style = ST({ ...l.style, label: "Пояснение", opacity: .35 }); restyle(l); setCurrent(key); dataRev++;
-  toast(`Слой «${title}»: ${feats.length} объектов с таблицей показателей. Граф на него больше не влияет.`);
+  toast(`Слой «${title}»: ${plural(feats.length, ["объект", "объекта", "объектов"])} с таблицей показателей. Граф на него больше не влияет.`);
 }
 $("bBakeNode").onclick = () => bakeNode(selNode);

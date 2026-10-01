@@ -15,10 +15,12 @@ let tT; function toast(t) {
   const el = $("toast"); el.textContent = t; el.classList.remove("top"); el.classList.add("on");
   // сообщение — над низом карты (над встроенными снизу окнами и командной строкой), по центру карты; поверх окна — вверху карты
   const m = $("mMain").getBoundingClientRect();
-  Object.assign(el.style, { left: (m.left + m.width / 2) + "px", bottom: (innerHeight - m.bottom + (document.body.classList.contains("cmdon") ? 58 : 14)) + "px", top: "" });
+  // над командной строкой по её настоящей высоте (с пометкой она бывает в две строки), иначе — над низом карты
+  const cl = document.querySelector(".cmdline:not([hidden])"), cr = cl && cl.offsetParent ? cl.getBoundingClientRect() : null;
+  Object.assign(el.style, { left: (m.left + m.width / 2) + "px", bottom: (cr ? innerHeight - cr.top + 8 : innerHeight - m.bottom + 14) + "px", top: "" });
   const r = el.getBoundingClientRect(), hit = [...document.querySelectorAll(".win:not([hidden])")].some(w => { const b = w.getBoundingClientRect(); return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top; });
   if (hit) { el.classList.add("top"); Object.assign(el.style, { top: (m.top + 10) + "px", bottom: "auto" }); }
-  clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), 4200);
+  clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), /^Восстановлена последняя работа/.test(t) ? 2500 : 4200);   // «Восстановлена…» не должна долго висеть над первой командой
 }
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
 async function api(path, body) {
@@ -101,7 +103,14 @@ function setBasemap(id) {
   if ($("baseSel")) $("baseSel").value = id; window.markDirty?.();
 }
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
-function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [new ol.control.ScaleLine({ minWidth: 70 }), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
+// масштабная линейка по-русски: OpenLayers пишет «50 m» / «1 km»; текст правится сразу после каждого обновления линейки (масштаб, перемещение)
+function ruScaleLine() {
+  const sl = new ol.control.ScaleLine({ minWidth: 70 });
+  new MutationObserver(() => sl.element.querySelectorAll(".ol-scale-line-inner").forEach(e => { const t = e.textContent.replace(/ (k?)m$/, (_, k) => k ? " км" : " м"); if (t !== e.textContent) e.textContent = t; }))
+    .observe(sl.element, { childList: true, characterData: true, subtree: true });
+  return sl;
+}
+function newMap(target, layers) { const m = new ol.Map({ target, layers: [basemap(), ...layers], view: sharedView, controls: [ruScaleLine(), new ol.control.Attribution({ collapsible: false })], interactions: interactions() }); ALLMAPS.push(m); window.attachDataLayers?.(m); return m; }
 const PAT = new Map();
 /* штриховка: узор (45, 135, 0 — горизонталь, 90 — вертикаль, x45 — косая сетка, x0 — прямая сетка, dots — точки) и шаг в пикселях */
 const HATCHES = { "45": "косая ／", "135": "косая ＼", "0": "горизонтальная", "90": "вертикальная", "x45": "косая сетка", "x0": "прямая сетка", "dots": "точки" };
@@ -1144,7 +1153,7 @@ function renderParams() {
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${esc(lbl)}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
-    return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
+    return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}" title="${esc(lbl)}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры узлов графа, вынесенные в панель: правка здесь меняет граф, и наоборот.</div>`;
   icons();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
@@ -1226,7 +1235,7 @@ function renderTep() {
       <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
       <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}</div>
       ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="${tp.walkRoute ? "пешеходный маршрут по улицам и дорожкам OSM от центра территории" : "прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)"}">${tp.walkRoute ? "" : "≈ "}${fmt(tp.walk)} м ${tp.walkRoute ? "пешком по улицам" : "до станции"}${tp.station ? ` · ${esc(tp.station)}` : ""}${tp.routing ? " · маршрут по улицам считается (первый раз до 2 минут)…" : ""}</small></div>` : ""}
-      <div class="row"><label title="945-ПП прил. 3: деловая активность района">K2</label>${sel("k2", [[0.2, "0,2"], [0.5, "0,5"], [0.7, "0,7"], [0.9, "0,9"]], "K2")}<label class="inl"><input type="checkbox" data-tp="tinao" ${tp.tinao ? "checked" : ""}> ТиНАО</label></div>
+      <div class="row"><label title="945-ПП прил. 3: деловая активность района">K2</label>${sel("k2", [[0.2, "0,2"], [0.5, "0,5"], [0.7, "0,7"], [0.9, "0,9"]], "K2")}<label class="inl" title="Отметьте, если территория в Троицком или Новомосковском округе: от этого зависит расчёт показателей"><input type="checkbox" data-tp="tinao" ${tp.tinao ? "checked" : ""}> ТиНАО</label></div>
       <div class="row"><label title="2152-ПП табл. 1.4.2">Жилые территории</label>${sel("mode", Object.entries(MODES), "Тип территории")}</div>
       <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${Number(tp.nonres)}" style="width:64px"></div>
       <div class="row"><label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label><input type="number" data-tp="unbuilt" min="0" max="90" value="${Number(tp.unbuilt)}" style="width:64px"></div>
@@ -1489,7 +1498,9 @@ function dragWin(w, e, onTap) {
       const d = WST[w.id] ||= {}, [, , ww, hh] = W0()[w.id], W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 80);
       floatWin(w); Object.assign(w.style, { width: W + "px", height: H + "px" }); dx = Math.min(dx, W - 60); dy = Math.min(dy, 24); moving = true; winFront(w);
     }
-    s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(40, Math.min(ev.clientY - dy, innerHeight - 40)));
+    // заголовок окна всегда виден: не выше ленты и не ниже строки состояния
+    const top0 = document.querySelector(".ribbon")?.getBoundingClientRect().bottom ?? 40, bot0 = (document.querySelector(".status")?.getBoundingClientRect().top ?? innerHeight) - 30;
+    s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(top0, Math.min(ev.clientY - dy, bot0)));
     w.style.left = s.x + "px"; w.style.top = s.y + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
   };
   const up = ev => {
@@ -1509,9 +1520,14 @@ const WIN_OPEN = {
   wCmp: () => { if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
 const go = {};
+// лёгкое появление плавающего окна (прозрачность и масштаб, без смены размеров — раскладка не дёргается); не при
+// восстановлении окон на старте и не при «уменьшении движения» в системе
+let WIN_ANIM = false;
+const winAppear = w => { if (!WIN_ANIM || !w.animate || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  w.animate([{ opacity: 0, transform: "scale(.98)" }, { opacity: 1, transform: "none" }], { duration: 150, easing: "cubic-bezier(0.23,1,0.32,1)" }); };
 function winOpen(id, on) {
-  const w = $(id); on = on ?? w.hidden; w.hidden = !on;
-  if (on) { const z = dockOf(id); if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  const w = $(id); const was = w.hidden; on = on ?? w.hidden; w.hidden = !on;
+  if (on) { const z = dockOf(id); if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); if (was) winAppear(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
   if (w.classList.contains("docked")) layoutChanged();
   if (on && w.classList.contains("docked")) { w.parentElement.dataset.active = id; syncZones(); }
   if (id === "wGraph") $("pv").hidden = !on;
@@ -1673,6 +1689,7 @@ const startApp = async () => {
   // узкое окно: панели поверх карты, при запуске закрыты — открываются из меню «Окна»
   if (innerWidth <= 1000) { $("work").classList.add("noL", "noR"); syncWinButtons(); }          // без записи: на широком окне панели вернутся
   Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); });   // первый запуск: вместо окон — «С чего начать» на карте
+  requestAnimationFrame(() => { WIN_ANIM = true; });                                // окна, открытые дальше, появляются мягко
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();
 };

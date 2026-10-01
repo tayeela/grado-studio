@@ -327,6 +327,8 @@ function start(name, opts = {}) {
   if (name === "grip" && !opts?.g) return;
   window.clearTools?.(); UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
   CMD = CMDS[name].make(opts); CMD.id = name;
+  downloadWarn(name);
+  window.revealCurLayer?.(name);          // рисование в скрытый текущий слой: слой включается (layers.js)
   if (CMDS[name].alias.length) { LAST = name; hist(`${CMDS[name].title.toUpperCase()} (${CMDS[name].alias[0]})`, true); }
   mMain.getTargetElement().style.cursor = "crosshair"; window.syncStart?.();
   if (CMD.done) return finish();
@@ -337,9 +339,41 @@ function cancel(silent) {
   if (!silent) { UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); }
 }
 // итог команды («Соединено: 12 → 2», «Расстояние 25 м») остаётся в строке состояния после её завершения
-function finish() { setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), msg = document.getElementById("stHint")?.textContent || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
+function finish() { setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), cur = document.getElementById("stHint")?.textContent || "", msg = doneMsg || (cur === ESC_HINT ? "" : cur); CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
 let lastNote = null;
-function note(msg) { setHint(msg); lastNote = msg; hist(msg); if (CMD) showCmd(); }
+/* итог действия в строке состояния (принцип 3: «каждый инструмент говорит, что делать дальше»); пока команда идёт, в строке состояния
+   только короткая часть, полная подсказка — в командной строке над картой */
+const ESC_HINT = "Esc — прервать";
+let doneMsg = null;
+const MODK = () => typeof MOD !== "undefined" ? MOD : "Ctrl", UNDO_TAIL = () => ` ${MODK()}+Z — отменить.`;
+const plural = (n, a, b, c) => { const m = n % 100, k = n % 10; return m > 10 && m < 20 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c; };
+function result(msg) { note(msg); doneMsg = msg; }
+const DRAW_DONE = { "отрезок": ["Создан отрезок", "len"], "полилиния": ["Создана полилиния", "v"], "прямоугольник": ["Создан прямоугольник", "v"], "круг": ["Создан круг", "area"], "дуга": ["Создана дуга", "len"],
+  "многоугольник": ["Создан многоугольник", "v"], "эллипс": ["Создан эллипс", "area"], "точка": ["Создана точка", ""] };
+function drawSummary(items, label) {
+  const d = DRAW_DONE[label]; if (!d || items.length !== 1) return;
+  const { key, f } = items[0], g = f.getGeometry(), poly = g.getType() === "Polygon", ch = g.getType() === "Point" ? null : chainsOf(g)[0]?.map(toM), parts = [];
+  if (ch) {
+    const nv = poly ? ch.length - 1 : ch.length;
+    if (d[1] === "v") parts.push(`${nv} ${plural(nv, "вершина", "вершины", "вершин")}`);
+    if (poly && d[1] !== "len") parts.push(`${fmt(Math.abs(G.area(ch)), 1)} м²`); else if (!poly && d[1] !== "area") parts.push(`${f2(G.chainLen(ch))} м`);
+  }
+  result(`${poly && label === "полилиния" ? "Создан полигон" : d[0]} в слое «${lyr(key)?.title || "—"}»${parts.map(x => ", " + x).join("")}.${UNDO_TAIL()}`);
+}
+const EDIT_DONE = { "перенос": "Перемещено объектов", "копия": "Скопировано объектов", "поворот": "Повёрнуто объектов", "масштаб": "Масштабировано объектов", "зеркало": "Отражено объектов",
+  "обрезка": "Обрезано объектов", "удлинение": "Удлинено объектов", "сопряжение": "Сопряжено объектов" };
+function editSummary(changes, adds, label) {
+  const n = changes.length || adds.length, w = /^удаление( \d+ об\.)?$/.test(label) ? "Удалено объектов" : EDIT_DONE[label];
+  if (w && n) result(`${w}: ${n}.${UNDO_TAIL()}`);
+}
+// слой — выгрузка портала: объекты, нарисованные в нём, помечаются как правка выгрузки (бейдж «изм.» у слоя); рисованию это не мешает
+const DL_SRC = { gisogd: "ГИС ОГД", ogd: "ГИС ОГД", egko: "ЕГКО", nspd: "НСПД", osm: "OpenStreetMap", yandex: "Яндекса" };
+const DRAW_GEOM = { line: ["line"], arc: ["line"], pline: ["line", "poly"], rect: ["poly", "line"], circle: ["poly", "line"], polygon: ["poly", "line"], ellipse: ["poly", "line"], point: ["point"] };
+function downloadWarn(name) {
+  const l = DRAW_GEOM[name] && lyr(window.CURKEY?.()), src = l && /^([a-z]+)\./.exec(l.key)?.[1];
+  if (l && DL_SRC[src] && DRAW_GEOM[name].includes(l.geom)) note(`Слой — выгрузка ${DL_SRC[src]}: ваши объекты будут помечены как правка выгрузки.`);
+}
+function note(msg) { doneMsg = null; setHint(msg); lastNote = msg; hist(msg); if (CMD) showCmd(); }
 /* история команд, как текстовое окно AutoCAD (F2): запущенные команды и их сообщения за сеанс */
 const HIST = [], histEl = document.createElement("div"); histEl.className = "cmdhist"; histEl.hidden = true; histEl.setAttribute("role", "log");
 function hist(text, cmd) {
@@ -363,7 +397,7 @@ function showCmd() {
 }
 function after() {
   if (!CMD) { showCmd(); return; } if (CMD.done) return finish();
-  setHint(`${title()} · ${CMD.prompt().replace(/\s*\[[^\]]*\]/g, "")}`); showCmd(); lastNote = null;
+  setHint(ESC_HINT); showCmd(); lastNote = null;
   if (CMD.need === "text" && inEl.hidden) openInput("val");            // текст надписи набирается сразу, без первой буквы-команды
   if (CUR) CUR = resolve(CUR.c); refresh(); syncButtons();
 }
@@ -406,7 +440,7 @@ mMain.getInteractions().on("add", ev => { if (ev.element !== cadI) { const arr =
 /* клавиатура: псевдонимы команд, динамический ввод, Enter/пробел, Esc, F-клавиши режимов */
 addEventListener("keydown", e => {
   if (e.target === inEl) return;
-  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph")) return;
+  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph") || window.treeOwnsKey?.(e)) return;      // клавиши дерева слоёв (стрелки, Пробел, F2, Delete) не уходят в команды карты; буквы и Esc — уходят
   if (e.key === "F2") { e.preventDefault(); toggleHist(); return; }
   const F = { F3: "osnap", F8: "ortho", F10: "polar", F11: "otrack", F12: "dyn" }[e.key];
   if (F) { e.preventDefault(); toggle(F); return; }
@@ -448,6 +482,7 @@ function addNew(items, label) {
   pushUndo(featRec(items, label));
   const keys = new Set(); items.forEach(({ key, f }) => { layerSrc[key].addFeature(f); keys.add(key); });
   keys.forEach(k => syncFromSource(k));
+  drawSummary(items, label); if (label === "подобие") result(`Подобие построено, объектов: ${items.length}.${UNDO_TAIL()}`);
 }
 // правка: changes [{key, f, geom?, cad?, remove?}] — прежнее состояние запоминается для отмены; adds [{key, f}] — новые объекты
 function edit(changes, adds, label) {
@@ -458,6 +493,7 @@ function edit(changes, adds, label) {
   changes.forEach(c => { keys.add(c.key); if (c.remove) { layerSrc[c.key].removeFeature(c.f); return; } if (c.geom) c.f.setGeometry(c.geom); if (c.props) c.f.setProperties(c.props); if ("cad" in c) { if (c.cad) c.f.set("_cad", c.cad); else c.f.unset("_cad"); } c.f.set("_edited", true); });
   adds.forEach(a => { layerSrc[a.key].addFeature(a.f); keys.add(a.key); });
   keys.forEach(k => syncFromSource(k));
+  editSummary(changes, adds, label);
 }
 const worldChains = f => chainsOf(f.getGeometry()).map(ch => ch.map(toM));
 function xformGeom(g, fn) { const g2 = g.clone(); g2.applyTransform((inp, out, dim = 2) => { for (let i = 0; i < inp.length; i += dim) { const c = fromM(fn(toM([inp[i], inp[i + 1]]))); out[i] = c[0]; out[i + 1] = c[1]; } return out; }); return g2; }
@@ -1509,6 +1545,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? `${title()} · ${CMD.prompt()}` : "",
+window.CAD = { contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? ESC_HINT : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();

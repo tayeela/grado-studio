@@ -522,7 +522,7 @@ R.comments = [$("hubCList"), () => {
 const cpath = s => `project/${encodeURIComponent(st.pid)}/comments${s || ""}`;
 function flyTo(pt) {
   if (!pt) return toast("Объект этого комментария удалён — метки на карте нет.");
-  sharedView.animate({ center: pt, zoom: Math.max(sharedView.getZoom() || 0, 17), duration: 350 });
+  sharedView.animate({ center: pt, zoom: Math.max(sharedView.getZoom() || 0, 17), duration: matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350 });
 }
 function selectComment(cid, open) {
   st.cSel = cid; const c = st.comments.find(x => x.id === cid);

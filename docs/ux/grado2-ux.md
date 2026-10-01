@@ -224,4 +224,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   `GRADO2_HUB_DIR` is outside the guard. (5) After a 429 the page retries the stored link on each reload until the tab is
   closed. (6) People without the owner role see only «Включать и выключать ссылку может только владелец проекта», not
   whether a link is on.
+- 2026-10-01 (v0.87.0, UI audit, `docs/ux/audit-2026-10-01.md`): left for later — dark graph canvas (litegraph reads
+  colours once), cursor coordinates in the status bar, AutoCAD-style staged ribbon collapse, layer search, undo entries
+  of a deleted layer's earlier edits are dropped, focus after re-render in «По листам» mode returns to the first row.
 

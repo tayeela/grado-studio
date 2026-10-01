@@ -14,9 +14,9 @@ body.hub-on .top{gap:8px}
 #hubAccName{max-width:130px}
 .hubrole{color:var(--faint);white-space:nowrap}
 .hubbar .chev{width:12px;height:12px;margin-left:-2px}
-.hubcnt{font-weight:600;font-size:10px;line-height:14px;min-width:14px;padding:0 4px;border-radius:7px;background:var(--accent);color:var(--accent-ink);text-align:center}
+.hubcnt{font-weight:600;font-size:var(--fs-s);line-height:14px;min-width:14px;padding:0 4px;border-radius:7px;background:var(--accent);color:var(--accent-ink);text-align:center}
 .hubav{display:flex;align-items:center;padding-left:4px}
-.hubav .av,.hubav .more{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 10px/1 var(--ui);border:2px solid var(--panel);margin-left:-5px;flex:0 0 auto;cursor:default}
+.hubav .av,.hubav .more{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 var(--fs-s)/1 var(--ui);border:2px solid var(--panel);margin-left:-5px;flex:0 0 auto;cursor:default}
 .hubav .more{background:var(--hover);color:var(--muted)}
 .hubsync{display:flex;align-items:center;gap:6px;color:var(--muted);white-space:nowrap;padding:0 4px}
 .hubsync .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto}
@@ -25,7 +25,7 @@ body.hub-on .top{gap:8px}
 .hubsync[data-state="offline"] .dot,.hubsync[data-state="full"] .dot{background:var(--bad)}
 .hubsync[data-state="offline"],.hubsync[data-state="full"]{color:var(--bad)}
 .hubacc{position:relative;display:inline-flex}
-.hubmenu{position:absolute;top:calc(100% + 4px);right:0;min-width:240px;z-index:85}
+.hubmenu{position:absolute;top:calc(100% + 4px);right:0;min-width:240px;z-index:var(--z-menu)}
 .hubmenu button{display:flex;align-items:center;gap:8px}
 .hubmenu button svg{width:15px;height:15px}
 /* Шапка тесная: слева проект и кнопки хаба, справа окна программы. Ширины подобраны по замеру (1440 px — без наложений):
@@ -46,25 +46,25 @@ body.hub-viewer .hubhint{display:flex}
 body.hub-viewer #rbDraw,body.hub-viewer #rbAnno,body.hub-viewer #rbModify,body.hub-viewer #rbMore,body.hub-viewer #rbTerr,
 body.hub-viewer .ribbon [data-tool="vertex"],body.hub-viewer #bDelFeat,body.hub-viewer #bUndo,body.hub-viewer #bRedo,body.hub-viewer .ribbon .tgt{display:none}
 body.hub-viewer #bNewLayer,body.hub-viewer #bNewGroup,body.hub-viewer #bTidy,body.hub-viewer #bFrame,body.hub-viewer #bLoad,body.hub-viewer #bDraw,
-body.hub-viewer #bExample,body.hub-viewer #bGen,body.hub-viewer #bBakeVar,body.hub-viewer #bBakeNode,body.hub-viewer #fDxf,body.hub-viewer label:has(>#fDxf){pointer-events:none;opacity:.4}
+body.hub-viewer #bExample,body.hub-viewer #bGen,body.hub-viewer #bBakeVar,body.hub-viewer #bBakeNode,body.hub-viewer #fDxf,body.hub-viewer label:has(>#fDxf){pointer-events:none;opacity:.45}
 body.hub-cmode #mMain{cursor:crosshair!important}
 
 /* ---------- вход и регистрация ---------- */
-.hublogin{position:fixed;inset:0;z-index:300;display:grid;place-items:center;background:var(--bg);overflow:auto;padding:16px}
-.hublogin form{width:min(360px,100%);background:var(--panel);border:1px solid var(--line-2);border-radius:6px;padding:20px;display:grid;gap:10px}
+.hublogin{position:fixed;inset:0;z-index:var(--z-login);display:grid;place-items:center;background:var(--bg);overflow:auto;padding:16px}
+.hublogin form{width:min(360px,100%);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-2);padding:20px;display:grid;gap:10px}
 .hublogin h1{margin:0 0 2px;font-size:15px;font-weight:600}
 .hublogin label,.hubdlg label{display:grid;gap:3px;color:var(--muted)}
 .hublogin label[hidden]{display:none}
-.hublogin input,.hubdlg input{height:30px;border:1px solid var(--line-2);background:var(--field);color:var(--text);border-radius:3px;padding:0 8px;width:100%}
-.hublogin .btn.primary{height:30px;justify-content:center;font-size:13px}
+.hublogin input,.hubdlg input{height:var(--h-lg);border:1px solid var(--line-2);background:var(--field);color:var(--text);border-radius:var(--r-1);padding:0 8px;width:100%}
+.hublogin .btn.primary{height:var(--h-lg);justify-content:center;font-size:var(--fs-l)}
 .hubtabs{display:flex;border-bottom:1px solid var(--line)}
-.hubtabs button{flex:1 1 auto;border:1px solid transparent;border-bottom:0;background:none;height:28px;padding:0 8px;border-radius:3px 3px 0 0;color:var(--muted)}
-.hubtabs button[aria-selected="true"]{background:var(--field);border-color:var(--line);color:var(--text);margin-bottom:-1px;height:29px}
+.hubtabs button{flex:1 1 auto;border:1px solid transparent;border-bottom:0;background:none;height:28px;padding:0 8px;border-radius:var(--r-1) 3px 0 0;color:var(--muted)}
+.hubtabs button[aria-selected="true"]{background:var(--field);border-color:var(--line);color:var(--text);margin-bottom:-1px}
 .hubmsg{min-height:1.4em;color:var(--bad)}
 .hubmsg.ok{color:var(--good)}
 
 /* ---------- диалог пароля ---------- */
-dialog.hubdlg{width:min(340px,calc(100vw - 32px));padding:16px;border:1px solid var(--line-2);border-radius:8px;background:var(--panel);color:var(--text);box-shadow:0 12px 40px rgba(0,0,0,.35)}
+dialog.hubdlg{width:min(340px,calc(100vw - 32px));padding:16px;border:1px solid var(--line-2);border-radius:var(--r-2);background:var(--panel);color:var(--text);box-shadow:var(--sh-3)}
 dialog.hubdlg::backdrop{background:rgba(0,0,0,.25)}
 dialog.hubdlg form{display:grid;gap:10px}
 .hubrow{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
@@ -73,53 +73,53 @@ dialog.hubdlg form{display:grid;gap:10px}
 .hubt td.nm{max-width:240px}
 .hubt td.acts{text-align:right;white-space:nowrap;overflow:visible}
 .hubt td.acts .btn,.hubt td.acts .tb{display:inline-flex;vertical-align:middle}
-.hubt tr.cur td{background:var(--selrow)}
-.hubt .pill{font-size:10px;padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);margin-left:6px}
-.hubt .sub{color:var(--faint);font-size:11px;display:block}
-.hubt input.hubren{height:22px;width:100%}
-.hubt select{height:22px}
-.btn.danger,.tb.danger{background:var(--bad);border-color:var(--bad);color:#fff}
+.hubt tr.cur td{background:var(--selrow);color:var(--text)}
+.hubt .pill{font-size:var(--fs-s);padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);margin-left:6px}
+.hubt .sub{color:var(--faint);font-size:var(--fs-s);display:block}
+.hubt input.hubren{height:var(--h-sm);width:100%}
+.hubt select{height:var(--h-sm)}
+.btn.danger,.tb.danger{background:var(--bad);border-color:var(--bad);color:var(--on-bad)}
 .hubdim{color:var(--faint)}
-.hubcode{display:flex;align-items:center;gap:8px;margin:8px;padding:8px 10px;background:var(--field);border:1px solid var(--accent);border-radius:4px}
-.hubcode code{flex:1;font:600 15px var(--mono);letter-spacing:.06em;user-select:all;-webkit-user-select:all}
+.hubcode{display:flex;align-items:center;gap:8px;margin:8px;padding:8px 10px;background:var(--field);border:1px solid var(--accent);border-radius:var(--r-1)}
+.hubcode code{flex:1;font:600 var(--fs-l) var(--mono);letter-spacing:.06em;user-select:all;-webkit-user-select:all}
 .hubsec{padding:6px 8px;font-weight:600;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--panel)}
 .hubnote{padding:6px 8px;color:var(--muted);line-height:1.45}
 
 /* ---------- комментарии ---------- */
 .hubcompose{display:grid;gap:6px;padding:8px;border-bottom:1px solid var(--line);background:var(--field)}
-.hubcompose textarea,.hubcr textarea{width:100%;resize:vertical;min-height:54px;padding:5px 6px;border:1px solid var(--line-2);border-radius:3px;background:var(--field);color:var(--text);font:inherit}
+.hubcompose textarea,.hubcr textarea{width:100%;resize:vertical;min-height:54px;padding:5px 6px;border:1px solid var(--line-2);border-radius:var(--r-1);background:var(--field);color:var(--text);font:inherit}
 .hubcwhere{color:var(--muted)}
 .hubfilter{margin:8px 8px 0}
 .hubc{padding:8px;border-bottom:1px solid var(--line);cursor:pointer}
 .hubc:hover{background:var(--hover)}
-.hubc.sel{background:var(--selrow)}
+.hubc.sel{background:var(--selrow);color:var(--text)}
 .hubc.done .hubcb{color:var(--muted)}
 .hubch{display:flex;align-items:center;gap:6px}
 .hubch b{font-weight:600}
 .hubch .t{color:var(--faint);margin-left:auto;white-space:nowrap}
-.hubpin{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font:600 10px/1 var(--ui);background:#d9822b;color:#fff;flex:0 0 auto}
-.hubc.done .hubpin{background:#8a8d91}
+.hubpin{width:18px;height:18px;border-radius:50%;display:grid;place-items:center;font:600 var(--fs-s)/1 var(--ui);background:var(--warn);color:var(--accent-ink);flex:0 0 auto}
+.hubc.done .hubpin{background:var(--faint)}
 .hubcb{margin:4px 0 2px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
-.hubca{color:var(--faint);font-size:11px}
+.hubca{color:var(--faint);font-size:var(--fs-s)}
 .hubr{margin:6px 0 0 24px;padding-left:8px;border-left:2px solid var(--line-2)}
 .hubr .hr{display:flex;gap:6px}.hubr .hr b{font-weight:600}.hubr .hr span{color:var(--faint);margin-left:auto}
 .hubr div:last-child{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 .hubcf{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
-.hubcf .btn{height:22px;padding:0 8px}
+.hubcf .btn{height:var(--h-sm);padding:0 8px}
 .hubcr{display:grid;gap:6px;margin:6px 0 0 24px}
 
 .projbar .btn[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 body.hub-viewer .start{display:none}
 
 /* ---------- команды ---------- */
-.hubsec .btn{margin-left:8px;height:22px;padding:0 8px;font-weight:400}
-.hubsec input.hubren{height:22px;width:60%}
+.hubsec .btn{margin-left:8px;height:var(--h-sm);padding:0 8px;font-weight:400}
+.hubsec input.hubren{height:var(--h-sm);width:60%}
 
 /* ---------- этап 2: избранное, копия, доступ по ссылке ---------- */
 .tb.star.on{color:var(--warn)}
 .tb.star.on svg{fill:currentColor}
 .hubcopy td{background:var(--field)}
 .hubform{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:2px 0}
-.hubform input{height:22px;flex:1 1 180px;min-width:140px}
+.hubform input{height:var(--h-sm);flex:1 1 180px;min-width:140px}
 .hubform label{display:flex;align-items:center;gap:6px}
 .hublinkurl{font-family:var(--mono)}

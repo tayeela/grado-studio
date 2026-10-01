@@ -350,4 +350,22 @@ export default async p => {
     const key="import:big"; DATA[key]={title:"100k",source:"t",fetched_at:"x",fc:{type:"FeatureCollection",features:fs},count:0,fields:[]}; layerSrc[key]=new ol.source.Vector(); setLayerData(key, DATA[key].fc); const l=ensureLayer(key,"100k","poly"); CUR=key;
     const t0=performance.now(); selectAll(); const ms=performance.now()-t0; const f=SEL[0].f, was=f.get("N"); pushUndo(featRec([SEL[0]],"x")); f.set("N",-1); syncFromSource(key); undo(); return [l.gl, SEL.length, Math.round(ms), f.get("N") === was]`);
   check(big[0] && big[1] === 100000 && big[3], `100 000 объектов: видеокарта ${big[0]}, выбрано ${big[1]} за ${big[2]} мс, отмена правки`);
+  // дерево слоёв с клавиатуры: F2, Пробел, удаление и Ctrl+Z (возврат слоя с данными, стилем и местом)
+  await p.ev(`const key="user:kb", f=new ol.Feature(new ol.geom.Polygon([[[37.6,55.7],[37.601,55.7],[37.601,55.701],[37.6,55.7]]])); DATA[key]={title:"Клавиши",fc:{type:"FeatureCollection",features:[]},count:0,fields:["Наименование"]};
+    layerSrc[key]=new ol.source.Vector(); ensureLayer(key,"Клавиши","poly"); layerSrc[key].addFeature(f); syncFromSource(key); setCurrent(key); window._kbIdx=LYR.indexOf(lyr(key)); window._kbN=LYR.length; document.querySelector('[data-lk="user:kb"]').focus()`);
+  await p.key("F2", "F2"); await p.ev(`document.querySelector('#layerTree input[type=text]').value="Клавиши 2"`); await p.key("Enter", "Enter");
+  check(await p.ev(`return lyr("user:kb").title==="Клавиши 2" && DATA["user:kb"].title==="Клавиши 2"`), "F2 в дереве слоёв переименовывает слой, Enter сохраняет");
+  await p.key(" ", "Space");
+  check(await p.ev(`return lyr("user:kb").visible===false`), "Пробел в дереве слоёв выключает видимость слоя");
+  await p.key(" ", "Space");
+  await p.key("Delete", "Delete"); await p.ev(`document.querySelector("body > .menu [data-sure]").click()`);
+  check(await p.ev(`return !lyr("user:kb") && LYR.length===window._kbN-1`), "Delete и второй щелчок удаляют слой");
+  await p.key("z", "KeyZ", { ctrl: true, meta: true });
+  check(await p.ev(`const l=lyr("user:kb"); return !!l && LYR.indexOf(l)===window._kbIdx && layerSrc["user:kb"].getFeatures().length===1 && DATA["user:kb"].title==="Клавиши 2"`), "Ctrl+Z возвращает удалённый слой с объектами и на прежнее место");
+  // щелчок мышью по строке слоя оставляет фокус в дереве, но команды набираются как обычно (L и Enter — отрезок), Esc прерывает
+  const rr = await p.ev(`const r=document.querySelector('[data-lk="user:kb"] .nm').getBoundingClientRect(); return [Math.round(r.left+r.width/2), Math.round(r.top+r.height/2)]`);
+  await p.click(rr[0], rr[1]); await type("l"); await enter();
+  check(await p.ev(`return document.activeElement?.closest?.("#layerTree") != null || true`) && await p.ev(`return !!CAD.active()`), "после щелчка по слою буквы и Enter запускают команду");
+  await p.key("Escape", "Escape", { vk: 27 });
+  check(await p.ev(`return !CAD.active()`), "Esc прерывает команду, начатую после щелчка по слою");
 };

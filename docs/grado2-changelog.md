@@ -2,6 +2,25 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.87.0: interface audit — layer tree, ribbon, windows, feedback, one visual system, light
+  motion.** Owner: full UI audit, better interaction, «наведи красоту»; start with the ribbon, layers and properties,
+  work windows; choose taste from interface catalogues (Mobbin MCP found, paid, not connected; references gathered from
+  Figma UI3, QGIS, AutoCAD, Felt, ArcGIS Pro, Rhino 8, Carbon, Atlassian, Fluent 2, Linear), «слегка анимирован».
+  Audit by four independent passes (references, 136 screenshots at 1280/840 px in both themes, code, scenarios walked as a
+  planner) — `docs/ux/audit-2026-10-01.md`. Fixed: layer tree — right click opens the row menu, rename by double click
+  and F2, keyboard (arrows, Space, Delete, Shift+F10), arrows no longer move objects while the tree has focus, delete
+  layer with an in-menu confirm and Ctrl+Z restore (data, style, place, group), drawing into a hidden current layer
+  shows it, full names in tooltips, «Реестр зданий» only on building layers, Russian plurals; the tree waits for an
+  open rename before re-rendering. Visual system — tokens for heights 20/24/28/32, radii 3/6, fonts 11/12/13, three
+  shadows, z-index scale; contrast of secondary text ≥ 4,5:1 in both themes; complete hover/press/focus/disabled states
+  (primary buttons had no hover); one 28 px ribbon that fits one row at 1280; menus highlight with the selection colour,
+  destructive items red; aligned symbols in the tree. Motion (Carbon «productive»): windows fade/scale in 150 ms when
+  opened (not on restore), menus 90 ms, toasts, button press scale .97; nothing on tools, keys, map or tree; reduced
+  motion respected. Windows: «Данные» buttons no longer cut, «Листы» table scrolls, form grids in «Ограничения» and
+  «Показатели», «Проекты» wording, «Справка» fits, titles start with the button word, tooltips on fields (no invented
+  norms). Feedback: one result line after drawing and edits («Создан полигон в слое …, 4 вершины, … м². Ctrl+Z —
+  отменить.»), a note when drawing into a portal download, short status in command mode and at 840 px (full text in
+  the tooltip), Russian scale line, toast above the command line.
 - **2026-10-01, ГРАДО 2 v0.86.0: search, favourites, copy and link access in hub mode.** Owner's choices: search and
   order, «Сделать копию», favourites and link access «для своих» now; adding to a team stays immediate. Contract first
   (`docs/grado2-collab-spec.md`, «Projects window and link access»), checked with the advisor: the link token lives in

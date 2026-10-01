@@ -220,10 +220,10 @@ const fmtDate = t => new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit"
 const fmtSize = b => b > 1e6 ? fmt(b / 1e6, 1) + " МБ" : fmt(Math.max(1, b / 1e3)) + " КБ";
 async function renderProjects() {
   let r; try { r = await (await fetch("/api/projects")).json(); } catch { $("projList").innerHTML = `<div class="empty">Сервер не отвечает</div>`; return; }
-  $("projDir").textContent = r.dir; $("projDir").title = "Папка проектов: файлы .grado2 можно копировать и пересылать";
+  $("projDir").textContent = r.dir; $("projDir").title = `${r.dir}\nПапка проектов: файлы .grado2 можно копировать и пересылать`;
   $("projList").innerHTML = r.projects.length ? `<table class="at"><thead><tr><th>Проект</th><th>Изменён</th><th>Размер</th><th></th></tr></thead><tbody>${r.projects.map(p =>
     `<tr${p.name === PROJ.name ? ' class="sel"' : ""}><td>${esc(p.name)}</td><td class="num">${fmtDate(p.modified)}</td><td class="num">${fmtSize(p.size)}</td><td><button class="btn" data-open="${esc(p.name)}">Открыть</button></td></tr>`).join("")}</tbody></table>`
-    : `<div class="empty">Сохранённых проектов пока нет. Введите название выше и нажмите «Сохранить».</div>`;
+    : `<div class="empty">Сохранённых файлов в папке нет. Открытая работа сохраняется сама (автосохранение); Ctrl+S — сохранить под именем.</div>`;
 }
 function openProjects(focusName) {
   winOpen("wProjects", true); $("projName").value = PROJ.name || ""; renderProjects();
