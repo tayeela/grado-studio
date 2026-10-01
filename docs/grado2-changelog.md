@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.88.3: leftover edits of earlier sessions committed.** `tests/test_server.py`
+  (`HttpHardening`): the server under test gets a temporary projects folder, so the POST /api/project test no longer
+  writes into the real one. `print_io.py`: the street-label comment now matches the code — a required street with no
+  clean place gets no label; there is no last pass without the boundary check (rule 1). `CLAUDE.md`: the test command
+  uses `~/.grado2/venv/bin/python`. Program behaviour unchanged.
 - **2026-10-01, ГРАДО 2 v0.88.2: collaboration test — failures now show their cause; no `_uid` divergence found.**
   The e2e collab scenario failed in 2 of 4 full runs on 01.10 and the check «наборы постоянных номеров у A и B
   совпадают» (collab_scenarios.mjs:154) was blamed, but that was never shown: one failed run kept no output, the other

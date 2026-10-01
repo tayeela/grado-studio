@@ -17,7 +17,7 @@ no emoji, describe results as what appears on screen.
 - Tests before every commit (commit only after they pass on that exact tree):
   ```sh
   PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" \
-    python3 -m unittest discover -s <core/connectors/tests | core/compute/tests | apps/grado2/tests> -p "test_*.py"
+    ~/.grado2/venv/bin/python -m unittest discover -s <core/connectors/tests | core/compute/tests | apps/grado2/tests> -p "test_*.py"
   GRADO2_E2E=1  # add for the headless browser scenarios in apps/grado2/tests
   ```
 - `.claude/launch.json` points `grado2-test` to the main checkout; in a worktree it is edited locally and marked

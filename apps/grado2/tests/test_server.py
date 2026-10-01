@@ -345,7 +345,10 @@ class HttpHardening(unittest.TestCase):
     """Заголовки защиты, пределы тела, форма JSON, ответы об ошибках без подробностей, квота папки проектов."""
 
     def setUp(self):
+        import tempfile
         import threading
+        self.tmp = tempfile.TemporaryDirectory()                          # тест POST /api/project не должен писать в настоящую папку проектов
+        self.old, S.PROJECTS = S.PROJECTS, Path(self.tmp.name) / "p"
         self.srv = S.Server(("127.0.0.1", 0), S.Handler)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
@@ -353,6 +356,8 @@ class HttpHardening(unittest.TestCase):
     def tearDown(self):
         self.srv.shutdown()
         self.srv.server_close()
+        S.PROJECTS = self.old
+        self.tmp.cleanup()
 
     def call(self, path, data=None):
         import json
