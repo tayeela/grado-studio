@@ -160,10 +160,10 @@ async function computeConstraints() {
         const top = Math.min(hs ?? Infinity, hp ?? Infinity);
         if (top === Infinity) continue;                        // клетка без ограничения по высоте — пустая, карта под ней видна
         cells.push(turf.polygon([[toLL([x, y]), toLL([x + cell, y]), toLL([x + cell, y + cell]), toLL([x, y + cell]), toLL([x, y])]], {
-          "Потолок, м": top === Infinity ? null : Math.floor(top * 10) / 10, "Потолок, эт.": top === Infinity ? null : Math.floor(top / CONS.floorH),
+          "Предельная высота, м": top === Infinity ? null : Math.floor(top * 10) / 10, "Предельная высота, эт.": top === Infinity ? null : Math.floor(top / CONS.floorH),
           "По инсоляции, м": hs == null ? null : Math.floor(hs * 10) / 10, "По ПЗЗ, м": hp, "Почему": hs != null && (hp == null || hs <= hp) ? "тень на окна соседей" : hp != null ? "высота по ПЗЗ" : "не ограничено" }));
       }
-      consLayer(CK.ceil, "Предельная высота застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Потолок, эт.", n: 5, ramp: "green", method: "equal" } });
+      consLayer(CK.ceil, "Предельная высота застройки (инсоляция соседей, ПЗЗ)", turf.featureCollection(cells), "poly", { mode: "grad", opacity: .4, stroke: "#ffffff", width: 0, grad: { field: "Предельная высота, эт.", n: 5, ramp: "green", method: "equal" } });
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
       log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах в ${R} м от границы (дома дальше полосы выгрузки 60 м не загружены и не защищены); ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
     }
@@ -178,13 +178,14 @@ function consExclude() {
   const on = EXCLUDE.map(lyr).filter(l => l && shown(l));
   return unionAll(on.flatMap(l => layerSrc[l.key].getFeatures().filter(f => visibleIn(l, f)).map(f => GJ.writeFeatureObject(f)).filter(f => /Polygon/.test(f.geometry?.type))));
 }
-// потолок корпуса: наименьший «Потолок, м» среди клеток, которые задевает пятно корпуса; null — не ограничен
+// потолок корпуса: наименьшая «Предельная высота, м» среди клеток, которые задевает пятно корпуса; null — не ограничен
+// (старое имя «Потолок, м» — запасное: участник со старой версией может прислать слой до обновления)
 function consCeiling() {
   const l = lyr(CK.ceil); if (!l || !shown(l)) return null;
   const src = layerSrc[CK.ceil];
-  return f => { let top = Infinity; const ex = GJ.readFeature(f).getGeometry().getExtent(); src.forEachFeatureIntersectingExtent(ex, c => { if (!visibleIn(l, c)) return; const v = c.get("Потолок, м"); if (v != null && v < top && safe(() => turf.booleanIntersects(f, GJ.writeFeatureObject(c)))) top = v; }); return top === Infinity ? null : top; };
+  return f => { let top = Infinity; const ex = GJ.readFeature(f).getGeometry().getExtent(); src.forEachFeatureIntersectingExtent(ex, c => { if (!visibleIn(l, c)) return; const v = c.get("Предельная высота, м") ?? c.get("Потолок, м"); if (v != null && v < top && safe(() => turf.booleanIntersects(f, GJ.writeFeatureObject(c)))) top = v; }); return top === Infinity ? null : top; };
 }
-function NCons() { this.addOutput("запреты", "geom"); this.addOutput("потолок", "cap"); finish(this, "src", 220); }
+function NCons() { this.addOutput("запреты", "geom"); this.addOutput("предельная высота", "cap"); finish(this, "src", 220); }
 NCons.title = "Ограничения"; NCons.prototype.onExecute = function () {
   const vis = [...EXCLUDE, CK.ceil].map(k => { const l = lyr(k); return l ? (shown(l) ? 1 : 0) + ":" + DATA[k]?.rev + ":" + JSON.stringify([l.style.mode, l.style.cat?.off, l.style.rules]) : "-"; }).join(",");
   if (this._ck !== vis) { this._ck = vis; this._ex = consExclude(); this._cap = consCeiling(); if (this._ex) this._ex.properties = {}; if (this._cap) this._cap._id = Math.random().toString(36).slice(2); }
@@ -205,7 +206,7 @@ function ensureConsNode() {
   const nd = add("Геометрия/Вычесть", [place.pos[0] - 20, place.pos[1] + 200], n => n.title = "Пятно с ограничениями");
   if (from) from.connect(src.origin_slot, nd, 0);
   nc.connect(0, nd, 1); nd.connect(0, place, 0);
-  if (!place.inputs[2]) place.addInput("потолок", "cap");
+  if (!place.inputs[2]) place.addInput("предельная высота", "cap");
   nc.connect(1, place, 2);
   toast("В схему добавлен блок «Ограничения»: пятно застройки минус запреты, высота корпусов — не выше предельной высоты.");
 }

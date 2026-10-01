@@ -22,7 +22,9 @@ function migrate(p) {
   let v = p.version || 1;
   if (v > PROJ_VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${v}, эта программа понимает до ${PROJ_VERSION}) — обновите программу`);
   while (v < PROJ_VERSION) { p = MIGRATIONS[v](p); v++; }
-  p.version = PROJ_VERSION; return p;
+  p.version = PROJ_VERSION;
+  // «потолок» → «предельная высота» (01.10.2026): без смены формата — идемпотентно, при каждой загрузке (migrate.js)
+  return MIGRATE.renameCeiling(p);
 }
 window.migrateProject = migrate;
 

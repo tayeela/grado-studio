@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.88.1: «потолок» → «предельная высота» in data and the calculation scheme, old projects
+  converted.** Owner: rename the remaining «Потолок, м», «Потолок, эт.» fields and the «потолок» sockets, with migration
+  of saved projects. The ceiling layer now writes «Предельная высота, м» / «Предельная высота, эт.» (the default
+  graduated style uses the new field); the «Ограничения» block output and the «Посадка застройки» input are named
+  «предельная высота». `web/migrate.js` (`renameCeiling`) runs at the end of `migrate()` on every load, hub projects
+  included (join → applyProject): it renames the fields in the `cons:ceiling` data (fc and a separate original, field
+  order kept), in that layer's style (label, category, graduated and rule fields) and the socket names of those two
+  program blocks only; user layers with a «Потолок» field stay untouched; idempotent, project format stays 2. The
+  building cap still reads «Потолок, м» as a fallback, for a collaborator whose tab runs the old version. Tests:
+  `tests/migrate_test.js` via `test_migrate_js.py`. Real project copy: the «Посадка застройки» input became
+  «предельная высота» after loading.
 - **2026-10-01, ГРАДО 2 v0.88.0: first-run audit — search on the map, boundary by cadastral numbers, AutoCAD
   coordinates, clearer words.** Owner: full UX audit through the eyes of a first-time user (a planner colleague who knows
   QGIS and AutoCAD); report and fix the obvious at once, texts and first steps by the owner. Three novice agents that may

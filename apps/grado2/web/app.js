@@ -761,7 +761,7 @@ NInter.title = "Пересечь"; NInter.prototype.onExecute = function () { co
 LiteGraph.registerNodeType("Геометрия/Пересечь", NInter);
 
 function NPlace() {
-  this.addInput("пятно", "geom"); this.addInput("этажность", "num"); this.addInput("потолок", "cap"); this.addOutput("посадка", "sketch");
+  this.addInput("пятно", "geom"); this.addInput("этажность", "num"); this.addInput("предельная высота", "cap"); this.addOutput("посадка", "sketch");
   this.addWidget("combo", "типология", "Секции", () => { }, { values: TYPOLOGIES });
   this.addWidget("slider", "ширина корпуса, м", 16, () => { }, { min: 12, max: 24, precision: 0, slider_color: "#8fb3e0" });
   this.addWidget("slider", "этажность", 12, () => { }, { min: 1, max: 30, precision: 0, slider_color: "#8fb3e0" });
