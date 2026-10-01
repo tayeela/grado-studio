@@ -151,7 +151,10 @@ try {
   await Promise.all([A.until(`return ${cnt}===2 && ${feats}.some(f=>f.get("Наименование")==="Квартал Б2")`, "у A оба результата"), B.until(`return ${cnt}===2 && ${feats}.some(f=>f.get("Наименование")==="Квартал Б2")`, "у B оба результата")]);
   check(true, "одновременные правки разных объектов (новый полигон A и атрибут B) — оба результата есть у обоих");
   const uids = P => P.ev(`return ${feats}.map(f=>f.get("_uid")).sort().join()`);
-  check(await uids(A) === await uids(B), "наборы постоянных номеров у A и B совпадают (двойников нет)");
+  // номера сверяются, пока обе стороны не придут к одному; не сошлись за 6 с — в сообщении оба списка
+  let ua = "", ub = "";
+  for (const t = Date.now(); Date.now() - t < 6000; await sleep(100)) { ua = await uids(A); ub = await uids(B); if (ua === ub) break; }
+  check(ua === ub, `наборы постоянных номеров у A и B совпадают (двойников нет)${ua === ub ? "" : ` — A: ${ua}; B: ${ub}`}`);
   await A.until(`return $("hubSync").dataset.state==="saved"`, "A: «сохранено»"); await B.until(`return $("hubSync").dataset.state==="saved"`, "B: «сохранено»");
 
   // ---------- присутствие: курсор и выбор B видны у A ----------

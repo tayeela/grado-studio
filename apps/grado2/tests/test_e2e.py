@@ -26,6 +26,13 @@ def _free_port():
         return s.getsockname()[1]
 
 
+def _failure(r):
+    """Why a scenario failed: every line that is not "ok - …" (STEP FAILED, console errors), then the tail of stderr.
+    A plain tail of stdout cut the cause off once the output grew past it, and a passed check got the blame."""
+    bad = [ln for ln in r.stdout.splitlines() if ln.strip() and not ln.startswith("ok - ")]
+    return "\n".join(bad)[-4000:] + "\n" + r.stderr[-2000:]
+
+
 @unittest.skipUnless(os.environ.get("GRADO2_E2E") == "1" and shutil.which("node") and Path(CHROME).exists(),
                      "set GRADO2_E2E=1; needs node and Chrome")
 class BrowserScenarios(unittest.TestCase):
@@ -45,7 +52,7 @@ class BrowserScenarios(unittest.TestCase):
                 r = subprocess.run(["node", str(HERE / "e2e/driver.mjs"), f"http://127.0.0.1:{port}/", str(HERE / "e2e/scenarios.mjs")],
                                    capture_output=True, text=True, timeout=600, env={**os.environ, "CHROME": CHROME})
                 print(r.stdout[-4000:])
-                self.assertEqual(r.returncode, 0, r.stdout[-4000:] + r.stderr[-2000:])
+                self.assertEqual(r.returncode, 0, _failure(r))
             finally:
                 srv.terminate()
                 srv.wait(10)
@@ -73,7 +80,7 @@ class BrowserScenarios(unittest.TestCase):
                                    capture_output=True, text=True, timeout=600,
                                    env={**os.environ, "CHROME": CHROME, "E2E_ADMIN_PW": admin_pw, "E2E_INVITE": invite})
                 print(r.stdout[-4000:])
-                self.assertEqual(r.returncode, 0, r.stdout[-4000:] + r.stderr[-2000:])
+                self.assertEqual(r.returncode, 0, _failure(r))
             finally:
                 srv.terminate()
                 srv.wait(10)

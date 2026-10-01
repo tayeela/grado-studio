@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.88.2: collaboration test — failures now show their cause; no `_uid` divergence found.**
+  The e2e collab scenario failed in 2 of 4 full runs on 01.10 and the check «наборы постоянных номеров у A и B
+  совпадают» (collab_scenarios.mjs:154) was blamed, but that was never shown: one failed run kept no output, the other
+  only `AssertionError: 1 != 0 : нет)` — the blind tail `r.stdout[-4000:]` began inside a line ending «(двойников нет)»,
+  which is either the passed «ok - …» line (then the cause was ~660 characters further on) or a «STEP FAILED» line
+  followed by ~4000 characters of console errors. Which check failed cannot be recovered (the total time, 293 s against
+  288 s for a passing run, hints the collab scenario ran to its end, but proves nothing). No divergence in
+  `web/collab.js` was found: with temporary logging at every place a `_uid` is given or changed (`ensureUids`,
+  `setLayerData`, `syncFromSource`) the numbers were made once per new polygon on the drawing side and never renamed;
+  B renamed nothing, `ensureUids` never fired; 56 repeats of the concurrent step (B's delay swept 0–1.5 s; normal CPU,
+  slowed 4× and 8×) and 8 full collab runs (6 of them three at a time next to the owner scenarios, one at 6× CPU) all
+  gave equal sets. Changes, tests only: `test_e2e.py` reports every line that is not «ok - …» (STEP FAILED, console
+  errors) instead of a blind tail; the uid check now waits up to 6 s for both sides to agree (agreement within 6 s, as
+  the collaboration contract promises, not at the same instant) and prints both lists if they do not. Found, not fixed,
+  harmless today: `mergeFC` numbers a feature without `_uid` with the salt `layer:<key>`, `normSection`/`diffApply` with
+  `<key>`; a pushed feature always has a number already (`syncFromSource`), so the two never meet. Program code unchanged.
 - **2026-10-01, ГРАДО 2 v0.88.1: «потолок» → «предельная высота» in data and the calculation scheme, old projects
   converted.** Owner: rename the remaining «Потолок, м», «Потолок, эт.» fields and the «потолок» sockets, with migration
   of saved projects. The ceiling layer now writes «Предельная высота, м» / «Предельная высота, эт.» (the default
