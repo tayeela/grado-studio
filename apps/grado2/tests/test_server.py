@@ -1040,27 +1040,33 @@ class HubHttp(unittest.TestCase):
                   f"/api/hub/project/{pid}/presence", f"/api/hub/project/{pid}/comments",
                   f"/api/hub/project/{pid}/comments/abc", f"/api/hub/project/{pid}/comments/abc/reply",
                   f"/api/hub/project/{pid}/comments/abc/delete", f"/api/hub/project/{pid}/history/1/restore",
-                  f"/api/hub/project/{pid}/delete"]
+                  f"/api/hub/project/{pid}/delete", "/api/hub/teams", f"/api/hub/project/{pid}/team"]
+        tid = self.call("/api/hub/teams", {"name": "К"}, ann)[2]["id"]
+        routes += [f"/api/hub/team/{tid}", f"/api/hub/team/{tid}/members", f"/api/hub/team/{tid}/delete"]
         for path in routes:
             self.assertEqual(self.call(path, {}, ann, headers={"Origin": "https://evil.example"})[0], 403, path)
             self.assertEqual(self.call(path, {}, ann, headers={"Host": "evil.example"})[0], 403, path)
             self.assertEqual(self.call(path, raw=b"{}", cookie=ann, ctype="text/plain")[0], 415, path)
         self.assertEqual(self.call("/api/hub/me", cookie=ann)[0], 200)                # ничего из этого не сработало
+        self.assertEqual([t["id"] for t in self.call("/api/hub/teams", cookie=ann)[2]["teams"]], [tid])
         self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 200)
 
     def test_get_routes_have_no_side_effects(self):
         ann = self.login("ann")
         pid = self.new_project(ann)
         before = self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"]
-        for path in ("/api/hub/me", "/api/hub/projects", f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/sections?names=meta",
+        for path in ("/api/hub/me", "/api/hub/projects", "/api/hub/teams", f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/sections?names=meta",
                      f"/api/hub/project/{pid}/comments", f"/api/hub/project/{pid}/history", f"/api/hub/project/{pid}/activity",
                      f"/api/hub/project/{pid}/download"):
             self.call(path, cookie=ann)
         self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"], before)
         # «опасные» слова в GET не превращаются в действия
-        for path in (f"/api/hub/project/{pid}/delete", f"/api/hub/project/{pid}/push", "/api/hub/logout", f"/api/hub/project/{pid}/members"):
+        tid = self.call("/api/hub/teams", {"name": "К"}, ann)[2]["id"]
+        for path in (f"/api/hub/project/{pid}/delete", f"/api/hub/project/{pid}/push", "/api/hub/logout", f"/api/hub/project/{pid}/members",
+                     f"/api/hub/project/{pid}/team", f"/api/hub/team/{tid}", f"/api/hub/team/{tid}/members", f"/api/hub/team/{tid}/delete"):
             self.assertEqual(self.call(path, cookie=ann)[0], 404, path)
         self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 200)
+        self.assertEqual(len(self.call("/api/hub/teams", cookie=ann)[2]["teams"]), 1)
 
     def test_deeply_nested_json_is_a_plain_400(self):
         cookie = self.login("ann")
@@ -1134,6 +1140,114 @@ class HubHttp(unittest.TestCase):
                     break
             else:
                 self.fail("поток отключённого пользователя остался открытым")
+        finally:
+            c.close()
+
+    # ----- команды -----
+
+    def test_team_create_list_rename(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        s, _, j = self.call("/api/hub/teams", {"name": "  Бюро  "}, ann)
+        self.assertEqual(s, 200, j)
+        tid = j["id"]
+        self.assertRegex(tid, r"^[0-9a-f]{16}$")
+        t = self.call("/api/hub/teams", cookie=ann)[2]["teams"]
+        self.assertEqual([(x["id"], x["name"], x["role"], x["projects"]) for x in t], [(tid, "Бюро", "owner", 0)])
+        self.assertEqual(t[0]["members"], [{"login": "ann", "name": "Анна", "role": "owner"}])
+        self.assertEqual(self.call("/api/hub/teams", cookie=vic)[2], {"teams": []})        # чужую команду не видно
+        self.assertEqual(self.call(f"/api/hub/team/{tid}", {"name": "Атлас"}, vic)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/team/{tid}", {"name": "Атлас"}, ann)[2], {"name": "Атлас"})
+        self.assertEqual(self.call(f"/api/hub/team/{tid}", {"name": " "}, ann)[0], 400)
+        self.assertEqual(self.call("/api/hub/teams", cookie=ann)[2]["teams"][0]["name"], "Атлас")
+        self.assertEqual(self.call("/api/hub/teams", cookie="")[0], 401)
+
+    def test_team_members_need_explicit_role_and_owner(self):
+        ann, vic, boss = self.login("ann"), self.login("vic"), self.login("boss")
+        tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
+        path = f"/api/hub/team/{tid}/members"
+        s, _, j = self.call(path, {"login": "vic"}, ann)                      # без role — 400, ничего не меняется
+        self.assertEqual(s, 400, j)
+        self.assertEqual(len(self.call("/api/hub/teams", cookie=ann)[2]["teams"][0]["members"]), 1)
+        s, _, j = self.call(path, {"login": "vic", "role": "member"}, ann)
+        self.assertEqual((s, [(m["login"], m["role"]) for m in j["members"]]), (200, [("ann", "owner"), ("vic", "member")]))
+        self.assertEqual(self.call(path, {"login": "boss", "role": "member"}, vic)[0], 403)      # участник не владелец
+        self.assertEqual(self.call(path, {"login": "vic", "role": "owner"}, vic)[0], 403)
+        self.assertEqual(self.call(path, {"login": "vic", "role": "root"}, ann)[0], 400)
+        self.assertEqual(self.call(path, {"login": "ghost", "role": "member"}, ann)[0], 404)
+        s, _, j = self.call(path, {"login": "vic", "role": None}, vic)        # выйти может любой участник
+        self.assertEqual((s, [m["login"] for m in j["members"]]), (200, ["ann"]))
+        self.assertEqual(self.call("/api/hub/teams", cookie=vic)[2], {"teams": []})
+        self.assertEqual(self.call(path, {"login": "ann", "role": None}, ann)[0], 400)          # последний владелец
+
+    def test_team_project_visible_to_member_and_access_switch(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
+        self.call(f"/api/hub/team/{tid}/members", {"login": "vic", "role": "member"}, ann)
+        s, _, j = self.call("/api/hub/projects", {"name": "Общий", "team": tid}, ann)
+        self.assertEqual(s, 200, j)
+        pid = j["id"]
+        items = self.call("/api/hub/projects", cookie=vic)[2]["projects"]
+        self.assertEqual([(x["id"], x["role"], x["team"], x["team_name"], x["team_access"]) for x in items],
+                         [(pid, "editor", tid, "Бюро", "edit")])
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 200)
+        self.assertEqual(self.call("/api/hub/teams", cookie=ann)[2]["teams"][0]["projects"], 1)
+        self.assertEqual(self.call("/api/hub/projects", {"name": "x", "team": tid}, self.login("boss"))[0], 200)   # админ может
+        self.assertEqual(self.call("/api/hub/projects", {"name": "x", "team": "0" * 16}, ann)[0], 404)
+        self.assertEqual(self.call("/api/hub/projects", {"name": "x", "team": tid, "team_access": "all"}, ann)[0], 400)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/team", {"team_access": "none"}, ann)[0], 400)    # без ключа team
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/team", {"team": tid, "team_access": "none"}, vic)[0], 403)
+        s, _, j = self.call(f"/api/hub/project/{pid}/team", {"team": tid, "team_access": "none"}, ann)
+        self.assertEqual((s, j), (200, {"team": tid, "team_access": "none"}))
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 403)
+        self.assertNotIn(pid, [x["id"] for x in self.call("/api/hub/projects", cookie=vic)[2]["projects"]])
+        s, _, j = self.call(f"/api/hub/project/{pid}/team", {"team": None}, ann)                  # обратно в «Личные»
+        self.assertEqual((s, j["team"]), (200, None))
+        self.assertIsNone([x for x in self.call("/api/hub/projects", cookie=ann)[2]["projects"] if x["id"] == pid][0]["team"])
+
+    def test_team_delete_refused_while_it_has_projects(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
+        pid = self.call("/api/hub/projects", {"name": "Общий", "team": tid}, ann)[2]["id"]
+        self.assertEqual(self.call(f"/api/hub/team/{tid}/delete", {}, vic)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/team/{tid}/delete", {}, ann)[0], 400)
+        self.assertEqual(len(self.call("/api/hub/teams", cookie=ann)[2]["teams"]), 1)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/delete", {}, ann)[0], 200)
+        self.assertEqual(self.call(f"/api/hub/team/{tid}/delete", {}, ann)[2], {"ok": True})
+        self.assertEqual(self.call("/api/hub/teams", cookie=ann)[2], {"teams": []})
+
+    def test_team_id_in_url_is_never_a_path(self):
+        ann = self.login("ann")
+        self.call("/api/hub/teams", {"name": "Бюро"}, ann)
+        for tid in ("..", "%2e%2e", "..%2f..", "%2e%2e%2fusers", "A" * 16, "0" * 15, "0" * 17, "%00", "g" * 16):
+            for suffix in ("", "/members", "/delete"):
+                s, _, j = self.call(f"/api/hub/team/{tid}{suffix}", {"name": "x", "login": "ann", "role": None}, ann)
+                self.assertIn(s, (404,), (tid, suffix, s))
+        self.assertEqual(self.call(f"/api/hub/team/{'0' * 16}/delete", {}, ann)[0], 404)        # правильной формы, но нет
+        self.assertEqual(self.call(f"/api/hub/team/{'0' * 16}/other", {}, ann)[0], 404)
+
+    def test_team_routes_use_the_small_body_limit(self):
+        for path in ("/api/hub/teams", f"/api/hub/team/{'0' * 16}", f"/api/hub/team/{'0' * 16}/members",
+                     f"/api/hub/team/{'0' * 16}/delete", f"/api/hub/project/{'0' * 16}/team"):
+            self.assertEqual(S.body_limit(path), S.MAX_HUB_BODY, path)
+        ann = self.login("ann")
+        with mock.patch.object(S, "MAX_HUB_BODY", 100):                  # настоящий предел 413 на маленьком теле
+            self.assertEqual(self.call("/api/hub/teams", raw=b'{"name":"x"' + b" " * 200 + b"}", cookie=ann)[0], 413)
+        self.assertEqual(self.call("/api/hub/teams", cookie=ann)[2], {"teams": []})
+
+    def test_sse_stream_ends_when_member_removed_from_team(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        tid = self.call("/api/hub/teams", {"name": "Бюро"}, ann)[2]["id"]
+        self.call(f"/api/hub/team/{tid}/members", {"login": "vic", "role": "member"}, ann)
+        pid = self.call("/api/hub/projects", {"name": "Общий", "team": tid}, ann)[2]["id"]
+        c, r, q = self.open_stream(pid, vic)
+        try:
+            self.assertEqual(q.get(timeout=3)["type"], "presence")
+            self.assertEqual(self.call(f"/api/hub/team/{tid}/members", {"login": "vic", "role": None}, ann)[0], 200)
+            for _ in range(40):
+                if q.get(timeout=5) is None:
+                    break
+            else:
+                self.fail("поток остался открытым после выхода из команды")
         finally:
             c.close()
 

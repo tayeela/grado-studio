@@ -957,6 +957,331 @@ class Events(Base):
         self.assertEqual((merged["rev"], merged["sections"]), (hub.QUEUE_MAX - 1, ["layer:0", "layer:1", "layer:2"]))
 
 
+class Teams(Base):
+    """Команды (рабочие пространства): роли, проекты команды, перенос, рассылка изменений доступа."""
+
+    def setUp(self):
+        super().setUp()
+        self.tid = self.hub.create_team(self.owner, "Отдел")["id"]
+        self.hub.set_team_member(self.owner, self.tid, "editor", "member")
+
+    def team_project(self, access="edit"):
+        return self.hub.create_project(self.owner, "Командный", None, self.tid, access)["id"]
+
+    def status(self, fn):
+        with self.assertRaises(HubError) as c:
+            fn()
+        return c.exception.status
+
+    def test_create_list_rename(self):
+        h = self.hub
+        self.assertRegex(self.tid, r"^[0-9a-f]{16}$")
+        blank = h.create_team(self.owner, "   ")["id"]
+        mine = {t["id"]: t for t in h.list_teams(self.owner)}
+        self.assertEqual(mine[blank]["name"], "Новая команда")
+        self.assertEqual(mine[self.tid]["name"], "Отдел")
+        self.assertEqual(mine[self.tid]["role"], "owner")
+        self.assertEqual(mine[self.tid]["members"], [{"login": "editor", "name": "Редактор", "role": "member"},
+                                                    {"login": "owner", "name": "Владелец", "role": "owner"}])
+        self.assertEqual(mine[self.tid]["projects"], 0)
+        self.team_project()
+        got = h.list_teams(self.editor)
+        self.assertEqual((len(got), got[0]["role"], got[0]["projects"]), (1, "member", 1))
+        self.assertEqual(h.list_teams(self.stranger), [])
+        self.assertEqual(h.rename_team(self.owner, self.tid, "  Новый   отдел "), "Новый отдел")
+        self.assertEqual(h.list_teams(self.editor)[0]["name"], "Новый отдел")
+        for bad in ("", "   ", None):
+            self.assertEqual(self.status(lambda: h.rename_team(self.owner, self.tid, bad)), 400)
+        self.assertEqual(self.status(lambda: h.rename_team(self.editor, self.tid, "Взлом")), 403)
+        self.assertEqual(Hub(h.root).teams[self.tid]["name"], "Новый отдел")      # команды лежат на диске
+
+    def test_admin_sees_all_teams_as_admin(self):
+        t = [t for t in self.hub.list_teams(self.admin) if t["id"] == self.tid]
+        self.assertEqual(t[0]["role"], "admin")
+        self.hub.rename_team(self.admin, self.tid, "От админа")
+        self.hub.set_team_member(self.admin, self.tid, "viewer", "member")
+
+    def test_unknown_team_is_404(self):
+        h = self.hub
+        for tid in ("0" * 16, "xx", None, 5):
+            self.assertEqual(self.status(lambda: h.rename_team(self.owner, tid, "x")), 404)
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, "0" * 16, "viewer", "member")), 404)
+        self.assertEqual(self.status(lambda: h.delete_team(self.owner, "0" * 16)), 404)
+
+    def test_member_add_change_remove(self):
+        h = self.hub
+        res = h.set_team_member(self.owner, self.tid, "viewer", "member")
+        self.assertEqual([m["login"] for m in res], ["editor", "owner", "viewer"])
+        res = h.set_team_member(self.owner, self.tid, "viewer", "owner")
+        self.assertEqual({m["login"]: m["role"] for m in res}["viewer"], "owner")
+        res = h.set_team_member(self.owner, self.tid, "viewer", None)
+        self.assertEqual([m["login"] for m in res], ["editor", "owner"])
+        self.assertEqual(h.list_teams(self.viewer), [])
+
+    def test_leave(self):
+        h = self.hub
+        h.set_team_member(self.editor, self.tid, "editor", None)
+        self.assertEqual(h.list_teams(self.editor), [])
+        self.assertEqual(self.status(lambda: h.set_team_member(self.stranger, self.tid, "owner", None)), 403)
+
+    def test_member_cannot_manage(self):
+        h = self.hub
+        for call in (lambda: h.set_team_member(self.editor, self.tid, "viewer", "member"),
+                     lambda: h.set_team_member(self.editor, self.tid, "owner", None),
+                     lambda: h.set_team_member(self.editor, self.tid, "editor", "owner"),
+                     lambda: h.delete_team(self.editor, self.tid),
+                     lambda: h.set_team_member(self.stranger, self.tid, "stranger", "owner")):
+            self.assertEqual(self.status(call), 403)
+
+    def test_last_owner_protected(self):
+        h = self.hub
+        for call in (lambda: h.set_team_member(self.owner, self.tid, "owner", None),
+                     lambda: h.set_team_member(self.owner, self.tid, "owner", "member")):
+            with self.assertRaises(HubError) as c:
+                call()
+            self.assertEqual(c.exception.status, 400)
+            self.assertIn("владелец", c.exception.message)
+        h.set_team_member(self.owner, self.tid, "editor", "owner")
+        h.set_team_member(self.owner, self.tid, "owner", None)    # теперь можно: владелец остаётся
+        self.assertEqual(h.list_teams(self.editor)[0]["role"], "owner")
+
+    def test_unknown_user_404_and_bad_role(self):
+        h = self.hub
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, self.tid, "nobody", "member")), 404)
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, self.tid, "viewer", "editor")), 400)
+
+    def test_caps(self):
+        h = self.hub
+        old = hub.TEAM_MEMBERS_MAX
+        hub.TEAM_MEMBERS_MAX = 3
+        self.addCleanup(setattr, hub, "TEAM_MEMBERS_MAX", old)
+        h.set_team_member(self.owner, self.tid, "viewer", "member")
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, self.tid, "stranger", "member")), 400)
+        h.set_team_member(self.owner, self.tid, "viewer", "owner")        # смена роли у своего — не новый участник
+        old = hub.TEAMS_PER_USER
+        hub.TEAMS_PER_USER = 2
+        self.addCleanup(setattr, hub, "TEAMS_PER_USER", old)
+        h.create_team(self.owner, "Вторая")
+        self.assertEqual(self.status(lambda: h.create_team(self.owner, "Третья")), 400)
+
+    def test_team_project_roles(self):
+        h = self.hub
+        pid = self.team_project()
+        self.assertEqual(h.role_of(self.editor, pid), "editor")
+        self.assertEqual(h.role_of(self.owner, pid), "owner")
+        self.assertIsNone(h.role_of(self.stranger, pid))
+        row = [p for p in h.list_projects(self.editor) if p["id"] == pid][0]
+        self.assertEqual((row["team"], row["team_name"], row["team_access"], row["role"]),
+                         (self.tid, "Отдел", "edit", "editor"))
+        self.assertEqual(h.get_project(self.editor, pid)["role"], "editor")
+        h.push(self.editor, pid, 1, {"meta": {"name": "x"}}, "c1")       # редактор команды правит
+        view = self.team_project("view")
+        self.assertEqual(h.role_of(self.editor, view), "viewer")
+        self.assertEqual(self.status(lambda: h.push(self.editor, view, 1, {"meta": {"name": "x"}}, "c1")), 403)
+        none = self.team_project("none")
+        self.assertIsNone(h.role_of(self.editor, none))
+        self.assertNotIn(none, [p["id"] for p in h.list_projects(self.editor)])
+        self.assertEqual(self.status(lambda: h.get_project(self.editor, none)), 403)
+        h.set_team_member(self.owner, self.tid, "viewer", "owner")        # владелец команды — владелец проекта
+        self.assertEqual(h.role_of(self.viewer, none), "owner")
+        self.assertEqual(h.role_of(self.viewer, pid), "owner")
+
+    def test_personal_share_for_guest_and_strongest_wins(self):
+        h = self.hub
+        pid = self.team_project("view")
+        h.set_member(self.owner, pid, "stranger", "viewer")
+        self.assertEqual(h.role_of(self.stranger, pid), "viewer")
+        row = [p for p in h.list_projects(self.stranger) if p["id"] == pid][0]
+        self.assertEqual(row["team"], self.tid)
+        h.set_member(self.owner, pid, "editor", "editor")                # команда смотрит, лично правит
+        self.assertEqual(h.role_of(self.editor, pid), "editor")
+        pid2 = self.team_project("edit")
+        h.set_member(self.owner, pid2, "editor", "viewer")               # команда правит, лично смотрит
+        self.assertEqual(h.role_of(self.editor, pid2), "editor")
+
+    def test_create_project_in_foreign_team_forbidden(self):
+        h = self.hub
+        self.assertEqual(self.status(lambda: h.create_project(self.stranger, "Чужой", None, self.tid)), 403)
+        self.assertEqual(self.status(lambda: h.create_project(self.owner, "Плохой", None, self.tid, "all")), 400)
+        self.assertEqual(self.status(lambda: h.create_project(self.owner, "Нет", None, "0" * 16)), 404)
+        pid = h.create_project(self.admin, "От админа", None, self.tid)["id"]      # администратору можно
+        self.assertEqual(h._meta(pid)["team"], self.tid)
+        pid = h.create_project(self.editor, "От участника", None, self.tid)["id"]
+        self.assertEqual(h.role_of(self.editor, pid), "owner")
+        self.assertEqual(h.role_of(self.owner, pid), "owner")             # владелец команды — владелец проекта
+        personal = h.create_project(self.owner, "Личный")["id"]
+        row = [p for p in h.list_projects(self.owner) if p["id"] == personal][0]
+        self.assertEqual((row["team"], row["team_name"], row["team_access"]), (None, None, "edit"))
+
+    def test_set_project_team_in_and_out(self):
+        h = self.hub
+        pid = h.create_project(self.editor, "Личный")["id"]
+        self.assertIsNone(h.role_of(self.owner, pid))
+        self.assertEqual(h.set_project_team(self.editor, pid, self.tid, "view"), {"team": self.tid, "team_access": "view"})
+        self.assertEqual(h.role_of(self.owner, pid), "owner")             # владелец команды
+        self.assertEqual(h.activity(self.editor, pid)[0]["action"], "team")
+        self.assertEqual(h.set_project_team(self.editor, pid, self.tid, "edit")["team_access"], "edit")
+        # наружу: личный владелец остаётся, второго не добавляется
+        self.assertEqual(h.set_project_team(self.editor, pid, None, "view"), {"team": None, "team_access": "edit"})
+        self.assertIsNone(h.role_of(self.owner, pid))
+        self.assertEqual(h._meta(pid)["members"], {"editor": "owner"})
+        # проект, где личного владельца нет: переносящий становится им
+        pid2 = self.team_project()
+        h.set_member(self.owner, pid2, "owner", None)                     # допустимо: владелец команды остаётся
+        self.assertEqual(h._meta(pid2)["members"], {})
+        h.set_project_team(self.owner, pid2, None, "edit")
+        self.assertEqual(h._meta(pid2)["members"], {"owner": "owner"})
+        self.assertIsNone(h.role_of(self.editor, pid2))
+
+    def test_set_project_team_permissions(self):
+        h = self.hub
+        pid = self.team_project()
+        self.assertEqual(self.status(lambda: h.set_project_team(self.editor, pid, None, "edit")), 403)
+        mine = h.create_project(self.stranger, "Мой")["id"]
+        self.assertEqual(self.status(lambda: h.set_project_team(self.stranger, mine, self.tid, "edit")), 403)
+        self.assertEqual(self.status(lambda: h.set_project_team(self.stranger, mine, "0" * 16, "edit")), 404)
+        self.assertEqual(self.status(lambda: h.set_project_team(self.owner, pid, self.tid, "all")), 400)
+
+    def test_set_member_last_owner_counts_team_owners(self):
+        h = self.hub
+        pid = self.team_project()
+        h.set_member(self.owner, pid, "editor", "owner")
+        h.set_member(self.owner, pid, "owner", "viewer")                  # личный владелец остаётся — editor
+        self.assertEqual(h._meta(pid)["owner"], "editor")
+        h.set_member(self.owner, pid, "editor", "viewer")                 # личных нет, но владелец команды есть
+        self.assertEqual(h._meta(pid)["owner"], "editor")                 # квота остаётся на прежнем
+        self.assertEqual(h.role_of(self.owner, pid), "owner")
+        bare = h.create_project(self.owner, "Личный")["id"]
+        self.assertEqual(self.status(lambda: h.set_member(self.owner, bare, "owner", None)), 400)
+
+    def test_delete_team(self):
+        h = self.hub
+        pid = self.team_project()
+        with self.assertRaises(HubError) as c:
+            h.delete_team(self.owner, self.tid)
+        self.assertEqual((c.exception.status, c.exception.message),
+                         (400, "в команде есть проекты: перенесите или удалите их"))
+        h.delete_project(self.owner, pid)
+        h.delete_team(self.owner, self.tid)
+        self.assertEqual(h.list_teams(self.owner), [])
+        self.assertEqual(self.status(lambda: h.delete_team(self.owner, self.tid)), 404)
+
+    def test_old_meta_without_team_is_personal(self):
+        h = self.hub
+        pid = h.create_project(self.owner, "Старый")["id"]
+        meta = h._meta(pid)
+        meta.pop("team"), meta.pop("team_access")
+        h._save_meta(pid, meta)
+        self.assertNotIn("team", h._meta(pid))
+        self.assertEqual(h.role_of(self.owner, pid), "owner")
+        self.assertIsNone(h.role_of(self.editor, pid))
+        row = [p for p in h.list_projects(self.owner) if p["id"] == pid][0]
+        self.assertEqual((row["team"], row["team_name"], row["team_access"]), (None, None, "edit"))
+        h.set_member(self.owner, pid, "viewer", "viewer")
+        self.assertEqual(h.role_of(self.viewer, pid), "viewer")
+
+    def test_deleted_team_gives_no_role(self):
+        h = self.hub
+        pid = self.team_project()
+        del h.teams[self.tid]                                             # битая ссылка на команду: личные роли целы
+        self.assertIsNone(h.role_of(self.editor, pid))
+        self.assertEqual(h.role_of(self.owner, pid), "owner")
+        row = [p for p in h.list_projects(self.owner) if p["id"] == pid][0]
+        self.assertIsNone(row["team"])
+
+    def test_disabled_user_has_no_team_role(self):
+        h = self.hub
+        pid = self.team_project()
+        h.update_user(self.admin, "editor", disabled=True)
+        self.assertIsNone(h.role_of(self.editor, pid))
+
+    def test_removed_member_streams_close_on_every_team_project(self):
+        h = self.hub
+        p1, p2, p3 = self.team_project(), self.team_project(), self.team_project()
+        other = h.create_project(self.owner, "Не командный")["id"]
+        h.set_member(self.owner, other, "editor", "editor")
+        subs = [h.subscribe(self.editor, p) for p in (p1, p2, p3)]
+        keep = h.subscribe(self.owner, p1)
+        elsewhere = h.subscribe(self.editor, other)
+        for s in subs + [keep, elsewhere]:
+            s.get(0)
+        h.set_team_member(self.owner, self.tid, "editor", None)
+        for s in subs:
+            self.assertEqual(s.get(1), {"type": "members"})
+            self.assertTrue(s.closed)
+        self.assertEqual(keep.get(1), {"type": "members"})
+        self.assertFalse(keep.closed)
+        self.assertFalse(elsewhere.closed)
+        self.assertIsNone(elsewhere.get(0))
+        self.assertEqual(self.status(lambda: h.subscribe(self.editor, p1)), 403)
+        keep.close(), elsewhere.close()
+
+    def test_access_change_propagates(self):
+        h = self.hub
+        pid = self.team_project()
+        sub = h.subscribe(self.editor, pid)
+        sub.get(0)
+        h.set_team_member(self.owner, self.tid, "viewer", "member")      # новый человек: событие, поток остаётся
+        self.assertEqual(sub.get(1), {"type": "members"})
+        self.assertFalse(sub.closed)
+        h.set_project_team(self.owner, pid, self.tid, "none")            # доступ команды снят: поток закрыт
+        self.assertEqual(sub.get(1), {"type": "members"})
+        self.assertTrue(sub.closed)
+        owner_sub = h.subscribe(self.owner, pid)
+        owner_sub.get(0)
+        h.set_project_team(self.owner, pid, None, "edit")                # вышел из команды наружу: владелец проекта
+        self.assertEqual(owner_sub.get(1), {"type": "members"})
+        self.assertFalse(owner_sub.closed)
+        owner_sub.close()
+
+    def test_review_fixes_access_owner_and_streams(self):
+        h = self.hub
+        pid = self.team_project("view")
+        # доступ команды не указан: в той же команде не меняется, при переезде в другую — «правит»
+        self.assertEqual(h.set_project_team(self.owner, pid, self.tid, None)["team_access"], "view")
+        other = h.create_team(self.owner, "Второй")["id"]
+        self.assertEqual(h.set_project_team(self.owner, pid, other, None)["team_access"], "edit")
+        h.set_project_team(self.owner, pid, self.tid, "view")
+        # снятие личной роли не рвёт поток, если доступ остался через команду
+        h.set_member(self.owner, pid, "editor", "editor")
+        sub = h.subscribe(self.editor, pid)
+        sub.get(0)
+        h.set_member(self.owner, pid, "editor", None)
+        self.assertEqual(sub.get(1), {"type": "members"})
+        self.assertFalse(sub.closed)
+        self.assertEqual(h.role_of(self.editor, pid), "viewer")
+        sub.close()
+        # перенос в личные: если создателя в проекте уже нет, владельцем записывается переносящий
+        h.set_team_member(self.owner, self.tid, "editor", "owner")
+        h.set_member(self.owner, pid, "owner", None)
+        h.set_project_team(self.editor, pid, None, None)
+        meta = h._meta(pid)
+        self.assertEqual((meta["members"], meta["owner"]), ({"editor": "owner"}, "editor"))
+
+    def test_teams_file_is_resynced_from_disk(self):
+        other = Hub(self.hub.root)                                        # второй процесс (CLI) правит teams.json
+        tid2 = other.create_team(self.stranger, "Из другого процесса")["id"]
+        self.assertIn(tid2, [t["id"] for t in self.hub.list_teams(self.stranger)])
+
+    def test_adding_to_team_respects_per_user_cap(self):
+        h = self.hub
+        old = hub.TEAMS_PER_USER
+        hub.TEAMS_PER_USER = 1
+        self.addCleanup(setattr, hub, "TEAMS_PER_USER", old)
+        h.create_team(self.stranger, "Своя")
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, self.tid, "stranger", "member")), 400)
+
+    def test_cli_list_prints_teams(self):
+        import contextlib
+        import io
+        import os
+        from unittest import mock
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {"GRADO2_HUB_DIR": str(self.hub.root)}), contextlib.redirect_stdout(buf):
+            self.assertEqual(hub.main(["list"]), 0)
+        self.assertIn(f"команда {self.tid}\tОтдел\tучастников 2", buf.getvalue())
+
+
 class Hardening(Base):
     """Проверки по разбору безопасности: сессии, лимиты, квоты, общие файлы с командной строкой."""
 

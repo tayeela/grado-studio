@@ -209,3 +209,11 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   existing project only after the album is rebuilt; the owner has to remember to press it. Candidate: refresh the
   template part of «pptkrt_» sheets on project open (keep frame, scale and photos). Sheets that do not fit are now
   named in the export message and marked «не готов» under the map — check that the owner notices it.
+- 2026-10-01 (v0.85.0, teams): open points from the review, not fixed. (1) Anyone can add an existing person to a
+  team without their consent, and the 404/200 answer reveals whether a login exists (same as project shares today);
+  if it becomes a nuisance — accept-to-join or a daily limit. (2) Team and project metadata are changed in memory
+  before the file write; a failed write leaves memory ahead of disk until the next re-read. (3) Disabled people still
+  count as team owners, so a team whose only owner is disabled is managed by the admin only. (4) Test gaps: demoting a
+  team owner to member keeps the stream; personal role plus team access «none». Projects window: list_teams reads
+  every project file to count team projects — fine for tens of projects, cache team ids if the hub grows.
+

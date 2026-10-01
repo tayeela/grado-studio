@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.85.0: teams (workspaces) in hub mode.** Owner: «разные команды пользователей с доступами
+  к разным проектам, как в Miro, Google Документах, Canva». Owner's decisions: new accounts still only by an admin
+  invite, a new team project is edited by the whole team by default, link sharing later. Contract first
+  (`docs/grado2-collab-spec.md`, «Teams»). `hub.py`: `teams.json` (re-read like `users.json`), team roles owner/member,
+  projects carry `team` and `team_access` (edit/view/none; old projects are personal, no migration); the single access
+  point `_role` takes the strongest of the personal share and the team role (team owner = project owner); last-owner
+  rule counts team owners; `set_project_team` moves a project between spaces; any change of team membership, team
+  role, team access or space closes the event streams of people who lost access on every affected project
+  (`_access_changed`). Routes `/api/hub/teams`, `/api/hub/team/<tid>[/members|/delete]`,
+  `/api/hub/project/<pid>/team`, `team` in project creation. Client: «Совместные проекты» grouped into «Личные», one
+  group per team and «Доступные мне», «Где создать»; window «Команды»; «Доступ» gains «Где лежит проект» and «Вся
+  команда …». Tests: `Teams` in `test_hub.py`, new `HubHttp` cases, 8 team steps in the two-browser scenario. Work
+  split between worker agents (hub, routes, UI, scenario) with an independent review and a verifier run.
 - **2026-10-01, ГРАДО 2 v0.84.9: owner's decisions on the album rule register (8.50–8.66) and fixes found by the
   reviewers.** Rules first: label-rules.md rule 13, slide-layout-rules.md items 1.20, 1.27–1.29, 1.43, 2.17, 2.22, 2.35,
   3.13, 3.14, 3.24, 3.28, 3.47–3.49, 6.11, 6.12, 7.10, 7.11, register items closed. Sheet title is always 18 pt: a

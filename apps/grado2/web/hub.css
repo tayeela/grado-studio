@@ -110,3 +110,7 @@ dialog.hubdlg form{display:grid;gap:10px}
 
 .projbar .btn[aria-pressed="true"]{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
 body.hub-viewer .start{display:none}
+
+/* ---------- команды ---------- */
+.hubsec .btn{margin-left:8px;height:22px;padding:0 8px;font-weight:400}
+.hubsec input.hubren{height:22px;width:60%}

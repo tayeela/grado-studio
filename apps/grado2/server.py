@@ -393,6 +393,8 @@ MAX_BODY = 32 * 2**20
 HUB_PROJECT_RE = re.compile(r"/api/hub/project/([^/]+)(?:/(.+))?")
 MAX_HUB_BODY = 2**20            # остальные POST совместного режима: вход, комментарии, доступ — короткий JSON
 HUB_PUSH_RE = re.compile(r"/api/hub/project/[^/]+/push")
+HUB_TEAM_RE = re.compile(r"/api/hub/team/([^/]+)(?:/(members|delete))?")
+HUB_TID_RE = re.compile(r"[0-9a-f]{16}")     # id команды в адресе: только 16 hex, остальное до хаба и диска не доходит
 
 
 def body_limit(path):
@@ -1386,6 +1388,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"invites": HUB.list_invites(u)})
         if path == "/api/hub/projects":
             return self._json(200, {"projects": HUB.list_projects(u)})
+        if path == "/api/hub/teams":
+            return self._json(200, {"teams": HUB.list_teams(u)})
         m = HUB_PROJECT_RE.fullmatch(path)
         if not m:
             return self._json(404, {"error": "no such method"})
@@ -1474,7 +1478,22 @@ class Handler(SimpleHTTPRequestHandler):
                 raise hubmod.HubError(400, "нельзя менять поля: " + ", ".join(sorted(map(str, bad))))
             return self._json(200, {"user": HUB.update_user(u, unquote(path[len("/api/hub/users/"):]), **req)})
         if path == "/api/hub/projects":
-            return self._json(200, HUB.create_project(u, req.get("name"), req.get("project")))
+            return self._json(200, HUB.create_project(u, req.get("name"), req.get("project"), req.get("team"), req.get("team_access")))
+        if path == "/api/hub/teams":
+            return self._json(200, HUB.create_team(u, req.get("name")))
+        tm = HUB_TEAM_RE.fullmatch(path)
+        if tm:
+            tid, act = unquote(tm.group(1)), tm.group(2) or ""
+            if not HUB_TID_RE.fullmatch(tid):
+                return self._json(404, {"error": "команда не найдена"})
+            if act == "":
+                return self._json(200, {"name": HUB.rename_team(u, tid, req.get("name"))})
+            if act == "delete":
+                HUB.delete_team(u, tid)
+                return self._json(200, {"ok": True})
+            if "role" not in req:                  # как у проекта: пропуск поля не должен убирать человека из команды
+                raise hubmod.HubError(400, "укажите role: owner, member или null")
+            return self._json(200, {"members": HUB.set_team_member(u, tid, req.get("login"), req["role"])})
         m = HUB_PROJECT_RE.fullmatch(path)
         if not m:
             return self._json(404, {"error": "no such method"})
@@ -1490,6 +1509,10 @@ class Handler(SimpleHTTPRequestHandler):
             if "role" not in req:                  # без роли «убрать» не выводим: пропуск поля не должен удалять человека
                 raise hubmod.HubError(400, "укажите role: owner, editor, viewer или null")
             return self._json(200, {"members": HUB.set_member(u, pid, req.get("login"), req["role"])})
+        if rest == "team":
+            if "team" not in req:                  # null = «Личные»; пропуск поля не должен переносить проект
+                raise hubmod.HubError(400, "укажите team: id команды или null")
+            return self._json(200, HUB.set_project_team(u, pid, req["team"], req.get("team_access")))
         if rest == "presence":
             HUB.presence(u, pid, req.get("client"), req.get("cursor"), req.get("layer"), req.get("sel"))
             return self._json(200, {"ok": True})

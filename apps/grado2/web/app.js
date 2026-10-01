@@ -1387,7 +1387,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoun
   wCmp: [L + 20, 100, Math.min(1000, mw), 520], wTable: [L, h - 330, Math.max(560, mw), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
   wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)],
   // совместный режим (hub.js): по центру — проекты, доступ, пользователи; справа у карты — комментарии и история
-  wHubProjects: [Math.round(w / 2 - 390), 90, 780, Math.min(520, h - 150)], wShare: [Math.round(w / 2 - 250), 90, 500, Math.min(440, h - 150)], wHubAdmin: [Math.round(w / 2 - 330), 90, 660, Math.min(560, h - 150)],
+  wHubProjects: [Math.round(w / 2 - 390), 90, 780, Math.min(520, h - 150)], wShare: [Math.round(w / 2 - 250), 90, 500, Math.min(440, h - 150)], wHubAdmin: [Math.round(w / 2 - 330), 90, 660, Math.min(560, h - 150)], wTeams: [Math.round(w / 2 - 320), 90, 640, Math.min(560, h - 150)],
   wComments: [R - 380, 104, 380, Math.min(580, h - 150)], wHistory: [R - 560, 104, 560, Math.min(540, h - 150)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();

@@ -78,6 +78,11 @@ _BAD_KEYS = frozenset({"__proto__", "constructor", "prototype", "hasOwnProperty"
                        "toLocaleString", "isPrototypeOf", "propertyIsEnumerable", "__defineGetter__",     # ключи слоёв в обычные
                        "__defineSetter__", "__lookupGetter__", "__lookupSetter__"})                       # объекты
 ROLES = ("owner", "editor", "viewer")
+TEAM_MEMBERS_MAX = 200
+TEAMS_PER_USER = 50                # команд, в которых состоит один человек
+TEAM_ROLES = ("owner", "member")
+TEAM_ACCESS = ("edit", "view", "none")     # что получает вся команда в проекте команды
+ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
 META_KEYS = ("name", "territory", "checked", "groups", "views", "album", "graph", "imports", "current_order")
 
 
@@ -341,6 +346,7 @@ class Hub:
         self.users = self._load("users.json")
         self.invites = self._load("invites.json")
         self.sessions = self._load("sessions.json")
+        self.teams = self._load("teams.json")
         if self._prune_sessions():
             self._save("sessions.json", self.sessions)
         self._fails = {}                                 # ("l", логин) | ("i", ip) -> [время неудач]
@@ -382,7 +388,8 @@ class Hub:
         """Под self.lock. users/invites/sessions держатся в памяти, а `hub.py adduser|passwd|invite` — отдельный процесс,
         пишущий те же файлы. Без пересчитывания с диска сервер не видел бы нового пользователя, не гасил бы сессии после
         `passwd`, а первая его запись затёрла бы правку из командной строки."""
-        for name, attr in (("users.json", "users"), ("invites.json", "invites"), ("sessions.json", "sessions")):
+        for name, attr in (("users.json", "users"), ("invites.json", "invites"), ("sessions.json", "sessions"),
+                           ("teams.json", "teams")):
             if self._stamp(name) != self._stamps.get(name):
                 try:
                     setattr(self, attr, self._load(name))
@@ -764,11 +771,27 @@ class Hub:
         if used + len(data) > QUOTA_BYTES:
             raise HubError(507, f"хранилище совместных проектов заполнено (больше {QUOTA_BYTES // 2**30} ГБ): удалите старые проекты")
 
-    @staticmethod
-    def _role(u, login, meta):
+    def _team_role(self, login, meta):
+        """Роль, которую человеку даёт команда проекта (None — проект личный, команды нет или доступа нет). Под self.lock."""
+        tid = meta.get("team")
+        team = self.teams.get(tid) if isinstance(tid, str) else None
+        if not isinstance(team, dict):
+            return None
+        r = (team.get("members") or {}).get(login)
+        if r == "owner":
+            return "owner"
+        if r == "member":
+            return {"edit": "editor", "view": "viewer"}.get(meta.get("team_access") or "edit")
+        return None
+
+    def _role(self, u, login, meta):
+        """Единая точка решения о доступе: сильнейшая из личной роли и роли от команды проекта."""
         if not u or u.get("disabled"):
             return None
-        return "admin" if u.get("admin") else meta["members"].get(login)
+        if u.get("admin"):
+            return "admin"
+        roles = [r for r in (meta["members"].get(login), self._team_role(login, meta)) if r in ROLE_RANK]
+        return max(roles, key=ROLE_RANK.__getitem__) if roles else None
 
     def role_of(self, user, pid):
         try:
@@ -843,14 +866,21 @@ class Hub:
                 role = self._role(u, login, meta)
                 if role is None:
                     continue
+                tid = meta.get("team")
+                team = self.teams.get(tid) if isinstance(tid, str) else None
                 out.append({"id": meta["id"], "name": meta["name"], "owner": meta["owner"], "role": role,
                             "rev": meta["rev"], "updated": meta["updated"], "updated_by": meta["updated_by"],
-                            "members": self._members_list(meta), "online": self._online_count(meta["id"])})
+                            "members": self._members_list(meta), "online": self._online_count(meta["id"]),
+                            "team": tid if team else None, "team_name": team.get("name") if team else None,
+                            "team_access": meta.get("team_access") or "edit"})
         out.sort(key=lambda p: -p["updated"])
         return out
 
-    def create_project(self, user, name, project=None):
+    def create_project(self, user, name, project=None, team=None, team_access="edit"):
         name = _clean_name(name, "Новый проект")
+        team_access = team_access or "edit"
+        if team_access not in TEAM_ACCESS:
+            raise HubError(400, "доступ команды: edit, view или none")
         if project is None:
             sections = {"meta": _norm_meta({})}
         else:
@@ -862,7 +892,9 @@ class Hub:
         if len(sections) > MAX_SECTIONS:
             raise HubError(400, "в проекте слишком много слоёв")
         with self.lock:
-            login, _ = self._actor(user)
+            login, u = self._actor(user)
+            if team is not None:
+                self._team_member_or_admin(u, login, self._team(team))
             obj = join_sections(sections, name)
             data = self._dump(obj)
             self._check_size(data)
@@ -885,7 +917,7 @@ class Hub:
             norm = split_project(obj)
             meta = {"id": pid, "name": name, "owner": login, "members": {login: "owner"}, "rev": 1,
                     "sec_rev": {n: 1 for n in norm}, "created": now, "updated": now, "updated_by": login,
-                    "snap_t": 0, "rev_c": 0}
+                    "snap_t": 0, "rev_c": 0, "team": team, "team_access": team_access if team else "edit"}
             try:
                 self._write(d / "project.grado2", data)
                 self._save_meta(pid, meta)                # meta последней: без неё каталог не считается проектом
@@ -1061,20 +1093,185 @@ class Hub:
                 if login not in members and len(members) >= MEMBERS_MAX:
                     raise HubError(400, f"в проекте уже {MEMBERS_MAX} участников")
                 members[login] = role
-            owners = sorted(m for m, r in members.items() if r == "owner")
-            if not owners:
+            personal = sorted(m for m, r in members.items() if r == "owner")
+            tid = meta.get("team")
+            team = self.teams.get(tid) if isinstance(tid, str) else None
+            team_owners = [m for m, r in ((team or {}).get("members") or {}).items() if r == "owner"]
+            if not personal and not team_owners:         # владельцы: личные плюс владельцы команды проекта
                 raise HubError(400, "у проекта должен остаться хотя бы один владелец")
             meta["members"] = members
-            if meta["owner"] not in owners:
-                meta["owner"] = owners[0]
+            if personal and meta["owner"] not in personal:
+                meta["owner"] = personal[0]              # личных владельцев нет — квота остаётся на создателе
             self._save_meta(pid, meta)
             self._activity_add(pid, me, "member", f"{login}: {role or 'удалён'}")
             result = self._members_list(meta)
-        with self._live:
-            self._publish(pid, {"type": "members"})
-            if role is None:
-                self._shutdown_subs(pid, lambda s: s.login == login)
+        self._access_changed([pid])          # поток закрывается, только если доступа не осталось и через команду
         return result
+
+    # ----- команды -----
+
+    def _team(self, tid):
+        """Команда по id или 404. Под self.lock."""
+        team = self.teams.get(tid) if isinstance(tid, str) and PID_RE.fullmatch(tid) else None
+        if not isinstance(team, dict):
+            raise HubError(404, "команда не найдена")
+        return team
+
+    @staticmethod
+    def _team_member_or_admin(u, login, team):
+        if not u.get("admin") and login not in (team.get("members") or {}):
+            raise HubError(403, "вы не участник этой команды")
+
+    def _team_projects(self, tid):
+        """id проектов команды. Под self.lock."""
+        out = []
+        for d in sorted((self.root / "projects").iterdir()):
+            if not PID_RE.fullmatch(d.name):
+                continue
+            try:
+                if self._meta(d.name).get("team") == tid:
+                    out.append(d.name)
+            except HubError:
+                pass
+        return out
+
+    def _team_manager(self, user, tid):
+        """Владелец команды или администратор. Под self.lock. Возвращает (login, команда)."""
+        login, u = self._actor(user)
+        team = self._team(tid)
+        if not u.get("admin") and (team.get("members") or {}).get(login) != "owner":
+            raise HubError(403, "это может сделать только владелец команды")
+        return login, team
+
+    def _team_members_list(self, team):
+        return [{"login": m, "name": (self.users.get(m) or {}).get("name") or m, "role": r}
+                for m, r in sorted((team.get("members") or {}).items())]
+
+    def _teams_of(self, login):
+        return sum(1 for t in self.teams.values() if login in (t.get("members") or {}))
+
+    def list_teams(self, user):
+        with self.lock:
+            login, u = self._actor(user)
+            counts = {}
+            for d in (self.root / "projects").iterdir():
+                if PID_RE.fullmatch(d.name):
+                    try:
+                        tid = self._meta(d.name).get("team")
+                    except HubError:
+                        continue
+                    if isinstance(tid, str):
+                        counts[tid] = counts.get(tid, 0) + 1
+            out = []
+            for tid, t in self.teams.items():
+                mine = (t.get("members") or {}).get(login)
+                if mine is None and not u.get("admin"):
+                    continue
+                out.append({"id": tid, "name": t.get("name") or "", "role": "admin" if u.get("admin") else mine,
+                            "members": self._team_members_list(t), "projects": counts.get(tid, 0)})
+        out.sort(key=lambda t: (t["name"].lower(), t["id"]))
+        return out
+
+    def create_team(self, user, name):
+        name = _clean_name(name, "Новая команда")
+        with self.lock:
+            login, _ = self._actor(user)
+            if self._teams_of(login) >= TEAMS_PER_USER:
+                raise HubError(400, f"вы уже состоите в {TEAMS_PER_USER} командах: выйдите из ненужных")
+            while True:
+                tid = secrets.token_hex(8)
+                if tid not in self.teams:
+                    break
+            self.teams[tid] = {"name": name, "created": _now(), "by": login, "members": {login: "owner"}}
+            self._save("teams.json", self.teams)
+        return {"id": tid}
+
+    def rename_team(self, user, tid, name):
+        name = _clean_name(name, "")
+        if not name:
+            raise HubError(400, "название не может быть пустым")
+        with self.lock:
+            _, team = self._team_manager(user, tid)
+            team["name"] = name
+            self._save("teams.json", self.teams)
+        return name
+
+    def set_team_member(self, user, tid, login, role):
+        if role is not None and role not in TEAM_ROLES:
+            raise HubError(400, "роль: owner, member или null")
+        with self.lock:
+            me, _ = self._actor(user)
+            team = self._team(tid)
+            members = dict(team.get("members") or {})
+            leaving = login == me and role is None and me in members      # выйти из команды может любой участник
+            if not leaving:
+                self._team_manager(user, tid)
+            target = self.users.get(login) if isinstance(login, str) else None
+            if not target:
+                raise HubError(404, f"пользователь «{str(login)[:40]}» не найден")
+            if role is None:
+                members.pop(login, None)
+            else:
+                if login not in members:
+                    if len(members) >= TEAM_MEMBERS_MAX:
+                        raise HubError(400, f"в команде уже {TEAM_MEMBERS_MAX} участников")
+                    if self._teams_of(login) >= TEAMS_PER_USER:
+                        raise HubError(400, f"этот человек уже состоит в {TEAMS_PER_USER} командах")
+                members[login] = role
+            if not any(r == "owner" for r in members.values()):
+                raise HubError(400, "в команде должен остаться хотя бы один владелец")
+            team["members"] = members
+            self._save("teams.json", self.teams)
+            result = self._team_members_list(team)
+            pids = self._team_projects(tid)
+        self._access_changed(pids)
+        return result
+
+    def delete_team(self, user, tid):
+        with self.lock:
+            self._team_manager(user, tid)
+            if self._team_projects(tid):
+                raise HubError(400, "в команде есть проекты: перенесите или удалите их")
+            del self.teams[tid]
+            self._save("teams.json", self.teams)
+
+    def set_project_team(self, user, pid, team, team_access):
+        if team_access is not None and team_access not in TEAM_ACCESS:
+            raise HubError(400, "доступ команды: edit, view или none")
+        with self.lock:
+            me, meta, _ = self._require(user, pid, "owner")
+            if team_access is None:              # не указан: в той же команде доступ не меняется, в новой — «правит»
+                team_access = (meta.get("team_access") if team == meta.get("team") else None) or "edit"
+            if team is not None:
+                self._team_member_or_admin(self.users[me], me, self._team(team))   # переезд В команду — только её участнику
+            members = dict(meta["members"])
+            if team is None:
+                team_access = "edit"
+                if not any(r == "owner" for r in members.values()):
+                    # владелец был только от команды: без личного владельца проект осиротеет. Им становится тот, кто
+                    # переносит; глобальный администратор, не состоящий в проекте, тоже записывается (иначе доступа нет ни у кого)
+                    members[me] = "owner"
+                    if meta.get("owner") not in members:
+                        meta["owner"] = me           # иначе квота и поле «владелец» висели бы на ушедшем создателе
+            meta["members"], meta["team"], meta["team_access"] = members, team, team_access
+            self._save_meta(pid, meta)
+            name = self.teams[team]["name"] if team else "личные"
+            self._activity_add(pid, me, "team", f"{name}: {team_access}")
+        self._access_changed([pid])
+        return {"team": team, "team_access": team_access}
+
+    def _access_changed(self, pids):
+        """Доступ к проектам мог измениться: сообщить участникам и закрыть потоки тех, у кого роли больше нет.
+        role_of берёт self.lock, поэтому её нельзя звать под self._live (см. _recheck_subs)."""
+        for pid in pids:
+            self._publish(pid, {"type": "members"})
+        with self._live:
+            pairs = {(s.pid, s.login) for pid in pids for s in self._subs.get(pid, ())}
+        lost = {(pid, login) for pid, login in pairs if self.role_of({"login": login}, pid) is None}
+        if lost:
+            with self._live:
+                for pid in {p for p, _ in lost}:
+                    self._shutdown_subs(pid, lambda s, pid=pid: (pid, s.login) in lost)
 
     def delete_project(self, user, pid):
         with self.lock:
@@ -1363,6 +1560,8 @@ def main(argv=None):
                 u = hub.users[login]
                 print(f"пользователь {login}\t{u.get('name') or ''}\t{'admin' if u.get('admin') else ''}"
                       f"\t{'отключён' if u.get('disabled') else ''}")
+            for tid, t in sorted(hub.teams.items(), key=lambda x: (x[1].get("name") or "", x[0])):
+                print(f"команда {tid}\t{t.get('name') or ''}\tучастников {len(t.get('members') or {})}")
             now = _now()
             for code, i in sorted(hub.invites.items(), key=lambda x: x[1]["created"]):
                 if not i.get("used_by") and i.get("expires", 0) > now:

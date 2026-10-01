@@ -416,7 +416,7 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
       <span class="hubsync" id="hubSync" data-state="saved" role="status" title="Все правки сохранены на сервере"><i class="dot"></i><span id="hubSyncTxt">сохранено</span></span>
       <button class="btn" id="hubShareBtn" data-win="wShare" title="Доступ: кто может открывать и править проект"><i data-lucide="user-plus"></i><span class="lb">Доступ</span></button><button class="btn" id="hubComBtn" data-win="wComments" title="Комментарии к проекту"><i data-lucide="message-square"></i><span class="lb">Комментарии</span><b class="hubcnt" id="hubComCnt" hidden></b></button><button class="btn" id="hubHistBtn" data-win="wHistory" title="История: версии проекта и кто что менял"><i data-lucide="history"></i><span class="lb">История</span></button>
       <span class="hubacc"><button class="btn" id="hubAcc" aria-haspopup="menu" aria-expanded="false" aria-controls="hubAccMenu" title="Ваша учётная запись"><i data-lucide="circle-user"></i><span class="lb" id="hubAccName"></span><i data-lucide="chevron-down" class="chev"></i></button>
-        <div class="menu hubmenu" id="hubAccMenu" role="menu" hidden><button role="menuitem" class="hubnarrow" data-hubwin="wShare"><i data-lucide="user-plus"></i>Доступ</button><button role="menuitem" class="hubnarrow" data-hubwin="wComments"><i data-lucide="message-square"></i>Комментарии</button><button role="menuitem" class="hubnarrow" data-hubwin="wHistory"><i data-lucide="history"></i>История</button><hr class="hubnarrow"><button role="menuitem" data-hubact="pw"><i data-lucide="key-round"></i>Сменить пароль</button><button role="menuitem" data-hubact="admin" id="hubAdminItem" hidden><i data-lucide="user-cog"></i>Пользователи и приглашения</button><hr><button role="menuitem" data-hubact="out"><i data-lucide="log-out"></i>Выйти</button></div></span>
+        <div class="menu hubmenu" id="hubAccMenu" role="menu" hidden><button role="menuitem" class="hubnarrow" data-hubwin="wShare"><i data-lucide="user-plus"></i>Доступ</button><button role="menuitem" class="hubnarrow" data-hubwin="wComments"><i data-lucide="message-square"></i>Комментарии</button><button role="menuitem" class="hubnarrow" data-hubwin="wHistory"><i data-lucide="history"></i>История</button><hr class="hubnarrow"><button role="menuitem" data-hubwin="wTeams"><i data-lucide="users"></i>Команды</button><button role="menuitem" data-hubact="pw"><i data-lucide="key-round"></i>Сменить пароль</button><button role="menuitem" data-hubact="admin" id="hubAdminItem" hidden><i data-lucide="user-cog"></i>Пользователи и приглашения</button><hr><button role="menuitem" data-hubact="out"><i data-lucide="log-out"></i>Выйти</button></div></span>
     </div><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
@@ -535,6 +535,7 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
   <header class="wh"><i data-lucide="users"></i><b>Совместные проекты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb">
     <div class="projbar"><input type="text" id="hubNewName" placeholder="Название проекта" maxlength="60" aria-label="Название нового проекта"><button class="btn primary" id="hubNew" title="Создать пустой общий проект"><i data-lucide="file-plus"></i>Создать пустой</button></div>
+    <div class="projbar"><label for="hubNewTeam" class="hubdim">Где создать</label><select id="hubNewTeam" title="Где создать: личные проекты или проект команды"><option value="">Личные</option></select><button class="btn" id="hubTeamsBtn" title="Команды: общие рабочие пространства"><i data-lucide="users"></i>Команды</button></div>
     <div class="projbar"><button class="btn" id="hubShareLocal" title="Всё, что сейчас на карте, станет общим проектом на сервере: слои, стили, граф, листы"><i data-lucide="cloud-upload"></i>Сделать общим текущую работу</button><label class="btn" title="Загрузить файл .grado2 с диска как новый общий проект"><i data-lucide="folder-input"></i>Загрузить файл .grado2…<input type="file" id="hubFile" accept=".grado2,.json" hidden></label></div>
     <div class="sb" id="hubProjList"></div>
   </div>
@@ -562,6 +563,14 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
 <section class="win" id="wHubAdmin" hidden aria-label="Пользователи и приглашения">
   <header class="wh"><i data-lucide="user-cog"></i><b>Пользователи и приглашения</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="sb" id="hubAdminBody"></div></div>
+</section>
+<section class="win" id="wTeams" hidden aria-label="Команды">
+  <header class="wh"><i data-lucide="users"></i><b>Команды</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb">
+    <div class="hubnote">Новых людей приглашает администратор; в команду добавляют по логину уже зарегистрированных.</div>
+    <div class="projbar"><input type="text" id="hubTeamNew" placeholder="Название новой команды" maxlength="60" autocomplete="off" aria-label="Название новой команды"><button class="btn primary" id="hubTeamCreate"><i data-lucide="user-plus"></i>Создать команду</button></div>
+    <div class="sb" id="hubTeamsBody"></div>
+  </div>
 </section>
 <dialog class="hubdlg" id="hubPwDlg" aria-label="Сменить пароль"><form id="hubPwForm" autocomplete="off">
   <b>Сменить пароль</b>

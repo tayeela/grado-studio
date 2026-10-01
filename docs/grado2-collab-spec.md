@@ -48,7 +48,64 @@ projects/<pid>/activity.json  last 300 entries [{t, login, action, detail}]
 | rename project, share (add/remove members, change roles) | no | no | yes | yes |
 | delete project | no | no | yes | yes |
 | create invites, disable users, list all users | no | no | no | yes |
-The last owner cannot be removed or downgraded.
+The last owner cannot be removed or downgraded. Team owners count as owners of the team's projects (see Teams).
+
+## Teams (workspaces, added 2026-10-01)
+Owner: «разные команды пользователей с доступами к разным проектам, как в Miro, Google Документах, Canva».
+Owner's decisions 01.10.2026: new people still get an account only by an admin invite (team owners add existing
+accounts by login); a new team project is edited by the whole team by default; link sharing — later, not now.
+
+Storage
+```
+teams.json   {tid: {name, created, by, members: {login: "owner"|"member"}}}     # tid = secrets.token_hex(8), PID_RE
+projects/<pid>/meta.json  + team: tid|null, team_access: "edit"|"view"|"none"     # absent = personal project, "edit"
+```
+- `teams.json` is loaded in `Hub.__init__` and re-read in `_sync` like `users.json`. Old `meta.json` without `team`
+  is a personal project: read with `meta.get("team")`, `meta.get("team_access") or "edit"`. No migration file.
+- Limits: `TEAM_MEMBERS_MAX = 200`, `TEAMS_PER_USER = 50` (teams a person belongs to), team name `_clean_name` ≤ 60.
+- Any logged-in user may create a team and becomes its owner. Team roles: `owner` (renames the team, adds/removes
+  people and changes their team role, deletes an empty team, is owner of every project of the team) and `member`.
+  A team keeps at least one owner. A member may leave a team (set own role to null) unless they are its last owner.
+  Global admin may do everything with every team and sees all teams (role "admin").
+- A team with projects cannot be deleted (400 «в команде есть проекты: перенесите или удалите их»).
+
+Effective project role — the single decision point `Hub._role(u, login, meta)` (instance method now):
+disabled → None; global admin → "admin"; else the strongest (viewer < editor < owner) of
+(a) the personal share `meta["members"].get(login)`,
+(b) if `meta["team"]` is a team where `login` is a member: team owner → "owner"; team member → by `team_access`:
+    "edit" → "editor", "view" → "viewer", "none" → nothing.
+`_require` and the roles table above are unchanged. Personal shares work for people outside the team (guests).
+
+Projects in teams
+- `create_project(user, name, project=None, team=None, team_access="edit")`: with a team, the creator must be a member
+  of it (any team role) or admin; `meta["members"] = {creator: "owner"}` as before; `meta["owner"]` = creator (the
+  `PROJECTS_PER_USER` quota is still counted on the creator).
+- Move between spaces / change team access: `set_project_team(user, pid, team, team_access)` — project owner role
+  required (`_require(..., "owner")`); moving INTO a team requires the actor to be a member of that team (or admin).
+  Moving OUT to personal (`team=None`): if no personal owner remains in `meta["members"]`, the actor becomes one.
+- «Last owner» in `set_member`: owners = personal owners ∪ owners of the project's team; must stay non-empty.
+- `list_projects` items gain `team` (tid|null), `team_name`, `team_access`; existing fields and role values unchanged
+  (`members` stays the personal share list).
+
+Access-change propagation: adding/removing a team member, changing a team role, changing `team_access`, moving a
+project, deleting a team → for every affected project publish `{type:"members"}` and close the event streams of
+people who no longer have a role there (same check as `_recheck_subs`, via `role_of`, never while holding `_live`).
+
+HTTP (all inherit the session gate, `_foreign`, JSON Content-Type, 1 MB body limit)
+- `GET /api/hub/teams` → `{teams:[{id, name, role, members:[{login,name,role}], projects:n}]}`
+- `POST /api/hub/teams {name}` → `{id}` · `POST /api/hub/team/<tid> {name}` rename (team owner/admin)
+- `POST /api/hub/team/<tid>/members {login, role:"owner"|"member"|null}` (team owner/admin; anyone for own null = leave)
+- `POST /api/hub/team/<tid>/delete` (team owner/admin, empty team only)
+- `POST /api/hub/projects {name, project?, team?, team_access?}` (team optional)
+- `POST /api/hub/project/<pid>/team {team: tid|null, team_access}` (project owner)
+
+Client (hub.js)
+- «Совместные проекты» groups the list: «Личные», one group per team «Команда «…»», «Доступные мне» (shared with me
+  from spaces I am not in). Creating a project asks where: «Личные» or one of my teams.
+- Window «Команды» (`wTeams`, also in the account menu): my teams; create; per team rename, people with role
+  (владелец команды / участник), add by login, remove, leave, delete (empty team).
+- Window «Доступ»: for a team project a first row «Вся команда «…»: редактирует / смотрит / нет доступа», then «Где
+  лежит проект: Личные / команда …» (owner only), then the personal list as before. One role label table in hub.js.
 
 ## Sections (the unit of sync)
 The shared project is split into sections; personal state never leaves the client.

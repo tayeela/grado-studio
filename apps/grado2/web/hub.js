@@ -5,11 +5,14 @@
 "use strict";
 
 /* ================= общее ================= */
+/* единая таблица подписей: роли в проекте, роли в команде, доступ всей команды к проекту */
 const ROLE = { owner: "владелец", editor: "правка", viewer: "просмотр", admin: "администратор" };
+const TROLE = { owner: "владелец команды", member: "участник", admin: "администратор" };
+const TACC = { edit: "вся команда правит", view: "вся команда смотрит", none: "только приглашённые" };
 const C = () => window.Collab;
 const st = {
   me: null, pid: null, name: "", role: null, members: [], projects: [], names: {}, others: [], comments: [], cFilter: "open", cSel: null, draft: null,
-  cMode: false, replyFor: null, replyText: "", renameId: null, hTab: "ver", armed: null,
+  cMode: false, replyFor: null, replyText: "", renameId: null, hTab: "ver", armed: null, teams: null, renameTeam: null,
 };
 const myRole = () => C()?.role || st.role || (st.me?.admin ? "admin" : null);
 const canEdit = r => r === "owner" || r === "editor" || r === "admin";
@@ -132,9 +135,25 @@ function closedProject(text) {
   winOpen("wHubProjects", true);
 }
 async function loadProjects() {
-  try { st.projects = (await hub("projects")).projects || []; } catch (e) { fail("Список проектов")(e); return; }
+  // команды меняются редко: при фоновом обновлении раз в 15 с их запрашиваем, только если открыто окно, где они видны
+  const teams = !st.teams || !$("wHubProjects").hidden || !$("wTeams").hidden || !$("wShare").hidden;
+  try { [{ projects: st.projects }] = await Promise.all([hub("projects"), teams ? loadTeams() : null]); st.projects ||= []; } catch (e) { fail("Список проектов")(e); return; }
   st.projects.forEach(p => (p.members || []).forEach(m => { st.names[m.login] = m.name || m.login; }));
-  draw("projects");
+  draw("projects"); if (!$("wTeams").hidden) draw("teams");
+}
+/* команды, в которых я состою (у администратора — все); ошибка не всплывает: список проектов важнее */
+async function loadTeams(loud) {
+  try { st.teams = (await hub("teams")).teams || []; (st.teams).forEach(t => t.members.forEach(m => { st.names[m.login] = m.name || m.login; })); }
+  catch (e) { st.teams ||= []; if (loud) fail("Команды")(e); }
+  fillNewTeam();
+}
+const myTeam = tid => !!tid && (st.teams || []).some(t => t.id === tid);
+const teamOpts = (cur, curName) => `<option value="">Личные</option>` + (st.teams || []).map(t => `<option value="${esc(t.id)}" ${t.id === cur ? "selected" : ""}>${esc(t.name)}</option>`).join("")
+  + (cur && !myTeam(cur) ? `<option value="${esc(cur)}" selected>${esc(curName || "Команда")}</option>` : "");
+function fillNewTeam() {
+  const s = $("hubNewTeam"), v = s.value;
+  s.innerHTML = `<option value="">Личные</option>` + (st.teams || []).map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+  if ([...s.options].some(o => o.value === v)) s.value = v;
 }
 async function refreshMeta() {
   await loadProjects(); const p = st.projects.find(x => x.id === st.pid);
@@ -176,10 +195,18 @@ function menu(on) {
 }
 
 /* ================= окно «Совместные проекты» ================= */
+/* группы списка: «Личные», по одной на мою команду, «Доступные мне» (проекты команд, где я не состою); пустые не показываются */
+function projGroups() {
+  const rows = [...st.projects].sort((a, b) => toMs(b.updated) - toMs(a.updated)), g = [], add = (title, r) => { if (r.length) g.push({ title, rows: r }); };
+  add("Личные", rows.filter(p => !p.team));
+  (st.teams || []).forEach(t => add(`Команда «${t.name}»`, rows.filter(p => p.team === t.id)));
+  add("Доступные мне", rows.filter(p => p.team && !myTeam(p.team)));
+  return g;
+}
 R.projects = [$("hubProjList"), () => {
-  const rows = [...st.projects].sort((a, b) => toMs(b.updated) - toMs(a.updated)), el = $("hubProjList"), k = (a, id) => a + ":" + id;
-  if (!rows.length) { el.innerHTML = `<div class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</div>`; return; }
-  el.innerHTML = `<table class="at hubt"><thead><tr><th>Проект</th><th>Ваша роль</th><th>Менял последним</th><th>Сейчас в проекте</th><th></th></tr></thead><tbody>${rows.map(p => {
+  const el = $("hubProjList"), k = (a, id) => a + ":" + id;
+  if (!st.projects.length) { el.innerHTML = `<div class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</div>`; return; }
+  const row = p => {
     const cur = p.id === st.pid, own = isOwner(p.role), on = +p.online || 0, ren = st.renameId === p.id;
     const name = ren ? `<input type="text" class="hubren" data-id="${esc(p.id)}" value="${esc(p.name)}" maxlength="60" aria-label="Новое название проекта">` : `${esc(p.name)}${cur ? `<span class="pill">открыт</span>` : ""}`;
     const del = armedIs(k("del", p.id));
@@ -190,11 +217,13 @@ R.projects = [$("hubProjList"), () => {
         ${own ? `<button class="tb" data-act="ren" data-id="${esc(p.id)}" title="Переименовать проект" aria-label="Переименовать"><i data-lucide="pencil"></i></button>` : ""}
         <button class="tb" data-act="dl" data-id="${esc(p.id)}" title="Скачать проект файлом .grado2" aria-label="Скачать"><i data-lucide="download"></i></button>
         ${own ? `<button class="tb ${del ? "danger" : ""}" data-act="del" data-id="${esc(p.id)}" title="${del ? "Нажмите ещё раз — проект и его история будут удалены у всех" : "Удалить проект у всех участников"}" aria-label="Удалить"><i data-lucide="trash-2"></i>${del ? "Точно?" : ""}</button>` : ""}</td></tr>`;
-  }).join("")}</tbody></table>`;
+  };
+  el.innerHTML = `<table class="at hubt"><thead><tr><th>Проект</th><th>Ваша роль</th><th>Менял последним</th><th>Сейчас в проекте</th><th></th></tr></thead>${projGroups().map(g => `<tbody><tr><td colspan="5" class="hubsec">${esc(g.title)}</td></tr>${g.rows.map(row).join("")}</tbody>`).join("")}</table>`;
   el.querySelector(".hubren")?.focus();
 }];
 async function createProject(body, okText) {
   const name = body.name; if (!name) { $("hubNewName").focus(); return toast("Введите название проекта."); }
+  if ($("hubNewTeam").value) body.team = $("hubNewTeam").value;
   try {
     const r = await hub("projects", body); $("hubNewName").value = "";
     await loadProjects(); toast(okText || `Создан проект «${name}».`);
@@ -208,7 +237,8 @@ function wireProjects() {
     const name = $("hubNewName").value.trim(); if (!name) { $("hubNewName").focus(); return toast("Введите название: под ним текущая работа станет общим проектом."); }
     if (!C()?.createFromLocal) return toast("Модуль совместной работы не загрузился: обновите страницу.");
     try {
-      const r = await C().createFromLocal(name), pid = (r && r.id) || (typeof r === "string" ? r : null) || C().pid;
+      const r = await C().createFromLocal(name), pid = (r && r.id) || (typeof r === "string" ? r : null) || C().pid, tm = $("hubNewTeam").value;
+      if (tm && pid) { try { await hub(`project/${encodeURIComponent(pid)}/team`, { team: tm, team_access: "edit" }); } catch (e) { fail("Проект создан, но не перенесён в команду")(e); } }   // createFromLocal в collab.js про команды не знает: переносим вторым шагом
       $("hubNewName").value = ""; await loadProjects();
       if (pid && C().pid !== pid) await openProject(pid, name); else { st.pid = C().pid; st.name = name; history.replaceState(null, "", "#p=" + st.pid); await refreshMeta(); loadComments(); winOpen("wHubProjects", false); }
       toast(`Текущая работа стала общим проектом «${name}».`);
@@ -247,20 +277,29 @@ function wireProjects() {
 R.share = [$("hubShareBody"), () => {
   const el = $("hubShareBody"), own = isOwner(myRole());
   if (!st.pid) { el.innerHTML = `<div class="empty">Сначала откройте проект: окно «Совместные проекты».</div>`; return; }
+  const pr = st.projects.find(x => x.id === st.pid) || {}, off = own ? "" : "disabled";
   el.innerHTML = `<div class="hubnote">Проект «${esc(st.name)}». ${own ? "Вы владелец: можно добавлять и убирать участников и менять их роли." : "Менять доступ может только владелец проекта."}</div>
+  <table class="at hubt"><tbody><tr><td class="nm">Где лежит проект</td><td><select data-act="pteam" ${off} aria-label="Где лежит проект">${teamOpts(pr.team, pr.team_name)}</select></td></tr>
+  ${pr.team ? `<tr><td class="nm" title="${esc(pr.team_name || "")}">Вся команда «${esc(pr.team_name || "")}»</td><td><select data-act="tacc" ${off} aria-label="Доступ всей команды">${["edit", "view", "none"].map(r => `<option value="${r}" ${(pr.team_access || "edit") === r ? "selected" : ""}>${TACC[r]}</option>`).join("")}</select></td></tr>` : ""}</tbody></table>
   <table class="at hubt"><thead><tr><th>Участник</th><th>Логин</th><th>Роль</th><th></th></tr></thead><tbody>${st.members.map(m => {
     const rm = armedIs("rm:" + m.login);
     return `<tr><td class="nm">${esc(m.name || m.login)}${m.login === st.me?.login ? `<span class="pill">вы</span>` : ""}</td><td>${esc(m.login)}</td>
     <td>${own ? `<select data-act="role" data-login="${esc(m.login)}" aria-label="Роль участника">${["owner", "editor", "viewer"].map(r => `<option value="${r}" ${m.role === r ? "selected" : ""}>${ROLE[r]}</option>`).join("")}</select>` : esc(ROLE[m.role] || m.role)}</td>
     <td class="acts">${own ? `<button class="tb ${rm ? "danger" : ""}" data-act="rm" data-login="${esc(m.login)}" title="${rm ? "Нажмите ещё раз, чтобы убрать участника" : "Убрать из проекта"}" aria-label="Убрать"><i data-lucide="x"></i>${rm ? "Точно?" : ""}</button>` : ""}</td></tr>`;
   }).join("")}</tbody></table>
-  ${own ? `<div class="projbar"><input type="text" id="hubShareLogin" placeholder="Логин человека" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Логин человека"><select id="hubShareRole" aria-label="Роль"><option value="editor">правка</option><option value="viewer">просмотр</option></select><button class="btn primary" data-act="add"><i data-lucide="user-plus"></i>Добавить</button></div>
+  ${own ? `<div class="projbar"><input type="text" id="hubShareLogin" placeholder="Логин человека" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Логин человека"><select id="hubShareRole" aria-label="Роль"><option value="editor">${ROLE.editor}</option><option value="viewer">${ROLE.viewer}</option></select><button class="btn primary" data-act="add"><i data-lucide="user-plus"></i>Добавить</button></div>
   <div class="hubnote">Человек должен быть зарегистрирован в ГРАДО 2. Нет учётной записи — попросите администратора выдать приглашение.</div>` : ""}
   <div class="hubnote"><b>Владелец</b> — управляет доступом, может удалить проект. <b>Правка</b> — рисует и меняет проект. <b>Просмотр</b> — смотрит проект и оставляет комментарии.</div>`;
 }];
 function wireShare() {
   const setRole = async (login, role) => { try { await hub(`project/${encodeURIComponent(st.pid)}/members`, { login, role }); await refreshMeta(); } catch (e) { fail("Доступ не изменён")(e); await refreshMeta(); } };
-  $("hubShareBody").addEventListener("change", e => { const s = e.target.closest('select[data-act="role"]'); if (s) setRole(s.dataset.login, s.value); });
+  const setTeam = async (team, acc, ok) => { try { await hub(`project/${encodeURIComponent(st.pid)}/team`, { team, team_access: acc }); toast(ok); } catch (e) { fail("Доступ не изменён")(e); } await refreshMeta(); };
+  $("hubShareBody").addEventListener("change", e => {
+    const s = e.target.closest("select[data-act]"); if (!s) return; const pr = st.projects.find(x => x.id === st.pid) || {};
+    if (s.dataset.act === "role") setRole(s.dataset.login, s.value);
+    else if (s.dataset.act === "pteam") setTeam(s.value || null, s.value && pr.team ? pr.team_access || "edit" : "edit", s.value ? "Проект перенесён в команду." : "Проект стал личным.");
+    else if (s.dataset.act === "tacc") setTeam(pr.team, s.value, "Доступ команды изменён.");
+  });
   $("hubShareBody").addEventListener("click", async e => {
     const b = e.target.closest("button[data-act]"); if (!b) return;
     if (b.dataset.act === "rm" && twoStep("rm:" + b.dataset.login, "share")) { await setRole(b.dataset.login, null); toast("Участник убран из проекта."); }
@@ -270,6 +309,61 @@ function wireShare() {
     }
   });
   $("hubShareBody").addEventListener("keydown", e => { if (e.key === "Enter" && e.target.id === "hubShareLogin") $("hubShareBody").querySelector('[data-act="add"]').click(); });
+}
+
+/* ================= окно «Команды» ================= */
+R.teams = [$("hubTeamsBody"), () => {
+  const el = $("hubTeamsBody"), ts = st.teams, me = st.me?.login;
+  if (!ts) { el.innerHTML = `<div class="empty">Загружаю…</div>`; return; }
+  if (!ts.length) { el.innerHTML = `<div class="empty">Вы пока не состоите ни в одной команде. Введите название и нажмите «Создать команду».</div>`; return; }
+  el.innerHTML = ts.map(t => {
+    const mgr = t.role === "owner" || t.role === "admin", ren = st.renameTeam === t.id, mine = t.members.some(m => m.login === me), id = esc(t.id);
+    const lv = armedIs("tleave:" + t.id), dl = armedIs("tdel:" + t.id), n = +t.projects || 0;
+    return `<div class="hubsec">${ren ? `<input type="text" class="hubren" data-tid="${id}" value="${esc(t.name)}" maxlength="60" aria-label="Новое название команды">` : esc(t.name)}${mgr && !ren ? `<button class="btn" data-act="trename" data-tid="${id}">Переименовать</button>` : ""}</div>
+    <div class="hubnote">${n ? `Проектов в команде: ${n}.` : "Проектов в команде пока нет."}</div>
+    <table class="at hubt"><thead><tr><th>Участник</th><th>Логин</th><th>Роль</th><th></th></tr></thead><tbody>${t.members.map(m => {
+      const rm = armedIs(`trm:${t.id}:${m.login}`);
+      return `<tr><td class="nm">${esc(m.name || m.login)}${m.login === me ? `<span class="pill">вы</span>` : ""}</td><td>${esc(m.login)}</td>
+      <td>${mgr ? `<select data-act="trole" data-tid="${id}" data-login="${esc(m.login)}" aria-label="Роль в команде">${["owner", "member"].map(r => `<option value="${r}" ${m.role === r ? "selected" : ""}>${TROLE[r]}</option>`).join("")}</select>` : esc(TROLE[m.role] || m.role)}</td>
+      <td class="acts">${mgr ? `<button class="tb ${rm ? "danger" : ""}" data-act="trm" data-tid="${id}" data-login="${esc(m.login)}" title="${rm ? "Нажмите ещё раз, чтобы убрать человека из команды" : "Убрать из команды"}" aria-label="Убрать"><i data-lucide="x"></i>${rm ? "Точно?" : ""}</button>` : ""}</td></tr>`;
+    }).join("")}</tbody></table>
+    ${mgr ? `<div class="projbar"><input type="text" class="hubtadd" data-tid="${id}" placeholder="Логин человека" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Логин человека"><button class="btn primary" data-act="tadd" data-tid="${id}"><i data-lucide="user-plus"></i>Добавить по логину</button></div>` : ""}
+    ${mine || mgr ? `<div class="projbar">${mine ? `<button class="btn ${lv ? "danger" : ""}" data-act="tleave" data-tid="${id}">${lv ? "Точно выйти?" : "Выйти из команды"}</button>` : ""}${mgr ? `<button class="btn ${dl ? "danger" : ""}" data-act="tdel" data-tid="${id}" title="Удалить можно только команду без проектов">${dl ? "Точно удалить?" : "Удалить команду"}</button>` : ""}</div>` : ""}`;
+  }).join("");
+  el.querySelector(".hubren")?.focus();
+}];
+function wireTeams() {
+  const body = $("hubTeamsBody"), tp = (tid, s) => `team/${encodeURIComponent(tid)}${s || ""}`;
+  /* одно действие: запрос, затем список команд и проектов заново; ошибка сервера (например, «в команде есть проекты») — тостом */
+  const act = async (path, data, ok, pre) => {
+    try { await hub(path, data); await refreshMeta(); if (ok) toast(ok); } catch (e) { fail(pre)(e); await refreshMeta(); }
+    draw("teams", true);
+  };
+  $("hubTeamsBtn").onclick = () => winOpen("wTeams", true);
+  $("hubTeamCreate").onclick = () => {
+    const name = $("hubTeamNew").value.trim(); if (!name) { $("hubTeamNew").focus(); return toast("Введите название команды."); }
+    $("hubTeamNew").value = ""; act("teams", { name }, `Создана команда «${name}».`, "Команда не создана");
+  };
+  $("hubTeamNew").addEventListener("keydown", e => { if (e.key === "Enter") $("hubTeamCreate").click(); });
+  body.addEventListener("change", e => { const s = e.target.closest('select[data-act="trole"]'); if (s) act(tp(s.dataset.tid, "/members"), { login: s.dataset.login, role: s.value }, "Роль в команде изменена.", "Роль не изменена"); });
+  body.addEventListener("click", e => {
+    const b = e.target.closest("button[data-act]"); if (!b) return; const tid = b.dataset.tid, a = b.dataset.act;
+    if (a === "trename") { st.renameTeam = tid; draw("teams", true); }
+    else if (a === "tadd") {
+      const i = b.closest(".projbar").querySelector("input"), login = i.value.trim().toLowerCase(); if (!login) return i.focus();
+      act(tp(tid, "/members"), { login, role: "member" }, `Человек «${login}» добавлен в команду.`, "Не добавлен");
+    }
+    else if (a === "trm" && twoStep(`trm:${tid}:${b.dataset.login}`, "teams")) act(tp(tid, "/members"), { login: b.dataset.login, role: null }, "Человек убран из команды.", "Не убран");
+    else if (a === "tleave" && twoStep("tleave:" + tid, "teams")) act(tp(tid, "/members"), { login: st.me.login, role: null }, "Вы вышли из команды.", "Не удалось выйти");
+    else if (a === "tdel" && twoStep("tdel:" + tid, "teams")) act(tp(tid, "/delete"), {}, "Команда удалена.", "Команда не удалена");
+  });
+  body.addEventListener("keydown", e => {
+    if (e.key === "Enter" && e.target.classList?.contains("hubtadd")) return e.target.closest(".projbar").querySelector('[data-act="tadd"]').click();
+    const i = e.target.closest?.(".hubren"); if (!i) return;
+    if (e.key === "Escape") { st.renameTeam = null; draw("teams", true); }
+    if (e.key === "Enter") { const name = i.value.trim(), tid = i.dataset.tid; st.renameTeam = null; if (name) act(tp(tid), { name }, "Команда переименована.", "Не переименована"); else draw("teams", true); }
+  });
+  body.addEventListener("focusout", e => { if (e.target.closest?.(".hubren") && st.renameTeam) { st.renameTeam = null; setTimeout(() => draw("teams", true), 0); } });
 }
 
 /* ================= комментарии ================= */
@@ -566,6 +660,7 @@ function presenceTick() {
 function hubHooks() {
 WIN_OPEN.wHubProjects = () => loadProjects();
 WIN_OPEN.wShare = () => refreshMeta();
+WIN_OPEN.wTeams = () => { st.renameTeam = null; draw("teams", true); loadTeams(true).then(() => draw("teams", true)); };
 WIN_OPEN.wComments = () => { draw("comments", true); loadComments(); };
 WIN_OPEN.wHistory = () => { st.hist = null; draw("history", true); loadHistory(); };
 WIN_OPEN.wHubAdmin = () => { st.newCode = null; loadAdmin(); };
@@ -589,7 +684,7 @@ function wire() {
   const att = window.attachDataLayers; window.attachDataLayers = m => { att?.(m); overlays(m); };
   $("hubLoginForm").addEventListener("submit", submitLogin);
   document.querySelectorAll("[data-lmode]").forEach(b => b.onclick = () => setLmode(b.dataset.lmode));
-  wireProjects(); wireShare(); wireComments(); wireHistory(); wireAdmin(); wireAccount();
+  wireProjects(); wireShare(); wireTeams(); wireComments(); wireHistory(); wireAdmin(); wireAccount();
   addEventListener("keydown", e => { if (e.key === "Escape" && st.cMode && !e.target.closest?.("input,textarea")) setCMode(false); });
   addEventListener("hashchange", () => { const m = /[#&]p=([\w-]+)/.exec(location.hash); if (m && st.me && m[1] !== st.pid) openProject(m[1]); });
   if (typeof MutationObserver === "function") new MutationObserver(() => { if (!dotsBusy) requestAnimationFrame(paintDots); }).observe($("layerTree"), { childList: true });
@@ -607,7 +702,7 @@ function wire() {
     let faultAt = 0; L("fault", d => { if (Date.now() - faultAt < 10000) return; faultAt = Date.now(); toast("Правки не сохранены: " + (d?.message || "хранилище на сервере заполнено") + "."); });
   } else toast("Модуль совместной работы не загрузился: обновите страницу.");
   setInterval(presenceTick, 500);
-  setInterval(() => { if (document.hidden) return; if (st.pid || !$("wHubProjects").hidden) refreshMeta(); draw("comments"); }, 15000);
+  setInterval(() => { if (document.hidden) return; if (st.pid || !$("wHubProjects").hidden || !$("wTeams").hidden) refreshMeta(); draw("comments"); }, 15000);
   renderBar(); renderAv(); icons();
 }
 

@@ -32,7 +32,9 @@ async function launch(name) {
     // «Failed to load resource» и прочее, что браузер пишет в консоль сам; 401 на /api/hub/me до входа — ожидаемый ответ «вы не вошли» (спека)
     if (m.method === "Log.entryAdded" && m.params.entry.level === "error" && !(p.allow401 && /\b40[13]\b/.test(m.params.entry.text)) && !(/\/api\/hub\/me$/.test(m.params.entry.url || "") && /401/.test(m.params.entry.text))
       // 409 на отправку — штатный конфликт одновременных правок: клиент сводит правки и отправляет снова
-      && !(/\/api\/hub\/project\/[0-9a-f]+\/push$/.test(m.params.entry.url || "") && /\b409\b/.test(m.params.entry.text))) logs.push(name + " log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
+      && !(/\/api\/hub\/project\/[0-9a-f]+\/push$/.test(m.params.entry.url || "") && /\b409\b/.test(m.params.entry.text))
+      // 400 на удаление команды с проектами — ожидаемый отказ сервера (шаг 8 «команды»)
+      && !(/\/api\/hub\/team\/[0-9a-f]+\/delete$/.test(m.params.entry.url || "") && /\b400\b/.test(m.params.entry.text))) logs.push(name + " log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
     if (m.method === "Runtime.exceptionThrown") logs.push(name + " EXCEPTION: " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text)); };
   await send("Runtime.enable"); await send("Page.enable"); await send("Log.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -264,6 +266,99 @@ try {
   await A.until(`return /слишком много вкладок/.test($("toast").textContent)`, "сообщение о лишних вкладках", 5000);
   await sleep(4000);
   check(await A.ev(`return window.__probes`) === 1, "A: после отказа 429 поток не переподключается часто (одна проверка за 4 с, следующая — через минуту)");
+
+  // ---------- команды: «Бюро 1», командный проект, доступ всей команды (B — по-прежнему участник сервера, но не личный участник нового проекта) ----------
+  const showWin = async (P, openSel, id) => { if (await P.ev(`return $("${id}").hidden`)) await P.clickEl(openSel); await P.until(`return !$("${id}").hidden`, `окно ${id} открыто`); };
+  const hideWin = async (P, id) => { if (!(await P.ev(`return $("${id}").hidden`))) await P.clickEl(`#${id} [data-close]`); await P.until(`return $("${id}").hidden`, `окно ${id} закрыто`); };
+  const openTeams = async P => { await P.clickEl("#hubAcc"); await P.clickEl('[data-hubwin="wTeams"]'); await P.until(`return !$("wTeams").hidden && !!$("hubTeamNew")`, "окно «Команды»"); };
+  const reopenProjects = async P => { await hideWin(P, "wHubProjects"); await showWin(P, "#hubProjBtn", "wHubProjects"); };
+  const GROUP = "Команда «Бюро 1»";
+  const inGroup = `(()=>{ const rows=[...document.querySelectorAll("#hubProjList tbody")].filter(t=>t.querySelector(".hubsec")?.textContent===${JSON.stringify(GROUP)}); const r=rows.flatMap(t=>[...t.querySelectorAll("tr:not(:first-child)")]).find(r=>/Командный проект/.test(r.textContent)); return r||null; })()`;
+  const anyRow = `[...document.querySelectorAll("#hubProjList tbody tr")].some(r=>/Командный проект/.test(r.textContent))`;
+  const bobAcc = async () => B.ev(`const me=await (await fetch("/api/hub/projects")).json(); return me.projects.some(p=>p.name==="Командный проект")`);
+  await hideWin(A, "wShare");
+  B.allow401 = true;                     // 403 на закрывающемся потоке и проверках B ожидаемы и ниже
+
+  // 1. A создаёт команду
+  await openTeams(A);
+  await A.fill("#hubTeamNew", "Бюро 1"); await A.clickEl("#hubTeamCreate");
+  await A.until(`return /Бюро 1/.test($("hubTeamsBody").textContent) && !!document.querySelector('#hubTeamsBody select[data-act="trole"][data-login="anna"]')`, "команда «Бюро 1» в списке");
+  check(await A.ev(`const s=document.querySelector('#hubTeamsBody select[data-act="trole"][data-login="anna"]'); return s.value==="owner" && s.selectedOptions[0].textContent==="владелец команды" && /Проектов в команде пока нет/.test($("hubTeamsBody").textContent)`), "A: команда «Бюро 1» создана, A в ней — «владелец команды», проектов пока нет");
+  await A.shot("13-A-komandy.png");
+  await hideWin(A, "wTeams");
+
+  // 2. A создаёт проект в команде
+  await showWin(A, "#hubProjBtn", "wHubProjects");
+  await A.until(`return [...$("hubNewTeam").options].some(o=>o.textContent==="Бюро 1")`, "в «Где создать» есть «Бюро 1»");
+  await A.ev(`const s=$("hubNewTeam"); s.value=[...s.options].find(o=>o.textContent==="Бюро 1").value; s.dispatchEvent(new Event("change",{bubbles:true})); return 1`);
+  await A.fill("#hubNewName", "Командный проект"); await A.clickEl("#hubNew");
+  await A.until(`return Collab.pid && $("hubProjName").textContent==="Командный проект" && $("wHubProjects").hidden`, "командный проект создан и открыт");
+  await showWin(A, "#hubProjBtn", "wHubProjects");
+  await A.until(`return !!${inGroup}`, "у A проект под заголовком команды");
+  check(await A.ev(`return !!${inGroup} && [...document.querySelectorAll("#hubProjList .hubsec")].some(e=>e.textContent==="Личные")`), "A: «Командный проект» в списке под заголовком «Команда «Бюро 1»», «Проверка» осталась в «Личные»");
+  await A.shot("14-A-gruppy-proektov.png");
+  await hideWin(A, "wHubProjects");
+
+  // 3. B проект не видит
+  await reopenProjects(B);
+  await B.until(`return $("hubProjList").textContent.trim().length>0`, "список проектов B прорисован");
+  check(!(await B.ev(`return ${anyRow}`)) && !(await bobAcc()), "B: «Командного проекта» в списке нет (ни на экране, ни в ответе сервера)");
+
+  // 4. A добавляет B в команду (участник)
+  await openTeams(A);
+  await A.fill(".hubtadd", "bob"); await A.clickEl('#hubTeamsBody [data-act="tadd"]');
+  await A.until(`return !!document.querySelector('#hubTeamsBody select[data-act="trole"][data-login="bob"]')`, "bob в команде");
+  check(await A.ev(`const s=document.querySelector('#hubTeamsBody select[data-act="trole"][data-login="bob"]'); return s.value==="member" && s.selectedOptions[0].textContent==="участник" && /Проектов в команде: 1/.test($("hubTeamsBody").textContent)`), "A: bob добавлен в «Бюро 1» ролью «участник», в команде 1 проект");
+  await hideWin(A, "wTeams");
+  await reopenProjects(B);
+  await B.until(`return !!${inGroup}`, "у B проект под заголовком команды");
+  check(await B.ev(`const r=${inGroup}; return r.children[1].textContent==="правка"`), "B: «Командный проект» появился под «Команда «Бюро 1»», роль в строке — «правка»");
+  await B.clickEl('#hubProjList tbody:has(.hubsec) tr:not(:first-child) [data-act="open"]');
+  await B.until(`return Collab.pid && Collab.role==="editor" && $("hubProjName").textContent==="Командный проект" && $("wHubProjects").hidden`, "B открыл командный проект");
+  check(await B.ev(`return $("hubRole").textContent==="правка" && !document.body.classList.contains("hub-viewer")`), "B: в шапке роль «правка», открыто для правки");
+
+  // 5. «вся команда смотрит» — у B открытый проект становится «только просмотр»
+  await showWin(A, "#hubShareBtn", "wShare");
+  await A.until(`return !!document.querySelector('#hubShareBody select[data-act="tacc"]')`, "строка «Вся команда» в «Доступе»");
+  check(await A.ev(`return /Вся команда «Бюро 1»/.test($("hubShareBody").textContent) && document.querySelector('#hubShareBody select[data-act="pteam"]').selectedOptions[0].textContent==="Бюро 1" && document.querySelector('#hubShareBody select[data-act="tacc"]').value==="edit"`), "A: в «Доступе» проект лежит в «Бюро 1», вся команда правит");
+  await A.shot("15-A-dostup-komanda.png");
+  const setTacc = (v) => A.ev(`const s=document.querySelector('#hubShareBody select[data-act="tacc"]'); s.value=${JSON.stringify(v)}; s.dispatchEvent(new Event("change",{bubbles:true})); return 1`);
+  await setTacc("view");
+  await B.until(`return Collab.role==="viewer" && document.body.classList.contains("hub-viewer")`, "B: открытый командный проект стал «только просмотр»", 8000);
+  check(await B.ev(`return /просмотр/.test($("hubRole").textContent) && $("hubSync").dataset.state==="readonly"`), "B: «вся команда смотрит» — в шапке роль «просмотр», статус «только просмотр»");
+
+  // 6. «только приглашённые» — у B доступа нет
+  await setTacc("none");
+  await B.until(`return !Collab.pid && $("hubProjName").textContent==="Выберите проект" && !$("wHubProjects").hidden`, "B: проект закрыт, открыт список", 10000);
+  check(await B.ev(`return /нет доступа/.test($("toast").textContent) && !document.body.classList.contains("hub-viewer") && !${anyRow}`), "B: «только приглашённые» — сообщение «больше нет доступа», проект закрыт, в списке его нет");
+
+  // 7. снова «вся команда правит», затем A убирает B из команды
+  await setTacc("edit");
+  await A.until(`return document.querySelector('#hubShareBody select[data-act="tacc"]').value==="edit" && /Доступ команды изменён/.test($("toast").textContent)`, "A: доступ команды «правит» сохранён");
+  await reopenProjects(B);
+  await B.until(`return !!${inGroup}`, "B снова видит проект");
+  check(true, "B: после «вся команда правит» проект снова в его списке");
+  await hideWin(A, "wShare");
+  await openTeams(A);
+  const rmBtn = '#hubTeamsBody [data-act="trm"][data-login="bob"]';
+  await A.clickEl(rmBtn);
+  await A.until(`return /Точно/.test(document.querySelector(${JSON.stringify(rmBtn)}).textContent)`, "подтверждение «Точно?» для bob");
+  await A.clickEl(rmBtn);
+  await A.until(`return !document.querySelector('#hubTeamsBody select[data-act="trole"][data-login="bob"]')`, "bob убран из команды");
+  await hideWin(A, "wTeams");
+  await reopenProjects(B);
+  await B.until(`return $("hubProjList").textContent.trim().length>0 && !${anyRow}`, "у B проект исчез из списка");
+  check(!(await bobAcc()), "B: убран из команды — «Командного проекта» в списке больше нет, сервер его не отдаёт");
+
+  // 8. команду с проектом удалить нельзя
+  await openTeams(A);
+  const delBtn = '#hubTeamsBody [data-act="tdel"]';
+  await A.clickEl(delBtn);
+  await A.until(`return /Точно удалить/.test(document.querySelector(${JSON.stringify(delBtn)}).textContent)`, "подтверждение «Точно удалить?»");
+  await A.clickEl(delBtn);
+  await A.until(`return /есть проекты/.test($("toast").textContent)`, "сообщение «есть проекты»", 6000);
+  check(await A.ev(`return /Бюро 1/.test($("hubTeamsBody").textContent)`), "A: «Удалить команду» с проектом внутри — сообщение «в команде есть проекты», команда осталась");
+  await hideWin(A, "wTeams");
 
   // ---------- консоль ----------
   const all = [...A.logs, ...B.logs];
