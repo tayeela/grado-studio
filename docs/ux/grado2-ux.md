@@ -233,8 +233,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-10-01 (v0.87.0, UI audit, `docs/ux/audit-2026-10-01.md`): left for later — dark graph canvas (litegraph reads
   colours once), cursor coordinates in the status bar, AutoCAD-style staged ribbon collapse, layer search, undo entries
   of a deleted layer's earlier edits are dropped, focus after re-render in «По листам» mode returns to the first row.
-- 2026-10-01 (v0.88.0, first-run audit): open — (socket names and fields «Потолок, м», «Потолок, эт.» renamed with a
-  project migration in v0.88.1); a sheet/PDF path for a
+- 2026-10-01 (v0.88.1): closed — socket names and fields «Потолок, м», «Потолок, эт.» renamed with a project
+  migration. Open: a ceiling layer with two distinct values and 5 quantile classes paints both cells one colour.
+- 2026-10-01 (v0.88.0, first-run audit): open — a sheet/PDF path for a
   newcomer still needs the «Листы» window explained; mouse-wheel zoom felt too fast to a novice; the help (F1) is long
   and has no jump links.
 - 2026-10-01 (v0.88.0, found while checking): a re-download of «Земельные участки (ЕГРН)» keeps the internal `_uid` of
