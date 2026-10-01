@@ -7,6 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import server as S  # noqa: E402
 
+# Папка «~/Documents/ГРАДО 2» — невосстановимые данные владельца. Без GRADO2_PROJECTS server.PROJECTS указывает на неё,
+# и тесты, которые пишут проекты, портили бы её. Поэтому в таком случае весь модуль работает во временной папке.
+if not os.environ.get("GRADO2_PROJECTS"):
+    import tempfile as _tempfile
+    S.PROJECTS = Path(_tempfile.mkdtemp(prefix="grado2-test-")) / "p"
+
 
 class Grado2Server(unittest.TestCase):
     def test_tep_population_only_from_new_buildings(self):
@@ -1040,7 +1046,8 @@ class HubHttp(unittest.TestCase):
                   f"/api/hub/project/{pid}/presence", f"/api/hub/project/{pid}/comments",
                   f"/api/hub/project/{pid}/comments/abc", f"/api/hub/project/{pid}/comments/abc/reply",
                   f"/api/hub/project/{pid}/comments/abc/delete", f"/api/hub/project/{pid}/history/1/restore",
-                  f"/api/hub/project/{pid}/delete", "/api/hub/teams", f"/api/hub/project/{pid}/team"]
+                  f"/api/hub/project/{pid}/delete", "/api/hub/teams", f"/api/hub/project/{pid}/team",
+                  f"/api/hub/project/{pid}/star", f"/api/hub/project/{pid}/copy", f"/api/hub/project/{pid}/link", "/api/hub/join"]
         tid = self.call("/api/hub/teams", {"name": "К"}, ann)[2]["id"]
         routes += [f"/api/hub/team/{tid}", f"/api/hub/team/{tid}/members", f"/api/hub/team/{tid}/delete"]
         for path in routes:
@@ -1057,16 +1064,187 @@ class HubHttp(unittest.TestCase):
         before = self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"]
         for path in ("/api/hub/me", "/api/hub/projects", "/api/hub/teams", f"/api/hub/project/{pid}", f"/api/hub/project/{pid}/sections?names=meta",
                      f"/api/hub/project/{pid}/comments", f"/api/hub/project/{pid}/history", f"/api/hub/project/{pid}/activity",
-                     f"/api/hub/project/{pid}/download"):
+                     f"/api/hub/project/{pid}/download", f"/api/hub/project/{pid}/link"):
             self.call(path, cookie=ann)
         self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[2]["rev"], before)
         # «опасные» слова в GET не превращаются в действия
         tid = self.call("/api/hub/teams", {"name": "К"}, ann)[2]["id"]
         for path in (f"/api/hub/project/{pid}/delete", f"/api/hub/project/{pid}/push", "/api/hub/logout", f"/api/hub/project/{pid}/members",
-                     f"/api/hub/project/{pid}/team", f"/api/hub/team/{tid}", f"/api/hub/team/{tid}/members", f"/api/hub/team/{tid}/delete"):
+                     f"/api/hub/project/{pid}/team", f"/api/hub/team/{tid}", f"/api/hub/team/{tid}/members", f"/api/hub/team/{tid}/delete",
+                     f"/api/hub/project/{pid}/star", f"/api/hub/project/{pid}/copy", "/api/hub/join"):
             self.assertEqual(self.call(path, cookie=ann)[0], 404, path)
         self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=ann)[0], 200)
         self.assertEqual(len(self.call("/api/hub/teams", cookie=ann)[2]["teams"]), 1)
+        self.assertEqual(len(self.call("/api/hub/projects", cookie=ann)[2]["projects"]), 1)      # копии не появилось
+        self.assertFalse(self.call("/api/hub/projects", cookie=ann)[2]["projects"][0]["star"])
+
+    # ----- избранное, копия, доступ по ссылке (этап 2) -----
+
+    def listed(self, cookie):
+        return {p["id"]: p for p in self.call("/api/hub/projects", cookie=cookie)[2]["projects"]}
+
+    def test_star_on_off_is_reflected_in_the_list(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        self.assertIs(self.listed(ann)[pid]["star"], False)
+        s, _, j = self.call(f"/api/hub/project/{pid}/star", {"on": True}, ann)
+        self.assertEqual((s, j), (200, {"star": True}))
+        self.assertIs(self.listed(ann)[pid]["star"], True)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/star", {"on": False}, ann)[2], {"star": False})
+        self.assertIs(self.listed(ann)[pid]["star"], False)
+
+    def test_star_route_needs_boolean_on_and_access(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        for body in ({}, {"on": "true"}, {"on": 1}, {"on": None}, {"on": []}):
+            self.assertEqual(self.call(f"/api/hub/project/{pid}/star", body, ann)[0], 400, body)
+        self.assertIs(self.listed(ann)[pid]["star"], False)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/star", {"on": True}, vic)[0], 403)     # чужой проект
+
+    def test_copy_creates_own_project_with_default_name(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann, "Участок")
+        s, _, j = self.call(f"/api/hub/project/{pid}/copy", {}, ann)
+        self.assertEqual(s, 200, j)
+        self.assertEqual(set(j), {"id", "rev"})
+        self.assertNotEqual(j["id"], pid)
+        row = self.listed(ann)[j["id"]]
+        self.assertEqual((row["name"], row["role"]), ("Участок — копия", "owner"))
+        s, _, j2 = self.call(f"/api/hub/project/{pid}/copy", {"name": "Моя"}, ann)
+        self.assertEqual(self.listed(ann)[j2["id"]]["name"], "Моя")
+        # зритель тоже может сделать копию, владельцем копии становится он
+        self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "viewer"}, ann)
+        s, _, j3 = self.call(f"/api/hub/project/{pid}/copy", {}, vic)
+        self.assertEqual(s, 200, j3)
+        self.assertEqual(self.listed(vic)[j3["id"]]["role"], "owner")
+        self.assertNotIn("vic", self.call(f"/api/hub/project/{pid}", cookie=ann)[2].get("members", {}))
+
+    def test_copy_into_foreign_team_is_403_and_needs_access(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(vic, "Мой")
+        self.call(f"/api/hub/project/{pid}/members", {"login": "ann", "role": "viewer"}, vic)
+        tid = self.call("/api/hub/teams", {"name": "Бюро"}, vic)[2]["id"]          # ann в этой команде нет
+        before = len(self.listed(ann))
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/copy", {"team": tid}, ann)[0], 403)
+        self.assertEqual(len(self.listed(ann)), before)
+        other = self.new_project(vic, "Закрытый")
+        self.assertEqual(self.call(f"/api/hub/project/{other}/copy", {}, ann)[0], 403)
+
+    def test_copy_keeps_the_small_hub_body_limit(self):
+        self.assertEqual(S.body_limit("/api/hub/project/" + "0" * 16 + "/copy"), S.MAX_HUB_BODY)
+        self.assertEqual(S.body_limit("/api/hub/join"), S.MAX_HUB_BODY)
+        self.assertEqual(S.body_limit("/api/hub/project/" + "0" * 16 + "/link"), S.MAX_HUB_BODY)
+        self.assertLess(S.MAX_HUB_BODY, S.MAX_PROJECT_BODY)
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        s, _, j = self.call(f"/api/hub/project/{pid}/copy", raw=b"{}", cookie=ann, headers={"Content-Length": str(S.MAX_HUB_BODY + 10)})    # заявлен больше 1 МБ: отказ до чтения
+        self.assertEqual(s, 413, j)
+
+    def link_on(self, cookie, pid, role="viewer"):
+        s, _, j = self.call(f"/api/hub/project/{pid}/link", {"role": role}, cookie)
+        self.assertEqual(s, 200, j)
+        return j["link"]["token"]
+
+    def test_link_join_gives_the_role(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", cookie=ann)[2], {"link": None, "users": []})
+        token = self.link_on(ann, pid, "viewer")
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", cookie=ann)[2]["link"], {"token": token, "role": "viewer"})
+        s, _, j = self.call("/api/hub/join", {"token": token}, vic)
+        self.assertEqual((s, j["id"], j["role"]), (200, pid, "viewer"), j)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[2]["role"], "viewer")
+        self.assertEqual(self.listed(ann)[pid]["link_role"], "viewer")
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", cookie=ann)[2]["users"][0]["login"], "vic")
+
+    def test_join_needs_a_session_and_a_token(self):
+        ann = self.login("ann")
+        pid = self.new_project(ann)
+        token = self.link_on(ann, pid)
+        self.assertEqual(self.call("/api/hub/join", {"token": token})[0], 401)
+        for body in ({}, {"token": 5}, {"token": ""}, {"token": "x" * 65}):
+            self.assertEqual(self.call("/api/hub/join", body, ann)[0], 400, body)
+
+    def test_only_owner_reads_and_changes_the_link(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", cookie=vic)[0], 403)          # посторонний
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", {"role": "viewer"}, vic)[0], 403)
+        self.call(f"/api/hub/project/{pid}/members", {"login": "vic", "role": "editor"}, ann)    # редактор — тоже не владелец
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", cookie=vic)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", {"role": "viewer"}, vic)[0], 403)
+        self.assertIsNone(self.call(f"/api/hub/project/{pid}/link", cookie=ann)[2]["link"])
+        stranger = self.new_project(vic, "Чужой")
+        self.assertEqual(self.call(f"/api/hub/project/{stranger}/link", cookie=ann)[0], 403)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", {"role": "owner"}, ann)[0], 400)
+        for body in ({}, {"rotate": True}):                       # без role ссылку не трогаем
+            self.assertEqual(self.call(f"/api/hub/project/{pid}/link", body, ann)[0], 400, body)
+        self.link_on(ann, pid)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}/link", {"role": "viewer", "rotate": "yes"}, ann)[0], 400)
+        self.assertIsNotNone(self.call(f"/api/hub/project/{pid}/link", cookie=ann)[2]["link"])
+
+    def test_link_rotate_kills_old_token_and_joined_access(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        old = self.link_on(ann, pid, "editor")
+        self.assertEqual(self.call("/api/hub/join", {"token": old}, vic)[2]["role"], "editor")
+        s, _, j = self.call(f"/api/hub/project/{pid}/link", {"role": "editor", "rotate": True}, ann)
+        self.assertEqual(s, 200, j)
+        self.assertNotEqual(j["link"]["token"], old)
+        self.assertEqual(self.call("/api/hub/join", {"token": old}, vic)[0], 404)
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 403)
+        self.assertEqual(self.call("/api/hub/join", {"token": j["link"]["token"]}, vic)[0], 200)      # новая ссылка работает
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[2]["role"], "editor")
+
+    def test_link_off_closes_access_and_the_event_stream(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        token = self.link_on(ann, pid)
+        self.assertEqual(self.call("/api/hub/join", {"token": token}, vic)[0], 200)
+        c, r, q = self.open_stream(pid, vic)
+        try:
+            self.assertEqual(q.get(timeout=3)["type"], "presence")
+            s, _, j = self.call(f"/api/hub/project/{pid}/link", {"role": None}, ann)
+            self.assertEqual((s, j), (200, {"link": None, "users": []}))
+            for _ in range(40):
+                if q.get(timeout=5) is None:
+                    break
+            else:
+                self.fail("поток остался открытым после отключения ссылки")
+        finally:
+            c.close()
+        self.assertEqual(self.call(f"/api/hub/project/{pid}", cookie=vic)[0], 403)
+        self.assertEqual(self.call("/api/hub/join", {"token": token}, vic)[0], 404)
+
+    def test_bad_join_tokens_are_throttled_apart_from_password_login(self):
+        ann, vic = self.login("ann"), self.login("vic")
+        for i in range(5):
+            self.assertEqual(self.call("/api/hub/join", {"token": f"nope{i}"}, vic)[0], 404, i)
+        s, _, j = self.call("/api/hub/join", {"token": "nope5"}, vic)
+        self.assertEqual(s, 429, j)
+        pid = self.new_project(ann)
+        token = self.link_on(ann, pid)
+        self.assertEqual(self.call("/api/hub/join", {"token": token}, vic)[0], 429)       # даже верная ссылка — позже
+        self.assertEqual(self.call("/api/hub/login", {"login": "vic", "password": "password-vic"})[0], 200)   # пароль не заблокирован
+        self.assertEqual(self.call("/api/hub/join", {"token": "nope"}, ann)[0], 404)       # другой логин со своим счётом
+
+    def test_join_token_never_reaches_the_server_log(self):
+        import io
+        ann, vic = self.login("ann"), self.login("vic")
+        pid = self.new_project(ann)
+        token = self.link_on(ann, pid)
+        bad = "BADTOKEN-" + "z" * 20
+        err = io.StringIO()
+        with mock.patch.object(S.sys, "stderr", err):
+            self.call("/api/hub/join", {"token": bad}, vic)
+            self.call("/api/hub/join", {"token": token}, vic)
+            self.call("/api/hub/join", raw=b'{"token": "' + bad.encode() + b'"', cookie=vic)       # битый JSON
+            self.call(f"/api/hub/project/{pid}/link", {"role": 5}, ann)
+        log = err.getvalue()
+        self.assertNotIn(token, log)
+        self.assertNotIn(bad, log)
+        self.assertNotIn(token, str(self.call("/api/hub/project/" + pid + "/activity", cookie=ann)[2]))
 
     def test_deeply_nested_json_is_a_plain_400(self):
         cookie = self.login("ann")

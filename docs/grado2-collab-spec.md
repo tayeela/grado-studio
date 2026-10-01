@@ -107,6 +107,54 @@ Client (hub.js)
 - Window «Доступ»: for a team project a first row «Вся команда «…»: редактирует / смотрит / нет доступа», then «Где
   лежит проект: Личные / команда …» (owner only), then the personal list as before. One role label table in hub.js.
 
+## Projects window and link access (added 2026-10-01, stage 2)
+Owner's decisions 01.10.2026: adding to a team stays immediate (no accept step); add search and order, «Сделать копию»
+and favourites to «Совместные проекты»; link access «для своих» — a link opens the project only for people who have an
+account, with the role chosen by the owner, and the link can be revoked.
+
+Search and order (client only): a search field filters rows by project name and team name (case-insensitive, «ё» = «е»);
+an order select «Недавние» (updated, newest first — today's order) / «По названию» (`localeCompare(a, b, "ru")`). Remembered per browser
+(localStorage, wrapped in try/catch). Groups stay; empty groups after filtering are hidden; «Ничего не найдено» when all are.
+
+Favourites: per person, stored in their own file `stars.json` `{login: [pid, …]}` (written under `self.lock` like
+`teams.json`, re-read in `_sync`; NOT in `users.json`, which the CLI rewrites from another process); cap `STARS_MAX = 500`;
+pids that no longer exist or are no longer accessible are ignored on read. `POST /api/hub/project/<pid>/star {on: bool}` (any
+role that can read) → `{star}`. `list_projects` items gain `star: bool`. The client shows a star toggle in each row and a
+group «Избранное» first; a starred project also stays in its own group (as in Google Drive and Miro).
+
+Copy: `POST /api/hub/project/<pid>/copy {name?, team?, team_access?}` (any role that can read the project — viewers
+can already download it). Creates a new project from the current `project.grado2` like `create_project` (creator is
+owner, quota and size checks apply, same team rules as creation), name default «<имя> — копия». Comments, history,
+activity, members, link and stars are NOT copied. The `PROJECTS_PER_USER` quota counts the copier (new meta.owner);
+copying into a team requires membership in it, as for creation. Activity of the new project: «copy» with the source name. → `{id, rev}`.
+Client: «Сделать копию» in the row actions; asks the name and «Где создать» (Личные / my teams), opens the copy.
+
+Link access (Google Docs style, accounts only):
+```
+meta.json + link: {token, role: "viewer"|"editor", created, by} | null,  link_users: [login, …]
+```
+- Owner role required to turn on/change/rotate/turn off: `POST /api/hub/project/<pid>/link {role: "viewer"|"editor"|null,
+  rotate?: bool}`. role null → link off and `link_users` cleared. rotate → new token and `link_users` cleared (people who
+  came by the old link lose access). Changing only the role keeps token and people. → `{link: {token, role} | null,
+  users:[{login,name}]}`.
+- Token `secrets.token_urlsafe(18)`; the page URL is `<origin>/#join=<token>` — in the fragment, so it never reaches the
+  server log or a Referer header. The token is never put into activity, logs or events.
+- `POST /api/hub/join {token}` (logged in) → finds the project whose `meta.link.token` matches (hmac.compare_digest);
+  adds the login to `link_users` (cap `LINK_USERS_MAX = 500`) → `{id, name, role}`. Unknown/revoked token → 404 «ссылка
+  недействительна или отключена»; failures are throttled with their OWN keys `("j", login)` and `("ji", ip)` (5 per login,
+  25 per IP per 15 min → 429), so bad links never lock the password login. Joining when a stronger role already exists is
+  harmless; such people are not shown under «Вошли по ссылке».
+- `_role` gains a third source: if `meta.link` is on and `login in meta.link_users` → `meta.link.role`. Strongest wins, as
+  before. Disabled users get nothing. Turning the link off, rotating it or lowering its role runs `_access_changed([pid])`.
+- `list_projects` items gain `link_role` (null when off) only for owners/admins, and link users see the project under
+  «Доступные мне». `GET /api/hub/project/<pid>/link` (owner) → `{link, users}` for the share window.
+- Client «Доступ»: a block «Доступ по ссылке»: select «выключен / по ссылке смотрят / по ссылке правят», the link in a
+  read-only field with «Скопировать», «Новая ссылка» (rotates, with a second-click confirm «Точно? Старая ссылка
+  перестанет работать»), and «Вошли по ссылке: …» names. Hint: «Ссылка работает только для тех, у кого есть учётная
+  запись в ГРАДО 2.» Opening `/#join=…`: without a session — the login screen, then the join continues (token kept in
+  sessionStorage and removed from the address bar with history.replaceState); with a session — join, open the project,
+  toast «Вы открыли проект по ссылке: <роль>».
+
 ## Sections (the unit of sync)
 The shared project is split into sections; personal state never leaves the client.
 - `meta` → `{name, territory, checked, groups, views, album, graph, imports, current_order}` where `current_order`

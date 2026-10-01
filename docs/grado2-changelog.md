@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-01, ГРАДО 2 v0.86.0: search, favourites, copy and link access in hub mode.** Owner's choices: search and
+  order, «Сделать копию», favourites and link access «для своих» now; adding to a team stays immediate. Contract first
+  (`docs/grado2-collab-spec.md`, «Projects window and link access»), checked with the advisor: the link token lives in
+  the URL fragment (`/#join=…`), so it never reaches the server log or a Referer; bad links have their own throttle keys
+  and never lock the password login; favourites live in `stars.json`, not in `users.json` rewritten by the CLI.
+  `hub.py`: `stars.json`, `copy_project` (shared `_make_project` with creation), `link`/`link_users` in meta as the third
+  source of the role in `_role` (strongest wins), `set_link`/`get_link`/`join`; turning the link off, rotating or
+  lowering it goes through `_access_changed`. Review debts of v0.85.0: team and meta writes are copy-then-assign, disabled
+  people do not count as owners, `list_teams` keeps a pid → team map instead of re-reading every project file. Routes
+  `…/star`, `…/copy`, `…/link` (GET/POST), `/api/hub/join`. Client: search field and order (remembered per browser),
+  star and group «Избранное», «Сделать копию» row form, block «Доступ по ссылке» with copy/rotate and «Вошли по ссылке»,
+  opening `/#join=…` through the login screen. `test_server.py` now points `PROJECTS` at a temp folder when
+  `GRADO2_PROJECTS` is unset (a run without it had written `zzz.grado2` into the owner's folder). Tests: `Stage2` in
+  `test_hub.py`, new `HubHttp` cases including «token never in the log», 19 new checks in the two-browser scenario.
+  After the review: a person whose role is already as strong as the link is not recorded as a link user (otherwise,
+  removed from members, they would keep access unseen by the owner); a star can be removed without access; the page
+  keeps the link token on network errors and «повторите позже», and drops it only on a final answer.
 - **2026-10-01, ГРАДО 2 v0.85.0: teams (workspaces) in hub mode.** Owner: «разные команды пользователей с доступами
   к разным проектам, как в Miro, Google Документах, Canva». Owner's decisions: new accounts still only by an admin
   invite, a new team project is edited by the whole team by default, link sharing later. Contract first

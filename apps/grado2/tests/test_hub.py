@@ -1529,5 +1529,448 @@ class Hardening(Base):
         own.close()
 
 
+class Stage2(Base):
+    """Этап 2: избранное, копия проекта, доступ по ссылке, долги разбора команд."""
+
+    def setUp(self):
+        super().setUp()
+        self.pid = self.new_project(sample_project())
+        self.tid = self.hub.create_team(self.owner, "Отдел")["id"]
+        self.hub.set_team_member(self.owner, self.tid, "editor", "member")
+
+    def patch(self, **kw):
+        for k, v in kw.items():
+            old = getattr(hub, k)
+            setattr(hub, k, v)
+            self.addCleanup(setattr, hub, k, old)
+
+    def status(self, fn):
+        with self.assertRaises(HubError) as c:
+            fn()
+        return c.exception.status
+
+    def drain(self, sub):
+        out = []
+        while (ev := sub.get(0)) is not None:
+            out.append(ev["type"])
+        return out
+
+    def item(self, user, pid):
+        return next(p for p in self.hub.list_projects(user) if p["id"] == pid)
+
+    # ----- A.1: память меняется только после записи -----
+
+    def test_failed_team_write_leaves_memory_untouched(self):
+        h = self.hub
+        orig = h._save
+
+        def boom(name, data):
+            raise OSError("диск полон")
+        h._save = boom
+        try:
+            before = json.dumps(h.teams, sort_keys=True)
+            for fn in (lambda: h.create_team(self.owner, "Ещё"),
+                       lambda: h.rename_team(self.owner, self.tid, "Другое"),
+                       lambda: h.set_team_member(self.owner, self.tid, "viewer", "member"),
+                       lambda: h.delete_team(self.owner, self.tid)):
+                with self.assertRaises(OSError):
+                    fn()
+                self.assertEqual(json.dumps(h.teams, sort_keys=True), before)
+        finally:
+            h._save = orig
+
+    def test_failed_meta_write_leaves_meta_untouched(self):
+        h = self.hub
+        orig = h._save_meta
+
+        def boom(pid, meta):
+            raise OSError("диск полон")
+        h._save_meta = boom
+        try:
+            with self.assertRaises(OSError):
+                h.set_member(self.owner, self.pid, "stranger", "viewer")
+        finally:
+            h._save_meta = orig
+        self.assertNotIn("stranger", h._meta(self.pid)["members"])
+
+    # ----- A.2: отключённые владельцы команды -----
+
+    def test_disabled_team_owner_does_not_count(self):
+        h = self.hub
+        h.set_team_member(self.owner, self.tid, "editor", "owner")
+        pid = h.create_project(self.owner, "Командный", None, self.tid)["id"]
+        h.update_user(self.admin, "editor", disabled=True)
+        self.assertIsNone(h.role_of({"login": "editor"}, pid))
+        # последний активный владелец команды: нельзя разжаловать, хотя второй владелец отключён
+        self.assertEqual(self.status(lambda: h.set_team_member(self.owner, self.tid, "owner", "member")), 400)
+        # в проекте владельцев: личный owner и активный владелец команды owner; убрать личного можно, пока команда держит
+        h.set_member(self.owner, pid, "owner", None)
+        h.update_user(self.admin, "editor", disabled=False)
+
+    def test_team_with_only_disabled_owner_still_managed_by_admin(self):
+        h = self.hub
+        tid = h.create_team(self.editor, "Чужая")["id"]
+        h.update_user(self.admin, "editor", disabled=True)                  # единственный владелец отключён
+        h.set_team_member(self.admin, tid, "viewer", "member")              # админ правит команду без активного владельца
+        h.set_team_member(self.admin, tid, "owner", "owner")                # назначает активного владельца
+        team = next(t for t in h.list_teams(self.admin) if t["id"] == tid)
+        roles = {m["login"]: m["role"] for m in team["members"]}
+        self.assertEqual(roles, {"editor": "owner", "viewer": "member", "owner": "owner"})
+        h.set_team_member(self.admin, tid, "editor", None)                  # убрать отключённого, активный уже есть
+        self.assertEqual(self.status(lambda: h.set_team_member(self.admin, tid, "owner", None)), 400)
+
+    def test_project_last_owner_ignores_disabled_team_owner(self):
+        h = self.hub
+        tid = h.create_team(self.editor, "К")["id"]
+        h.set_team_member(self.editor, tid, "owner", "member")
+        pid = h.create_project(self.owner, "П", None, tid)["id"]
+        h.update_user(self.admin, "editor", disabled=True)                  # единственный владелец команды отключён
+        self.assertEqual(self.status(lambda: h.set_member(self.owner, pid, "owner", None)), 400)
+
+    # ----- A.3: карта проект -> команда -----
+
+    def test_list_teams_uses_map_without_rereading_meta(self):
+        h = self.hub
+        pid = h.create_project(self.owner, "К", None, self.tid)["id"]
+        self.assertEqual(h.list_teams(self.owner)[0]["projects"], 1)
+        calls = []
+        orig = h._meta
+        h._meta = lambda p: (calls.append(p), orig(p))[1]
+        try:
+            self.assertEqual(h.list_teams(self.owner)[0]["projects"], 1)
+            self.assertEqual(calls, [])
+            h.set_project_team(self.owner, pid, None, None)
+            self.assertEqual(h.list_teams(self.owner)[0]["projects"], 0)
+            h.set_project_team(self.owner, pid, self.tid, "view")
+            self.assertEqual(h.list_teams(self.owner)[0]["projects"], 1)
+        finally:
+            h._meta = orig
+        h.delete_project(self.owner, pid)
+        self.assertEqual(h.list_teams(self.owner)[0]["projects"], 0)
+
+    def test_map_rebuilds_when_project_added_outside(self):
+        h = self.hub
+        h.list_teams(self.owner)
+        other = Hub(h.root)                                                  # «другой процесс» создаёт проект команды
+        pid = other.create_project(self.owner, "Снаружи", None, self.tid)["id"]
+        self.assertEqual(h.list_teams(self.owner)[0]["projects"], 1)
+        self.assertTrue(pid)
+
+    # ----- A.4: понижение владельца команды, личная роль -----
+
+    def test_demoted_team_owner_keeps_stream_and_gets_members(self):
+        h = self.hub
+        h.set_team_member(self.owner, self.tid, "editor", "owner")
+        pid = h.create_project(self.owner, "К", None, self.tid)["id"]
+        sub = h.subscribe(self.editor, pid)
+        self.drain(sub)
+        h.set_team_member(self.owner, self.tid, "editor", "member")
+        self.assertFalse(sub.closed)
+        self.assertEqual(h.role_of(self.editor, pid), "editor")
+        self.assertIn("members", self.drain(sub))
+        sub.close()
+
+    def test_personal_role_survives_team_access_none(self):
+        h = self.hub
+        pid = h.create_project(self.owner, "К", None, self.tid)["id"]
+        h.set_member(self.owner, pid, "editor", "viewer")
+        h.set_project_team(self.owner, pid, self.tid, "none")
+        self.assertEqual(h.role_of(self.editor, pid), "viewer")
+        sub = h.subscribe(self.editor, pid)
+        h.set_project_team(self.owner, pid, self.tid, "none")
+        self.assertFalse(sub.closed)
+        sub.close()
+
+    # ----- B: избранное -----
+
+    def test_star_roundtrip_and_persistence(self):
+        h = self.hub
+        self.assertFalse(self.item(self.editor, self.pid)["star"])
+        self.assertEqual(h.set_star(self.editor, self.pid, True), {"star": True})
+        self.assertTrue(self.item(self.editor, self.pid)["star"])
+        self.assertFalse(self.item(self.owner, self.pid)["star"])           # у каждого своё
+        self.assertTrue(Hub(h.root)._stars_of("editor") == {self.pid})
+        self.assertEqual(h.set_star(self.editor, self.pid, False), {"star": False})
+        self.assertFalse(self.item(self.editor, self.pid)["star"])
+        self.assertEqual(self.status(lambda: h.set_star(self.stranger, self.pid, True)), 403)
+        self.assertEqual(self.status(lambda: h.set_star(self.editor, self.pid, "yes")), 400)
+
+    def test_star_cap(self):
+        self.patch(STARS_MAX=2)
+        h = self.hub
+        p2 = self.new_project()
+        p3 = self.new_project()
+        h.set_star(self.owner, self.pid, True)
+        h.set_star(self.owner, p2, True)
+        self.assertEqual(self.status(lambda: h.set_star(self.owner, p3, True)), 400)
+        h.set_star(self.owner, p2, True)                                     # повторное добавление того же — не рост
+        h.set_star(self.owner, p2, False)
+        h.set_star(self.owner, p3, True)
+
+    def test_star_ignores_deleted_and_inaccessible(self):
+        h = self.hub
+        p2 = self.new_project()
+        h.set_star(self.editor, self.pid, True)
+        h.set_star(self.editor, p2, True)
+        h.delete_project(self.owner, p2)
+        h.set_member(self.owner, self.pid, "editor", None)
+        self.assertEqual(h.list_projects(self.editor), [])
+        h.set_member(self.owner, self.pid, "editor", "editor")
+        self.assertTrue(self.item(self.editor, self.pid)["star"])            # вернули доступ — звезда на месте
+        p4 = self.new_project()
+        h.set_star(self.editor, p4, True)                                    # запись чистит исчезнувшие
+        self.assertEqual(h._stars_of("editor"), {self.pid, p4})
+
+    # ----- C: копия -----
+
+    def test_copy_basic(self):
+        h = self.hub
+        h.add_comment(self.owner, self.pid, "замечание", {"lonlat": [37.6, 55.7]})
+        h.push(self.editor, self.pid, 1, {"layer:c": layer_section("c", "u9")}, "c1")
+        out = h.copy_project(self.viewer, self.pid)                          # зритель тоже может копировать
+        cp = out["id"]
+        self.assertEqual(out["rev"], 1)
+        self.assertNotEqual(cp, self.pid)
+        got = h.get_project(self.viewer, cp)
+        self.assertEqual(got["name"], "Проект — копия")
+        self.assertEqual(got["role"], "owner")
+        self.assertIn("layer:c", got["sections"])                            # текущее содержимое, с правкой editor
+        self.assertEqual(h.comments(self.viewer, cp), [])
+        self.assertEqual(h.history(self.viewer, cp), [])
+        meta = h._meta(cp)
+        self.assertEqual((meta["members"], meta["owner"], meta.get("link"), meta.get("link_users")),
+                         ({"viewer": "owner"}, "viewer", None, None))
+        self.assertEqual([(a["action"], a["detail"]) for a in h.activity(self.viewer, cp)], [("copy", "Проект")])
+        self.assertEqual(h.role_of(self.owner, cp), None)                    # владелец исходника в копии не участвует
+        self.assertEqual(h.get_project(self.owner, self.pid)["rev"], 2)      # исходник не тронут
+        named = h.copy_project(self.owner, self.pid, "  Мой   вариант ")
+        self.assertEqual(h.get_project(self.owner, named["id"])["name"], "Мой вариант")
+        self.assertEqual(h.get_project(self.owner, h.copy_project(self.owner, self.pid, "  ")["id"])["name"], "Проект — копия")
+        self.assertEqual(self.status(lambda: h.copy_project(self.stranger, self.pid)), 403)
+        long_pid = h.create_project(self.owner, "Д" * 60)["id"]
+        self.assertTrue(h.get_project(self.owner, h.copy_project(self.owner, long_pid)["id"])["name"].endswith(" — копия"))
+
+    def test_copy_into_team_requires_membership(self):
+        h = self.hub
+        self.assertEqual(self.status(lambda: h.copy_project(self.viewer, self.pid, team=self.tid)), 403)
+        out = h.copy_project(self.editor, self.pid, team=self.tid, team_access="view")
+        meta = h._meta(out["id"])
+        self.assertEqual((meta["team"], meta["team_access"], meta["owner"]), (self.tid, "view", "editor"))
+        self.assertEqual(self.status(lambda: h.copy_project(self.editor, self.pid, team=self.tid, team_access="bad")), 400)
+        self.assertEqual(self.status(lambda: h.copy_project(self.editor, self.pid, team="f" * 16)), 404)
+
+    def test_copy_counts_quota_on_copier(self):
+        self.patch(PROJECTS_PER_USER=2)
+        h = self.hub
+        h.copy_project(self.viewer, self.pid)
+        h.copy_project(self.viewer, self.pid)
+        self.assertEqual(self.status(lambda: h.copy_project(self.viewer, self.pid)), 400)
+        h.copy_project(self.owner, self.pid)                                 # у владельца исходника квота своя
+
+    # ----- D: ссылка -----
+
+    def link(self, role="viewer"):
+        return self.hub.set_link(self.owner, self.pid, role)["link"]["token"]
+
+    def test_link_role_and_state(self):
+        h = self.hub
+        self.assertEqual(h.get_link(self.owner, self.pid), {"link": None, "users": []})
+        self.assertIsNone(self.item(self.owner, self.pid)["link_role"])
+        res = h.set_link(self.owner, self.pid, "viewer")
+        tok = res["link"]["token"]
+        self.assertEqual((res["link"]["role"], res["users"]), ("viewer", []))
+        self.assertGreaterEqual(len(tok), 20)
+        self.assertEqual(self.item(self.owner, self.pid)["link_role"], "viewer")
+        self.assertIsNone(self.item(self.editor, self.pid)["link_role"])    # только владельцу и админу
+        self.assertEqual(self.status(lambda: h.set_link(self.editor, self.pid, "editor")), 403)
+        self.assertEqual(self.status(lambda: h.get_link(self.editor, self.pid)), 403)
+        self.assertEqual(self.status(lambda: h.set_link(self.owner, self.pid, "owner")), 400)
+        self.assertIsNone(h.role_of(self.stranger, self.pid))
+        self.assertEqual(h.join(self.stranger, tok, "1.1.1.1"),
+                         {"id": self.pid, "name": "Проект", "role": "viewer"})
+        self.assertEqual(h.role_of(self.stranger, self.pid), "viewer")
+        self.assertEqual(self.item(self.stranger, self.pid)["role"], "viewer")
+        self.assertIsNone(self.item(self.stranger, self.pid)["link_role"])
+        self.assertEqual(h.get_link(self.owner, self.pid)["users"], [{"login": "stranger", "name": "Чужой"}])
+        self.assertEqual(self.status(lambda: h.push(self.stranger, self.pid, 1, {"layer:z": layer_section("z")}, "c1")), 403)
+        h.join(self.stranger, tok, "1.1.1.1")                                # повторный вход не дублирует
+        self.assertEqual(h._meta(self.pid)["link_users"], ["stranger"])
+        h.set_link(self.owner, self.pid, "editor")                           # смена роли: токен и люди те же
+        self.assertEqual(h.get_link(self.owner, self.pid)["link"]["token"], tok)
+        self.assertEqual(h.role_of(self.stranger, self.pid), "editor")
+        self.assertEqual(h.push(self.stranger, self.pid, 1, {"layer:z": layer_section("z")}, "c1")["rev"], 2)
+
+    def test_link_strongest_wins(self):
+        h = self.hub
+        tok = self.link("viewer")
+        h.join(self.editor, tok, "1.1.1.1")                                  # у editor личная роль editor
+        self.assertEqual(h.role_of(self.editor, self.pid), "editor")
+        h.set_link(self.owner, self.pid, "editor")
+        h.join(self.viewer, h.get_link(self.owner, self.pid)["link"]["token"], "1.1.1.1")
+        self.assertEqual(h.role_of(self.viewer, self.pid), "editor")         # ссылка сильнее личного viewer
+        h.set_link(self.owner, self.pid, None)
+        self.assertEqual(h.role_of(self.viewer, self.pid), "viewer")
+        # команда: member с доступом view по ссылке-редактору становится редактором
+        tp = h.create_project(self.owner, "К", None, self.tid, "view")["id"]
+        t2 = h.set_link(self.owner, tp, "editor")["link"]["token"]
+        h.join(self.editor, t2, "1.1.1.1")
+        self.assertEqual(h.role_of(self.editor, tp), "editor")
+        h.set_link(self.owner, tp, "viewer")
+        self.assertEqual(h.role_of(self.editor, tp), "viewer")
+        # люди с личной или командной ролью не показываются под «Вошли по ссылке»
+        self.assertEqual(h.get_link(self.owner, tp)["users"], [])
+
+    def test_join_with_stronger_role_is_not_recorded(self):
+        h = self.hub
+        tok = self.link("viewer")
+        r = h.join(self.editor, tok, "1.1.1.1")                              # личная роль editor сильнее ссылки
+        self.assertEqual(r["role"], "editor")
+        self.assertNotIn("editor", h._meta(self.pid).get("link_users") or [])
+        h.set_member(self.owner, self.pid, "editor", None)                   # убрали из участников — доступа нет
+        self.assertIsNone(h.role_of(self.editor, self.pid))
+
+    def test_unstar_without_access(self):
+        h = self.hub
+        h.set_star(self.editor, self.pid, True)
+        h.set_member(self.owner, self.pid, "editor", None)
+        self.assertEqual(h.set_star(self.editor, self.pid, False), {"star": False})
+        self.assertNotIn(self.pid, h._stars_of("editor"))
+        self.assertEqual(self.status(lambda: h.set_star(self.editor, self.pid, True)), 403)
+        self.assertEqual(self.status(lambda: h.set_star(self.editor, "../x", False)), 400)   # не id проекта
+
+    def test_link_off_closes_stream(self):
+        h = self.hub
+        tok = self.link("viewer")
+        h.join(self.stranger, tok, "1.1.1.1")
+        sub = h.subscribe(self.stranger, self.pid)
+        self.drain(sub)
+        h.set_link(self.owner, self.pid, None)
+        self.assertTrue(sub.closed)
+        self.assertIsNone(h.role_of(self.stranger, self.pid))
+        self.assertEqual(h.list_projects(self.stranger), [])
+        self.assertEqual(h._meta(self.pid)["link_users"], [])
+        self.assertEqual(self.status(lambda: h.join(self.stranger, tok, "1.1.1.1")), 404)
+
+    def test_link_rotate(self):
+        h = self.hub
+        tok = self.link("editor")
+        h.join(self.stranger, tok, "1.1.1.1")
+        sub = h.subscribe(self.stranger, self.pid)
+        new = h.set_link(self.owner, self.pid, "editor", rotate=True)
+        self.assertNotEqual(new["link"]["token"], tok)
+        self.assertEqual(new["users"], [])
+        self.assertTrue(sub.closed)
+        self.assertIsNone(h.role_of(self.stranger, self.pid))
+        self.assertEqual(self.status(lambda: h.join(self.stranger, tok, "1.1.1.1")), 404)
+        self.assertEqual(h.join(self.stranger, new["link"]["token"], "1.1.1.1")["role"], "editor")
+
+    def test_link_lower_role_keeps_stream_and_notifies(self):
+        h = self.hub
+        tok = self.link("editor")
+        h.join(self.stranger, tok, "1.1.1.1")
+        sub = h.subscribe(self.stranger, self.pid)
+        self.drain(sub)
+        h.set_link(self.owner, self.pid, "viewer")
+        self.assertFalse(sub.closed)
+        self.assertIn("members", self.drain(sub))
+        self.assertEqual(h.role_of(self.stranger, self.pid), "viewer")
+        sub.close()
+
+    def test_join_publishes_members(self):
+        h = self.hub
+        tok = self.link()
+        sub = h.subscribe(self.owner, self.pid)
+        self.drain(sub)
+        h.join(self.stranger, tok, "1.1.1.1")
+        self.assertEqual(self.drain(sub), ["members"])
+        sub.close()
+
+    def test_join_validation_and_throttle_keys(self):
+        h = self.hub
+        tok = self.link()
+        for bad in (None, 5, "", "x" * 65):
+            self.assertEqual(self.status(lambda: h.join(self.stranger, bad, "1.1.1.1")), 400)
+        for _ in range(5):
+            self.assertEqual(self.status(lambda: h.join(self.stranger, "нет-такой", "1.1.1.1")), 404)
+        self.assertEqual(self.status(lambda: h.join(self.stranger, tok, "1.1.1.1")), 429)   # даже верная — после лимита
+        self.assertEqual(h.login("stranger", PW, "1.1.1.1")[1]["login"], "stranger")        # пароль не заблокирован
+        self.assertNotIn(("l", "stranger"), h._fails)
+        self.assertEqual(h.join(self.owner, tok, "1.1.1.1")["role"], "owner")               # другой логин с того же IP жив
+        self.tick(hub.FAIL_WINDOW + 1)
+        self.assertEqual(h.join(self.stranger, tok, "1.1.1.1")["role"], "viewer")
+
+    def test_join_throttle_per_ip_and_password_does_not_block_join(self):
+        h = self.hub
+        tok = self.link()
+        for i in range(25):
+            u = h.create_user(f"guest{i:02d}", PW)
+            self.assertEqual(self.status(lambda: h.join(u, "нет-такой", "9.9.9.9")), 404)
+        self.assertEqual(self.status(lambda: h.join(self.stranger, tok, "9.9.9.9")), 429)
+        h2 = Hub(h.root)
+        for _ in range(5):
+            self.assertEqual(self.status(lambda: h2.login("viewer", "wrong-password", "8.8.8.8")), 401)
+        self.assertEqual(self.status(lambda: h2.login("viewer", PW, "8.8.8.8")), 429)       # пароль заблокирован...
+        self.assertEqual(h2.join(self.viewer, tok, "8.8.8.8")["role"], "viewer")            # ...а ссылка — нет
+
+    def test_token_never_in_activity_or_events(self):
+        h = self.hub
+        sub = h.subscribe(self.owner, self.pid)
+        tok = self.link("viewer")
+        h.set_link(self.owner, self.pid, "editor")
+        new = h.set_link(self.owner, self.pid, "editor", rotate=True)["link"]["token"]
+        h.join(self.stranger, new, "1.1.1.1")
+        h.set_link(self.owner, self.pid, None)
+        raw = (h._pdir(self.pid) / "activity.json").read_text(encoding="utf-8")
+        self.assertNotIn(tok, raw)
+        self.assertNotIn(new, raw)
+        acts = [(a["action"], a["detail"]) for a in h.activity(self.owner, self.pid) if a["action"] == "link"]
+        self.assertEqual(acts, [("link", "off"), ("link", "editor"), ("link", "editor"), ("link", "viewer")])
+        self.assertNotIn(tok, json.dumps(self.drain_events(sub)))
+        sub.close()
+        with self.assertRaises(HubError) as c:
+            h.join(self.stranger, tok, "1.1.1.1")
+        self.assertNotIn(tok, c.exception.message)
+
+    def drain_events(self, sub):
+        out = []
+        while (ev := sub.get(0)) is not None:
+            out.append(ev)
+        return out
+
+    def test_disabled_user_joined_by_link_has_no_role(self):
+        h = self.hub
+        tok = self.link()
+        h.join(self.stranger, tok, "1.1.1.1")
+        h.update_user(self.admin, "stranger", disabled=True)
+        self.assertIsNone(h.role_of({"login": "stranger"}, self.pid))
+        self.assertEqual(self.status(lambda: h.join(self.stranger, tok, "1.1.1.1")), 401)
+
+    def test_link_users_cap(self):
+        self.patch(LINK_USERS_MAX=1)
+        h = self.hub
+        tok = self.link("editor")                    # ссылка сильнее личного viewer: viewer займёт место в списке
+        h.join(self.stranger, tok, "1.1.1.1")
+        h.join(self.stranger, tok, "1.1.1.1")                                # уже в списке — не рост
+        self.assertEqual(self.status(lambda: h.join(self.viewer, tok, "1.1.1.1")), 400)
+
+    def test_link_survives_commit_and_old_meta(self):
+        h = self.hub
+        tok = self.link()
+        h.join(self.stranger, tok, "1.1.1.1")
+        h.push(self.editor, self.pid, 1, {"layer:z": layer_section("z")}, "c1")
+        h.rename_project(self.owner, self.pid, "Новое")
+        h.add_comment(self.owner, self.pid, "т", {"lonlat": [1, 1]})
+        meta = h._meta(self.pid)
+        self.assertEqual((meta["link"]["token"], meta["link_users"]), (tok, ["stranger"]))
+        self.assertEqual(Hub(h.root).role_of(self.stranger, self.pid), "viewer")
+        self.assertEqual(h.join(self.stranger, tok, "1.1.1.1")["name"], "Новое")
+
+    def test_admin_manages_link(self):
+        h = self.hub
+        tok = h.set_link(self.admin, self.pid, "viewer")["link"]["token"]
+        self.assertEqual(h.get_link(self.admin, self.pid)["link"]["token"], tok)
+        self.assertEqual(self.item(self.admin, self.pid)["link_role"], "viewer")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1417,6 +1417,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"history": HUB.history(u, pid)})
         if rest == "activity":
             return self._json(200, {"activity": HUB.activity(u, pid)})
+        if rest == "link":
+            return self._json(200, HUB.get_link(u, pid))
         return self._json(404, {"error": "no such method"})
 
     def _hub_events(self, user, pid):
@@ -1481,6 +1483,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, HUB.create_project(u, req.get("name"), req.get("project"), req.get("team"), req.get("team_access")))
         if path == "/api/hub/teams":
             return self._json(200, HUB.create_team(u, req.get("name")))
+        if path == "/api/hub/join":            # токен ссылки — только в теле запроса, не в адресе (адрес попадает в журнал)
+            return self._json(200, HUB.join(u, req.get("token"), ip))
         tm = HUB_TEAM_RE.fullmatch(path)
         if tm:
             tid, act = unquote(tm.group(1)), tm.group(2) or ""
@@ -1513,6 +1517,16 @@ class Handler(SimpleHTTPRequestHandler):
             if "team" not in req:                  # null = «Личные»; пропуск поля не должен переносить проект
                 raise hubmod.HubError(400, "укажите team: id команды или null")
             return self._json(200, HUB.set_project_team(u, pid, req["team"], req.get("team_access")))
+        if rest == "star":
+            if not isinstance(req.get("on"), bool):
+                raise hubmod.HubError(400, "укажите on: true или false")
+            return self._json(200, HUB.set_star(u, pid, req["on"]))
+        if rest == "copy":                     # тело короткое (имя, команда): предел 1 МБ, сам проект копируется на сервере
+            return self._json(200, HUB.copy_project(u, pid, req.get("name"), req.get("team"), req.get("team_access")))
+        if rest == "link":
+            if "role" not in req:                  # null = «выключить»; пропуск поля не должен гасить ссылку
+                raise hubmod.HubError(400, "укажите role: viewer, editor или null")
+            return self._json(200, HUB.set_link(u, pid, req["role"], req.get("rotate", False)))
         if rest == "presence":
             HUB.presence(u, pid, req.get("client"), req.get("cursor"), req.get("layer"), req.get("sel"))
             return self._json(200, {"ok": True})

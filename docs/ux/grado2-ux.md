@@ -216,4 +216,12 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   count as team owners, so a team whose only owner is disabled is managed by the admin only. (4) Test gaps: demoting a
   team owner to member keeps the stream; personal role plus team access «none». Projects window: list_teams reads
   every project file to count team projects — fine for tens of projects, cache team ids if the hub grows.
+- 2026-10-01 (v0.86.0, link access, favourites, copy): open points, not fixed. (1) People who came by a link stay in
+  `link_users` until the link is rotated or turned off; disabled accounts stay there and count toward the cap of 500,
+  and an account the admin re-enables gets its link access back. (2) While a login is throttled for bad links, a valid
+  link also answers 429 until the window passes. (3) The pid → team map goes stale if `meta.json` is edited outside the
+  server (a restart fixes it). (4) `test_server.py` guard: temp folders are not cleaned; an explicitly set
+  `GRADO2_HUB_DIR` is outside the guard. (5) After a 429 the page retries the stored link on each reload until the tab is
+  closed. (6) People without the owner role see only «Включать и выключать ссылку может только владелец проекта», not
+  whether a link is on.
 

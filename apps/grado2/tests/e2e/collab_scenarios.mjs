@@ -34,7 +34,9 @@ async function launch(name) {
       // 409 на отправку — штатный конфликт одновременных правок: клиент сводит правки и отправляет снова
       && !(/\/api\/hub\/project\/[0-9a-f]+\/push$/.test(m.params.entry.url || "") && /\b409\b/.test(m.params.entry.text))
       // 400 на удаление команды с проектами — ожидаемый отказ сервера (шаг 8 «команды»)
-      && !(/\/api\/hub\/team\/[0-9a-f]+\/delete$/.test(m.params.entry.url || "") && /\b400\b/.test(m.params.entry.text))) logs.push(name + " log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
+      && !(/\/api\/hub\/team\/[0-9a-f]+\/delete$/.test(m.params.entry.url || "") && /\b400\b/.test(m.params.entry.text))
+      // 404 на вход по старой (заменённой) ссылке — ожидаемый отказ сервера (этап 2, шаг 5)
+      && !(/\/api\/hub\/join$/.test(m.params.entry.url || "") && /\b404\b/.test(m.params.entry.text))) logs.push(name + " log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
     if (m.method === "Runtime.exceptionThrown") logs.push(name + " EXCEPTION: " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text)); };
   await send("Runtime.enable"); await send("Page.enable"); await send("Log.enable");
   await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -359,6 +361,106 @@ try {
   await A.until(`return /есть проекты/.test($("toast").textContent)`, "сообщение «есть проекты»", 6000);
   check(await A.ev(`return /Бюро 1/.test($("hubTeamsBody").textContent)`), "A: «Удалить команду» с проектом внутри — сообщение «в команде есть проекты», команда осталась");
   await hideWin(A, "wTeams");
+
+  // ---------- этап 2: поиск, избранное, ссылка, копия ----------
+  const rowOf = name => `[...document.querySelectorAll("#hubProjList tbody tr")].find(r=>r.querySelector("td.nm")?.title===${JSON.stringify(name)})`;
+  const rowPid = async (P, name) => P.ev(`const r=${rowOf(name)}; return r?r.querySelector('[data-act="star"]').dataset.id:null`);
+  const groupsOf = P => P.ev(`return [...document.querySelectorAll("#hubProjList tbody")].map(t=>({t:t.querySelector(".hubsec")?.textContent, rows:[...t.querySelectorAll("td.nm")].map(e=>e.title)}))`);
+  const ELKA = "Ёлка тест";
+
+  // 1. A создаёт личный проект «Ёлка тест» и ищет его
+  await showWin(A, "#hubProjBtn", "wHubProjects");
+  await A.ev(`const s=$("hubNewTeam"); s.value=""; s.dispatchEvent(new Event("change",{bubbles:true})); return 1`);
+  await A.fill("#hubNewName", ELKA); await A.clickEl("#hubNew");
+  await A.until(`return Collab.pid && $("hubProjName").textContent==${JSON.stringify(ELKA)} && $("wHubProjects").hidden`, "проект «Ёлка тест» создан и открыт");
+  await showWin(A, "#hubProjBtn", "wHubProjects");
+  await A.until(`return !!${rowOf(ELKA)}`, "«Ёлка тест» в списке A");
+  await A.fill("#hubQ", "елка");
+  await A.until(`return !!${rowOf(ELKA)} && !${rowOf("Проверка")} && !/Ничего не найдено/.test($("hubProjList").textContent)`, "поиск «елка»: виден только «Ёлка тест»");
+  check(await A.ev(`return !!${rowOf(ELKA)} && !${rowOf("Командный проект")}`), "A: поиск «елка» (без «ё») находит «Ёлка тест» и скрывает остальные");
+  await A.fill("#hubQ", "zzzz");
+  await A.until(`return /Ничего не найдено/.test($("hubProjList").textContent)`, "«Ничего не найдено»");
+  check(await A.ev(`return !document.querySelector("#hubProjList table")`), "A: поиск «zzzz» — «Ничего не найдено», таблицы нет");
+  await A.fill("#hubQ", "елка");
+  await A.until(`return !!${rowOf(ELKA)}`, "поиск вернул «Ёлка тест»");
+  await A.shot("16-A-poisk.png");
+  await A.fill("#hubQ", ""); await A.key("Backspace", "Backspace", { vk: 8 });
+  await A.until(`return $("hubQ").value==="" && !!${rowOf("Проверка")} && !!${rowOf(ELKA)}`, "поиск очищен, видны все проекты");
+  check(true, "A: поиск очищен — в списке снова все проекты");
+
+  // 2. избранное
+  const starSel = pid => `#hubProjList [data-act="star"][data-id="${pid}"]`;
+  const elkaPid = await rowPid(A, ELKA);
+  check(!!elkaPid, "A: id проекта «Ёлка тест» найден в списке");
+  await A.clickEl(starSel(elkaPid));
+  await A.until(`return document.querySelector("#hubProjList .hubsec")?.textContent==="Избранное"`, "группа «Избранное» появилась первой");
+  { const g = await groupsOf(A);
+    check(g[0].t === "Избранное" && g[0].rows.includes(ELKA), "A: «Избранное» первая группа и содержит «Ёлка тест»");
+    check(g.some(x => x.t === "Личные" && x.rows.includes(ELKA)), "A: «Ёлка тест» осталась и в группе «Личные»"); }
+  await A.shot("17-A-izbrannoe.png");
+  await A.clickEl(starSel(elkaPid));
+  await A.until(`return ![...document.querySelectorAll("#hubProjList .hubsec")].some(e=>e.textContent==="Избранное")`, "группа «Избранное» исчезла");
+  check(true, "A: звезда снята — группы «Избранное» нет");
+  await hideWin(A, "wHubProjects");
+
+  // 3. ссылка «по ссылке смотрят»: B заходит по ней
+  await showWin(A, "#hubShareBtn", "wShare");
+  await A.until(`return !!document.querySelector('#hubShareBody select[data-act="linkrole"]')`, "блок «Доступ по ссылке»");
+  check(await A.ev(`return /Доступ по ссылке/.test($("hubShareBody").textContent) && document.querySelector('#hubShareBody select[data-act="linkrole"]').value==="" && !$("hubLinkUrl")`), "A: ссылка по умолчанию выключена, поля со ссылкой нет");
+  const setLinkRole = (P, v) => P.ev(`const s=document.querySelector('#hubShareBody select[data-act="linkrole"]'); s.value=${JSON.stringify(v)}; s.dispatchEvent(new Event("change",{bubbles:true})); return 1`);
+  await setLinkRole(A, "viewer");
+  await A.until(`return !!$("hubLinkUrl") && /#join=/.test($("hubLinkUrl").value)`, "поле со ссылкой появилось");
+  const link1 = await A.ev(`return $("hubLinkUrl").value`);
+  check(await A.ev(`return $("hubLinkUrl").readOnly && document.querySelector('#hubShareBody select[data-act="linkrole"]').selectedOptions[0].textContent==="по ссылке смотрят" && /Новая ссылка/.test($("hubShareBody").textContent)`), "A: «по ссылке смотрят», ссылка в поле только для чтения, есть «Новая ссылка»");
+  await A.shot("18-A-dostup-ssylka.png");
+  await B.go(link1);
+  await B.until(`return Collab.pid && Collab.role==="viewer" && $("wHubProjects").hidden`, "B открыл проект по ссылке", 12000);
+  await B.shot("19-B-po-ssylke.png");
+  check(await B.ev(`return $("hubProjName").textContent==${JSON.stringify(ELKA)} && $("hubRole").textContent==="просмотр" && document.body.classList.contains("hub-viewer")`), "B: по ссылке попал в «Ёлка тест», роль «просмотр»");
+  check(await B.ev(`return !/join=/.test(location.href)`), "B: в адресной строке нет «join=»");
+  check(await B.ev(`return /по ссылке/.test($("toast").textContent)`), "B: тост «Вы открыли проект по ссылке»");
+
+  // 4. «по ссылке правят» — у B открытый проект становится редактируемым
+  await setLinkRole(A, "editor");
+  await B.until(`return Collab.role==="editor" && !document.body.classList.contains("hub-viewer")`, "B: проект стал редактируемым", 8000);
+  check(await B.ev(`return $("hubRole").textContent==="правка" && !document.body.classList.contains("hub-viewer")`), "B: «по ссылке правят» — роль «правка» без перезагрузки");
+
+  // 5. «Новая ссылка» (два нажатия): у B доступа нет, старая ссылка не работает
+  const rotSel = '#hubShareBody [data-act="linkrot"]';
+  await A.clickEl(rotSel);
+  await A.until(`return /Точно/.test(document.querySelector(${JSON.stringify(rotSel)}).textContent)`, "подтверждение «Точно?» у «Новая ссылка»");
+  await A.clickEl(rotSel);
+  await A.until(`return $("hubLinkUrl") && $("hubLinkUrl").value && $("hubLinkUrl").value!==${JSON.stringify(link1)}`, "в поле новая ссылка", 8000);
+  await B.until(`return !Collab.pid && $("hubProjName").textContent==="Выберите проект" && !$("wHubProjects").hidden`, "B: проект закрыт после смены ссылки", 10000);
+  check(await B.ev(`return /нет доступа/.test($("toast").textContent) && !document.body.classList.contains("hub-viewer")`), "B: ссылка заменена — «больше нет доступа», проект закрыт");
+  await B.go(link1);
+  await B.until(`return /ссылка недействительна или отключена/.test($("toast").textContent)`, "тост про старую ссылку", 8000);
+  check(await B.ev(`return !Collab.pid && !/join=/.test(location.href)`), "B: старая ссылка — «ссылка недействительна или отключена», проект не открыт");
+
+  // 6. A выключает ссылку
+  await setLinkRole(A, "");
+  await A.until(`return !$("hubLinkUrl") && document.querySelector('#hubShareBody select[data-act="linkrole"]').value===""`, "ссылка выключена");
+  check(true, "A: «выключен» — поле со ссылкой исчезло");
+
+  // 7. B делает копию проекта, который может читать (A даёт B просмотр по логину)
+  await A.fill("#hubShareLogin", "bob");
+  await A.ev(`$("hubShareRole").value="viewer"; return 1`);
+  await A.clickEl('#hubShareBody [data-act="add"]');
+  await A.until(`return document.querySelector('select[data-act="role"][data-login="bob"]')?.value==="viewer"`, "bob — «просмотр» в «Доступе»");
+  await hideWin(A, "wShare");
+  await reopenProjects(B);
+  await B.until(`return !!${rowOf(ELKA)}`, "у B в списке «Ёлка тест»", 10000);
+  const bobElka = await rowPid(B, ELKA);
+  await B.clickEl(`#hubProjList [data-act="copy"][data-id="${bobElka}"]`);
+  await B.until(`return !!document.querySelector(".hubcopyname")`, "форма копии");
+  check(await B.ev(`return /— копия$/.test(document.querySelector(".hubcopyname").value)`), "B: имя копии по умолчанию оканчивается на «— копия»");
+  const copyName = await B.ev(`return document.querySelector(".hubcopyname").value`);
+  await B.clickEl('#hubProjList [data-act="copyok"]');
+  await B.until(`return Collab.pid && Collab.pid!==${JSON.stringify(bobElka)} && $("hubProjName").textContent===${JSON.stringify(copyName)} && $("wHubProjects").hidden`, "B открыл копию", 12000);
+  check(await B.ev(`return $("hubRole").textContent==="владелец" && Collab.role==="owner" && !document.body.classList.contains("hub-viewer")`), "B: копия открыта, роль «владелец»");
+  await reopenProjects(B);
+  await B.until(`return !!${rowOf(copyName)}`, "копия в списке B", 8000);
+  check(await B.ev(`const t=[...document.querySelectorAll("#hubProjList tbody")].find(t=>t.querySelector(".hubsec")?.textContent==="Личные"); return !!t && [...t.querySelectorAll("td.nm")].some(e=>e.title===${JSON.stringify(copyName)})`), "B: копия в группе «Личные»");
 
   // ---------- консоль ----------
   const all = [...A.logs, ...B.logs];

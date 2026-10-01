@@ -537,6 +537,7 @@ dialog.ogdpick::backdrop{background:rgba(0,0,0,.25)}
     <div class="projbar"><input type="text" id="hubNewName" placeholder="Название проекта" maxlength="60" aria-label="Название нового проекта"><button class="btn primary" id="hubNew" title="Создать пустой общий проект"><i data-lucide="file-plus"></i>Создать пустой</button></div>
     <div class="projbar"><label for="hubNewTeam" class="hubdim">Где создать</label><select id="hubNewTeam" title="Где создать: личные проекты или проект команды"><option value="">Личные</option></select><button class="btn" id="hubTeamsBtn" title="Команды: общие рабочие пространства"><i data-lucide="users"></i>Команды</button></div>
     <div class="projbar"><button class="btn" id="hubShareLocal" title="Всё, что сейчас на карте, станет общим проектом на сервере: слои, стили, граф, листы"><i data-lucide="cloud-upload"></i>Сделать общим текущую работу</button><label class="btn" title="Загрузить файл .grado2 с диска как новый общий проект"><i data-lucide="folder-input"></i>Загрузить файл .grado2…<input type="file" id="hubFile" accept=".grado2,.json" hidden></label></div>
+    <div class="projbar"><input type="text" id="hubQ" placeholder="Найти проект" autocomplete="off" spellcheck="false" aria-label="Найти проект"><select id="hubOrd" title="Порядок проектов в списке" aria-label="Порядок проектов"><option value="recent">Недавние</option><option value="name">По названию</option></select></div>
     <div class="sb" id="hubProjList"></div>
   </div>
 </section>

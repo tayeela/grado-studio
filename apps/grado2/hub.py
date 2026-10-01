@@ -16,6 +16,7 @@
 
 import calendar
 import collections
+import copy
 import gzip
 import hashlib
 import hmac
@@ -81,6 +82,10 @@ ROLES = ("owner", "editor", "viewer")
 TEAM_MEMBERS_MAX = 200
 TEAMS_PER_USER = 50                # команд, в которых состоит один человек
 TEAM_ROLES = ("owner", "member")
+STARS_MAX = 500                    # избранных проектов на человека
+LINK_USERS_MAX = 500               # людей, вошедших в проект по ссылке
+LINK_ROLES = ("viewer", "editor")
+JOIN_KEYS = ("j", "ji")              # свои ключи счётчика неудач: плохие ссылки не блокируют вход по паролю
 TEAM_ACCESS = ("edit", "view", "none")     # что получает вся команда в проекте команды
 ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
 META_KEYS = ("name", "territory", "checked", "groups", "views", "album", "graph", "imports", "current_order")
@@ -347,6 +352,8 @@ class Hub:
         self.invites = self._load("invites.json")
         self.sessions = self._load("sessions.json")
         self.teams = self._load("teams.json")
+        self.stars = self._load("stars.json")
+        self._pid_team = None                            # pid -> tid|None; строится одним обходом при первом обращении
         if self._prune_sessions():
             self._save("sessions.json", self.sessions)
         self._fails = {}                                 # ("l", логин) | ("i", ip) -> [время неудач]
@@ -389,7 +396,7 @@ class Hub:
         пишущий те же файлы. Без пересчитывания с диска сервер не видел бы нового пользователя, не гасил бы сессии после
         `passwd`, а первая его запись затёрла бы правку из командной строки."""
         for name, attr in (("users.json", "users"), ("invites.json", "invites"), ("sessions.json", "sessions"),
-                           ("teams.json", "teams")):
+                           ("teams.json", "teams"), ("stars.json", "stars")):
             if self._stamp(name) != self._stamps.get(name):
                 try:
                     setattr(self, attr, self._load(name))
@@ -520,12 +527,12 @@ class Hub:
                 for key in sorted(self._fails, key=lambda k: self._fails[k][-1])[:len(self._fails) - 4096]:
                     del self._fails[key]
 
-    def _throttle_check(self, login, ip, reserve=False):
+    def _throttle_check(self, login, ip, reserve=False, pre=("l", "i"), msg="слишком много попыток входа; повторите позже"):
         """429, если предел неудач исчерпан. reserve=True: попытка записывается сразу, до проверки пароля (scrypt занимает
         десятки миллисекунд, и без этого пачка параллельных запросов видела бы пустой счётчик и обходила лимит);
         успешный вход потом снимает отметку через _refund."""
         now = _now()
-        keys = [(k, lim) for k, lim in ((("l", login), LOGIN_FAILS), (("i", ip), IP_FAILS)) if k[1] is not None]
+        keys = [(k, lim) for k, lim in (((pre[0], login), LOGIN_FAILS), ((pre[1], ip), IP_FAILS)) if k[1] is not None]
         with self._auth:
             for key, limit in keys:
                 stamps = [t for t in self._fails.get(key, ()) if t > now - FAIL_WINDOW]
@@ -534,16 +541,16 @@ class Hub:
                 else:
                     self._fails.pop(key, None)
                 if len(stamps) >= limit:
-                    raise HubError(429, "слишком много попыток входа; повторите позже")
+                    raise HubError(429, msg)
             if reserve:
                 for key, _ in keys:
                     self._fails.setdefault(key, []).append(now)
                 self._gc_fails(now)
 
-    def _fail(self, login, ip):
+    def _fail(self, login, ip, pre=("l", "i")):
         now = _now()
         with self._auth:
-            for key in (("l", login), ("i", ip)):
+            for key in ((pre[0], login), (pre[1], ip)):
                 if key[1] is not None:
                     self._fails.setdefault(key, []).append(now)
             self._gc_fails(now)
@@ -753,6 +760,29 @@ class Hub:
 
     def _save_meta(self, pid, meta):
         self._write(self._pdir(pid) / "meta.json", self._dump(meta))
+        if self._pid_team is not None:                     # карта проект -> команда следует за записью meta
+            tid = meta.get("team")
+            self._pid_team[pid] = tid if isinstance(tid, str) else None
+
+    def _team_counts(self):
+        """Сколько проектов в каждой команде. Под self.lock. Карта pid -> команда строится одним обходом meta.json и дальше
+        ведётся в _save_meta и при удалении; если набор каталогов проектов разошёлся с картой (кто-то менял папку снаружи),
+        карта строится заново."""
+        pids = {d.name for d in (self.root / "projects").iterdir() if PID_RE.fullmatch(d.name)}
+        if self._pid_team is None or set(self._pid_team) != pids:
+            fresh = {}
+            for pid in pids:
+                try:
+                    tid = self._meta(pid).get("team")
+                except HubError:
+                    tid = None
+                fresh[pid] = tid if isinstance(tid, str) else None
+            self._pid_team = fresh
+        counts = {}
+        for tid in self._pid_team.values():
+            if tid is not None:
+                counts[tid] = counts.get(tid, 0) + 1
+        return counts
 
     def _check_size(self, data):
         """Файл проекта не больше PROJECT_MAX_BYTES, а вся папка хаба (с историей) — не больше QUOTA_BYTES.
@@ -775,7 +805,7 @@ class Hub:
         """Роль, которую человеку даёт команда проекта (None — проект личный, команды нет или доступа нет). Под self.lock."""
         tid = meta.get("team")
         team = self.teams.get(tid) if isinstance(tid, str) else None
-        if not isinstance(team, dict):
+        if not isinstance(team, dict) or (self.users.get(login) or {}).get("disabled"):
             return None
         r = (team.get("members") or {}).get(login)
         if r == "owner":
@@ -784,13 +814,23 @@ class Hub:
             return {"edit": "editor", "view": "viewer"}.get(meta.get("team_access") or "edit")
         return None
 
+    @staticmethod
+    def _link_role(login, meta):
+        """Роль по ссылке: ссылка включена и человек по ней уже входил (owner по ссылке выдать нельзя)."""
+        link = meta.get("link")
+        users = meta.get("link_users")
+        if isinstance(link, dict) and link.get("role") in LINK_ROLES and isinstance(users, list) and login in users:
+            return link["role"]
+        return None
+
     def _role(self, u, login, meta):
-        """Единая точка решения о доступе: сильнейшая из личной роли и роли от команды проекта."""
+        """Единая точка решения о доступе: сильнейшая из личной роли, роли от команды проекта и роли по ссылке."""
         if not u or u.get("disabled"):
             return None
         if u.get("admin"):
             return "admin"
-        roles = [r for r in (meta["members"].get(login), self._team_role(login, meta)) if r in ROLE_RANK]
+        roles = [r for r in (meta["members"].get(login), self._team_role(login, meta),
+                                  self._link_role(login, meta)) if r in ROLE_RANK]
         return max(roles, key=ROLE_RANK.__getitem__) if roles else None
 
     def role_of(self, user, pid):
@@ -856,6 +896,7 @@ class Hub:
         out = []
         with self.lock:
             login, u = self._actor(user)
+            starred = self._stars_of(login)
             for d in sorted((self.root / "projects").iterdir()):
                 if not PID_RE.fullmatch(d.name):
                     continue
@@ -872,15 +913,14 @@ class Hub:
                             "rev": meta["rev"], "updated": meta["updated"], "updated_by": meta["updated_by"],
                             "members": self._members_list(meta), "online": self._online_count(meta["id"]),
                             "team": tid if team else None, "team_name": team.get("name") if team else None,
-                            "team_access": meta.get("team_access") or "edit"})
+                            "team_access": meta.get("team_access") or "edit", "star": meta["id"] in starred,
+                            "link_role": ((meta.get("link") or {}).get("role") if isinstance(meta.get("link"), dict) else None)
+                            if role in ("owner", "admin") else None})
         out.sort(key=lambda p: -p["updated"])
         return out
 
     def create_project(self, user, name, project=None, team=None, team_access="edit"):
         name = _clean_name(name, "Новый проект")
-        team_access = team_access or "edit"
-        if team_access not in TEAM_ACCESS:
-            raise HubError(400, "доступ команды: edit, view или none")
         if project is None:
             sections = {"meta": _norm_meta({})}
         else:
@@ -889,6 +929,14 @@ class Hub:
             if not isinstance(project.get("version", 1), int) or project.get("version", 1) > 2:
                 raise HubError(400, "файл сохранён более новой версией ГРАДО 2")
             sections = split_project(project)
+        return self._make_project(user, name, sections, team, team_access, "create", name)
+
+    def _make_project(self, user, name, sections, team, team_access, action, detail):
+        """Общая часть создания и копирования: проверки, квота, каталог проекта, meta последней. sections — уже
+        разобранные разделы (кэш не меняется: join_sections их только читает)."""
+        team_access = team_access or "edit"
+        if team_access not in TEAM_ACCESS:
+            raise HubError(400, "доступ команды: edit, view или none")
         if len(sections) > MAX_SECTIONS:
             raise HubError(400, "в проекте слишком много слоёв")
         with self.lock:
@@ -925,8 +973,20 @@ class Hub:
                 shutil.rmtree(d, ignore_errors=True)       # не оставляем недописанный проект (и его занятое место)
                 raise
             self._cache_put(pid, 1, norm)
-            self._activity_add(pid, login, "create", name)
+            self._activity_add(pid, login, action, detail)
         return {"id": pid, "rev": 1}
+
+    def copy_project(self, user, pid, name=None, team=None, team_access=None):
+        """Копия проекта: текущее содержимое файла, владелец — копирующий. Комментарии, история, участники, ссылка и
+        избранное не переносятся. Правила команды и квота — как при создании."""
+        with self.lock:
+            login, meta, role = self._require(user, pid, "read")
+            if name is None:
+                name = _clean_name(_clean_name(meta["name"], "Проект", 52) + " — копия", "Копия")
+            else:
+                name = _clean_name(name, _clean_name(_clean_name(meta["name"], "Проект", 52) + " — копия", "Копия"))
+            sections = self._sections(pid, meta["rev"])
+            return self._make_project(user, name, sections, team, team_access, "copy", meta["name"])
 
     def get_project(self, user, pid):
         with self.lock:
@@ -1096,15 +1156,15 @@ class Hub:
             personal = sorted(m for m, r in members.items() if r == "owner")
             tid = meta.get("team")
             team = self.teams.get(tid) if isinstance(tid, str) else None
-            team_owners = [m for m, r in ((team or {}).get("members") or {}).items() if r == "owner"]
+            team_owners = self._active_owners((team or {}).get("members") or {})   # отключённый владелец команды не в счёт
             if not personal and not team_owners:         # владельцы: личные плюс владельцы команды проекта
                 raise HubError(400, "у проекта должен остаться хотя бы один владелец")
-            meta["members"] = members
+            new_meta = dict(meta, members=members)       # в файл пишется копия; общая структура не трогается до записи
             if personal and meta["owner"] not in personal:
-                meta["owner"] = personal[0]              # личных владельцев нет — квота остаётся на создателе
-            self._save_meta(pid, meta)
+                new_meta["owner"] = personal[0]          # личных владельцев нет — квота остаётся на создателе
+            self._save_meta(pid, new_meta)
             self._activity_add(pid, me, "member", f"{login}: {role or 'удалён'}")
-            result = self._members_list(meta)
+            result = self._members_list(new_meta)
         self._access_changed([pid])          # поток закрывается, только если доступа не осталось и через команду
         return result
 
@@ -1147,21 +1207,23 @@ class Hub:
         return [{"login": m, "name": (self.users.get(m) or {}).get("name") or m, "role": r}
                 for m, r in sorted((team.get("members") or {}).items())]
 
+    def _active_owners(self, members):
+        """Владельцы команды, чьи учётные записи не отключены. Под self.lock."""
+        return [m for m, r in members.items() if r == "owner" and not (self.users.get(m) or {}).get("disabled")]
+
+    def _save_teams(self, teams):
+        """Записать копию teams.json и только после успеха сделать её текущей: сбой записи не оставляет в памяти правку,
+        которой нет на диске. Под self.lock."""
+        self._save("teams.json", teams)
+        self.teams = teams
+
     def _teams_of(self, login):
         return sum(1 for t in self.teams.values() if login in (t.get("members") or {}))
 
     def list_teams(self, user):
         with self.lock:
             login, u = self._actor(user)
-            counts = {}
-            for d in (self.root / "projects").iterdir():
-                if PID_RE.fullmatch(d.name):
-                    try:
-                        tid = self._meta(d.name).get("team")
-                    except HubError:
-                        continue
-                    if isinstance(tid, str):
-                        counts[tid] = counts.get(tid, 0) + 1
+            counts = self._team_counts()
             out = []
             for tid, t in self.teams.items():
                 mine = (t.get("members") or {}).get(login)
@@ -1182,8 +1244,9 @@ class Hub:
                 tid = secrets.token_hex(8)
                 if tid not in self.teams:
                     break
-            self.teams[tid] = {"name": name, "created": _now(), "by": login, "members": {login: "owner"}}
-            self._save("teams.json", self.teams)
+            teams = copy.deepcopy(self.teams)
+            teams[tid] = {"name": name, "created": _now(), "by": login, "members": {login: "owner"}}
+            self._save_teams(teams)
         return {"id": tid}
 
     def rename_team(self, user, tid, name):
@@ -1191,9 +1254,10 @@ class Hub:
         if not name:
             raise HubError(400, "название не может быть пустым")
         with self.lock:
-            _, team = self._team_manager(user, tid)
-            team["name"] = name
-            self._save("teams.json", self.teams)
+            self._team_manager(user, tid)
+            teams = copy.deepcopy(self.teams)
+            teams[tid]["name"] = name
+            self._save_teams(teams)
         return name
 
     def set_team_member(self, user, tid, login, role):
@@ -1218,11 +1282,14 @@ class Hub:
                     if self._teams_of(login) >= TEAMS_PER_USER:
                         raise HubError(400, f"этот человек уже состоит в {TEAMS_PER_USER} командах")
                 members[login] = role
-            if not any(r == "owner" for r in members.values()):
+            if not any(r == "owner" for r in members.values()) or (
+                    not self._active_owners(members) and self._active_owners(team.get("members") or {})):
+                # отключённый владелец не считается; но команду, где активного владельца уже нет, администратор чинит
                 raise HubError(400, "в команде должен остаться хотя бы один владелец")
-            team["members"] = members
-            self._save("teams.json", self.teams)
-            result = self._team_members_list(team)
+            teams = copy.deepcopy(self.teams)
+            teams[tid]["members"] = members
+            self._save_teams(teams)
+            result = self._team_members_list(teams[tid])
             pids = self._team_projects(tid)
         self._access_changed(pids)
         return result
@@ -1232,8 +1299,9 @@ class Hub:
             self._team_manager(user, tid)
             if self._team_projects(tid):
                 raise HubError(400, "в команде есть проекты: перенесите или удалите их")
-            del self.teams[tid]
-            self._save("teams.json", self.teams)
+            teams = copy.deepcopy(self.teams)
+            del teams[tid]
+            self._save_teams(teams)
 
     def set_project_team(self, user, pid, team, team_access):
         if team_access is not None and team_access not in TEAM_ACCESS:
@@ -1245,6 +1313,7 @@ class Hub:
             if team is not None:
                 self._team_member_or_admin(self.users[me], me, self._team(team))   # переезд В команду — только её участнику
             members = dict(meta["members"])
+            new_owner = None
             if team is None:
                 team_access = "edit"
                 if not any(r == "owner" for r in members.values()):
@@ -1252,13 +1321,126 @@ class Hub:
                     # переносит; глобальный администратор, не состоящий в проекте, тоже записывается (иначе доступа нет ни у кого)
                     members[me] = "owner"
                     if meta.get("owner") not in members:
-                        meta["owner"] = me           # иначе квота и поле «владелец» висели бы на ушедшем создателе
-            meta["members"], meta["team"], meta["team_access"] = members, team, team_access
-            self._save_meta(pid, meta)
+                        new_owner = me               # иначе квота и поле «владелец» висели бы на ушедшем создателе
+            new_meta = dict(meta, members=members, team=team, team_access=team_access)
+            if new_owner:
+                new_meta["owner"] = new_owner
+            self._save_meta(pid, new_meta)
             name = self.teams[team]["name"] if team else "личные"
             self._activity_add(pid, me, "team", f"{name}: {team_access}")
         self._access_changed([pid])
         return {"team": team, "team_access": team_access}
+
+    # ----- избранное -----
+
+    def _stars_of(self, login):
+        v = self.stars.get(login)
+        return set(x for x in v if isinstance(x, str)) if isinstance(v, list) else set()
+
+    def set_star(self, user, pid, on):
+        if not isinstance(on, bool):
+            raise HubError(400, "on должен быть true или false")
+        with self.lock:
+            if on:
+                login, meta, _ = self._require(user, pid, "read")
+            else:                                        # убрать звезду можно и без доступа: проект мог стать недоступен
+                login, _ = self._actor(user)
+                _check_pid(pid)
+            # исчезнувшие проекты отбрасываются при записи; недоступные просто не показываются при чтении списка
+            cur = [p for p in self._stars_of(login) if p != pid and PID_RE.fullmatch(p)
+                   and (self.root / "projects" / p / "meta.json").exists()]
+            cur.sort()
+            if on:
+                if len(cur) >= STARS_MAX:
+                    raise HubError(400, f"в избранном уже {STARS_MAX} проектов: уберите ненужные")
+                cur.append(pid)
+            stars = dict(self.stars)
+            stars[login] = cur
+            self._save("stars.json", stars)
+            self.stars = stars
+        return {"star": on}
+
+    # ----- доступ по ссылке -----
+
+    def _link_info(self, meta):
+        """{"link": {token, role} | None, "users": [{login, name}]} — без тех, у кого есть личная или командная роль. Под self.lock."""
+        link = meta.get("link")
+        if not isinstance(link, dict):
+            return {"link": None, "users": []}
+        users = []
+        for m in meta.get("link_users") or []:
+            if m in meta["members"] or self._team_role(m, meta) or m not in self.users:
+                continue
+            users.append({"login": m, "name": self.users[m].get("name") or m})
+        return {"link": {"token": link["token"], "role": link["role"]}, "users": users}
+
+    def get_link(self, user, pid):
+        with self.lock:
+            _, meta, _ = self._require(user, pid, "owner")
+            return self._link_info(meta)
+
+    def set_link(self, user, pid, role, rotate=False):
+        if role is not None and role not in LINK_ROLES:
+            raise HubError(400, "роль по ссылке: viewer, editor или null")
+        if not isinstance(rotate, bool):
+            raise HubError(400, "rotate должен быть true или false")
+        with self.lock:
+            me, meta, _ = self._require(user, pid, "owner")
+            link = meta.get("link")
+            if role is None:
+                new_meta = dict(meta, link=None, link_users=[])
+            elif isinstance(link, dict) and isinstance(link.get("token"), str) and not rotate:
+                new_meta = dict(meta, link=dict(link, role=role))          # токен и люди остаются
+            else:
+                new_meta = dict(meta, link={"token": secrets.token_urlsafe(18), "role": role, "created": _now(), "by": me},
+                                link_users=[])
+            self._save_meta(pid, new_meta)
+            self._activity_add(pid, me, "link", role or "off")             # токен в журнал не попадает
+            result = self._link_info(new_meta)
+        self._access_changed([pid])
+        return result
+
+    def join(self, user, token, ip):
+        """Войти в проект по ссылке. Неверные ссылки считаются отдельно от неудач входа по паролю."""
+        if not isinstance(token, str) or not 0 < len(token) <= 64:
+            raise HubError(400, "некорректная ссылка")
+        ip = str(ip or "?")[:64]
+        with self.lock:
+            login, u = self._actor(user)
+            self._throttle_check(login, ip, pre=JOIN_KEYS, msg="слишком много неверных ссылок; повторите позже")
+            raw, found = token.encode("utf-8"), None
+            for d in sorted((self.root / "projects").iterdir()):
+                if not PID_RE.fullmatch(d.name):
+                    continue
+                try:
+                    meta = self._meta(d.name)
+                except HubError:
+                    continue
+                link = meta.get("link")
+                if isinstance(link, dict) and isinstance(link.get("token"), str) \
+                        and hmac.compare_digest(raw, link["token"].encode("utf-8")) and found is None:
+                    found = meta
+            if found is None:
+                self._fail(login, ip, pre=JOIN_KEYS)
+                raise HubError(404, "ссылка недействительна или отключена")
+            meta, pid = found, found["id"]
+            users = list(meta.get("link_users") or [])
+            # у кого роль и без ссылки не слабее ссылочной, в список вошедших по ссылке не попадает: иначе, убранный
+            # из участников, он сохранил бы доступ по ссылке незаметно для владельца
+            base = self._role(u, login, dict(meta, link_users=[]))
+            link_role = (meta.get("link") or {}).get("role")
+            strong = base == "admin" or (base in ROLE_RANK and link_role in ROLE_RANK and ROLE_RANK[base] >= ROLE_RANK[link_role])
+            added = login not in users and not strong
+            if added:
+                if len(users) >= LINK_USERS_MAX:
+                    raise HubError(400, f"по ссылке уже вошли {LINK_USERS_MAX} человек")
+                users.append(login)
+                meta = dict(meta, link_users=users)
+                self._save_meta(pid, meta)
+            result = {"id": pid, "name": meta["name"], "role": self._role(u, login, meta)}
+        if added:
+            self._publish(pid, {"type": "members"})
+        return result
 
     def _access_changed(self, pids):
         """Доступ к проектам мог измениться: сообщить участникам и закрыть потоки тех, у кого роли больше нет.
@@ -1281,6 +1463,8 @@ class Hub:
             os.replace(self._pdir(pid), gone)
             shutil.rmtree(gone, ignore_errors=True)
             self._cache.pop(pid, None)
+            if self._pid_team is not None:
+                self._pid_team.pop(pid, None)
         with self._live:
             self._publish(pid, {"type": "deleted"})
             self._shutdown_subs(pid, lambda s: True)

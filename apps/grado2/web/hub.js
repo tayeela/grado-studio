@@ -14,6 +14,11 @@ const st = {
   me: null, pid: null, name: "", role: null, members: [], projects: [], names: {}, others: [], comments: [], cFilter: "open", cSel: null, draft: null,
   cMode: false, replyFor: null, replyText: "", renameId: null, hTab: "ver", armed: null, teams: null, renameTeam: null,
 };
+/* настройки списка проектов помним в браузере; без localStorage страница работает так же, просто без памяти */
+const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { } };
+st.q = lsGet("grado2.hub.q") || ""; st.ord = lsGet("grado2.hub.order") === "name" ? "name" : "recent";
+st.copyId = null; st.copyName = ""; st.copyTeam = ""; st.link = null;
 const myRole = () => C()?.role || st.role || (st.me?.admin ? "admin" : null);
 const canEdit = r => r === "owner" || r === "editor" || r === "admin";
 const isOwner = r => r === "owner" || r === "admin";
@@ -107,8 +112,36 @@ function enter(user, again) {
   $("hubAdminItem").hidden = !user.admin; $("hubBar").hidden = false; $("hubCTool").hidden = false;
   if (inited !== user.login) { inited = user.login; C()?.init?.(user); }
   if (again) return;
+  if (getJoin()) { doJoin().then(ok => { if (!ok) startPage(); }); return; }
+  startPage();
+}
+function startPage() {
   const m = /[#&]p=([\w-]+)/.exec(location.hash);
   if (m) openProject(m[1]); else winOpen("wHubProjects", true);
+}
+
+/* ================= вход по ссылке #join=… ================= */
+/* Токен забираем из адреса сразу (в историю браузера и под глаза он не попадает), остальные части решётки (#p=…) остаются.
+   Хранится в sessionStorage и в памяти: если войти не удалось с первого раза, он дождётся входа в учётную запись. */
+let joinTok = null;
+const JKEY = "grado2.join";
+function grabJoin() {
+  const parts = location.hash.replace(/^#/, "").split("&").filter(Boolean), keep = [];
+  let tok = null; parts.forEach(x => { const m = /^join=([\w-]+)$/.exec(x); if (m) tok = m[1]; else keep.push(x); });
+  if (!tok) return false;
+  joinTok = tok; try { sessionStorage.setItem(JKEY, tok); } catch { }
+  try { history.replaceState(null, "", location.pathname + location.search + (keep.length ? "#" + keep.join("&") : "")); } catch { }
+  return true;
+}
+function getJoin() { if (joinTok) return joinTok; try { return sessionStorage.getItem(JKEY) || null; } catch { return null; } }
+function clearJoin() { joinTok = null; try { sessionStorage.removeItem(JKEY); } catch { } }
+async function doJoin() {
+  const tok = getJoin(); if (!tok) return false;
+  // ссылка стирается, только когда ответ окончательный: при сбое связи или «повторите позже» она остаётся для новой попытки
+  let r; try { r = await hub("join", { token: tok }); } catch (e) { if (e.status === 400 || e.status === 404) clearJoin(); fail()(e); return false; }
+  clearJoin();
+  try { await openProject(r.id, r.name); } catch (e) { fail()(e); return false; }
+  toast(`Вы открыли проект по ссылке: ${ROLE[r.role] || r.role}.`); return true;
 }
 function boot() {
   return bootP ||= (async () => {
@@ -195,9 +228,15 @@ function menu(on) {
 }
 
 /* ================= окно «Совместные проекты» ================= */
-/* группы списка: «Личные», по одной на мою команду, «Доступные мне» (проекты команд, где я не состою); пустые не показываются */
+/* поиск: без различия регистра, «ё» как «е» */
+const norm = t => String(t || "").toLowerCase().replace(/ё/g, "е").trim();
+const teamName = p => p.team_name || (st.teams || []).find(t => t.id === p.team)?.name || "";
+/* группы списка: «Избранное» (первой), «Личные», по одной на мою команду, «Доступные мне» (проекты команд, где я не состою); пустые не показываются.
+   Избранный проект остаётся и в своей группе. Порядок: «Недавние» или «По названию» */
 function projGroups() {
-  const rows = [...st.projects].sort((a, b) => toMs(b.updated) - toMs(a.updated)), g = [], add = (title, r) => { if (r.length) g.push({ title, rows: r }); };
+  const f = norm(st.q), hit = p => !f || norm(p.name).includes(f) || norm(teamName(p)).includes(f);
+  const rows = st.projects.filter(hit).sort(st.ord === "name" ? (a, b) => String(a.name).localeCompare(String(b.name), "ru") : (a, b) => toMs(b.updated) - toMs(a.updated)), g = [], add = (title, r, fav) => { if (r.length) g.push({ title, rows: r, fav }); };
+  add("Избранное", rows.filter(p => p.star), true);
   add("Личные", rows.filter(p => !p.team));
   (st.teams || []).forEach(t => add(`Команда «${t.name}»`, rows.filter(p => p.team === t.id)));
   add("Доступные мне", rows.filter(p => p.team && !myTeam(p.team)));
@@ -206,20 +245,25 @@ function projGroups() {
 R.projects = [$("hubProjList"), () => {
   const el = $("hubProjList"), k = (a, id) => a + ":" + id;
   if (!st.projects.length) { el.innerHTML = `<div class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</div>`; return; }
-  const row = p => {
+  const row = (p, fav) => {
     const cur = p.id === st.pid, own = isOwner(p.role), on = +p.online || 0, ren = st.renameId === p.id;
     const name = ren ? `<input type="text" class="hubren" data-id="${esc(p.id)}" value="${esc(p.name)}" maxlength="60" aria-label="Новое название проекта">` : `${esc(p.name)}${cur ? `<span class="pill">открыт</span>` : ""}`;
-    const del = armedIs(k("del", p.id));
+    const del = armedIs(k("del", p.id)), star = !!p.star;
+    const cform = st.copyId === p.id && !fav ? `<tr class="hubcopy"><td colspan="5"><div class="hubform"><input type="text" class="hubcopyname" value="${esc(st.copyName)}" maxlength="60" aria-label="Название копии"><label class="hubdim">Где создать <select class="hubcopyteam" aria-label="Где создать копию">${teamOpts(st.copyTeam)}</select></label><button class="btn primary" data-act="copyok" data-id="${esc(p.id)}">Создать копию</button><button class="btn" data-act="copyno">Отмена</button></div></td></tr>` : "";
     return `<tr class="${cur ? "cur" : ""}"><td class="nm" title="${esc(p.name)}">${name}</td><td>${esc(ROLE[p.role] || p.role)}</td>
       <td>${p.updated_by ? esc(uname(p.updated_by)) : "—"}<span class="sub">${p.updated ? esc(when(p.updated)) : ""}</span></td>
       <td class="num">${on ? `${on} ${plural(on, ["человек", "человека", "человек"])}` : `<span class="hubdim">никого</span>`}</td>
-      <td class="acts"><button class="btn" data-act="open" data-id="${esc(p.id)}" ${cur ? "disabled" : ""}>${cur ? "Открыт" : "Открыть"}</button>
+      <td class="acts"><button class="tb star ${star ? "on" : ""}" data-act="star" data-id="${esc(p.id)}" aria-pressed="${star}" title="${star ? "Убрать из избранного" : "В избранное"}" aria-label="${star ? "Убрать из избранного" : "В избранное"}"><i data-lucide="star"></i></button><button class="btn" data-act="open" data-id="${esc(p.id)}" ${cur ? "disabled" : ""}>${cur ? "Открыт" : "Открыть"}</button>
         ${own ? `<button class="tb" data-act="ren" data-id="${esc(p.id)}" title="Переименовать проект" aria-label="Переименовать"><i data-lucide="pencil"></i></button>` : ""}
+        <button class="tb" data-act="copy" data-id="${esc(p.id)}" title="Сделать копию проекта: новый проект с теми же слоями, без комментариев и истории" aria-label="Сделать копию"><i data-lucide="copy"></i></button>
         <button class="tb" data-act="dl" data-id="${esc(p.id)}" title="Скачать проект файлом .grado2" aria-label="Скачать"><i data-lucide="download"></i></button>
-        ${own ? `<button class="tb ${del ? "danger" : ""}" data-act="del" data-id="${esc(p.id)}" title="${del ? "Нажмите ещё раз — проект и его история будут удалены у всех" : "Удалить проект у всех участников"}" aria-label="Удалить"><i data-lucide="trash-2"></i>${del ? "Точно?" : ""}</button>` : ""}</td></tr>`;
+        ${own ? `<button class="tb ${del ? "danger" : ""}" data-act="del" data-id="${esc(p.id)}" title="${del ? "Нажмите ещё раз — проект и его история будут удалены у всех" : "Удалить проект у всех участников"}" aria-label="Удалить"><i data-lucide="trash-2"></i>${del ? "Точно?" : ""}</button>` : ""}</td></tr>${cform}`;
   };
-  el.innerHTML = `<table class="at hubt"><thead><tr><th>Проект</th><th>Ваша роль</th><th>Менял последним</th><th>Сейчас в проекте</th><th></th></tr></thead>${projGroups().map(g => `<tbody><tr><td colspan="5" class="hubsec">${esc(g.title)}</td></tr>${g.rows.map(row).join("")}</tbody>`).join("")}</table>`;
+  const gs = projGroups();
+  if (!gs.length) { el.innerHTML = `<div class="empty">Ничего не найдено</div>`; return; }
+  el.innerHTML = `<table class="at hubt"><thead><tr><th>Проект</th><th>Ваша роль</th><th>Менял последним</th><th>Сейчас в проекте</th><th></th></tr></thead>${gs.map(g => `<tbody><tr><td colspan="5" class="hubsec">${esc(g.title)}</td></tr>${g.rows.map(p => row(p, g.fav)).join("")}</tbody>`).join("")}</table>`;
   el.querySelector(".hubren")?.focus();
+  if (st.copyFocus) { st.copyFocus = false; const i = el.querySelector(".hubcopyname"); if (i) { i.focus(); i.select(); } }
 }];
 async function createProject(body, okText) {
   const name = body.name; if (!name) { $("hubNewName").focus(); return toast("Введите название проекта."); }
@@ -230,7 +274,20 @@ async function createProject(body, okText) {
     if (C()?.pid !== r.id) await openProject(r.id, name); else { st.pid = r.id; st.name = name; await refreshMeta(); winOpen("wHubProjects", false); }
   } catch (e) { fail("Проект не создан")(e); }
 }
+async function copyProject(id) {
+  const p = st.projects.find(x => x.id === id), name = st.copyName.trim().slice(0, 60); if (!p) return;
+  if (!name) { el_copyName()?.focus(); return toast("Введите название копии."); }
+  const body = { name }; if (st.copyTeam) body.team = st.copyTeam;
+  try {
+    const r = await hub(`project/${encodeURIComponent(id)}/copy`, body);
+    st.copyId = null; await loadProjects(); toast(`Создана копия «${name}».`); await openProject(r.id, name);
+  } catch (e) { fail("Копия не создана")(e); }
+}
+const el_copyName = () => $("hubProjList").querySelector(".hubcopyname");
 function wireProjects() {
+  $("hubQ").value = st.q; $("hubOrd").value = st.ord;
+  $("hubQ").addEventListener("input", e => { st.q = e.target.value; lsSet("grado2.hub.q", st.q); draw("projects", true); });
+  $("hubOrd").addEventListener("change", e => { st.ord = e.target.value === "name" ? "name" : "recent"; lsSet("grado2.hub.order", st.ord); draw("projects", true); });
   $("hubNew").onclick = () => createProject({ name: $("hubNewName").value.trim() });
   $("hubNewName").addEventListener("keydown", e => { if (e.key === "Enter") $("hubNew").click(); });
   $("hubShareLocal").onclick = async () => {
@@ -255,13 +312,24 @@ function wireProjects() {
   $("hubProjList").addEventListener("click", async e => {
     const b = e.target.closest("[data-act]"); if (!b) return; const id = b.dataset.id, p = st.projects.find(x => x.id === id); if (!p) return;
     if (b.dataset.act === "open") openProject(id, p.name);
+    else if (b.dataset.act === "star") {
+      const on = !p.star;
+      try { const r = await hub(`project/${encodeURIComponent(id)}/star`, { on }); p.star = typeof r?.star === "boolean" ? r.star : on; } catch (err) { fail("Избранное не изменено")(err); }
+      draw("projects", true);
+    }
+    else if (b.dataset.act === "copy") { st.copyId = id; st.copyName = `${p.name} — копия`.slice(0, 60); st.copyTeam = myTeam(p.team) ? p.team : ""; st.copyFocus = true; draw("projects", true); }
+    else if (b.dataset.act === "copyno") { st.copyId = null; draw("projects", true); }
+    else if (b.dataset.act === "copyok") copyProject(id);
     else if (b.dataset.act === "dl") { const a = document.createElement("a"); a.href = `/api/hub/project/${encodeURIComponent(id)}/download`; a.download = p.name + ".grado2"; document.body.append(a); a.click(); a.remove(); }
     else if (b.dataset.act === "ren") { st.renameId = id; draw("projects", true); }
     else if (b.dataset.act === "del" && twoStep("del:" + id, "projects")) {
       try { await hub(`project/${encodeURIComponent(id)}/delete`, {}); toast(`Проект «${p.name}» удалён.`); if (id === st.pid) { C()?.close?.(); closedProject(); } loadProjects(); } catch (err) { fail("Проект не удалён")(err); }
     }
   });
+  $("hubProjList").addEventListener("input", e => { if (e.target.classList?.contains("hubcopyname")) st.copyName = e.target.value; });
+  $("hubProjList").addEventListener("change", e => { if (e.target.classList?.contains("hubcopyteam")) st.copyTeam = e.target.value; });
   $("hubProjList").addEventListener("keydown", async e => {
+    if (e.target.classList?.contains("hubcopyname")) { if (e.key === "Enter") copyProject(st.copyId); if (e.key === "Escape") { st.copyId = null; draw("projects", true); } return; }
     const i = e.target.closest?.(".hubren"); if (!i) return;
     if (e.key === "Escape") { st.renameId = null; draw("projects", true); }
     if (e.key === "Enter") {
@@ -274,6 +342,31 @@ function wireProjects() {
 }
 
 /* ================= окно «Доступ» ================= */
+/* доступ по ссылке: переключатель, сама ссылка, «Новая ссылка», кто уже вошёл */
+const LINKR = { "": "выключен", viewer: "по ссылке смотрят", editor: "по ссылке правят" };
+const linkUrl = t => `${location.origin}${location.pathname}#join=${t}`;
+function linkBlock(own, pr) {
+  const head = `<div class="hubsec">Доступ по ссылке</div>`;
+  if (!own) return head + `<div class="hubnote">${pr.link_role && LINKR[pr.link_role] ? `Сейчас: ${LINKR[pr.link_role]}. ` : ""}Включать и выключать ссылку может только владелец проекта.</div>`;
+  const L = st.link; if (!L || L.pid !== st.pid) return head + `<div class="hubnote">Загружаю…</div>`;
+  if (L.err) return head + `<div class="hubnote">Не удалось получить настройки ссылки: закройте и снова откройте окно.</div>`;
+  const role = L.link?.role || "", rot = armedIs("lrot");
+  return head + `<table class="at hubt"><tbody><tr><td class="nm">Кто может открыть по ссылке</td><td><select data-act="linkrole" aria-label="Доступ по ссылке">${Object.keys(LINKR).map(r => `<option value="${r}" ${role === r ? "selected" : ""}>${LINKR[r]}</option>`).join("")}</select></td></tr></tbody></table>`
+    + (L.link ? `<div class="projbar"><input type="text" id="hubLinkUrl" class="hublinkurl" readonly value="${esc(linkUrl(L.link.token))}" aria-label="Ссылка на проект"><button class="btn" data-act="linkcopy"><i data-lucide="copy"></i>Скопировать</button><button class="btn ${rot ? "danger" : ""}" data-act="linkrot" title="Выдать новую ссылку: старая перестанет работать, а вошедшие по ней потеряют доступ"><i data-lucide="rotate-cw"></i>${rot ? "Точно? Старая ссылка перестанет работать" : "Новая ссылка"}</button></div>`
+      + (L.users.length ? `<div class="hubnote">Вошли по ссылке: ${L.users.map(u => esc(u.name || u.login)).join(", ")}</div>` : "") : "")
+    + `<div class="hubnote">Ссылка работает только для тех, у кого есть учётная запись в ГРАДО 2.</div>`;
+}
+async function loadLink() {
+  const pid = st.pid; if (!pid || !isOwner(myRole())) return;
+  try { const r = await hub(`project/${encodeURIComponent(pid)}/link`); if (pid === st.pid) st.link = { pid, link: r?.link || null, users: r?.users || [] }; }
+  catch (e) { if (pid === st.pid) st.link = { pid, link: null, users: [], err: true }; fail("Доступ по ссылке")(e); }
+  draw("share");
+}
+async function setLink(body, ok) {
+  const pid = st.pid;
+  try { const r = await hub(`project/${encodeURIComponent(pid)}/link`, body); st.link = { pid, link: r?.link || null, users: r?.users || [] }; if (ok) toast(ok); draw("share", true); refreshMeta(); }
+  catch (e) { fail("Ссылка не изменена")(e); loadLink(); }
+}
 R.share = [$("hubShareBody"), () => {
   const el = $("hubShareBody"), own = isOwner(myRole());
   if (!st.pid) { el.innerHTML = `<div class="empty">Сначала откройте проект: окно «Совместные проекты».</div>`; return; }
@@ -281,6 +374,7 @@ R.share = [$("hubShareBody"), () => {
   el.innerHTML = `<div class="hubnote">Проект «${esc(st.name)}». ${own ? "Вы владелец: можно добавлять и убирать участников и менять их роли." : "Менять доступ может только владелец проекта."}</div>
   <table class="at hubt"><tbody><tr><td class="nm">Где лежит проект</td><td><select data-act="pteam" ${off} aria-label="Где лежит проект">${teamOpts(pr.team, pr.team_name)}</select></td></tr>
   ${pr.team ? `<tr><td class="nm" title="${esc(pr.team_name || "")}">Вся команда «${esc(pr.team_name || "")}»</td><td><select data-act="tacc" ${off} aria-label="Доступ всей команды">${["edit", "view", "none"].map(r => `<option value="${r}" ${(pr.team_access || "edit") === r ? "selected" : ""}>${TACC[r]}</option>`).join("")}</select></td></tr>` : ""}</tbody></table>
+  ${linkBlock(own, pr)}
   <table class="at hubt"><thead><tr><th>Участник</th><th>Логин</th><th>Роль</th><th></th></tr></thead><tbody>${st.members.map(m => {
     const rm = armedIs("rm:" + m.login);
     return `<tr><td class="nm">${esc(m.name || m.login)}${m.login === st.me?.login ? `<span class="pill">вы</span>` : ""}</td><td>${esc(m.login)}</td>
@@ -296,12 +390,20 @@ function wireShare() {
   const setTeam = async (team, acc, ok) => { try { await hub(`project/${encodeURIComponent(st.pid)}/team`, { team, team_access: acc }); toast(ok); } catch (e) { fail("Доступ не изменён")(e); } await refreshMeta(); };
   $("hubShareBody").addEventListener("change", e => {
     const s = e.target.closest("select[data-act]"); if (!s) return; const pr = st.projects.find(x => x.id === st.pid) || {};
-    if (s.dataset.act === "role") setRole(s.dataset.login, s.value);
+    if (s.dataset.act === "linkrole") setLink({ role: s.value || null }, s.value ? "Доступ по ссылке включён." : "Доступ по ссылке выключен.");
+    else if (s.dataset.act === "role") setRole(s.dataset.login, s.value);
     else if (s.dataset.act === "pteam") setTeam(s.value || null, s.value && pr.team ? pr.team_access || "edit" : "edit", s.value ? "Проект перенесён в команду." : "Проект стал личным.");
     else if (s.dataset.act === "tacc") setTeam(pr.team, s.value, "Доступ команды изменён.");
   });
   $("hubShareBody").addEventListener("click", async e => {
+    if (e.target.id === "hubLinkUrl") return e.target.select();
     const b = e.target.closest("button[data-act]"); if (!b) return;
+    if (b.dataset.act === "linkcopy") {
+      const i = $("hubLinkUrl"); let ok = false;
+      try { await navigator.clipboard.writeText(i.value); ok = true; } catch { i.focus(); i.select(); try { ok = document.execCommand("copy"); } catch { } }
+      return toast(ok ? "Ссылка скопирована." : "Ссылка выделена: скопируйте её (Ctrl+C).");
+    }
+    if (b.dataset.act === "linkrot") { if (twoStep("lrot", "share")) setLink({ rotate: true, role: st.link?.link?.role || "viewer" }, "Выдана новая ссылка: старая больше не работает."); return; }
     if (b.dataset.act === "rm" && twoStep("rm:" + b.dataset.login, "share")) { await setRole(b.dataset.login, null); toast("Участник убран из проекта."); }
     if (b.dataset.act === "add") {
       const login = $("hubShareLogin").value.trim().toLowerCase(); if (!login) return $("hubShareLogin").focus();
@@ -558,6 +660,7 @@ function wireAccount() {
     if (b.dataset.hubact === "admin") winOpen("wHubAdmin", true);
     if (b.dataset.hubact === "out") {
       try { await C()?.flush?.(); } catch { }
+      clearJoin();
       try { await hub("logout", {}); } catch { }
       try { history.replaceState(null, "", location.pathname + location.search); } catch { }
       location.reload();                                       // с экрана уходят данные проекта: следующий человек начинает с чистой страницы
@@ -659,7 +762,7 @@ function presenceTick() {
 /* ================= окна: открытие и подсказка для наблюдателя ================= */
 function hubHooks() {
 WIN_OPEN.wHubProjects = () => loadProjects();
-WIN_OPEN.wShare = () => refreshMeta();
+WIN_OPEN.wShare = () => { refreshMeta(); loadLink(); };
 WIN_OPEN.wTeams = () => { st.renameTeam = null; draw("teams", true); loadTeams(true).then(() => draw("teams", true)); };
 WIN_OPEN.wComments = () => { draw("comments", true); loadComments(); };
 WIN_OPEN.wHistory = () => { st.hist = null; draw("history", true); loadHistory(); };
@@ -686,14 +789,14 @@ function wire() {
   document.querySelectorAll("[data-lmode]").forEach(b => b.onclick = () => setLmode(b.dataset.lmode));
   wireProjects(); wireShare(); wireTeams(); wireComments(); wireHistory(); wireAdmin(); wireAccount();
   addEventListener("keydown", e => { if (e.key === "Escape" && st.cMode && !e.target.closest?.("input,textarea")) setCMode(false); });
-  addEventListener("hashchange", () => { const m = /[#&]p=([\w-]+)/.exec(location.hash); if (m && st.me && m[1] !== st.pid) openProject(m[1]); });
+  addEventListener("hashchange", () => { if (grabJoin() && st.me) { doJoin(); return; } const m = /[#&]p=([\w-]+)/.exec(location.hash); if (m && st.me && m[1] !== st.pid) openProject(m[1]); });
   if (typeof MutationObserver === "function") new MutationObserver(() => { if (!dotsBusy) requestAnimationFrame(paintDots); }).observe($("layerTree"), { childList: true });
   const L = C()?.listen?.bind(C());
   if (L) {
     L("status", d => setSync(d?.state));
     L("presence", d => { st.others = (d?.users || []).filter(u => u.client !== C().client); st.others.forEach(u => { if (u.name) st.names[u.login] = u.name; }); renderAv(); paintPresence(); });
     L("comments", () => loadComments());
-    L("members", () => refreshMeta());
+    L("members", () => { refreshMeta(); if (!$("wShare").hidden) loadLink(); });
     L("session", d => { if (d?.expired) sessionLost(); });
     L("role", () => { renderBar(); applyRole(); toast(`Ваша роль в проекте: ${ROLE[myRole()] || "—"}.`); });
     L("rev", () => { overlaysRefresh(); if (!$("wHistory").hidden) { clearTimeout(histT); histT = setTimeout(loadHistory, 1500); } });
@@ -711,7 +814,7 @@ const modeP = new Promise(res => {
   const chk = () => { if (window.HUB_MODE !== undefined) { res(!!window.HUB_MODE); return true; } return ++n > 3000 && (res(false), true); };   // 5 минут ожидания, дальше считаем, что режим обычный
   if (!chk()) { const iv = setInterval(() => chk() && clearInterval(iv), 100); addEventListener("grado:mode", () => { if (chk()) clearInterval(iv); }); }
 });
-modeP.then(on => { if (on) boot(); });
+modeP.then(on => { if (on) { grabJoin(); boot(); } });
 
 window.HubUI = {
   /* project.js ждёт этот вызов перед стартом: в обычном режиме — сразу null, в совместном — после входа, с данными человека */
