@@ -2,6 +2,32 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.96.1: full ППТ titles from ГИС ОГД.** Owner 03.10: in the КРТ presentation near
+  д. Безобразово the ППТ title was cut («…от газорегулято…»); «название ППТ всегда должно быть написано полностью и как
+  на ГИСОГД». Cause: the portal's shapefile DBF caps text fields at 254 bytes (UTF-8 → about 127 Cyrillic characters);
+  216 of 530 «ПП территорий» titles in the cache were cut. The connector (`gisogd_api.py`) now detects capped values
+  in any field and refills them from the portal's CSV attribute export, one request per layer per TTL, cached as
+  `<code>.csv.gz`, matched by `gisguid` (then `orbis_id`); on the cache of «ПП территорий» all 521 objects with geometry
+  got the full title (up to 498 characters). If the CSV fails the shapefile value stays, the layer note says «названия
+  документов могли быть обрезаны порталом…», the next attempt waits an hour (`<code>.csv.fail`). The lines cache is
+  renamed (`.shp.lines2.gz`) so layers loaded earlier are rebuilt at once. Re-download the document layer and rebuild
+  the album to get the full titles; the «…» added by the album for titles over 120 characters is removed in the next
+  version.
+- **2026-10-03, ГРАДО 2 v0.96.0: dark node graph, help with contents, first-run path, calmer wheel.** The «Схема расчёта»
+  canvas follows the theme (background, nodes, text, links) and switches live; theme colours stay out of the saved
+  project (the saved graph is identical in both themes, a toggle marks nothing dirty and pushes nothing). F1 help: a
+  search field, a contents list with jump links, «Наверх» in every section, a first section «Как начать» (boundary →
+  data → constraints → sketch → indicators and norms → sheet and PDF / exports) and a «Новое» line; the search resets
+  on reopen; F1 from the search field toggles the window. The first-run card «С чего начать» is one phrase with
+  «Нарисовать границу» and «Пример» and never returns once a boundary exists; the status hint leads on: «Граница задана.
+  Загрузите данные или постройте эскиз.» → «Эскиз готов. Откройте «Листы», чтобы собрать лист и PDF.»; the idle hint at
+  1280 is «Начните с границы: «Данные» → «Нарисовать границу».» (full text in the tooltip). Layer search works in the
+  by-sheet tree. Default floating-window sizes grow on large screens (`uiK()` reads the real font size). Mouse wheel:
+  one notch ×1.07, ten notches ×1.8 (was ×10), anchored at the cursor; trackpad scroll and pinch unchanged (measured
+  through CDP). The changed-field marker in «Нормативы» is stronger. Pass 2 of the windows: an automated check of all
+  20 windows at 1280×720 and 2560×1440 (light) found nothing cut or off-screen; the remaining items are in
+  `docs/ux/audit-2026-10-03-pass2.md` (light map in the dark theme, dark-theme pass by eye, legend/3D previews, help
+  table columns, graph labels at 2560, grips on satellite basemaps).
 - **2026-10-03, ГРАДО 2 v0.95.1: text in the PDF album can be searched and copied.** The PDF writer
   (`core/render/grado_render/backend_pdf.py`) embeds its TrueType font as Type0 / Identity-H; it now adds a `/ToUnicode`
   CMap built from the glyphs actually used. Before, `pdftotext` on a test sheet gave «ŘůŹźŧŽůŵ…»; now «Ситуационный

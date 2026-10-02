@@ -26,6 +26,7 @@ GeoJSON, пересчитанный сервером портала, стоит 
 кэша с «shp»).
 """
 
+import csv
 import gzip
 import io
 import json
@@ -120,6 +121,12 @@ GISOGD_API_LAYERS = {
         "style_id": "lgr.vodookhr",
     },
 }
+
+# колонки CSV-выгрузки слоёв документов → поля .dbf (имена там усечены до 10 знаков)
+CSV_TO_DBF = {"document_name": "document_1", "isogd_card_number": "isogd_card", "document_number": "document_n",
+              "document_date": "document_d", "document_guid": "document_g"}
+
+_CSV_COOLDOWN = 3600          # после сбоя CSV новый запрос к порталу по этому слою — не раньше чем через час
 
 _MAX_LAYER = 512 * 2**20      # потолок слоя, собираемого в памяти (_http_get), — и сжатого, и распакованного
 _MAX_STREAM = 2 * 2**30       # потолок потоковой выгрузки на диск (ЕГКО: газоны — 1,3 ГБ)
@@ -615,7 +622,80 @@ class GisogdApi(Connector):
 
     @staticmethod
     def _cut(v):
-        return isinstance(v, str) and len(v.encode("utf-8")) >= 250
+        """Значение, возможно обрезанное dBASE на 254 байтах: в .cpg UTF-8 это 245–256 байт (кириллица — 2 байта на знак,
+        хвостовые пробелы срезаны, обрыв может уйти на знак-два), в cp1251 — 245–254 знаков."""
+        if not isinstance(v, str):
+            return False
+        return 245 <= len(v.encode("utf-8")) <= 256 or 245 <= len(v) <= 254
+
+    def _csv_text(self, code):
+        """CSV-выгрузка слоя (format=csv): полные тексты без предела dBASE. Кэш <код>.csv.gz рядом со слоем, срок тот же
+        и не старше .shp.gz (обновили слой — обновили и CSV); сеть — как у слоя: пауза после запроса, до трёх попыток."""
+        path, gz = self._cache_child(code, f"{code}.csv.gz"), self._cache_path(code)
+        if path and path.exists() and (time.time() - path.stat().st_mtime) < self.ttl \
+                and not (gz and gz.exists() and path.stat().st_mtime < gz.stat().st_mtime):
+            try:
+                dec = zlib.decompressobj(wbits=31)
+                data = _inflate(dec, path.read_bytes(), _MAX_LAYER)
+                if not dec.eof:
+                    raise EOFError("кэш недописан")
+                return data.decode("utf-8-sig")
+            except (OSError, EOFError, zlib.error, ConnectorError, UnicodeDecodeError):
+                path.unlink(missing_ok=True)
+        fail = self._cache_child(code, f"{code}.csv.fail")      # метка сбоя: время — её mtime
+        if fail and fail.exists() and 0 <= time.time() - fail.stat().st_mtime < _CSV_COOLDOWN:
+            raise ConnectorError(f"ГИС ОГД: слой {code} — CSV недавно не получен, повтор позже")
+        try:
+            raw = self.transport(f"{self.base}/layers/{code}/export/?format=csv")
+            try:
+                text = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                raise ConnectorError(f"ГИС ОГД: слой {code} — CSV не в UTF-8") from None
+            head = text.split("\n", 1)[0]
+            if ";" not in head or not ("orbis_id" in head or "gisguid" in head):
+                raise ConnectorError(f"ГИС ОГД: слой {code} — ответ портала не CSV слоя")
+        except Exception:
+            if fail:
+                fail.parent.mkdir(parents=True, exist_ok=True)
+                fail.write_text(str(time.time()), "utf-8")
+            time.sleep(_PAUSE)                                  # пауза и после неудачи
+            raise
+        if fail:
+            fail.unlink(missing_ok=True)
+        if path:
+            with _tmp_beside(path) as tmp:
+                tmp.write_bytes(gzip.compress(raw, 6))
+        time.sleep(_PAUSE)
+        return text
+
+    def _csv_full(self, code, oids, guids, fields):
+        """Полные значения полей fields для объектов с обрезанным текстом → ({orbis_id | "g:"+gisguid: {поле: значение}},
+        поля, которые в CSV есть). Колонки CSV → имена .dbf: CSV_TO_DBF, иначе та же колонка или её первые 10 знаков."""
+        rd = csv.reader(io.StringIO(self._csv_text(code)), delimiter=";")
+        head = [h.strip().lstrip("\ufeff") for h in next(rd, [])]
+        col = {h: i for i, h in enumerate(head)}
+        names = []                                  # (индекс колонки, [имена полей .dbf по возрастанию приоритета])
+        for h, i in col.items():
+            names.append((i, [h[:10], h] + ([CSV_TO_DBF[h]] if h in CSV_TO_DBF else [])))
+        covered = {n for _, ns in names for n in ns} & set(fields)
+        out = {}
+        io_, gi = col.get("orbis_id"), col.get("gisguid")
+        for row in rd:
+            oid = row[io_].strip() if io_ is not None and io_ < len(row) else ""
+            guid = row[gi].strip() if gi is not None and gi < len(row) else ""
+            if oid not in oids and guid not in guids:
+                continue
+            d = {}
+            for i, ns in names:
+                if i < len(row):
+                    for n in ns:
+                        d[n] = row[i].strip()
+            d = {k: v for k, v in d.items() if k in covered}
+            if guid:
+                out["g:" + guid] = d
+            if oid:
+                out[oid] = d
+        return out, covered
 
     def _long_texts(self, code, ids):
         """dBASE режет текст на 254 байтах: списки ВРИ ПЗЗ и ограничения ОКН приходят обрезанными. Полные строки
@@ -648,7 +728,7 @@ class GisogdApi(Connector):
                         break
                     buf = rest[end:]
                     props = obj.get("properties") or {}
-                    oid = str(props.get("orbis_id"))
+                    oid = norm_id(props.get("orbis_id"))
                     if oid in ids:
                         out[oid] = {k: v for k, v in props.items() if isinstance(v, str) and len(v) > 200}
         except Exception:
@@ -658,7 +738,7 @@ class GisogdApi(Connector):
         return out
 
     def _restore(self, props, full):
-        src = full.get(str(props.get("orbis_id")))
+        src = full.get("g:" + str(props.get("gisguid"))) or full.get(norm_id(props.get("orbis_id")))
         if not src:
             return props
         for k, v in props.items():
@@ -668,7 +748,7 @@ class GisogdApi(Connector):
         return props
 
     def _lines_path(self, code):
-        return self._cache_child(code, f"{code}.shp.lines.gz")
+        return self._cache_child(code, f"{code}.shp.lines2.gz")     # lines2: кэш до CSV-слияния (lines) держал обрезанные названия — не читается
 
     def _from_lines(self, code, query):
         """Быстрый путь по кэшу: строка на объект «w,s,e,n<TAB>ключ<TAB>json».
@@ -711,9 +791,34 @@ class GisogdApi(Connector):
         try:
             zf = _zip_of(raw, code)
             _prj, recs = iter_zip(zf)
-            cut_ids = {str(_full_names(r["properties"]).get("orbis_id")) for r in recs
-                       if any(self._cut(v) for v in r["properties"].values())}
-            full = self._long_texts(code, cut_ids) if cut_ids else {}
+            cut_ids, cut_guids, cut_fields = set(), set(), set()
+            for r in recs:
+                rp = _full_names(r["properties"])
+                hit = {k for k, v in rp.items() if self._cut(v)}
+                if hit:
+                    cut_fields |= hit
+                    cut_ids.add(norm_id(rp.get("orbis_id")))
+                    cut_guids.add(str(rp.get("gisguid")))
+            # полные тексты: сначала CSV-выгрузка (маленькая, названия документов), потом GeoJSON — только для полей,
+            # которых в CSV нет (списки ВРИ ПЗЗ и т. п.); сбой CSV слой не роняет — остаются значения из SHP
+            full, csv_failed, geo_fields = {}, False, cut_fields
+            if cut_fields:
+                try:
+                    full, covered = self._csv_full(code, cut_ids, cut_guids, cut_fields)
+                    geo_fields = cut_fields - covered
+                except Exception:
+                    csv_failed = True
+                    # поля, которые покрыл бы CSV (названия документов), через GeoJSON не добираются: слой целиком
+                    # на каждый запрос при неработающем CSV — против правила порталов
+                    geo_fields = cut_fields - set(CSV_TO_DBF.values())
+                if geo_fields:
+                    for oid, d in self._long_texts(code, cut_ids).items():
+                        tgt = full.setdefault(oid, {})
+                        for k, v in d.items():
+                            tgt.setdefault(k, v)
+            # «left» — объектов, у которых название документа так и осталось обрезанным (для пометки и недолговечного кэша;
+            # другие поля — списки ВРИ, ограничения — не считаются: их полный текст идёт запасным путём через GeoJSON)
+            doc_fields, left = cut_fields & set(CSV_TO_DBF.values()), 0
             lp = self._lines_path(code)
             with (_tmp_beside(lp) if lp else _nowhere()) as tmp, \
                     (gzip.open(tmp, "wt", encoding="utf-8", compresslevel=5) if lp else _nowhere()) as fh:
@@ -724,12 +829,19 @@ class GisogdApi(Connector):
                     if not fb:
                         continue
                     props = self._restore(f.get("properties") or {}, full)
+                    if any(self._cut(props.get(k)) for k in doc_fields):
+                        left += 1
                     key = f"{code}:{norm_id(props.get('orbis_id') or props.get('id') or i)}"
                     if fh:
                         fh.write(",".join(repr(v) for v in fb) + "\t" + key + "\t"
                                  + json.dumps({"geometry": geom, "properties": props}, ensure_ascii=False, separators=(",", ":")) + "\n")
                     if _overlaps(fb, query):
                         out.append({"type": "Feature", "geometry": geom, "properties": dict(props), "grado_key": key})
+            if csv_failed and left and lp and lp.exists() and self._cache_path(code).exists():
+                # полных текстов нет — построчный кэш делаем «старее слоя», чтобы следующий запрос собрал его заново и
+                # снова попробовал CSV, а обрезанные названия не пролежали в кэше неделю
+                old = self._cache_path(code).stat().st_mtime - 10
+                os.utime(lp, (old, old))
         except Exception as e:
             if cached and self._cache_path(code):
                 self._cache_path(code).unlink(missing_ok=True)   # следующая попытка скачает заново
@@ -740,6 +852,9 @@ class GisogdApi(Connector):
             raise ConnectorError(f"ГИС ОГД: слой {code} не разобран: {clean_msg(e)}") from None
 
         notes = []
+        if csv_failed and left:
+            notes.append(f"слой {code}: названия документов могли быть обрезаны порталом "
+                         f"(полная выгрузка CSV не получена, {left} об.)")
         if not cached:
             notes.append(f"слой {code} загружен целиком ({count} об., "
                          f"{len(raw)/1e6:.0f} МБ) — портал не фильтрует по области; "

@@ -91,7 +91,7 @@ class TestGisogdApi(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             conn = GisogdApi(transport=t, cache_dir=td)
             first = conn.fetch(BBOX, "virtual1742")
-            self.assertTrue((Path(td) / "virtual1742.shp.lines.gz").is_file())
+            self.assertTrue((Path(td) / "virtual1742.shp.lines2.gz").is_file())
             second = conn.fetch(BBOX, "virtual1742")
             far = conn.fetch((29.9, 49.9, 30.2, 50.2), "virtual1742")
             self.assertEqual(len(t.calls), 1)
@@ -350,3 +350,193 @@ class LongTexts(unittest.TestCase):
             self.assertEqual(by[8], "коротко")
             again = GisogdApi(transport=lambda *a, **k: self.fail("второй раз — из кэша"), cache_dir=td).fetch(BBOX, "virtual130")
             self.assertEqual({f["properties"]["orbis_id"]: f["properties"]["vri"] for f in again["features"]}[7], self.VRI)
+
+
+class CappedTitles(unittest.TestCase):
+    """dBASE режет названия документов на 254 байтах (ПП территорий: 216 из 530 названий): полные берутся из CSV-выгрузки
+    слоя (format=csv, UTF-8 с BOM, «;»). Строка ниже — из выгрузки ppppppt, 03.10.2026 (498 знаков, с кавычками)."""
+
+    GUID = '8a900547-587e-4ae6-b700-03f6e39c2e27'
+    TITLE = 'Об утверждении проекта планировки территории района Северный города Москвы, ограниченной:полосой отвода подъездной железнодорожной ветки к Северной водопроводной станции, территорией объектов природного комплекса Северно-Восточного административного округа города Москвы №16 "Хлебниковский лесопарк (кварталы 58,68,69,70,103), район Северный", № 19 "Парк, район Северный", №20 "Кладбище у Хлебниковского лесопарка, район Северный",границей зоны 1-го пояса санитарной зоны проектируемого проезда 241'
+    CSV_HEAD = "orbis_id;isogd_card_number;document_date;document_number;document_name;document_guid;gisguid;date_sile\n"
+
+    def layer(self):
+        cut = self.TITLE.encode("utf-8")[:254].decode("utf-8", "ignore")
+        return {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": _poly(37.60, 55.75, 37.61, 55.76),
+             "properties": {"orbis_id": 2610, "gisguid": self.GUID, "document_1": cut}},
+            {"type": "Feature", "geometry": _poly(37.605, 55.752, 37.606, 55.753),
+             "properties": {"orbis_id": 2611, "gisguid": "g-2", "document_1": "Короткое название"}}]}
+
+    def csv_bytes(self):
+        import csv
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";", lineterminator="\n")
+        w.writerow(self.CSV_HEAD.strip().split(";"))
+        w.writerow(["2610", "ИСОГД-1", "2015-12-17 00:00:00", "899-ПП", self.TITLE, "d-1", self.GUID, ""])
+        w.writerow(["2611", "ИСОГД-2", "2018-06-19 00:00:00", "590-ПП", "Другое", "d-2", "g-2", ""])
+        return b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
+
+    def transport(self, layer, csv_data, calls):
+        def t(url, timeout=None):
+            calls.append(url)
+            if "format=csv" in url:
+                if csv_data is None:
+                    raise ConnectorError("ГИС ОГД ответил HTTP 500")
+                return csv_data
+            return shp_zip(layer)
+        return t
+
+    def titles(self, r):
+        return {f["properties"]["orbis_id"]: f["properties"]["document_1"] for f in r["features"]}
+
+    def test_csv_gives_full_title(self):
+        layer, calls = self.layer(), []
+        self.assertEqual(len(layer["features"][0]["properties"]["document_1"].encode("utf-8")) <= 254, True)
+        r = GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls)).fetch(BBOX, "ppppppt")
+        by = self.titles(r)
+        self.assertEqual(by[2610], self.TITLE)
+        self.assertEqual(len(by[2610]), 498)
+        self.assertEqual(by[2611], "Короткое название")
+        self.assertEqual(sum("format=csv" in c for c in calls), 1)
+        self.assertFalse(any("format=geojson" in c for c in calls))   # поле покрыто CSV — тяжёлый GeoJSON не нужен
+        self.assertFalse([n for n in r["notes"] if "обрезан" in n])
+
+    def test_csv_cached_and_works_offline(self):
+        layer, calls = self.layer(), []
+        with tempfile.TemporaryDirectory() as td:
+            GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertTrue((Path(td) / "ppppppt.csv.gz").exists())
+            Path(td, "ppppppt.shp.lines2.gz").unlink()               # построчный кэш потерян: слой и CSV — с диска
+            r = GisogdApi(transport=lambda *a, **k: self.fail("нужен кэш, а не сеть"), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(self.titles(r)[2610], self.TITLE)
+
+    def test_csv_missing_keeps_shp_value_and_notes(self):
+        layer, calls = self.layer(), []
+        cut = layer["features"][0]["properties"]["document_1"]
+        with tempfile.TemporaryDirectory() as td:
+            r = GisogdApi(transport=self.transport(layer, None, calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(self.titles(r)[2610], cut)
+            self.assertTrue(any("названия документов могли быть обрезаны порталом" in n for n in r["notes"]))
+            self.assertFalse(Path(td, "ppppppt.csv.gz").exists())
+            self.assertTrue(Path(td, "ppppppt.csv.fail").exists())
+
+    def test_csv_failure_cooldown_one_request_per_hour(self):
+        """Неработающий CSV: один запрос на слой в час, GeoJSON слоя целиком не качается; через час — ещё одна попытка."""
+        import os
+        import time
+        layer, calls = self.layer(), []
+        with tempfile.TemporaryDirectory() as td:
+            for _ in range(2):
+                r = GisogdApi(transport=self.transport(layer, None, calls), cache_dir=td).fetch(BBOX, "ppppppt")
+                self.assertTrue(any("обрезаны" in n for n in r["notes"]))     # пометка видна и в паузу
+            self.assertEqual(sum("format=csv" in c for c in calls), 1)
+            self.assertEqual(sum("format=geojson" in c for c in calls), 0)
+            old = time.time() - 2 * 3600
+            os.utime(Path(td, "ppppppt.csv.fail"), (old, old))
+            GisogdApi(transport=self.transport(layer, None, calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(sum("format=csv" in c for c in calls), 2)          # после паузы — ровно одна попытка
+            GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(sum("format=csv" in c for c in calls), 2)          # метка снова свежая
+            os.utime(Path(td, "ppppppt.csv.fail"), (old, old))
+            r = GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(self.titles(r)[2610], self.TITLE)
+            self.assertFalse(Path(td, "ppppppt.csv.fail").exists())
+
+    def test_old_lines_cache_name_is_ignored(self):
+        layer, calls = self.layer(), []
+        with tempfile.TemporaryDirectory() as td:
+            GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            new = Path(td, "ppppppt.shp.lines2.gz")
+            old = Path(td, "ppppppt.shp.lines.gz")
+            new.rename(old)                                  # остался только кэш прежнего имени — с «обрезанным» содержимым
+            with gzip.open(old, "wt", encoding="utf-8") as fh:
+                fh.write("37.0,55.0,38.0,56.0\tppppppt:2610\t" + json.dumps(
+                    {"geometry": _poly(37.60, 55.75, 37.61, 55.76), "properties": {"orbis_id": 2610, "document_1": "СТАРОЕ"}}) + "\n")
+            r = GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls), cache_dir=td).fetch(BBOX, "ppppppt")
+            self.assertEqual(self.titles(r)[2610], self.TITLE)
+            self.assertTrue(old.exists() and new.exists())   # старый файл не тронут
+
+    def test_csv_not_a_csv_is_a_failure_not_an_error(self):
+        layer, calls = self.layer(), []
+        r = GisogdApi(transport=self.transport(layer, b"<html>busy</html>", calls)).fetch(BBOX, "ppppppt")
+        self.assertEqual(len(r["features"]), 2)
+        self.assertTrue(any("обрезаны" in n for n in r["notes"]))
+
+    def test_no_capped_field_no_csv_request(self):
+        calls = []
+        GisogdApi(transport=self.transport(LAYER, None, calls)).fetch(BBOX, "virtual1742")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("format=csv", calls[0])
+
+    def test_orbis_id_fallback_when_guid_differs(self):
+        layer, calls = self.layer(), []
+        layer["features"][0]["properties"].update(gisguid="other-guid", orbis_id=2610.0)    # номер в .dbf — число с дробью: 2610.0
+        r = GisogdApi(transport=self.transport(layer, self.csv_bytes(), calls)).fetch(BBOX, "ppppppt")
+        self.assertEqual(self.titles(r)[2610], self.TITLE)
+
+    def test_cp1251_dbf_254_chars(self):
+        """Не UTF-8: .cpg нет, dBASE в cp1251 — обрезка на 254 знаках (а не байтах)."""
+        layer = self.layer()
+        cut = self.TITLE[:254]
+        fields = [("orbis_id", "N", 10), ("gisguid", "C", 37), ("document_1", "C", 254)]
+        rows = [(2610, self.GUID, cut), (2611, "g-2", "Короткое название")]
+        head_len, rec_len = 32 + 32 * len(fields) + 1, 1 + sum(f[2] for f in fields)
+        dbf = bytearray(struct.pack("<4BIHH20x", 3, 126, 9, 23, len(rows), head_len, rec_len))
+        for n, t, ln in fields:
+            dbf += n.encode("ascii").ljust(11, b"\0") + t.encode() + b"\0" * 4 + bytes([ln, 0]) + b"\0" * 14
+        dbf += b"\x0d"
+        for oid, g, d in rows:
+            dbf += b" " + str(oid).rjust(10).encode() + g.encode().ljust(37) + d.encode("cp1251").ljust(254)
+        dbf += b"\x1a"
+        src, out = zipfile.ZipFile(io.BytesIO(shp_zip(layer))), io.BytesIO()
+        with zipfile.ZipFile(out, "w") as z:
+            for n in src.namelist():
+                if n.endswith(".dbf"):
+                    z.writestr(n, bytes(dbf))
+                elif not n.endswith(".cpg"):
+                    z.writestr(n, src.read(n))
+        t = self.transport(layer, self.csv_bytes(), [])
+        r = GisogdApi(transport=lambda url, timeout=None: out.getvalue() if "format=shp" in url else t(url)).fetch(BBOX, "ppppppt")
+        self.assertEqual(self.titles(r)[2610], self.TITLE)
+
+    def test_duplicate_gisguid_last_csv_row_wins(self):
+        import csv
+        layer, calls = self.layer(), []
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";", lineterminator="\n")
+        w.writerow(self.CSV_HEAD.strip().split(";"))
+        w.writerow(["9001", "", "", "", self.TITLE[:254] + " ПЕРВАЯ", "", self.GUID, ""])
+        w.writerow(["9002", "", "", "", self.TITLE, "", self.GUID, ""])            # тот же gisguid: побеждает последняя строка
+        data = b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")
+        r = GisogdApi(transport=self.transport(layer, data, calls)).fetch(BBOX, "ppppppt")
+        self.assertEqual(self.titles(r)[2610], self.TITLE)
+
+    def test_semicolon_and_newline_inside_quoted_csv_field(self):
+        import csv
+        title = self.TITLE[:300] + "; корп. 2;\nстр. 5 " + self.TITLE[300:]
+        layer, calls = self.layer(), []
+        layer["features"][0]["properties"]["document_1"] = title.encode("utf-8")[:254].decode("utf-8", "ignore")
+        buf = io.StringIO()
+        w = csv.writer(buf, delimiter=";", lineterminator="\n")
+        w.writerow(self.CSV_HEAD.strip().split(";"))
+        w.writerow(["2610", "ИСОГД-1", "", "899-ПП", title, "d-1", self.GUID, ""])
+        r = GisogdApi(transport=self.transport(layer, b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8"), calls)).fetch(BBOX, "ppppppt")
+        self.assertEqual(self.titles(r)[2610], title.strip())
+
+    def test_field_not_in_csv_falls_back_to_geojson(self):
+        vri = "Размещение жилых домов, " * 40
+        layer = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "geometry": _poly(37.60, 55.75, 37.61, 55.76), "properties": {"orbis_id": 7, "vri": vri}}]}
+        gj = json.dumps(layer, ensure_ascii=False).encode("utf-8")
+        calls = []
+
+        def transport(url, timeout=None):
+            calls.append(url)
+            if "format=csv" in url:
+                return ("orbis_id;document_name\n7;Документ\n").encode("utf-8")
+            return gj if "format=geojson" in url else shp_zip(layer)
+        r = GisogdApi(transport=transport).fetch(BBOX, "virtual130")
+        self.assertEqual(r["features"][0]["properties"]["vri"], vri)
+        self.assertEqual(sum("format=csv" in c for c in calls), 1)
+        self.assertEqual(sum("format=geojson" in c for c in calls), 1)
