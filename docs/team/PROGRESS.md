@@ -38,6 +38,18 @@ gave a false failure on a busy machine (v0.95.0).
 RULE: Agents never use `git stash` / `git checkout` of files in the shared worktree for «before» screenshots — they
 serve a `git archive HEAD` copy on another port.
 
+RULE: A hidden window can keep keyboard focus in its input: a global shortcut handler that skips inputs must still
+handle the shortcut that toggles that window (F1 from the help search field, v0.96.0).
+RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
+text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
+
+- 03.10.2026, цикл 7 — пара. Сервер: v0.95.1 ToUnicode в PDF (ревью руководителя, 73 render OK). Интерфейс (v0.96.0):
+  тёмный граф, справка, путь новичка, колесо; ревью FAIL (цвета темы попадали в проект) → исправлено исполнителем с
+  доказательством равенства сохранённого графа в обеих темах; прогон упал дважды на F1 из поля поиска (окно скрыто,
+  фокус в поле) — исправлено руководителем; проверка приветствия сведена к видимому. Владелец 03.10: названия ППТ
+  обрезаны → T29: причина — DBF 254 байта; сервер v0.96.1 (ревью FAIL: безграничный повтор CSV и старый кэш →
+  исправлено: cooldown 1 ч, `lines2`), интерфейс в работе (убрать «…», перенос, продолжение списка на следующем
+  слайде). Итог прогонов: 381 unit OK, connectors 162 OK, collab 66 ok, E2E оба сценария зелёные.
 - 03.10.2026, цикл 6 — пара «сервер + интерфейс». Сервер (v0.94.1, c30baa2): участки ДОО, школ, поликлиники как
   показатели ТЭП (сверка нормоконтролёра по тексту — PASS по всем 10 константам), выгрузка GeoJSON устойчивее.
   Интерфейс (v0.95.0, 8598739): меню выгрузок у DXF, район по доле площади, столбцы у всех вариантов, масштаб схемы
