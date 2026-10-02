@@ -18,6 +18,19 @@ runs the final gate on the combined tree.
 RULE: Norm constants are checked only against decree texts in `docs/standards/moscow-ngp` (audit of 02.10.2026);
 the owner sends missing texts as files.
 
+RULE: Starting `apps/grado2/server.py` without a port replaces the owner's server on 8650 — agents always pass an
+explicit port ≥ 8660 and `GRADO2_PROJECTS=<temp>`; screenshots for audits are taken from a `git archive` snapshot.
+RULE: Anything stored in the undo stack as a full copy must be dropped when its object is replaced from outside
+(file, parcels, another person's change) — T16 first version let Ctrl+Z bring an old boundary back over a new one.
+
+- 02.10.2026, цикл 3 — указания владельца: правка границы и привязка к ней (T16), интерфейс на разных экранах (T17),
+  нормативы вручную (T13). T16 принята со второго захода (v0.92.0, b2edc4e): первый FAIL архитектора — записи отмены
+  правки вершин переживали замену границы; исправлено, плюс запрет зрителю в самой правке, отказ на
+  самопересечение, замер привязки 0,13 мс на 5000 вершин. T13 шаг 1 (v0.91.4, 5487b43): `constants_meta`,
+  `GET /api/tep/norms`, `constants` в `POST /api/tep`; FAIL архитектора (10**400 → 500) исправлен руководителем.
+  T17: аудит на 5 размерах окна (e7b31af), правки T18–T21. Проверка на общем дереве: 360 unit OK, collab 66 ok,
+  compute 40 OK, 2 прогона E2E подряд зелёные; снимки границы с ручками и маркера привязки просмотрены. Не проверено:
+  второй живой участник совместной работы, Retina, тёмная тема. Дальше: T13 шаг 2 (окно «Нормативы»), T18, T19.
 - 02.10.2026, цикл 2 — T2, T3, T4 приняты; указание владельца о ручной правке нормативов → T13 первой в очереди.
   T2: сбой сценария — клик по «Доступ» попадал в «Историю», пока шапка сдвигалась ~30 мс; сценарий ждёт устойчивую
   кнопку (hub.js не менялся; сдвиг — T15). T3: `mergeDownload` переносит `_uid` на совпавший объект (`Collab.keepUid`);
