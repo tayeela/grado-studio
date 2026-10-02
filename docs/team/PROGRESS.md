@@ -28,6 +28,17 @@ the page breaks. Fetch on first use.
 RULE: The lead's gate prints the failing step: grep the E2E output for `STEP FAILED` and ` log: ` lines, and a FAILED
 gate blocks the commit even when the diff review said PASS (cycle 4: review PASS, both E2E runs failed).
 
+RULE: The lead runs the unit tests WITHOUT `PYTHONPATH` too (as the program starts): a module that imports a core
+package not on the server's own `sys.path` list passes with PYTHONPATH and fails in the real program (v0.93.1,
+`grado_geom`). A new core package also goes into `packaging/grado2.spec`.
+RULE: No inline `<script>` in `index.html`: the page's CSP is `script-src 'self'`; put the code into a file.
+
+- 02.10.2026, цикл 5 — пара «сервер + интерфейс». Сервер (v0.93.1, c036320): `/api/export/geojson`,
+  `/api/export/xlsx`, `/api/place` с полигоном, разбивка спорта; ревью PASS, но прогон руководителя без PYTHONPATH
+  упал (`No module named grado_geom`) — исправлено (sys.path, spec установщика). Интерфейс (v0.94.0, 964838b): масштаб
+  по `--k`, панели clamp, «Размер интерфейса», 840 px, `syncVarTep`, подсказка слоёв; ревью PASS, но оба прогона E2E
+  упали на CSP (встроенный скрипт) — вынесен в `uisize.js`. После исправлений: 374 unit OK, compute 41 OK, collab 66 ok,
+  2 прогона E2E зелёные; снимки 2560 и 840 просмотрены. Дальше: T24 + T25 парой, затем T26, T7.
 RULE: Probes of grado.tailink.tech from the Mac are unreliable (the Mac goes out through a VPN; half of the requests
 time out before connecting). The landing is confirmed by the deploy script's own health check («Готово: на сервере
 версия X»), not by curl from the Mac.
