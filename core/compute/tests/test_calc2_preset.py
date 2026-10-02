@@ -55,6 +55,13 @@ class TestCalc2Yakimanka(unittest.TestCase):
             self.assertEqual(self.r[mine], round_half_up(norm * REF["population"] / div, 3), mine)
             self.assertLessEqual(abs(self.r[mine] - REF[{"sport_indoor": "sport_indoor_nnp"}.get(mine, mine)]), 0.0011, mine)
 
+    def test_sport_flat_split_sums_to_total(self):
+        # 1557-ПП п. 1.3.3.2: 970 = 570 (до 500 м) + 400 (до 1500 м)
+        a, b, t = self.r["sport_flat_500_ha"], self.r["sport_flat_1500_ha"], self.r["sport_flat_ha"]
+        self.assertEqual(a, round_half_up(570 * REF["population"] / 1e7, 3))
+        self.assertEqual(b, round_half_up(400 * REF["population"] / 1e7, 3))
+        self.assertLessEqual(abs(a + b - t), 0.0011)
+
     def test_parking(self):
         self.eq("parking_perm", "parking_perm"); self.eq("parking_guest", "parking_guest"); self.eq("parking_visitor", "parking_visitor")
         self.eq("parking_total", "parking_total"); self.eq("parking_stop", "parking_stop")

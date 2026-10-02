@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.93.1: server part for exports, districts by area, sport split (no buttons yet).**
+  `POST /api/export/geojson` — layers `{layers:[{name, features}]}` in lon/lat → `grado2-geojson-msk.zip`: one
+  `.geojson` per layer in МСК (same transform as DXF, a `crs` member with the МСК definition, Russian field names kept)
+  and `README.txt`. `POST /api/export/xlsx` — `{tep:[{group,title,value,unit}], sheets:[{n,title,format,scale}], note?,
+  project?}` → `grado2-tep.xlsx` with worksheets «ТЭП» and «Листы», written with the standard library; numbers are
+  numeric cells, text starting with = + - @ stays text; opened in LibreOffice by the reviewer, not in Excel.
+  `POST /api/place` takes an optional territory `polygon`: district, education zone, K2, okrug and ТиНАО follow the
+  district with the largest area share (local reference `docs/standards/admin/moscow-adm.geojson`, no portal traffic);
+  the answer adds `districts:[{name, share}]` and `chosen_by`; `inside_ttk`, K1 and the rail distance still use the
+  centre. Flat sport facilities are split by 1557-ПП п. 1.3.3.2: 570 m² within 500 m and 400 m² within 1500 m per
+  1000 people (two constants, two metrics). The note «Нормативы изменены вручную» reaches PDF, SVG and PPTX (rows come
+  from the client — test); DXF has no ТЭП table. `core/geom` is now on the server's import path and in the installer
+  spec (the first version worked only with PYTHONPATH set — found by the lead's run without it). Open: a
+  GeometryCollection makes the GeoJSON export answer 400; no feature-count cap; the frontend still sends a centre
+  point only and has no buttons for the two exports (next step).
 - **2026-10-02, ГРАДО 2 v0.93.0: window «Нормативы расчёта»; floating windows stay on screen; nothing cut at 1280.**
   Owner 02.10: «нормативы постоянно меняются, поэтому должна быть возможность их вручную менять перед расчётом, но поля
   должны быть предзаполнены нынешними нормативами». «Показатели» → «Нормативы…» opens a window (new module

@@ -34,7 +34,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 # в собранной программе (PyInstaller) всё лежит в папке распаковки sys._MEIPASS: web/, core/…, docs/standards/
 FROZEN = getattr(sys, "frozen", False)
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
-for sub in ("core/connectors", "core/compute", "core/render", "core/layout"):
+for sub in ("core/connectors", "core/compute", "core/render", "core/layout", "core/geom"):
     sys.path.insert(0, str(ROOT / sub))
 
 from grado_compute import Engine                                   # noqa: E402
@@ -1063,15 +1063,88 @@ def _fresh(path):
     return path.exists() and time.time() - path.stat().st_mtime < PLACE_TTL
 
 
-def place_info(lon, lat):
+OKRUG_FULL = {"ЦАО": "Центральный", "САО": "Северный", "СВАО": "Северо-Восточный", "ВАО": "Восточный", "ЮВАО": "Юго-Восточный",
+              "ЮАО": "Южный", "ЮЗАО": "Юго-Западный", "ЗАО": "Западный", "СЗАО": "Северо-Западный", "ЗелАО": "Зеленоградский",
+              "НАО": "Новомосковский", "ТАО": "Троицкий"}
+MAX_PLACE_VERTICES = 100000
+_ADMIN_DIST = {}
+
+
+def _admin_districts():
+    """Районы из эталона (docs/standards/admin/moscow-adm.geojson): [(название, код округа, полигоны, bbox)]; читается один раз."""
+    if ADMIN_FILE not in _ADMIN_DIST:
+        doc = json.loads(ADMIN_FILE.read_text(encoding="utf-8"))
+        out = []
+        for f in doc["features"]:
+            pr, g = f["properties"], f["geometry"]
+            if pr.get("Уровень") != "район":
+                continue
+            polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+            xs = [pt[0] for poly in polys for pt in poly[0]]
+            ys = [pt[1] for poly in polys for pt in poly[0]]
+            out.append((pr["Наименование"], pr.get("Округ", ""), polys, (min(xs), min(ys), max(xs), max(ys))))
+        _ADMIN_DIST[ADMIN_FILE] = out
+    return _ADMIN_DIST[ADMIN_FILE]
+
+
+def place_polygons(geom):
+    """Контур территории из запроса: GeoJSON Polygon / MultiPolygon в lon/lat → список полигонов [[кольцо, ...], ...].
+    Не-объект, чужой тип, bool, NaN, координаты вне диапазона, больше 100 000 вершин — ValueError (ответ 400)."""
+    import export_io
+    if not isinstance(geom, dict) or geom.get("type") not in ("Polygon", "MultiPolygon"):
+        raise ValueError("polygon must be a GeoJSON Polygon or MultiPolygon")
+    c = geom.get("coordinates")
+    polys = [c] if geom["type"] == "Polygon" else c
+    n = 0
+    if not isinstance(polys, list) or not polys:
+        raise ValueError("polygon coordinates are empty")
+    for poly in polys:
+        if not isinstance(poly, list) or not poly:
+            raise ValueError("polygon rings are empty")
+        for ring in poly:
+            if not isinstance(ring, list) or len(ring) < 4:
+                raise ValueError("polygon ring needs at least 4 points")
+            n += len(ring)
+            if n > MAX_PLACE_VERTICES:
+                raise ValueError("polygon has too many vertices")
+            for pt in ring:
+                if not isinstance(pt, list) or len(pt) < 2:
+                    raise ValueError("polygon point must be [lon, lat]")
+                export_io._num(pt[0], "lon", 180)
+                export_io._num(pt[1], "lat", 90)
+    return [[[(float(pt[0]), float(pt[1])) for pt in ring] for ring in poly] for poly in polys]
+
+
+def district_shares(polys):
+    """Доли площади территории по районам эталона: [{name, okrug, share}] по убыванию; доли в сумме 1 (часть вне Москвы не считается)."""
+    from grado_geom.overlay import union_intersection_area
+    k = math.cos(math.radians(sum(pt[1] for poly in polys for pt in poly[0]) / sum(len(poly[0]) for poly in polys)))
+    sq = lambda ps: [[[(x * k, y) for x, y in ring] for ring in poly] for poly in ps]
+    bb = (min(pt[0] for poly in polys for pt in poly[0]), min(pt[1] for poly in polys for pt in poly[0]),
+          max(pt[0] for poly in polys for pt in poly[0]), max(pt[1] for poly in polys for pt in poly[0]))
+    terr, found = sq(polys), []
+    for name, okrug, dpolys, b in _admin_districts():
+        if b[2] < bb[0] or b[0] > bb[2] or b[3] < bb[1] or b[1] > bb[3]:
+            continue
+        a = union_intersection_area(terr, sq(dpolys))
+        if a > 0:
+            found.append([name, okrug, a])
+    total = sum(f[2] for f in found)
+    return [{"name": n, "okrug": o, "share": round(a / total, 4)} for n, o, a in sorted(found, key=lambda f: -f[2])] if total else []
+
+
+def place_info(lon, lat, polygon=None):
     """Территориальные параметры ТЭП по точке (как маркер «Калькулятора 2.0»): район и округ по OSM, образовательная
     зона (2151-ПП), K2 (945-ПП прил. 3 с границей ТТК), ТиНАО, K1 по расстоянию до ближайшего входа или станции
-    метро, МЦК, МЦД. K1 — приближение: прямое расстояние × 1,3 вместо пешеходной изохроны."""
+    метро, МЦК, МЦД. K1 — приближение: прямое расстояние × 1,3 вместо пешеходной изохроны.
+    polygon — контур территории (GeoJSON в lon/lat): район, зона и K2 берутся у района с наибольшей долей площади
+    (по эталону районов, без новых запросов к порталам); без контура или вне эталона — по точке (chosen_by «centre»)."""
     import math
-    key = (round(lon, 3), round(lat, 3))
+    polys = place_polygons(polygon) if polygon is not None else None
+    key = (round(lon, 3), round(lat, 3), hash(json.dumps(polygon, sort_keys=True)) if polygon is not None else None)
     if key in _PLACE_MEMO:
         return _PLACE_MEMO[key]
-    cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"
+    cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"      # Overpass по точке, от контура не зависит
     raw = None
     if _fresh(cache):
         try:
@@ -1087,6 +1160,14 @@ def place_info(lon, lat):
     okrug = next((a.get("name") for a in areas if a.get("admin_level") == "5"), "")
     dname = next((a.get("name") for a in areas if a.get("admin_level") == "8"), "")
     tinao = int(any(w in (okrug or "") for w in ("Троицк", "Новомосковск")))
+    districts, chosen_by = [], "centre"
+    if polys:
+        districts = district_shares(polys)
+        if districts:
+            top = districts[0]
+            chosen_by, dname = "area", top["name"]
+            okrug = f'{OKRUG_FULL[top["okrug"]]} административный округ' if top["okrug"] in OKRUG_FULL else okrug
+            tinao = int(top["okrug"] in ("ТАО", "НАО"))
     table = {_norm_name(k): k for k in DISTRICTS["k2"]}
     district = table.get(_norm_name(dname))
     inside_ttk = _in_ring(lon, lat, DISTRICTS["ttk_hull"])
@@ -1106,7 +1187,8 @@ def place_info(lon, lat):
     walk = dist * 1.3 if dist is not None else None
     k1 = 0.75 if walk is not None and walk < 1200 else 0.9 if walk is not None and walk <= 2200 else 1.0
     out = {"district": district or dname, "known": bool(district), "okrug": okrug, "tinao": tinao, "inside_ttk": inside_ttk,
-           "zone": zone, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes}
+           "zone": zone, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes,
+           "districts": [{"name": d["name"], "share": d["share"]} for d in districts], "chosen_by": chosen_by}
     _PLACE_MEMO[key] = out
     return out
 
@@ -1918,6 +2000,24 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)
+            if self.path == "/api/export/geojson":
+                import export_io
+                body = export_io.export_geojson(req.get("layers"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", 'attachment; filename="grado2-geojson-msk.zip"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path == "/api/export/xlsx":
+                import export_io
+                body = export_io.export_xlsx(req.get("tep") or [], req.get("sheets") or [], req.get("note"), req.get("project"))
+                self.send_response(200)
+                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                self.send_header("Content-Disposition", 'attachment; filename="grado2-tep.xlsx"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path == "/api/fgistp/fetch":
                 bbox = [float(v) for v in req["bbox"]]
                 try:
@@ -1931,8 +2031,10 @@ class Handler(SimpleHTTPRequestHandler):
                     f["constants"] = req["constants"]
                 return self._json(200, tep(**f))
             if self.path == "/api/place":
+                import export_io
+                lon, lat = export_io._num(req["lon"], "lon", 180), export_io._num(req["lat"], "lat", 90)
                 try:
-                    return self._json(200, place_info(float(req["lon"]), float(req["lat"])))
+                    return self._json(200, place_info(float(lon), float(lat), req.get("polygon")))
                 except ConnectorError as e:
                     return self._json(502, {"error": str(e)})
             if self.path == "/api/rail_route":

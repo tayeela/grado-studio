@@ -9,7 +9,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 ROOT = Path(SPEC).resolve().parents[1]
 APP = ROOT / "apps/grado2"
 VERSION = json.loads((APP / "web/version.json").read_text("utf-8"))["version"]
-PATHEX = [str(APP)] + [str(ROOT / "core" / m) for m in ("connectors", "compute", "render", "layout")]
+PATHEX = [str(APP)] + [str(ROOT / "core" / m) for m in ("connectors", "compute", "render", "layout", "geom")]
 sys.path[:0] = PATHEX                       # collect_* ниже импортируют пакеты ядра
 
 datas = [(str(APP / "web"), "web"),
@@ -19,8 +19,8 @@ datas = [(str(APP / "web"), "web"),
          (str(ROOT / "docs/standards/redln97"), "docs/standards/redln97")]
 datas += collect_data_files("certifi") + collect_data_files("ezdxf") + collect_data_files("grado_compute") + collect_data_files("grado_render")
 
-hiddenimports = ["server", "dxf_io", "file_io", "print_io"]
-for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "ezdxf", "PIL"):
+hiddenimports = ["server", "dxf_io", "file_io", "print_io", "export_io"]
+for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL"):
     hiddenimports += collect_submodules(package)
 
 a = Analysis([str(ROOT / "packaging/grado2_entry.py")], pathex=PATHEX, binaries=[], datas=datas, hiddenimports=hiddenimports,

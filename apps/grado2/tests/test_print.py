@@ -255,6 +255,20 @@ class Pptx(unittest.TestCase):
         self.assertIn('name="Участки"', s2)
         self.assertIn('<a:round/>', s2)                                  # изломы контуров карты скруглены
 
+    def test_tep_note_row_reaches_pdf_svg_and_pptx(self):
+        """T23: строки ТЭП приходят с клиента как есть, сервер их не пересобирает: примечание «Нормативы изменены вручную»
+        доходит до SVG-листа, PDF и PPTX. В DXF таблицы ТЭП нет вовсе (экспорт DXF несёт только слои)."""
+        import io
+        import zipfile
+        note = "Нормативы изменены вручную"
+        spec = {"meta": {}, "sheets": [{"title": "ТЭП", "size": "A3", "kind": "tep", "tep": [["Территория", "45,9 га"], [note, "3"]]}]}
+        self.assertIn(note, print_io.render_preview_svg(spec, S.REDLN, S.LGR_DASH))
+        self.assertEqual(print_io.render_pdf(spec, S.REDLN, S.LGR_DASH)[:4], b"%PDF")
+        z = zipfile.ZipFile(io.BytesIO(print_io.render_pptx(spec, S.REDLN, S.LGR_DASH)))
+        self.assertIn(note, z.read("ppt/slides/slide1.xml").decode("utf-8"))
+        mapsheet = sheet(tep=[[note, "3"]])                                # лист с картой: та же строка в блоке ТЭП
+        self.assertIn(note, print_io.render_preview_svg({"meta": {}, "sheets": [mapsheet]}, S.REDLN, S.LGR_DASH))
+
 
 class PptKrtSheets(unittest.TestCase):
     """Листы альбома ППТ КРТ по составу «ГК Царицыно»: карта слева (рамка шаблона), справа легенда и списки документов,
