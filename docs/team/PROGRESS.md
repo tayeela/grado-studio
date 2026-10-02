@@ -43,6 +43,15 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+RULE: Project files on the site (`/var/lib/grado/projects`, local mode, not hub) are edited only by the lead with the
+owner's word: plan first, backup to `.bak/`, atomic replace, the owner's tab closed (browser autosave would overwrite),
+verification, rollback path. Subagents never touch them.
+
+- 03.10.2026, цикл 8 — T31 (v0.96.3, ревью PASS с правками руководителя: blur только окна, выделение в таблице не
+  теряется от кнопки), T34 (v0.96.3 статус; v0.97.0 импорт — ревью FAIL: зритель, Esc, размер → исправлено; на файлах
+  владельца 9 листов, PDF 9 стр., стр. 2 совпадает с его PDF попиксельно). Разведка сервера: сайт в локальном режиме,
+  «Безобразово» 1 лист с 29.09 — альбом туда никогда не попадал, собирался на Mac в проекте «КРТ 3141 проверка».
+  Спека T32/T33 готова, перевёрстка в работе. Прогоны: 385 unit OK, collab 66, E2E оба сценария OK.
 - 03.10.2026, выкладка по слову владельца — v0.96.2: прогон в ветке (apps 384, connectors 162, compute 46, render
   73, collab 66, E2E оба сценария OK), main ← team/grado2 (3141fd7), скрипт выкладки: «Готово: на сервере версия
   0.96.2», main отправлен. Новые замечания владельца по сайту (на 0.93.0): выделение текста при перетаскивании, окно
