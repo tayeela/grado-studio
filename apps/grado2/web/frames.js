@@ -11,7 +11,7 @@
   let SELF = null, drawing = false, drag = null;
 
   // лист на карте: карта-лист без обзорной подгонки; листы раздела — только при открытом окне «Листы» (или force)
-  const sheetOnMap = (sh, force) => !["tep", "title", "photos"].includes(sh.kind) && !sh.panels && !["moscow", "district", "okrug"].includes(sh.fit)
+  const sheetOnMap = (sh, force) => !["tep", "title", "photos"].includes(sh.kind) && !sh.panels && !sh.frozen && !["moscow", "district", "okrug"].includes(sh.fit)
     && (force || !(sh.fit || sh.keys) || !$("wSheets").hidden);
   window.sheetOnMap = sheetOnMap;
   const own = sh => !(sh.fit || sh.keys);

@@ -1,3 +1,4 @@
+import json
 import sys
 import os
 import unittest
@@ -458,6 +459,20 @@ class HttpHardening(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(len(j["norms"]), len(json.loads(S.PRESET.read_text("utf-8"))["constants"]))
         self.assertEqual(j["norms"][0].keys() >= {"id", "value", "title", "unit", "group", "source", "edition", "min", "max"}, True)
+
+    def test_local_project_40mb_body_saves(self):
+        """Проект с данными и альбомом готовой вёрстки (импорт «Из файла…») больше 32 МБ: путь записи проекта принимает его."""
+        self.assertGreaterEqual(S.body_limit("/api/project?name=x"), 128 * 2**20)
+        self.assertGreater(S.body_limit("/api/project?autosave=1"), S.MAX_BODY)
+        body = json.dumps({"format": "grado2", "pad": "x" * (40 * 2**20)}).encode()
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            old, S.PROJECTS = S.PROJECTS, Path(tmp) / "p"
+            try:
+                path = S.save_project("Большой", body)
+                self.assertEqual(path.stat().st_size, len(body))
+            finally:
+                S.PROJECTS = old
 
     def test_body_limits_per_path(self):
         self.assertEqual(S.body_limit("/api/project?name=x"), S.MAX_PROJECT_BODY)

@@ -21,7 +21,7 @@ let tT; function toast(t) {
   Object.assign(el.style, { left: (m.left + m.width / 2) + "px", bottom: (cr ? innerHeight - cr.top + 8 : innerHeight - m.bottom + 14) + "px", top: "" });
   const r = el.getBoundingClientRect(), hit = [...document.querySelectorAll(".win:not([hidden])")].some(w => { const b = w.getBoundingClientRect(); return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top; });
   if (hit) { el.classList.add("top"); Object.assign(el.style, { top: (m.top + 10) + "px", bottom: "auto" }); }
-  clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), /^Восстановлена последняя работа/.test(t) ? 2500 : 4200);   // «Восстановлена…» не должна долго висеть над первой командой
+  clearTimeout(tT); tT = setTimeout(() => el.classList.remove("on"), /^Восстановлена последняя работа/.test(t) ? 2500 : Math.max(4200, t.length * 55));   // «Восстановлена…» не должна долго висеть над первой командой
 }
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
 async function api(path, body, signal) {
@@ -195,7 +195,7 @@ const coverStyle = new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#1
 const coverLayer = new ol.layer.Vector({ source: coverSrc, style: coverStyle, zIndex: 105, visible: false });
 mMain.addLayer(coverLayer);
 function coverSheets() {
-  const sh = (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels);
+  const sh = (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels && !s.frozen);
   return sh.length ? sh : [newSheet()];
 }
 function coverBox() {

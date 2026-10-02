@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.97.0: an album can be imported from a project file («Листы» → «Из файла…»).** Owner 03.10:
+  his finished КРТ layout (9 sheets) lived only in a backup folder; the live project showed «Лист 1». «Из файла…»
+  reads a `.grado2` in the browser — a whole project (its `album`) or a bare `{meta, sheets}` album — and either
+  replaces the current sheets or appends them (in-place choice bar: focus on its first button, Esc cancels). Sheets
+  that carry their own layers with geometry (a rendered print spec) become «готовая вёрстка»: they draw from their
+  own data without project layers, format, scale and legend are locked, they have no frame on the map and are left
+  out of frames / ГИС ОГД / DXF. Imported sheets get ids `imp_<time>_<n>`; empty album meta fields are filled from the
+  file; `builtAt` is the import time with «импортирован из файла …» in the status line; missing project layers or
+  views are listed in a toast («в N л. нет слоёв: …») instead of being dropped silently. A viewer of a shared project
+  cannot import. Files over 25 MB ask first («проект станет большим…»); over 400 MB are refused; a project with the
+  owner's 9 frozen sheets is 17.4 MB and the status line says so. Checked with the owner's real files: 9 sheets, PDF
+  of 9 A3 pages whose page 2 is pixel-identical to his finished PDF; the full 30.09 project gives 21 sheets. Not
+  checked: PPTX of frozen sheets; collaboration with an 18 MB album (the whole album is re-sent on each meta edit).
 - **2026-10-03, ГРАДО 2 v0.96.3: dragging never selects text; the album status line.** Owner 03.10: «при растягивании
   окна или вообще при протаскивании мышкой выделяется беспорядочно текст». While a mouse button is held outside
   fields and table cells, `<html>` carries `.nosel` (user-select none for the whole page, including the table cells a

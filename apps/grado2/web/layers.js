@@ -461,7 +461,7 @@ function sheetKeys(sh) {
 }
 const sheetView = sh => !sh.keys && !sh.panels && sh.view ? VIEWS.find(x => x.id === sh.view) : null;
 const sheetEditable = sh => !sh.panels && !!(sh.keys || sheetView(sh));
-const mapSheets = () => ALBUM.sheets.filter(s => s.kind !== "title" && s.kind !== "tep");
+const mapSheets = () => ALBUM.sheets.filter(s => s.kind !== "title" && s.kind !== "tep" && !s.frozen);
 function sheetTreeHTML() {
   const used = new Set(), sheets = mapSheets(), hit = l => !LQ || normQ(l.title).includes(LQ), shut = id => !LQ && SHEET_SHUT.has(id), nh = [];   // поиск слоёв работает и здесь: папки без найденных слоёв скрыты, найденные раскрыты
   const folder = (id, name, n, tools, note) => `<div class="tn gr" data-shk="${esc(id)}">

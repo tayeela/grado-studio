@@ -57,6 +57,7 @@ function tepRows(all) {
     .concat((all ? ms : ms.slice(0, 30)).map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + m.unit]));
 }
 function sheetSpec(sheet) {
+  if (sheet.frozen) { const { id, frozen, view, ...ready } = sheet; return ready; }   // готовая вёрстка из файла: слои уже внутри листа (импорт «Из файла…»)
   if (sheet.adm) return admPanelSpec(sheet);                               // схемы административного деления альбомов (albums.js)
   if (sheet.kind === "tep") return { title: sheet.title, size: sheet.size, kind: "tep", tep: tepRows(true) };
   if (sheet.kind === "title") return { title: sheet.title, size: sheet.size, kind: "title", ...albumExtra(sheet) };
@@ -451,41 +452,115 @@ async function satFile(i, ask) {
 // строка состояния альбома: сколько листов, когда собран и когда в последний раз сохранены PDF и PPTX (время — в проекте, ALBUM.meta)
 const stampAlbum = k => { ALBUM.meta[k] = new Date().toISOString(); window.markDirty?.(); syncAlbumStat(); };
 const stampText = (iso, long) => { const d = new Date(iso); if (isNaN(d)) return ""; const p = n => String(n).padStart(2, "0"); return `${p(d.getDate())}.${p(d.getMonth() + 1)}${long ? "." + d.getFullYear() : ""} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+const BYTES = new WeakMap(), sheetBytes = x => { let n = BYTES.get(x); if (n == null) { n = JSON.stringify(x).length; BYTES.set(x, n); } return n; };   // размер листа в проекте считается один раз
+const shWord = n => (n % 10 === 1 && n % 100 !== 11) ? "лист" : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? "листа" : "листов";
 function albumStatText() {
   const m = ALBUM.meta, n = ALBUM.sheets.length, w = (n % 10 === 1 && n % 100 !== 11) ? "лист" : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? "листа" : "листов";
   let t = m.builtAt && n ? `Альбом: ${n} ${w} · собран ${stampText(m.builtAt, true)}` : n ? `Альбом: ${n} ${w} · дата сборки не записана` : "Альбом ещё не собирался";
+  const big = ALBUM.sheets.reduce((n, x) => n + (x.frozen ? sheetBytes(x) : 0), 0);
+  if (big > 10 * 2**20) t += ` · альбом с готовой вёрсткой, ${mb(big)} МБ — сохранение медленнее`;
+  if (m.importedFrom) t += ` · импортирован из файла ${m.importedFrom}`;
   if (m.pdfAt) t += ` · PDF: сохранён ${stampText(m.pdfAt)} в папку загрузок`;
   if (m.pptxAt) t += ` · PPTX: сохранён ${stampText(m.pptxAt)} в папку загрузок`;
   return t;
 }
 const syncAlbumStat = () => { const e = $("shStat"); if (e) e.textContent = albumStatText(); };
+/* Импорт альбома из файла: проект .grado2 (берётся его album) или голый альбом {meta, sheets}. Читается в браузере
+   (FileReader), на сервер не уходит. Лист с готовой вёрсткой (слои с объектами внутри листа, как у описания печати)
+   помечается frozen: он собирается без слоёв проекта. У листов по слоям недостающие слои — предупреждение, не сбой. */
+let IMPORT = null;   // файл, ждущий выбора: { name, size, album } — «Заменить / Добавить»; { name, size, file } — предупреждение о размере
+const IMPORT_WARN = 25 * 2**20, PROJECT_CAP = 400 * 2**20;   // предел тела записи проекта — MAX_PROJECT_BODY в server.py (и локально, и в совместном режиме)
+const isViewer = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
+const mb = n => Math.max(1, Math.round(n / 2**20));
+const isReadySheet = s => Array.isArray(s?.layers) && s.layers.every(l => Array.isArray(l?.features)) || !!s?.panels?.some?.(p => Array.isArray(p?.layers));
+function albumOfJson(j) {
+  if (!j || typeof j !== "object") throw new Error("это не альбом и не проект ГРАДО 2");
+  if (j.format === "grado2") { const p = window.migrateProject ? window.migrateProject(j) : j; if (!p.album) throw new Error("в проекте нет альбома"); return p.album; }   // формат проекта — по миграциям project.js
+  if (Array.isArray(j.sheets)) { const p = { format: "grado2", version: j.version ?? 2, album: j }; return (window.migrateProject ? window.migrateProject(p) : p).album; }   // голый альбом идёт теми же миграциями проекта (сейчас к альбому ни одна не применяется)
+  throw new Error("в файле нет листов альбома");
+}
+function readAlbumFile(file, confirmed) {
+  if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект.");
+  if (file.size > PROJECT_CAP) return toast(`Файл ${mb(file.size)} МБ больше предела проекта (${mb(PROJECT_CAP)} МБ): импорт отменён.`);
+  if (!confirmed && file.size > IMPORT_WARN) { IMPORT = { name: file.name, size: file.size, file }; renderSheets(); return; }
+  busy(true); const rd = new FileReader();
+  rd.onerror = () => { busy(false); toast("Файл не прочитан: " + (rd.error?.message || "ошибка чтения")); };
+  rd.onload = () => { try {
+    const a = albumOfJson(JSON.parse(rd.result)), list = (a.sheets || []).filter(s => s && typeof s === "object");
+    if (!list.length) throw new Error("в файле нет листов");
+    IMPORT = { name: file.name, size: file.size, album: { meta: safeObj(a.meta), sheets: list } };
+    if (!ALBUM.sheets.length) importAlbum("replace"); else { renderSheets(); toast(`Файл «${file.name}»: ${list.length} л. Выберите: заменить или добавить.`); }
+  } catch (e) { toast("Файл не открыт: " + (e instanceof SyntaxError ? "это не JSON" : e.message)); } finally { busy(false); } };
+  rd.readAsText(file);
+}
+function importBarHTML() {
+  if (!IMPORT) return "";
+  if (IMPORT.file) return `<div class="pad row" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">Файл ${mb(IMPORT.size)} МБ: проект станет большим, сохранение и совместная работа будут медленнее. Продолжить?</span><button class="btn primary" data-shimp="go">Продолжить</button><button class="btn" data-shimp="cancel">Отмена</button></div>`;
+  const n = IMPORT.album.sheets.length, c = ALBUM.sheets.length;
+  return `<div class="pad row" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">«${esc(IMPORT.name)}»: ${n} л.</span><button class="btn primary" data-shimp="replace">Заменить ${c} ${shWord(c)} текущего альбома на ${n} из файла</button><button class="btn" data-shimp="add">Добавить после текущих</button><button class="btn" data-shimp="cancel">Отмена</button></div>`;
+}
+function missingLayersText(list) {
+  const have = new Set(LYR.map(l => l.key)), miss = new Set(); let ns = 0, nv = 0;
+  list.forEach(s => { if (s.frozen) return;
+    const ks = [...(s.keys || []), ...(s.panels || []).flatMap(p => p?.keys || [])].filter(k => !have.has(k)); ks.forEach(k => miss.add(k)); if (ks.length) ns++;
+    if (s.view && !VIEWS.some(v => v.id === s.view)) nv++; });
+  const t = []; if (ns) t.push(`в ${ns} л. нет слоёв: ${[...miss].slice(0, 6).join(", ")}${miss.size > 6 ? ` и ещё ${miss.size - 6}` : ""} — они будут пустыми, пока не загружены данные`);
+  if (nv) t.push(`в ${nv} л. нет вида карты — берётся текущая карта`);
+  return t.join("; ");
+}
+function importAlbum(mode) {
+  const imp = IMPORT; IMPORT = null;
+  if (!imp || mode === "cancel") { renderSheets(); return; }
+  if (mode === "go") { readAlbumFile(imp.file, true); renderSheets(); return; }
+  if (isViewer()) { renderSheets(); return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); }
+  // проект после импорта не должен перерасти предел записи (сам файл — верхняя оценка добавляемого альбома)
+  const now = projectJSON().length;
+  if (now + imp.size > PROJECT_CAP) { renderSheets(); return toast(`Проект станет ${mb(now + imp.size)} МБ, а сохранить можно не больше ${mb(PROJECT_CAP)} МБ: импорт отменён.`); }
+  const list = imp.album.sheets.map(s => { const x = { ...s }; if (x.scale != null && !Array.isArray(x.scale)) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view);
+    if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; if (isReadySheet(x)) x.frozen = true; return x; });
+  const old = mode === "add" ? ALBUM.sheets.length : 0;
+  // id всегда новые, «imp_…»: старые «sec1_», «pptkrt_» — префиксы наборов, по ним buildAlbum удаляет листы (ссылок листов друг на друга в файлах нет)
+  const t = Date.now().toString(36), had = new Set(ALBUM.sheets.map(s => s.id)); let k = 0;
+  list.forEach(s => { do { s.id = `imp_${t}_${k++}`; } while (had.has(s.id)); });
+  const warn = missingLayersText(list), was = ALBUM.sheets.length;
+  window.hideSheetFrame?.();
+  if (mode === "add") ALBUM.sheets.push(...list); else ALBUM.sheets.splice(0, was, ...list);
+  const m = ALBUM.meta, empty = v => v == null || v === "" || (Array.isArray(v) && !v.length);   // заполненное в проекте остаётся, пустое берётся из файла
+  ["object", "code", "stage", "org", "short", "place", "date", "ogdCodes"].forEach(k => { if (empty(m[k]) && !empty(imp.album.meta[k])) m[k] = imp.album.meta[k]; });
+  m.builtAt = new Date().toISOString(); m.importedFrom = imp.name;
+  window.markDirty?.(); renderSheets(); previewSheet(old);
+  toast(`${mode === "add" ? "Добавлено" : "Загружено"} ${list.length} л. из файла «${imp.name}»${mode === "add" ? `, всего ${ALBUM.sheets.length}` : ""}.${warn ? " Внимание: " + warn + "." : ""}`);
+}
 function renderSheets() {
   window.redrawFrames?.(true);             // рамки листов на карте и область загрузки данных
   const el = $("sheetsBody"); if (!el) return;
   const m = ALBUM.meta, inp = (k, ph) => `<input type="text" data-meta="${k}" value="${esc(m[k] || "")}" placeholder="${ph}" aria-label="${ph}">`;
   const vopts = s => `<option value="" ${s.kind !== "tep" && !s.view ? "selected" : ""}>текущая карта</option>` + VIEWS.map(v => `<option value="${esc(v.id)}" ${s.kind !== "tep" && v.id === s.view ? "selected" : ""}>вид «${esc(v.name)}»</option>`).join("")
     + `<option value="__tep" ${s.kind === "tep" ? "selected" : ""}>таблица ТЭП (все показатели)</option>`;
-  const tepS = s => s.kind === "tep" ? "disabled" : "";
+  const tepS = s => s.kind === "tep" || s.frozen ? "disabled" : "";
   el.innerHTML = `<div class="pad"><div class="note" style="padding:0 0 6px">Основная надпись</div><div class="meta4">${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия кратко: ПП, П, Р")}${inp("org", "Организация")}</div></div>`
+    + importBarHTML()
     + `<div class="sect">Листы альбома</div>`
     + (ALBUM.sheets.length ? `<table class="at sheets"><colgroup><col style="width:26px"><col><col style="width:132px"><col style="width:176px"><col style="width:156px"><col style="width:36px"><col style="width:36px"><col style="width:206px"></colgroup><thead><tr><th>№</th><th>Название</th><th>Формат</th><th>Содержание</th><th>Масштаб</th><th title="Легенда вида">Лег.</th><th title="Таблица ТЭП">ТЭП</th><th></th></tr></thead><tbody>${ALBUM.sheets.map((s, i) => `<tr data-sh="${i}">
         <td class="num">${i + 1}</td><td><input type="text" data-sk="title" value="${esc(s.title)}" aria-label="Название листа"></td>
-        <td><select data-sk="size" aria-label="Формат">${Object.keys(SIZE_T).map(v => `<option value="${esc(v)}" ${v === s.size ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></td>
-        <td>${s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
-        <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select></td>
+        <td><select data-sk="size" aria-label="Формат" ${s.frozen ? "disabled" : ""}>${Object.keys(SIZE_T).map(v => `<option value="${esc(v)}" ${v === s.size ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></td>
+        <td>${s.frozen ? `<select disabled aria-label="Содержание листа" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе"><option>готовая вёрстка</option></select>` : s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
+        <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : s.frozen ? `<option>${+s.scale ? "1:" + fmt(Math.round(+s.scale)) : "—"}</option>` : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select></td>
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
-        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}${s.kind === "situation" ? `<button class="tb" data-shpdf="${i}" title="PDF только этого листа"><i data-lucide="file-down"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button>${s.kind === "tep" ? "" : `<button class="tb" data-shlay="${i}" title="Макет: правка любой надписи листа — текст, шрифт, кегль, цвет, обводка, поворот, место; свои надписи"><i data-lucide="pencil-ruler"></i></button>`}<button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
+        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels || s.frozen ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}${s.kind === "situation" ? `<button class="tb" data-shpdf="${i}" title="PDF только этого листа"><i data-lucide="file-down"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button>${s.kind === "tep" ? "" : `<button class="tb" data-shlay="${i}" title="Макет: правка любой надписи листа — текст, шрифт, кегль, цвет, обводка, поворот, место; свои надписи"><i data-lucide="pencil-ruler"></i></button>`}<button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row" style="flex-wrap:wrap"><button class="btn" id="shAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в таблице"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><button class="btn" id="shSit" title="Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл"><i data-lucide="map"></i>Ситуационный план А4</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row" style="flex-wrap:wrap"><button class="btn" id="shAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в таблице"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><button class="btn" id="shSit" title="Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл"><i data-lucide="map"></i>Ситуационный план А4</button><button class="btn" id="shImport" title="Взять листы альбома из файла: проекта .grado2 или готовой вёрстки. Файл читается в браузере, на сервер не уходит"><i data-lucide="folder-open"></i>Из файла…</button><input type="file" id="shImpFile" accept=".grado2,.json,application/json" hidden><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="note" id="shStat" style="padding:0 10px 8px">${esc(albumStatText())}</div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
-  icons();
+  icons();  if (IMPORT) $("shImpBar")?.querySelector("button")?.focus();   // выбор по клавиатуре: фокус на первую кнопку строки
 }
 const shEl = () => $("sheetsBody");
+shEl().addEventListener("keydown", e => { if (e.key === "Escape" && IMPORT) { e.preventDefault(); e.stopPropagation(); importAlbum("cancel"); } });   // Esc в строке выбора — «Отмена»; Enter нажимает кнопку в фокусе сам
 shEl().addEventListener("dblclick", e => { if (e.target.id === "sheetPrev" && e.target.dataset.i) openLayout(+e.target.dataset.i); });
 shEl().addEventListener("change", e => {
   const t = e.target, row = t.closest("[data-sh]");
   if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; window.markDirty?.(); return; }
+  if (t.id === "shImpFile") { if (isViewer()) { t.value = ""; return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); } const f = t.files?.[0]; t.value = ""; if (f) readAlbumFile(f); return; }
   // формат слайдов раздела: новый раздел строится в нём, собранные слайды переводятся сразу (масштаб — заново, по рамке)
   if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });
     window.markDirty?.(); if (FRAME) showFrame(FRAME.i); renderSheets(); return; }
@@ -503,6 +578,8 @@ shEl().addEventListener("click", e => {
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt") window.buildAlbum?.("pptkrt");
   if (b.id === "shSit") buildSituation();
+  if (b.id === "shImport") { if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); $("shImpFile").click(); }
+  if (b.dataset.shimp) importAlbum(b.dataset.shimp);
   if (b.dataset.shpdf) albumFile("pdf", ALBUM.sheets[+b.dataset.shpdf]);
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);
   if (b.dataset.shlay) openLayout(+b.dataset.shlay);

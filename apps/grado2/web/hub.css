@@ -124,3 +124,4 @@ body.hub-viewer .start{display:none}
 .hubform input{height:var(--h-sm);flex:1 1 180px;min-width:140px}
 .hubform label{display:flex;align-items:center;gap:6px}
 .hublinkurl{font-family:var(--mono)}
+body.hub-viewer #shImport{display:none}
