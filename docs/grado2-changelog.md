@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.94.1: plot areas of social objects in ТЭП; sturdier GeoJSON export (server part).**
+  New ТЭП group «Участки социальных объектов»: «Число ДОО», «Участок ДОО, га (не менее)», «Число школ», «Участок
+  школы, га (не менее)», «Число поликлиник», «Участок поликлиники, га (не менее)», from the demand already computed.
+  Norms from the texts in `docs/standards/moscow-ngp`: 2151-ПП table 1.4.1 rows 3.1–3.2 (ДОО: up to 150 places 35 m²
+  per place, 151–350 — 32), table 1.4.2 rows 3.1–3.3 (schools: up to 900 — 19, 901–1500 — 16, over 1501 — 14),
+  2150-ПП table 1.4.1 п. 2.1 (clinic 0.35 ha per object); all ten numbers are constants with sources, editable in
+  «Нормативы». Rules where the text is silent (stated in the metric notes): a ДОО demand over 350 places is split into
+  equal objects of at most 350; a school is one object of any capacity; exactly 1501 places counts as «свыше»; one
+  clinic. Not computed: built-in ДОО (20 m²), cadet schools, +0.2 ha for a dormitory, the reductions of up to 10 %.
+  Якиманка: 291 × 32 = 0.931 ha, 595 × 19 = 1.131 ha, clinic 0.35 ha; earlier fixture numbers unchanged. GeoJSON
+  export: a GeometryCollection is flattened, empty geometry skipped (counts in README.txt), Windows reserved file names
+  get «_», at most 200 000 objects per export. `/api/place` keeps its last 256 answers.
 - **2026-10-02, ГРАДО 2 v0.94.0: the interface scales with the screen; narrow window; variants follow the norms.**
   Owner 02.10: «продолжай оптимизировать интерфейс и для удобства пользователя и для разных экранов». One factor `--k`
   drives the size tokens (heights, fonts, icons, top and status rows): 1 below 1700 px (1280×720 screenshots are

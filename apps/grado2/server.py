@@ -15,6 +15,7 @@
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 """
 
+import hashlib
 import hmac
 import ipaddress
 import json
@@ -964,6 +965,8 @@ def _in_ring(x, y, ring):
 
 
 _PLACE_MEMO = {}
+MAX_PLACE_MEMO = 256                 # последних ответов /api/place в памяти
+_PLACE_LOCK = threading.Lock()
 
 
 def _rail_nodes(raw):
@@ -1141,9 +1144,10 @@ def place_info(lon, lat, polygon=None):
     (по эталону районов, без новых запросов к порталам); без контура или вне эталона — по точке (chosen_by «centre»)."""
     import math
     polys = place_polygons(polygon) if polygon is not None else None
-    key = (round(lon, 3), round(lat, 3), hash(json.dumps(polygon, sort_keys=True)) if polygon is not None else None)
-    if key in _PLACE_MEMO:
-        return _PLACE_MEMO[key]
+    key = (round(lon, 3), round(lat, 3), hashlib.sha1(json.dumps(polygon, sort_keys=True).encode()).hexdigest() if polygon is not None else None)
+    with _PLACE_LOCK:
+        if key in _PLACE_MEMO:
+            return _PLACE_MEMO[key]
     cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"      # Overpass по точке, от контура не зависит
     raw = None
     if _fresh(cache):
@@ -1189,7 +1193,10 @@ def place_info(lon, lat, polygon=None):
     out = {"district": district or dname, "known": bool(district), "okrug": okrug, "tinao": tinao, "inside_ttk": inside_ttk,
            "zone": zone, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes,
            "districts": [{"name": d["name"], "share": d["share"]} for d in districts], "chosen_by": chosen_by}
-    _PLACE_MEMO[key] = out
+    with _PLACE_LOCK:
+        _PLACE_MEMO[key] = out
+        while len(_PLACE_MEMO) > MAX_PLACE_MEMO:                 # самый старый ключ — первый (dict хранит порядок вставки)
+            del _PLACE_MEMO[next(iter(_PLACE_MEMO))]
     return out
 
 

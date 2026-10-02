@@ -97,6 +97,69 @@ class TestCalc2Rules(unittest.TestCase):
         self.assertEqual((round_half_up(2.5), round_half_up(0.0005, 3), round_half_up(2.675, 2)), (3, 0.001, 2.68))
 
 
+class TestSocialPlots(unittest.TestCase):
+    """Участки социальных объектов (2151-ПП табл. 1.4.1 и 1.4.2 п. 3, 2150-ПП табл. 1.4.1 п. 2.1), только расчёт.
+
+    Ручной расчёт для Якиманки (эталон: население 6610, ДОО 291 место, школы 595 мест, поликлиника смешанного
+    типа 126 пос./смену):
+      ДОО: 291 место <= 350 -> один объект; ёмкость 291 лежит в ступени «от 151 до 350 мест» (п. 3.2) = 32 м²/место;
+           291 x 32 = 9312 м² = 0,9312 га -> 0,931 га (3 знака).
+      Школа: 595 мест <= 900 -> один объект, п. 3.1 «до 900 мест» = не менее 19 м²/место;
+           595 x 19 = 11305 м² = 1,1305 га -> 1,131 га (математическое округление, как у остальных ТЭП).
+      Поликлиника: п. 2.1 = 0,35 га на объект; число объектов принято 1 (нормы мощности объекта нет) -> 0,35 га.
+    Выше 350 мест ДОО делится на равные объекты не более 350 мест; школа выше 1500 мест остаётся одним объектом
+    (ступень «свыше 1501» не ограничена сверху)."""
+
+    def engine(self, **consts):
+        e = Engine.from_file(PRESET)
+        e.set_inputs(spp_in=357, ratio_zh=100, nonres_part=6, education_zone=1)
+        if consts:
+            e.set_constants(**consts)
+        return e
+
+    def test_yakimanka_hand_example(self):
+        e = self.engine()
+        self.assertEqual((e.display("population"), e.display("doo_places"), e.display("school_places"), e.display("clinic_mixed_visits")),
+                         (6610, 291, 595, 126))
+        self.assertEqual((e.display("doo_count"), e.display("doo_plot_ha")), (1, 0.931))
+        self.assertEqual((e.display("school_count"), e.display("school_plot_ha")), (1, 1.131))
+        self.assertEqual((e.display("clinic_count"), e.display("clinic_plot_ha")), (1, 0.35))
+        self.assertEqual(e.value("doo_plot_ha"), 291 * 32 / 10000)
+
+    def test_doo_steps_and_split(self):
+        for z, places, count, m2 in ((22.6, 150, 1, 35), (22.7, 151, 1, 32), (52.9, 350, 1, 32), (53, 351, 2, 32), (106, 701, 3, 32)):
+            e = self.engine(doo_z1=z)
+            self.assertEqual((e.value("doo_places"), e.value("doo_count")), (places, count), z)
+            self.assertAlmostEqual(e.value("doo_plot_ha"), places * m2 / 10000, places=9, msg=z)
+
+    def test_school_steps_and_gap(self):
+        for z, places, m2 in ((136.1, 900, 19), (136.2, 901, 16), (226.9, 1500, 16), (227, 1501, 14), (400, 2644, 14)):
+            e = self.engine(school_z1=z)
+            self.assertEqual(e.value("school_places"), places, z)
+            self.assertAlmostEqual(e.value("school_plot_ha"), places * m2 / 10000, places=9, msg=z)
+            self.assertEqual(e.value("school_count"), 1)
+
+    def test_no_population_gives_zero(self):
+        e = Engine.from_file(PRESET)
+        e.set_inputs(spp_in=0, education_zone=1)
+        for k in ("doo_count", "doo_plot_ha", "school_count", "school_plot_ha", "clinic_count", "clinic_plot_ha"):
+            self.assertEqual(e.value(k), 0, k)
+
+    def test_norms_are_editable_and_in_their_own_group(self):
+        e = self.engine(doo_plot_m2_2=30, clinic_plot_norm_ha=0.5)
+        self.assertAlmostEqual(e.value("doo_plot_ha"), 291 * 30 / 10000, places=9)
+        self.assertEqual(e.value("clinic_plot_ha"), 0.5)
+        meta = json.loads(PRESET.read_text("utf-8"))["constants_meta"]
+        mine = [k for k, m in meta.items() if m["group"] == "Участки социальных объектов"]
+        self.assertEqual(len(mine), 10)
+        for k in mine:
+            self.assertRegex(meta[k]["source"], r"2151-ПП|2150-ПП")
+        rows = {r["id"]: r for r in e.results() if r["group"] == "Участки социальных объектов"}
+        self.assertEqual(sorted(rows), ["clinic_count", "clinic_plot_ha", "doo_count", "doo_plot_ha", "school_count", "school_plot_ha"])
+        self.assertEqual((rows["doo_plot_ha"]["unit"], rows["doo_plot_ha"]["title"]), ("га", "Участок ДОО, га (не менее)"))
+        self.assertTrue(all(r.get("note") for r in rows.values()))
+
+
 class TestCalc2ConstantsMeta(unittest.TestCase):
     P = json.loads(PRESET.read_text("utf-8"))
 

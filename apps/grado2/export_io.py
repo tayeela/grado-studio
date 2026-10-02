@@ -13,9 +13,12 @@ from grado_connectors import crs
 
 MAX_LAYERS = 500
 MAX_ROWS = 20000
+MAX_FEATURES = 200000                # объектов в одном экспорте GeoJSON (вход и выход после разбора составных геометрий)
+MAX_GC_DEPTH = 4                     # вложенность GeometryCollection
 MAX_TEXT = 32000                     # предел ячейки Excel — 32767 знаков
 _GEOM_DEPTH = {"Point": 0, "LineString": 1, "MultiPoint": 1, "Polygon": 2, "MultiLineString": 2, "MultiPolygon": 3}
 _BAD_NAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+_WIN_RESERVED = {"CON", "PRN", "AUX", "NUL"} | {f"{p}{i}" for p in ("COM", "LPT") for i in range(1, 10)}
 
 
 def _num(v, what, lim=1e15):
@@ -62,8 +65,22 @@ def _to_msk(geom, what):
     return {"type": geom["type"], "coordinates": _walk_coords(geom.get("coordinates"), _GEOM_DEPTH[geom["type"]], what)}
 
 
+def _parts(geom, depth=0):
+    """Геометрия → список простых геометрий: GeometryCollection раскладывается на части (рекурсивно), пустые части отбрасываются."""
+    if isinstance(geom, dict) and geom.get("type") == "GeometryCollection":
+        gs = geom.get("geometries")
+        if not isinstance(gs, list):
+            raise ValueError("geometries must be an array")
+        if depth >= MAX_GC_DEPTH:
+            raise ValueError("GeometryCollection is nested too deeply")
+        return [p for g in gs for p in _parts(g, depth + 1)]
+    return [] if geom is None else [geom]
+
+
 def _file_name(name, used):
     base = _BAD_NAME.sub("_", name).strip(" .") [:100] or "layer"
+    if base.split(".")[0].strip().upper() in _WIN_RESERVED:       # Windows: CON, NUL, COM1... нельзя как имя файла, в том числе с расширением
+        base += "_"
     n, out = 1, base
     while out.lower() in used:
         n += 1
@@ -74,7 +91,8 @@ def _file_name(name, used):
 
 README_GEOJSON = (
     "Координаты в этих файлах — МСК (местная система Москвы, метры), а не широта и долгота.\n"
-    "Каждый слой — отдельный файл .geojson в кодировке UTF-8; имена полей сохранены как в ГРАДО 2.\n\n"
+    "Каждый слой — отдельный файл .geojson в кодировке UTF-8; имена полей сохранены как в ГРАДО 2.\n"
+    "Составные геометрии (GeometryCollection) разложены на отдельные объекты с теми же свойствами.\n\n"
     "Как открыть в QGIS: Слой - Добавить слой - Добавить векторный слой, выберите файл. Система координат берётся\n"
     "из самого файла (элемент crs). Если QGIS её не распознал, задайте слою пользовательскую СК «МСК»\n"
     "(Слой - Свойства - Источник - Назначить СК) со строкой PROJ:\n"
@@ -87,6 +105,7 @@ def export_geojson(layers):
     if not isinstance(layers, list) or not layers or len(layers) > MAX_LAYERS:
         raise ValueError("layers must be a non-empty array")
     out, used = io.BytesIO(), set()
+    total = made = skipped = split = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for i, layer in enumerate(layers):
             if not isinstance(layer, dict):
@@ -97,6 +116,9 @@ def export_geojson(layers):
                 fs = fs.get("features")
             if not isinstance(fs, list):
                 raise ValueError("features must be an array")
+            total += len(fs)
+            if total > MAX_FEATURES:
+                raise ValueError(f"too many features: at most {MAX_FEATURES} per export")
             feats = []
             for f in fs:
                 if not isinstance(f, dict):
@@ -104,11 +126,28 @@ def export_geojson(layers):
                 props = f.get("properties")
                 if props is not None and not isinstance(props, dict):
                     raise ValueError("properties must be an object")
-                feats.append({"type": "Feature", "properties": props or {}, "geometry": _to_msk(f.get("geometry"), f"layer {i}")})
+                geoms = _parts(f.get("geometry"))
+                if f.get("geometry") is None or not geoms:
+                    skipped += 1                                     # без геометрии: в QGIS нечего показывать
+                    continue
+                if isinstance(f.get("geometry"), dict) and f["geometry"].get("type") == "GeometryCollection":
+                    split += 1
+                made += len(geoms)
+                if made > MAX_FEATURES:
+                    raise ValueError(f"too many features: at most {MAX_FEATURES} per export")
+                for g in geoms:
+                    feats.append({"type": "Feature", "properties": props or {}, "geometry": _to_msk(g, f"layer {i}")})
             fc = {"type": "FeatureCollection", "name": name,
                   "crs": {"type": "name", "properties": {"name": crs.MSK_PROJ4}}, "features": feats}
             z.writestr(_file_name(name, used), json.dumps(fc, ensure_ascii=False, allow_nan=False).encode("utf-8"))
-        z.writestr("README.txt", README_GEOJSON.encode("utf-8"))
+        readme = README_GEOJSON
+        if skipped or split:
+            readme += "\n"
+            if split:
+                readme += f"Составных геометрий разложено на части: {split}.\n"
+            if skipped:
+                readme += f"Пропущено объектов без геометрии: {skipped}.\n"
+        z.writestr("README.txt", readme.encode("utf-8"))
     return out.getvalue()
 
 

@@ -92,14 +92,69 @@ class GeoJsonExport(Http):
                {"layers": [{"name": "a", "features": [{"geometry": {"type": "Point", "coordinates": [10 ** 30, 55]}}]}]},
                {"layers": [{"name": "a", "features": [{"geometry": {"type": "Point", "coordinates": [37]}}]}]},
                {"layers": [{"name": "a", "features": [{"geometry": {"type": "Polygon", "coordinates": [37]}}]}]},
-               {"layers": [{"name": "a", "features": [{"geometry": {"type": "GeometryCollection", "geometries": []}}]}]},
+               {"layers": [{"name": "a", "features": [{"geometry": {"type": "GeometryCollection"}}]}]},
+               {"layers": [{"name": "a", "features": [{"geometry": {"type": "GeometryCollection", "geometries": [{"type": "Circle"}]}}]}]},
                {"layers": [{"name": "a", "features": [{"geometry": None, "properties": 5}]}]},
                {"layers": [{"name": 5, "features": []}]}]
         for b in bad:
             raw = json.dumps(b).replace("1e+400", "1e400").encode()
             self.assertEqual(self.post("/api/export/geojson", raw)[0], 400, b)
         self.assertEqual(self.post("/api/export/geojson", b"[]")[0], 400)
-        self.assertEqual(self.post("/api/export/geojson", b'{"layers":[{"name":"a","features":[{"properties":{"x":NaN}}]}]}')[0], 400)
+        self.assertEqual(self.post("/api/export/geojson", b'{"layers":[{"name":"a","features":[{"properties":{"x":NaN},"geometry":{"type":"Point","coordinates":[37,55]}}]}]}')[0], 400)
+
+
+class GeoJsonExportHardening(Http):
+    PT = {"type": "Point", "coordinates": [LON, LAT]}
+    POLY = {"type": "Polygon", "coordinates": [SQ]}
+
+    def zip(self, layers):
+        st, h, body = self.post("/api/export/geojson", {"layers": layers})
+        self.assertEqual(st, 200, body)
+        return zipfile.ZipFile(io.BytesIO(body))
+
+    def test_geometry_collection_is_flattened_with_same_properties(self):
+        gc = {"type": "GeometryCollection", "geometries": [self.PT, {"type": "GeometryCollection", "geometries": [self.POLY]}]}
+        z = self.zip([{"name": "L", "features": [{"type": "Feature", "properties": {"a": 1}, "geometry": gc}]}])
+        fs = json.loads(z.read("L.geojson"))["features"]
+        self.assertEqual([f["geometry"]["type"] for f in fs], ["Point", "Polygon"])
+        self.assertEqual([f["properties"] for f in fs], [{"a": 1}, {"a": 1}])
+        self.assertIn("разложено на части: 1", z.read("README.txt").decode("utf-8"))
+
+    def test_null_and_empty_geometry_skipped_and_counted(self):
+        empty = {"type": "GeometryCollection", "geometries": []}
+        z = self.zip([{"name": "L", "features": [{"geometry": None}, {"properties": {}}, {"geometry": empty}, {"geometry": self.PT}]}])
+        self.assertEqual(len(json.loads(z.read("L.geojson"))["features"]), 1)
+        self.assertIn("без геометрии: 3", z.read("README.txt").decode("utf-8"))
+
+    def test_clean_export_readme_has_no_counts(self):
+        z = self.zip([{"name": "L", "features": [{"geometry": self.PT}]}])
+        self.assertNotIn("Пропущено", z.read("README.txt").decode("utf-8"))
+
+    def test_windows_reserved_names_get_suffix(self):
+        names = ["CON", "nul", "Com1", "LPT9", "aux.txt", "COM0", "CONSOLE"]
+        z = self.zip([{"name": n, "features": []} for n in names])
+        self.assertEqual(sorted(z.namelist()), sorted(["CON_.geojson", "nul_.geojson", "Com1_.geojson", "LPT9_.geojson",
+                                                       "aux.txt_.geojson", "COM0.geojson", "CONSOLE.geojson", "README.txt"]))
+
+    def test_feature_cap_is_400(self):
+        old = export_io.MAX_FEATURES
+        export_io.MAX_FEATURES = 3
+        try:
+            f = {"geometry": self.PT}
+            self.assertEqual(self.post("/api/export/geojson", {"layers": [{"name": "a", "features": [f] * 3}]})[0], 200)
+            st, _, body = self.post("/api/export/geojson", {"layers": [{"name": "a", "features": [f] * 2}, {"name": "b", "features": [f] * 2}]})
+            self.assertEqual(st, 400)
+            self.assertIn(b"too many features", body)
+            gc = {"geometry": {"type": "GeometryCollection", "geometries": [self.PT] * 4}}      # разбор не обходит предел
+            self.assertEqual(self.post("/api/export/geojson", {"layers": [{"name": "a", "features": [gc]}]})[0], 400)
+        finally:
+            export_io.MAX_FEATURES = old
+
+    def test_gc_nesting_is_limited(self):
+        g = self.PT
+        for _ in range(10):
+            g = {"type": "GeometryCollection", "geometries": [g]}
+        self.assertEqual(self.post("/api/export/geojson", {"layers": [{"name": "a", "features": [{"geometry": g}]}]})[0], 400)
 
 
 class XlsxExport(Http):
@@ -233,6 +288,18 @@ class PlaceByArea(Http):
         far = [[[40, 50], [40.1, 50], [40.1, 50.1], [40, 50.1], [40, 50]]]
         st, r = self.place(polygon={"type": "Polygon", "coordinates": far})
         self.assertEqual((st, r["chosen_by"], r["district"]), (200, "centre", "Арбат"))
+
+    def test_memo_is_bounded_and_keys_are_small(self):
+        old = S.MAX_PLACE_MEMO
+        S.MAX_PLACE_MEMO = 2
+        try:
+            for dx in (0.0, 0.01, 0.02):                          # три разных контура, предел 2
+                poly = {"type": "Polygon", "coordinates": self.rect(self.X0 + dx, self.X0 + self.W)}
+                self.assertEqual(self.place(polygon=poly)[0], 200)
+            self.assertEqual(len(S._PLACE_MEMO), 2)
+            self.assertTrue(all(isinstance(k[2], str) and len(k[2]) == 40 for k in S._PLACE_MEMO))
+        finally:
+            S.MAX_PLACE_MEMO = old
 
     def test_malformed_polygon_is_400(self):
         for poly in ("x", [], {"type": "Point", "coordinates": [1, 2]}, {"type": "Polygon", "coordinates": "x"}, {"type": "Polygon", "coordinates": []},

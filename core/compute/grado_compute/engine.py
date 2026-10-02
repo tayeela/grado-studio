@@ -25,6 +25,7 @@ class Metric:
         self.precision = spec.get("precision")
         self.group = spec.get("group", "")
         self.hidden = spec.get("hidden", False)
+        self.note = spec.get("note", "")
         self.tree = expressions.parse(self.expr)
         self.deps = expressions.names(self.tree)
 
@@ -153,6 +154,9 @@ class Engine:
             m = self.metrics[mid]
             if m.hidden:
                 continue
-            out.append({"id": m.id, "title": m.title, "unit": m.unit,
-                        "group": m.group, "value": self.display(mid), "precision": m.precision})
+            row = {"id": m.id, "title": m.title, "unit": m.unit,
+                   "group": m.group, "value": self.display(mid), "precision": m.precision}
+            if m.note:                       # пояснение к допущению нормы; только у метрик, где оно есть
+                row["note"] = m.note
+            out.append(row)
         return out
