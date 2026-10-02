@@ -43,6 +43,8 @@ function syncProjTitle() {
 
 function collectProject() {
   const v = sharedView;
+  // при каждой записи с листами помним, сколько их было: пустой альбом потом скажет «раньше было N» (ALBUM.meta.peak)
+  if (ALBUM.sheets.length && ALBUM.meta.peak?.n !== ALBUM.sheets.length) ALBUM.meta.peak = { n: ALBUM.sheets.length, at: new Date().toISOString() };
   return {
     format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, file: PROJ.file, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
@@ -78,7 +80,7 @@ function clearProject() {
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
   Object.keys(SOURCES).filter(k => k.startsWith("import:") || SOURCES[k].kind === "fgistp").forEach(k => delete SOURCES[k]);
-  Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined });   // штамп нового проекта — не от прежнего
+  Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined, editedAt: undefined, peak: undefined });   // штамп нового проекта — не от прежнего
   TERR = null; TERRSEL = false; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ALBUM.sheets.length = 0; delete ALBUM.frames; window.redrawFrames?.(); ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
@@ -220,12 +222,17 @@ setInterval(() => {
 /* ---------- окно «Проекты» ---------- */
 const fmtDate = t => new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const fmtSize = b => b > 1e6 ? fmt(b / 1e6, 1) + " МБ" : fmt(Math.max(1, b / 1e3)) + " КБ";
+// вторая строка списка проектов: «Альбом: 7 листов · собран 03.10» — только у проектов с листами
+const albumLine = (n, at) => { if (!n) return ""; const d = at ? new Date(at) : null, dd = d && !isNaN(d) ? ` · собран ${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}` : "";
+  return `<span class="albln"><i data-lucide="printer"></i>Альбом: ${n} ${n % 10 === 1 && n % 100 !== 11 ? "лист" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "листа" : "листов"}${dd}</span>`; };
+window.albumLine = albumLine;
 async function renderProjects() {
   let r; try { r = await (await fetch("/api/projects")).json(); } catch { $("projList").innerHTML = `<div class="empty">Сервер не отвечает</div>`; return; }
   $("projDir").textContent = r.dir; $("projDir").title = `${r.dir}\nПапка проектов: файлы .grado2 можно копировать и пересылать`;
   $("projList").innerHTML = r.projects.length ? `<table class="at"><thead><tr><th>Проект</th><th>Изменён</th><th>Размер</th><th></th></tr></thead><tbody>${r.projects.map(p =>
-    `<tr${p.name === PROJ.name ? ' class="sel"' : ""}><td>${esc(p.name)}</td><td class="num">${fmtDate(p.modified)}</td><td class="num">${fmtSize(p.size)}</td><td><button class="btn" data-open="${esc(p.name)}">Открыть</button></td></tr>`).join("")}</tbody></table>`
+    `<tr${p.name === PROJ.name ? ' class="sel"' : ""}><td>${esc(p.name)}${albumLine(p.album_n, p.album_at)}</td><td class="num">${fmtDate(p.modified)}</td><td class="num">${fmtSize(p.size)}</td><td><button class="btn" data-open="${esc(p.name)}">Открыть</button></td></tr>`).join("")}</tbody></table>`
     : `<div class="empty">Сохранённых файлов в папке нет. Открытая работа сохраняется сама (автосохранение); Ctrl+S — сохранить под именем.</div>`;
+  icons();
 }
 function openProjects(focusName) {
   winOpen("wProjects", true); $("projName").value = PROJ.name || ""; renderProjects();
@@ -247,7 +254,9 @@ window.openProjectFile = async f => {
   try { const p = JSON.parse(await f.text()); p.name ||= f.name.replace(/\.grado2$/i, ""); applyProject(p); PROJ.file = null; PROJ.dirty = true; syncProjTitle(); toast(`Открыт файл «${f.name}». Сохраните проект, чтобы он появился в папке проектов.`); winOpen("wProjects", false); }
   catch (err) { toast("Файл не открылся: " + err.message); }
 };
-addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); saveProject(); } });   // saveProject сам уходит в hubSave в совместном режиме
+addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); saveProject(); } });
+// Ctrl+P (Cmd+P) — «Листы и альбом» вместо печати страницы браузером
+addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.code === "KeyP") { e.preventDefault(); winOpen("wSheets", true); } });   // saveProject сам уходит в hubSave в совместном режиме
 
 /* ---------- старт: восстановить последнюю работу ---------- */
 window.markDirty = markDirty;

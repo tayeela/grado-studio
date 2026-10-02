@@ -1277,9 +1277,27 @@ def save_project(name, body):
     return path
 
 
+_ALBUM_INFO = {}                # путь -> (mtime, size, (листов, собран)): разбор файла один раз на запись
+
+
+def album_info(path, st=None):
+    """Сколько листов в альбоме проекта и когда он собран (ALBUM.meta.builtAt) — для второй строки списка «Проекты»."""
+    st = st or path.stat()
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _ALBUM_INFO.get(str(path))
+    if hit and hit[0] == key:
+        return hit[1]
+    res = hubmod.album_summary(path)
+    _ALBUM_INFO[str(path)] = (key, res)
+    return res
+
+
 def list_projects():
     files = sorted(PROJECTS.glob("*.grado2"), key=lambda p: p.stat().st_mtime, reverse=True) if PROJECTS.exists() else []
-    info = lambda p: {"name": p.stem, "modified": p.stat().st_mtime, "size": p.stat().st_size}
+    def info(p):
+        st = p.stat()
+        n, at = album_info(p, st)
+        return {"name": p.stem, "modified": st.st_mtime, "size": st.st_size, "album_n": n, "album_at": at}
     auto = [info(p) for p in files if p.stem == AUTOSAVE]
     return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None}
 

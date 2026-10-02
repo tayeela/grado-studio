@@ -284,6 +284,14 @@ class SplitJoin(unittest.TestCase):
 
 
 class Projects(Base):
+    def test_list_carries_album_summary(self):
+        pr = sample_project()
+        pr["album"] = {"meta": {"builtAt": "2026-10-03T09:40:00.000Z"}, "sheets": [{"id": "a"}, {"id": "b"}]}
+        self.new_project(pr)
+        row = self.hub.list_projects(self.owner)[0]
+        self.assertEqual((row["album_n"], row["album_at"]), (2, "2026-10-03T09:40:00.000Z"))
+        self.assertEqual(self.hub.list_projects(self.owner)[0]["album_n"], 2)       # второй вызов — из кэша ревизии
+
     def test_create_get_and_list(self):
         pid = self.new_project(sample_project())
         self.assertRegex(pid, r"^[0-9a-f]{16}$")

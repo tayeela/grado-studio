@@ -22,6 +22,7 @@ import hashlib
 import hmac
 import json
 import math
+import mmap
 import os
 import re
 import secrets
@@ -135,6 +136,41 @@ def _norm_meta(src):
         "imports": src["imports"] if isinstance(src.get("imports"), dict) else {},
         "current_order": [k for k in lst(src.get("current_order")) if _layer_key_ok(k)],
     }
+
+
+_ALBUM_KEY = re.compile(rb'"album"\s*:\s*(?=\{)')
+
+
+def album_summary(path):
+    """(листов в альбоме, когда собран) по файлу проекта .grado2 — без разбора всего файла: альбом лежит в начале, до слоёв и данных,
+    поэтому разбирается только значение ключа «album», окном, которое растёт, пока объект не поместится. Нет альбома — (None, None)."""
+    try:
+        with open(path, "rb") as fh:
+            if os.fstat(fh.fileno()).st_size == 0:
+                return None, None
+            with mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+                dec = json.JSONDecoder()
+                for k, m in enumerate(_ALBUM_KEY.finditer(mm)):
+                    if k >= 4:
+                        break
+                    size = 1 << 18
+                    while True:
+                        end = min(len(mm), m.end() + size)
+                        try:
+                            alb = dec.raw_decode(mm[m.end():end].decode("utf-8", "replace"))[0]
+                            break
+                        except ValueError:
+                            if end >= len(mm):
+                                alb = None
+                                break
+                            size *= 4
+                    if isinstance(alb, dict) and isinstance(alb.get("sheets"), list):
+                        meta = alb.get("meta") if isinstance(alb.get("meta"), dict) else {}
+                        at = meta.get("builtAt")
+                        return len(alb["sheets"]), at if isinstance(at, str) else None
+    except (OSError, ValueError, RecursionError):
+        pass
+    return None, None
 
 
 def split_project(obj):
@@ -359,6 +395,7 @@ class Hub:
         self._fails = {}                                 # ("l", логин) | ("i", ip) -> [время неудач]
         self._presence = {}                              # pid -> {(login, client): запись}
         self._subs = {}                                  # pid -> [Subscription]
+        self._album_sum = {}                              # pid -> (rev, (листов, собран)) для списка проектов
         self._cache = collections.OrderedDict()          # pid -> (rev, разделы)
 
     # ----- файлы -----
@@ -909,7 +946,8 @@ class Hub:
                     continue
                 tid = meta.get("team")
                 team = self.teams.get(tid) if isinstance(tid, str) else None
-                out.append({"id": meta["id"], "name": meta["name"], "owner": meta["owner"], "role": role,
+                alb_n, alb_at = self._album_info(d.name, meta["rev"])
+                out.append({"id": meta["id"], "album_n": alb_n, "album_at": alb_at, "name": meta["name"], "owner": meta["owner"], "role": role,
                             "rev": meta["rev"], "updated": meta["updated"], "updated_by": meta["updated_by"],
                             "members": self._members_list(meta), "online": self._online_count(meta["id"]),
                             "team": tid if team else None, "team_name": team.get("name") if team else None,
@@ -918,6 +956,15 @@ class Hub:
                             if role in ("owner", "admin") else None})
         out.sort(key=lambda p: -p["updated"])
         return out
+
+    def _album_info(self, pid, rev):
+        """Листов в альбоме и когда собран — для списка проектов; по ревизии запоминается."""
+        hit = self._album_sum.get(pid)
+        if hit and hit[0] == rev:
+            return hit[1]
+        res = album_summary(self._pdir(pid) / "project.grado2")
+        self._album_sum[pid] = (rev, res)
+        return res
 
     def create_project(self, user, name, project=None, team=None, team_access="edit"):
         name = _clean_name(name, "Новый проект")

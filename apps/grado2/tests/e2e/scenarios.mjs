@@ -336,7 +336,7 @@ export default async p => {
 
   // виды и листы
   check(await p.ev(`winOpen("wViews", true); await new Promise(r=>setTimeout(r,300)); $("viewName").value="Эскиз"; $("viewSave").click(); return VIEWS.length===1`), "вид сохранён");
-  const pdf = await p.ev(`winOpen("wSheets", true); await new Promise(r=>setTimeout(r,300)); $("shAdd").click(); ALBUM.sheets[0].tep=true; const r=await fetch("/api/print/pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(albumSpec(ALBUM.sheets))}); const b=await r.blob(); return [r.status,b.size]`);
+  const pdf = await p.ev(`winOpen("wSheets", true); await new Promise(r=>setTimeout(r,300)); $("shAddA3").click(); ALBUM.sheets[0].tep=true; const r=await fetch("/api/print/pdf",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(albumSpec(ALBUM.sheets))}); const b=await r.blob(); return [r.status,b.size]`);
   check(pdf[0] === 200 && pdf[1] > 20000, `альбом PDF: ${pdf[1]} байт`);
   // рамка листа на карте: тянется мышью, центр листа запоминается
   await p.ev(`document.querySelector("[data-shframe='0']").click(); await new Promise(r=>setTimeout(r,500)); return 1`);
@@ -347,9 +347,9 @@ export default async p => {
   // инструмент «Лист»: прямоугольник по карте — новый лист альбома без штампа, пропорции А3, масштаб из размера
   const nl = await p.ev(`const r=mMain.getTargetElement().getBoundingClientRect(); $("bFrame").click(); return [r.left+r.width*.3, r.top+r.height*.3, r.left+r.width*.6, r.top+r.height*.6]`);
   await p.drag(nl[0], nl[1], nl[2], nl[3]);
-  check(await p.ev(`const s=ALBUM.sheets.at(-1), [w,h]=frameMM(s); const ok=ALBUM.sheets.length===2 && s.size==="BA3" && s.scale>100 && Math.abs(w/h-420/297)<1e-9 && document.querySelectorAll("#sheetsBody tr[data-sh]").length===2;
-    ALBUM.sheets.pop(); redrawFrames(); return ok`), "инструмент «Лист»: новый лист альбома А3 без штампа, в таблице «Листы»");
-  check(await p.ev(`$("shAdd").click(); await new Promise(r=>setTimeout(r,500)); const sel=document.querySelector("[data-sh='1'] [data-sk='view']"); sel.value="__tep"; sel.dispatchEvent(new Event("change",{bubbles:true}));
+  check(await p.ev(`const s=ALBUM.sheets.at(-1), [w,h]=frameMM(s); const ok=ALBUM.sheets.length===2 && s.size==="BA3" && s.scale>100 && Math.abs(w/h-420/297)<1e-9 && document.querySelectorAll("#sheetsBody .shrow").length===2;
+    ALBUM.sheets.pop(); redrawFrames(); return ok`), "инструмент «Лист»: новый лист альбома А3 без штампа, строкой в списке «Листы и альбом»");
+  check(await p.ev(`$("shAddA3").click(); await new Promise(r=>setTimeout(r,500)); const sel=document.querySelector("[data-sh='1'] [data-sk='view']"); sel.value="__tep"; sel.dispatchEvent(new Event("change",{bubbles:true}));
     const r=await fetch("/api/print/svg",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...albumSpec([ALBUM.sheets[1]]),index:0})}); const t=await r.text();
     ALBUM.sheets.splice(1,1); winOpen("wSheets", false); await new Promise(r=>setTimeout(r,50)); return r.status===200 && t.includes("Плотность") && !FRAME`), "лист «Таблица ТЭП» собирается; закрытое окно убирает рамку с карты");
 
@@ -639,14 +639,14 @@ export default async p => {
     await p.ev(`selectTerr(false); const g=${JSON.stringify(prevT)}; if (g) setTerritory({ geometry: JSON.parse(g) }); UNDO.length = 0; REDO.length = 0; return 1`);
   }
   // T24: выгрузки GeoJSON для QGIS и Excel — ответ на тот же fetch, что делает кнопка; DXF остаётся одним щелчком
-  await p.ev(`document.body.classList.remove("hub-viewer"); winOpen("wSheets", true); await new Promise(r=>setTimeout(r,200)); if (!ALBUM.sheets.length) $("shAdd").click(); winOpen("wSheets", false);
+  await p.ev(`document.body.classList.remove("hub-viewer"); winOpen("wSheets", true); await new Promise(r=>setTimeout(r,200)); if (!ALBUM.sheets.length) $("shAddA3").click(); winOpen("wSheets", false);
     for (let i = 0; i < 40 && !RESULT.tepNode?._tep; i++) await new Promise(r=>setTimeout(r,100));
     window.__fx = window.fetch; window.__ex = [];
     window.fetch = async (u, o) => { const r = await window.__fx(u, o); if (String(u).startsWith("/api/export/")) { const b = new Uint8Array(await r.clone().arrayBuffer()); window.__ex.push({ u: String(u), st: r.status, ct: r.headers.get("content-type"), pk: b[0] === 80 && b[1] === 75, body: JSON.parse(o.body) }); } return r; }; return 1`);
   try {
-    check(await p.ev(`return !!$("bExport") && $("bExport").offsetParent !== null && $("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "false"`), "кнопка DXF на месте, меню «Другие выгрузки» закрыто");
+    check(await p.ev(`return !!$("bExport") && $("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "false" && $("bExpMore").offsetParent !== null && /Выгрузка/.test($("bExpMore").innerText) && $("expMenu").querySelectorAll("[role=menuitem]").length === 6 && !document.querySelector(".top > #bExport, .top > .expmore ~ #bOgdAll")`), "в шапке одна кнопка «Выгрузка ▾», меню из шести пунктов закрыто");
     await p.ev(`$("bExpMore").click(); return 1`);
-    check(await p.ev(`return !$("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "true" && document.activeElement === $("bExpGeo") && /Excel/.test($("expMenu").innerText)`), "стрелка рядом с DXF открывает меню: GeoJSON для QGIS и Excel");
+    check(await p.ev(`return !$("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "true" && document.activeElement === $("bExport") && /Excel/.test($("expMenu").innerText) && /ГИС ОГД в DXF/.test($("expMenu").innerText) && /PPTX альбома/.test($("expMenu").innerText)`), "«Выгрузка ▾» открывает меню, фокус на первом пункте «Чертёж DXF»");
     await p.key("Escape", "Escape", { vk: 27 });
     check(await p.ev(`return $("expMenu").hidden`), "Esc закрывает меню выгрузок");
     await p.ev(`$("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
@@ -685,9 +685,9 @@ export default async p => {
   check(await p.ev(`const m=ALBUM.meta, keep=[m.builtAt,m.pdfAt,m.pptxAt], sh=ALBUM.sheets.splice(0);
     m.builtAt=m.pdfAt=m.pptxAt=undefined; const a=albumStatText(); ALBUM.sheets.push(newSheet()); const b=albumStatText();
     m.builtAt="2026-10-03T09:05:00"; m.pdfAt="2026-10-03T10:07:00"; m.pptxAt="2026-10-03T10:08:00"; const c=albumStatText(), j=Collab.join(Collab.split(JSON.parse(projectJSON())),{});
-    const kept=j.album.meta.builtAt===m.builtAt && j.album.meta.pdfAt===m.pdfAt;
+    const kept=j.album.meta.builtAt===m.builtAt && j.album.meta.pdfAt===m.pdfAt; m.editedAt="2026-10-03T11:00:00"; const d=albumStatText(); m.editedAt=undefined;
     ALBUM.sheets.splice(0, ALBUM.sheets.length, ...sh); [m.builtAt,m.pdfAt,m.pptxAt]=keep;
-    return a==="Альбом ещё не собирался" && b==="Альбом: 1 лист · дата сборки не записана" && c==="Альбом: 1 лист · собран 03.10.2026 09:05 · PDF: сохранён 03.10 10:07 в папку загрузок · PPTX: сохранён 03.10 10:08 в папку загрузок" && kept`), "T34: строка состояния альбома («ещё не собирался» / N листов, собран, PDF и PPTX), время сохраняется в проекте и в общем проекте");
+    return a==="Альбом: листов нет" && b==="Альбом: 1 лист · дата сборки не записана" && c==="Альбом: 1 лист · собран 03.10 09:05 · PDF 03.10 10:07 · PPTX 03.10 10:08" && d===c+" · изменён после PDF" && kept`), "T34: строка состояния альбома («ещё не собирался» / N листов, собран, PDF и PPTX), время сохраняется в проекте и в общем проекте");
   // T34b: «Из файла…» — импорт альбома (проект или голый {meta, sheets}) в браузере: замена / добавление, свежие id, пустые поля штампа
   // берутся из файла, недостающие слои — предупреждение; лист с готовой вёрсткой (слои внутри) собирается без слоёв проекта
   {
@@ -710,5 +710,44 @@ export default async p => {
     await imp("bad.json", { foo: 1 });
     check(await p.ev(`return ALBUM.sheets.length===4 && /в файле нет листов/.test($("toast").textContent) && !$("shImpBar")`), "T34b: чужой файл — сообщение, альбом цел");
     await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...__keep[0]); Object.assign(ALBUM.meta, __keep[1]); delete ALBUM.meta.importedFrom; renderSheets(); winOpen("wSheets", false); return 1`);
+  }
+  // T32/T33: «Листы и альбом» — одна строка на лист, свойства выбранного, без горизонтальной прокрутки; «Выгрузка ▾» с клавиатуры; Ctrl+P; peak и строка альбома в списке проектов
+  {
+    await p.ev(`window.__k32=[ALBUM.sheets.splice(0), {...ALBUM.meta}]; delete ALBUM.meta.peak; winOpen("wSheets", false); return 1`);
+    await p.key("p", "KeyP", { ctrl: true, vk: 80 });
+    check(await p.ev(`return !$("wSheets").hidden && !!$("shStat") && /листов нет/.test($("shStat").textContent) && !!document.querySelector("#sheetsBody .shempty") && $("shPdf").disabled && $("shBadge").hidden`), "T32: Ctrl+P открывает «Листы и альбом»; листов нет — строка статуса и пустое окно с двумя кнопками");
+    await p.ev(`$("sheetsBody").querySelector('[data-shact="add"]').click(); $("shAddA1").click(); $("shAddSlide").click(); await new Promise(r=>setTimeout(r,500)); ALBUM.sheets[1].title="Второй лист"; renderSheets(); return 1`);
+    check(await p.ev(`const rows=[...document.querySelectorAll("#sheetsBody .shrow")], b=$("sheetsBody"); return ALBUM.sheets.length===3 && rows.length===3 && ALBUM.sheets.map(s=>s.size).join()==="A3,A1,P" && $("shBadge").textContent==="3" && b.scrollWidth<=b.clientWidth && rows[2].getAttribute("aria-selected")==="true" && !!document.querySelector(".shdet[data-sh='2']")`), "T32: три листа — три строки, бейдж 3, выбран последний, свойства под ним, прокрутки вбок нет");
+    await p.ev(`document.querySelector(".shrow[data-sh='1']").click(); return 1`);
+    check(await p.ev(`return document.querySelector(".shrow[data-sh='1']").getAttribute("aria-selected")==="true" && document.querySelector(".shdet").dataset.sh==="1" && document.querySelector(".shdet [data-sk=title]").value==="Второй лист"`), "T32: щелчок по строке выбирает лист и показывает его свойства");
+    await p.ev(`const t=document.querySelector(".shdet [data-sk=title]"); t.value="Переименован"; t.dispatchEvent(new Event("change",{bubbles:true})); return 1`);
+    check(await p.ev(`return ALBUM.sheets[1].title==="Переименован" && document.querySelector(".shrow[data-sh='1'] .t").textContent==="Переименован" && !!ALBUM.meta.editedAt`), "T32: название меняется в свойствах и сразу в строке списка");
+    // узкая раскладка: тело окна 300 px — список и свойства друг под другом, прокрутки вбок нет
+    check(await p.ev(`const w=$("wSheets"), was=[w.style.width, w.style.height]; if (w.classList.contains("docked")) floatWin(w); w.style.width="420px"; w.style.height="300px"; await new Promise(r=>setTimeout(r,200)); const b=$("sheetsBody"), ok=b.scrollWidth<=b.clientWidth && b.querySelector(".shw").scrollWidth<=b.querySelector(".shw").clientWidth; w.style.width=was[0]; w.style.height=was[1]; return ok`), "T32: окно 420x300 — без горизонтальной прокрутки");
+    // меню «Добавить лист» и «Собрать»: открываются, Esc закрывает и возвращает фокус
+    await p.ev(`$("shAdd").click(); return 1`);
+    check(await p.ev(`return !$("shMenuAdd").hidden && $("shAdd").getAttribute("aria-expanded")==="true" && document.activeElement===$("shAddA3")`), "T32: «Добавить лист ▾» открывает меню, фокус на первом пункте");
+    await p.key("Escape", "Escape", { vk: 27 });
+    check(await p.ev(`return $("shMenuAdd").hidden && document.activeElement===$("shAdd")`), "T32: Esc закрывает меню и возвращает фокус на кнопку");
+    await p.ev(`$("shBuild").click(); return 1`);
+    check(await p.ev(`return !$("shMenuBuild").hidden && ["shSec1","shPptKrt","shSit","shImport"].every(id=>!!$(id))`), "T32: «Собрать ▾»: раздел, альбом ППТ КРТ, ситуационный план, из файла");
+    await p.key("Escape", "Escape", { vk: 27 });
+    // «Выгрузка ▾»: стрелка вниз на кнопке, круговая навигация, Esc, PDF и PPTX активны при листах
+    await p.ev(`$("bExpMore").focus(); return 1`);
+    await p.key("ArrowDown", "ArrowDown", { vk: 40 });
+    check(await p.ev(`return !$("expMenu").hidden && document.activeElement===$("bExport") && !$("bExpPdf").disabled && !$("bExpPptx").disabled`), "T32: ↓ на «Выгрузке» открывает меню; PDF и PPTX доступны, раз листы есть");
+    await p.key("End", "End", { vk: 35 });
+    check(await p.ev(`return document.activeElement===$("bExpPptx")`), "T32: End — последний пункт");
+    await p.key("ArrowDown", "ArrowDown", { vk: 40 });
+    check(await p.ev(`return document.activeElement===$("bExport")`), "T32: ↓ с последнего пункта — по кругу на первый");
+    await p.key("Escape", "Escape", { vk: 27 });
+    check(await p.ev(`return $("expMenu").hidden && document.activeElement===$("bExpMore")`), "T32: Esc закрывает «Выгрузку» и возвращает фокус");
+    // peak пишется при сохранении проекта с листами; пустой альбом после этого говорит «раньше было N»
+    check(await p.ev(`projectJSON(); const pk=ALBUM.meta.peak; ALBUM.sheets.splice(0); renderSheets(); const t=document.querySelector("#sheetsBody .shempty")?.innerText||""; return pk?.n===3 && /Раньше в проекте было 3 листа/.test(t) && $("expMenu").querySelector("#bExpPdf").disabled===false`), "T33: ALBUM.meta.peak записан при сохранении; пустое окно: «Раньше в проекте было 3 листа»");
+    check(await p.ev(`$("bExpMore").click(); const d=$("bExpPdf").disabled, h=$("bExpPdf").innerText; $("bExpMore").click(); return d && /Нет листов/.test(h)`), "T33: нет листов — PDF и PPTX в меню серые, пояснение «Нет листов»");
+    // список «Проекты»: вторая строка «Альбом: N листов · собран дд.мм» только у проектов с листами
+    check(await p.ev(`ALBUM.sheets.splice(0, 0, ...__k32[0].length ? __k32[0] : [newSheet(), newSheet()]); ALBUM.meta.builtAt="2026-10-03T12:40:00"; await saveProject("e2e-album"); ALBUM.sheets.splice(0); await saveProject("e2e-bez"); winOpen("wProjects", true); const has=()=>{const t=$("projList").innerText; return /e2e-album/.test(t) && /e2e-bez/.test(t)}; for (let i=0;i<100 && !(has() && /Альбом:/.test($("projList").innerText));i++) await new Promise(r=>setTimeout(r,100));
+      const rows=[...document.querySelectorAll("#projList tr")], a=rows.find(r=>/e2e-album/.test(r.innerText)), b=rows.find(r=>/e2e-bez/.test(r.innerText)); winOpen("wProjects", false); return !!a && /Альбом: \\d+ лист\\S* · собран 03\\.10/.test(a.innerText) && !!b && !/Альбом:/.test(b.innerText)`), "T33: «Проекты»: у проекта с альбомом строка «Альбом: N листов · собран 03.10», у пустого — нет");
+    await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...__k32[0]); Object.keys(ALBUM.meta).forEach(k=>delete ALBUM.meta[k]); Object.assign(ALBUM.meta, __k32[1]); renderSheets(); winOpen("wSheets", false); return 1`);
   }
 };

@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.0: the «Листы и альбом» window rebuilt; one «Выгрузка» menu.** Owner 03.10: «окно листы и
+  альбом неудобное и странно свёрстано»; «три кнопки очень похожи по смыслу и не понятны интуитивно». Spec:
+  `docs/ux/spec-2026-10-03-sheets-and-exports.md`. Top bar: «Листы и альбом» (sheet-count badge, Ctrl+P) and
+  «Выгрузка ▾» with six items and a one-line explanation each (Чертёж DXF, ГИС ОГД в DXF, GeoJSON для QGIS, Excel: ТЭП и
+  листы, PDF альбома, PPTX альбома); «DXF ГИС ОГД» is «ГИС ОГД в DXF» everywhere; keyboard: Enter/Space/↓ open, ↑↓,
+  Home/End, Esc, Tab. «Слои» and «Свойства» are back in the bar from 1560 px. The window: status line («Альбом: 7
+  листов · собран 03.10 12:40 · PDF 03.10 12:41», «Раньше в проекте было N листов (дд.мм)» when empty), «Добавить лист
+  ▾» (A3 / A1 / слайд 16:9), «Собрать ▾» (Альбом ППТ КРТ, Ситуационный план A4, Раздел, Из файла…), «PDF», «PPTX», a
+  collapsible «Штамп…», one line per sheet (number, name, format · scale, content icons, «готовая»), the selected
+  sheet's settings beside the list from 640 px and below it when narrower; no horizontal scrolling in any dock. The
+  «Проекты» list shows «Альбом: N листов · собран дд.мм» (server `list_projects` returns `album_n`/`album_at` read from
+  the file without parsing it; cache keyed by mtime_ns + size). `ALBUM.meta.peak`/`editedAt` recorded on save.
+  Open: focus does not return to the button after choosing a menu item; `peak` is the last count, not the maximum;
+  PDF/PPTX in the menu do not grey out while a build runs.
 - **2026-10-03, ГРАДО 2 v0.97.0: an album can be imported from a project file («Листы» → «Из файла…»).** Owner 03.10:
   his finished КРТ layout (9 sheets) lived only in a backup folder; the live project showed «Лист 1». «Из файла…»
   reads a `.grado2` in the browser — a whole project (its `album`) or a bare `{meta, sheets}` album — and either

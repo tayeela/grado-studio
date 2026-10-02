@@ -268,6 +268,29 @@ class Projects(unittest.TestCase):
         self.assertIsNotNone(r["autosave"])
         self.assertEqual(S.project_path("Хорошёво").read_bytes(), b'{"format": "grado2"}')
 
+    def test_list_carries_album_summary(self):
+        alb = {"meta": {"builtAt": "2026-10-03T09:40:00.000Z"}, "sheets": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+        S.save_project("С альбомом", json.dumps({"format": "grado2", "album": alb}).encode())
+        S.save_project("Без альбома", b'{"format": "grado2"}')
+        S.save_project("Пустой", json.dumps({"format": "grado2", "album": {"meta": {}, "sheets": []}}).encode())
+        by = {p["name"]: p for p in S.list_projects()["projects"]}
+        self.assertEqual((by["С альбомом"]["album_n"], by["С альбомом"]["album_at"]), (3, "2026-10-03T09:40:00.000Z"))
+        self.assertEqual((by["Без альбома"]["album_n"], by["Без альбома"]["album_at"]), (None, None))
+        self.assertEqual(by["Пустой"]["album_n"], 0)
+        S.save_project("С альбомом", json.dumps({"format": "grado2", "album": {"meta": {}, "sheets": [{}]}}).encode())   # запись новее — счёт заново
+        self.assertEqual({p["name"]: p["album_n"] for p in S.list_projects()["projects"]}["С альбомом"], 1)
+
+    def test_album_summary_skips_the_big_data(self):
+        """Строка про альбом не требует разбора всего файла: альбом читается окном, большая граница и слои вокруг не мешают."""
+        big = {"format": "grado2", "territory": {"p": "я" * 3_000_000},
+               "album": {"meta": {"builtAt": "2026-10-03T12:40:00"}, "sheets": [{"id": i, "t": "а" * 700} for i in range(9)]},
+               "layers": [{"k": "z" * 2_000_000}]}
+        S.save_project("Большой", json.dumps(big, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+        r = {p["name"]: p for p in S.list_projects()["projects"]}["Большой"]
+        self.assertEqual((r["album_n"], r["album_at"]), (9, "2026-10-03T12:40:00"))
+        S.save_project("Пустой файл", b"{}")
+        self.assertIsNone({p["name"]: p for p in S.list_projects()["projects"]}["Пустой файл"]["album_n"])
+
     def test_names_cannot_escape_the_folder(self):
         for bad in ("../x", "a/b", "", ".hidden", "c:x"):
             with self.assertRaises(ValueError):

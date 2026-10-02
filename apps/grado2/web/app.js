@@ -666,17 +666,31 @@ $("bExpXls").onclick = () => {
   exportTo("/api/export/xlsx", { tep, sheets, project: PROJ.name || "Без названия", ...(t?.constantsChanged?.length ? { note: `Нормативы изменены вручную: ${t.constantsChanged.length}` } : {}) },
     "grado2-tep.xlsx", "Excel готов: показатели ТЭП и список листов. Файл сохранён в папку загрузок браузера.", "Excel не выгружен");
 };
-const expMenu = on => { $("expMenu").hidden = !on; $("bExpMore").setAttribute("aria-expanded", on); if (on) $("bExpGeo").focus(); };
+/* меню «Выгрузка ▾» (шапка): шесть пунктов с пояснением в строку; клавиатура — как у меню: Enter, пробел или ↓ на кнопке открывает и ставит
+   фокус на первый доступный пункт, ↑↓ по кругу, Home/End, Esc закрывает и возвращает фокус, Tab закрывает */
+const expItems = () => [...$("expMenu").querySelectorAll("button:not(:disabled)")];
+const expSync = () => {       // PDF и PPTX без листов — серые, пояснение «Нет листов»
+  const none = !ALBUM.sheets.length;
+  [["bExpPdf", "Все листы одним файлом для печати"], ["bExpPptx", "Редактируемая презентация PowerPoint"]].forEach(([id, hint]) => { const b = $(id); b.disabled = none; b.querySelector("small").textContent = none ? "Нет листов" : hint; });
+  const fr = window.ogdFrame?.(), g = $("bOgdAll");
+  if (!ogdPoll) g.querySelector("small").textContent = fr ? "Все слои портала по рамке листа" : "Сначала нарисуйте лист на карте";
+};
+const expMenu = on => { if (on) expSync(); $("expMenu").hidden = !on; $("bExpMore").setAttribute("aria-expanded", on); if (on) expItems()[0]?.focus(); };
 $("bExpMore").onclick = e => { e.stopPropagation(); expMenu($("expMenu").hidden); };
+$("bExpMore").addEventListener("keydown", e => { if (e.key === "ArrowDown") { e.preventDefault(); if ($("expMenu").hidden) expMenu(true); else expItems()[0]?.focus(); } });
 $("expMenu").addEventListener("click", () => expMenu(false));
 $("expMenu").addEventListener("keydown", e => {
-  const items = [...$("expMenu").querySelectorAll("button")], i = items.indexOf(document.activeElement);
+  const items = expItems(), i = items.indexOf(document.activeElement);
   if (e.key === "Escape") { e.stopPropagation(); expMenu(false); $("bExpMore").focus(); }
+  if (e.key === "Tab") expMenu(false);
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+  if (e.key === "Home" || e.key === "End") { e.preventDefault(); items[e.key === "Home" ? 0 : items.length - 1].focus(); }
 });
 addEventListener("pointerdown", e => { if (!$("expMenu").hidden && !e.target.closest(".expmore")) expMenu(false); });
+$("bExpPdf").onclick = () => window.albumFile?.("pdf");
+$("bExpPptx").onclick = () => window.albumFile?.("pptx");
 
-/* «DXF ГИС ОГД»: все слои ГИС ОГД внутри листа, нарисованного на карте (frames.js), — чертёж для передачи: МСК,
+/* «ГИС ОГД в DXF»: все слои ГИС ОГД внутри листа, нарисованного на карте (frames.js), — чертёж для передачи: МСК,
    слой портала на своём слое, лист бумаги с видовым экраном в масштабе. Кнопка в шапке берёт выбранный лист или
    последний; листа нет — включает инструмент «Лист». Выгрузка идёт на сервере фоном, повторное нажатие её останавливает. */
 let ogdPoll = null;
@@ -696,26 +710,26 @@ async function runOgd(fr, codes) {
     if (/уже идёт/.test(err.message)) { toast("Выгрузка ГИС ОГД уже идёт — показываю её ход на кнопке и в строке состояния. Новая начнётся, когда эта закончится."); return watchOgd(); }
     return toast("Выгрузка не началась: " + err.message);
   }
-  toast(`Выгрузка всех слоёв ГИС ОГД по ${where}. Ход — на кнопке «DXF ГИС ОГД» и в строке состояния; работать можно дальше.`);
+  toast(`Выгрузка всех слоёв ГИС ОГД по ${where}. Ход — на кнопке «Выгрузка» и в строке состояния; работать можно дальше.`);
   watchOgd();
 }
 /* ход выгрузки: кнопка показывает «слой N из M», строка состояния — подробности; по окончании архив скачивается.
    Подключается и к выгрузке, начатой раньше (при открытии страницы и на повторное нажатие). */
 function watchOgd() {
-  const btn = $("bOgdAll"), lb = btn.lastChild, min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
+  const btn = $("bOgdAll"), lb = btn.querySelector("b"), hint = btn.querySelector("small"), top = $("bExpMore"), min = s => s < 90 ? `${Math.round(s)} с` : `${Math.round(s / 60)} мин`;
   clearInterval(ogdPoll);
   const tick = async () => {
     let st; try { st = await api("/api/ogd_all/status"); } catch { return; }
     const where = st.where || "листу";
     if (st.running) {
       const left = st.done ? (Date.now() / 1000 - st.started) / st.done * (st.total - st.done) : 0;
-      lb.textContent = `ГИС ОГД ${st.done}/${st.total || "…"} · стоп`; btn.classList.add("busy");
+      lb.textContent = `ГИС ОГД ${st.done}/${st.total || "…"} · стоп`; hint.textContent = "Идёт выгрузка — нажмите, чтобы остановить"; btn.classList.add("busy"); top.classList.add("busy");
       btn.title = `Идёт выгрузка ГИС ОГД по ${where}. Нажмите, чтобы остановить.`;
       window.setHint?.(`ГИС ОГД по ${where}: слой ${st.done} из ${st.total || "…"}${st.current ? ` — «${st.current}»` : ""}${st.message ? ` (${st.message})` : ""}. `
         + `С объектами на листе: ${st.found}.${left > 5 ? ` Осталось около ${min(left)}.` : ""} Работать можно дальше.`);
       return;
     }
-    clearInterval(ogdPoll); ogdPoll = null; lb.textContent = "DXF ГИС ОГД"; btn.classList.remove("busy"); btn.title = btn.dataset.title || btn.title; window.setHint?.("");
+    clearInterval(ogdPoll); ogdPoll = null; lb.textContent = "ГИС ОГД в DXF"; btn.classList.remove("busy"); top.classList.remove("busy"); btn.title = btn.dataset.title || btn.title; window.setHint?.("");
     if (!st.file) return toast(st.message || "Выгрузка остановлена.");
     const a = document.createElement("a"); a.href = "/api/ogd_all/file"; a.download = st.file; a.click();
     const miss = st.errors.map(e => "«" + e.split(": ")[0] + "»");
@@ -726,6 +740,7 @@ function watchOgd() {
   ogdPoll = setInterval(tick, 1500); tick();
 }
 $("bOgdAll").dataset.title = $("bOgdAll").title;
+window.expSync = expSync;
 window.ogdResume = () => api("/api/ogd_all/status").then(st => { if (st.running) watchOgd(); }).catch(() => { });   // открыли страницу во время выгрузки; зовёт startApp, когда сервер готов принимать запросы (в совместном режиме — после входа)
 window.ogdFrame = () => window.selectedFrame?.() || [...ALBUM.sheets].reverse().find(sh => window.sheetOnMap?.(sh));
 window.runOgd = runOgd; window.exportOgd = fr => ogdPoll ? runOgd(null) : window.openOgdPicker(fr);   // сначала окно выбора слоёв (ogdpick.js)
@@ -733,7 +748,7 @@ $("bOgdAll").onclick = () => {
   if (ogdPoll) return runOgd(null);
   const fr = window.ogdFrame();
   if (fr) return window.exportOgd(fr);
-  window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «DXF ГИС ОГД» над листом.");
+  window.startFrame(); toast("Нарисуйте лист: тяните прямоугольник по карте. Потом «ГИС ОГД в DXF» над листом.");
 };
 
 /* ================= граф анализа (litegraph.js) ================= */
@@ -1651,7 +1666,7 @@ const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoun
   wData: [L, 96, 340, Math.min(560, h - 150)], wGraph: [L, Math.round(h * .38), Math.max(560, mw), Math.round(h * .56)], wSketch: [R - 320, 96, 320, 470],
   wVars: [L, h - 300, Math.min(1180, mw), 260], wTep: [R - 330, 96, 330, Math.min(620, h - 150)], w3d: [L + 40, 110, Math.min(620, mw), 440],
   wCmp: [L + 20, 100, Math.min(1000, mw), 520], wTable: [L, h - 330, Math.max(560, mw), 280], wProjects: [Math.round(w / 2 - 290), 90, 580, Math.min(480, h - 150)],
-  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)],
+  wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(100, h - 440), Math.min(560, mw), Math.min(420, h - 140)],
   // совместный режим (hub.js): по центру — проекты, доступ, пользователи; справа у карты — комментарии и история
   wHubProjects: [Math.round(w / 2 - 390), 90, 780, Math.min(520, h - 150)], wShare: [Math.round(w / 2 - 250), 90, 500, Math.min(440, h - 150)], wHubAdmin: [Math.round(w / 2 - 330), 90, 660, Math.min(560, h - 150)], wTeams: [Math.round(w / 2 - 320), 90, 640, Math.min(560, h - 150)],
   wComments: [R - 380, 104, 380, Math.min(580, h - 150)], wHistory: [R - 560, 104, 560, Math.min(540, h - 150)],

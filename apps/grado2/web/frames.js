@@ -2,7 +2,7 @@
    Каждый лист-карта альбома (ALBUM.sheets) — рамка на карте: её размер = карта листа (frameMM) × масштаб. Инструмент
    «Лист»: тяните прямоугольник — пропорции формата держатся сами (по умолчанию А3 без штампа), масштаб считается из
    размера; появляется новый лист альбома. Выбранный лист: тянуть внутри — сдвиг (sheet.center), за угол — размер
-   (sheet.scale), над листом панель: название, формат, ориентация, масштаб, «Загрузить сюда», «DXF ГИС ОГД», «Просмотр»,
+   (sheet.scale), над листом панель: название, формат, ориентация, масштаб, «Загрузить сюда», «ГИС ОГД в DXF», «Просмотр»,
    удалить. Листы раздела (строятся по территории) видны на карте, пока открыто окно «Листы»; обзорные схемы Москвы
    и округа, таблица ТЭП и титул рамки не имеют. Граница участка не нужна. */
 (function () {
@@ -47,7 +47,7 @@
     src.clear();
     ALBUM.sheets.forEach(sh => { if (!sheetOnMap(sh, sh === SELF)) return; const r = corners(sh).map(toMap), f = new ol.Feature(new ol.geom.Polygon([[...r, r[0]]])); f.set("sh", sh); f.set("label", label(sh)); src.addFeature(f); });
     if (!drag) placeBar();
-    window.updateCover?.();
+    window.updateCover?.(); window.syncSheetBadge?.();
     if (fromSheets !== true && !drag && !$("wSheets").hidden) window.renderSheets?.();
   }
   window.redrawFrames = redraw;
@@ -63,7 +63,7 @@
       + `<label title="Масштаб листа: впишите число или тяните угол рамки">1:<input data-k="scale" value="${sc}" inputmode="numeric"></label>`
       + `<select data-k="scale" class="sc" aria-label="Типовой масштаб" title="Типовой масштаб"><option value="">▾</option>${ROUND.map(v => `<option value="${v}">1:${fmt(v)}</option>`).join("")}</select>`
       + `<span class="vs"></span><button class="btn" data-a="load" title="Выбрать, что загрузить на этот лист: окно «Исходные данные»"><i data-lucide="download"></i>Загрузить сюда</button>`
-      + `<button class="btn primary" data-a="ogd" title="Все слои ГИС ОГД внутри листа — чертёж DXF в МСК: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном 1:${fmt(sc)}"><i data-lucide="file-down"></i>DXF ГИС ОГД</button>`
+      + `<button class="btn primary" data-a="ogd" title="Все слои ГИС ОГД внутри листа — чертёж DXF в МСК: слой портала на своём слое, цвета как на портале, лист бумаги с видовым экраном 1:${fmt(sc)}"><i data-lucide="file-down"></i>ГИС ОГД в DXF</button>`
       + `<button class="tb" data-a="prev" title="Просмотр листа (окно «Листы»)"><i data-lucide="eye"></i></button>`
       + `<button class="tb" data-a="del" title="Удалить лист (Del)"><i data-lucide="trash-2"></i></button>`;
     icons();
@@ -96,7 +96,7 @@
   });
   bar.addEventListener("keydown", e => { if (e.key === "Enter") e.target.blur(); e.stopPropagation(); });
 
-  function changed() { window.markDirty?.(); redraw(); if (BY_SHEET) renderTree(); }      // папки листов в дереве слоёв
+  function changed() { window.touchAlbum ? window.touchAlbum() : window.markDirty?.(); redraw(); if (BY_SHEET) renderTree(); }      // папки листов в дереве слоёв
   function remove(sh) {
     const i = ALBUM.sheets.indexOf(sh); if (i < 0) return;
     ALBUM.sheets.splice(i, 1); SELF = null; changed();
@@ -139,8 +139,8 @@
       const sh = hitSheet(e.pixel);
       // внутри листа лежат объекты чертежа: щелчок по объекту — выбор объекта, по пустому месту — выбор листа
       const other = sh && sh !== SELF && mMain.forEachFeatureAtPixel(e.pixel, () => true, { layerFilter: l => l !== layer && l.getZIndex() !== 105, hitTolerance: 3 });
-      if (sh && !other) { if (sh !== SELF) { SELF = sh; redraw(true); } drag = { mode: "move", m0: m, c0: centerMsk(sh) }; return true; }
-      if (SELF) { SELF = null; redraw(true); }
+      if (sh && !other) { if (sh !== SELF) { SELF = sh; redraw(true); window.syncSheetSel?.(); } drag = { mode: "move", m0: m, c0: centerMsk(sh) }; return true; }
+      if (SELF) { SELF = null; redraw(true); window.syncSheetSel?.(); }
       return false;
     },
     handleDragEvent(e) {

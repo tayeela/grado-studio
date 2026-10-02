@@ -18,6 +18,7 @@ const st = {
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { } };
 st.q = lsGet("grado2.hub.q") || ""; st.ord = lsGet("grado2.hub.order") === "name" ? "name" : "recent";
+st.album = lsGet("grado2.hub.album") === "1";
 st.copyId = null; st.copyName = ""; st.copyTeam = ""; st.link = null;
 const myRole = () => C()?.role || st.role || (st.me?.admin ? "admin" : null);
 const canEdit = r => r === "owner" || r === "editor" || r === "admin";
@@ -234,7 +235,7 @@ const teamName = p => p.team_name || (st.teams || []).find(t => t.id === p.team)
 /* группы списка: «Избранное» (первой), «Личные», по одной на мою команду, «Доступные мне» (проекты команд, где я не состою); пустые не показываются.
    Избранный проект остаётся и в своей группе. Порядок: «Недавние» или «По названию» */
 function projGroups() {
-  const f = norm(st.q), hit = p => !f || norm(p.name).includes(f) || norm(teamName(p)).includes(f);
+  const f = norm(st.q), hit = p => (!st.album || +p.album_n > 0) && (!f || norm(p.name).includes(f) || norm(teamName(p)).includes(f));
   const rows = st.projects.filter(hit).sort(st.ord === "name" ? (a, b) => String(a.name).localeCompare(String(b.name), "ru") : (a, b) => toMs(b.updated) - toMs(a.updated)), g = [], add = (title, r, fav) => { if (r.length) g.push({ title, rows: r, fav }); };
   add("Избранное", rows.filter(p => p.star), true);
   add("Личные", rows.filter(p => !p.team));
@@ -247,7 +248,7 @@ R.projects = [$("hubProjList"), () => {
   if (!st.projects.length) { el.innerHTML = `<div class="empty">Совместных проектов пока нет. Введите название и нажмите «Создать пустой» или «Сделать общим текущую работу».</div>`; return; }
   const row = (p, fav) => {
     const cur = p.id === st.pid, own = isOwner(p.role), on = +p.online || 0, ren = st.renameId === p.id;
-    const name = ren ? `<input type="text" class="hubren" data-id="${esc(p.id)}" value="${esc(p.name)}" maxlength="60" aria-label="Новое название проекта">` : `${esc(p.name)}${cur ? `<span class="pill">открыт</span>` : ""}`;
+    const name = ren ? `<input type="text" class="hubren" data-id="${esc(p.id)}" value="${esc(p.name)}" maxlength="60" aria-label="Новое название проекта">` : `${esc(p.name)}${cur ? `<span class="pill">открыт</span>` : ""}${window.albumLine?.(+p.album_n, p.album_at) || ""}`;
     const del = armedIs(k("del", p.id)), star = !!p.star;
     const cform = st.copyId === p.id && !fav ? `<tr class="hubcopy"><td colspan="5"><div class="hubform"><input type="text" class="hubcopyname" value="${esc(st.copyName)}" maxlength="60" aria-label="Название копии"><label class="hubdim">Где создать <select class="hubcopyteam" aria-label="Где создать копию">${teamOpts(st.copyTeam)}</select></label><button class="btn primary" data-act="copyok" data-id="${esc(p.id)}">Создать копию</button><button class="btn" data-act="copyno">Отмена</button></div></td></tr>` : "";
     return `<tr class="${cur ? "cur" : ""}"><td class="nm" title="${esc(p.name)}">${name}</td><td>${esc(ROLE[p.role] || p.role)}</td>
@@ -287,6 +288,8 @@ const el_copyName = () => $("hubProjList").querySelector(".hubcopyname");
 function wireProjects() {
   $("hubQ").value = st.q; $("hubOrd").value = st.ord;
   $("hubQ").addEventListener("input", e => { st.q = e.target.value; lsSet("grado2.hub.q", st.q); draw("projects", true); });
+  $("hubAlb").setAttribute("aria-pressed", st.album);
+  $("hubAlb").onclick = () => { st.album = !st.album; lsSet("grado2.hub.album", st.album ? "1" : "0"); $("hubAlb").setAttribute("aria-pressed", st.album); draw("projects", true); };
   $("hubOrd").addEventListener("change", e => { st.ord = e.target.value === "name" ? "name" : "recent"; lsSet("grado2.hub.order", st.ord); draw("projects", true); });
   $("hubNew").onclick = () => createProject({ name: $("hubNewName").value.trim() });
   $("hubNewName").addEventListener("keydown", e => { if (e.key === "Enter") $("hubNew").click(); });
