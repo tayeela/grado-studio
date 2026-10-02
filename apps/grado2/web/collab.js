@@ -53,6 +53,12 @@ function h12(s) {
 /* Всем объектам слоя — `_uid`. Номер объекта, у которого его нет (файл из старой версии, проект, загруженный на сервер),
    считается из ключа слоя, места в списке и геометрии: у всех участников он получается одинаковым, и два человека,
    открывшие такой проект одновременно, не плодят двойников. Вход не меняется: нужен номер — возвращается копия. */
+/* Перевыгрузка слоя: объект источника, который уже есть на карте (тот же `_key`), сохраняет прежний `_uid` —
+   иначе номер считается заново из места в списке и геометрии, и совместная работа теряет все объекты. Вход не меняется. */
+function keepUid(fresh, cur) {
+  const u = cur?.properties?._uid; if (!u || fresh?.properties?._uid === u) return fresh;
+  return { ...fresh, properties: { ...(fresh.properties || {}), _uid: u } };
+}
 function ensureUids(fc, salt) {
   const fs = fc?.features; if (!Array.isArray(fs)) return fc;
   const seen = new Set(); let out = null;
@@ -188,7 +194,7 @@ function merge3(base, mine, theirs, sectionName, info) {
 /* ================= часть в браузере: обмен с сервером и применение к открытому проекту ================= */
 function install() {
 const C = { on: false, pid: null, rev: 0, role: null, user: null, client: Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join(""),
-  applying: false, status: "saved", split, join, merge3 };
+  applying: false, status: "saved", split, join, merge3, keepUid };
 root.Collab = C;
 const L = {};
 C.listen = (type, cb) => { (L[type] ||= []).push(cb); return () => { L[type] = (L[type] || []).filter(f => f !== cb); }; };
@@ -638,6 +644,6 @@ addEventListener("pagehide", () => savePersonal());
 addEventListener("beforeunload", e => { if (C.on && C.pid && editable() && (timer || C.status === "sending" || C.status === "offline" || C.status === "conflict")) { e.preventDefault(); e.returnValue = ""; } });
 }
 
-if (typeof module === "object" && module.exports) module.exports = { split, join, merge3, ensureUids, stable, h12 };
+if (typeof module === "object" && module.exports) module.exports = { split, join, merge3, ensureUids, keepUid, stable, h12 };
 if (typeof window !== "undefined" && typeof document !== "undefined") install();
 })(typeof window !== "undefined" ? window : globalThis);

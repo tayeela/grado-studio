@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.91.3: objects keep their identity on a re-download.** «Выгрузить заново» matched objects by
+  their stable key (the cadastral number for ЕГРН parcels) but gave every unedited object a new internal `_uid`, derived
+  from its place in the list and its geometry — only 2 of 1122 unchanged parcels kept it. Now a matched object carries
+  its old `_uid` (`Collab.keepUid`), also when its geometry was updated by the portal; new objects get a new one as
+  before. Collaboration merges and selections that rely on `_uid` no longer lose such objects. Test: 120 synthetic
+  parcels with new portal ids, noise and another order (`tests/collab_test.js`). The collaboration browser scenario
+  no longer clicks «Доступ» while the header buttons shift for ~30 ms after a project opens (the sync label changes
+  width) — it waits for a steady button and a visible window. Open: the shift itself (a fixed width for the sync label).
 - **2026-10-02, ГРАДО 2 v0.91.2: project event stream keeps its own hub.** The live event stream of a shared project
   (`/api/hub/project/<id>/events`) now holds the hub it started with. During the unit tests a stream from an earlier
   test outlived the test's hub and logged a 500 «'NoneType' object has no attribute 'session_user'»; three runs of the

@@ -99,8 +99,12 @@ try {
   await A.until(`return Collab.pid && $("hubProjName").textContent==="Проверка" && $("wHubProjects").hidden`, "проект «Проверка» создан и открыт");
   // администратор сервера видит свои проекты с ролью «admin» (спека: GET /projects) — в шапке «администратор»; права владельца те же
   check(await A.ev(`return ["owner","admin"].includes(Collab.role) && /владелец|администратор/.test($("hubRole").textContent)`), "A: проект «Проверка» создан в «Совместных проектах», A — владелец (администратор)");
+  // сразу после открытия проекта подпись «сохранено» на ~30 мс становится «отправляю…» и кнопки шапки сдвигаются:
+  // клик по координатам мог попасть в соседнюю кнопку («История»). Ждём, пока кнопка встанет на место, и проверяем, что окно открылось.
+  const btnPos = `const r=document.querySelector("#hubShareBtn").getBoundingClientRect(); return r.left+","+r.top`;
+  for (let prev = null, same = 0; same < 3; await A.sleep(150)) { const now = await A.ev(btnPos); same = now === prev ? same + 1 : 0; prev = now; }
   await A.clickEl("#hubShareBtn");
-  await A.until(`return !!document.querySelector("#hubShareLogin")`, "окно «Доступ»");
+  await A.until(`const e=document.querySelector("#hubShareLogin"); return !!e && !$("wShare").hidden && e.getBoundingClientRect().width>0`, "окно «Доступ»");
   await A.fill("#hubShareLogin", "bob"); await A.clickEl('#hubShareBody [data-act="add"]');
   await A.until(`return [...document.querySelectorAll("#hubShareBody tbody tr")].some(r=>/bob/.test(r.textContent))`, "bob в списке участников");
   check(await A.ev(`return document.querySelector('select[data-act="role"][data-login="bob"]').value==="editor"`), "A: в окне «Доступ» B добавлен с ролью «правка»");

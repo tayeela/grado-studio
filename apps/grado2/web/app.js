@@ -555,7 +555,7 @@ function mergeDownload(key, prev, fc, bb) {
   // правленный вами объект, которого в источнике больше нет, не пропадает молча: остаётся с пометкой
   const orphan = cur.filter(f => f.properties?._edited && f.properties._key && !newBy.has(f.properties._key) && !outKeys.has(f.properties._key)).map(f => ({ ...f, properties: { ...f.properties, "Нет в источнике": "да" } }));
   const out = fc.features.filter(f => !gone.has(f.properties?._key)).map(f => { const c = curBy.get(f.properties?._key); if (c?.properties._edited) return c;
-    if (!c || !own.length) return f; const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return { ...f, properties: p }; }).concat(outside, drawn, orphan);
+    if (!c) return f; if (!own.length) return Collab.keepUid(f, c); const p = { ...f.properties }; own.forEach(k => { if (c.properties[k] != null) p[k] = c.properties[k]; }); return Collab.keepUid({ ...f, properties: p }, c); }).concat(outside, drawn, orphan);
   const conflict = mine.filter(f => changed.includes(f.properties._key)).length;
   const parts = [`+${added.length} новых`, `−${removed.length} исчезло`, `${changed.length} изменились`];
   if (mine.length) parts.push(`ваши правки (${mine.length}) сохранены${conflict ? `, из них ${conflict} изменились и в источнике — сверьте` : ""}`);

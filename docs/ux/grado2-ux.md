@@ -238,6 +238,9 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 - 2026-10-01 (v0.88.0, first-run audit): open — a sheet/PDF path for a
   newcomer still needs the «Листы» window explained; mouse-wheel zoom felt too fast to a novice; the help (F1) is long
   and has no jump links.
+- 2026-10-02 (v0.91.3): the `_uid` loss on re-download below is fixed. Open: header buttons shift ~80 px for ~30 ms
+  after a project opens (sync label «сохранено» → «отправляю…» → «сохранено»); a click in that moment hits the
+  neighbouring button — give the sync label a fixed width.
 - 2026-10-01 (v0.88.0, found while checking): a re-download of «Земельные участки (ЕГРН)» keeps the internal `_uid` of
   only 2 of 1122 unchanged parcels (same on v0.87.0 — not new); collaboration merges and selections rely on `_uid`.
   The default ГИС ОГД layers in the source picker were empty for the ТАО site, so a newcomer gets ГИС ОГД data only

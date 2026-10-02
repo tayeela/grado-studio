@@ -1,6 +1,6 @@
 // collab.js: разбиение проекта на разделы и слияние по трём версиям (merge3), проверяется под node (запуск — tests/test_collab_js.py).
 const assert = require("assert");
-const { split, join, merge3, ensureUids } = require("../web/collab.js");
+const { split, join, merge3, ensureUids, keepUid } = require("../web/collab.js");
 let n = 0; const ok = (c, msg) => { assert.ok(c, "FAIL: " + msg); n++; }, eq = (a, b, msg) => { assert.deepStrictEqual(a, b, "FAIL: " + msg); n++; };
 
 const feat = (uid, x, props = {}) => ({ type: "Feature", geometry: { type: "Point", coordinates: [37.5 + x, 55.7] }, properties: { _uid: uid, ...props } });
@@ -178,6 +178,27 @@ const byUid = (sec, u) => sec.data.fc.features.find(f => f.properties._uid === u
   const t8 = M(); t8.name = "Новое имя"; eq(merge3(M(), M(), t8, "meta").name, "Новое имя", "название от хаба применяется");
   // мета-раздела нет ни у кого
   eq(merge3(M(), M(), M(), "meta"), M(), "meta без правок");
+}
+
+// перевыгрузка ЕГРН (T3): те же кадастровые номера, новые id портала, шум координат — `_uid` неизменённых участков сохраняется
+{
+  const N = 120, parcel = (i, id, noise, dx = 0) => ({ type: "Feature", geometry: { type: "Point", coordinates: [37.5 + i * 1e-4 + noise + dx, 55.7] },
+    properties: { _key: "77:01:000" + i, "Кадастровый номер": "77:01:000" + i, id_portal: id } });
+  const first = ensureUids(fc(...Array.from({ length: N }, (_, i) => parcel(i, "p" + i, 0))), "nspd.parcels");   // то, что на карте
+  // новая выгрузка: участок 5 исчез, 0 сдвинут, 999 новый; порядок в списке другой
+  const dl = Array.from({ length: N }, (_, i) => i).filter(i => i !== 5).reverse().map(i => parcel(i, "q" + i, 1e-9 * (i % 7), i === 0 ? 5e-5 : 0)).concat(parcel(999, "q999", 0));
+  const bare = ensureUids(fc(...dl), "nspd.parcels").features;                    // как было: номер считается заново из места и геометрии
+  const curBy = new Map(first.features.map(f => [f.properties._key, f]));
+  const old = first.features.map(f => f.properties._uid);
+  const kept = dl.map(f => keepUid(f, curBy.get(f.properties._key)));
+  const same = kept.filter(f => curBy.has(f.properties._key) && f.properties._uid === curBy.get(f.properties._key).properties._uid).length;
+  ok(bare.filter(f => curBy.has(f.properties._key) && f.properties._uid === curBy.get(f.properties._key).properties._uid).length < N * 0.5, "без переноса номера теряются");
+  ok(same / (N - 1) >= 0.99, "перенос: >= 99 % прежних номеров (" + same + " из " + (N - 1) + ")");
+  eq(kept.find(f => f.properties._key === "77:01:0000").properties._uid, curBy.get("77:01:0000").properties._uid, "геометрия изменилась — номер прежний");
+  ok(kept.find(f => f.properties._key === "77:01:0000").geometry.coordinates[0] > 37.5 + 4e-5, "геометрия обновилась");
+  ok(!kept.some(f => f.properties._key === "77:01:0005"), "исчезнувший участок не вернулся");
+  ok(!old.includes(kept.find(f => f.properties._key === "77:01:000999").properties._uid || "x"), "у нового участка нового номера нет в старых");
+  eq(keepUid(dl[0], undefined), dl[0], "нет старого объекта — вход как есть");
 }
 
 console.log("collab: " + n + " checks ok");
