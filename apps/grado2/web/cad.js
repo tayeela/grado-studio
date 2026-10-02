@@ -63,9 +63,10 @@ const MAXGRIPS = 3000;
 let gripCut = false;                  // выбор больше MAXGRIPS вершин: ручки не показаны, строка состояния говорит об этом
 function syncGrips() {
   gripSrc.clear(true); gripCut = false;
-  if (CMD || UIS.tool !== "select" || !SEL.length) return;
+  const terrF = TERRSEL && TERR ? terrSrc.getFeatures()[0] : null;
+  if (CMD || UIS.tool !== "select" || (!SEL.length && !terrF)) return;
   const fs = [];
-  for (const { key, f } of SEL) {
+  for (const { key, f } of terrF ? [{ key: "@terr", f: terrF }] : SEL) {
     const g = f.getGeometry(); if (!g) continue;
     const vs = vertices(g), byRing = new Map();
     vs.forEach(v => { const r = v.path.slice(0, -1).join(","); if (!byRing.has(r)) byRing.set(r, []); byRing.get(r).push(v); });
@@ -119,6 +120,7 @@ function gather(c, tolMap) {
       addChains(chainsOf(f.getGeometry()), !!cad?.c);
     });
   }
+  terrSrc.forEachFeatureInExtent(ext, f => addChains(chainsOf(f.getGeometry()), false));     // граница территории: вершины, середины и стороны
   if (CMD?.own) CMD.own().forEach(ch => { if (ch.length) addChains([ch.map(fromM)], false); });
   return { pts, segs, curves };
 }
@@ -1178,6 +1180,26 @@ def("lengthen", "Увеличить", ["LEN"], () => {
   return st;
 });
 // РУЧКА: щелчок по ручке, затем щелчок в новом месте (или перетаскивание); привязки, отслеживание, орто и ввод работают
+/* правка границы территории: та же запись отмены, что у слоёв, но путь через setTerritory (площадь, версия, граф, сохранение, совместная работа) */
+// допустима ли граница после правки: причина отказа простыми словами или null
+function terrFault(gj) {
+  const polys = gj.geometry.type === "Polygon" ? [gj.geometry.coordinates] : gj.geometry.type === "MultiPolygon" ? gj.geometry.coordinates : [];
+  if (!polys.length || polys.flat(3).some(v => !Number.isFinite(v))) return "граница стала пустой";
+  if (turf.kinks(gj).features.length) return "Граница не может пересекать сама себя";
+  if (!(turf.area(gj) > 0.01)) return "Граница не может иметь нулевую площадь";
+  for (const rings of polys) for (const hole of rings.slice(1)) if (hole.some(v => !turf.booleanPointInPolygon(v, turf.polygon([rings[0]])))) return "Дыра в границе должна лежать внутри контура";
+  return null;
+}
+function terrEdit(geom, label) {
+  if (!TERR) return;
+  if (terrLocked()) return result("Только просмотр: границу правит владелец или редактор проекта.");
+  const gj = GJ.writeFeatureObject(new ol.Feature(geom)), bad = terrFault(gj);
+  if (bad) return result(`${bad} — вершина возвращена на место.`);
+  pushUndo({ kind: "terr", label: `граница: ${label}`, geom: TERR.geometry });
+  setTerritory(gj, { keep: true });
+  result(`Граница территории: ${label}, площадь ${fmt(TERR_M2 / 1e4, 3)} га.${UNDO_TAIL()}`);
+}
+const put = (changes, label) => changes[0].key === "@terr" ? terrEdit(changes[0].geom, label) : edit(changes, [], label);
 def("grip", "Ручка", [], o => {
   const g = o.g, f = g.get("f"), key = g.get("key"), path = g.get("path"), mid = !!g.get("mid"), closed = g.get("closed"), orig = f.getGeometry();
   const baseW = toM(g.getGeometry().getCoordinates());
@@ -1194,7 +1216,7 @@ def("grip", "Ручка", [], o => {
   /* ТОПО: та же вершина у соседних объектов (в пределах 1 мм на местности) переносится вместе — граница двух участков
      остаётся общей, без щели и нахлёста, как в топологическом редактировании QGIS */
   const oldC = fromM(baseW), tol = .001 / Math.cos(ol.proj.toLonLat(oldC)[1] * Math.PI / 180);
-  const mates = mid || !path.length || !ST.topo ? [] : (() => { const out = [];
+  const mates = mid || !path.length || !ST.topo || key === "@terr" ? [] : (() => { const out = [];
     for (const l of LYR) { if (!shown(l) || outOfScale(l)) continue;
       layerSrc[l.key].forEachFeatureInExtent(ol.extent.buffer([oldC[0], oldC[1], oldC[0], oldC[1]], tol), o => { if (o === f || /Point/.test(o.getGeometry().getType())) return; out.push({ key: l.key, f: o }); }); }
     return out; })();
@@ -1205,8 +1227,8 @@ def("grip", "Ручка", [], o => {
     prompt: () => mid ? "Новая вершина: щелчок, @dx;dy или X;Y (Esc — отмена)" : `Новое положение вершины: щелчок, @dx;dy или X;Y${optStr(st.opts())} (Esc — отмена)`,
     opts: () => mid || !path.length ? [] : [opt("Удалить вершину (У)", ["у", "удалить", "d", "delete"], () => {
       const n = g.get("n"), min = closed ? 3 : 2; if (n <= min) return note(`Удалить нельзя: у ${closed ? "контура" : "линии"} останется меньше ${min} вершин.`);
-      edit([{ key, f, geom: build(null, true), cad: null }], [], "удаление вершины"); st.done = true; })],
-    point: (w, how) => { if (skip && how?.click && !st.moved) { skip = false; return; } edit([{ key, f, geom: build(fromM(w)), cad: null }, ...shared(fromM(w))], [], mid ? "новая вершина" : "перенос вершины"); st.done = true; },
+      put([{ key, f, geom: build(null, true), cad: null }], "удаление вершины"); st.done = true; })],
+    point: (w, how) => { if (skip && how?.click && !st.moved) { skip = false; return; } put([{ key, f, geom: build(fromM(w)), cad: null }, ...shared(fromM(w))], mid ? "новая вершина" : "перенос вершины"); st.done = true; },
     enter: () => { st.done = true; },
     preview: w => ({ ghosts: [new ol.Feature({ geometry: build(fromM(w)), k: "ghost" }), ...shared(fromM(w)).map(x => new ol.Feature({ geometry: x.geom, k: "ghost" }))], lines: [[baseW, w]] }) };
   return st;
@@ -1566,6 +1588,6 @@ function gripTip(features, c) {
   const L = nb.map(q => f2(G.dist(v, toM(q))) + " м");
   tipEl.innerHTML = [`отрезки: ${L.join(" и ")}`, `X ${f2(v[0])}  Y ${f2(v[1])}`].map(esc).join("<br>"); tipOv.setPosition(c); tipEl.hidden = false;
 }
-window.CAD = { cmd: () => CMD?.id || null, contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? ESC_HINT : "",
+window.CAD = { terrEdit, gripList: () => gripSrc.getFeatures().map(g => ({ w: toM(g.getGeometry().getCoordinates()), mid: !!g.get("mid") })), cmd: () => CMD?.id || null, contourAt: w => contourAt(w), grip: gripTip, grips: () => syncGrips(), gripsCut: () => gripCut, MAXGRIPS, ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())), start, cancel: silent => cancel(silent), active: () => !!CMD, selecting: () => CMD?.need === "sel", prompt: () => CMD ? ESC_HINT : "",
   toM, fromM, ST, CMDS, ALIAS, HELP, toggle, cur: () => CUR, acq: () => ACQ.slice(), setOrtho: on => { if (!!ST.ortho !== !!on) toggle("ortho"); }, get ortho() { return ST.ortho; } };
 })();

@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.92.0: the territory boundary can be edited, and drawing snaps to it.** Owner 02.10: «до сих
+  пор нет возможности редактирования границы территории, при черчении должна работать привязка и к вершинам
+  территории». Click the red dashed boundary (within 6 px) or «Изменить границу» in «Данные»: square grips on
+  vertices, triangles on side midpoints, area and vertex count in the right panel. A grip is moved by click–click or
+  drag (snaps and typed МСК `X;Y` work), a triangle adds a vertex, a grip + Del removes one (not below three per
+  contour); Ctrl+Z / Ctrl+Shift+Z; Esc deselects. Multi-part boundaries and holes are editable. Every edit goes through
+  `setTerritory` (area, graph nodes, autosave, collaboration). An edit that makes the boundary cross itself, have zero
+  area or push a hole outside its contour is refused with a reason in the status line. Replacing the boundary («Из
+  файла», «По участкам», «Пример», another person's change) drops the undo entries of vertex edits, so Ctrl+Z cannot
+  bring an old boundary back over the new one. A viewer of a shared project cannot edit (guard in `CAD.terrEdit`, the
+  selection is cleared when the role becomes viewer). Object snap (`gather()` in cad.js) now takes the boundary too:
+  vertices «конечная точка», side midpoints, edges — while drawing, in «Вершины» and for the boundary's own grips;
+  0.13 ms per call on a 5 000-vertex boundary. Open: «ТОПО» does not drag neighbouring objects with a boundary vertex;
+  a click within 6 px of the boundary selects the boundary rather than a parcel under it; not checked with a second
+  live collaborator.
 - **2026-10-02, ГРАДО 2 v0.91.4: norm constants can be overridden in the ТЭП request (server part).** Owner 02.10: norms
   change all the time, so they must be editable before a calculation, prefilled with the current ones. The preset
   `moscow_calc2.json` has a `constants_meta` block: for each of the 31 constants a title, unit, group, decree and

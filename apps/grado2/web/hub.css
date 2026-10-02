@@ -45,7 +45,7 @@ body.hub-on .top{gap:8px}
 body.hub-viewer .hubhint{display:flex}
 body.hub-viewer #rbDraw,body.hub-viewer #rbAnno,body.hub-viewer #rbModify,body.hub-viewer #rbMore,body.hub-viewer #rbTerr,
 body.hub-viewer .ribbon [data-tool="vertex"],body.hub-viewer #bDelFeat,body.hub-viewer #bUndo,body.hub-viewer #bRedo,body.hub-viewer .ribbon .tgt{display:none}
-body.hub-viewer #bNewLayer,body.hub-viewer #bNewGroup,body.hub-viewer #bTidy,body.hub-viewer #bFrame,body.hub-viewer #bLoad,body.hub-viewer #bDraw,
+body.hub-viewer #bNewLayer,body.hub-viewer #bNewGroup,body.hub-viewer #bTidy,body.hub-viewer #bFrame,body.hub-viewer #bLoad,body.hub-viewer #bDraw,body.hub-viewer #bEditTerr,
 body.hub-viewer #bExample,body.hub-viewer #bTerrFile,body.hub-viewer #bGen,body.hub-viewer #bBakeVar,body.hub-viewer #bBakeNode,body.hub-viewer #fDxf,body.hub-viewer label:has(>#fDxf){pointer-events:none;opacity:.45}
 body.hub-cmode #mMain{cursor:crosshair!important}
 

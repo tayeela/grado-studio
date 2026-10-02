@@ -901,7 +901,14 @@ function setVertex(f, path, axis, val) {
   arr[last] = c; if (/Polygon/.test(g.getType()) && last === 0) arr[arr.length - 1] = c.slice();
   g.setCoordinates(coords);
 }
+const vertexCount = g => (g.getType() === "Polygon" ? g.getCoordinates() : g.getType() === "MultiPolygon" ? g.getCoordinates().flat() : []).reduce((n, r) => n + Math.max(0, r.length - 1), 0);   // вершины контуров без замыкающей
 function renderObject(el) {
+  if (!SEL.length && TERRSEL && TERR) {
+    const g = terrSrc.getFeatures()[0]?.getGeometry(), n = g ? vertexCount(g) : 0;
+    el.innerHTML = `<div class="pad"><div class="ph"><b>Граница территории</b></div><div class="note" style="padding:0 0 6px">${fmt(TERR_M2 / 1e4, 3)} га · вершин: ${fmt(n)}</div>
+      <div class="note" style="padding:0 0 6px">Ручка-квадрат — вершина: щёлкните её и новое место (или перетащите; привязки и ввод X;Y работают). Треугольник на стороне добавляет вершину. Ручка и Del (или буква У) — удалить вершину, не меньше трёх. ${MOD}+Z — отменить. Esc — снять выбор.</div></div>`;
+    return;
+  }
   if (!SEL.length) { el.innerHTML = `<div class="empty">Щёлкните объект на карте или строку таблицы.<br><br>Несколько объектов — Shift+щелчок или рамка с Shift. Все объекты слоя — ${MOD}+A.</div>`; return; }
   if (SEL.length === 1) {
     const { key, f } = SEL[0], l = lyr(key), [kind, v] = sizeOf(f);
@@ -1053,12 +1060,30 @@ function setSel(list) {
   const seen = new Set(); SEL = list.filter(s => s.f && layerSrc[s.key]?.hasFeature(s.f) && !seen.has(s.f) && seen.add(s.f));
   const big = SEL.length > 5000; selCv.setVisible(!big); selGl.setVisible(big);
   selSrc.clear(true); selSrc.addFeatures(SEL.map(s => s.f));
-  if (SEL.length) UIS.rt = "obj";
+  if (SEL.length) { UIS.rt = "obj"; if (TERRSEL) { TERRSEL = false; terrSrc.changed(); } }
   CAD.grips?.();                                     // ручки AutoCAD на вершинах выбранных объектов (до строки состояния: она говорит, если ручек нет)
   renderRight(); renderTable(); syncRibbon(); syncStatus();
   if (UIS.tool === "vertex") setTool(UIS.tool);      // ручки работают с выбором
 }
-function select(key, f) { setSel(f ? [{ key, f }] : []); }
+function select(key, f) { selectTerr(false); setSel(f ? [{ key, f }] : []); }
+/* Граница территории правится как объект: щелчок по ней (или «Изменить границу») ставит ручки на вершины и середины сторон,
+   дальше всё как у объектов слоя — cad.js (ручка), отмена и возврат (запись kind "terr"). Наблюдателю совместного проекта — нельзя. */
+const terrLocked = () => document.body.classList.contains("hub-viewer");
+function selectTerr(on) {
+  on = !!on && !!TERR && !terrLocked();
+  if (on === TERRSEL) { if (on) { CAD.grips?.(); } return; }
+  TERRSEL = on; if (on) { setSel([]); UIS.rt = "obj"; }
+  terrSrc.changed(); CAD.grips?.(); renderRight(); syncStatus();
+  if (on) setHint("Граница территории: ручки на вершинах. Щёлкните ручку и новое место или перетащите; треугольник на стороне добавляет вершину; Del при выбранной ручке удаляет; Esc — снять.");
+}
+window.selectTerr = selectTerr;
+// расстояние (px) от точки экрана до линии границы: внутри контура щелчок границей не считается
+function terrEdgePx(px) {
+  const f = terrSrc.getFeatures()[0], g = f?.getGeometry(); if (!g) return Infinity;
+  const rings = g.getType() === "Polygon" ? g.getCoordinates() : g.getType() === "MultiPolygon" ? g.getCoordinates().flat() : []; if (!rings.length) return Infinity;
+  const c = mMain.getCoordinateFromPixel(px), q = mMain.getPixelFromCoordinate(new ol.geom.MultiLineString(rings).getClosestPoint(c));
+  return Math.hypot(q[0] - px[0], q[1] - px[1]);
+}
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
 function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`);
   if (outOfScale(l)) return toast(`Слой «${l.title}» не виден на этом масштабе (${l.style.minDen && !(l.style.maxDen && scaleDen(sharedView.getResolution()) > l.style.maxDen) ? `мельче 1:${fmt(l.style.minDen)}` : `крупнее 1:${fmt(l.style.maxDen)}`}).`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
@@ -1084,6 +1109,8 @@ const visibleIn = (l, f) => l.gl ? symVisible(f) : !symbolOf(l, f).hide;
 mMain.on("click", e => {
   if (UIS.tool !== "select") return;
   const hit = hitAt(e.pixel);
+  // граница территории: щелчок у её линии (до 6 px), если под ним не точка и не линия слоя
+  if (!e.originalEvent.shiftKey && (!hit || /Polygon/.test(hit.f.getGeometry().getType())) && TERR && !terrLocked() && terrEdgePx(e.pixel) <= 6) { setSel([]); selectTerr(true); return; }
   // как «Определить объекты» в QGIS: выбор не меняет текущий слой, иначе рисование уйдёт в чужую выгрузку
   if (e.originalEvent.shiftKey) { if (hit) toggleSel(hit); return; }
   select(hit?.key, hit?.f || null);
@@ -1157,6 +1184,11 @@ function snapFor(l) {
   if (!c) { const snap = new ol.interaction.Snap({ source: layerSrc[l.key], pixelTolerance: 10 }); snap.set("gradoSnap", true); mMain.addInteraction(snap); c = { src: layerSrc[l.key], snap }; SNAPS.set(l.key, c); }
   return c.snap;
 }
+let TSNAP = null;                            // привязка к границе территории: она не слой, но вершины и стороны ловятся как у слоя
+function terrSnap() {
+  if (!TSNAP) { TSNAP = new ol.interaction.Snap({ source: terrSrc, pixelTolerance: 10 }); TSNAP.set("gradoSnap", true); mMain.addInteraction(TSNAP); }
+  return TSNAP;
+}
 function placeTools(list) {                  // инструменты — перед постоянными привязками, привязки к кадру крупных слоёв — в конце
   const coll = mMain.getInteractions(), arr = coll.getArray();
   let at = arr.findIndex(i => i.get("gradoSnap")); if (at < 0) at = arr.length;
@@ -1165,7 +1197,7 @@ function placeTools(list) {                  // инструменты — пе�
 }
 // прежние имена инструментов — команды черчения (cad.js); «Вершины» — ручки OpenLayers
 const CMD_OF = { point: "point", line: "pline", poly: "pline", rect: "rect", mlen: "dist", marea: "area", terr: "terr", move: "move" };
-function clearTools() { toolI.forEach(i => { mMain.removeInteraction(i); i.dispose(); });   /* Modify держит подписки на объекты до dispose */ toolI = []; toolClean.forEach(fn => fn()); toolClean = []; SNAPS.forEach(c => c.snap.setActive(false)); }
+function clearTools() { toolI.forEach(i => { mMain.removeInteraction(i); i.dispose(); });   /* Modify держит подписки на объекты до dispose */ toolI = []; toolClean.forEach(fn => fn()); toolClean = []; SNAPS.forEach(c => c.snap.setActive(false)); TSNAP?.setActive(false); }
 window.clearTools = clearTools;
 window.CURKEY = () => CUR;
 function setTool(t) {
@@ -1189,7 +1221,9 @@ function setTool(t) {
     const k = mMain.on("pointermove", e => { if (dragging) CAD.grip(dragging, e.coordinate); }); toolClean.push(() => { ol.Observable.unByKey(k); CAD.grip(null); });
     const on = new Set();
     if (CAD.ST.osnap) LYR.filter(shown).forEach(x => { if (big(x)) { const v = new ol.interaction.Snap({ features: viewCollection(x.key, toolClean), pixelTolerance: 10 }); v.set("viewSnap", true); toolI.push(v); } else on.add(snapFor(x)); });
+    if (CAD.ST.osnap) on.add(terrSnap());
     SNAPS.forEach((c, k) => { if (!lyr(k)) { mMain.removeInteraction(c.snap); SNAPS.delete(k); } else c.snap.setActive(on.has(c.snap)); });
+    TSNAP?.setActive(on.has(TSNAP));
   }
   placeTools(toolI);
   mMain.getTargetElement().style.cursor = t === "select" ? "" : "crosshair";
@@ -1210,11 +1244,13 @@ function syncStatus() {
   const what = n ? `выбранных объектов (${fmt(n)})` : `слоя «${l?.title || "—"}»`;
   // в покое — одно короткое предложение (на 840 px длинное обрезается); полный текст — во всплывающей подсказке
   const full = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
+    : UIS.tool === "select" && !n && TERRSEL && TERR ? "Граница территории: тяните ручки-квадраты (вершины); треугольник на стороне добавляет вершину; Esc — снять выбор."
     : UIS.tool === "select" && n && CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: ручек было бы больше ${fmt(CAD.MAXGRIPS)}, поэтому они не показаны — выберите меньше объектов, чтобы править вершины. Команды (M, CO, RO) работают со всем выбором; Esc — снять выбор.`
     : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить; команды: M — перенести, CO — копировать, RO — повернуть, MI — зеркало (буквы и Enter); Esc — снять выбор.`
     : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
   const short = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: рисуйте инструментами сверху или откройте «Данные». F1 — клавиши."
     : UIS.tool === "select" && n && !CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: Del — удалить, M, CO, RO — правка, Esc — снять.`
+    : UIS.tool === "select" && !n && TERRSEL && TERR ? full
     : UIS.tool === "select" && !n ? "Выбор: щелчок или рамка." : full;
   $("stHint").textContent = short; $("stHint").title = short === full ? "" : full;
   $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; $("stLayer").title = l ? `Текущий слой: ${l.title}` : "";
@@ -1272,11 +1308,13 @@ function pushStyleUndo(l, tag) {
   pushUndo({ kind: "style", key: l.key, tag, t: now, label: `стиль «${l.title}»`, style: JSON.stringify(l.style), lop: l.layerOpacity });
 }
 function capture(rec) {
+  if (rec.kind === "terr") return { ...rec, geom: TERR?.geometry || null };
   if (rec.kind === "feat") return { ...rec, items: rec.items.map(it => ({ ...it, s: snapF(it.key, it.f) })) };
   if (rec.kind === "layer") return { ...rec, fs: layerSrc[rec.key].getFeatures() };
   const l = lyr(rec.key); return { ...rec, t: 0, style: JSON.stringify(l.style), lop: l.layerOpacity };
 }
 function applyRec(rec) {
+  if (rec.kind === "terr") { if (rec.geom) setTerritory({ geometry: rec.geom }, { keep: true }); return; }          // граница: тем же путём, что и правка
   if (rec.kind === "style") { const l = lyr(rec.key); l.style = ST(JSON.parse(rec.style)); l.layerOpacity = rec.lop; restyle(l); applyOrder(); UIS.rt = "style"; if (CUR !== l.key) setCurrentQuiet(l.key); renderRight(); return; }
   if (rec.kind === "layer") { const src = layerSrc[rec.key]; src.clear(true); src.addFeatures(rec.fs); syncFromSource(rec.key); return; }
   const keys = new Set();
@@ -1292,7 +1330,7 @@ function applyRec(rec) {
 function stepHistory(from, to, verb) {
   const rec = from.pop(); if (!rec) return toast(from === UNDO ? "Отменять нечего." : "Возвращать нечего.");
   if (rec.kind === "rmlayer") { restoreLayers(rec); setHint(`${verb}: ${rec.label}.`); syncRibbon(); return; }      // возврат удалённого слоя; «Вернуть» его заново не удаляет
-  if (rec.kind !== "feat" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
+  if (rec.kind !== "feat" && rec.kind !== "terr" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
   const inv = capture(rec); applyRec(rec); to.push(inv);
   setSel(SEL); setHint(`${verb}: ${rec.label}.`); syncRibbon();
 }
@@ -1334,7 +1372,7 @@ addEventListener("keydown", e => {
     // Esc по очереди: открытое меню → подбор вариантов → выбор и инструмент → верхнее плавающее окно, а если плавающих нет — открытое встроенное (по умолчанию «Виды», «Данные» и др. встроены, и Esc их не трогал)
     const menu = document.querySelector(".cadmenu"); if (menu) { menu.remove(); return; }
     if (varRun && !varRun.stop) { $("bStopVar").click(); return; }
-    if (!SEL.length && UIS.tool === "select" && !measureSrc.getFeatures().length) { const w = document.querySelector(".win.front:not([hidden]):not(.docked)") || [...document.querySelectorAll(".win.docked:not([hidden])")].find(x => x.parentElement.dataset.active === x.id); if (w) { winOpen(w.id, false); return; } if (!$("start").hidden) { closeStart(); return; } }
+    if (!SEL.length && !TERRSEL && UIS.tool === "select" && !measureSrc.getFeatures().length) { const w = document.querySelector(".win.front:not([hidden]):not(.docked)") || [...document.querySelectorAll(".win.docked:not([hidden])")].find(x => x.parentElement.dataset.active === x.id); if (w) { winOpen(w.id, false); return; } if (!$("start").hidden) { closeStart(); return; } }
     measureSrc.clear(); select(null, null); setTool("select"); }
 });
 
@@ -1342,7 +1380,7 @@ addEventListener("keydown", e => {
 function renderKeys() {
   const rows = (title, list) => `<div class="sect">${title}</div><table class="keys">${list.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>`;
   const steps = [
-    ["Территория", "«Данные» → «Нарисовать границу» или «Пример». Граница задаёт, что выгружать и где считать показатели."],
+    ["Территория", "«Данные» → «Нарисовать границу» или «Пример». Граница задаёт, что выгружать и где считать показатели. Править её можно как объект: щелчок по линии границы или «Изменить границу» — ручки на вершинах; привязка ловит и вершины границы."],
     ["Существующее положение", "Отметьте источники (ЕГРН, OSM, ГИС ОГД: ПЗЗ, ОКН, красные линии, рельеф) → «Загрузить». Свои файлы — «Файл…» или перетащите на карту. Повторная выгрузка покажет, что изменилось, и сохранит ваши правки."],
     ["Реестр зданий", "Меню слоя зданий → «Реестр зданий». Выберите дома (щелчок, Shift+рамка) и отметьте «сносим» справа."],
     ["Ограничения", "Окно «Ограничения» → «Рассчитать»: запреты (ЗОУИТ, отступ от красных линий, пожарные разрывы, ПЗЗ) и предельная высота по инсоляции соседей. Выключенный слой группы «Ограничения» посадка не учитывает."],

@@ -79,7 +79,7 @@ function clearProject() {
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
   Object.keys(SOURCES).filter(k => k.startsWith("import:") || SOURCES[k].kind === "fgistp").forEach(k => delete SOURCES[k]);
   Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" });   // штамп нового проекта — не от прежнего
-  TERR = null; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
+  TERR = null; TERRSEL = false; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ALBUM.sheets.length = 0; delete ALBUM.frames; window.redrawFrames?.(); ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
   $("vlist").innerHTML = `<div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений.</div>`;

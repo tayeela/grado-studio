@@ -464,7 +464,7 @@ function applyLayer(key, val, mine, restyled) {
 }
 function applyTerritory(t) {
   if (t) { const c = sharedView.getCenter(), z = sharedView.getZoom(); setTerritory(t); sharedView.setCenter(c); sharedView.setZoom(z); return; }   // чужая граница не сдвигает мой вид
-  TERR = null; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true; dataRev++;
+  TERR = null; TERRSEL = false; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true; dataRev++;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
 }
 function applyGraph(g) {

@@ -490,4 +490,93 @@ export default async p => {
   check(await p.ev(`return ALBUM.sheets[${lay[0]}].edits[${JSON.stringify(lay[1])}].hide === true && LYR.reduce((n, l) => n + layerSrc[l.key].getFeatures().length, 0) === ${nFeat}`), "макет: Delete скрывает надпись листа, объекты карты целы");
   await p.key("Escape", "Escape", { vk: 27 });
   check(await p.ev(`const r = $("layEd").hidden && !LAY; ALBUM.sheets.splice(${lay[0]}, 1); renderSheets(); return r`), "макет: Esc закрывает окно макета");
+
+  // T16: граница территории правится как объект (ручки, перенос, новая и удалённая вершина, ввод X;Y, отмена и возврат),
+  // а привязка при черчении ловит вершины границы. Своя граница вдали от остальных объектов; прежняя возвращается в конце.
+  {
+    const shots = process.env.T16_SHOTS, shot = n => shots ? p.shot(`${shots}/${n}.png`) : null;
+    const prevT = await p.ev(`return TERR ? JSON.stringify(TERR.geometry) : null`);
+    const SQ = [[20000, 20000], [20200, 20000], [20200, 20150], [20000, 20150]];
+    await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+    await p.ev(`const sq=${JSON.stringify(SQ)}; setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq, sq[0]].map(w => MSK.toWgs(w))] } }); await new Promise(r=>setTimeout(r,400)); return 1`);
+    const px = (x, y) => p.ev(`const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM([${x},${y}])); return [r.left+q[0], r.top+q[1]]`);
+    const area = () => p.ev(`return [TERR_M2, $("terrInfo").textContent, vertexCount(terrSrc.getFeatures()[0].getGeometry()), TERR_REV]`);
+    const a0 = await area();
+    check(Math.abs(a0[0] - 200 * 150) < 5 && /Площадь 3,00 га/.test(a0[1]), "своя граница 200 × 150 м задана: в окне «Данные» 3,00 га");
+    // щелчок по линии границы выбирает её: ручки на 4 вершинах и 4 серединах сторон
+    const top = await px(20100, 20000); await p.click(top[0], top[1] + 2);
+    check(await p.ev(`return TERRSEL && CAD.gripList().length === 8 && CAD.gripList().filter(g=>g.mid).length === 4`), "щелчок по линии границы: ручки на 4 вершинах и 4 серединах сторон");
+    check(await p.ev(`return /Граница территории/.test($("rightPane").textContent)`), "справа сказано, как править границу");
+    await shot("1-boundary-grips");
+    // перенос вершины мышью: площадь в «Данные» меняется, Ctrl+Z возвращает, Ctrl+Shift+Z повторяет
+    const v = await px(20200, 20150); await p.drag(v[0], v[1], v[0] + 40, v[1] + 40);
+    const a1 = await area();
+    check(Math.abs(a1[0] - a0[0]) > 50 && a1[1] !== a0[1] && a1[2] === 4 && a1[3] > a0[3] && /^Площадь /.test(a1[1]), `вершина перенесена: площадь ${a0[0].toFixed(0)} → ${a1[0].toFixed(0)} м², текст в «Данные» обновился, версия границы выросла`);
+    check(await p.ev(`return TERRSEL && CAD.gripList().length === 8`), "после переноса граница остаётся выбранной");
+    await p.key("z", "KeyZ", { meta: true }); const a2 = await area();
+    check(Math.abs(a2[0] - a0[0]) < 1e-6 && a2[1] === a0[1], "Ctrl+Z вернул границу: площадь и текст прежние");
+    await p.key("z", "KeyZ", { meta: true, shift: true }); check(Math.abs((await area())[0] - a1[0]) < 1e-6, "Ctrl+Shift+Z повторил перенос");
+    await p.key("z", "KeyZ", { meta: true });
+    // новая вершина: щелчок по треугольнику на стороне и новое место; удаление: щелчок по ручке и Del
+    const m = await px(20100, 20000); await p.click(m[0], m[1]); await p.click(m[0], m[1] - 30, { wait: 200 });
+    check((await area())[2] === 5, "треугольник на стороне и щелчок: добавлена пятая вершина");
+    const added = await p.ev(`const c=terrSrc.getFeatures()[0].getGeometry().getCoordinates()[0].map(CAD.toM); return c.map(q=>Math.round(q[1]))`);
+    check(added.some(y => y > 20005 && y < 20100), "новая вершина стоит там, куда щёлкнули");
+    const nv2 = await p.ev(`const g=CAD.gripList().filter(g=>!g.mid).map(g=>g.w).find(q=>Math.abs(q[0]-20100)<8 && q[1]>20000+1); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM(g)); return [r.left+q[0], r.top+q[1]]`);
+    await p.click(nv2[0], nv2[1]); await p.key("Delete", "Delete", { vk: 46 });
+    check((await area())[2] === 4, "ручка и Del: вершина удалена, снова четыре");
+    // ввод координат с клавиатуры: ручка, затем X;Y
+    const type = async str => { for (const ch of str) await p.key(ch, /\d/.test(ch) ? "Digit" + ch : "", { text: ch, wait: 25 }); };
+    const v3 = await px(20000, 20150); await p.click(v3[0], v3[1]); await type("19990;20160"); await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+    check(await p.ev(`const c=terrSrc.getFeatures()[0].getGeometry().getCoordinates()[0].map(CAD.toM); return c.some(q=>Math.abs(q[0]-19990)<1e-4 && Math.abs(q[1]-20160)<1e-4)`), "вершина перенесена вводом X;Y = 19990;20160 (МСК) точно");
+    // нельзя меньше трёх вершин
+    await p.key("z", "KeyZ", { meta: true });
+    const lim = await p.ev(`const f=terrSrc.getFeatures()[0]; const g=f.getGeometry(); const cc=g.getCoordinates(); cc[0]=[cc[0][0],cc[0][1],cc[0][2],cc[0][0]]; g.setCoordinates(cc); setTerritory(GJ.writeFeatureObject(f), {keep:true}); selectTerr(false); selectTerr(true); await new Promise(r=>setTimeout(r,100)); return vertexCount(terrSrc.getFeatures()[0].getGeometry())`);
+    check(lim === 3, "проверочный треугольник из трёх вершин");
+    const tv = await p.ev(`const g=CAD.gripList().find(g=>!g.mid); const r=$("mMain").getBoundingClientRect(), q=mMain.getPixelFromCoordinate(CAD.fromM(g.w)); return [r.left+q[0], r.top+q[1]]`);
+    await p.click(tv[0], tv[1]); await p.key("Delete", "Delete", { vk: 46 });
+    check((await area())[2] === 3, "у треугольника вершину удалить нельзя: остаётся три");
+    await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+    check(await p.ev(`return !TERRSEL && CAD.gripList().length === 0`), "Esc снимает выбор границы");
+    // привязка при черчении: курсор рядом с вершиной границы — метка «конечная точка», точка ложится ровно в вершину
+    await p.ev(`const sq=${JSON.stringify(SQ)}; setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq, sq[0]].map(w => MSK.toWgs(w))] } }); await new Promise(r=>setTimeout(r,400)); return 1`);
+    await p.ev(`CAD.ST.otrack=false; CAD.ST.polar=false; return 1`);
+    const bv = await px(20200, 20000), cm = async s => { for (const ch of s) await p.key(ch, /[a-z]/i.test(ch) ? "Key" + ch.toUpperCase() : "", { text: ch, wait: 25 }); };
+    await cm("pl"); await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+    for (let i = 0; i <= 6; i++) await p.move(bv[0] + 36 - i * 5, bv[1] - 24 + i * 3.5); await p.sleep(200);
+    const k = await p.ev(`return [CAD.cur()?.k, CAD.cur()?.w]`);
+    check(k[0] === "end" && /конечная точка/.test(await p.ev(`return document.querySelector(".cadtip").innerText`)), "у вершины границы метка привязки «конечная точка»");
+    await shot("2-snap-boundary-vertex");
+    await p.move(bv[0] + 4, bv[1] - 3); await p.click(bv[0] + 4, bv[1] - 3); await p.click(bv[0] - 80, bv[1] - 90); await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+    const first = await p.ev(`const c=layerSrc[CUR].getFeatures().slice(-1)[0].getGeometry().getCoordinates(); return CAD.toM(c[0][0] !== undefined ? c[0] : c)`);
+    check(Math.abs(first[0] - 20200) < 1e-4 && Math.abs(first[1] - 20000) < 1e-4, `первая точка полилинии ровно в вершине границы (${first.map(v => v.toFixed(4)).join("; ")})`);
+    // середина стороны границы
+    await p.key("z", "KeyZ", { meta: true });
+    await cm("l"); await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+    const mid = await px(20100, 20150); await p.move(mid[0] + 3, mid[1] + 4); await p.move(mid[0] + 2, mid[1] + 2); await p.sleep(200);
+    check(await p.ev(`return CAD.cur()?.k === "mid" && Math.abs(CAD.cur().w[0]-20100)<1e-6 && Math.abs(CAD.cur().w[1]-20150)<1e-6`), "привязка к середине стороны границы");
+    await p.key("Escape", "Escape", { vk: 27 }); await p.key("Escape", "Escape", { vk: 27 });
+    await p.ev(`CAD.ST.otrack=true; CAD.ST.polar=true; return 1`);
+    // «Изменить границу» в окне «Данные»
+    await p.ev(`selectTerr(false); $("bEditTerr").click(); return 1`);
+    check(await p.ev(`return TERRSEL && CAD.gripList().length === 8`), "кнопка «Изменить границу» выбирает границу");
+    // правка, нарушающая контур, не принимается: вершина возвращается, в строке состояния сказано почему
+    await p.ev(`selectTerr(false); selectTerr(true); return 1`);
+    const ar = (await area())[0], ub = await p.ev(`return UNDO.length`), bx = await px(20200, 20000), bt = await px(20100, 20200);
+    await p.drag(bx[0], bx[1], bt[0], bt[1]);
+    check(Math.abs((await area())[0] - ar) < 1e-6 && await p.ev(`return UNDO.length`) === ub && /пересекать сама себя — вершина возвращена на место/.test(await p.ev(`return $("stHint").textContent`)), "вершина через противоположную сторону (бабочка): правка отклонена, граница прежняя, причина в строке состояния");
+    // наблюдатель: сама правка (не только кнопки) отказывает
+    check(await p.ev(`document.body.classList.add("hub-viewer"); const g=terrSrc.getFeatures()[0].getGeometry().clone(); g.translate(5, 5); const n0 = TERR_REV; CAD.terrEdit(g, "тест"); document.body.classList.remove("hub-viewer"); return TERR_REV === n0 && !UNDO.some(u=>u.kind==="terr")`), "правка границы у наблюдателя не проходит (отказывает сама правка)");
+    // граница заменена целиком (файл, участки, пример): Ctrl+Z не возвращает старую
+    await p.drag(bx[0], bx[1], bx[0] - 30, bx[1] - 20);
+    check(await p.ev(`return UNDO.some(u=>u.kind==="terr")`), "правка вершины записана в отмену");
+    await p.ev(`const sq=[[30000,30000],[30100,30000],[30100,30100],[30000,30100]]; setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq, sq[0]].map(w => MSK.toWgs(w))] } }); await new Promise(r=>setTimeout(r,300)); return 1`);
+    check(await p.ev(`return !UNDO.some(u=>u.kind==="terr") && !REDO.some(u=>u.kind==="terr")`), "замена границы стирает записи отмены её вершин");
+    await p.key("z", "KeyZ", { meta: true });
+    check(await p.ev(`return Math.abs(TERR_M2 - 10000) < 1`), "Ctrl+Z после замены границы оставляет новую границу");
+    await p.ev(`const sq=${JSON.stringify(SQ)}; setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq, sq[0]].map(w => MSK.toWgs(w))] } }); await new Promise(r=>setTimeout(r,300)); return 1`);
+    // наблюдатель совместного проекта границу не правит
+    check(await p.ev(`selectTerr(false); document.body.classList.add("hub-viewer"); selectTerr(true); const a=TERRSEL; $("bEditTerr").click(); const b=TERRSEL; document.body.classList.remove("hub-viewer"); return !a && !b`), "наблюдателю граница на правку не даётся");
+    await p.ev(`selectTerr(false); const g=${JSON.stringify(prevT)}; if (g) setTerritory({ geometry: JSON.parse(g) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  }
 };

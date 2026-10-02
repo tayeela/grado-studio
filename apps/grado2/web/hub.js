@@ -218,7 +218,7 @@ function renderAv() {
 function applyRole() {
   const viewer = !!st.pid && myRole() === "viewer";
   document.body.classList.toggle("hub-viewer", viewer); $("hubViewHint").hidden = !viewer; renderBar();
-  if (viewer) { setSync("readonly"); if (typeof setTool === "function" && UIS.tool !== "select") setTool("select"); }
+  if (viewer) { window.selectTerr?.(false); setSync("readonly"); if (typeof setTool === "function" && UIS.tool !== "select") setTool("select"); }
   else if ($("hubSync").dataset.state === "readonly") setSync("saved");
   draw("share"); draw("comments");
 }

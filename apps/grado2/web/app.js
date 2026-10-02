@@ -152,20 +152,28 @@ const redLineStyle = f => new ol.style.Style({ renderer(coords, st) {
 let SOURCES = {};                 // ключ → {title, kind}
 const DATA = {};                  // ключ → {title, source, fetched_at, fc, count, fields}
 let ERRORS = {};
-let TERR = null, TERR_M2 = 0, dataRev = 0, TERR_REV = 0;   // TERR_REV — номер версии границы: узлы графа пересчитываются при её перерисовке
+let TERR = null, TERR_M2 = 0, dataRev = 0, TERR_REV = 0, TERRSEL = false;   // TERRSEL — граница выбрана для правки: на ней ручки (cad.js). TERR_REV — номер версии границы: узлы графа пересчитываются при её перерисовке
 const terrSrc = new ol.source.Vector(), layerSrc = {};
 const terrStyle = S(null, "#b3261e", 2); terrStyle.getStroke().setLineDash([12, 4, 2, 4]);
-const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: terrStyle, zIndex: 110 });
+const terrHalo = S(null, "rgba(30,111,217,.45)", 7);
+const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: () => TERRSEL ? [terrHalo, terrStyle] : terrStyle, zIndex: 110 });
 
 /* ================= данные территории ================= */
 const mMain = newMap("mMain", [terrLayer()]);
-function setTerritory(feature) {
+/* opt.keep — правка вершин: вид карты остаётся. Правка границы идёт тем же путём, что и новая граница: площадь, номер версии,
+   узлы графа, автосохранение и совместная работа реагируют одинаково */
+function setTerritory(feature, opt) {
+  // граница заменена целиком (файл, участки, пример, чужая правка): записи отмены правки вершин к ней уже не относятся
+  if (!opt?.keep && typeof UNDO !== "undefined" && [...UNDO, ...REDO].some(u => u.kind === "terr")) {
+    [UNDO, REDO].forEach(a => a.splice(0, a.length, ...a.filter(u => u.kind !== "terr"))); window.syncRibbon?.();
+  }
   TERR = turf.feature(feature.geometry); TERR_M2 = m2(TERR); TERR_REV++;
   setFrame(turf.centroid(TERR).geometry.coordinates);
   terrSrc.clear(); terrSrc.addFeature(toOl(TERR));
   updateCover();
   $("bLoad").disabled = false; dataRev++; window.syncStatus?.(); window.syncStart?.(); window.markDirty?.(); if (!$("wData").hidden) renderSources(); if (!$("wSketch").hidden) renderParams(); if (!$("w3d").hidden) draw3d();
-  sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
+  if (!opt?.keep) sharedView.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17 });
+  window.CAD?.grips?.(); window.renderRight?.();
 }
 /* Область загрузки данных = рамки листов альбома (карты в своём формате и масштабе, со сдвигом), а не граница
    участка: всё, что попадёт на листы, должно быть загружено. Обзорные схемы (Москва, округ, район) и листы из двух карт
@@ -204,6 +212,7 @@ new MutationObserver(() => {
     sharedView.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
 }).observe($("wData"), { attributes: true, attributeFilter: ["hidden"] });
 $("bDraw").onclick = () => setTool("terr");
+$("bEditTerr").onclick = () => { if (!TERR) return toast("Границы пока нет: нарисуйте её, возьмите из файла или «Пример»."); setTool("select"); selectTerr(true); };
 /* Граница из файла (DXF, DWG, GeoJSON, KML/KMZ, Shapefile): самый большой полигон или замкнутая полилиния файла становится
    границей территории. Местные метры читаются в системе, выбранной в «Файлы в метрах» (по умолчанию МСК), как при импорте. */
 function pickBoundary(then) {
