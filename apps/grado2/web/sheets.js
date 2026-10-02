@@ -82,7 +82,7 @@ function sheetSpec(sheet) {
   const frameLL = (() => { const [lo, la] = ol.proj.toLonLat([ext[0], ext[1]]), [hi, ha] = ol.proj.toLonLat([ext[2], ext[3]]), k = 1 / 1.15;
     return [center[0] - (center[0] - lo) * k, center[1] - (center[1] - la) * k, center[0] + (hi - center[0]) * k, center[1] + (ha - center[1]) * k]; })();
   const homeOkr = sheet.homeOkrug ? (h => h.okrug?.properties["Округ"] || h.okrug?.properties["Наименование"])(homeAdm()) : null;
-  const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
+  const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen) && !(pl.style.minDen && scale < pl.style.minDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
   vl.slice().reverse().forEach(pl => {                                   // снизу вверх, как рисует карта
     const st = pl.style, feats = [];
     layerSrc[pl.key]?.forEachFeatureInExtent(ext, f => {
@@ -127,6 +127,7 @@ function sheetSpec(sheet) {
       : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
   if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   if (sheet.look === "concept") conceptSheet(out, sheet, frameLL);           // шапка ППТ КРТ, остальное — как в «ГК Царицыно» (albums.js)
+  if (sheet.kind === "situation") situationExtras(sheet, out, frameLL);
   return out;
 }
 const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(sheetSpec) });
@@ -236,7 +237,7 @@ const ROADS_WHITE = { "calc.uds_osm": { mode: "single", fill: "#ffffff", stroke:
 const UDS_YA_W = { 4: 14, 5: 12, 6: 10, 7: 7, 8: 6 };                       // класс дороги Яндекса (fc) → ширина, м
 const UDS_OSM_W = { motorway: 24, trunk: 20, primary: 16, secondary: 14, tertiary: 12, unclassified: 7, residential: 8, living_street: 6, service: 5,
   motorway_link: 8, trunk_link: 8, primary_link: 7, secondary_link: 7, tertiary_link: 7 };
-const DERIVED = { "calc.uds_osm": ["osm.roads"], "calc.uds_ya": ["yandex.hd_roads", "yandex.roads"] };
+const DERIVED = { "calc.uds_osm": ["osm.roads"], "calc.uds_ya": ["yandex.hd_roads", "yandex.roads"], "calc.uds_sit": ["sit.roads_hd", "sit.roads"] };
 function udsLayer(key, title, polys, axes, widthOf, src) {
   const out = polys.filter(f => /Polygon/.test(f.geometry?.type)).map(f => ({ type: "Feature", geometry: f.geometry, properties: { "Вид": "проезжая часть", "Источник": src } }));
   axes.forEach(f => { const w = /LineString/.test(f.geometry?.type) && widthOf(f.properties || {}); if (!w) return;
@@ -250,6 +251,9 @@ function udsLayer(key, title, polys, axes, widthOf, src) {
 function buildUds() {
   if (DATA["yandex.hd_roads"] || DATA["yandex.roads"])
     udsLayer("calc.uds_ya", "УДС: проезжая часть и проезды (Яндекс)", DATA["yandex.hd_roads"]?.fc.features || [], DATA["yandex.roads"]?.fc.features || [],
+      p => String(p.hd_covered) === "0" ? UDS_YA_W[+p.fc] : 0, "Яндекс Карты");
+  if (DATA["sit.roads_hd"] || DATA["sit.roads"])
+    udsLayer("calc.uds_sit", "Ситплан: УДС (Яндекс)", DATA["sit.roads_hd"]?.fc.features || [], DATA["sit.roads"]?.fc.features || [],
       p => String(p.hd_covered) === "0" ? UDS_YA_W[+p.fc] : 0, "Яндекс Карты");
   if (DATA["osm.roads"]) udsLayer("calc.uds_osm", "УДС по осям (OSM)", [], DATA["osm.roads"].fc.features, p => UDS_OSM_W[p["Тип дороги"]], "OpenStreetMap");
 }
@@ -285,6 +289,62 @@ const SEC1 = [
   { title: "Схема об утверждённой и разрабатываемой документации", keys: ["calc.uds_osm", "egko.buildings", "gisogd.gpzu", "gisogd.krt", "gisogd.ppt"], fit: "terr", ctx: 2 },
   { title: "Объекты социальной инфраструктуры и радиусы обслуживания", keys: ["egko.buildings", "osm.social"], fit: "terr", pad: 700, extra: "radii" },
 ];
+// административное деление всей Москвы (выгрузка до v0.65 знала районы только своего округа — берётся заново)
+async function ensureAdmin() {
+  const adm = DATA["gisogd.admin"]?.fc.features || [];
+  if (adm.filter(f => f.properties["Уровень"] === "район").length < 100 || adm.some(f => f.properties["Уровень"] === "округ" && f.properties["Граница"] !== ADM_REV)) {
+    toast("Административное деление Москвы…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
+}
+/* Ситуационный план: картинка на весь лист А4 без легенды, штампа и подписи — зелень, вода, дороги и дома Яндекса
+   (тайлы z16), главные пути железной дороги, границы районов с названиями, названия улиц (OSM) и граница территории.
+   Масштаб — авто по территории с окружением ~900 м, меняется в строке листа; рамку можно сдвинуть. */
+const SIT = { kind: "situation", title: "Ситуационный план", size: "BA4", legend: false, tep: false, scale: 0, view: "", fit: "terr", pad: 900,
+  keys: ["sit.green", "sit.water", "calc.uds_sit", "sit.buildings", "gisogd.admin", "sit.rail", "osm.roads"],
+  only: { "gisogd.admin": { field: "Уровень", values: ["район"] }, "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } },
+  styles: { "gisogd.admin": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#8a3fb0", width: 2.6, label: "", dash: [15, 4.6, 3, 4.6] },
+    "sit.rail": { mode: "single", fill: "#1f1f1f", width: 3 }, "osm.roads": { mode: "single", fill: "#ffffff", width: 0, label: "Название", lineOff: true },
+    ...Object.fromEntries(["sit.green", "sit.water", "calc.uds_sit", "sit.buildings"].map(k => [k, { minDen: 0 }])) },   // на листе — при любом масштабе
+  labelMM: { "osm.roads": 2.2 } };
+function situationExtras(sheet, out, frameLL) {
+  // железная дорога — белые штрихи поверх чёрной линии, как на топоплане
+  const rail = out.layers.find(l => l.key === "sit.rail");
+  if (rail) out.layers.push({ key: "sit.rail.dash", title: "Железная дорога: штрихи", features: rail.features.map(f => ({ ...f, fill: "#ffffff", stroke: "#ffffff", lc: "#ffffff", w: 1.2, dash: [7.7, 7.7], label: null })) });
+  // названия районов — на той части района, что попала на лист
+  const box = turf.bboxPolygon(frameLL), pts = [];
+  (DATA["gisogd.admin"]?.fc.features || []).filter(f => f.properties["Уровень"] === "район").forEach(f => {
+    const x = inter(f, box); if (!x || turf.area(x) < 2e4) return;
+    pts.push({ g: turf.pointOnFeature(x).geometry, nm: true, ls: 3.4, lcol: "#5b2a78", label: "РАЙОН " + LABEL_FN.adm({ get: k => f.properties[k] }).toUpperCase() }); });
+  out.layers.push({ key: "sit.districts", title: "Районы: подписи", features: pts });
+  out.kind = "situation"; out.legend = [];
+}
+async function buildSituation() {
+  if (!TERR) { toast("Выберите файл границы (DXF, DWG, GeoJSON, KML, Shapefile) — лист строится вокруг неё."); return window.pickBoundary(buildSituation); }
+  const sh = { id: "sit_" + Date.now().toString(36), ...JSON.parse(JSON.stringify(SIT)) };
+  await ensureAdmin();
+  const bb = frameBox(sh), before = new Set(LYR.map(l => l.key));
+  // OSM — только названия улиц: середины листа хватает
+  const c = turf.centroid(TERR).geometry.coordinates, kx = 111.32 * Math.cos(c[1] * Math.PI / 180), ky = 110.54, a = (bb[2] - bb[0]) * kx * (bb[3] - bb[1]) * ky;
+  const f = Math.min(1, Math.sqrt(24 / a)), ob = [c[0] - (bb[2] - bb[0]) * f / 2, c[1] - (bb[3] - bb[1]) * f / 2, c[0] + (bb[2] - bb[0]) * f / 2, c[1] + (bb[3] - bb[1]) * f / 2];
+  toast("Ситуационный план: здания, дороги и зелень Яндекса, железная дорога, названия улиц…");
+  await loadKeys(["sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"], bb);
+  // вблизи территории — подробная основа Яндекса (z18): крупнее 1:7 500 обзорные слои не видны, их сменяет она
+  const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(DATA[k]?.bbox && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(DATA[k].bbox))));
+  if (near.length) await loadKeys(near, turf.bbox(buf(TERR, 300)));
+  if (!DATA["osm.roads"]?.bbox || !(DATA["osm.roads"].bbox[0] <= ob[0] && DATA["osm.roads"].bbox[2] >= ob[2])) await loadKeys(["osm.roads"], ob);
+  buildUds();
+  // своя подробная застройка на территории (ЕГКО, ЕГРН) уже есть — здания Яндекса её не дублируют
+  const ext = ol.proj.transformExtent(turf.bbox(TERR), "EPSG:4326", "EPSG:3857");
+  const detailed = ["egko.buildings", "nspd.buildings"].some(k => lyr(k)?.visible && layerSrc[k]?.getFeaturesInExtent(ext).length);
+  LYR.filter(l => !before.has(l.key) && /^(sit\.|calc\.uds_sit)/.test(l.key)).forEach(l => { l.visible = l.key !== "sit.roads" && l.key !== "sit.roads_hd" && !(detailed && l.key === "sit.buildings"); });
+  // подробные слои Яндекса, заведённые здесь, — только крупнее 1:7 500: на обзоре их сменяет ситплан без наложения
+  LYR.filter(l => !before.has(l.key) && /^yandex\./.test(l.key)).forEach(l => { l.visible = ["yandex.green", "yandex.water"].includes(l.key) || (l.key === "yandex.buildings" && !detailed);
+    if (!l.style.maxDen) { l.style.maxDen = 7500; rebuildLayer(l); } });
+  // названия улиц, УДС по осям OSM и районы нужны листу, а не холсту: заведённые здесь — выключены (есть в дереве)
+  LYR.filter(l => !before.has(l.key) && ["osm.roads", "calc.uds_osm", "gisogd.admin"].includes(l.key)).forEach(l => { l.visible = false; });
+  tidyLayers();
+  ALBUM.sheets.push(sh); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1);
+  toast(`Ситуационный план А4, 1:${fmt(sheetScale(sh))}: масштаб меняется в строке листа, рамка сдвигается на карте, PDF одного листа — кнопкой в строке. Данные Яндекса — пользовательская карта, для работы.`);
+}
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»") {
@@ -294,9 +354,7 @@ async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slid
   // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
   // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 132). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
-  const adm = DATA["gisogd.admin"]?.fc.features || [];
-  if (adm.filter(f => f.properties["Уровень"] === "район").length < 100 || adm.some(f => f.properties["Уровень"] === "округ" && f.properties["Граница"] !== ADM_REV)) {
-    toast("Административное деление Москвы…"); await loadKeys(["gisogd.admin"], [36.8, 55.1, 38.0, 56.1]); }
+  await ensureAdmin();
   // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
   const need = new Map();
   sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
@@ -345,16 +403,17 @@ async function previewSheet(i) {
 }
 // альбом файлом: PDF для печати или PPTX — та же вёрстка редактируемой презентацией PowerPoint (подписи — текстом,
 // карты — фигурами по слоям, снимки — рисунками)
-async function albumFile(kind = "pdf") {
+async function albumFile(kind = "pdf", only = null) {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
+  const list = only ? [only] : ALBUM.sheets;
   busy(true);
   try {
-    const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(ALBUM.sheets)) });
+    const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
     if (!r.ok) throw new Error((await r.json()).error);
-    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (only ? only.title : ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     // листы «не готов»: что-то не поместилось, а мельчить и обрывать молча нельзя — пометка серым внизу листа
     const nr = r.headers.get("X-Grado-Not-Ready");
-    toast((kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
+    toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
       + (nr ? ` Не готовы листы ${nr.split(",").join(", ")}: не всё поместилось, что именно — серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
   } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); }
@@ -400,9 +459,9 @@ function renderSheets() {
         <td>${s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts(s)}</select>`}</td>
         <td><select data-sk="scale" aria-label="Масштаб" ${tepS(s)} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select></td>
         <td><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS(s)}></td><td><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS(s)}></td>
-        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
+        <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}${s.kind === "situation" ? `<button class="tb" data-shpdf="${i}" title="PDF только этого листа"><i data-lucide="file-down"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button><button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
-    + `<div class="pad row" style="flex-wrap:wrap"><button class="btn" id="shAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в таблице"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="pad row" style="flex-wrap:wrap"><button class="btn" id="shAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в таблице"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><button class="btn" id="shSit" title="Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл"><i data-lucide="map"></i>Ситуационный план А4</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }
@@ -426,6 +485,8 @@ shEl().addEventListener("click", e => {
   if (b.id === "shPptx") albumFile("pptx");
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt") window.buildAlbum?.("pptkrt");
+  if (b.id === "shSit") buildSituation();
+  if (b.dataset.shpdf) albumFile("pdf", ALBUM.sheets[+b.dataset.shpdf]);
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);
   if (b.dataset.shsat) satFile(+b.dataset.shsat, e.shiftKey);
   if (b.dataset.shphoto) addPhotos(+b.dataset.shphoto);

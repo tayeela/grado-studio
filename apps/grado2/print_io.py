@@ -41,6 +41,9 @@ class PaperFrame(Frame):
     def ops(self, ctx):
         x, y, w, h = self.rect
         sh, ink = self.sheet, (0.1, 0.1, 0.1)
+        border = {"op": "path", "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]], "closed": True, "fill": None, "stroke": ink, "width": 0.35, "dash": None}
+        if sh.get("kind") == "situation":                       # ситуационный план — картинка для вставки в документ: только рамка
+            return [border]
         text = " · ".join(v for v in (sh.get("title") or "", f"М 1:{int(round(sh['scale'])):,}".replace(",", " ")) if v)
         size = max(2.6, min(w, h) / 90)
         tw = len(text) * size * 0.55 + size * 1.6
@@ -1138,8 +1141,8 @@ class SketchMapFrame(Frame):
         out.append({"op": "layer", "name": "Рамка"})
         if sh.get("noFrame"):
             pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
-        elif str(sh.get("size", "")).startswith("P"):
-            # слайд презентации: только рамка карты — без стрелки севера и линейки (как в альбоме раздела)
+        elif str(sh.get("size", "")).startswith("P") or sh.get("kind") == "situation":
+            # слайд презентации и ситуационный план: только рамка карты — без стрелки севера и линейки
             x, y, w, h = rect
             out.append({"op": "path", "closed": True, "fill": None, "stroke": (0, 0, 0), "width": 0.5, "dash": None,
                         "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]})

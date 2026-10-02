@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.90.0: situational plan A4.** Second feature of the unmerged branch of 25.09 (v0.54.0–0.54.1),
+  redone on the current program. «Листы» → «Ситуационный план А4»: a picture on the whole A4 sheet without stamp (format «А4
+  без штампа»), with only a thin frame — no title, legend, north arrow, scale bar or corner caption. Content: Yandex green,
+  water, buildings and road surface (+ driveways from axes, «Ситплан: УДС»), main railway tracks (black line with white
+  dashes, sidings dropped), district boundaries (purple dash-dot) and district names on the part of each district inside the
+  sheet, street names (OSM, names only), the boundary. Scale is auto (territory + 900 m), changeable in the sheet row; the
+  frame can be dragged; a row button saves this sheet alone as PDF. Without a boundary the button first asks for its file.
+  - Data: new sources `sit.*` (kind `yandex_sit`) — Yandex tiles at z16 (16 times fewer tiles than z18, steps ~1,3 m =
+    0,1 mm at 1:10 000), one download thread, own keys so the detailed canvas layers are not replaced. Administrative
+    division is taken for all Moscow as for section 1 (`ensureAdmin`, shared).
+  - Canvas: the coarse `sit.*` layers are overview layers — new style key `minDen`, visible only at 1:7 500 and smaller (the
+    reverse of «Виден крупнее»; tree tooltip «Обзорный: виден мельче…», name greyed out of scale). Around the territory
+    (boundary + 300 m) detailed Yandex z18 layers are loaded and limited to 1:7 500 and larger, so zooming in swaps the
+    coarse picture for the exact one. Yandex buildings stay off where ЕГКО or ЕГРН buildings cover the territory. Street
+    names, OSM axes and districts loaded for the sheet stay off on the canvas.
+  - Checked on the example territory: 1:15 000, Хорошёвский district with its neighbours, railway, street names — on
+    screen as intended; one-sheet PDF saved. Tests: server (z16, one thread, main tracks only), print (bare full-page
+    sheet), e2e (sheet content, overview visibility, button).
 - **2026-10-02, ГРАДО 2 v0.89.0: boundary from a file.** Owner: bring back the three features of the unmerged branch
   `claude/stoic-mirzakhani-92ecaa` (v0.54.0–0.54.2 of 25.09, never merged; redone on the current program, not merged).
   First of them: «Данные» → «Из файла» next to «Нарисовать границу» takes the largest closed contour of a DXF, DWG,

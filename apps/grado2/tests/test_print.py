@@ -35,6 +35,22 @@ class Print(unittest.TestCase):
             self.assertAlmostEqual(w / h, size[0] / size[1], places=6)
         self.assertTrue(print_io.render_pdf({"sheets": [sheet(size="BA3", orient="P")]}, S.REDLN, S.LGR_DASH).startswith(b"%PDF"))
 
+    def test_situation_plan_is_a_bare_full_page_picture(self):
+        rail = {"type": "LineString", "coordinates": [[37.640, 55.799], [37.660, 55.801]]}
+        sh = {"size": "BA4", "kind": "situation", "title": "Ситуационный план", "scale": 10000, "center": [37.65, 55.80], "legend": [], "territory": None,
+              "layers": [{"title": "ЖД", "features": [{"g": rail, "lc": "#1f1f1f", "w": 3}, {"g": rail, "lc": "#ffffff", "w": 1.2, "dash": [7.7, 7.7]}]},
+                         {"title": "Районы", "features": [{"g": {"type": "Point", "coordinates": [37.65, 55.80]}, "nm": True, "ls": 3.4, "label": "РАЙОН ЛЕФОРТОВО"}]}]}
+        svg = print_io.render_preview_svg({"sheets": [sh]}, S.REDLN, S.LGR_DASH)
+        self.assertIn("РАЙОН ЛЕФОРТОВО", svg)
+        self.assertNotIn("Ситуационный план", svg)                       # ни заголовка, ни подписи масштаба в углу
+        self.assertNotIn("1:10", svg)
+        self.assertNotIn("<circle", svg)                                 # подпись района — без значка
+        self.assertIn("stroke-dasharray", svg)                           # белые штрихи железной дороги
+        doc = print_io.build_document({"sheets": [sh]}, S.REDLN, S.LGR_DASH)
+        x, y, w, h = doc.pages[0].frames[0].rect                         # карта на весь лист А4 с полями 2 %
+        self.assertAlmostEqual(w, 297 * .96, places=6)
+        self.assertAlmostEqual(h, 210 * .96, places=6)
+
     def test_pdf_album_of_two_sheets(self):
         pdf = print_io.render_pdf({"meta": {"object": "Хорошёво"}, "sheets": [sheet(), sheet(size="A1", title="Эскиз")]}, S.REDLN, S.LGR_DASH)
         self.assertTrue(pdf.startswith(b"%PDF"))

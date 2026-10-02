@@ -149,12 +149,23 @@ SOURCES["yandex.green"] = ("yandex", ["vegetation", "vegetation_planned", "hd_ro
 SOURCES["yandex.water"] = ("yandex", ["hydro_a", "hydro_l"], "Вода (Яндекс)")
 SOURCES["yandex.parking"] = ("yandex", ["parking_p"], "Парковки (Яндекс)")
 SOURCES["yandex.transport"] = ("yandex", ["transport_p", "transport_way"], "Транспорт (Яндекс)")
+# Ситуационный план (лист А4, 1:10 000–1:25 000): те же тайлы Яндекса, но с z16 — в 16 раз меньше тайлов на ту же площадь.
+# Содержание то же, координаты округлены к сетке тайла (~1,3 м; на листе 1:10 000 это 0,1 мм). На холсте эти слои —
+# только обзорные. Качаются в один поток. Отдельные ключи — чтобы подробные слои холста (z18) не заменялись грубыми.
+SIT_ZOOM = 16
+SOURCES["sit.green"] = ("yandex_sit", ["vegetation", "vegetation_planned", "hd_road_vegetation"], "Ситплан: озеленение (Яндекс)")
+SOURCES["sit.water"] = ("yandex_sit", ["hydro_a"], "Ситплан: вода (Яндекс)")
+SOURCES["sit.roads_hd"] = ("yandex_sit", ["hd_road_surface"], "Ситплан: проезжая часть (Яндекс)")
+SOURCES["sit.roads"] = ("yandex_sit", ["road"], "Ситплан: оси дорог (Яндекс)")
+SOURCES["sit.buildings"] = ("yandex_sit", ["building"], "Ситплан: здания (Яндекс)")
+SOURCES["sit.rail"] = ("yandex_sit", ["transport_way"], "Ситплан: железная дорога, главные пути (Яндекс)")
+SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway"}   # без подъездных путей и веток
 
 # Предел области выгрузки. НСПД и Overpass за один запрос берут не больше TILE_KM2: область больше делится на равные
 # части, они запрашиваются по очереди, объекты склеиваются (общие для двух частей — по ключу объекта, один раз).
 # ОГД и ЕГКО режутся из кэша слоя на диске; Яндекс сам склеивает тайлы, предел у него — время первой выгрузки
 # (около минуты на 1 км²).
-LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0}
+LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0, "yandex_sit": 150.0}
 TILE_KM2 = {"nspd": 4.0, "osm": 25.0}
 
 # читаемые имена полей; остальные поля проходят как есть
@@ -351,7 +362,7 @@ PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, 
            "yandex.hd_roads": _renamed({"type": "Тип", "struct": "Конструкция", "z_level": "Уровень"}),
            "yandex.buildings": _renamed({"height": "Высота, м", "ft_type_name": "Назначение"})}
 for _k in SOURCES:
-    if _k.startswith("yandex.") and _k not in PRESENT:
+    if _k.startswith(("yandex.", "sit.")) and _k not in PRESENT:
         PRESENT[_k] = dict              # без переименования; поле LineCode у Яндекса не бывает
 
 
@@ -731,15 +742,18 @@ def fetch(bbox, keys):
             finally:
                 PROGRESS.pop(k, None)
 
-    def run_yandex(ks):
-        """Все слои Яндекса одним проходом: тайлы качаются и разбираются один раз (3 потока, пауза, кэш на диске)."""
+    def run_yandex(ks, zoom=None, workers=3):
+        """Все слои Яндекса одним проходом: тайлы качаются и разбираются один раз (3 потока, пауза, кэш на диске);
+        для ситуационного плана — z16 в один поток."""
         def tell(got, total):
             for k in ks:
                 PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": "tiles"}
         try:
-            res = YandexVmap(cache_dir=CACHE / "yandex", progress=tell).fetch(bbox, [n for k in ks for n in SOURCES[k][1]])
+            res = YandexVmap(cache_dir=CACHE / "yandex", progress=tell, workers=workers, **({"zoom": zoom} if zoom else {})).fetch(
+                bbox, sorted({n for k in ks for n in SOURCES[k][1]}))
             for k in ks:
-                part = [f for f in res["features"] if f["properties"].get("grado_layer") in SOURCES[k][1]]
+                keep = SIT_FILTER.get(k, lambda p: True)
+                part = [f for f in res["features"] if f["properties"].get("grado_layer") in SOURCES[k][1] and keep(f["properties"])]
                 # вид слоя на карте берётся по первому объекту: площадные — первыми, затем линии, точки — последними
                 part.sort(key=lambda f: ("Polygon" not in f["geometry"]["type"]) + (f["geometry"]["type"] == "Point"))
                 layers[k] = _layer(k, {**res, "features": part})
@@ -776,6 +790,7 @@ def fetch(bbox, keys):
         [([k], lambda k=k: run_admin(k)) for k in by("gisogd_admin")] + \
         ([(by("egko"), lambda: run_egko(by("egko")))] if by("egko") else []) + \
         ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else []) + \
+        ([(by("yandex_sit"), lambda: run_yandex(by("yandex_sit"), SIT_ZOOM, 1))] if by("yandex_sit") else []) + \
         [(ks, lambda ks=ks: run_split(ks)) for ks in ([k for k in split if SOURCES[k][0] == kind] for kind in TILE_KM2) if ks]
     if not jobs:
         return layers, errors

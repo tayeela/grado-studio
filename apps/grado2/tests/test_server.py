@@ -161,6 +161,33 @@ class Yandex(unittest.TestCase):
         self.assertIn("в сдаваемые материалы не включать", layers["yandex.buildings"]["source"])
 
 
+class SituationPlanSources(unittest.TestCase):
+    """Ситуационный план: слои Яндекса с z16 в один поток, железная дорога — только главные пути."""
+
+    def test_coarse_tiles_one_thread_main_tracks_only(self):
+        keys = [k for k in S.SOURCES if k.startswith("sit.")]
+        self.assertEqual(set(keys), {"sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"})
+        self.assertTrue(all(S.SOURCES[k][0] == "yandex_sit" for k in keys))
+        calls = []
+
+        class Rec:
+            def __init__(self, **kw):
+                calls.append(kw)
+
+            def fetch(self, bbox, layers):
+                f = lambda t, name: {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[37.6, 55.8], [37.61, 55.8]]},
+                                     "properties": {"grado_layer": "transport_way", "ft_type_name": name, "_key": t}}
+                return {"features": [f("a", "transport-railway"), f("b", "transport-railway-siding")], "source": "Яндекс", "fetched_at": "x"}
+        old, S.YandexVmap = S.YandexVmap, Rec
+        try:
+            layers, errors = S.fetch([37.6, 55.79, 37.7, 55.83], ["sit.rail"])
+        finally:
+            S.YandexVmap = old
+        self.assertEqual(errors, {})
+        self.assertEqual((calls[0]["zoom"], calls[0]["workers"]), (16, 1))
+        self.assertEqual([f["properties"]["_key"] for f in layers["sit.rail"]["features"]["features"]], ["a"])   # без подъездных путей
+
+
 class RailRoute(unittest.TestCase):
     """K1 по улицам: маршрут по пешеходной сети OSM до входа в метро (данные из кэша, без сети)."""
     def test_route_goes_around_the_block(self):

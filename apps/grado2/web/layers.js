@@ -14,7 +14,7 @@ const HEX = /^#[0-9a-f]{3,8}$/i, okc = (c, d) => typeof c === "string" && HEX.te
 const okn = (v, d) => { const n = typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN; return Number.isFinite(n) ? n : d; };
 function cleanStyle(st) {
   st.width = okn(st.width, 1); st.opacity = okn(st.opacity, .7); st.labelSize = okn(st.labelSize, 11);
-  ["hatchStep", "maxDen"].forEach(k => { if (st[k] != null) { const n = okn(st[k], 0); if (n) st[k] = n; else delete st[k]; } });
+  ["hatchStep", "maxDen", "minDen"].forEach(k => { if (st[k] != null) { const n = okn(st[k], 0); if (n) st[k] = n; else delete st[k]; } });
   st.fill = okc(st.fill, "#9aa1a8"); st.stroke = okc(st.stroke, "#5f6368");
   if (st.grad && !Object.hasOwn(RAMPS, st.grad.ramp)) st.grad.ramp = "blue";   // палитра по имени из файла: чужого имени в RAMPS нет
   st.rules.elseFill = okc(st.rules.elseFill, "#dddddd"); (st.rules.list || []).forEach(r => { r.fill = okc(r.fill, "#9aa1a8"); });
@@ -28,10 +28,10 @@ const stDefaults = o => Object.assign({ mode: "single", fill: "#9aa1a8", stroke:
 // оси и точки транспорта, зоны ограничений (штриховка и контур — прозрачны), участки, покрытия (проезжая часть, вода,
 // озеленение), внизу — площадные зоны планирования. Прежний порядок клал проезжую часть Яндекса под все зоны — её не было видно.
 const PREFERRED = ["gisogd.red_lines", "gisogd.demolition", "egko.addresses", "egko.fences", "relief.contours",
-  "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings",
+  "sit.rail", "egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings", "sit.buildings",
   "yandex.transport", "yandex.parking", "osm.social", "yandex.roads", "osm.roads", "egko.paths", "yandex.road_edges",
   "gisogd.okn", "nspd.zouit", "gisogd.zouit", "gisogd.airfield", "gisogd.szz", "gisogd.vodookhr", "gisogd.ppt", "gisogd.pmt", "gisogd.agr", "gisogd.gpzu", "gisogd.krt",
-  "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "yandex.hd_roads", "egko.roads", "egko.water_labels", "egko.place_labels", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
+  "nspd.parcels", "calc.uds_ya", "calc.uds_osm", "calc.uds_sit", "sit.roads_hd", "sit.roads", "sit.water", "sit.green", "yandex.hd_roads", "egko.roads", "egko.water_labels", "egko.place_labels", "egko.water", "osm.water", "yandex.water", "egko.green", "yandex.green",
   "gisogd.admin", "gisogd.pzz_zones", "gisogd.pzz_sub", "gisogd.func_zones", "gisogd.func_zones_tinao", "osm.landuse", "yandex.landuse"];
 // застройка из разных источников — одна и та же: на холсте видна одна, по этому порядку (ЕГКО — самая полная)
 const BUILDINGS = ["egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings"];
@@ -54,6 +54,15 @@ function defaultStyle(key, fc) {
   const zones = lib => { const colors = {}; fc.features.forEach(f => { const v = String(f.properties.naimfunkzony ?? f.properties.naimfunkzo ?? f.properties["Вид зоны"] ?? ""); const z = lib[v.toLowerCase()]; if (z) colors[v] = z.fill; }); return colors; };
   return ST(({
     "nspd.parcels": { fill: "#ffffff", stroke: "#7d8288", width: .8, opacity: 0 },
+    // ситуационный план (Яндекс z16): обзорные слои — на холсте видны только мельче 1:7 500 (minDen), вблизи их сменяют
+    // подробные; железная дорога — одна линия на любом масштабе
+    "calc.uds_sit": { fill: "#d5dae0", stroke: "#9ea7b1", width: 0, opacity: 1, minDen: 7500 },
+    "sit.buildings": { fill: "#d8d3c9", stroke: "#8f897f", width: .5, opacity: 1, minDen: 7500 },
+    "sit.green": { fill: "#cfe4b3", stroke: "#9cbf80", width: 0, opacity: 1, minDen: 7500 },
+    "sit.water": { fill: "#bcd8ee", stroke: "#78aee6", width: 0, opacity: 1, minDen: 7500 },
+    "sit.roads_hd": { fill: "#d5dae0", stroke: "#9ea7b1", width: 0, opacity: 1, minDen: 7500 },
+    "sit.roads": { fill: "#8f887c", width: .8, minDen: 7500 },
+    "sit.rail": { fill: "#1f1f1f", width: 3 },
     "nspd.buildings": { fill: "#cbc6be", stroke: "#4d4d4d", width: .8, opacity: 1 },
     "nspd.zouit": { fill: "#7a4ab0", stroke: "#7a4ab0", hatch: true },
     "osm.roads": { mode: "cat", width: 1.6, cat: { field: "Тип дороги", colors: {}, off: [] } },
@@ -158,12 +167,13 @@ function glSwitchRes(l) {                 // разрешение (м/пикс.)
   const ex = layerSrc[l.key].getExtent(), n = layerSrc[l.key].getFeatures().length, area = Math.max(1, ol.extent.getArea(ex));
   return Math.sqrt(15000 * area / n / (1600 * 900));
 }
-// видимость по масштабу (как в QGIS): слой виден только крупнее 1:maxDen; разрешение карты — через широту центра
+// видимость по масштабу (как в QGIS): слой виден только крупнее 1:maxDen, обзорный (minDen) — только мельче 1:minDen;
+// разрешение карты — через широту центра
 const denToRes = den => den * 0.000264583 / Math.cos(ol.proj.toLonLat(sharedView.getCenter())[1] * Math.PI / 180);
-const outOfScale = l => !!l.style.maxDen && scaleDen(sharedView.getResolution()) > l.style.maxDen;
+const outOfScale = l => (!!l.style.maxDen && scaleDen(sharedView.getResolution()) > l.style.maxDen) || (!!l.style.minDen && scaleDen(sharedView.getResolution()) < l.style.minDen);
 function olLayersFor(l) {
   const src = layerSrc[l.key], out = [], mr = l.style.maxDen ? denToRes(l.style.maxDen) : Infinity;
-  l._kind = kindOf(l); l.gl = l._kind.startsWith("gl"); l._maxDen = l.style.maxDen || 0;
+  l._kind = kindOf(l); l.gl = l._kind.startsWith("gl"); l._maxDen = l.style.maxDen || 0; l._minDen = l.style.minDen || 0;
   const cv = new ol.layer.Vector({ source: src, style: (f, res) => styleFor(l, f, res), declutter: !!l.style.label, maxResolution: mr });
   if (l.gl) {
     symAll(l, false); const r = glSwitchRes(l);
@@ -171,6 +181,8 @@ function olLayersFor(l) {
     cv.setMaxResolution(Math.min(r, mr));
   }
   out.push(cv);
+  const nr = l.style.minDen ? denToRes(l.style.minDen) : 0;          // обзорный слой: вблизи его грубые контуры не показываются
+  if (nr) out.forEach(x => x.setMinResolution(Math.max(x.getMinResolution(), nr)));
   out.forEach((x, i) => { x.set("key", l.key); x.set("sub", i); x.set("gl", x instanceof ol.layer.WebGLVector); });
   return out;
 }
@@ -398,7 +410,7 @@ async function labelAngles() {
 window.portalStyles = portalStyles;
 function restyle(l) {
   l.cache.clear(); l._br = null;
-  if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== l._maxDen) rebuildLayer(l);
+  if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== l._maxDen || (l.style.minDen || 0) !== (l._minDen || 0)) rebuildLayer(l);
   else if (l.gl) { symAll(l, false); ALLMAPS.forEach(m => m.getLayers().forEach(x => { if (x.get("key") === l.key) x.get("gl") ? x.setStyle(glStyle(l)) : x.changed(); })); }
   else layerSrc[l.key]?.changed();
   renderTree(); window.markDirty?.();
@@ -428,7 +440,7 @@ function rowHTML(l, ind, drag, extra = "") {
   return `<div class="tn${ind} ${shown(l) ? "" : "off"}" draggable="${drag}" data-lk="${esc(l.key)}" aria-selected="${CUR === l.key}">
       <button class="tw" data-tw="${esc(l.key)}" aria-label="Легенда" ${["cat", "grad", "rules"].includes(l.style.mode) ? "" : 'style="visibility:hidden"'}><i data-lucide="${l.open ? "chevron-down" : "chevron-right"}"></i></button>
       <input type="checkbox" data-vis="${esc(l.key)}" ${l.visible ? "checked" : ""} aria-label="Видимость">${symHTML(l)}
-      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + esc(d.fetched_at) : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}">${esc(l.title)}</span>
+      <span class="nm${outOfScale(l) ? " outscale" : ""}" title="${esc(l.title)}${d?.source ? " — " + esc(d.source) : ""}${d?.fetched_at ? ", " + esc(d.fetched_at) : ""}${l.style.maxDen ? `. Виден крупнее 1:${fmt(l.style.maxDen)}` : ""}${l.style.minDen ? `. Обзорный: виден мельче 1:${fmt(l.style.minDen)}` : ""}">${esc(l.title)}</span>
       ${d?.edited && d.original ? `<span class="badge" title="Объектов выгрузки изменено вручную">изм. ${esc(d.edited)}</span>` : ""}
       ${l.gl ? `<span class="badge gl" title="Крупный слой рисуется видеокартой (WebGL). Штриховка показывается полупрозрачной заливкой, подписи — на крупном масштабе.">GPU</span>` : ""}
       <span class="meta num">${fmt(d?.count ?? 0)}</span>
@@ -1049,7 +1061,7 @@ function setSel(list) {
 function select(key, f) { setSel(f ? [{ key, f }] : []); }
 function toggleSel(it) { setSel(SEL.some(s => s.f === it.f) ? SEL.filter(s => s.f !== it.f) : [...SEL, it]); }
 function selectAll() { const l = lyr(CUR); if (!l) return toast("Выберите слой в списке."); if (!shown(l)) return toast(`Слой «${l.title}» скрыт — включите его видимость.`);
-  if (outOfScale(l)) return toast(`Слой «${l.title}» не виден на этом масштабе (крупнее 1:${fmt(l.style.maxDen)}).`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
+  if (outOfScale(l)) return toast(`Слой «${l.title}» не виден на этом масштабе (${l.style.minDen && !(l.style.maxDen && scaleDen(sharedView.getResolution()) > l.style.maxDen) ? `мельче 1:${fmt(l.style.minDen)}` : `крупнее 1:${fmt(l.style.maxDen)}`}).`); const all = layerSrc[l.key].getFeatures(), vis = all.filter(f => visibleIn(l, f)); setSel(vis.map(f => ({ key: l.key, f })));
   toast(`Выбраны все видимые объекты слоя «${l.title}»: ${fmt(SEL.length)}.${vis.length < all.length ? ` Скрытые стилем (${fmt(all.length - vis.length)}) не выбраны.` : ""}`); }
 const keyOf = f => SEL.find(s => s.f === f)?.key || LYR.find(l => layerSrc[l.key]?.hasFeature(f))?.key;
 // объект под курсором: холст отвечает сам; крупный слой в обзоре (видеокарта) — поиск по его данным
@@ -1374,7 +1386,7 @@ mMain.on("pointermove", e => { const ll = ol.proj.toLonLat(e.coordinate), [x, y]
 function scaleDen(r) { const la = ol.proj.toLonLat(sharedView.getCenter())[1]; return Math.round(r * Math.cos(la * Math.PI / 180) / 0.000264583 / 10) * 10; }
 const syncScale = () => { $("stScale").textContent = "1:" + fmt(scaleDen(sharedView.getResolution()));
   // имя слоя вне своего масштаба — серым курсивом, как в QGIS
-  LYR.forEach(l => { if (l.style.maxDen) document.querySelector(`[data-lk="${CSS.escape(l.key)}"] .nm`)?.classList.toggle("outscale", outOfScale(l)); }); };
+  LYR.forEach(l => { if (l.style.maxDen || l.style.minDen) document.querySelector(`[data-lk="${CSS.escape(l.key)}"] .nm`)?.classList.toggle("outscale", outOfScale(l)); }); };
 sharedView.on("change:resolution", syncScale); syncScale();
 
 ALLMAPS.forEach(m => window.attachDataLayers(m));

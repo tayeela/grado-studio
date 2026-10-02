@@ -461,4 +461,19 @@ export default async p => {
     const ok = await importBoundary([new File([JSON.stringify(gj)], "граница.geojson")]);
     return [ok, Math.abs(TERR_M2 - m2(turf.polygon([big]))) < 1, /Граница из файла «граница.geojson»: .* га; взят самый большой из 2 контуров/.test($("toast").textContent)]`);
   check(tf.every(Boolean), `«Из файла»: граница — самый большой из двух замкнутых контуров, площадь как у контура, в подсказке имя файла (${tf})`);
+
+  // ситуационный план: лист А4 без штампа и легенды, железная дорога со штрихами, подпись района без значка; обзорный слой
+  // ситплана на холсте виден только мельче 1:7 500 (данные — заглушки, без порталов)
+  const sp = await p.ev(`const c = turf.centroid(TERR).geometry.coordinates, mk = (k, t, fc) => { DATA[k] = { title: t, fc }; layerSrc[k] = new ol.source.Vector(); setLayerData(k, fc); const l = ensureLayer(k, t, /Polygon/.test(fc.features[0].geometry.type) ? "poly" : "line"); l.style = defaultStyle(k, fc); rebuildLayer(l); };
+    const fc = g => ({ type: "FeatureCollection", features: [{ type: "Feature", geometry: g, properties: {} }] });
+    mk("sit.rail", "ЖД", fc({ type: "LineString", coordinates: [[c[0] - .01, c[1]], [c[0] + .01, c[1] + .001]] }));
+    mk("sit.buildings", "Здания", fc(turf.bboxPolygon([c[0], c[1], c[0] + .0005, c[1] + .0003]).geometry));
+    const hadAdm = !!DATA["gisogd.admin"]; if (!hadAdm) mk("gisogd.admin", "Районы", { type: "FeatureCollection", features: [{ type: "Feature", geometry: turf.bboxPolygon([c[0] - .05, c[1] - .03, c[0] + .05, c[1] + .03]).geometry, properties: { "Уровень": "район", "Наименование": "Проверочный" } }] });
+    const sh = { id: "sit_t", ...JSON.parse(JSON.stringify(SIT)) }, s = albumSpec([sh]).sheets[0];
+    const rail = s.layers.find(l => l.key === "sit.rail.dash"), dist = s.layers.find(l => l.key === "sit.districts");
+    const ol_ = mMain.getLayers().getArray().find(x => x.get("key") === "sit.buildings");
+    const r = [s.kind === "situation", s.size === "BA4", !s.legend.length, !!rail?.features.length && !!rail.features[0].dash, !!dist?.features.length && dist.features.every(f => f.nm && /^РАЙОН /.test(f.label)),
+      ol_ && ol_.getMinResolution() > 0, !!$("shSit")];
+    ["sit.rail", "sit.buildings"].concat(hadAdm ? [] : ["gisogd.admin"]).forEach(k => dropLayer(k)); return r`);
+  check(sp.every(Boolean), `ситуационный план: А4 без штампа и легенды, штрихи железной дороги, подписи районов без значка, обзорные здания вблизи скрыты, кнопка в «Листах» (${sp})`);
 };

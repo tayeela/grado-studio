@@ -113,7 +113,7 @@ function applyProject(p) {
     (p.layers || []).forEach(s => { const l = lyr(s.key); if (l) l.group = s.group || null; });
     const order = (p.layers || []).map(s => s.key);            // порядок прорисовки — как в файле
     LYR.sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
-    normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== (l._maxDen || 0)) rebuildLayer(l); else if (l.gl) restyle(l); });
+    normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== (l._maxDen || 0) || (l.style.minDen || 0) !== (l._minDen || 0)) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     VIEWS.push(...(p.views || []).map(v => ({ ...v, id: safeId(v.id) })));
     Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" }, safeObj(p.album?.meta)); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; })); ALBUM.frames = p.album?.frames; window.migrateFrames?.();   // листы v0.56 → листы альбома
