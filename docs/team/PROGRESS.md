@@ -33,6 +33,18 @@ package not on the server's own `sys.path` list passes with PYTHONPATH and fails
 `grado_geom`). A new core package also goes into `packaging/grado2.spec`.
 RULE: No inline `<script>` in `index.html`: the page's CSP is `script-src 'self'`; put the code into a file.
 
+RULE: E2E waits for anything that sends the 100 000-object test layer to the server are at least 30 s; a 5 s wait
+gave a false failure on a busy machine (v0.95.0).
+RULE: Agents never use `git stash` / `git checkout` of files in the shared worktree for «before» screenshots — they
+serve a `git archive HEAD` copy on another port.
+
+- 03.10.2026, цикл 6 — пара «сервер + интерфейс». Сервер (v0.94.1, c30baa2): участки ДОО, школ, поликлиники как
+  показатели ТЭП (сверка нормоконтролёра по тексту — PASS по всем 10 константам), выгрузка GeoJSON устойчивее.
+  Интерфейс (v0.95.0, 8598739): меню выгрузок у DXF, район по доле площади, столбцы у всех вариантов, масштаб схемы
+  расчёта, поиск по слоям. Ревью PASS; прогон руководителя один раз упал на ожидании 5 с выгрузки слоя в 100 000
+  объектов — ожидание увеличено, три мелких замечания ревью исправлены руководителем. Итог: 381 unit OK (без
+  PYTHONPATH), compute 46 OK, collab 66 ok, 2 прогона E2E зелёные. Решения команды: школа — один объект, ДОО свыше 350
+  мест делится, сокращение участка до 10 % не учитывается; «Слои» и «Свойства» на 1481–2000 px ушли в «Окна».
 - 02.10.2026, цикл 5 — пара «сервер + интерфейс». Сервер (v0.93.1, c036320): `/api/export/geojson`,
   `/api/export/xlsx`, `/api/place` с полигоном, разбивка спорта; ревью PASS, но прогон руководителя без PYTHONPATH
   упал (`No module named grado_geom`) — исправлено (sys.path, spec установщика). Интерфейс (v0.94.0, 964838b): масштаб
