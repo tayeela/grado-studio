@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.91.1: review fixes for v0.89–0.91.** Messages and the busy bar now show above the layout editor
+  (its «Сбросить всё» asks to confirm through a message that was hidden behind it). A viewer of a shared project cannot
+  use «Из файла». A file with one broken polygon still gives a boundary from its other contours. The situational plan
+  reloads OSM street names when the loaded area is too short north–south too, not only east–west. In the layout editor
+  Tab, Enter and Space on its buttons work, and no key (Ctrl+Z included) reaches the map underneath; an own text cannot
+  be emptied into an invisible one. The Data window names the `sit.*` group. Edits from a hand-edited project file with
+  wrong types no longer break printing.
 - **2026-10-02, ГРАДО 2 v0.91.0: sheet layout editor («Макет», like the QGIS print layout).** Third feature of the
   unmerged branch of 25.09 (v0.54.2), redone on the current program.
   - «Листы» → pencil-ruler button in a sheet row (or double click on the sheet preview) opens the finished sheet full screen.

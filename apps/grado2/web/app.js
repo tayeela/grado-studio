@@ -221,8 +221,8 @@ async function importBoundary(files) {
     const closed = c => c.length > 3 && turf.distance(c[0], c[c.length - 1]) * 1000 < .5;      // концы ближе 0,5 м — контур замкнут
     const polys = j.layers.flatMap(l => l.features.features).flatMap(f => {
       const g = f.geometry; if (!g) return [];
-      if (g.type === "Polygon") return [turf.polygon(g.coordinates)];
-      if (g.type === "MultiPolygon") return g.coordinates.map(c => turf.polygon(c));
+      if (g.type === "Polygon") return [safe(() => turf.polygon(g.coordinates))].filter(Boolean);      // кривой контур не роняет остальные
+      if (g.type === "MultiPolygon") return g.coordinates.map(c => safe(() => turf.polygon(c))).filter(Boolean);
       const ls = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
       return ls.filter(closed).map(c => safe(() => turf.polygon([[...c.slice(0, -1), c[0]]]))).filter(Boolean);
     });
@@ -367,6 +367,7 @@ $("bExample").onclick = () => setTerritory(turf.polygon([[[37.5195, 55.7895], [3
   new MutationObserver(sync).observe(b, { attributes: true, attributeFilter: ["disabled"] }); sync(); }
 const GROUP = { gisogd_admin: "Административное деление Москвы (эталон)", fgistp: "ФГИС ТП (загруженные слои документов)", import: "Импорт файлов", nspd: "ЕГРН · НСПД", osm: "OpenStreetMap", gisogd: "ГИС ОГД Москвы (первая выгрузка слоя идёт целиком — до 200 МБ и пары минут; дальше из кэша)",
   egko: "ЕГКО Москвы — картооснова ГИС ОГД (первая выгрузка слоя идёт целиком по всей Москве — до 1,3 ГБ и нескольких минут; дальше из кэша)", terrain: "Рельеф",
+  yandex_sit: "Яндекс Карты для ситуационного плана (крупные тайлы z16, область до 150 км²; лист «Ситуационный план А4» качает их сам)",
   yandex: "Яндекс Карты, для анализа и эскиза; в сдаваемые материалы не включать (область до 40 км²; первая выгрузка 1 км² — около минуты, дальше с диска)" };
 const CHECKED = new Set(["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
 const histText = d => { const h = d.history || [], x = h[h.length - 1]; return h.length > 1 && x.added != null ? ` · выгрузок ${h.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };

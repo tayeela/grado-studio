@@ -1509,7 +1509,8 @@ def apply_edits(ops, sheet, seen=None, items=True):
     на странице), по ключу — правка: сдвиг dx/dy (мм), кегль (мм), цвет, шрифт, обводка [цвет, мм], поворот (°), свой
     текст, скрыть. Свои надписи листа (items) дописываются сверху. Ключ не хранит координат: подпись найдётся и после
     пересборки листа, пока у неё тот же текст. seen — счётчик, общий для всех рамок страницы (PPTX идёт по рамкам)."""
-    edits, out = sheet.get("edits") or {}, []
+    edits, out = sheet.get("edits"), []
+    edits = edits if isinstance(edits, dict) else {}
     seen = {} if seen is None else seen
     for o in ops:
         if o.get("op") != "text":
@@ -1530,33 +1531,41 @@ def apply_edits(ops, sheet, seen=None, items=True):
 
 
 def own_texts(sheet):
-    out = []
-    for it in sheet.get("items") or []:
+    out, items = [], sheet.get("items")
+    for it in items if isinstance(items, list) else []:
         if isinstance(it, dict) and str(it.get("text") or "").strip():
-            o = {"op": "text", "x": float(it.get("x", 0)), "y": float(it.get("y", 0)), "size": 3.0, "text": str(it["text"]),
+            o = {"op": "text", "x": _num(it.get("x")), "y": _num(it.get("y")), "size": 3.0, "text": str(it["text"]),
                  "color": (0.1, 0.1, 0.1), "key": f"item:{it.get('id')}"}
             out.append(_edited(o, {k: v for k, v in it.items() if k not in ("x", "y", "text")}))
     return out
 
 
+def _num(v, d=0.0):
+    """Число из правки макета; не число (файл, правленный руками) — d."""
+    try:
+        return float(v) if v not in (None, "") else d
+    except (TypeError, ValueError):
+        return d
+
+
 def _edited(o, e):
     rgb = lambda c, d: hex_to_rgb(c) if isinstance(c, str) and c.startswith("#") else d
     o = dict(o)
-    o["x"] += float(e.get("dx") or 0)
-    o["y"] += float(e.get("dy") or 0)
+    o["x"] += _num(e.get("dx"))
+    o["y"] += _num(e.get("dy"))
     if isinstance(e.get("text"), str) and e["text"].strip():
         o["text"] = e["text"]
-    if e.get("size"):
-        o["size"] = max(.5, min(60.0, float(e["size"])))
+    if _num(e.get("size")) > 0:
+        o["size"] = max(.5, min(60.0, _num(e["size"])))
     if e.get("color"):
         o["color"] = rgb(e["color"], o.get("color"))
     if e.get("font") in FONTS:
         o["font_family"] = e["font"]
-    if e.get("angle") is not None and e.get("angle") != "":
-        o["angle"] = math.radians(float(e["angle"]))
+    if e.get("angle") not in (None, ""):
+        o["angle"] = math.radians(_num(e["angle"]))
     h = e.get("halo")
     if isinstance(h, (list, tuple)) and len(h) == 2:
-        o["halo"], o["halo_color"] = max(.05, min(3.0, float(h[1]))), rgb(h[0], (1, 1, 1))
+        o["halo"], o["halo_color"] = max(.05, min(3.0, _num(h[1], .6))), rgb(h[0], (1, 1, 1))
     elif "halo" in e and not h:
         o.pop("halo", None)
         o.pop("halo_color", None)

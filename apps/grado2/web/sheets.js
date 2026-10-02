@@ -330,7 +330,7 @@ async function buildSituation() {
   // вблизи территории — подробная основа Яндекса (z18): крупнее 1:7 500 обзорные слои не видны, их сменяет она
   const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(DATA[k]?.bbox && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(DATA[k].bbox))));
   if (near.length) await loadKeys(near, turf.bbox(buf(TERR, 300)));
-  if (!DATA["osm.roads"]?.bbox || !(DATA["osm.roads"].bbox[0] <= ob[0] && DATA["osm.roads"].bbox[2] >= ob[2])) await loadKeys(["osm.roads"], ob);
+  const rb = DATA["osm.roads"]?.bbox; if (!rb || !(rb[0] <= ob[0] && rb[1] <= ob[1] && rb[2] >= ob[2] && rb[3] >= ob[3])) await loadKeys(["osm.roads"], ob);
   buildUds();
   // своя подробная застройка на территории (ЕГКО, ЕГРН) уже есть — здания Яндекса её не дублируют
   const ext = ol.proj.transformExtent(turf.bbox(TERR), "EPSG:4326", "EPSG:3857");

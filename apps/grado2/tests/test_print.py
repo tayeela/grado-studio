@@ -198,17 +198,18 @@ class LayoutEdits(unittest.TestCase):
     """Редактор макета: правки надписей готового листа по ключу «текст#n» и свои надписи — в SVG, PDF и PPTX."""
 
     def spec(self, **kw):
-        lab = lambda y: {"g": {"type": "Point", "coordinates": [37.65, y]}, "nm": True, "ls": 3.4, "label": "РАЙОН ЛЕФОРТОВО"}
+        lab = lambda x, t: {"g": {"type": "Point", "coordinates": [x, 55.80]}, "nm": True, "ls": 3.4, "label": t}
         sh = {"size": "BA4", "kind": "situation", "title": "Ситплан", "scale": 10000, "center": [37.65, 55.80], "legend": [], "territory": None,
-              "layers": [{"title": "Районы", "features": [lab(55.80), lab(55.79)]}], **kw}
+              "layers": [{"title": "Районы", "features": [lab(37.65, "РАЙОН ЛЕФОРТОВО"), lab(37.64, "РАЙОН ПЕРОВО")]}], **kw}
         return {"meta": {}, "sheets": [sh]}
 
     def test_edit_by_key_and_own_text(self):
         edits = {"РАЙОН ЛЕФОРТОВО#0": {"dx": 5, "dy": -2, "size": 5, "color": "#8a3fb0", "font": "ui-bold", "angle": -15, "halo": ["#ffffff", .8]},
-                 "РАЙОН ЛЕФОРТОВО#1": {"hide": True}}
+                 "РАЙОН ПЕРОВО#0": {"hide": True}}
         items = [{"id": "a", "x": 20, "y": 30, "text": "Проектируемая территория", "size": 4, "font": "serif-bold", "halo": ["#ffffff", .5]}]
         spec = self.spec(edits=edits, items=items)
         plain = [o for o in print_io._pages(self.spec(), {}, {}, None)[0][2] if o["op"] == "text"]
+        self.assertEqual([o["text"] for o in plain], ["РАЙОН ЛЕФОРТОВО", "РАЙОН ПЕРОВО"])
         t = [o for o in print_io._pages(spec, {}, {}, None)[0][2] if o["op"] == "text"]
         self.assertEqual([o["text"] for o in t], ["РАЙОН ЛЕФОРТОВО", "Проектируемая территория"])   # второй скрыт, своя добавлена
         a, own = t
@@ -222,6 +223,12 @@ class LayoutEdits(unittest.TestCase):
         self.assertIn('paint-order="stroke"', svg)
         self.assertTrue(print_io.render_pdf(spec, {}, {}).startswith(b"%PDF"))
         self.assertTrue(print_io.render_pptx(spec, {}, {})[:2] == b"PK")
+
+    def test_broken_edits_do_not_break_the_sheet(self):
+        spec = self.spec(edits=["x"], items=[{"id": "b", "x": "left", "y": None, "text": "Т", "dx": "a"}, "junk"])
+        t = [o for o in print_io._pages(spec, {}, {}, None)[0][2] if o["op"] == "text"]
+        self.assertEqual([o["text"] for o in t], ["РАЙОН ЛЕФОРТОВО", "РАЙОН ПЕРОВО", "Т"])
+        self.assertEqual((t[2]["x"], t[2]["y"]), (0.0, 0.0))
 
 
 if __name__ == "__main__":

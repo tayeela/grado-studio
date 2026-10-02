@@ -256,6 +256,7 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .menu button.danger,.menu button[data-danger]{color:var(--bad)}
 .legend{padding:6px 8px;background:var(--field)}.lg{margin-bottom:6px}.lgh{display:flex;gap:6px;align-items:center;font-weight:600}.lgi{display:flex;gap:6px;align-items:center;padding:1px 0 1px 18px;color:var(--muted)}
 .meta4{display:grid;grid-template-columns:1fr 1fr;gap:4px}.meta4 input{width:100%}
+body:has(#layEd:not([hidden])) .toast,body:has(#layEd:not([hidden])) .busy{z-index:9100}   /* сообщения и полоса занятости — над макетом */
 #layEd{position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column}#layEd[hidden]{display:none}
 .layh{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}.layh .sp{flex:1}
 .layb{flex:1;display:flex;min-height:0}.lays{flex:1;overflow:auto;padding:16px;background:var(--canvas)}.lays.busy{cursor:progress}

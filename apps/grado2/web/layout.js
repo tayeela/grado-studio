@@ -33,12 +33,16 @@ function layoutEl() {
   st.addEventListener("wheel", e => { if (!e.ctrlKey && !e.metaKey) return; e.preventDefault(); layZoom(LAY.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15)); }, { passive: false });
   return el;
 }
-/* Клавиши, пока открыт макет (app.js спрашивает раньше всех обработчиков): стрелки, Delete, Esc — макету; остальное
-   не уходит в команды карты под ним. Ввод в полях панели и сочетания с Ctrl/Cmd (сохранение) проходят как обычно. */
+/* Клавиши, пока открыт макет (app.js спрашивает раньше всех обработчиков): стрелки, Delete, Esc — макету; ни одна клавиша
+   не уходит в команды карты под ним (Ctrl+Z не отменит невидимую правку карты). Ввод в полях панели, Tab, Enter и пробел
+   на кнопках работают как обычно; Ctrl/Cmd+S сохраняет проект. */
 window.LAYKEYS = e => {
   if (!LAY || $("layEd")?.hidden) return false;
   if (e.key === "Escape") { if (LAY.adding) setAdding(false); else closeLayout(); return true; }
-  if (/INPUT|SELECT|TEXTAREA/.test(e.target?.tagName || "") || e.ctrlKey || e.metaKey) return false;
+  if ((e.ctrlKey || e.metaKey) && (e.code === "KeyS" || e.key === "s")) return false;
+  const tag = e.target?.tagName || "";
+  if (/INPUT|SELECT|TEXTAREA/.test(tag) || e.key === "Tab" || e.ctrlKey || e.metaKey || (tag === "BUTTON" && (e.key === "Enter" || e.key === " "))) {
+    e.stopImmediatePropagation(); return false; }
   const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
   if (d && LAY.sel) { const k = e.shiftKey ? 5 : .5; moveSel(d[0] * k, d[1] * k); }
   if ((e.key === "Delete" || e.key === "Backspace") && LAY.sel) hideSel();
@@ -145,7 +149,7 @@ function layPanel() {
   </div><div class="note" id="layHint"></div>`;
   layHint("");
   const set = (k, v) => { const x = editOf(LAY.sel); if (v === "" || v == null) delete x[k]; else x[k] = v; window.markDirty?.(); clearTimeout(LAY.t); LAY.t = setTimeout(renderLayout, 350); };
-  $("layText").oninput = ev => set("text", ev.target.value);
+  $("layText").oninput = ev => { if (item && !ev.target.value.trim()) return; set("text", ev.target.value); };   // пустая своя надпись пропала бы с листа — её удаляют кнопкой
   $("layFont").onchange = ev => set("font", ev.target.value);
   $("laySize").onchange = ev => set("size", +(+ev.target.value * PT).toFixed(3));
   $("layColor").oninput = ev => set("color", ev.target.value);
