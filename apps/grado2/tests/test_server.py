@@ -30,6 +30,41 @@ class Grado2Server(unittest.TestCase):
         self.assertEqual(m["density_spp"], 0)
         self.assertEqual(m["population"], 19)
 
+    YAK = dict(terr_ha=15, restrict_ha=0, spp_new_m2=357_000, share=1, nonres_part=6, education_zone=1, k1=0.75, k2=0.2)
+
+    def test_tep_without_constants_has_no_new_keys_and_matches_fixture(self):
+        import json
+        ref = json.loads((S.ROOT / "core/compute/tests/fixtures/calc2_yakimanka_15ha.json").read_text("utf-8"))["expected"]
+        r = S.tep(**self.YAK)
+        self.assertEqual(set(r), {"metrics", "density_total"})
+        m = {x["id"]: x["value"] for x in r["metrics"]}
+        for k in ("population", "doo_places", "school_places"):
+            self.assertEqual(m[k], ref[k], k)
+
+    def test_tep_constants_override_doo(self):
+        import math
+        base = {x["id"]: x["value"] for x in S.tep(**self.YAK)["metrics"]}
+        r = S.tep(**self.YAK, constants={"doo_z1": 50, "school_z1": 90})
+        m = {x["id"]: x["value"] for x in r["metrics"]}
+        self.assertEqual(r["constants_changed"], ["doo_z1"])          # school_z1 равна пресету: не «изменена»
+        self.assertEqual(m["doo_places"], math.ceil(round(50 * base["population"] / 1000, 6)))
+        self.assertGreater(m["doo_places"], base["doo_places"])
+        self.assertEqual(m["school_places"], base["school_places"])
+        self.assertEqual(m["population"], base["population"])
+        self.assertEqual(S.tep(**self.YAK, constants={})["constants_changed"], [])
+
+    def test_tep_constants_bad_values(self):
+        for bad in ({"nope": 1}, {"doo_z1": -1}, {"doo_z1": 1e9}, {"doo_z1": "50"}, {"doo_z1": True}, {"doo_z1": float("nan")}, {"doo_z1": float("inf")}, {"doo_z1": 10**400}, [1]):
+            with self.assertRaises(ValueError, msg=bad):
+                S.tep(**self.YAK, constants=bad)
+
+    def test_tep_norms_cover_all_constants(self):
+        import json
+        p = json.loads(S.PRESET.read_text("utf-8"))
+        n = S.tep_norms()["norms"]
+        self.assertEqual([x["id"] for x in n], list(p["constants"]))
+        self.assertEqual({x["id"]: x["value"] for x in n}, p["constants"])
+
     def test_clean_props_renames_and_parses_numbers(self):
         p = S.clean_props({"opt_floors": "9-12", "opt_cad_num": "77:1", "grado_set": "x", "name": ""})
         self.assertEqual(p, {"Этажность": 9, "Кадастровый номер": "77:1"})
@@ -409,6 +444,20 @@ class HttpHardening(unittest.TestCase):
         self.assertNotIn("unsafe-eval", csp)
         self.assertNotIn("script-src 'self' 'unsafe", csp)
         self.assertIn("img-src 'self' data: blob: https:", csp)        # плитки Esri и EOX
+
+    def test_tep_constants_and_norms_over_http(self):
+        import json
+        body = {"terr_ha": 15, "restrict_ha": 0, "spp_new_m2": 357000, "share": 1}
+        code, _, _, j = self.call("/api/tep", json.dumps({**body, "constants": {"doo_z1": 50}}).encode())
+        self.assertEqual((code, j["constants_changed"]), (200, ["doo_z1"]))
+        for bad in ({"nope": 1}, {"doo_z1": 1e9}):
+            code, _, _, j = self.call("/api/tep", json.dumps({**body, "constants": bad}).encode())
+            self.assertEqual(code, 400)
+            self.assertTrue(j["error"].isascii(), j["error"])
+        code, _, _, j = self.call("/api/tep/norms")
+        self.assertEqual(code, 200)
+        self.assertEqual(len(j["norms"]), len(json.loads(S.PRESET.read_text("utf-8"))["constants"]))
+        self.assertEqual(j["norms"][0].keys() >= {"id", "value", "title", "unit", "group", "source", "edition", "min", "max"}, True)
 
     def test_body_limits_per_path(self):
         self.assertEqual(S.body_limit("/api/project?name=x"), S.MAX_PROJECT_BODY)

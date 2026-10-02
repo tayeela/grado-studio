@@ -911,16 +911,39 @@ def _bbox_of(geom):
 
 
 def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0, nonres_part=6, education_zone=1,
-        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25):
+        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25, constants=None):
     """ТЭП по методике «Калькулятора 2.0» (Москва). Население, соцобъекты и машино-места — от новой застройки;
-    СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя."""
+    СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя.
+    constants — необязательная подмена норм {id: число}; в ответе тогда есть constants_changed (id, что отличаются от пресета)."""
     e = Engine.from_file(PRESET)
+    changed = None
+    if constants is not None:
+        if not isinstance(constants, dict):
+            raise ValueError("constants must be an object")
+        meta = e.preset.get("constants_meta", {})
+        for cid, v in constants.items():
+            if cid not in e.constants:
+                raise ValueError(f"unknown constant {cid!r}".encode("ascii", "backslashreplace").decode())
+            lo, hi = meta[cid]["min"], meta[cid]["max"]
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not lo <= v <= hi:     # NaN fails the range; range first: isfinite(10**400) overflows
+                raise ValueError(f"constant {cid} must be a number from {lo} to {hi}")
+        changed = [cid for cid in e.constants if cid in constants and constants[cid] != e.constants[cid]]
+        e.set_constants(**{cid: constants[cid] for cid in changed})
     e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
                  spp_low_in=spp_low_m2 / 1000, nonres_part=max(0.0, min(100.0, float(nonres_part))), education_zone=2 if int(education_zone) == 2 else 1,
                  k1=k1, k2=k2, tinao=1 if tinao else 0, territory_mode=int(territory_mode) if int(territory_mode) in (1, 2, 3) else 1,
                  unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))))
-    return {"metrics": e.results(),
-            "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
+    out = {"metrics": e.results(),
+           "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
+    if changed is not None:
+        out["constants_changed"] = changed
+    return out
+
+
+def tep_norms():
+    """Нормы пресета для полей ввода: текущие значения и описание (название, единица, группа, источник, редакция, пределы)."""
+    p = json.loads(PRESET.read_text("utf-8"))
+    return {"preset": p["id"], "norms": [{"id": cid, "value": v, **p["constants_meta"][cid]} for cid, v in p["constants"].items()]}
 
 
 def _norm_name(t):
@@ -1267,6 +1290,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(code, obj)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
+        if self.path.split("?")[0] == "/api/tep/norms":
+            return self._json(200, tep_norms())
         if self.path == "/api/health":
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
         if self.path == "/api/progress":
@@ -1902,6 +1927,8 @@ class Handler(SimpleHTTPRequestHandler):
             if self.path == "/api/tep":
                 f = {k: float(req[k]) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2", "spp_low_m2", "nonres_part",
                                                 "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share") if req.get(k) is not None}
+                if req.get("constants") is not None:
+                    f["constants"] = req["constants"]
                 return self._json(200, tep(**f))
             if self.path == "/api/place":
                 try:

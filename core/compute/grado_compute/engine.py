@@ -124,6 +124,17 @@ class Engine:
             dirty |= self._dirty_set(input_id)
         self._recompute(dirty)
 
+    def set_constants(self, **kwargs):
+        """Подмена норм (констант пресета) перед расчётом; неизвестное имя — ошибка до любой записи."""
+        unknown = [k for k in kwargs if k not in self.constants]
+        if unknown:
+            raise KeyError(f"нет константы {unknown[0]!r}")
+        dirty = set()
+        for cid, value in kwargs.items():
+            self._values[cid] = value
+            dirty |= self._dirty_set(cid)
+        self._recompute(dirty)
+
     def value(self, name):
         return self._values[name]
 

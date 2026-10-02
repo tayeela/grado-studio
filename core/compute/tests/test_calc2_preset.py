@@ -88,3 +88,28 @@ class TestCalc2Rules(unittest.TestCase):
     def test_half_up_display(self):
         from grado_compute.expressions import round_half_up
         self.assertEqual((round_half_up(2.5), round_half_up(0.0005, 3), round_half_up(2.675, 2)), (3, 0.001, 2.68))
+
+
+class TestCalc2ConstantsMeta(unittest.TestCase):
+    P = json.loads(PRESET.read_text("utf-8"))
+
+    def test_every_constant_has_meta_and_back(self):
+        self.assertEqual(set(self.P["constants"]), set(self.P["constants_meta"]))
+
+    def test_meta_is_complete_and_default_inside_limits(self):
+        for cid, m in self.P["constants_meta"].items():
+            for k in ("title", "unit", "group", "source", "edition", "status", "min", "max"):
+                self.assertIn(k, m, cid)
+            self.assertTrue(m["title"] and m["unit"] and m["group"] and m["source"], cid)
+            self.assertLessEqual(m["min"], self.P["constants"][cid], cid)
+            self.assertLessEqual(self.P["constants"][cid], m["max"], cid)
+
+    def test_set_constants_recomputes_and_rejects_unknown(self):
+        e = Engine.from_file(PRESET)
+        e.set_inputs(spp_in=357, ratio_zh=100, nonres_part=6, education_zone=1)
+        school = e.value("school_places")
+        e.set_constants(doo_z1=50)
+        self.assertEqual(e.value("doo_places"), -(-round(50 * e.value("population") / 1000, 6) // 1))
+        self.assertEqual(e.value("school_places"), school)
+        with self.assertRaises(KeyError):
+            e.set_constants(nope=1)

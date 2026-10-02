@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.91.4: norm constants can be overridden in the ТЭП request (server part).** Owner 02.10: norms
+  change all the time, so they must be editable before a calculation, prefilled with the current ones. The preset
+  `moscow_calc2.json` has a `constants_meta` block: for each of the 31 constants a title, unit, group, decree and
+  clause, edition and limits (sources from `docs/standards/moscow-ngp/preset-audit-2026-10-02.md`; project assumptions
+  are marked as such). `GET /api/tep/norms` returns them with current values; `POST /api/tep` accepts
+  `constants: {id: number}` and answers `constants_changed`. Without overrides the answer is the same as before.
+  Not yet: the window with the fields (next step); green-area and playground norms (0.25, 0.02, 3.5, 0.6, 1.5, 0.7)
+  are still written inside metric expressions and are not editable.
 - **2026-10-02, ГРАДО 2 v0.91.3: objects keep their identity on a re-download.** «Выгрузить заново» matched objects by
   their stable key (the cadastral number for ЕГРН parcels) but gave every unedited object a new internal `_uid`, derived
   from its place in the list and its geometry — only 2 of 1122 unchanged parcels kept it. Now a matched object carries
