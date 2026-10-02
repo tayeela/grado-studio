@@ -20,7 +20,7 @@ let ws, id = 0; const pending = new Map(), logs = [];
 const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
 const mods = o => (o?.alt ? 1 : 0) | (o?.ctrl ? 2 : 0) | (o?.meta ? 4 : 0) | (o?.shift ? 8 : 0);
 const p = {
-  sleep, logs,
+  sleep, logs, raw: (m, a) => send(m, a),
   log: (...a) => console.log(...a),
   async ev(expr) { const r = await send("Runtime.evaluate", { expression: `(async () => { ${expr} })()`, awaitPromise: true, returnByValue: true }); if (r.result?.exceptionDetails) throw new Error("page: " + (r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text)); return r.result?.result?.value; },
   async move(x, y, o) { await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, modifiers: mods(o), button: o?.down ? "left" : "none", buttons: o?.down ? 1 : 0 }); },

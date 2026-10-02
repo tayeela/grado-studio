@@ -1867,6 +1867,23 @@ function toggleDock(side, on) {
   if (narrow() && !$("work").classList.contains(cls)) $("work").classList.add(side === "L" ? "noR" : "noL");
   WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize();
 }
+// Протаскивание мышью не выделяет текст: пока кнопка нажата вне полей и ячеек таблицы, на <html> стоит .nosel (user-select:none
+// для всей страницы, в том числе для ячеек, через которые проводят окно или разделитель); снимается при отпускании,
+// отмене, потере фокуса окна — даже если мышь отпустили за пределами окна браузера. Рукоятки не начинают выделение и сами.
+{
+  const root = document.documentElement, TXT = "input,textarea,select,[contenteditable],.at td,.selectable", NOSTART = ".wh,.dztabs,[data-gut],.dres,.dresv";
+  const off = () => root.classList.remove("nosel");
+  addEventListener("pointerdown", e => {
+    if (e.button || e.target.closest?.(TXT)) return;
+    root.classList.add("nosel");
+    if (!e.target.closest?.("button,.tl,.top,.st")) getSelection()?.removeAllRanges();   // щелчок по кнопке не теряет выделение в таблице (Ctrl+C после выбора)
+  }, true);
+  addEventListener("mousedown", e => { const h = e.target.closest?.(NOSTART); if (h && !e.target.closest("button,input,select,textarea")) e.preventDefault(); }, true);
+  addEventListener("pointermove", e => { if (!e.buttons) off(); }, true);
+  ["pointerup", "pointercancel", "mouseup", "dragend", "contextmenu"].forEach(t => addEventListener(t, off, true));
+  addEventListener("blur", e => { if (e.target === window) off(); }, true);   // только потеря фокуса самим окном: blur поля при нажатии снимал бы .nosel в начале протаскивания
+  document.addEventListener("visibilitychange", off);
+}
 // боковые панели тянутся за разделитель, ширина запоминается
 function setDockWidth(side, px) { $("work").style.setProperty(side === "l" ? "--wl" : "--wr", px + "px"); WST["w" + side] = px; }
 document.querySelectorAll("[data-gut]").forEach(g => g.addEventListener("pointerdown", e => {

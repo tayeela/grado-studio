@@ -46,6 +46,7 @@ html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:var(--fs-m)/1.35 var(--ui);overflow:hidden;-webkit-user-select:none;user-select:none}
 /* как в настольных программах: интерфейс не выделяется, текст выделяется только в полях и ячейках таблицы */
 input,textarea,.at td,.selectable{-webkit-user-select:text;user-select:text}
+html.nosel,html.nosel *{-webkit-user-select:none!important;user-select:none!important}
 ::selection{background:color-mix(in srgb,var(--accent) 28%,transparent)}
 *{box-sizing:border-box}
 button,input,select,table{font:inherit;color:inherit}
@@ -614,7 +615,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 </section>
 <section class="win" id="wKeys" hidden aria-label="Клавиши">
   <header class="wh"><i data-lucide="circle-help"></i><b>Справка и клавиши</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
-  <div class="wb" id="keysBody"></div>
+  <div class="wb selectable" id="keysBody"></div>
 </section>
 <section class="win" id="wHubProjects" hidden aria-label="Совместные проекты">
   <header class="wh"><i data-lucide="users"></i><b>Совместные проекты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>

@@ -664,4 +664,28 @@ export default async p => {
     check(await p.ev(`const f = window.fetch; window.fetch = async () => new Response("{}", { status: 500 }); $("bExpMore").click(); $("bExpGeo").click(); await new Promise(r=>setTimeout(r,300)); window.fetch = f;
       return /GeoJSON не выгружен: сервер не принял данные\./.test($("toast").textContent) && !$("bExpMore").disabled && $("busy").hidden`), "ошибка выгрузки — по-русски в сообщении, кнопки снова доступны");
   } finally { await p.ev(`window.fetch = window.__fx; return 1`); }
+  // T31: протаскивание не выделяет текст — окно за заголовок через справку и дерево слоёв, разделитель панели, угол окна
+  {
+    const sel = () => p.ev(`return getSelection().toString().length + "|" + document.documentElement.classList.contains("nosel")`);
+    await p.key("F1", "F1", { vk: 112 }); await p.sleep(300);
+    const h = await p.ev(`const w=$("wKeys"); if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); await new Promise(r=>setTimeout(r,200)); const b=w.querySelector(".wh b").getBoundingClientRect(), t=$("layerTree").getBoundingClientRect(); return [b.left+4, b.top+4, t.left+30, t.top+60]`);
+    await p.ev(`window.__nm = []; addEventListener("pointermove", e => { if (e.buttons) window.__nm.push(getSelection().toString().length + "|" + document.documentElement.classList.contains("nosel")); }, true); return 1`);
+    await p.drag(h[0], h[1], h[2], h[3]);
+    check((await sel()) === "0|false" && (await p.ev(`return window.__nm.length > 5 && window.__nm.every(x => x === "0|true")`)), "T31: окно, проведённое за заголовок через справку и «Слои», ничего не выделяет; .nosel стоит на время протяжки и снимается");
+    const g = await p.ev(`const g=document.querySelector('[data-gut="l"]').getBoundingClientRect(); return [g.left+g.width/2, g.top+g.height/2]`);
+    await p.ev(`window.__nm = []; return 1`); await p.drag(g[0], g[1], g[0] + 90, g[1] - 150);
+    check((await sel()) === "0|false" && (await p.ev(`return window.__nm.every(x => x === "0|true")`)), "T31: вертикальный разделитель, проведённый через дерево слоёв, ничего не выделяет");
+    const hh = await p.ev(`const b=$("wKeys").querySelector(".wh b").getBoundingClientRect(); return [b.left+4, b.top+4]`);
+    await p.drag(hh[0], hh[1], hh[0] + 40, hh[1] + 400);
+    check((await sel()) === "0|false", "T31: окно, протащенное к строке состояния, ничего не выделяет");
+    check(await p.ev(`const e=document.querySelector("#keysBody .hsec p, #keysBody .hsec li, #keysBody .hsec td"); return getComputedStyle(e).userSelect === "text" && getComputedStyle($("layerTree")).userSelect === "none"`), "T31: текст справки выделяется, интерфейс (дерево слоёв) — нет");
+    await p.ev(`winOpen("wKeys", false); return 1`);
+  }
+  // T34: строка «Альбом: N листов · собран …» и время PDF/PPTX хранятся в проекте (ALBUM.meta) и переживают сборку/разбор общего проекта
+  check(await p.ev(`const m=ALBUM.meta, keep=[m.builtAt,m.pdfAt,m.pptxAt], sh=ALBUM.sheets.splice(0);
+    m.builtAt=m.pdfAt=m.pptxAt=undefined; const a=albumStatText(); ALBUM.sheets.push(newSheet()); const b=albumStatText();
+    m.builtAt="2026-10-03T09:05:00"; m.pdfAt="2026-10-03T10:07:00"; m.pptxAt="2026-10-03T10:08:00"; const c=albumStatText(), j=Collab.join(Collab.split(JSON.parse(projectJSON())),{});
+    const kept=j.album.meta.builtAt===m.builtAt && j.album.meta.pdfAt===m.pdfAt;
+    ALBUM.sheets.splice(0, ALBUM.sheets.length, ...sh); [m.builtAt,m.pdfAt,m.pptxAt]=keep;
+    return a==="Альбом ещё не собирался" && b==="Альбом: 1 лист · дата сборки не записана" && c==="Альбом: 1 лист · собран 03.10.2026 09:05 · PDF: сохранён 03.10 10:07 в папку загрузок · PPTX: сохранён 03.10 10:08 в папку загрузок" && kept`), "T34: строка состояния альбома («ещё не собирался» / N листов, собран, PDF и PPTX), время сохраняется в проекте и в общем проекте");
 };

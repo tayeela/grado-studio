@@ -343,7 +343,7 @@ async function buildSituation() {
   // названия улиц, УДС по осям OSM и районы нужны листу, а не холсту: заведённые здесь — выключены (есть в дереве)
   LYR.filter(l => !before.has(l.key) && ["osm.roads", "calc.uds_osm", "gisogd.admin"].includes(l.key)).forEach(l => { l.visible = false; });
   tidyLayers();
-  ALBUM.sheets.push(sh); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1);
+  ALBUM.sheets.push(sh); ALBUM.meta.builtAt = new Date().toISOString(); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1);
   toast(`Ситуационный план А4, 1:${fmt(sheetScale(sh))}: масштаб меняется в строке листа, рамка сдвигается на карте, PDF одного листа — кнопкой в строке. Данные Яндекса — пользовательская карта, для работы.`);
 }
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
@@ -389,6 +389,7 @@ async function buildSection(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slid
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
   const used = sheets.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
   tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
+  ALBUM.meta.builtAt = new Date().toISOString();
   window.markDirty?.(); renderSheets(); toast(`${lost.length ? `Не загрузились после повтора: ${lost.join("; ")} — слайды с ними неполные, повторите сборку позже. ` : ""}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
@@ -413,6 +414,7 @@ async function albumFile(kind = "pdf", only = null) {
     const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (only ? only.title : ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    if (!only) stampAlbum(kind === "pdf" ? "pdfAt" : "pptxAt");
     // листы «не готов»: что-то не поместилось, а мельчить и обрывать молча нельзя — пометка серым внизу листа
     const nr = r.headers.get("X-Grado-Not-Ready");
     toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
@@ -446,6 +448,17 @@ async function satFile(i, ask) {
   } catch (e) { toast("Снимок не собран: " + (/too large|too many/.test(e.message) ? "рамка слишком велика — не больше 6 × 6 км" : e.message)); }
   finally { clearInterval(poll); busy(false); window.setHint?.(""); }
 }
+// строка состояния альбома: сколько листов, когда собран и когда в последний раз сохранены PDF и PPTX (время — в проекте, ALBUM.meta)
+const stampAlbum = k => { ALBUM.meta[k] = new Date().toISOString(); window.markDirty?.(); syncAlbumStat(); };
+const stampText = (iso, long) => { const d = new Date(iso); if (isNaN(d)) return ""; const p = n => String(n).padStart(2, "0"); return `${p(d.getDate())}.${p(d.getMonth() + 1)}${long ? "." + d.getFullYear() : ""} ${p(d.getHours())}:${p(d.getMinutes())}`; };
+function albumStatText() {
+  const m = ALBUM.meta, n = ALBUM.sheets.length, w = (n % 10 === 1 && n % 100 !== 11) ? "лист" : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? "листа" : "листов";
+  let t = m.builtAt && n ? `Альбом: ${n} ${w} · собран ${stampText(m.builtAt, true)}` : n ? `Альбом: ${n} ${w} · дата сборки не записана` : "Альбом ещё не собирался";
+  if (m.pdfAt) t += ` · PDF: сохранён ${stampText(m.pdfAt)} в папку загрузок`;
+  if (m.pptxAt) t += ` · PPTX: сохранён ${stampText(m.pptxAt)} в папку загрузок`;
+  return t;
+}
+const syncAlbumStat = () => { const e = $("shStat"); if (e) e.textContent = albumStatText(); };
 function renderSheets() {
   window.redrawFrames?.(true);             // рамки листов на карте и область загрузки данных
   const el = $("sheetsBody"); if (!el) return;
@@ -464,6 +477,7 @@ function renderSheets() {
         <td class="acts">${s.kind === "photos" ? `<button class="tb" data-shphoto="${i}" title="Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка"><i data-lucide="camera"></i></button>${(s.photos || []).length ? `<button class="tb" data-shphotox="${i}" title="Убрать все снимки со слайда"><i data-lucide="image-off"></i></button>` : ""}` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shframe="${i}" aria-pressed="${FRAME?.i === i}" title="Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}"><i data-lucide="frame"></i></button>`}${s.center && s.kind !== "tep" ? `<button class="tb" data-shreset="${i}" title="Вернуть лист в центр территории"><i data-lucide="locate-fixed"></i></button>` : ""}${["tep", "title"].includes(s.kind) || s.panels ? "" : `<button class="tb" data-shsat="${i}" title="Спутник Яндекса по рамке листа — в AutoCAD, в МСК, 0,3 м на пиксель: чертёж DXF со снимком на своём месте. Shift+щелчок — сменить папку загрузок"><i data-lucide="satellite"></i></button>`}${s.kind === "situation" ? `<button class="tb" data-shpdf="${i}" title="PDF только этого листа"><i data-lucide="file-down"></i></button>` : ""}<button class="tb" data-shprev="${i}" title="Просмотр листа"><i data-lucide="eye"></i></button>${s.kind === "tep" ? "" : `<button class="tb" data-shlay="${i}" title="Макет: правка любой надписи листа — текст, шрифт, кегль, цвет, обводка, поворот, место; свои надписи"><i data-lucide="pencil-ruler"></i></button>`}<button class="tb" data-shup="${i}" title="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист"><i data-lucide="trash-2"></i></button></td></tr>`).join("")}</tbody></table>`
       : `<div class="note">Листов пока нет. Лист берёт вид карты (окно «Виды») или текущую карту, рамку А3/А1 по ГОСТ, легенду и ТЭП.</div>`)
     + `<div class="pad row" style="flex-wrap:wrap"><button class="btn" id="shAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в таблице"><i data-lucide="file-plus"></i>Добавить лист</button><select id="shSlide" aria-label="Формат слайдов раздела" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (ALBUM.meta.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select><button class="btn" id="shSec1" title="Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов"><i data-lucide="layout-template"></i>Раздел 1: существующее положение</button><button class="btn" id="shPptKrt" title="Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи"><i data-lucide="presentation"></i>Альбом ППТ КРТ</button><button class="btn" id="shSit" title="Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл"><i data-lucide="map"></i>Ситуационный план А4</button><span class="sp" style="flex:1"></span><button class="btn" id="shPptx" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button><button class="btn primary" id="shPdf" title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF альбома</button></div>`
+    + `<div class="note" id="shStat" style="padding:0 10px 8px">${esc(albumStatText())}</div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div>`;
   icons();
 }

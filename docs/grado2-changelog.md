@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.96.3: dragging never selects text; the album status line.** Owner 03.10: «при растягивании
+  окна или вообще при протаскивании мышкой выделяется беспорядочно текст». While a mouse button is held outside
+  fields and table cells, `<html>` carries `.nosel` (user-select none for the whole page, including the table cells a
+  window or splitter is dragged across); it is removed on release, cancel, context menu, loss of window focus and on a
+  move without buttons. Window headers, tab strips, splitters and resize grips do not start a selection at all. Help
+  text stays selectable; a click on a button keeps a selection made in a table. «Листы»: a status line «Альбом: N
+  листов · собран дд.мм.гггг чч:мм» / «Альбом ещё не собирался», plus «PDF/PPTX: сохранён … в папку загрузок»;
+  `builtAt`, `pdfAt`, `pptxAt` live in `ALBUM.meta` and sync in collaboration. Where the album is stored: only in the
+  project file (`album` section); PDF and PPTX go to the browser's downloads folder. Found (not fixed): in a shared
+  project two people editing the album at the same time keep one side's whole album (`mergeMeta` treats `album` as
+  one key) — the other side's sheets are dropped silently.
 - **2026-10-03, ГРАДО 2 v0.96.2: document titles are never shortened in the album.** `docTitle` (albums.js) no longer
   adds «…» to titles over 120 characters. On the КРТ document slides the lists «Проекты планировки территории» /
   «Проекты межевания территории» wrap every title in full; when the list does not fit, the item font steps down

@@ -78,7 +78,7 @@ function clearProject() {
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
   Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
   Object.keys(SOURCES).filter(k => k.startsWith("import:") || SOURCES[k].kind === "fgistp").forEach(k => delete SOURCES[k]);
-  Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" });   // штамп нового проекта — не от прежнего
+  Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined });   // штамп нового проекта — не от прежнего
   TERR = null; TERRSEL = false; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
   $("terrInfo").textContent = "Граница не задана: нарисуйте её на карте (двойной щелчок завершает) или возьмите пример.";
   CUR = null; setSel([]); UNDO.length = 0; REDO.length = 0; GROUPS.length = 0; VIEWS.length = 0; VIEW_CUR = null; ALBUM.sheets.length = 0; delete ALBUM.frames; window.redrawFrames?.(); ERRORS = {}; VARS = []; varSel = -1; measureSrc.clear();
@@ -116,7 +116,7 @@ function applyProject(p) {
     normGroups(); LYR.forEach(l => { l.cache.clear(); l._br = null; if (kindOf(l) !== l._kind || (l.style.maxDen || 0) !== (l._maxDen || 0) || (l.style.minDen || 0) !== (l._minDen || 0)) rebuildLayer(l); else if (l.gl) restyle(l); });
     CUR = lyr(p.current) ? p.current : LYR[0]?.key || null;
     VIEWS.push(...(p.views || []).map(v => ({ ...v, id: safeId(v.id) })));
-    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P" }, safeObj(p.album?.meta)); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; })); ALBUM.frames = p.album?.frames; window.migrateFrames?.();   // листы v0.56 → листы альбома
+    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined }, safeObj(p.album?.meta)); window.hideSheetFrame?.(); ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(p.album?.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; })); ALBUM.frames = p.album?.frames; window.migrateFrames?.();   // листы v0.56 → листы альбома
     if (p.graph) graph.configure(p.graph);
     graph._nodes.forEach(n => n.widgets?.forEach(w => { if (w.value === undefined) w.value = (w.options?.min ?? 0) > 0 ? w.options.min : 0; }));   // проект старой версии: у нового поля узла нет значения
     if (p.view?.center) { sharedView.setCenter(ol.proj.fromLonLat(p.view.center)); sharedView.setZoom(p.view.zoom); }
