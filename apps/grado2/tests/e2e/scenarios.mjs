@@ -620,4 +620,30 @@ export default async p => {
     check(await p.ev(`selectTerr(false); document.body.classList.add("hub-viewer"); selectTerr(true); const a=TERRSEL; $("bEditTerr").click(); const b=TERRSEL; document.body.classList.remove("hub-viewer"); return !a && !b`), "наблюдателю граница на правку не даётся");
     await p.ev(`selectTerr(false); const g=${JSON.stringify(prevT)}; if (g) setTerritory({ geometry: JSON.parse(g) }); UNDO.length = 0; REDO.length = 0; return 1`);
   }
+  // T24: выгрузки GeoJSON для QGIS и Excel — ответ на тот же fetch, что делает кнопка; DXF остаётся одним щелчком
+  await p.ev(`document.body.classList.remove("hub-viewer"); winOpen("wSheets", true); await new Promise(r=>setTimeout(r,200)); if (!ALBUM.sheets.length) $("shAdd").click(); winOpen("wSheets", false);
+    for (let i = 0; i < 40 && !RESULT.tepNode?._tep; i++) await new Promise(r=>setTimeout(r,100));
+    window.__fx = window.fetch; window.__ex = [];
+    window.fetch = async (u, o) => { const r = await window.__fx(u, o); if (String(u).startsWith("/api/export/")) { const b = new Uint8Array(await r.clone().arrayBuffer()); window.__ex.push({ u: String(u), st: r.status, ct: r.headers.get("content-type"), pk: b[0] === 80 && b[1] === 75, body: JSON.parse(o.body) }); } return r; }; return 1`);
+  try {
+    check(await p.ev(`return !!$("bExport") && $("bExport").offsetParent !== null && $("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "false"`), "кнопка DXF на месте, меню «Другие выгрузки» закрыто");
+    await p.ev(`$("bExpMore").click(); return 1`);
+    check(await p.ev(`return !$("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "true" && document.activeElement === $("bExpGeo") && /Excel/.test($("expMenu").innerText)`), "стрелка рядом с DXF открывает меню: GeoJSON для QGIS и Excel");
+    await p.key("Escape", "Escape", { vk: 27 });
+    check(await p.ev(`return $("expMenu").hidden`), "Esc закрывает меню выгрузок");
+    await p.ev(`$("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
+    check(await p.ev(`const e = window.__ex[0]; return !!e && e.u === "/api/export/geojson" && e.st === 200 && e.ct === "application/zip" && e.pk && $("expMenu").hidden
+      && e.body.layers.length === Object.keys(DATA).length + (TERR ? 1 : 0) && e.body.layers.every(l => l.name && l.features) && /GeoJSON готов/.test($("toast").textContent)`), "«GeoJSON для QGIS»: тот же набор слоёв, что у DXF (плюс граница), ответ — zip");
+    await p.ev(`$("bExpMore").click(); $("bExpXls").click(); for (let i = 0; i < 400 && window.__ex.length < 2; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
+    check(await p.ev(`const e = window.__ex[1], t = RESULT.tepNode._tep; return !!e && e.u === "/api/export/xlsx" && e.st === 200 && /spreadsheetml/.test(e.ct) && e.pk
+      && e.body.tep.length > 5 && e.body.tep.every(r => typeof r.value === "number" || r.value === null) && e.body.tep.some(r => typeof r.value === "number" && r.value > 0)
+      && e.body.sheets.length === ALBUM.sheets.length && e.body.sheets[0].n === 1 && typeof e.body.project === "string" && e.body.project.length > 0
+      && (t.constantsChanged?.length ? e.body.note === "Нормативы изменены вручную: " + t.constantsChanged.length : e.body.note === undefined)`), "«Excel: ТЭП и листы»: показатели числами, список листов, название проекта; ответ — xlsx");
+    await p.ev(`RESULT.tepNode._tep.constantsChanged = ["x", "y"]; $("bExpMore").click(); $("bExpXls").click(); for (let i = 0; i < 50 && window.__ex.length < 3; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
+    check(await p.ev(`return window.__ex[2]?.body.note === "Нормативы изменены вручную: 2"`), "Excel: при изменённых нормативах в файл идёт пометка «Нормативы изменены вручную: N»");
+    // наблюдатель совместного проекта выгружает так же, как DXF; ошибка сервера — простыми словами
+    check(await p.ev(`document.body.classList.add("hub-viewer"); const n = window.__ex.length; $("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 50 && window.__ex.length === n; i++) await new Promise(r=>setTimeout(r,100)); document.body.classList.remove("hub-viewer"); return window.__ex.length === n + 1 && window.__ex[n].st === 200`), "наблюдатель может выгрузить GeoJSON, как DXF");
+    check(await p.ev(`const f = window.fetch; window.fetch = async () => new Response("{}", { status: 500 }); $("bExpMore").click(); $("bExpGeo").click(); await new Promise(r=>setTimeout(r,300)); window.fetch = f;
+      return /GeoJSON не выгружен: сервер не принял данные\./.test($("toast").textContent) && !$("bExpMore").disabled && $("busy").hidden`), "ошибка выгрузки — по-русски в сообщении, кнопки снова доступны");
+  } finally { await p.ev(`window.fetch = window.__fx; return 1`); }
 };

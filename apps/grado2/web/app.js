@@ -620,18 +620,52 @@ mapDrop.addEventListener("drop", e => { mapDrop.classList.remove("dropfile"); if
   const fs = [...e.dataTransfer.files], proj = fs.find(f => /\.grado2$/i.test(f.name));
   if (proj) return window.openProjectFile?.(proj);          // файл проекта открывается как проект
   importFiles(fs); });
-$("bExport").onclick = async () => {
+// слои выгрузки: все слои проекта (в них же принятый эскиз и слои ограничений) и граница территории — одни и те же для DXF и GeoJSON
+const exportLayers = () => {
   const layers = Object.entries(DATA).map(([k, d]) => ({ name: d.title, features: d.fc, color: k === "gisogd.red_lines" ? "#d7191c" : "#808080", floors: d.fc.features.some(f => f.properties?.["Этажность"]) }));
   if (TERR) layers.push({ name: "Граница территории", features: turf.featureCollection([TERR]), color: "#b3261e" });
-  if (!layers.length) return toast("Экспортировать нечего: загрузите данные, нарисуйте объекты или примите эскиз в проект.");
-  busy(true);
-  try {
-    const r = await fetch("/api/export/dxf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layers }) });
-    if (!r.ok) throw new Error((await r.json()).error);
-    const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = "grado2-dxf.zip"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    toast("DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МСК (как в QGIS), метры. Файл сохранён в папку загрузок браузера.");
-  } catch (err) { toast("Экспорт не удался: " + err.message); } finally { busy(false); }
+  return layers;
 };
+const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
+// выгрузка на сервер и сохранение файла; ошибка сервера — по-русски, подробности в консоль
+async function exportTo(path, body, file, okText, failText) {
+  busy(true); $("bExpMore").disabled = true;
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const j = await r.json().catch(() => ({})); console.warn("export", path, r.status, j.error); throw new Error(r.status === 413 ? "слишком много данных" : r.status === 401 || r.status === 403 ? "нет доступа, войдите заново" : "сервер не принял данные"); }
+    saveBlob(await r.blob(), file); toast(okText);
+  } catch (err) { toast(`${failText}: ${err instanceof TypeError ? "нет связи с программой" : err.message}.`); } finally { busy(false); $("bExpMore").disabled = false; }
+}
+$("bExport").onclick = () => {
+  const layers = exportLayers();
+  if (!layers.length) return toast("Экспортировать нечего: загрузите данные, нарисуйте объекты или примите эскиз в проект.");
+  exportTo("/api/export/dxf", { layers }, "grado2-dxf.zip", "DXF готов: в архиве чертёж, red_lns.shx и REDLN97.LIN. Координаты — МСК (как в QGIS), метры. Файл сохранён в папку загрузок браузера.", "Экспорт не удался");
+};
+$("bExpGeo").onclick = () => {
+  const layers = exportLayers().map(({ name, features }) => ({ name, features }));
+  if (!layers.length) return toast("Экспортировать нечего: загрузите данные, нарисуйте объекты или примите эскиз в проект.");
+  exportTo("/api/export/geojson", { layers }, "grado2-geojson-msk.zip", "GeoJSON готов: в архиве по файлу на слой и README.txt. Координаты — МСК (как в QGIS), метры. Файл сохранён в папку загрузок браузера.", "GeoJSON не выгружен");
+};
+$("bExpXls").onclick = () => {
+  const t = RESULT.tepNode?._tep, num = v => v == null || v === "" || !Number.isFinite(+v) ? null : +(+v).toFixed(6);   // пустое значение — пустая ячейка, а не ноль
+  const sheets = ALBUM.sheets.map((s, i) => ({ n: i + 1, title: s.title || "", format: (SIZE_T[s.size] || s.size || "").replace(" без штампа", "") + (isPaper(s.size) && s.orient === "P" ? " книжн." : ""),
+    scale: ["tep", "title", "photos"].includes(s.kind) || s.panels ? null : Math.round(sheetScale(s)) }));
+  if (!t && !sheets.length) return toast("В Excel пока нечего выгружать: нужна граница территории (тогда посчитаются показатели) или листы альбома.");
+  const tep = t ? [["Территория и эскиз", "Территория", t.terr, "га"], ["Территория и эскиз", "СПП новая", t.sppNew / 1000, "тыс. м²"], ["Территория и эскиз", "СПП сохраняемая", t.sppKept / 1000, "тыс. м²"],
+    ["Территория и эскиз", "Плотность", t.density, "тыс. м²/га"], ["Территория и эскиз", "Застроенность", t.cover * 100, "%"]]
+    .map(([group, title, v, unit]) => ({ group, title, value: num(v), unit })).concat(t.metrics.map(m => ({ group: m.group || "Прочее", title: m.title, value: num(m.value), unit: m.unit || "" }))) : [];
+  exportTo("/api/export/xlsx", { tep, sheets, project: PROJ.name || "Без названия", ...(t?.constantsChanged?.length ? { note: `Нормативы изменены вручную: ${t.constantsChanged.length}` } : {}) },
+    "grado2-tep.xlsx", "Excel готов: показатели ТЭП и список листов. Файл сохранён в папку загрузок браузера.", "Excel не выгружен");
+};
+const expMenu = on => { $("expMenu").hidden = !on; $("bExpMore").setAttribute("aria-expanded", on); if (on) $("bExpGeo").focus(); };
+$("bExpMore").onclick = e => { e.stopPropagation(); expMenu($("expMenu").hidden); };
+$("expMenu").addEventListener("click", () => expMenu(false));
+$("expMenu").addEventListener("keydown", e => {
+  const items = [...$("expMenu").querySelectorAll("button")], i = items.indexOf(document.activeElement);
+  if (e.key === "Escape") { e.stopPropagation(); expMenu(false); $("bExpMore").focus(); }
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
+});
+addEventListener("pointerdown", e => { if (!$("expMenu").hidden && !e.target.closest(".expmore")) expMenu(false); });
 
 /* «DXF ГИС ОГД»: все слои ГИС ОГД внутри листа, нарисованного на карте (frames.js), — чертёж для передачи: МСК,
    слой портала на своём слое, лист бумаги с видовым экраном в масштабе. Кнопка в шапке берёт выбранный лист или
@@ -868,9 +902,12 @@ function tepParams(n) {
 }
 function placeLookup(n) {
   const tp = tepParams(n); if (!TERR || tp.rev === TERR_REV || n._placeBusy) return;
+  // правка границы (ручки, перенос) — серия версий: запрос уходит, когда граница не менялась 0,4 с; первый запрос — сразу
+  if (n._placeSeen !== TERR_REV) { n._placeSeen = TERR_REV; n._placeAt = Date.now(); }
+  if (tp.rev !== -1 && Date.now() - n._placeAt < 400) { clearTimeout(n._placeT); n._placeT = setTimeout(() => placeLookup(n), 420 - (Date.now() - n._placeAt)); return; }
   n._placeBusy = true; const rev = TERR_REV, [lon, lat] = turf.centroid(TERR).geometry.coordinates;
-  api("/api/place", { lon, lat }).then(r => {
-    tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.walkRoute = false; tp.station = ""; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
+  api("/api/place", { lon, lat, polygon: TERR.geometry }).then(r => {
+    tp.districts = r.chosen_by === "area" ? r.districts || [] : []; tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.walkRoute = false; tp.station = ""; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
     if (tp.auto) Object.assign(tp, { zone: r.zone, k1: r.k1, k2: r.k2, tinao: r.tinao });
     recompute(true); renderTep();
     // K1 по улицам: маршрут по пешеходной сети OSM до входа или станции (первый раз — до пары минут, дальше с диска)
@@ -883,15 +920,7 @@ function placeLookup(n) {
       if (tp.auto) tp.k1 = q.route_m < 1200 ? 0.75 : q.route_m <= 2200 ? 0.9 : 1.0;
       recompute(true); renderTep();
     }).catch(() => { if (tp.rev === rev) { tp.routing = false; renderTep(); } });
-    // граница в нескольких районах: районы в точках внутри границы, кроме центра
-    const bb = turf.bbox(TERR), c = [lon, lat], pts = [[bb[0], bb[1]], [bb[2], bb[1]], [bb[2], bb[3]], [bb[0], bb[3]]]
-      .map(q => [c[0] + (q[0] - c[0]) * .7, c[1] + (q[1] - c[1]) * .7]).filter(q => turf.booleanPointInPolygon(q, TERR));
-    Promise.all(pts.map(q => api("/api/place", { lon: q[0], lat: q[1] }).catch(() => null))).then(rs => {
-      if (tp.rev !== rev) return;
-      const other = [...new Set(rs.filter(Boolean).map(x => x.district).filter(d => d && d !== r.district))];
-      if (other.length) { tp.notes = [...(tp.notes || []).filter(x => !/нескольких районах/.test(x)), `граница лежит в нескольких районах: ${[r.district, ...other].join(", ")} — зона, K2 и ТиНАО взяты по району центра («${r.district}»), проверьте`]; renderTep(); }
-    });
-  }).catch(e => { tp.rev = rev; tp.notes = ["район не определён: " + e.message + " — задайте зону и K1, K2 вручную"]; renderTep(); }).finally(() => { n._placeBusy = false; });
+  }).catch(e => { tp.rev = rev; tp.districts = []; tp.notes = ["район не определён: " + e.message + " — задайте зону и K1, K2 вручную"]; renderTep(); }).finally(() => { n._placeBusy = false; });
 }
 /* ТЭП: геометрические части — здесь, нормативная часть — движок ядра на сервере */
 function keptBuildings(kept) { const src = kept?.properties?._src || []; return src.filter(f => /Polygon/.test(f.geometry.type) && insideTerr(f)); }
@@ -1218,7 +1247,7 @@ lgc.onNodeDeselected = () => { selNode = null; updateAnalysisMap(); };
 function fitGraph(min = .6) {
   const box = $("graphbox").getBoundingClientRect(), ns = graph._nodes; if (!ns.length || !box.width) return;
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
-  const s = Math.max(min, Math.min(1.1, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка
+  const k = (parseFloat(getComputedStyle(document.body).fontSize) || 12) / 12, s = Math.max(min * k, Math.min(1.1 * k, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка; на крупном экране масштаб графа растёт вместе с интерфейсом (--k = размер шрифта страницы / 12; uiK() на calc() даёт 1), положения узлов в файле не меняются
   lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
 }
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
@@ -1387,6 +1416,8 @@ function takePzzTarget(silent) {
 }
 window.takePzzTarget = takePzzTarget;
 const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
+// «по большей доле площади: Хорошёвский 62 %, Беговой 38 %» — не больше трёх районов, остальные «и ещё N»
+const districtShares = ds => "по большей доле площади: " + ds.slice(0, 3).map(d => `${d.name}\u00a0${d.share > 0 && d.share < .005 ? "<1" : Math.round(d.share * 100)}\u00a0%`).join(", ") + (ds.length > 3 ? ` и ещё ${ds.length - 3}` : "");
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
   window.Norms?.refresh();
@@ -1398,6 +1429,7 @@ function renderTep() {
   const byGroup = {}; t.metrics.forEach(m => (byGroup[m.group || "Прочее"] ||= []).push(m));
   const place = `<div class="sect">Территория расчёта</div><div class="pad tepp">
       <div class="row"><label>Район</label><b>${esc(tp.district || "определяется…")}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
+      ${(tp.districts || []).length > 1 ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="Район, зона образования, K2 и ТиНАО взяты у района с наибольшей долей площади границы">${esc(districtShares(tp.districts))}</small></div>` : ""}
       <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
       <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}</div>
       ${tp.walk != null ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="${tp.walkRoute ? "пешеходный маршрут по улицам и дорожкам OSM от центра территории" : "прямое расстояние до ближайшего входа или станции метро, МЦК, МЦД × 1,3 (маршрут по улицам считается)"}">${tp.walkRoute ? "" : "≈ "}${fmt(tp.walk)} м ${tp.walkRoute ? "пешком по улицам" : "до станции"}${tp.station ? ` · ${esc(tp.station)}` : ""}${tp.routing ? " · маршрут по улицам считается (первый раз до 2 минут)…" : ""}</small></div>` : ""}
@@ -1495,15 +1527,21 @@ let varRun = null;                 // идущий подбор: {stop}
 /* Показатели вариантов считаются при подборе; когда меняются нормативы или параметры территории («Нормативы расчёта», «Показатели»),
    таблица вариантов пересчитывается тем же запросом tepRequest, чтобы числа в ней совпадали с окном «Показатели». */
 let varTepKey = null, varTepTimer = 0, varTepSeq = 0;
+// показатели всех вариантов: не больше 4 запросов одновременно; stale() — ответ устарел, остальные запросы не посылаются
+async function tepForVars(vs, kept, lim, share, target, tp, stale = () => false) {
+  const out = new Array(vs.length); let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, vs.length) }, async () => { while (next < vs.length && !stale()) { const i = next++; out[i] = await tepRequest(vs[i].sk, kept, lim, share, target, tp); } }));
+  return out;
+}
 function varTepKeyNow() { const t = RESULT.tepNode; if (!t) return null; const q = tepParams(t);
   return [JSON.stringify(q.constants || {}), q.nonres, q.zone, q.k1, q.k2, q.tinao, q.mode, q.unbuilt, t.widgets[0].value, t.widgets[1].value, gid(t.getInputData(1)), gid(t.getInputData(2)), TERR_REV, dataRev].join("|"); }
 function syncVarTep() {
   if (!VARS.length || varRun || !RESULT.tepNode || varTepKey === null || varTepKey === varTepKeyNow()) return;
   clearTimeout(varTepTimer); varTepTimer = setTimeout(async () => {
     const t = RESULT.tepNode, key = varTepKeyNow(); if (!t || !VARS.length || varRun || key === varTepKey) return;
-    const seq = ++varTepSeq, epoch = window.PROJ_EPOCH, vs = VARS.slice(0, 6), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), tp = JSON.parse(JSON.stringify(tepParams(t)));
+    const seq = ++varTepSeq, epoch = window.PROJ_EPOCH, vs = VARS.slice(), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), tp = JSON.parse(JSON.stringify(tepParams(t)));
     busy(true);
-    try { const res = await Promise.all(vs.map(v => tepRequest(v.sk, kept, lim, share, target, tp)));
+    try { const res = await tepForVars(vs, kept, lim, share, target, tp, () => seq !== varTepSeq || epoch !== window.PROJ_EPOCH);
       if (seq !== varTepSeq || epoch !== window.PROJ_EPOCH) return;
       vs.forEach((v, i) => { v.tep = res[i]; }); varTepKey = key; renderVars(); }
     catch (e) { console.warn("варианты: пересчёт показателей не удался", e); }
@@ -1542,7 +1580,7 @@ $("bGen").onclick = async () => {
     VARS.forEach(v => { v.score = v.err + (v.own == null ? .3 : (100 - v.own) / 100 * .5); });   // недобор инсоляции весит как половина отклонения плотности
     VARS.sort((a, b) => a.score - b.score);
     varProgress(total - 1, total, "Показатели лучших вариантов…");
-    varTepKey = varTepKeyNow(); await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target, tepParams(t)); }));
+    varTepKey = varTepKeyNow(); { const vs = VARS.slice(), res = await tepForVars(vs, kept, lim, share, target, tepParams(t), () => epoch !== window.PROJ_EPOCH); vs.forEach((v, i) => { v.tep = res[i]; }); }
     if (epoch !== window.PROJ_EPOCH) { VARS = []; return toast("Подбор вариантов для прежнего проекта отброшен."); }
     varSel = -1; renderVars();
     if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
@@ -1787,7 +1825,7 @@ $("winMenu").addEventListener("keydown", e => {
   if (e.key === "Escape") { e.stopPropagation(); winMenu(false); $("bMore").focus(); }
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
 });
-addEventListener("pointerdown", e => { if (!$("winMenu").hidden && !e.target.closest(".more")) winMenu(false); });
+addEventListener("pointerdown", e => { if (!$("winMenu").hidden && (!e.target.closest(".more") || e.target.closest(".expmore"))) winMenu(false); });
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
   // узкое окно: панели выезжают поверх карты — открыта только одна, иначе вдвоём они закрывают почти всю карту

@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.95.0: exports for QGIS and Excel, district by area share, layer search.** A small arrow next
+  to «DXF» opens «GeoJSON для QGIS» (the same layers as the DXF export plus the boundary → zip with one МСК file per
+  layer) and «Excel: ТЭП и листы» (numbers as numeric cells, empty values as empty cells, the sheet list, the project
+  name and the note «Нормативы изменены вручную: N»); DXF stays one click. The territory polygon goes to `/api/place`
+  (one request 0.4 s after the last boundary edit): «Показатели» shows under «Район» «по большей доле площади: Беговой
+  51 %, Хорошёвский 49 %»; a failed lookup clears the old shares. The new ТЭП group «Участки социальных объектов» of
+  v0.94.1 appears in «Показатели» by itself. All variants get «Население» and «ДОО, мест» (four requests at a time).
+  The node graph view scales with the interface size on large screens. «Слои» has a search field («ё» = «е», Esc
+  clears; not in the by-sheet mode). The status hint is fitted by a binary search. Between 1481 and 2000 px «Слои» and
+  «Свойства» moved from the top bar into «Окна»: the bar did not fit at 1920 before. Opening the export menu closes
+  «Окна». E2E: the export steps wait up to 40 s (the 100 000-object test layer took over 5 s on a busy machine —
+  one false failure). Open: layer search in the by-sheet mode; `uiK()` reads a `calc()` and returns 1, so default
+  floating-window sizes do not grow on large screens; hidden layers are exported like in DXF; hub project list after
+  login was checked only by the collab scenario.
 - **2026-10-02, ГРАДО 2 v0.94.1: plot areas of social objects in ТЭП; sturdier GeoJSON export (server part).**
   New ТЭП group «Участки социальных объектов»: «Число ДОО», «Участок ДОО, га (не менее)», «Число школ», «Участок
   школы, га (не менее)», «Число поликлиник», «Участок поликлиники, га (не менее)», from the demand already computed.

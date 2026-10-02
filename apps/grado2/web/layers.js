@@ -514,24 +514,29 @@ function setBySheet(on) {
   renderTree();
 }
 window.setBySheet = setBySheet;
+/* поиск по слоям: фильтр дерева по названию (регистр и «ё» не важны); группа с найденным слоем показывается раскрытой, не меняя своего состояния */
+let LQ = "";
+const normQ = v => String(v ?? "").toLowerCase().replace(/ё/g, "е");
 function renderTree0() {
   const el = $("layerTree"); if (!el) return;
   if (BY_SHEET && LYR.length) { el.innerHTML = sheetTreeHTML(); syncCurSelect(); syncStart(); icons(); return; }
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Схема расчёта», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Сохранить слоем».">Предпросмотр схемы${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
   if (!LYR.length) { el.innerHTML = `<div class="note" title="Слой появится сам, как только выберете инструмент рисования; «+» над списком создаёт пустой слой.">Слоёв нет. Нарисуйте объект или <button class="lnk" data-open-data>загрузите данные</button>.</div>` + res; icons(); syncStart(); syncCurSelect(); return; }
-  let h = "", prevG = null;
+  let h = "", prevG = null; const hit = l => !LQ || normQ(l.title).includes(LQ);
+  if (LQ && !LYR.some(hit)) h = `<div class="note">Нет слоёв с таким названием. Esc — сбросить поиск.</div>`;
   LYR.forEach(l => {
+    if (!hit(l)) return;
     const g = l.group && grp(l.group);
     if (g && l.group !== prevG) {
       const n = LYR.filter(x => x.group === g.id).length;
       h += `<div class="tn gr ${g.visible ? "" : "off"}" draggable="true" data-gk="${esc(g.id)}" title="Группа слоёв: перетаскивается целиком, двойной щелчок — переименовать">
-        <button class="tw" data-gtw="${esc(g.id)}" aria-label="${g.open ? "Свернуть" : "Развернуть"} группу"><i data-lucide="${g.open ? "chevron-down" : "chevron-right"}"></i></button>
-        <input type="checkbox" data-gvis="${esc(g.id)}" ${g.visible ? "checked" : ""} aria-label="Видимость группы"><i data-lucide="${g.open ? "folder-open" : "folder"}" class="gi"></i>
+        <button class="tw" data-gtw="${esc(g.id)}" aria-label="${(g.open || LQ) ? "Свернуть" : "Развернуть"} группу"><i data-lucide="${(g.open || LQ) ? "chevron-down" : "chevron-right"}"></i></button>
+        <input type="checkbox" data-gvis="${esc(g.id)}" ${g.visible ? "checked" : ""} aria-label="Видимость группы"><i data-lucide="${(g.open || LQ) ? "folder-open" : "folder"}" class="gi"></i>
         <span class="nm" title="${esc(g.title)}">${esc(g.title)}</span><span class="meta num">${n}</span>
         <button class="tw more" data-gmore="${esc(g.id)}" aria-label="Меню группы"><i data-lucide="more-horizontal"></i></button></div>`;
     }
     prevG = l.group;
-    if (g && !g.open) return;
+    if (g && !g.open && !LQ) return;
     h += rowHTML(l, g ? " in" : "", true);
   });
   el.innerHTML = h + res;
@@ -539,6 +544,8 @@ function renderTree0() {
   icons();
 }
 const tree = () => $("layerTree");
+$("lySearch").addEventListener("input", e => { LQ = normQ(e.target.value.trim()); renderTree(); });
+$("lySearch").addEventListener("keydown", e => { if (e.key === "Escape" && e.target.value) { e.stopPropagation(); e.target.value = ""; LQ = ""; renderTree(); } });
 document.addEventListener("click", e => {
   const t = e.target;
   if (!tree()?.contains(t)) return;
@@ -1246,7 +1253,11 @@ function fitHint(text, full) {
   if (el.scrollWidth <= el.clientWidth + 1) return;
   let t = text.replace(/\s*F1 — клавиши\.?$/, "").replace(/[.]$/, ""); el.textContent = t; el.title = full;
   if (el.scrollWidth <= el.clientWidth + 1) return;
-  const w = t.split(" "); while (w.length > 3 && el.scrollWidth > el.clientWidth + 1) { w.pop(); el.textContent = w.join(" ").replace(/[,;:—-]$/, "") + "…"; }
+  // бинарный поиск числа слов (не меньше трёх): одно чтение раскладки на шаг вместо одного на каждое отброшенное слово
+  const w = t.split(" "), put = n => { el.textContent = w.slice(0, n).join(" ").replace(/[,;:—-]$/, "") + "…"; return el.scrollWidth <= el.clientWidth + 1; };
+  let lo = 3, hi = w.length - 1;                       // lo — всегда допустимо (минимум), hi — наибольшее, что ещё проверяем
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (put(m)) lo = m; else hi = m - 1; }
+  if (w.length > 3) put(lo);
 }
 addEventListener("resize", () => { if (hintOverride === null && hintFit && !(UIS.tool === "cmd" && CAD.active())) fitHint(hintFit.text, hintFit.full); });
 function syncStatus() {
