@@ -25,14 +25,14 @@
   color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#4a4a4a;
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#27405f;
   --accent:#5b9bec; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#ef6b5f;
-  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text);
+  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }}
 :root[data-theme="dark"]{
   color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#4a4a4a;
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#27405f;
   --accent:#5b9bec; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#ef6b5f;
-  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text);
+  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }
 /* масштаб интерфейса: один множитель --k на все размеры текста, высоты строк и кнопок и значки (карта и граф не масштабируются).
@@ -282,9 +282,9 @@ table.sheets input[type=checkbox]{width:auto;height:auto;display:block;margin:0 
 .ol-dragbox.selbox{border:1.5px solid var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .ol-dragbox.selbox.cross{border:1.5px dashed var(--good);background:color-mix(in srgb,var(--good) 10%,transparent)}
 kbd{font:var(--fs-s) var(--mono);border:1px solid var(--line-2);border-bottom-width:2px;border-radius:var(--r-1);padding:0 4px;background:var(--field);color:var(--text);white-space:nowrap}
-table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;border-bottom:1px solid var(--line);vertical-align:top}table.keys td:first-child{width:1%;white-space:nowrap}
+.hbar{position:sticky;top:0;z-index:2;background:var(--panel);border-bottom:1px solid var(--line);padding:6px 8px;display:grid;gap:5px}.hbar input[type=search]{height:var(--h-sm);border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0 6px;min-width:0;width:100%}.hcontents{display:flex;flex-wrap:wrap;gap:2px 12px}.hcontents a,.htop{color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}.hcontents a:hover,.htop:hover{color:var(--text)}.htop{float:right;font-weight:400}.hsec[hidden],.hsec tr[hidden]{display:none}table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;border-bottom:1px solid var(--line);vertical-align:top}table.keys td:first-child{width:1%;white-space:nowrap}
 .start{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);z-index:var(--z-map);background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-2);box-shadow:var(--sh-2);padding:12px;display:flex;flex-direction:column;gap:6px;min-width:300px}
-.starth{display:flex;align-items:center;justify-content:space-between;margin:-4px -4px 2px 0}.start b{font-size:var(--fs-l)}.start .btn{justify-content:flex-start;height:var(--h-md)}.start .btn kbd{margin-left:auto}
+.starth{display:flex;align-items:center;justify-content:space-between;margin:-4px -4px 2px 0}.start b{font-size:var(--fs-l)}.start .btn{justify-content:flex-start;height:var(--h-md)}.start .btn kbd{margin-left:auto}.startp{margin:0 0 4px;max-width:300px;color:var(--text);line-height:1.45}.start .btn.primary kbd{opacity:.8}.startmore{display:flex;flex-wrap:wrap;gap:2px 12px;margin-top:2px}.startmore button{border:0;background:none;padding:2px 0;color:var(--accent);text-decoration:underline;text-underline-offset:2px;cursor:pointer}.startmore button:hover{color:var(--text)}
 .pop{position:fixed;z-index:var(--z-pop);background:var(--panel);border:1px solid var(--line-2);box-shadow:var(--sh-2);padding:6px;width:196px;border-radius:var(--r-2)}
 .pop .g{display:grid;grid-template-columns:repeat(8,1fr);gap:3px;margin-bottom:6px}
 .pop .g button{aspect-ratio:1;border:1px solid rgba(0,0,0,.25);padding:0;border-radius:var(--r-1)}
@@ -532,11 +532,10 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
       <div class="msearch" id="msearch" role="search"><div class="msf"><input type="text" id="sq" placeholder="Адрес или кадастровый номер" autocomplete="off" spellcheck="false" aria-label="Поиск по адресу или кадастровому номеру" aria-controls="sres"><button class="tb" id="sqGo" title="Найти (Enter)" aria-label="Найти"><i data-lucide="search"></i></button></div><div class="sres" id="sres" role="listbox" hidden></div></div>
       <div class="mtools"><button class="tb" id="hubCTool" aria-pressed="false" hidden title="Комментарий: щёлкните по карте, где нужна метка (Esc — отмена)"><i data-lucide="message-square-plus"></i></button><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
       <div class="start" id="start" hidden role="dialog" aria-label="С чего начать"><div class="starth"><b>С чего начать</b><button class="tb" data-close-start title="Закрыть (Esc). Эти действия есть в справке F1" aria-label="Закрыть"><i data-lucide="x"></i></button></div>
-        <button class="btn" data-go="example"><i data-lucide="map-pin"></i>Пример территории и выгрузка данных</button>
-        <button class="btn" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу территории<kbd>BO</kbd></button>
-        <button class="btn" data-go="draw"><i data-lucide="pentagon"></i>Чертить с нуля<kbd>PL</kbd></button>
-        <button class="btn" data-go="proj"><i data-lucide="folder-open"></i>Открыть проект</button>
-        <button class="btn" data-go="keys"><i data-lucide="circle-help"></i>Как работать и клавиши<kbd>F1</kbd></button></div></div>
+        <p class="startp">Начните с границы территории: по ней загрузятся данные, построится эскиз и соберётся лист PDF.</p>
+        <button class="btn primary" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу<kbd>BO</kbd></button>
+        <button class="btn" data-go="example"><i data-lucide="map-pin"></i>Пример</button>
+        <div class="startmore"><button data-go="draw" title="Чертить с нуля, команда PL">Чертить с нуля</button><button data-go="proj">Открыть проект</button><button data-go="keys" title="Справка и клавиши, F1">Справка F1</button></div></div></div>
       <div class="dz b" id="dzB"></div></div>
     <aside class="side r">
       <div class="dtabs" role="tablist"><button data-rtab="style" aria-selected="true" role="tab">Стиль</button><button data-rtab="obj" aria-selected="false" role="tab">Объект</button><button class="tb drawerx" data-dock="R" title="Закрыть панель свойств" aria-label="Закрыть панель свойств"><i data-lucide="x"></i></button></div>

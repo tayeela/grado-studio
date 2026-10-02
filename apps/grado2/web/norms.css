@@ -12,7 +12,8 @@
 #norms details[open]>summary::before{transform:rotate(45deg)}
 #norms summary small{font-weight:400;color:var(--accent)}
 #norms .nrow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;padding:6px 8px;border-left:3px solid transparent;border-bottom:1px solid var(--line)}
-#norms .nrow.chg{border-left-color:var(--accent)}
+#norms .nrow.chg{border-left-color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+#norms .nrow.chg input[type=number]{border-color:var(--accent)}
 #norms .nrow .nt{flex:1 1 230px;min-width:0;line-height:1.35}
 #norms .nrow .nin{flex:0 0 auto;display:flex;align-items:center;gap:6px}
 #norms .nrow input[type=number]{width:92px;height:var(--h-sm);border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0 5px;text-align:right}

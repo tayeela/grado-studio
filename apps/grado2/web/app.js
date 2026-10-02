@@ -89,7 +89,16 @@ function rot([x, y], a, c) { const s = Math.sin(a), k = Math.cos(a), dx = x - c[
 const GJ = new ol.format.GeoJSON({ featureProjection: "EPSG:3857" });
 const toOl = f => GJ.readFeature(f);
 const sharedView = new ol.View({ center: ol.proj.fromLonLat([37.525, 55.7925]), zoom: 15 });
-const interactions = () => (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false, shiftDragZoom: false });   // Shift+тянуть — рамка выбора
+/* колесо мыши спокойнее (T9): штатно 300 условных единиц на уровень — одна «щёлка» (100) даёт треть уровня, десять щёлок ≈ 10× масштаб.
+   Для колеса — 1000 на уровень (десять щёлок ≈ 2×); трекпад и щипок (мелкие шаги дельты, режим «trackpad» в OpenLayers) остаются плавными, зум к курсору прежний */
+const calmWheel = () => {
+  const m = new ol.interaction.MouseWheelZoom(), proto = Object.getPrototypeOf(m);
+  // настоящая «щёлка» колеса: строчная дельта или целое кратное 100/120 пикселей без Ctrl; щипок (Ctrl) и двупальцевая прокрутка трекпада — прежняя скорость
+  const notch = o => { if (!o || o.ctrlKey) return false; if (o.deltaMode) return true; const d = Math.abs(o.deltaY), near = (v, u) => v >= u * .98 && Math.abs(v / u - Math.round(v / u)) < .02; return d >= 50 && (near(d, 100) || near(d, 120)); };
+  m.handleEvent = e => { m.deltaPerZoom_ = notch(e.originalEvent) ? 1000 : 300; return proto.handleEvent.call(m, e); };
+  return m;
+};
+const interactions = () => { const c = (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false, shiftDragZoom: false, mouseWheelZoom: false }); c.push(calmWheel()); return c; };   // Shift+тянуть — рамка выбора
 /* подложки: схема OSM (серая, приглушённая — чтобы читались знаки), спутник Esri, Sentinel-2 без облаков (EOX), без подложки */
 const BASEMAPS = {
   osm: { title: "Схема OSM", layer: () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 }) },
@@ -731,7 +740,25 @@ $("bOgdAll").onclick = () => {
 Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: "#d6dade", NODE_DEFAULT_BGCOLOR: "#f7f7f5", NODE_DEFAULT_BOXCOLOR: "#8a8d91", NODE_TITLE_COLOR: "#1d1d1f", NODE_SELECTED_TITLE_COLOR: "#000", NODE_TEXT_COLOR: "#333", NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11,
   WIDGET_BGCOLOR: "#ffffff", WIDGET_OUTLINE_COLOR: "#b5b8bc", WIDGET_TEXT_COLOR: "#1d1d1f", WIDGET_SECONDARY_TEXT_COLOR: "#6b6f75", LINK_COLOR: "#7a7e84", CONNECTING_LINK_COLOR: "#2f6fc4", NODE_TITLE_HEIGHT: 24, NODE_SLOT_HEIGHT: 20, NODE_WIDGET_HEIGHT: 20 });
 LGraphNode.prototype.serialize_widgets = true;   // значения полей узлов (слой, фильтр, ползунки) — в файл проекта
-LGraphCanvas.link_type_colors = { geom: "#3f8f5a", num: "#b07a00", sketch: "#2f6fc4", tep: "#8a4ab0" };
+/* цвета графа следуют теме: litegraph читает их из своих констант, поэтому applyGraphTheme переписывает константы и цвета уже созданных узлов (тема меняется на лету). Текст и рамки — токены страницы */
+const GTH = {
+  light: { title: { src: "#cfe3d4", op: "#d6dade", gen: "#cfdcf0", tep: "#e3d6ec", num: "#f0e3c8" }, link: { geom: "#3f8f5a", num: "#b07a00", sketch: "#2f6fc4", tep: "#8a4ab0" }, slider: { gen: "#8fb3e0", num: "#e3b25a", tep: "#c0a6d4" } },
+  dark: { title: { src: "#2f4a38", op: "#3c4148", gen: "#2d4666", tep: "#4a3860", num: "#5a4721" }, link: { geom: "#5cc08c", num: "#e0a13a", sketch: "#5b9bec", tep: "#b98ae0" }, slider: { gen: "#35608f", num: "#7a5a1c", tep: "#6a4a86" } }
+};
+const GT = { title: GTH.light.title, body: "#f7f7f5", border: "#6b6e73", muted: "#5f6368" };
+const isDarkTheme = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+function applyGraphTheme() {
+  const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), P = GTH[isDarkTheme() ? "dark" : "light"];
+  Object.assign(GT, { title: P.title, body: v("--panel"), border: v("--faint"), muted: v("--muted") });
+  Object.assign(LiteGraph, { NODE_DEFAULT_COLOR: P.title.op, NODE_DEFAULT_BGCOLOR: v("--panel"), NODE_DEFAULT_BOXCOLOR: v("--faint"), NODE_TITLE_COLOR: v("--text"), NODE_SELECTED_TITLE_COLOR: v("--text"), NODE_TEXT_COLOR: v("--text"), NODE_BOX_OUTLINE_COLOR: v("--accent"),
+    WIDGET_BGCOLOR: v("--field"), WIDGET_OUTLINE_COLOR: v("--faint"), WIDGET_TEXT_COLOR: v("--text"), WIDGET_SECONDARY_TEXT_COLOR: v("--muted"), LINK_COLOR: v("--faint") });
+  LGraphCanvas.link_type_colors = Object.assign({}, P.link);
+  graph._nodes.forEach(n => { if (n._kind) { n.color = P.title[n._kind]; n.bgcolor = v("--panel"); (n.widgets || []).forEach(w => { if (w.options && w.options.slider_color) w.options.slider_color = P.slider[n._kind] || w.options.slider_color; }); } });
+  try { Object.assign(lgc, { clear_background_color: v("--graph"), node_title_color: v("--text"), default_link_color: v("--faint") }); lgc.setDirty(true, true); } catch { }   // lgc ещё не создан при первом вызове
+}
+/* цвета узлов зависят от темы только на экране: в файл проекта и в общий граф узел пишется всегда со светлыми цветами (как до T27), иначе проект зависел бы от темы того, кто сохранял */
+const _nodeSerialize = LGraphNode.prototype.serialize;
+LGraphNode.prototype.serialize = function () { const o = _nodeSerialize.call(this); if (this._kind) { o.color = GTH.light.title[this._kind]; o.bgcolor = "#f7f7f5"; } return o; };
 const TITLE = { src: "#cfe3d4", op: "#d6dade", gen: "#cfdcf0", tep: "#e3d6ec", num: "#f0e3c8" };
 const OPS = ["—", "=", "≠", ">", "<", "≥", "≤", "содержит", "один из"];
 function testOp(v, op, t) {
@@ -741,8 +768,11 @@ function testOp(v, op, t) {
   const n = !isNaN(+v) && !isNaN(+t) && t !== "", a = n ? +v : String(v), b = n ? +t : String(t);
   return { "=": a == b, "≠": a != b, ">": a > b, "<": a < b, "≥": a >= b, "≤": a <= b }[op];
 }
-function drawInfo(ctx) { if (this.flags.collapsed || !this.info) return; ctx.fillStyle = "#5f6368"; ctx.font = "11px system-ui, sans-serif"; ctx.fillText(fitText(this.info, this.size[0] - 14, ctx.font), 8, this.size[1] - 7); }
-function finish(node, kind, w = 210) { node.color = TITLE[kind]; node.bgcolor = "#f7f7f5"; node.size = node.computeSize(); node.size[0] = Math.max(w, node.size[0]); node.size[1] += 16; node.onDrawForeground = drawInfo; }
+function drawInfo(ctx) {
+  if (this.flags.collapsed) return;
+  ctx.save(); ctx.strokeStyle = GT.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(.5, -LiteGraph.NODE_TITLE_HEIGHT + .5, this.size[0], this.size[1] + LiteGraph.NODE_TITLE_HEIGHT - 1, 8); ctx.stroke(); ctx.restore(); // рамка узла ≥ 3:1 к фону графа в обеих темах
+  if (!this.info) return; ctx.fillStyle = GT.muted; ctx.font = "11px system-ui, sans-serif"; ctx.fillText(fitText(this.info, this.size[0] - 14, ctx.font), 8, this.size[1] - 7); }
+function finish(node, kind, w = 210) { node._kind = kind; node.color = GT.title[kind] || TITLE[kind]; node.bgcolor = GT.body; node.size = node.computeSize(); node.size[0] = Math.max(w, node.size[0]); node.size[1] += 16; node.onDrawForeground = drawInfo; }
 const ha = f => f ? fmt(m2(f) / 1e4, 2) + " га" : "пусто";
 const titleToKey = t => Object.keys(DATA).find(k => DATA[k].title === t) || Object.keys(SOURCES).find(k => SOURCES[k].title === t);
 
@@ -1240,6 +1270,8 @@ nP.connect(0, nTep, 0); nK.connect(0, nTep, 1); nZ.connect(0, nTep, 2);
 
 const lgc = new LGraphCanvas($("gcv"), graph);
 Object.assign(lgc, { background_image: null, clear_background_color: "#e6e6e2", render_canvas_border: false, render_shadows: false, show_info: false, render_connection_arrows: false, title_text_font: GFONT.title, inner_text_font: GFONT.inner, links_render_mode: LiteGraph.SPLINE_LINK });
+applyGraphTheme(); graph.onConfigure = applyGraphTheme;   // загрузка проекта и совместная правка заменяют цвета узлов цветами из файла
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyGraphTheme);
 Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // подписи узлов при любом масштабе
 let selNode = null;
 lgc.onNodeSelected = n => { selNode = n; updateAnalysisMap(); };
@@ -1247,7 +1279,7 @@ lgc.onNodeDeselected = () => { selNode = null; updateAnalysisMap(); };
 function fitGraph(min = .6) {
   const box = $("graphbox").getBoundingClientRect(), ns = graph._nodes; if (!ns.length || !box.width) return;
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
-  const k = (parseFloat(getComputedStyle(document.body).fontSize) || 12) / 12, s = Math.max(min * k, Math.min(1.1 * k, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка; на крупном экране масштаб графа растёт вместе с интерфейсом (--k = размер шрифта страницы / 12; uiK() на calc() даёт 1), положения узлов в файле не меняются
+  const k = uiK(), s = Math.max(min * k, Math.min(1.1 * k, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка; на крупном экране масштаб графа растёт вместе с интерфейсом (--k = размер шрифта страницы / 12, то же читает uiK()), положения узлов в файле не меняются
   lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
 }
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
@@ -1267,6 +1299,7 @@ function recompute(force) {
   const place = graph._nodes.find(n => n.type === "Эскиз/Посадка застройки"), tepN = graph._nodes.find(n => n.type === "Показатели/ТЭП КРТ");
   RESULT = { site: place?.getInputData(0) || null, sketch: place?.getOutputData(0) || [], tep: tepN?._tep || null, placeNode: place, tepNode: tepN };
   lgc.setDirty(true, true); updateAnalysisMap(); renderSketch();
+  const nk = !!RESULT.sketch.length; if (recompute.sk !== nk) { recompute.sk = nk; window.syncStatus?.(); }   // подсказка «что дальше» меняется, когда появился или исчез эскиз
   if (!recompute.once) { recompute.once = true; renderParams(); }
 }
 setInterval(() => { if (window.HUB_MODE === false || window.HUB_IN) recompute(false); }, 250);   // совместный режим: граф считается и ходит на сервер (/api/tep) только после входа
@@ -1763,6 +1796,7 @@ function winOpen(id, on) {
   if (id === "wGraph") $("pv").hidden = !on;
   if (PREVIEW_WINS.includes(id)) syncPreview();
   (WST[id] ||= {}).open = on; saveWins(); syncWinButtons();
+  if (id === "wSheets") window.syncStatus?.();   // подсказка «что дальше» зависит от того, открыты ли «Листы»
 }
 function syncWinButtons() {
   document.querySelectorAll("[data-win]").forEach(b => { const id = b.dataset.win, on = id === "dockL" ? !$("work").classList.contains("noL") : id === "dockR" ? !$("work").classList.contains("noR") : !$(id).hidden;
@@ -1802,7 +1836,8 @@ function setUiSize(v) {
   dispatchEvent(new Event("resize")); mMain.updateSize?.();
   toast(`Размер интерфейса: ${v === "large" ? "крупный" : v === "normal" ? "обычный" : "авто, по ширине экрана"}.`);
 }
-const uiK = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--k")) || 1;
+// --k задан выражением calc(), getPropertyValue отдаёт его текстом (parseFloat даёт 1): масштаб читается по размеру шрифта страницы (12 px × --k), как в fitGraph
+const uiK = () => (parseFloat(getComputedStyle(document.body).fontSize) || 12) / 12;
 function renderWinMenu() {
   const lay = (name, user) => `<button role="menuitem" class="lay" data-layout="${esc(name)}" data-user="${user ? 1 : ""}" title="Открыть окна этой раскладки и расставить их"><i data-lucide="layout-dashboard"></i>${esc(name)}${user ? `<i class="x" data-laydel="${esc(name)}" title="Удалить раскладку">×</i>` : ""}</button>`;
   $("winMenu").innerHTML = WINITEMS + `<div class="mh">Раскладка окон</div>` + Object.keys(LAYOUTS).map(n => lay(n)).join("") + Object.keys(userLayouts()).map(n => lay(n, true)).join("")
@@ -1914,8 +1949,8 @@ addEventListener("resize", () => {
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } };
-try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { }
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); };
+try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS

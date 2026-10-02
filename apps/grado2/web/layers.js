@@ -463,25 +463,27 @@ const sheetView = sh => !sh.keys && !sh.panels && sh.view ? VIEWS.find(x => x.id
 const sheetEditable = sh => !sh.panels && !!(sh.keys || sheetView(sh));
 const mapSheets = () => ALBUM.sheets.filter(s => s.kind !== "title" && s.kind !== "tep");
 function sheetTreeHTML() {
-  const used = new Set(), sheets = mapSheets();
+  const used = new Set(), sheets = mapSheets(), hit = l => !LQ || normQ(l.title).includes(LQ), shut = id => !LQ && SHEET_SHUT.has(id), nh = [];   // поиск слоёв работает и здесь: папки без найденных слоёв скрыты, найденные раскрыты
   const folder = (id, name, n, tools, note) => `<div class="tn gr" data-shk="${esc(id)}">
-      <button class="tw" data-shtw="${esc(id)}" aria-label="${SHEET_SHUT.has(id) ? "Развернуть" : "Свернуть"} папку листа"><i data-lucide="${SHEET_SHUT.has(id) ? "chevron-right" : "chevron-down"}"></i></button>
-      <i data-lucide="${SHEET_SHUT.has(id) ? "folder" : "folder-open"}" class="gi"></i><span class="nm" title="${esc(note || name)}">${esc(name)}</span><span class="meta num">${n}</span>${tools}</div>`;
+      <button class="tw" data-shtw="${esc(id)}" aria-label="${shut(id) ? "Развернуть" : "Свернуть"} папку листа"><i data-lucide="${shut(id) ? "chevron-right" : "chevron-down"}"></i></button>
+      <i data-lucide="${shut(id) ? "folder" : "folder-open"}" class="gi"></i><span class="nm" title="${esc(note || name)}">${esc(name)}</span><span class="meta num">${n}</span>${tools}</div>`;
   let h = sheets.length ? "" : `<div class="note">Листов пока нет: нарисуйте лист инструментом «Лист» или соберите раздел в окне «Листы». Папки слоёв появятся по листам.</div>`;
   sheets.forEach(sh => {
     const ks = sheetKeys(sh), ls = ks ? LYR.filter(l => ks.includes(l.key)) : LYR.filter(l => l.visible), ed = sheetEditable(sh);
     ls.forEach(l => used.add(l.key));
+    const lsh = ls.filter(hit); if (LQ && !lsh.length) return; nh.push(1);
     const tools = `${ks ? `<button class="tw" data-shshow="${esc(sh.id)}" title="Показать на карте только слои этого листа"><i data-lucide="eye"></i></button>` : ""}<button class="tw more" data-shmore="${esc(sh.id)}" aria-label="Меню папки листа"><i data-lucide="more-horizontal"></i></button>`;
-    h += folder(sh.id, `${ALBUM.sheets.indexOf(sh) + 1}. ${sh.title}`, ls.length, tools,
+    h += folder(sh.id, `${ALBUM.sheets.indexOf(sh) + 1}. ${sh.title}`, LQ ? lsh.length : ls.length, tools,
       ks ? (ed ? "Слои листа. Добавить слой — меню «…» папки, убрать — крестик у слоя" : "Слои листа раздела заданы шаблоном раздела") : "Лист показывает текущую карту: здесь видимые слои. Меню «…» → «Закрепить состав листа»");
-    if (SHEET_SHUT.has(sh.id)) return;
-    ls.forEach(l => { h += rowHTML(l, " in", false, ed ? `<button class="tw" data-shrm="${esc(sh.id)}|${esc(l.key)}" title="Убрать слой с листа «${esc(sh.title)}» (слой остаётся в проекте)"><i data-lucide="x"></i></button>` : ""); });
+    if (shut(sh.id)) return;
+    lsh.forEach(l => { h += rowHTML(l, " in", false, ed ? `<button class="tw" data-shrm="${esc(sh.id)}|${esc(l.key)}" title="Убрать слой с листа «${esc(sh.title)}» (слой остаётся в проекте)"><i data-lucide="x"></i></button>` : ""); });
   });
-  const rest = LYR.filter(l => !used.has(l.key));
+  const rest = LYR.filter(l => !used.has(l.key) && hit(l));
   if (rest.length) {
-    h += folder("_rest", "Не на листах", rest.length, "", "Слои, которых нет ни на одном листе");
-    if (!SHEET_SHUT.has("_rest")) rest.forEach(l => { h += rowHTML(l, " in", false); });
+    nh.push(1); h += folder("_rest", "Не на листах", rest.length, "", "Слои, которых нет ни на одном листе");
+    if (!shut("_rest")) rest.forEach(l => { h += rowHTML(l, " in", false); });
   }
+  if (LQ && !nh.length) h += `<div class="note">Нет слоёв с таким названием. Esc — сбросить поиск.</div>`;
   return h;
 }
 function showSheet(sh) {
@@ -1260,17 +1262,26 @@ function fitHint(text, full) {
   if (w.length > 3) put(lo);
 }
 addEventListener("resize", () => { if (hintOverride === null && hintFit && !(UIS.tool === "cmd" && CAD.active())) fitHint(hintFit.text, hintFit.full); });
+/* подсказка «что дальше» в покое ведёт по пути граница → данные → эскиз → лист, ничего не навязывая */
+function nextStep() {
+  if (!TERR) return null;
+  const sketch = (typeof RESULT !== "undefined" && RESULT.sketch?.length) || LYR.some(l => /^Эскиз/.test(l.title || ""));
+  if (sketch) return $("wSheets").hidden ? "Эскиз готов. Откройте «Листы», чтобы собрать лист и PDF." : null;
+  return Object.keys(DATA).length ? "Данные загружены. Постройте эскиз (окно «Эскиз») или откройте «Листы»." : "Граница задана. Загрузите данные или постройте эскиз.";
+}
+window.nextStep = nextStep;
 function syncStatus() {
   hintOverride = null; const l = lyr(CUR), n = SEL.length;
   if (UIS.tool === "cmd" && CAD.active()) { $("stHint").textContent = CAD.prompt(); $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; return; }
   const what = n ? `выбранных объектов (${fmt(n)})` : `слоя «${l?.title || "—"}»`;
   // в покое — одно короткое предложение (на 840 px длинное обрезается); полный текст — во всплывающей подсказке
-  const full = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
+  const nxt = UIS.tool === "select" && !n && !TERRSEL ? nextStep() : null;
+  const full = nxt ? nxt : !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: нарисуйте что угодно инструментами сверху, задайте границу территории (BO и Enter) или откройте окно «Данные». Все клавиши — F1."
     : UIS.tool === "select" && !n && TERRSEL && TERR ? "Граница территории: тяните ручки-квадраты (вершины); треугольник на стороне добавляет вершину; Esc — снять выбор."
     : UIS.tool === "select" && n && CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: ручек было бы больше ${fmt(CAD.MAXGRIPS)}, поэтому они не показаны — выберите меньше объектов, чтобы править вершины. Команды (M, CO, RO) работают со всем выбором; Esc — снять выбор.`
     : UIS.tool === "select" && n ? `Выбрано ${fmt(n)}: атрибуты справа, Del — удалить; команды: M — перенести, CO — копировать, RO — повернуть, MI — зеркало (буквы и Enter); Esc — снять выбор.`
     : TOOLS[UIS.tool].hint.replace("«%»", `«${l?.title || "—"}»`).replace("%", what);
-  const short = !TERR && !LYR.length && UIS.tool === "select" ? "С чего начать: рисуйте инструментами сверху или откройте «Данные». F1 — клавиши."
+  const short = nxt ? nxt : !TERR && !LYR.length && UIS.tool === "select" ? "Начните с границы: «Данные» → «Нарисовать границу»."
     : UIS.tool === "select" && n && !CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: Del — удалить, M, CO, RO — правка, Esc — снять.`
     : UIS.tool === "select" && !n && TERRSEL && TERR ? full
     : UIS.tool === "select" && !n ? "Выбор: щелчок или рамка." : full;
@@ -1378,6 +1389,7 @@ addEventListener("keydown", e => {
   }
 }, true);
 addEventListener("keydown", e => {
+  if (e.key === "F1" && e.target.id === "helpQ") { e.preventDefault(); const h = $("wKeys").hidden; if (!h) e.target.blur(); winOpen("wKeys", h); return; }   // F1 из поля поиска справки: окно скрыто (поле могло остаться в фокусе) — открыть, иначе закрыть
   if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph")) return;
   // e.code не зависит от раскладки (русская тоже работает); без code — по латинской букве
   const code = e.code || (/^[a-z]$/i.test(e.key) ? "Key" + e.key.toUpperCase() : "");
@@ -1400,8 +1412,19 @@ addEventListener("keydown", e => {
 });
 
 /* ---------- окно «Клавиши»: собирается из тех же таблиц, что и обработчики, поэтому не расходится с ними ---------- */
+/* справка F1: оглавление со ссылками на разделы (прокрутка внутри окна, «Наверх»), первый раздел «Как начать», поиск по словам */
+const HELP_START = [
+  ["Граница", "«Данные» → «Нарисовать границу» или «Пример». Потом «Изменить границу»: ручки на вершинах, привязка ловит вершины и стороны границы."],
+  ["Данные", "Отметьте источники в окне «Данные» и нажмите «Загрузить». Свои файлы — «Файл…» или перетащите на карту."],
+  ["Ограничения", "Окно «Ограничения» → «Рассчитать»: запреты и предельная высота, которые учтёт эскиз."],
+  ["Эскиз", "Окно «Эскиз» → типология → «Построить эскиз». «Сохранить слоем» делает его обычным слоем."],
+  ["Показатели и нормативы", "Окно «Показатели» считает ТЭП; «Нормативы…» в нём меняют нормы расчёта, изменённое помечено."],
+  ["Лист и PDF", "«Листы» → лист с рамкой и штампом → «PDF альбома». Чертёж — «DXF»; стрелка рядом даёт GeoJSON для QGIS и Excel."],
+  ["Новое", "«Изменить границу», привязка к границе, «Нормативы…», стрелка у «DXF», «Размер интерфейса» в меню «Окна»."]];
 function renderKeys() {
-  const rows = (title, list) => `<div class="sect">${title}</div><table class="keys">${list.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>`;
+  const secs = [], sec = (title, inner) => { const id = "h-" + secs.length; secs.push([id, title]); return `<section class="hsec" id="${id}"><div class="sect"><span class="ht">${title}</span><a class="htop" href="#h-top" data-hj="top">Наверх</a></div>${inner}</section>`; };
+  const rows = (title, list) => sec(title, `<table class="keys">${list.map(([k, v]) => `<tr><td><kbd>${k}</kbd></td><td>${v}</td></tr>`).join("")}</table>`);
+  const start = sec("Как начать", `<table class="keys">${HELP_START.map(([k, v], i) => `<tr><td><b>${i < 6 ? i + 1 + ". " : ""}${k}</b></td><td>${v}</td></tr>`).join("")}</table>`);
   const steps = [
     ["Территория", "«Данные» → «Нарисовать границу» или «Пример». Граница задаёт, что выгружать и где считать показатели. Править её можно как объект: щелчок по линии границы или «Изменить границу» — ручки на вершинах; привязка ловит и вершины границы."],
     ["Существующее положение", "Отметьте источники (ЕГРН, OSM, ГИС ОГД: ПЗЗ, ОКН, красные линии, рельеф) → «Загрузить». Свои файлы — «Файл…» или перетащите на карту. Повторная выгрузка покажет, что изменилось, и сохранит ваши правки."],
@@ -1412,25 +1435,46 @@ function renderKeys() {
     ["Анализ", "«Схема расчёта» → группа «Анализ»: радиусы школ и детсадов, пешая доступность, показатели кварталов, баланс территории. «В слой» сохраняет результат с таблицей."],
     ["Выпуск", "«Виды» — наборы слоёв с оформлением. «Листы» — листы А3/А1 из видов с рамкой и штампом, «PDF альбома». «DXF» — чертёж в МСК с типами линий красных линий."],
     ["Проект", "Сохраняется сам через 2 с после правки; Ctrl+S — сохранить под именем, окно «Проекты» — открыть, новый, копия."]];
-  $("keysBody").innerHTML = `<div class="sect">Как работать</div><table class="keys">${steps.map(([k, v], i) => `<tr><td><b>${i + 1}. ${k}</b></td><td>${v}</td></tr>`).join("")}</table>`
-    + `<div class="note" style="color:var(--warn)">Инсоляция в ГРАДО — предпроектная оценка по методам ГОСТ Р 57795-2017 (22 апреля и 22 августа). Для экспертизы нужен сертифицированный расчёт. Радиусы обслуживания — по СП 42.13330.2016; московские нормативы 2150-ПП и 2151-ПП сверяйте отдельно.</div>`
+  const body = start + sec("Подробно по шагам", `<table class="keys">${steps.map(([k, v], i) => `<tr><td><b>${i + 1}. ${k}</b></td><td>${v}</td></tr>`).join("")}</table>`
+    + `<div class="note" style="color:var(--warn)">Инсоляция в ГРАДО — предпроектная оценка по методам ГОСТ Р 57795-2017 (22 апреля и 22 августа). Для экспертизы нужен сертифицированный расчёт. Радиусы обслуживания — по СП 42.13330.2016; московские нормативы 2150-ПП и 2151-ПП сверяйте отдельно.</div>`)
     + rows("Команды черчения (набрать и Enter или пробел, как в AutoCAD)", Object.entries(CAD.ALIAS).map(([a, id]) => [a, `${CAD.CMDS[id].title}: ${CAD.HELP[id]}`]))
     + rows("Во время команды", [["число, Enter", "следующая точка на этом расстоянии по направлению курсора или по пунктирной линии отслеживания, м"], ["длина<угол", "длина и угол; угол от направления на восток против часовой стрелки"], ["@dx;dy", "смещение от последней точки по X и Y, м"], ["X;Y", "точка в координатах МСК (X — на восток, Y — на север)"], ["X,Y и @dx,dy", "то же через запятую без пробелов, как в AutoCAD: 0,0 и @120,0. Запятая — это точка X,Y только в целых числах (0,0) или с десятичной точкой (12345.6,6789.1); после первой точки 25,5 остаётся длиной 25,5 м, смещение пишите с @"], ["буква параметра", "вариант из квадратных скобок в строке состояния: З — замкнуть, О — отменить, Р — радиус…"], ["Enter, пробел, правая кнопка", "завершить шаг или команду; без команды — повторить последнюю"], ["Backspace", "убрать последнюю точку"], ["Esc", "прервать команду"]])
     + rows("Режимы черчения (строка состояния)", [["F3", "объектная привязка: конечная точка, середина, центр, квадрант, пересечение, продолжение, нормаль, касательная, параллельно (задержите курсор на отрезке — потом ведите параллельно ему), ближайшая (▾ — набор)"], ["F11", "объектное отслеживание: задержите курсор на точке привязки до «+», дальше — пунктирные линии выравнивания и продолжения"], ["F10", "полярное отслеживание: пунктирный луч под углами, кратными шагу (▾ — 90, 45, 30, 15, 10, 5°)"], ["F8", "орто: только по осям X и Y МСК"], ["F12", "динамический ввод: размеры и поле ввода у курсора"], ["F2", "история команд за сеанс"]])
     + rows("Выбор", [["щелчок", "выбрать объект"], ["Shift+щелчок", "добавить к выбору или убрать из него"], ["Shift+тянуть", "рамка: добавить объекты к выбору"], [`${MOD}+тянуть`, "рамка: выбрать заново"], ["рамка слева направо", "только объекты целиком внутри (как в AutoCAD)"], ["рамка справа налево", "все объекты, которых рамка касается"], [`${MOD}+A`, "все объекты текущего слоя"], [`${MOD}+C, ${MOD}+V`, "копировать выбранное и вставить в текущий слой на то же место"], ["← → ↑ ↓, с Shift", "сдвинуть выбранное на 0,1 м, с Shift — на 1 м (оси МСК)"], ["Esc", "снять выбор, вернуться к «Выбору»"]])
     + rows("Правка", [["Del, Backspace", "удалить выбранные объекты"], ["двойной щелчок", "завершить полилинию, замер, границу"], ["Вершины", "ручки: тянуть вершину, щелчок по ребру — новая вершина, Alt+щелчок — удалить"], [`${MOD}+Z`, "отменить правку объектов или стиля"], [`${MOD}+Shift+Z, ${MOD}+Y`, "вернуть отменённое"]])
     + rows("Проект и окна", [[`${MOD}+S`, "сохранить проект"], ["F1, ?", "это окно"], ["двойной щелчок по заголовку окна", "встроить в панель / сделать плавающим"],
-      ["Alt+← → ↓ на заголовке окна (Tab до него)", "встроить слева / справа / под картой; Alt+↑ — плавающее"]])
+      ["Alt+← → ↓ на заголовке окна (Tab до него)", "встроить слева / справа / под картой; Alt+↑ — плавающее"], ["Размер интерфейса", "меню «Окна» → «Размер интерфейса»: авто, обычный, крупный"]])
     + rows("Карта", [["колесо, щипок", "масштаб"], ["тянуть", "сдвиг карты"], [`${MOD}+F`, "поиск по адресу или кадастровому номеру (поле «Поиск» над картой слева)"]])
     + `<div class="note">Команды набираются в любой раскладке: считается клавиша, а не буква. Объекты сначала можно выбрать, потом вызвать команду редактирования — или наоборот.</div>`;
+  $("keysBody").innerHTML = `<div class="hbar" id="h-top"><input type="search" id="helpQ" placeholder="Найти в справке" aria-label="Поиск по справке" autocomplete="off" spellcheck="false"><nav class="hcontents" aria-label="Оглавление справки">${secs.map(([id, t]) => `<a href="#${id}" data-hj="${id}">${t.replace(/\s*\(.*$/, "")}</a>`).join("")}</nav></div>` + body + `<div class="note" id="helpNone" hidden>В справке нет таких слов. Esc — сбросить поиск.</div>`;
 }
+const helpFilter = () => {
+  const q = normQ($("helpQ").value.trim()); let any = false;
+  document.querySelectorAll("#keysBody .hsec").forEach(sc => {
+    const all = normQ(sc.querySelector(".ht").textContent).includes(q) && q;      // название раздела подходит — раздел целиком
+    let n = 0; sc.querySelectorAll("tr").forEach(tr => { const on = !q || all || normQ(tr.textContent).includes(q); tr.hidden = !on; if (on) n++; });
+    const note = sc.querySelector(".note"), nOn = !q || all || (note && normQ(note.textContent).includes(q)); if (note) note.hidden = !nOn;
+    const on = !q || n > 0 || nOn; sc.hidden = !on; any ||= on;
+    document.querySelector(`#keysBody .hcontents [data-hj="${sc.id}"]`).hidden = !on;
+  });
+  $("helpNone").hidden = any;
+};
+WIN_OPEN.wKeys = () => { const i = $("helpQ"); if (!i) return; if (i.value) { i.value = ""; helpFilter(); } if (!window.CAD?.active()) i.focus(); };   // справка открывается с пустым поиском; поле в фокусе, только если не идёт команда черчения
+$("keysBody").addEventListener("input", e => { if (e.target.id === "helpQ") helpFilter(); });
+$("keysBody").addEventListener("keydown", e => { if (e.key === "Escape" && e.target.id === "helpQ" && e.target.value) { e.stopPropagation(); e.target.value = ""; helpFilter(); } });
+$("keysBody").addEventListener("click", e => {
+  const a = e.target.closest("[data-hj]"); if (!a) return; e.preventDefault();
+  const box = $("keysBody"), t = a.dataset.hj === "top" ? null : document.getElementById(a.dataset.hj);
+  box.scrollTop = t ? t.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - $("keysBody").querySelector(".hbar").offsetHeight + 1 : 0;
+});
 $("bKeys").onclick = () => winOpen("wKeys");
 
 /* ---------- пустой проект: с чего начать ---------- */
 // закрытая панель больше не появляется сама (её содержимое есть в справке F1)
 let startOff = false; try { startOff = localStorage.getItem("grado2.start") === "off"; } catch { }
 // во время команды панель прячется: иначе щелчок по карте под ней попадал в её кнопки и сбрасывал черчение
-function syncStart() { const el = $("start"); if (el) el.hidden = startOff || !!(LYR.length || TERR) || UIS.tool !== "select" || !!window.CAD?.active(); }
+function syncStart() { if (TERR && !startOff) { startOff = true; try { localStorage.setItem("grado2.start", "off"); } catch { } }   // граница есть — приветствие больше не возвращается
+  const el = $("start"); if (el) el.hidden = startOff || !!(LYR.length || TERR) || UIS.tool !== "select" || !!window.CAD?.active(); }
 window.syncStart = syncStart;
 function closeStart() { startOff = true; try { localStorage.setItem("grado2.start", "off"); } catch { } syncStart(); }
 $("start").addEventListener("click", e => {

@@ -9,6 +9,20 @@ export default async p => {
 
   // первый запуск: «С чего начать» вместо пустого экрана; F1 — клавиши
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
+  check(await p.ev(`try{localStorage.removeItem("grado2.start")}catch{} startOff=false; selectTerr(false); setTool("select"); syncStatus(); await new Promise(r=>setTimeout(r,100)); const t=$("start").innerText; return !$("start").hidden && /Начните с границы/.test(t) && /Нарисовать границу/.test(t) && /Пример/.test(t) && $("start").querySelectorAll(".btn").length===2`), "T27: приветствие на пустой карте — одна фраза и два действия «Нарисовать границу», «Пример»");
+  check(await p.ev(`const a=uiK(); document.documentElement.dataset.ui="large"; await new Promise(r=>setTimeout(r,100)); const b=uiK(); delete document.documentElement.dataset.ui; return a===1 && Math.abs(b-7/6)<.01`), "T27: uiK() читает масштаб интерфейса (1 и 7/6 при «крупном»)");
+  check(await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
+    const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
+    const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
+    window.markDirty=om; Collab.touched=ot; return light===dark && bg0!==bg1 && nb0!==nb1 && lgc.clear_background_color===bg0 && md===0 && tc===0`), "T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет");
+  {
+    const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
+    const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900); const r10 = await res(), c1 = await at();
+    p.log("wheel: 1 notch", (r0 / r1).toFixed(3), "10 notches", (r0 / r10).toFixed(3));
+    check(r0 / r10 > 1.5 && r0 / r10 <= 2.3 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) / r10 < 1.5, "T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте");
+    const q0 = await res(); for (let i = 0; i < 30; i++) await p.wheel(mx, my, -6, { ctrl: true, wait: 16 }); await p.sleep(500); const q1 = await res();
+    p.log("pinch: 30 events dy=-6 ctrl", (q0 / q1).toFixed(3)); check(q0 / q1 > 1.3, "T27: щипок (Ctrl, мелкие шаги) остаётся быстрым");
+  }
   // T17-9: пустое дерево слоёв — одна короткая строка, «загрузите данные» открывает «Данные»
   check(await p.ev(`const t=$("layerTree").innerText.trim(); document.querySelector("#layerTree [data-open-data]").click(); await new Promise(r=>setTimeout(r,200)); const ok=!$("wData").hidden; winOpen("wData", false); return t==="Слоёв нет. Нарисуйте объект или загрузите данные." && ok`), "пустые «Слои»: одна строка, «загрузите данные» открывает «Данные»");
   // T20: размер интерфейса — в меню «Окна», один множитель --k, помнится; «обычный» возвращает размеры 1280
@@ -18,6 +32,8 @@ export default async p => {
     return big.join()==="large,large,14px,33" && norm.join()==="12px,28" && localStorage.getItem("grado2.uisize")===null && !document.documentElement.dataset.ui`), "«Размер интерфейса» в меню «Окна»: крупный 14 px / кнопки 33 px, обычный 12 px / 28 px, авто снимает настройку");
   await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`return !$("wKeys").hidden && $("keysBody").innerText.includes("Полилиния") && $("keysBody").innerText.includes("TR")`), "F1 открывает окно клавиш с командами черчения");
   await p.ev(`winOpen("wKeys", false); return 1`);
+  await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`const box=$("keysBody"); document.querySelector('#keysBody [data-hj="h-3"]').click(); await new Promise(r=>setTimeout(r,200)); const r=document.getElementById("h-3").getBoundingClientRect(), bb=box.getBoundingClientRect(); const ok1=box.scrollTop>0&&r.top>=bb.top&&r.top<bb.bottom-20; box.querySelector('.htop').click(); await new Promise(r=>setTimeout(r,100)); return ok1 && box.scrollTop===0 && /Как начать/.test(box.querySelector("#h-0").innerText)`), "T27: ссылка оглавления справки прокручивает к разделу, «Наверх» возвращает");
+  check(await p.ev(`const i=$("helpQ"); i.value="Размер интерфейса"; i.dispatchEvent(new Event("input",{bubbles:true})); const vis=[...document.querySelectorAll("#keysBody .hsec")].filter(x=>!x.hidden).length; i.value=""; i.dispatchEvent(new Event("input",{bubbles:true})); winOpen("wKeys", false); return vis>=1 && vis<6 && ![...document.querySelectorAll("#keysBody .hsec")].some(x=>x.hidden)`), "T27: поиск в справке отбирает разделы и сбрасывается");
   // эскиз без границы территории не строится и говорит почему
   check(await p.ev(`winOpen("wSketch", true); await new Promise(r=>setTimeout(r,200)); document.querySelector('#wSketch [data-run="1"]').click(); await new Promise(r=>setTimeout(r,150));
     const ok = !RESULT.placeNode.properties.run && /границ/.test($("toast").textContent) && /Нет границы/.test($("wSketch").textContent); winOpen("wSketch", false); return ok`), "эскиз без границы не строится: сообщение и пометка в окне «Эскиз»");
@@ -483,6 +499,7 @@ export default async p => {
     const sa = await p.ev(`const r = [...$("sres").querySelectorAll("[data-a]")].find(b => b.dataset.a === "terr").getBoundingClientRect(); return [r.left + 10, r.top + 8]`);
     await p.click(sa[0], sa[1], { wait: 500 });
     check(await p.ev(`const f = ${JSON.stringify(sqParcel)}; return !!TERR && Math.abs(TERR_M2 - m2(f)) < 1 && TERR_M2 > 1e4 && layerSrc["nspd.parcels"].getFeatures().length === 1 && /Граница по участкам: 1 участок, /.test($("toast").textContent)`), "«Сделать границей территории»: граница по площади участка, участок в слое ЕГРН");
+    check(await p.ev(`selectTerr(false); setTool("select"); syncStatus(); return $("start").hidden && /Граница задана\.|Данные загружены\.|Эскиз готов\./.test($("stHint").textContent+$("stHint").title)`), "T27: после границы приветствие скрыто насовсем, подсказка «что дальше» ведёт к данным и эскизу");
     // «По участкам» без загруженных участков берёт их у портала (заглушка)
     await p.ev(`delete DATA["nspd.parcels"]; setTerritory(turf.polygon([[[37.1, 55.1], [37.11, 55.1], [37.11, 55.11], [37.1, 55.1]]])); window.prompt = () => "77:01:0000000:1"; return 1`);
     await p.ev(`$("bParcels").click(); await new Promise(r => setTimeout(r, 500)); return 1`);

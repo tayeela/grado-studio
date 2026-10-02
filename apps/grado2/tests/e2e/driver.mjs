@@ -1,7 +1,7 @@
 // ГРАДО 2 browser scenarios: headless Chrome over the DevTools protocol, no dependencies (node 22 has fetch and WebSocket).
 // node driver.mjs <url> <steps.mjs>; Chrome path from env CHROME (default: macOS Google Chrome). Exit code 1 on a failed step
 // or on any exception in the page console.
-// steps.mjs: export default async (p) => { ... }  p.ev(js) · p.click(x,y,{shift,meta,dbl}) · p.drag(x0,y0,x1,y1,{shift}) · p.key(key,code,mods) · p.shot(file) · p.sleep(ms) · p.log(...)
+// steps.mjs: export default async (p) => { ... }  p.wheel(x,y,deltaY,{ctrl}) · p.ev(js) · p.click(x,y,{shift,meta,dbl}) · p.drag(x0,y0,x1,y1,{shift}) · p.key(key,code,mods) · p.shot(file) · p.sleep(ms) · p.log(...)
 import { spawn } from "node:child_process";
 import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -39,6 +39,7 @@ const p = {
     const base = { key, code, modifiers: mods(o), windowsVirtualKeyCode: o.vk || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0) };
     await send("Input.dispatchKeyEvent", { type: "keyDown", ...base, text: o.text }); await send("Input.dispatchKeyEvent", { type: "keyUp", ...base }); await sleep(o.wait ?? 80);
   },
+  async wheel(x, y, dy, o = {}) { await send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy, modifiers: mods(o) }); await sleep(o.wait ?? 40); },
   async type(text) { await send("Input.insertText", { text }); await sleep(60); },
   async shot(file) { const s = await send("Page.captureScreenshot", { format: "png" }); writeFileSync(file, Buffer.from(s.result.data, "base64")); },
 };
