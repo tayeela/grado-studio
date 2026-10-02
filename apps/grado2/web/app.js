@@ -1390,6 +1390,7 @@ const GROUP_ORDER = ["Основные показатели", "СПП в ГНС"
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
   window.Norms?.refresh();
+  syncVarTep();
   if (!TERR) { $("tep").innerHTML = `<div class="empty">Показатели появятся, когда будет граница территории: окно «Данные» → «Нарисовать границу» или «Пример».</div>`; return; }
   const t = RESULT.tepNode?._tep; if (!t) { $("tep").innerHTML = `<div class="empty">${TERR ? "Считаю…" : "Нет территории"}</div>`; return; }
   const tp = tepParams(RESULT.tepNode), sel = (k, opts, lab) => `<select data-tp="${k}" aria-label="${lab}">${opts.map(([v, l]) => `<option value="${v}" ${String(tp[k]) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -1491,6 +1492,24 @@ let VARS = [], varSel = -1;
    Оценка: отклонение плотности от цели и доля фасадов новых домов с нормой инсоляции. Все кандидаты — в таблице,
    шесть лучших — карточками; выбранный переносит параметры в граф, «Сохранить слоем» делает его слоем. */
 let varRun = null;                 // идущий подбор: {stop}
+/* Показатели вариантов считаются при подборе; когда меняются нормативы или параметры территории («Нормативы расчёта», «Показатели»),
+   таблица вариантов пересчитывается тем же запросом tepRequest, чтобы числа в ней совпадали с окном «Показатели». */
+let varTepKey = null, varTepTimer = 0, varTepSeq = 0;
+function varTepKeyNow() { const t = RESULT.tepNode; if (!t) return null; const q = tepParams(t);
+  return [JSON.stringify(q.constants || {}), q.nonres, q.zone, q.k1, q.k2, q.tinao, q.mode, q.unbuilt, t.widgets[0].value, t.widgets[1].value, gid(t.getInputData(1)), gid(t.getInputData(2)), TERR_REV, dataRev].join("|"); }
+function syncVarTep() {
+  if (!VARS.length || varRun || !RESULT.tepNode || varTepKey === null || varTepKey === varTepKeyNow()) return;
+  clearTimeout(varTepTimer); varTepTimer = setTimeout(async () => {
+    const t = RESULT.tepNode, key = varTepKeyNow(); if (!t || !VARS.length || varRun || key === varTepKey) return;
+    const seq = ++varTepSeq, epoch = window.PROJ_EPOCH, vs = VARS.slice(0, 6), share = t.widgets[0].value / 100, target = t.widgets[1].value, kept = t.getInputData(1), lim = t.getInputData(2), tp = JSON.parse(JSON.stringify(tepParams(t)));
+    busy(true);
+    try { const res = await Promise.all(vs.map(v => tepRequest(v.sk, kept, lim, share, target, tp)));
+      if (seq !== varTepSeq || epoch !== window.PROJ_EPOCH) return;
+      vs.forEach((v, i) => { v.tep = res[i]; }); varTepKey = key; renderVars(); }
+    catch (e) { console.warn("варианты: пересчёт показателей не удался", e); }
+    finally { busy(false); }
+  }, 400);
+}
 const varProgress = (done, total, text) => { $("varProg").firstElementChild.style.width = (done / total * 100).toFixed(1) + "%"; $("varMsg").textContent = text; setHint(text); };
 $("bStopVar").onclick = () => { if (varRun) { varRun.stop = true; $("bStopVar").disabled = true; $("varMsg").textContent = "Останавливаю: дорабатывает текущий вариант…"; } };
 $("bGen").onclick = async () => {
@@ -1523,7 +1542,7 @@ $("bGen").onclick = async () => {
     VARS.forEach(v => { v.score = v.err + (v.own == null ? .3 : (100 - v.own) / 100 * .5); });   // недобор инсоляции весит как половина отклонения плотности
     VARS.sort((a, b) => a.score - b.score);
     varProgress(total - 1, total, "Показатели лучших вариантов…");
-    await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target, tepParams(t)); }));
+    varTepKey = varTepKeyNow(); await Promise.all(VARS.slice(0, 6).map(async v => { v.tep = await tepRequest(v.sk, kept, lim, share, target, tepParams(t)); }));
     if (epoch !== window.PROJ_EPOCH) { VARS = []; return toast("Подбор вариантов для прежнего проекта отброшен."); }
     varSel = -1; renderVars();
     if (!VARS.length) $("vlist").innerHTML = `<div class="empty">${run.stop ? "Подбор остановлен до первого варианта." : "Ни один вариант не поместился в пятно застройки: проверьте ограничения и цель плотности."}</div>`;
@@ -1541,8 +1560,8 @@ function renderVars() {
   const kept = keptBuildings(RESULT.tepNode?.getInputData(1)).flatMap(f => ringsXY(f));
   const cards = VARS.slice(0, 6).map((v, i) => `<button class="vc" data-var="${i}" aria-pressed="${i === varSel}"><svg viewBox="${vb}" preserveAspectRatio="xMidYMid meet"><g transform="scale(1,-1)"><polygon points="${pts(ringsXY(TERR)[0])}" fill="#fff" stroke="#b3261e" stroke-width="${sw * 2}" stroke-dasharray="${sw * 8} ${sw * 4}"/>${kept.map(r => `<polygon points="${pts(r)}" fill="#bdb8b0"/>`).join("")}${v.sk.flatMap(b => ringsXY(b.f)).map(r => `<polygon points="${pts(r)}" fill="#6fa6e6" stroke="#1a4f94" stroke-width="${sw}"/>`).join("")}</g></svg>
       <div class="vt">${i + 1}. ${esc(vName(v))}</div><div class="vm"><span>плотность</span><b style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</b><span>ср. эт.</span><b>${fmt(v.avg, 1)}</b><span>инсоляция</span><b>${v.own == null ? "—" : v.own + " %"}</b><span>население</span><b>${v.tep ? fmt(v.tep.m.population) : "—"}</b></div></button>`).join("");
-  const table = `<table class="at vt-table"><thead><tr><th>№</th><th>Вариант</th><th>Корпусов</th><th>Ср. эт.</th><th>СПП новая, тыс. м²</th><th>Плотность (цель ${fmt(target)})</th><th>Застроенность</th><th>Ниже предельной высоты</th><th title="Доля фасадов новых домов (без северных), получающих норму 22 апреля, предварительно">Инсоляция новых</th></tr></thead><tbody>${VARS.map((v, i) =>
-    `<tr data-var="${i}" class="${i === varSel ? "sel" : ""}"><td class="num">${i + 1}</td><td>${esc(vName(v))}</td><td class="num">${v.n}</td><td class="num">${fmt(v.avg, 1)}</td><td class="num">${fmt(v.spp / 1000, 1)}</td><td class="num" style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</td><td class="num">${fmt(v.cover * 100, 1)} %</td><td class="num">${v.capped || ""}</td><td class="num">${v.own == null ? "—" : v.own + " %"}</td></tr>`).join("")}</tbody></table>`;
+  const table = `<table class="at vt-table"><thead><tr><th>№</th><th>Вариант</th><th>Корпусов</th><th>Ср. эт.</th><th>СПП новая, тыс. м²</th><th>Плотность (цель ${fmt(target)})</th><th>Застроенность</th><th>Ниже предельной высоты</th><th title="Доля фасадов новых домов (без северных), получающих норму 22 апреля, предварительно">Инсоляция новых</th><th title="По действующим нормативам окна «Нормативы расчёта»">Население, чел.</th><th title="Места в детских садах по нормативам зоны">ДОО, мест</th></tr></thead><tbody>${VARS.map((v, i) =>
+    `<tr data-var="${i}" class="${i === varSel ? "sel" : ""}"><td class="num">${i + 1}</td><td>${esc(vName(v))}</td><td class="num">${v.n}</td><td class="num">${fmt(v.avg, 1)}</td><td class="num">${fmt(v.spp / 1000, 1)}</td><td class="num" style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</td><td class="num">${fmt(v.cover * 100, 1)} %</td><td class="num">${v.capped || ""}</td><td class="num">${v.own == null ? "—" : v.own + " %"}</td><td class="num">${v.tep ? fmt(v.tep.m.population) : "—"}</td><td class="num">${v.tep ? fmt(v.tep.m.doo_places) : "—"}</td></tr>`).join("")}</tbody></table>`;
   $("vlist").innerHTML = `<div class="vcards">${cards}</div><div class="note">Все варианты по оценке — лучшие сверху. Этажность подобрана под цель плотности и не выше предельной высоты ограничений. Инсоляция новых — предварительная оценка по 22 апреля (подробно — «Проверить нормы» в окне «Эскиз»).</div>${table}`;
 }
 $("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариант в списке — щелчок по карточке.") : bakeSketch();
@@ -1577,7 +1596,7 @@ function fitWin(w, l, t, W = w.offsetWidth, H = w.offsetHeight) {
   return { l: Math.round(Math.max(a.l, Math.min(l, a.r - W))), t: Math.round(Math.max(a.t, Math.min(t, a.b - H))), W, H };
 }
 function placeWin(w) {
-  const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id], f = fitWin(w, d.l ?? l, d.t ?? t, d.w || ww, d.h || hh);
+  const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id], k = uiK(), f = fitWin(w, d.l ?? l, d.t ?? t, d.w || Math.round(ww * k), d.h || Math.round(hh * k));
   Object.assign(w.style, { width: f.W + "px", height: f.H + "px", left: f.l + "px", top: f.t + "px" });
 }
 const SNAP = 12;
@@ -1737,14 +1756,25 @@ function saveLayout() {
   L._sz = { w: Object.fromEntries(Object.keys(L).map(id => [id, { dh: WST[id]?.dh, bw: WST[id]?.bw }])), hb: WST.hb, zhl: WST.zhl, zhr: WST.zhr };
   const U = userLayouts(); let n = 1; while (U["Моя раскладка " + n]) n++; U["Моя раскладка " + n] = L; saveWins(); toast(`Запомнено как «Моя раскладка ${n}» — она в меню «Окна», раздел «Раскладка окон».`);
 }
+/* размер интерфейса: «авто» — по ширине окна (media в index.html), «обычный» и «крупный» — выбор владельца, помнится в браузере */
+function uiSize() { try { const v = localStorage.getItem("grado2.uisize"); return v === "normal" || v === "large" ? v : "auto"; } catch { return "auto"; } }
+function setUiSize(v) {
+  try { v === "auto" ? localStorage.removeItem("grado2.uisize") : localStorage.setItem("grado2.uisize", v); } catch { }
+  if (v === "auto") delete document.documentElement.dataset.ui; else document.documentElement.dataset.ui = v;
+  dispatchEvent(new Event("resize")); mMain.updateSize?.();
+  toast(`Размер интерфейса: ${v === "large" ? "крупный" : v === "normal" ? "обычный" : "авто, по ширине экрана"}.`);
+}
+const uiK = () => parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--k")) || 1;
 function renderWinMenu() {
   const lay = (name, user) => `<button role="menuitem" class="lay" data-layout="${esc(name)}" data-user="${user ? 1 : ""}" title="Открыть окна этой раскладки и расставить их"><i data-lucide="layout-dashboard"></i>${esc(name)}${user ? `<i class="x" data-laydel="${esc(name)}" title="Удалить раскладку">×</i>` : ""}</button>`;
   $("winMenu").innerHTML = WINITEMS + `<div class="mh">Раскладка окон</div>` + Object.keys(LAYOUTS).map(n => lay(n)).join("") + Object.keys(userLayouts()).map(n => lay(n, true)).join("")
-    + `<button role="menuitem" class="lay" data-laysave title="Запомнить, какие окна открыты и где встроены"><i data-lucide="bookmark-plus"></i>Запомнить текущую…</button>`;
+    + `<button role="menuitem" class="lay" data-laysave title="Запомнить, какие окна открыты и где встроены"><i data-lucide="bookmark-plus"></i>Запомнить текущую…</button>`
+    + `<div class="mh">Размер интерфейса</div>` + [["auto", "Авто", "по ширине экрана"], ["normal", "Обычный", "как на ноутбуке"], ["large", "Крупный", "для больших экранов"]].map(([v, n, t]) => `<button role="menuitemradio" class="lay uisz" data-uisize="${v}" aria-checked="${uiSize() === v}" title="${t}">${esc(n)}</button>`).join("");
   icons();
 }
 renderWinMenu();
 $("winMenu").addEventListener("click", e => {
+  const us = e.target.closest("[data-uisize]"); if (us) { setUiSize(us.dataset.uisize); return; }
   const del = e.target.closest("[data-laydel]"); if (del) { e.stopImmediatePropagation(); delete userLayouts()[del.dataset.laydel]; saveWins(); renderWinMenu(); return; }
   const b = e.target.closest("[data-layout]"); if (b) { applyLayout(b.dataset.user ? userLayouts()[b.dataset.layout] : LAYOUTS[b.dataset.layout]); return; }
   if (e.target.closest("[data-laysave]")) saveLayout();
@@ -1833,7 +1863,7 @@ document.querySelectorAll(".win").forEach(w => {
     const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
     g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
   });
-  DZ.b.style.height = (WST.hb || Math.max(260, Math.round(DZ.b.parentElement.clientHeight * .4))) + "px"; }
+  DZ.b.style.height = (WST.hb || Math.max(innerWidth <= 900 ? 160 : 260, Math.round(DZ.b.parentElement.clientHeight * .4))) + "px"; }   // узкое окно: не больше 40 % высоты (своя высота владельца главнее)
 new ResizeObserver(() => mMain.updateSize()).observe($("mMain"));
 // при сужении окна браузера плавающие окна остаются на экране; ниже 1000 px боковые встроенные окна плывут, шире — встают обратно
 let wasNarrow = narrow();

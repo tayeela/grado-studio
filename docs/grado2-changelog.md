@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.94.0: the interface scales with the screen; narrow window; variants follow the norms.**
+  Owner 02.10: «продолжай оптимизировать интерфейс и для удобства пользователя и для разных экранов». One factor `--k`
+  drives the size tokens (heights, fonts, icons, top and status rows): 1 below 1700 px (1280×720 screenshots are
+  pixel-identical to before), 13/12 from 1700 (font 13 px, ribbon 30 px), 7/6 from 2200 (font 14 px, ribbon 33 px, layer
+  rows 28 px). Side panels are `clamp(280px, 14vw, 380px)`; a width set by dragging still wins. «Окна» → «Размер
+  интерфейса: Авто / Обычный / Крупный», kept in localStorage and applied before the first paint by `web/uisize.js` (a
+  separate file: the page's CSP `script-src 'self'` does not run inline scripts — the first version was inline and
+  failed the lead's browser run). The map is not scaled (the same click gives the same МСК coordinate within 0.01 m);
+  printed sheets do not depend on `--k`. At ≤ 900 px wide the bottom dock takes at most 40 % of the height by default
+  and its tabs scroll sideways; the status hint is shortened by whole words (the «F1 — клавиши» tail first) with the
+  full text in a tooltip. The empty «Слои» panel says «Слоёв нет. Нарисуйте объект или загрузите данные.» with a link
+  to «Данные». The variants table recomputes its ТЭП when norms or territory parameters change (`syncVarTep`,
+  debounced, stale answers dropped) and shows «Население, чел.» and «ДОО, мест». Open: only the first six variants get
+  the new columns («—» for the rest); the node graph canvas font stays 11 px on large screens; `fitHint` measures
+  once per dropped word; Retina and Windows 125 % not checked; boundary grips not checked in the dark theme.
 - **2026-10-02, ГРАДО 2 v0.93.1: server part for exports, districts by area, sport split (no buttons yet).**
   `POST /api/export/geojson` — layers `{layers:[{name, features}]}` in lon/lat → `grado2-geojson-msk.zip`: one
   `.geojson` per layer in МСК (same transform as DXF, a `crs` member with the МСК definition, Russian field names kept)

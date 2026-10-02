@@ -9,6 +9,13 @@ export default async p => {
 
   // первый запуск: «С чего начать» вместо пустого экрана; F1 — клавиши
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
+  // T17-9: пустое дерево слоёв — одна короткая строка, «загрузите данные» открывает «Данные»
+  check(await p.ev(`const t=$("layerTree").innerText.trim(); document.querySelector("#layerTree [data-open-data]").click(); await new Promise(r=>setTimeout(r,200)); const ok=!$("wData").hidden; winOpen("wData", false); return t==="Слоёв нет. Нарисуйте объект или загрузите данные." && ok`), "пустые «Слои»: одна строка, «загрузите данные» открывает «Данные»");
+  // T20: размер интерфейса — в меню «Окна», один множитель --k, помнится; «обычный» возвращает размеры 1280
+  check(await p.ev(`$("bMore").click(); await new Promise(r=>setTimeout(r,100)); document.querySelector('[data-uisize="large"]').click(); await new Promise(r=>setTimeout(r,200)); const big=[document.documentElement.dataset.ui, localStorage.getItem("grado2.uisize"), getComputedStyle(document.body).fontSize, document.querySelector(".tl").offsetHeight];
+    $("bMore").click(); await new Promise(r=>setTimeout(r,100)); document.querySelector('[data-uisize="normal"]').click(); await new Promise(r=>setTimeout(r,200)); const norm=[getComputedStyle(document.body).fontSize, document.querySelector(".tl").offsetHeight];
+    $("bMore").click(); await new Promise(r=>setTimeout(r,100)); document.querySelector('[data-uisize="auto"]').click(); await new Promise(r=>setTimeout(r,200));
+    return big.join()==="large,large,14px,33" && norm.join()==="12px,28" && localStorage.getItem("grado2.uisize")===null && !document.documentElement.dataset.ui`), "«Размер интерфейса» в меню «Окна»: крупный 14 px / кнопки 33 px, обычный 12 px / 28 px, авто снимает настройку");
   await p.key("F1", "F1", { vk: 112 }); check(await p.ev(`return !$("wKeys").hidden && $("keysBody").innerText.includes("Полилиния") && $("keysBody").innerText.includes("TR")`), "F1 открывает окно клавиш с командами черчения");
   await p.ev(`winOpen("wKeys", false); return 1`);
   // эскиз без границы территории не строится и говорит почему
@@ -338,6 +345,16 @@ export default async p => {
   const nm2 = await p.ev(`const t=RESULT.tepNode._tep; return [t.m.doo_places, Math.ceil(Math.round(50*t.m.population/1000*1e6)/1e6), /Нормативы изменены вручную: 1/.test($("tep").innerText), JSON.stringify(tepParams(RESULT.tepNode).constants), document.querySelector('.nrow[data-id="doo_z1"] .nch').textContent, $("normAll").disabled]`);
   check(nm2[0] === nm2[1] && nm2[0] !== nm[3], `ДОО в «Показателях» пересчитано по 50 вместо 44: ${nm[3]} → ${nm2[0]} мест`);
   check(nm2[2] && nm2[3] === '{"doo_z1":50}' && nm2[4] === "действующее: 44" && nm2[5] === false, "в «Показателях» строка «Нормативы изменены вручную: 1», в проекте только разница {doo_z1:50}, у поля «действующее: 44»");
+  // T22: таблица вариантов пересчитывается при смене норматива и совпадает с «Показателями»
+  const vr = await p.ev(`winOpen("wVars", true); $("bGen").click(); await new Promise(r=>{const w=setInterval(()=>{ if(!$("bGen").hidden && VARS.length && VARS[0].tep){clearInterval(w);r();}},200);});
+    const cell=()=>document.querySelector("#vlist .vt-table tbody tr:first-child td:last-child").textContent.replace(/\\s/g,""); return [VARS[0].tep.m.doo_places, cell()]`);
+  await p.ev(`const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("40"); await p.key("Enter", "Enter", { vk: 13, wait: 400 });
+  const vr2 = await p.ev(`const t0=Date.now(); while (Date.now()-t0<15000) { if (VARS[0].tep.m.doo_places !== ${vr[0]}) break; await new Promise(r=>setTimeout(r,200)); } await new Promise(r=>setTimeout(r,300));
+    const cell=document.querySelector("#vlist .vt-table tbody tr:first-child td:last-child").textContent.replace(/\\s/g,""), v=VARS[0];
+    return [v.tep.m.doo_places, cell, Math.ceil(Math.round(40*v.tep.m.population/1000*1e6)/1e6), $("busy").hidden]`);
+  check(vr2[0] !== vr[0] && vr2[0] === vr2[2] && vr2[1] === String(vr2[0]).replace(/\\s/g,"") && vr2[3], `таблица вариантов после смены ДОО 50 → 40: ${vr[0]} → ${vr2[0]} мест в первой строке, считается по новому нормативу`);
+  await p.ev(`const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("50"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
+  await p.ev(`winOpen("wVars", false); VARS = []; return 1`);
   await p.ev(`const i=document.querySelector('[data-nid="doo_z2"]'); i.focus(); i.select(); return 1`); await p.type("5000"); await p.sleep(700);
   check(await p.ev(`const r=document.querySelector('.nrow[data-id="doo_z2"]'); return r.classList.contains("bad") && /Допустимо от 0 до 200/.test(r.querySelector(".nerr").textContent) && !tepParams(RESULT.tepNode).constants.doo_z2`), "значение вне пределов: поле красное, подпись «Допустимо от 0 до 200», в расчёт не берётся");
   await p.ev(`const r=document.querySelector('.nrow[data-id="doo_z2"] input'); r.blur(); const q=$("normQ"); q.value="сад"; q.dispatchEvent(new Event("input",{bubbles:true})); return 1`);

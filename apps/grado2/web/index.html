@@ -6,13 +6,14 @@
 <script src="vendor/turf.min.js"></script>
 <script src="vendor/litegraph.min.js"></script>
 <script src="vendor/lucide.min.js"></script>
+<script src="uisize.js"></script>
 <style>
 :root{
   --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line:#d4d4d4; --line-2:#bdbdbd;
   --text:#1d1d1f; --muted:#5f6368; --faint:#6b6e73; --hover:#e4e4e4; --selrow:#d3e3f8;
   --accent:#2f6fc4; --accent-ink:#fff; --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
   --canvas:#f5f4f0; --graph:#e6e6e2;
-  --h-xs:20px; --h-sm:24px; --h-md:28px; --h-lg:32px; --r-1:3px; --r-2:6px; --fs-s:11px; --fs-m:12px; --fs-l:13px; --ease-out:cubic-bezier(0.23,1,0.32,1); --dur-1:90ms; --dur-2:150ms;
+  --k:1; --h-xs:calc(20px*var(--k)); --h-sm:calc(24px*var(--k)); --h-md:calc(28px*var(--k)); --h-lg:calc(32px*var(--k)); --h-top:calc(38px*var(--k)); --h-status:calc(24px*var(--k)); --ico:calc(16px*var(--k)); --ico-s:calc(14px*var(--k)); --ico-xs:calc(12px*var(--k)); --r-1:3px; --r-2:6px; --fs-s:calc(11px*var(--k)); --fs-m:calc(12px*var(--k)); --fs-l:calc(13px*var(--k)); --ease-out:cubic-bezier(0.23,1,0.32,1); --dur-1:90ms; --dur-2:150ms;
   --sh-1:0 2px 8px rgba(0,0,0,.14); --sh-2:0 4px 14px rgba(0,0,0,.2); --sh-3:0 4px 12px rgba(0,0,0,.16);
   --z-map:5; --z-gut:10; --z-win:40; --z-drawer:45; --z-pop:70; --z-toast:80; --z-menu:85; --z-modal:90; --z-busy:100; --z-login:200;
   --press:color-mix(in srgb,var(--hover),#000 10%); --on-bad:#fff; --toast-bg:#333; --toast-ink:#fff;
@@ -34,6 +35,12 @@
   --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text);
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }
+/* масштаб интерфейса: один множитель --k на все размеры текста, высоты строк и кнопок и значки (карта и граф не масштабируются).
+   До 1700 px шириной — как раньше (1); 1700–2200 — текст 13 px; шире 2200 — 14 px. «Размер интерфейса» в меню «Окна» задаёт data-ui. */
+@media (min-width:1700px){:root{--k:calc(13/12)}}
+@media (min-width:2200px){:root{--k:calc(7/6)}}
+:root[data-ui="normal"]{--k:1}
+:root[data-ui="large"]{--k:calc(7/6)}
 html,body{height:100%}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--text);font:var(--fs-m)/1.35 var(--ui);overflow:hidden;-webkit-user-select:none;user-select:none}
@@ -43,11 +50,11 @@ input,textarea,.at td,.selectable{-webkit-user-select:text;user-select:text}
 *{box-sizing:border-box}
 button,input,select,table{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
-svg.lucide{width:16px;height:16px;stroke-width:1.75;flex:0 0 auto}
+svg.lucide{width:var(--ico);height:var(--ico);stroke-width:1.75;flex:0 0 auto}
 .num{font-variant-numeric:tabular-nums}
 select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0 5px;min-width:0}
 
-.app{height:100%;display:grid;grid-template-rows:38px auto minmax(0,1fr) 24px;grid-template-columns:minmax(0,1fr)}
+.app{height:100%;display:grid;grid-template-rows:var(--h-top) auto minmax(0,1fr) var(--h-status);grid-template-columns:minmax(0,1fr)}
 .top .sp{flex:1}
 .wins{display:flex;gap:1px;align-items:center}
 .wins .btn{border-color:transparent;background:none;color:var(--muted)}
@@ -55,7 +62,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .wins .btn[aria-pressed="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
 .wins .vs{width:1px;height:18px;background:var(--line);margin:0 5px}
 /* строка инструментов */
-.ribbon{display:flex;align-items:center;flex-wrap:wrap;gap:1px;row-gap:3px;padding:4px 6px;min-height:40px;background:var(--panel);border-bottom:1px solid var(--line)}
+.ribbon{display:flex;align-items:center;flex-wrap:wrap;gap:1px;row-gap:3px;padding:4px 6px;min-height:calc(40px*var(--k));background:var(--panel);border-bottom:1px solid var(--line)}
 .ribbon>*{flex:0 0 auto}
 .ribbon .g{display:flex;align-items:center;gap:0}
 .ribbon .vs{width:1px;height:var(--h-sm);background:var(--line);margin:0 3px;flex:0 0 auto}
@@ -67,7 +74,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .ribbon .tgt select{width:176px;min-width:176px;text-overflow:ellipsis}
 .ribbon label.inl{color:var(--muted);white-space:nowrap}
 /* рабочая область: слои | карта | свойства */
-.work{--wl:280px;--wr:290px;position:relative;display:grid;grid-template-columns:var(--wl) minmax(0,1fr) var(--wr);min-height:0}
+.work{--wl:clamp(280px,14vw,380px);--wr:clamp(290px,14vw,380px);position:relative;display:grid;grid-template-columns:var(--wl) minmax(0,1fr) var(--wr);min-height:0}
 .work.noL{grid-template-columns:0 minmax(0,1fr) var(--wr)}.work.noR{grid-template-columns:var(--wl) minmax(0,1fr) 0}.work.noL.noR{grid-template-columns:0 minmax(0,1fr) 0}
 .gut{position:absolute;top:0;bottom:0;width:7px;cursor:col-resize;z-index:var(--z-gut);touch-action:none}
 .gut.l{left:calc(var(--wl) - 4px)}.gut.r{right:calc(var(--wr) - 4px)}
@@ -113,7 +120,8 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .dztabs button>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .dztabs.many button:not([aria-selected=true]){flex:0 0 auto}.dztabs.many button:not([aria-selected=true])>span{display:none}
 .dztabs button>svg,.dztabs .x{flex:0 0 auto}
-.dztabs button svg{width:14px;height:14px}
+.dztabs button svg{width:var(--ico-s);height:var(--ico-s)}
+@media (max-width:900px){.dztabs{scrollbar-width:thin}.dztabs button>span{overflow:visible}.dztabs button,.dztabs.many button:not([aria-selected=true]){flex:0 0 auto}}
 .dztabs button[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text);margin-bottom:-1px}
 .dztabs .x{font-style:normal;width:18px;height:18px;display:grid;place-items:center;border-radius:var(--r-1);color:var(--faint);cursor:pointer}
 .dztabs .x:hover{background:var(--hover);color:var(--text)}
@@ -148,6 +156,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .sb{overflow:auto;flex:1;min-height:0}
 .sect{padding:4px 8px;font-weight:600;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:-1px}
 .note{padding:8px;color:var(--muted);line-height:1.45}
+.lnk{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit}.lnk:hover{text-decoration:none}
 .mapbox{position:relative;min-width:0;min-height:0;background:var(--canvas)}
 .mapbox .m{position:absolute;inset:0}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--line-2);height:100%}
@@ -195,8 +204,8 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .tn.dragging{opacity:.4}
 .tn.drop-a{box-shadow:inset 0 2px 0 var(--accent)}
 .tn.drop-b{box-shadow:inset 0 -2px 0 var(--accent)}
-.tw{width:16px;height:16px;border:0;background:none;padding:0;display:grid;place-items:center;color:var(--muted)}
-.tw svg.lucide{width:12px;height:12px}
+.tw{width:var(--ico);height:var(--ico);border:0;background:none;padding:0;display:grid;place-items:center;color:var(--muted)}
+.tw svg.lucide{width:var(--ico-xs);height:var(--ico-xs)}
 .tw.more{opacity:.6}.tn:hover .tw.more{opacity:1}
 .badge{font-size:var(--fs-s);padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
 .edit-on{width:12px!important;height:12px!important;color:var(--accent)}
@@ -302,7 +311,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .btn{border:1px solid var(--line-2);background:var(--panel);border-radius:var(--r-1);height:var(--h-sm);padding:0 10px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .btn:hover{background:var(--hover)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.btn svg.lucide{width:14px;height:14px}
+.btn svg.lucide{width:var(--ico-s);height:var(--ico-s)}
 .kv{display:grid;grid-template-columns:1fr auto;background:var(--field)}
 .kv>div{padding:4px 8px;border-bottom:1px solid var(--line)}
 .kv>div:nth-child(even){text-align:right;font-variant-numeric:tabular-nums}
@@ -397,12 +406,13 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 /* ноутбук: редкие окна уходят в меню «Окна ▾» с подписями, а не остаются значками без слов */
 .more{display:inline-flex;position:relative}.more .chev{width:12px;height:12px;margin-left:-2px}
 .wmenu{position:absolute;top:calc(100% + 4px);right:0;min-width:210px}
-.wmenu button{display:flex;align-items:center;gap:8px}.wmenu button svg{width:15px;height:15px}
+.wmenu button{display:flex;align-items:center;gap:8px}.wmenu button svg{width:calc(15px*var(--k));height:calc(15px*var(--k))}
 .wmenu button::after{content:"";margin-left:auto;width:14px;text-align:right}.wmenu button[aria-checked="true"]::after{content:"✓"}
 /* меню «Окна»: раскладки — всегда; окна — те, что не поместились в шапку */
 .wmenu [data-win]{display:none}
 .wmenu .mh{padding:6px 12px 3px;color:var(--faint);font-size:var(--fs-s)}
-.wmenu .lay{display:flex;align-items:center;gap:8px}.wmenu .lay svg{width:15px;height:15px}.wmenu .lay::after{display:none}
+.wmenu .lay{display:flex;align-items:center;gap:8px}.wmenu .lay svg{width:calc(15px*var(--k));height:calc(15px*var(--k))}.wmenu .lay::after{display:none}
+.wmenu .lay.uisz::after{display:block}
 .wmenu .lay .x{font-style:normal;margin-left:auto;width:18px;height:18px;display:grid;place-items:center;border-radius:var(--r-1);opacity:.7}.wmenu .lay .x:hover{opacity:1;background:color-mix(in srgb,var(--text) 14%,transparent)}
 @media (max-width:1480px){.wins .btn.opt{display:none}.tl.opt span.lb{display:none}.wmenu [data-win]:not(.core){display:flex}}
 @media (max-width:1180px){.tl span.lb{display:none}}
@@ -415,7 +425,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .btn,.tl,.tb{transition:background-color var(--dur-1) ease,transform var(--dur-1) var(--ease-out)}
 .btn:active,.tl:active,.tb:active{transform:scale(.97)}
 .menu button,.dtabs button,.dztabs button,.hubtabs button{transition:background-color var(--dur-1) ease}
-.wh .tb{width:var(--h-sm);height:var(--h-sm)}.wh .tb svg{width:14px;height:14px}
+.wh .tb{width:var(--h-sm);height:var(--h-sm)}.wh .tb svg{width:var(--ico-s);height:var(--ico-s)}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}.btn:active,.tl:active,.tb:active{transform:none}}
 @media (max-width:1180px){.status .modes #mdPolar .t{min-width:2.4em}}
 .implocal{display:flex;align-items:center;gap:6px;padding:4px 8px;border-bottom:1px solid var(--line);color:var(--muted)}.implocal span{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#impLocal{height:var(--h-sm);flex:0 0 auto}

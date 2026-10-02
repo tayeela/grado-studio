@@ -518,7 +518,7 @@ function renderTree0() {
   const el = $("layerTree"); if (!el) return;
   if (BY_SHEET && LYR.length) { el.innerHTML = sheetTreeHTML(); syncCurSelect(); syncStart(); icons(); return; }
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Схема расчёта», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Сохранить слоем».">Предпросмотр схемы${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
-  if (!LYR.length) { el.innerHTML = `<div class="note">Слоёв пока нет. Нажмите «+» над списком и рисуйте, выберите инструмент рисования на панели сверху (слой появится сам) или загрузите источники в окне «Данные».</div>` + res; icons(); syncStart(); syncCurSelect(); return; }
+  if (!LYR.length) { el.innerHTML = `<div class="note" title="Слой появится сам, как только выберете инструмент рисования; «+» над списком создаёт пустой слой.">Слоёв нет. Нарисуйте объект или <button class="lnk" data-open-data>загрузите данные</button>.</div>` + res; icons(); syncStart(); syncCurSelect(); return; }
   let h = "", prevG = null;
   LYR.forEach(l => {
     const g = l.group && grp(l.group);
@@ -1238,6 +1238,17 @@ function syncRibbon() {
 let hintOverride = null;
 const setHint = t => { hintOverride = t; $("stHint").textContent = t; };
 window.setHint = setHint;                // ход выгрузки из окна «Данные» (app.js) пишется сюда же
+/* подсказка строки состояния не обрезается посреди слова: если не помещается, сначала уходит хвост «F1 — клавиши», потом слова с конца
+   со знаком «…»; полный текст — во всплывающей подсказке */
+let hintFit = null;
+function fitHint(text, full) {
+  const el = $("stHint"); hintFit = { text, full }; el.textContent = text; el.title = text === full ? "" : full;
+  if (el.scrollWidth <= el.clientWidth + 1) return;
+  let t = text.replace(/\s*F1 — клавиши\.?$/, "").replace(/[.]$/, ""); el.textContent = t; el.title = full;
+  if (el.scrollWidth <= el.clientWidth + 1) return;
+  const w = t.split(" "); while (w.length > 3 && el.scrollWidth > el.clientWidth + 1) { w.pop(); el.textContent = w.join(" ").replace(/[,;:—-]$/, "") + "…"; }
+}
+addEventListener("resize", () => { if (hintOverride === null && hintFit && !(UIS.tool === "cmd" && CAD.active())) fitHint(hintFit.text, hintFit.full); });
 function syncStatus() {
   hintOverride = null; const l = lyr(CUR), n = SEL.length;
   if (UIS.tool === "cmd" && CAD.active()) { $("stHint").textContent = CAD.prompt(); $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; return; }
@@ -1252,11 +1263,12 @@ function syncStatus() {
     : UIS.tool === "select" && n && !CAD.gripsCut?.() ? `Выбрано ${fmt(n)}: Del — удалить, M, CO, RO — правка, Esc — снять.`
     : UIS.tool === "select" && !n && TERRSEL && TERR ? full
     : UIS.tool === "select" && !n ? "Выбор: щелчок или рамка." : full;
-  $("stHint").textContent = short; $("stHint").title = short === full ? "" : full;
+  fitHint(short, full);
   $("stLayer").innerHTML = l ? `слой <b>${esc(l.title)}</b>` : ""; $("stLayer").title = l ? `Текущий слой: ${l.title}` : "";
   window.syncStart?.();
 }
 window.syncStatus = syncStatus;
+$("layerTree").addEventListener("click", e => { if (e.target.closest("[data-open-data]")) winOpen("wData", true); });
 document.querySelectorAll("[data-tool]").forEach(b => b.onclick = () => setTool(b.dataset.tool));
 
 $("bDelFeat").onclick = () => {

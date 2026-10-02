@@ -23,7 +23,7 @@
 #norms .nrow .nerr{color:var(--bad)}
 #norms .nrow.bad input[type=number]{border-color:var(--bad);outline:1px solid var(--bad)}
 #norms .nrow .nrev{width:var(--h-sm);height:var(--h-sm)}
-#norms .nrow .nrev svg{width:14px;height:14px}
+#norms .nrow .nrev svg{width:var(--ico-s);height:var(--ico-s)}
 #norms .nempty{padding:20px;text-align:center;color:var(--faint)}
 .normsline{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);padding:5px 8px;color:var(--text)}
 .normsline:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}

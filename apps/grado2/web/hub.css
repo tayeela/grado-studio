@@ -28,7 +28,7 @@ body.hub-on .top{gap:8px}
 .hubacc{position:relative;display:inline-flex}
 .hubmenu{position:absolute;top:calc(100% + 4px);right:0;min-width:240px;z-index:var(--z-menu)}
 .hubmenu button{display:flex;align-items:center;gap:8px}
-.hubmenu button svg{width:15px;height:15px}
+.hubmenu button svg{width:calc(15px*var(--k));height:calc(15px*var(--k))}
 /* Шапка тесная: слева проект и кнопки хаба, справа окна программы. Ширины подобраны по замеру (1440 px — без наложений):
    до 1900 px — кнопки хаба без подписей, имя учётной записи и роль спрятаны (роль видна в подсказке и в окне «Доступ»);
    до 1720 — слово «сохранено» уходит, остаётся цветная точка (тревожные состояния — «нет связи», «отправляю…» — пишутся словами; «только просмотр» объясняет плашка над картой) */
