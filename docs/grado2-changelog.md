@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.91.0: sheet layout editor («Макет», like the QGIS print layout).** Third feature of the
+  unmerged branch of 25.09 (v0.54.2), redone on the current program.
+  - «Листы» → pencil-ruler button in a sheet row (or double click on the sheet preview) opens the finished sheet full screen.
+    Any text of the sheet — title, header, map labels, legend lines — is picked with a click and edited in the side panel:
+    text, font (PT Sans, PT Serif, Montserrat, each also bold — the fonts the PDF embeds, so screen and PDF match), size in
+    points, colour, halo (colour and width in mm), rotation; drag with the mouse or move with the arrows (0,5 mm, Shift 5 mm);
+    Delete hides it; «Сбросить правку» restores it; «Скрытые» brings hidden texts back; «Текст» adds an own text by a click.
+    Zoom: buttons and Ctrl + wheel. «PDF листа» saves this sheet with the edits. While the editor is open its keys are taken
+    first (app.js, `LAYKEYS`), so Delete or letters never reach the map commands underneath.
+  - Edits are stored in the sheet (`edits` by key «text#n» — the n-th text with that wording on the page; `items` — own
+    texts) and applied by the print renderer to every output — preview, PDF and PPTX (`print_io.apply_edits`). Keys carry
+    no coordinates: an edit survives rebuilding the sheet while the text stays the same; rebuilt sections and albums keep
+    the edits of their sheets. The automatic label rules are unchanged — an edit is a manual correction on one sheet.
+  - Core SVG renderer: `data-key` on texts. Checked on the situational plan: label moved, enlarged, rotated, recoloured,
+    bold Montserrat with a white halo; own text added; a label hidden with Delete; PDF and PPTX built with the edits.
+    Tests: print (edits by key, own text, SVG, PDF, PPTX), e2e (edit reaches the redrawn sheet, Delete, Esc).
 - **2026-10-02, ГРАДО 2 v0.90.0: situational plan A4.** Second feature of the unmerged branch of 25.09 (v0.54.0–0.54.1),
   redone on the current program. «Листы» → «Ситуационный план А4»: a picture on the whole A4 sheet without stamp (format «А4
   без штампа»), with only a thin frame — no title, legend, north arrow, scale bar or corner caption. Content: Yandex green,

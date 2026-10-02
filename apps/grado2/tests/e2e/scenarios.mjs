@@ -476,4 +476,18 @@ export default async p => {
       ol_ && ol_.getMinResolution() > 0, !!$("shSit")];
     ["sit.rail", "sit.buildings"].concat(hadAdm ? [] : ["gisogd.admin"]).forEach(k => dropLayer(k)); return r`);
   check(sp.every(Boolean), `ситуационный план: А4 без штампа и легенды, штрихи железной дороги, подписи районов без значка, обзорные здания вблизи скрыты, кнопка в «Листах» (${sp})`);
+
+  // макет листа: надпись готового листа выбирается, правка (кегль, поворот, обводка, шрифт) приходит в перерисованный лист;
+  // Delete скрывает надпись и не трогает объекты карты; Esc закрывает макет
+  const lay = await p.ev(`ALBUM.sheets.push({ id: "lay1", title: "Лист для макета", size: "PA4", kind: "map", view: "", scale: 2000, legend: true, tep: false });
+    const i = ALBUM.sheets.length - 1; await openLayout(i);
+    const t = LAY.svg.querySelector("text[data-key]"), key = t.dataset.key; ALBUM.sheets[i].edits = { [key]: { size: 6, angle: 30, halo: ["#ffffff", .5], font: "serif-bold" } };
+    await renderLayout(); const u = [...LAY.svg.querySelectorAll("text[data-key]")].find(x => x.dataset.key === key);
+    return [i, key, u.getAttribute("font-size"), (u.getAttribute("transform") || "").startsWith("rotate(30"), !!u.getAttribute("stroke"), u.getAttribute("font-weight")]`);
+  check(+lay[2] === 6 && lay[3] && lay[4] && lay[5] === "bold", `макет: надпись листа — кегль ${lay[2]} мм, поворот ${lay[3]}, обводка ${lay[4]}, полужирный ${lay[5]}`);
+  const nFeat = await p.ev(`return LYR.reduce((n, l) => n + layerSrc[l.key].getFeatures().length, 0)`);
+  await p.ev(`LAY.sel = ${JSON.stringify(lay[1])}; document.activeElement?.blur?.(); return 1`); await p.key("Delete", "Delete", { vk: 46 }); await p.sleep(600);
+  check(await p.ev(`return ALBUM.sheets[${lay[0]}].edits[${JSON.stringify(lay[1])}].hide === true && LYR.reduce((n, l) => n + layerSrc[l.key].getFeatures().length, 0) === ${nFeat}`), "макет: Delete скрывает надпись листа, объекты карты целы");
+  await p.key("Escape", "Escape", { vk: 27 });
+  check(await p.ev(`const r = $("layEd").hidden && !LAY; ALBUM.sheets.splice(${lay[0]}, 1); renderSheets(); return r`), "макет: Esc закрывает окно макета");
 };

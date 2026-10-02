@@ -256,6 +256,15 @@ table.cl{width:100%;border-collapse:collapse;border:1px solid var(--line)}
 .menu button.danger,.menu button[data-danger]{color:var(--bad)}
 .legend{padding:6px 8px;background:var(--field)}.lg{margin-bottom:6px}.lgh{display:flex;gap:6px;align-items:center;font-weight:600}.lgi{display:flex;gap:6px;align-items:center;padding:1px 0 1px 18px;color:var(--muted)}
 .meta4{display:grid;grid-template-columns:1fr 1fr;gap:4px}.meta4 input{width:100%}
+#layEd{position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column}#layEd[hidden]{display:none}
+.layh{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);background:var(--panel)}.layh .sp{flex:1}
+.layb{flex:1;display:flex;min-height:0}.lays{flex:1;overflow:auto;padding:16px;background:var(--canvas)}.lays.busy{cursor:progress}
+.lays svg{display:block;width:100%;max-width:calc((100vh - 90px) * 1.78);margin:0 auto;height:auto;background:#fff;box-shadow:0 1px 8px rgba(0,0,0,.25)}
+.lays text.layt{cursor:move}.lays text.layt:hover{outline:1px dashed #1a5fb4}
+.layp{width:280px;flex:0 0 auto;border-left:1px solid var(--line);background:var(--panel);overflow:auto}
+.layp .lf label{display:flex;flex-direction:column;gap:3px;font-size:12px;margin:0 0 8px}.layp .lf textarea,.layp .lf select,.layp .lf input{width:100%}
+.layp .row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.layp label.chk{flex-direction:row;align-items:center;gap:6px}.layp label.chk input{width:auto}
+.layp .note{padding:10px 12px}
 table.sheets{table-layout:fixed;min-width:760px}#sheetsBody{overflow-x:auto}table.sheets td,table.sheets th{padding:2px 4px}table.sheets input[type=text],table.sheets select{width:100%;min-width:0}
 table.sheets input[type=checkbox]{width:auto;height:auto;display:block;margin:0 auto}table.sheets td.acts{white-space:nowrap;overflow:visible}table.sheets td.acts .tb{display:inline-flex;vertical-align:middle}.sheetprev{padding:8px;background:var(--canvas)}.sheetprev:has(img[hidden]){display:none}.sheetprev img{width:100%;display:block;background:#fff;box-shadow:var(--sh-1)}
 .menu hr{border:0;border-top:1px solid var(--line);margin:4px 0}
@@ -663,6 +672,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 <script src="views.js"></script>
 <script src="sheets.js"></script>
 <script src="albums.js"></script>
+<script src="layout.js"></script>
 <script src="frames.js"></script>
 <script src="ogdpick.js"></script>
 <script src="migrate.js"></script>

@@ -113,12 +113,14 @@ def render_svg(w, h, ops, font_family="Arial, sans-serif"):
             halo = (f' stroke="{_css(o.get("halo_color", (1, 1, 1)))}" stroke-width="{_num(o["halo"]) * 2:.3f}" '
                     f'paint-order="stroke" stroke-linejoin="round"') if o.get("halo") else ""
             under = ' text-decoration="underline"' if o.get("underline") else ""
+            # ключ надписи — для выбора её в редакторе макета листа
+            key = f' data-key="{_esc(o["key"])}"' if o.get("key") else ""
             op_font = (font_family if family in (None, "ui") else
                        _FONT_FAMILIES.get(family, font_family))
             body.append(
                 f'<text x="{o["x"]:.3f}" y="{o["y"]:.3f}"{tf} '
                 f'font-size="{_num(o["size"])}" font-family="{op_font}"'
-                f'{weight}{halo}{under} '
+                f'{weight}{halo}{under}{key} '
                 f'text-anchor="{anchor}" fill="{_css(o.get("color", (0, 0, 0)))}">'
                 f'{_esc(o["text"])}</text>')
     body.extend("</g>" * open_groups)

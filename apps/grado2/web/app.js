@@ -9,7 +9,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const icons = () => lucide.createIcons({ attrs: { "stroke-width": 1.75 } });
 // Совместный режим (hub.js ставит window.KEYGUARD): клавиша наблюдателя гасится здесь, в самом первом перехвате окна, —
 // обработчики cad.js и layers.js стоят на том же перехвате и идут позже; в обычном режиме KEYGUARD нет и ничего не происходит
-addEventListener("keydown", e => { if (window.KEYGUARD?.(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+// макет листа (layout.js) открыт поверх всего — его клавиши тоже решаются здесь, раньше команд карты
+addEventListener("keydown", e => { if (window.LAYKEYS?.(e) || window.KEYGUARD?.(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
 // сообщение внизу по центру; если там стоит окно — над картой сверху, чтобы не закрывать карточки и кнопки окна
 let tT; function toast(t) {
   const el = $("toast"); el.textContent = t; el.classList.remove("top"); el.classList.add("on");

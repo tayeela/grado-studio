@@ -194,6 +194,36 @@ class SlideLabels(unittest.TestCase):
             self.assertLessEqual(c[0] + c[2], wh[0])
 
 
+class LayoutEdits(unittest.TestCase):
+    """Редактор макета: правки надписей готового листа по ключу «текст#n» и свои надписи — в SVG, PDF и PPTX."""
+
+    def spec(self, **kw):
+        lab = lambda y: {"g": {"type": "Point", "coordinates": [37.65, y]}, "nm": True, "ls": 3.4, "label": "РАЙОН ЛЕФОРТОВО"}
+        sh = {"size": "BA4", "kind": "situation", "title": "Ситплан", "scale": 10000, "center": [37.65, 55.80], "legend": [], "territory": None,
+              "layers": [{"title": "Районы", "features": [lab(55.80), lab(55.79)]}], **kw}
+        return {"meta": {}, "sheets": [sh]}
+
+    def test_edit_by_key_and_own_text(self):
+        edits = {"РАЙОН ЛЕФОРТОВО#0": {"dx": 5, "dy": -2, "size": 5, "color": "#8a3fb0", "font": "ui-bold", "angle": -15, "halo": ["#ffffff", .8]},
+                 "РАЙОН ЛЕФОРТОВО#1": {"hide": True}}
+        items = [{"id": "a", "x": 20, "y": 30, "text": "Проектируемая территория", "size": 4, "font": "serif-bold", "halo": ["#ffffff", .5]}]
+        spec = self.spec(edits=edits, items=items)
+        plain = [o for o in print_io._pages(self.spec(), {}, {}, None)[0][2] if o["op"] == "text"]
+        t = [o for o in print_io._pages(spec, {}, {}, None)[0][2] if o["op"] == "text"]
+        self.assertEqual([o["text"] for o in t], ["РАЙОН ЛЕФОРТОВО", "Проектируемая территория"])   # второй скрыт, своя добавлена
+        a, own = t
+        self.assertEqual((a["size"], a["font_family"], a["color"]), (5, "ui-bold", print_io.hex_to_rgb("#8a3fb0")))
+        self.assertAlmostEqual(math.degrees(a["angle"]), -15)
+        self.assertEqual((a["halo"], a["halo_color"]), (.8, (1.0, 1.0, 1.0)))
+        self.assertAlmostEqual(a["x"] - plain[0]["x"], 5)
+        self.assertEqual((own["x"], own["y"], own["key"], own["font_family"]), (20.0, 30.0, "item:a", "serif-bold"))
+        svg = print_io.render_preview_svg(spec, {}, {})
+        self.assertIn('data-key="РАЙОН ЛЕФОРТОВО#0"', svg)
+        self.assertIn('paint-order="stroke"', svg)
+        self.assertTrue(print_io.render_pdf(spec, {}, {}).startswith(b"%PDF"))
+        self.assertTrue(print_io.render_pptx(spec, {}, {})[:2] == b"PK")
+
+
 if __name__ == "__main__":
     unittest.main()
 

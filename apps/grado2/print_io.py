@@ -1500,8 +1500,76 @@ def build_document(spec, lib, lgr_dash, tiles=None):
     return doc
 
 
+# шрифты редактора макета — те, что есть у ядра (PDF встраивает их файлы, поэтому лист и PDF совпадают)
+FONTS = ("ui", "ui-bold", "sans", "sans-bold", "serif", "serif-bold")
+
+
+def apply_edits(ops, sheet, seen=None, items=True):
+    """Правка готового листа (редактор макета): у каждой надписи листа ключ «текст#n» (n — какая по счёту такая же надпись
+    на странице), по ключу — правка: сдвиг dx/dy (мм), кегль (мм), цвет, шрифт, обводка [цвет, мм], поворот (°), свой
+    текст, скрыть. Свои надписи листа (items) дописываются сверху. Ключ не хранит координат: подпись найдётся и после
+    пересборки листа, пока у неё тот же текст. seen — счётчик, общий для всех рамок страницы (PPTX идёт по рамкам)."""
+    edits, out = sheet.get("edits") or {}, []
+    seen = {} if seen is None else seen
+    for o in ops:
+        if o.get("op") != "text":
+            out.append(o)
+            continue
+        n = seen.get(o["text"], 0)
+        seen[o["text"]] = n + 1
+        o = {**o, "key": f"{o['text']}#{n}"}
+        e = edits.get(o["key"])
+        if isinstance(e, dict):
+            if e.get("hide"):
+                continue
+            o = _edited(o, e)
+        out.append(o)
+    if items:
+        out.extend(own_texts(sheet))
+    return out
+
+
+def own_texts(sheet):
+    out = []
+    for it in sheet.get("items") or []:
+        if isinstance(it, dict) and str(it.get("text") or "").strip():
+            o = {"op": "text", "x": float(it.get("x", 0)), "y": float(it.get("y", 0)), "size": 3.0, "text": str(it["text"]),
+                 "color": (0.1, 0.1, 0.1), "key": f"item:{it.get('id')}"}
+            out.append(_edited(o, {k: v for k, v in it.items() if k not in ("x", "y", "text")}))
+    return out
+
+
+def _edited(o, e):
+    rgb = lambda c, d: hex_to_rgb(c) if isinstance(c, str) and c.startswith("#") else d
+    o = dict(o)
+    o["x"] += float(e.get("dx") or 0)
+    o["y"] += float(e.get("dy") or 0)
+    if isinstance(e.get("text"), str) and e["text"].strip():
+        o["text"] = e["text"]
+    if e.get("size"):
+        o["size"] = max(.5, min(60.0, float(e["size"])))
+    if e.get("color"):
+        o["color"] = rgb(e["color"], o.get("color"))
+    if e.get("font") in FONTS:
+        o["font_family"] = e["font"]
+    if e.get("angle") is not None and e.get("angle") != "":
+        o["angle"] = math.radians(float(e["angle"]))
+    h = e.get("halo")
+    if isinstance(h, (list, tuple)) and len(h) == 2:
+        o["halo"], o["halo_color"] = max(.05, min(3.0, float(h[1]))), rgb(h[0], (1, 1, 1))
+    elif "halo" in e and not h:
+        o.pop("halo", None)
+        o.pop("halo_color", None)
+    return o
+
+
+def _pages(spec, lib, lgr_dash, tiles):
+    pages = document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None)
+    return [(w, h, apply_edits(ops, sh)) for (w, h, ops), sh in zip(pages, spec["sheets"])]
+
+
 def render_pdf(spec, lib, lgr_dash, tiles=None):
-    return PdfBackend(None).render(document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None))
+    return PdfBackend(None).render(_pages(spec, lib, lgr_dash, tiles))
 
 
 def not_ready(spec):
@@ -1522,12 +1590,14 @@ def render_pptx(spec, lib, lgr_dash, tiles=None):
     from grado_render.backend_pptx import PptxBackend
     doc = build_document(spec, lib, lgr_dash, tiles)
     titles, pages = sheet_titles(doc), []
-    for i, page in enumerate(doc.pages, start=1):
-        ctx = _ctx(doc, None, None, None, i, titles[i - 1])
-        pages.append((page.size[0], page.size[1], [(PPTX_GROUPS.get(type(f).__name__, "Оформление"), f.ops(ctx)) for f in page.frames]))
+    for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
+        ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
+        groups = [(PPTX_GROUPS.get(type(f).__name__, "Оформление"), apply_edits(f.ops(ctx), sh, seen, items=False)) for f in page.frames]
+        own = own_texts(sh)
+        pages.append((page.size[0], page.size[1], groups + ([("Свои надписи", own)] if own else [])))
     return PptxBackend(doc.title).render(pages)
 
 
 def render_preview_svg(spec, lib, lgr_dash, index=0, tiles=None):
-    w, h, ops = document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None)[index]
+    w, h, ops = _pages(spec, lib, lgr_dash, tiles)[index]
     return render_svg(w, h, ops)
