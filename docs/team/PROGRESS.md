@@ -1,0 +1,36 @@
+# Журнал команды ГРАДО 2
+
+Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
+
+RULE: The owner's program and the site change only after the owner's word «выкладывай»; all program work happens in
+the team worktree `.claude/worktrees/team` on branch `team/grado2`.
+
+RULE: Before taking a status claim from a role, check the changelog entry it cites: the changelog keeps old «not done»
+lines under entries that were done later (Э11 was «not done» at line 1513 and done in v0.36.0).
+RULE: Social-object placement (T6) starts only after the preset constants audit (T4) and the norms spec with a fixture
+test (T5); plot areas are the table minimum «не менее».
+
+RULE: A reviewer's PASS on frontend code is not enough: a function added to a module under `(function(root){…})` is
+not global — call it through its exported object, and run the E2E on the combined tree before the commit (T3:
+`keepUid is not defined` passed the unit tests and the diff review).
+RULE: Agents that share the worktree must not run the E2E on a tree with another agent's unfinished edits; the lead
+runs the final gate on the combined tree.
+RULE: Norm constants are checked only against decree texts in `docs/standards/moscow-ngp` (audit of 02.10.2026);
+the owner sends missing texts as files.
+
+- 02.10.2026, цикл 2 — T2, T3, T4 приняты; указание владельца о ручной правке нормативов → T13 первой в очереди.
+  T2: сбой сценария — клик по «Доступ» попадал в «Историю», пока шапка сдвигалась ~30 мс; сценарий ждёт устойчивую
+  кнопку (hub.js не менялся; сдвиг — T15). T3: `mergeDownload` переносит `_uid` на совпавший объект (`Collab.keepUid`);
+  первая версия падала в браузере (`keepUid is not defined`), исправлено руководителем. T4: 34 константы подтверждены
+  текстами, включая спорт по 1557-ПП из PDF владельца; не проверены только проектные допущения (k_flats, k_np,
+  плотность ИЖС) и правила владельца. Проверка на общем дереве: 355 unit OK, collab 66 checks ok, connectors 150 OK,
+  3 прогона E2E подряд зелёные (плюс 5 прогонов сценария у исполнителя). Журнал PROGRESS.md теперь в git (слово
+  владельца). Дальше: T13 (нормативы вручную), T15, T5.
+- 02.10.2026, цикл 1 — задачи T1 и T2 (частично). T1: совещание продакта, архитектора, нормоконтролёра и креативного
+  директора в два круга; план сверен с v0.91.1 (новый раздел «Where we are (02.10.2026)» в ветке команды, 532d0e5),
+  очередь T2–T12 в BOARD, решение в DECISIONS. T2а: ошибка 500 ленты событий в unit-тестах — поток пережил подмену
+  хаба тестом; обработчик держит свой хаб (v0.91.2, 2180962). Проверка: 3 прогона unit-тестов по 355 — OK, без
+  `session_user`; ревью архитектора PASS (прод не меняется). Браузерные сценарии: 4 прогона из 5 зелёные, один упал на
+  `#hubShareLogin` — это остаток T2. Дальше: T2 (стабильность сценария), T3 (`_uid` ЕГРН), T4 (сверка констант).
+- 02.10.2026 — команда создана: роли в `.claude/agents/grado-*.md`, порядок цикла в `docs/team/CYCLE.md`,
+  рабочая копия `.claude/worktrees/team` на ветке `team/grado2` (от main 2c9c6ea, v0.91.1). Первая задача — T1.
