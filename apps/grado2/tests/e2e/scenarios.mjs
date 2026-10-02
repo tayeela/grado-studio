@@ -452,4 +452,13 @@ export default async p => {
     check(await p.ev(`const f = ${JSON.stringify(sqParcel)}, m = mergeDownload("nspd.parcels", DATA["nspd.parcels"], { type: "FeatureCollection", features: [{ ...f, properties: { ...f.properties, _key: "portal-id-1" } }] }, null); return m.counts.removed === 0 && m.counts.added === 0`), "выгрузка по области: тот же кадастровый номер — тот же объект, «исчезло» не растёт");
   } finally { await p.ev(`window.fetch = window.__f0; window.prompt = window.__p0; return 1`); }
   check(await p.ev(`return window.fetch === window.__f0`), "fetch восстановлен после проверок поиска");
+
+  // «Из файла»: граница — самый большой замкнутый контур файла (замкнутая линия считается контуром), через настоящий импорт
+  check(await p.ev(`return !!$("bTerrFile") && typeof importBoundary === "function"`), "в окне «Данные» есть кнопка «Из файла»");
+  const tf = await p.ev(`const big = [[37.52, 55.79], [37.53, 55.79], [37.53, 55.795], [37.52, 55.795], [37.52, 55.79]], small = [[37.521, 55.791], [37.522, 55.791], [37.522, 55.792], [37.521, 55.791]];
+    const gj = { type: "FeatureCollection", features: [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: big } },
+      { type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [small] } }, { type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: [[37.5, 55.7], [37.51, 55.71]] } }] };
+    const ok = await importBoundary([new File([JSON.stringify(gj)], "граница.geojson")]);
+    return [ok, Math.abs(TERR_M2 - m2(turf.polygon([big]))) < 1, /Граница из файла «граница.geojson»: .* га; взят самый большой из 2 контуров/.test($("toast").textContent)]`);
+  check(tf.every(Boolean), `«Из файла»: граница — самый большой из двух замкнутых контуров, площадь как у контура, в подсказке имя файла (${tf})`);
 };

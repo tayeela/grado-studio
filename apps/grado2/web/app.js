@@ -203,6 +203,37 @@ new MutationObserver(() => {
     sharedView.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
 }).observe($("wData"), { attributes: true, attributeFilter: ["hidden"] });
 $("bDraw").onclick = () => setTool("terr");
+/* Граница из файла (DXF, DWG, GeoJSON, KML/KMZ, Shapefile): самый большой полигон или замкнутая полилиния файла становится
+   границей территории. Местные метры читаются в системе, выбранной в «Файлы в метрах» (по умолчанию МСК), как при импорте. */
+function pickBoundary(then) {
+  const inp = document.createElement("input"); inp.type = "file"; inp.multiple = true;
+  inp.accept = ".dxf,.dwg,.geojson,.json,.kml,.kmz,.zip,.shp,.dbf,.shx,.prj,.cpg";
+  inp.onchange = () => importBoundary([...inp.files]).then(ok => ok && then?.()); inp.click();
+}
+async function importBoundary(files) {
+  if (!files.length) return false;
+  busy(true);
+  try {
+    const body = { local: $("impLocal")?.value || "msk", files: await Promise.all(files.map(async f => ({ name: f.name, b64: b64(await f.arrayBuffer()) }))) };
+    const r = await fetch("/api/import/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }), j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    const closed = c => c.length > 3 && turf.distance(c[0], c[c.length - 1]) * 1000 < .5;      // концы ближе 0,5 м — контур замкнут
+    const polys = j.layers.flatMap(l => l.features.features).flatMap(f => {
+      const g = f.geometry; if (!g) return [];
+      if (g.type === "Polygon") return [turf.polygon(g.coordinates)];
+      if (g.type === "MultiPolygon") return g.coordinates.map(c => turf.polygon(c));
+      const ls = g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : [];
+      return ls.filter(closed).map(c => safe(() => turf.polygon([[...c.slice(0, -1), c[0]]]))).filter(Boolean);
+    });
+    if (!polys.length) throw new Error("в файле нет замкнутых контуров");
+    polys.sort((a, b) => turf.area(b) - turf.area(a));
+    setTerritory(polys[0]);
+    toast(`Граница из файла «${files[0].name}»: ${fmt(TERR_M2 / 1e4, 2)} га${polys.length > 1 ? `; взят самый большой из ${polys.length} контуров` : ""}.`);
+    return true;
+  } catch (e) { toast("Граница не прочитана: " + e.message); return false; } finally { busy(false); }
+}
+window.pickBoundary = pickBoundary;
+$("bTerrFile").onclick = () => pickBoundary();
 /* Граница по кадастровым номерам: территория — объединение участков НСПД (владелец 30.09.2026: границу КРТ 3141 —
    по участкам 50:27:0000000:126 и 77:22:0030223:315, 48,5180 га в документе заказчика). Номера вставляются как есть,
    из таблицы или письма: берутся все строки вида 00:00:0000000:000. */

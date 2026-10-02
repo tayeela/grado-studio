@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.89.0: boundary from a file.** Owner: bring back the three features of the unmerged branch
+  `claude/stoic-mirzakhani-92ecaa` (v0.54.0–0.54.2 of 25.09, never merged; redone on the current program, not merged).
+  First of them: «Данные» → «Из файла» next to «Нарисовать границу» takes the largest closed contour of a DXF, DWG,
+  GeoJSON, KML/KMZ or Shapefile as the territory boundary — polygons, multipolygon parts and lines whose ends meet within
+  0,5 m; local metres are read in the system chosen in «Файлы в метрах» (МСК by default), as on import. The hint names the
+  file, the area and how many contours there were. Checked: a DXF in МСК with two closed polylines and a line gave the
+  larger one, 6,06 га as computed from its vertices; e2e step with a GeoJSON through the real import.
 - **2026-10-01, ГРАДО 2 v0.88.3: leftover edits of earlier sessions committed.** `tests/test_server.py`
   (`HttpHardening`): the server under test gets a temporary projects folder, so the POST /api/project test no longer
   writes into the real one. `print_io.py`: the street-label comment now matches the code — a required street with no
