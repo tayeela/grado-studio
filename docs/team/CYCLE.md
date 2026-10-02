@@ -18,7 +18,8 @@ is `README.md` in this folder.
 ## Budget
 
 At most 3 tasks per cycle and about 15 agent calls in total; at most 3 agents at the same time, and two agents
-never edit the same files at once. All role agents are Sonnet. Stop early and write the report if the usage
+never edit the same files at once. All role agents are Sonnet: when a role is called through `general-purpose`
+(the `grado-*` agent types do not load in a session started from `~`), always pass `model: "sonnet"`. Stop early and write the report if the usage
 limit is near. Read big files by line ranges (the changelog is 1800+ lines: read the top 80).
 
 ## 0. Start
