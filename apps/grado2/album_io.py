@@ -468,7 +468,22 @@ class ConceptColumnFrame(Frame):
                         out.append(_text(cx + cw / 2, yy + T10 * .8 + i * lh_ + (rh - 2 - len(c) * lh_) / 2, fs, line, INK2, "sans", "middle"))
                     cx += cw
                 yy += rh
-        for blk in sh.get("cLists") or []:
+        # списки документов: название — полностью. Не помещается — кегль пунктов ступенями вниз до 2,0 мм (5,7 пт);
+        # и тогда не помещается — пункты не режутся, лист помечается «не готов» (владелец 03.10.2026)
+        lists_ = [blk for blk in sh.get("cLists") or []]
+        fs_list = 10.0
+        if lists_ and not full:
+            for fs_try in (10.0, 9.0, 8.0, 7.2, 6.4, 2.0 / PT):
+                need = yy
+                for blk in lists_:
+                    need += 7 + 5 * len(_wrap_mm(blk["title"], "sans-bold", S12, w)) + 1.5
+                    for it in blk["items"]:
+                        need += len(_wrap_mm(it["text"], "sans", fs_try * PT, w - 4)) * fs_try * .42 + 2.6 * fs_try / 10 + 3.2
+                fs_list = fs_try
+                if need <= bottom:
+                    break
+        SL, LH = fs_list * PT, fs_list * .42
+        for blk in lists_:
             if full or yy > bottom - 12:
                 if blk.get("items"):
                     _not_ready(sh, f"не выведен список «{blk['title']}» ({len(blk['items'])})")
@@ -480,17 +495,17 @@ class ConceptColumnFrame(Frame):
                 yy += 5
             yy += 1.5
             for n, it in enumerate(blk["items"]):
-                lines = _wrap_mm(it["text"], "sans", S10, w - 4)
-                bh = len(lines) * 4.2 + 2.6
+                lines = _wrap_mm(it["text"], "sans", SL, w - 4)
+                bh = len(lines) * LH + 2.6 * fs_list / 10
                 if yy + bh > bottom:
                     _not_ready(sh, f"не поместились пункты списка «{blk['title']}» ({len(blk['items']) - n})")
                     full = True
                     break
                 out.append({"op": "path", "closed": True, "fill": None, "stroke": _rgb(it.get("color"), INK), "width": 0.3, "dash": None,
                             "rings": [[(x, yy), (x + w, yy), (x + w, yy + bh), (x, yy + bh)]]})
-                cap_ = S10 * .7                                       # высота прописных: текст по центру рамки (правило 11)
+                cap_ = SL * .7                                        # высота прописных: текст по центру рамки (правило 11)
                 for i, line in enumerate(lines):
-                    out.append(_text(x + 1.8, yy + (bh - (len(lines) - 1) * 4.2 - cap_) / 2 + cap_ + i * 4.2, 10, line, INK2, "sans"))
+                    out.append(_text(x + 1.8, yy + (bh - (len(lines) - 1) * LH - cap_) / 2 + cap_ + i * LH, fs_list, line, INK2, "sans"))
                 yy += bh + 3.2
         cards = sh.get("cCards")
         if cards and cards.get("items") and full:

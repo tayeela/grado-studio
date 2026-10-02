@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.96.2: document titles are never shortened in the album.** `docTitle` (albums.js) no longer
+  adds «…» to titles over 120 characters. On the КРТ document slides the lists «Проекты планировки территории» /
+  «Проекты межевания территории» wrap every title in full; when the list does not fit, the item font steps down
+  (10 → 9 → 8 → 7.2 → 6.4 → 2.0 mm) and the frame grows with it; if it still does not fit the sheet is marked «не
+  готов» with the reason (continuation slides are not made). Legend labels on sheets wrap fully instead of being cut
+  at the third line; the legend stops between items, never inside a label. Checked with a real 498-character title
+  (three of them on one slide). Open: a list that does not fit at 2.0 mm still has no continuation slide.
 - **2026-10-03, ГРАДО 2 v0.96.1: full ППТ titles from ГИС ОГД.** Owner 03.10: in the КРТ presentation near
   д. Безобразово the ППТ title was cut («…от газорегулято…»); «название ППТ всегда должно быть написано полностью и как
   на ГИСОГД». Cause: the portal's shapefile DBF caps text fields at 254 bytes (UTF-8 → about 127 Cyrillic characters);

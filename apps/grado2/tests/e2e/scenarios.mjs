@@ -7,6 +7,7 @@ export default async p => {
   const [cx, cy] = box;
   const poly = async (x, y, s) => { await p.click(x, y); await p.click(x + s, y); await p.click(x + s, y + s); await p.click(x, y + s, { dbl: true, wait: 300 }); };
 
+  check(await p.ev(`const t = "Об утверждении проекта планировки территории района Северный города Москвы, ограниченной:полосой отвода " + "x".repeat(380) + " проезда 241"; return docTitle(t) === t && !docTitle(t).includes("…") && docTitle("А - Б") === "А — Б" && docLine({ document_1: t, document_n: "899-ПП", document_d: "2015-12-17" }).startsWith(t)`), "T29: название документа ППТ в альбоме не сокращается (длинное — целиком, без многоточия)");
   // первый запуск: «С чего начать» вместо пустого экрана; F1 — клавиши
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
   check(await p.ev(`try{localStorage.removeItem("grado2.start")}catch{} startOff=false; selectTerr(false); setTool("select"); syncStatus(); await new Promise(r=>setTimeout(r,100)); const t=$("start").innerText; return !$("start").hidden && /Начните с границы/.test(t) && /Нарисовать границу/.test(t) && /Пример/.test(t) && $("start").querySelectorAll(".btn").length===2`), "T27: приветствие на пустой карте — одна фраза и два действия «Нарисовать границу», «Пример»");

@@ -1236,7 +1236,7 @@ class ColumnFrame(Frame):
                 full = True
             items = grp.get("items") or [grp]
             if not full and len(items) > 1:
-                for line in _wrap(grp["title"], int(w / 1.45))[:2]:
+                for line in _wrap(grp["title"], int(w / 1.45)):
                     out.append({"op": "text", "x": x, "y": yy, "size": 2.6, "text": line})
                     yy += 3.4
                 yy += 1.1
@@ -1244,11 +1244,13 @@ class ColumnFrame(Frame):
                 if full or yy > y + h - 8:            # место проверяется на каждой строке, иначе легенда наезжает на штамп
                     full = True
                     break
-                out.extend(_swatch(x, yy - 3, grp.get("kind", "poly"), it))
-                # длинная строка легенды переносится (до трёх строк), а не обрезается
+                # длинная строка легенды переносится целиком, сколько бы строк ни понадобилось (владелец 03.10.2026);
+                # не помещается — легенда обрывается по строкам, а не внутри подписи
                 lines = _wrap(str(it.get("label") or grp["title"]), int((w - 13) / 1.3))
-                if len(lines) > 3:
-                    lines = lines[:2] + [lines[2][:max(1, int((w - 13) / 1.3) - 1)] + "…"]
+                if yy + (len(lines) - 1) * 3 > y + h - 8:
+                    full = True
+                    break
+                out.extend(_swatch(x, yy - 3, grp.get("kind", "poly"), it))
                 for i, line in enumerate(lines):
                     out.append({"op": "text", "x": x + 13, "y": yy + i * 3, "size": 2.4, "text": line})
                 yy += 4.8 + (len(lines) - 1) * 3
@@ -1265,11 +1267,11 @@ class ColumnFrame(Frame):
             if yy > y + h - 12:
                 break
             yy += 3
-            for line in _wrap(blk["title"], int(w / 1.45))[:2]:
+            for line in _wrap(blk["title"], int(w / 1.45)):
                 out.append({"op": "text", "x": x, "y": yy, "size": 2.8, "text": line, "font_family": "ui-bold"})
                 yy += 3.8
             for n, item in enumerate(blk["items"]):
-                lines = _wrap(item, int(w / 1.12))[:4]
+                lines = _wrap(item, int(w / 1.12))
                 if yy + len(lines) * 2.9 > y + h - 3:
                     out.append({"op": "text", "x": x, "y": min(yy + 1, y + h - 1), "size": 2.3, "color": (0.3, 0.3, 0.3),
                                 "text": f"… ещё {len(blk['items']) - n} — на карте их номера есть"})

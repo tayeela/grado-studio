@@ -273,9 +273,9 @@ function conceptDocs(out, bb, groups) {
   if (pts.length) out.layers.push({ title: "Номера документов", features: pts });
   return lists;
 }
-// название документа ГИС ОГД хранит не длиннее 128 знаков: обрезанное название помечается многоточием; дефис между
+// название документа — всегда полностью, как в ГИС ОГД (владелец 03.10.2026): без многоточия и обрезки; дефис между
 // словами — тире (правило 11: «…от газорегулято №1218-ПП»)
-const docTitle = t => { t = String(t || "").trim().replace(/\s+-\s+/g, " — "); return t.length >= 120 && !/[.)»"]$/.test(t) ? t + "…" : t; };
+const docTitle = t => String(t || "").trim().replace(/\s+-\s+/g, " — ");
 // «№» отделён от номера неразрывным пробелом (правило 2.26; владелец 01.10.2026)
 const docLine = p => [docTitle(p.document_1), p.document_n ? `№\u00a0${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ");
 

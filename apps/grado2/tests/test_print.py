@@ -340,6 +340,40 @@ class ConceptSheets(unittest.TestCase):
         self.assertIn("пункты легенды", note[0])
         self.assertTrue(all(o["size"] == 10 * 0.3528 for o in ops if o["op"] == "text" and o["text"].startswith("пункт легенды")))   # не мельче
 
+    LONG = ('Об утверждении проекта планировки территории района Северный города Москвы, ограниченной:полосой отвода подъездной '
+            'железнодорожной ветки к Северной водопроводной станции, территорией объектов природного комплекса Северно-Восточного '
+            'административного округа города Москвы №16 "Хлебниковский лесопарк (кварталы 58,68,69,70,103), район Северный", '
+            '№ 19 "Парк, район Северный", №20 "Кладбище у Хлебниковского лесопарка, район Северный",границей зоны 1-го пояса '
+            'санитарной зоны проектируемого проезда 241')
+
+    def test_document_title_498_chars_is_printed_in_full_without_ellipsis(self):
+        self.assertEqual(len(self.LONG), 498)
+        item = "1. " + self.LONG + " №\u00a0899-ПП от 17.12.2015 г."
+        _, ops = self._ops({"title": "Схема", "cLists": [{"title": "Проекты планировки территории", "items": [{"text": item, "color": "#f5a623"}]}]})
+        texts = [o["text"] for o in ops if o["op"] == "text"]
+        self.assertFalse(any("…" in t for t in texts))
+        self.assertEqual(" ".join(texts).count("санитарной зоны проектируемого проезда 241"), 1)
+        joined = " ".join(t for t in texts if t not in ("Схема",))
+        flat = lambda t: " ".join(t.replace("\xa0", " ").split())
+        self.assertIn(flat(self.LONG), flat(joined))
+        self.assertIn("899-ПП", joined)
+
+    def test_legend_label_of_498_chars_wraps_in_print_io_column(self):
+        spec = {"sheets": [{"size": "PA3", "style": "plan", "title": "Схема", "scale": 7500, "center": [37.2, 55.4], "layers": [],
+                            "legend": [{"title": "Док", "items": [{"label": self.LONG, "fill": "#cccccc"}]}]}]}
+        ops = print_io.document_pages_ops(print_io.build_document(spec, {}, {}), None)[0][2]
+        texts = [o["text"] for o in ops if o["op"] == "text"]
+        self.assertFalse(any("…" in t for t in texts))
+        self.assertIn("проезда 241", " ".join(texts))
+
+    def test_long_list_steps_font_down_and_all_items_stay(self):
+        items = [{"text": f"{n}. " + self.LONG + " №\u00a0899-ПП от 17.12.2015 г.", "color": "#f5a623"} for n in range(1, 7)]
+        _, ops = self._ops({"title": "Схема", "cLists": [{"title": "Проекты планировки территории", "items": items}]})
+        texts = [o["text"] for o in ops if o["op"] == "text"]
+        self.assertGreaterEqual(" ".join(texts).count("241"), 6)
+        self.assertFalse(any("…" in t for t in texts))
+        self.assertTrue(any(abs(o["size"] - 10 * 0.3528) > 1e-6 for o in ops if o["op"] == "text" and "241" in o["text"]))
+
     def test_last_line_not_a_lonely_short_word_and_table_hyphen_break(self):
         import album_io as A
         lines = A._wrap_mm("земельных участков, поставленных на кадастровый учёт", "sans", 10 * A.PT, 120 - 15.5)
