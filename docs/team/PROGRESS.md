@@ -43,6 +43,12 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026 (02:18 MSK), выкладка v0.97.0 и перенос альбома по слову владельца («выкладывай и переноси как
+  закончишь»). Выкладка: main ← team/grado2 (eb3c2d9), «Готово: на сервере версия 0.97.0». Перенос на сервере
+  (Mac → msk → grado, как root): условие — автосохранение старше 10 мин и 0 соединений с :8650 (вкладка закрыта);
+  бэкапы `/var/lib/grado/projects/.bak/Безобразово.grado2.bak-20261002-2318` и `autosave.grado2.bak-20261002-2318`;
+  `transfer_album.py` (копия логики importAlbum «заменить») применён к проекту и к автосохранению: 1 → 9 листов
+  (8 frozen), 36 слоёв без изменений, 16 → 34 МБ; атомарная подмена, chown grado, 600. Откат: `cp` бэкапа на место.
 RULE: Project files on the site (`/var/lib/grado/projects`, local mode, not hub) are edited only by the lead with the
 owner's word: plan first, backup to `.bak/`, atomic replace, the owner's tab closed (browser autosave would overwrite),
 verification, rollback path. Subagents never touch them.
