@@ -783,3 +783,48 @@ class TestPrintHolesAndGroundUnits(unittest.TestCase):
             # QML: size 3.5 м, ow 1.25 м (1.24 — округление MARKER_OW 0.625→0.62)
             self.assertAlmostEqual(lm["size_mm"] * scale / 1000, 3.5, delta=0.02)
             self.assertAlmostEqual(lm["ow_mm"] * scale / 1000, 1.25, delta=0.02)
+
+
+class TestSearchableText(unittest.TestCase):
+    """Текст листа PDF ищется и копируется: у каждого шрифта есть /ToUnicode (T28)."""
+    WORDS = ["Ситуационный план", "ТЭП", "1:2 000", "45,9", "м²"]
+
+    def setUp(self):
+        ops = [{"op": "text", "x": 20, "y": 20 + 10 * i, "size": 4, "text": w}
+               for i, w in enumerate(self.WORDS)]
+        ops.append({"op": "text", "x": 20, "y": 90, "size": 4, "text": "Halo",
+                    "halo": 0.3})
+        self.pdf = PdfBackend().render([(160, 100, ops)])
+
+    def _streams(self):
+        out = []
+        for s in re.findall(rb"stream\n(.*?)\nendstream", self.pdf, re.S):
+            try:
+                out.append(zlib.decompress(s))
+            except zlib.error:
+                pass
+        return out
+
+    def test_to_unicode_cmap_decodes_page_text(self):
+        self.assertIn(b"/ToUnicode", self.pdf)
+        cmap = next(s for s in self._streams() if b"beginbfchar" in s).decode()
+        table = {int(g, 16): chr(int(u, 16))
+                 for g, u in re.findall(r"<([0-9A-F]{4})> <([0-9A-F]{4})>", cmap)}
+        page = next(s for s in self._streams() if b" Tj" in s).decode("latin1")
+        runs = ["".join(table.get(int(h[i:i + 4], 16), "?") for i in range(0, len(h), 4))
+                for h in re.findall(r"<([0-9A-F]+)> Tj", page)]
+        for w in self.WORDS:
+            self.assertIn(w, runs)
+
+    def test_pdftotext_finds_russian_words(self):
+        import shutil
+        import subprocess
+        exe = shutil.which("pdftotext") or ("/opt/homebrew/bin/pdftotext" if Path("/opt/homebrew/bin/pdftotext").exists() else None)
+        if not exe:
+            self.skipTest("pdftotext не установлен")
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "t.pdf"
+            f.write_bytes(self.pdf)
+            text = subprocess.run([exe, "-layout", str(f), "-"], capture_output=True, text=True, check=True).stdout
+        for w in self.WORDS:
+            self.assertIn(w, text)

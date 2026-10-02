@@ -45,6 +45,22 @@ def _f(x):
     return f"{x:.3f}".rstrip("0").rstrip(".")
 
 
+def _to_unicode_cmap(gid_char):
+    """CMap /ToUnicode: код глифа (Identity-H, 2 байта) → Юникод, чтобы текст листа искался и копировался."""
+    items = sorted(gid_char.items())
+    out = ["/CIDInit /ProcSet findresource begin", "12 dict begin", "begincmap",
+           "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def",
+           "/CMapName /Adobe-Identity-UCS def", "/CMapType 2 def",
+           "1 begincodespacerange", "<0000> <FFFF>", "endcodespacerange"]
+    for i in range(0, len(items), 100):
+        chunk = items[i:i + 100]
+        out.append(f"{len(chunk)} beginbfchar")
+        out += [f"<{g:04X}> <{ch.encode('utf-16-be').hex().upper()}>" for g, ch in chunk]      # UTF-16BE: символы вне BMP — суррогатной парой
+        out.append("endbfchar")
+    out += ["endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end"]
+    return "\n".join(out).encode("ascii")
+
+
 class PdfBackend:
     def __init__(self, font_path=None):
         self._font_paths = {"ui": font_path} if font_path else {}
@@ -53,6 +69,7 @@ class PdfBackend:
         # Совместимость с прежним публичным атрибутом: основной шрифт — ui.
         self.font = self._fonts["ui"]
         self._used_gids = {"ui": {0}}
+        self._gid_char = {"ui": {}}                         # глиф → символ Юникода (для /ToUnicode: поиск и копирование текста)
         self.used_gids = self._used_gids["ui"]
         self._used_families = set()
         self._img_names = {}
@@ -65,6 +82,7 @@ class PdfBackend:
                 self._font_paths.get(family) or find_font(family))
             self._font_order.append(family)
         self._used_gids.setdefault(family, {0})
+        self._gid_char.setdefault(family, {})
         self._used_families.add(family)
         return family, self._fonts[family]
 
@@ -142,6 +160,9 @@ class PdfBackend:
               -w if o.get("anchor") == "end" else 0.0)
         gids = [font.gid_for(ch) for ch in o["text"]]
         self._used_gids[family].update(gids)
+        for g, ch in zip(gids, o["text"]):
+            if g:
+                self._gid_char[family].setdefault(g, ch)
         hexstr = "".join(f"{g:04X}" for g in gids)
         color = self._color(o.get("color", (0, 0, 0)), stroke=False)
         angle = o.get("angle", 0.0)
@@ -226,6 +247,7 @@ class PdfBackend:
         """pages: [(w_mm, h_mm, ops)] → bytes PDF."""
         objs = {}  # num -> bytes тела объекта
         self._used_gids = {family: {0} for family in self._fonts}
+        self._gid_char = {family: {} for family in self._fonts}
         self.used_gids = self._used_gids["ui"]
         self._used_families = set()
 
@@ -255,8 +277,8 @@ class PdfBackend:
         next_num = 3
         for family in (f for f in self._font_order if f in self._used_families):
             f = self._fonts[family]
-            type0, cid, descriptor, font_file = range(next_num, next_num + 4)
-            next_num += 4
+            type0, cid, descriptor, font_file, to_uni = range(next_num, next_num + 5)
+            next_num += 5
             font_refs[family] = type0
             scale = 1000.0 / f.units_per_em
             widths = sorted(self._used_gids[family])
@@ -267,7 +289,8 @@ class PdfBackend:
             flags = 33 if family == "mono" else (34 if family.startswith("serif") else 32)
             objs[type0] = (
                 f"<< /Type /Font /Subtype /Type0 /BaseFont /{base} "
-                f"/Encoding /Identity-H /DescendantFonts [{cid} 0 R] >>"
+                f"/Encoding /Identity-H /DescendantFonts [{cid} 0 R] "
+                f"/ToUnicode {to_uni} 0 R >>"
             ).encode()
             objs[cid] = (
                 f"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{base} "
@@ -282,6 +305,7 @@ class PdfBackend:
                 f"/CapHeight {int(f.ascent * scale)} /StemV 80 "
                 f"/FontFile2 {font_file} 0 R >>"
             ).encode()
+            objs[to_uni] = stream_obj(_to_unicode_cmap(self._gid_char[family]))
             objs[font_file] = stream_obj(
                 f.data, extra=f"/Length1 {len(f.data)} ")
 

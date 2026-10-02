@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.95.1: text in the PDF album can be searched and copied.** The PDF writer
+  (`core/render/grado_render/backend_pdf.py`) embeds its TrueType font as Type0 / Identity-H; it now adds a `/ToUnicode`
+  CMap built from the glyphs actually used. Before, `pdftotext` on a test sheet gave «ŘůŹźŧŽůŵ…»; now «Ситуационный
+  план», «Технико-экономические показатели», «25,0 тыс. м²/га». The picture is identical (0 different pixels at
+  100 dpi), the file grew by 567 bytes. Limits: the reading order is the drawing order; legend symbols drawn as paths
+  carry no text; not checked by hand in a PDF viewer.
 - **2026-10-03, ГРАДО 2 v0.95.0: exports for QGIS and Excel, district by area share, layer search.** A small arrow next
   to «DXF» opens «GeoJSON для QGIS» (the same layers as the DXF export plus the boundary → zip with one МСК file per
   layer) and «Excel: ТЭП и листы» (numbers as numeric cells, empty values as empty cells, the sheet list, the project
