@@ -27,7 +27,7 @@ limit is near. Read big files by line ranges (the changelog is 1800+ lines: read
 1. `cd ~/grado-studio`. If `.claude/worktrees/team` is missing: `git worktree add .claude/worktrees/team team/grado2`
    (or `-b team/grado2 … main` if the branch is missing too).
 2. Bring the team branch up to date with `main` (in the worktree): `git merge --ff-only main` when possible, otherwise
-   `git rebase main`. On conflicts in `version.json` or `docs/grado2-changelog.md` keep main's entries and put the
+   `git merge main` (not rebase: the branch is pushed, a rebase would need a forced push). On conflicts in `version.json` or `docs/grado2-changelog.md` keep main's entries and put the
    team's on top with the next version number. Never rewrite `main`.
 
 ## 1. Read
