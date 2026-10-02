@@ -28,6 +28,41 @@ the page breaks. Fetch on first use.
 RULE: The lead's gate prints the failing step: grep the E2E output for `STEP FAILED` and ` log: ` lines, and a FAILED
 gate blocks the commit even when the diff review said PASS (cycle 4: review PASS, both E2E runs failed).
 
+RULE: The lead runs the unit tests WITHOUT `PYTHONPATH` too (as the program starts): a module that imports a core
+package not on the server's own `sys.path` list passes with PYTHONPATH and fails in the real program (v0.93.1,
+`grado_geom`). A new core package also goes into `packaging/grado2.spec`.
+RULE: No inline `<script>` in `index.html`: the page's CSP is `script-src 'self'`; put the code into a file.
+
+RULE: E2E waits for anything that sends the 100 000-object test layer to the server are at least 30 s; a 5 s wait
+gave a false failure on a busy machine (v0.95.0).
+RULE: Agents never use `git stash` / `git checkout` of files in the shared worktree for «before» screenshots — they
+serve a `git archive HEAD` copy on another port.
+
+RULE: A hidden window can keep keyboard focus in its input: a global shortcut handler that skips inputs must still
+handle the shortcut that toggles that window (F1 from the help search field, v0.96.0).
+RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
+text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
+
+- 03.10.2026, цикл 7 — пара. Сервер: v0.95.1 ToUnicode в PDF (ревью руководителя, 73 render OK). Интерфейс (v0.96.0):
+  тёмный граф, справка, путь новичка, колесо; ревью FAIL (цвета темы попадали в проект) → исправлено исполнителем с
+  доказательством равенства сохранённого графа в обеих темах; прогон упал дважды на F1 из поля поиска (окно скрыто,
+  фокус в поле) — исправлено руководителем; проверка приветствия сведена к видимому. Владелец 03.10: названия ППТ
+  обрезаны → T29: причина — DBF 254 байта; сервер v0.96.1 (ревью FAIL: безграничный повтор CSV и старый кэш →
+  исправлено: cooldown 1 ч, `lines2`), интерфейс в работе (убрать «…», перенос, продолжение списка на следующем
+  слайде). Итог прогонов: 381 unit OK, connectors 162 OK, collab 66 ok, E2E оба сценария зелёные.
+- 03.10.2026, цикл 6 — пара «сервер + интерфейс». Сервер (v0.94.1, c30baa2): участки ДОО, школ, поликлиники как
+  показатели ТЭП (сверка нормоконтролёра по тексту — PASS по всем 10 константам), выгрузка GeoJSON устойчивее.
+  Интерфейс (v0.95.0, 8598739): меню выгрузок у DXF, район по доле площади, столбцы у всех вариантов, масштаб схемы
+  расчёта, поиск по слоям. Ревью PASS; прогон руководителя один раз упал на ожидании 5 с выгрузки слоя в 100 000
+  объектов — ожидание увеличено, три мелких замечания ревью исправлены руководителем. Итог: 381 unit OK (без
+  PYTHONPATH), compute 46 OK, collab 66 ok, 2 прогона E2E зелёные. Решения команды: школа — один объект, ДОО свыше 350
+  мест делится, сокращение участка до 10 % не учитывается; «Слои» и «Свойства» на 1481–2000 px ушли в «Окна».
+- 02.10.2026, цикл 5 — пара «сервер + интерфейс». Сервер (v0.93.1, c036320): `/api/export/geojson`,
+  `/api/export/xlsx`, `/api/place` с полигоном, разбивка спорта; ревью PASS, но прогон руководителя без PYTHONPATH
+  упал (`No module named grado_geom`) — исправлено (sys.path, spec установщика). Интерфейс (v0.94.0, 964838b): масштаб
+  по `--k`, панели clamp, «Размер интерфейса», 840 px, `syncVarTep`, подсказка слоёв; ревью PASS, но оба прогона E2E
+  упали на CSP (встроенный скрипт) — вынесен в `uisize.js`. После исправлений: 374 unit OK, compute 41 OK, collab 66 ok,
+  2 прогона E2E зелёные; снимки 2560 и 840 просмотрены. Дальше: T24 + T25 парой, затем T26, T7.
 RULE: Probes of grado.tailink.tech from the Mac are unreliable (the Mac goes out through a VPN; half of the requests
 time out before connecting). The landing is confirmed by the deploy script's own health check («Готово: на сервере
 версия X»), not by curl from the Mac.
