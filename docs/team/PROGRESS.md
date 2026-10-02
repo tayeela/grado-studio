@@ -23,6 +23,18 @@ explicit port ≥ 8660 and `GRADO2_PROJECTS=<temp>`; screenshots for audits are 
 RULE: Anything stored in the undo stack as a full copy must be dropped when its object is replaced from outside
 (file, parcels, another person's change) — T16 first version let Ctrl+Z bring an old boundary back over a new one.
 
+RULE: A frontend module must not call the API when the script loads: in hub mode there is no session yet (401) and
+the page breaks. Fetch on first use.
+RULE: The lead's gate prints the failing step: grep the E2E output for `STEP FAILED` and ` log: ` lines, and a FAILED
+gate blocks the commit even when the diff review said PASS (cycle 4: review PASS, both E2E runs failed).
+
+- 02.10.2026, цикл 4 — T13 шаг 2, T18, T19, T15 приняты (v0.93.0, 528c736). Ревью архитектора PASS, но общий прогон
+  упал дважды на «A: список проектов пуст»: `norms.js` запрашивал `/api/tep/norms` при загрузке страницы, до входа в
+  совместном режиме — 401. Исправлено руководителем (запрос при первом расчёте или открытии окна), добавлен минимум
+  160 × 120 для плавающего окна. Проверка после исправления: 360 unit OK, collab 66 ok, compute 40 OK, 2 прогона E2E
+  подряд зелёные; снимки окна «Нормативы» (1280, 840) и плавающего окна на 1280×720 просмотрены. Открыто: T22
+  (варианты после смены норматива), T23 (пометка в выгрузках), T20, T21. На порту 8672 с 30.09 висит чужой тестовый
+  сервер (pid 99191) — не трогали.
 - 02.10.2026, цикл 3 — указания владельца: правка границы и привязка к ней (T16), интерфейс на разных экранах (T17),
   нормативы вручную (T13). T16 принята со второго захода (v0.92.0, b2edc4e): первый FAIL архитектора — записи отмены
   правки вершин переживали замену границы; исправлено, плюс запрет зрителю в самой правке, отказ на
