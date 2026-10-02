@@ -19,6 +19,7 @@ body.hub-on .top{gap:8px}
 .hubav .av,.hubav .more{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font:600 var(--fs-s)/1 var(--ui);border:2px solid var(--panel);margin-left:-5px;flex:0 0 auto;cursor:default}
 .hubav .more{background:var(--hover);color:var(--muted)}
 .hubsync{display:flex;align-items:center;gap:6px;color:var(--muted);white-space:nowrap;padding:0 4px}
+#hubSyncTxt{display:inline-block;width:12ch;overflow:hidden;text-overflow:ellipsis}   /* фиксированная ширина: кнопки шапки не прыгают, когда подпись меняется */
 .hubsync .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:0 0 auto}
 .hubsync[data-state="saved"] .dot{background:var(--good)}
 .hubsync[data-state="sending"] .dot,.hubsync[data-state="conflict"] .dot{background:var(--warn)}

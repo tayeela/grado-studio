@@ -32,7 +32,9 @@
     "n_sport_flat": 970, "n_sport_indoor": 800, "n_sport_indoor_500": 320, "n_sport_indoor_1500": 480,
     "retail": 270, "services": 100, "catering": 120, "culture": 150, "city_services": 90,
     "parking_d": 0.8, "guest_share": 0.1, "visitor_builtin_m2": 90, "visitor_office_m2": 63,
-    "stop_flats_m2": 22100, "stop_builtin_m2": 450, "stop_builtin_max": 4
+    "stop_flats_m2": 22100, "stop_builtin_m2": 450, "stop_builtin_max": 4,
+    "green_share_reno": 0.25, "green_share_mgk": 0.02, "green_zhk_conv": 5, "green_planting_conv": 3.5,
+    "green_play_mgk": 0.6, "green_play_other": 1.5, "green_public_norm": 0.7
   },
   "constants_meta": {
     "per_flat": {"title": "Жителей на одну квартиру (средний размер домовладения)", "unit": "чел.", "group": "Жильё и население", "source": "945-ПП, прил. 5 п. 1", "edition": "05.08.2026", "status": "confirmed", "min": 1, "max": 6},
@@ -65,7 +67,14 @@
     "visitor_office_m2": {"title": "Приобъектные стоянки у нежилых зданий (деловое управление): ННП на одно место", "unit": "м² ННП на место", "group": "Стоянки и транспорт", "source": "945-ПП, прил. 1 п. 2.1", "edition": "05.08.2026", "status": "confirmed", "min": 10, "max": 1000},
     "stop_flats_m2": {"title": "Места кратковременной остановки у жилья: площадь квартир на одно место", "unit": "м² квартир на место", "group": "Остановки", "source": "945-ПП, прил. 8 п. 1", "edition": "05.08.2026", "status": "confirmed", "min": 1000, "max": 100000},
     "stop_builtin_m2": {"title": "Места остановки у встроенных коммерческих помещений: ННП на одно место", "unit": "м² ННП на место", "group": "Остановки", "source": "945-ПП, прил. 8 п. 4", "edition": "05.08.2026", "status": "confirmed", "min": 10, "max": 5000},
-    "stop_builtin_max": {"title": "Места остановки у встроенных коммерческих помещений: не более на объект", "unit": "мест", "group": "Остановки", "source": "проектное допущение", "edition": null, "status": "unverified", "min": 1, "max": 20}
+    "stop_builtin_max": {"title": "Места остановки у встроенных коммерческих помещений: не более на объект", "unit": "мест", "group": "Остановки", "source": "проектное допущение", "edition": null, "status": "unverified", "min": 1, "max": 20},
+    "green_share_reno": {"title": "Озеленённые территории ЖК при реконструкции: доля площади территории проектирования", "unit": "доля", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 п. 1.1", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 1},
+    "green_share_mgk": {"title": "Озеленённые территории ЖК в МГК: доля площади территории проектирования", "unit": "доля", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 п. 3.1", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 1},
+    "green_zhk_conv": {"title": "Озеленённые территории ЖК при преобразовании: на одного жителя", "unit": "м²/чел.", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 п. 2.1", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 50},
+    "green_planting_conv": {"title": "В т.ч. зелёные насаждения при преобразовании: на одного жителя", "unit": "м²/чел.", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 п. 2.1.1", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 50},
+    "green_play_mgk": {"title": "Площадки и дорожно-тропиночная сеть в МГК: на одного жителя", "unit": "м²/чел.", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 пп. 3.1.1 и 3.1.2", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 20},
+    "green_play_other": {"title": "Площадки и дорожно-тропиночная сеть при преобразовании и реконструкции: на одного жителя", "unit": "м²/чел.", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 пп. 1.1.1 и 2.1.2", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 20},
+    "green_public_norm": {"title": "Озеленённые территории общего пользования: на одного жителя", "unit": "м²/чел.", "group": "Озеленение и площадки", "source": "2152-ПП, табл. 1.4.2 пп. 2.2 и 3.2", "edition": "18.08.2026", "status": "confirmed", "min": 0, "max": 20}
   },
   "metrics": [
     {"id": "calc_area", "title": "Площадь территории проектирования", "unit": "га", "expr": "max(terr_area - restrict_area, 0)", "precision": 3, "group": "Основные показатели"},
@@ -116,9 +125,9 @@
     {"id": "parking_visitor", "title": "Приобъектные парковки", "unit": "м/м", "expr": "ceil(round(np_res_nonres * 1000 / visitor_builtin_m2 * k1 * k2, 6)) + ceil(round(np_nonres * 1000 / visitor_office_m2 * k1 * k2, 6))", "precision": 0, "group": "Машино-места"},
     {"id": "parking_total", "title": "Места хранения и паркирования, всего", "unit": "м/м", "expr": "parking_perm + parking_guest + parking_visitor", "precision": 0, "group": "Машино-места"},
     {"id": "parking_stop", "title": "Места кратковременной остановки", "unit": "м/м", "expr": "ceil(round((flats_area + flats_area_low) * 1000 / stop_flats_m2, 6)) + where(np_res_nonres > 0, min(stop_builtin_max, max(1, ceil(round(np_res_nonres * 1000 / stop_builtin_m2, 6)))), 0)", "precision": 0, "group": "Машино-места"},
-    {"id": "green_zhk_ha", "title": "Озеленённые территории ЖК", "unit": "га", "expr": "where(territory_mode == 2, calc_area * 0.25, where(territory_mode == 3, calc_area * 0.02, 5 * population / 10000))", "precision": 3, "group": "Элементы жилых территорий"},
-    {"id": "green_planting_ha", "title": "в т.ч. занятые зелёными насаждениями", "unit": "га", "expr": "where(territory_mode == 1, 3.5 * population / 10000, 0)", "precision": 3, "group": "Элементы жилых территорий"},
-    {"id": "green_playgrounds_ha", "title": "Площадки детей и взрослых, дорожно-тропиночная сеть", "unit": "га", "expr": "where(territory_mode == 3, 0.6, 1.5) * population / 10000", "precision": 3, "group": "Элементы жилых территорий"},
-    {"id": "green_public_ha", "title": "Озеленённые территории общего пользования", "unit": "га", "expr": "where(territory_mode == 2, 0, 0.7 * population / 10000)", "precision": 3, "group": "Элементы жилых территорий"}
+    {"id": "green_zhk_ha", "title": "Озеленённые территории ЖК", "unit": "га", "expr": "where(territory_mode == 2, calc_area * green_share_reno, where(territory_mode == 3, calc_area * green_share_mgk, green_zhk_conv * population / 10000))", "precision": 3, "group": "Элементы жилых территорий"},
+    {"id": "green_planting_ha", "title": "в т.ч. занятые зелёными насаждениями", "unit": "га", "expr": "where(territory_mode == 1, green_planting_conv * population / 10000, 0)", "precision": 3, "group": "Элементы жилых территорий"},
+    {"id": "green_playgrounds_ha", "title": "Площадки детей и взрослых, дорожно-тропиночная сеть", "unit": "га", "expr": "where(territory_mode == 3, green_play_mgk, green_play_other) * population / 10000", "precision": 3, "group": "Элементы жилых территорий"},
+    {"id": "green_public_ha", "title": "Озеленённые территории общего пользования", "unit": "га", "expr": "where(territory_mode == 2, 0, green_public_norm * population / 10000)", "precision": 3, "group": "Элементы жилых территорий"}
   ]
 }

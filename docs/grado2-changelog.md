@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.93.0: window «Нормативы расчёта»; floating windows stay on screen; nothing cut at 1280.**
+  Owner 02.10: «нормативы постоянно меняются, поэтому должна быть возможность их вручную менять перед расчётом, но поля
+  должны быть предзаполнены нынешними нормативами». «Показатели» → «Нормативы…» opens a window (new module
+  `web/norms.js`, `norms.css`): collapsible groups, each field prefilled with the current value from the preset, the
+  decree, clause and edition under it (or «проектное допущение»), search by title. A changed field has an accent bar,
+  «действующее: 44» and a return button; «Вернуть все действующие»; a value outside the limits is not applied
+  («Допустимо от N до M»). Overrides are kept as differences in the ТЭП node parameters (`tepParams(node).constants`),
+  so they are saved with the project and synced — no format change; single ТЭП and the variant search send the same
+  ones. «Показатели» and the ТЭП table of a sheet show «Нормативы изменены вручную: N». A viewer sees the window
+  read-only. Seven green-area and playground norms (0.25, 0.02, 5, 3.5, 0.6, 1.5, 0.7 by 2152-ПП table 1.4.2) moved
+  from metric expressions into `constants`; the Якиманка fixture is unchanged. Norms are fetched on the first
+  calculation or when the window opens (an early fetch before login in hub mode gave 401 and broke the project list).
+  Screens (audit `docs/ux/audit-2026-10-02-screens.md`): a floating window is kept inside the map area while dragged,
+  on a browser resize and when restored from a layout, shrunk if larger, never under 160 × 120 px; «Построить эскиз»,
+  «Сохранить слоем», graph buttons wrap instead of being cut, typologies are an even two-column grid, the project
+  button shows «Без названия» in full at 1280, layer names in «Ограничения» wrap; the hub sync label has a fixed width.
+  Open: the variants table keeps old numbers after a norm change until the search is run again; the note line in
+  DXF/other exports of the ТЭП table is not checked; dark theme and hub header not checked for the CSS fixes.
 - **2026-10-02, ГРАДО 2 v0.92.0: the territory boundary can be edited, and drawing snaps to it.** Owner 02.10: «до сих
   пор нет возможности редактирования границы территории, при черчении должна работать привязка и к вершинам
   территории». Click the red dashed boundary (within 6 px) or «Изменить границу» in «Данные»: square grips on

@@ -27,6 +27,11 @@ export default async p => {
   check(await p.ev(`["wTep","wSketch","wCons"].forEach(id=>winOpen(id,true)); await new Promise(r=>setTimeout(r,400));
     const ok = $("dzR").classList.contains("tabbed") && $("dzR").querySelectorAll(".dztabs [data-tab]").length===3 && $("rightPane").clientHeight>=140;
     ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,false)); return ok`), "три окна в панели свойств — вкладками, панель «Стиль» не сжата");
+  // плавающее окно не уходит за экран: брошенное далеко вниз и вправо остаётся целиком в поле карты (шапка и ручка размера достижимы)
+  await p.ev(`WST.wTep = { ...(WST.wTep||{}), dock: null }; winOpen("wTep", true); floatWin($("wTep")); placeWin($("wTep")); await new Promise(r=>setTimeout(r,200)); return 1`);
+  const fh = await p.ev(`const r=$("wTep").querySelector(".wh b").getBoundingClientRect(); return [r.left+4, r.top+4, innerWidth-6, innerHeight-4]`);
+  await p.drag(fh[0], fh[1], fh[2], fh[3]);
+  check(await p.ev(`const r=$("wTep").getBoundingClientRect(), a=winArea(); const ok = r.left>=a.l-1 && r.right<=a.r+1 && r.top>=a.t-1 && r.bottom<=a.b+1 && r.bottom<=document.querySelector(".status").getBoundingClientRect().top+1; winOpen("wTep", false); delete WST.wTep; saveWins(); return ok`), "плавающее окно, брошенное за нижний правый угол, остаётся целиком в поле карты");
   // раскладки окон: готовая открывает свои окна в своих зонах и закрывает прочие; текущую можно запомнить
   check(await p.ev(`winOpen("wKeys", true); $("bMore").click(); await new Promise(r=>setTimeout(r,100)); [...document.querySelectorAll("#winMenu [data-layout]")].find(b=>b.textContent.startsWith("Эскиз")).click(); await new Promise(r=>setTimeout(r,400));
     return $("wSketch").parentElement.id==="dzR" && $("wTep").parentElement.id==="dzR" && $("wVars").parentElement.id==="dzB" && $("wKeys").hidden && $("winMenu").hidden`), "раскладка «Эскиз и варианты» расставляет свои окна и закрывает прочие");
@@ -324,9 +329,28 @@ export default async p => {
     const r=await fetch("/api/print/svg",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...albumSpec([ALBUM.sheets[1]]),index:0})}); const t=await r.text();
     ALBUM.sheets.splice(1,1); winOpen("wSheets", false); await new Promise(r=>setTimeout(r,50)); return r.status===200 && t.includes("Плотность") && !FRAME`), "лист «Таблица ТЭП» собирается; закрытое окно убирает рамку с карты");
 
+  // нормативы расчёта (T13): окно предзаполнено действующими значениями, ручная правка пересчитывает показатели, видна строкой и переживает сохранение
+  const nm = await p.ev(`winOpen("wTep", true); await new Promise(r=>setTimeout(r,400)); const t0=RESULT.tepNode._tep; document.querySelector("#tep [data-norms-open]").click(); await new Promise(r=>setTimeout(r,600));
+    const i=document.querySelector('[data-nid="doo_z1"]'); return [!$("wNorms").hidden, i && i.value, t0 && t0.m.population, t0 && t0.m.doo_places, /Нормативы изменены/.test($("tep").innerText), $("normAll").disabled]`);
+  check(nm[0] && nm[1] === "44" && nm[4] === false && nm[5] === true, `окно «Нормативы расчёта» открывается кнопкой, ДОО зоны 1 предзаполнено действующим значением ${nm[1]}, строки «изменены вручную» нет`);
+  check(nm[2] > 0, `в проекте есть население для проверки пересчёта: ${nm[2]}`);
+  await p.ev(`const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("50"); await p.key("Enter", "Enter", { vk: 13, wait: 1800 });
+  const nm2 = await p.ev(`const t=RESULT.tepNode._tep; return [t.m.doo_places, Math.ceil(Math.round(50*t.m.population/1000*1e6)/1e6), /Нормативы изменены вручную: 1/.test($("tep").innerText), JSON.stringify(tepParams(RESULT.tepNode).constants), document.querySelector('.nrow[data-id="doo_z1"] .nch').textContent, $("normAll").disabled]`);
+  check(nm2[0] === nm2[1] && nm2[0] !== nm[3], `ДОО в «Показателях» пересчитано по 50 вместо 44: ${nm[3]} → ${nm2[0]} мест`);
+  check(nm2[2] && nm2[3] === '{"doo_z1":50}' && nm2[4] === "действующее: 44" && nm2[5] === false, "в «Показателях» строка «Нормативы изменены вручную: 1», в проекте только разница {doo_z1:50}, у поля «действующее: 44»");
+  await p.ev(`const i=document.querySelector('[data-nid="doo_z2"]'); i.focus(); i.select(); return 1`); await p.type("5000"); await p.sleep(700);
+  check(await p.ev(`const r=document.querySelector('.nrow[data-id="doo_z2"]'); return r.classList.contains("bad") && /Допустимо от 0 до 200/.test(r.querySelector(".nerr").textContent) && !tepParams(RESULT.tepNode).constants.doo_z2`), "значение вне пределов: поле красное, подпись «Допустимо от 0 до 200», в расчёт не берётся");
+  await p.ev(`const r=document.querySelector('.nrow[data-id="doo_z2"] input'); r.blur(); const q=$("normQ"); q.value="сад"; q.dispatchEvent(new Event("input",{bubbles:true})); return 1`);
+  check(await p.ev(`return [...document.querySelectorAll("#norms .nrow:not([hidden])")].length === 2 && [...document.querySelectorAll("#norms .ngrp")].filter(g=>!g.hidden).length === 1`), "поиск «сад» оставляет два норматива ДОО");
+  await p.ev(`$("normQ").value=""; $("normQ").dispatchEvent(new Event("input",{bubbles:true})); const r=document.querySelector('.nrow[data-id="doo_z2"]'); r.classList.remove("bad"); r.querySelector(".nerr").hidden=true; r.querySelector("input").value="63"; return 1`);
+  check(await p.ev(`document.body.classList.add("hub-viewer"); window.Norms.refresh(); const ok=[...document.querySelectorAll("#norms input[type=number]")].every(i=>i.disabled) && !document.querySelector("#norms .nro").hidden && $("normAll").disabled; document.body.classList.remove("hub-viewer"); window.Norms.refresh(); return ok`), "наблюдатель видит окно нормативов только для чтения");
   // проект: сохранить, новый, открыть — слои, группы, виды, альбом на месте; файл старой версии открывается
   const round = await p.ev(`await saveProject("e2e"); newProject(); newProject(); await openProject("e2e"); await new Promise(r=>setTimeout(r,1500)); return [LYR.length, GROUPS.length, VIEWS.length, ALBUM.sheets.length]`);
   check(round[0] > 3 && round[1] >= 1 && round[2] === 1 && round[3] === 1, `проект открылся: слоёв ${round[0]}, групп ${round[1]}, видов ${round[2]}, листов ${round[3]}`);
+  check(await p.ev(`winOpen("wTep", true); await new Promise(r=>setTimeout(r,800)); const t=RESULT.tepNode._tep; return JSON.stringify(tepParams(RESULT.tepNode).constants) === '{"doo_z1":50}' && t.constantsChanged.join() === "doo_z1" && /Нормативы изменены вручную: 1/.test($("tep").innerText)`), "после сохранения и открытия проекта ручной норматив ДОО = 50 на месте, строка в «Показателях» есть");
+  check(await p.ev(`winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const was=RESULT.tepNode._tep.m.doo_places; document.querySelector('[data-nrev="doo_z1"]').click(); await new Promise(r=>setTimeout(r,1800)); const t=RESULT.tepNode._tep;
+    return document.querySelector('[data-nid="doo_z1"]').value === "44" && !tepParams(RESULT.tepNode).constants && t.constantsChanged.length === 0 && !/Нормативы изменены/.test($("tep").innerText) && t.m.doo_places < was`), "«Вернуть действующее» возвращает 44, убирает правку из проекта и строку из «Показателей»");
+  await p.ev(`winOpen("wNorms", false); winOpen("wTep", false); return 1`);
   check(await p.ev(`const v1={format:"grado2",version:1,layers:[{key:"user:a",title:"A",geom:"poly",visible:true,style:{}}],data:{"user:a":{title:"A",fc:{type:"FeatureCollection",features:[]}}},graph:null};
     applyProject(v1); return LYR.length===1 && GROUPS.length===0 && ALBUM.sheets.length===0`), "проект формата 1 открывается миграцией");
   check(await p.ev(`try { applyProject({format:"grado2",version:99}); return false; } catch (e) { return /новой версией/.test(e.message); }`), "файл новее программы не открывается, с понятной причиной");

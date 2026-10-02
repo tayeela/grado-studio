@@ -124,16 +124,16 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .dropind{position:fixed;z-index:var(--z-pop);pointer-events:none;border-radius:var(--r-1);background:color-mix(in srgb,var(--accent) 16%,transparent);outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
 .win.todock{opacity:.72}
 .wh{height:var(--h-md);display:flex;align-items:center;gap:7px;padding:0 3px 0 10px;border-bottom:1px solid var(--line);cursor:move;flex:0 0 auto;user-select:none;touch-action:none}
-.wh b{font-weight:600}.wh .sp{flex:1}.wh small{color:var(--faint)}
+.wh b{font-weight:600;white-space:nowrap}.wh .sp{flex:1}.wh small{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;position:relative}
 .gwrap{flex:1;display:grid;grid-template-columns:150px minmax(0,1fr);min-height:0}
 .gwrap .lib{border-right:1px solid var(--line);overflow:auto}
 .wb .split{flex:1}
 .wb canvas.c3d{position:absolute;inset:0}
 .wb .empty{margin:auto;max-width:360px;padding:24px;text-align:center;color:var(--muted);line-height:1.5;display:flex;flex-direction:column;gap:6px;position:relative}.wb .empty b{color:var(--text);font-size:var(--fs-l)}
-.top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-bottom:1px solid var(--line)}@media (max-width:1360px){.top{gap:8px}}
 .brand{font-weight:600}
-.proj{border-color:transparent;background:none;color:var(--muted);max-width:220px;flex:0 1 auto;min-width:0}.proj .lb{overflow:hidden;text-overflow:ellipsis}.proj:hover{background:var(--hover);color:var(--text)}
+.proj{border-color:transparent;background:none;color:var(--muted);max-width:220px;flex:0 1 auto;min-width:130px}.proj .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.proj:hover{background:var(--hover);color:var(--text)}
 .projbar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}.projbar input[type=text]{flex:1;min-width:160px;height:var(--h-md)}
 .projdir{padding:4px 8px;color:var(--faint);font-size:var(--fs-s);border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb{border:1px solid transparent;background:none;width:var(--h-md);height:var(--h-md);border-radius:var(--r-1);display:grid;place-items:center;padding:0;flex:0 0 auto}
@@ -297,6 +297,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .lr .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lr .c{color:var(--faint)}
 .lr input{margin:0}
+#consBody .lr{height:auto;min-height:var(--h-sm);padding-top:3px;padding-bottom:3px}#consBody .lr .nm{white-space:normal;overflow:visible;line-height:1.25}
 .sym{width:16px;height:12px;display:inline-flex;align-items:center;justify-content:center;border:1px solid rgba(0,0,0,.35);flex:0 0 auto}
 .btn{border:1px solid var(--line-2);background:var(--panel);border-radius:var(--r-1);height:var(--h-sm);padding:0 10px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 .btn:hover{background:var(--hover)}
@@ -313,7 +314,7 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .lib button{display:flex;width:100%;align-items:center;gap:7px;border:0;background:none;text-align:left;padding:4px 8px 4px 14px;min-height:var(--h-sm);line-height:1.2}
 .lib button:hover{background:var(--hover)}
 .lib .cat{padding:6px 8px 2px;color:var(--faint);font-weight:600}
-.gbar{position:absolute;left:8px;top:8px;display:flex;gap:6px;z-index:2}
+.gbar{position:absolute;left:8px;right:8px;top:8px;display:flex;flex-wrap:wrap;gap:6px;z-index:2;pointer-events:none}.gbar>*{pointer-events:auto}
 .pv{position:absolute;right:8px;bottom:8px;background:color-mix(in srgb,var(--panel) 93%,transparent);border:1px solid var(--line-2);border-radius:var(--r-1);padding:4px 8px;color:var(--text);z-index:2;max-width:70%}
 .litegraph.litecontextmenu{font:var(--fs-m) var(--ui);background:var(--panel);color:var(--text);border:1px solid var(--line-2);box-shadow:var(--sh-2);padding:3px 0;min-width:160px;z-index:100;border-radius:var(--r-2)}
 .litegraph .litemenu-title{padding:4px 10px;font-weight:600;color:var(--muted)}
@@ -335,10 +336,13 @@ table.keys{width:100%;border-collapse:collapse}table.keys td{padding:3px 8px;bor
 .ctl .t span:last-child{font-variant-numeric:tabular-nums;color:var(--muted)}
 .ctl input[type=range]{width:100%;accent-color:var(--accent);margin:0}
 /* ровные ячейки: при переносе строки не рвутся, как в сегментах macOS */
+.ctl{container-type:inline-size}
+.ctl .row{flex-wrap:wrap}.ctl .row>.btn{min-width:max-content}
 .ctl .seg{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:1px;background:var(--panel);border:1px solid var(--line-2);border-radius:var(--r-1);overflow:hidden}
 .ctl .seg button{border:0;box-shadow:0 0 0 1px var(--line-2);background:var(--panel);height:var(--h-sm);padding:0 2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .seg.dec{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line-2);border-radius:var(--r-1);overflow:hidden}.seg.dec button{flex:1;border:0;border-right:1px solid var(--line-2);background:var(--panel);height:var(--h-sm);display:flex;align-items:center;justify-content:center;gap:5px}.seg.dec button:last-child{border-right:0}.seg.dec button:hover{background:var(--hover)}.seg.dec i{width:10px;height:10px;border-radius:var(--r-1);display:inline-block}
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+@container (max-width:380px){.ctl .seg{grid-template-columns:repeat(2,minmax(0,1fr))}.ctl .seg>:last-child:nth-child(odd){grid-column:1/-1}}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
 .vbar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .vbar>#varMsg{flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vbar>.sp{display:none}.vbar .btn{flex:0 0 auto}
@@ -382,7 +386,6 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .cmdline{position:absolute;left:10px;bottom:30px;z-index:var(--z-gut);max-width:calc(100% - 20px);display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 6px;padding:5px 9px;background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:var(--r-2);box-shadow:var(--sh-1);font:var(--fs-l)/1.45 system-ui,sans-serif;color:var(--text)}
 .cmdline b{font-weight:650;letter-spacing:.02em}.cmdline .op{border:1px solid color-mix(in srgb,var(--accent) 40%,transparent);background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);border-radius:var(--r-1);padding:0 6px;font:inherit;line-height:1.5;cursor:pointer}.cmdline .op:hover{background:color-mix(in srgb,var(--accent) 18%,transparent)}.cmdline .k{color:var(--muted)}
 .cmdline .nt{flex-basis:100%;color:var(--warn);font-size:var(--fs-m)}
-.ctl .seg>:last-child:nth-child(3n+2){grid-column:span 2}
 .drawerx{display:none;margin-left:auto}@media (max-width:1000px){.drawerx{display:inline-flex}}
 .cadtip{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:var(--r-2);padding:3px 6px;font:var(--fs-m)/1.35 system-ui,sans-serif;font-variant-numeric:tabular-nums;white-space:nowrap;box-shadow:var(--sh-1);pointer-events:none}
 .cadin{position:absolute;z-index:var(--z-map);width:170px;height:var(--h-md);padding:0 6px;font:var(--fs-l) system-ui,sans-serif;font-variant-numeric:tabular-nums;border:1px solid var(--accent);border-radius:var(--r-1);background:var(--panel);color:var(--text);box-shadow:var(--sh-1)}
@@ -469,6 +472,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 @media (max-width:1100px){.ribbon .tgt select{width:260px;min-width:0}}
 </style>
 <link rel="stylesheet" href="hub.css">
+<link rel="stylesheet" href="norms.css">
 
 <div class="app">
   <header class="top">
@@ -539,7 +543,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
     <div class="sb" id="srcList"></div></div>
 </section>
 <section class="win" id="wGraph" hidden aria-label="Схема расчёта — анализ территории">
-  <header class="wh"><i data-lucide="workflow"></i><b>Схема расчёта</b><small>выход выбранного узла — на карте оранжевым</small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <header class="wh"><i data-lucide="workflow"></i><b>Схема расчёта</b><small title="выход выбранного узла — на карте оранжевым">выход выбранного узла — на карте оранжевым</small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="gwrap"><div class="lib" id="lib"></div><div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
       <div class="gbar"><button class="btn" id="bFitGraph" title="Показать всю схему в окне"><i data-lucide="scan"></i>Вся схема</button><button class="btn" id="bRunGraph" title="Пересчитать схему заново от начала до конца"><i data-lucide="play"></i>Пересчитать</button><button class="btn" id="bBakeNode" title="Выход выбранного узла — обычным слоем проекта (с таблицей показателей у узлов анализа)"><i data-lucide="stamp"></i>В слой</button></div></div></div></div>
 </section>
@@ -555,6 +559,10 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 <section class="win" id="wTep" hidden aria-label="Показатели">
   <header class="wh"><i data-lucide="calculator"></i><b>Показатели</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div id="tep"></div></div>
+</section>
+<section class="win" id="wNorms" hidden aria-label="Нормативы расчёта">
+  <header class="wh"><i data-lucide="scale"></i><b>Нормативы расчёта</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <div class="wb"><div id="norms"></div></div>
 </section>
 <section class="win hctl" id="w3d" hidden aria-label="Объём">
   <header class="wh"><i data-lucide="box"></i><b>Объём</b><button class="tb" id="bRot" title="Повернуть на 90°"><i data-lucide="rotate-cw"></i></button>
@@ -671,6 +679,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 <script src="analysis.js"></script>
 <script src="constraints.js"></script>
 <script src="views.js"></script>
+<script src="norms.js"></script>
 <script src="sheets.js"></script>
 <script src="albums.js"></script>
 <script src="layout.js"></script>

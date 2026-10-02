@@ -860,7 +860,8 @@ const bakedSketch = d => d.fc.features.filter(f => /Polygon/.test(f.geometry?.ty
 
 /* Территориальные параметры ТЭП (как маркер «Калькулятора 2.0»): район → образовательная зона (2151-ПП), K2 (945-ПП прил. 3,
    внутри ТТК 0,2), ТиНАО; K1 — по расстоянию до ближайшей станции. Определяются по центру территории, правятся руками
-   в окне «Показатели» (тогда auto = false и повторно не перезаписываются). Хранятся в узле ТЭП — сохраняются в проекте. */
+   в окне «Показатели» (тогда auto = false и повторно не перезаписываются). Хранятся в узле ТЭП — сохраняются в проекте.
+   tp.constants — ручные правки нормативов {id: число}, только отличия от пресета (окно «Нормативы», norms.js). */
 function tepParams(n) {
   n.properties ||= {};
   return n.properties.tp ||= { auto: true, district: "", zone: 1, k1: 1, k2: 0.9, tinao: 0, mode: 1, nonres: 6, unbuilt: 25, walk: null, rev: -1, notes: [] };
@@ -903,10 +904,11 @@ async function tepRequest(sketch, kept, lim, share, target, tp = {}) {
   // новая СПП не раскладывается на землю, занятую домами, которые остаются
   const restrict = m2(inter(TERR, unionAll([lim, ...keptList].filter(Boolean)))) / 1e4, terr = TERR_M2 / 1e4;
   const sppLow = sketch.filter(b => b.maxF === 3).reduce((s, b) => s + b.m2 * b.floors, 0);        // ИЖС и блокированные: 50 м² квартир на жителя
-  const r = await api("/api/tep", { terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept, spp_low_m2: sppLow,
+  await window.Norms?.ready(); const consts = window.Norms?.constants(tp) ?? (tp.constants && Object.keys(tp.constants).length ? tp.constants : null);   // ручные нормативы (norms.js), только разница с пресетом
+  const r = await api("/api/tep", { ...(consts ? { constants: consts } : {}), terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept, spp_low_m2: sppLow,
     nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25 });
   const m = Object.fromEntries(r.metrics.map(x => [x.id, x.value]));
-  return { m, metrics: r.metrics, density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
+  return { m, metrics: r.metrics, constantsChanged: r.constants_changed || [], density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
 }
 
 /* ---------- генератор посадки (локальная рамка, метры) ---------- */
@@ -1387,6 +1389,7 @@ window.takePzzTarget = takePzzTarget;
 const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
 function renderTep() {
+  window.Norms?.refresh();
   if (!TERR) { $("tep").innerHTML = `<div class="empty">Показатели появятся, когда будет граница территории: окно «Данные» → «Нарисовать границу» или «Пример».</div>`; return; }
   const t = RESULT.tepNode?._tep; if (!t) { $("tep").innerHTML = `<div class="empty">${TERR ? "Считаю…" : "Нет территории"}</div>`; return; }
   const tp = tepParams(RESULT.tepNode), sel = (k, opts, lab) => `<select data-tp="${k}" aria-label="${lab}">${opts.map(([v, l]) => `<option value="${v}" ${String(tp[k]) === String(v) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
@@ -1401,12 +1404,14 @@ function renderTep() {
       <div class="row"><label title="2152-ПП табл. 1.4.2">Жилые территории</label>${sel("mode", Object.entries(MODES), "Тип территории")}</div>
       <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${Number(tp.nonres)}" style="width:64px"></div>
       <div class="row"><label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label><input type="number" data-tp="unbuilt" min="0" max="90" value="${Number(tp.unbuilt)}" style="width:64px"></div>
+      <div class="row"><label title="Нормы расчёта: 2151-ПП, 2152-ПП, 1557-ПП, 945-ПП. Поля уже заполнены действующими значениями; их можно изменить до расчёта">Нормативы</label><button class="btn" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы…</button></div>
       ${tp.auto ? "" : `<button class="btn" data-tp-auto title="Снова взять зону, K1, K2 и ТиНАО по району территории">по району</button>`}
       ${tp.mode !== 1 || tp.nonres !== 6 || tp.unbuilt !== 25 ? `<button class="btn" data-tp-reset title="Преобразование, нежилое 6 %, незастраиваемая 25 % — как в «Калькуляторе 2.0» по умолчанию">сбросить тип и проценты</button>` : ""}
       ${(() => { const pz = pzzTarget(); if (!pz) return ""; if (pz.value == null) return `<div class="row"><label>Цель по ПЗЗ</label><small>в подзонах внутри границы плотность не установлена числом («-», «Ф»)</small></div>`;
         return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
       ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
-  $("tep").innerHTML = place + `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
+  const nch = t.constantsChanged?.length ? `<button class="normsline" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы изменены вручную: ${t.constantsChanged.length}</button>` : "";
+  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
     + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)]))).join("")
     + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
@@ -1559,14 +1564,21 @@ const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoun
   wKeys: [Math.round(w / 2 - 290), 80, 580, Math.min(680, h - 140)], wCons: [R - 690, 96, 340, Math.min(700, h - 150)], wViews: [L + 350, 96, 380, Math.min(560, h - 150)], wSheets: [L, Math.max(120, h - 400), Math.min(820, mw), Math.min(370, h - 160)],
   // совместный режим (hub.js): по центру — проекты, доступ, пользователи; справа у карты — комментарии и история
   wHubProjects: [Math.round(w / 2 - 390), 90, 780, Math.min(520, h - 150)], wShare: [Math.round(w / 2 - 250), 90, 500, Math.min(440, h - 150)], wHubAdmin: [Math.round(w / 2 - 330), 90, 660, Math.min(560, h - 150)], wTeams: [Math.round(w / 2 - 320), 90, 640, Math.min(560, h - 150)],
-  wComments: [R - 380, 104, 380, Math.min(580, h - 150)], wHistory: [R - 560, 104, 560, Math.min(540, h - 150)] }; };
+  wComments: [R - 380, 104, 380, Math.min(580, h - 150)], wHistory: [R - 560, 104, 560, Math.min(540, h - 150)],
+  wNorms: [R - 700, 100, 440, Math.min(660, h - 150)] }; };
 // рабочее поле карты: края боковых панелей, к которым прилипают окна
 const mapBox = () => $("mMain").parentElement.getBoundingClientRect();
+// рабочее поле плавающих окон: карта между панелями, под лентой и над строкой состояния
+const winArea = () => { const m = mapBox(), rb = document.querySelector(".ribbon")?.getBoundingClientRect().bottom ?? 0, st = document.querySelector(".status")?.getBoundingClientRect().top ?? innerHeight;
+  const l = Math.max(0, m.left), t = Math.max(m.top, rb) + 4, r = Math.min(innerWidth, m.right), b = Math.min(st, m.bottom || st); return { l, t, r, b, w: Math.max(0, r - l), h: Math.max(0, b - t) }; };
+// окно целиком в поле: шапка и ручка размера достижимы, нижний край не ниже строки состояния; большее поля ужимается
+function fitWin(w, l, t, W = w.offsetWidth, H = w.offsetHeight) {
+  const a = winArea(); W = Math.max(160, Math.min(W, a.w)); H = Math.max(120, Math.min(H, a.h));   // на крошечной области карты окно не сжимается в ноль
+  return { l: Math.round(Math.max(a.l, Math.min(l, a.r - W))), t: Math.round(Math.max(a.t, Math.min(t, a.b - H))), W, H };
+}
 function placeWin(w) {
-  const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id];
-  // окно не заходит на шапку и ленту: на узком экране лента в две строки, верх рабочего поля ниже
-  const top = Math.round(mapBox().top) + 4, W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - top - 30);
-  Object.assign(w.style, { width: W + "px", height: H + "px", left: Math.max(4, Math.min(d.l ?? l, innerWidth - W - 4)) + "px", top: Math.max(top, Math.min(d.t ?? t, innerHeight - H - 26)) + "px" });
+  const d = WST[w.id] || {}, [l, t, ww, hh] = W0()[w.id], f = fitWin(w, d.l ?? l, d.t ?? t, d.w || ww, d.h || hh);
+  Object.assign(w.style, { width: f.W + "px", height: f.H + "px", left: f.l + "px", top: f.t + "px" });
 }
 const SNAP = 12;
 function snapMove(w, x, y) {           // магнит плавающего окна к краям карты, строке состояния и другим окнам
@@ -1660,10 +1672,9 @@ function dragWin(w, e, onTap) {
       const d = WST[w.id] ||= {}, [, , ww, hh] = W0()[w.id], W = Math.min(d.w || ww, innerWidth - 20), H = Math.min(d.h || hh, innerHeight - 80);
       floatWin(w); Object.assign(w.style, { width: W + "px", height: H + "px" }); dx = Math.min(dx, W - 60); dy = Math.min(dy, 24); moving = true; winFront(w);
     }
-    // заголовок окна всегда виден: не выше ленты и не ниже строки состояния
-    const top0 = document.querySelector(".ribbon")?.getBoundingClientRect().bottom ?? 40, bot0 = (document.querySelector(".status")?.getBoundingClientRect().top ?? innerHeight) - 30;
-    s = snapMove(w, Math.max(-w.offsetWidth + 80, Math.min(ev.clientX - dx, innerWidth - 80)), Math.max(top0, Math.min(ev.clientY - dy, bot0)));
-    w.style.left = s.x + "px"; w.style.top = s.y + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
+    // окно целиком в поле карты (fitWin)
+    s = snapMove(w, ev.clientX - dx, ev.clientY - dy);
+    const f = fitWin(w, s.x, s.y); w.style.left = f.l + "px"; w.style.top = f.t + "px"; z = dropZone(ev.clientX, ev.clientY); showDrop(z); w.classList.toggle("snap", !z && s.snapped); w.classList.toggle("todock", !!z);
   };
   const up = ev => {
     if (ev.pointerId !== pid) return;

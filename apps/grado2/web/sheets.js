@@ -53,6 +53,7 @@ function tepRows(all) {
   const t = RESULT.tepNode?._tep; if (!t) return [];
   const ms = t.metrics.filter(m => m.value);
   return [["Территория", fmt(t.terr, 2) + " га"], ["СПП новая", fmt(t.sppNew / 1000, 1) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 1) + " тыс. м²"], ["Плотность", fmt(t.density, 1) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"]]
+    .concat(t.constantsChanged?.length ? [["Нормативы изменены вручную", String(t.constantsChanged.length)]] : [])      // правки в окне «Нормативы расчёта» видны и на листе
     .concat((all ? ms : ms.slice(0, 30)).map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + m.unit]));
 }
 function sheetSpec(sheet) {
