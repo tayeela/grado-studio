@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-02, ГРАДО 2 v0.91.2: project event stream keeps its own hub.** The live event stream of a shared project
+  (`/api/hub/project/<id>/events`) now holds the hub it started with. During the unit tests a stream from an earlier
+  test outlived the test's hub and logged a 500 «'NoneType' object has no attribute 'session_user'»; three runs of the
+  355 unit tests are now clean. Nothing changes for people using the program. Still open: the collaboration browser
+  scenario sometimes fails at «A: нет элемента #hubShareLogin» (1 of 3 runs on 02.10).
 - **2026-10-02, ГРАДО 2 v0.91.1: review fixes for v0.89–0.91.** Messages and the busy bar now show above the layout editor
   (its «Сбросить всё» asks to confirm through a message that was hidden behind it). A viewer of a shared project cannot
   use «Из файла». A file with one broken polygon still gives a boundary from its other contours. The situational plan

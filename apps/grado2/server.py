@@ -1559,7 +1559,8 @@ class Handler(SimpleHTTPRequestHandler):
     def _hub_events(self, user, pid):
         """Поток событий проекта (SSE): одна вкладка — одна подписка. Поток держится, пока клиент читает; каждые 15 с — строка
         «: ping», её сбой и есть признак, что вкладку закрыли. Подписка закрывается всегда."""
-        sub = HUB.subscribe(user, pid)             # отказ (нет проекта, нет доступа, слишком много потоков) — обычным ответом
+        hub = HUB                                  # поток живёт дольше запроса: держим свой хаб, глобальный могут подменить
+        sub = hub.subscribe(user, pid)             # отказ (нет проекта, нет доступа, слишком много потоков) — обычным ответом
         token = self._session_token()
         try:
             # читать из сокета поток не будет, так что таймаут действует только на запись: читатель, который встал и не
@@ -1576,8 +1577,8 @@ class Handler(SimpleHTTPRequestHandler):
                 ev = sub.get(min(15, EVENTS_RECHECK))      # не дольше срока проверки сессии; пинг — при каждом пустом круге
                 if time.monotonic() - checked >= EVENTS_RECHECK:     # вышел, сессия истекла, отключили, убрали из проекта
                     checked = time.monotonic()
-                    who = HUB.session_user(token)
-                    if not who or HUB.role_of(who, pid) is None:
+                    who = hub.session_user(token)
+                    if not who or hub.role_of(who, pid) is None:
                         break
                 if ev is None:
                     if sub.closed:                 # проект удалён или доступ закрыт, очередь выбрана
