@@ -28,6 +28,14 @@ the page breaks. Fetch on first use.
 RULE: The lead's gate prints the failing step: grep the E2E output for `STEP FAILED` and ` log: ` lines, and a FAILED
 gate blocks the commit even when the diff review said PASS (cycle 4: review PASS, both E2E runs failed).
 
+RULE: Probes of grado.tailink.tech from the Mac are unreliable (the Mac goes out through a VPN; half of the requests
+time out before connecting). The landing is confirmed by the deploy script's own health check («Готово: на сервере
+версия X»), not by curl from the Mac.
+
+- 02.10.2026, выкладка по слову владельца — v0.93.0: main чистый, полный прогон в ветке (connectors 150, compute 40,
+  apps 360, collab 66, E2E 2 сценария — OK), `git merge --ff-only team/grado2` → main 88e5cd2, скрипт выкладки:
+  «Готово: на сервере версия 0.93.0», main отправлен на GitHub. Указание владельца: продолжать, пока весь интерфейс
+  не исправлен, бэкендер и фронтендер в связке.
 - 02.10.2026, цикл 4 — T13 шаг 2, T18, T19, T15 приняты (v0.93.0, 528c736). Ревью архитектора PASS, но общий прогон
   упал дважды на «A: список проектов пуст»: `norms.js` запрашивал `/api/tep/norms` при загрузке страницы, до входа в
   совместном режиме — 401. Исправлено руководителем (запрос при первом расчёте или открытии окна), добавлен минимум
