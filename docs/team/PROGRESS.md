@@ -43,6 +43,10 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, выкладка по слову владельца — v0.96.2: прогон в ветке (apps 384, connectors 162, compute 46, render
+  73, collab 66, E2E оба сценария OK), main ← team/grado2 (3141fd7), скрипт выкладки: «Готово: на сервере версия
+  0.96.2», main отправлен. Новые замечания владельца по сайту (на 0.93.0): выделение текста при перетаскивании, окно
+  «Листы и альбом», три похожие кнопки, где итоговая вёрстка Безобразово → T31–T34.
 - 03.10.2026, цикл 7 — пара. Сервер: v0.95.1 ToUnicode в PDF (ревью руководителя, 73 render OK). Интерфейс (v0.96.0):
   тёмный граф, справка, путь новичка, колесо; ревью FAIL (цвета темы попадали в проект) → исправлено исполнителем с
   доказательством равенства сохранённого графа в обеих темах; прогон упал дважды на F1 из поля поиска (окно скрыто,
