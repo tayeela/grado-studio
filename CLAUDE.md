@@ -34,7 +34,11 @@ no emoji, describe results as what appears on screen.
 - No new dependencies in core and apps/grado2. Do not touch the owner's QGIS DB or plugin
   (`~/Library/Application Support/QGIS`). Ask before deleting caches in `~/.grado2/cache`.
 - Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, at most 3 retries.
-- Token budget: no Workflow fan-outs; at most one subagent at a time (Sonnet, read-only) and only when it saves reading.
+- Token budget: no Workflow fan-outs. Outside the team cycle, at most one subagent at a time (Sonnet, read-only).
+- Agent team (since 02.10.2026, owner's request): roles in `.claude/agents/grado-*.md`, procedure in `docs/team/CYCLE.md`.
+  When the owner says «команда, за работу», run one cycle by that file; «выкладывай» = its Landing section. Owner's
+  notes for the team go to `docs/team/OWNER.md`. Team work lives on branch `team/grado2` (worktree
+  `.claude/worktrees/team`) and reaches `main` only on the owner's word.
 
 ## Iron rules (still valid)
 1. The owner's open project is irreplaceable data — never experiment on it.
