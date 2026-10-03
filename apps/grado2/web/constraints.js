@@ -6,7 +6,7 @@
    и посадка его больше не учитывает (что видно на карте, то и учитывает генерация).
    Инсоляция — предпроектная оценка по методам ГОСТ Р 57795-2017, не сертифицированный расчёт (см. insol.js). */
 
-const CONS = { norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true } };
+const CONS = { waterLine: 5, norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150, use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true } };
 // сохранённые настройки кладутся поверх умолчаний; «use» сливается по ключам, иначе новый переключатель у старых настроек выключен
 // из хранилища берутся только известные ключи: числа — через Number (значение идёт в value="…"), переключатели — только true/false
 try {
@@ -18,8 +18,8 @@ try {
 if (!(CONS.step >= 2 && CONS.step <= 20)) CONS.step = 4;
 if (!(CONS.cell >= 4 && CONS.cell <= 20)) CONS.cell = 8;
 const CONS_GROUP = "Ограничения";
-const CK = { zouit: "cons:zouit", red: "cons:redlines", fire: "cons:fire", pzz: "cons:pzz0", gp: "cons:gpnature", front: "cons:front", ceil: "cons:ceiling" };
-const EXCLUDE = [CK.zouit, CK.red, CK.fire, CK.pzz, CK.gp];   // слои-запреты: вычитаются из пятна застройки
+const CK = { zouit: "cons:zouit", red: "cons:redlines", fire: "cons:fire", water: "cons:water", pzz: "cons:pzz0", gp: "cons:gpnature", front: "cons:front", ceil: "cons:ceiling" };
+const EXCLUDE = [CK.zouit, CK.water, CK.red, CK.fire, CK.pzz, CK.gp];   // слои-запреты: вычитаются из пятна застройки
 
 /* противопожарные разрывы между новым зданием I–II степени огнестойкости (С0) и существующим — СП 4.13130.2013, табл. 1:
    I–III, С0 — 6 м; II–III С1, IV С0 — 8 м; IV–V, С1–С3 (дерево, смешанные) — 10 м. Степень берётся по материалу стен ЕГРН. */
@@ -74,58 +74,79 @@ const clip = (f, terr) => { const r = inter(f, terr); return r && m2(r) > 1 ? r 
 /* Радиус защиты соседей: высокий дом у границы в начале окна (солнце ~10° над горизонтом в 6:00 22 апреля) бросает тень
    на высоту/tan 10°. Высота — наибольшая по ПЗЗ в границе, без ПЗЗ — 75 м (25 этажей); радиус 200…600 м. */
 function protectR() {
-  const hs = (DATA["gisogd.pzz_sub"]?.fc.features || []).filter(f => f.properties["Высота, м"] > 0 && safe(() => turf.booleanIntersects(f, TERR))).map(f => +f.properties["Высота, м"]);
+  const hs = Roles.features("pzz_sub").filter(f => f.properties["Высота, м"] > 0 && safe(() => turf.booleanIntersects(f, TERR))).map(f => +f.properties["Высота, м"]);
   const H = Math.min(CONS.cap, hs.length ? Math.max(...hs) : 75);
   return Math.max(200, Math.min(600, Math.round(H / Math.tan(10 * Math.PI / 180) / 50) * 50));
 }
 const polyFeats = key => (DATA[key]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type));
+/* Слои берутся по роли (roles.js): проект владельца хранит каталожные слои как `ogd.<код>`, а не `gisogd.*`/`nspd.*`.
+   Объекты роли — с описанием слоя L ({key, title, codeTitle}): название зоны берётся из полей объекта, а если их нет
+   (сырая выгрузка портала), — из названия кода каталога («Природная зона») или заголовка слоя. */
+const cleanTitle = t => String(t || "").replace(/\s*\((ОГД|ЕГРН|ЕГКО|OSM)\)\s*$/, "");
+const roleFeats = (role, re = /Polygon/) => Roles.info(role).flatMap(L => DATA[L.key].fc.features.filter(f => re.test(f.geometry?.type)).map(f => ({ f, L })));
+const nameOf = (f, L, fields) => { for (const k of fields) { const v = f.properties?.[k]; if (v != null && String(v).trim() !== "") return String(v).trim(); } return L.codeTitle || cleanTitle(L.title); };
+// «ЗОУИТ и охранные зоны: 31 объект · 5 слоёв — А, Б, В и ещё 2»: журнал называет слои, из которых взято
+function usedLine(label, roles, n, unit = ["объект", "объекта", "объектов"]) {
+  const ls = [].concat(roles).flatMap(r => Roles.info(r));
+  if (!ls.length) return `${label}: слоёв этой роли нет`;
+  const names = ls.slice(0, 3).map(l => l.title).join(", ") + (ls.length > 3 ? ` и ещё ${ls.length - 3}` : "");
+  return `${label}: ${plural(n, unit)} · ${plural(ls.length, ["слой", "слоя", "слоёв"])} — ${names}`;
+}
+const ZONE_FIELDS = ["Вид зоны", "vid_zouit", "Наименование", "Название", "type_zone"];
 
 /* ---------- расчёт ---------- */
 async function computeConstraints() {
   if (!TERR) return toast("Сначала задайте границу территории (окно «Данные» или инструмент «Граница»).");
   try { localStorage.setItem("grado2.cons", JSON.stringify({ ...CONS, log: undefined })); } catch { }
+  await Roles.ready();            // таблица кодов каталога с сервера: без неё слои `ogd.<код>` не распознаются
   const R = protectR(), zone = buf(TERR, R), log = [], tick = () => new Promise(r => setTimeout(r, 0));
   busy(true); const runBtn = $("consRun"); if (runBtn) runBtn.disabled = true;
   try {
     // 1. ЗОУИТ и охранные зоны: каждая зона отдельно, с причиной — «почему здесь нельзя»
     if (CONS.use.zouit) {
-      const out = [];
-      [["nspd.zouit", f => f.properties["Вид зоны"] || f.properties["Наименование"] || "ЗОУИТ (ЕГРН)"], ["gisogd.szz", f => f.properties["Вид зоны"] || "СЗЗ"], ["gisogd.vodookhr", () => "Водоохранная зона"], ["gisogd.zouit", f => f.properties["Вид зоны"] || "ЗОУИТ (ОГД)"],
-        ["gisogd.okn", f => /регулирован/i.test(f.properties["Вид зоны"] || "") ? null : `ОКН: ${f.properties["Вид зоны"] || "зона"}`]]
-        .forEach(([k, why]) => polyFeats(k).forEach(f => { const w = why(f); if (!w) return; const c = clip(f, TERR); if (c) out.push(turf.feature(c.geometry, { "Причина": w, "Источник": DATA[k].title, "Наименование": f.properties["Наименование"] || "" })); }));
+      const out = [], add = (f, L, why) => { if (!why) return; const c = clip(f, TERR); if (c) out.push(turf.feature(c.geometry, { "Причина": why, "Источник": L.title, "Наименование": f.properties["Наименование"] || f.properties["Название"] || "" })); };
+      roleFeats("zouit").forEach(({ f, L }) => add(f, L, nameOf(f, L, ZONE_FIELDS)));
+      roleFeats("szz").forEach(({ f, L }) => add(f, L, f.properties["Вид зоны"] || L.codeTitle || "СЗЗ"));
+      roleFeats("okn").forEach(({ f, L }) => { const v = f.properties["Вид зоны"] || L.codeTitle || cleanTitle(L.title); add(f, L, /регулирован/i.test(v) ? null : `ОКН: ${v}`); });
       consLayer(CK.zouit, "Запрет: ЗОУИТ и охранные зоны", turf.featureCollection(out), "poly", { mode: "cat", hatch: true, width: 1.2, cat: { field: "Причина", colors: {}, off: [] } });
-      log.push(`ЗОУИТ и охранные зоны: ${out.length}` + (DATA["gisogd.okn"] ? "" : " (ОКН не загружены)"));
+      log.push(usedLine("ЗОУИТ и охранные зоны", ["zouit", "szz", "okn"], out.length, ["зона", "зоны", "зон"]) + (Roles.keys("okn").length ? "" : " (ОКН не загружены)"));
+      // водные объекты: вода и русла рек не застраиваются; береговые полосы и водоохранные зоны уже в ЗОУИТ выше (слои этой роли)
+      const wat = []; roleFeats("water", /Polygon|Line/).forEach(({ f, L }) => { const g = /Line/.test(f.geometry.type) ? buf(f, CONS.waterLine) : f, c = g && clip(g, TERR);
+        if (c) wat.push(turf.feature(c.geometry, { "Причина": "водный объект: " + (f.properties["Вид"] || nameOf(f, L, [])), "Источник": L.title })); });
+      consLayer(CK.water, "Запрет: водные объекты", turf.featureCollection(wat), "poly", { fill: "#2a78d6", stroke: "#1a4f94", opacity: .3, width: 1 });
+      log.push(usedLine("водные объекты", "water", wat.length));
     }
     // 2. отступ от красных линий
     if (CONS.use.red) {
-      const lines = (DATA["gisogd.red_lines"]?.fc.features || []).filter(f => /Line/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, zone)));
+      const lines = Roles.features("red_lines").filter(f => /Line/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, zone)));
       const out = lines.map(f => buf(f, CONS.redline)).filter(Boolean).map(f => clip(f, TERR)).filter(Boolean).map(f => turf.feature(f.geometry, { "Причина": `отступ ${CONS.redline} м от красной линии`, "Норма": "СП 42.13330.2016" }));
       const u = unionAll(out); const fc = turf.featureCollection(u ? [turf.feature(u.geometry, { "Причина": `отступ ${CONS.redline} м от красных линий`, "Норма": "СП 42.13330.2016" })] : []);
       consLayer(CK.red, `Запрет: ${CONS.redline} м от красных линий`, fc, "poly", { fill: "#d7191c", stroke: "#d7191c", hatch: true, width: 1 });
-      log.push(DATA["gisogd.red_lines"] ? `красные линии: ${lines.length}` : "красные линии не загружены — отступ не построен");
+      log.push(Roles.keys("red_lines").length ? usedLine("красные линии", "red_lines", lines.length, ["линия", "линии", "линий"]) : "красные линии не загружены (нет слоя с ролью «Красные линии») — отступ не построен");
     }
     await tick();
     // 3. сохраняемые здания и противопожарные разрывы до них
-    const ek = EXIST_KEY(), exist = ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, zone))) : [];
+    const ek = Roles.existingBuildingsKey(), exist = ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, zone))) : [];
     const kept = exist.filter(f => decisionOf(f) !== "сносим");
     if (CONS.use.fire) {
       const out = kept.map(f => { const g = fireGap(f), b = buf(f, g); const c = b && clip(b, TERR); return c ? turf.feature(c.geometry, { "Причина": `противопожарный разрыв ${g} м`, "Материал стен": f.properties["Материал стен"] || "нет данных", "Норма": "СП 4.13130.2013, табл. 1" }) : null; }).filter(Boolean);
       consLayer(CK.fire, "Запрет: сохраняемые здания и пожарные разрывы", turf.featureCollection(out), "poly", { fill: "#eb6834", stroke: "#b34a1c", opacity: .25, width: .8 });
-      log.push(`сохраняемых зданий: ${kept.length}` + (ek ? "" : " (здания не загружены)"));
+      log.push(ek ? `сохраняемых зданий: ${kept.length} из ${exist.length} в полосе защиты (слой «${DATA[ek].title}»; «сносим» не учитывается)` : "здания не загружены (нет слоя с ролью «Здания»)");
     }
     // 4. ПЗЗ: подзоны с нулевыми параметрами — нового строительства нет
     if (CONS.use.pzz) {
-      const zero = polyFeats("gisogd.pzz_sub").filter(f => /не предусмотрено/.test(f.properties["Регламент"] || "")).map(f => clip(f, TERR) && turf.feature(clip(f, TERR).geometry, { "Причина": "ПЗЗ: нулевые параметры", "Номер подзоны": f.properties["Номер подзоны"], "Документ": f.properties["Документ"] })).filter(Boolean);
+      const sub = roleFeats("pzz_sub"), zero = sub.map(x => x.f).filter(f => /не предусмотрено/.test(f.properties["Регламент"] || "")).map(f => clip(f, TERR) && turf.feature(clip(f, TERR).geometry, { "Причина": "ПЗЗ: нулевые параметры", "Номер подзоны": f.properties["Номер подзоны"] ?? f.properties.podzone_num, "Документ": f.properties["Документ"] ?? f.properties.num_pp })).filter(Boolean);
       consLayer(CK.pzz, "Запрет: ПЗЗ без нового строительства", turf.featureCollection(zero), "poly", { fill: "#8a5a00", stroke: "#8a5a00", hatch: true, width: 1 });
-      log.push(DATA["gisogd.pzz_sub"] ? `подзон ПЗЗ без строительства: ${zero.length}` : "ПЗЗ не загружены");
+      log.push(!sub.length ? "ПЗЗ не загружены (нет слоя с ролью «ПЗЗ: подзоны»)" : usedLine("подзоны ПЗЗ без строительства", "pzz_sub", zero.length, ["подзона", "подзоны", "подзон"])
+        + (sub.some(x => x.f.properties["Регламент"] != null) ? "" : `; в слое ${sub.length} подзон, но регламент (плотность, высота) не разобран — выгрузка сырая, запрет по нулевым параметрам не построен`));
     }
     // 4б. Генплан: природные и озеленённые функциональные зоны — жилой застройки там нет (природно-жилая зона её допускает)
     if (CONS.use.gp) {
       const natural = v => /природн|озелен|парков|лесопарк|оопт|особо охраняем/i.test(v) && !/жил/i.test(v);
-      const out = [["gisogd.func_zones", "naimfunkzony"], ["gisogd.func_zones_tinao", "Вид зоны"]].flatMap(([k, fld]) => polyFeats(k)
-        .filter(f => natural(String(f.properties[fld] || ""))).map(f => { const c = clip(f, TERR); return c && turf.feature(c.geometry, { "Причина": `Генплан: ${f.properties[fld]}`, "Источник": DATA[k].title }); })).filter(Boolean);
+      const fz = roleFeats("func_zones"), FZ = ["naimfunkzony", "Вид зоны", "Название", "zone_title"];
+      const out = fz.map(({ f, L }) => ({ f, L, t: nameOf(f, L, FZ) })).filter(x => natural(x.t)).map(({ f, L, t }) => { const c = clip(f, TERR); return c && turf.feature(c.geometry, { "Причина": `Генплан: ${t}`, "Источник": L.title }); }).filter(Boolean);
       consLayer(CK.gp, "Запрет: природные зоны Генплана", turf.featureCollection(out), "poly", { fill: "#2e7d32", stroke: "#2e7d32", hatch: true, width: 1 });
-      log.push(DATA["gisogd.func_zones"] || DATA["gisogd.func_zones_tinao"] ? `природных зон Генплана: ${out.length}` : "функциональные зоны Генплана не загружены");
+      log.push(fz.length ? usedLine("природные зоны Генплана", "func_zones", out.length, ["зона", "зоны", "зон"]) : "функциональные зоны Генплана не загружены (нет слоя с ролью «Функциональные зоны»)");
     }
     await tick();
     // 5–6. инсоляция: фронт существующих жилых окон и солнечный потолок участка
@@ -151,7 +172,7 @@ async function computeConstraints() {
       const gmax = Math.max(0, ...obst.map(p => p.g || 0)) + 50, capAbs = CONS.cap + gmax;
       const { env, protectedRays } = INSOL.envelope(pts, paths, grid, { norm: CONS.norm * 60, cap: capAbs });
       // ПЗЗ: предельная высота подзоны (где задана числом) — тоже потолок
-      const pzz = polyFeats("gisogd.pzz_sub").filter(f => f.properties["Высота, м"] > 0).map(f => ({ f, h: +f.properties["Высота, м"] }));
+      const pzz = roleFeats("pzz_sub").map(x => x.f).filter(f => f.properties["Высота, м"] > 0).map(f => ({ f, h: +f.properties["Высота, м"] }));
       const cells = [];
       for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
         const n = j * nx + i; if (!grid.inside[n]) continue;
@@ -256,7 +277,7 @@ $("consBody").addEventListener("click", e => { if (e.target.closest("#consRun"))
 const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
 const prismsOf = (f, h) => polys(f).map(p => { const ring = openRing(p[0].map(toXY)), g = groundAt(...ringMid(ring));
   return { ring, holes: p.slice(1).map(q => openRing(q.map(toXY))), g, h: g + h, f }; });
-const keptForCheck = () => { const ek = EXIST_KEY(), zone = buf(TERR, protectR()); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
+const keptForCheck = () => { const ek = Roles.existingBuildingsKey(), zone = buf(TERR, protectR()); return ek ? DATA[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
 let CHECK = null;                 // {key} — принятый слой, который перепроверяется после правки
 function sketchFromLayer(key) {
   return layerSrc[key].getFeatures().map(o => ({ f: GJ.writeFeatureObject(o), floors: +o.get("Этажность") || 1, grp: o.get("Блок") || null })).filter(b => /Polygon/.test(b.f.geometry?.type));
@@ -289,7 +310,7 @@ async function checkNorms(sk, title) {
   // 2. соседи, потерявшие норму
   // соседи — теми же точками и шагом солнца (5 мин), что и солнечный потолок: иначе эскиз под потолком «терял» бы им норму
   const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step, CONS.z);
-  const paths5 = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5)), ek = EXIST_KEY();
+  const paths5 = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5)), ek = Roles.existingBuildingsKey();
   const sig = [TERR_REV, fh, norm, CONS.reveal, CONS.z, CONS.step, ek, DATA[ek]?.rev, DATA["relief.contours"]?.rev, kept.length].join("|");
   if (nbBase?.sig !== sig || nbBase.nb0.length !== nb.length) {
     const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths5, { norm, reveal: CONS.reveal }, gen);

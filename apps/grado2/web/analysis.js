@@ -14,7 +14,8 @@ const SERVICES = {
   "школы · 500 м": { kinds: ["школа"], r: 500, norm: "СП 42.13330.2016, табл. 10.2" },
   "поликлиники · 1000 м": { kinds: ["поликлиника"], r: 1000, norm: "СП 42.13330.2016, табл. 10.1" },
   "аптеки · 500 м": { kinds: ["аптека"], r: 500, norm: "СП 42.13330.2016, табл. 10.1" } };
-const socialPoints = kinds => (DATA["osm.social"]?.fc.features || []).filter(f => f.geometry?.type === "Point" && kinds.includes(f.properties["Вид"]));
+// слои берутся по роли (roles.js), а не по ключу osm.*: проект может держать их под другим ключом или вручную назначить роль
+const socialPoints = kinds => Roles.features("social").filter(f => f.geometry?.type === "Point" && kinds.includes(f.properties["Вид"]));
 const ha2 = f => fmt(m2(f) / 1e4, 2) + " га";
 
 function NRadius() {
@@ -26,7 +27,7 @@ function NRadius() {
 NRadius.title = "Радиусы обслуживания"; NRadius.prototype.onExecute = function () {
   const sv = SERVICES[this.widgets[0].value] || Object.values(SERVICES)[0], ok = RESULT.tepNode ? tepParams(RESULT.tepNode).okrug : "";
   const r0 = typeof sv.r === "function" ? sv.r(ok) : sv.r, r = r0 == null ? null : r0 * (this.widgets[1].value ? .7 : 1);
-  const pts = socialPoints(sv.kinds), key = [DATA["osm.social"]?.rev, this.widgets[0].value, r, TERR_REV].join("|");
+  const pts = socialPoints(sv.kinds), key = [Roles.sig("social"), this.widgets[0].value, r, TERR_REV].join("|");
   if (r == null) { this._ck = key; this._out = [null, null]; this._fc = []; this.setOutputData(0, null); this.setOutputData(1, null); this.info = `в ЦАО школа нормируется «в границах ЦАО» (${sv.norm}) — радиусом не проверяется`; return; }
   if (this._ck !== key) {
     this._ck = key;
@@ -34,7 +35,7 @@ NRadius.title = "Радиусы обслуживания"; NRadius.prototype.onE
     const cover = unionAll(circles), out = TERR ? diff(TERR, cover) : null;
     this._out = [cover, out];
     this._fc = circles.concat(out ? [turf.feature(out.geometry, { "Пояснение": `вне радиуса ${Math.round(r)} м: ${ha2(out)} — здесь ${sv.kinds[0]} не доступен пешком по норме (${sv.norm})` })] : []);
-    this._msg = !DATA["osm.social"] ? "загрузите «Школы, детсады, поликлиники (OSM)» в окне «Данные»" : `${plural(pts.length, ["объект", "объекта", "объектов"])} · вне радиуса ${out ? ha2(out) : "0 га"} · ${sv.norm}`;
+    this._msg = !Roles.keys("social").length ? "загрузите «Школы, детсады, поликлиники (OSM)» в окне «Данные»" : `${plural(pts.length, ["объект", "объекта", "объектов"])} · вне радиуса ${out ? ha2(out) : "0 га"} · ${sv.norm}`;
   }
   this.setOutputData(0, this._out[0]); this.setOutputData(1, this._out[1]); this.info = this._msg;
 };
@@ -44,7 +45,7 @@ LiteGraph.registerNodeType("Анализ/Радиусы обслуживания
    узлов, достижимые куски улиц — с буфером 30 м. Скорость 4,5 км/ч (75 м/мин). */
 const NO_WALK = new Set(["motorway", "motorway_link", "trunk_link", "construction", "proposed"]);
 function walkGraph() {
-  const roads = DATA["osm.roads"]?.fc.features || [], key = p => p[0].toFixed(1) + "," + p[1].toFixed(1);
+  const roads = Roles.features("roads"), key = p => p[0].toFixed(1) + "," + p[1].toFixed(1);
   const nodes = new Map(), adj = [], xy = [];
   const id = p => { const k = key(p); let i = nodes.get(k); if (i === undefined) { i = xy.length; nodes.set(k, i); xy.push(p); adj.push([]); } return i; };
   roads.forEach(f => { if (NO_WALK.has(f.properties["Тип дороги"])) return; const g = f.geometry; (g.type === "LineString" ? [g.coordinates] : g.type === "MultiLineString" ? g.coordinates : []).forEach(line => {
@@ -67,10 +68,10 @@ function NWalk() {
 }
 NWalk.title = "Пешая доступность"; NWalk.prototype.onExecute = function () {
   const sv = SERVICES[this.widgets[0].value] || Object.values(SERVICES)[0], min = Math.round(this.widgets[1].value), D = min * 75;
-  const key = [DATA["osm.roads"]?.rev, DATA["osm.social"]?.rev, this.widgets[0].value, min, LON0].join("|");
+  const key = [Roles.sig("roads"), Roles.sig("social"), this.widgets[0].value, min, LON0].join("|");
   if (this._ck !== key) {
     this._ck = key; this._out = null; this._fc = [];
-    if (!DATA["osm.roads"] || !DATA["osm.social"]) { this._msg = "нужны «Улично-дорожная сеть (OSM)» и «Школы, детсады, поликлиники (OSM)»"; }
+    if (!Roles.keys("roads").length || !Roles.keys("social").length) { this._msg = "нужны «Улично-дорожная сеть (OSM)» и «Школы, детсады, поликлиники (OSM)»"; }
     else {
       const G = walkGraph(), pts = socialPoints(sv.kinds);
       // от объекта — к ближайшему узлу улиц (не дальше 200 м), это расстояние тоже идёт в счёт
@@ -99,11 +100,11 @@ function NBlocks() { this.addInput("кварталы", "geom"); this.addInput("�
 NBlocks.title = "Показатели кварталов"; NBlocks.prototype.onExecute = function () {
   // без входа — кварталы как территория между улицами (буфер 10 м от линий OSM, кроме тротуаров и дорожек)
   let bl = this.getInputData(0);
-  if (!bl && TERR && DATA["osm.roads"]) { this._auto ||= {}; const k = DATA["osm.roads"].rev + "|" + TERR_M2; if (this._auto.k !== k) { const streets = DATA["osm.roads"].fc.features.filter(f => /Line/.test(f.geometry?.type) && !/footway|path|steps|cycleway|service|track|pedestrian/.test(f.properties["Тип дороги"] || "")); this._auto = { k, g: diff(TERR, unionAll(streets.map(f => buf(f, 10)))) }; } bl = this._auto.g; }
+  if (!bl && TERR && Roles.keys("roads").length) { this._auto ||= {}; const k = Roles.sig("roads") + "|" + TERR_M2; if (this._auto.k !== k) { const streets = Roles.features("roads").filter(f => /Line/.test(f.geometry?.type) && !/footway|path|steps|cycleway|service|track|pedestrian/.test(f.properties["Тип дороги"] || "")); this._auto = { k, g: diff(TERR, unionAll(streets.map(f => buf(f, 10)))) }; } bl = this._auto.g; }
   const bi = this.getInputData(1), key = gid(bl) + gid(bi) + dataRev;
   if (this._ck !== key) {
     this._ck = key; this._fc = [];
-    const ek = EXIST_KEY(), blds = bi?.properties?._src || (ek ? DATA[ek].fc.features : []), polyB = blds.filter(f => /Polygon/.test(f.geometry?.type));
+    const ek = Roles.existingBuildingsKey(), blds = bi?.properties?._src || (ek ? DATA[ek].fc.features : []), polyB = blds.filter(f => /Polygon/.test(f.geometry?.type));
     const cents = polyB.map(f => ({ f, c: safe(() => turf.pointOnFeature(f)) })).filter(x => x.c);
     this._fc = (bl ? splitParts(bl) : []).filter(p => m2(p) > 500).map((p, i) => {
       const inB = cents.filter(x => safe(() => turf.booleanPointInPolygon(x.c, p))).map(x => x.f), a = m2(p);

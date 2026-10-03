@@ -545,6 +545,43 @@ def ogd_catalog():
     return _OGD_CAT["cat"]
 
 
+# Роли слоёв в расчётах (ограничения, анализ, эскиз): фронт ищет слой по роли, а не по фиксированному ключу — в проектах
+# владельца каталожные слои лежат как `ogd.<код>`. Ключ источника -> роль (web/roles.js держит ту же таблицу для работы
+# без сети; тест сверяет их). Роли: pzz_sub, pzz_zones, func_zones, zouit, szz, okn, red_lines, buildings, roads, water,
+# green, social, parcels.
+SOURCE_ROLES = {
+    "gisogd.pzz_sub": "pzz_sub", "gisogd.pzz_zones": "pzz_zones", "gisogd.func_zones": "func_zones",
+    "gisogd.func_zones_tinao": "func_zones", "nspd.zouit": "zouit", "gisogd.zouit": "zouit", "gisogd.vodookhr": "zouit",
+    "gisogd.szz": "szz", "gisogd.okn": "okn", "gisogd.red_lines": "red_lines",
+    "nspd.buildings": "buildings", "egko.buildings": "buildings", "osm.buildings": "buildings",
+    "osm.roads": "roads", "egko.roads": "roads", "osm.water": "water", "egko.water": "water", "egko.green": "green",
+    "osm.social": "social", "nspd.parcels": "parcels",
+}
+# Коды каталога ОГД выводятся из SOURCES: каждый код источника получает роль источника. Исключение — «красные линии»:
+# в gisogd.red_lines вместе с красными линиями лежат границы водоохранных зон (l16), прибрежных защитных полос (l17) и
+# береговых полос (l41) — у них есть свои полигоны в роли zouit, отступ как от красной линии для них неверен. Остальные
+# коды l1..l4, l25, l7, l57, l8, l18, l21, l29 по названию каталога не проверены (офлайн названий нет) — без роли;
+# владелец ставит роль слою вручную. Без роли также: virtual84/virtual87 («Пятая/Третья подзона» — приаэродромные
+# подзоны Внукова, в SOURCES["gisogd.airfield"] их нет, не проверено), virtual100, gpzu, pmtgk, подписи (virtual18, virtual23).
+CODE_ROLES_SKIP = {"gisogd.red_lines"}
+# коды вне SOURCES; название в каталоге сверено по слою проекта «Безобразово» (заголовок слоя = название каталога)
+EXTRA_CODE_ROLES = {"zu_29_06_2021": "parcels"}   # «Земельные участки (ОГД)»
+
+
+def layer_roles():
+    codes, titles = {}, {}
+    for key, role in SOURCE_ROLES.items():
+        src = SOURCES.get(key)
+        if key in CODE_ROLES_SKIP or not src or src[0] != "gisogd" or not isinstance(src[1], dict):
+            continue
+        for code, name in src[1].items():
+            codes.setdefault(code, role)
+            if isinstance(name, str):
+                titles.setdefault(code, name.split("|")[0])
+    codes.update(EXTRA_CODE_ROLES)
+    return {"sources": dict(SOURCE_ROLES), "codes": codes, "titles": titles}
+
+
 OGD_JOB, OGD_LOCK = [], threading.Lock()   # «Всё из ГИС ОГД в DWG»: одна фоновая выгрузка за раз (ogd_all.py)
 EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ, еженедельно перекачивать незачем
 
@@ -1416,6 +1453,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(code, obj)
         if self.path == "/api/sources":
             return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
+        if self.path == "/api/layer_roles":
+            return self._json(200, layer_roles())
         if self.path.split("?")[0] == "/api/tep/norms":
             return self._json(200, tep_norms())
         if self.path == "/api/health":

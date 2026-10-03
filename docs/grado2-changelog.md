@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.99.0: layers are found by role — constraints and the sketch work on real projects.** The timed
+  run on a copy of the owner's site project (`docs/ux/run-2026-10-03-bezobrazovo.md`) showed «Ограничения», the
+  buildings register and analysis looking for fixed keys (`gisogd.pzz_sub`, `nspd.zouit`, `osm.roads`, `nspd.buildings`…)
+  while a real project stores catalog layers as `ogd.<code>` and ЕГКО as `egko.*`: all seven constraint layers were
+  empty, 3 566 buildings ignored, the sketch stood on the river. New `web/roles.js` (`window.Roles`): a layer fills a
+  role (ЗОУИТ, СЗЗ, ОКН, красные линии, ПЗЗ подзоны/зоны, функциональные зоны Генплана, здания, дороги, вода, зелень,
+  соцобъекты, участки) by a manual «Роль в расчётах» set in its style panel (saved with the layer, synced in
+  collaboration), else by its source key, else by its catalog code (`GET /api/layer_roles`, built from `SOURCES`;
+  `l16/l17/l41`, `gpzu`, `pmtgk`, `virtual84/87` left unmapped until their names are checked). `constraints.js` and
+  `analysis.js` use roles and name the layers they used; new sketch bans: water and existing buildings not marked
+  «сносим». `robust()` rejects a geometry result with a ring under 4 positions (turf.difference on ЕГКО layers gave
+  2-point rings and the sketch came out empty); `EXIST_KEY` → `Roles.existingBuildingsKey()`. Checked on the
+  Безобразово copy with the КРТ 3141 boundary: ЗОУИТ 8 zones from 9 layers, water 3, buildings 1 541 kept, 13
+  buildings placed with zero overlap of water and buildings; console clean. Open: ПЗЗ from the catalog carries raw
+  portal fields, so heights and zero-parameter subzones are not derived from it; `NLayer` graph nodes still look up
+  layers by title; `Roles.keys()` is not cached; the building ban depends on the fire-gap layer switch.
 - **2026-10-03, ГРАДО 2 v0.98.5: the album is its own section of a shared project.** In hub mode the album sat inside
   the `meta` section, so every edit of any shared parameter (ТЭП node params, views, groups) re-sent the whole album —
   19.5 MB with the owner's nine frozen sheets, on every push and autosave. Now `album` is a section of its own

@@ -53,7 +53,7 @@ function collectProject() {
     checked: [...CHECKED],
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
-    layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style })),
+    layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style, ...(l.role ? { role: l.role } : {}) })),
     data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
     graph: graph.serialize(),
   };
@@ -109,7 +109,7 @@ function applyProject(p) {
       if (!d.original) delete DATA[s.key].original;              // свой слой: «исходной выгрузки» у него нет
       if (!d.fc?.features?.length) DATA[s.key].fields = ["Наименование", "Примечание"];
       const l = ensureLayer(s.key, s.title, s.geom);
-      Object.assign(l, { visible: s.visible, layerOpacity: okn(s.layerOpacity, 1), open: !!s.open, style: ST(s.style || {}) });
+      Object.assign(l, { visible: s.visible, layerOpacity: okn(s.layerOpacity, 1), open: !!s.open, style: ST(s.style || {}), role: window.Roles?.sane(s.role) });   // роль слоя в расчётах (roles.js): нет — «авто»
     }
     GROUPS.push(...(p.groups || []).map(g => ({ id: g.id, title: g.title, visible: g.visible !== false, open: g.open !== false })));   // группы — после загрузки слоёв: пока слои приходят по одному, нормализация сочла бы группы пустыми
     (p.layers || []).forEach(s => { const l = lyr(s.key); if (l) l.group = s.group || null; });

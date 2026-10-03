@@ -69,7 +69,10 @@ const quiet = fn => { try { return { ok: true, v: fn() }; } catch { return { ok:
 const snap6 = f => turf.truncate(f, { precision: 7, coordinates: 2 });
 function robust(op, a, b) {
   const tries = [() => op(a, b), () => op(snap6(a), snap6(b)), () => op(snap6(a), snap6(turf.buffer(b, .01, { units: "meters" }) || b))];
-  for (const t of tries) { const r = quiet(t); if (r.ok) return r.v; }
+  // результат с «кольцом» из 2–3 точек (turf.difference на реальных слоях ЕГКО) ломает splitParts — берём следующую попытку
+  const sane = g => { const polys = g?.geometry?.type === "Polygon" ? [g.geometry.coordinates] : g?.geometry?.type === "MultiPolygon" ? g.geometry.coordinates : null;
+    return g == null || (polys != null && polys.every(p => p.every(r => r.length >= 4))); };
+  for (const t of tries) { const r = quiet(t); if (r.ok && sane(r.v)) return r.v; }
   console.warn("геометрия: операция не удалась и после повторов"); return null;
 }
 function unionAll(fs) {
@@ -586,7 +589,7 @@ function mergeDownload(key, prev, fc, bb) {
   return { fc: { type: "FeatureCollection", features: out }, original: { type: "FeatureCollection", features: fc.features.concat(keepOut) }, text: parts.join(", "), mark: new Set([...added, ...changed]),
     counts: { added: added.length, removed: removed.length, changed: changed.length } };
 }
-const EXIST_KEY = () => DATA["nspd.buildings"] ? "nspd.buildings" : DATA["osm.buildings"] ? "osm.buildings" : null;
+const EXIST_KEY = () => window.Roles?.existingBuildingsKey?.() ?? (DATA["nspd.buildings"] ? "nspd.buildings" : DATA["osm.buildings"] ? "osm.buildings" : null);   // здания по роли: ЕГРН → ЕГКО → OSM (T60)
 const floorsOf = f => { const v = +(f.properties["Этажность"]); return v > 0 ? v : 1; };
 function insideTerr(f) { return TERR && safe(() => turf.booleanPointInPolygon(turf.pointOnFeature(f), TERR)); }
 function existingSummary() {
