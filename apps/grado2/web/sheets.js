@@ -331,11 +331,17 @@ async function buildSituation0(mode) {
   const c = turf.centroid(TERR).geometry.coordinates, kx = 111.32 * Math.cos(c[1] * Math.PI / 180), ky = 110.54, a = (bb[2] - bb[0]) * kx * (bb[3] - bb[1]) * ky;
   const f = Math.min(1, Math.sqrt(24 / a)), ob = [c[0] - (bb[2] - bb[0]) * f / 2, c[1] - (bb[3] - bb[1]) * f / 2, c[0] + (bb[2] - bb[0]) * f / 2, c[1] + (bb[3] - bb[1]) * f / 2];
   toast("Ситуационный план: здания, дороги и зелень Яндекса, железная дорога, названия улиц…");
-  await loadKeys(["sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"], bb);
-  // вблизи территории — подробная основа Яндекса (z18): крупнее 1:7 500 обзорные слои не видны, их сменяет она
-  const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(DATA[k]?.bbox && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(DATA[k].bbox))));
-  if (near.length) await loadKeys(near, turf.bbox(buf(TERR, 300)));
-  const rb = DATA["osm.roads"]?.bbox; if (!rb || !(rb[0] <= ob[0] && rb[1] <= ob[1] && rb[2] >= ob[2] && rb[3] >= ob[3])) await loadKeys(["osm.roads"], ob);
+  const stp = what => bpStep(`Лист 1 из 1: ${sh.title} — загрузка ${what}…`);
+  bpBegin(`Лист 1 из 1: ${sh.title} — подготовка…`, false);
+  try {
+    stp("зелени, воды, дорог, зданий и железной дороги Яндекса"); await loadKeys(["sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"], bb);
+    // вблизи территории — подробная основа Яндекса (z18): крупнее 1:7 500 обзорные слои не видны, их сменяет она
+    const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(DATA[k]?.bbox && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(DATA[k].bbox))));
+    if (near.length) { stp("подробной основы Яндекса"); await loadKeys(near, turf.bbox(buf(TERR, 300))); }
+    const rb = DATA["osm.roads"]?.bbox; if (!rb || !(rb[0] <= ob[0] && rb[1] <= ob[1] && rb[2] >= ob[2] && rb[3] >= ob[3])) { stp("улиц OSM"); await loadKeys(["osm.roads"], ob); }
+    if (ERRORS["osm.roads"]) LOSTNOTE.set(sh.id, lostPhrase("osm.roads")); else LOSTNOTE.delete(sh.id);
+    bpStep(`Лист 1 из 1: ${sh.title} — отрисовка…`);
+  } finally { bpEnd(); }
   buildUds();
   // своя подробная застройка на территории (ЕГКО, ЕГРН) уже есть — здания Яндекса её не дублируют
   const ext = ol.proj.transformExtent(turf.bbox(TERR), "EPSG:4326", "EPSG:3857");
@@ -395,6 +401,29 @@ function tplMake(s) {
   const d = TPL_SETS[set], i = s.tpl.i, t = d && d.list()[i];
   return t ? makeTplSheet(t, s.id, set, i, s.tpl.size || d.size()) : null;
 }
+const LOSTNOTE = new Map();       // id листа → слои, которые не загрузились при сборке (портал молчал): лист собран без них; не сохраняется в проект
+const FITWHY = new Map();        // id листа → почему не поместилось (ответ сервера при просмотре и выгрузке); сбрасывается правкой альбома
+const OSM_NOUN = { "osm.roads": "улицы OSM", "osm.landuse": "землепользование OSM", "osm.buildings": "здания OSM", "osm.water": "водные объекты OSM", "osm.social": "социальные объекты OSM" };
+// всё, из-за чего лист «не готов»: слои, вёрстка (ответ сервера), загрузка при сборке — одной строкой для подсказки строки листа и заметки
+const whyOf = s => [NOTREADY.get(s.id), FITWHY.get(s.id), LOSTNOTE.get(s.id)].filter(Boolean).join("; ");
+// ответ сервера при просмотре и выгрузке: X-Grado-Not-Ready-Why = «лист 6: причина, причина; лист 10: …» (%XX); list — листы запроса по порядку
+function readFit(r, list) {
+  list.forEach(s => FITWHY.delete(s.id));
+  let txt = ""; try { txt = decodeURIComponent(r.headers.get("X-Grado-Not-Ready-Why") || ""); } catch { }
+  for (const m of txt.matchAll(/(?:^|; )лист (\d+): (.*?)(?=; лист \d+: |$)/gs)) { const sh = list[+m[1] - 1]; if (sh) FITWHY.set(sh.id, m[2]); }
+  if (!txt && r.headers.get("X-Grado-Not-Ready")) r.headers.get("X-Grado-Not-Ready").split(",").forEach(n => { const sh = list[+n - 1]; if (sh) FITWHY.set(sh.id, "не всё поместилось, что именно — серым внизу листа"); });
+  syncAlbumStat();
+  list.forEach(sh => { const i = ALBUM.sheets.indexOf(sh), row = i >= 0 && document.querySelector(`#sheetsBody .shrow[data-sh="${i}"]`); if (row) row.innerHTML = rowInner(sh, i); });   // значок «не готов» с причиной в подсказке — сразу
+  icons();
+  return list.map((sh, i) => FITWHY.has(sh.id) ? `лист ${ALBUM.sheets.indexOf(sh) + 1}: ${FITWHY.get(sh.id)}` : "").filter(Boolean).join("; ");
+}
+// причина сбоя слоя для владельца: сервер уже отдаёт русскую фразу («портал OpenStreetMap ответил 504: …»); сырых кодов здесь нет
+function lostPhrase(k, why = ERRORS[k]) {
+  why = String(why || "");
+  const reason = (c => c ? `портал ответил ${c[1]}` : /портал|не ответил|Failed to fetch|NetworkError|abort/i.test(why) ? "портал не ответил" : why.replace(/[:.]\s.*$/, "") || "не загрузился")(/ответил (\d{3})/.exec(why));
+  const retry = /портал/.test(reason) ? " — повторите сборку позже" : "";
+  return k.startsWith("osm.") ? `${OSM_NOUN[k] || SOURCES[k]?.title || k} не загрузились (${reason})${retry}` : `слой «${SOURCES[k]?.title || k}» не загрузился (${reason})${retry}`;
+}
 const NOTREADY = new Map();        // id листа → почему не готов; не сохраняется в проект, считается при каждом обновлении
 function notReadyWhy(s) {
   if (s.kind === "title") return "";
@@ -404,7 +433,8 @@ function notReadyWhy(s) {
   const ks = [...new Set([...(s.keys || []), ...(s.panels || []).flatMap(p => p.keys || [])])], t = k => SOURCES[k]?.title || k;
   const bad = ks.filter(k => ERRORS[k]), miss = ks.filter(k => !bad.includes(k) && !lyr(k) && !DATA[k] && SOURCES[k] && !CHECKED.has(k));
   const w = (a, one, many) => `${a.length > 1 ? "слои" : "слой"} ${a.map(x => "«" + t(x) + "»").join(", ")} ${a.length > 1 ? many : one}`;      // пустой результат выгрузки не в счёт: слой запрашивали
-  return [bad.length ? w(bad, "не загрузился", "не загрузились") : "", miss.length ? w(miss, "не загружен", "не загружены") : ""].filter(Boolean).join("; ");
+  const osmBad = bad.filter(k => k.startsWith("osm.")), otherBad = bad.filter(k => !k.startsWith("osm."));   // OSM: «улицы OSM не загрузились (портал ответил 504) — повторите сборку позже»
+  return [...osmBad.map(k => lostPhrase(k)), otherBad.length ? w(otherBad, "не загрузился", "не загрузились") : "", miss.length ? w(miss, "не загружен", "не загружены") : ""].filter(Boolean).join("; ");
 }
 // лист проекта старого формата (нет sheet.tpl): ничего не меняется, записывается только откуда он (legacy: true) — автоматически такой лист не пересобирается
 function tplAdopt() {
@@ -462,7 +492,7 @@ function tplAuto() {
 const tplSchedule = () => { clearTimeout(TPL_TIMER); TPL_TIMER = setTimeout(tplAuto, 600); };
 window.scheduleTplRefresh = tplSchedule;
 // открытие проекта: листы старого формата (без sheet.tpl) не меняются — только помечаются legacy; пересборка таких листов — по «Обновить листы» с подтверждением
-window.tplOpen = () => { NOTREADY.clear(); TPL_SIG = null; if (isViewer()) return; tplAdopt(); const r = tplRefresh({}); if (r.n) { TPL_SIG = tplSig(); tplAfter(r, false); } };
+window.tplOpen = () => { NOTREADY.clear(); LOSTNOTE.clear(); FITWHY.clear(); TPL_SIG = null; if (isViewer()) return; tplAdopt(); const r = tplRefresh({}); if (r.n) { TPL_SIG = tplSig(); tplAfter(r, false); } };
 function tplManual() {
   if (isViewer()) return toast("Только просмотр: листы обновляет тот, кто правит проект.");
   tplAdopt();
@@ -506,26 +536,48 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
     if (a <= lim * .97) return; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;
     need.set(k, [c[0] - hx, c[1] - hy, c[0] + hx, c[1] + hy]); });
   const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
+  // ход сборки (T62): группа слоёв — за листом, которому она нужна первому; листы идут по порядку, «Остановить» работает по границе листа
+  const sheetNeeds = sheets.map(s => new Set((s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []).flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k])));
+  const todo = [...groups.values()].map(g => ({ ...g, first: Math.max(0, sheetNeeds.findIndex(ks => g.keys.some(k => ks.has(k)))) })).sort((a, b) => a.first - b.first);
+  const loaded = new Set(), frontier = () => { const i = sheetNeeds.findIndex(ks => [...ks].some(k => !loaded.has(k))); return i < 0 ? sheets.length : i; };   // первый лист, которому ещё не хватает слоёв
+  const what = ks => { const nm = ks.map(k => OSM_NOUN[k] || SOURCES[k]?.title || k); return nm.slice(0, 2).join(", ") + (nm.length > 2 ? ` и ещё ${nm.length - 2}` : ""); };
+  const step = (ks, pre = "") => { const i = Math.min(frontier(), sheets.length - 1); BP.cur = i; bpStep(`${pre}Лист ${i + 1} из ${sheets.length}: ${sheets[i].title} — загрузка ${what(ks)}…`); };
   // ошибки каждой выгрузки (loadKeys начинает с чистого списка) копятся здесь; упавший слой повторяется один раз
   const failed = new Map();
-  for (const { bb, keys } of groups.values()) {
-    keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb);
-    keys.filter(k => ERRORS[k]).forEach(k => failed.set(k, { bb, why: ERRORS[k] }));
-  }
-  for (const [k, { bb }] of [...failed]) { await loadKeys([k], bb); if (!ERRORS[k]) failed.delete(k); else failed.get(k).why = ERRORS[k]; }
-  const lost = [...failed].map(([k, x]) => `«${SOURCES[k]?.title || k}» (${x.why})`);
+  bpBegin(`Лист 1 из ${sheets.length}: ${sheets[0]?.title || ""} — подготовка…`);
+  try {
+    for (const { bb, keys } of todo) {
+      if (BP.stop && frontier() > BP.stopAt) break;       // лист, на котором нажали «Остановить», доделан
+      step(keys); keys.forEach(k => CHECKED.add(k)); const t0 = performance.now(); await loadKeys(keys, bb); console.debug(`[T62] ${keys.join(",")}: ${Math.round(performance.now() - t0)} мс`);
+      keys.forEach(k => loaded.add(k));
+      keys.filter(k => ERRORS[k]).forEach(k => failed.set(k, { bb, why: ERRORS[k] }));
+    }
+    // повтор упавшего слоя — один раз; «область больше допустимой» повторять бессмысленно
+    if (!BP.stop) for (const [k, { bb, why }] of [...failed]) {
+      if (/област.* больш|слишком больш|портал/i.test(why)) continue;       // сервер уже повторял с паузами (3 попытки): сразу ещё раз — против правил порталов
+      step([k], "Повтор. "); await loadKeys([k], bb); if (!ERRORS[k]) failed.delete(k); else failed.get(k).why = ERRORS[k]; }
+  } finally { bpEnd(); }
+  const nDone = frontier();                      // собранные листы — первые, чьи слои все загружены (или запрошены: сбой — в заметке листа)
+  const stopped = nDone < sheets.length, built = sheets.slice(0, nDone);
+  const lost = [...failed.keys()].filter(k => sheetNeeds.slice(0, nDone).some(ks => ks.has(k))).map(k => lostPhrase(k, failed.get(k).why));
+  built.forEach((s, i) => { const ph = [...failed.keys()].filter(k => sheetNeeds[i].has(k)).map(k => lostPhrase(k, failed.get(k).why)); if (ph.length) LOSTNOTE.set(s.id, ph.join("; ")); else LOSTNOTE.delete(s.id); });
   buildUds();
   // пересборка раздела не теряет добавленные снимки и правки макета (надписи, свои тексты) — по листу с тем же видом и названием
   // — по id листа (он задан шаблоном), а не по названию: переименованный лист не теряет снимки и надписи
   const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
-  sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o) carryHand(s, o, false); });
-  ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith(prefix)).concat(sheets);
+  built.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o) carryHand(s, o, false); });
+  // остановка: листы раздела, до которых сборка не дошла, остаются прежними (прежняя сборка не пропадает молча)
+  const rest = stopped ? ALBUM.sheets.filter(s => String(s.id).startsWith(prefix) && !(parseInt(String(s.id).slice(prefix.length), 10) < nDone)) : [];
+  ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith(prefix)).concat(built, rest);
   // холст — опорный план: тематические слои раздела (зоны, ПЗЗ, Генплан, документация, соцобъекты) выключены — они
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
-  const used = sheets.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
+  const used = built.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
   tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
   ALBUM.meta.builtAt = new Date().toISOString();
-  window.markDirty?.(); renderSheets(); toast(`${lost.length ? `Не загрузились после повтора: ${lost.join("; ")} — слайды с ними неполные, повторите сборку позже. ` : ""}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
+  window.markDirty?.(); renderSheets();
+  const lostT = lost.length ? `Листы собраны без части данных: ${lost.join("; ")}. ` : "";
+  toast(stopped ? `${lostT}Сборка остановлена: готово ${nDone} из ${sheets.length} листов — «${name}», остальные листы прежние (если были). Чтобы собрать всё, запустите сборку снова.`
+    : `${lostT}${name}: ${sheets.length} листов, формат «${SIZE_T[size] || size}». Холст приведён к опорному плану: тематические слои раздела выключены (включаются в дереве). «PDF альбома» — выгрузка; рамку любого листа можно сдвинуть.`);
 }
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }
@@ -536,6 +588,7 @@ async function previewSheet(i) {
   try {
     const r = await fetch("/api/print/svg", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...albumSpec([ALBUM.sheets[i]]), index: 0 }) });
     if (!r.ok) throw new Error((await r.json()).error);
+    if (ALBUM.sheets[i]) readFit(r, [ALBUM.sheets[i]]);
     const url = URL.createObjectURL(await r.blob()), img = $("sheetPrev"); if (!img) return; if (img.dataset.url) URL.revokeObjectURL(img.dataset.url);
     img.src = url; img.dataset.url = url; img.dataset.i = i; img.hidden = false; img.title = "Двойной щелчок — макет: правка надписей листа";
   } catch (e) { toast("Лист не собран: " + e.message); } finally { busy(false); }
@@ -549,17 +602,18 @@ async function albumFile0(kind = "pdf", only = null) {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
   const list = only ? [only] : ALBUM.sheets;
   busy(true); setBuilding(true);
+  bpBegin(`${kind === "pdf" ? "PDF" : "PPTX"}: вёрстка ${list.length} ${shWord(list.length)} на сервере (лист за листом, остановить нельзя)…`, false);
   try {
     const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
     if (!r.ok) throw new Error((await r.json()).error);
     const a = document.createElement("a"); a.href = URL.createObjectURL(await r.blob()); a.download = (only ? only.title : ALBUM.meta.object || PROJ.name || "альбом") + "." + kind; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     if (!only) stampAlbum(kind === "pdf" ? "pdfAt" : "pptxAt");
     // листы «не готов»: что-то не поместилось, а мельчить и обрывать молча нельзя — пометка серым внизу листа
-    const nr = r.headers.get("X-Grado-Not-Ready");
+    const nr = readFit(r, list);                    // «лист 6: легенда из 23 позиций не помещается — …; лист 10: …»
     toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
-      + (nr ? ` Не готовы листы ${nr.split(",").join(", ")}: не всё поместилось, что именно — серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
-  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); setBuilding(false); }
+      + (nr ? ` Не готовы: ${nr}. Причина — и серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
+  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { bpEnd(); busy(false); setBuilding(false); }
 }
 // спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF
 // сразу, только если путь к нему полный: папку загрузок браузера программа спрашивает один раз, архив называется
@@ -602,13 +656,14 @@ function albumStatText() {
   if (m.pdfAt) t += ` · PDF ${stampText(m.pdfAt)}`;
   if (m.pptxAt) t += ` · PPTX ${stampText(m.pptxAt)}`;
   if (TPL_AT) t += ` · листы обновлены ${stampText(new Date(TPL_AT).toISOString())}`;
-  if (NOTREADY.size) t += ` · не готово: ${NOTREADY.size}`;
+  const nr = ALBUM.sheets.filter(x => NOTREADY.has(x.id) || FITWHY.has(x.id) || LOSTNOTE.has(x.id));
+  if (nr.length) t += ` · не готово: ${nr.length}` + (FITWHY.size ? ` (${ALBUM.sheets.filter(x => FITWHY.has(x.id)).map(x => `лист ${ALBUM.sheets.indexOf(x) + 1}: ${FITWHY.get(x.id)}`).join("; ")})` : "");
   const last = [m.editedAt, m.builtAt].filter(Boolean).sort().pop();       // правили листы после последнего файла
   if (last && m.pdfAt && last > m.pdfAt) t += " · изменён после PDF";
   else if (last && !m.pdfAt && m.pptxAt && last > m.pptxAt) t += " · изменён после PPTX";
   return t;
 }
-const syncAlbumStat = () => { const e = $("shStat"); if (e) { const t = SHBUILD > 0 ? "Собираю…" : albumStatText(); e.textContent = t; e.title = t; } };
+const syncAlbumStat = () => { const e = $("shStat"); if (e) { const t = SHBUILD > 0 ? (BP.on ? bpLine() : "Собираю…") : albumStatText(); e.textContent = t; e.title = t; } };
 /* Импорт альбома из файла: проект .grado2 (берётся его album) или голый альбом {meta, sheets}. Читается в браузере
    (FileReader), на сервер не уходит. Лист с готовой вёрсткой (слои с объектами внутри листа, как у описания печати)
    помечается frozen: он собирается без слоёв проекта. У листов по слоям недостающие слои — предупреждение, не сбой. */
@@ -697,13 +752,23 @@ function importAlbum(mode) {
    Раскладка по ширине тела окна (container query в index.html), поэтому одинаково внизу, справа и в плавающем окне. */
 let SHI = 0, STAMP_OPEN = false, SHBUILD = 0, SHOTHER = null;
 const SHM = { open: null, btn: null };
-const touch = () => { ALBUM.meta.editedAt = new Date().toISOString(); window.markDirty?.(); };
+const touch = () => { ALBUM.meta.editedAt = new Date().toISOString(); FITWHY.clear(); window.markDirty?.(); };
 window.touchAlbum = touch;
 const track = async fn => { SHBUILD++; syncBusy(); try { return await fn(); } finally { SHBUILD--; syncBusy(); } };
+/* Ход сборки (T62): «Лист 3 из 10: Ситуационный план — загрузка улиц OSM… · 42 с» — в строке состояния окна и в сообщении;
+   «Остановить» (BP.stop) сборка замечает после текущего листа: уже собранные листы остаются. */
+const BP = { on: false, t0: 0, text: "", stop: false, stopAt: -1, cur: 0, canStop: false, timer: 0 };
+const bpLine = () => `${BP.text} · ${Math.round((Date.now() - BP.t0) / 1000)} с${BP.stop ? " · остановка после этого листа…" : ""}`;
+function bpShow() { if (!BP.on) return; syncAlbumStat(); toast(bpLine()); }
+function bpBegin(text, canStop = true) {
+  Object.assign(BP, { on: true, t0: Date.now(), text, stop: false, stopAt: -1, canStop }); clearInterval(BP.timer); BP.timer = setInterval(bpShow, 1000); syncBusy(); bpShow();
+}
+const bpStep = text => { BP.text = text; bpShow(); };
+function bpEnd() { BP.on = false; BP.stop = false; clearInterval(BP.timer); syncBusy(); }
 function syncBusy() {
   const w = $("sheetsBody")?.querySelector(".shw"); if (!w) return;
   w.classList.toggle("isbusy", SHBUILD > 0);
-  w.querySelectorAll(".shact .btn").forEach(b => { b.disabled = SHBUILD > 0 || (/^shP/.test(b.id) && !ALBUM.sheets.length); });
+  w.querySelectorAll(".shact .btn").forEach(b => { if (b.id === "shStop") { b.hidden = !(SHBUILD > 0 && BP.on && BP.canStop); b.disabled = BP.stop; return; } b.disabled = SHBUILD > 0 || (/^shP/.test(b.id) && !ALBUM.sheets.length); });
   syncAlbumStat();
 }
 const selIdx = () => {
@@ -724,7 +789,7 @@ function rowInner(s, i, on) {
   return `<span class="n">${i + 1}</span><span class="t" title="${esc(s.title)}">${esc(s.title) || "<i>без названия</i>"}</span>`
     + (s.frozen ? `<span class="rdy" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе">готовая</span>` : "")
     + `<span class="fs">${esc(sizeShort(s))}${sc ? `<span class="sc"> · ${sc}</span>` : ""}</span>`
-    + `<span class="ic">${ic(s.legend && s.kind !== "tep", "list", "Легенда вида")}${ic(s.tep || s.kind === "tep", "table", "Таблица ТЭП")}${ic(s.kind === "photos", "camera", "Фотофиксация")}${ic(NOTREADY.has(s.id), "triangle-alert", "Не готов: " + esc(NOTREADY.get(s.id) || ""))}</span>`
+    + `<span class="ic">${ic(s.legend && s.kind !== "tep", "list", "Легенда вида")}${ic(s.tep || s.kind === "tep", "table", "Таблица ТЭП")}${ic(s.kind === "photos", "camera", "Фотофиксация")}${ic(NOTREADY.has(s.id) || FITWHY.has(s.id) || LOSTNOTE.has(s.id), "triangle-alert", "Не готов: " + esc(whyOf(s)))}</span>`
     + `<span class="ra"><button class="tb" data-shup="${i}" title="Выше" aria-label="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист" aria-label="Удалить лист"><i data-lucide="trash-2"></i></button></span>`;
 }
 function detHTML(s, i) {
@@ -732,7 +797,7 @@ function detHTML(s, i) {
     + `<option value="__tep" ${s.kind === "tep" ? "selected" : ""}>таблица ТЭП (все показатели)</option>`;
   const tepS = s.kind === "tep" || s.frozen ? "disabled" : "";
   const note = s.frozen ? "Готовая вёрстка из файла: слои и оформление записаны в самом листе." : s.panels ? "Две карты: у каждой свой масштаб; слои, оформление и рамки заданы шаблоном раздела." : s.keys ? "Лист раздела: слои, оформление и рамка заданы шаблоном раздела." : "";
-  const nrw = NOTREADY.get(s.id), noteAll = (nrw ? `<b>Не готов:</b> ${esc(nrw)}. ` : "") + note;
+  const nrw = whyOf(s), noteAll = (nrw ? `<b>Не готов:</b> ${esc(nrw)}. ` : "") + note;
   const content = s.frozen ? `<select disabled aria-label="Содержание листа" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе"><option>готовая вёрстка</option></select>`
     : s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts}</select>`;
   const scale = `<select data-sk="scale" aria-label="Масштаб" ${tepS} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : s.frozen ? `<option>${+s.scale ? "1:" + fmt(Math.round(+s.scale)) : "—"}</option>` : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select>`;
@@ -774,6 +839,7 @@ function renderSheets() {
   if (!n) loadOther();
   el.innerHTML = `<div class="shw">`
     + `<div class="shtop"><div class="shstat" id="shStat"></div><div class="shact">`
+    + `<button class="btn" id="shStop" hidden title="Остановить сборку после текущего листа: уже собранные листы остаются"><i data-lucide="square"></i>Остановить</button>`
     + `<button class="btn dd" id="shAdd" aria-haspopup="menu" aria-expanded="false" aria-controls="shMenuAdd" title="Добавить в альбом новый лист: рамку и штамп можно настроить в свойствах листа"><i data-lucide="file-plus"></i>Добавить лист<i data-lucide="chevron-down" class="chev"></i></button>`
     + `<button class="btn dd" id="shBuild" aria-haspopup="menu" aria-expanded="false" aria-controls="shMenuBuild" title="Собрать набор листов по шаблону или взять листы из файла"><i data-lucide="layout-template"></i>Собрать<i data-lucide="chevron-down" class="chev"></i></button>`
     + `<button class="btn primary" id="shPdf" ${n ? "" : "disabled"} title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF</button>`
@@ -854,6 +920,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shAddA3" || b.dataset.shact === "add") addSheet("A3");
   if (b.id === "shAddA1") addSheet("A1");
   if (b.id === "shAddSlide") addSheet("P");
+  if (b.id === "shStop" && BP.on) { BP.stop = true; BP.stopAt = BP.cur; bpShow(); syncBusy(); }
   if (b.id === "shPdf") albumFile("pdf");
   if (b.id === "shPptx") albumFile("pptx");
   if (b.id === "shSec1") buildSection();

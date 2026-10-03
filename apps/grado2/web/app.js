@@ -1357,7 +1357,7 @@ function applyGraphScale(force) {
 applyGraphTheme(); applyGraphScale();
 graph.onConfigure = () => { applyGraphTheme(); applyGraphScale(true); };
 addEventListener("resize", () => { applyGraphScale(); requestAnimationFrame(() => applyGraphScale()); }); addEventListener("load", () => applyGraphScale());   // media-запрос --k применяется к стилю чуть позже события   // загрузка проекта и совместная правка заменяют цвета узлов цветами из файла
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyGraphTheme(); themeBasemap(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyGraphTheme(); themeBasemap(); Object.values(resSrcs).forEach(r => r.changed()); });
 Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // подписи узлов при любом масштабе
 let selNode = null;
 lgc.onNodeSelected = n => { selNode = n; updateAnalysisMap(); };
@@ -1497,7 +1497,7 @@ function recompute(force) {
   safe(() => graph.runStep(1, true));
   const place = graph._nodes.find(n => n.type === "Эскиз/Посадка застройки"), tepN = graph._nodes.find(n => n.type === "Показатели/ТЭП КРТ");
   RESULT = { site: place?.getInputData(0) || null, sketch: place?.getOutputData(0) || [], tep: tepN?._tep || null, placeNode: place, tepNode: tepN };
-  lgc.setDirty(true, true); updateAnalysisMap(); renderSketch();
+  lgc.setDirty(true, true); updateAnalysisMap(); renderSketch(); svSync();
   const nk = !!RESULT.sketch.length; if (recompute.sk !== nk) { recompute.sk = nk; window.syncStatus?.(); }   // подсказка «что дальше» меняется, когда появился или исчез эскиз
   if (!recompute.once) { recompute.once = true; renderParams(); }
 }
@@ -1514,16 +1514,24 @@ const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: s
 const siteHatch = () => getComputedStyle(document.documentElement).getPropertyValue("--site-hatch").trim() || "#6dae8c";
 const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: () => new ol.style.Style({ fill: new ol.style.Fill({ color: hatch(siteHatch()) }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
+const cmpSrc = new ol.source.Vector(), cmpLayer = () => new ol.layer.Vector({ source: cmpSrc, zIndex: 40, style: sketchStyle });   // «Сравнение»: справа текущий эскиз или сохранённый вариант
+const SV = { ask: null, val: "", ren: null, arm: null, cmp: "", focus: false, key: "" };           // сохранённые варианты: окно имени, переименование, «ещё раз», выбор в «Сравнении»
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
 // участки, дворы и улицы эскиза (ИЖС, блокированные, урбан-блоки) — под корпусами
-const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "свет соседям": ["#fdf0b8", "#d9a400"],
-  "участок ДОО": ["#f6dccb", "#b9774f"], "участок школы": ["#dcd3ec", "#7f66a8"], "участок поликлиники": ["#cfe8e3", "#4f9a8f"] };
-const groundSrc = new ol.source.Vector(), groundStyle = f => { const [fill, stroke] = GROUND[f.get("kind")] || ["#eeeeee", "#999999"]; return S(fill, stroke, .8); };
+const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "свет соседям": ["#fdf0b8", "#d9a400"]};
+// резервные участки соцобъектов: цвета из токенов --res-* (свои для каждой темы), подпись вида — с масштаба 1:5 000 и крупнее
+const RES_TOKEN = { "участок ДОО": "doo", "участок школы": "school", "участок поликлиники": "clinic" }, RES_CAP = { "участок ДОО": "ДОО", "участок школы": "школа", "участок поликлиники": "поликлиника" }, RES_CAP_DEN = 5000;
+const resTok = (k, ln) => getComputedStyle(document.documentElement).getPropertyValue(`--res-${RES_TOKEN[k]}${ln ? "-ln" : ""}`).trim() || (ln ? "#999999" : "#eeeeee");
+const groundSrc = new ol.source.Vector(), resSrcs = Object.fromEntries(Object.keys(RES_TOKEN).map(k => [k, new ol.source.Vector()])), groundStyle = f => { const [fill, stroke] = GROUND[f.get("kind")] || ["#eeeeee", "#999999"]; return S(fill, stroke, .8); };
+const resStyle = f => { const k = f.get("kind"), st = S(resTok(k), resTok(k, true), 1);
+  if (scaleDen(sharedView.getResolution()) <= RES_CAP_DEN) st.setText(new ol.style.Text({ text: RES_CAP[k], font: "11px system-ui, sans-serif", fill: new ol.style.Fill({ color: resTok(k, true) }), stroke: new ol.style.Stroke({ color: isDarkTheme() ? "#1a1a1a" : "#ffffff", width: 3 }), overflow: true }));
+  return st; };
 // результат графа — отдельные слои над данными; видимость переключается в дереве слоёв
 const RES = [
   { id: "site", title: "Пятно застройки", color: "#1f7a4d", layer: siteLayer() },
   { id: "kept", title: "Сохраняемые здания", color: "#bdb8b0", layer: keptLayer() },
-  { id: "ground", title: "Участки и улицы эскиза", color: "#b7b2a8", layer: new ol.layer.Vector({ source: groundSrc, style: groundStyle }) },
+  { id: "ground", title: "Участки и улицы эскиза", color: "#eef5e4", layer: new ol.layer.Vector({ source: groundSrc, style: groundStyle }) },
+  ...Object.keys(RES_TOKEN).map(k => ({ id: "res-" + RES_TOKEN[k], title: "Резерв: " + RES_CAP[k], color: `var(--res-${RES_TOKEN[k]})`, layer: new ol.layer.Vector({ source: resSrcs[k], style: resStyle }) })),
   { id: "sketch", title: "Эскиз застройки", color: "#6fa6e6", layer: sketchLayer() },
   { id: "prev", title: "Выход выбранного узла", color: "#e08a00", layer: new ol.layer.Vector({ source: prevSrc, declutter: true, style: f => {
     const out = [S([224, 138, 0, .22], "#c46f00", 2)], t = f.get("Пояснение");            // узел объясняет результат словами прямо на карте
@@ -1533,7 +1541,10 @@ RES.forEach((r, i) => { r.layer.setZIndex(100 + i); mMain.addLayer(r.layer); });
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() {
   sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; }));
-  groundSrc.clear(); groundSrc.addFeatures([...(RESULT.sketch.streets || []), ...(RESULT.sketch.plots || []), ...reserveShown()].map(g => { const f = toOl(g.f); f.set("kind", g.kind); return f; }));
+  fillCmp();
+  const feat = g => { const f = toOl(g.f); f.set("kind", g.kind); return f; };
+  groundSrc.clear(); groundSrc.addFeatures([...(RESULT.sketch.streets || []), ...(RESULT.sketch.plots || [])].map(feat));
+  Object.values(resSrcs).forEach(r => r.clear()); reserveShown().forEach(g => resSrcs[g.kind]?.addFeature(feat(g)));
 }
 function updateAnalysisMap() {
   fillGeom(siteSrc, RESULT.site); fillSketch(); prevSrc.clear();
@@ -1581,7 +1592,7 @@ function renderParams() {
     : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Сохранить слоем</button></div>
       <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низкой предельной высотой — на их месте пятна «свет соседям» (жёлтые): там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не сохранён, он виден только при открытых окнах схемы расчёта и эскиза.` : TERR ? "Выберите типологию и параметры, затем «Построить эскиз»: корпуса сами не появляются. Пока окно открыто, на карте виден предварительный просмотр — пятно застройки и сохраняемые здания; «Сохранить слоем» сохраняет построенный эскиз слоем." : "<b class=\"warnt\">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу командой BO или «Пример территории» в окне «Данные»."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
-  $("params").innerHTML = head + `<div id="resNote"></div>` + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
+  $("params").innerHTML = head + svSketchBar() + `<div id="resNote"></div>` + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${esc(lbl)}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}" title="${esc(lbl)}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры блоков схемы, вынесенные в панель: правка здесь меняет схему, и наоборот.</div>`;
@@ -1602,9 +1613,9 @@ function renderParams() {
     recompute(true); renderParams(); };            // сначала пересчёт — иначе панель покажет число корпусов прежней типологии
 }
 /* «Сохранить слоем» (Bake в Grasshopper): снимок эскиза становится обычным слоем и больше не зависит от графа */
-function bakeSketch() {
-  const sk = RESULT.sketch; if (!sk.length) return toast("Эскиз пуст: сначала «Построить эскиз».");
-  const typ = RESULT.placeNode.widgets[0].value, fl = [...new Set(sk.map(b => b.floors))].join("/"), key = "user:" + Date.now().toString(36), title = `Эскиз: ${typ.toLowerCase()}, ${fl} эт.`;
+function bakeSketch(skIn, typIn, titleIn) {       // skIn — сохранённый вариант (T59): корпуса без участков и улиц графа
+  const own = Array.isArray(skIn), sk = own ? skIn : RESULT.sketch; if (!sk.length) return toast("Эскиз пуст: сначала «Построить эскиз».");
+  const typ = (own && typIn) || RESULT.placeNode.widgets[0].value, fl = [...new Set(sk.map(b => b.floors))].join("/"), key = "user:" + Date.now().toString(36), title = (own && titleIn) || `Эскиз: ${typ.toLowerCase()}, ${fl} эт.`;
   const fc = turf.featureCollection(sk.map((b, i) => turf.feature(b.f.geometry, { "№": i + 1, "Типология": typ, "Корпус": b.kind || "", "Этажность": b.floors, "Площадь застройки, м²": Math.round(b.m2), "СПП, м²": Math.round(b.m2 * b.floors),
     ...(b.grp ? { "Блок": b.grp } : {}), ...(b["Блоков"] ? { "Блоков": b["Блоков"] } : {}), ...(b["1 этаж"] ? { "1 этаж": b["1 этаж"] } : {}) })));
   DATA[key] = { title, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
@@ -1621,7 +1632,7 @@ function bakeSketch() {
     DATA[k] = { title: name, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc: lfc, count: 0, fields: [] };
     layerSrc[k] = new ol.source.Vector(); setLayerData(k, lfc); delete DATA[k].original;
     const x = ensureLayer(k, name, "poly"); x.style = ST(style); restyle(x); extra.push(k); };
-  const resP = reserveState().plots, allPlots = [...(sk.plots || []), ...resP];
+  const resP = own ? [] : reserveState().plots, allPlots = [...(sk.plots || []), ...resP];
   layerOf(allPlots, `Эскиз: участки и дворы (${typ.toLowerCase()})`, g => ({ ...(g["Участок"] ? { "Участок": g["Участок"], "Места": g["Места"], "Дефицит": g["Дефицит"] } : {}), ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}), ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }),
     { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a", "хозпостройка": "#d9cdb8", "участок ДОО": "#f6dccb", "участок школы": "#dcd3ec", "участок поликлиники": "#cfe8e3" }, off: [] } });
   layerOf(sk.streets, `Эскиз: улицы и проезды (${typ.toLowerCase()})`, g => g["Мест"] ? { "Мест": g["Мест"], "Норма": "945-ПП п. 6.2.3.2: 10 % от 1,6 места на дом" } : {},
@@ -1687,7 +1698,7 @@ function renderTep() {
   const rs = reserveState(), sumLine = `<div class="resline" title="Площади участков — минимум по таблице норм; здания, СПП и плотность от резерва не меняются">${esc(reserveSummary(t))}</div>`;
   $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + sumLine + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
     + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
-    + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
+    + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
 $("tep").addEventListener("change", e => {
   const k = e.target.dataset.tp; if (!k || !RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
@@ -1844,6 +1855,124 @@ function renderVars() {
     `<tr data-var="${i}" class="${i === varSel ? "sel" : ""}"><td class="num">${i + 1}</td><td>${esc(vName(v))}</td><td class="num">${v.n}</td><td class="num">${fmt(v.avg, 1)}</td><td class="num">${fmt(v.spp / 1000, 1)}</td><td class="num" style="color:var(--${dcls(v.density)})">${fmt(v.density, 1)}</td><td class="num">${fmt(v.cover * 100, 1)} %</td><td class="num">${v.capped || ""}</td><td class="num">${v.own == null ? "—" : v.own + " %"}</td><td class="num">${v.tep ? fmt(v.tep.m.population) : "—"}</td><td class="num">${v.tep ? fmt(v.tep.m.doo_places) : "—"}</td></tr>`).join("")}</tbody></table>`;
   $("vlist").innerHTML = `<div class="vcards">${cards}</div><div class="note">Все варианты по оценке — лучшие сверху. Этажность подобрана под цель плотности и не выше предельной высоты ограничений. Инсоляция новых — предварительная оценка по 22 апреля (подробно — «Проверить нормы» в окне «Эскиз»).</div>${table}`;
 }
+
+/* ---------- сохранённые варианты (T59) ----------
+   Эскиз с его показателями запоминается как именной вариант в узле «ТЭП КРТ»: node.properties.saved = [{id, name, at, typ, n, avg, spp, cover, density, pop, doo, own, sig, sk:[{g, floors, kind?, grp?}]}].
+   Поле необязательное и едет вместе со схемой (graph.serialize / graph.configure, совместный режим). Показатели — снимок на момент сохранения.
+   Подбор вариантов (VARS) их не трогает: это другой список. Участки, дворы и улицы графа в вариант не входят — только корпуса и этажность. */
+const savedList = () => RESULT.tepNode?.properties?.saved || [];
+const SV_MAX = 20, svRO = () => !!(window.Collab?.on && Collab.role === "viewer");      // не больше 20 вариантов (схема уходит на сервер целиком); наблюдатель не меняет
+const svRoToast = () => toast("Только просмотр: попросите владельца дать права на правку.");
+const svRound = g => JSON.parse(JSON.stringify(g, (k, v) => typeof v === "number" ? Math.round(v * 1e6) / 1e6 : v));
+function svCurrent() {                           // текущий эскиз: принятый слой (с вашими правками этажности и переносами) или результат графа
+  const t = RESULT.tepNode, bk = t?.properties?.baked, bd = bk && DATA[bk];
+  if (bd) return { sk: bakedSketch(bd), typ: bd.fc.features[0]?.properties?.["Типология"] || RESULT.placeNode?.widgets[0].value || "" };
+  return { sk: RESULT.sketch || [], typ: RESULT.placeNode?.widgets[0].value || "" };
+}
+const svSig = sk => sk.map(b => { const c = turf.centroid(turf.feature(svRound(b.f.geometry), {})).geometry.coordinates;      // по округлённой геометрии: открытый вариант совпадает со своей подписью
+    return b.floors + ":" + c[0].toFixed(6) + "," + c[1].toFixed(6); }).join(";");
+function svDefName() { const L = savedList(); let i = L.length + 1; while (L.some(r => r.name === "Мой вариант " + i)) i++; return "Мой вариант " + i; }
+function svAsk(where) {
+  if (svRO()) return svRoToast();
+  if (savedList().length >= SV_MAX) return toast(`Сохранено ${SV_MAX} вариантов — это предел: удалите ненужные в окне «Варианты».`);
+  const c = svCurrent(); if (!c.sk.length) return toast("Эскиз пуст: сначала «Построить эскиз».");
+  if (!RESULT.tepNode?._tep) return toast("Показатели ещё считаются: повторите через секунду.");
+  SV.ask = where; SV.val = svDefName(); SV.focus = true; svRender();
+}
+function svCommit() {
+  if (svRO()) return svRoToast();
+  const c = svCurrent(), t = RESULT.tepNode?._tep, name = SV.val.trim() || svDefName(); if (!c.sk.length || !t) return;
+  if (savedList().length >= SV_MAX) return toast(`Сохранено ${SV_MAX} вариантов — это предел: удалите ненужные в окне «Варианты».`);
+  if (savedList().some(r => r.name === name)) return toast(`Вариант «${name}» уже есть: назовите иначе.`);
+  if (Math.abs((t.sppNew || 0) - c.sk.reduce((q, b) => q + b.m2 * b.floors, 0)) >= 1) return toast("Показатели ещё считаются по прежнему эскизу: повторите через секунду.");
+  const spp = c.sk.reduce((q, b) => q + b.m2 * b.floors, 0), fp = c.sk.reduce((q, b) => q + b.m2, 0), chk = window.LASTCHECK;
+  const rec = { id: "sv" + Date.now().toString(36), name, at: new Date().toISOString().slice(0, 10), typ: c.typ, n: c.sk.length, avg: fp ? spp / fp : 0, spp, cover: TERR_M2 ? fp / TERR_M2 : 0,
+    density: t.density, pop: t.m?.population ?? null, doo: t.m?.doo_places ?? null, own: chk?.own ?? null, sig: svSig(c.sk),
+    sk: c.sk.map(b => ({ g: svRound(b.f.geometry), floors: b.floors, ...(b.kind ? { kind: b.kind } : {}), ...(b.grp ? { grp: b.grp } : {}) })) };
+  ((RESULT.tepNode.properties ||= {}).saved ||= []).push(rec);
+  SV.ask = null; window.markDirty?.(); svRender(); toast(`Вариант «${name}» сохранён вместе с показателями. Он в окне «Варианты», группа «Сохранённые».`);
+}
+function svOpen(id) {
+  const r = savedList().find(x => x.id === id); if (!r) return;
+  const sk = r.sk.map(b => { const f = turf.feature(b.g, {}); return { f, m2: m2(f), floors: b.floors, kind: b.kind, grp: b.grp, maxF: LOWRISE.has(r.typ) ? 3 : undefined }; });
+  const P = RESULT.tepNode.properties, vk = P.svLayer, old = P.baked, ol = old && old !== vk && lyr(old);
+  if (ol) LYR.filter(l => l === ol || (l.group && l.group === ol.group)).forEach(l => { l.visible = false; });      // принятый эскиз владельца остаётся в проекте, но не рисуется поверх
+  if (vk && DATA[vk] && lyr(vk)) {          // один слой «Вариант: …» на все открытия: меняются его объекты и название
+    const fc = turf.featureCollection(sk.map((b, i) => turf.feature(b.f.geometry, { "№": i + 1, "Типология": r.typ, "Корпус": b.kind || "", "Этажность": b.floors, "Площадь застройки, м²": Math.round(b.m2), "СПП, м²": Math.round(b.m2 * b.floors), ...(b.grp ? { "Блок": b.grp } : {}) })));
+    DATA[vk].title = lyr(vk).title = "Вариант: " + r.name; DATA[vk].source = "сохранённый вариант, открыт " + new Date().toLocaleDateString("ru-RU"); setLayerData(vk, fc); delete DATA[vk].original;
+    lyr(vk).visible = true; P.baked = vk; RESULT.tepNode._key = null; setCurrent(vk); dataRev++; renderTree(); toast(`Вариант «${r.name}» открыт: ${sk.length} корпусов.`);
+  } else { bakeSketch(sk, r.typ, "Вариант: " + r.name); P.svLayer = P.baked; }
+  recompute(true); svRender();
+}
+function svArmed(id, act) { return SV.arm && SV.arm.id === id && SV.arm.act === act && Date.now() - SV.arm.t < 4000; }
+function svClick(id, act) {       // «Открыть» при несохранённом текущем и «Удалить» — со второго щелчка, как в меню слоёв
+  if (act === "del" && svRO()) return svRoToast();
+  const r = savedList().find(x => x.id === id); if (!r) return;
+  const c = svCurrent(), dirty = act === "open" && c.sk.length && !savedList().some(x => x.sig === svSig(c.sk)), need = act === "del" || dirty;
+  if (need && !svArmed(id, act)) { SV.arm = { id, act, t: Date.now() }; setTimeout(() => { if (SV.arm && Date.now() - SV.arm.t >= 3900) { SV.arm = null; svRender(); } }, 4000); svRender();
+    return toast(act === "del" ? `Удалить вариант «${r.name}»? Нажмите «Удалить» ещё раз.` : "Текущий эскиз не сохранён как вариант и будет заменён. Нажмите «Открыть» ещё раз, чтобы продолжить."); }
+  SV.arm = null;
+  if (act === "del") { const L = RESULT.tepNode.properties.saved; L.splice(L.findIndex(x => x.id === id), 1); if (SV.cmp === id) SV.cmp = ""; window.markDirty?.(); svRender(); fillCmp(); toast(`Вариант «${r.name}» удалён.`); }
+  else svOpen(id);
+}
+function svRename(id, name) {
+  if (svRO()) { SV.ren = null; svRender(); return svRoToast(); }
+  const r = savedList().find(x => x.id === id); name = (name || "").trim(); SV.ren = null;
+  if (r && name && name !== r.name) { if (savedList().some(x => x.name === name)) toast(`Вариант «${name}» уже есть: имя не изменено.`); else { r.name = name; window.markDirty?.(); } }
+  svRender();
+}
+const svBar = where => `<div class="svbar" data-svbar="${where}"><input type="text" id="svName${where}" data-svname value="${esc(SV.val)}" maxlength="60" aria-label="Название варианта" placeholder="Название варианта"><button class="btn primary" data-sv-ok>Сохранить</button><button class="btn" data-sv-no>Отмена</button></div>`;
+function svSketchBar() {
+  const n = svCurrent().sk.length; if (!RESULT.placeNode) return "";
+  return `<div class="ctl svsk">${SV.ask === "sk" ? svBar("sk") : `<div class="row" style="margin:0"><button class="btn" data-savevar="sk" ${n && !svRO() ? "" : "disabled"} title="Запомнить текущий эскиз с показателями под своим названием: он появится в окне «Варианты», группа «Сохранённые»"><i data-lucide="bookmark-plus"></i>Сохранить как вариант…</button></div>`}${savedList().length ? `<small>Сохранённых вариантов: ${savedList().length} (окно «Варианты»)</small>` : ""}</div>`;
+}
+function svHtml() {
+  const L = savedList(), cur = svCurrent(), cs = cur.sk.length ? svSig(cur.sk) : "", target = RESULT.tepNode?.widgets[1].value || 25;
+  const dcls = d => d > target * 1.05 ? "bad" : d < target * .8 ? "warn" : "good";
+  const head = `<div class="svh"><b>Сохранённые</b><small>${L.length ? plural(L.length, ["вариант", "варианта", "вариантов"]) : ""}</small><span class="sp"></span>${SV.ask === "vars" ? svBar("vars") : `<button class="btn" data-savevar="vars" ${cur.sk.length && !svRO() ? "" : "disabled"} title="Запомнить текущий эскиз с показателями под своим названием"><i data-lucide="bookmark-plus"></i>Сохранить текущий эскиз…</button>`}</div>`;
+  if (!L.length) return head + `<div class="note">Сохранённых вариантов пока нет. «Сохранить как вариант…» запоминает текущий эскиз вместе с показателями, в том числе ваши правки этажности и переносы корпусов. Новый подбор вариантов их не стирает.</div>`;
+  const ro = svRO(), btn = (r, act, label, armLabel, tip) => `<button class="btn" data-sv="${act}" data-id="${r.id}" ${ro && act !== "open" ? "disabled" : ""} ${svArmed(r.id, act) ? 'data-armed="1"' : ""} title="${tip}">${svArmed(r.id, act) ? armLabel : label}</button>`;
+  return head + `<small class="svn">Числа в таблице — на момент сохранения; «Открыть» пересчитает их по нынешним нормативам.</small><table class="at svt"><thead><tr><th>Вариант</th><th title="На момент сохранения">Корпусов</th><th title="На момент сохранения">Ср. эт.</th><th title="На момент сохранения">СПП новая, тыс. м²</th><th title="На момент сохранения">Плотность (цель ${fmt(target)})</th><th title="Доля фасадов новых домов, получающих норму, на момент сохранения; «—», если «Проверить нормы» не запускалась">Инсоляция новых</th><th title="На момент сохранения">Население, чел.</th><th title="На момент сохранения">ДОО, мест</th><th></th></tr></thead><tbody>${L.map(r => {
+    const ren = SV.ren === r.id;
+    return `<tr data-svrow="${r.id}" class="${r.sig === cs ? "sel" : ""}"><td title="Сохранён ${esc(r.at)}, ${esc(r.typ)}; показатели — на момент сохранения">${ren ? `<input type="text" data-svren value="${esc(SV.val)}" maxlength="60" aria-label="Новое название варианта">` : esc(r.name)}${r.sig === cs ? ` <small>· открыт сейчас</small>` : ""}</td><td class="num">${r.n}</td><td class="num">${fmt(r.avg, 1)}</td><td class="num">${fmt(r.spp / 1000, 1)}</td><td class="num" style="color:var(--${dcls(r.density)})">${fmt(r.density, 1)}</td><td class="num">${r.own == null ? "—" : r.own + " %"}</td><td class="num">${r.pop == null ? "—" : fmt(r.pop)}</td><td class="num">${r.doo == null ? "—" : fmt(r.doo)}</td>
+      <td class="ac">${ren ? `<button class="btn primary" data-sv="renok" data-id="${r.id}">Готово</button><button class="btn" data-sv="renno" data-id="${r.id}">Отмена</button>`
+        : btn(r, "open", "Открыть", "Заменить? Ещё раз", "Сделать вариант текущим эскизом: он станет слоем, показатели пересчитаются по нынешним нормативам") + btn(r, "ren", "Переименовать", "", "Изменить название") + btn(r, "del", "Удалить", "Удалить? Ещё раз", "Убрать вариант из проекта (слои уже открытых эскизов остаются)")}</td></tr>`; }).join("")}</tbody></table>`;
+}
+function svRender() {
+  const box = $("vsaved"); if (box) { box.innerHTML = svHtml(); icons?.(); }
+  if (!$("wSketch").hidden) renderParams();
+  svCmpSel();
+  if (SV.focus) { SV.focus = false; const i = document.querySelector(`[data-svbar="${SV.ask}"] input`) || document.querySelector("[data-svren]"); i?.focus(); i?.select(); }
+}
+function svSync(force) {            // список сохранённых изменился (открыт проект, правка другим участником): перерисовать группу
+  const k = (RESULT.tepNode?.id ?? "") + "|" + savedList().map(r => r.id + r.name).join(","); if (!force && k === SV.key) return; SV.key = k; if (SV.cmp && !savedList().some(r => r.id === SV.cmp)) SV.cmp = ""; svRender(); fillCmp();
+}
+function svCmpSel() {
+  const s = $("cmpVar"); if (!s) return; const L = savedList(), h = `<option value="">Текущий эскиз</option>` + L.map(r => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
+  if (s.dataset.h !== h) { s.innerHTML = h; s.dataset.h = h; } s.value = SV.cmp; s.hidden = !L.length;
+}
+function fillCmp() {                // правая карта «Сравнения»: текущий эскиз или выбранный сохранённый вариант
+  const r = SV.cmp && savedList().find(x => x.id === SV.cmp); cmpSrc.clear();
+  if (r) cmpSrc.addFeatures(r.sk.map(b => { const f = toOl(turf.feature(b.g, {})); f.set("floors", b.floors); return f; })); else cmpSrc.addFeatures(sketchSrc.getFeatures().map(f => f.clone()));
+  const t = $("mAfter")?.parentElement.querySelector(".mtag"); if (t) t.textContent = r ? "Вариант: " + r.name : "Эскиз";
+}
+document.addEventListener("click", e => {
+  const a = e.target.closest("[data-savevar]"); if (a) return svAsk(a.dataset.savevar);
+  if (e.target.closest("[data-sv-ok]")) return svCommit();
+  if (e.target.closest("[data-sv-no]")) { SV.ask = null; return svRender(); }
+  const b = e.target.closest("[data-sv]"); if (!b) return; const id = b.dataset.id, act = b.dataset.sv;
+  if (act === "ren") { SV.ren = id; SV.val = savedList().find(x => x.id === id)?.name || ""; SV.focus = true; return svRender(); }
+  if (act === "renok") return svRename(id, SV.val);
+  if (act === "renno") { SV.ren = null; return svRender(); }
+  svClick(id, act);
+});
+document.addEventListener("input", e => { if (e.target.matches?.("[data-svname],[data-svren]")) SV.val = e.target.value; });
+document.addEventListener("keydown", e => {
+  const t = e.target; if (!t.matches?.("[data-svname],[data-svren]")) return;
+  if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); if (t.matches("[data-svname]")) svCommit(); else svRename(t.closest("tr").dataset.svrow, SV.val); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); SV.ask = null; SV.ren = null; svRender(); }
+}, true);
+document.addEventListener("change", e => { if (e.target.id === "cmpVar") { SV.cmp = e.target.value; fillCmp(); } });
 $("bBakeVar").onclick = () => varSel < 0 ? toast("Выберите вариант в списке — щелчок по карточке.") : bakeSketch();
 $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-var]"); if (!b) return; varSel = +b.dataset.var; const v = VARS[varSel], p = RESULT.placeNode;
   const setWv = (name, val) => { const w = p.widgets.find(w => w.name === name); if (w) w.value = val; };
@@ -1854,7 +1983,8 @@ $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-va
 // окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
 const WINKEY = "grado2.win";
 let WST = {}; try { WST = JSON.parse(localStorage.getItem(WINKEY)) || {}; } catch { }
-const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST)); } catch { } };
+delete WST.zoneToast;       // «Третье окно открыто плавающим…» — раз за сеанс: флаг живёт только в памяти, в localStorage не пишется
+const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST, (k, v) => k === "zoneToast" ? undefined : v)); } catch { } };
 // начальные места окон — внутри поля карты, а не поверх боковых панелей
 const W0 = () => { const w = innerWidth, h = innerHeight, m = $("mMain").getBoundingClientRect(), L = Math.round(m.left) + 12, R = Math.round(m.right) - 12, mw = Math.max(360, R - L); return {
   wData: [L, 96, 340, Math.min(560, h - 150)], wGraph: [L, Math.round(h * .38), Math.max(560, mw), Math.round(h * .56)], wSketch: [R - 320, 96, 320, 470],
@@ -2004,7 +2134,7 @@ const WIN_OPEN = {
   // при первом открытии граф вписывается читаемо (не мельче 0,8); «Вся схема» ужимает до 0,6
   wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.8); go.fitted = k; } updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
-  wCmp: () => { syncCmpHint(); if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), sketchLayer(), terrLayer()]); } },
+  wCmp: () => { syncCmpHint(); if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), cmpLayer(), terrLayer()]); fillCmp(); svSync(true); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
 const go = {};
 // лёгкое появление плавающего окна (прозрачность и масштаб, без смены размеров — раскладка не дёргается); не при
@@ -2017,7 +2147,7 @@ function winOpen(id, on) {
   if (on) { const z = dockOf(id);
     if (z && (was || !w.classList.contains("docked")) && zoneFull(z, w)) {   // в зоне уже два окна — это открывается плавающим, место в зоне остаётся за теми двумя
       if (w.classList.contains("docked")) floatWin(w, true); (WST[id] ||= {}).capFloat = true; placeWin(w); winFront(w); if (was) winAppear(w);
-      if (!ZONE_FORCE && !WST.zoneToast) { WST.zoneToast = 1; saveWins(); toast("Третье окно открыто плавающим: в зоне уже два. Поменять — в меню «Окна»"); }
+      if (!ZONE_FORCE && !WST.zoneToast) { WST.zoneToast = 1; toast("Третье окно открыто плавающим: в зоне уже два. Поменять — в меню «Окна»"); }
     } else if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); if (was) winAppear(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
   if (w.classList.contains("docked")) layoutChanged();
   if (on && w.classList.contains("docked")) { w.parentElement.dataset.active = id; syncZones(); }
@@ -2197,7 +2327,7 @@ addEventListener("resize", () => {
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); siteSrc.changed(); };
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); siteSrc.changed(); Object.values(resSrcs).forEach(r => r.changed()); };
 try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал

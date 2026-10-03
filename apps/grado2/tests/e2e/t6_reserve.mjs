@@ -26,7 +26,7 @@ export default async (p, check, shots) => {
   check(await p.ev(`const pl=RESULT.sketch.plots||[]; return reserveState().plots.every(g=>!pl.includes(g)) && pl.every(g=>!/^участок (ДОО|школы|поликлиники)$/.test(g.kind))`), "T6: резерв не попадает в sketch.plots графа (кэш посадки не портится)");
   // карта, строка в «Показателях», записка в панели эскиза
   await p.ev(`winOpen("wTep", true); winOpen("wSketch", true); updateAnalysisMap(); renderTep(); renderParams(); await new Promise(r=>setTimeout(r,800)); return 1`);
-  const ui = await p.ev(`const kinds=groundSrc.getFeatures().filter(f=>/^участок (ДОО|школы|поликлиники)$/.test(f.get("kind"))).length, line=document.querySelector("#tep .resline")?.textContent||"", t=RESULT.tepNode._tep, st=reserveState();
+  const ui = await p.ev(`const kinds=Object.values(resSrcs).flatMap(s=>s.getFeatures()).filter(f=>/^участок (ДОО|школы|поликлиники)$/.test(f.get("kind"))).length, line=document.querySelector("#tep .resline")?.textContent||"", t=RESULT.tepNode._tep, st=reserveState();
     return [kinds, st.plots.length, line, document.querySelectorAll("#tep .note.warn").length, document.querySelectorAll("#resNote .note.warn").length, st.notes.length, t.social.length]`);
   p.log("  T6 строка: " + ui[2]);
   check(ui[0] === ui[1] && /^Резерв: /.test(ui[2]) && /га \(\d+ %\)/.test(ui[2]), "T6 шаг 3: на карте столько же участков, сколько посчитано; над показателями строка «Резерв: … · X,XXX га (YY %)»");
@@ -47,7 +47,7 @@ export default async (p, check, shots) => {
   await p.ev(`const t0=Date.now(); while (Date.now()-t0<15000) { const t=RESULT.tepNode._tep; if (t && t.social && t.social.length && reserveState().plots.length) break; await new Promise(r=>setTimeout(r,300)); } return 1`);
   const bk = await p.ev(`const u0=UNDO.length, keys0=new Set(LYR.map(l=>l.key)), n=reserveState().plots.length; bakeSketch(); await new Promise(r=>setTimeout(r,2500));
     const nk=LYR.map(l=>l.key).filter(k=>!keys0.has(k)), pl=nk.map(k=>DATA[k]).find(d=>d&&/участки и дворы/.test(d.title)), fs=pl?pl.fc.features:[], rk=fs.filter(f=>/^участок (ДОО|школы|поликлиники)$/.test(f.properties["Вид"]));
-    const drawn=groundSrc.getFeatures().filter(f=>/^участок (ДОО|школы|поликлиники)$/.test(f.get("kind"))).length, L=nk.map(k=>LYR.find(l=>l.key===k)).find(l=>l&&/участки и дворы/.test(l.title)), cat=L?L.style.cat.colors:null;
+    const drawn=Object.values(resSrcs).flatMap(s=>s.getFeatures()).filter(f=>/^участок (ДОО|школы|поликлиники)$/.test(f.get("kind"))).length, L=nk.map(k=>LYR.find(l=>l.key===k)).find(l=>l&&/участки и дворы/.test(l.title)), cat=L?L.style.cat.colors:null;
     const out=JSON.stringify({ n, saved: rk.length, places: rk.every(f=>f.properties["Места"]>0 && f.properties["Дефицит"]>0), drawn, colors: !!cat && ["участок ДОО","участок школы","участок поликлиники"].every(k=>cat[k]) });
     removeLayers(nk, "t6"); UNDO.length = u0; delete RESULT.tepNode.properties.reserveBaked; RESULT.tepNode.properties.baked=null; RESULT.tepNode._key=null; return out`);
   const B = JSON.parse(bk);

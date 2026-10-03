@@ -18,7 +18,7 @@ const inner = async (p, check, shots) => {
     window.__t6b = { s0, uam: updateAnalysisMap, fs: fillSketch }; updateAnalysisMap = () => {}; fillSketch = () => {};     // таймер графа не должен подменять картинку до снимка
     groundSrc.clear(); sketchSrc.clear(); siteSrc.clear();
     siteSrc.addFeature(toOl(site)); sketchSrc.addFeatures(bld.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; }));
-    groundSrc.addFeatures(res.plots.map(g => { const f = toOl(g.f); f.set("kind", g.kind); return f; }));
+    Object.values(resSrcs).forEach(s => s.clear()); res.plots.forEach(g => { const f = toOl(g.f); f.set("kind", g.kind); resSrcs[g.kind].addFeature(f); });
     winOpen("wSketch", true); mMain.updateSize(); sharedView.fit(siteSrc.getExtent(), { size: mMain.getSize(), padding: [40, 40, 40, 40], duration: 0 });
     return JSON.stringify({ social: r.social, density: r.density_total, spp, pre: pre === post, plots, notes: res.notes, stats: res.stats, partial: !!res.partial, summary: reserveSummary({ social: r.social, terr: 20 }),
       same: before === snap(), nm: r.metrics.filter(m => /^spp|^density|^population/.test(m.id)).length })`));

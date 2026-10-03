@@ -107,5 +107,83 @@ class OsmCacheIndexPath(unittest.TestCase):
             self.assertIsNone(_OverpassCache(cache_dir).find((1, 1, 2, 2), ["buildings"], 3600))
 
 
+class OverpassRetry(unittest.TestCase):
+    """T62: 504 и обрыв по времени повторяются (портальные правила: пауза, не больше 3 попыток, ожидание растёт вдвое)."""
+
+    @staticmethod
+    def _err(code):
+        import urllib.error
+        return urllib.error.HTTPError("https://x", code, "gateway", {}, None)
+
+    def _answer(self, body=b'{"elements": []}'):
+        import io
+        from unittest import mock
+        r = mock.MagicMock()
+        r.__enter__.return_value = io.BytesIO(body)
+        return r
+
+    def test_504_twice_then_answer_waits_2_then_4_seconds(self):
+        from unittest import mock
+        from grado_connectors import osm
+        sleeps = []
+        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(504), self._err(504), self._answer()]) as op:
+            res = osm.post_with_retry("https://x", b"data=1", None, sleep=sleeps.append)
+        self.assertEqual(res, {"elements": []})
+        self.assertEqual(op.call_count, 3)
+        self.assertEqual(sleeps, [2, 4])
+
+    def test_three_failures_raise_the_last_and_stop(self):
+        import urllib.error
+        from unittest import mock
+        from grado_connectors import osm
+        sleeps = []
+        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(504)] * 5) as op:
+            with self.assertRaises(urllib.error.HTTPError) as c:
+                osm.post_with_retry("https://x", b"d", None, sleep=sleeps.append)
+        self.assertEqual(c.exception.code, 504)
+        self.assertEqual(op.call_count, 3)                     # не больше трёх попыток
+        self.assertEqual(sleeps, [2, 4])                       # после последней паузы нет
+
+    def test_timeout_is_retried_but_404_is_not(self):
+        import socket
+        import urllib.error
+        from unittest import mock
+        from grado_connectors import osm
+        with mock.patch.object(osm.netutil, "open_url", side_effect=[socket.timeout("timed out"), self._answer()]) as op:
+            self.assertEqual(osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None), {"elements": []})
+        self.assertEqual(op.call_count, 2)
+        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(404)]) as op:
+            with self.assertRaises(urllib.error.HTTPError):
+                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
+        self.assertEqual(op.call_count, 1)
+
+    def test_runtime_error_remark_is_a_refusal_without_retry(self):
+        from unittest import mock
+        from grado_connectors import osm
+        from grado_connectors.contract import ConnectorError
+        with mock.patch.object(osm.netutil, "open_url", return_value=self._answer(b'{"remark": "runtime error: out of memory"}')) as op:
+            with self.assertRaises(ConnectorError):
+                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
+        self.assertEqual(op.call_count, 1)
+
+    def test_ssl_error_is_not_retried_and_cancelled_mirror_stops(self):
+        import ssl
+        import threading
+        import urllib.error
+        from unittest import mock
+        from grado_connectors import osm
+        from grado_connectors.contract import ConnectorError
+        with mock.patch.object(osm.netutil, "open_url", side_effect=urllib.error.URLError(ssl.SSLError("bad cert"))) as op:
+            with self.assertRaises(urllib.error.URLError):
+                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
+        self.assertEqual(op.call_count, 1)
+        stop = threading.Event()
+        stop.set()
+        with mock.patch.object(osm.netutil, "open_url") as op:
+            with self.assertRaises(ConnectorError):
+                osm.post_with_retry("https://x", b"d", None, cancel=stop)
+        self.assertEqual(op.call_count, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

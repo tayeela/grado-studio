@@ -552,6 +552,7 @@ def source_ogd_code(key):
 AREA_TOO_BIG = "область слишком большая — уменьшите рамку"
 # PORTAL_DOWN — текст для владельца (примечание и строка в окне), не серверная строка ошибки
 PORTAL_DOWN = "портал OpenStreetMap не ответил: подождите минуту и повторите, область, уже скачанная раньше, берётся с диска"
+PORTAL_DOWN_CODE = "портал OpenStreetMap ответил {code}: подождите минуту и повторите, область, уже скачанная раньше, берётся с диска"
 
 
 def plain_portal_error(text):
@@ -560,10 +561,55 @@ def plain_portal_error(text):
     if re.search(r"out of memory|too large|слишком больш|exceeded.*(memory|limit)", t, re.I):
         return AREA_TOO_BIG
     if re.search(r"overpass|openstreetmap", t, re.I):
+        # все зеркала ответили одним и тем же кодом (504) — он попадает в текст: «портал ответил 504»
+        codes = set(re.findall(r"HTTP (\d{3})", t))
+        if len(codes) == 1 and not re.search(r"errno|timed out|connection|urlopen", t, re.I):
+            return PORTAL_DOWN_CODE.format(code=codes.pop())
         return PORTAL_DOWN
     if re.search(r"errno \d+|http 5\d\d|timed out|connection (reset|refused)|urlopen error", t, re.I):
         return "портал не ответил: подождите минуту и повторите"
     return t
+
+
+def not_ready_why(spec):
+    """Причины пометки «не готов» для владельца: «лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или
+    шрифт». Читается после сборки PDF/PPTX/просмотра (album_io пишет sheet["_notReady"] — технические фразы).
+    Возвращает [(номер листа с 1, [фраза, …]), …]."""
+    out = []
+    for i, sh in enumerate(spec.get("sheets") or [], start=1):
+        raw = sh.get("_notReady") if isinstance(sh, dict) else None
+        if not raw:
+            continue
+        total = sum(len(g.get("items") or []) for g in (sh.get("cLegend") or []) if isinstance(g, dict))
+        why = []
+        for r in raw:
+            m = re.search(r"пункты легенды \((\d+)\)", r)
+            if m:
+                why.append(f"легенда из {total or m.group(1)} позиций не помещается — уменьшите число слоёв или шрифт")
+                continue
+            m = re.search(r"не поместились строки таблицы \((\d+)\)", r)
+            if m:
+                why.append(f"в таблицу не поместились {m.group(1)} строк — возьмите формат А1 или сократите таблицу")
+                continue
+            if "не помещается по ширине" in r:
+                why.append(r + " — уберите столбцы или возьмите формат А1")
+                continue
+            if re.search(r"не поместил|не выведен", r):
+                why.append(r + " — уменьшите число слоёв или возьмите формат А1")
+                continue
+            why.append(r)
+        out.append((i, why))
+    return out
+
+
+def not_ready_headers(spec):
+    """Заголовки ответа: номера листов «не готов» и причины (ASCII: текст кодируется %XX, браузер читает decodeURIComponent)."""
+    rows = not_ready_why(spec)
+    if not rows:
+        return []
+    why = "лист " + "; лист ".join(f"{n}: " + ", ".join(w) for n, w in rows)
+    return [("X-Grado-Not-Ready", ",".join(str(n) for n, _ in rows)),
+            ("X-Grado-Not-Ready-Why", quote(why[:300]))]
 
 
 def _log_portal(where, text):
@@ -700,6 +746,39 @@ def ogd_label_angles(code, feats, bbox, api=None):
     return ogd_all.set_label_angles(feats, sib)
 
 
+class _OsmCacheMiss(Exception):
+    pass
+
+
+def _osm_no_live(query):
+    raise _OsmCacheMiss
+
+
+def osm_fetch(bbox, sets, cache_dir=None):
+    """Выгрузка OSM: сначала всё из кэша; если наборы лежат в кэше порознь (листы просили их по отдельности), они
+    собираются из него — Overpass по той же области повторно не спрашивается (T62: на копии «Безобразово» из 33 с сборки
+    30 с ушло на такой повторный запрос); иначе один запрос по всем наборам."""
+    cache_dir = cache_dir or CACHE / "osm"
+    sets = list(sets)
+    try:
+        return OsmOverpass(transport=_osm_no_live, cache_dir=cache_dir).fetch(bbox, sets)
+    except _OsmCacheMiss:
+        pass
+    if len(sets) > 1:
+        try:
+            cached = OsmOverpass(transport=_osm_no_live, cache_dir=cache_dir)
+            parts = [cached.fetch(bbox, [x]) for x in sets]
+            res = parts[0]
+            for r in parts[1:]:
+                res["features"] += r["features"]
+                res["notes"] += [n for n in r.get("notes", []) if n not in res["notes"]]
+            res["params"]["sets"] = sorted(sets)
+            return res
+        except _OsmCacheMiss:
+            pass
+    return OsmOverpass(cache_dir=cache_dir).fetch(bbox, sets)
+
+
 def fetch(bbox, keys):
     """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors).
     Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»)."""
@@ -749,7 +828,7 @@ def fetch(bbox, keys):
         osm_keys = [k for k in keys if SOURCES[k][0] == "osm"]
         if not osm_keys:
             return
-        res = OsmOverpass(cache_dir=CACHE / "osm").fetch(bbox, [SOURCES[k][1] for k in osm_keys])
+        res = osm_fetch(bbox, [SOURCES[k][1] for k in osm_keys])
         for k in osm_keys:
             part = [f for f in res["features"] if f["properties"].get("grado_set") == SOURCES[k][1]]
             layers[k] = _layer(k, {**res, "features": part})
@@ -2029,8 +2108,8 @@ class Handler(SimpleHTTPRequestHandler):
                 import print_io
                 body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile)
                 self.send_response(200)
-                if print_io.not_ready(req):                  # листы «не готов» — номера через запятую (ASCII)
-                    self.send_header("X-Grado-Not-Ready", ",".join(map(str, print_io.not_ready(req))))
+                for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
+                    self.send_header(h, v)
                 self.send_header("Content-Type", "application/pdf")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
                 self.send_header("Content-Length", str(len(body)))
@@ -2040,8 +2119,8 @@ class Handler(SimpleHTTPRequestHandler):
                 import print_io
                 body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile)
                 self.send_response(200)
-                if print_io.not_ready(req):                  # листы «не готов» — номера через запятую (ASCII)
-                    self.send_header("X-Grado-Not-Ready", ",".join(map(str, print_io.not_ready(req))))
+                for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
+                    self.send_header(h, v)
                 self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
                 self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pptx"')
                 self.send_header("Content-Length", str(len(body)))
@@ -2071,6 +2150,8 @@ class Handler(SimpleHTTPRequestHandler):
                 body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0)), esri_tile).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
+                for h, v in not_ready_headers(req):
+                    self.send_header(h, v)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)

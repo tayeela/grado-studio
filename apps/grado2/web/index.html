@@ -13,6 +13,7 @@
   --text:#1d1d1f; --muted:#5f6368; --faint:#6b6e73; --hover:#e4e4e4; --selrow:#d3e3f8;
   --accent:#2f6fc4; --accent-ink:#fff; --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
   --canvas:#f5f4f0; --graph:#e6e6e2; --site-hatch:#6dae8c;
+  --res-doo:#f6dccb; --res-doo-ln:#9c5a33; --res-school:#dcd3ec; --res-school-ln:#7f66a8; --res-clinic:#ecd9a8; --res-clinic-ln:#7d6420;
   --k:1; --h-xs:calc(20px*var(--k)); --h-sm:calc(24px*var(--k)); --h-md:calc(28px*var(--k)); --h-lg:calc(32px*var(--k)); --h-top:calc(38px*var(--k)); --h-status:calc(24px*var(--k)); --ico:calc(16px*var(--k)); --ico-s:calc(14px*var(--k)); --ico-xs:calc(12px*var(--k)); --r-1:3px; --r-2:6px; --fs-s:calc(11px*var(--k)); --fs-m:calc(12px*var(--k)); --fs-l:calc(13px*var(--k)); --ease-out:cubic-bezier(0.23,1,0.32,1); --dur-1:90ms; --dur-2:150ms;
   --sh-1:0 2px 8px rgba(0,0,0,.14); --sh-2:0 4px 14px rgba(0,0,0,.2); --sh-3:0 4px 12px rgba(0,0,0,.16);
   --z-map:5; --z-gut:10; --z-win:40; --z-drawer:45; --z-pop:70; --z-toast:80; --z-menu:85; --z-modal:90; --z-busy:100; --z-login:200;
@@ -26,6 +27,7 @@
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#203550;
   --accent:#6aa8f2; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#f5806f;
   --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818; --site-hatch:#4e9a74;
+  --res-doo:#7c5646; --res-doo-ln:#e0b39a; --res-school:#645a82; --res-school-ln:#c4b6e6; --res-clinic:#7a6a3e; --res-clinic-ln:#dcc486;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }}
 :root[data-theme="dark"]{
@@ -33,6 +35,7 @@
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#203550;
   --accent:#6aa8f2; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#f5806f;
   --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818; --site-hatch:#4e9a74;
+  --res-doo:#7c5646; --res-doo-ln:#e0b39a; --res-school:#645a82; --res-school-ln:#c4b6e6; --res-clinic:#7a6a3e; --res-clinic-ln:#dcc486;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }
 /* масштаб интерфейса: один множитель --k на все размеры текста, высоты строк и кнопок и значки (карта и граф не масштабируются).
@@ -260,6 +263,7 @@ table.at{border-collapse:collapse;width:100%}
 .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
 .row>label:first-child{width:clamp(62px,34%,92px);color:var(--muted);flex:0 0 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row>*{min-width:0}
+#rightPane .row>label:first-child{width:clamp(62px,44%,128px)}
 .row>select,.row>input[type=text],.row>input[type=range]{flex:1 1 60px;min-width:0}
 .row>input[type=number]{flex:0 1 64px}
 .row>label.inl{display:flex;align-items:center;gap:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -389,6 +393,8 @@ kbd{font:var(--fs-s) var(--mono);border:1px solid var(--line-2);border-bottom-wi
 .vprog{height:3px;background:var(--line);overflow:hidden}.vprog>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
 @media (prefers-reduced-motion:reduce){.vprog>i{transition:none}}
 .vlist{display:flex;flex-wrap:wrap;gap:6px;padding:8px;align-content:flex-start}
+.vsaved{padding:6px 8px;border-bottom:1px solid var(--line)}.svh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}.svh b{font-weight:600}.svh small,.svsk small{color:var(--muted)}.svh .sp{flex:1}
+.svbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.svbar input,.svt input{width:200px;max-width:100%}.svt th{white-space:normal;vertical-align:bottom}.svt td.ac{white-space:nowrap;text-align:right;position:sticky;right:0;background:var(--panel);box-shadow:-8px 0 8px -8px var(--line-2)}.svt tr.sel td.ac{background:var(--selrow)}.svt tr:hover td.ac{background:var(--hover)}.svt td.ac .btn{margin-left:4px}.svt .btn[data-armed]{border-color:var(--bad);color:var(--bad)}.svn{display:block;color:var(--muted);margin:2px 0 4px}.svsk{display:flex;flex-direction:column;gap:4px}
 .vlist{display:block}.vcards{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}.vt-table tr{cursor:default}
 .vc{flex:0 0 180px;border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0;text-align:left;display:flex;flex-direction:column}
 .vc:hover{border-color:var(--accent)}
@@ -541,7 +547,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 .shrow .n{flex:0 0 22px;color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
 .shrow .t{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shrow .fs{flex:0 1 auto;min-width:0;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;font-variant-numeric:tabular-nums}
-.shrow .ic{display:flex;gap:4px;color:var(--muted);flex:0 0 auto}.shrow .ic svg{width:14px;height:14px}
+.shrow .ic{display:flex;gap:4px;color:var(--muted);flex:0 0 auto}.shrow .ic .lucide-triangle-alert{color:var(--warn)}.shrow .ic svg{width:14px;height:14px}
 .shrow .rdy{font-size:var(--fs-s);padding:0 5px;border-radius:8px;background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--text);flex:0 0 auto}
 .shrow .ra{display:none;gap:0;flex:0 0 auto}.shrow[aria-selected="true"] .ra{display:flex}
 .shdet{min-height:0;min-width:0;overflow-x:hidden;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:8px}
@@ -654,6 +660,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 <section class="win" id="wVars" hidden aria-label="Варианты">
   <header class="wh"><i data-lucide="layout-grid"></i><b>Варианты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="vbar"><span style="color:var(--muted)" id="varMsg" title="Перебор типологий и направления корпусов в пределах ограничений">Перебор типологий</span><span class="sp"></span><button class="btn primary" id="bGen" title="Перебор типологий, ширины и направления корпусов с этажностью под цель плотности в пределах ограничений"><i data-lucide="sparkles"></i>Подобрать варианты</button><button class="btn" id="bStopVar" hidden title="Прервать подбор: уже посчитанные варианты останутся (Esc)"><i data-lucide="square"></i>Стоп</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Сохранить слоем</button></div><div class="vprog" id="varProg" hidden><i></i></div>
+    <div class="vsaved" id="vsaved"></div>
     <div class="vlist" id="vlist"><div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений. Выбранный вариант переносит параметры в схему.</div></div></div>
 </section>
 <section class="win" id="wTep" hidden aria-label="Показатели">
@@ -671,7 +678,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
   <div class="wb"><canvas class="c3d" id="c3d"></canvas><div class="empty" id="e3d" hidden><b>Объёма пока нет</b>Здесь видны корпуса эскиза и сохраняемые здания с тенями. Сначала задайте границу территории (команда BO или «Пример территории» в окне «Данные»), затем постройте эскиз в окне «Эскиз».</div></div>
 </section>
 <section class="win" id="wCmp" hidden aria-label="Сравнение">
-  <header class="wh"><i data-lucide="columns-2"></i><b>Сравнение</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
+  <header class="wh"><i data-lucide="columns-2"></i><b>Сравнение</b><span class="sp"></span><select id="cmpVar" hidden aria-label="Что показывать справа" title="Справа: текущий эскиз или сохранённый вариант"></select><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="note" id="cmpHint" style="flex:none;margin:0;padding:6px 10px">Здесь рядом показываются существующее положение и эскиз. Сначала загрузите данные и постройте эскиз.</div><div class="split" id="splitBox"><div><div class="m" id="mBefore"></div><span class="mtag">Существующее</span></div><div><div class="m" id="mAfter"></div><span class="mtag">Эскиз</span></div></div></div>
 </section>
 <section class="win" id="wTable" hidden aria-label="Таблица атрибутов">

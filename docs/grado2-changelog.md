@@ -2,6 +2,29 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-04, ГРАДО 2 v0.99.6: album assembly shows its progress; saved variants; reserve plot colours; wording.**
+  Album (T62): while a section is built the status line and the busy toast read «Лист 3 из 9: Ортофотоплан —
+  загрузка … · 12 с»; «Остановить» finishes the current sheet and keeps the ones built («Сборка остановлена: готово
+  N из 9»); PDF/PPTX export shows «вёрстка N листов на сервере» with elapsed seconds; Overpass timeouts and
+  429/502/503/504 are retried on the server (3 attempts, 2 s then 4 s; SSL/connection errors are not retried; a
+  losing mirror stops retrying once another answered) and the sheet is built without OSM with the note «улицы OSM не
+  загрузились (портал ответил 504) — повторите сборку позже»; the page does not repeat a portal failure itself;
+  «не поместились» reasons come back from the server («лист 6: легенда из 23 позиций не помещается — уменьшите число
+  слоёв или шрифт») into the row tooltip, the status line and the PDF message. Profile on the Безобразово copy (warm
+  caches): a combined Overpass request missed the per-set cache and cost 30 of 33 s — `osm_fetch` now assembles the
+  sets from the cached parts; sheet 2 «Месторасположение» still takes 8–9 s of the PDF (5 MB SVG). Variants (T59):
+  «Сохранить как вариант…» in «Эскиз» / «Сохранить текущий эскиз…» in «Варианты» → group «Сохранённые» (up to 20,
+  buildings and floors with 6-decimal coordinates, stored in the ТЭП node, synced) with «Открыть» (two-click when the
+  current sketch has unsaved edits, one reused «Вариант: …» layer), «Переименовать», «Удалить» (two-click); numbers
+  are «на момент сохранения», «Открыть» recomputes; «Сравнение» can show a saved variant; viewers cannot change them;
+  the third-window toast shows once per session. Reserve plots (T67): per-theme fills (`--res-doo/-school/-clinic`,
+  light ДОО salmon, school lilac, clinic muted ochre; dark desaturated with lighter outlines), captions «ДОО / школа /
+  поликлиника» from 1:5 000, «Предпросмотр схемы» rows «Резерв: ДОО / школа / поликлиника» with swatches. T68: the
+  «не готов» icon in the warning colour, right-pane labels not truncated at 1440, «проектное допущение — в
+  постановлениях нет» instead of repository wording in «Нормативы», the standards path removed from the «Показатели»
+  note. Open: failed Esri tiles are retried on every render (a sheet took 398 s offline); OSM/ЕГКО refuse territories
+  over ~300 ha because the «Ортофотоплан» frame exceeds 150 km²; «Открыть» of a saved variant stays enabled for a
+  viewer (local only).
 - **2026-10-04, ГРАДО 2 v0.99.5: plots for kindergartens, schools and clinics on the sketch (T6 steps 3–4); block
   insolation pass; album smalls.** «Показатели» show «Резерв: ДОО n, школа 1, поликлиника 1 · X,XXX га (YY %)» above
   the metrics; the sketch gets plots of the exact required area («участок ДОО» / «участок школы» / «участок

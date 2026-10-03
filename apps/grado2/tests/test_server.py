@@ -551,7 +551,7 @@ class HttpHardening(unittest.TestCase):
         code, _, _, j = self.call("/api/tep/norms")
         ids = {x["id"]: x for x in j["norms"]}
         for k in ("park_m2_ground", "park_m2_underground", "park_m2_multi"):
-            self.assertEqual((ids[k]["group"], ids[k]["status"], ids[k]["source"]), ("Стоянки и транспорт", "unverified", "нет в текстах репозитория"))
+            self.assertEqual((ids[k]["group"], ids[k]["status"], ids[k]["source"]), ("Стоянки и транспорт", "unverified", "проектное допущение — в постановлениях нет"))
 
     def test_local_project_40mb_body_saves(self):
         """Проект с данными и альбомом готовой вёрстки (импорт «Из файла…») больше 32 МБ: путь записи проекта принимает его."""
@@ -1921,6 +1921,49 @@ class T61Portal(unittest.TestCase):
         big = "Overpass не ответил (runtime error: Query ran out of memory; HTTP 429) — попробуйте позже или уменьшите область"
         self.assertEqual(S.plain_portal_error(big), S.AREA_TOO_BIG)
         self.assertEqual(S.plain_portal_error("Overpass: area too large"), S.AREA_TOO_BIG)
+
+    def test_plain_portal_error_names_the_code_when_every_mirror_gave_the_same(self):
+        # T62: «портал ответил 504» — код виден владельцу, остального сырого текста нет
+        out = S.plain_portal_error("Overpass не ответил (HTTP 504; HTTP 504; HTTP 504) — попробуйте позже или уменьшите область")
+        self.assertTrue(out.startswith("портал OpenStreetMap ответил 504: "))
+        for bad in ("Overpass", "HTTP", "Errno"):
+            self.assertNotIn(bad, out)
+        self.assertEqual(S.plain_portal_error("Overpass не ответил (HTTP 504; HTTP 502) — попробуйте позже"), S.PORTAL_DOWN)
+
+    def test_not_ready_reasons_are_plain_and_headers_ascii(self):
+        legend = [{"title": "А", "items": [{"label": str(i)} for i in range(15)]}, {"title": "Б", "items": [{"label": str(i)} for i in range(8)]}]
+        spec = {"sheets": [{"title": "ok"}, {"_notReady": ["в колонку не поместились пункты легенды (5)"], "cLegend": legend},
+                           {"_notReady": ["не поместились строки таблицы (7)", "название не помещается в две строки по 18 пт"]}]}
+        rows = dict(S.not_ready_why(spec))
+        self.assertEqual(set(rows), {2, 3})
+        self.assertEqual(rows[2], ["легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт"])
+        self.assertIn("в таблицу не поместились 7 строк", rows[3][0])
+        self.assertEqual(rows[3][1], "название не помещается в две строки по 18 пт")        # прочие фразы — как есть
+        h = dict(S.not_ready_headers(spec))
+        self.assertEqual(h["X-Grado-Not-Ready"], "2,3")
+        h["X-Grado-Not-Ready-Why"].encode("ascii")                       # заголовок ASCII
+        from urllib.parse import unquote
+        self.assertTrue(unquote(h["X-Grado-Not-Ready-Why"]).startswith("лист 2: легенда из 23 позиций"))
+        self.assertEqual(S.not_ready_headers({"sheets": [{"title": "ok"}]}), [])
+
+    def test_osm_fetch_combines_sets_cached_separately_without_asking_overpass(self):
+        # T62: «улицы» и «землепользование» этой же области лежат в кэше порознь — сборка берёт их оттуда, портал не спрашивается
+        import tempfile
+        way = lambda i, tags: {"type": "way", "id": i, "tags": tags, "geometry": [{"lon": 0, "lat": 0}, {"lon": 1, "lat": 0}, {"lon": 1, "lat": 1}, {"lon": 0, "lat": 1}, {"lon": 0, "lat": 0}]}
+        roads, land = {"elements": [way(1, {"highway": "residential"})]}, {"elements": [way(2, {"landuse": "grass"})]}
+        bb = (0.0, 0.0, 1.0, 1.0)
+        with tempfile.TemporaryDirectory() as d:
+            S.OsmOverpass(transport=lambda q: roads, cache_dir=d).fetch(bb, ["roads"])
+            S.OsmOverpass(transport=lambda q: land, cache_dir=d).fetch(bb, ["landuse"])
+            with mock.patch.object(S.OsmOverpass, "_http_post", side_effect=AssertionError("Overpass не должен спрашиваться")):
+                res = S.osm_fetch(bb, ["landuse", "roads"], cache_dir=d)
+            self.assertEqual(sorted(f["properties"]["grado_set"] for f in res["features"]), ["landuse", "roads"])
+            self.assertEqual(res["params"]["sets"], ["landuse", "roads"])
+            # в кэше нет одного из наборов — один запрос по обоим, как раньше
+            asked = []
+            with mock.patch.object(S.OsmOverpass, "_http_post", side_effect=lambda q: asked.append(q) or {"elements": []}):
+                S.osm_fetch(bb, ["roads", "water"], cache_dir=d)
+            self.assertEqual(len(asked), 1)
 
     def test_place_info_survives_overpass_failure_when_polygon_is_known(self):
         poly = {"type": "Polygon", "coordinates": [[[37.52, 55.78], [37.53, 55.78], [37.53, 55.79], [37.52, 55.79], [37.52, 55.78]]]}

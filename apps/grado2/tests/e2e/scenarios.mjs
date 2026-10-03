@@ -1084,4 +1084,170 @@ export default async p => {
     await p.ev(`removeLayers(window.__t66l); delete window.__t66l; await new Promise(r=>setTimeout(r,200)); return 1`);
     await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...window.__t66.keep); window.loadKeys = window.__t66.lk; window.ensureAdmin = window.__t66.ea; CHECKED.clear(); window.__t66.c.forEach(k => CHECKED.add(k)); NOTREADY.clear(); TPL_SIG = null; winOpen("wSheets", false); delete window.__t66; return 1`);
   });
+  await p.group("t59", async () => {
+    const wait = ms => p.sleep(ms);
+    const settle = () => p.ev(`for (let k = 0; k < 80; k++) { await new Promise(r=>setTimeout(r,250)); const c = svCurrent(), t = RESULT.tepNode._tep; if (c.sk.length && t && Math.abs(t.sppNew - c.sk.reduce((q, b) => q + b.m2 * b.floors, 0)) < 1) break; } return svCurrent().sk.length`);
+    const editFloors = d => p.ev(`const bk = RESULT.tepNode.properties.baked, dd = DATA[bk]; dd.fc.features.forEach((f, i) => { f.properties["Этажность"] = ${d} + i % 3; }); setLayerData(bk, dd.fc); dataRev++; return dd.fc.features.length`);
+    if (!await p.ev(`for (let k = 0; k < 20 && !(RESULT.tepNode?._tep && TERR); k++) await new Promise(r=>setTimeout(r,500)); return !!RESULT.tepNode?._tep && !!TERR`)) {
+      await p.ev(`$("bExample").click(); await new Promise(r=>setTimeout(r,500)); winOpen("wSketch", true); await new Promise(r=>setTimeout(r,300)); document.querySelector('#wSketch [data-run="1"]').click(); for (let k = 0; k < 40 && !RESULT.tepNode?._tep; k++) await new Promise(r=>setTimeout(r,500)); return 1`);
+    }
+    await p.ev(`delete RESULT.tepNode.properties.saved; svSync(true); winOpen("wSketch", true); return 1`);
+    // эскиз принят слоем, этажность правится руками
+    await p.ev(`bakeSketch(); return 1`); await settle();
+    const nb = await editFloors(5); await settle();
+    check(nb > 0 && await p.ev(`return svCurrent().sk.some(b => b.floors === 6) && svCurrent().sk.every(b => b.floors >= 5)`), `T59: правка этажности принятого слоя (${nb} корпусов) стала текущим эскизом`);
+    // «Сохранить как вариант…» в окне «Эскиз»: строка с названием по умолчанию
+    await p.ev(`document.querySelector('#params [data-savevar="sk"]').click(); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`const i = document.querySelector('#params [data-svbar="sk"] input'); return !!i && i.value === "Мой вариант 1" && document.activeElement === i`), "T59: «Сохранить как вариант…» — строка с названием «Мой вариант 1», курсор в поле");
+    await p.ev(`document.querySelector('#params [data-sv-no]').click(); await new Promise(r=>setTimeout(r,100)); return 1`);
+    check(await p.ev(`return !document.querySelector('#params [data-svbar]') && savedList().length === 0`), "T59: «Отмена» ничего не сохраняет");
+    await p.ev(`document.querySelector('#params [data-savevar="sk"]').click(); await new Promise(r=>setTimeout(r,200)); return 1`);
+    await p.key("a", "KeyA", { ctrl: true }); await p.type("Вариант А"); await p.key("Enter", "Enter", { vk: 13, wait: 400 });
+    const snap = await p.ev(`const r = savedList()[0]; return r ? { name: r.name, n: r.n, sig: r.sig, density: r.density, pop: r.pop, doo: r.doo, avg: r.avg, k: r.sk.length } : null`);
+    check(snap && snap.name === "Вариант А" && snap.k === nb && snap.n === nb && snap.pop > 0, `T59: «Вариант А» сохранён: ${snap && snap.n} корпусов, плотность ${snap && snap.density.toFixed(1)}, население ${snap && snap.pop}`);
+    check(await p.ev(`return JSON.stringify(graph.serialize()).includes("Вариант А")`), "T59: вариант лежит в схеме проекта (node.properties.saved) и уходит с ней в файл");
+    // окно «Варианты»: группа «Сохранённые» с теми же столбцами
+    await p.ev(`winOpen("wVars", true); await new Promise(r=>setTimeout(r,300)); return 1`);
+    const tb = await p.ev(`const t = document.querySelector("#vsaved"); return [t.querySelector(".svh b")?.textContent, [...t.querySelectorAll("th")].map(x => x.textContent).join("|"), t.querySelector("tbody tr")?.textContent]`);
+    check(tb[0] === "Сохранённые" && /Вариант\|Корпусов\|Ср\. эт\.\|СПП новая.*\|Плотность.*\|Инсоляция новых\|Население, чел\.\|ДОО, мест/.test(tb[1]) && tb[2].includes("Вариант А") && tb[2].includes(`${snap.n}`), `T59: группа «Сохранённые» в «Вариантах»: ${tb[1]}`);
+    // перезагрузка проекта (сохранение → открытие): вариант на месте с теми же числами
+    await p.ev(`const j = JSON.parse(JSON.stringify(collectProject())); clearProject(); applyProject(j); for (let k = 0; k < 40 && !RESULT.tepNode?._tep; k++) await new Promise(r=>setTimeout(r,250)); await new Promise(r=>setTimeout(r,500)); return 1`); await settle();
+    const rl = await p.ev(`const r = savedList()[0]; return [savedList().length, r?.name, r?.sig, r?.density, r?.pop, $("vsaved").textContent.includes("Вариант А")]`);
+    check(rl[0] === 1 && rl[1] === "Вариант А" && rl[2] === snap.sig && rl[3] === snap.density && rl[4] === snap.pop && rl[5], `T59: после перезагрузки проекта вариант в списке с теми же числами (${rl.slice(0, 2)})`);
+    // новый подбор вариантов не стирает сохранённые
+    await p.ev(`$("bGen").click(); for (let k = 0; k < 480 && (varRun || !VARS.length); k++) await new Promise(r=>setTimeout(r,250)); return 1`);
+    check(await p.ev(`return VARS.length > 0 && !varRun && savedList().length === 1 && $("vsaved").textContent.includes("Вариант А") && !!$("vlist").querySelector("[data-var]")`), "T59: «Подобрать варианты» построил список, «Сохранённые» остались");
+    // снимки «Сохранённых»: светлая и тёмная
+    const shots = process.env.E2E_SHOTS;
+    const shotVars = async name => { if (!shots) return; await p.ev(`const w = $("wVars"); w.style.left = "40px"; w.style.top = "90px"; w.style.width = "1180px"; w.style.height = "420px"; $("vsaved").scrollIntoView(); return 1`); await wait(300); await p.shot(`${shots}/t59-${name}.png`); };
+    await p.ev(`document.documentElement.dataset.theme = "light"; return 1`); await shotVars("saved-light");
+    await p.ev(`document.documentElement.dataset.theme = "dark"; return 1`); await shotVars("saved-dark");
+    await p.ev(`document.documentElement.dataset.theme = "light"; return 1`);
+    // «Открыть»: текущий отличается от сохранённого → второй щелчок
+    await editFloors(9); await settle();
+    const sig0 = await p.ev(`return svSig(svCurrent().sk)`);
+    await p.ev(`document.querySelector('#vsaved [data-sv="open"]').click(); await new Promise(r=>setTimeout(r,300)); return 1`);
+    check(await p.ev(`return !!document.querySelector('#vsaved [data-sv="open"][data-armed]') && svSig(svCurrent().sk) === ${JSON.stringify(sig0)} && /не сохранён как вариант/.test($("toast").textContent)`), "T59: «Открыть» при несохранённых правках — предупреждение, эскиз не заменён");
+    await p.ev(`document.querySelector('#vsaved [data-sv="open"]').click(); await new Promise(r=>setTimeout(r,500)); return 1`); await settle();
+    check(await p.ev(`return svSig(svCurrent().sk) === ${JSON.stringify(snap.sig)} && !!document.querySelector("#vsaved tr.sel")`), "T59: второй щелчок открыл вариант: эскиз восстановлен (этажность и положение), строка помечена «открыт сейчас»");
+    // «Сравнение»: справа можно выбрать сохранённый вариант
+    const cm = await p.ev(`winOpen("wCmp", true); await new Promise(r=>setTimeout(r,500)); const s = $("cmpVar"); const id = savedList()[0].id; s.value = id; s.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200));
+      return [s.hidden, [...s.options].map(o => o.textContent).join("|"), cmpSrc.getFeatures().length, $("mAfter").parentElement.querySelector(".mtag").textContent]`);
+    check(!cm[0] && cm[1] === "Текущий эскиз|Вариант А" && cm[2] === snap.n && cm[3] === "Вариант: Вариант А", `T59: «Сравнение» — выбор «Вариант А» справа (${cm})`);
+    await p.ev(`$("cmpVar").value = ""; $("cmpVar").dispatchEvent(new Event("change", { bubbles: true })); winOpen("wCmp", false); return 1`);
+    // «Переименовать»
+    await p.ev(`document.querySelector('#vsaved [data-sv="ren"]').click(); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`const i = document.querySelector("#vsaved [data-svren]"); return !!i && i.value === "Вариант А" && document.activeElement === i`), "T59: «Переименовать» — поле с прежним названием");
+    await p.key("a", "KeyA", { ctrl: true }); await p.type("Вариант Б"); await p.key("Enter", "Enter", { vk: 13, wait: 300 });
+    check(await p.ev(`return savedList()[0].name === "Вариант Б" && $("vsaved").textContent.includes("Вариант Б") && !$("vsaved").textContent.includes("Вариант А")`), "T59: название изменилось в списке и в проекте");
+    // «Открыть» повторно: один слой «Вариант: …», а не новый на каждое открытие
+    await p.ev(`document.querySelector('#vsaved [data-sv="open"]').click(); await new Promise(r=>setTimeout(r,500)); return 1`); await settle();
+    check(await p.ev(`const ls = LYR.filter(l => /^Вариант: /.test(l.title)); return ls.length === 1 && ls[0].title === "Вариант: Вариант Б" && RESULT.tepNode.properties.baked === ls[0].key && svSig(svCurrent().sk) === savedList()[0].sig`), "T59: повторное «Открыть» меняет объекты единственного слоя «Вариант: …»");
+    check(await p.ev(`return savedList()[0].sk.every(b => JSON.stringify(b.g).match(/\\d+\\.\\d+/g).every(x => x.split(".")[1].length <= 6)) && /на момент сохранения/.test($("vsaved").textContent)`), "T59: координаты в варианте — до 6 знаков; в таблице пометка «на момент сохранения»");
+    // наблюдатель в совместном режиме: сохранить, переименовать, удалить нельзя
+    const ro = await p.ev(`const o = [Collab.on, Collab.role]; Collab.on = true; Collab.role = "viewer"; svRender(); const n0 = savedList().length;
+      const dis = [...document.querySelectorAll('#vsaved [data-sv="ren"],#vsaved [data-sv="del"],#vsaved [data-savevar]')].every(b => b.disabled);
+      svAsk("vars"); svCommit(); const t1 = $("toast").textContent; svClick(savedList()[0].id, "del"); svRename(savedList()[0].id, "Чужое"); const t2 = $("toast").textContent;
+      const r = [dis, SV.ask, n0, savedList().length, savedList()[0].name, /Только просмотр/.test(t1), /Только просмотр/.test(t2)]; Collab.on = o[0]; Collab.role = o[1]; svRender(); return r`);
+    check(ro[0] && ro[1] === null && ro[2] === 1 && ro[3] === 1 && ro[4] === "Вариант Б" && ro[5] && ro[6], `T59: наблюдатель — кнопки недоступны, сохранение, переименование и удаление отказывают с «Только просмотр» (${ro})`);
+    // предел: 20 вариантов
+    const cap = await p.ev(`const L = RESULT.tepNode.properties.saved, keep = L.slice(); for (let i = L.length; i < 20; i++) L.push({ ...keep[0], id: "x" + i, name: "Лишний " + i }); svSync(true);
+      svAsk("vars"); const r = [L.length, SV.ask, /предел/.test($("toast").textContent)]; RESULT.tepNode.properties.saved = keep; svSync(true); return r`);
+    check(cap[0] === 20 && cap[1] === null && cap[2], `T59: на 21-й вариант — отказ с пояснением (${cap})`);
+    // «Удалить» — со второго щелчка
+    await p.ev(`document.querySelector('#vsaved [data-sv="del"]').click(); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`return savedList().length === 1 && !!document.querySelector('#vsaved [data-sv="del"][data-armed]')`), "T59: «Удалить» с первого щелчка только спрашивает");
+    await p.ev(`document.querySelector('#vsaved [data-sv="del"]').click(); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`return savedList().length === 0 && !JSON.stringify(graph.serialize()).includes("Вариант Б") && /пока нет/.test($("vsaved").textContent)`), "T59: второй щелчок удалил вариант");
+    await p.ev(`winOpen("wVars", false); return 1`);
+    // T66: «Третье окно открыто плавающим…» — раз за сеанс, в localStorage не пишется
+    const zt = await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); delete WST.zoneToast; try { localStorage.removeItem("grado2.zonecap"); } catch {} syncZones(); await new Promise(r=>setTimeout(r,300));
+      winOpen("wSketch", true); winOpen("wTep", true); await new Promise(r=>setTimeout(r,300)); winOpen("wCons", true); await new Promise(r=>setTimeout(r,400)); const t1 = $("toast").textContent; saveWins();
+      const stored = localStorage.getItem("grado2.win") || ""; winOpen("wCons", false); $("toast").textContent = ""; winOpen("wCons", true); await new Promise(r=>setTimeout(r,300)); const t2 = $("toast").textContent;
+      ["wCons", "wTep", "wSketch"].forEach(id => winOpen(id, false)); return [/Третье окно открыто плавающим/.test(t1), !stored.includes("zoneToast"), !/Третье окно/.test(t2)]`);
+    check(zt[0] && zt[1] && zt[2], `T59/T66: подсказка о третьем окне — один раз за сеанс, в localStorage не сохраняется (${zt})`);
+  });
+  // T62: ход сборки раздела («Лист 3 из 9: … — загрузка …· 4 с»), «Остановить» после текущего листа, сбой OSM — заметка листа,
+  // причины «не поместилось» в подсказке строки, строке состояния и сообщении о PDF. Портал и печать подменены: без сети.
+  await p.group("t62", async () => {
+    await p.ev(`window.__f62 = window.fetch; window.__click62 = HTMLAnchorElement.prototype.click; window.__alb62 = ALBUM.sheets; window.__delay62 = 300; window.__osm62 = true; window.__req62 = [];
+      window.fetch = async (u, o) => { u = String(u);
+        if (u === "/api/progress") return new Response("{}", { status: 200 });
+        if (u === "/api/fetch") { await new Promise(r => setTimeout(r, window.__delay62)); const b = JSON.parse(o.body), errors = {}; window.__req62.push(...b.sources);
+          if (window.__osm62) b.sources.filter(k => k.startsWith("osm.")).forEach(k => { errors[k] = "портал OpenStreetMap ответил 504: подождите минуту и повторите, область, уже скачанная раньше, берётся с диска"; });
+          return new Response(JSON.stringify({ layers: {}, errors }), { status: 200 }); }
+        return window.__f62(u, o); };
+      setTerritory(turf.polygon([[[37.1475, 55.3414], [37.1631, 55.3414], [37.1631, 55.3499], [37.1475, 55.3499], [37.1475, 55.3414]]]));
+      ALBUM.sheets = []; winOpen("wSheets", true); renderSheets(); await new Promise(r => setTimeout(r, 400)); return 1`);
+    try {
+      // 1. полная сборка: Overpass отвечает 504 — раздел собран, у листов с улицами OSM заметка без сырого кода, сообщение понятное
+      await p.ev(`await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 300)); return 1`);
+      const a = await p.ev(`const note = ALBUM.sheets.map(s => LOSTNOTE.get(s.id)).filter(Boolean), tip = [...document.querySelectorAll("#sheetsBody .shrow .ic span[title]")].map(e => e.title).join("|");
+        return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, note, tip, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden]`);
+      check(a[0] === 9 && a[1].length >= 1 && a[1].every(t => t === "улицы OSM не загрузились (портал ответил 504) — повторите сборку позже" || /не загрузил/.test(t)), `T62: сбой OSM — листы собраны (${a[0]} из 9), у ${a[1].length} заметка «${a[1][0]}»`);
+      check(await p.ev(`const c = {}; window.__req62.filter(k => k.startsWith("osm.")).forEach(k => c[k] = (c[k] || 0) + 1); return Object.keys(c).length > 0 && Object.values(c).every(n => n === 1)`), "T62: слой, на который портал ответил 504, не запрашивается повторно сразу (сервер уже повторял с паузами)");
+      check(/улицы OSM не загрузились \(портал ответил 504\) — повторите сборку позже/.test(a[2]) && !/HTTP|Overpass|Errno/.test(a[2] + a[3]), "T62: заметка в подсказке строки листа и в сообщении без сырых кодов (HTTP, Overpass)");
+      check(/Листы собраны без части данных/.test(a[3]) && a[5] === true, "T62: сообщение «Листы собраны без части данных…», кнопка «Остановить» после сборки скрыта");
+      // 2. медленная сборка: строка состояния и сообщение несут «Лист N из 9: название — загрузка … · N с»
+      await p.ev(`window.__delay62 = 4000; window.__osm62 = false; ALBUM.sheets = []; LOSTNOTE.clear(); renderSheets(); window.__b62 = buildSection(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); window.__t62 = []; return 1`);
+      let seen = null;
+      for (let i = 0; i < 60 && !seen; i++) { await p.sleep(250);
+        seen = await p.ev(`const t = $("shStat").textContent; return /^Лист \\d+ из 9: .+ — загрузка .+… · \\d+ с$/.test(t) && !$("shStop").hidden ? [t, $("toast").textContent] : null`); }
+      check(!!seen, `T62: во время сборки в строке состояния «${seen?.[0]}»`);
+      check(seen && /^Лист \d+ из 9: /.test(seen[1]), "T62: то же — в сообщении «" + (seen?.[1] || "").slice(0, 70) + "»");
+      await p.sleep(2200);                           // первая выгрузка (лист 3) ещё идёт: 4 с на запрос
+      const el = await p.ev(`return $("shStat").textContent`);
+      check(/ · [2-9] с$/.test(el), `T62: секунды растут: «${el}»`);
+      // 3. «Остановить»: сборка заканчивается после текущего листа, собранные листы остаются
+      const k = await p.ev(`const m = /^Лист (\\d+) из 9/.exec($("shStat").textContent); $("shStop").click(); await new Promise(r => setTimeout(r, 100)); return [m ? +m[1] : -1, $("shStat").textContent, $("shStop").disabled]`);
+      check(/остановка после этого листа/.test(k[1]) && k[2] === true, `T62: после «Остановить» — «…остановка после этого листа…»`);
+      await p.ev(`await window.__b62; await new Promise(r => setTimeout(r, 300)); return 1`);
+      const z = await p.ev(`return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden, SHBUILD]`);
+      check(z[0] >= k[0] && z[0] < 9 && /Сборка остановлена: готово \d+ из 9/.test(z[1]) && z[3] && z[4] === 0, `T62: остановка на листе ${k[0]}: в альбоме ${z[0]} из 9 листов, «${z[1].slice(0, 60)}», «Остановить» скрыта`);
+      // 4. «не поместилось»: причины сервера — в подсказке строки, строке состояния и сообщении о PDF
+      await p.ev(`ALBUM.sheets = []; renderSheets(); window.__delay62 = 5; await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 200));
+        window.__why62 = "лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8: в таблицу не поместились 7 строк — возьмите формат А1 или сократите таблицу";
+        window.fetch = async (u, o) => String(u) === "/api/print/pdf" ? new Response(new Blob(["%PDF"]), { status: 200, headers: { "X-Grado-Not-Ready": "6,8", "X-Grado-Not-Ready-Why": encodeURIComponent(window.__why62) } }) : window.__f62(u, o);
+        HTMLAnchorElement.prototype.click = function () { };
+        await albumFile0("pdf"); await new Promise(r => setTimeout(r, 200)); return 1`);
+      const w = await p.ev(`return [$("toast").textContent, $("shStat").textContent, document.querySelector('#sheetsBody .shrow[data-sh="5"] .ic span[title*="Не готов"]')?.title || "", document.querySelector('#sheetsBody .shrow[data-sh="7"] .ic span[title*="Не готов"]')?.title || "", FITWHY.size]`);
+      check(/Не готовы: лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8: в таблицу не поместились 7 строк/.test(w[0]), "T62: сообщение о PDF называет листы и причины");
+      check(/не готово: \d+ \(лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8:/.test(w[1]), `T62: строка состояния: «не готово: … (лист 6: легенда из 23 позиций…)» — ${w[1]}`);
+      check(/легенда из 23 позиций не помещается/.test(w[2]) && /не поместились 7 строк/.test(w[3]) && w[4] === 2, "T62: подсказка значка «не готов» в строках листов 6 и 8 несёт причину");
+      await p.ev(`touchAlbum(); return 1`);
+      check(await p.ev(`syncAlbumStat(); return FITWHY.size === 0 && !/лист 6:/.test($("shStat").textContent)`), "T62: правка альбома сбрасывает прежние причины (они были про прежнюю вёрстку)");
+    } finally { await p.ev(`window.fetch = window.__f62; HTMLAnchorElement.prototype.click = window.__click62; ALBUM.sheets = window.__alb62; LOSTNOTE.clear(); FITWHY.clear(); renderSheets(); winOpen("wSheets", false); return 1`); }
+  });
+  // T67: участки резерва на эскизе — цвета из токенов по темам, подпись вида с 1:5 000, легенда в «Предпросмотре схемы»
+  await p.group("t67", async () => {
+    const shots = process.env.E2E_SHOTS;
+    await p.ev(`winOpen("wSketch", true); const c = centroid(ringsXY(RESULT.site)[0]), box = (dx, dy, w, h) => polyLL([[c[0]+dx, c[1]+dy], [c[0]+dx+w, c[1]+dy], [c[0]+dx+w, c[1]+dy+h], [c[0]+dx, c[1]+dy+h]]);
+      window.__rs67 = Object.values(resSrcs).map(s => s.getFeatures().slice()); Object.values(resSrcs).forEach(s => s.clear());
+      [["участок ДОО", -140, -60], ["участок школы", 0, -60], ["участок поликлиники", 140, -60]].forEach(([k, dx, dy]) => { const f = toOl(box(dx, dy, 110, 90)); f.set("kind", k); resSrcs[k].addFeature(f); });
+      RES.forEach(r => { r.on = true; }); syncPreview(); renderTree(); mMain.updateSize(); sharedView.setCenter(toOl(box(0, 0, 1, 1)).getGeometry().getFirstCoordinate()); return 1`);
+    const tok = async th => JSON.parse(await p.ev(`document.documentElement.dataset.theme = "${th}"; await new Promise(r => setTimeout(r, 200)); const g = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return JSON.stringify(["doo", "school", "clinic"].map(k => [g("--res-" + k), g("--res-" + k + "-ln")]).concat([[g("--site-hatch")]]))`));
+    const L = await tok("light"), D = await tok("dark");
+    check(L.slice(0, 3).every((x, i) => /^#/.test(x[0]) && /^#/.test(x[1]) && x[0] !== D[i][0] && x[1] !== D[i][1]), "T67: у каждого вида участка в светлой и тёмной теме свои заливка и контур");
+    check(L[2][0] === "#ecd9a8" && L[2][0] !== L[3][0], "T67: поликлиника в светлой теме — приглушённая охра, не бирюза и не цвет штриховки пятна");
+    for (const th of ["light", "dark"]) for (const den of [5000, 2000, 8000]) {
+      const r = JSON.parse(await p.ev(`document.documentElement.dataset.theme = "${th}"; Object.values(resSrcs).forEach(s => s.changed()); sharedView.setResolution(${den} / (Math.cos(ol.proj.toLonLat(sharedView.getCenter())[1] * Math.PI / 180) / 0.000264583)); await new Promise(r => setTimeout(r, 900));
+        const caps = Object.entries(resSrcs).map(([k, s]) => { const f = s.getFeatures()[0], st = resStyle(f), t = st.getText(); return [t ? t.getText() : null, st.getFill().getColor(), st.getStroke().getColor(), st.getStroke().getWidth()]; }); return JSON.stringify(caps)`));
+      const want = den <= 5000;
+      check(r.every((c, i) => (want ? c[0] === ["ДОО", "школа", "поликлиника"][i] : c[0] === null) && c[3] === 1 && c[1] === (th === "light" ? L : D)[i][0] && c[2] === (th === "light" ? L : D)[i][1]), `T67: 1:${den}, ${th}: подпись вида ${want ? "есть («ДОО», «школа», «поликлиника»)" : "не рисуется"}, заливка и контур из токенов, контур 1 px`);
+      if (shots && den !== 8000) { await p.ev(`return 1`); await p.shot(`${shots}/t67-${th}-${den}.png`); }
+    }
+    const lg = await p.ev(`renderTree(); const rows = [...document.querySelectorAll("#layerTree [data-res]")].map(i => i.closest("label")); return JSON.stringify(rows.map(l => [l.querySelector(".nm").textContent, l.querySelector(".sym").getAttribute("style"), l.querySelector(".meta").textContent]))`);
+    const rows = JSON.parse(lg), nm = rows.map(x => x[0]);
+    check(["Участки и улицы эскиза", "Резерв: ДОО", "Резерв: школа", "Резерв: поликлиника"].every(x => nm.includes(x)) && rows.filter(x => /Резерв/.test(x[0])).every(x => /var\(--res-(doo|school|clinic)\)/.test(x[1]) && x[2] === "1"), "T67: «Предпросмотр схемы» показывает участки эскиза и три вида резерва со своими цветами и числом участков");
+    if (shots) { await p.ev(`document.documentElement.dataset.theme = "light"; document.getElementById("layerTree").scrollIntoView({block:"center"}); return 1`); await p.shot(`${shots}/t67-legend-light.png`); await p.ev(`document.documentElement.dataset.theme = "dark"; return 1`); await p.shot(`${shots}/t67-legend-dark.png`); }
+    // T68: подписи правой панели без «…», значок «не готов» цветом --warn
+    const lw = JSON.parse(await p.ev(`document.documentElement.dataset.theme = "light"; document.querySelector('[data-rtab="style"]').click(); await new Promise(r => setTimeout(r, 300));
+      const ls = [...document.querySelectorAll("#rightPane .row>label:first-child")], cut = ls.filter(l => l.scrollWidth > l.clientWidth + 1).map(l => l.textContent);
+      const d = document.createElement("div"); d.className = "shrow"; d.innerHTML = '<span class="ic"><svg class="lucide lucide-triangle-alert"></svg></span>'; document.body.appendChild(d);
+      const col = getComputedStyle(d.querySelector("svg")).color, warn = (() => { const e = document.createElement("i"); e.style.color = "var(--warn)"; document.body.appendChild(e); const c = getComputedStyle(e).color; e.remove(); return c; })(); d.remove();
+      return JSON.stringify({ w: innerWidth, names: ls.map(l => l.textContent), cut, tri: col === warn })`));
+    check(lw.cut.length === 0 && lw.names.includes("Роль в расчётах") && lw.tri, `T68: ширина ${lw.w}: подписи панели стиля целиком (${lw.names.length} шт., обрезано: ${lw.cut.join(", ") || "нет"}); значок «не готов» — цвет --warn`);
+    if (shots) await p.shot(`${shots}/t68-style-panel.png`);
+    await p.ev(`document.documentElement.dataset.theme = "light"; Object.values(resSrcs).forEach((s, i) => { s.clear(); s.addFeatures(window.__rs67[i]); }); delete window.__rs67; syncPreview(); return 1`);
+  });
 };
