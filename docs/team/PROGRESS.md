@@ -43,6 +43,16 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 04.10.2026, цикл 18 (03:30–07:00 MSK, ветка team/t60) — T6 шаги 3–4 (черновик другой сессии перенесён в team2 и
+  доведён; ревью FAIL: таймер по часам → недетерминизм и ложное «не помещается» → бюджет шагов, граница свободной
+  земли как препятствие; повторное ревью FAIL: прерванный результат не кэшировался → шторм пересчётов → исправлено
+  руководителем), T56 (blocks.js, хук в urbanBlocks; на примере эффекта нет — соседние кварталы; бюджет relax
+  переведён на шаги руководителем; вопрос владельцу А/Б/В), T65/T66 (ревью PASS). Итог v0.99.5: apps 413 OK,
+  blocks/roles/collab ok, E2E 320 ok / 0 failed. Другая сессия: T6 в `team` без движения с 18:19 03.10 — её
+  черновик использован, её рабочая копия не тронута.
+RULE: Any search or relaxation that can be cut short is bounded by step counts, never by wall-clock time, and a
+cut-short result is cached under the same key (deterministic) — a time bound gives different sketches on different
+machines and an uncached partial result re-runs on every render (T6, T56).
 - 04.10.2026, цикл 17 (00:40–03:30 MSK, ветка team/t60) — T64 (v0.99.3; ревью PASS, правка руководителя: контуры с
   обводкой не выбрасывать), T61 (ревью FAIL: подмена ключей ломала загрузку листов альбома, K1=1,0 при молчании OSM →
   исправлено), T55 (возврат руководителя до ревью: старые листы сбрасывались бы к шаблону при открытии → только по
