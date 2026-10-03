@@ -158,6 +158,40 @@ function mergeOrder(b, m, t) {
   m.forEach((k, i) => { if (has.has(k)) return; const at = i ? out.indexOf(m[i - 1]) + 1 : 0; out.splice(at, 0, k); has.add(k); });
   return out;
 }
+/* альбом: meta и прочие ключи — как mergeMeta, листы — по `id` (старые проекты без id и списки с повтором id — целиком, см. ниже).
+   Лист, правленный только с одной стороны, берётся оттуда; по-разному с обеих — чужой, конфликт «album:лист …»;
+   убранный одной стороной и правленный другой — остаётся с правкой. Новые листы обеих сторон сохраняются (порядок — mergeOrder). */
+function mergeAlbum(b, m, t, info) {
+  b = isObj(b) ? b : {};
+  const { meta: bmt, sheets: bsh, ...br } = b, { meta: mmt, sheets: msh, ...mr } = m, { meta: tmt, sheets: tsh, ...tr } = t;
+  const sub = { conflicts: [] }, out = mergeMeta(br, mr, tr, sub);
+  out.meta = mergeMeta(bmt, mmt || {}, tmt || {}, sub);
+  if (sub.conflicts.length) info?.conflicts.push("album");
+  // без `id` у какого-либо листа или с повтором `id` в одном списке лист по месту не опознать: `sheets` — одно значение (правило mergeMeta)
+  const arr = a => Array.isArray(a) ? a : [], keyed = a => arr(a).every(x => isObj(x) && x.id != null) && new Set(arr(a).map(x => x.id)).size === arr(a).length;
+  if (!(keyed(bsh) && keyed(msh) && keyed(tsh))) {
+    if (same(msh, bsh)) { if (tsh !== undefined) out.sheets = tsh; }
+    else if (same(tsh, bsh) || same(msh, tsh)) out.sheets = msh;
+    else { out.sheets = tsh; info?.conflicts.push("album"); }
+    return out;
+  }
+  const idx = a => new Map(arr(a).map(x => ["i:" + x.id, x]));
+  const B = idx(bsh), M = idx(msh), T = idx(tsh);
+  const back = [...B.keys()].filter(k => !M.has(k) && T.has(k) && !same(T.get(k), B.get(k)));   // убран мной, правлен ими — вернуть в порядок
+  const order = mergeOrder([...B.keys()].filter(k => !back.includes(k)), [...M.keys()], [...T.keys()]), sheets = [];
+  for (const k of order) {
+    const bs = B.get(k), ms = M.get(k), ts = T.get(k);
+    let v;
+    if (ms && ts) {
+      if (bs && same(ms, bs)) v = ts; else if (bs && same(ts, bs)) v = ms; else if (same(ms, ts)) v = ms;
+      else { v = ts; info?.conflicts.push("album:лист " + (ts.num ?? ts.title ?? ts.id ?? k.slice(1))); }
+    } else if (ms) v = bs && same(ms, bs) ? undefined : ms;         // у них убран: если я правил — остаётся
+    else if (ts) v = bs && same(ts, bs) ? undefined : ts;           // у меня убран: если они правили — остаётся
+    if (v !== undefined) sheets.push(v);
+  }
+  out.sheets = sheets;
+  return out;
+}
 function mergeMeta(b, m, t, info) {
   b = b || {};
   const out = {};
@@ -166,6 +200,7 @@ function mergeMeta(b, m, t, info) {
     let v;
     if (!mc) v = tv; else if (!tc) v = mv; else if (same(mv, tv)) v = mv;
     else if (k === "current_order") v = mergeOrder(bv, mv, tv);
+    else if (k === "album" && isObj(mv) && isObj(tv)) v = mergeAlbum(bv, mv, tv, info);
     else if (k === "imports" && isObj(mv) && isObj(tv)) { const sub = { conflicts: [] }; v = mergeObj(bv, mv, tv, sub, 0); if (sub.conflicts.length && info) info.conflicts.push(k); }
     else { v = tv; info?.conflicts.push(k); }                      // обе стороны правили ключ по-разному: оставлена их версия
     if (v !== undefined) out[k] = v;
@@ -409,7 +444,7 @@ function integrate(have, revs, by) {
   for (const n of names) { if (nb[n] == null) delete base[n]; else base[n] = nb[n]; if (revs && n in revs) { if (revs[n] === undefined) delete secRev[n]; else secRev[n] = revs[n]; } }
   if (info.conflicts.length) {
     const lab = { territory: "границе", checked: "наборе источников", groups: "группах слоёв", views: "видах", album: "альбоме", graph: "схеме расчёта", imports: "источниках", current_order: "порядке слоёв" };
-    const what = [...new Set(info.conflicts)].map(k => lab[k] || k).join(", ");
+    const what = [...new Set(info.conflicts)].map(k => lab[k] || (k.startsWith("album:") ? "альбоме (" + k.slice(6) + ")" : k)).join(", ");
     toast(`Ваши правки в ${what} совпали с правками ${by || "другого участника"}: оставлена их версия.`);
   }
   emit("rev", { by: by || null, sections: names });

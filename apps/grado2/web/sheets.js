@@ -410,11 +410,13 @@ async function previewSheet(i) {
 }
 // альбом файлом: PDF для печати или PPTX — та же вёрстка редактируемой презентацией PowerPoint (подписи — текстом,
 // карты — фигурами по слоям, снимки — рисунками)
+let buildingN = 0;      // идущие сборки; пока >0, пункты PDF и PPTX в меню «Выгрузка» серые (app.js: expSync)
+const setBuilding = on => { buildingN += on ? 1 : -1; window.albumBuilding = buildingN > 0; if (!$("expMenu").hidden) window.expSync?.(); };
 const albumFile = (kind, only) => track(() => albumFile0(kind, only));
 async function albumFile0(kind = "pdf", only = null) {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
   const list = only ? [only] : ALBUM.sheets;
-  busy(true);
+  busy(true); setBuilding(true);
   try {
     const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
     if (!r.ok) throw new Error((await r.json()).error);
@@ -425,7 +427,7 @@ async function albumFile0(kind = "pdf", only = null) {
     toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
       + (nr ? ` Не готовы листы ${nr.split(",").join(", ")}: не всё поместилось, что именно — серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
-  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); }
+  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { busy(false); setBuilding(false); }
 }
 // спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF
 // сразу, только если путь к нему полный: папку загрузок браузера программа спрашивает один раз, архив называется

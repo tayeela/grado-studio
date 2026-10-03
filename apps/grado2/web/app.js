@@ -638,12 +638,13 @@ const exportLayers = () => {
 const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); };
 // выгрузка на сервер и сохранение файла; ошибка сервера — по-русски, подробности в консоль
 async function exportTo(path, body, file, okText, failText) {
+  const back = document.activeElement === $("bExpMore") || $("expMenu").contains(document.activeElement);   // кнопка «Выгрузка» на время сборки серая и теряет фокус — вернём его
   busy(true); $("bExpMore").disabled = true;
   try {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) { const j = await r.json().catch(() => ({})); console.warn("export", path, r.status, j.error); throw new Error(r.status === 413 ? "слишком много данных" : r.status === 401 || r.status === 403 ? "нет доступа, войдите заново" : "сервер не принял данные"); }
     saveBlob(await r.blob(), file); toast(okText);
-  } catch (err) { toast(`${failText}: ${err instanceof TypeError ? "нет связи с программой" : err.message}.`); } finally { busy(false); $("bExpMore").disabled = false; }
+  } catch (err) { toast(`${failText}: ${err instanceof TypeError ? "нет связи с программой" : err.message}.`); } finally { busy(false); $("bExpMore").disabled = false; const a = document.activeElement; if (back && (!a || a === document.body || $("expMenu").contains(a))) $("bExpMore").focus(); }   // фокус на скрытом пункте меню — ничей (браузер снимет его позже)
 }
 $("bExport").onclick = () => {
   const layers = exportLayers();
@@ -670,15 +671,18 @@ $("bExpXls").onclick = () => {
    фокус на первый доступный пункт, ↑↓ по кругу, Home/End, Esc закрывает и возвращает фокус, Tab закрывает */
 const expItems = () => [...$("expMenu").querySelectorAll("button:not(:disabled)")];
 const expSync = () => {       // PDF и PPTX без листов — серые, пояснение «Нет листов»
-  const none = !ALBUM.sheets.length;
-  [["bExpPdf", "Все листы одним файлом для печати"], ["bExpPptx", "Редактируемая презентация PowerPoint"]].forEach(([id, hint]) => { const b = $(id); b.disabled = none; b.querySelector("small").textContent = none ? "Нет листов" : hint; });
+  const none = !ALBUM.sheets.length, building = !!window.albumBuilding;   // «Нет листов» главнее «Идёт сборка…»
+  [["bExpPdf", "Все листы одним файлом для печати"], ["bExpPptx", "Редактируемая презентация PowerPoint"]].forEach(([id, hint]) => { const b = $(id); b.disabled = none || building; b.querySelector("small").textContent = none ? "Нет листов" : building ? "Идёт сборка…" : hint; });
   const fr = window.ogdFrame?.(), g = $("bOgdAll");
   if (!ogdPoll) g.querySelector("small").textContent = fr ? "Все слои портала по рамке листа" : "Сначала нарисуйте лист на карте";
 };
 const expMenu = on => { if (on) expSync(); $("expMenu").hidden = !on; $("bExpMore").setAttribute("aria-expanded", on); if (on) expItems()[0]?.focus(); };
 $("bExpMore").onclick = e => { e.stopPropagation(); expMenu($("expMenu").hidden); };
 $("bExpMore").addEventListener("keydown", e => { if (e.key === "ArrowDown") { e.preventDefault(); if ($("expMenu").hidden) expMenu(true); else expItems()[0]?.focus(); } });
-$("expMenu").addEventListener("click", () => expMenu(false));
+$("expMenu").addEventListener("click", () => {   // пункт выбран: меню закрывается, фокус — на «Выгрузку»; если пункт уже перевёл фокус в своё окно, не отбираем
+  const a = document.activeElement, mine = !a || a === document.body || $("expMenu").contains(a);
+  expMenu(false); if (mine) $("bExpMore").focus();
+});
 $("expMenu").addEventListener("keydown", e => {
   const items = expItems(), i = items.indexOf(document.activeElement);
   if (e.key === "Escape") { e.stopPropagation(); expMenu(false); $("bExpMore").focus(); }

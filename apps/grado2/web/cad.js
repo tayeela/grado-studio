@@ -451,7 +451,7 @@ mMain.getInteractions().on("add", ev => { if (ev.element !== cadI) { const arr =
 /* клавиатура: псевдонимы команд, динамический ввод, Enter/пробел, Esc, F-клавиши режимов */
 addEventListener("keydown", e => {
   if (e.target === inEl) return;
-  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph") || window.treeOwnsKey?.(e)) return;      // клавиши дерева слоёв (стрелки, Пробел, F2, Delete) не уходят в команды карты; буквы и Esc — уходят
+  if (e.target.matches?.("input,select,textarea") || e.target.closest?.("#wGraph,.menu,[role=menu]") || window.treeOwnsKey?.(e)) return;      // клавиши дерева слоёв (стрелки, Пробел, F2, Delete) не уходят в команды карты; буквы и Esc — уходят; в открытом меню («Выгрузка», «Окна») Enter и пробел выбирают пункт, а не повторяют команду
   if (e.key === "F2") { e.preventDefault(); toggleHist(); return; }
   const F = { F3: "osnap", F8: "ortho", F10: "polar", F11: "otrack", F12: "dyn" }[e.key];
   if (F) { e.preventDefault(); toggle(F); return; }

@@ -43,8 +43,8 @@ function syncProjTitle() {
 
 function collectProject() {
   const v = sharedView;
-  // при каждой записи с листами помним, сколько их было: пустой альбом потом скажет «раньше было N» (ALBUM.meta.peak)
-  if (ALBUM.sheets.length && ALBUM.meta.peak?.n !== ALBUM.sheets.length) ALBUM.meta.peak = { n: ALBUM.sheets.length, at: new Date().toISOString() };
+  // при каждой записи с листами помним, сколько их было больше всего: пустой альбом потом скажет «раньше было N» (ALBUM.meta.peak)
+  if (ALBUM.sheets.length > (ALBUM.meta.peak?.n || 0)) ALBUM.meta.peak = { n: ALBUM.sheets.length, at: new Date().toISOString() };
   return {
     format: PROJ_FORMAT, version: PROJ_VERSION, app: "ГРАДО 2 " + (window.APP_VERSION || ""), name: PROJ.name, file: PROJ.file, saved_at: new Date().toISOString(), dirty: PROJ.dirty,
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },

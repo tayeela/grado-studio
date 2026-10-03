@@ -682,12 +682,14 @@ export default async p => {
     await p.ev(`winOpen("wKeys", false); return 1`);
   }
   // T34: строка «Альбом: N листов · собран …» и время PDF/PPTX хранятся в проекте (ALBUM.meta) и переживают сборку/разбор общего проекта
-  check(await p.ev(`const m=ALBUM.meta, keep=[m.builtAt,m.pdfAt,m.pptxAt], sh=ALBUM.sheets.splice(0);
-    m.builtAt=m.pdfAt=m.pptxAt=undefined; const a=albumStatText(); ALBUM.sheets.push(newSheet()); const b=albumStatText();
+  // editedAt ставится при каждой правке листа настоящим временем: до сравнения с датами-образцами его надо снять, иначе шаг зависит от часов
+  check(await p.ev(`const m=ALBUM.meta, keep=[m.builtAt,m.pdfAt,m.pptxAt,m.editedAt], sh=ALBUM.sheets.splice(0);
+    m.builtAt=m.pdfAt=m.pptxAt=m.editedAt=undefined; const a=albumStatText(); ALBUM.sheets.push(newSheet()); m.editedAt=undefined; const b=albumStatText();
     m.builtAt="2026-10-03T09:05:00"; m.pdfAt="2026-10-03T10:07:00"; m.pptxAt="2026-10-03T10:08:00"; const c=albumStatText(), j=Collab.join(Collab.split(JSON.parse(projectJSON())),{});
     const kept=j.album.meta.builtAt===m.builtAt && j.album.meta.pdfAt===m.pdfAt; m.editedAt="2026-10-03T11:00:00"; const d=albumStatText(); m.editedAt=undefined;
-    ALBUM.sheets.splice(0, ALBUM.sheets.length, ...sh); [m.builtAt,m.pdfAt,m.pptxAt]=keep;
-    return a==="Альбом: листов нет" && b==="Альбом: 1 лист · дата сборки не записана" && c==="Альбом: 1 лист · собран 03.10 09:05 · PDF 03.10 10:07 · PPTX 03.10 10:08" && d===c+" · изменён после PDF" && kept`), "T34: строка состояния альбома («ещё не собирался» / N листов, собран, PDF и PPTX), время сохраняется в проекте и в общем проекте");
+    ALBUM.sheets.splice(0, ALBUM.sheets.length, ...sh); [m.builtAt,m.pdfAt,m.pptxAt,m.editedAt]=keep;
+    const ok=a==="Альбом: листов нет" && b==="Альбом: 1 лист · дата сборки не записана" && c==="Альбом: 1 лист · собран 03.10 09:05 · PDF 03.10 10:07 · PPTX 03.10 10:08" && d===c+" · изменён после PDF" && kept;
+    if(!ok) console.warn("T34: "+JSON.stringify({a,b,c,d,kept})); return ok`), "T34: строка состояния альбома («ещё не собирался» / N листов, собран, PDF и PPTX), время сохраняется в проекте и в общем проекте");
   // T34b: «Из файла…» — импорт альбома (проект или голый {meta, sheets}) в браузере: замена / добавление, свежие id, пустые поля штампа
   // берутся из файла, недостающие слои — предупреждение; лист с готовой вёрсткой (слои внутри) собирается без слоёв проекта
   {
@@ -742,6 +744,25 @@ export default async p => {
     check(await p.ev(`return document.activeElement===$("bExport")`), "T32: ↓ с последнего пункта — по кругу на первый");
     await p.key("Escape", "Escape", { vk: 27 });
     check(await p.ev(`return $("expMenu").hidden && document.activeElement===$("bExpMore")`), "T32: Esc закрывает «Выгрузку» и возвращает фокус");
+    // T36: пункт выбран с клавиатуры — меню закрылось, фокус вернулся на «Выгрузку» (Excel не уводит со страницы)
+    await p.ev(`$("bExpMore").focus(); return 1`);
+    await p.key("ArrowDown", "ArrowDown", { vk: 40 });
+    for (let i = 0; i < 3; i++) await p.key("ArrowDown", "ArrowDown", { vk: 40 });
+    check(await p.ev(`return document.activeElement===$("bExpXls")`), "T36: ↓ три раза — «Excel: ТЭП и листы»");
+    await p.ev(`window.__fx36 = window.fetch; window.fetch = async (u, ...a) => /api[/]export[/]xlsx/.test(u) ? new Response(new Blob(["x"]), { status: 200 }) : window.__fx36(u, ...a); return 1`);   // Excel без настоящей выгрузки: быстро и без записи файла
+    await p.key("Enter", "Enter", { vk: 13, text: "\r" });
+    check(await p.ev(`try { for (let i = 0; i < 30 && ($("bExpMore").disabled || !$("busy").hidden); i++) await new Promise(r => setTimeout(r, 100)); const ok = $("expMenu").hidden && !$("bExpMore").disabled && document.activeElement.id === "bExpMore"; if (!ok) console.warn("T36: " + JSON.stringify({ hidden: $("expMenu").hidden, disabled: $("bExpMore").disabled, active: document.activeElement.id || document.activeElement.tagName, busy: $("busy").hidden, toast: $("toast").textContent.slice(0, 120) })); return ok; } finally { window.fetch = window.__fx36; }`), "T36: Enter на пункте меню «Выгрузка» закрывает меню и возвращает фокус на «Выгрузку»");
+    // T36: peak — наибольшее число листов, а не последнее
+    check(await p.ev(`const old = ALBUM.meta.peak, n = ALBUM.sheets.length; ALBUM.meta.peak = { n: 9, at: "2026-01-01T00:00:00.000Z" }; projectJSON(); const a = ALBUM.meta.peak.n === 9 && ALBUM.meta.peak.at === "2026-01-01T00:00:00.000Z";
+      ALBUM.meta.peak = { n: n - 1, at: "x" }; projectJSON(); const b = ALBUM.meta.peak.n === n && n === 3; ALBUM.meta.peak = old; return a && b`), "T36: ALBUM.meta.peak: 3 листа после 9 — остаётся 9; 3 листа после 2 — становится 3");
+    // T36: пока собирается PDF, пункты PDF и PPTX серые с пояснением «Идёт сборка…»
+    check(await p.ev(`const f = window.fetch; window.fetch = async (u, ...a) => { if (/api[/]print[/]pdf/.test(u)) { await new Promise(r => setTimeout(r, 600)); return new Response("{}", { status: 500 }); } return f(u, ...a); };
+      try {
+        window.albumFile("pdf"); await new Promise(r => setTimeout(r, 100)); $("bExpMore").click();
+        const during = $("bExpPdf").disabled && $("bExpPptx").disabled && /Идёт сборка…/.test($("bExpPdf").innerText) && /Идёт сборка…/.test($("bExpPptx").innerText) && window.albumBuilding === true;
+        await new Promise(r => setTimeout(r, 900)); const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
+        return during && after;
+      } finally { window.fetch = f; if (!$("expMenu").hidden) $("bExpMore").click(); }`), "T36: сборка PDF — PDF и PPTX в меню серые, «Идёт сборка…»; после неё снова доступны");
     // peak пишется при сохранении проекта с листами; пустой альбом после этого говорит «раньше было N»
     check(await p.ev(`projectJSON(); const pk=ALBUM.meta.peak; ALBUM.sheets.splice(0); renderSheets(); const t=document.querySelector("#sheetsBody .shempty")?.innerText||""; return pk?.n===3 && /Раньше в проекте было 3 листа/.test(t) && $("expMenu").querySelector("#bExpPdf").disabled===false`), "T33: ALBUM.meta.peak записан при сохранении; пустое окно: «Раньше в проекте было 3 листа»");
     check(await p.ev(`$("bExpMore").click(); const d=$("bExpPdf").disabled, h=$("bExpPdf").innerText; $("bExpMore").click(); return d && /Нет листов/.test(h)`), "T33: нет листов — PDF и PPTX в меню серые, пояснение «Нет листов»");

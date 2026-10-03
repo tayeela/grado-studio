@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.1: shared album merged sheet by sheet; «Выгрузка» menu leftovers.** Shared project: when two
+  people change the album at the same time, `collab.js` merged the key `album` as one value and one side's sheets vanished
+  silently. Now `mergeAlbum` merges sheets by `id` (order via `mergeOrder`; a sheet changed on one side is taken from
+  there, the same change on both from either, different changes on both — theirs with the conflict «альбоме (лист N)»; a
+  sheet one side removed and the other edited stays with the edit; new sheets of both sides are kept); `meta` and the
+  other album keys merge per key as before. Old projects whose sheets have no `id`, or a list with a repeated `id`, are
+  merged as one value with the old rule. 13 new checks in `tests/collab_test.js` (79). Menu «Выгрузка ▾»: after an item
+  is chosen (mouse or Enter) the focus returns to the «Выгрузка» button unless the item moved it into a window or
+  tool; during a DXF / GeoJSON / Excel export the button is disabled and focus comes back afterwards; while a PDF or PPTX
+  of the album builds the items «PDF альбома» / «PPTX альбома» are grey with «Идёт сборка…» (`window.albumBuilding`);
+  `ALBUM.meta.peak` keeps the largest sheet count ever saved («Раньше в проекте было N листов»), not the last one.
+  Enter or Space on an item of an open menu («Выгрузка», «Окна») chooses the item: the map's «repeat the last command» key
+  handler (`cad.js`) no longer swallows it while the focus is inside a menu. E2E: three T36 steps; the T34 status-line step no longer depends on the clock (`editedAt` is cleared before comparing
+  with sample dates — it broke after 13:07 MSK on 03.10).
 - **2026-10-03, ГРАДО 2 v0.98.0: the «Листы и альбом» window rebuilt; one «Выгрузка» menu.** Owner 03.10: «окно листы и
   альбом неудобное и странно свёрстано»; «три кнопки очень похожи по смыслу и не понятны интуитивно». Spec:
   `docs/ux/spec-2026-10-03-sheets-and-exports.md`. Top bar: «Листы и альбом» (sheet-count badge, Ctrl+P) and
