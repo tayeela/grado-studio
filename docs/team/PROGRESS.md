@@ -43,6 +43,17 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 14 (18:20–20:40 MSK, вторая сессия параллельно с T6) — совещание (продакт, архитектор, креативный
+  директор, два круга) → очередь T50–T59 (DECISIONS). T54 (v0.98.5, 1b73e85): альбом — отдельный раздел хаба, meta-правка
+  7,9 КБ вместо 19,5 МБ; ревью PASS; гейт на слепке HEAD + 4 файла: apps 395 OK, collab 84, E2E collab OK. T51 часть 1
+  (b7502f8): харнес не останавливается на первом сбое, SUMMARY, группы/E2E_ONLY, свободный порт, ожидание готовности;
+  полный прогон 236 ok. T50: замер пути на копии проекта сайта — 5,7 мин машинного времени (альбом 4 мин); находка:
+  ограничения и здания ищут `gisogd.*`/`nspd.*`/`osm.*`, а проект хранит `ogd.<код>`/`egko.*` — ограничения пустые,
+  эскиз на реке; в проекте сайта `territory: null`. → T60 первой, T61–T63. Файлы другой сессии (app.js, index.html,
+  scenarios.mjs) не трогались; коммиты path-limited.
+RULE: The owner's real projects store catalog layers as `ogd.<code>` and `egko.*`; every feature that looks up a
+layer by a fixed key (`gisogd.*`, `nspd.*`, `osm.*`) is silently empty on them — look up layers by role, and test on
+the copy of the site project (`/tmp/grado-team/transfer/bezobrazovo.server.grado2`), not only on the example.
 - 03.10.2026, цикл 13 (19:50–20:45 MSK) — T6 шаг 2 (фронтенд: «Условия проекта» в «Нормативах»; ревью PASS с тремя
   правками: ключ «Вариантов» учитывает свободные места, текст источника зоны выводится из состояния, а не из серверной
   строки, `tepParams` не дописывает ключи при чтении). Снимок владельческого прогона 0.98.3 на `git archive` (1d0843b):
