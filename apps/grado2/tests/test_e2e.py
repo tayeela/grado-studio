@@ -27,10 +27,19 @@ def _free_port():
 
 
 def _failure(r):
-    """Why a scenario failed: every line that is not "ok - …" (STEP FAILED, console errors), then the tail of stderr.
+    """Why a scenario failed: the full list of failed steps (STEP FAILED / FAILED #k / SUMMARY lines, none cut), then every other
+    line that is not "ok - …" (console errors), the last 4000 characters of stdout and the tail of stderr.
     A plain tail of stdout cut the cause off once the output grew past it, and a passed check got the blame."""
-    bad = [ln for ln in r.stdout.splitlines() if ln.strip() and not ln.startswith("ok - ")]
-    return "\n".join(bad)[-4000:] + "\n" + r.stderr[-2000:]
+    lines = [ln for ln in r.stdout.splitlines() if ln.strip()]
+    steps = [ln for ln in lines if ln.startswith(("STEP FAILED", "  FAILED #", "SUMMARY:"))]
+    other = [ln for ln in lines if not ln.startswith("ok - ") and ln not in steps]
+    return ("\n".join(steps)[-20000:] + "\n--- other non-ok lines ---\n" + "\n".join(other)[-4000:]
+            + "\n--- last 4000 chars of stdout ---\n" + r.stdout[-4000:] + "\n--- stderr ---\n" + r.stderr[-2000:])
+
+
+def _summary(r):
+    """SUMMARY line and failed step names, printed even when the run passes."""
+    return "\n".join(ln for ln in r.stdout.splitlines() if ln.startswith(("SUMMARY:", "  FAILED #")))
 
 
 @unittest.skipUnless(os.environ.get("GRADO2_E2E") == "1" and shutil.which("node") and Path(CHROME).exists(),
@@ -52,6 +61,7 @@ class BrowserScenarios(unittest.TestCase):
                 r = subprocess.run(["node", str(HERE / "e2e/driver.mjs"), f"http://127.0.0.1:{port}/", str(HERE / "e2e/scenarios.mjs")],
                                    capture_output=True, text=True, timeout=600, env={**os.environ, "CHROME": CHROME})
                 print(r.stdout[-4000:])
+                print(_summary(r))
                 self.assertEqual(r.returncode, 0, _failure(r))
             finally:
                 srv.terminate()
@@ -80,6 +90,7 @@ class BrowserScenarios(unittest.TestCase):
                                    capture_output=True, text=True, timeout=600,
                                    env={**os.environ, "CHROME": CHROME, "E2E_ADMIN_PW": admin_pw, "E2E_INVITE": invite})
                 print(r.stdout[-4000:])
+                print(_summary(r))
                 self.assertEqual(r.returncode, 0, _failure(r))
             finally:
                 srv.terminate()
