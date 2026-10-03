@@ -43,6 +43,11 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 04.10.2026, цикл 20 (прерван лимитом сессии ~12:00 MSK) — в team2 (team/t60, после v0.99.6) НЕ закоммичены:
+  T69 готова (негативный кэш плиток в print_io.py/sat_io.py, test_print 44 OK, apps 417 OK; ревью и E2E не
+  проводились), T70 (server.py/коннекторы) и T71 (albums.js) — исполнители ещё работали. Следующей сессии: прочитать
+  `git -C .claude/worktrees/team2 status`, провести ревью T69–T71, общий прогон, коммит v0.99.7; затем слияние
+  team/t60 → team/grado2 и выкладка по слову владельца.
 - 04.10.2026, цикл 19 (07:00–11:30 MSK, ветка team/t60) — T62 (исполнитель упал на ошибке API, перезапущен с
   сохранёнными правками; ревью FAIL: двойной повтор к порталу → исправлено), T59 (ревью FAIL: права зрителя, нет
   предела → исправлено), осмотр креативного директора v0.99.5 → T67/T68 (ревью FAIL по контрасту подписей →
