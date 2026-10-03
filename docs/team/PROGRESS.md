@@ -43,6 +43,15 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 04.10.2026, цикл 17 (00:40–03:30 MSK, ветка team/t60) — T64 (v0.99.3; ревью PASS, правка руководителя: контуры с
+  обводкой не выбрасывать), T61 (ревью FAIL: подмена ключей ломала загрузку листов альбома, K1=1,0 при молчании OSM →
+  исправлено), T55 (возврат руководителя до ревью: старые листы сбрасывались бы к шаблону при открытии → только по
+  «Обновить листы» с вопросом; опрос заменён хуками; ревью PASS). Итог v0.99.4 (c…): apps 412 OK, E2E 276 ok / 0
+  failed (новый харнес: группы t52, t55, t61). Другая сессия: T6 в `team` без движения с 18:19 03.10.
+RULE: Any automatic rebuild of the owner's content (sheets, layers, graph) on project open is forbidden: adopt the
+current state as the base and rebuild only on an explicit action with a two-click confirmation (T55).
+RULE: A layer-key alias (`gisogd.X` ↔ `ogd.X`) is applied only where the user picks from the catalog; code that
+loads layers for albums/sheets keeps exact keys (iron rule 5) — T61 first version broke album loads.
 - 03.10.2026, цикл 16 (22:30–00:40 MSK, ветка team/t60) — T57 (v0.99.1: стоянки площадью; площадь на место в
   945-ПП нет — допущения 25/30/25 с пометкой), T52+T53+T63 (v0.99.2: док — два окна в зоне, 32 %, вкладки, «Нормативы»
   справа, «Показатели» от 1400 px; ревью PASS; гейт первый раз 249 ok / 4 failed — все четыре в проверках, исправлены
