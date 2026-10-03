@@ -43,6 +43,15 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 12 (18:55–19:50 MSK) — T38 (решение «карта Б, Carto»: плитки CARTO пришли заглушками «API KEY
+  REQUIRED» — проверено curl и снимком; заменено на Esri Canvas World_Dark_Gray_Base, проверено z10–17; ревью руководителя),
+  T6 шаг 1 (архитектор разбил задачу на 4 шага — plan-T6.md; бэкенд: пресет + /api/tep + place_info; ревью PASS с правкой
+  руководителя: свободные места — только целые). Итог: v0.98.3 (1d0843b), compute 51 OK, apps 391 OK (без PYTHONPATH),
+  E2E оба сценария OK, console clean. Внутренние решения по вопросам архитектора — в plan-T6.md.
+RULE: An external tile or data service is checked with one real request (size and a look at the tile) before it is
+wired in: CARTO basemaps returned HTTP 200 with an «API KEY REQUIRED» placeholder (03.10.2026).
+RULE: Reviewers never run `git stash` in the shared worktree, even «for a probe» — it reverts other agents' work under a
+running E2E (03.10.2026, restored by pop; the gate was rerun).
 - 03.10.2026 (18:50 MSK), выкладка по слову владельца — v0.98.2: main чистый, team ← main (20bf925, только docs/team),
   unit 388 OK, main ← team/grado2, «Готово: на сервере версия 0.98.2», main отправлен. Ответы владельца: 1В 2А 3А 4А 5А,
   карта Б (CARTO) → T6 открыт, T38 добавлен.
