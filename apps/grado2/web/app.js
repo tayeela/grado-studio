@@ -777,7 +777,11 @@ function applyGraphTheme() {
 }
 /* цвета узлов зависят от темы только на экране: в файл проекта и в общий граф узел пишется всегда со светлыми цветами (как до T27), иначе проект зависел бы от темы того, кто сохранял */
 const _nodeSerialize = LGraphNode.prototype.serialize;
-LGraphNode.prototype.serialize = function () { const o = _nodeSerialize.call(this); if (this._kind) { o.color = GTH.light.title[this._kind]; o.bgcolor = "#f7f7f5"; } return o; };
+LGraphNode.prototype.serialize = function () { const o = _nodeSerialize.call(this);
+  if (this._gk && this._gk !== 1) o.size = this._sz0 && this._szS && this.size[0] === this._szS[0] && this.size[1] === this._szS[1] ? new Float32Array(this._sz0) : new Float32Array(Array.from(this.size, v => Math.round(v / this._gk * 100) / 100));   // тот же тип, что у litegraph: вид файла не меняется   // размер узла в файле — всегда при масштабе 1: проект не зависит от размера интерфейса
+  if (this._kind) { o.color = GTH.light.title[this._kind]; o.bgcolor = "#f7f7f5"; } return o; };
+const GBASE = { NODE_TEXT_SIZE: 12, NODE_SUBTEXT_SIZE: 11, NODE_TITLE_HEIGHT: 24, NODE_SLOT_HEIGHT: 20, NODE_WIDGET_HEIGHT: 20, NODE_TITLE_TEXT_Y: 20 };
+let gK = 1;   // текущий масштаб узлов графа (= --k)
 const TITLE = { src: "#cfe3d4", op: "#d6dade", gen: "#cfdcf0", tep: "#e3d6ec", num: "#f0e3c8" };
 const OPS = ["—", "=", "≠", ">", "<", "≥", "≤", "содержит", "один из"];
 function testOp(v, op, t) {
@@ -790,8 +794,12 @@ function testOp(v, op, t) {
 function drawInfo(ctx) {
   if (this.flags.collapsed) return;
   ctx.save(); ctx.strokeStyle = GT.border; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(.5, -LiteGraph.NODE_TITLE_HEIGHT + .5, this.size[0], this.size[1] + LiteGraph.NODE_TITLE_HEIGHT - 1, 8); ctx.stroke(); ctx.restore(); // рамка узла ≥ 3:1 к фону графа в обеих темах
-  if (!this.info) return; ctx.fillStyle = GT.muted; ctx.font = "11px system-ui, sans-serif"; ctx.fillText(fitText(this.info, this.size[0] - 14, ctx.font), 8, this.size[1] - 7); }
-function finish(node, kind, w = 210) { node._kind = kind; node.color = GT.title[kind] || TITLE[kind]; node.bgcolor = GT.body; node.size = node.computeSize(); node.size[0] = Math.max(w, node.size[0]); node.size[1] += 16; node.onDrawForeground = drawInfo; }
+  if (!this.info) return; ctx.fillStyle = GT.muted; ctx.font = GFONT.inner; ctx.fillText(fitText(this.info, this.size[0] - 14 * gK, ctx.font), 8 * gK, this.size[1] - 7 * gK); }
+function finish(node, kind, w = 210) { w *= gK; node._gk = gK; node._kind = kind; node.color = GT.title[kind] || TITLE[kind]; node.bgcolor = GT.body; const cur = {}; Object.keys(GBASE).forEach(n => { cur[n] = LiteGraph[n]; LiteGraph[n] = GBASE[n]; });
+  node.size = node.computeSize(); Object.assign(LiteGraph, cur);   // размер считается в масштабе 1 (не зависит от --k), на экране — умноженный
+  node.size[0] = Math.max(w / gK, node.size[0]); node.size[1] += 16; node._sz0 = node.size.slice(); node.size = node.size.map(v => v * gK); node._szS = node.size.slice(); node.onDrawForeground = drawInfo;
+  node.onConfigure = function () { this._sz0 = Array.from(this.size); this.size = this._sz0.map(v => v * gK); this._szS = this.size.slice(); this._gk = gK; };   // configure (вставка, клон, загрузка) приносит размер в масштабе 1 
+}
 const ha = f => f ? fmt(m2(f) / 1e4, 2) + " га" : "пусто";
 const titleToKey = t => Object.keys(DATA).find(k => DATA[k].title === t) || Object.keys(SOURCES).find(k => SOURCES[k].title === t);
 
@@ -801,7 +809,7 @@ LiteGraph.registerNodeType("Данные/Территория", NTerr);
 
 /* Длинные имена в узле графа: litegraph рисует значение списка без обрезки, и оно наезжает на подпись.
    Если values — объект, он рисует values[значение], а в меню показывает ключи: ключ = полное имя, показ = обрезанное. */
-const _mc = document.createElement("canvas").getContext("2d"), GFONT = { title: "600 12px system-ui, sans-serif", inner: "11px system-ui, sans-serif" };
+const _mc = document.createElement("canvas").getContext("2d"), GFONT0 = { title: 12, inner: 11 }, GFONT = { title: "600 12px system-ui, sans-serif", inner: "11px system-ui, sans-serif" };
 function fitText(t, px, font) {
   _mc.font = font; t = String(t ?? "");
   if (_mc.measureText(t).width <= px) return t;
@@ -816,7 +824,7 @@ const fitCombo = (node, name, list) => () => {
   // Proxy: значение, которого нет в списке (пустое, удалённый слой), тоже рисуется, а в меню не попадает
   return new Proxy(Object.fromEntries(list().map(v => [v, fit(v)])), { get: (o, k) => typeof k !== "string" || k in o ? o[k] : fit(k) });
 };
-function fitTitle(node, full) { node._fullTitle = full; node.title = fitText(full, node.size[0] - 34, GFONT.title); }
+function fitTitle(node, full) { node._fullTitle = full; node.title = fitText(full, node.size[0] / gK - 34, "600 12px system-ui, sans-serif"); }   // обрезка в масштабе 1: заголовок попадает в файл и не должен зависеть от --k
 function NLayer() {
   this.addOutput("объекты", "geom");
   this.addWidget("combo", "слой", "", () => { }, { values: fitCombo(this, "слой", () => Object.keys(DATA).map(k => DATA[k].title)) });
@@ -1289,7 +1297,23 @@ nP.connect(0, nTep, 0); nK.connect(0, nTep, 1); nZ.connect(0, nTep, 2);
 
 const lgc = new LGraphCanvas($("gcv"), graph);
 Object.assign(lgc, { background_image: null, clear_background_color: "#e6e6e2", render_canvas_border: false, render_shadows: false, show_info: false, render_connection_arrows: false, title_text_font: GFONT.title, inner_text_font: GFONT.inner, links_render_mode: LiteGraph.SPLINE_LINK });
-applyGraphTheme(); graph.onConfigure = applyGraphTheme;   // загрузка проекта и совместная правка заменяют цвета узлов цветами из файла
+/* подписи и строки узлов растут вместе с интерфейсом (--k); размеры узлов пересчитываются, в файл проекта пишется масштаб 1 (см. serialize выше).
+   Сам холст графа по --k не масштабируется (index.html), растут только текст и высоты строк. */
+function applyGraphScale(force) {
+  const k = Math.round((parseFloat(getComputedStyle(document.body).fontSize) || 12) / 12 * 1000) / 1000; if (!force && k === gK) return; gK = k;   // k — как uiK() ниже (тот объявлен позже)
+  Object.keys(GBASE).forEach(n => { LiteGraph[n] = Math.round(GBASE[n] * k * 2) / 2; });
+  GFONT.title = `600 ${GFONT0.title * k}px system-ui, sans-serif`; GFONT.inner = `${GFONT0.inner * k}px system-ui, sans-serif`;
+  Object.assign(lgc, { title_text_font: GFONT.title, inner_text_font: GFONT.inner });
+  graph._nodes.forEach(n => {
+    const g = n._gk || 1, base = n._sz0 && n._szS && n.size[0] === n._szS[0] && n.size[1] === n._szS[1] ? n._sz0 : Array.from(n.size, v => v / g);
+    n._sz0 = base; n.size = base.map(v => v * k); n._szS = Array.from(n.size); n._gk = k;
+    if (n._fullTitle) fitTitle(n, n._fullTitle);
+  });
+  lgc.setDirty(true, true);
+}
+applyGraphTheme(); applyGraphScale();
+graph.onConfigure = () => { applyGraphTheme(); applyGraphScale(true); };
+addEventListener("resize", () => { applyGraphScale(); requestAnimationFrame(() => applyGraphScale()); }); addEventListener("load", () => applyGraphScale());   // media-запрос --k применяется к стилю чуть позже события   // загрузка проекта и совместная правка заменяют цвета узлов цветами из файла
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyGraphTheme);
 Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // подписи узлов при любом масштабе
 let selNode = null;

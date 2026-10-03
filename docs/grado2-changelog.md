@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.2: dark theme polish, help texts, graph labels scale with the interface.** Second-pass
+  leftovers (`docs/ux/audit-2026-10-03-pass2.md`, creative spec `docs/ux/spec-2026-10-03-dark-theme.md`). Dark theme:
+  the scale line and the map attribution sit on a panel-coloured plate instead of a white one; the halves of
+  «Сравнение» are dark with a thin frame; sheet previews and the layout keep white paper but get a frame and shadow on
+  a dark area; selected and hovered rows reach 4.5:1 (`--accent` #6aa8f2, `--bad` #f5806f, `--selrow` #203550), field
+  borders 3:1 (`--line-2` #6a6a6a). The light theme is untouched. The map itself stays light — whether to dim the OSM
+  basemap in the dark theme is the owner's choice (BOARD «Ждёт владельца»). «Схема расчёта»: node text, title and row
+  heights follow the interface size (`--k`: 13/12 from 1700 px, 7/6 from 2200 px); the saved graph is identical at any
+  size (sizes and the truncated layer-node title are stored at scale 1; pasted and cloned nodes too). Help F1: the
+  tables of keys share one first-column width; «Как начать» and «Новое» name «Листы и альбом», the «Выгрузка ▾» menu
+  and «Собрать ▾» → «Из файла…». The long status hint is shorter. Norms: `docs/team/spec-T5-social-objects.md` — the
+  social-object specification (ДОО, школа, поликлиника by 2151-ПП and 2150-ПП) with a worked 20-га example and
+  `core/compute/tests/test_social_fixture.py`; five norm questions wait for the owner before plots are reserved in
+  the sketch.
 - **2026-10-03, ГРАДО 2 v0.98.1: shared album merged sheet by sheet; «Выгрузка» menu leftovers.** Shared project: when two
   people change the album at the same time, `collab.js` merged the key `album` as one value and one side's sheets vanished
   silently. Now `mergeAlbum` merges sheets by `id` (order via `mergeOrder`; a sheet changed on one side is taken from
