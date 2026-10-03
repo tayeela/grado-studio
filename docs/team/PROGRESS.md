@@ -43,6 +43,13 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 16 (22:30–00:40 MSK, ветка team/t60) — T57 (v0.99.1: стоянки площадью; площадь на место в
+  945-ПП нет — допущения 25/30/25 с пометкой), T52+T53+T63 (v0.99.2: док — два окна в зоне, 32 %, вкладки, «Нормативы»
+  справа, «Показатели» от 1400 px; ревью PASS; гейт первый раз 249 ok / 4 failed — все четыре в проверках, исправлены
+  исполнителем; итог 253 ok / 0 failed, apps 402 OK), T58 (проверка: PPTX из готовой вёрстки 9 слайдов, совместная
+  работа с альбомом 17 МБ — PASS; найдены T64 плитки не обрезаны и слайд 2 обычного альбома 159 МБ XML, T65 сборка
+  добавляет к импортированным). Другая сессия: правки T6 в `team` без движения с 18:19. Дальше: слияние team/t60 →
+  team/grado2 (после T6 или по слову владельца), T55, T61, T62, T64, T65.
 - 03.10.2026, цикл 15 (20:40–22:30 MSK) — T60 (v0.99.0): роли слоёв; две правки app.js (robust() отбрасывает кольца
   < 4 точек, EXIST_KEY по роли) сделаны в отдельной рабочей копии `.claude/worktrees/team2` на ветке `team/t60`, чтобы
   не трогать несохранённые правки T6 другой сессии в `team` (без движения с 18:19). Ревью PASS; проверка на копии
