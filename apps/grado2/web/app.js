@@ -960,7 +960,7 @@ const bakedSketch = d => d.fc.features.filter(f => /Polygon/.test(f.geometry?.ty
 function tepParams(n) {
   n.properties ||= {};
   return n.properties.tp ||= { auto: true, district: "", zone: 1, k1: 1, k2: 0.9, tinao: 0, mode: 1, nonres: 6, unbuilt: 25, walk: null, rev: -1, notes: [] };
-}
+}   // tp.free (свободные места) и tp.zoneSet («зона выбрана вручную») создаются только правкой в окне «Нормативы»; читать с умолчанием 0 / false
 function placeLookup(n) {
   const tp = tepParams(n); if (!TERR || tp.rev === TERR_REV || n._placeBusy) return;
   // правка границы (ручки, перенос) — серия версий: запрос уходит, когда граница не менялась 0,4 с; первый запрос — сразу
@@ -969,7 +969,8 @@ function placeLookup(n) {
   n._placeBusy = true; const rev = TERR_REV, [lon, lat] = turf.centroid(TERR).geometry.coordinates;
   api("/api/place", { lon, lat, polygon: TERR.geometry }).then(r => {
     tp.districts = r.chosen_by === "area" ? r.districts || [] : []; tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.walkRoute = false; tp.station = ""; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
-    if (tp.auto) Object.assign(tp, { zone: r.zone, k1: r.k1, k2: r.k2, tinao: r.tinao });
+    tp.zoneDist = r.zone; tp.zoneNote = r.zone_note || "";      // зона района и пометка сервера (район не в списках 2151-ПП)
+    if (tp.auto) Object.assign(tp, { k1: r.k1, k2: r.k2, tinao: r.tinao, ...(tp.zoneSet ? {} : { zone: r.zone }) });   // выбранную вручную зону не перезаписываем
     recompute(true); renderTep();
     // K1 по улицам: маршрут по пешеходной сети OSM до входа или станции (первый раз — до пары минут, дальше с диска)
     tp.routing = r.rail_walk_m != null;
@@ -996,7 +997,8 @@ async function tepRequest(sketch, kept, lim, share, target, tp = {}) {
   const sppLow = sketch.filter(b => b.maxF === 3).reduce((s, b) => s + b.m2 * b.floors, 0);        // ИЖС и блокированные: 50 м² квартир на жителя
   await window.Norms?.ready(); const consts = window.Norms?.constants(tp) ?? (tp.constants && Object.keys(tp.constants).length ? tp.constants : null);   // ручные нормативы (norms.js), только разница с пресетом
   const r = await api("/api/tep", { ...(consts ? { constants: consts } : {}), terr_ha: terr, restrict_ha: restrict, spp_new_m2: sppNew, share, spp_kept_m2: sppKept, spp_low_m2: sppLow,
-    nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25 });
+    nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25,
+    free_doo: tp.free?.doo ?? 0, free_school: tp.free?.school ?? 0, free_clinic: tp.free?.clinic ?? 0 });
   const m = Object.fromEntries(r.metrics.map(x => [x.id, x.value]));
   return { m, metrics: r.metrics, constantsChanged: r.constants_changed || [], density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
 }
@@ -1495,7 +1497,7 @@ function takePzzTarget(silent) {
   window.markDirty?.(); recompute(true); return true;
 }
 window.takePzzTarget = takePzzTarget;
-const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
+const GROUP_ORDER = ["Основные показатели", "СПП в ГНС", "Наземная площадь", "Единый показатель", "Баланс территории", "Социальные объекты", "Участки социальных объектов", "Резерв участков", "Обслуживание", "Машино-места", "Элементы жилых территорий"];
 // «по большей доле площади: Хорошёвский 62 %, Беговой 38 %» — не больше трёх районов, остальные «и ещё N»
 const districtShares = ds => "по большей доле площади: " + ds.slice(0, 3).map(d => `${d.name}\u00a0${d.share > 0 && d.share < .005 ? "<1" : Math.round(d.share * 100)}\u00a0%`).join(", ") + (ds.length > 3 ? ` и ещё ${ds.length - 3}` : "");
 const MODES = { 1: "преобразование", 2: "реконструкция", 3: "малоэтажный комплекс" };
@@ -1518,7 +1520,7 @@ function renderTep() {
       <div class="row"><label title="Доля встроенно-пристроенных нежилых помещений в МКД; по умолчанию 94 / 6">Нежилое в МКД, %</label><input type="number" data-tp="nonres" min="0" max="100" value="${Number(tp.nonres)}" style="width:64px"></div>
       <div class="row"><label title="Незастраиваемая территория в составе жилой (баланс территории)">Незастраиваемая, %</label><input type="number" data-tp="unbuilt" min="0" max="90" value="${Number(tp.unbuilt)}" style="width:64px"></div>
       <div class="row"><label title="Нормы расчёта: 2151-ПП, 2152-ПП, 1557-ПП, 945-ПП. Поля уже заполнены действующими значениями; их можно изменить до расчёта">Нормативы</label><button class="btn" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы…</button></div>
-      ${tp.auto ? "" : `<button class="btn" data-tp-auto title="Снова взять зону, K1, K2 и ТиНАО по району территории">по району</button>`}
+      ${tp.auto && !tp.zoneSet ? "" : `<button class="btn" data-tp-auto title="Снова взять зону, K1, K2 и ТиНАО по району территории">по району</button>`}
       ${tp.mode !== 1 || tp.nonres !== 6 || tp.unbuilt !== 25 ? `<button class="btn" data-tp-reset title="Преобразование, нежилое 6 %, незастраиваемая 25 % — как в «Калькуляторе 2.0» по умолчанию">сбросить тип и проценты</button>` : ""}
       ${(() => { const pz = pzzTarget(); if (!pz) return ""; if (pz.value == null) return `<div class="row"><label>Цель по ПЗЗ</label><small>в подзонах внутри границы плотность не установлена числом («-», «Ф»)</small></div>`;
         return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
@@ -1531,12 +1533,13 @@ function renderTep() {
 $("tep").addEventListener("change", e => {
   const k = e.target.dataset.tp; if (!k || !RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
   tp[k] = e.target.type === "checkbox" ? (e.target.checked ? 1 : 0) : +e.target.value;
-  if (["zone", "k1", "k2", "tinao"].includes(k)) tp.auto = false;
+  if (["k1", "k2", "tinao"].includes(k)) tp.auto = false;
+  if (k === "zone") tp.zoneSet = true;        // зона правится отдельно от K1, K2, ТиНАО: tp.auto не трогаем
   window.markDirty?.(); recompute(true);
 });
 $("tep").addEventListener("click", e => {
   if (!RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
-  if (e.target.closest("[data-tp-auto]")) { tp.auto = true; tp.rev = -1; recompute(true); }
+  if (e.target.closest("[data-tp-auto]")) { tp.auto = true; if (tp.zoneSet) { delete tp.zoneSet; tp.zone = tp.zoneDist ?? tp.zone; } tp.rev = -1; recompute(true); }
   if (e.target.closest("[data-tp-pzz]")) takePzzTarget();
   if (e.target.closest("[data-tp-reset]")) { Object.assign(tp, { mode: 1, nonres: 6, unbuilt: 25 }); window.markDirty?.(); recompute(true); }
 });
@@ -1614,7 +1617,7 @@ async function tepForVars(vs, kept, lim, share, target, tp, stale = () => false)
   return out;
 }
 function varTepKeyNow() { const t = RESULT.tepNode; if (!t) return null; const q = tepParams(t);
-  return [JSON.stringify(q.constants || {}), q.nonres, q.zone, q.k1, q.k2, q.tinao, q.mode, q.unbuilt, t.widgets[0].value, t.widgets[1].value, gid(t.getInputData(1)), gid(t.getInputData(2)), TERR_REV, dataRev].join("|"); }
+  return [JSON.stringify(q.constants || {}), JSON.stringify(q.free || {}), q.nonres, q.zone, q.k1, q.k2, q.tinao, q.mode, q.unbuilt, t.widgets[0].value, t.widgets[1].value, gid(t.getInputData(1)), gid(t.getInputData(2)), TERR_REV, dataRev].join("|"); }
 function syncVarTep() {
   if (!VARS.length || varRun || !RESULT.tepNode || varTepKey === null || varTepKey === varTepKeyNow()) return;
   clearTimeout(varTepTimer); varTepTimer = setTimeout(async () => {

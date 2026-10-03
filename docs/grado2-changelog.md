@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.4: «Условия проекта» in the «Нормативы» window — norms zone and free places in existing
+  social objects (T6, step 2).** Owner's decisions 1В and 2А. At the top of «Нормативы»: «Образовательная зона» (зона 1 /
+  зона 2 of 2151-ПП) with its source beside it — «по району <X>», «выбрана вручную · [по району]» or «зона 2 принята:
+  район не в списках 2151-ПП» for a district outside the lists; three whole-number fields 0–100000 with one-line hints:
+  «Свободные места в ДОО», «Свободные места в школах», «Свободные посещения в смену в поликлиниках» (default 0). Any
+  change recalculates the ТЭП; the group «Резерв участков» shows the deficit per type, the number and areas of plots to
+  reserve and the total in m² / га / % of the territory (example B: 175 / 400 / 100 free → 2,675 га, none → 3,684 га).
+  Values are stored in the project (graph node of the ТЭП, `tp.free`, `tp.zoneSet`), survive save/reopen and
+  collaboration; old projects get 0 and the automatic zone. «Вернуть все действующие» resets norms only, not these
+  conditions. Choosing a zone no longer freezes K1, K2 and ТиНАО (the old «Образование» select in «Показатели» did);
+  «по району» returns to the district's zone. A viewer of a shared project sees the fields disabled. Nothing is drawn
+  on the map yet — the reserved plots are the next step.
 - **2026-10-03, ГРАДО 2 v0.98.3: a dark basemap in the dark theme; social-object deficit and plot sizes on the server
   (T6, step 1).** Owner 03.10: «карта Б, Carto». CARTO's tiles now need an API key (every tile comes back as an «API KEY
   REQUIRED» placeholder), so the dark theme uses Esri's dark basemap instead (Canvas World_Dark_Gray_Base, same provider

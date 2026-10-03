@@ -28,3 +28,17 @@
 #norms .nempty{padding:20px;text-align:center;color:var(--faint)}
 .normsline{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-left:3px solid var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);padding:5px 8px;color:var(--text)}
 .normsline:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+#norms .ncond{border-bottom:1px solid var(--line)}
+#norms .ncond .nct{padding:4px 8px;font-weight:600;background:var(--panel);border-bottom:1px solid var(--line)}
+#norms .crow{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;padding:6px 8px;border-bottom:1px solid var(--line)}
+#norms .crow:last-child{border-bottom:0}
+#norms .crow .nt{flex:1 1 230px;min-width:0;line-height:1.35}
+#norms .crow .nin{flex:0 0 auto;display:flex;align-items:center;gap:6px}
+#norms .crow input[type=number]{width:92px;height:var(--h-sm);border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0 5px;text-align:right}
+#norms .crow select{height:var(--h-sm);border:1px solid var(--line-2);background:var(--field);border-radius:var(--r-1);padding:0 5px}
+#norms .crow .nu{color:var(--muted);max-width:150px;line-height:1.25}
+#norms .crow .ns,#norms .crow .nerr{flex:1 1 100%;font-size:var(--fs-s);line-height:1.35}
+#norms .crow .ns{color:var(--muted)}
+#norms .crow .ns .btn{margin-left:2px}
+#norms .crow .nerr{color:var(--bad)}
+#norms .crow.bad input[type=number]{border-color:var(--bad);outline:1px solid var(--bad)}
