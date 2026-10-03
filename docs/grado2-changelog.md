@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.3: a dark basemap in the dark theme; social-object deficit and plot sizes on the server
+  (T6, step 1).** Owner 03.10: «карта Б, Carto». CARTO's tiles now need an API key (every tile comes back as an «API KEY
+  REQUIRED» placeholder), so the dark theme uses Esri's dark basemap instead (Canvas World_Dark_Gray_Base, same provider
+  and terms as the satellite layer, no key, Russian street names): «Схема OSM» swaps to it when the theme is dark and
+  back to OSM in the light theme, at once on the theme button and on the OS setting, without marking the project
+  unsaved; satellite basemaps unchanged; attribution «Подложка © Esri, HERE, Garmin, © OpenStreetMap contributors».
+  Social objects (owner's answers 1В 2А 3А 4А 5А; plan `docs/team/plan-T6.md`): the preset `moscow_calc2.json` gets
+  three project inputs `free_doo`, `free_school`, `free_clinic` (free places in existing ДОО, schools, clinics; default
+  0) and the metric group «Резерв участков»: deficit per type, number of ДОО plots (split above 350 places, q+1 first),
+  plot areas by the 2151-ПП tiers (ДОО ≤150 → 35, else 32 m²/place; school by the deficit: ≤900 → 19, ≤1500 → 16, else
+  14; clinic 0,35 га when the deficit > 0), totals in m² / га / % of the territory. `/api/tep` accepts the three numbers
+  (0–100000, else 400) and returns `social: [{kind, places, m2}]`. `place_info`: a district outside the 2151-ПП lists
+  gets зона 2 with `zone_note`. Fixture numbers (20 га, СПП 450/150 тыс. м²): B0 36 844 m², B1 26 746, A1 9 274 — asserted
+  through the engine (`test_social_fixture.py`, `test_server.py`). Nothing changes on screen for the social objects
+  yet: the «Нормативы» inputs and the plots in the sketch are the next steps.
 - **2026-10-03, ГРАДО 2 v0.98.2: dark theme polish, help texts, graph labels scale with the interface.** Second-pass
   leftovers (`docs/ux/audit-2026-10-03-pass2.md`, creative spec `docs/ux/spec-2026-10-03-dark-theme.md`). Dark theme:
   the scale line and the map attribution sit on a panel-coloured plate instead of a white one; the halves of

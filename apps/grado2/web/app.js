@@ -101,16 +101,19 @@ const calmWheel = () => {
 const interactions = () => { const c = (ol.interaction.defaults.defaults || ol.interaction.defaults)({ doubleClickZoom: false, altShiftDragRotate: false, pinchRotate: false, shiftDragZoom: false, mouseWheelZoom: false }); c.push(calmWheel()); return c; };   // Shift+тянуть — рамка выбора
 /* подложки: схема OSM (серая, приглушённая — чтобы читались знаки), спутник Esri, Sentinel-2 без облаков (EOX), без подложки */
 const BASEMAPS = {
-  osm: { title: "Схема OSM", layer: () => new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 }) },
+  /* Схема OSM: в тёмной теме — тёмно-серая подложка Esri (Canvas World_Dark_Gray_Base), в светлой — плитки OSM (серые, через CSS-фильтр). Плитки Esri — на тех же условиях, что и спутник Esri. */
+  osm: { title: "Схема OSM", layer: () => isDarkTheme()
+    ? new ol.layer.Tile({ className: "basemap-dark", opacity: 1, source: new ol.source.XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxZoom: 16, crossOrigin: "anonymous", attributions: "Подложка © Esri, HERE, Garmin, © OpenStreetMap contributors" }) })
+    : new ol.layer.Tile({ source: new ol.source.OSM(), className: "basemap", opacity: .55 }) },
   esri: { title: "Спутник (Esri)", layer: () => new ol.layer.Tile({ className: "basemap-sat", opacity: .9, source: new ol.source.XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maxZoom: 19, attributions: "Снимки © Esri, Maxar, Earthstar Geographics" }) }) },
   s2: { title: "Sentinel-2 (EOX)", layer: () => new ol.layer.Tile({ className: "basemap-sat", opacity: .9, source: new ol.source.XYZ({ url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg", maxZoom: 15, attributions: "Sentinel-2 cloudless 2021 © EOX IT Services GmbH (содержит изменённые данные Copernicus Sentinel)" }) }) },
   none: { title: "Без подложки", layer: () => new ol.layer.Tile({ visible: false }) } };
 let BASE = localStorage.getItem("grado2.base") || "osm"; if (!BASEMAPS[BASE]) BASE = "osm";
 const basemap = () => { const l = BASEMAPS[BASE].layer(); l.set("basemap", true); return l; };
-function setBasemap(id) {
+function setBasemap(id, quiet) {   // quiet: смена темы пересоздаёт подложку, но проект «несохранённым» не делает
   if (!BASEMAPS[id]) return; BASE = id; try { localStorage.setItem("grado2.base", id); } catch { }
   ALLMAPS.forEach(m => { const old = m.getLayers().getArray().find(x => x.get("basemap")); if (old) m.removeLayer(old); m.getLayers().insertAt(0, basemap()); });
-  if ($("baseSel")) $("baseSel").value = id; window.markDirty?.();
+  if ($("baseSel")) $("baseSel").value = id; if (!quiet) window.markDirty?.();
 }
 const ALLMAPS = [];   // все карты проекта: слои из модели (layers.js) цепляются к каждой
 // масштабная линейка по-русски: OpenLayers пишет «50 m» / «1 km»; текст правится сразу после каждого обновления линейки (масштаб, перемещение)
@@ -765,7 +768,8 @@ const GTH = {
   dark: { title: { src: "#2f4a38", op: "#3c4148", gen: "#2d4666", tep: "#4a3860", num: "#5a4721" }, link: { geom: "#5cc08c", num: "#e0a13a", sketch: "#5b9bec", tep: "#b98ae0" }, slider: { gen: "#35608f", num: "#7a5a1c", tep: "#6a4a86" } }
 };
 const GT = { title: GTH.light.title, body: "#f7f7f5", border: "#6b6e73", muted: "#5f6368" };
-const isDarkTheme = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
+function isDarkTheme() { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; }   // function: подложка зовёт её при создании карты (строка ~171), раньше этого места
+const themeBasemap = () => { if (BASE === "osm") setBasemap("osm", true); };   // тема сменилась: подложка «Схема OSM» меняет вариант сразу
 function applyGraphTheme() {
   const cs = getComputedStyle(document.documentElement), v = n => cs.getPropertyValue(n).trim(), P = GTH[isDarkTheme() ? "dark" : "light"];
   Object.assign(GT, { title: P.title, body: v("--panel"), border: v("--faint"), muted: v("--muted") });
@@ -1314,7 +1318,7 @@ function applyGraphScale(force) {
 applyGraphTheme(); applyGraphScale();
 graph.onConfigure = () => { applyGraphTheme(); applyGraphScale(true); };
 addEventListener("resize", () => { applyGraphScale(); requestAnimationFrame(() => applyGraphScale()); }); addEventListener("load", () => applyGraphScale());   // media-запрос --k применяется к стилю чуть позже события   // загрузка проекта и совместная правка заменяют цвета узлов цветами из файла
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyGraphTheme);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { applyGraphTheme(); themeBasemap(); });
 Object.defineProperty(lgc, "low_quality", { get: () => false, set() { } }); // подписи узлов при любом масштабе
 let selNode = null;
 lgc.onNodeSelected = n => { selNode = n; updateAnalysisMap(); };
@@ -2009,8 +2013,8 @@ addEventListener("resize", () => {
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); };
-try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme();
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); };
+try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS

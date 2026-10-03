@@ -23,7 +23,10 @@
     {"id": "k2", "title": "K2 — деловая активность района", "unit": "", "default": 0.9, "min": 0.2, "max": 0.9, "step": 0.1},
     {"id": "tinao", "title": "ТиНАО (1) или старая Москва (0)", "unit": "", "default": 0, "min": 0, "max": 1, "step": 1},
     {"id": "territory_mode", "title": "Жилые территории по 2152-ПП: 1 — преобразование, 2 — реконструкция, 3 — малоэтажный комплекс", "unit": "", "default": 1, "min": 1, "max": 3, "step": 1},
-    {"id": "unbuilt_share", "title": "Незастраиваемая территория в составе жилой", "unit": "%", "default": 25, "min": 0, "max": 90, "step": 1}
+    {"id": "unbuilt_share", "title": "Незастраиваемая территория в составе жилой", "unit": "%", "default": 25, "min": 0, "max": 90, "step": 1},
+    {"id": "free_doo", "title": "Свободные места ДОО в существующих объектах", "unit": "мест", "default": 0, "min": 0, "max": 100000, "step": 1},
+    {"id": "free_school", "title": "Свободные места школ в существующих объектах", "unit": "мест", "default": 0, "min": 0, "max": 100000, "step": 1},
+    {"id": "free_clinic", "title": "Свободные посещения поликлиники в существующих объектах", "unit": "пос./смену", "default": 0, "min": 0, "max": 100000, "step": 1}
   ],
   "constants": {
     "k_flats": 0.65, "k_np": 0.9, "k_flats_total": 1.1, "per_flat": 2.1,
@@ -152,6 +155,18 @@
     {"id": "school_count", "title": "Число школ", "unit": "шт.", "expr": "where(school_places > 0, 1, 0)", "precision": 0, "group": "Участки социальных объектов", "note": "Один объект на весь спрос: верхняя ступень таблицы 1.4.2 (свыше 1501 места) не ограничена сверху, деления нет."},
     {"id": "school_plot_ha", "title": "Участок школы, га (не менее)", "unit": "га", "expr": "school_places * where(school_places <= school_plot_cap1, school_plot_m2_1, where(school_places <= school_plot_cap2, school_plot_m2_2, school_plot_m2_3)) / 10000", "precision": 3, "group": "Участки социальных объектов", "note": "2151-ПП табл. 1.4.2 п. 3.1-3.3: до 900 мест не менее 19, 901-1500 не менее 16, свыше 1501 не менее 14 м²/место. Ровно 1501 место текстом не покрыто — принято как «свыше». Кадетские корпуса, школы без спортивного ядра (п. 3.4-3.5) не считаются."},
     {"id": "clinic_count", "title": "Число поликлиник", "unit": "шт.", "expr": "where(clinic_mixed_visits > 0, 1, 0)", "precision": 0, "group": "Участки социальных объектов", "note": "Норм мощности одной поликлиники (посещений в смену на объект) в 2150-ПП нет, поэтому число объектов принято равным одному — это допущение, не норма."},
-    {"id": "clinic_plot_ha", "title": "Участок поликлиники, га (не менее)", "unit": "га", "expr": "clinic_plot_norm_ha * clinic_count", "precision": 3, "group": "Участки социальных объектов", "note": "2150-ПП табл. 1.4.1 п. 2.1: 0,35 га на один объект независимо от мощности; число объектов — допущение (см. «Число поликлиник»)."}
+    {"id": "clinic_plot_ha", "title": "Участок поликлиники, га (не менее)", "unit": "га", "expr": "clinic_plot_norm_ha * clinic_count", "precision": 3, "group": "Участки социальных объектов", "note": "2150-ПП табл. 1.4.1 п. 2.1: 0,35 га на один объект независимо от мощности; число объектов — допущение (см. «Число поликлиник»)."},
+    {"id": "doo_deficit", "title": "Дефицит мест ДОО", "unit": "мест", "expr": "max(doo_places - free_doo, 0)", "precision": 0, "group": "Резерв участков"},
+    {"id": "doo_res_n", "title": "Участков ДОО к резерву", "unit": "шт.", "expr": "ceil(div(doo_deficit, doo_plot_cap2))", "precision": 0, "group": "Резерв участков", "note": "Дефицит делится поровну на объекты не более 350 мест, больший объект первым; свободные места вводятся вручную, участок — минимум таблицы 2151-ПП 1.4.1."},
+    {"id": "doo_res_q", "title": "Места в меньшем участке ДОО", "unit": "мест", "expr": "floor(div(doo_deficit, doo_res_n))", "precision": 0, "group": "Резерв участков", "hidden": true},
+    {"id": "doo_res_r", "title": "Число участков ДОО с q+1 местом", "unit": "шт.", "expr": "doo_deficit - doo_res_q * doo_res_n", "precision": 0, "group": "Резерв участков", "hidden": true},
+    {"id": "doo_res_m2", "title": "Участки ДОО, м²", "unit": "м²", "expr": "doo_res_r * (doo_res_q + 1) * where(doo_res_q + 1 <= doo_plot_cap1, doo_plot_m2_1, doo_plot_m2_2) + (doo_res_n - doo_res_r) * doo_res_q * where(doo_res_q <= doo_plot_cap1, doo_plot_m2_1, doo_plot_m2_2)", "precision": 0, "group": "Резерв участков"},
+    {"id": "school_deficit", "title": "Дефицит мест школ", "unit": "мест", "expr": "max(school_places - free_school, 0)", "precision": 0, "group": "Резерв участков"},
+    {"id": "school_res_m2", "title": "Участок школы, м²", "unit": "м²", "expr": "school_deficit * where(school_deficit <= school_plot_cap1, school_plot_m2_1, where(school_deficit <= school_plot_cap2, school_plot_m2_2, school_plot_m2_3))", "precision": 0, "group": "Резерв участков", "note": "Школа — один участок; ступень площади берётся по дефициту, а не по потребности."},
+    {"id": "clinic_deficit", "title": "Дефицит посещений поликлиники", "unit": "пос./смену", "expr": "max(clinic_mixed_visits - free_clinic, 0)", "precision": 0, "group": "Резерв участков"},
+    {"id": "clinic_res_m2", "title": "Участок поликлиники, м²", "unit": "м²", "expr": "where(clinic_deficit > 0, clinic_plot_norm_ha * 10000, 0)", "precision": 0, "group": "Резерв участков"},
+    {"id": "social_res_m2", "title": "Резерв участков всего, м²", "unit": "м²", "expr": "doo_res_m2 + school_res_m2 + clinic_res_m2", "precision": 0, "group": "Резерв участков"},
+    {"id": "social_res_ha", "title": "Резерв участков всего, га", "unit": "га", "expr": "social_res_m2 / 10000", "precision": 3, "group": "Резерв участков"},
+    {"id": "social_res_share", "title": "Доля резерва в территории, %", "unit": "%", "expr": "div(social_res_ha, calc_area) * 100", "precision": 3, "group": "Резерв участков"}
   ]
 }

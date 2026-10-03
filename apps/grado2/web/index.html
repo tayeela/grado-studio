@@ -312,6 +312,7 @@ kbd{font:var(--fs-s) var(--mono);border:1px solid var(--line-2);border-bottom-wi
 .terr .row{display:flex;gap:6px;flex-wrap:wrap}
 .err{color:var(--bad);padding:2px 8px 6px 22px;background:var(--field)}
 .basemap canvas{filter:grayscale(1) contrast(.9) brightness(1.05)}
+.basemap-dark canvas{filter:none}   /* тёмные плитки Esri уже серые: фильтр светлой подложки не нужен (оба тёмных блока ниже совпадают) */
 .mapbox.dropfile::after{content:"Отпустите файлы: DXF, GeoJSON, KML, Shapefile — каждый станет слоем";position:absolute;inset:8px;border:2px dashed var(--accent);border-radius:var(--r-2);background:color-mix(in srgb,var(--accent) 8%,transparent);display:grid;place-items:center;font-size:var(--fs-l);color:var(--text);z-index:var(--z-gut);pointer-events:none}
 .busy{position:fixed;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,transparent,var(--accent),transparent);background-size:40% 100%;animation:busy 1s linear infinite;z-index:var(--z-busy)}
 @keyframes busy{from{background-position:-40% 0}to{background-position:140% 0}}

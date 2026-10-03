@@ -12,6 +12,13 @@ export default async p => {
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
   check(await p.ev(`try{localStorage.removeItem("grado2.start")}catch{} startOff=false; selectTerr(false); setTool("select"); syncStatus(); await new Promise(r=>setTimeout(r,100)); const t=$("start").innerText; return !$("start").hidden && /Начните с границы/.test(t) && /Нарисовать границу/.test(t) && /Пример/.test(t) && $("start").querySelectorAll(".btn").length===2`), "T27: приветствие на пустой карте — одна фраза и два действия «Нарисовать границу», «Пример»");
   check(await p.ev(`const a=uiK(); document.documentElement.dataset.ui="large"; await new Promise(r=>setTimeout(r,100)); const b=uiK(); delete document.documentElement.dataset.ui; return a===1 && Math.abs(b-7/6)<.01`), "T27: uiK() читает масштаб интерфейса (1 и 7/6 при «крупном»)");
+  check(await p.ev(`const src=()=>{const l=mMain.getLayers().getArray().find(x=>x.get("basemap")); return String(l.getSource().getUrls?.()?.[0]||"osm:"+l.getSource().constructor.name)}, urlOk=u=>/cartocdn/.test(u);
+    let md=0; const om=window.markDirty; window.markDirty=(...a)=>{md++; return om?.(...a)}; const d0=PROJ.dirty, b0=BASE;
+    document.documentElement.dataset.theme="light"; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));   // light -> dark
+    const dark=src(), darkAttr=mMain.getLayers().getArray().find(x=>x.get("basemap")).getSource().getAttributions()?.({})?.join?.(" ")||"";
+    $("bTheme").click(); await new Promise(r=>setTimeout(r,200));   // dark -> light
+    const light=src(); window.markDirty=om;
+    return /World_Dark_Gray_Base/.test(dark) && /Esri/.test(darkAttr) && !/cartocdn/.test(light) && /openstreetmap/.test(light) && md===0 && PROJ.dirty===d0 && BASE===b0 && $("baseSel").options.length>=1`), "T38: тёмная тема — тёмная подложка Esri, светлая — OSM; смена темы не делает проект несохранённым, выбор подложки не меняется");
   check(await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
     const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
     const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));

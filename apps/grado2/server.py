@@ -912,10 +912,17 @@ def _bbox_of(geom):
 
 
 def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0, nonres_part=6, education_zone=1,
-        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25, constants=None):
+        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25, constants=None, free_doo=0, free_school=0, free_clinic=0):
     """ТЭП по методике «Калькулятора 2.0» (Москва). Население, соцобъекты и машино-места — от новой застройки;
     СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя.
-    constants — необязательная подмена норм {id: число}; в ответе тогда есть constants_changed (id, что отличаются от пресета)."""
+    constants — необязательная подмена норм {id: число}; в ответе тогда есть constants_changed (id, что отличаются от пресета).
+    free_doo, free_school, free_clinic — свободные места существующих объектов (вручную, 0..100000); из дефицита пресет считает
+    резерв участков, в ответе social = [{kind, places, m2}] (ДОО — по участку, больший первым; школа и поликлиника — 0 или 1)."""
+    free = {}
+    for fid, fv in (('free_doo', free_doo), ('free_school', free_school), ('free_clinic', free_clinic)):
+        if isinstance(fv, bool) or not isinstance(fv, (int, float)) or not 0 <= fv <= 100000 or fv != int(fv):      # NaN fails the range; places are whole
+            raise ValueError(f"{fid} must be a whole number from 0 to 100000")
+        free[fid] = int(fv)
     e = Engine.from_file(PRESET)
     changed = None
     if constants is not None:
@@ -933,8 +940,18 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
     e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
                  spp_low_in=spp_low_m2 / 1000, nonres_part=max(0.0, min(100.0, float(nonres_part))), education_zone=2 if int(education_zone) == 2 else 1,
                  k1=k1, k2=k2, tinao=1 if tinao else 0, territory_mode=int(territory_mode) if int(territory_mode) in (1, 2, 3) else 1,
-                 unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))))
-    out = {"metrics": e.results(),
+                 unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))), **free)
+    def whole(v):
+        return int(v) if float(v).is_integer() else v
+    social = []
+    n, q, r = int(e.value('doo_res_n')), int(e.value('doo_res_q')), int(e.value('doo_res_r'))
+    for places in [q + 1] * r + [q] * (n - r):
+        social.append({'kind': 'doo', 'places': places, 'm2': whole(places * (e.value('doo_plot_m2_1') if places <= e.value('doo_plot_cap1') else e.value('doo_plot_m2_2')))})
+    if e.value('school_deficit') > 0:
+        social.append({'kind': 'school', 'places': whole(e.value('school_deficit')), 'm2': whole(e.value('school_res_m2'))})
+    if e.value('clinic_deficit') > 0:
+        social.append({'kind': 'clinic', 'places': whole(e.value('clinic_deficit')), 'm2': whole(e.value('clinic_res_m2'))})
+    out = {"metrics": e.results(), "social": social,
            "density_total": ((spp_new_m2 + spp_kept_m2) / 1000 / terr_ha) if terr_ha else 0.0}
     if changed is not None:
         out["constants_changed"] = changed
@@ -1176,13 +1193,15 @@ def place_info(lon, lat, polygon=None):
     district = table.get(_norm_name(dname))
     inside_ttk = _in_ring(lon, lat, DISTRICTS["ttk_hull"])
     notes = []
+    zone_note = ""
     if district:
         k2row = DISTRICTS["k2"][district]
         k2 = (k2row.get("inside_ttk") if inside_ttk else k2row.get("outside_ttk")) if "inside_ttk" in k2row else \
              (k2row["exclave"] if "exclave" in k2row and lon < 37.33 else k2row["value"])
         zone = 2 if _norm_name(district) in {_norm_name(z) for z in DISTRICTS["zone2"]} else 1
     else:
-        k2, zone = (0.9, 2 if tinao else 1)
+        k2, zone = (0.9, 2)
+        zone_note = "район не в списках 2151-ПП: принята образовательная зона 2, её можно изменить в «Нормативах»"
         notes.append(f"район «{dname or 'не определён'}» не найден в таблицах 945-ПП и 2151-ПП — K2 и зона приняты {k2} и {zone}, поправьте вручную")
     # ближайший вход или станция рельсового каркаса
     rail = _rail_nodes(raw)
@@ -1191,7 +1210,7 @@ def place_info(lon, lat, polygon=None):
     walk = dist * 1.3 if dist is not None else None
     k1 = 0.75 if walk is not None and walk < 1200 else 0.9 if walk is not None and walk <= 2200 else 1.0
     out = {"district": district or dname, "known": bool(district), "okrug": okrug, "tinao": tinao, "inside_ttk": inside_ttk,
-           "zone": zone, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes,
+           "zone": zone, "zone_note": zone_note, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes,
            "districts": [{"name": d["name"], "share": d["share"]} for d in districts], "chosen_by": chosen_by}
     with _PLACE_LOCK:
         _PLACE_MEMO[key] = out
@@ -2051,7 +2070,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(502, {"error": str(e)})
             if self.path == "/api/tep":
                 f = {k: float(req[k]) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2", "spp_low_m2", "nonres_part",
-                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share") if req.get(k) is not None}
+                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share", "free_doo", "free_school", "free_clinic") if req.get(k) is not None}
                 if req.get("constants") is not None:
                     f["constants"] = req["constants"]
                 return self._json(200, tep(**f))

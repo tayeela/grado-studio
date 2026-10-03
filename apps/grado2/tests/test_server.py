@@ -37,7 +37,7 @@ class Grado2Server(unittest.TestCase):
         import json
         ref = json.loads((S.ROOT / "core/compute/tests/fixtures/calc2_yakimanka_15ha.json").read_text("utf-8"))["expected"]
         r = S.tep(**self.YAK)
-        self.assertEqual(set(r), {"metrics", "density_total"})
+        self.assertEqual(set(r), {"metrics", "density_total", "social"})
         m = {x["id"]: x["value"] for x in r["metrics"]}
         for k in ("population", "doo_places", "school_places"):
             self.assertEqual(m[k], ref[k], k)
@@ -58,6 +58,39 @@ class Grado2Server(unittest.TestCase):
         for bad in ({"nope": 1}, {"doo_z1": -1}, {"doo_z1": 1e9}, {"doo_z1": "50"}, {"doo_z1": True}, {"doo_z1": float("nan")}, {"doo_z1": float("inf")}, {"doo_z1": 10**400}, [1]):
             with self.assertRaises(ValueError, msg=bad):
                 S.tep(**self.YAK, constants=bad)
+
+    B = dict(terr_ha=20, restrict_ha=0, spp_new_m2=450_000, share=1, nonres_part=6, education_zone=2, k1=1, k2=0.9)
+
+    def test_tep_social_reserve(self):
+        r = S.tep(**self.B)
+        self.assertEqual(r["social"], [{"kind": "doo", "places": 263, "m2": 8416}, {"kind": "doo", "places": 262, "m2": 8384},
+                                       {"kind": "school", "places": 1034, "m2": 16544}, {"kind": "clinic", "places": 159, "m2": 3500}])
+        m = {x["id"]: x for x in r["metrics"]}
+        self.assertEqual((m["social_res_m2"]["value"], m["social_res_ha"]["value"], m["social_res_share"]["value"]), (36844, 3.684, 18.422))
+        self.assertEqual(m["social_res_ha"]["group"], "Резерв участков")
+        r = S.tep(**self.B, free_doo=175, free_school=400, free_clinic=100)
+        self.assertEqual([(x["kind"], x["places"], x["m2"]) for x in r["social"]],
+                         [("doo", 350, 11200), ("school", 634, 12046), ("clinic", 59, 3500)])
+        m = {x["id"]: x["value"] for x in r["metrics"]}
+        self.assertEqual((m["social_res_m2"], m["social_res_ha"], m["social_res_share"]), (26746, 2.675, 13.373))
+        a = dict(self.B, spp_new_m2=150_000, education_zone=1)
+        r = S.tep(**a, free_doo=40, free_school=100, free_clinic=20)
+        self.assertEqual([(x["kind"], x["places"], x["m2"]) for x in r["social"]], [("doo", 83, 2905), ("school", 151, 2869), ("clinic", 33, 3500)])
+        m = {x["id"]: x["value"] for x in r["metrics"]}
+        self.assertEqual((m["social_res_m2"], m["social_res_ha"], m["social_res_share"]), (9274, 0.927, 4.637))
+
+    def test_tep_social_zero_deficit_and_surplus(self):
+        r = S.tep(**self.B, free_doo=100000, free_school=100000, free_clinic=100000)
+        self.assertEqual(r["social"], [])
+        m = {x["id"]: x["value"] for x in r["metrics"]}
+        self.assertEqual((m["doo_deficit"], m["social_res_m2"], m["social_res_share"]), (0, 0, 0))
+
+    def test_tep_free_places_bad_values(self):
+        for k in ("free_doo", "free_school", "free_clinic"):
+            for bad in (-1, float("nan"), float("inf"), 100001, "5", True, 0.5):
+                with self.assertRaises(ValueError, msg=(k, bad)) as cm:
+                    S.tep(**self.B, **{k: bad})
+                self.assertEqual(str(cm.exception), str(cm.exception).encode("ascii", "ignore").decode())
 
     def test_tep_norms_cover_all_constants(self):
         import json
