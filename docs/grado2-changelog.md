@@ -2,6 +2,25 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-04, ГРАДО 2 v0.99.4: template sheets refresh themselves; re-download updates the layer; honest status line.**
+  Album (T55): sheets built from templates («Альбом ППТ КРТ» sections, «Ситуационный план A4», ТЭП sheets) carry
+  `tpl = {set, i, size, base}` — the template values they were built with. When the ТЭП, the norms, an accepted sketch
+  or layer styles change, the template part is rebuilt through the same code that built it (debounced; only when the
+  signature changed) and everything the owner changed by hand — title, frame, scale, note, layers, view, photos,
+  «Макет» texts — is kept; status line «Листы обновлены по новым показателям»; «не готов: слой «X» не загружен» in the
+  sheet note, a warning icon on the row. Sheets from older projects (no `tpl`) are never rebuilt by themselves: only
+  «Собрать ▾ → Обновить листы» with a two-click confirmation («Обновить N старых листов по шаблону? Ваши названия,
+  рамки и фото сохранятся, набор слоёв и легенда — по шаблону»). Frozen (imported) sheets are untouched. ТЭП rows and
+  legends were always computed live at print time; what could go stale was the layer set, the frame and the open
+  preview. Data (T61): one portal layer has two keys — `gisogd.<name>` in the «Данные» pick list and `ogd.<code>` in
+  the catalog tree — so a re-download from the tree added a duplicate; a pick from the catalog window now updates the
+  layer already in the project (merge path, manual edits and `_uid` kept), album loads keep exact keys. The status
+  line names the layer and the progress: «ГПЗУ (ОГД): 42 % · 1,8 МБ из 4,3 МБ», «3 из 7: Зоны (актуальные)…».
+  «Район определяется…» ends within 30 s: the district comes from the local polygon when OSM is down, K1 stays
+  unknown with the note «район не определён: портал OSM не ответил — задайте зону вручную»; raw portal errors are
+  replaced by plain Russian («область слишком большая — уменьшите рамку» / «портал не ответил — подождите минуту»),
+  the raw text goes to the log. Open: the «Листы обновлены» line also shows when only the signature changed; a legacy
+  sheet's changed size is lost on the confirmed rebuild.
 - **2026-10-04, ГРАДО 2 v0.99.3: PPTX — satellite tiles clipped to the frame, heavy slides rasterised.** QA on the
   owner's album found satellite tiles running under the legend and the title of the «Ортофотоплан» slide, and slide 2
   of a normal «Альбом ППТ КРТ» with 244 000 shapes / 159 MB of XML (every ЕГКО building, lawn and forest a filled shape)

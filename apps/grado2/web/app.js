@@ -479,8 +479,29 @@ async function fgLoad() {
 $("bLoad").onclick = () => window.openSources();
 window.renderSources = renderSources;
 /* выгрузка источников по прямоугольнику: кнопка «Загрузить» — граница + 60 м; листы раздела — вся площадь своих рамок */
-async function loadKeys(keys, bb) {
-  const [w, s, e, n] = bb;
+/* Один слой портала бывает под двумя ключами: подборка ГРАДО (`gisogd.gpzu`) и слой каталога (`ogd.gpzu`) — сервер
+   отдаёт код в /api/sources. Если слой проекта лежит под другим ключом, перевыгрузка идёт в него (слияние сохраняет
+   ваши правки и _uid), а не заводит второй слой рядом. Если лежат оба — как выбрано. */
+function sameLayerKey(k) {
+  if (DATA[k]) return k;
+  const code = k.startsWith("ogd.") ? k.slice(4) : SOURCES[k]?.code; if (!code) return k;
+  return ["ogd." + code, ...Object.keys(SOURCES).filter(x => SOURCES[x].code === code)].find(x => x !== k && DATA[x]) || k;
+}
+/* строка состояния выгрузки: «ГПЗУ (ОГД): 42 % · 1,8 МБ»; очередь из нескольких слоёв — «3 из 7: Зоны (актуальные): …» */
+function dlStatus(pr, names) {
+  const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0), ya = pr.filter(x => x.stage === "tiles"), big = pr.filter(x => x.stage !== "tiles");
+  const what = x => x.stage === "cells" ? `часть ${x.got + 1} из ${x.total}` : x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке"
+    : !x.got ? "запрос к порталу (у крупных слоёв ЕГКО — до нескольких минут)" : x.total ? `${Math.round(x.got / x.total * 100)} % · ${mb(x.got)} МБ из ${mb(x.total)} МБ` : `${mb(x.got)} МБ`;
+  const parts = big.map(x => `${x.of > 1 ? `${x.nth} из ${x.of}: ` : ""}${x.title}: ${what(x)}`);
+  if (ya.length) parts.push(`Яндекс: тайлы ${ya[0].got} из ${ya[0].total}`);
+  if (!parts.length && names.length) parts.push(`${names.slice(0, 3).join(", ")}${names.length > 3 ? ` и ещё ${names.length - 3}` : ""}: ждём ответ портала`);
+  return parts.length ? parts.join("; ") + ". Работать можно дальше." : "";
+}
+window.dlStatus = dlStatus; window.sameLayerKey = sameLayerKey;
+/* opts.alias — выбор в окне «Исходные данные»: слой, лежащий в проекте под другим ключом, обновляется на месте.
+   Листы и альбомы (sheets.js, albums.js) ищут слои по точному ключу — для них alias выключен (по умолчанию). */
+async function loadKeys(keys, bb, opts = {}) {
+  const [w, s, e, n] = bb; keys = [...new Set(opts.alias ? keys.map(sameLayerKey) : keys)];
   // OSM (Overpass) отвечает от секунд до минуты — отдельным запросом, чтобы остальные слои появились сразу
   // ЕГКО — тоже отдельно: первая выгрузка слоя всей Москвы идёт минутами
   // Яндекс — тоже отдельно: первая выгрузка тайлов идёт с паузами, до минуты на 1 км²
@@ -489,16 +510,15 @@ async function loadKeys(keys, bb) {
   const pending = new Set(parts); let nLayers = 0; const reports = [], fresh = [], empty = [], same = [];
   ERRORS = {}; $("bLoad").disabled = true; busy(true);
   const epoch = window.PROJ_EPOCH; let dropped = false;
-  const hint = () => window.setHint?.(`Выгрузка идёт${pending.size === 1 && pending.has(osm) ? ": ждём OpenStreetMap (Overpass отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`);
+  const names = () => [...pending].flat().map(k => SOURCES[k]?.title || DATA[k]?.title || k);
+  const hintText = () => `Выгрузка идёт: ${names().slice(0, 3).join(", ")}${names().length > 3 ? ` и ещё ${names().length - 3}` : ""}${pending.size === 1 && pending.has(osm) ? " — ждём OpenStreetMap (отвечает до минуты, повтор той же области берётся с диска)" : ""}. Работать можно дальше.`;
+  const hint = () => window.setHint?.(hintText());
   hint();
   // ГИС ОГД в первый раз качает слой целиком (ПЗЗ — 221 МБ), НСПД и OSM большую область берут по частям: сервер
   // сообщает ход, показываем его
-  const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0);
   const poll = setInterval(async () => {
-    try { const pr = Object.values(await api("/api/progress")); if (!pr.length || !pending.size) return;
-      const ya = pr.filter(x => x.stage === "tiles"), big = pr.filter(x => x.stage !== "tiles");
-      window.setHint?.([big.length ? (big.every(x => x.stage === "cells") ? "Большая область, выгрузка по частям: " : "Первая выгрузка слоя целиком: ") + big.map(x => `«${x.title}» — ${x.stage === "cells" ? `часть ${x.got + 1} из ${x.total}` : x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке" : !x.got ? "портал готовит файл (у крупных слоёв ЕГКО — до нескольких минут)" : x.total ? `${Math.round(x.got / x.total * 100)} % (${mb(x.got)} из ${mb(x.total)} МБ)` : `${mb(x.got)} МБ`}`).join("; ") : "",
-        ya.length ? `Яндекс: тайлы ${ya[0].got} из ${ya[0].total}` : ""].filter(Boolean).join(". ") + ". Работать можно дальше."); } catch { }
+    try { const pr = Object.values(await api("/api/progress")); if (!pending.size) return;
+      window.setHint?.(dlStatus(pr, names()) || hintText()); } catch { }
   }, 800);
   await Promise.all(parts.map(async part => {
     try {
@@ -949,7 +969,7 @@ NTep.title = "ТЭП · Москва, «Калькулятор 2.0»"; NTep.prot
   const tp = tepParams(this); placeLookup(this);
   const key = [bd ? `${bk}:${bd.rev || 0}:${sk.length}` : gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по сохранённому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по сохранённому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); window.scheduleTplRefresh?.(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
@@ -964,16 +984,19 @@ function tepParams(n) {
   n.properties ||= {};
   return n.properties.tp ||= { auto: true, district: "", zone: 1, k1: 1, k2: 0.9, tinao: 0, mode: 1, nonres: 6, unbuilt: 25, walk: null, rev: -1, notes: [] };
 }   // tp.free (свободные места) и tp.zoneSet («зона выбрана вручную») создаются только правкой в окне «Нормативы»; читать с умолчанием 0 / false
+const PLACE_LIMIT_MS = 30000;
 function placeLookup(n) {
   const tp = tepParams(n); if (!TERR || tp.rev === TERR_REV || n._placeBusy) return;
   // правка границы (ручки, перенос) — серия версий: запрос уходит, когда граница не менялась 0,4 с; первый запрос — сразу
   if (n._placeSeen !== TERR_REV) { n._placeSeen = TERR_REV; n._placeAt = Date.now(); }
   if (tp.rev !== -1 && Date.now() - n._placeAt < 400) { clearTimeout(n._placeT); n._placeT = setTimeout(() => placeLookup(n), 420 - (Date.now() - n._placeAt)); return; }
   n._placeBusy = true; const rev = TERR_REV, [lon, lat] = turf.centroid(TERR).geometry.coordinates;
-  api("/api/place", { lon, lat, polygon: TERR.geometry }).then(r => {
+  // не дольше 30 с: портал OSM молчит — говорим об этом и просим задать зону руками (сервер дочитает и положит ответ на диск)
+  const ac = new AbortController(), cut = setTimeout(() => ac.abort(), PLACE_LIMIT_MS);
+  api("/api/place", { lon, lat, polygon: TERR.geometry }, ac.signal).then(r => {
     tp.districts = r.chosen_by === "area" ? r.districts || [] : []; tp.rev = rev; tp.district = r.district; tp.okrug = r.okrug; tp.walk = r.rail_walk_m; tp.walkRoute = false; tp.station = ""; tp.notes = r.notes || []; tp.insideTtk = r.inside_ttk;
     tp.zoneDist = r.zone; tp.zoneNote = r.zone_note || "";      // зона района и пометка сервера (район не в списках 2151-ПП)
-    if (tp.auto) Object.assign(tp, { k1: r.k1, k2: r.k2, tinao: r.tinao, ...(tp.zoneSet ? {} : { zone: r.zone }) });   // выбранную вручную зону не перезаписываем
+    if (tp.auto) Object.assign(tp, { ...(r.k1 != null ? { k1: r.k1 } : {}), k2: r.k2, tinao: r.tinao, ...(tp.zoneSet ? {} : { zone: r.zone }) });   // выбранную вручную зону не перезаписываем
     recompute(true); renderTep();
     // K1 по улицам: маршрут по пешеходной сети OSM до входа или станции (первый раз — до пары минут, дальше с диска)
     tp.routing = r.rail_walk_m != null;
@@ -985,7 +1008,11 @@ function placeLookup(n) {
       if (tp.auto) tp.k1 = q.route_m < 1200 ? 0.75 : q.route_m <= 2200 ? 0.9 : 1.0;
       recompute(true); renderTep();
     }).catch(() => { if (tp.rev === rev) { tp.routing = false; renderTep(); } });
-  }).catch(e => { tp.rev = rev; tp.districts = []; tp.notes = ["район не определён: " + e.message + " — задайте зону и K1, K2 вручную"]; renderTep(); }).finally(() => { n._placeBusy = false; });
+  }).catch(e => {
+    if (e?.name !== "AbortError") console.warn("[район]", e?.message);
+    tp.rev = rev; tp.districts = [];
+    tp.notes = ["район не определён: " + (e?.name === "AbortError" ? "портал OSM не ответил" : e?.message || "портал не ответил") + " — задайте зону вручную"]; renderTep();
+  }).finally(() => { clearTimeout(cut); n._placeBusy = false; renderTep(); });
 }
 /* ТЭП: геометрические части — здесь, нормативная часть — движок ядра на сервере */
 function keptBuildings(kept) { const src = kept?.properties?._src || []; return src.filter(f => /Polygon/.test(f.geometry.type) && insideTerr(f)); }
@@ -1461,7 +1488,7 @@ function bakeSketch() {
     ...(b.grp ? { "Блок": b.grp } : {}), ...(b["Блоков"] ? { "Блоков": b["Блоков"] } : {}), ...(b["1 этаж"] ? { "1 этаж": b["1 этаж"] } : {}) })));
   DATA[key] = { title, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc, count: 0, fields: [] };
   layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
-  const l = ensureLayer(key, title, "poly");
+  const l = ensureLayer(key, title, "poly"); window.scheduleTplRefresh?.();      // эскиз принят слоем: листы по шаблону сверяют показатели
   if (RESULT.tepNode) { (RESULT.tepNode.properties ||= {}).baked = key; RESULT.tepNode._key = null; }   // «Показатели» — по принятому слою
   const many = new Set(sk.map(b => b.floors)).size > 1;          // разная этажность — диапазоны, одна — единый цвет
   l.style = ST({ mode: many ? "grad" : "single", fill: "#6fa6e6", stroke: "#1a4f94", width: .8, opacity: .9, label: "Этажность", grad: { field: "Этажность", n: 4, ramp: "blue", method: "equal" } });
@@ -1518,7 +1545,7 @@ function renderTep() {
   const dCls = t.density > t.target * 1.05 ? "bad" : t.density < t.target * .8 ? "warn" : "good";
   const byGroup = {}; t.metrics.forEach(m => (byGroup[m.group || "Прочее"] ||= []).push(m));
   const place = `<div class="sect">Территория расчёта</div><div class="pad tepp">
-      <div class="row"><label>Район</label><b>${esc(tp.district || "определяется…")}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
+      <div class="row"><label>Район</label><b>${esc(tp.district || (RESULT.tepNode?._placeBusy ? "определяется…" : "не определён"))}</b>${tp.insideTtk ? `<small>внутри ТТК</small>` : ""}</div>
       ${(tp.districts || []).length > 1 ? `<div class="row" style="margin:-2px 0 4px 140px"><small title="Район, зона образования, K2 и ТиНАО взяты у района с наибольшей долей площади границы">${esc(districtShares(tp.districts))}</small></div>` : ""}
       <div class="row"><label title="2151-ПП п. 1.3.2: нормы ДОО и школ">Образование</label>${sel("zone", [[1, "зона 1 — 44 / 90"], [2, "зона 2 — 63 / 124"]], "Образовательная зона")}</div>
       <div class="row"><label title="945-ПП прил. 6: пешая доступность входа в метро, МЦК, МЦД">K1</label>${sel("k1", [[0.75, "0,75 · до 1200 м"], [0.9, "0,9 · 1200–2200 м"], [1, "1,0 · дальше"]], "K1")}</div>

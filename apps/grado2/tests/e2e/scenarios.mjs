@@ -874,4 +874,135 @@ export default async p => {
     check(await p.ev(`const w = document.querySelector(".win.docked>.wb"); return !!w && /linear-gradient/.test(getComputedStyle(w).backgroundImage)`), "T53: прокручиваемые встроенные окна несут подсказку-тень у края");
     await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); delete WST.zoneToast; return 1`);
   });
+  // T61: перевыгрузка слоя не дублирует его; строка состояния выгрузки с именем, процентом и МБ; «район» не висит бесконечно
+  await p.group("t61", async () => {
+    await p.ev(`window.__f61 = window.fetch; window.__hint61 = []; window.__sh61 = window.setHint; window.setHint = t => { window.__hint61.push(String(t)); return window.__sh61?.(t); }; return 1`);
+    try {
+      // 1. один слой портала под ключом ogd.gpzu; повторный выбор подборки gisogd.gpzu обновляет его, а не заводит второй
+      check(await p.ev(`return SOURCES["gisogd.gpzu"]?.code === "gpzu"`), "T61: /api/sources отдаёт код слоя каталога у подборки «ГПЗУ»");
+      const first = await p.ev(`
+        const mk = (k, v) => ({ type: "Feature", geometry: { type: "Polygon", coordinates: [[[37.52, 55.78], [37.521, 55.78], [37.521, 55.781], [37.52, 55.78]]] }, properties: { _key: k, "Номер": v } });
+        window.__reqs61 = []; window.__rows61 = [mk("a", "1"), mk("b", "2")];
+        window.fetch = async (u, o) => { u = String(u);
+          if (u === "/api/progress") return new Response("{}", { status: 200 });
+          if (u === "/api/fetch") { const b = JSON.parse(o.body); window.__reqs61.push(b.sources); const k = b.sources[0];
+            return new Response(JSON.stringify({ errors: {}, layers: { [k]: { title: "ГПЗУ (ОГД)", fetched_at: "2026-10-03", features: { type: "FeatureCollection", features: window.__rows61 } } } }), { status: 200 }); }
+          return window.__f61(u, o); };
+        delete DATA["ogd.gpzu"]; delete DATA["gisogd.gpzu"]; const bb = [37.51, 55.77, 37.53, 55.79];
+        await loadKeys(["ogd.gpzu"], bb); const n0 = LYR.length;
+        const f = layerSrc["ogd.gpzu"].getFeatures().find(x => x.get("_key") === "a"); f.set("Заметка", "моя правка"); syncFromSource("ogd.gpzu");
+        window.__rows61 = [mk("a", "1"), mk("b", "2"), mk("c", "3")];
+        await loadKeys(["gisogd.gpzu"], bb, { alias: true });
+        return [n0, LYR.length, window.__reqs61.map(x => x.join()).join("|"), !!DATA["gisogd.gpzu"], DATA["ogd.gpzu"].count, layerSrc["ogd.gpzu"].getFeatures().find(x => x.get("_key") === "a")?.get("Заметка")]`);
+      check(first[0] === first[1] && first[2] === "ogd.gpzu|ogd.gpzu" && first[3] === false && first[4] === 3 && first[5] === "моя правка", `T61: «ГПЗУ» выбран подборкой — слой обновлён на месте (слоёв ${first[0]} → ${first[1]}, запрос ${first[2]}, объектов ${first[4]}, правка «${first[5]}» сохранена)`);
+      // 1б. загрузка листа/альбома (без alias) кладёт слой под точным ключом gisogd.gpzu, даже если ogd.gpzu есть
+      const ex = await p.ev(`window.__reqs61.length = 0; await loadKeys(["gisogd.gpzu"], [37.51, 55.77, 37.53, 55.79]); const a = [window.__reqs61.join("|"), !!DATA["gisogd.gpzu"]];
+        delete DATA["gisogd.gpzu"]; LYR.splice(LYR.findIndex(l => l.key === "gisogd.gpzu"), 1); return a`);
+      check(ex[0] === "gisogd.gpzu" && ex[1] === true, "T61: загрузка листа без alias остаётся под ключом gisogd.gpzu (слой ищут по точному ключу)");
+      // 2. строка состояния: имя, процент, МБ; очередь «3 из 7»
+      const seq = JSON.stringify([
+        [{ title: "ГПЗУ (ОГД)", got: 0, total: null, stage: "wait", nth: 1, of: 1 }],
+        [{ title: "ГПЗУ (ОГД)", got: 1800000, total: 4300000, stage: "download", nth: 1, of: 1 }],
+        [{ title: "Зоны (актуальные)", got: 1800000, total: 4300000, stage: "download", nth: 3, of: 7 }]]);
+      await p.ev(`window.__hint61.length = 0; let i = 0; const seq = ${seq};
+        window.fetch = async (u, o) => { u = String(u);
+          if (u === "/api/progress") { const r = seq[Math.min(i++, seq.length - 1)]; return new Response(JSON.stringify(Object.fromEntries(r.map((x, j) => ["k" + j, x]))), { status: 200 }); }
+          if (u === "/api/fetch") { await new Promise(r => setTimeout(r, 3200)); return new Response(JSON.stringify({ errors: {}, layers: {} }), { status: 200 }); }
+          return window.__f61(u, o); };
+        await loadKeys(["gisogd.gpzu"], [37.51, 55.77, 37.53, 55.79]); return 1`);
+      const hints = await p.ev(`return window.__hint61.join(" || ")`);
+      p.log("hints:", hints);
+      check(/ГПЗУ \(ОГД\): запрос к порталу/.test(hints), "T61: до первого мегабайта строка состояния уже называет слой");
+      check(/ГПЗУ \(ОГД\): 42 % · 1,8 МБ из 4,3 МБ/.test(hints), "T61: «ГПЗУ (ОГД): 42 % · 1,8 МБ…» — процент и мегабайты из /api/progress");
+      check(/3 из 7: Зоны \(актуальные\): 42 %/.test(hints), "T61: очередь — «3 из 7: Зоны (актуальные): …»");
+      check(await p.ev(`return dlStatus([], ["А", "Б"]).startsWith("А, Б: ждём ответ портала") && dlStatus([{ title: "Т", got: 5, total: 9, stage: "tiles" }], []).startsWith("Яндекс: тайлы 5 из 9")`), "T61: источники без хода (НСПД, OSM) — имена слоёв; Яндекс — тайлы");
+    } finally { await p.ev(`window.fetch = window.__f61; window.setHint = window.__sh61; return 1`); }
+    // 3. «район»: портал молчит — через 30 с (таймер подменён) строка «район не определён», «определяется…» нет
+    try {
+      const r = await p.ev(`
+        setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
+        winOpen("wTep", true); await new Promise(r => setTimeout(r, 400));
+        const n = RESULT.tepNode, tp = tepParams(n); window.__st61 = window.setTimeout; window.__calls61 = [];
+        window.fetch = (u, o) => String(u) === "/api/place" ? new Promise((_, rej) => o.signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))) : window.__f61(u, o);
+        window.setTimeout = (fn, ms, ...a) => { if (ms === 30000) { window.__calls61.push(ms); ms = 20; } return window.__st61(fn, ms, ...a); };
+        tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); await new Promise(r => window.__st61(r, 60));
+        const busyText = $("tep").innerText.includes("определяется…"); await new Promise(r => window.__st61(r, 300));
+        window.setTimeout = window.__st61; const t = $("tep").innerText;
+        return [window.__calls61.length, busyText, t.includes("определяется…"), /район не определён: портал OSM не ответил — задайте зону вручную/.test(t), n._placeBusy]`);
+      check(r[0] === 1 && !r[2] && r[3] && r[4] === false, `T61: нет ответа /api/place — запрос обрывается по таймеру 30 с, строка «район не определён… задайте зону вручную», «определяется…» нет (${JSON.stringify(r)})`);
+      // сбой с текстом сервера: чистая русская фраза, сырого Overpass в окне нет
+      const t2 = await p.ev(`
+        window.fetch = (u, o) => String(u) === "/api/place" ? Promise.resolve(new Response(JSON.stringify({ error: "портал OpenStreetMap не ответил: подождите минуту и повторите" }), { status: 502 })) : window.__f61(u, o);
+        const n = RESULT.tepNode, tp = tepParams(n); tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); await new Promise(r => setTimeout(r, 400)); return $("tep").innerText`);
+      check(/портал OpenStreetMap не ответил: подождите минуту/.test(t2) && !/Overpass|Errno|HTTP 5/.test(t2) && !t2.includes("определяется…"), "T61: ответ 502 — понятная фраза с действием, без Overpass/Errno/HTTP");
+    } finally { await p.ev(`window.fetch = window.__f61; if (window.__st61) window.setTimeout = window.__st61; return 1`); }
+  });
+
+  // T55: листы, собранные по шаблону, обновляются сами при смене ТЭП и нормативов; рукой правленное остаётся; листы из файла не трогаются
+  await p.group("t55", async () => {
+    // снимок — сам просмотр листа (SVG из сервера) на весь экран, а не тесное окно «Листы и альбом»
+    const shot = async name => { if (!process.env.T55_SHOT_DIR) return;
+      await p.ev(`const im = document.createElement("img"); im.id = "t55ov"; im.src = $("sheetPrev").src; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.append(im); await new Promise(r=>setTimeout(r,600)); return 1`);
+      await p.shot(`${process.env.T55_SHOT_DIR}/${name}.png`); await p.ev(`$("t55ov")?.remove(); return 1`); };
+    const tepRowsOf = i => p.ev(`return JSON.stringify(albumSpec([ALBUM.sheets[${i}]]).sheets[0].tep)`);
+    if (!await p.ev(`for (let k = 0; k < 20 && !(RESULT.tepNode?._tep && TERR); k++) await new Promise(r=>setTimeout(r,500)); return !!RESULT.tepNode?._tep && !!TERR`)) {                  // группа запущена отдельно: нужны территория и посчитанный эскиз
+      await p.ev(`$("bExample").click(); await new Promise(r=>setTimeout(r,500)); winOpen("wSketch", true); await new Promise(r=>setTimeout(r,300)); document.querySelector('#wSketch [data-run="1"]').click(); for (let k = 0; k < 40 && !RESULT.tepNode?._tep; k++) await new Promise(r=>setTimeout(r,500)); return 1`);
+    }
+    check(await p.ev(`return !!RESULT.tepNode?._tep && !!TERR`), "T55: есть территория и посчитанные показатели");
+    if (await p.ev(`return !!RESULT.tepNode._tep.constantsChanged?.length`)) {          // норматив остался изменённым от прежних шагов: вернуть действующий
+      await p.ev(`winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("44"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
+    }
+    // выгрузка слоёв из сети в тесте не нужна: листы строятся по шаблону и тому, что уже есть в проекте
+    await p.ev(`window.__t55 = { keep: ALBUM.sheets.splice(0), lk: window.loadKeys, ea: window.ensureAdmin, c: new Set(CHECKED) }; window.loadKeys = async () => {}; window.ensureAdmin = async () => { CHECKED.add("gisogd.admin"); }; TPL_SIG = null; NOTREADY.clear();
+      ALBUM.meta.builtAt = undefined; ALBUM.meta.editedAt = undefined; await buildAlbum("pptkrt"); winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); return 1`);
+    const b = await p.ev(`const n = ALBUM.sheets.length; return [n, ALBUM.sheets.every((s, i) => s.tpl?.set === "pptkrt_" && s.tpl.i === i && s.id === "pptkrt_" + i), JSON.stringify(ALBUM.sheets).includes("Плотность"), ALBUM.sheets[3].title]`);
+    check(b[0] >= 5 && b[1] && !b[2], `T55: «Альбом ППТ КРТ» — ${b[0]} листов, у каждого sheet.tpl (набор и номер в шаблоне); строк ТЭП в листах не хранится`);
+    // таблица ТЭП — лист «Таблица ТЭП» из списка листов, и лист шаблона с включённой таблицей ТЭП
+    await p.ev(`$("shAddA3").click(); await new Promise(r=>setTimeout(r,500)); const sel = document.querySelector("[data-sh='${b[0]}'] [data-sk='view']"); sel.value = "__tep"; sel.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
+    const T = b[0];
+    await p.ev(`pickSheet(3); await new Promise(r=>setTimeout(r,200)); const c = document.querySelector('#sheetsBody [data-sk="tep"]'); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`return ALBUM.sheets[${T}].kind === "tep" && ALBUM.sheets[${T}].tpl?.set === "tep" && ALBUM.sheets[3].tep === true`), "T55: лист «Таблица ТЭП» помечен как лист по шаблону, на листе шаблона включена таблица ТЭП");
+    // рукой: название, рамка (центр и масштаб), подпись, надпись «Макета» и свой текст
+    const hand = await p.ev(`const s = ALBUM.sheets[3]; s.title = "Моя схема"; s.center = [37.5, 55.7]; s.scale = 7500; s.note = "Моя подпись"; s.edits = { t1: { text: "правка" } }; s.items = [{ text: "свой текст", x: 10, y: 10 }];
+      const fz = { id: "imp_t55_0", frozen: true, title: "Готовый лист", size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [["Плотность", "1,0 тыс. м²/га"]] }; ALBUM.sheets.push(fz);
+      window.__fz = JSON.stringify(fz); window.__k3 = JSON.stringify(ALBUM.sheets[3].keys); return ALBUM.sheets.indexOf(fz)`);
+    const F = hand;
+    const before = [await tepRowsOf(T), await tepRowsOf(3)];
+    check(!/Нормативы изменены/.test(before[0]) && /Плотность/.test(before[0]) && /Плотность/.test(before[1]), "T55: до правки норматива строки «Нормативы изменены вручную» на листах нет");
+    await p.ev(`pickSheet(${T}); await new Promise(r=>setTimeout(r,200)); previewSheet(${T}); await new Promise(r=>setTimeout(r,2500)); return 1`);
+    await shot("t55-tep-before");
+    // норматив: «Нормативы» → ДОО зоны 1 = 50
+    await p.ev(`winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("50"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
+    let st = "";
+    for (let k = 0; k < 20 && !/Листы обновлены по новым показателям/.test(st); k++) { await p.sleep(400); st = await p.ev(`return $("stHint").textContent`); }
+    check(st === "Листы обновлены по новым показателям", `T55: строка состояния после смены норматива: «${st}»`);
+    const after = [await tepRowsOf(T), await tepRowsOf(3)];
+    check(after[0] !== before[0] && /Нормативы изменены вручную","1"/.test(after[0]), "T55: на листе «Таблица ТЭП» строки показателей изменились, появилась строка «Нормативы изменены вручную: 1»");
+    check(after[1] !== before[1] && /Нормативы изменены вручную","1"/.test(after[1]), "T55: на листе шаблона с таблицей ТЭП — то же");
+    await p.sleep(2500); await shot("t55-tep-after");
+    check(await p.ev(`const s = ALBUM.sheets[3]; return s.title === "Моя схема" && JSON.stringify(s.center) === "[37.5,55.7]" && s.scale === 7500 && s.note === "Моя подпись" && s.edits.t1.text === "правка" && s.items[0].text === "свой текст" && s.tep === true && JSON.stringify(s.keys) === window.__k3 && s.tpl.set === "pptkrt_" && s.tpl.i === 3`), "T55: название, рамка, масштаб, подпись, надписи «Макета» и свои тексты после обновления на месте; слои — по шаблону");
+    check(await p.ev(`return JSON.stringify(ALBUM.sheets[${F}]) === window.__fz && !NOTREADY.has("imp_t55_0")`), "T55: лист «готовая вёрстка» из файла не изменился");
+    // «Обновить листы» в «Собрать ▾»: шаблонная часть возвращается к шаблону, правленное остаётся; клавишей Enter
+    check(await p.ev(`ALBUM.sheets[4].styles = {}; ALBUM.sheets[4].rect = [0, 0, 1, 1]; TPL_SIG = null; NOTREADY.clear(); $("toast").textContent = ""; winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); $("shBuild").click(); await new Promise(r=>setTimeout(r,300)); $("shRefresh").focus();
+      return document.activeElement === $("shRefresh") && JSON.stringify(ALBUM.sheets[4].styles) !== JSON.stringify(PPTKRT[4].styles)`), "T55: перед «Обновить листы» шаблонная часть листа 5 устарела, пункт меню в фокусе");
+    await p.key("Enter", "Enter", { vk: 13, text: "\r", wait: 600 });
+    check(await p.ev(`const s = ALBUM.sheets[4], t = PPTKRT[4]; return JSON.stringify(s.styles) === JSON.stringify(t.styles) && JSON.stringify(s.rect) === JSON.stringify(t.rect) && ALBUM.sheets[3].title === "Моя схема" && /Листы обновлены по новым показателям/.test($("toast").textContent) && JSON.stringify(ALBUM.sheets[${F}]) === window.__fz`), "T55: «Обновить листы» (клавиша Enter на пункте) возвращает слои и оформление листа к шаблону, название и рамка остаются, лист из файла цел");
+    // не готов: слои листа не загружены
+    await p.ev(`CHECKED.delete("egko.buildings"); await tplManual(); await new Promise(r=>setTimeout(r,500)); pickSheet(3); await new Promise(r=>setTimeout(r,300)); return 1`);
+    check(await p.ev(`return /слой «Здания \\(ЕГКО\\)» не загружен/.test(NOTREADY.get("pptkrt_3") || "") && /Не готов:/.test(document.querySelector("#sheetsBody .snote")?.textContent || "") && /не готово: \\d+/.test($("shStat").textContent) && !NOTREADY.has("imp_t55_0")`), "T55: лист без нужных слоёв помечен «Не готов» с причиной, в строке альбома — число таких листов");
+    // проект старого формата (листы без sheet.tpl), лист 6 правлен рукой: при открытии ничего не меняется; пересборка — только после второго нажатия
+    const lg = await p.ev(`const s = ALBUM.sheets[5]; s.keys = s.keys.slice(1); s.legend = !s.legend; s.title = "Старое название"; const k5 = JSON.stringify(s.keys), l5 = s.legend;
+      const pr = JSON.parse(JSON.stringify(collectProject())); pr.album.sheets.forEach(x => delete x.tpl); const want = JSON.stringify(pr.album.sheets.filter(x => !x.frozen && x.kind !== "tep"));
+      applyProject(pr); await new Promise(r=>setTimeout(r,600));
+      const got = JSON.stringify(ALBUM.sheets.filter(x => !x.frozen && x.kind !== "tep").map(x => { const { tpl, ...r } = x; return r; }));
+      const t = ALBUM.sheets[5]; window.__lg = [k5, l5]; return [got === want, t.tpl?.legacy === true, JSON.stringify(t.keys) === k5, t.legend === l5, t.title === "Старое название"]`);
+    check(lg.every(Boolean), `T55: проект старого формата с правленным листом открывается без изменений, лист помечен legacy (${lg})`);
+    const lg2 = await p.ev(`tplManual(); const a = JSON.stringify(ALBUM.sheets[5].keys), q = $("toast").textContent; tplManual(); const t = ALBUM.sheets[5];
+      return [a === window.__lg[0], /Обновить [0-9]+ (старый лист|старых листов) по шаблону[?] Ваши названия, рамки и фото сохранятся, набор слоёв и легенда — по шаблону/.test(q), JSON.stringify(t.keys) === JSON.stringify(PPTKRT[5].keys.concat([])) || t.keys.length === PPTKRT[5].keys.length, t.legend === PPTKRT[5].legend !== false || t.legend === (PPTKRT[5].legend ?? true), t.title === "Старое название", t.tpl.legacy === undefined]`);
+    check(lg2.every(Boolean), `T55: «Обновить листы» спрашивает про старые листы; после подтверждения слои и легенда — по шаблону, название осталось (${lg2})`);
+    await p.ev(`for (let k = 0; k < 30 && !RESULT.tepNode?._tep; k++) await new Promise(r=>setTimeout(r,500)); return 1`);
+    // порядок: возвращаем проект теста в исходный вид
+    await p.ev(`const i=document.querySelector('[data-nid="doo_z1"]'); winOpen("wNorms", true); i.focus(); i.select(); return 1`); await p.type("44"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
+    await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...window.__t55.keep); window.loadKeys = window.__t55.lk; window.ensureAdmin = window.__t55.ea; CHECKED.clear(); window.__t55.c.forEach(k => CHECKED.add(k)); NOTREADY.clear(); TPL_SIG = null; winOpen("wNorms", false); winOpen("wSheets", false); delete window.__t55; delete window.__fz; delete window.__k3; delete window.__lg; return 1`);
+  });
 };

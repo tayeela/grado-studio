@@ -79,7 +79,7 @@
     if (a === "load") {
       keep();
       TREE.flatMap(leaves).filter(l => isOgd(l.key) && st.sel.has(l.key)).forEach(l => { SOURCES[l.key] ||= { title: `${l.name} (ОГД)`, kind: "gisogd" }; });
-      const keys = [...st.sel], bb = st.bbox; dlg.close(); window.renderSources?.(); loadKeys(keys, bb);
+      const keys = [...st.sel], bb = st.bbox; dlg.close(); window.renderSources?.(); loadKeys(keys, bb, { alias: true });
     }
     if (a === "dxf") {
       keep();

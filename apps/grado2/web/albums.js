@@ -758,6 +758,8 @@ const PPTKRT = [
   ...PPTKRT_C,
 ];
 
+TPL_SETS.pptkrt_ = { list: () => PPTKRT, size: () => "PA3" };       // обновление листов по шаблону (sheets.js, tplRefresh)
+
 async function buildAlbum(kind) {
   if (kind === "pptkrt") return buildSection(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ");
 }

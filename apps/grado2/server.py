@@ -536,6 +536,42 @@ PROGRESS = {}        # ключ источника → ход первой вы�
 _OGD_CAT = {}
 
 
+def source_ogd_code(key):
+    """Код слоя каталога ГИС ОГД, который целиком отдаёт источник: `ogd.<код>` и подборка ГРАДО с одним кодом без
+    подписи вида зоны (`gisogd.gpzu` = `ogd.gpzu`). Подборки из нескольких кодов и слои с подписями — None.
+    Фронт по нему находит уже загруженный слой проекта под другим ключом и обновляет его, а не заводит второй."""
+    if key.startswith("ogd."):
+        return key[4:] or None
+    src = SOURCES.get(key)
+    if src and src[0] == "gisogd" and isinstance(src[1], dict) and len(src[1]) == 1:
+        code, zone = next(iter(src[1].items()))
+        return None if zone else code
+    return None
+
+
+AREA_TOO_BIG = "область слишком большая — уменьшите рамку"
+# PORTAL_DOWN — текст для владельца (примечание и строка в окне), не серверная строка ошибки
+PORTAL_DOWN = "портал OpenStreetMap не ответил: подождите минуту и повторите, область, уже скачанная раньше, берётся с диска"
+
+
+def plain_portal_error(text):
+    """Текст сбоя портала для владельца: без сырых кодов (Errno, HTTP 504, timed out). Сырой текст остаётся в журнале."""
+    t = str(text or "")
+    if re.search(r"out of memory|too large|слишком больш|exceeded.*(memory|limit)", t, re.I):
+        return AREA_TOO_BIG
+    if re.search(r"overpass|openstreetmap", t, re.I):
+        return PORTAL_DOWN
+    if re.search(r"errno \d+|http 5\d\d|timed out|connection (reset|refused)|urlopen error", t, re.I):
+        return "портал не ответил: подождите минуту и повторите"
+    return t
+
+
+def _log_portal(where, text):
+    if sys.stderr and text:
+        sys.stderr.write(f"[portal] {where}: {text}\n")
+
+
+
 def ogd_catalog():
     """Каталог ГИС ОГД для окна выбора слоёв: час в памяти (дерево открывается при каждой выгрузке)."""
     import time as _t
@@ -675,6 +711,8 @@ def fetch(bbox, keys):
                 it = None
             if it:
                 SOURCES[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
+            elif (twin := next((x for x in SOURCES if x != k and source_ogd_code(x) == k[4:]), None)):
+                SOURCES[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])      # каталог не ответил — тот же слой по названию подборки
     keys = [k for k in keys if k in SOURCES]
     area = bbox_km2(bbox)
     layers, errors = {}, {}
@@ -723,10 +761,11 @@ def fetch(bbox, keys):
             except ConnectorError as e:
                 errors[k] = str(e)
 
-    def run_gisogd(k):
+    def run_gisogd(k, nth=0, of=0):
         feats, notes, doc = [], [], None
         def tell(code, got, total, stage):
-            PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage}
+            PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": nth, "of": of}
+        tell(None, 0, None, "wait")          # имя слоя в строке состояния — сразу, не после первого мегабайта
         api = GisogdApi(cache_dir=CACHE / "gisogd", progress=tell)
         missed = []
         for code, zone in SOURCES[k][1].items():
@@ -752,19 +791,20 @@ def fetch(bbox, keys):
 
     def run_ogd(ks):
         """Слои портала, выбранные в окне «Исходные данные», — по очереди: портал не долбим параллельно."""
-        for k in ks:
+        for i, k in enumerate(ks, 1):
             try:
-                run_gisogd(k)
+                run_gisogd(k, i, len(ks))
             except ConnectorError as e:
                 PROGRESS.pop(k, None)
                 errors[k] = str(e)
 
     def run_egko(ks):
         """ЕГКО — по очереди, один слой за другим: первая выгрузка газонов — 1,3 ГБ, портал не долбим параллельно."""
-        for k in ks:
+        for i, k in enumerate(ks, 1):
             feats, notes, doc = [], [], None
-            def tell(code, got, total, stage, k=k):
-                PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage}
+            def tell(code, got, total, stage, k=k, i=i):
+                PROGRESS[k] = {"title": SOURCES[k][2], "got": got, "total": total, "stage": stage, "nth": i, "of": len(ks)}
+            tell(None, 0, None, "wait")
             api = GisogdApi(cache_dir=CACHE / "egko", progress=tell, map_name="base2", clip=True, ttl=EGKO_TTL)
             try:
                 for code, val in SOURCES[k][1].items():
@@ -841,6 +881,11 @@ def fetch(bbox, keys):
                     PROGRESS.pop(k, None)
                     if k not in layers:
                         errors.setdefault(k, str(e) or type(e).__name__)
+    for k, v in list(errors.items()):
+        plain = plain_portal_error(v)
+        if plain != v:
+            _log_portal(k, v)
+            errors[k] = plain
     return layers, errors
 
 
@@ -1211,7 +1256,7 @@ def place_info(lon, lat, polygon=None):
         if key in _PLACE_MEMO:
             return _PLACE_MEMO[key]
     cache = CACHE / "place" / f"{key[0]}_{key[1]}.json"      # Overpass по точке, от контура не зависит
-    raw = None
+    raw, overpass_down = None, False
     if _fresh(cache):
         try:
             raw = json.loads(cache.read_text("utf-8"))
@@ -1220,8 +1265,16 @@ def place_info(lon, lat, polygon=None):
     if raw is None:
         q = (f"[out:json][timeout:25];is_in({lat},{lon})->.a;area.a[\"boundary\"=\"administrative\"][\"admin_level\"~\"^(5|8)$\"];out tags;"
              f"(node(around:3000,{lat},{lon})[\"railway\"=\"subway_entrance\"];node(around:3000,{lat},{lon})[\"railway\"~\"^(station|halt)$\"];);out;")
-        raw = OsmOverpass()._http_post(q)
-        atomic_write(cache, json.dumps(raw, ensure_ascii=False).encode("utf-8"))
+        try:
+            raw = OsmOverpass()._http_post(q)
+        except ConnectorError as e:
+            # район по площади границы берётся из эталона районов без сети: без OSM остаются только станции (K1)
+            if not (polys and district_shares(polys)):
+                raise
+            _log_portal("place", str(e))
+            raw, overpass_down = {"elements": []}, True
+        else:
+            atomic_write(cache, json.dumps(raw, ensure_ascii=False).encode("utf-8"))
     areas = [e.get("tags", {}) for e in raw.get("elements", []) if e.get("type") == "area"]
     okrug = next((a.get("name") for a in areas if a.get("admin_level") == "5"), "")
     dname = next((a.get("name") for a in areas if a.get("admin_level") == "8"), "")
@@ -1253,10 +1306,14 @@ def place_info(lon, lat, polygon=None):
     kx = 111320 * math.cos(math.radians(lat))
     dist = min((math.hypot((e["lon"] - lon) * kx, (e["lat"] - lat) * 110540) for e in rail), default=None)
     walk = dist * 1.3 if dist is not None else None
-    k1 = 0.75 if walk is not None and walk < 1200 else 0.9 if walk is not None and walk <= 2200 else 1.0
+    k1 = None if overpass_down else 0.75 if walk is not None and walk < 1200 else 0.9 if walk is not None and walk <= 2200 else 1.0   # K1 без OSM неизвестен, не «1,0»
+    if overpass_down:
+        notes.append("станции метро не найдены: " + PORTAL_DOWN + "; K1 проверьте вручную")
     out = {"district": district or dname, "known": bool(district), "okrug": okrug, "tinao": tinao, "inside_ttk": inside_ttk,
            "zone": zone, "zone_note": zone_note, "k2": k2, "k1": k1, "rail_walk_m": round(walk) if walk is not None else None, "notes": notes,
            "districts": [{"name": d["name"], "share": d["share"]} for d in districts], "chosen_by": chosen_by}
+    if overpass_down:                # неполный ответ в память не кладём: следующий запрос попробует портал снова
+        return out
     with _PLACE_LOCK:
         _PLACE_MEMO[key] = out
         while len(_PLACE_MEMO) > MAX_PLACE_MEMO:                 # самый старый ключ — первый (dict хранит порядок вставки)
@@ -1460,7 +1517,7 @@ class Handler(SimpleHTTPRequestHandler):
             code, obj = (search_addr if route.endswith("address") else search_any)(q[:2000])
             return self._json(code, obj)
         if self.path == "/api/sources":
-            return self._json(200, {k: {"title": v[2], "kind": v[0]} for k, v in SOURCES.items()})
+            return self._json(200, {k: {"title": v[2], "kind": v[0], **({"code": c} if (c := source_ogd_code(k)) else {})} for k, v in SOURCES.items()})
         if self.path == "/api/layer_roles":
             return self._json(200, layer_roles())
         if self.path.split("?")[0] == "/api/tep/norms":
@@ -2127,7 +2184,8 @@ class Handler(SimpleHTTPRequestHandler):
                 try:
                     return self._json(200, place_info(float(lon), float(lat), req.get("polygon")))
                 except ConnectorError as e:
-                    return self._json(502, {"error": str(e)})
+                    _log_portal("place", str(e))
+                    return self._json(502, {"error": plain_portal_error(str(e))})
             if self.path == "/api/rail_route":
                 try:
                     return self._json(200, rail_route(float(req["lon"]), float(req["lat"])) or {})

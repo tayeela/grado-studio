@@ -1885,3 +1885,62 @@ class SearchAddress(unittest.TestCase):
             self.assertEqual((s, o["type"], len(o["features"])), (200, "cadastral", 1))
             self.assertEqual((g.call_count, c.call_count), (1, 1))
         self.assertEqual(self.get("", "/api/search")[0], 400)
+
+
+class T61Portal(unittest.TestCase):
+    def test_sources_expose_single_catalog_code(self):
+        # подборка ГРАДО с одним кодом и слой каталога — один и тот же слой портала (T61: перевыгрузка не должна дублировать)
+        self.assertEqual(S.source_ogd_code("gisogd.gpzu"), "gpzu")
+        self.assertEqual(S.source_ogd_code("ogd.gpzu"), "gpzu")
+        self.assertEqual(S.source_ogd_code("gisogd.pmt"), "pmtgk")
+        for k in ("gisogd.red_lines", "gisogd.zouit", "gisogd.pzz_sub", "gisogd.ppt", "osm.roads", "nspd.parcels", "egko.green"):
+            self.assertIsNone(S.source_ogd_code(k), k)
+
+    def test_fetch_ogd_key_falls_back_to_curated_twin_when_catalog_is_down(self):
+        S.SOURCES.pop("ogd.gpzu", None)
+        with mock.patch.object(S, "ogd_catalog", side_effect=S.ConnectorError("down")), \
+                mock.patch.object(S, "bbox_km2", side_effect=RuntimeError("stop")):
+            with self.assertRaises(RuntimeError):
+                S.fetch([37.5, 55.7, 37.51, 55.71], ["ogd.gpzu"])
+        try:
+            self.assertEqual(S.SOURCES["ogd.gpzu"][1], {"gpzu": None})
+            self.assertEqual(S.SOURCES["ogd.gpzu"][2], S.SOURCES["gisogd.gpzu"][2])
+        finally:
+            S.SOURCES.pop("ogd.gpzu", None)
+
+    def test_plain_portal_error_hides_raw_text(self):
+        raw = "Overpass не ответил (Errno 54; HTTP 504; timed out) — попробуйте позже или уменьшите область"
+        out = S.plain_portal_error(raw)
+        self.assertEqual(out, S.PORTAL_DOWN)
+        for bad in ("Overpass", "Errno", "HTTP", "timed out"):
+            self.assertNotIn(bad, out)
+        self.assertIn("повторите", out)
+        self.assertNotIn("Errno", S.plain_portal_error("[Errno 54] Connection reset by peer"))
+        self.assertEqual(S.plain_portal_error("слой не найден (HTTP 404)"), "слой не найден (HTTP 404)")
+        self.assertEqual(S.plain_portal_error(""), "")
+        big = "Overpass не ответил (runtime error: Query ran out of memory; HTTP 429) — попробуйте позже или уменьшите область"
+        self.assertEqual(S.plain_portal_error(big), S.AREA_TOO_BIG)
+        self.assertEqual(S.plain_portal_error("Overpass: area too large"), S.AREA_TOO_BIG)
+
+    def test_place_info_survives_overpass_failure_when_polygon_is_known(self):
+        poly = {"type": "Polygon", "coordinates": [[[37.52, 55.78], [37.53, 55.78], [37.53, 55.79], [37.52, 55.79], [37.52, 55.78]]]}
+        S._PLACE_MEMO.clear()
+        with mock.patch.object(S, "_fresh", return_value=False), \
+                mock.patch.object(S.OsmOverpass, "_http_post", side_effect=S.ConnectorError("Overpass не ответил (HTTP 504)")):
+            r = S.place_info(37.525, 55.785, poly)
+            self.assertTrue(r["district"] and r["chosen_by"] == "area")
+            self.assertTrue(any("станции метро не найдены" in x and "Overpass" not in x for x in r["notes"]), r["notes"])
+            self.assertIsNone(r["k1"])                              # K1 без OSM неизвестен: клиент не перезапишет прежний
+            self.assertIsNone(r["rail_walk_m"])
+            self.assertEqual(S._PLACE_MEMO, {})                    # неполный ответ не запоминается
+            with self.assertRaises(S.ConnectorError):              # без контура район берётся только из OSM
+                S.place_info(37.525, 55.785, None)
+
+    def test_place_info_k1_is_known_when_overpass_answers(self):
+        poly = {"type": "Polygon", "coordinates": [[[37.52, 55.78], [37.53, 55.78], [37.53, 55.79], [37.52, 55.79], [37.52, 55.78]]]}
+        S._PLACE_MEMO.clear()
+        with mock.patch.object(S, "_fresh", return_value=False), mock.patch.object(S, "atomic_write"), \
+                mock.patch.object(S.OsmOverpass, "_http_post", return_value={"elements": []}):
+            r = S.place_info(37.525, 55.785, poly)
+        self.assertEqual(r["k1"], 1.0)                              # ответ пришёл, станций рядом нет — K1 1,0 настоящий
+        S._PLACE_MEMO.clear()

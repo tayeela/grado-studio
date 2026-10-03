@@ -125,7 +125,7 @@ function applyProject(p) {
     if (p.view?.basemap && p.view.basemap !== BASE) setBasemap(p.view.basemap);
     go.fitted = false; dataRev++; lastSig = ""; recompute(true); renderParams();
     applyOrder(); LYR.forEach(l => layerSrc[l.key].changed()); renderSources(); renderTree(); renderRight(); renderTable(); setTool("select"); syncPreview(); portalStyles(); setBySheet(!!ALBUM.meta.treeBySheet);
-    window.renderSheets?.(); window.renderViews?.();
+    window.tplOpen?.(); window.renderSheets?.(); window.renderViews?.();
   } finally { PROJ.loading = false; }
   // file — имя файла в папке проектов, в который этот проект сохранялся (у открытого с диска файла его нет):
   // по нему «Сохранить» отличает свой файл от чужого с тем же названием
@@ -259,7 +259,7 @@ addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "
 addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.code === "KeyP") { e.preventDefault(); winOpen("wSheets", true); } });   // saveProject сам уходит в hubSave в совместном режиме
 
 /* ---------- старт: восстановить последнюю работу ---------- */
-window.markDirty = markDirty;
+{ const markDirty0 = markDirty; window.markDirty = () => { markDirty0(); window.scheduleTplRefresh?.(); }; }      // правка проекта → листы по шаблону сверяют показатели (sheets.js, tplAuto: с паузой, только если что-то изменилось)
 // Режим (обычный или совместный) узнаётся первым делом: на общем сервере без входа отвечают только /api/health и страницы,
 // поэтому startApp (app.js) ждёт hubGate — после входа идут остальные запросы; вход и открытие проекта ведёт hub.js
 let modeP = null;

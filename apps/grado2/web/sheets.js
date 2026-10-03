@@ -322,7 +322,7 @@ function situationExtras(sheet, out, frameLL) {
 const buildSituation = () => track(() => buildSituation0());
 async function buildSituation0() {
   if (!TERR) { toast("Выберите файл границы (DXF, DWG, GeoJSON, KML, Shapefile) — лист строится вокруг неё."); return window.pickBoundary(buildSituation0); }
-  const sh = { id: "sit_" + Date.now().toString(36), ...JSON.parse(JSON.stringify(SIT)) };
+  const sh = makeSitSheet("sit_" + Date.now().toString(36));
   await ensureAdmin();
   const bb = frameBox(sh), before = new Set(LYR.map(l => l.key));
   // OSM — только названия улиц: середины листа хватает
@@ -348,13 +348,137 @@ async function buildSituation0() {
   ALBUM.sheets.push(sh); ALBUM.meta.builtAt = new Date().toISOString(); window.markDirty?.(); renderSheets(); previewSheet(ALBUM.sheets.length - 1);
   toast(`Ситуационный план А4, 1:${fmt(sheetScale(sh))}: масштаб меняется в строке листа, рамка сдвигается на карте, PDF одного листа — кнопкой в строке. Данные Яндекса — пользовательская карта, для работы.`);
 }
+/* ===== Листы по шаблону: как лист собран и как он обновляется (T55) =====
+   Лист шаблона («Раздел 1», «Альбом ППТ КРТ», «Ситуационный план A4», «Таблица ТЭП») хранит в sheet.tpl, откуда он:
+   { set: префикс набора («sec1_», «pptkrt_», «sit_») или «tep», i: номер в шаблоне, size: формат при сборке,
+   base: значения полей, которые владелец может поправить рукой (название, легенда, ТЭП, формат, слои, масштаб,
+   центр рамки, подпись, вид) — так видно, что правил он, а что пришло из шаблона }. Показатели ТЭП, легенда и
+   объекты карты на листе не хранятся: sheetSpec берёт их из проекта при каждом просмотре и печати. Хранится
+   «шаблонная» часть листа (слои, оформление, рамки в мм, состав) — её и пересобирает tplRefresh тем же кодом, что
+   «Собрать» (makeTplSheet), а рукой правленное (название, рамка и масштаб, снимки, надписи «Макета», свои тексты)
+   переносит carryHand. Листы «готовая вёрстка» (frozen, импорт из файла) не трогаются никогда. */
+const TPL_SETS = { sec1_: { list: () => SEC1, size: () => ALBUM.meta.slide || "P" } };   // albums.js добавляет pptkrt_
+const TPL_COND = ["title", "legend", "tep", "size", "keys", "scale", "center", "note", "orient", "view", "kind"];
+const TPL_LEGACY = ["title", "scale", "center", "note", "orient"];      // у листа без sheet.tpl рукой правленным считается то, что отличается от шаблона
+const cloneJ = x => JSON.parse(JSON.stringify(x));
+const sameJ = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const tplBase = s => Object.fromEntries(TPL_COND.filter(k => s[k] !== undefined).map(k => [k, cloneJ(s[k])]));
+function makeTplSheet(t, id, set, i, size) {
+  const s = { id, size, legend: t.kind !== "title", tep: false, scale: 0, view: "", ...cloneJ(t) };
+  if (s.kind === "photos") s.photos = [];
+  s.tpl = { set, i, size, base: tplBase(s) }; return s;
+}
+function makeSitSheet(id) { const s = { id, ...cloneJ(SIT) }; s.tpl = { set: "sit_", base: tplBase(s) }; return s; }
+// full: перенести и правки владельца (название, рамка, масштаб, слои…); без full — только снимки и надписи «Макета» (повторная сборка набора)
+function carryHand(fresh, old, full = true) {
+  if (full) {
+    const base = old.tpl?.legacy ? null : old.tpl?.base;      // лист старого проекта: правленным считается всё, что отличается от шаблона (название, рамка, подпись)
+    TPL_COND.forEach(k => {
+      const edited = base ? !sameJ(old[k], base[k]) : TPL_LEGACY.includes(k) && !sameJ(old[k], fresh[k]);
+      if (edited) { if (old[k] === undefined) delete fresh[k]; else fresh[k] = cloneJ(old[k]); }
+    });
+  }
+  if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];
+  if (old.edits) fresh.edits = old.edits; if (old.items) fresh.items = old.items;
+}
+const tplKey = s => JSON.stringify(s, (k, v) => k === "data" && typeof v === "string" && v.length > 500 ? v.length   // снимки — по длине; ключи по алфавиту: порядок полей после переноса правок не считается отличием
+  : v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x < y ? -1 : 1)) : v);
+const TPL_MAKE = {
+  sit_: (s) => makeSitSheet(s.id),
+  tep: (s) => ({ ...s, tpl: { set: "tep" } }) };
+const tplSet = s => s.frozen ? null : s.tpl?.set || null;
+function tplMake(s) {
+  const set = tplSet(s); if (!set) return null;
+  if (TPL_MAKE[set]) return TPL_MAKE[set](s);
+  const d = TPL_SETS[set], i = s.tpl.i, t = d && d.list()[i];
+  return t ? makeTplSheet(t, s.id, set, i, s.tpl.size || d.size()) : null;
+}
+const NOTREADY = new Map();        // id листа → почему не готов; не сохраняется в проект, считается при каждом обновлении
+function notReadyWhy(s) {
+  if (s.kind === "title") return "";
+  if ((s.kind === "tep" || s.tep) && !RESULT.tepNode?._tep) return "показатели ещё не посчитаны: постройте эскиз застройки";
+  if (s.kind === "tep") return "";
+  if (!TERR) return "нет границы территории";
+  const ks = [...new Set([...(s.keys || []), ...(s.panels || []).flatMap(p => p.keys || [])])], t = k => SOURCES[k]?.title || k;
+  const bad = ks.filter(k => ERRORS[k]), miss = ks.filter(k => !bad.includes(k) && !lyr(k) && !DATA[k] && SOURCES[k] && !CHECKED.has(k));
+  const w = (a, one, many) => `${a.length > 1 ? "слои" : "слой"} ${a.map(x => "«" + t(x) + "»").join(", ")} ${a.length > 1 ? many : one}`;      // пустой результат выгрузки не в счёт: слой запрашивали
+  return [bad.length ? w(bad, "не загрузился", "не загрузились") : "", miss.length ? w(miss, "не загружен", "не загружены") : ""].filter(Boolean).join("; ");
+}
+// лист проекта старого формата (нет sheet.tpl): ничего не меняется, записывается только откуда он (legacy: true) — автоматически такой лист не пересобирается
+function tplAdopt() {
+  let n = 0;
+  ALBUM.sheets.forEach(s => { if (s.frozen || s.tpl) return;
+    const set = s.kind === "tep" ? "tep" : [...Object.keys(TPL_SETS), "sit_"].find(k => String(s.id).startsWith(k)); if (!set) return;
+    const i = parseInt(String(s.id).slice(set.length), 10);
+    if (set === "tep") s.tpl = { set };
+    else if (set === "sit_" || (TPL_SETS[set] && Number.isFinite(i) && TPL_SETS[set].list()[i])) { s.tpl = { set, i: set === "sit_" ? undefined : i, size: s.size, legacy: true }; n++; } });
+  return n;
+}
+// пересобрать шаблонную часть листов по текущему шаблону и проекту; o.legacy — пересобрать и старые листы (только по подтверждению владельца)
+function tplRefresh(o = {}) {
+  const res = { n: 0, old: 0, changed: 0, bad: [] };
+  ALBUM.sheets.forEach(s => {
+    if (s.frozen || !s.tpl) return;
+    if (s.tpl.legacy && !o.legacy) { res.n++; res.old++; const w = notReadyWhy(s); if (w) { NOTREADY.set(s.id, w); res.bad.push(s); } else NOTREADY.delete(s.id); return; }
+    const fresh = tplMake(s); if (!fresh) return;
+    res.n++;
+    if (fresh.tpl.set !== "tep") carryHand(fresh, s, true);
+    if (tplKey(fresh) !== tplKey(s)) { Object.keys(s).forEach(k => delete s[k]); Object.assign(s, fresh); res.changed++; }
+    const why = notReadyWhy(s); if (why) { NOTREADY.set(s.id, why); res.bad.push(s); } else NOTREADY.delete(s.id);
+  });
+  return res;
+}
+let TPL_SIG = null, TPL_AT = 0, TPL_TIMER = 0;
+// из чего складывается «новые показатели»: ТЭП и нормативы, принятый эскиз, граница, оформление слоёв листов
+function tplSig() {
+  const ts = ALBUM.sheets.filter(s => !s.frozen && s.tpl); if (!ts.length) return null;
+  const ks = [...new Set(ts.flatMap(s => [...(s.keys || []), ...(s.panels || []).flatMap(p => p.keys || [])]))], t = RESULT.tepNode?._tep;
+  const tep = t ? JSON.stringify([tepRows(true), t.constantsChanged || []]) : null;
+  return { tep, all: JSON.stringify([tep, RESULT.tepNode?.properties?.baked || null, RESULT.sketch?.length || 0, TERR ? Math.round(m2(TERR)) : null, ks.map(k => { const l = lyr(k); return l ? [k, l.style] : [k, ERRORS[k] || CHECKED.has(k) ? 1 : 0]; })]) };
+}
+function tplAfter(r, say) {
+  TPL_AT = Date.now();
+  if (r.changed) window.markDirty?.();
+  if (say) { const m = "Листы обновлены по новым показателям" + (r.bad.length ? ` · не готово: ${r.bad.length}` : ""); window.setHint?.(m); setTimeout(() => { if ($("stHint")?.textContent === m) window.setHint?.(""); }, 8000); }
+  syncAlbumStat();
+  const el = $("wSheets"); if (el && !el.hidden) {
+    const shown = $("sheetPrev") && !$("sheetPrev").hidden;          // открытый просмотр листа перерисовывается по новым показателям
+    if (!document.activeElement?.closest?.("#sheetsBody input, #sheetsBody select, #sheetsBody textarea")) renderSheets();
+    if (shown && ALBUM.sheets.length) previewSheet(selIdx());
+  }
+}
+function tplAuto() {
+  TPL_TIMER = 0; if (isViewer()) return;
+  const sg = tplSig(); if (!sg) { TPL_SIG = null; return; }
+  if (sg.all === TPL_SIG?.all) return;
+  const prev = TPL_SIG; TPL_SIG = sg;
+  tplAfter(tplRefresh({}), !!prev && prev.tep !== null);        // первый подсчёт после открытия проекта — не «новые показатели»
+}
+const tplSchedule = () => { clearTimeout(TPL_TIMER); TPL_TIMER = setTimeout(tplAuto, 600); };
+window.scheduleTplRefresh = tplSchedule;
+// открытие проекта: листы старого формата (без sheet.tpl) не меняются — только помечаются legacy; пересборка таких листов — по «Обновить листы» с подтверждением
+window.tplOpen = () => { NOTREADY.clear(); TPL_SIG = null; if (isViewer()) return; tplAdopt(); const r = tplRefresh({}); if (r.n) { TPL_SIG = tplSig(); tplAfter(r, false); } };
+function tplManual() {
+  if (isViewer()) return toast("Только просмотр: листы обновляет тот, кто правит проект.");
+  tplAdopt();
+  const old = ALBUM.sheets.filter(s => s.tpl?.legacy && !s.frozen).length, frozen = ALBUM.sheets.filter(s => s.frozen).length;
+  // старые листы (из проекта до sheet.tpl) пересобираются по шаблону только после второго нажатия: слои и легенда станут шаблонными
+  const go = old ? confirmInline($("shRefresh"), `Обновить ${old} ${old % 10 === 1 && old % 100 !== 11 ? "старый лист" : "старых листов"} по шаблону? Ваши названия, рамки и фото сохранятся, набор слоёв и легенда — по шаблону.`) : false;
+  const r = tplRefresh({ legacy: go });
+  if (!r.n) return toast("В альбоме нет листов, собранных по шаблону (раздел, альбом ППТ КРТ, ситуационный план, таблица ТЭП)." + (frozen ? " Готовая вёрстка из файла не обновляется." : ""));
+  TPL_SIG = tplSig(); tplAfter(r, true);
+  if (old && !go) return;           // вопрос о старых листах остаётся на экране
+  toast(`Листы обновлены по новым показателям: ${r.n} ${shWord(r.n)} по шаблону` + (frozen ? `, ${frozen} из файла не тронуты` : "") + "."
+    + (r.bad.length ? ` Не готовы: ${r.bad.map(s => `«${s.title}» — ${NOTREADY.get(s.id)}`).join("; ")}. Недостающие слои выгружает «Собрать».` : ""));
+}
+
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 const buildSection = (...a) => track(() => buildSection0(...a));
 async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»") {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
   const before = new Set(LYR.map(l => l.key));
-  const sheets = tpl.map((t, i) => ({ id: prefix + i, size, legend: t.kind !== "title", tep: false, scale: 0, view: "", ...JSON.parse(JSON.stringify(t)) }));
+  const sheets = tpl.map((t, i) => makeTplSheet(t, prefix + i, prefix, i, size));       // та же сборка листа, что у «Обновить листы» (tplRefresh ниже)
   // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
   // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 132). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
@@ -384,9 +508,9 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   const lost = [...failed].map(([k, x]) => `«${SOURCES[k]?.title || k}» (${x.why})`);
   buildUds();
   // пересборка раздела не теряет добавленные снимки и правки макета (надписи, свои тексты) — по листу с тем же видом и названием
-  const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).map(s => [(s.kind || "") + s.title, s]));
-  sheets.forEach(s => { const o = old.get((s.kind || "") + s.title); if (s.kind === "photos") s.photos = o?.photos || [];
-    if (o?.edits) s.edits = o.edits; if (o?.items) s.items = o.items; });
+  // — по id листа (он задан шаблоном), а не по названию: переименованный лист не теряет снимки и надписи
+  const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
+  sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o) carryHand(s, o, false); });
   ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith(prefix)).concat(sheets);
   // холст — опорный план: тематические слои раздела (зоны, ПЗЗ, Генплан, документация, соцобъекты) выключены — они
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
@@ -469,6 +593,8 @@ function albumStatText() {
   if (m.importedFrom) t += ` · импортирован из файла ${m.importedFrom}`;
   if (m.pdfAt) t += ` · PDF ${stampText(m.pdfAt)}`;
   if (m.pptxAt) t += ` · PPTX ${stampText(m.pptxAt)}`;
+  if (TPL_AT) t += ` · листы обновлены ${stampText(new Date(TPL_AT).toISOString())}`;
+  if (NOTREADY.size) t += ` · не готово: ${NOTREADY.size}`;
   const last = [m.editedAt, m.builtAt].filter(Boolean).sort().pop();       // правили листы после последнего файла
   if (last && m.pdfAt && last > m.pdfAt) t += " · изменён после PDF";
   else if (last && !m.pdfAt && m.pptxAt && last > m.pptxAt) t += " · изменён после PPTX";
@@ -527,7 +653,7 @@ function importAlbum(mode) {
   const now = projectJSON().length;
   if (now + imp.size > PROJECT_CAP) { renderSheets(); return toast(`Проект станет ${mb(now + imp.size)} МБ, а сохранить можно не больше ${mb(PROJECT_CAP)} МБ: импорт отменён.`); }
   const list = imp.album.sheets.map(s => { const x = { ...s }; if (x.scale != null && !Array.isArray(x.scale)) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view);
-    if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; if (isReadySheet(x)) x.frozen = true; return x; });
+    if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; delete x.tpl; if (isReadySheet(x)) x.frozen = true; return x; });
   const old = mode === "add" ? ALBUM.sheets.length : 0;
   // id всегда новые, «imp_…»: старые «sec1_», «pptkrt_» — префиксы наборов, по ним buildAlbum удаляет листы (ссылок листов друг на друга в файлах нет)
   const t = Date.now().toString(36), had = new Set(ALBUM.sheets.map(s => s.id)); let k = 0;
@@ -572,7 +698,7 @@ function rowInner(s, i, on) {
   return `<span class="n">${i + 1}</span><span class="t" title="${esc(s.title)}">${esc(s.title) || "<i>без названия</i>"}</span>`
     + (s.frozen ? `<span class="rdy" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе">готовая</span>` : "")
     + `<span class="fs">${esc(sizeShort(s))}${sc ? `<span class="sc"> · ${sc}</span>` : ""}</span>`
-    + `<span class="ic">${ic(s.legend && s.kind !== "tep", "list", "Легенда вида")}${ic(s.tep || s.kind === "tep", "table", "Таблица ТЭП")}${ic(s.kind === "photos", "camera", "Фотофиксация")}</span>`
+    + `<span class="ic">${ic(s.legend && s.kind !== "tep", "list", "Легенда вида")}${ic(s.tep || s.kind === "tep", "table", "Таблица ТЭП")}${ic(s.kind === "photos", "camera", "Фотофиксация")}${ic(NOTREADY.has(s.id), "triangle-alert", "Не готов: " + esc(NOTREADY.get(s.id) || ""))}</span>`
     + `<span class="ra"><button class="tb" data-shup="${i}" title="Выше" aria-label="Выше"><i data-lucide="arrow-up"></i></button><button class="tb" data-shdel="${i}" title="Удалить лист" aria-label="Удалить лист"><i data-lucide="trash-2"></i></button></span>`;
 }
 function detHTML(s, i) {
@@ -580,6 +706,7 @@ function detHTML(s, i) {
     + `<option value="__tep" ${s.kind === "tep" ? "selected" : ""}>таблица ТЭП (все показатели)</option>`;
   const tepS = s.kind === "tep" || s.frozen ? "disabled" : "";
   const note = s.frozen ? "Готовая вёрстка из файла: слои и оформление записаны в самом листе." : s.panels ? "Две карты: у каждой свой масштаб; слои, оформление и рамки заданы шаблоном раздела." : s.keys ? "Лист раздела: слои, оформление и рамка заданы шаблоном раздела." : "";
+  const nrw = NOTREADY.get(s.id), noteAll = (nrw ? `<b>Не готов:</b> ${esc(nrw)}. ` : "") + note;
   const content = s.frozen ? `<select disabled aria-label="Содержание листа" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе"><option>готовая вёрстка</option></select>`
     : s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts}</select>`;
   const scale = `<select data-sk="scale" aria-label="Масштаб" ${tepS} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : s.frozen ? `<option>${+s.scale ? "1:" + fmt(Math.round(+s.scale)) : "—"}</option>` : ""}<option value="0" title="Масштаб подобран так, чтобы территория поместилась на лист">авто 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select>`;
@@ -596,7 +723,7 @@ function detHTML(s, i) {
     + `<div class="g2"><label class="f">Формат<select data-sk="size" aria-label="Формат" ${s.frozen ? "disabled" : ""}>${Object.keys(SIZE_T).map(v => `<option value="${esc(v)}" ${v === s.size ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></label><label class="f">Масштаб${scale}</label></div>`
     + `<label class="f">Содержание${content}</label>`
     + `<div class="flags"><label title="Легенда вида"><input type="checkbox" data-sk="legend" ${s.legend ? "checked" : ""} aria-label="Легенда" ${tepS}>Легенда</label><label title="Таблица ТЭП"><input type="checkbox" data-sk="tep" ${s.tep ? "checked" : ""} aria-label="ТЭП" ${tepS}>Таблица ТЭП</label></div>`
-    + (note ? `<div class="snote">${note}</div>` : "") + `<div class="tools">${tools}</div>`
+    + (noteAll ? `<div class="snote">${noteAll}</div>` : "") + `<div class="tools">${tools}</div>`
     + `<div class="sheetprev"><img id="sheetPrev" alt="Просмотр листа" hidden></div></div>`;
 }
 function emptyHTML() {
@@ -635,6 +762,7 @@ function renderSheets() {
     + `<div class="menu shmenu" id="shMenuBuild" role="menu" hidden>${mi("shSec1", "layout-template", "Раздел 1: существующее положение", "Слайды по территории; заменит листы этого набора", "Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов. Заменит листы этого набора")}`
     + `${mi("shPptKrt", "presentation", "Альбом ППТ&nbsp;КРТ", "Шаблон с красной шапкой; заменит листы этого набора", "Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи. Заменит листы этого набора")}`
     + `${mi("shSit", "map", "Ситуационный план A4", "Окружение и граница территории, один лист", "Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл")}<hr>`
+    + `${mi("shRefresh", "refresh-cw", "Обновить листы", "Пересобрать листы по шаблону из текущих показателей; ваши названия, рамки и надписи остаются", "Пересборка листов, собранных по шаблону, из текущих ТЭП, нормативов, эскиза и оформления слоёв. Название, рамка и масштаб, снимки и надписи «Макета» остаются; листы из файла не трогаются; слои из сети не выгружаются — для этого «Собрать»")}`
     + `${mi("shImport", "folder-open", "Из файла…", "Листы из проекта .grado2 или готовой вёрстки", "Взять листы альбома из файла: проекта .grado2 или готовой вёрстки. Файл читается в браузере, на сервер не уходит")}</div>`
     + `<input type="file" id="shImpFile" accept=".grado2,.json,application/json" hidden>`;
   icons(); syncBusy();
@@ -683,7 +811,8 @@ shEl().addEventListener("change", e => {
   if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });
     touch(); if (FRAME) showFrame(FRAME.i); renderSheets(); return; }
   if (!row || !t.dataset.sk) return; const s = ALBUM.sheets[+row.dataset.sh], k = t.dataset.sk;
-  if (k === "view") { s.kind = t.value === "__tep" ? "tep" : "map"; s.view = s.kind === "tep" ? "" : t.value; if (s.kind === "tep") { s.title = s.title === newSheet().title || !s.title ? "Технико-экономические показатели" : s.title; if (FRAME?.i === +row.dataset.sh) showFrame(null); } }
+  if (k === "view") { s.kind = t.value === "__tep" ? "tep" : "map"; s.view = s.kind === "tep" ? "" : t.value; if (s.kind === "tep") s.tpl = { set: "tep" }; else if (s.tpl?.set === "tep") delete s.tpl;
+    if (s.kind === "tep") { s.title = s.title === newSheet().title || !s.title ? "Технико-экономические показатели" : s.title; if (FRAME?.i === +row.dataset.sh) showFrame(null); } }
   else s[k] = t.type === "checkbox" ? t.checked : k === "scale" ? +t.value : t.value;
   touch(); if (["size", "view"].includes(k)) renderSheets(); else refreshRow(+row.dataset.sh);
   if (FRAME?.i === +row.dataset.sh && ["size", "scale", "title"].includes(k)) showFrame(FRAME.i);
@@ -703,6 +832,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt" || b.dataset.shact === "pptkrt") track(() => window.buildAlbum?.("pptkrt"));
   if (b.id === "shSit") buildSituation();
+  if (b.id === "shRefresh") tplManual();
   if (b.id === "shImport") { if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); $("shImpFile").click(); }
   if (b.dataset.shimp) importAlbum(b.dataset.shimp);
   if (b.dataset.shpdf) albumFile("pdf", ALBUM.sheets[+b.dataset.shpdf]);
