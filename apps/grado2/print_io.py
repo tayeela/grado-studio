@@ -1595,18 +1595,398 @@ PPTX_GROUPS = {"SketchMapFrame": "Карта", "PanelFrame": "Карта", "Colu
                "TepSheetFrame": "ТЭП", "LegendFrame": "Легенда", "TableFrame": "Таблица"}
 
 
+# ---------- PPTX: тайлы подложки по рамке карты, тяжёлые карты — растром ----------
+
+PPTX_MAX_SHAPES = 20000          # больше фигур на слайде — карта уходит растром (LibreOffice на 244 тыс. фигур не открыл за 9 мин)
+PPTX_MAX_XML = 16e6              # или оценка XML слайда больше этого (байт)
+PPTX_DPI = 200                   # разрешение растра карты
+PPTX_SUBPIXEL = 0.25 * 25.4 / 72  # 0,25 пт в мм: мельче глаз на листе не различает
+
+
+def _op_box(ops):
+    """Текущая рамка обрезки по операциям: пересечение прямоугольных clip (кольцевые — по охвату)."""
+    stack = []
+    for o in ops:
+        if o["op"] == "clip":
+            if o.get("rect"):
+                x, y, w, h = o["rect"]
+                b = (x, y, x + w, y + h)
+            else:
+                pts = [p for r in o.get("rings") or [] for p in r]
+                b = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)) if pts else None
+            stack.append(b)
+        elif o["op"] == "unclip" and stack:
+            stack.pop()
+    return stack
+
+
+def _meet_box(a, b):
+    if a is None or b is None:
+        return a or b
+    return (max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3]))
+
+
+def _quad_info(quad):
+    (tlx, tly), (trx, try_), (blx, bly) = quad
+    ux, uy, vx, vy = trx - tlx, try_ - tly, blx - tlx, bly - tly
+    corners = [(tlx, tly), (trx, try_), (trx + vx, try_ + vy), (blx, bly)]
+    w, h = math.hypot(ux, uy), math.hypot(vx, vy)
+    cx, cy = (trx + blx) / 2, (try_ + bly) / 2                       # так PPTX-бэкенд ставит повёрнутый рисунок
+    return corners, (ux, uy, vx, vy), (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
+
+
+def _inside(b, box):
+    return b[0] >= box[0] and b[1] >= box[1] and b[2] <= box[2] and b[3] <= box[3]
+
+
+def _tile_patch(data, quad, box, ppmm=None):
+    """Часть тайла-параллелограмма внутри box (мм) как прямоугольная картинка (PIL RGBA) по осям листа.
+    Возвращает (картинка, (x0, y0, x1, y1) мм) или None, если тайл вне box. ppmm — пикселей на мм (по умолчанию как у тайла)."""
+    import io
+    from PIL import Image
+    corners, (ux, uy, vx, vy), _ = _quad_info(quad)
+    poly = clip_ring(corners, (box[0], box[1], box[2] - box[0], box[3] - box[1]), pad=0)
+    if len(poly) < 3:
+        return None
+    bx0, by0 = min(p[0] for p in poly), min(p[1] for p in poly)
+    bx1, by1 = max(p[0] for p in poly), max(p[1] for p in poly)
+    if bx1 - bx0 < 1e-6 or by1 - by0 < 1e-6:
+        return None
+    im = Image.open(io.BytesIO(data)).convert("RGB")
+    W, H = im.size
+    ppmm = ppmm or W / (math.hypot(ux, uy) or 1)
+    ow, oh = max(1, min(4096, int(math.ceil((bx1 - bx0) * ppmm)))), max(1, min(4096, int(math.ceil((by1 - by0) * ppmm))))
+    sx, sy, det = (bx1 - bx0) / ow, (by1 - by0) / oh, (ux * vy - uy * vx) or 1e-9
+    tlx, tly = quad[0]
+    coef = (sx * vy / det * W, -sy * vx / det * W, ((bx0 - tlx) * vy - (by0 - tly) * vx) / det * W,
+            -uy * sx / det * H, ux * sy / det * H, (ux * (by0 - tly) - uy * (bx0 - tlx)) / det * H)
+    warped = im.transform((ow, oh), Image.AFFINE, coef, Image.BILINEAR)
+    alpha = Image.new("L", im.size, 255).transform((ow, oh), Image.AFFINE, coef, Image.BILINEAR)
+    out = im.resize((ow, oh)).convert("RGBA")               # подложка из самого тайла: на срезе нет чёрной каёмки
+    out.paste(warped, (0, 0), alpha)
+    area = abs(sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]))) / 2
+    if area < 0.995 * (bx1 - bx0) * (by1 - by0):             # по краям внутри рамки остаются углы чужих тайлов
+        out.putalpha(alpha)
+    return out, (bx0, by0, bx1, by1)
+
+
+def pptx_clip_tiles(ops):
+    """Тайлы подложки, торчащие за рамку карты, режутся по рамке (PPTX не умеет обрезку: PDF режет clip-ом).
+    Рисунок почти без поворота кадрируется бэкендом (srcRect); повёрнутый перерисовывается прямоугольным куском
+    внутри рамки. Целые тайлы остаются как есть."""
+    import io
+    out, stack = [], []
+    for o in ops:
+        if o["op"] == "clip":
+            stack.append(o)
+        elif o["op"] == "unclip" and stack:
+            stack.pop()
+        if o["op"] != "image" or "quad" not in o or not stack:
+            out.append(o)
+            continue
+        box = None
+        for c in stack:
+            if c.get("rect"):
+                x, y, w, h = c["rect"]
+                box = _meet_box(box, (x, y, x + w, y + h))
+        if box is None:
+            out.append(o)
+            continue
+        corners, (ux, uy, vx, vy), plain = _quad_info(o["quad"])
+        xs, ys = [p[0] for p in corners], [p[1] for p in corners]
+        if _inside((min(xs), min(ys), max(xs), max(ys)), box) and _inside(plain, box):
+            out.append(o)
+        elif max(xs) < box[0] or min(xs) > box[2] or max(ys) < box[1] or min(ys) > box[3]:
+            continue
+        elif max(abs(uy), abs(vx)) < 0.05:                       # поворот меньше полупикселя: прямой рисунок, обрежет бэкенд
+            out.append({"op": "image", "data": o["data"], "x": o["quad"][0][0], "y": o["quad"][0][1], "w": ux, "h": vy})
+        else:
+            got = _tile_patch(o["data"], o["quad"], box)
+            if got is None:
+                continue
+            im, (x0, y0, x1, y1) = got
+            buf = io.BytesIO()
+            if im.getchannel("A").getextrema()[0] == 255:
+                im.convert("RGB").save(buf, "JPEG", quality=88)
+            else:
+                im.save(buf, "PNG")
+            out.append({"op": "image", "data": buf.getvalue(), "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0})
+    return out
+
+
+def pptx_thin(ops):
+    """Фигуры, которых на листе не видно, в PPTX не нужны: замкнутые контуры мельче 0,25 пт пропускаются, подробные
+    кольца упрощаются (Дуглас — Пекер, 0,25 пт)."""
+    out = []
+    for o in ops:
+        if o["op"] != "path":
+            out.append(o)
+            continue
+        rings = []
+        for r in o["rings"]:
+            if len(r) >= 20:
+                s = _simplify(list(r), PPTX_SUBPIXEL)
+                r = s if len(s) >= (3 if o.get("closed") else 2) else r
+            rings.append(r)
+        xs, ys = [p[0] for r in rings for p in r], [p[1] for r in rings for p in r]
+        # крошечный замкнутый контур пропускается, только если у него нет заметной обводки (точка 0,5 мм линией — видна)
+        if o.get("closed") and xs and max(xs) - min(xs) < PPTX_SUBPIXEL and max(ys) - min(ys) < PPTX_SUBPIXEL \
+                and not (o.get("fill") is None and (o.get("width") or 0) > PPTX_SUBPIXEL):
+            continue
+        out.append({**o, "rings": rings})
+    return out
+
+
+def pptx_weight(ops):
+    """(число фигур, оценка веса XML в байтах) слайда по операциям рамки; линии без заливки одного вида подряд
+    бэкенд сливает в одну фигуру, как и здесь."""
+    shapes = pts = 0
+    prev = None
+    for o in ops:
+        t = o["op"]
+        if t == "path":
+            n = sum(len(r) for r in o["rings"])
+            pts += n
+            if o.get("fill") is None:
+                key = (bool(o.get("closed")), tuple(o["stroke"] or ()), o.get("width"), tuple(o.get("dash") or ()))
+                if key != prev:
+                    shapes += 1
+                prev = key
+            else:
+                shapes += 1
+                prev = None
+        else:
+            prev = None
+            shapes += t in ("text", "circle", "image") or (t == "clip" and bool(o.get("rings")))
+    return shapes, shapes * 600 + pts * 55
+
+
+def _dash_runs(pts, dash):
+    """Ломаная (мм) → куски штриха: dash — [штрих, пробел, ...] в мм."""
+    pat = [max(0.05, float(v)) for v in dash] or [1.0]
+    pat = pat * (2 if len(pat) % 2 else 1)
+    runs, cur, i, left, on = [], [pts[0]], 0, pat[0], True
+    for a, b in zip(pts, pts[1:]):
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        pos = 0.0
+        while d - pos > left:
+            pos += left
+            p = (a[0] + (b[0] - a[0]) * pos / d, a[1] + (b[1] - a[1]) * pos / d)
+            if on:
+                cur.append(p)
+                runs.append(cur)
+            cur = [p]
+            on = not on
+            i = (i + 1) % len(pat)
+            left = pat[i]
+        left -= d - pos
+        if on:
+            cur.append(b)
+    if on and len(cur) > 1:
+        runs.append(cur)
+    return runs
+
+
+def pptx_rasterize(ops, dpi=PPTX_DPI):
+    """Операции карты → список из одной картинки PNG (все контуры и снимки, с обрезкой) и поверх неё подписей и значков
+    векторно. Рамка — внешний clip карты; без него рисунок всей карты по охвату контуров."""
+    import io
+    from PIL import Image, ImageChops, ImageDraw
+    box = None
+    for c in ops:
+        if c["op"] == "clip" and c.get("rect"):
+            x, y, w, h = c["rect"]
+            box = (x, y, x + w, y + h)
+            break
+    if box is None:
+        pts = [p for o in ops if o["op"] == "path" for r in o["rings"] for p in r]
+        if not pts:
+            return ops
+        box = (min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts))
+    x0, y0, x1, y1 = box
+    pmm = dpi / 25.4
+    W, H = max(1, int(round((x1 - x0) * pmm))), max(1, int(round((y1 - y0) * pmm)))
+    ss = 2 if W * H * 4 <= 36e6 else 1                               # сглаживание: рисуем вдвое крупнее и уменьшаем
+    k, cw, ch = pmm * ss, W * ss, H * ss
+    px = lambda p: ((p[0] - x0) * k, (p[1] - y0) * k)
+    layers = [Image.new("RGBA", (cw, ch), (0, 0, 0, 0))]
+    masks = []
+
+    def poly_mask(rings):
+        m = Image.new("1", (cw, ch), 0)
+        for r in rings:
+            t = Image.new("1", (cw, ch), 0)
+            ImageDraw.Draw(t).polygon([px(p) for p in r], fill=1)
+            m = ImageChops.logical_xor(m, t)
+        return m.convert("L")
+
+    def blend(layer, rings, color, alpha, bb):
+        a = max(0, min(1, float(alpha)))
+        ex = [px(p) for r in rings for p in r]
+        l, t = max(0, int(min(p[0] for p in ex)) - 1), max(0, int(min(p[1] for p in ex)) - 1)
+        r_, b_ = min(cw, int(max(p[0] for p in ex)) + 2), min(ch, int(max(p[1] for p in ex)) + 2)
+        if r_ <= l or b_ <= t:
+            return
+        m = Image.new("1", (r_ - l, b_ - t), 0)
+        for r in rings:
+            tmp = Image.new("1", m.size, 0)
+            ImageDraw.Draw(tmp).polygon([(px(p)[0] - l, px(p)[1] - t) for p in r], fill=1)
+            m = ImageChops.logical_xor(m, tmp)
+        patch = Image.new("RGBA", m.size, tuple(int(round(v * 255)) for v in color) + (0,))
+        patch.putalpha(m.convert("L").point(lambda v: int(v * a)))
+        layer.alpha_composite(patch, (l, t))
+
+    rest = []
+    for o in ops:
+        t = o["op"]
+        layer = layers[-1]
+        if t == "clip":
+            if o.get("rect"):
+                x, y, w, h = o["rect"]
+                full = x <= x0 and y <= y0 and x + w >= x1 and y + h >= y1
+                masks.append(None if full else poly_mask([[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]))
+            else:
+                rings = [r for r in o.get("rings") or [] if len(r) >= 3]
+                masks.append(poly_mask(rings) if rings else None)
+            if masks[-1] is not None:
+                layers.append(Image.new("RGBA", (cw, ch), (0, 0, 0, 0)))
+        elif t == "unclip":
+            if masks:
+                m = masks.pop()
+                if m is not None:
+                    top = layers.pop()
+                    top.putalpha(ImageChops.multiply(top.getchannel("A"), m))
+                    layers[-1].alpha_composite(top)
+        elif t == "path":
+            rings = [r for r in o["rings"] if len(r) >= 2]
+            if not rings:
+                continue
+            fill, stroke = o.get("fill"), o.get("stroke")
+            if o.get("closed") and fill is not None:
+                rgb = tuple(int(round(v * 255)) for v in fill)
+                alpha = o.get("alpha")
+                if alpha is not None and float(alpha) < 1:
+                    blend(layer, rings, fill, alpha, None)
+                elif len(rings) == 1:
+                    ImageDraw.Draw(layer).polygon([px(p) for p in rings[0]], fill=rgb + (255,))
+                else:
+                    m = poly_mask(rings)
+                    layer.paste(Image.new("RGBA", (cw, ch), rgb + (255,)), (0, 0), m)
+            if stroke is not None:
+                d = ImageDraw.Draw(layer)
+                col = tuple(int(round(v * 255)) for v in stroke) + (255,)
+                wpx = max(1, int(round(float(o.get("width") or 0.1) * k)))
+                for r in rings:
+                    line = list(r) + ([r[0]] if o.get("closed") else [])
+                    for run in (_dash_runs(line, o["dash"]) if o.get("dash") else [line]):
+                        d.line([px(p) for p in run], fill=col, width=wpx, joint="curve" if wpx > 2 else None)
+        elif t == "image":
+            try:
+                if "quad" in o:
+                    got = _tile_patch(o["data"], o["quad"], box, ppmm=k)
+                    if got:
+                        im, (bx0, by0, bx1, by1) = got
+                        layer.alpha_composite(im, (int(round((bx0 - x0) * k)), int(round((by0 - y0) * k))))
+                else:
+                    im = Image.open(io.BytesIO(o["data"])).convert("RGBA").resize((max(1, int(round(o["w"] * k))), max(1, int(round(o["h"] * k)))))
+                    layer.alpha_composite(im.crop((max(0, int(round((x0 - o["x"]) * k))), max(0, int(round((y0 - o["y"]) * k))), im.width, im.height)),
+                                          (max(0, int(round((o["x"] - x0) * k))), max(0, int(round((o["y"] - y0) * k)))))
+            except Exception:                                            # битый снимок: остальная карта должна собраться
+                continue
+        elif t in ("text", "circle"):
+            rest.append(o)
+    while len(layers) > 1:
+        top = layers.pop()
+        layers[-1].alpha_composite(top)
+    img = layers[0].resize((W, H), Image.LANCZOS) if ss > 1 else layers[0]
+    buf = io.BytesIO()
+    img.save(buf, "PNG")
+    return ([{"op": "clip", "rect": (x0, y0, x1 - x0, y1 - y0)}, {"op": "layer", "name": "Карта (растр)"},
+             {"op": "image", "data": buf.getvalue(), "x": x0, "y": y0, "w": x1 - x0, "h": y1 - y0}] + rest + [{"op": "unclip"}])
+
+
+RASTER_NOTE = "Карта этого слайда вставлена картинкой (PNG, 200 dpi): векторных фигур было слишком много для PowerPoint. Подписи, легенда и рамка остались текстом и фигурами."
+
+
+def pptx_notes(data, notes):
+    """Заметки слайдов к готовому PPTX: notes — {номер слайда: текст}. Добавляет образец заметок, страницы заметок и связи."""
+    import io
+    import zipfile
+    if not notes:
+        return data
+    src = zipfile.ZipFile(io.BytesIO(data))
+    files = {n: src.read(n) for n in src.namelist()}
+    ns = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+          'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
+    head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    grp = ('<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
+           '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>')
+    rel = lambda rid, typ, target: (f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{typ}" Target="{target}"/>')
+    rels = lambda body: head + f'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>'
+    files["ppt/theme/theme2.xml"] = files["ppt/theme/theme1.xml"]
+    files["ppt/notesMasters/notesMaster1.xml"] = (head + f'<p:notesMaster {ns}><p:cSld><p:spTree>{grp}<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes"/>'
+        '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="685800" y="4400550"/>'
+        '<a:ext cx="5486400" cy="3600450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>'
+        '<a:p><a:endParaRPr lang="ru-RU"/></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" '
+        'accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:notesMaster>').encode("utf-8")
+    files["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = rels(rel("rId1", "theme", "../theme/theme2.xml")).encode("utf-8")
+    types = files["[Content_Types].xml"].decode("utf-8")
+    add = ('<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>'
+           '<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>')
+    for n, text in sorted(notes.items()):
+        files[f"ppt/notesSlides/notesSlide{n}.xml"] = (head + f'<p:notes {ns}><p:cSld><p:spTree>{grp}<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes"/>'
+            '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>'
+            f'<a:p><a:r><a:rPr lang="ru-RU"/><a:t>{text.replace("&", "&amp;").replace("<", "&lt;")}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>'
+            '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>').encode("utf-8")
+        files[f"ppt/notesSlides/_rels/notesSlide{n}.xml.rels"] = rels(
+            rel("rId1", "notesMaster", "../notesMasters/notesMaster1.xml") + rel("rId2", "slide", f"../slides/slide{n}.xml")).encode("utf-8")
+        srel = files[f"ppt/slides/_rels/slide{n}.xml.rels"].decode("utf-8")
+        files[f"ppt/slides/_rels/slide{n}.xml.rels"] = srel.replace("</Relationships>", rel("rId900", "notesSlide", f"../notesSlides/notesSlide{n}.xml") + "</Relationships>").encode("utf-8")
+        add += f'<Override PartName="/ppt/notesSlides/notesSlide{n}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>'
+    files["[Content_Types].xml"] = types.replace("</Types>", add + "</Types>").encode("utf-8")
+    pres = files["ppt/presentation.xml"].decode("utf-8")
+    files["ppt/presentation.xml"] = pres.replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId900"/></p:notesMasterIdLst>', 1).encode("utf-8")
+    prel = files["ppt/_rels/presentation.xml.rels"].decode("utf-8")
+    files["ppt/_rels/presentation.xml.rels"] = prel.replace("</Relationships>", rel("rId900", "notesMaster", "notesMasters/notesMaster1.xml") + "</Relationships>").encode("utf-8")
+    buf = io.BytesIO()
+    z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
+    z.writestr("[Content_Types].xml", files.pop("[Content_Types].xml"))
+    for name, blob in files.items():
+        z.writestr(name, blob)
+    z.close()
+    return buf.getvalue()
+
+
 def render_pptx(spec, lib, lgr_dash, tiles=None):
-    """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом."""
+    """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом.
+    Тайлы подложки режутся по рамке карты; слайд, где фигур больше PPTX_MAX_SHAPES, получает карту картинкой (PNG
+    200 dpi) — подписи, легенда и рамка остаются векторными, в заметках слайда сказано, что карта растровая."""
     from grado_layout.compose import _ctx, sheet_titles
     from grado_render.backend_pptx import PptxBackend
     doc = build_document(spec, lib, lgr_dash, tiles)
-    titles, pages = sheet_titles(doc), []
+    titles, pages, notes = sheet_titles(doc), [], {}
     for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
         ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
-        groups = [(PPTX_GROUPS.get(type(f).__name__, "Оформление"), apply_edits(f.ops(ctx), sh, seen, items=False)) for f in page.frames]
+        groups = []
+        for f in page.frames:
+            name, ops = PPTX_GROUPS.get(type(f).__name__, "Оформление"), apply_edits(f.ops(ctx), sh, seen, items=False)
+            if name == "Карта":
+                ops = pptx_thin(pptx_clip_tiles(ops))
+            groups.append((name, ops))
+        weights = [pptx_weight(ops) for _, ops in groups]
+        total = [sum(w[0] for w in weights), sum(w[1] for w in weights)]
+        for j in sorted(range(len(groups)), key=lambda j: -weights[j][0]):          # самая тяжёлая карта — первой
+            if total[0] <= PPTX_MAX_SHAPES and total[1] <= PPTX_MAX_XML:
+                break
+            if groups[j][0] == "Карта":
+                ops = pptx_rasterize(groups[j][1])
+                groups[j] = (groups[j][0], ops)
+                new = pptx_weight(ops)
+                total = [total[0] - weights[j][0] + new[0], total[1] - weights[j][1] + new[1]]
+                notes[i] = RASTER_NOTE
         own = own_texts(sh)
         pages.append((page.size[0], page.size[1], groups + ([("Свои надписи", own)] if own else [])))
-    return PptxBackend(doc.title).render(pages)
+    return pptx_notes(PptxBackend(doc.title).render(pages), notes)
 
 
 def render_preview_svg(spec, lib, lgr_dash, index=0, tiles=None):

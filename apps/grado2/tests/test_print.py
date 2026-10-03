@@ -449,3 +449,92 @@ class LabelsInFrame(unittest.TestCase):
         self.assertAlmostEqual(max(r[0] for r in runs), 30, places=1)
         runs = print_io._straight_runs(pts, [False, False, True, False, False])   # перекрёсток на 20 мм
         self.assertAlmostEqual(max(r[0] for r in runs), 20, delta=.1)
+
+
+class PptxBasemapAndHeavyMaps(unittest.TestCase):
+    """T64: тайлы подложки в PPTX не вылезают за рамку карты; слайд с десятками тысяч фигур получает карту растром."""
+
+    @staticmethod
+    def _pics(xml):
+        import re
+        return [tuple(int(v) for v in m) for m in re.findall(r'<p:pic>.*?<a:off x="(-?\d+)" y="(-?\d+)"/><a:ext cx="(\d+)" cy="(\d+)"/>', xml, flags=re.S)]
+
+    def test_satellite_tiles_are_cropped_to_the_map_frame(self):
+        import base64
+        import io
+        import zipfile
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
+        spec = {"meta": {}, "sheets": [{"kind": "title", "size": "P", "title": "Титул"},
+                                       {"size": "P", "title": "Ортофотоплан", "scale": 2000, "center": [37.65, 55.80], "basemap": "sat", "layers": [], "legend": [], "tep": [],
+                                        "territory": None}]}
+        doc = print_io.build_document(spec, {}, {}, lambda z, x, y: jpeg)
+        x, y, w, h = doc.pages[1].frames[0].rect
+        z = zipfile.ZipFile(io.BytesIO(print_io.render_pptx(spec, {}, {}, lambda z_, x_, y_: jpeg)))
+        pics = self._pics(z.read("ppt/slides/slide2.xml").decode("utf-8"))
+        self.assertGreater(len(pics), 4)
+        E_ = 36000
+        for px, py, cx, cy in pics:
+            self.assertGreaterEqual(px, round(x * E_) - 1)
+            self.assertGreaterEqual(py, round(y * E_) - 1)
+            self.assertLessEqual(px + cx, round((x + w) * E_) + 1)
+            self.assertLessEqual(py + cy, round((y + h) * E_) + 1)
+
+    def test_rotated_tile_is_redrawn_inside_the_frame(self):
+        import base64
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
+        a = math.radians(7)
+        u, v = (30 * math.cos(a), 30 * math.sin(a)), (-30 * math.sin(a), 30 * math.cos(a))
+        quad = ((90.0, 90.0), (90 + u[0], 90 + u[1]), (90 + v[0], 90 + v[1]))          # торчит за правую и нижнюю границы рамки
+        ops = print_io.pptx_clip_tiles([{"op": "clip", "rect": (0, 0, 100, 100)}, {"op": "image", "data": jpeg, "quad": quad}, {"op": "unclip"}])
+        im = [o for o in ops if o["op"] == "image"]
+        self.assertEqual(len(im), 1)
+        self.assertNotIn("quad", im[0])
+        self.assertGreaterEqual(im[0]["x"], 0)
+        self.assertGreaterEqual(im[0]["y"], 0)
+        self.assertLessEqual(im[0]["x"] + im[0]["w"], 100 + 1e-6)
+        self.assertLessEqual(im[0]["y"] + im[0]["h"], 100 + 1e-6)
+        out = print_io.pptx_clip_tiles([{"op": "clip", "rect": (0, 0, 100, 100)}, {"op": "image", "data": jpeg, "quad": ((200, 200), (230, 200), (200, 230))}])
+        self.assertEqual([o["op"] for o in out], ["clip"])                              # целиком вне рамки — пропущен
+
+    @staticmethod
+    def _dense(nx, ny):
+        lon, lat = 37.65, 55.80
+        dx, dy, w, h = 1.8 / (111320 * .5612), 1.8 / 110540, 1.2 / (111320 * .5612), 1.2 / 110540            # шаг 0,9 мм листа на 1:2000
+        feats = []
+        for i in range(nx):
+            for j in range(ny):
+                x, y = lon - nx * dx / 2 + i * dx, lat - ny * dy / 2 + j * dy
+                feats.append({"g": {"type": "Polygon", "coordinates": [[[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]]},
+                              "fill": "#cbc6be", "stroke": "#4d4d4d", "w": 1, "a": 1})
+        return {"meta": {"object": "X"}, "sheets": [{"kind": "title", "size": "P", "title": "Титул"},
+                                                    {"size": "P", "title": "Тяжёлая схема", "scale": 2000, "center": [lon, lat], "legend": [], "tep": [], "territory": None,
+                                                     "layers": [{"title": "Здания", "features": feats}]}]}
+
+    def test_dense_map_falls_back_to_a_raster_and_stays_small(self):
+        import io
+        import zipfile
+        z = zipfile.ZipFile(io.BytesIO(print_io.render_pptx(self._dense(290, 167), {}, {})))            # ~48 тыс. зданий
+        xml = z.read("ppt/slides/slide2.xml").decode("utf-8")
+        self.assertLess(len(xml), 5_000_000)
+        self.assertLess(xml.count("<p:sp>"), print_io.PPTX_MAX_SHAPES)
+        self.assertRegex(xml, r'<p:pic><p:nvPicPr><p:cNvPr id="\d+" name="Карта"')             # карта — одна картинка
+        self.assertIn("Тяжёлая схема", xml)                                                              # заголовок остался текстом
+        self.assertTrue(any(n.startswith("ppt/media/") and n.endswith(".png") for n in z.namelist()))
+        self.assertIn("картинкой", z.read("ppt/notesSlides/notesSlide2.xml").decode("utf-8"))
+        self.assertNotIn("notesSlide1.xml", " ".join(z.namelist()))                                      # заметки только у растрового слайда
+
+    def test_normal_map_stays_vector_without_notes(self):
+        import io
+        import zipfile
+        z = zipfile.ZipFile(io.BytesIO(print_io.render_pptx({"meta": {}, "sheets": [sheet()]}, S.REDLN, S.LGR_DASH)))
+        xml = z.read("ppt/slides/slide1.xml").decode("utf-8")
+        self.assertNotIn("<p:pic>", xml)
+        self.assertIn("Здания", xml)
+        self.assertFalse([n for n in z.namelist() if "notes" in n or n.endswith(".png")])
+
+    def test_thin_drops_subpixel_shapes_and_simplifies(self):
+        tiny = {"op": "path", "closed": True, "fill": (0, 0, 0), "stroke": None, "rings": [[(0, 0), (0.05, 0), (0.05, 0.05)]]}
+        wavy = {"op": "path", "closed": False, "fill": None, "stroke": (0, 0, 0), "rings": [[(i * 0.5, 0.01 * (i % 2)) for i in range(40)]]}
+        out = print_io.pptx_thin([tiny, wavy])
+        self.assertEqual(len(out), 1)
+        self.assertLess(len(out[0]["rings"][0]), 40)

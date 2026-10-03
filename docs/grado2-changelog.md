@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-04, ГРАДО 2 v0.99.3: PPTX — satellite tiles clipped to the frame, heavy slides rasterised.** QA on the
+  owner's album found satellite tiles running under the legend and the title of the «Ортофотоплан» slide, and slide 2
+  of a normal «Альбом ППТ КРТ» with 244 000 shapes / 159 MB of XML (every ЕГКО building, lawn and forest a filled shape)
+  that LibreOffice could not open in 9 minutes. Now, for PPTX only (`print_io.py`, PDF untouched): tile quads are
+  clipped to the map frame (near-straight ones become cropped images, rotated ones are redrawn inside the frame);
+  closed shapes under 0.25 pt without a visible stroke are dropped and rings of 20+ points simplified
+  (Douglas–Peucker 0.25 pt = 0.35 m at 1:4 000); when a slide exceeds 20 000 shapes or ~16 MB of XML its heaviest map
+  frame becomes one 200 dpi PNG (texts and markers stay vector; frame, legend and stamp untouched) and the slide notes
+  say the map is a picture. Synthetic 48 000-building slide: 31.7 MB / 44 000 shapes → 4 shapes + a 0.86 MB PNG,
+  LibreOffice 11.2 s → 1.3 s. Not measured on the real ЕГКО slide; not opened in PowerPoint.
 - **2026-10-03, ГРАДО 2 v0.99.2: the dock no longer crowds out the map; CSS smalls.** Team decision (council 03.10,
   option А, reversible): a zone holds at most two docked windows when opened from a button — a third opens floating
   with a one-time toast («Третье окно открыто плавающим: в зоне уже два. Поменять — в меню «Окна»»); «Окна» → «Окон в
