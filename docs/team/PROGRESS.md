@@ -43,6 +43,17 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 11 (17:20–18:40 MSK) — T5 (нормоконтроль: спецификация соцобъектов, пример 20 га, тест 4 OK; пять
+  вопросов владельцу и три архитектору — в BOARD «Ждёт владельца»), T30 (креативный директор: осмотр тёмной темы на 1280
+  и 2560, спецификация; фронтенд: мелочи T28-4/5/6 + обязательные правки тёмной темы; ревью FAIL дважды по масштабу
+  графа — обрезка заголовка слоя и вставка узла зависели от --k и меняли файл проекта → исправлено, проверено равенством
+  serialize() при k=1 и 7/6; карта в тёмной теме — вопрос владельцу А/Б/В), T37 (справка под v0.98.0). Итог: v0.98.2
+  (2e68d6b), unit 388 OK (без PYTHONPATH), compute OK, E2E оба сценария OK, console clean.
+RULE: Anything litegraph draws from a size-dependent constant (`--k`) must be stored at scale 1: titles truncated with
+`fitText`, node sizes, pasted/cloned nodes (`onConfigure`) — check `JSON.stringify(graph.serialize())` equal at k=1 and 7/6.
+- 03.10.2026 (17:15 MSK), выкладка по слову владельца («выкладывай и продолжай по задачам») — v0.98.1: main чистый,
+  team/grado2 ← main (8fcdcb8, только docs/team), unit 388 OK, collab 79 (программа та же, что в зелёном прогоне E2E
+  цикла 10), main ← team/grado2, скрипт выкладки: «Готово: на сервере версия 0.98.1», main отправлен.
 - 03.10.2026, цикл 10 (16:00–17:10 MSK) — T35 (сведение альбома по листам, ревью PASS с правкой: списки без id —
   целиком; collab 79 проверок) и T36 (хвосты меню «Выгрузка»; ревью FAIL по тесту — гонка с настоящей выгрузкой Excel
   → заглушка fetch). Общий прогон падал четыре раза подряд по трём разным причинам: (1) шаг T34 сравнивал строку
