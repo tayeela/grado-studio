@@ -949,10 +949,12 @@ def _bbox_of(geom):
 
 
 def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0, nonres_part=6, education_zone=1,
-        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25, constants=None, free_doo=0, free_school=0, free_clinic=0):
+        k1=1.0, k2=0.9, tinao=0, territory_mode=1, unbuilt_share=25, constants=None, free_doo=0, free_school=0, free_clinic=0,
+        park_share_underground=0, park_share_multi=0):
     """ТЭП по методике «Калькулятора 2.0» (Москва). Население, соцобъекты и машино-места — от новой застройки;
     СПП ИЖС и блокированных домов идёт в жилую с 50 м² квартир на жителя.
     constants — необязательная подмена норм {id: число}; в ответе тогда есть constants_changed (id, что отличаются от пресета).
+    park_share_underground, park_share_multi — доли постоянных мест (целые %, сумма до 100) в подземных и многоэтажных гаражах, остальное наземное.
     free_doo, free_school, free_clinic — свободные места существующих объектов (вручную, 0..100000); из дефицита пресет считает
     резерв участков, в ответе social = [{kind, places, m2}] (ДОО — по участку, больший первым; школа и поликлиника — 0 или 1)."""
     free = {}
@@ -960,6 +962,11 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
         if isinstance(fv, bool) or not isinstance(fv, (int, float)) or not 0 <= fv <= 100000 or fv != int(fv):      # NaN fails the range; places are whole
             raise ValueError(f"{fid} must be a whole number from 0 to 100000")
         free[fid] = int(fv)
+    for pid, pv in (('park_share_underground', park_share_underground), ('park_share_multi', park_share_multi)):
+        if isinstance(pv, bool) or not isinstance(pv, (int, float)) or not 0 <= pv <= 100 or pv != int(pv):      # NaN fails the range; shares are whole percents
+            raise ValueError(f"{pid} must be a whole number from 0 to 100")
+    if park_share_underground + park_share_multi > 100:
+        raise ValueError("park_share_underground and park_share_multi together must not exceed 100")
     e = Engine.from_file(PRESET)
     changed = None
     if constants is not None:
@@ -977,7 +984,8 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
     e.set_inputs(terr_area=terr_ha, restrict_area=restrict_ha, spp_in=spp_new_m2 / 1000, ratio_zh=max(0.0, min(100.0, share * 100)),
                  spp_low_in=spp_low_m2 / 1000, nonres_part=max(0.0, min(100.0, float(nonres_part))), education_zone=2 if int(education_zone) == 2 else 1,
                  k1=k1, k2=k2, tinao=1 if tinao else 0, territory_mode=int(territory_mode) if int(territory_mode) in (1, 2, 3) else 1,
-                 unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))), **free)
+                 unbuilt_share=max(0.0, min(90.0, float(unbuilt_share))),
+                 park_share_underground=int(park_share_underground), park_share_multi=int(park_share_multi), **free)
     def whole(v):
         return int(v) if float(v).is_integer() else v
     social = []
@@ -2109,7 +2117,7 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(502, {"error": str(e)})
             if self.path == "/api/tep":
                 f = {k: float(req[k]) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2", "spp_low_m2", "nonres_part",
-                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share", "free_doo", "free_school", "free_clinic") if req.get(k) is not None}
+                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share", "free_doo", "free_school", "free_clinic", "park_share_underground", "park_share_multi") if req.get(k) is not None}
                 if req.get("constants") is not None:
                     f["constants"] = req["constants"]
                 return self._json(200, tep(**f))

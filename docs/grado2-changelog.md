@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.99.1: parking as required area in «Показатели» (server part).** New ТЭП group «Стоянки —
+  площадь»: permanent places split by two project conditions «доля подземных, %» and «доля многоуровневых, %» (whole
+  numbers, defaults 0, sum ≤ 100, sent in `/api/tep`), the rest ground; places per kind, «наземные стоянки, га»,
+  «подземные, м²», «многоуровневые, м²» (floor area), «всего, га»; guest and visitor places are not included (note).
+  Area per place: 945-ПП gives only counts (appendix 1 line 1046 — a place per 2 000 m² of park; appendix 6 note 1 —
+  90 m² ННП per visitor place), so the three constants `park_m2_ground` 25, `park_m2_underground` 30, `park_m2_multi`
+  25 are project assumptions, editable in «Нормативы» and marked «нет в текстах репозитория». Якиманка, 2 519 permanent
+  places: 0/0 → 6.298 ha ground; 40/0 → 1 008 underground places 30 240 m², 1 511 ground 3.778 ha, total 6.802 ha.
+  Existing fixture numbers unchanged.
 - **2026-10-03, ГРАДО 2 v0.99.0: layers are found by role — constraints and the sketch work on real projects.** The timed
   run on a copy of the owner's site project (`docs/ux/run-2026-10-03-bezobrazovo.md`) showed «Ограничения», the
   buildings register and analysis looking for fixed keys (`gisogd.pzz_sub`, `nspd.zouit`, `osm.roads`, `nspd.buildings`…)

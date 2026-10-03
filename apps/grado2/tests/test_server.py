@@ -92,6 +92,28 @@ class Grado2Server(unittest.TestCase):
                     S.tep(**self.B, **{k: bad})
                 self.assertEqual(str(cm.exception), str(cm.exception).encode("ascii", "ignore").decode())
 
+    def test_tep_parking_area_split(self):
+        """Parking area. Norm area per place is NOT in the repository texts (945-PP has places only): the preset uses
+        project assumptions 25 / 30 / 25 m2 per place (ground / underground / multi-storey).
+        Yakimanka fixture: parking_perm = 2519 places.
+        0/0: all ground, 2519 * 25 = 62 975 m2 = 6.298 ha; total 6.298 ha.
+        40/0: underground ceil(2519 * 0.4) = ceil(1007.6) = 1008 places * 30 = 30 240 m2; ground 2519 - 1008 = 1511 * 25 = 37 775 m2 = 3.778 ha;
+        total = 3.7775 + 3.024 = 6.8015 ha -> 6.802."""
+        m = {x["id"]: x["value"] for x in S.tep(**self.YAK)["metrics"]}
+        self.assertEqual(m["parking_perm"], 2519)
+        self.assertEqual((m["park_ground_ha"], m["park_underground_m2"], m["park_multi_m2"], m["park_total_ha"]), (6.298, 0, 0, 6.298))
+        m = {x["id"]: x["value"] for x in S.tep(**self.YAK, park_share_underground=40, park_share_multi=0)["metrics"]}
+        self.assertEqual(m["parking_perm"], 2519)
+        self.assertEqual((m["park_ground_ha"], m["park_underground_m2"], m["park_multi_m2"], m["park_total_ha"]), (3.778, 30240, 0, 6.802))
+        m = {x["id"]: x["value"] for x in S.tep(**self.YAK, park_share_underground=0, park_share_multi=100)["metrics"]}
+        self.assertEqual((m["park_ground_ha"], m["park_multi_m2"]), (0, 62975))      # 2519 * 25
+        for bad in (-1, 101, 12.5, float("nan"), "5", True):
+            for k in ("park_share_underground", "park_share_multi"):
+                with self.assertRaises(ValueError, msg=(k, bad)):
+                    S.tep(**self.YAK, **{k: bad})
+        with self.assertRaises(ValueError):
+            S.tep(**self.YAK, park_share_underground=60, park_share_multi=60)
+
     def test_tep_norms_cover_all_constants(self):
         import json
         p = json.loads(S.PRESET.read_text("utf-8"))
@@ -515,6 +537,21 @@ class HttpHardening(unittest.TestCase):
         self.assertEqual(code, 200)
         self.assertEqual(len(j["norms"]), len(json.loads(S.PRESET.read_text("utf-8"))["constants"]))
         self.assertEqual(j["norms"][0].keys() >= {"id", "value", "title", "unit", "group", "source", "edition", "min", "max"}, True)
+
+    def test_tep_parking_area_over_http_bad_share_is_400(self):
+        import json
+        body = {"terr_ha": 15, "restrict_ha": 0, "spp_new_m2": 357000, "share": 1}
+        code, _, _, j = self.call("/api/tep", json.dumps({**body, "park_share_underground": 40}).encode())
+        self.assertEqual(code, 200)
+        self.assertEqual({x["id"]: x["value"] for x in j["metrics"]}["park_underground_m2"] > 0, True)
+        for bad in ({"park_share_multi": 101}, {"park_share_underground": 2.5}, {"park_share_underground": 70, "park_share_multi": 40}):
+            code, _, _, j = self.call("/api/tep", json.dumps({**body, **bad}).encode())
+            self.assertEqual(code, 400, bad)
+            self.assertTrue(j["error"].isascii(), j["error"])
+        code, _, _, j = self.call("/api/tep/norms")
+        ids = {x["id"]: x for x in j["norms"]}
+        for k in ("park_m2_ground", "park_m2_underground", "park_m2_multi"):
+            self.assertEqual((ids[k]["group"], ids[k]["status"], ids[k]["source"]), ("Стоянки и транспорт", "unverified", "нет в текстах репозитория"))
 
     def test_local_project_40mb_body_saves(self):
         """Проект с данными и альбомом готовой вёрстки (импорт «Из файла…») больше 32 МБ: путь записи проекта принимает его."""
