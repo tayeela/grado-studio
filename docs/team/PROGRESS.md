@@ -43,6 +43,9 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026 (18:50 MSK), выкладка по слову владельца — v0.98.2: main чистый, team ← main (20bf925, только docs/team),
+  unit 388 OK, main ← team/grado2, «Готово: на сервере версия 0.98.2», main отправлен. Ответы владельца: 1В 2А 3А 4А 5А,
+  карта Б (CARTO) → T6 открыт, T38 добавлен.
 - 03.10.2026, цикл 11 (17:20–18:40 MSK) — T5 (нормоконтроль: спецификация соцобъектов, пример 20 га, тест 4 OK; пять
   вопросов владельцу и три архитектору — в BOARD «Ждёт владельца»), T30 (креативный директор: осмотр тёмной темы на 1280
   и 2560, спецификация; фронтенд: мелочи T28-4/5/6 + обязательные правки тёмной темы; ревью FAIL дважды по масштабу
