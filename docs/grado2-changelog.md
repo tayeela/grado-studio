@@ -2,6 +2,27 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-04, ГРАДО 2 v0.99.5: plots for kindergartens, schools and clinics on the sketch (T6 steps 3–4); block
+  insolation pass; album smalls.** «Показатели» show «Резерв: ДОО n, школа 1, поликлиника 1 · X,XXX га (YY %)» above
+  the metrics; the sketch gets plots of the exact required area («участок ДОО» / «участок школы» / «участок
+  поликлиники», pale salmon, lilac, teal; `m2`, «Места», «Дефицит») placed in the free land of the site outside
+  building buffers, streets and plots, within the service radius (ДОО 300 m / ЦАО 500, school 1 000 m / ЦАО none),
+  slid from the corner nearest the houses; a plot that does not fit is never shrunk — the note says «ДОО №1
+  (0,842 га) не помещается в свободной земле пятна (в радиусе N м от домов) — освободите землю» and a warning line
+  appears in «Резерв участков». The search is deterministic (fixed budgets of grid nodes, cheap checks and exact
+  tests, no wall-clock), «поиск места прерван: слишком сложное пятно» when the budget runs out; СПП and density do not
+  change; «Сохранить слоем» keeps the plots in the plots layer without a duplicate preview. Example B1 of
+  `spec-T5-social-objects.md`: school 12 046 m², ДОО 11 200 m², clinic 3 500 m², all within ±0,3 %. On the Безобразово
+  copy with the КРТ 3141 boundary nothing fits (130 houses fragment the free land) — reported, not shrunk. Urban
+  blocks (T56, partial): after a block is placed, `blocks.js` lowers floors of the section that buys the most light
+  per lost m² until the north wing meets the 50 % facade rule (closed 12-storey ring: 35 % → 100 % at −3 % floor
+  area); on the example nothing changes — its 66 failing sections are shadowed by neighbouring blocks across the
+  streets, which a per-block pass cannot fix (a site-wide pass costs −15 % and 11 s — owner's decision). Album
+  (T65/T66): building «Альбом ППТ КРТ» or «Ситуационный план A4» with other sheets present asks «Заменить / Добавить /
+  Отмена»; «Листы обновлены по новым показателям» only when a sheet or the ТЭП numbers changed; a legacy sheet keeps
+  its changed size after «Обновить листы»; «Подписи этажности: всегда / от 1:2 000 / от 1:5 000» per layer in the
+  style panel. Open: a renamed sketch layer falls back to «всегда»; the block pass ignores existing buildings and
+  relief; the third-window toast shows once ever.
 - **2026-10-04, ГРАДО 2 v0.99.4: template sheets refresh themselves; re-download updates the layer; honest status line.**
   Album (T55): sheets built from templates («Альбом ППТ КРТ» sections, «Ситуационный план A4», ТЭП sheets) carry
   `tpl = {set, i, size, base}` — the template values they were built with. When the ТЭП, the norms, an accepted sketch

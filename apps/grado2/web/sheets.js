@@ -320,8 +320,10 @@ function situationExtras(sheet, out, frameLL) {
   out.kind = "situation"; out.legend = [];
 }
 const buildSituation = () => track(() => buildSituation0());
-async function buildSituation0() {
+async function buildSituation0(mode) {
   if (!TERR) { toast("Выберите файл границы (DXF, DWG, GeoJSON, KML, Shapefile) — лист строится вокруг неё."); return window.pickBoundary(buildSituation0); }
+  if (typeof mode !== "string" && ALBUM.sheets.some(s => !String(s.id).startsWith("sit_"))) return askBuild("Ситуационный план A4", 1, m => track(() => buildSituation0(m)));
+  if (mode === "replace") { window.hideSheetFrame?.(); ALBUM.sheets = []; SHI = 0; }
   const sh = makeSitSheet("sit_" + Date.now().toString(36));
   await ensureAdmin();
   const bb = frameBox(sh), before = new Set(LYR.map(l => l.key));
@@ -359,7 +361,7 @@ async function buildSituation0() {
    переносит carryHand. Листы «готовая вёрстка» (frozen, импорт из файла) не трогаются никогда. */
 const TPL_SETS = { sec1_: { list: () => SEC1, size: () => ALBUM.meta.slide || "P" } };   // albums.js добавляет pptkrt_
 const TPL_COND = ["title", "legend", "tep", "size", "keys", "scale", "center", "note", "orient", "view", "kind"];
-const TPL_LEGACY = ["title", "scale", "center", "note", "orient"];      // у листа без sheet.tpl рукой правленным считается то, что отличается от шаблона
+const TPL_LEGACY = ["title", "scale", "center", "note", "orient", "size"];      // у листа без sheet.tpl рукой правленным считается то, что отличается от шаблона
 const cloneJ = x => JSON.parse(JSON.stringify(x));
 const sameJ = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const tplBase = s => Object.fromEntries(TPL_COND.filter(k => s[k] !== undefined).map(k => [k, cloneJ(s[k])]));
@@ -452,7 +454,10 @@ function tplAuto() {
   const sg = tplSig(); if (!sg) { TPL_SIG = null; return; }
   if (sg.all === TPL_SIG?.all) return;
   const prev = TPL_SIG; TPL_SIG = sg;
-  tplAfter(tplRefresh({}), !!prev && prev.tep !== null);        // первый подсчёт после открытия проекта — не «новые показатели»
+  const r = tplRefresh({});
+  // подсказка — когда что-то изменилось: сам лист (r.changed) или показатели на листе, где есть таблица ТЭП (строки считаются при выводе и в листе не хранятся)
+  const tepShown = !!prev && prev.tep !== sg.tep && ALBUM.sheets.some(s => !s.frozen && s.tpl && (s.kind === "tep" || s.tep));
+  tplAfter(r, !!prev && prev.tep !== null && (r.changed > 0 || tepShown));        // первый подсчёт после открытия проекта — не «новые показатели»
 }
 const tplSchedule = () => { clearTimeout(TPL_TIMER); TPL_TIMER = setTimeout(tplAuto, 600); };
 window.scheduleTplRefresh = tplSchedule;
@@ -475,8 +480,11 @@ function tplManual() {
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 const buildSection = (...a) => track(() => buildSection0(...a));
-async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»") {
+async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»", mode) {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
+  // в альбоме есть листы не этого набора (из файла, другой набор, свои): набор не вставляется молча рядом — выбор в строке, как при импорте
+  if (!mode && ALBUM.sheets.some(s => !String(s.id).startsWith(prefix))) return askBuild(name, tpl.length, m => track(() => buildSection0(tpl, prefix, size, name, m)));
+  if (mode === "replace") { window.hideSheetFrame?.(); ALBUM.sheets = ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)); SHI = 0; }   // листы этого набора остаются: из них переносятся снимки и надписи
   const before = new Set(LYR.map(l => l.key));
   const sheets = tpl.map((t, i) => makeTplSheet(t, prefix + i, prefix, i, size));       // та же сборка листа, что у «Обновить листы» (tplRefresh ниже)
   // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
@@ -616,6 +624,7 @@ function albumOfJson(j) {
   throw new Error("в файле нет листов альбома");
 }
 function readAlbumFile(file, confirmed) {
+  BUILDASK = null;
   if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект.");
   if (file.size > PROJECT_CAP) return toast(`Файл ${mb(file.size)} МБ больше предела проекта (${mb(PROJECT_CAP)} МБ): импорт отменён.`);
   if (!confirmed && file.size > IMPORT_WARN) { IMPORT = { name: file.name, size: file.size, file }; renderSheets(); return; }
@@ -630,10 +639,27 @@ function readAlbumFile(file, confirmed) {
   rd.readAsText(file);
 }
 function importBarHTML() {
+  if (BUILDASK) return buildBarHTML();
   if (!IMPORT) return "";
   if (IMPORT.file) return `<div class="pad row shbar" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">Файл ${mb(IMPORT.size)} МБ: проект станет большим, сохранение и совместная работа будут медленнее. Продолжить?</span><button class="btn primary" data-shimp="go">Продолжить</button><button class="btn" data-shimp="cancel">Отмена</button></div>`;
   const n = IMPORT.album.sheets.length, c = ALBUM.sheets.length;
   return `<div class="pad row shbar" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">«${esc(IMPORT.name)}»: ${n} л.</span><button class="btn primary" data-shimp="replace">Заменить ${c} ${shWord(c)} текущего альбома на ${n} из файла</button><button class="btn" data-shimp="add">Добавить после текущих</button><button class="btn" data-shimp="cancel">Отмена</button></div>`;
+}
+/* Строка выбора при сборке набора поверх чужих листов: тот же вид и те же клавиши, что у импорта (Esc — «Отмена») */
+let BUILDASK = null;    // { name, n, run }
+function askBuild(name, n, run) {
+  IMPORT = null; BUILDASK = { name, n, run }; renderSheets();
+  toast(`«${name}»: в альбоме уже есть другие листы. Выберите: заменить или добавить.`);
+}
+function buildAnswer(mode) {
+  const a = BUILDASK; BUILDASK = null;
+  if (!a || mode === "cancel") { renderSheets(); return; }
+  if (isViewer()) { renderSheets(); return toast("Только просмотр: сборка листов доступна тому, кто правит проект."); }
+  renderSheets(); return a.run(mode);
+}
+function buildBarHTML() {
+  const a = BUILDASK, c = ALBUM.sheets.length;
+  return `<div class="pad row shbar" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">«${esc(a.name)}»: ${a.n} л.</span><button class="btn primary" data-shbuild="replace">Заменить ${c} ${shWord(c)} текущего альбома на ${esc(a.name)}</button><button class="btn" data-shbuild="add">Добавить после текущих</button><button class="btn" data-shbuild="cancel">Отмена</button></div>`;
 }
 function missingLayersText(list) {
   const have = new Set(LYR.map(l => l.key)), miss = new Set(); let ns = 0, nv = 0;
@@ -766,7 +792,7 @@ function renderSheets() {
     + `${mi("shImport", "folder-open", "Из файла…", "Листы из проекта .grado2 или готовой вёрстки", "Взять листы альбома из файла: проекта .grado2 или готовой вёрстки. Файл читается в браузере, на сервер не уходит")}</div>`
     + `<input type="file" id="shImpFile" accept=".grado2,.json,application/json" hidden>`;
   icons(); syncBusy();
-  if (IMPORT) $("shImpBar")?.querySelector("button")?.focus();   // выбор по клавиатуре: фокус на первую кнопку строки
+  if (IMPORT || BUILDASK) $("shImpBar")?.querySelector("button")?.focus();   // выбор по клавиатуре: фокус на первую кнопку строки
   else if (focusRow >= 0) el.querySelector(`.shrow[data-sh="${focusRow}"]`)?.focus();
 }
 function shMenu(id, on, btn) {
@@ -783,6 +809,7 @@ function shMenu(id, on, btn) {
 addEventListener("pointerdown", e => { if (SHM.open && !e.target.closest(".shmenu") && !e.target.closest("#shAdd,#shBuild")) shMenu(SHM.open, false); });
 const shEl = () => $("sheetsBody");
 shEl().addEventListener("keydown", e => {
+  if (e.key === "Escape" && BUILDASK) { e.preventDefault(); e.stopPropagation(); buildAnswer("cancel"); return; }
   if (e.key === "Escape" && IMPORT) { e.preventDefault(); e.stopPropagation(); importAlbum("cancel"); return; }   // Esc в строке выбора — «Отмена»; Enter нажимает кнопку в фокусе сам
   const menu = e.target.closest?.(".shmenu"), trg = e.target.closest?.("#shAdd,#shBuild");
   if (trg && e.key === "ArrowDown") { e.preventDefault(); shMenu(trg.id === "shAdd" ? "shMenuAdd" : "shMenuBuild", true, trg); return; }
@@ -835,6 +862,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shRefresh") tplManual();
   if (b.id === "shImport") { if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); $("shImpFile").click(); }
   if (b.dataset.shimp) importAlbum(b.dataset.shimp);
+  if (b.dataset.shbuild) buildAnswer(b.dataset.shbuild);
   if (b.dataset.shpdf) albumFile("pdf", ALBUM.sheets[+b.dataset.shpdf]);
   if (b.dataset.shprev) previewSheet(+b.dataset.shprev);
   if (b.dataset.shlay) openLayout(+b.dataset.shlay);

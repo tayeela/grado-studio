@@ -969,7 +969,7 @@ NTep.title = "ТЭП · Москва, «Калькулятор 2.0»"; NTep.prot
   const tp = tepParams(this); placeLookup(this);
   const key = [bd ? `${bk}:${bd.rev || 0}:${sk.length}` : gid(sk), gid(kept), gid(lim), share, target, dataRev, JSON.stringify(tp)].join("|");
   if (this._key !== key) { this._key = key; const seq = this._seq = (this._seq || 0) + 1;
-    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по сохранённому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); window.scheduleTplRefresh?.(); } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
+    tepRequest(sk, kept, lim, share, target, tp).then(t => { if (seq === this._seq) { this._tep = t; this.setOutputData(0, t); this.info = `${bd ? "по сохранённому эскизу · " : ""}плотность ${fmt(t.density, 1)} · население ${fmt(t.m.population)}`; lgc.setDirty(true, true); renderTep(); window.scheduleTplRefresh?.(); if (RESULT.tepNode === this) { fillSketch(); renderResNote(); } } }).catch(e => { this.info = "ТЭП: " + e.message; }); }
   this.setOutputData(0, this._tep);
 };
 LiteGraph.registerNodeType("Показатели/ТЭП КРТ", NTep);
@@ -1030,7 +1030,7 @@ async function tepRequest(sketch, kept, lim, share, target, tp = {}) {
     nonres_part: tp.nonres ?? 6, education_zone: tp.zone ?? 1, k1: tp.k1 ?? 1, k2: tp.k2 ?? 0.9, tinao: tp.tinao ?? 0, territory_mode: tp.mode ?? 1, unbuilt_share: tp.unbuilt ?? 25,
     free_doo: tp.free?.doo ?? 0, free_school: tp.free?.school ?? 0, free_clinic: tp.free?.clinic ?? 0 });
   const m = Object.fromEntries(r.metrics.map(x => [x.id, x.value]));
-  return { m, metrics: r.metrics, constantsChanged: r.constants_changed || [], density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
+  return { m, metrics: r.metrics, social: r.social || [], constantsChanged: r.constants_changed || [], density: r.density_total, target, terr, restrict, sppNew, sppKept, cover: (fpNew + fpKept) / TERR_M2, n: sketch.length, kept: keptList, demolN: demol.length, demolSpp: demol.reduce((s, f) => s + m2(f) * floorsOf(f), 0), existKey: ek };
 }
 
 /* ---------- генератор посадки (локальная рамка, метры) ---------- */
@@ -1276,6 +1276,13 @@ function place(site, p) {
         if (yb - ya >= 36) { put(rect(xa, ya, xb, ym - 6), f, kind); put(rect(xa, ym + 6, xb, yb), f, kind); } else put(rect(xa, ya, xb, yb), f, kind);
       });
       plot(polyLL(W(rect(x0 + d, y0 + d, x1 - d, y1 - d))), "двор", { "Блок": grp });
+      // T56: секции, чьи фасады не набирают 50 % нормы инсоляции из-за затенения своим кварталом, — понижение соседних крыльев (blocks.js)
+      if (window.BLOCKS?.relax && !window.NO_BLOCKS_RELAX && typeof TERR !== "undefined" && TERR) {
+        const g = out.filter(b => b.grp === grp), secs = g.map(b => ({ ring: prismsOf(b.f, 0)[0].ring, floors: b.floors }));
+        BLOCKS.relax(secs, { lat: turf.centroid(TERR).geometry.coordinates[1], floorH: CONS.floorH, norm: CONS.norm * 60, z: CONS.z, reveal: CONS.reveal });
+        g.forEach((b, i) => { b.floors = secs[i].floors; });
+        g.forEach((b, i) => { if (!secs[i].floors) out.splice(out.indexOf(b), 1); });
+      }
     }));
     if (!placed) return false;
     us.forEach((x0, i) => vs.forEach((y0, j) => {
@@ -1370,6 +1377,119 @@ const LIBICON = { "Данные": "database", "Параметры": "sliders-hor
 $("lib").innerHTML = Object.entries(LIB).map(([c, ts]) => `<div class="cat">${c}</div>` + ts.map(t => `<button data-add="${t}"><i data-lucide="${LIBICON[c]}"></i>${t.split("/")[1]}</button>`).join("")).join("");
 $("lib").addEventListener("click", e => { const b = e.target.closest("[data-add]"); if (!b) return; add(b.dataset.add, lgc.convertCanvasToOffset([$("graphbox").clientWidth / 2 - 100, $("graphbox").clientHeight / 2 - 40])); lgc.setDirty(true, true); });
 
+/* ---------- T6: резерв участков ДОО, школы и поликлиники ----------
+   Площади участков и их число даёт сервер (/api/tep → social, «не менее» по таблице норм); здесь только место на карте.
+   Здания, СПП и плотность не меняются: участок ищется в земле пятна, которую эскиз оставил свободной. Участок не
+   уменьшается — не поместился, значит на карте его нет, а в панели сказано, чего не хватает. */
+const RES_KINDS = { doo: "участок ДОО", school: "участок школы", clinic: "участок поликлиники" }, RES_NAMES = { doo: "ДОО", school: "школа", clinic: "поликлиника" };
+let RES_GRID = 2500, RES_CHECKS = 800, RES_TESTS = 60;     // бюджет поиска одного участка: узлов сетки на форму и проход, дешёвых проверок, точных проверок
+const RES_GAP = 3;              // м от стен корпусов до границы резервного участка
+const reserveRadii = tp => { const cao = typeof CAO === "function" && CAO(tp?.okrug); return { doo: cao ? 500 : 300, school: cao ? null : 1000, clinic: null }; };   // 2151-ПП табл. 1.4.1–1.4.2 п. 4; поликлиника — радиуса нет
+const hitsBox = (x0, y0, x1, y1, ring, solid = true) => {       // многоугольник (кольцо в локальных метрах) пересекает открытый прямоугольник со сторонами по осям
+  for (const [x, y] of ring) if (x > x0 && x < x1 && y > y0 && y < y1) return true;
+  for (let i = 0; i < ring.length; i++) {      // ребро проходит внутри прямоугольника (Лианг–Барски)
+    const [ax, ay] = ring[i], [bx, by] = ring[(i + 1) % ring.length]; if ((ax <= x0 && bx <= x0) || (ax >= x1 && bx >= x1) || (ay <= y0 && by <= y0) || (ay >= y1 && by >= y1)) continue;
+    const dx = bx - ax, dy = by - ay; let t0 = 0, t1 = 1, out = false;
+    for (const [pp, qq] of [[-dx, ax - x0], [dx, x1 - ax], [-dy, ay - y0], [dy, y1 - ay]]) {
+      if (pp === 0) { if (qq <= 0) { out = true; break; } continue; }
+      const r = qq / pp; if (pp < 0) { if (r > t1) { out = true; break; } if (r > t0) t0 = r; } else { if (r < t0) { out = true; break; } if (r < t1) t1 = r; } }
+    if (!out && t0 < t1) return true;
+  }
+  if (!solid) return false;                  // solid = false: проверяется только граница (кольцо пятна или дыры в нём)
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2; let inside = false;       // прямоугольник целиком внутри многоугольника
+  for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) if ((ring[i][1] > cy) !== (ring[k][1] > cy) && cx < (ring[k][0] - ring[i][0]) * (cy - ring[i][1]) / (ring[k][1] - ring[i][1]) + ring[i][0]) inside = !inside;
+  return inside;
+};
+function reserveSocial(site, sketch, social, radii) {
+  const out = { plots: [], notes: [], warns: [] };
+  if (!site || !social?.length) return out;
+  const blds = sketch.map(b => b.f), bu = blds.length ? unionAll(blds) : null, ground = [...(sketch.streets || []), ...(sketch.plots || [])].map(s => s.f);
+  let free = site;
+  for (const g of [bu && buf(bu, RES_GAP), ...ground]) { if (g && free) free = diff(free, g); }
+  // препятствия для быстрого отсева кандидатов: корпус с отступом, улицы, участки эскиза и уже поставленные участки резерва (само пятно проверяет fits)
+  const obst = [...blds.map(f => buf(f, RES_GAP) || f), ...ground], houses = blds.map(f => centroid(ringsXY(f)[0]));
+  const reach = {};
+  const order = { school: 0, doo: 1, clinic: 2 }, list = social.map((s, i) => ({ ...s, i })).sort((a, b) => order[a.kind] - order[b.kind] || a.i - b.i);
+  const total = {}; list.forEach(s => { total[s.kind] = (total[s.kind] || 0) + s.places; });
+  const seen = {};
+  for (const s of list) {
+    const n = seen[s.kind] = (seen[s.kind] || 0) + 1, many = list.filter(x => x.kind === s.kind).length > 1, nm = RES_NAMES[s.kind], name = `${nm === "ДОО" ? "ДОО" : nm[0].toUpperCase() + nm.slice(1)}${many ? " №" + n : ""}`;
+    const A = s.m2, rad = radii?.[s.kind], st = { cands: 0, checks: 0, tests: 0 }; let best = null, cut = false;
+    if (rad && bu) reach[s.kind] ||= buf(bu, rad);
+    const rch = rad && bu ? reach[s.kind] : null;
+    for (const part of free ? splitParts(free) : []) {
+      if (m2(part) < A * .997) continue;
+      const { a, b } = partFrame(ringsXY(part)[0], 0), W = rp => rp.map(q => rot(q, a, [0, 0])), L = rp => rp.map(q => rot(q, -a, [0, 0]));
+      const box = o => polys(o).map(c => { const r = c[0].map(toXY).map(q => rot(q, -a, [0, 0])), xs = r.map(q => q[0]), ys = r.map(q => q[1]); return { r, x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }; });
+      const ob = obst.flatMap(box), hs = L(houses), edge = polys(part).flatMap(c => c.map(r => r.map(toXY).map(q => rot(q, -a, [0, 0]))));     // edge: граница свободной земли (внешняя и дыры) не должна проходить через участок
+      const pin = pt => turf.booleanPointInPolygon(pt, part), inPart = rp => rp.every(q => pin(toLL(q)));
+      const dh = (x, y) => hs.length ? Math.min(...hs.map(q => Math.hypot(q[0] - x, q[1] - y))) : 0;
+      const W0 = Math.sqrt(A * 1.5), shapes = [[W0, A / W0], [A / W0, W0]].filter(([w, h]) => w <= b[2] - b[0] + .1 && h <= b[3] - b[1] + .1);
+      const minStep = m2(part) > 1e5 ? 10 : 5;
+      for (const fine of [1, 3]) {                                                    // грубая сетка, затем втрое чаще
+        const cands = [];
+        for (const [w, h] of shapes) {
+          let su = Math.max(minStep, w / 8) / fine, sv = Math.max(minStep, h / 6) / fine, us = [], vs = [];
+          const nGrid = ((b[2] - b[0] - w) / su + 2) * ((b[3] - b[1] - h) / sv + 2); if (nGrid > RES_GRID) { const q = Math.sqrt(nGrid / RES_GRID); su *= q; sv *= q; }     // число узлов сетки ограничено: реже шаг, а не пропуск
+          for (let u = b[0]; u + w <= b[2] + .01; u += su) us.push(u); us.push(b[2] - w);
+          for (let v = b[1]; v + h <= b[3] + .01; v += sv) vs.push(v); vs.push(b[3] - h);
+          for (const v of vs) for (const u of us) {
+            if (edge.some(r => hitsBox(u, v, u + w, v + h, r, false))) continue;
+            if (ob.some(o => o.x1 > u - .5 && o.x0 < u + w + .5 && o.y1 > v - .5 && o.y0 < v + h + .5 && hitsBox(u - .5, v - .5, u + w + .5, v + h + .5, o.r))) continue;     // 0,5 м запаса: площадь потом чуть подгоняется
+            cands.push({ u, v, w, h, d: dh(u + w / 2, v + h / 2) });
+          }
+        }
+        cands.sort((p, q) => p.d - q.d);                                              // от места, ближнего к домам
+        st.cands += cands.length;
+        for (const c of cands) {
+          if (best && c.d >= best.d) break;
+          if (st.checks >= RES_CHECKS || st.tests >= RES_TESTS) { cut = true; break; }     // бюджет шагов — не время: на любом компьютере тот же результат
+          st.checks++;
+          let ring = W(rect(c.u, c.v, c.u + c.w, c.v + c.h));
+          if (!inPart(ring) || !pin(toLL(W([[c.u + c.w / 2, c.v + c.h / 2]])[0]))) continue;     // дешёвый отсев: углы и центр в свободной земле
+          if (rch && !ring.some(q => turf.booleanPointInPolygon(toLL(q), rch))) continue;       // хотя бы один угол в радиусе
+          st.tests++;
+          let f = polyLL(ring); const k = Math.sqrt(A / m2(f));
+          if (Math.abs(k - 1) > 1e-6) { const mx = c.u + c.w / 2, my = c.v + c.h / 2; ring = W(rect(mx - c.w * k / 2, my - c.h * k / 2, mx + c.w * k / 2, my + c.h * k / 2)); f = polyLL(ring); }
+          if (m2(inter(part, f)) >= m2(f) * .997 && (!rch || m2(inter(rch, f)) > 0)) { best = { f, d: c.d }; break; }
+        }
+        if (best || cut) break;
+      }
+    }
+    const ha = fmt(A / 1e4, 3); (out.stats ||= []).push({ name, ...st, cut: cut && !best });
+    if (!best && cut) { out.partial = true; out.notes.push(`${name} (${ha} га): поиск места прерван: слишком сложное пятно`); out.warns.push(`${name}: поиск места прерван`); }
+    else if (best) { out.plots.push({ f: best.f, kind: RES_KINDS[s.kind], m2: m2(best.f), "Участок": name, "Места": s.places, "Дефицит": total[s.kind] }); free = diff(free, best.f); obst.push(best.f); }
+    else {
+      out.notes.push(rad ? `${name} (${ha} га) не помещается в свободной земле пятна (в радиусе ${fmt(rad)} м от домов) — освободите землю`
+        : `${name} (${ha} га) не помещается в свободной земле пятна — освободите землю (сократите СПП или снимите ограничения)`);
+      out.warns.push(`${name}: ${ha} га не помещается`);
+    }
+  }
+  return out;
+}
+let _resKey = "", _resVal = { plots: [], notes: [], warns: [] };
+function reserveState() {          // кэш: территория пятна + эскиз + ответ сервера (+ радиусы)
+  const t = RESULT.tepNode?._tep, social = t?.social || [];
+  if (!RESULT.site || !RESULT.sketch?.length || !social.length) return (_resKey = "", _resVal = { plots: [], notes: [], warns: [] });
+  if (!RESULT.tepNode.properties?.baked && Math.abs((t.sppNew || 0) - RESULT.sketch.reduce((q, b) => q + b.m2 * b.floors, 0)) >= 1) return { plots: [], notes: [], warns: [] };   // ответ сервера от прежнего эскиза: не считаем
+  const radii = reserveRadii(tepParams(RESULT.tepNode)), key = gid(RESULT.site) + gid(RESULT.sketch) + JSON.stringify(social) + JSON.stringify(radii);
+  if (key !== _resKey) { _resKey = key; _resVal = safe(() => reserveSocial(RESULT.site, RESULT.sketch, social, radii)) || { plots: [], notes: [], warns: [] }; }     // поиск прерван бюджетом — не итог: следующий вызов считает заново
+  return _resVal;
+}
+const reserveSaved = () => { const k = RESULT.tepNode?.properties?.reserveBaked; return !!(k && DATA[k]); };     // слой с участками уже сохранён — превью не рисуем второй раз
+const reserveShown = () => reserveSaved() ? [] : reserveState().plots;
+function reserveSummary(t) {
+  const s = t.social || []; if (!s.length) return "Резерв участков не нужен";
+  const cnt = k => s.filter(x => x.kind === k).length, parts = [cnt("doo") && `ДОО ${cnt("doo")}`, cnt("school") && `школа ${cnt("school")}`, cnt("clinic") && `поликлиника ${cnt("clinic")}`].filter(Boolean);
+  const ha = s.reduce((a, x) => a + x.m2, 0) / 1e4;
+  return `Резерв: ${parts.join(", ")} · ${fmt(ha, 3)} га (${fmt(t.terr ? ha / t.terr * 100 : 0, 0)} %)`;
+}
+function renderResNote() {
+  const el = $("resNote"); if (!el) return;
+  const st = reserveState();
+  el.innerHTML = st?.notes.length ? st.notes.map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "";
+}
+
 let lastSig = "", RESULT = { site: null, sketch: [], tep: null };
 const signature = () => JSON.stringify([dataRev, Object.values(graph.links || {}).filter(Boolean).map(l => [l.origin_id, l.origin_slot, l.target_id, l.target_slot]), graph._nodes.map(n => [n.id, n.widgets?.map(w => w.value)])]);
 function recompute(force) {
@@ -1396,7 +1516,8 @@ const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
 // участки, дворы и улицы эскиза (ИЖС, блокированные, урбан-блоки) — под корпусами
-const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "свет соседям": ["#fdf0b8", "#d9a400"] };
+const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"], "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "свет соседям": ["#fdf0b8", "#d9a400"],
+  "участок ДОО": ["#f6dccb", "#b9774f"], "участок школы": ["#dcd3ec", "#7f66a8"], "участок поликлиники": ["#cfe8e3", "#4f9a8f"] };
 const groundSrc = new ol.source.Vector(), groundStyle = f => { const [fill, stroke] = GROUND[f.get("kind")] || ["#eeeeee", "#999999"]; return S(fill, stroke, .8); };
 // результат графа — отдельные слои над данными; видимость переключается в дереве слоёв
 const RES = [
@@ -1412,7 +1533,7 @@ RES.forEach((r, i) => { r.layer.setZIndex(100 + i); mMain.addLayer(r.layer); });
 function fillGeom(src, f) { src.clear(); if (f) src.addFeature(toOl(f)); }
 function fillSketch() {
   sketchSrc.clear(); sketchSrc.addFeatures(RESULT.sketch.map(b => { const f = toOl(b.f); f.set("floors", b.floors); return f; }));
-  groundSrc.clear(); groundSrc.addFeatures([...(RESULT.sketch.streets || []), ...(RESULT.sketch.plots || [])].map(g => { const f = toOl(g.f); f.set("kind", g.kind); return f; }));
+  groundSrc.clear(); groundSrc.addFeatures([...(RESULT.sketch.streets || []), ...(RESULT.sketch.plots || []), ...reserveShown()].map(g => { const f = toOl(g.f); f.set("kind", g.kind); return f; }));
 }
 function updateAnalysisMap() {
   fillGeom(siteSrc, RESULT.site); fillSketch(); prevSrc.clear();
@@ -1460,18 +1581,18 @@ function renderParams() {
     : `<div class="ctl"><div class="row" style="margin:0">${on ? `<button class="btn" data-run="0" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз"><i data-lucide="pause"></i>Остановить</button>` : `<button class="btn primary" data-run="1" title="Разместить корпуса на пятне застройки по заданной типологии"><i data-lucide="play"></i>Построить эскиз</button>`}<button class="btn" data-bake ${RESULT.sketch.length ? "" : "disabled"} title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать"><i data-lucide="stamp"></i>Сохранить слоем</button></div>
       <small>${on ? `Эскиз перестраивается при каждой правке ниже. ${LOWRISE.has(pn.widgets[0].value) ? "Домов" : "Корпусов"}: ${RESULT.sketch.length}.${RESULT.sketch.dropped ? ` Цель набрана и без ${plural(RESULT.sketch.dropped, ["корпуса", "корпусов", "корпусов"])} под низкой предельной высотой — на их месте пятна «свет соседям» (жёлтые): там нужен свет соседям.` : ""}${RESULT.sketch.goal && /не достигнута/.test(RESULT.sketch.goal) ? ` ${RESULT.sketch.goal[0].toUpperCase()}${RESULT.sketch.goal.slice(1)}.` : ""} Пока эскиз не сохранён, он виден только при открытых окнах схемы расчёта и эскиза.` : TERR ? "Выберите типологию и параметры, затем «Построить эскиз»: корпуса сами не появляются. Пока окно открыто, на карте виден предварительный просмотр — пятно застройки и сохраняемые здания; «Сохранить слоем» сохраняет построенный эскиз слоем." : "<b class=\"warnt\">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу командой BO или «Пример территории» в окне «Данные»."}</small></div>`;
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
-  $("params").innerHTML = head + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
+  $("params").innerHTML = head + `<div id="resNote"></div>` + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${esc(lbl)}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}" title="${esc(lbl)}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры блоков схемы, вынесенные в панель: правка здесь меняет схему, и наоборот.</div>`;
-  icons();
+  icons(); renderResNote();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
   $("params").onclick = e => {
     const r = e.target.closest("[data-run]"); if (r) {
       if (r.dataset.run === "1" && !TERR) return toast("Эскиз строится внутри границы территории, а её нет. Задайте границу: команда BO (кнопка «Граница» на ленте) или «Пример территории» в окне «Данные».");
       if (r.dataset.run === "1" && !RESULT.site) return toast("Пятно застройки пусто: вся территория занята запретами или сохраняемыми зданиями. Проверьте окно «Ограничения».");
       pn.properties.run = r.dataset.run === "1"; pn._ck = null;
-      if (pn.properties.run && RESULT.tepNode?.properties?.baked) RESULT.tepNode.properties.baked = null;   /* новый эскиз — показатели снова по графу */ recompute(true); renderParams(); syncPreview(); return; }
+      if (pn.properties.run && RESULT.tepNode?.properties?.baked) { RESULT.tepNode.properties.baked = null; delete RESULT.tepNode.properties.reserveBaked; }   /* новый эскиз — показатели снова по графу */ recompute(true); renderParams(); syncPreview(); return; }
     if (e.target.closest("[data-bake]")) return bakeSketch();
     if (e.target.closest("[data-check]")) return window.runCheck?.(null);
     const b = e.target.closest("[data-seg]"); if (!b) return; const c = cs[+b.dataset.seg]; c.n.widgets.find(x => x.name === c.w).value = b.dataset.v;
@@ -1500,13 +1621,15 @@ function bakeSketch() {
     DATA[k] = { title: name, source: "эскиз из схемы расчёта, сохранён " + new Date().toLocaleDateString("ru-RU"), fetched_at: new Date().toISOString().slice(0, 10), fc: lfc, count: 0, fields: [] };
     layerSrc[k] = new ol.source.Vector(); setLayerData(k, lfc); delete DATA[k].original;
     const x = ensureLayer(k, name, "poly"); x.style = ST(style); restyle(x); extra.push(k); };
-  layerOf(sk.plots, `Эскиз: участки и дворы (${typ.toLowerCase()})`, g => ({ ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}), ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }),
-    { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a", "хозпостройка": "#d9cdb8" }, off: [] } });
+  const resP = reserveState().plots, allPlots = [...(sk.plots || []), ...resP];
+  layerOf(allPlots, `Эскиз: участки и дворы (${typ.toLowerCase()})`, g => ({ ...(g["Участок"] ? { "Участок": g["Участок"], "Места": g["Места"], "Дефицит": g["Дефицит"] } : {}), ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}), ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }),
+    { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a", "хозпостройка": "#d9cdb8", "участок ДОО": "#f6dccb", "участок школы": "#dcd3ec", "участок поликлиники": "#cfe8e3" }, off: [] } });
   layerOf(sk.streets, `Эскиз: улицы и проезды (${typ.toLowerCase()})`, g => g["Мест"] ? { "Мест": g["Мест"], "Норма": "945-ПП п. 6.2.3.2: 10 % от 1,6 места на дом" } : {},
     { mode: "cat", fill: "#e4e1da", stroke: "#b7b2a8", width: .8, opacity: .9, cat: { field: "Вид", colors: { "проезд": "#e4e1da", "улица": "#e4e1da", "гостевая стоянка": "#9fb6d9" }, off: [] } });
   // порядок сверху вниз: корпуса, участки и дворы, улицы (новые слои встают наверх — поднимаем в обратном порядке)
   if (extra.length) { [...extra.slice(0, -1).reverse(), key].forEach(k => { const i = LYR.findIndex(x => x.key === k); LYR.unshift(LYR.splice(i, 1)[0]); });
     newGroup([key, ...extra], `Эскиз: ${typ.toLowerCase()}`); applyOrder(); }
+  if (RESULT.tepNode) { if (resP.length && extra.length) RESULT.tepNode.properties.reserveBaked = extra[0]; else delete RESULT.tepNode.properties.reserveBaked; }     // превью участков больше не рисуется: они в сохранённом слое
   setCurrent(key); dataRev++;
   toast(`Эскиз сохранён слоем «${title}»: ${sk.length} корпусов${sk.plots?.length ? `, участков, дворов и хозпостроек ${sk.plots.length}` : ""}${sk.streets?.length ? `, улиц, проездов и гостевых стоянок ${sk.streets.length}` : ""}. Слои можно править, стилизовать и выгружать; схема на них больше не влияет.`);
 }
@@ -1561,8 +1684,9 @@ function renderTep() {
         return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
       ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
   const nch = t.constantsChanged?.length ? `<button class="normsline" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы изменены вручную: ${t.constantsChanged.length}</button>` : "";
-  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
-    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)]))).join("")
+  const rs = reserveState(), sumLine = `<div class="resline" title="Площади участков — минимум по таблице норм; здания, СПП и плотность от резерва не меняются">${esc(reserveSummary(t))}</div>`;
+  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + sumLine + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
+    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
     + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП — тексты и выписки в docs/standards/moscow-ngp. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
 $("tep").addEventListener("change", e => {

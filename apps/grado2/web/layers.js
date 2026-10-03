@@ -14,6 +14,7 @@ const HEX = /^#[0-9a-f]{3,8}$/i, okc = (c, d) => typeof c === "string" && HEX.te
 const okn = (v, d) => { const n = typeof v === "number" || (typeof v === "string" && v.trim() !== "") ? Number(v) : NaN; return Number.isFinite(n) ? n : d; };
 function cleanStyle(st) {
   st.width = okn(st.width, 1); st.opacity = okn(st.opacity, .7); st.labelSize = okn(st.labelSize, 11);
+  if (st.floorsDen != null && ![0, 2000, 5000].includes(Number(st.floorsDen))) delete st.floorsDen; else if (st.floorsDen != null) st.floorsDen = Number(st.floorsDen);
   ["hatchStep", "maxDen", "minDen"].forEach(k => { if (st[k] != null) { const n = okn(st[k], 0); if (n) st[k] = n; else delete st[k]; } });
   st.fill = okc(st.fill, "#9aa1a8"); st.stroke = okc(st.stroke, "#5f6368");
   if (st.grad && !Object.hasOwn(RAMPS, st.grad.ramp)) st.grad.ramp = "blue";   // палитра по имени из файла: чужого имени в RAMPS нет
@@ -295,8 +296,11 @@ const upright = a => { a = ((a % 360) + 360) % 360; return a > 90 && a <= 270 ? 
 // угол подписи в градусах против часовой стрелки: _angle — вдоль границы своей папки (сервер), иначе угол ГИС ОГД
 // textangle (он по часовой); ol.style.Text поворачивает по часовой — знак меняется
 const labelDeg = f => f.get("_angle") != null ? +f.get("_angle") : -(+f.get("textangle") || 0);
+// подписи этажности: с какого масштаба (знаменатель; 0 — всегда). Не задано: у эскиза — от 1:2 000, у остальных слоёв — всегда
+const floorsDenOf = l => l.style.floorsDen != null ? l.style.floorsDen : /^user:/.test(l.key) && /^Эскиз/.test(l.title || "") ? 2000 : 0;
 const labelStyle = (l, f) => { const st = l.style; let t = f.get(st.label); if (t == null || t === "") return null;
-  if (st.label === "Этажность" && String(l.key).startsWith("user:")) { if (scaleDen(sharedView.getResolution()) > 2000) return null; t = t + " эт."; }   // корпуса эскиза: «12 эт.», только крупнее 1:2 000
+  if (st.label === "Этажность" && String(l.key).startsWith("user:")) { t = t + " эт."; }
+  if (st.label === "Этажность") { const fd = floorsDenOf(l); if (fd && scaleDen(sharedView.getResolution()) > fd) return null; }   // корпуса эскиза: «12 эт.», только крупнее 1:2 000
   const ang = st.labelAngle ? -upright(labelDeg(f)) * Math.PI / 180 : 0, bare = st.marker === false;
   return new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle, offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false }) }); };   // у точки подпись над знаком с зазором: знак — помеха для разведения подписей, задетая рамкой подпись скрывалась
 // крупный слой: номер цвета в таблице l.pal у каждого объекта (-1 — скрыт категорией или правилом)
@@ -871,7 +875,7 @@ function renderStyle(el) {
   if (rOpts.length) h += `<div class="row"><label>Роль в расчётах</label><select data-lrole aria-label="Роль слоя в расчётах" title="Какие расчёты берут этот слой: ограничения, анализ, эскиз. «Авто» — по источнику слоя; ручная роль заменяет её.">${rOpts.map(([v, t]) => `<option value="${v}" ${(l.role || "auto") === v ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></div>`;
   h += `<div class="row"><label>Слой, %</label><input type="range" data-lop min="0" max="1" step=".05" value="${okn(l.layerOpacity, 1)}" aria-label="Непрозрачность слоя"><span class="num">${Math.round(okn(l.layerOpacity, 1) * 100)}</span></div>
     ${l.geom === "poly" && (st.hatch || st.rules.list.some(r => r.hatch)) ? `<div class="row"><label>Узор штриховки</label><select data-k="hatchPat">${Object.entries(HATCHES).map(([k, t]) => `<option value="${k}" ${(st.hatchPat || "45") === k ? "selected" : ""}>${t}</option>`).join("")}</select><input type="number" data-k="hatchStep" min="4" max="40" value="${st.hatchStep || 8}" title="шаг штриховки, пикс." style="width:52px"></div>` : ""}
-    <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
+    <div class="row"><label>Подпись</label><select data-k="label"><option value="">нет</option>${fields.map(k => `<option ${st.label === k ? "selected" : ""}>${esc(k)}</option>`).join("")}</select><input type="number" data-k="labelSize" min="7" max="24" value="${st.labelSize}" style="width:54px" aria-label="Кегль"></div>${st.label === "Этажность" ? `<div class="row"><label>Подписи этажности</label><select data-k="floorsDen" data-num aria-label="Подписи этажности">${[[0, "всегда"], [2000, "от 1:2 000"], [5000, "от 1:5 000"]].map(([v, n]) => `<option value="${v}" ${floorsDenOf(l) === v ? "selected" : ""}>${n}</option>`).join("")}</select></div>` : ""}${l.gl ? `<div class="note" style="padding:2px 0 0">Слой крупный (${fmt(layerSrc[l.key]?.getFeatures().length || 0)} объектов): на обзоре его рисует видеокарта: штриховка там — полупрозрачной заливкой, подписей нет. Подписи появляются с масштаба крупнее 1:${fmt(scaleDen(glSwitchRes(l)))}.</div>` : ""}</div>`;
   el.innerHTML = h;
 }
 const numOrText = v => isNum(v) && String(v).trim() !== "" && !/^0\d/.test(v) ? +v : v;

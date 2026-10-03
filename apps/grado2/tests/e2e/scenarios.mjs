@@ -329,6 +329,8 @@ export default async p => {
   check(await p.ev(`const n=graph._nodes.find(n=>n.type==="Данные/Слой"), w=n.widgets[0], was=w.value, long="Охранные зоны объектов культурного наследия федерального значения";
     DATA["user:long"]={title:long,fc:turf.featureCollection([]),count:0,fields:[]}; w.value=long; const shown=w.options.values()[long], empty=w.options.values()[""]; w.value=was; delete DATA["user:long"];
     return shown.endsWith("…") && shown.length < long.length && empty === "—"`), "длинное имя слоя в узле графа обрезается, пустое — «—»");
+  // T6 шаги 3–4: резерв участков ДОО, школы и поликлиники (отдельный файл; параметры эскиза после шага возвращаются)
+  await p.group("t6", async () => { await (await import("./t6_exampleb.mjs")).default(p, check, process.env.E2E_SHOTS); await (await import("./t6_reserve.mjs")).default(p, check, process.env.E2E_SHOTS); });
   await p.ev(`bakeSketch(); return 1`);
 
   // малоэтажные типологии и урбан-блоки: свои участки, дворы, улицы; этажность до 3; секции квартала — одно здание
@@ -341,6 +343,17 @@ export default async p => {
   check(low["ИЖС"].guest >= Math.ceil(low["ИЖС"].n * .16 * .8) && low["Блокированные"].guest > 0, `гостевые места по 945-ПП: ИЖС ${low["ИЖС"].guest} на ${low["ИЖС"].n} домов, блокированные ${low["Блокированные"].guest}`);
   check(low["Блокированные"].n > 0 && low["Блокированные"].plots > low["Блокированные"].n && low["Блокированные"].maxF <= 3 && low["Блокированные"].streets > 0, `блокированные: ${low["Блокированные"].n} домов, ${low["Блокированные"].plots} участков блоков, проезды`);
   check(low["Урбан-блоки"].n > low["Урбан-блоки"].grp && low["Урбан-блоки"].plots > 0 && low.gap === 0, `урбан-блоки: ${low["Урбан-блоки"].n} секций в ${low["Урбан-блоки"].grp} кварталах, дворы; вплотную стоящие секции квартала — не нарушение разрыва`);
+  // T56: «Квартал» (урбан-блоки) без секций ниже 50 % нормы из-за затенения собственным кварталом: с понижением крыльев (blocks.js) и без него
+  await p.group("t56", async () => {
+    const R = JSON.parse(await p.ev(`const pn=RESULT.placeNode, w0=pn.widgets[5].value, t0=pn.widgets[0].value, out={}; pn.widgets[5].value="заданной"; pn.widgets[0].value="Урбан-блоки";
+      for (const off of [true, false]) { window.NO_BLOCKS_RELAX=off; pn._ck=null; const t=performance.now(); recompute(true); await new Promise(r=>setTimeout(r,400)); const ms=Math.round(performance.now()-t-400), sk=RESULT.sketch;
+        await runCheck(null); const bad=catValues("cons:check","Нарушение").filter(x=>/норму получают/.test(x[0])).reduce((s,x)=>s+x[1],0);
+        out[off?"before":"after"]={n:sk.length, bad, spp:Math.round(sk.reduce((s,b)=>s+b.m2*b.floors,0)), goal:sk.goal||"", ms}; }
+      window.NO_BLOCKS_RELAX=false; pn.widgets[0].value=t0; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return JSON.stringify(out)`));
+    p.log("  T56: " + JSON.stringify(R));
+    check(R.before.n > 0 && R.after.n > 0 && R.after.bad <= R.before.bad, `T56 урбан-блоки: секций ниже нормы инсоляции было ${R.before.bad}, стало ${R.after.bad} (корпусов ${R.before.n} → ${R.after.n}), СПП ${R.before.spp} → ${R.after.spp} м²`);
+    check(R.after.spp >= R.before.spp * .95, `T56: СПП урбан-блоков после правки не ниже 95 % (${(100 * R.after.spp / R.before.spp).toFixed(1)} %)`);
+  });
 
   // виды и листы
   check(await p.ev(`winOpen("wViews", true); await new Promise(r=>setTimeout(r,300)); $("viewName").value="Эскиз"; $("viewSave").click(); return VIEWS.length===1`), "вид сохранён");
@@ -1004,5 +1017,71 @@ export default async p => {
     // порядок: возвращаем проект теста в исходный вид
     await p.ev(`const i=document.querySelector('[data-nid="doo_z1"]'); winOpen("wNorms", true); i.focus(); i.select(); return 1`); await p.type("44"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
     await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...window.__t55.keep); window.loadKeys = window.__t55.lk; window.ensureAdmin = window.__t55.ea; CHECKED.clear(); window.__t55.c.forEach(k => CHECKED.add(k)); NOTREADY.clear(); TPL_SIG = null; winOpen("wNorms", false); winOpen("wSheets", false); delete window.__t55; delete window.__fz; delete window.__k3; delete window.__lg; return 1`);
+  });
+  // T66 (совет 03.10.2026): сборка набора поверх чужих листов спрашивает в строке выбора; «Листы обновлены…» только при реальных изменениях;
+  // правленный формат старого листа сохраняется; подписи этажности — настройка слоя
+  await p.group("t66", async () => {
+    if (!await p.ev(`for (let k = 0; k < 20 && !TERR; k++) await new Promise(r=>setTimeout(r,500)); return !!TERR`)) {
+      await p.ev(`$("bExample").click(); await new Promise(r=>setTimeout(r,800)); return 1`);
+    }
+    check(await p.ev(`return !!TERR`), "T66: есть территория");
+    await p.ev(`window.__t66 = { keep: ALBUM.sheets.splice(0), lk: window.loadKeys, ea: window.ensureAdmin, c: new Set(CHECKED) }; window.loadKeys = async () => {}; window.ensureAdmin = async () => { CHECKED.add("gisogd.admin"); }; TPL_SIG = null; NOTREADY.clear(); winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); return 1`);
+    const done = n => p.ev(`for (let k = 0; k < 120 && !(SHBUILD === 0 && ALBUM.sheets.length === ${n}); k++) await new Promise(r=>setTimeout(r,250)); return ALBUM.sheets.length`);
+    // синтетический альбом из файла: 3 листа готовой вёрстки
+    await p.ev(`const fz = i => ({ id: "x" + i, frozen: true, title: "Готовый " + i, size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [] });
+      readAlbumFile(new File([JSON.stringify({ sheets: [fz(0), fz(1), fz(2)] })], "t66.json")); for (let k = 0; k < 40 && ALBUM.sheets.length < 3; k++) await new Promise(r=>setTimeout(r,150)); return 1`);
+    const N = await p.ev(`return ALBUM.sheets.length`), M = await p.ev(`return PPTKRT.length`);
+    check(N === 3 && await p.ev(`return ALBUM.sheets.every(s => s.frozen)`), `T66: импортирован альбом из файла, ${N} листа готовой вёрстки`);
+    const ask = () => p.ev(`buildAlbum("pptkrt"); await new Promise(r=>setTimeout(r,500)); const b = $("shImpBar"); return [ALBUM.sheets.length, !!b, b ? [...b.querySelectorAll("button")].map(x => x.textContent.trim()).join("|") : "", b?.textContent.includes("в альбоме") ?? false]`);
+    let a = await ask();
+    check(a[0] === N && a[1] && /^Заменить 3 листа текущего альбома на .+\|Добавить после текущих\|Отмена$/.test(a[2]), `T66: «Альбом ППТ КРТ» поверх листов из файла — строка выбора, листы не тронуты (${a[2]})`);
+    check(await p.ev(`return document.activeElement === $("shImpBar").querySelector("button")`), "T66: фокус на первой кнопке строки выбора");
+    await p.ev(`const esc = () => (document.getElementById("shImpBar") ? document.activeElement : document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      esc(); await new Promise(r=>setTimeout(r,300)); if ($("shImpBar")) { esc(); await new Promise(r=>setTimeout(r,300)); } return 1`);   // первый Esc мог отменить команду CAD, оставшуюся от прежних шагов
+    const esc66 = await p.ev(`return [!$("shImpBar"), ALBUM.sheets.length, document.activeElement?.tagName + "#" + (document.activeElement?.id || document.activeElement?.className), typeof TOOL !== "undefined" ? TOOL : ""]`);
+    check(esc66[0] && esc66[1] === N, `T66: Esc в строке выбора — «Отмена», альбом без изменений (${esc66})`);
+    await ask(); await p.ev(`$("shImpBar").querySelector('[data-shbuild="cancel"]').click(); await new Promise(r=>setTimeout(r,300)); return 1`);
+    check(await p.ev(`return !$("shImpBar") && ALBUM.sheets.length === ${N}`), "T66: кнопка «Отмена» — то же");
+    // «Добавить»: 9 + N
+    await ask(); await p.ev(`$("shImpBar").querySelector('[data-shbuild="add"]').click(); return 1`);
+    check(await done(M + N) === M + N && await p.ev(`return !$("shImpBar") && ALBUM.sheets.filter(s => s.frozen).length === ${N} && ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length === ${M}`), `T66: «Добавить после текущих» — ${M} листов набора и ${N} прежних (${M + N})`);
+    // «Заменить»: только набор
+    await ask(); await p.ev(`$("shImpBar").querySelector('[data-shbuild="replace"]').click(); return 1`);
+    check(await done(M) === M && await p.ev(`return ALBUM.sheets.every(s => s.id.startsWith("pptkrt_"))`), `T66: «Заменить» — в альбоме ровно ${M} листов набора`);
+    // тот же набор повторно: без вопроса, заменяет только себя
+    a = await ask();
+    check(!a[1] && await done(M) === M, "T66: повторная сборка того же набора — без строки выбора, листов столько же");
+    // ситуационный план поверх листов набора: тот же вопрос (сборка не начинается)
+    await p.ev(`buildSituation(); await new Promise(r=>setTimeout(r,500)); return 1`);
+    check(await p.ev(`const b = $("shImpBar"); return !!b && /^Заменить \\d+ листов? текущего альбома на Ситуационный план A4/.test(b.querySelector("button").textContent) && ALBUM.sheets.length === ${M}`), "T66: «Ситуационный план A4» поверх чужих листов — та же строка выбора");
+    await p.ev(`$("shImpBar").querySelector('[data-shbuild="cancel"]').click(); return 1`);
+    // «Листы обновлены по новым показателям» — только если лист изменился
+    await p.ev(`window.setHint(""); TPL_SIG = { tep: tplSig().tep, all: "a" }; tplAuto(); await new Promise(r=>setTimeout(r,600)); return 1`);
+    check(await p.ev(`return !/Листы обновлены/.test($("stHint").textContent)`), "T66: показатели «изменились», но ни один лист не изменился — подсказки «Листы обновлены» нет");
+    await p.ev(`window.setHint(""); ALBUM.sheets[4].styles = {}; TPL_SIG = { tep: tplSig().tep, all: "b" }; tplAuto(); await new Promise(r=>setTimeout(r,600)); return 1`);
+    check(await p.ev(`return $("stHint").textContent === "Листы обновлены по новым показателям"`), "T66: лист действительно изменился — подсказка есть");
+    // лист старого проекта: формат, изменённый владельцем, не откатывается при «Обновить листы»
+    const lg = await p.ev(`const s = ALBUM.sheets[2]; s.size = "A3"; delete s.tpl; tplAdopt(); const legacy = s.tpl?.legacy === true; tplRefresh({ legacy: true });
+      const s5 = ALBUM.sheets[5]; delete s5.tpl; tplAdopt(); tplRefresh({ legacy: true }); return [legacy, s.size === "A3", s5.size === "PA3"]`);
+    check(lg.every(Boolean), `T66: старый лист с изменённым форматом после «Обновить листы» сохраняет формат, нетронутый — шаблонный (${lg})`);
+    // подписи этажности: настройка слоя
+    const fl = await p.ev(`const mk = (key, title) => { const fc = turf.featureCollection([turf.feature(turf.bboxPolygon([37, 55, 37.001, 55.001]).geometry, { "Этажность": 9 })]);
+        DATA[key] = { title, source: "t", fetched_at: "2026-10-03", fc, count: 0, fields: [] }; layerSrc[key] = new ol.source.Vector(); setLayerData(key, fc); delete DATA[key].original;
+        const l = ensureLayer(key, title, "poly"); l.style = ST({ label: "Этажность" }); restyle(l); return l; };
+      const sk = mk("user:t66sk", "Эскиз: тест"), my = mk("user:t66my", "Мой слой"), f = l => layerSrc[l.key].getFeatures()[0];
+      const view = sharedView, r0 = view.getResolution(); let r = 1; for (let i = 0; i < 4; i++) r = r * 3000 / scaleDen(r); view.setResolution(r);
+      const at = () => [labelStyle(sk, f(sk)) !== null, labelStyle(my, f(my)) !== null];
+      const out = { a3000: at(), txt: labelStyle(sk, f(sk))?.getText?.().getText?.() };
+      sk.style.floorsDen = 5000; out.sk5 = at()[0]; sk.style.floorsDen = 0; out.sk0 = at()[0]; delete sk.style.floorsDen;
+      my.style.floorsDen = 2000; out.my2 = at()[1]; delete my.style.floorsDen;
+      view.setResolution(r * 8000 / 3000); out.a8000 = at(); sk.style.floorsDen = 5000; out.sk5far = at()[0]; delete sk.style.floorsDen;
+      view.setResolution(r0); window.__t66l = [sk.key, my.key]; return out`);
+    check(fl.a3000[0] === false && fl.a3000[1] === true && fl.sk5 === true && fl.sk0 === true && fl.my2 === false && fl.a8000[1] === true && fl.sk5far === false, `T66: подписи этажности: эскиз по умолчанию от 1:2 000, свой слой — всегда, «от 1:5 000» и «всегда» работают (${JSON.stringify(fl)})`);
+    const ui = await p.ev(`setCurrentQuiet("user:t66sk"); UIS.rt = "style"; renderRight(); const sel = document.querySelector('#rightPane select[data-k="floorsDen"]'); if (!sel) return ["нет списка"];
+      const o = [...sel.options].map(x => x.textContent).join("|"), v0 = sel.value; sel.value = "5000"; sel.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200));
+      return [o, v0, lyr("user:t66sk").style.floorsDen, document.querySelector('#rightPane select[data-k="floorsDen"]').value]`);
+    check(ui[0] === "всегда|от 1:2 000|от 1:5 000" && ui[1] === "2000" && ui[2] === 5000 && ui[3] === "5000", `T66: в панели стиля рядом с полем «Подпись» — «Подписи этажности»: всегда / от 1:2 000 / от 1:5 000, значение пишется в стиль слоя (${ui})`);
+    await p.ev(`removeLayers(window.__t66l); delete window.__t66l; await new Promise(r=>setTimeout(r,200)); return 1`);
+    await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...window.__t66.keep); window.loadKeys = window.__t66.lk; window.ensureAdmin = window.__t66.ea; CHECKED.clear(); window.__t66.c.forEach(k => CHECKED.add(k)); NOTREADY.clear(); TPL_SIG = null; winOpen("wSheets", false); delete window.__t66; return 1`);
   });
 };

@@ -430,7 +430,7 @@ canvas.c3d{position:absolute;inset:0;width:100%;height:100%;display:block;backgr
 .cadin.bad{border-color:var(--bad);outline:1px solid var(--bad)}
 .toast{position:fixed;left:50%;bottom:76px;transform:translateX(-50%);background:var(--toast-bg);color:var(--toast-ink);border:1px solid var(--line-2);padding:6px 12px;border-radius:var(--r-1);z-index:var(--z-toast);max-width:80%;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(4px);transition:opacity var(--dur-1) ease,transform var(--dur-1) ease}
 .toast.on{opacity:1;transform:translateX(-50%);transition:opacity var(--dur-2) var(--ease-out),transform var(--dur-2) var(--ease-out)}
-.tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.note.warn{color:var(--warn)}.note.warn .btn{margin-top:6px}.nm.outscale{color:var(--faint);font-style:italic}
+.tepp .row{display:flex;align-items:center;gap:6px;margin:3px 0;flex-wrap:wrap}.tepp .row>label:first-child{width:134px;flex:none;color:var(--muted)}.tepp small{color:var(--muted)}.tepp select{flex:1;min-width:0;max-width:180px}.resline{padding:4px 8px 2px}.note.warn{color:var(--warn)}.note.warn .btn{margin-top:6px}.nm.outscale{color:var(--faint);font-style:italic}
 /* узкий экран (ноутбук 1280): редкие подписи уходят в подсказки, иконки остаются */
 /* ноутбук: редкие окна уходят в меню «Окна ▾» с подписями, а не остаются значками без слов */
 .more{display:inline-flex;position:relative}.more .chev{width:12px;height:12px;margin-left:-2px}
@@ -770,6 +770,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 
 <div class="busy" id="busy" hidden></div>
 <script src="insol.js"></script>
+<script src="blocks.js"></script>
 <script src="linetype.js"></script>
 <script src="app.js"></script>
 <script src="msk.js"></script>
