@@ -43,6 +43,15 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 04.10.2026, цикл 19 (07:00–11:30 MSK, ветка team/t60) — T62 (исполнитель упал на ошибке API, перезапущен с
+  сохранёнными правками; ревью FAIL: двойной повтор к порталу → исправлено), T59 (ревью FAIL: права зрителя, нет
+  предела → исправлено), осмотр креативного директора v0.99.5 → T67/T68 (ревью FAIL по контрасту подписей →
+  исправлено руководителем). Итог v0.99.6: connectors 167 OK, compute 51 OK, apps 416 OK, E2E 363 ok / 0 failed.
+  Исполнитель T59 один раз запустил `pkill -f` по ошибке (ничего не задето) — напоминание в брифах.
+RULE: Every subagent brief repeats the ban on `pkill -f` and `git stash`/`checkout`; a brief without it is the
+lead's fault (cycle 19: one stray `pkill -f`).
+RULE: Portal retries live in exactly one place (the connector, with pauses); the page never repeats a failed portal
+request itself (T62: 3 × 2 attempts without a pause).
 - 04.10.2026, цикл 18 (03:30–07:00 MSK, ветка team/t60) — T6 шаги 3–4 (черновик другой сессии перенесён в team2 и
   доведён; ревью FAIL: таймер по часам → недетерминизм и ложное «не помещается» → бюджет шагов, граница свободной
   земли как препятствие; повторное ревью FAIL: прерванный результат не кэшировался → шторм пересчётов → исправлено
