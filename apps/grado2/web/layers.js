@@ -295,7 +295,8 @@ const upright = a => { a = ((a % 360) + 360) % 360; return a > 90 && a <= 270 ? 
 // угол подписи в градусах против часовой стрелки: _angle — вдоль границы своей папки (сервер), иначе угол ГИС ОГД
 // textangle (он по часовой); ol.style.Text поворачивает по часовой — знак меняется
 const labelDeg = f => f.get("_angle") != null ? +f.get("_angle") : -(+f.get("textangle") || 0);
-const labelStyle = (l, f) => { const st = l.style, t = f.get(st.label); if (t == null || t === "") return null;
+const labelStyle = (l, f) => { const st = l.style; let t = f.get(st.label); if (t == null || t === "") return null;
+  if (st.label === "Этажность" && String(l.key).startsWith("user:")) { if (scaleDen(sharedView.getResolution()) > 2000) return null; t = t + " эт."; }   // корпуса эскиза: «12 эт.», только крупнее 1:2 000
   const ang = st.labelAngle ? -upright(labelDeg(f)) * Math.PI / 180 : 0, bare = st.marker === false;
   return new ol.style.Style({ text: new ol.style.Text({ text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new ol.style.Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle, offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false }) }); };   // у точки подпись над знаком с зазором: знак — помеха для разведения подписей, задетая рамкой подпись скрывалась
 // крупный слой: номер цвета в таблице l.pal у каждого объекта (-1 — скрыт категорией или правилом)
@@ -523,7 +524,7 @@ function renderTree0() {
   const el = $("layerTree"); if (!el) return;
   if (BY_SHEET && LYR.length) { el.innerHTML = sheetTreeHTML(); syncCurSelect(); syncStart(); icons(); return; }
   const res = (RESULT.sketch.length || RESULT.site) && PREVIEW_WINS.some(id => !$(id).hidden) ? `<div class="tgrp" title="Как предпросмотр в Grasshopper: виден, пока открыты окна «Схема расчёта», «Эскиз», «Варианты», «Объём» или «Сравнение». В проект эскиз попадает кнопкой «Сохранить слоем».">Предпросмотр схемы${PREVIEW_WINS.some(id => !$(id).hidden) ? "" : " · скрыт"}</div>` + RES.map(r => `<label class="tn"><span class="tw"></span><input type="checkbox" data-res="${r.id}" ${r.on !== false ? "checked" : ""} aria-label="Показывать в предпросмотре"><span class="sym" style="background:${r.color}"></span><span class="nm">${r.title}</span><span class="meta num">${r.layer.getSource().getFeatures().length || ""}</span></label>`).join("") : "";
-  if (!LYR.length) { el.innerHTML = `<div class="note" title="Слой появится сам, как только выберете инструмент рисования; «+» над списком создаёт пустой слой.">Слоёв нет. Нарисуйте объект или <button class="lnk" data-open-data>загрузите данные</button>.</div>` + res; icons(); syncStart(); syncCurSelect(); return; }
+  if (!LYR.length) { el.innerHTML = (res ? `<div class="note" title="Эскиз виден на карте как предпросмотр; кнопка «Сохранить слоем» в окне «Эскиз» делает из него слой.">Слоёв пока нет (эскиз ещё не сохранён)</div>` : `<div class="note" title="Слой появится сам, как только выберете инструмент рисования; «+» над списком создаёт пустой слой.">Слоёв нет. Нарисуйте объект или <button class="lnk" data-open-data>загрузите данные</button>.</div>`) + res; icons(); syncStart(); syncCurSelect(); return; }
   let h = "", prevG = null; const hit = l => !LQ || normQ(l.title).includes(LQ);
   if (LQ && !LYR.some(hit)) h = `<div class="note">Нет слоёв с таким названием. Esc — сбросить поиск.</div>`;
   LYR.forEach(l => {

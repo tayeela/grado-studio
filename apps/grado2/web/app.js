@@ -1359,8 +1359,13 @@ setInterval(() => { if (window.HUB_MODE === false || window.HUB_IN) recompute(fa
 /* ---------- результат графа на основной карте ---------- */
 const prevSrc = new ol.source.Vector(), sketchSrc = new ol.source.Vector(), siteSrc = new ol.source.Vector(), keptSrc = new ol.source.Vector();
 const shade = n => ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94"][Math.min(4, Math.floor(n / 6))];
-const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: shade(f.get("floors")) }), stroke: new ol.style.Stroke({ color: "#1a4f94", width: 1 }), text: new ol.style.Text({ text: String(f.get("floors")), font: "11px Arial", fill: new ol.style.Fill({ color: f.get("floors") > 14 ? "#fff" : "#123" }) }) });
-const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: new ol.style.Style({ fill: new ol.style.Fill({ color: hatch("#1f7a4d") }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
+// этажность на корпусе эскиза подписывается «12 эт.» и только на масштабе крупнее 1:2 000 (мельче подписи сливаются в крошку)
+const FLOOR_LABEL_DEN = 2000;
+const sketchStyle = f => new ol.style.Style({ fill: new ol.style.Fill({ color: shade(f.get("floors")) }), stroke: new ol.style.Stroke({ color: "#1a4f94", width: 1 }),
+  text: scaleDen(sharedView.getResolution()) <= FLOOR_LABEL_DEN ? new ol.style.Text({ text: f.get("floors") + " эт.", font: "11px Arial", fill: new ol.style.Fill({ color: f.get("floors") > 14 ? "#fff" : "#123" }) }) : undefined });
+// штриховка пятна застройки — цвет из токена --site-hatch (светлее контура, свой для каждой темы); смена темы перерисовывает слой
+const siteHatch = () => getComputedStyle(document.documentElement).getPropertyValue("--site-hatch").trim() || "#6dae8c";
+const siteLayer = () => new ol.layer.Vector({ source: siteSrc, zIndex: 20, style: () => new ol.style.Style({ fill: new ol.style.Fill({ color: hatch(siteHatch()) }), stroke: new ol.style.Stroke({ color: "#1f7a4d", width: 1.4, lineDash: [5, 3] }) }) });
 const keptLayer = () => new ol.layer.Vector({ source: keptSrc, zIndex: 35, style: S("#bdb8b0", "#4d4d4d", 1) });
 const sketchLayer = () => new ol.layer.Vector({ source: sketchSrc, zIndex: 40, style: sketchStyle });
 // участки, дворы и улицы эскиза (ИЖС, блокированные, урбан-блоки) — под корпусами
@@ -1737,28 +1742,28 @@ function snapMove(w, x, y) {           // магнит плавающего ок
    свойств или к нижнему краю карты, становится частью раскладки — карта ужимается, окна в одной зоне делят место;
    вытянутое за заголовок — снова плавает. Двойной щелчок по заголовку — встроить / сделать плавающим. */
 const DZ = { l: $("dzL"), r: $("dzR"), b: $("dzB") };
-const DOCK_DEFAULT = { wTable: "b", wVars: "b", wSheets: "b", wGraph: "b", wSketch: "r", wTep: "r", wCons: "r", wData: "l", wViews: "l" };
+const DOCK_DEFAULT = { wTable: "b", wVars: "b", wSheets: "b", wGraph: "b", wSketch: "r", wTep: "r", wNorms: "r", wCons: "r", wData: "l", wViews: "l" };
 const narrow = () => innerWidth <= 1000;       // боковые панели — выезжающие поверх карты: окна боковых зон встают вкладками под карту
 const dockPref = id => { const d = WST[id]; return d && "dock" in d ? d.dock : d?.anchor || DOCK_DEFAULT[id] || null; };   // anchor — прилипание прежних версий
 const dockOf = id => { const z = dockPref(id); return z && z !== "b" && narrow() ? "b" : z; };
 const layoutChanged = () => requestAnimationFrame(() => { syncZones(); mMain.updateSize(); window.CAD?.grips?.(); });
 /* несколько окон в одной зоне — вкладки (как сгруппированные панели QGIS): боковая панель всегда, нижняя — когда окнам
-   не хватает ширины (меньше 340 px на окно). Вкладку можно вытянуть мышью — окно поплывёт. */
+   не хватает ширины (меньше 400 px на окно). Вкладку можно вытянуть мышью — окно поплывёт. */
 function syncZones() {
   for (const [k, z] of Object.entries(DZ)) {
     const ws = [...z.querySelectorAll(":scope>.win")].filter(w => !w.hidden);
-    const width = k === "b" ? z.parentElement.clientWidth : 0, tabbed = ws.length > 1 && (k !== "b" || ws.length * 340 > width);
+    const width = k === "b" ? z.parentElement.clientWidth : 0, tabbed = ws.length > 1 && (k !== "b" || ws.length * 400 > width);
     let act = z.dataset.active; if (!ws.some(w => w.id === act)) act = ws[ws.length - 1]?.id || "";
     z.dataset.active = act; z.classList.toggle("tabbed", tabbed);
     ws.forEach(w => w.classList.toggle("dzoff", tabbed && w.id !== act));
     // нижняя зона без вкладок: окна рядом, ширины — перетаскиваемой границей между ними (WST[id].bw — доля)
     ws.forEach((w, i) => { w.classList.toggle("nfirst", k === "b" && !tabbed && i > 0); w.style.flexGrow = k === "b" && !tabbed ? (WST[w.id]?.bw || 1) : ""; });
     if (k !== "b" && WST["zh" + k]) z.style.setProperty("--dzh", WST["zh" + k] + "px");
+    if (k === "b") z.style.height = WST.hb ? WST.hb + "px" : "";                  // своя высота владельца (перетаскивание, раскладка) главнее; иначе CSS: 32 % поля карты
     let bar = z.querySelector(":scope>.dztabs");
     if (!bar) { bar = document.createElement("div"); bar.className = "dztabs"; bar.setAttribute("role", "tablist"); z.insertBefore(bar, z.querySelector(":scope>.win")); bindTabs(bar); }
     bar.hidden = !tabbed;
-    // вкладкам тесно — у неактивных остаются значок и крестик, подпись — в подсказке
-    bar.classList.toggle("many", tabbed && ws.length * 120 > (k === "b" ? width : z.clientWidth || z.parentElement.clientWidth));
+    // подписи вкладок видны всегда; когда тесно, шрифт мельче (CSS), а подпись сокращается «…» — полное имя в подсказке
     if (tabbed) bar.innerHTML = ws.map(w => `<button role="tab" data-tab="${w.id}" aria-selected="${w.id === act}" title="${esc(w.getAttribute("aria-label"))}. Потяните вкладку, чтобы окно поплыло">${w.querySelector(".wh>svg, .wh>i")?.outerHTML || ""}<span>${esc(document.querySelector(`.wins [data-win="${w.id}"] .lb`)?.textContent || w.querySelector(".wh b")?.textContent || "")}</span><i class="x" data-tabclose="${w.id}" title="Закрыть">×</i></button>`).join("");
   }
 }
@@ -1769,8 +1774,23 @@ function bindTabs(bar) {
     const w = $(t.dataset.tab); dragWin(w, e, () => { w.parentElement.dataset.active = w.id; syncZones(); requestAnimationFrame(() => WIN_OPEN[w.id]?.()); });
   });
 }
+/* Не больше двух встроенных окон в зоне (решение совета 03.10.2026): третье открывается плавающим, чтобы встроенные окна не вытесняли карту.
+   Правило — только при открытии окна кнопкой; перетаскивание, Alt+стрелка, запомненная раскладка и восстановление при запуске ставят окно как просили.
+   Настройка в меню «Окна»: «Окон в зоне» — не больше двух (авто) / без ограничения; помнится в браузере. */
+const ZONE_MAX = 2;
+const zoneCap = () => { try { return localStorage.getItem("grado2.zonecap") === "free" ? "free" : "two"; } catch { return "two"; } };
+function setZoneCap(v) {
+  try { v === "free" ? localStorage.setItem("grado2.zonecap", "free") : localStorage.removeItem("grado2.zonecap"); } catch { }
+  toast(v === "free" ? "Окон в зоне: без ограничения. Действует на окна, которые откроете дальше." : "Окон в зоне: не больше двух. Действует на окна, которые откроете дальше.");
+}
+let ZONE_FORCE = false;                       // "layout" — раскладка: окна встают как записаны; "restore" — запуск: окно, ушедшее в плавающие по правилу, плавает и дальше
+const zoneFull = (side, w) => {
+  if (zoneCap() === "free") return false;
+  if (ZONE_FORCE) return ZONE_FORCE === "restore" && !!WST[w.id]?.capFloat;
+  return [...DZ[side].querySelectorAll(":scope>.win")].filter(o => o !== w && !o.hidden).length >= ZONE_MAX;
+};
 function dockWin(w, side, keepPref) {
-  const d = WST[w.id] ||= {}; if (!keepPref) d.dock = side; delete d.anchor; delete d.full;
+  const d = WST[w.id] ||= {}; if (!keepPref) d.dock = side; delete d.anchor; delete d.full; delete d.capFloat;
   w.classList.add("docked"); w.classList.remove("front", "snap"); w.style.cssText = "";
   if (side !== "b") w.style.flexBasis = (d.dh || 300) + "px";
   if (w.parentElement !== DZ[side]) DZ[side].append(w);
@@ -1843,7 +1863,11 @@ const winAppear = w => { if (!WIN_ANIM || !w.animate || matchMedia("(prefers-red
   w.animate([{ opacity: 0, transform: "scale(.98)" }, { opacity: 1, transform: "none" }], { duration: 150, easing: "cubic-bezier(0.23,1,0.32,1)" }); };
 function winOpen(id, on) {
   const w = $(id); const was = w.hidden; on = on ?? w.hidden; w.hidden = !on;
-  if (on) { const z = dockOf(id); if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); if (was) winAppear(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
+  if (on) { const z = dockOf(id);
+    if (z && (was || !w.classList.contains("docked")) && zoneFull(z, w)) {   // в зоне уже два окна — это открывается плавающим, место в зоне остаётся за теми двумя
+      if (w.classList.contains("docked")) floatWin(w, true); (WST[id] ||= {}).capFloat = true; placeWin(w); winFront(w); if (was) winAppear(w);
+      if (!ZONE_FORCE && !WST.zoneToast) { WST.zoneToast = 1; saveWins(); toast("Третье окно открыто плавающим: в зоне уже два. Поменять — в меню «Окна»"); }
+    } else if (z) dockWin(w, z, z !== dockPref(id)); else { if (w.classList.contains("docked")) floatWin(w); placeWin(w); winFront(w); if (was) winAppear(w); } requestAnimationFrame(() => WIN_OPEN[id]?.()); }
   if (w.classList.contains("docked")) layoutChanged();
   if (on && w.classList.contains("docked")) { w.parentElement.dataset.active = id; syncZones(); }
   if (id === "wGraph") $("pv").hidden = !on;
@@ -1872,13 +1896,14 @@ function applyLayout(L) {
   const sz = L._sz;
   if (sz) { Object.entries(sz.w || {}).forEach(([id, v]) => Object.assign(WST[id] ||= {}, v)); ["hb", "zhl", "zhr"].forEach(k => { if (sz[k]) WST[k] = sz[k]; }); }
   Object.keys(W0()).forEach(id => { if (!(id in L) && !$(id).hidden) winOpen(id, false); });
-  Object.entries(L).forEach(([id, z]) => { if (!$(id)) return; (WST[id] ||= {}).dock = z; if (!$(id).hidden) winOpen(id, false); winOpen(id, true); });
+  ZONE_FORCE = "layout";                     // раскладка хранит, что записано: правило «не больше двух» к ней не применяется
+  try { Object.entries(L).forEach(([id, z]) => { if (!$(id)) return; (WST[id] ||= {}).dock = z; if (!$(id).hidden) winOpen(id, false); winOpen(id, true); }); } finally { ZONE_FORCE = false; }
   saveWins(); layoutChanged();
 }
 function saveLayout() {
   const L = {}; Object.keys(W0()).forEach(id => { if (!$(id).hidden) L[id] = $(id).classList.contains("docked") ? dockPref(id) : null; });
   if (!Object.keys(L).length) return toast("Откройте нужные окна и расставьте их — тогда раскладку можно запомнить.");
-  L._sz = { w: Object.fromEntries(Object.keys(L).map(id => [id, { dh: WST[id]?.dh, bw: WST[id]?.bw }])), hb: WST.hb, zhl: WST.zhl, zhr: WST.zhr };
+  L._sz = { w: Object.fromEntries(Object.keys(L).map(id => [id, { dh: WST[id]?.dh, bw: WST[id]?.bw }])), hb: WST.hb || (DZ.b.offsetHeight || undefined), zhl: WST.zhl, zhr: WST.zhr };
   const U = userLayouts(); let n = 1; while (U["Моя раскладка " + n]) n++; U["Моя раскладка " + n] = L; saveWins(); toast(`Запомнено как «Моя раскладка ${n}» — она в меню «Окна», раздел «Раскладка окон».`);
 }
 /* размер интерфейса: «авто» — по ширине окна (media в index.html), «обычный» и «крупный» — выбор владельца, помнится в браузере */
@@ -1895,12 +1920,14 @@ function renderWinMenu() {
   const lay = (name, user) => `<button role="menuitem" class="lay" data-layout="${esc(name)}" data-user="${user ? 1 : ""}" title="Открыть окна этой раскладки и расставить их"><i data-lucide="layout-dashboard"></i>${esc(name)}${user ? `<i class="x" data-laydel="${esc(name)}" title="Удалить раскладку">×</i>` : ""}</button>`;
   $("winMenu").innerHTML = WINITEMS + `<div class="mh">Раскладка окон</div>` + Object.keys(LAYOUTS).map(n => lay(n)).join("") + Object.keys(userLayouts()).map(n => lay(n, true)).join("")
     + `<button role="menuitem" class="lay" data-laysave title="Запомнить, какие окна открыты и где встроены"><i data-lucide="bookmark-plus"></i>Запомнить текущую…</button>`
+    + `<div class="mh">Окон в зоне</div>` + [["two", "Не больше двух", "Третье окно в зоне открывается плавающим, карта остаётся большой"], ["free", "Без ограничения", "Окна встают в зону сколько угодно, вкладками"]].map(([v, n, t]) => `<button role="menuitemradio" class="lay uisz" data-zonecap="${v}" aria-checked="${zoneCap() === v}" title="${t}">${esc(n)}</button>`).join("")
     + `<div class="mh">Размер интерфейса</div>` + [["auto", "Авто", "по ширине экрана"], ["normal", "Обычный", "как на ноутбуке"], ["large", "Крупный", "для больших экранов"]].map(([v, n, t]) => `<button role="menuitemradio" class="lay uisz" data-uisize="${v}" aria-checked="${uiSize() === v}" title="${t}">${esc(n)}</button>`).join("");
   icons();
 }
 renderWinMenu();
 $("winMenu").addEventListener("click", e => {
   const us = e.target.closest("[data-uisize]"); if (us) { setUiSize(us.dataset.uisize); return; }
+  const zc = e.target.closest("[data-zonecap]"); if (zc) { setZoneCap(zc.dataset.zonecap); return; }
   const del = e.target.closest("[data-laydel]"); if (del) { e.stopImmediatePropagation(); delete userLayouts()[del.dataset.laydel]; saveWins(); renderWinMenu(); return; }
   const b = e.target.closest("[data-layout]"); if (b) { applyLayout(b.dataset.user ? userLayouts()[b.dataset.layout] : LAYOUTS[b.dataset.layout]); return; }
   if (e.target.closest("[data-laysave]")) saveLayout();
@@ -2006,7 +2033,7 @@ document.querySelectorAll(".win").forEach(w => {
     const up = () => { g.removeEventListener("pointermove", mv); g.removeEventListener("pointerup", up); saveWins(); layoutChanged(); };
     g.addEventListener("pointermove", mv); g.addEventListener("pointerup", up);
   });
-  DZ.b.style.height = (WST.hb || Math.max(innerWidth <= 900 ? 160 : 260, Math.round(DZ.b.parentElement.clientHeight * .4))) + "px"; }   // узкое окно: не больше 40 % высоты (своя высота владельца главнее)
+  syncZones(); }   // высота по умолчанию — 32 % поля карты (CSS .dz.b), узкое окно тоже; своя высота владельца (WST.hb) главнее
 new ResizeObserver(() => mMain.updateSize()).observe($("mMain"));
 // при сужении окна браузера плавающие окна остаются на экране; ниже 1000 px боковые встроенные окна плывут, шире — встают обратно
 let wasNarrow = narrow();
@@ -2019,7 +2046,7 @@ addEventListener("resize", () => {
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); };
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); siteSrc.changed(); };
 try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
@@ -2034,7 +2061,7 @@ const startApp = async () => {
   if (WST.dockL === false) toggleDock("L", false); if (WST.dockR === false) toggleDock("R", false);
   // узкое окно: панели поверх карты, при запуске закрыты — открываются из меню «Окна»
   if (innerWidth <= 1000) { $("work").classList.add("noL", "noR"); syncWinButtons(); }          // без записи: на широком окне панели вернутся
-  Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); });   // первый запуск: вместо окон — «С чего начать» на карте
+  ZONE_FORCE = "restore"; try { Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); }); } finally { ZONE_FORCE = false; }   // первый запуск: вместо окон — «С чего начать» на карте
   requestAnimationFrame(() => { WIN_ANIM = true; });                                // окна, открытые дальше, появляются мягко
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();

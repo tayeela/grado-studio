@@ -563,7 +563,8 @@ window.syncSheetBadge = () => { const b = $("shBadge"), n = ALBUM.sheets.length;
 window.syncSheetSel = () => { if (!$("wSheets").hidden) renderSheets(); };   // рамку выбрали на карте — строка и свойства следуют за ней
 const sizeShort = s => (SIZE_T[s.size] || s.size || "").replace(" без штампа", "").replace(" (ГОСТ)", "") + (isPaper(s.size) && s.orient === "P" ? " книжн." : "");
 const scaleText = s => ["tep", "title", "photos"].includes(s.kind) ? "" : s.panels ? `${s.panels.length} карты` : "1:" + fmt(Math.round(sheetScale(s)));
-const stampSum = () => { const m = ALBUM.meta, p = [m.object, m.code, m.stage].filter(Boolean); return p.length ? "Штамп: " + p.join(" · ") : "Штамп: не заполнен"; };
+// строка штампа — обычный заголовок раздела «Штамп» и мелким серым то, что заполнено (не «Штамп: ПП», похожее на сообщение об ошибке)
+const stampSum = () => { const m = ALBUM.meta, p = [m.object, m.code, m.stage].filter(Boolean); return `<b>Штамп</b><em>${p.length ? esc(p.join(" · ")) : "не заполнен"}</em>`; };
 const mi = (id, ic, t, h, title) => `<button role="menuitem" id="${id}" title="${esc(title || h)}"><i data-lucide="${ic}"></i><span class="mi"><b>${t}</b><small>${h}</small></span></button>`;
 function rowInner(s, i, on) {
   const ic = (cond, name, tip) => cond ? `<span title="${tip}"><i data-lucide="${name}"></i></span>` : "";
@@ -600,10 +601,10 @@ function detHTML(s, i) {
 }
 function emptyHTML() {
   const pk = ALBUM.meta.peak, d = pk?.at ? stampText(pk.at).slice(0, 5) : "", elsewhere = (SHOTHER?.list || []).filter(p => p.album_n > 0 && p.name !== PROJ.name).slice(0, 2);
-  return `<div class="shempty"><div>Листов пока нет. Добавьте лист или соберите альбом ППТ КРТ</div>`
+  return `<div class="shempty"><div>Листов пока нет. Добавьте лист или соберите альбом</div>`
     + (pk?.n ? `<div class="snote">Раньше в проекте было ${pk.n} ${shWord(pk.n)}${d ? ` (${d})` : ""}. Они удалены или не сохранились — ${window.HUB_MODE ? "откройте «История» и вернитесь к версии с листами" : "откройте «Проекты» и выберите сохранённую версию"}.</div>` : "")
     + (elsewhere.length ? `<div class="snote" id="shOther">Альбомы лежат в других проектах: ${elsewhere.map(p => `<a data-shopen="${esc(p.name)}" role="button" tabindex="0" title="Открыть проект">«${esc(p.name)}»</a> — ${p.album_n} ${shWord(p.album_n)}`).join("; ")}.</div>` : "")
-    + `<div class="row"><button class="btn" data-shact="add"><i data-lucide="file-plus"></i>Добавить лист</button><button class="btn primary" data-shact="pptkrt"><i data-lucide="presentation"></i>Собрать альбом ППТ КРТ</button></div></div>`;
+    + `<div class="row"><button class="btn" data-shact="add"><i data-lucide="file-plus"></i>Добавить лист</button><button class="btn primary" data-shact="pptkrt"><i data-lucide="presentation"></i>Собрать альбом ППТ&nbsp;КРТ</button></div></div>`;
 }
 // проекты с альбомом — для строки в пустом окне; один запрос на открытие окна, не чаще раза в 20 с, только в обычном режиме (в совместном проекты на сервере другого вида)
 function loadOther() {
@@ -624,7 +625,7 @@ function renderSheets() {
     + `<button class="btn dd" id="shBuild" aria-haspopup="menu" aria-expanded="false" aria-controls="shMenuBuild" title="Собрать набор листов по шаблону или взять листы из файла"><i data-lucide="layout-template"></i>Собрать<i data-lucide="chevron-down" class="chev"></i></button>`
     + `<button class="btn primary" id="shPdf" ${n ? "" : "disabled"} title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF</button>`
     + `<button class="btn" id="shPptx" ${n ? "" : "disabled"} title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button></div></div>`
-    + `<div class="shstamp"><button id="shStampBtn" aria-expanded="${STAMP_OPEN}" aria-controls="shStampBox" title="Основная надпись листов: объект, шифр, стадия, организация"><i data-lucide="chevron-right"></i><span id="shStampSum">${esc(stampSum())}</span></button>`
+    + `<div class="shstamp"><button id="shStampBtn" aria-expanded="${STAMP_OPEN}" aria-controls="shStampBox" title="Основная надпись листов: объект, шифр, стадия, организация"><i data-lucide="chevron-right"></i><span id="shStampSum">${stampSum()}</span></button>`
     + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}`
     + `<label>Формат слайдов раздела<select id="shSlide" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (m.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></label></div></div>`
     + importBarHTML()
@@ -632,7 +633,7 @@ function renderSheets() {
     + `</div>`
     + `<div class="menu shmenu" id="shMenuAdd" role="menu" hidden>${mi("shAddA3", "file-plus", "Лист A3 (ГОСТ)", "Рамка и штамп по ГОСТ, карта и легенда")}${mi("shAddA1", "file-plus", "Лист A1 (ГОСТ)", "Большой лист по ГОСТ")}${mi("shAddSlide", "presentation", "Слайд 16:9", "Для презентации PPTX")}</div>`
     + `<div class="menu shmenu" id="shMenuBuild" role="menu" hidden>${mi("shSec1", "layout-template", "Раздел 1: существующее положение", "Слайды по территории; заменит листы этого набора", "Слайды раздела «Существующее положение»: месторасположение, ортофотопланы, ограничения, землепользование, Генплан, ПЗЗ, документация, соцобъекты. Недостающие слои выгружаются на всю площадь листов. Заменит листы этого набора")}`
-    + `${mi("shPptKrt", "presentation", "Альбом ППТ КРТ", "Шаблон с красной шапкой; заменит листы этого набора", "Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи. Заменит листы этого набора")}`
+    + `${mi("shPptKrt", "presentation", "Альбом ППТ&nbsp;КРТ", "Шаблон с красной шапкой; заменит листы этого набора", "Альбом «План реализации ППТ КРТ» по шаблону (А3, красная шапка), состав — как в «ГК Царицыно»: титул, месторасположение, ортофотоплан, фотофиксация, существующее использование с ЗОУИТ, Генплан, ППТ и ПМТ, ГПЗУ и АГР, землепользователи. Заменит листы этого набора")}`
     + `${mi("shSit", "map", "Ситуационный план A4", "Окружение и граница территории, один лист", "Ситуационный план на весь лист А4 без штампа и легенды: зелень, вода, дома и дороги, железная дорога, районы, названия улиц, граница территории. Нет границы — сначала выбрать её файл")}<hr>`
     + `${mi("shImport", "folder-open", "Из файла…", "Листы из проекта .grado2 или готовой вёрстки", "Взять листы альбома из файла: проекта .grado2 или готовой вёрстки. Файл читается в браузере, на сервер не уходит")}</div>`
     + `<input type="file" id="shImpFile" accept=".grado2,.json,application/json" hidden>`;
@@ -676,7 +677,7 @@ shEl().addEventListener("dblclick", e => { if (e.target.id === "sheetPrev" && e.
 const refreshRow = i => { const r = shEl().querySelector(`.shrow[data-sh="${i}"]`); if (r) { r.innerHTML = rowInner(ALBUM.sheets[i], i); icons(); } };
 shEl().addEventListener("change", e => {
   const t = e.target, row = t.closest("[data-sh]");
-  if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; touch(); const s = $("shStampSum"); if (s) s.textContent = stampSum(); return; }
+  if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; touch(); const s = $("shStampSum"); if (s) s.innerHTML = stampSum(); return; }
   if (t.id === "shImpFile") { if (isViewer()) { t.value = ""; return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); } const f = t.files?.[0]; t.value = ""; if (f) readAlbumFile(f); return; }
   // формат слайдов раздела: новый раздел строится в нём, собранные слайды переводятся сразу (масштаб — заново, по рамке)
   if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });

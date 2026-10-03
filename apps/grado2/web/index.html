@@ -12,7 +12,7 @@
   --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line:#d4d4d4; --line-2:#bdbdbd;
   --text:#1d1d1f; --muted:#5f6368; --faint:#6b6e73; --hover:#e4e4e4; --selrow:#d3e3f8;
   --accent:#2f6fc4; --accent-ink:#fff; --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
-  --canvas:#f5f4f0; --graph:#e6e6e2;
+  --canvas:#f5f4f0; --graph:#e6e6e2; --site-hatch:#6dae8c;
   --k:1; --h-xs:calc(20px*var(--k)); --h-sm:calc(24px*var(--k)); --h-md:calc(28px*var(--k)); --h-lg:calc(32px*var(--k)); --h-top:calc(38px*var(--k)); --h-status:calc(24px*var(--k)); --ico:calc(16px*var(--k)); --ico-s:calc(14px*var(--k)); --ico-xs:calc(12px*var(--k)); --r-1:3px; --r-2:6px; --fs-s:calc(11px*var(--k)); --fs-m:calc(12px*var(--k)); --fs-l:calc(13px*var(--k)); --ease-out:cubic-bezier(0.23,1,0.32,1); --dur-1:90ms; --dur-2:150ms;
   --sh-1:0 2px 8px rgba(0,0,0,.14); --sh-2:0 4px 14px rgba(0,0,0,.2); --sh-3:0 4px 12px rgba(0,0,0,.16);
   --z-map:5; --z-gut:10; --z-win:40; --z-drawer:45; --z-pop:70; --z-toast:80; --z-menu:85; --z-modal:90; --z-busy:100; --z-login:200;
@@ -25,14 +25,14 @@
   color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#6a6a6a;
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#203550;
   --accent:#6aa8f2; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#f5806f;
-  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818;
+  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818; --site-hatch:#4e9a74;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }}
 :root[data-theme="dark"]{
   color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#6a6a6a;
   --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#203550;
   --accent:#6aa8f2; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#f5806f;
-  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818;
+  --on-bad:#1a1a1a; --toast-bg:var(--field); --toast-ink:var(--text); --graph:#181818; --site-hatch:#4e9a74;
   --sh-1:0 1px 3px rgba(0,0,0,.32); --sh-2:0 4px 14px rgba(0,0,0,.4); --sh-3:0 4px 12px rgba(0,0,0,.34);
 }
 /* масштаб интерфейса: один множитель --k на все размеры текста, высоты строк и кнопок и значки (карта и граф не масштабируются).
@@ -60,7 +60,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .wins{display:flex;gap:1px;align-items:center}
 .wins .btn{border-color:transparent;background:none;color:var(--muted)}
 .wins .btn:hover{background:var(--hover);color:var(--text)}
-.wins .btn[aria-pressed="true"]{background:var(--field);border-color:var(--line-2);color:var(--text)}
+.wins .btn[aria-pressed="true"],#bSheets[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 14%,var(--panel));border-color:color-mix(in srgb,var(--accent) 45%,var(--line-2));color:var(--text)}
 .wins .vs{width:1px;height:18px;background:var(--line);margin:0 5px}
 /* строка инструментов */
 .ribbon{display:flex;align-items:center;flex-wrap:wrap;gap:1px;row-gap:3px;padding:4px 6px;min-height:calc(40px*var(--k));background:var(--panel);border-bottom:1px solid var(--line)}
@@ -99,7 +99,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 /* встроенные окна: зоны в панели слоёв, панели свойств и под картой */
 .dz{position:relative;display:flex;flex-direction:column;min-height:0;flex:0 1 auto}
 .dz:not(:has(>.win:not([hidden]))){display:none}
-.dz.b{flex:0 0 auto;flex-direction:row;height:280px;border-top:1px solid var(--line);background:var(--panel)}
+.dz.b{flex:0 0 auto;flex-direction:row;height:32%;min-height:150px;border-top:1px solid var(--line);background:var(--panel)}   /* по умолчанию не больше 32 % высоты поля карты; свою высоту (WST.hb) JS ставит в px */
 .win.docked{position:relative;inset:auto;z-index:auto;resize:none;border:0;border-radius:0;box-shadow:none;min-width:0;min-height:0;width:auto;height:auto;overflow:hidden}
 /* своё содержимое панели (слои, стиль) не отдаёт встроенным окнам всё место */
 .work>.side>.sb{flex:1 1 0;min-height:150px}
@@ -117,13 +117,13 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .dz.tabbed>.win:not(.hctl)>.wh{display:none}
 .dz.tabbed>.win.hctl>.wh>:is(b,[data-close]),.dz.tabbed>.win.hctl>.wh>:first-child{display:none}
 .dztabs{display:flex;align-items:flex-end;gap:1px;height:var(--h-md);padding:0 4px;border-bottom:1px solid var(--line);flex:0 0 auto;overflow-x:auto;scrollbar-width:none;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
-.dztabs button{display:flex;align-items:center;gap:4px;height:var(--h-sm);padding:0 3px 0 8px;border:1px solid transparent;border-bottom:0;border-radius:var(--r-1) 4px 0 0;background:none;color:var(--muted);white-space:nowrap;cursor:grab;flex:0 1 auto;min-width:0;touch-action:none}
+.dztabs button{display:flex;align-items:center;gap:3px;height:var(--h-sm);padding:0 2px 0 6px;font-size:var(--fs-s);border:1px solid transparent;border-bottom:0;border-radius:var(--r-1) 4px 0 0;background:none;color:var(--muted);white-space:nowrap;cursor:grab;flex:0 1 auto;min-width:0;touch-action:none}
 .dztabs button>span{overflow:hidden;text-overflow:ellipsis;min-width:0}
-.dztabs.many button:not([aria-selected=true]){flex:0 0 auto}.dztabs.many button:not([aria-selected=true])>span{display:none}
 .dztabs button>svg,.dztabs .x{flex:0 0 auto}
 .dztabs button svg{width:var(--ico-s);height:var(--ico-s)}
-@media (max-width:900px){.dztabs{scrollbar-width:thin}.dztabs button>span{overflow:visible}.dztabs button,.dztabs.many button:not([aria-selected=true]){flex:0 0 auto}}
-.dztabs button[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text);margin-bottom:-1px}
+@media (max-width:900px){.dztabs{scrollbar-width:thin}.dztabs button>span{overflow:visible}.dztabs button{flex:0 0 auto}}
+.dztabs button[aria-selected=true]{background:var(--panel);border-color:var(--line);color:var(--text);margin-bottom:-1px;box-shadow:inset 0 2px 0 var(--accent)}
+.dztabs button[aria-selected=true]>svg{color:var(--accent)}
 .dztabs .x{font-style:normal;width:18px;height:18px;display:grid;place-items:center;border-radius:var(--r-1);color:var(--faint);cursor:pointer}
 .dztabs .x:hover{background:var(--hover);color:var(--text)}
 .win.docked .wh{cursor:grab;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
@@ -135,6 +135,12 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .wh{height:var(--h-md);display:flex;align-items:center;gap:7px;padding:0 3px 0 10px;border-bottom:1px solid var(--line);cursor:move;flex:0 0 auto;user-select:none;touch-action:none}
 .wh b{font-weight:600;white-space:nowrap}.wh .sp{flex:1}.wh small{color:var(--faint);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;position:relative}
+/* встроенное окно, не поместившееся по высоте: тонкая постоянная полоса прокрутки и тень у края, за которым есть продолжение */
+.win.docked>.wb{background:linear-gradient(var(--panel) 30%,transparent) 0 0/100% 18px no-repeat local,linear-gradient(transparent,var(--panel) 70%) 0 100%/100% 18px no-repeat local,linear-gradient(rgba(0,0,0,.16),transparent) 0 0/100% 7px no-repeat scroll,linear-gradient(transparent,rgba(0,0,0,.16)) 0 100%/100% 7px no-repeat scroll,var(--panel)}
+.win.docked>.wb::-webkit-scrollbar{width:9px;height:9px}
+.win.docked>.wb::-webkit-scrollbar-track{background:transparent}
+.win.docked>.wb::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:5px;border:2px solid var(--panel)}
+.win.docked>.wb::-webkit-scrollbar-thumb:hover{background:var(--faint)}
 .gwrap{flex:1;display:grid;grid-template-columns:150px minmax(0,1fr);min-height:0}
 .gwrap .lib{border-right:1px solid var(--line);overflow:auto}
 .wb .split{flex:1}
@@ -144,6 +150,9 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 @media (min-width:1481px) and (max-width:2000px){body.hub-on .wins .btn.opt{display:none}body.hub-on .wmenu [data-win]:not(.core){display:flex}}
 @media (min-width:1481px) and (max-width:2000px){body:not(.hub-on) .wins .btn.opt:not([data-win^="dock"]){display:none}body:not(.hub-on) .wmenu [data-win]:not(.core):not([data-win^="dock"]){display:flex}}
 @media (min-width:1481px) and (max-width:1559px){body:not(.hub-on) .wins .btn.opt[data-win^="dock"]{display:none}body:not(.hub-on) .wmenu [data-win^="dock"]{display:flex}}
+/* «Показатели» остаётся в шапке с 1400 px (на 1440 обязательно); уже — и в совместном режиме (шапка шире) — переезжает в меню «Окна» */
+@media (max-width:1399px){.wins .btn[data-win="wTep"]{display:none}.wmenu [data-win="wTep"]{display:flex}}
+@media (max-width:2000px){body.hub-on .wins .btn[data-win="wTep"]{display:none}body.hub-on .wmenu [data-win="wTep"]{display:flex}}
 .brand{font-weight:600}
 .proj{border-color:transparent;background:none;color:var(--muted);max-width:220px;flex:0 1 auto;min-width:130px}.proj .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.proj:hover{background:var(--hover);color:var(--text)}
 .projbar{display:flex;gap:6px;padding:8px;border-bottom:1px solid var(--line);flex-wrap:wrap}.projbar input[type=text]{flex:1;min-width:160px;height:var(--h-md)}
@@ -372,7 +381,8 @@ kbd{font:var(--fs-s) var(--mono);border:1px solid var(--line-2);border-bottom-wi
 .ctl .seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
 @container (max-width:380px){.ctl .seg{grid-template-columns:repeat(2,minmax(0,1fr))}.ctl .seg>:last-child:nth-child(odd){grid-column:1/-1}}
 .ctl small{display:block;color:var(--faint);margin-top:3px}
-.vbar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.vbar{display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--line);flex-wrap:nowrap;overflow:hidden;container-type:inline-size}
+@container (max-width:520px){.vbar>#varMsg{display:none}}   /* тесно — остаются кнопки; подсказка «Перебор типологий» уходит, сообщения подбора дублируются в строке состояния */.vbar .btn{white-space:nowrap}
 .vbar>#varMsg{flex:1 1 160px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.vbar>.sp{display:none}.vbar .btn{flex:0 0 auto}
 .vbar b{font-weight:600}
 .vbar .sp{flex:1}
@@ -516,6 +526,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 .shstamp>button:hover{background:var(--hover);color:var(--text)}
 .shstamp>button span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .shstamp>button svg{width:12px;height:12px;transition:transform var(--dur-1) ease}
+.shstamp>button b{font-weight:600;color:var(--text)}.shstamp>button em{font-style:normal;margin-left:8px;color:var(--muted)}
 .shstamp>button[aria-expanded="true"] svg{transform:rotate(90deg)}
 .shstbox{display:grid;grid-template-columns:minmax(0,1fr);gap:6px 8px;padding:2px 8px 8px;max-height:45cqh;overflow-y:auto}
 .shstbox label,.shdet label.f{display:flex;flex-direction:column;gap:2px;color:var(--muted);font-size:var(--fs-s);min-width:0}
@@ -576,7 +587,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
     </div><span class="sp"></span>
     <nav class="wins" aria-label="Окна">
       <button class="btn opt" data-win="dockL" title="Панель слоёв слева"><i data-lucide="layers"></i><span class="lb">Слои</span></button><button class="btn opt" data-win="dockR" title="Панель стиля и свойств объекта справа"><i data-lucide="sliders-horizontal"></i><span class="lb">Свойства</span></button><span class="vs"></span>
-      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wViews" title="Виды карты: наборы видимых слоёв с оформлением и легендой (как темы карты в QGIS)"><i data-lucide="bookmark"></i><span class="lb">Виды</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Схема расчёта: параметрический анализ территории"><i data-lucide="workflow"></i><span class="lb">Схема расчёта</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn opt" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn opt" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
+      <button class="btn" data-win="wData" title="Граница территории и выгрузка источников"><i data-lucide="database"></i><span class="lb">Данные</span></button><button class="btn" data-win="wViews" title="Виды карты: наборы видимых слоёв с оформлением и легендой (как темы карты в QGIS)"><i data-lucide="bookmark"></i><span class="lb">Виды</span></button><button class="btn" data-win="wCons" title="Ограничения для генерации: ЗОУИТ, красные линии, пожарные разрывы, ПЗЗ, инсоляция соседей"><i data-lucide="shield-check"></i><span class="lb">Ограничения</span></button><button class="btn" data-win="wGraph" title="Схема расчёта: параметрический анализ территории"><i data-lucide="workflow"></i><span class="lb">Схема расчёта</span></button><button class="btn" data-win="wSketch" title="Параметры эскиза застройки"><i data-lucide="building-2"></i><span class="lb">Эскиз</span></button><button class="btn" data-win="wVars" title="Перебор вариантов застройки"><i data-lucide="layout-grid"></i><span class="lb">Варианты</span></button><button class="btn" data-win="wTep" title="ТЭП по методике КРТ"><i data-lucide="calculator"></i><span class="lb">Показатели</span></button><button class="btn opt" data-win="w3d" title="Аксонометрия эскиза"><i data-lucide="box"></i><span class="lb">Объём</span></button><button class="btn opt" data-win="wCmp" title="Существующее и эскиз рядом"><i data-lucide="columns-2"></i><span class="lb">Сравнение</span></button><button class="btn opt" data-win="wTable" title="Таблица атрибутов текущего слоя"><i data-lucide="table-2"></i><span class="lb">Таблица</span></button>
       <span class="more"><button class="btn" id="bMore" aria-haspopup="menu" aria-expanded="false" aria-controls="winMenu" title="Окна, которые не поместились в шапку, и раскладки окон под задачу: существующее положение, анализ, эскиз, листы"><i data-lucide="panels-top-left"></i><span class="lb">Окна</span><i data-lucide="chevron-down" class="chev"></i></button><div class="menu wmenu" id="winMenu" role="menu" hidden></div></span>
     </nav>
     <span class="vs"></span>
@@ -642,7 +653,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 </section>
 <section class="win" id="wVars" hidden aria-label="Варианты">
   <header class="wh"><i data-lucide="layout-grid"></i><b>Варианты</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
-  <div class="wb"><div class="vbar"><span style="color:var(--muted)" id="varMsg">перебор типологий и направления корпусов в пределах ограничений</span><span class="sp"></span><button class="btn primary" id="bGen" title="Перебор типологий, ширины и направления корпусов с этажностью под цель плотности в пределах ограничений"><i data-lucide="sparkles"></i>Подобрать варианты</button><button class="btn" id="bStopVar" hidden title="Прервать подбор: уже посчитанные варианты останутся (Esc)"><i data-lucide="square"></i>Стоп</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Сохранить слоем</button></div><div class="vprog" id="varProg" hidden><i></i></div>
+  <div class="wb"><div class="vbar"><span style="color:var(--muted)" id="varMsg" title="Перебор типологий и направления корпусов в пределах ограничений">Перебор типологий</span><span class="sp"></span><button class="btn primary" id="bGen" title="Перебор типологий, ширины и направления корпусов с этажностью под цель плотности в пределах ограничений"><i data-lucide="sparkles"></i>Подобрать варианты</button><button class="btn" id="bStopVar" hidden title="Прервать подбор: уже посчитанные варианты останутся (Esc)"><i data-lucide="square"></i>Стоп</button><button class="btn" id="bBakeVar" title="Сделать выбранный вариант слоем проекта"><i data-lucide="stamp"></i>Сохранить слоем</button></div><div class="vprog" id="varProg" hidden><i></i></div>
     <div class="vlist" id="vlist"><div class="empty">Нажмите «Подобрать варианты», чтобы сравнить типологии в пределах ограничений. Выбранный вариант переносит параметры в схему.</div></div></div>
 </section>
 <section class="win" id="wTep" hidden aria-label="Показатели">

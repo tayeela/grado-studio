@@ -55,9 +55,10 @@ export default async p => {
   await p.drag(h2[0], h2[1], dock[5], dock[6]);
   check(await p.ev(`const ok=$("wTable").parentElement.id==="dzR"; winOpen("wTable", false); return ok && $("dropInd").hidden`), "брошенное у правого края окно встраивается в панель свойств");
   await p.ev(`floatWin($("wTable")); WST.wTable.dock="b"; saveWins(); return 1`);
-  check(await p.ev(`["wTep","wSketch","wCons"].forEach(id=>winOpen(id,true)); await new Promise(r=>setTimeout(r,400));
+  // правило «не больше двух окон в зоне» (T52) здесь выключено настройкой «Без ограничения»: проверяется работа трёх вкладок
+  check(await p.ev(`localStorage.setItem("grado2.zonecap","free"); ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,true)); await new Promise(r=>setTimeout(r,400));
     const ok = $("dzR").classList.contains("tabbed") && $("dzR").querySelectorAll(".dztabs [data-tab]").length===3 && $("rightPane").clientHeight>=140;
-    ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,false)); return ok`), "три окна в панели свойств — вкладками, панель «Стиль» не сжата");
+    ["wTep","wSketch","wCons"].forEach(id=>winOpen(id,false)); localStorage.removeItem("grado2.zonecap"); return ok`), "три окна в панели свойств — вкладками, панель «Стиль» не сжата");
   // плавающее окно не уходит за экран: брошенное далеко вниз и вправо остаётся целиком в поле карты (шапка и ручка размера достижимы)
   await p.ev(`WST.wTep = { ...(WST.wTep||{}), dock: null }; winOpen("wTep", true); floatWin($("wTep")); placeWin($("wTep")); await new Promise(r=>setTimeout(r,200)); return 1`);
   const fh = await p.ev(`const r=$("wTep").querySelector(".wh b").getBoundingClientRect(); return [r.left+4, r.top+4, innerWidth-6, innerHeight-4]`);
@@ -817,4 +818,60 @@ export default async p => {
       const rows=[...document.querySelectorAll("#projList tr")], a=rows.find(r=>/e2e-album/.test(r.innerText)), b=rows.find(r=>/e2e-bez/.test(r.innerText)); winOpen("wProjects", false); return !!a && /Альбом: \\d+ лист\\S* · собран 03\\.10/.test(a.innerText) && !!b && !/Альбом:/.test(b.innerText)`), "T33: «Проекты»: у проекта с альбомом строка «Альбом: N листов · собран 03.10», у пустого — нет");
     await p.ev(`ALBUM.sheets.splice(0, ALBUM.sheets.length, ...__k32[0]); Object.keys(ALBUM.meta).forEach(k=>delete ALBUM.meta[k]); Object.assign(ALBUM.meta, __k32[1]); renderSheets(); winOpen("wSheets", false); return 1`);
   }
+  // T52 (раскладка) и T53 (мелкие правки вида), совет 03.10.2026: не больше двух встроенных окон в зоне, нижняя зона до 32 %, подписи вкладок, «Показатели» в шапке
+  await p.group("t52", async () => {
+    const wait = ms => p.sleep(ms);
+    await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); delete WST.hb; delete WST.zoneToast; try { localStorage.removeItem("grado2.zonecap"); } catch {} DZ.b.style.height=""; syncZones(); mMain.updateSize(); await new Promise(r=>setTimeout(r,300)); return 1`);
+    // 1. третье окно в правой зоне плывёт, первое сообщение — один раз
+    const z3 = await p.ev(`winOpen("wSketch", true); winOpen("wTep", true); await new Promise(r=>setTimeout(r,300)); const two = ["wSketch","wTep"].every(id => $(id).classList.contains("docked") && $(id).parentElement === DZ.r);
+      winOpen("wCons", true); await new Promise(r=>setTimeout(r,400)); const t1 = $("toast").textContent;
+      winOpen("wCons", false); winOpen("wCons", true); await new Promise(r=>setTimeout(r,300));
+      return [two, !$("wCons").classList.contains("docked"), $("wCons").style.left !== "", /Третье окно открыто плавающим: в зоне уже два\. Поменять — в меню «Окна»/.test(t1), WST.zoneToast === 1]`);
+    check(z3[0] && z3[1] && z3[2], `T52: Эскиз и Показатели встроены справа, третье окно (Ограничения) открывается плавающим: ${z3.slice(0, 3)}`);
+    check(z3[3] && z3[4], "T52: при первом таком случае — одна строка-подсказка со ссылкой на меню «Окна»");
+    // 2. настройка в «Окна»: без ограничения → третье встаёт в зону; «не больше двух» возвращает правило
+    check(await p.ev(`$("bMore").click(); await new Promise(r=>setTimeout(r,150)); const it=[...document.querySelectorAll('#winMenu [data-zonecap]')].map(b=>b.textContent.trim()+":"+b.getAttribute("aria-checked")).join("|");
+      document.querySelector('#winMenu [data-zonecap="free"]').click(); await new Promise(r=>setTimeout(r,150));
+      winOpen("wCons", false); winOpen("wCons", true); await new Promise(r=>setTimeout(r,300));
+      const free = $("wCons").classList.contains("docked") && $("wCons").parentElement === DZ.r && localStorage.getItem("grado2.zonecap") === "free";
+      $("bMore").click(); await new Promise(r=>setTimeout(r,150)); document.querySelector('#winMenu [data-zonecap="two"]').click(); await new Promise(r=>setTimeout(r,150));
+      winOpen("wCons", false); winOpen("wCons", true); await new Promise(r=>setTimeout(r,300));
+      return it === "Не больше двух:true|Без ограничения:false" && free && !$("wCons").classList.contains("docked") && localStorage.getItem("grado2.zonecap") === null`), "T52: меню «Окна» → «Окон в зоне»: «Не больше двух» / «Без ограничения»; без ограничения третье окно встаёт в зону, настройка помнится");
+    // 3. запомненная раскладка хранит как есть (три окна справа)
+    check(await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); userLayouts()["T52 тест"] = { wSketch: "r", wTep: "r", wCons: "r" }; applyLayout(userLayouts()["T52 тест"]); await new Promise(r=>setTimeout(r,400));
+      const ok = ["wSketch","wTep","wCons"].every(id => $(id).classList.contains("docked") && $(id).parentElement === DZ.r); delete userLayouts()["T52 тест"]; saveWins(); return ok`), "T52: запомненная раскладка с тремя окнами справа открывается как записана (правило «не больше двух» к ней не применяется)");
+    // 4. «Нормативы» по умолчанию встроены справа; ярлыки вкладок видны, активная заметна
+    const tb = await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); await new Promise(r=>setTimeout(r,200)); winOpen("wTep", true); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500));
+      const tabs=[...document.querySelectorAll("#dzR .dztabs [role=tab]")], act=tabs.find(t=>t.getAttribute("aria-selected")==="true"), off=tabs.find(t=>t!==act), cs=el=>getComputedStyle(el);
+      return [$("wNorms").classList.contains("docked") && $("wNorms").parentElement === DZ.r, tabs.length, tabs.every(t=>{ const s=t.querySelector("span"); return s && s.offsetWidth > 10 && s.textContent.trim().length > 2; }), tabs.map(t=>t.querySelector("span").textContent).join("|"),
+        !!act && cs(act).boxShadow !== "none" && cs(off).boxShadow === "none" && cs(act).backgroundColor !== cs(off).backgroundColor, document.querySelector('.wins [data-win=wTep]').getAttribute("aria-pressed") === "true"]`);
+    check(tb[0] && tb[1] === 2, `T52: «Нормативы» встроены справа вкладкой рядом с «Показателями» (${tb[3]})`);
+    check(tb[2] && tb[4], "T52: у всех вкладок видны подписи, активная вкладка отличается (акцентная кромка и фон)");
+    // 5. кнопка открытого окна залита; «Листы и альбом» — тоже
+    check(await p.ev(`winOpen("wSheets", true); await new Promise(r=>setTimeout(r,300)); const f=el=>getComputedStyle(el).backgroundColor, on=document.querySelector('.wins [data-win=wTep]'), off=document.querySelector('.wins [data-win=wCmp]') || document.querySelector('.wmenu [data-win=wCmp]');
+      return f(on) !== f($("bMore")) && f($("bSheets")) !== f($("bExpMore"))`), "T52: кнопка открытого окна в шапке залита акцентным тоном (и «Листы и альбом»)");
+    // 6. нижняя зона не выше 32 % поля карты; карта ≥ 55 % при Данные + Эскиз + Листы
+    const mh = await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); delete WST.hb; DZ.b.style.height=""; ["wData","wSketch","wSheets"].forEach(id => { (WST[id] ||= {}).dock = DOCK_DEFAULT[id]; }); winOpen("wData", true); winOpen("wSketch", true); winOpen("wSheets", true); await new Promise(r=>setTimeout(r,500));
+      const col = DZ.b.parentElement.clientHeight, b = DZ.b.offsetHeight, m = $("mMain").getBoundingClientRect().height; return [Math.round(b/col*100), Math.round(m/col*100), ["wData","wSketch","wSheets"].every(id=>$(id).classList.contains("docked"))]`);
+    check(mh[0] <= 33 && mh[1] >= 55 && mh[2], `T52: нижняя зона ${mh[0]} % поля карты (не больше 32), карта ${mh[1]} % (не меньше 55)`);
+    check(await p.ev(`(WST.wSheets ||= {}).dock = "b"; winOpen("wSheets", true); await new Promise(r=>setTimeout(r,300)); WST.hb = 300; syncZones(); await new Promise(r=>setTimeout(r,100)); const px = DZ.b.offsetHeight; delete WST.hb; syncZones(); return px === 300`), "T52: своя высота нижней зоны (WST.hb) главнее умолчания");
+    // 7. «Показатели» в шапке на 1440
+    check(await p.ev(`return innerWidth < 1400 || (!!document.querySelector('.wins [data-win=wTep]').offsetParent && document.querySelector("header.top").scrollWidth <= document.querySelector("header.top").clientWidth)`), "T63: на 1440 px «Показатели» стоит в шапке, шапка не переполнена");
+    // T53: «Варианты», «Листы и альбом», подписи этажей, штриховка, пустое дерево слоёв
+    check(await p.ev(`winOpen("wVars", true); await new Promise(r=>setTimeout(r,300)); const v=$("varMsg"); v.textContent="Перебор типологий"; const bar=v.parentElement, y=[...bar.children].filter(c=>c.offsetParent).map(c=>Math.round(c.getBoundingClientRect().top));
+      return v.textContent === "Перебор типологий" && Math.max(...y) - Math.min(...y) < 8 && (bar.clientWidth >= 520) === (v.offsetParent !== null)`), "T53: «Варианты» — шапка в одну строку, подпись «Перебор типологий» видна только при ширине шапки от 520 px");
+    const sh = await p.ev(`const keep = ALBUM.sheets.splice(0); winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,200)); const e = document.querySelector("#sheetsBody .shempty"), t = e?.firstElementChild?.textContent, bt = document.querySelector('[data-shact="pptkrt"]')?.textContent, st = $("shStampBtn");
+      const out = [t, bt, st?.querySelector("b")?.textContent, st?.querySelector("em")?.textContent, st ? getComputedStyle(st.querySelector("b")).color === getComputedStyle(document.body).color : false]; ALBUM.sheets.push(...keep); renderSheets(); return out`);
+    check(sh[0] === "Листов пока нет. Добавьте лист или соберите альбом" && sh[1].includes("ППТ КРТ"), `T53: пустые «Листы и альбом»: «${sh[0]}», кнопка с неразрывным пробелом в «ППТ КРТ»`);
+    check(sh[2] === "Штамп" && !/^Штамп:/.test(sh[2]) && sh[4], `T53: строка штампа — заголовок «Штамп» обычным цветом текста, заполненное мелким серым (${sh[3]})`);
+    const fl = await p.ev(`const f = new ol.Feature({ floors: 12 }), r0 = sharedView.getResolution(), txt = () => sketchStyle(f).getText()?.getText() ?? null; sharedView.setResolution(1500 / 2130); const fine = txt(), fd = scaleDen(sharedView.getResolution());
+      sharedView.setResolution(3000 / 2130); const coarse = txt(); sharedView.setResolution(r0); return [fine, coarse, fd]`);
+    check(fl[0] === "12 эт." && fl[1] === null, `T53: этажность на корпусе эскиза — «${fl[0]}» на 1:${fl[2]}, на 1:3 000 подписи нет`);
+    check(await p.ev(`const root = document.documentElement, was = root.dataset.theme; root.dataset.theme = "light"; const a = siteHatch(); root.dataset.theme = "dark"; const b = siteHatch(); if (was) root.dataset.theme = was; else delete root.dataset.theme;
+      return /^#[0-9a-f]{6}$/i.test(a) && /^#[0-9a-f]{6}$/i.test(b) && a !== b && a !== "#1f7a4d" && b !== "#1f7a4d"`), "T53: штриховка пятна застройки берёт светлый цвет из токена --site-hatch, свой для каждой темы");
+    check(await p.ev(`const keep = LYR.splice(0), s0 = RESULT.site; RESULT.site = s0 || {}; let t = "", g = ""; try { winOpen("wSketch", true); renderTree0(); t = $("layerTree").innerText; g = [...$("layerTree").children].map(c => c.className).join(); } finally { RESULT.site = s0; LYR.push(...keep); renderTree(); }
+      return /Слоёв пока нет \\(эскиз ещё не сохранён\\)/.test(t) && !/Слоёв нет/.test(t) && /Предпросмотр схемы/.test(t)`), "T53: пустое дерево слоёв при включённом предпросмотре — «Слоёв пока нет (эскиз ещё не сохранён)»");
+    check(await p.ev(`const w = document.querySelector(".win.docked>.wb"); return !!w && /linear-gradient/.test(getComputedStyle(w).backgroundImage)`), "T53: прокручиваемые встроенные окна несут подсказку-тень у края");
+    await p.ev(`Object.keys(W0()).forEach(id => { if (!$(id).hidden) winOpen(id, false); }); delete WST.zoneToast; return 1`);
+  });
 };

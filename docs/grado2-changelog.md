@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.99.2: the dock no longer crowds out the map; CSS smalls.** Team decision (council 03.10,
+  option А, reversible): a zone holds at most two docked windows when opened from a button — a third opens floating
+  with a one-time toast («Третье окно открыто плавающим: в зоне уже два. Поменять — в меню «Окна»»); «Окна» → «Окон в
+  зоне: Не больше двух / Без ограничения»; dragging, Alt+arrows, saved layouts and start-up restore are not capped.
+  The bottom zone is 32 % of the map-area height by default (a dragged or saved height wins). Dock tabs always show
+  their labels (smaller font, ellipsis + tooltip when tight), the active tab has an accent edge, the ribbon button of
+  an open window is tinted. «Нормативы» opens docked on the right; «Показатели» stays in the top bar from 1400 px.
+  Smalls: a thin scrollbar and edge shadow on overflowing dock panels; the «Варианты» header in one row («Перебор
+  типологий», hidden under 520 px); «Листов пока нет. Добавьте лист или соберите альбом», «ППТ КРТ» non-breaking, the
+  «Штамп» row as a heading; floor labels «N эт.» only from 1:2 000; `--site-hatch` token lighter in both themes;
+  «Слоёв пока нет (эскиз ещё не сохранён)». Open: the toast is shown once ever (localStorage), the 1:2 000 cutoff
+  applies to any user layer labelled «Этажность» and is not configurable.
 - **2026-10-03, ГРАДО 2 v0.99.1: parking as required area in «Показатели» (server part).** New ТЭП group «Стоянки —
   площадь»: permanent places split by two project conditions «доля подземных, %» and «доля многоуровневых, %» (whole
   numbers, defaults 0, sum ≤ 100, sent in `/api/tep`), the rest ground; places per kind, «наземные стоянки, га»,
