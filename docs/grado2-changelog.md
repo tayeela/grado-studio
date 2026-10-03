@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-03, ГРАДО 2 v0.98.5: the album is its own section of a shared project.** In hub mode the album sat inside
+  the `meta` section, so every edit of any shared parameter (ТЭП node params, views, groups) re-sent the whole album —
+  19.5 MB with the owner's nine frozen sheets, on every push and autosave. Now `album` is a section of its own
+  (`hub.py` `SECTION_RE`, `split_project`/`join_sections`, `LAYOUT` marker `layout: 2`; `collab.js` split/join/merge3 —
+  the sheet-by-sheet merge of v0.98.1 now runs on that section). Measured on the Безобразово copy: a meta edit sends
+  7.9 KB instead of 19.5 MB; the album goes only when the album changes. Old projects open as before (the server
+  splits the album on read; a `meta.json` without the marker gets the album revision set to the current one, so a
+  stale push conflicts instead of overwriting). A page of an older version against the new server gets 426 on a meta
+  push and changes nothing; reload open tabs after the deploy. Tests: test_hub 152 (17 MB album, meta push < 100 KB,
+  old layout, 426, album 409), collab 84; the collab browser scenario green on a snapshot.
 - **2026-10-03, ГРАДО 2 v0.98.4: «Условия проекта» in the «Нормативы» window — norms zone and free places in existing
   social objects (T6, step 2).** Owner's decisions 1В and 2А. At the top of «Нормативы»: «Образовательная зона» (зона 1 /
   зона 2 of 2151-ПП) with its source beside it — «по району <X>», «выбрана вручную · [по району]» or «зона 2 принята:

@@ -1,6 +1,7 @@
 /* ГРАДО 2 · совместная работа: движок синхронизации (контракт — docs/grado2-collab-spec.md).
    Сервер хранит проект целиком, разбитым на разделы, и нумерует правки; клиенты сводят правки сами:
-   · разделы: «meta» (граница, группы, виды, альбом, граф, источники, порядок слоёв) и «layer:<ключ>» = {spec, data};
+   · разделы: «meta» (граница, группы, виды, граф, источники, порядок слоёв), «album» (альбом: meta и листы — отдельно, чтобы
+     правка meta не пересылала альбом) и «layer:<ключ>» = {spec, data};
    · после каждой правки (markDirty → Collab.touched) с паузой 400 мс (не дольше 3 с) меняются только изменившиеся разделы;
    · сервер отвечает 409, если раздел успел поменять кто-то ещё: правки сводятся по трём версиям (база, моя, чужая):
      объекты слоя — по `_uid`, свойства — по полям, остальное — по ключам; затем отправка повторяется;
@@ -80,7 +81,8 @@ function split(p) {
   const layers = p.layers || [], s = {};
   const terr = p.territory ? (({ _gid, ...t }) => t)(p.territory) : null;      // _gid — метка в памяти (app.js gid()), у каждого участника своя
   s.meta = { name: p.name ?? null, territory: terr, checked: [...(p.checked || [])].sort(), groups: p.groups || [], views: p.views || [],
-    album: p.album || { meta: {}, sheets: [] }, graph: p.graph ?? null, imports: p.imports || {}, current_order: layers.map(l => l.key) };
+    graph: p.graph ?? null, imports: p.imports || {}, current_order: layers.map(l => l.key) };
+  s.album = p.album || { meta: {}, sheets: [] };      // свой раздел: правка любого поля meta не пересылает альбом (листы с фото — десятки МБ)
   for (const l of layers) s["layer:" + l.key] = { spec: l, data: p.data?.[l.key] ?? null };
   return s;
 }
@@ -95,7 +97,7 @@ function join(sec, personal) {
   if (personal.view) p.view = personal.view;
   Object.assign(p, { territory: m.territory ?? null, imports: m.imports || {}, checked: m.checked || [] });
   if (personal.current !== undefined) p.current = personal.current;
-  Object.assign(p, { groups: m.groups || [], views: m.views || [], album: m.album || { meta: {}, sheets: [] }, layers: order.map(k => sec["layer:" + k].spec), data });
+  Object.assign(p, { groups: m.groups || [], views: m.views || [], album: sec.album || m.album || { meta: {}, sheets: [] }, layers: order.map(k => sec["layer:" + k].spec), data });
   if (m.graph) p.graph = m.graph;
   return p;
 }
@@ -200,7 +202,6 @@ function mergeMeta(b, m, t, info) {
     let v;
     if (!mc) v = tv; else if (!tc) v = mv; else if (same(mv, tv)) v = mv;
     else if (k === "current_order") v = mergeOrder(bv, mv, tv);
-    else if (k === "album" && isObj(mv) && isObj(tv)) v = mergeAlbum(bv, mv, tv, info);
     else if (k === "imports" && isObj(mv) && isObj(tv)) { const sub = { conflicts: [] }; v = mergeObj(bv, mv, tv, sub, 0); if (sub.conflicts.length && info) info.conflicts.push(k); }
     else { v = tv; info?.conflicts.push(k); }                      // обе стороны правили ключ по-разному: оставлена их версия
     if (v !== undefined) out[k] = v;
@@ -223,6 +224,7 @@ function merge3(base, mine, theirs, sectionName, info) {
   if (eq(mine, theirs)) return mine;
   if (mine === null) return theirs;                   // я удалил, они правили — правка побеждает удаление
   if (theirs === null) return mine;                   // они удалили, я правил — слой возвращается
+  if (sectionName === "album" && isObj(mine) && isObj(theirs)) return mergeAlbum(base, mine, theirs, info);   // листы — по `id`
   return layer ? mergeLayer(base, mine, theirs, sectionName) : mergeMeta(base, mine, theirs, info);
 }
 
@@ -264,10 +266,13 @@ function secText(name, val) {
   return text;
 }
 function baseMeta() { if (!bm || bm.t !== base.meta) bm = { t: base.meta, v: base.meta ? JSON.parse(base.meta) : null, s: null }; return bm; }
+let ba = null;                                        // то же для раздела album: стабильный текст базы считается один раз на версию базы
+function baseAlbum() { if (!ba || ba.t !== base.album) ba = { t: base.album, s: base.album ? stable(JSON.parse(base.album)) : null }; return ba; }
 function sameSection(name, val, text) {
   if (val == null) return text == null;
   if (text == null) return false;
   if (name === "meta") { const b = baseMeta(); return (b.s ??= stable(b.v)) === stable(val); }   // ключи графа и шум порядка — не правка
+  if (name === "album") return baseAlbum().s === stable(val);                                       // порядок ключей — не правка
   return secText(name, val) === text;
 }
 function baseName() { return baseMeta().v?.name ?? null; }
@@ -275,9 +280,9 @@ function baseName() { return baseMeta().v?.name ?? null; }
 function normSection(name, val) {
   if (val && isLayerName(name) && val.data?.fc) val.data.fc = ensureUids(val.data.fc, name.slice(6));
   if (val && name === "meta" && val.territory?._gid) val.territory = (({ _gid, ...t }) => t)(val.territory);
+  if (val && name === "album") return { ...val, meta: { object: "", code: "", stage: "ПП", org: "", slide: "P", ...(isObj(val.meta) ? val.meta : {}) } };   // как приложение при загрузке
   if (val && name === "meta") {                       // то, что приложение и так приводит к норме при загрузке: иначе разница с сервером выглядела бы моей правкой
     if (Array.isArray(val.checked)) val.checked = [...val.checked].sort();                 // как у split: порядок Set — не правка
-    if (val.album) val.album = { ...val.album, meta: { object: "", code: "", stage: "ПП", org: "", slide: "P", ...(isObj(val.album.meta) ? val.album.meta : {}) } };
     if (Array.isArray(val.groups)) val.groups = val.groups.map(g => ({ id: g.id, title: g.title, visible: g.visible !== false, open: g.open !== false }));
   }
   return val;
@@ -521,13 +526,15 @@ function applyMeta(meta, mine, flags) {
   }
   if (ch("groups")) GROUPS.splice(0, GROUPS.length, ...(meta.groups || []).map(g => ({ id: g.id, title: g.title, visible: g.visible !== false, open: g.open !== false })));
   if (ch("views")) { VIEWS.splice(0, VIEWS.length, ...(meta.views || []).map(v => ({ ...v, id: safeId(v.id) }))); if (VIEW_CUR && !VIEWS.some(v => v.id === VIEW_CUR)) VIEW_CUR = null; flags.views = true; }
-  if (ch("album")) {
-    const a = meta.album || {};
+  if (ch("graph") && meta.graph) applyGraph(meta.graph);
+}
+function applyAlbum(a, flags) {
+  {
+    a = a || {};
     Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined }, safeObj(a.meta)); window.hideSheetFrame?.();
     ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(a.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; }));
     ALBUM.frames = a.frames; window.migrateFrames?.(); flags.album = true;
   }
-  if (ch("graph") && meta.graph) applyGraph(meta.graph);
 }
 function applyResults(res, local) {
   C.applying = true;
@@ -537,6 +544,7 @@ function applyResults(res, local) {
     for (const n of layerNames) structure = applyLayer(n.slice(6), res[n], local[n], restyled) || structure;
     const flags = {};
     if (res.meta) applyMeta(res.meta, local.meta, flags);
+    if (res.album && !same(res.album, local.album)) applyAlbum(res.album, flags);
     // группа слоя — после групп, порядок — после слоёв (пока слои приходят по одному, нормализация сочла бы группы пустыми)
     for (const n of layerNames) if (res[n]) { const l = lyr(n.slice(6)); if (l) l.group = res[n].spec.group || null; }
     const order = (res.meta ? res.meta.current_order : null);

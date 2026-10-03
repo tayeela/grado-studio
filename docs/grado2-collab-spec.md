@@ -157,13 +157,26 @@ meta.json + link: {token, role: "viewer"|"editor", created, by} | null,  link_us
 
 ## Sections (the unit of sync)
 The shared project is split into sections; personal state never leaves the client.
-- `meta` → `{name, territory, checked, groups, views, album, graph, imports, current_order}` where `current_order`
+- `meta` → `{name, territory, checked, groups, views, graph, imports, current_order}` where `current_order`
   is the list of layer keys in draw order.
+- `album` → `{meta, sheets, frames?, …}` (T54, layout 2). Own section because a frozen 9-sheet album is ~17 MB and
+  a meta-only edit (ТЭП node params, views, groups) used to re-send it on every push and autosave. Merge: `merge3`
+  with section name `album` runs the sheet-by-sheet merge by sheet `id` (v0.98.1); conflicts are reported as
+  `album` / `album:лист N`. Never `null` (cannot be deleted).
 - `layer:<key>` → `{spec, data}` where `spec` = the layer entry of `collectProject().layers` (key, title, geom,
   visible, layerOpacity, open, group, style) and `data` = the entry of `collectProject().data[key]`.
 - A deleted section is sent as `null`.
 - **Personal, never synced:** `view` (center, zoom, basemap), `current` layer, selection, undo/redo, `dirty`,
   window layout.
+- **Migration (layout 1 → 2).** `project.grado2` was always stored joined, so the album was already at the top level
+  of the file: on every read the server splits it into `meta` + `album` + layers, nothing is rewritten. `meta.json`
+  gets `layout: 2` with the next commit; a `meta.json` without `layout` is read as layout 1 and `sec_rev.album` is set
+  to the current `rev` (in memory), so an older base can never overwrite the album without a conflict.
+  `join_sections` also accepts sections in layout 1 (album inside `meta`, no `album` section).
+  **Old client (layout 1) against the new server:** it opens the project with an empty album (it reads `meta.album`);
+  any push of `meta` from it still carries an `album` key, and the server answers **426** «версия страницы устарела:
+  обновите страницу (Ctrl+Shift+R)», writes nothing, so the album cannot be wiped; layer pushes still work.
+  A new client never sends `album` inside `meta`.
 - `project.grado2` on the server = `join(sections)` in the normal file format (format, version, app, name, saved_at,
   layers, data, …) so the file stays openable in local mode.
 

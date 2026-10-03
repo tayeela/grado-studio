@@ -72,7 +72,7 @@ PALETTE = ("#e4572e", "#17a398", "#3f7cac", "#f2a541", "#8e5ea2", "#2e933c", "#d
 
 LOGIN_RE = re.compile(r"[a-z0-9_.-]{3,32}")
 PID_RE = re.compile(r"[0-9a-f]{16}")
-SECTION_RE = re.compile(r"(meta|layer:[^\s]{1,200})")     # только fullmatch: «$» пропустил бы перевод строки
+SECTION_RE = re.compile(r"(meta|album|layer:[^\s]{1,200})")     # только fullmatch: «$» пропустил бы перевод строки
 LAYER_KEY_RE = re.compile(r"[^\s]{1,200}")
 CLIENT_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 HISTORY_RE = re.compile(r"(\d+)-(\d{8}-\d{6})-([a-z0-9_.-]+)\.grado2\.gz")
@@ -89,7 +89,8 @@ LINK_ROLES = ("viewer", "editor")
 JOIN_KEYS = ("j", "ji")              # свои ключи счётчика неудач: плохие ссылки не блокируют вход по паролю
 TEAM_ACCESS = ("edit", "view", "none")     # что получает вся команда в проекте команды
 ROLE_RANK = {"viewer": 1, "editor": 2, "owner": 3}
-META_KEYS = ("name", "territory", "checked", "groups", "views", "album", "graph", "imports", "current_order")
+LAYOUT = 2                         # раскладка разделов: 2 = альбом в своём разделе «album» (1 = внутри meta)
+META_KEYS = ("name", "territory", "checked", "groups", "views", "graph", "imports", "current_order")
 
 
 def _now():
@@ -115,6 +116,11 @@ class Conflict(HubError):
 
 # ---------- разделы проекта ----------
 
+def _norm_album(src):
+    """Раздел album: объект {meta, sheets, ...}; не объект — пустой альбом."""
+    return src if isinstance(src, dict) else {"meta": {}, "sheets": []}
+
+
 def _layer_key_ok(key):
     return isinstance(key, str) and LAYER_KEY_RE.fullmatch(key) is not None and key not in _BAD_KEYS
 
@@ -123,7 +129,6 @@ def _norm_meta(src):
     """Раздел meta в нормальном виде: только известные поля, у каждого допустимый тип."""
     def lst(v):
         return v if isinstance(v, list) else []
-    album = src.get("album")
     territory, graph = src.get("territory"), src.get("graph")
     return {
         "name": src["name"] if isinstance(src.get("name"), str) else "",
@@ -131,7 +136,6 @@ def _norm_meta(src):
         "checked": lst(src.get("checked")),
         "groups": lst(src.get("groups")),
         "views": lst(src.get("views")),
-        "album": album if isinstance(album, dict) else {"meta": {}, "sheets": []},
         "graph": graph if isinstance(graph, dict) else None,
         "imports": src["imports"] if isinstance(src.get("imports"), dict) else {},
         "current_order": [k for k in lst(src.get("current_order")) if _layer_key_ok(k)],
@@ -189,13 +193,16 @@ def split_project(obj):
         sections[f"layer:{key}"] = {"spec": spec, "data": data[key]}
     meta = _norm_meta(obj)
     meta["current_order"] = order
-    return {"meta": meta, **sections}
+    return {"meta": meta, "album": _norm_album(obj.get("album")), **sections}
 
 
 def join_sections(sections, name=None):
     """Разделы -> обычный объект .grado2 (его открывает и локальный режим). Слои идут в порядке
     meta.current_order, остальные (которых в порядке нет) — по алфавиту в конце; пустой раздел слоя пропускается."""
-    meta = _norm_meta(sections.get("meta") or {})
+    raw_meta = sections.get("meta") or {}
+    # старая раскладка (до раздела album): альбом лежит в meta, отдельного раздела нет -> берём оттуда
+    album = _norm_album(sections["album"] if "album" in sections else raw_meta.get("album"))
+    meta = _norm_meta(raw_meta)
     layers = {n[6:]: s for n, s in sections.items()
               if n.startswith("layer:") and isinstance(s, dict) and isinstance(s.get("spec"), dict)
               and isinstance(s.get("data"), dict) and _layer_key_ok(n[6:])}
@@ -208,7 +215,7 @@ def join_sections(sections, name=None):
         "name": name if name else meta["name"],
         "saved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(_now())), "dirty": False,
         "territory": meta["territory"], "imports": meta["imports"], "checked": meta["checked"],
-        "groups": meta["groups"], "views": meta["views"], "album": meta["album"],
+        "groups": meta["groups"], "views": meta["views"], "album": album,
         "layers": [{**layers[k]["spec"], "key": k} for k in order],
         "data": {k: layers[k]["data"] for k in order},
         "graph": meta["graph"],
@@ -228,7 +235,13 @@ def _check_sections(sections):
         if name == "meta":
             if not isinstance(value, dict):
                 raise HubError(400, "раздел meta нельзя удалить и он должен быть объектом")
+            if "album" in value:      # старый клиент: альбом внутри meta; принять нельзя, он затёр бы раздел album
+                raise HubError(426, "версия страницы устарела: обновите страницу (Ctrl+Shift+R)")
             clean[name] = _norm_meta(value)
+        elif name == "album":
+            if not isinstance(value, dict):
+                raise HubError(400, "раздел album нельзя удалить и он должен быть объектом")
+            clean[name] = _norm_album(value)
         elif value is None:
             clean[name] = None
         elif (isinstance(value, dict) and isinstance(value.get("spec"), dict) and isinstance(value.get("data"), dict)):
@@ -793,6 +806,10 @@ class Hub:
             raise HubError(500, "файл проекта повреждён") from None
         if not isinstance(meta, dict) or meta.get("id") != pid:
             raise HubError(500, "файл проекта повреждён")
+        if meta.get("layout") != LAYOUT:                  # проект до раздела album: альбом «изменён» на текущей ревизии (на диск попадёт со следующей записью)
+            meta["layout"] = LAYOUT
+            if isinstance(meta.get("sec_rev"), dict):
+                meta["sec_rev"].setdefault("album", meta.get("rev", 0))
         return meta
 
     def _save_meta(self, pid, meta):
@@ -969,7 +986,7 @@ class Hub:
     def create_project(self, user, name, project=None, team=None, team_access="edit"):
         name = _clean_name(name, "Новый проект")
         if project is None:
-            sections = {"meta": _norm_meta({})}
+            sections = {"meta": _norm_meta({}), "album": _norm_album(None)}
         else:
             if not isinstance(project, dict) or project.get("format") != "grado2":
                 raise HubError(400, "это не файл проекта ГРАДО 2")
@@ -1012,7 +1029,7 @@ class Hub:
             norm = split_project(obj)
             meta = {"id": pid, "name": name, "owner": login, "members": {login: "owner"}, "rev": 1,
                     "sec_rev": {n: 1 for n in norm}, "created": now, "updated": now, "updated_by": login,
-                    "snap_t": 0, "rev_c": 0, "team": team, "team_access": team_access if team else "edit"}
+                    "snap_t": 0, "rev_c": 0, "layout": LAYOUT, "team": team, "team_access": team_access if team else "edit"}
             try:
                 self._write(d / "project.grado2", data)
                 self._save_meta(pid, meta)                # meta последней: без неё каталог не считается проектом

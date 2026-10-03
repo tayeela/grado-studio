@@ -233,7 +233,9 @@ class Accounts(Base):
 class SplitJoin(unittest.TestCase):
     def test_split_shape(self):
         s = hub.split_project(sample_project())
-        self.assertEqual(set(s), {"meta", "layer:a", "layer:b"})
+        self.assertEqual(set(s), {"meta", "album", "layer:a", "layer:b"})
+        self.assertEqual(s["album"], {"meta": {"object": "О"}, "sheets": []})
+        self.assertNotIn("album", s["meta"])
         self.assertEqual(s["meta"]["current_order"], ["b", "a"])
         self.assertEqual(set(s["meta"]), set(hub.META_KEYS))
         self.assertEqual(set(s["layer:a"]), {"spec", "data"})
@@ -267,13 +269,13 @@ class SplitJoin(unittest.TestCase):
 
     def test_empty_and_odd_input(self):
         s = hub.split_project({"format": "grado2"})
-        self.assertEqual(set(s), {"meta"})
+        self.assertEqual(set(s), {"meta", "album"})
         self.assertEqual(hub.split_project(hub.join_sections(s)), s)
         p = sample_project()
         p["layers"].append({"key": "no data"})                # слой без данных и ключ с пробелом — пропуск
         p["layers"].append({"key": "__proto__"})
         p["data"]["__proto__"] = {}
-        self.assertEqual(set(hub.split_project(p)), {"meta", "layer:a", "layer:b"})
+        self.assertEqual(set(hub.split_project(p)), {"meta", "album", "layer:a", "layer:b"})
         with self.assertRaises(ValueError):
             hub.split_project([])
 
@@ -297,8 +299,8 @@ class Projects(Base):
         self.assertRegex(pid, r"^[0-9a-f]{16}$")
         p = self.hub.get_project(self.owner, pid)
         self.assertEqual((p["name"], p["role"], p["rev"]), ("Проект", "owner", 1))
-        self.assertEqual(set(p["sections"]), {"meta", "layer:a", "layer:b"})
-        self.assertEqual(p["sec_rev"], {"meta": 1, "layer:a": 1, "layer:b": 1})
+        self.assertEqual(set(p["sections"]), {"meta", "album", "layer:a", "layer:b"})
+        self.assertEqual(p["sec_rev"], {"meta": 1, "album": 1, "layer:a": 1, "layer:b": 1})
         self.assertEqual(p["sections"]["meta"]["name"], "Проект")
         rows = self.hub.list_projects(self.owner)
         self.assertEqual(len(rows), 1)
@@ -481,7 +483,7 @@ class PushConflict(Base):
         new_a = layer_section("a", "u1", "u2", "u7")
         self.assertEqual(self.push(1, {"layer:a": new_a}), {"rev": 2})
         p = self.hub.get_project(self.owner, self.pid)
-        self.assertEqual((p["rev"], p["sec_rev"]), (2, {"meta": 1, "layer:a": 2, "layer:b": 1}))
+        self.assertEqual((p["rev"], p["sec_rev"]), (2, {"meta": 1, "album": 1, "layer:a": 2, "layer:b": 1}))
         self.assertEqual(len(p["sections"]["layer:a"]["data"]["fc"]["features"]), 3)
         _, raw = self.hub.project_file(self.owner, self.pid)
         self.assertEqual(len(json.loads(raw)["data"]["a"]["fc"]["features"]), 3)     # файл перезаписан
@@ -1410,7 +1412,7 @@ class Hardening(Base):
         for key in ("hasOwnProperty", "toString", "valueOf", "__proto__", "constructor", "prototype"):
             with self.assertRaises(HubError, msg=key):
                 self.hub.push(self.editor, self.pid, 1, {f"layer:{key}": layer_section(key, "u1")}, "c1")
-            self.assertEqual(hub.split_project({"layers": [{"key": key}], "data": {key: {}}}).keys(), {"meta"})
+            self.assertEqual(hub.split_project({"layers": [{"key": key}], "data": {key: {}}}).keys(), {"meta", "album"})
         self.hub.push(self.editor, self.pid, 1, {"layer:hasOwnProperty2": layer_section("hasOwnProperty2", "u1")}, "c1")
 
     def test_project_size_cap_writes_nothing(self):
@@ -1978,6 +1980,79 @@ class Stage2(Base):
         tok = h.set_link(self.admin, self.pid, "viewer")["link"]["token"]
         self.assertEqual(h.get_link(self.admin, self.pid)["link"]["token"], tok)
         self.assertEqual(self.item(self.admin, self.pid)["link_role"], "viewer")
+
+
+class AlbumSection(Base):
+    """Т54: альбом — свой раздел «album»; правка meta не пересылает альбом."""
+
+    @staticmethod
+    def big_album(n=9, mb=17):
+        pad = "x" * (mb * 2**20 // n)
+        return {"meta": {"object": "О", "builtAt": "2026-10-01T00:00:00.000Z"},
+                "sheets": [{"id": f"s{i}", "num": i, "title": f"Лист {i}", "photos": [pad]} for i in range(n)]}
+
+    def test_meta_edit_does_not_resend_album(self):
+        proj = sample_project()
+        proj["album"] = self.big_album()
+        pid = self.new_project(proj)
+        h = self.hub
+        first = h.get_project(self.owner, pid)
+        self.assertGreater(len(json.dumps(first["sections"]["album"])), 17_000_000)
+        self.assertNotIn("album", first["sections"]["meta"])
+        meta = dict(first["sections"]["meta"], groups=[{"id": "g2", "title": "Новая", "visible": True, "open": True}])
+        body = json.dumps({"base_rev": first["rev"], "client": "c1", "sections": {"meta": meta}})
+        self.assertLess(len(body), 100_000)                                   # вторая отправка — только meta
+        sub = h.subscribe(self.viewer, pid)
+        sub.get(0)
+        self.assertEqual(h.push(self.editor, pid, first["rev"], {"meta": meta}, "c1"), {"rev": 2})
+        self.assertEqual(sub.get(1)["sections"], ["meta"])
+        sub.close()
+        after = h.get_project(self.owner, pid)
+        self.assertEqual(after["sec_rev"]["album"], 1)                        # раздел альбома не тронут
+        self.assertEqual(after["sec_rev"]["meta"], 2)
+        self.assertEqual(after["sections"]["album"], first["sections"]["album"])
+        _, raw = h.project_file(self.owner, pid)
+        self.assertEqual(json.loads(raw)["album"], proj["album"])             # в файле альбом на месте
+
+    def test_old_layout_project_is_migrated_on_read(self):
+        pid = self.new_project(sample_project())
+        d = self.hub._pdir(pid)
+        m = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+        del m["layout"]
+        del m["sec_rev"]["album"]                                            # как записал хаб до раздела album
+        m["rev"] = m["sec_rev"]["meta"] = 7
+        (d / "meta.json").write_text(json.dumps(m), encoding="utf-8")
+        h = Hub(Path(self._tmp.name) / ".hub")                               # новый процесс: кэша нет
+        p = h.get_project(self.owner, pid)
+        self.assertEqual(p["sections"]["album"]["meta"]["object"], "О")
+        self.assertNotIn("album", p["sections"]["meta"])
+        self.assertEqual(p["sec_rev"]["album"], 7)                           # как «менялся на текущей ревизии»: старая база не затрёт
+        h.push(self.editor, pid, 7, {"album": {"meta": {"object": "Н"}, "sheets": []}}, "c1")
+        self.assertEqual(json.loads((d / "meta.json").read_text(encoding="utf-8"))["layout"], hub.LAYOUT)
+        # хранимая раскладка 1 в самих разделах (альбом внутри meta, раздела album нет): склеивается без потерь
+        legacy = {"meta": {**hub.split_project(sample_project())["meta"], "album": {"meta": {"object": "Старый"}, "sheets": [{"id": "z"}]}}}
+        self.assertEqual(hub.join_sections(legacy)["album"]["sheets"], [{"id": "z"}])
+
+    def test_old_client_cannot_overwrite_album_through_meta(self):
+        pid = self.new_project(sample_project())
+        p = self.hub.get_project(self.owner, pid)
+        old = {**p["sections"]["meta"], "album": {"meta": {}, "sheets": []}}      # старая страница шлёт альбом внутри meta
+        with self.assertRaises(HubError) as cm:
+            self.hub.push(self.editor, pid, p["rev"], {"meta": old}, "c1")
+        self.assertEqual(cm.exception.status, 426)
+        after = self.hub.get_project(self.owner, pid)
+        self.assertEqual((after["rev"], after["sections"]["album"]), (p["rev"], p["sections"]["album"]))
+
+    def test_album_conflict_returns_server_value(self):
+        pid = self.new_project(sample_project())
+        alb = lambda t: {"meta": {"object": "О"}, "sheets": [{"id": "s1", "title": t}, {"id": "s2", "title": "B"}]}
+        self.hub.push(self.editor, pid, 1, {"album": alb("Чужое")}, "c1")
+        with self.assertRaises(Conflict) as cm:
+            self.hub.push(self.owner, pid, 1, {"album": alb("Моё")}, "c2")
+        c = cm.exception.payload["conflicts"]
+        self.assertEqual(set(c), {"album"})
+        self.assertEqual(c["album"]["value"]["sheets"][0]["title"], "Чужое")      # сведение по листам делает клиент (collab_test)
+        self.hub.push(self.owner, pid, 1, {"meta": hub.split_project(sample_project())["meta"]}, "c2")  # meta идёт мимо конфликта альбома
 
 
 if __name__ == "__main__":

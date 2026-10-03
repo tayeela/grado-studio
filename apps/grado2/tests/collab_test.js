@@ -19,7 +19,8 @@ const project = () => ({
 // --- split / join на форме проекта
 {
   const p = project(), s = split(p);
-  eq(Object.keys(s).sort(), ["layer:bld", "layer:roads", "meta"], "разделы: meta и по разделу на слой");
+  eq(Object.keys(s).sort(), ["album", "layer:bld", "layer:roads", "meta"], "разделы: meta, album и по разделу на слой");
+  ok(!("album" in s.meta) && s.album.sheets[0].id === "s1", "альбом лежит в своём разделе, не в meta");
   eq(s.meta.current_order, ["bld", "roads"], "порядок слоёв в meta");
   eq(s.meta.checked, ["nspd.parcels", "osm.roads"], "checked отсортирован: порядок Set не считается правкой");
   ok(!("view" in s.meta) && !("current" in s.meta), "личное (вид карты, текущий слой) в разделы не попадает");
@@ -155,10 +156,17 @@ const byUid = (sec, u) => sec.data.fc.features.find(f => f.properties._uid === u
   const mine = M(), theirs = M(); mine.groups = [{ id: "g1", title: "Моя", visible: true, open: true }]; theirs.views = [{ id: "v1", name: "Чужой вид" }, { id: "v2", name: "Ещё" }];
   const r = merge3(M(), mine, theirs, "meta", info);
   eq([r.groups[0].title, r.views.length, info.conflicts], ["Моя", 2, []], "разные ключи meta складываются без конфликта");
-  // один ключ у обоих: побеждает чужое, ключ назван
-  const m2 = M(), t2 = M(), i2 = { conflicts: [] }; m2.album = { meta: { object: "Моё" }, sheets: [] }; t2.album = { meta: { object: "Чужое" }, sheets: [{ id: "s9" }] };
-  const r2 = merge3(M(), m2, t2, "meta", i2);
-  eq([r2.album.meta.object, i2.conflicts], ["Чужое", ["album"]], "ключ meta у обоих: чужое, конфликт назван");
+  // альбом и meta правятся независимо (T54): правка полей meta не трогает раздел album
+  { const m = M(), t = M(); m.groups = [{ id: "g9", title: "Моя", visible: true, open: true }];
+    const sa = split(project()), sb = split(project()); sb.meta.groups = m.groups;
+    ok(JSON.stringify(sa.album) === JSON.stringify(sb.album), "правка meta: раздел album тот же");
+    const ma = { meta: { object: "Моё" }, sheets: [] }, ta = { meta: { object: "Чужое" }, sheets: [{ id: "s9" }] }, ia = { conflicts: [] };
+    const ra = merge3(sa.album, ma, ta, "album", ia);
+    eq([ra.meta.object, ia.conflicts], ["Чужое", ["album"]], "ключ meta альбома у обоих: чужое, конфликт «album»");
+    const rm = merge3(M(), m, t, "meta"); eq(rm.groups[0].id, "g9", "meta сводится отдельно от album");
+    // старая раскладка (альбом внутри meta, раздела album нет): join берёт альбом из meta
+    eq(join({ meta: { ...M(), album: { meta: {}, sheets: [{ id: "old" }] } } }).album.sheets[0].id, "old", "join: старая раскладка — альбом из meta");
+    eq(join({ meta: M(), album: { meta: {}, sheets: [{ id: "new" }] } }).album.sheets[0].id, "new", "join: раздел album главнее"); }
   // граница и граф
   const m3 = M(), t3 = M(), i3 = { conflicts: [] }; m3.territory = null; t3.graph = { ...t3.graph, last_node_id: 7 };
   const r3 = merge3(M(), m3, t3, "meta", i3); eq([r3.territory, r3.graph.last_node_id, i3.conflicts], [null, 7, []], "граница моя, граф чужой");
@@ -178,36 +186,36 @@ const byUid = (sec, u) => sec.data.fc.features.find(f => f.properties._uid === u
   const t8 = M(); t8.name = "Новое имя"; eq(merge3(M(), M(), t8, "meta").name, "Новое имя", "название от хаба применяется");
   // альбом по листам (T35)
   const AB = () => ({ meta: { object: "Объект" }, sheets: [{ id: "s1", title: "Лист 1", num: "1" }, { id: "s2", title: "Лист 2", num: "2" }] });
-  const AM = (f) => { const x = M(); x.album = AB(); f(x.album); return x; };
-  const ids = r => r.album.sheets.map(x => x.id);
+  const AM = (f) => { const x = AB(); f(x); return x; };   // T54: альбом — свой раздел «album»
+  const ids = r => r.sheets.map(x => x.id);
   // 1: каждый добавил по листу
-  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => a.sheets.push({ id: "m1", title: "Мой" })), AM(a => a.sheets.push({ id: "t1", title: "Чужой" })), "meta", i);
+  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => a.sheets.push({ id: "m1", title: "Мой" })), AM(a => a.sheets.push({ id: "t1", title: "Чужой" })), "album", i);
     eq(ids(r), ["s1", "s2", "m1", "t1"], "альбом: листы обеих сторон, без двойников"); eq(i.conflicts, [], "новые листы — не конфликт"); }
   // 2: один лист правлен по-разному
-  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.sheets[0].title = "Моё"; }), AM(a => { a.sheets[0].title = "Чужое"; }), "meta", i);
-    eq([r.album.sheets[0].title, r.album.sheets.length, i.conflicts], ["Чужое", 2, ["album:лист 1"]], "один лист у обоих: чужое, конфликт назван по листу"); }
+  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.sheets[0].title = "Моё"; }), AM(a => { a.sheets[0].title = "Чужое"; }), "album", i);
+    eq([r.sheets[0].title, r.sheets.length, i.conflicts], ["Чужое", 2, ["album:лист 1"]], "один лист у обоих: чужое, конфликт назван по листу"); }
   // 3: правки разных листов
-  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.sheets[0].title = "Моё"; }), AM(a => { a.sheets[1].title = "Чужое"; }), "meta", i);
-    eq([r.album.sheets.map(x => x.title), i.conflicts], [["Моё", "Чужое"], []], "правки разных листов сохранены обе"); }
+  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.sheets[0].title = "Моё"; }), AM(a => { a.sheets[1].title = "Чужое"; }), "album", i);
+    eq([r.sheets.map(x => x.title), i.conflicts], [["Моё", "Чужое"], []], "правки разных листов сохранены обе"); }
   // 4: я убрал лист; они не трогали — убран; они правили — вернулся с правкой
-  { const r = merge3(AM(() => { }), AM(a => a.sheets.splice(1, 1)), AM(() => { }), "meta"); eq(ids(r), ["s1"], "лист убран мной, ими не тронут — убран");
-    const r2 = merge3(AM(() => { }), AM(a => a.sheets.splice(1, 1)), AM(a => { a.sheets[1].title = "Правка"; }), "meta"); eq(r2.album.sheets.map(x => x.title), ["Лист 1", "Правка"], "лист убран мной, ими правлен — вернулся с правкой");
-    const r3 = merge3(AM(() => { }), AM(() => { }), AM(a => a.sheets.splice(0, 1)), "meta"); eq(ids(r3), ["s2"], "лист убран ими, мной не тронут — убран"); }
+  { const r = merge3(AM(() => { }), AM(a => a.sheets.splice(1, 1)), AM(() => { }), "album"); eq(ids(r), ["s1"], "лист убран мной, ими не тронут — убран");
+    const r2 = merge3(AM(() => { }), AM(a => a.sheets.splice(1, 1)), AM(a => { a.sheets[1].title = "Правка"; }), "album"); eq(r2.sheets.map(x => x.title), ["Лист 1", "Правка"], "лист убран мной, ими правлен — вернулся с правкой");
+    const r3 = merge3(AM(() => { }), AM(() => { }), AM(a => a.sheets.splice(0, 1)), "album"); eq(ids(r3), ["s2"], "лист убран ими, мной не тронут — убран"); }
   // 5: паспорт альбома правил один, листы целы
-  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.meta.object = "Новый объект"; }), AM(a => { a.sheets[1].title = "Чужое"; }), "meta", i);
-    eq([r.album.meta.object, r.album.sheets.map(x => x.title), i.conflicts], ["Новый объект", ["Лист 1", "Чужое"], []], "meta альбома моя, листы чужие");
-    const r2 = merge3(AM(() => { }), AM(a => { a.meta.object = "Новый объект"; }), AM(() => { }), "meta"); eq([r2.album.meta.object, ids(r2)], ["Новый объект", ["s1", "s2"]], "только meta.object правлен — листы не тронуты"); }
+  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.meta.object = "Новый объект"; }), AM(a => { a.sheets[1].title = "Чужое"; }), "album", i);
+    eq([r.meta.object, r.sheets.map(x => x.title), i.conflicts], ["Новый объект", ["Лист 1", "Чужое"], []], "meta альбома моя, листы чужие");
+    const r2 = merge3(AM(() => { }), AM(a => { a.meta.object = "Новый объект"; }), AM(() => { }), "album"); eq([r2.meta.object, ids(r2)], ["Новый объект", ["s1", "s2"]], "только meta.object правлен — листы не тронуты"); }
   // старые листы без id: по месту не сводятся, список целиком; чужой побеждает, без двойников
   { const L = (...t) => t.map(title => ({ title })), i = { conflicts: [] };
-    const r = merge3(AM(a => { a.sheets = L("A", "B"); }), AM(a => { a.sheets = L("B"); }), AM(a => { a.sheets = L("A", "B2"); }), "meta", i);
-    eq([r.album.sheets.map(x => x.title), i.conflicts], [["A", "B2"], ["album"]], "листы без id: список целиком, чужой, без двойников");
-    const i2 = { conflicts: [] }, r2 = merge3(AM(a => { a.sheets = L("A", "B"); }), AM(a => { a.sheets = L("A", "B", "C"); }), AM(a => { a.meta.org = "Х"; a.sheets = L("A", "B"); }), "meta", i2);
-    eq([r2.album.sheets.map(x => x.title), r2.album.meta.org, i2.conflicts], [["A", "B", "C"], "Х", []], "листы без id: правил только я — мой список");
-    const r3 = merge3(AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }); }), AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }, { id: "m" }); }), AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }); a.sheets[0].title = "T"; }), "meta");
-    eq(r3.album.sheets.length, 3, "повтор id в списке: целиком, ничего не потеряно"); }
+    const r = merge3(AM(a => { a.sheets = L("A", "B"); }), AM(a => { a.sheets = L("B"); }), AM(a => { a.sheets = L("A", "B2"); }), "album", i);
+    eq([r.sheets.map(x => x.title), i.conflicts], [["A", "B2"], ["album"]], "листы без id: список целиком, чужой, без двойников");
+    const i2 = { conflicts: [] }, r2 = merge3(AM(a => { a.sheets = L("A", "B"); }), AM(a => { a.sheets = L("A", "B", "C"); }), AM(a => { a.meta.org = "Х"; a.sheets = L("A", "B"); }), "album", i2);
+    eq([r2.sheets.map(x => x.title), r2.meta.org, i2.conflicts], [["A", "B", "C"], "Х", []], "листы без id: правил только я — мой список");
+    const r3 = merge3(AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }); }), AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }, { id: "m" }); }), AM(a => { a.sheets.push({ id: "s1", title: "Повтор" }); a.sheets[0].title = "T"; }), "album");
+    eq(r3.sheets.length, 3, "повтор id в списке: целиком, ничего не потеряно"); }
   // meta.object по-разному, листы не тронуты
-  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.meta.object = "Моё"; }), AM(a => { a.meta.object = "Чужое"; }), "meta", i);
-    eq([r.album.meta.object, ids(r), i.conflicts], ["Чужое", ["s1", "s2"], ["album"]], "meta.object по-разному: обычный конфликт «album», листы целы"); }
+  { const i = { conflicts: [] }, r = merge3(AM(() => { }), AM(a => { a.meta.object = "Моё"; }), AM(a => { a.meta.object = "Чужое"; }), "album", i);
+    eq([r.meta.object, ids(r), i.conflicts], ["Чужое", ["s1", "s2"], ["album"]], "meta.object по-разному: обычный конфликт «album», листы целы"); }
   // мета-раздела нет ни у кого
   eq(merge3(M(), M(), M(), "meta"), M(), "meta без правок");
 }
