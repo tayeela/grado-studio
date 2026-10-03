@@ -43,6 +43,21 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 10 (16:00–17:10 MSK) — T35 (сведение альбома по листам, ревью PASS с правкой: списки без id —
+  целиком; collab 79 проверок) и T36 (хвосты меню «Выгрузка»; ревью FAIL по тесту — гонка с настоящей выгрузкой Excel
+  → заглушка fetch). Общий прогон падал четыре раза подряд по трём разным причинам: (1) шаг T34 сравнивал строку
+  состояния с зашитыми датами, а `editedAt` ставится настоящим временем — после 13:07 MSK 03.10 шаг стал красным
+  навсегда (тест); (2) `\/` внутри шаблонной строки теста — «Invalid regular expression flags» (тест); (3) настоящая
+  ошибка: Enter на пункте открытого меню «Выгрузка» уходил в обработчик карты «повторить команду» (cad.js), пункт
+  не выбирался; затем фокус не возвращался при мгновенной выгрузке (скрытый пункт ещё в activeElement). Итог:
+  v0.98.1 (78d7f31), unit 388 OK (без PYTHONPATH), collab 79, E2E оба сценария OK, console clean. Указание владельца
+  по T34 принято: перенос уже сделан ночью. Дальше: T30 (тёмная тема, остатки), T6 после T5.
+RULE: E2E steps never compare with hard-coded dates while the program stamps the real time (`editedAt`, `builtAt`):
+clear or stub the stamps first — the T34 step turned red by itself after 13:07 on 03.10.2026.
+RULE: Inside a template literal passed to `p.ev`, write regexes as `/api[/]print[/]pdf/` or `\\/`: a single `\/` is
+unescaped to `/` and the page throws «Invalid regular expression flags».
+RULE: Keyboard activation of any menu item is tested with a real key event (`p.key("Enter")`), not `.click()`:
+the map's global keydown handler (cad.js) can swallow Enter/Space for new menus and buttons.
 - 03.10.2026, цикл 9 (02:56 MSK, записано в 16:00 следующим циклом) — T32 + T33 (v0.98.0, 5710e85): перевёрстка окна «Листы и
   альбом» и меню «Выгрузка». Прогон руководителя: unit 388 OK, collab 66; владельческий сценарий E2E дважды красный на
   разных шагах (AE массив; T33 строка «Альбом» в «Проектах» — ложная, кэш списка по mtime), после правки теста и ключа
