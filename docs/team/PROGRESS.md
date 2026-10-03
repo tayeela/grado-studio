@@ -43,6 +43,13 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 13 (19:50–20:45 MSK) — T6 шаг 2 (фронтенд: «Условия проекта» в «Нормативах»; ревью PASS с тремя
+  правками: ключ «Вариантов» учитывает свободные места, текст источника зоны выводится из состояния, а не из серверной
+  строки, `tepParams` не дописывает ключи при чтении). Снимок владельческого прогона 0.98.3 на `git archive` (1d0843b):
+  владельческий OK; совместный упал на первом шаге и прошёл отдельно (гонка списка проектов при двух сценариях подряд).
+  Итог: v0.98.4 (61e5c92), apps 391 OK, E2E оба сценария OK, console clean.
+RULE: `test_e2e.py` prints only the last 4000 characters of a scenario's output: a step near the start of
+`scenarios.mjs` never shows an «ok» line in the log — a green run is the proof, not the grep.
 - 03.10.2026, цикл 12 (18:55–19:50 MSK) — T38 (решение «карта Б, Carto»: плитки CARTO пришли заглушками «API KEY
   REQUIRED» — проверено curl и снимком; заменено на Esri Canvas World_Dark_Gray_Base, проверено z10–17; ревью руководителя),
   T6 шаг 1 (архитектор разбил задачу на 4 шага — plan-T6.md; бэкенд: пресет + /api/tep + place_info; ревью PASS с правкой
