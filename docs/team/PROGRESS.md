@@ -51,7 +51,7 @@ text needs the attribute refill (CSV/GeoJSON) — check every new document layer
 RULE: An external tile or data service is checked with one real request (size and a look at the tile) before it is
 wired in: CARTO basemaps returned HTTP 200 with an «API KEY REQUIRED» placeholder (03.10.2026).
 RULE: Reviewers never run `git stash` in the shared worktree, even «for a probe» — it reverts other agents' work under a
-running E2E (03.10.2026, restored by pop; the gate was rerun).
+running E2E (03.10.2026, restored by pop; that gate stayed green, so it was not repeated).
 - 03.10.2026 (18:50 MSK), выкладка по слову владельца — v0.98.2: main чистый, team ← main (20bf925, только docs/team),
   unit 388 OK, main ← team/grado2, «Готово: на сервере версия 0.98.2», main отправлен. Ответы владельца: 1В 2А 3А 4А 5А,
   карта Б (CARTO) → T6 открыт, T38 добавлен.
