@@ -43,6 +43,12 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 03.10.2026, цикл 15 (20:40–22:30 MSK) — T60 (v0.99.0): роли слоёв; две правки app.js (robust() отбрасывает кольца
+  < 4 точек, EXIST_KEY по роли) сделаны в отдельной рабочей копии `.claude/worktrees/team2` на ветке `team/t60`, чтобы
+  не трогать несохранённые правки T6 другой сессии в `team` (без движения с 18:19). Ревью PASS; проверка на копии
+  Безобразово с границей КРТ 3141: ЗОУИТ 8 зон из 9 слоёв, вода 3, здания 1541, эскиз 13 корпусов без пересечений с
+  водой и домами, консоль чистая; гейт: apps 400 OK, roles 22 ok, E2E 236 ok / 0 failed. Слияние team/t60 →
+  team/grado2 — после коммита T6 (ожидается конфликт только в app.js вокруг robust()/EXIST_KEY, легко).
 - 03.10.2026, цикл 14 (18:20–20:40 MSK, вторая сессия параллельно с T6) — совещание (продакт, архитектор, креативный
   директор, два круга) → очередь T50–T59 (DECISIONS). T54 (v0.98.5, 1b73e85): альбом — отдельный раздел хаба, meta-правка
   7,9 КБ вместо 19,5 МБ; ревью PASS; гейт на слепке HEAD + 4 файла: apps 395 OK, collab 84, E2E collab OK. T51 часть 1
