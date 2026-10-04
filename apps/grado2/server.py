@@ -602,14 +602,31 @@ def yandex_sat_tile(z, x, y):
     самый свежий). Тот же кэш на диске, что у выгрузки снимка для AutoCAD (90 дней), скачивание по одному с паузой;
     нет тайла — None, печать подложит Esri."""
     import sat_io
+    src = sat_io.YandexSat(CACHE / "tiles" / "yandex-sat")
+    p = src.path(z, x, y)
+    if p.exists() and time.time() - p.stat().st_mtime < sat_io.TTL:
+        return p.read_bytes()
+    now = time.time()
+    # Яндекс отказывает (капча, бан, нет сети): 5 неудач подряд — 10 минут к нему не ходим, тайл без ответа — час;
+    # иначе печать листа ждала бы по 5 с на каждый из сотен тайлов (подложка тогда — Esri)
+    if _YSAT["off_until"] > now or _YSAT["bad"].get((z, x, y), 0) > now:
+        return p.read_bytes() if p.exists() else None
     with _TILE_LOCK:
         try:
-            src = sat_io.YandexSat(CACHE / "tiles" / "yandex-sat")
             src.ensure(z, x, y)
-            p = src.path(z, x, y)
-            return p.read_bytes() if p.exists() else None
         except OSError:
-            return None
+            pass
+    if p.exists() and time.time() - p.stat().st_mtime < 60:
+        _YSAT["fails"] = 0
+    else:
+        _YSAT["bad"][(z, x, y)] = now + 3600
+        _YSAT["fails"] += 1
+        if _YSAT["fails"] >= 5:
+            _YSAT["off_until"], _YSAT["fails"] = now + 600, 0
+    return p.read_bytes() if p.exists() else None
+
+
+_YSAT = {"fails": 0, "off_until": 0.0, "bad": {}}
 
 
 esri_tile.egko = egko_features          # печать берёт цветную основу ЕГКО через тот же вход, что и тайлы

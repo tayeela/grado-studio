@@ -23,7 +23,7 @@ function okrugMain(f, km = 3) {
   if (f?.geometry?.type !== "MultiPolygon") return f;
   const parts = f.geometry.coordinates.map(c => turf.polygon(c)), big = parts.reduce((a, b) => m2(b) > m2(a) ? b : a);
   const edge = turf.lineString(big.geometry.coordinates[0]);
-  const keep = parts.filter(p => p === big || turf.coordAll(p).filter((c, i) => i % 10 === 0).some(c => turf.pointToLineDistance(c, edge) < km));
+  const keep = parts.filter(p => p === big || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
   return { ...f, geometry: keep.length === 1 ? keep[0].geometry : { type: "MultiPolygon", coordinates: keep.map(p => p.geometry.coordinates) } };
 }
 window.okrugMain = okrugMain;
