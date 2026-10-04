@@ -81,6 +81,25 @@ class Print(unittest.TestCase):
         ops = print_io.linetype_ops([(0, 0), (200, 0)], name, 0.5, (1, 0, 0), .3, S.REDLN)
         self.assertGreater(len(ops[0]["rings"]), 10)
 
+    def test_linetype_marks_are_thin_and_round(self):
+        # засечки СЗЗ («Т») — тоньше самой линии, в масштабе знака, со скруглёнными изломами (владелец 05.10.2026)
+        ops = print_io.linetype_ops([(0, 0), (200, 0)], "L00s05t", 0.25, (1, 0, 0), .3, S.REDLN)
+        marks = [o for o in ops if o.get("join") == "round"]
+        self.assertTrue(marks)
+        self.assertTrue(all(o["width"] < .3 for o in marks))
+        self.assertEqual(ops[0]["width"], .3)
+
+    def test_tiles_3395_rows_follow_ellipsoidal_mercator(self):
+        # снимок Яндекса — сетка EPSG:3395: ряд тайла и его широта считаются по эллипсоидальному Меркатору
+        from grado_connectors.yandex_vmap import lonlat_to_3395, HALF
+        tr = print_io.MapTransform((0, 0, 100, 100), [37.758, 55.813], 1000)
+        asked = []
+        print_io.tile_ops(tr, (0, 0, 100, 100), 1000, lambda z, x, y: asked.append((z, x, y)) or None, 55.813, proj="3395", zmax=18)
+        z = asked[0][0]
+        row = int((HALF - lonlat_to_3395(37.758, 55.813)[1]) / (2 * HALF / 2 ** z))
+        self.assertEqual(z, 18)
+        self.assertIn(row, {y for _, _, y in asked})
+
 
 class Clip(unittest.TestCase):
     def test_ring_is_clipped_to_the_frame(self):

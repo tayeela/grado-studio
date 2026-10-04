@@ -499,7 +499,10 @@ def linetype_ops(pts, name, k, color, width, lib):
         ux, uy = ((b[0] - a[0]) / seg[i], (b[1] - a[1]) / seg[i]) if seg[i] else (1, 0)
         return a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, ux, uy
 
-    out, rings, t, guard = [], [], 0.0, 0
+    # знаки (засечки «Т», треугольники) в REDLN97 — контур и заливка штрихами через 0,125 единицы знака. Штрихами
+    # толщиной линии (0,3 мм при знаке ~0,6 мм) с острыми изломами знак превращался в пятно с рогами (владелец
+    # 05.10.2026: «условные ЛГР битые»): у знаков своя толщина — в масштабе знака, изломы скруглены
+    out, rings, marks, t, guard = [], [], {}, 0.0, 0
     while t < L and guard < 20000:
         guard += 1
         for e in lt["pattern"]:
@@ -525,32 +528,43 @@ def linetype_ops(pts, name, k, color, width, lib):
                 ax, ay, bx, by = (1, 0, 0, -1) if e.get("abs") else (ux, uy, vx, vy)
                 ox = px + (e.get("x") or 0) * k * ux + (e.get("y") or 0) * k * vx
                 oy = py + (e.get("x") or 0) * k * uy + (e.get("y") or 0) * k * vy
+                sw = round(min(width, 0.15 * sc), 4)
                 for path in s["paths"]:
                     ring = []
                     for sx, sy in path:
                         lx, ly = (sx * cr - sy * sr) * sc, (sx * sr + sy * cr) * sc
                         ring.append((ox + lx * ax + ly * bx, oy + lx * ay + ly * by))
                     if len(ring) > 1:
-                        rings.append(ring)
+                        marks.setdefault(sw, []).append(ring)
     if rings:
         out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": width, "dash": None, "rings": rings})
+    for sw, rs in marks.items():
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": sw, "dash": None, "rings": rs, "join": "round"})
     return out
 
 
-def tile_ops(tr, rect, scale, tiles, lat):
-    """Спутниковая подложка (тайлы Web Mercator, JPEG) под объектами листа: каждый тайл — картинка по трём углам,
-    пересчитанным в мм листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом)."""
+def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None):
+    """Спутниковая подложка (тайлы JPEG) под объектами листа: каждый тайл — картинка по трём углам, пересчитанным в мм
+    листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом). proj="3857" — Web Mercator (Esri),
+    "3395" — эллипсоидальный Меркатор (спутник Яндекса): у него другая только связь широты и номера ряда.
+    missing — список, куда пишется число тайлов, которых не оказалось."""
     fx, fy, fw, fh = rect
     half_x, half_y = fw / 2 / tr.k * 1.25, fh / 2 / tr.k * 1.25                 # метры на местности с запасом на поворот
     lon0, lat0 = tr.lon0, tr.lat0
     dlon, dlat = half_x / (111320 * math.cos(math.radians(lat0))), half_y / 110540
     mpp = scale * 0.00025                                                        # метров на пиксель тайла: ~100 dpi на листе
-    z = max(10, min(19, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
+    z = max(10, min(zmax, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
     n = 2 ** z
     tx = lambda lon: int((lon + 180) / 360 * n)
-    ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
     lon_of = lambda x: x / n * 360 - 180
-    lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+    if proj == "3395":
+        from grado_connectors.yandex_vmap import HALF, lat_from_3395, lonlat_to_3395
+        size = 2 * HALF / n
+        ty = lambda la: int((HALF - lonlat_to_3395(0, la)[1]) / size)
+        lat_of = lambda y: lat_from_3395(HALF - y * size)
+    else:
+        ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
+        lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
     x0, x1, y0, y1 = tx(lon0 - dlon), tx(lon0 + dlon), ty(lat0 + dlat), ty(lat0 - dlat)
     if (x1 - x0 + 1) * (y1 - y0 + 1) > 600:
         return []
@@ -559,6 +573,8 @@ def tile_ops(tr, rect, scale, tiles, lat):
         for y in range(y0, y1 + 1):
             data = tiles(z, x, y)
             if not data:
+                if missing is not None:
+                    missing.append((z, x, y))
                 continue
             tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
             # тайлы внахлёст на пиксель: иначе на стыках снимков просвечивают белые точки
@@ -592,8 +608,18 @@ class SketchMapFrame(Frame):
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
-            get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
-            out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+            ysat = getattr(self.tiles, "ysat", None) if kind == "sat" else None
+            if ysat:
+                # снимок — спутник Яндекса, самый свежий (владелец 05.10.2026); z18 — его самый подробный настоящий уровень.
+                # Где плиток Яндекса нет, под снимком лежит Esri — белых дыр на листе не бывает
+                miss = []
+                ys = tile_ops(tr, rect, sh["scale"], ysat, sh["center"][1], proj="3395", zmax=18, missing=miss)
+                if miss or not ys:
+                    out.extend(tile_ops(tr, rect, sh["scale"], self.tiles, sh["center"][1]))
+                out.extend(ys)
+            else:
+                get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
+                out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
             if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
                 fx, fy, fw, fh = rect
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
@@ -617,11 +643,13 @@ class SketchMapFrame(Frame):
         # их заливка цветом фона; внутренние стыки кусков закрываются, виден один общий контур (владелец 30.09.2026)
         casing = set(sh.get("casing") or [])
         cased = False
+        spans = []                                                      # (слой, начало его фигур в out)
         for layer in sh.get("layers", []):
             if layer.get("key") in casing:
                 if cased:
                     continue
                 cased = True
+                spans.append(({}, len(out)))
                 out.append({"op": "layer", "name": "Дороги"})
                 polys = []
                 for L_ in sh.get("layers", []):
@@ -642,6 +670,7 @@ class SketchMapFrame(Frame):
                     out.append({"op": "path", "rings": rings, "closed": True, "fill": hex_to_rgb(f.get("fill") or "#ffffff"),
                                 "stroke": None, "width": 0, "dash": None})
                 continue
+            spans.append((layer, len(out)))
             out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             for f in layer.get("features", []):
                 kind, parts = _parts(f["g"])
@@ -733,6 +762,17 @@ class SketchMapFrame(Frame):
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
                         if f.get("label"):
                             labels.append((x, y - 2, f["label"], f.get("ls"), f))
+        # слои с over (граница района) — поверх белой маски за территорией: иначе их не отличить от бледных линий под ней
+        if any(L_.get("over") for L_, _ in spans):
+            ends = [i for _, i in spans[1:]] + [len(out)]
+            moved, keep_from = [], []
+            for (L_, a_), b_ in zip(spans, ends):
+                if L_.get("over"):
+                    moved.extend(out[a_:b_])
+                    keep_from.append((a_, b_))
+            for a_, b_ in reversed(keep_from):
+                del out[a_:b_]
+            late[:0] = moved
         if sh.get("territory"):
             out.append({"op": "layer", "name": "Граница территории"})
         if sh.get("territory") and sh.get("terrPoint"):

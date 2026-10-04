@@ -160,7 +160,10 @@ SOURCES["sit.roads_hd"] = ("yandex_sit", ["hd_road_surface"], "Ситплан: �
 SOURCES["sit.roads"] = ("yandex_sit", ["road"], "Ситплан: оси дорог (Яндекс)")
 SOURCES["sit.buildings"] = ("yandex_sit", ["building"], "Ситплан: здания (Яндекс)")
 SOURCES["sit.rail"] = ("yandex_sit", ["transport_way"], "Ситплан: железная дорога, главные пути (Яндекс)")
-SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway"}   # без подъездных путей и веток
+# железная дорога листов альбома — главные пути подробного уровня (z18), как на ситплане (владелец 05.10.2026)
+SOURCES["yandex.rail"] = ("yandex", ["transport_way"], "Железная дорога, главные пути (Яндекс)")
+SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
+              "yandex.rail": lambda p: p.get("ft_type_name") == "transport-railway"}
 
 # Предел области выгрузки. НСПД и Overpass за один запрос берут не больше TILE_KM2: область больше делится на равные
 # части, они запрашиваются по очереди, объекты склеиваются (общие для двух частей — по ключу объекта, один раз).
@@ -594,7 +597,23 @@ def esri_tile(z, x, y, kind="sat"):
     return None
 
 
+def yandex_sat_tile(z, x, y):
+    """Тайл спутника Яндекса (сетка EPSG:3395) для снимка на листах альбома (владелец 05.10.2026: спутник — Яндекс,
+    самый свежий). Тот же кэш на диске, что у выгрузки снимка для AutoCAD (90 дней), скачивание по одному с паузой;
+    нет тайла — None, печать подложит Esri."""
+    import sat_io
+    with _TILE_LOCK:
+        try:
+            src = sat_io.YandexSat(CACHE / "tiles" / "yandex-sat")
+            src.ensure(z, x, y)
+            p = src.path(z, x, y)
+            return p.read_bytes() if p.exists() else None
+        except OSError:
+            return None
+
+
 esri_tile.egko = egko_features          # печать берёт цветную основу ЕГКО через тот же вход, что и тайлы
+esri_tile.ysat = yandex_sat_tile        # снимок листов альбома — спутник Яндекса
 
 
 def _point_in(g, x, y):

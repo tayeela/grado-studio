@@ -163,7 +163,7 @@ function fitBox(sheet) {
   if (sheet.fit === "moscow") { const o = adm.filter(x => x.properties["Уровень"] === "округ"); return o.length ? turf.bbox(turf.featureCollection(o)) : turf.bbox(buf(TERR, 20000)); }
   if (sheet.fit === "district" || sheet.fit === "okrug") {
     const lvl = sheet.fit === "district" ? "район" : "округ", f = adm.find(x => x.properties["Уровень"] === lvl && safe(() => turf.booleanPointInPolygon(c, x)));
-    if (f) return turf.bbox(f);
+    if (f) return turf.bbox(lvl === "округ" && window.okrugMain ? okrugMain(f) : f);   // округ — без далёких частей
     return turf.bbox(buf(TERR, sheet.fit === "district" ? 800 : 4000));
   }
   if (sheet.pad) return turf.bbox(buf(TERR, sheet.pad));
