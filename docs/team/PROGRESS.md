@@ -2,6 +2,9 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: Cycle start = `git merge main` in the team branch → `tools/gate.sh` → read `docs/wiki/INDEX.md` and `docs/wiki/team.md`;
+agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasting file ranges.
+
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
