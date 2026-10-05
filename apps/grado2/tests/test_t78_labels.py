@@ -136,3 +136,14 @@ class LeadersAndCaptions(unittest.TestCase):
         dot = [o for o in ops if o.get("op") == "circle" and abs(o.get("r", 0) - 1.0) < 1e-6]
         for o in dot:
             self.assertFalse(cap[0] < o["x"] < cap[2] and cap[1] < o["y"] < cap[3])
+
+
+class NestedQuotes(unittest.TestCase):
+    """Правило 17 (владелец 05.10.2026): внешние «ёлочки», вложенные „лапки“ — и в печати, как на странице."""
+
+    def test_nested(self):
+        g = print_io._guillemets
+        self.assertEqual(g('ЖК "Сиреневый парк"'), "ЖК «Сиреневый парк»")
+        self.assertEqual(g('"ЖК "Сиреневый парк""'), "«ЖК „Сиреневый парк“»")
+        self.assertEqual(g("«ЖК «Сиреневый парк»»"), "«ЖК „Сиреневый парк“»")
+        self.assertEqual(g('ГСК "Статор'), 'ГСК "Статор')

@@ -162,8 +162,13 @@ SOURCES["sit.buildings"] = ("yandex_sit", ["building"], "Ситплан: зда�
 SOURCES["sit.rail"] = ("yandex_sit", ["transport_way"], "Ситплан: железная дорога, главные пути (Яндекс)")
 # железная дорога листов альбома — главные пути подробного уровня (z18), как на ситплане (владелец 05.10.2026)
 SOURCES["yandex.rail"] = ("yandex", ["transport_way"], "Железная дорога, главные пути (Яндекс)")
+# станции рельсового каркаса (правило 16 label-rules.md): метро, МЦК и МЦД — точки transport_p типа transport-metro-station,
+# по одной на каждую линию: network moscow_metro (line moscow_metro-14 — МЦК, остальные — метро) или moscow_mcd (line
+# moscow_mcd-D1…D5); закрытые (closed = 1) не берутся. Разбор видов — web/railstations.js. Тайлы те же, что у yandex.rail
+SOURCES["yandex.stations"] = ("yandex", ["transport_p"], "Станции метро, МЦК и МЦД (Яндекс)")
 SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
-              "yandex.rail": lambda p: p.get("ft_type_name") == "transport-railway"}
+              "yandex.rail": lambda p: p.get("ft_type_name") == "transport-railway",
+              "yandex.stations": lambda p: p.get("ft_type_name") == "transport-metro-station" and str(p.get("closed")) != "1"}
 
 # Предел области выгрузки. НСПД и Overpass за один запрос берут не больше TILE_KM2: область больше делится на равные
 # части, они запрашиваются по очереди, объекты склеиваются (общие для двух частей — по ключу объекта, один раз).

@@ -197,11 +197,30 @@ _TW_FONTS = {}
 
 
 def _guillemets(text):
-    """Прямые кавычки в подписях листа → «ёлочки»; нечётное число кавычек (обрезанное название) не трогаем."""
-    t = str(text).replace("\u201c", '"').replace("\u201d", '"').replace("\u201e", '"')
-    if '"' not in t or t.count('"') % 2:
+    """Кавычки в подписях листа по русской типографике (правило 17): внешние «ёлочки», вложенные „лапки“. «, „ всегда
+    открывают, » закрывает; прямые и “ ” — по месту: в начале, после пробела, скобки, тире или открывающей — открывающая.
+    Не сошлись (обрезанное название) — строка как есть. Та же логика, что LabelFmt.guillemets на странице."""
+    t = str(text)
+    if not any(c in t for c in '"\u00ab\u00bb\u201c\u201d\u201e'):
         return t
-    return "".join(("\u00ab" if i == 0 or t[i - 1] in " \u00a0([\u2014\u2013-" else "\u00bb") if c == '"' else c for i, c in enumerate(t))
+    depth, out, prev_open = 0, [], False
+    for i, c in enumerate(t):
+        if c not in '"\u00ab\u00bb\u201c\u201d\u201e':
+            out.append(c)
+            prev_open = False
+            continue
+        p = t[i - 1] if i else ""
+        is_open = True if c in "\u00ab\u201e" else False if c == "\u00bb" else (not p or prev_open or p in " \u00a0([\u2014\u2013-" or p.isspace())
+        if is_open:
+            depth += 1
+            out.append("\u00ab" if depth == 1 else "\u201e")
+        else:
+            if depth < 1:
+                return t
+            out.append("\u00bb" if depth == 1 else "\u201c")
+            depth -= 1
+        prev_open = is_open
+    return t if depth else "".join(out)
 
 
 STATION_MARK = "ст.\u00a0ж/д\u00a0"                                   # подпись станции начинается так (правило 15)
@@ -304,6 +323,7 @@ def _in_ring(x, y, ring):
 LEAD_R = (7, 9, 11, 13, 15.5, 18, 21, 24, 28, 32, 42)
 OBST_PAD = 0.7                                                      # запас подписи от железной дороги и границы района, мм
 SPREAD = 4.0                                                        # точки выносок ближе этого — «кучка», разводятся (владелец 05.10.2026)
+STATION_ICON_H = 3.5                                                # высота значка станции метро / МЦК / МЦД, мм (правило 16)
 MAP_PAD = 2.5                                                       # поле подписей от края карты, мм (правило 11)
 LEAD_K = (21, 15, 3, 9, 18, 6, 0, 12, 22, 20, 16, 14, 4, 2, 10, 8, 23, 19, 17, 13, 5, 1, 11, 7)
 
@@ -976,6 +996,9 @@ class SketchMapFrame(Frame):
         # порядок при нехватке места (правила подписей, docs/standards/albums/label-rules.md): надписи на своих местах —
         # реки, номера документов, надписи ГИС ОГД; затем улицы; затем названия территорий, крупные раньше мелких
         for x, y, text, ls, deg, col, pf in placed:
+            if pf.get("ic"):                                  # станция метро / МЦК / МЦД: значок на точке, название рядом (правило 16)
+                out.extend(self._station(x, y, text, ls, col, pf, rect, take, grid, boxes, ink))
+                continue
             # надписи ГИС ОГД: на своём месте и под своим углом (вдоль границы), цветом знака ЛГР; наложения не пропускаются
             ls = float(ls or 2.0)
             if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -1312,6 +1335,47 @@ class SketchMapFrame(Frame):
                         "rings": [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]})
         else:
             out.extend(self._frame_marks(rect, k, sh["scale"], small=rect[2] < 150))
+        return out
+
+    @staticmethod
+    def _station(x, y, text, ls, col, pf, rect, take, grid, boxes, ink):
+        """Станция рельсового каркаса (правило 16): значки (3,5 мм высотой) стоят на самой точке станции; название — тем
+        же цветом с белой обводкой — справа, иначе слева, сверху или снизу; как и другие названия, не накладывается на чужие
+        подписи, не выходит за рамку и сначала обходит железную дорогу и границы. Нет места — остаётся значок."""
+        import rail_icons
+        rx, ry, rw, rh = rect
+        if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
+            return []
+        H, gap, ls = STATION_ICON_H, 0.6, float(ls or 4.4)
+        ids = [i for i in pf["ic"] if i in rail_icons.ICONS]
+        ws = [rail_icons.icon_width(i, H) for i in ids]
+        W = sum(ws) + gap * max(0, len(ws) - 1)
+        out, cx = [], x - W / 2
+        for i, w in zip(ids, ws):
+            out.extend(rail_icons.icon_ops(i, cx + w / 2, y, H))
+            cx += w + gap
+        ib = (x - W / 2 - .3, y - H / 2 - .3, x + W / 2 + .3, y + H / 2 + .3)
+        if not take(ib):                                      # значок остаётся на точке станции: место занимаем принудительно
+            for i_ in range(int(ib[0] // 10), int(ib[2] // 10) + 1):
+                for j_ in range(int(ib[1] // 10), int(ib[3] // 10) + 1):
+                    grid.setdefault((i_, j_), []).append(ib)
+            boxes.append(ib)
+        text = str(text)[:60]
+        if not text:
+            return out
+        tw, ey, M = _text_w(text, pf.get("lf"), ls), ls * .6, MAP_PAD
+        side, up = W / 2 + 1.0 + tw / 2, -(H / 2 + ey + .3)
+        cands = [(side, 0), (-side, 0), (W / 2 + tw / 2, up), (W / 2 + tw / 2, -up), (-(W / 2 + tw / 2), up), (-(W / 2 + tw / 2), -up), (0, up), (0, -up)]
+        for avoid in (True, False):
+            for dx, dy in cands:
+                cx_, cy_ = x + dx, y + dy
+                if not (cx_ - tw / 2 >= rx + M and cx_ + tw / 2 <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M):
+                    continue
+                if take((cx_ - tw / 2, cy_ - ey, cx_ + tw / 2, cy_ + ey), avoid=avoid):
+                    extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh") or .55)) if v}
+                    out.append({"op": "text", "x": cx_, "y": cy_ + ls * .35, "size": ls, "text": text,
+                                "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": 0.0, **extra})
+                    return out
         return out
 
     @staticmethod

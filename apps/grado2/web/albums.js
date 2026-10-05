@@ -227,6 +227,8 @@ PPTKRT_C.forEach(sh => { if (sh.keys.includes("yandex.rail")) sh.styles = { ...s
 const C_HIDDEN = { mode: "single", fill: "#141414", stroke: "#141414", width: 0, opacity: 0, marker: false, label: "" };
 PPTKRT_C.forEach(sh => { sh.keys.push("egko.place_labels", "egko.addresses");
   sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN }; });
+// станции метро, МЦК и МЦД (правило 16): точки Яндекса в тех же тайлах, что дороги; на листе — значок и название (railStations)
+PPTKRT_C.forEach(sh => { sh.keys.push("yandex.stations"); sh.styles = { ...sh.styles, "yandex.stations": C_HIDDEN }; });
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -512,16 +514,39 @@ function waterLabels(out, bb) {
   if (WL_MEMO.size > 40) WL_MEMO.delete(WL_MEMO.keys().next().value);
 }
 
+/* Станции метро, МЦК и МЦД (правило 16, владелец 05–06.10.2026): значок и название; признаки видов — railstations.js. Слой
+   станций — первым: места под значки и названия занимаются раньше остальных подписей. Возвращает станции для namedPlaces
+   (ЕГКО подписывает те же станции «ст. ж/д …» — дубль снимается) */
+function railStations(out, bb) {
+  const l = out.layers.find(x => x.key === "yandex.stations"); if (!l) return [];
+  const sts = RailStations.stations(l.features.filter(ft => ft.g?.type === "Point").map(ft => ({ props: ft.props, coord: ft.g.coordinates })));
+  l.features = [];
+  const inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
+  const vis = sts.filter(s => inBox(s.at));
+  if (vis.length) out.layers.unshift({ title: "Станции метро, МЦК и МЦД", features: vis.map(s => ({ g: { type: "Point", coordinates: s.at }, nm: true, label: s.name, ls: 4.4,
+    lf: "sans-bold", lh: .55, lcol: s.color, la: 0, nudge: true, ic: s.icons })) });
+  out._stations = vis;                                         // для легенды (conceptStations)
+  return sts.map(s => ({ bare: RailStations.bare(s.name), at: s.at }));
+}
+// легенда: «Транспорт» — значки только тех станций, что видны на листе (правило 7)
+function conceptStations(out, k) {
+  const items = RailStations.legendItems(out._stations || []); delete out._stations;
+  if (!items.length || k === "photos" || !out.cLegend) return;
+  const row = items.map(it => ({ kind: "icon", icon: it.icon, label: it.label })), g = out.cLegend.find(x => x.title === "Транспорт");
+  if (g) g.items.push(...row); else out.cLegend.push({ title: "Транспорт", items: row });
+}
+
 /* Обязательные подписи (владелец 30.09.2026: «д. Безобразово и ул. Придорожная на всех листах»): деревни и посёлки —
    по пояснительным подписям ЕГКО, на своём месте; улицы, которых нет среди названий OSM на листе, — по адресам зданий
    ЕГКО («Придорожная улица 7»): вдоль ближайшей дороги OSM рядом со зданиями, иначе вдоль ряда зданий. Слой — первым:
    эти подписи ставятся раньше всех. */
 const PLACE_RE = /^(д|дер|с|п|пос|рп|х|село|деревня)\.?\s+(.+)$/i;
 const titleRu = t => t.toLowerCase().replace(/(^|[\s-])([а-яё])/g, (m, a, b) => a + b.toUpperCase());
-function namedPlaces(out, bb) {
+function namedPlaces(out, bb, rail = []) {
   const L = key => out.layers.find(l => l.key === key), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
   const feats = [], kx = Math.cos(bb[1] * Math.PI / 180);
   (L("egko.place_labels")?.features || []).forEach(ft => { const t = String(ft.props?.["Подпись"] || ft.label || "").trim(), m = PLACE_RE.exec(t);
+    if (ft.g?.type === "Point" && /^(ст\.|станция)\s+\S/i.test(t) && rail.some(r => r.bare === RailStations.bare(t) && RailStations.dist(r.at, ft.g.coordinates) <= RailStations.NEAR_M)) return;   // это станция метро / МЦК / МЦД — подписана значком
     if (ft.g?.type === "Point" && inBox(ft.g.coordinates) && /^(ст\.|станция)\s+\S/i.test(t)) {   // станция ЕГКО — «ст. ж/д …» (правило 15); «СТ Ромашка» (садовое товарищество, без точки) — не станция
       feats.push({ g: ft.g, nm: true, label: LabelFmt.stationLabel(t), ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); return; }
     if (!m || ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
@@ -592,7 +617,7 @@ function conceptSheet(out, sheet, bb) {
   // тонкие реки ЕГКО нужны только для подписей ручьёв: на снимке вода видна сама (владелец 30.09.2026: голубых линий
   // на листе 3 быть не должно)
   if (sheet.basemap === "sat") (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) ft.nl = true; });
-  namedPlaces(out, bb);
+  namedPlaces(out, bb, railStations(out, bb));
   if (k === "ortho") {
     // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
     // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)
@@ -871,6 +896,7 @@ function conceptSheet(out, sheet, bb) {
   out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
   if (!out.cLegend && k !== "photos") out.cLegend = [bounds];
   conceptRail(out, box, k);
+  conceptStations(out, k);
   conceptDistricts(out, bb, k);
 }
 // железная дорога на белых схемах — главные пути знаком топоплана: чёрная линия, поверх белые штрихи (владелец

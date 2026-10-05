@@ -28,12 +28,24 @@
     const n = String(name || "").trim(); if (!n) return null;
     return isStation(props) && !NOT_STATION.test(n) ? stationLabel(n) : n;
   }
-  // прямые кавычки в подписях листа → «ёлочки»: открывающая — в начале или после пробела / скобки / тире, закрывающая — иначе;
-  // нечётное число кавычек (обрезанное название) не трогаем
+  // кавычки в подписях листа (правило 17): внешние «ёлочки», вложенные „лапки“. « и „ — всегда открывающие, » — закрывающая;
+  // прямые и “ ” — по контексту: открывающая в начале, после пробела / скобки / тире / открывающей кавычки, иначе закрывающая.
+  // Не сошлись открывающие и закрывающие (обрезанное название) — строку не трогаем
   function guillemets(s) {
-    s = String(s == null ? "" : s).replace(/[\u201c\u201d\u201e]/g, '"');
-    if (!s.includes('"') || (s.match(/"/g).length % 2)) return s;
-    return s.replace(/"/g, (m, i) => !s[i - 1] || /[\s\u00a0(\[\u2014\u2013-]/.test(s[i - 1]) ? "\u00ab" : "\u00bb");
+    s = String(s == null ? "" : s);
+    if (!/["\u00ab\u00bb\u201c\u201d\u201e]/.test(s)) return s;
+    let depth = 0, out = "", prevOpen = false;
+    for (let i = 0; i < s.length; i++) {
+      const c = s[i];
+      if (!/["\u00ab\u00bb\u201c\u201d\u201e]/.test(c)) { out += c; prevOpen = false; continue; }
+      const p = s[i - 1];
+      const open = c === "\u00ab" || c === "\u201e" ? true : c === "\u00bb" ? false
+        : !p || prevOpen || /[\s\u00a0(\[\u2014\u2013-]/.test(p);
+      if (open) { depth++; out += depth === 1 ? "\u00ab" : "\u201e"; }
+      else { if (depth < 1) return s; out += depth === 1 ? "\u00bb" : "\u201c"; depth--; }
+      prevOpen = open;
+    }
+    return depth ? s : out;
   }
   const api = { NB, STN_PREFIX, isStation, stationLabel, placeLabel, guillemets };
   if (typeof module === "object" && module.exports) module.exports = api;

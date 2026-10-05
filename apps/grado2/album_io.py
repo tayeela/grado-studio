@@ -374,6 +374,11 @@ def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
         line = [[(x, y + h / 2), (x + w, y + h / 2)]]
         out.append({"op": "path", "closed": False, "fill": None, "stroke": (0.12, 0.12, 0.12), "width": 1.04, "dash": None, "rings": line})
         out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.42, "dash": _dash_fit([2.0, 2.0], w), "rings": line})
+    elif k == "icon":                                    # станция метро / МЦК / МЦД — значок, как на карте (правило 16)
+        import rail_icons
+        if it.get("icon") in rail_icons.ICONS:
+            h_ = min(h, 3.0)
+            out.extend(rail_icons.icon_ops(it["icon"], x + w / 2, y + h / 2, h_))
     elif k == "flood":                                   # подтопление — знаки примера «Хатминки», засечки вниз
         from print_io import flood_ops
         out.extend(flood_ops([(x, y + h / 2 - .4), (x + w, y + h / 2 - .4)], int(it["code"]), _rgb(it.get("stroke"), (0.01, 0.51, 0.25)), side=1))

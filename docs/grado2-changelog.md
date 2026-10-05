@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.10: metro, МЦК and МЦД stations with icons; nested quotes.** Team cycle 24, owner's rules
+  16–17. T82: new source `yandex.stations` (Yandex `transport_p` points from the same tiles as the roads, no extra
+  downloads): `ft_type_name = transport-metro-station`, `network`/`line` tell metro, МЦК (`moscow_metro-14`) and МЦД
+  D1–D5; the name comes in the field «Название» (found on live data — the first version read `name` and drew nothing).
+  On album map sheets a metro or МЦК station gets the red «М» (owner's SVG) and its name in red with a white halo, an
+  МЦД station its diameter's parallelogram and the name in that colour; a metro and an МЦД station of one name within
+  700 m — both icons, one name; the duplicate ЕГКО «ст. ж/д …» label is dropped. Icons are vector paths in PDF, SVG and
+  PPTX (`rail_icons.py`); the legend «Транспорт» lists only icons on the sheet. T83: quotes by Russian typography —
+  outer «ёлочки», nested „лапки“, on the page (`labelfmt.js`) and in print (`print_io._guillemets`). Checked: a test
+  territory at metro «Перово» — «М Перово» in red on sheets 3–9, legend «станция метро»; unit tests, connectors, E2E.
 - **2026-10-05, ГРАДО 2 v0.99.9: station labels «ст. ж/д …», labels off the railway, Генплан legend and colours,
   coarse-imagery note, album tests.** Team cycle 23. T78 + owner's rule 15: railway stations (OSM land use «railway»
   with a name, railway=station/halt/yard, Yandex station types, ЕГКО «ст. …»/«станция …») are labelled «ст. ж/д
