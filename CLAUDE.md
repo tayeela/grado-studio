@@ -1,5 +1,9 @@
 # ГРАДО — память проекта
 
+**Start with `docs/wiki/INDEX.md`** (generated from the code on every commit by `tools/wiki.py`: sources, sheets,
+rules, modules, API, tests, team queue; hand-written: architecture, recipes). Read wiki pages, not big files whole.
+Test gate: `tools/gate.sh` (`E2E=1` adds browser scenarios). Agent briefs: `docs/team/prompts/`.
+
 Keep this file short: it is loaded into every turn and every subagent. History lives in docs:
 `docs/grado2-changelog.md` (ГРАДО 2, newest on top), `docs/grado2-plan.md`, `docs/ux/grado2-ux.md`,
 `docs/session-log-archive.md` (old studio and the full former CLAUDE.md), `git log`.
@@ -14,12 +18,8 @@ no emoji, describe results as what appears on screen.
 - Owner's server: `python3 apps/grado2/server.py` (port 8650, projects in `~/Documents/ГРАДО 2`). **Never test
   there.** Test only on preview `grado2-test` (port 8651, temp projects folder).
 - Backend changes need a server restart; frontend needs a page reload.
-- Tests before every commit (commit only after they pass on that exact tree):
-  ```sh
-  PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" \
-    ~/.grado2/venv/bin/python -m unittest discover -s <core/connectors/tests | core/compute/tests | apps/grado2/tests> -p "test_*.py"
-  GRADO2_E2E=1  # add for the headless browser scenarios in apps/grado2/tests
-  ```
+- Tests before every commit (commit only after they pass on that exact tree): `tools/gate.sh` (after the team branch
+  lands; until then the raw command: `PYTHONPATH=core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2 ~/.grado2/venv/bin/python -m unittest discover -s apps/grado2/tests -p "test_*.py"`).
 - `.claude/launch.json` points `grado2-test` to the main checkout; in a worktree it is edited locally and marked
   `skip-worktree` — do not commit it.
 
@@ -37,8 +37,8 @@ no emoji, describe results as what appears on screen.
 - Token budget: no Workflow fan-outs. Outside the team cycle, at most one subagent at a time (Sonnet, read-only).
 - Agent team (since 02.10.2026, owner's request): roles in `.claude/agents/grado-*.md`, procedure in `docs/team/CYCLE.md`.
   When the owner says «команда, за работу», run one cycle by that file; «выкладывай» = its Landing section. Owner's
-  notes for the team go to `docs/team/OWNER.md`. Team work lives on branch `team/grado2` (worktree
-  `.claude/worktrees/team`) and reaches `main` only on the owner's word.
+  notes for the team go to `docs/team/OWNER.md`. Team work lives on branch `team/t60` (worktree
+  `.claude/worktrees/team2`) and reaches `main` only on the owner's word.
 
 ## Iron rules (still valid)
 1. The owner's open project is irreplaceable data — never experiment on it.
