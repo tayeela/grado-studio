@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.** Owner 06.10: «сделай на всех
+  векторных схемах дороги ЕГКО, чтобы остались только полигональные, сделай красиво». Vector sheets (4–8): ЕГКО road
+  polygons first, Yandex polygons only where ЕГКО has less than 20 % of Yandex's area in the frame; satellite sheets
+  (3, 9): Yandex first, ЕГКО as fallback; roads built from axes are never drawn (`roadsrc.js`). Cartographic cleanup
+  per sheet (`roadclean.js`): clip to the frame + 5 %, dissolve into one shape (no seams or hairline gaps; closing
+  +0,4/−0,4 м), fragments < 10 м² and holes < 25 м² removed, simplify 0,3 м; colours and outlines unchanged (rule 13). The
+  same shape feeds the white «roads» plots, the photo-sheet outline and label obstacles. Checked: КРТ 3229 (ЕГКО 4340 м²
+  in the 1:1000 frame chosen, junctions clean at 300 dpi) and the «Безобразово» copy (ЕГКО only on Калужское ш.; village
+  streets stay white road plots, as in the owner's sample); unit and E2E green.
 - **2026-10-06, ГРАДО 2 v0.99.11: station names always red and always placed.** Owner 06.10: «у метро, МЦД и МЦК
   название всегда красное с белым контуром», «название всегда должно быть со значком». МЦД names are red #FF0013 with a
   white halo like metro and МЦК (the diameter colour stays only in the parallelogram); a station name is never dropped:

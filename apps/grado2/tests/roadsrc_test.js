@@ -1,17 +1,21 @@
-// roadsrc.js: выбор источника дорог листа (запуск — tests/test_roadsrc_js.py).
+// roadsrc.js: выбор источника дорог листа (запуск — tests/test_roadsrc_js.py). T84, 06.10.2026.
 const assert = require("assert");
 const { pickRoadSource: P } = require("../web/roadsrc.js");
 let n = 0; const eq = (a, b, msg) => { assert.strictEqual(a, b, "FAIL: " + msg); n++; };
-eq(P({ ya: 1000, uds: 1000, egko: 800 }), "yandex", "Москва: Яндекс покрывает всё");
-eq(P({ ya: 1000, uds: 1200 }), "yandex", "Яндекс ≥ 20 % УДС");
-eq(P({ ya: 1000, uds: 5000 }), "yandex", "ровно 20 % — ещё Яндекс");
-eq(P({ ya: 900, uds: 5000, egko: 3000 }), "egko", "мало полигонов Яндекса, есть ЕГКО");
-eq(P({ ya: 900, uds: 5000 }), "uds", "мало полигонов Яндекса, ЕГКО нет — оси");
-eq(P({ ya: 0, uds: 4000, egko: 2000 }), "egko", "Безобразово: полигонов Яндекса нет, есть ЕГКО");
-eq(P({ ya: 0, uds: 4000 }), "uds", "полигонов нет, ЕГКО нет — оси");
-eq(P({ ya: 0, uds: 0, egko: 100 }), "egko", "только ЕГКО");
-eq(P({ ya: 500 }), "yandex", "оси не загружены — остаётся Яндекс");
-eq(P({}), "none", "дорог нет нигде");
-eq(P({ ya: 0, uds: 0, egko: 0 }), "none", "нули");
-eq(P({ ya: 100, uds: 1000, egko: 0 }, .5), "uds", "порог задаётся");
+const V = { vector: true };
+eq(P({ ya: 1000, egko: 800 }, V), "egko", "векторный лист: ЕГКО первым, даже если Яндекс есть");
+eq(P({ ya: 1000, egko: 200 }, V), "egko", "ровно 20 % — ещё ЕГКО");
+eq(P({ ya: 1000, egko: 199 }, V), "yandex", "ЕГКО меньше 20 % Яндекса — Яндекс");
+eq(P({ ya: 1000, egko: 0 }, V), "yandex", "ЕГКО нет — Яндекс");
+eq(P({ ya: 0, egko: 50 }, V), "egko", "Яндекса нет — ЕГКО");
+eq(P({ ya: 0, egko: 0 }, V), "none", "дорог нет нигде");
+eq(P({}, V), "none", "пусто");
+eq(P({ ya: 1000, egko: 800 }), "yandex", "снимок: Яндекс первым");
+eq(P({ ya: 1000, egko: 800 }, { vector: false }), "yandex", "снимок явно");
+eq(P({ ya: 0, egko: 800 }), "egko", "снимок: Яндекса нет — ЕГКО запасным");
+eq(P({ ya: 5, egko: 800 }), "yandex", "снимок: любой Яндекс важнее");
+eq(P({}), "none", "снимок: нигде");
+eq(P({ ya: 100, egko: 10 }, { vector: true, minShare: .05 }), "egko", "порог задаётся");
+eq(P({ ya: 0, uds: 9000, egko: 0 }, V), "none", "оси (uds) не источник: полигонов нет — дорог нет");
+eq(P({ ya: 0, uds: 9000 }), "none", "оси не источник и на снимке");
 console.log(n + " checks ok");

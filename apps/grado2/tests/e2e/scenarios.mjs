@@ -1305,7 +1305,27 @@ export default async p => {
         return JSON.stringify({ noneItem: roadItem(none), noneFts: roadFts(none), udsItem: roadItem(uds), udsFts: roadFts(uds) });
       } finally { keys.forEach(k => { if (saved[k]) { DATA[k].fc = saved[k]; if (k !== "calc.uds_ya") setLayerData(k, saved[k]); } else if (k === "calc.uds_ya") delete DATA[k]; }); }`));
     check(!r.noneItem && r.noneFts === 0, "T76: дорог нигде нет — на листе их нет и знака «территории автодорог» в легенде нет");
-    check(r.udsItem && r.udsFts > 0, "T76: полигонов Яндекса нет — лист берёт УДС по осям (запасной источник), знак в легенде появился");
+    check(!r.udsItem && r.udsFts === 0, "T76/T84: полигонов нет нигде — дороги по осям (calc.uds_ya) на листе НЕ рисуются, знака в легенде нет");
+  });
+  // T84: векторные схемы — дороги ЕГКО первыми и одной очищенной фигурой, Яндекс только где у ЕГКО пусто; снимок — Яндекс первым
+  await p.group("t84", async () => {
+    const r = JSON.parse(await p.ev(`if (!TERR) $("bExample").click(); await new Promise(r => setTimeout(r, 400));
+      const keys = ["yandex.hd_roads", "egko.roads"], saved = Object.fromEntries(keys.map(k => [k, DATA[k]?.fc])), fc = fs => ({ type: "FeatureCollection", features: fs });
+      const [w, s, e, n] = turf.bbox(TERR), cx = (w + e) / 2, dy = (n - s) / 40, dx = (e - w) / 40;
+      const strip = (x0, x1, y) => ({ type: "Feature", properties: {}, geometry: turf.bboxPolygon([x0, y - dy, x1, y + dy]).geometry });
+      const eg = fc([strip(w, cx, s + (n - s) / 2), strip(cx + dx / 50, e, s + (n - s) / 2)]), ya = fc([strip(w, e, s + (n - s) / 3)]);   // у ЕГКО — две части с щелью
+      const mk = c => ({ ...cloneJ(PPTKRT_C.find(x => x.concept === c)), id: "t84" + c, size: "PA3" });
+      const roads = sp => sp.sheets[0].layers.find(l => l.key === "yandex.hd_roads")?.features || [];
+      try {
+        keys.forEach(k => { if (!DATA[k]) DATA[k] = { fc: fc([]), title: k }; ensureLayer(k, k, "Polygon"); });
+        setLayerData("yandex.hd_roads", ya); setLayerData("egko.roads", eg);
+        const vec = roads(albumSpec([mk("use")])), sat = roads(albumSpec([mk("ortho")]));
+        setLayerData("egko.roads", fc([])); const yaOnly = roads(albumSpec([mk("use")]));
+        return JSON.stringify({ vec: vec.length, vecType: vec[0]?.g.type, vecAbove: vec[0] && turf.bbox(vec[0].g)[1] > s + (n - s) * .4, sat: sat.length, satBelow: sat[0] && turf.bbox(sat[0].g)[3] < s + (n - s) * .4, yaOnly: yaOnly.length });
+      } finally { keys.forEach(k => setLayerData(k, saved[k] || fc([]))); }`));
+    check(r.vec === 1 && r.vecType === "Polygon" && r.vecAbove, "T84: векторный лист — дороги ЕГКО (не Яндекса), две части со щелью слиты в один полигон");
+    check(r.sat === 1 && r.satBelow, "T84: лист-снимок — полигоны Яндекса первыми");
+    check(r.yaOnly === 1, "T84: у ЕГКО в рамке пусто — векторный лист берёт Яндекс");
   });
   // T80: функции листов альбома 05.10.2026 на малых искусственных полигонах — округ без далёких частей, районы без частей вне округа, порядок СЗЗ, углы с районами
   await p.group("t80", async () => {

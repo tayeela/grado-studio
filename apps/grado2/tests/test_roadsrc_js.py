@@ -14,6 +14,11 @@ class RoadSrcJs(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
         self.assertIn("checks ok", r.stdout)
 
+    def test_road_clean(self):
+        r = subprocess.run(["node", str(HERE / "roadclean_test.js")], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr + r.stdout)
+        self.assertIn("checks ok", r.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

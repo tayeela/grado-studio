@@ -214,10 +214,9 @@ const PPTKRT_C = [
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
 ];
 
-// запасной источник дорог (T76, roadsrc.js): ЕГКО-полигоны добавлены в ключи и стили листов — слой ЕГКО режется из
-// кэша слоя на диске (портал — только при первой выгрузке, раз в срок кэша), в обычном случае пуст на листе
-// (conceptSheet очищает слой); УДС по осям (calc.uds_ya) берётся из DATA, в ключи не входит — иначе каждый лист скачивал бы
-// оси Яндекса по всей рамке, а в Москве полигоны есть всюду. Оси Яндекса загружены вокруг территории (buildSection0)
+// источник дорог (T76/T84, roadsrc.js): полигоны ЕГКО добавлены в ключи и стили листов — слой ЕГКО режется из кэша слоя на
+// диске (портал — только при первой выгрузке, раз в срок кэша); на векторных схемах он первый, на снимке — запасной.
+// Дороги по осям (calc.uds_*) на листах альбома не рисуются никогда
 PPTKRT_C.forEach(sh => { const i = sh.keys.indexOf("yandex.hd_roads"); if (i < 0) return;
   sh.keys.splice(i + 1, 0, "egko.roads"); sh.styles = { ...sh.styles, "egko.roads": sh.styles["yandex.hd_roads"] }; });
 // железная дорога на белых схемах (листы 4–8): чёрная линия, белые штрихи рисует conceptRail (владелец 05.10.2026)
@@ -585,21 +584,25 @@ function namedPlaces(out, bb, rail = []) {
   if (feats.length) out.layers.unshift({ title: "Населённые пункты и улицы", features: feats });
 }
 
-// Дороги листа: полигоны Яндекса, а где их мало — запасной источник ЭТОГО листа (решение и порог — roadsrc.js). Запасные
-// полигоны переносятся в слой yandex.hd_roads: контур (casing), препятствия подписям, доля участка под дорогой и легенда
-// видят один набор. Возвращает true, если в рамке есть полигоны дорог.
+// Дороги листа (владелец 06.10.2026, T84): на векторных схемах (основа не снимок: листы 4–8) — полигоны ЕГКО, Яндекс — только
+// там, где у ЕГКО в рамке пусто или мало; на снимке (3, 9) — Яндекс, ЕГКО запасным (решение — roadsrc.js). Дорог по осям
+// (calc.uds_*) на листах нет. Выбранные полигоны чистятся (roadclean.js: слияние без швов, без обрывков и островков) и
+// переносятся в слой yandex.hd_roads: контур (casing), препятствия подписям, доля участка под дорогой и легенда видят один
+// набор. Возвращает true, если в рамке есть полигоны дорог.
 function roadSource(out, sheet, bb) {
-  const hd = out.layers.find(l => l.key === "yandex.hd_roads"), eg = out.layers.find(l => l.key === "egko.roads"), box = turf.bboxPolygon(bb);
+  const hd = out.layers.find(l => l.key === "yandex.hd_roads"), eg = out.layers.find(l => l.key === "egko.roads");
   const area = g => /Polygon/.test(g?.type) ? (safe(() => { const c = turf.bboxClip({ type: "Feature", geometry: g, properties: {} }, bb); return c?.geometry?.coordinates?.length ? turf.area(c) : 0; }) || 0) : 0;
-  const sum = fts => fts.reduce((s, g) => s + area(g), 0);
-  const udsFts = (DATA["calc.uds_ya"]?.fc?.features || []).map(f => f.geometry);
-  const src = RoadSrc.pickRoadSource({ ya: sum((hd?.features || []).map(f => f.g)), uds: sum(udsFts), egko: sum((eg?.features || []).map(f => f.g)) });
-  if (eg && src === "egko") { if (hd) hd.features.push(...eg.features); else eg.key = "yandex.hd_roads"; }
-  if (src === "uds") { const st = sheet.styles?.["yandex.hd_roads"] || {};
-    const fts = udsFts.filter(g => /Polygon/.test(g?.type) && safe(() => turf.booleanIntersects(g, box))).map(g => ({ g, fill: st.fill, stroke: st.stroke, w: st.width || 0, a: st.opacity ?? 1 }));
-    if (hd) hd.features.push(...fts); else out.layers.unshift({ key: "yandex.hd_roads", title: "Дороги", features: fts }); }
-  if (eg && eg.key === "egko.roads") eg.features = [];
-  return src !== "none";
+  const sum = fts => fts.reduce((s, f) => s + area(f.g), 0);
+  const src = RoadSrc.pickRoadSource({ ya: sum(hd?.features || []), egko: sum(eg?.features || []) }, { vector: sheet.basemap !== "sat" });
+  const chosen = src === "egko" ? eg : src === "yandex" ? hd : null;
+  let layer = hd;
+  if (src === "egko" && !hd) { eg.key = "yandex.hd_roads"; layer = eg; }
+  if (layer) {
+    const fts = (chosen?.features || []).filter(f => /Polygon/.test(f.g?.type)), g = fts.length ? RoadClean.clean(turf, fts.map(f => f.g), bb) : null;
+    layer.features = g ? [{ ...fts[0], g, props: undefined, label: undefined }] : [];
+  }
+  if (eg && eg !== layer) eg.features = [];
+  return src !== "none" && !!layer?.features.length;
 }
 const ROADS_WORD = "территории автодорог, улиц, местных проездов";   // как в образце «ГК Царицыно», лист 5
 function conceptSheet(out, sheet, bb) {
