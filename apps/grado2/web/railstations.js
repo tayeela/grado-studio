@@ -5,7 +5,7 @@
      network = moscow_metro, line = moscow_metro-14 (или p_name «Московское центральное кольцо») — МЦК;
      network = moscow_metro, прочие line = moscow_metro-N — метро (N — номер линии, в том числе БКЛ и Некрасовская);
      network = moscow_mcd, line = moscow_mcd-D1…D5 (или p_name «МЦД-N …») — МЦД, диаметр D1…D5.
-   Метро и МЦК — один значок «М» и красное название; МЦД — параллелограмм своего диаметра и название его цветом. Станция
+   Метро и МЦК — один значок «М», МЦД — параллелограмм своего диаметра; название у всех красное с белой обводкой. Станция
    метро и МЦД с одним названием рядом (до 700 м) — один подписанный объект с двумя значками, название красное. */
 (function (root) {
   const METRO_COLOR = "#FF0013";
@@ -46,7 +46,7 @@
       const mcd = [...g.mcd].sort(), isMetro = g.metro || g.mck;
       const at = [g.pts.reduce((s, c) => s + c[0], 0) / g.pts.length, g.pts.reduce((s, c) => s + c[1], 0) / g.pts.length];
       return { name: g.name, at, icons: [...(isMetro ? ["metro"] : []), ...mcd.map(d => "mcd-" + d.toLowerCase())],
-        metro: g.metro, mck: g.mck, mcd, color: isMetro ? METRO_COLOR : MCD_COLOR[mcd[0]] };
+        metro: g.metro, mck: g.mck, mcd, color: METRO_COLOR };   // название метро, МЦК и МЦД — всегда красное с белой обводкой (владелец 06.10.2026)
     });
   }
 

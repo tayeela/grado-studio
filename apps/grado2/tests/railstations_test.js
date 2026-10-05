@@ -31,9 +31,9 @@ eq(s[0].color, R.METRO_COLOR, "название красное, если ест�
 eq(s[0].mck && s[0].metro, true, "и метро, и МЦК");
 s = R.stations([{ props: mcd("Перово", "D3"), coord: at(0, 0) }, { props: mcd("Перово", "D1"), coord: at(5, 0) }]);
 eq(s[0].icons, ["mcd-d1", "mcd-d3"], "два диаметра — по порядку");
-eq(s[0].color, "#F6A500", "название цветом первого диаметра, если метро нет");
+eq(s[0].color, R.METRO_COLOR, "МЦД без метро — название тоже красное (владелец 06.10.2026)");
 s = R.stations([{ props: mcd("Андроновка", "D3"), coord: at(0, 0) }]);
-eq([s[0].icons, s[0].color], [["mcd-d3"], "#E95B0C"], "МЦД-3: значок и цвет");
+eq([s[0].icons, s[0].color], [["mcd-d3"], R.METRO_COLOR], "МЦД-3: свой значок, название красное");
 s = R.stations([{ props: metro("Перово"), coord: [37.79, 55.75] }, { props: metro("Перово"), coord: [37.5, 55.9] }]);
 eq(s.length, 2, "одинаковое название далеко (>700 м) — разные станции");
 s = R.stations([{ props: metro("Сокол", 2), coord: null }, { props: { ft_type_name: "transport-bus-stop", name: "Сокол" }, coord: at(0, 0) }]);

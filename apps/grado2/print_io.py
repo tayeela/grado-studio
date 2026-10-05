@@ -1341,7 +1341,8 @@ class SketchMapFrame(Frame):
     def _station(x, y, text, ls, col, pf, rect, take, grid, boxes, ink):
         """Станция рельсового каркаса (правило 16): значки (3,5 мм высотой) стоят на самой точке станции; название — тем
         же цветом с белой обводкой — справа, иначе слева, сверху или снизу; как и другие названия, не накладывается на чужие
-        подписи, не выходит за рамку и сначала обходит железную дорогу и границы. Нет места — остаётся значок."""
+        подписи, не выходит за рамку и сначала обходит железную дорогу и границы. Места нет — название ставится всё равно:
+        оно всегда рядом со значком (владелец 06.10.2026)."""
         import rail_icons
         rx, ry, rw, rh = rect
         if not (rx <= x <= rx + rw and ry <= y <= ry + rh):
@@ -1366,16 +1367,34 @@ class SketchMapFrame(Frame):
         tw, ey, M = _text_w(text, pf.get("lf"), ls), ls * .6, MAP_PAD
         side, up = W / 2 + 1.0 + tw / 2, -(H / 2 + ey + .3)
         cands = [(side, 0), (-side, 0), (W / 2 + tw / 2, up), (W / 2 + tw / 2, -up), (-(W / 2 + tw / 2), up), (-(W / 2 + tw / 2), -up), (0, up), (0, -up)]
+        extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh") or .55)) if v}
+        put = lambda cx_, cy_: out.append({"op": "text", "x": cx_, "y": cy_ + ls * .35, "size": ls, "text": text,
+                                          "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": 0.0, **extra})
+        inside = lambda cx_, cy_: cx_ - tw / 2 >= rx + M and cx_ + tw / 2 <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M
         for avoid in (True, False):
             for dx, dy in cands:
                 cx_, cy_ = x + dx, y + dy
-                if not (cx_ - tw / 2 >= rx + M and cx_ + tw / 2 <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M):
+                if not inside(cx_, cy_):
                     continue
                 if take((cx_ - tw / 2, cy_ - ey, cx_ + tw / 2, cy_ + ey), avoid=avoid):
-                    extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh") or .55)) if v}
-                    out.append({"op": "text", "x": cx_, "y": cy_ + ls * .35, "size": ls, "text": text,
-                                "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": 0.0, **extra})
+                    put(cx_, cy_)
                     return out
+        # название станции всегда рядом со значком (владелец 06.10.2026): свободного места нет — ставится принудительно,
+        # туда, где оно меньше всего закрывает другие подписи (из мест в рамке: справа, слева, сверху, снизу), иначе справа,
+        # прижатым к рамке
+        def overlap(cx_, cy_):
+            a0, b0, a1, b1 = cx_ - tw / 2, cy_ - ey, cx_ + tw / 2, cy_ + ey
+            return sum(max(0, min(a1, q[2]) - max(a0, q[0])) * max(0, min(b1, q[3]) - max(b0, q[1])) for q in boxes if q != ib)
+        ok = [(x + dx, y + dy) for dx, dy in cands if inside(x + dx, y + dy)]
+        fit = min(ok, key=lambda c: overlap(*c)) if ok else None
+        if fit is None:
+            fit = (min(max(x + side, rx + M + tw / 2), rx + rw - M - tw / 2), min(max(y, ry + M + ey), ry + rh - M - ey))
+        b = (fit[0] - tw / 2, fit[1] - ey, fit[0] + tw / 2, fit[1] + ey)
+        for i_ in range(int(b[0] // 10), int(b[2] // 10) + 1):
+            for j_ in range(int(b[1] // 10), int(b[3] // 10) + 1):
+                grid.setdefault((i_, j_), []).append(b)
+        boxes.append(b)
+        put(*fit)
         return out
 
     @staticmethod

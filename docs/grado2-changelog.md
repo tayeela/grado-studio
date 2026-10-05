@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.11: station names always red and always placed.** Owner 06.10: «у метро, МЦД и МЦК
+  название всегда красное с белым контуром», «название всегда должно быть со значком». МЦД names are red #FF0013 with a
+  white halo like metro and МЦК (the diameter colour stays only in the parallelogram); a station name is never dropped:
+  when no free place is found it is put where it covers other labels least (among the places inside the frame).
+  Icons stay on every map sheet (owner: «да»). Tests updated; unit, E2E green.
 - **2026-10-06, ГРАДО 2 v0.99.10: metro, МЦК and МЦД stations with icons; nested quotes.** Team cycle 24, owner's rules
   16–17. T82: new source `yandex.stations` (Yandex `transport_p` points from the same tiles as the roads, no extra
   downloads): `ft_type_name = transport-metro-station`, `network`/`line` tell metro, МЦК (`moscow_metro-14`) and МЦД

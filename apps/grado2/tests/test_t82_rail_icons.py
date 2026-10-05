@@ -63,13 +63,14 @@ class RailIcons(unittest.TestCase):
         ix = [p[0] for r in icon["rings"] for p in r]
         self.assertGreater(t[0]["x"], max(ix), "название справа от значка (место свободно)")
 
-    def test_mcd_icon_and_diameter_colour(self):
-        ops = ops_of(sheet([station("Белокаменная", ["mcd-d2"], "#E94282")]))
+    def test_mcd_icon_and_red_name(self):
+        # МЦД — параллелограмм своего диаметра, название красное с белой обводкой (владелец 06.10.2026)
+        ops = ops_of(sheet([station("Белокаменная", ["mcd-d2"], "#FF0013")]))
         self.assertTrue(fills(ops, D2), "параллелограмм D2")
         self.assertTrue(fills(ops, (1.0, 1.0, 1.0)), "белая надпись «D2» поверх")
         t = texts(ops, "Белокаменная")
-        self.assertEqual(tuple(round(v, 3) for v in t[0]["color"]), tuple(round(v, 3) for v in D2))
-        self.assertFalse(fills(ops, RED), "красного значка нет")
+        self.assertEqual(tuple(round(v, 3) for v in t[0]["color"]), tuple(round(v, 3) for v in RED))
+        self.assertFalse(fills(ops, RED), "красного значка «М» нет")
 
     def test_shared_name_two_icons_one_label(self):
         ops = ops_of(sheet([station("Нижегородская", ["metro", "mcd-d4"], "#FF0013")]))
@@ -87,10 +88,24 @@ class RailIcons(unittest.TestCase):
         ops = ops_of(sheet([near, station("Сокол", ["metro"], "#FF0013")]))
         self.assertTrue(fills(ops, RED))
         a, b = texts(ops, "Сокол"), texts(ops, "Соседняя")
-        if a and b:
+        self.assertTrue(a, "название станции есть всегда (владелец 06.10.2026)")
+        if b:
+            # места без наложения нет — название встаёт туда, где закрывает соседнюю подпись меньше всего (не на её середину)
             w = print_io._text_w("Сокол", "sans-bold", 4.4)
             w2 = print_io._text_w("Соседняя улица очень длинная", "sans-bold", 4.4)
-            self.assertTrue(abs(a[0]["x"] - b[0]["x"]) >= (w + w2) / 2 - .01 or abs(a[0]["y"] - b[0]["y"]) >= 4.4 * .6 * 2 - .01, "подписи не наложены")
+            ox = max(0, min(a[0]["x"] + w / 2, b[0]["x"] + w2 / 2) - max(a[0]["x"] - w / 2, b[0]["x"] - w2 / 2))
+            oy = max(0, 4.4 * 1.2 - abs(a[0]["y"] - b[0]["y"]))
+            self.assertLess(ox * oy, w * 4.4 * 1.2 * .5, "наложение меньше половины названия")
+
+    def test_name_always_with_icon(self):
+        # свободного места нет нигде (take всегда отказывает) — название всё равно стоит рядом со значком (владелец 06.10.2026)
+        grid, boxes = {}, []
+        ops = print_io.SketchMapFrame._station(100.0, 100.0, "Перово", 4.4, "#FF0013", {"ic": ["metro"], "lf": "sans-bold"},
+                                               (10.0, 10.0, 200.0, 200.0), lambda *a, **k: False, grid, boxes, (0, 0, 0))
+        t = [o for o in ops if o.get("op") == "text"]
+        self.assertEqual(len(t), 1)
+        self.assertLess(abs(t[0]["x"] - 100.0), 40, "название рядом со значком")
+        self.assertTrue(boxes, "место названия занято для следующих подписей")
 
     def test_legend_swatch(self):
         for iid in ("metro", "mcd-d1"):
@@ -99,7 +114,7 @@ class RailIcons(unittest.TestCase):
         self.assertEqual(album_io.concept_swatch(0, 0, {"kind": "icon", "icon": "nope"}, None), [])
 
     def test_pdf_and_pptx_render(self):
-        sh = sheet([station("Нижегородская", ["metro", "mcd-d4"], "#FF0013"), station("Белокаменная", ["mcd-d2"], "#E94282", .002, .001)])
+        sh = sheet([station("Нижегородская", ["metro", "mcd-d4"], "#FF0013"), station("Белокаменная", ["mcd-d2"], "#FF0013", .002, .001)])
         spec = {"sheets": [sh]}
         pdf = print_io.render_pdf(spec, S.REDLN, S.LGR_DASH)
         self.assertTrue(bytes(pdf).startswith(b"%PDF"))
