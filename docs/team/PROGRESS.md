@@ -2,6 +2,17 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: Any new choice bar in «Листы и альбом» closes the pending one (only one bar at a time) and old E2E steps that
+export on purpose pass `force` — T74's export gate broke t62/t66 until then.
+
+- 05.10.2026, цикл 22 и выкладка (слово владельца «команда за работу дальше по очереди и выкладывай»). T74 (проверка
+  перед выгрузкой), T75 (снимок Яндекса: 404, Esri только под дырами, >600 плиток), T76 (дороги без полигонов Яндекса) —
+  три роли параллельно. Ревью архитектора: T74, T76 PASS; T75 FAIL по пункту «старые листы — Esri» — снят руководителем
+  (владелец 05.10: Безобразово тоже на снимке Яндекса), предупреждение о >600 плитках вынесено в T81. Общий прогон
+  упал на t62/t66 (строка T74 перехватывала выгрузку и не закрывалась) — исправлено исполнителем, E2E 375 шагов
+  зелёный; unit 437 OK с PYTHONPATH и без, connectors OK. Реальный сценарий: копия «Безобразово» (30.09) — 9 листов,
+  дороги на всех (полигонов Яндекса в ТиНАО нет, взяты ЕГКО/оси). Выкладка: main ff → a172ee2 v0.99.8; первая отправка
+  оборвалась по сети (msk), повтор `tools/deploy-server.sh` — «Готово: на сервере версия 0.99.8».
 RULE: An E2E check must not assume where the territory lies: earlier steps move it (T71 expected ≥ 5 okrug districts,
 the run had the territory in a 4-district okrug). Compare with the data of the current territory instead.
 RULE: Direct owner-requested changes land on main between cycles; the cycle starts by merging main into the team branch
