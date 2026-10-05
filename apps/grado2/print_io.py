@@ -860,6 +860,11 @@ class SketchMapFrame(Frame):
         if sh.get("mapNote"):
             n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNote"])
             take((rx, ry, rx + 102, ry + 7 + 5.4 * n + 3))                  # угол с округом и районом — без подписей карты
+        if sh.get("mapNoteBR"):                                           # правый нижний угол — район этого угла
+            from album_io import ortho_legend_h
+            n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNoteBR"])
+            lift = ortho_legend_h(sh) + 2 if sh.get("bleed") else 0
+            take((rx + rw - 102, ry + rh - lift - 7 - 5.4 * n, rx + rw, ry + rh - lift))
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
         # порядок при нехватке места (правила подписей, docs/standards/albums/label-rules.md): надписи на своих местах —

@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.98.11: Yandex road polygons on every album sheet; district captions by corner.** Owner:
+  «для всех схем используй полигональные дороги яндекс», «в верхнем левом углу район Метрогородок, в правом нижнем
+  Гольяново, одинаковый кегль у подписей». Sheets 3–9 draw roads from `yandex.hd_roads` only (no `calc.uds_ya` axis
+  driveways, no `egko.roads`); the use sheet's «roads» share test, the photo sheet casing and the label obstacles use
+  the same polygons. When the frame's top-left and bottom-right corners lie in different districts, the top-left
+  caption names that corner's district (with its okrug) and a new bottom-right caption (`mapNoteBR`,
+  `album_io.MapNoteFrame(corner="br")`, above the legend plate on the ortho sheet; print reserves the space for map
+  labels) names the other, both 14,3 pt; a district without a corner gets a 14,3 pt label inside its part.
 - **2026-10-05, ГРАДО 2 v0.98.10: album ППТ КРТ after the owner's review of КРТ 3229 (Гольяново).** Rules first:
   `docs/standards/albums/label-rules.md` item 14. Print: REDLN97 line marks (СЗЗ «Т», природный комплекс triangles)
   were stroked with the line width (0,3 mm) on ~0,6 mm glyphs and came out as blobs with spikes — marks now get their

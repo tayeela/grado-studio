@@ -301,18 +301,26 @@ class MapNoteFrame(Frame):
     (владелец 29.09.2026), строки по центру, Montserrat жирный тёмно-красным с белым ореолом — читается и на снимке.
     Каждый блок — список строк; строка-текст переносится по 25 знаков."""
 
-    def __init__(self, rect, lines):
+    def __init__(self, rect, lines, corner="tl", lift=0.0):
         super().__init__(rect)
-        self.lines = lines
+        self.lines, self.corner, self.lift = lines, corner, lift
 
     def ops(self, ctx):
-        x, y, _, _ = self.rect
-        out, yy = [], y + 7.7
-        for n, block in enumerate(self.lines):                        # три строки с равным интервалом, как в образце (правило 11)
-            for line in (block if isinstance(block, list) else _wrap(block, 25)):
-                out.append({**_text(x + 50, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
-                yy += 5.4
+        x, y, w, h = self.rect
+        rows = [line for block in self.lines for line in (block if isinstance(block, list) else _wrap(block, 25))]
+        # правый нижний угол — район, в котором лежит этот угол листа, тем же кеглем (владелец 05.10.2026)
+        out, yy = [], (y + 7.7 if self.corner == "tl" else y + h - self.lift - 3 - 5.4 * (len(rows) - 1))
+        cx = x + 50 if self.corner == "tl" else x + w - 50
+        for line in rows:                                             # три строки с равным интервалом, как в образце (правило 11)
+            out.append({**_text(cx, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
+            yy += 5.4
         return out
+
+
+def ortho_legend_h(sheet):
+    """Высота плашки легенды ортофотоплана от нижнего края листа (OrthoLegendFrame)."""
+    n = sum(len(g.get("items", [])) for g in sheet.get("cLegend") or [])
+    return 6.5 + 5.7 + 5.8 * n + 4.5
 
 
 # ---------- листы по образцу «ГК Царицыно» (look: "concept"): карта слева, колонка справа ----------
@@ -633,6 +641,8 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
             frames = [map_frame(r, sh), ConceptColumnFrame(CONCEPT_COL, sh, lib)]
         if sh.get("mapNote"):
             frames.append(MapNoteFrame(r, sh["mapNote"]))
+        if sh.get("mapNoteBR"):                       # на ортофотоплане — над плашкой легенды
+            frames.append(MapNoteFrame(r, sh["mapNoteBR"], "br", ortho_legend_h(sh) + 2 if sh.get("bleed") else 0))
         return frames + [deco]
     frames = []
     if sh.get("panels"):
