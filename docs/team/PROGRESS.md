@@ -2,6 +2,22 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: An E2E check must not assume where the territory lies: earlier steps move it (T71 expected ≥ 5 okrug districts,
+the run had the territory in a 4-district okrug). Compare with the data of the current territory instead.
+RULE: Direct owner-requested changes land on main between cycles; the cycle starts by merging main into the team branch
+and resolving conflicts in albums.js / print_io.py by hand (cycle 21: Yandex satellite vs TileGuard, okrugMain vs
+simplifyAdm). Never assume the team branch is ahead of main.
+
+- 05.10.2026, цикл 21 — по аудиту КРТ 3229 (`docs/ux/audit-2026-10-05-krt3229.md`). Довели T69–T71 (были не
+  закоммичены): ревью архитектора — T69, T71 PASS, T70 FAIL (страница не передавала территорию) — исправлено
+  руководителем. Слили main (v0.98.10–0.98.14) в team/t60 с ручным сведением конфликтов. Задачи T72 (граница по номеру
+  КРТ, кнопка в «Свойствах») и T73 (поля шапки и автозаполнение) — фронтенд, параллельно; руководитель связал их (номер
+  КРТ из поиска — в шапку). Найдена и выложена на сайт ошибка руководителя из main: карта округа теряла районы
+  (turf.intersect) — v0.98.13 и v0.98.14. Проверка: путь владельца на тестовой копии (поиск «КРТ 3229» → граница
+  1,66 га → «Собрать альбом ППТ КРТ» → 9 листов, шапка «№ 3229 / ВАО, район Гольяново / д. 8»), unit 431 OK с
+  PYTHONPATH и без, E2E зелёный (4 прогона: столкновения T73 со старыми шагами T34b/T55/T66 исправлены, T71 — проверка
+  переписана, один раз — медленный старт страницы под нагрузкой). Итог v0.99.7 на team/t60, готово к выкладке.
+  Дальше: T74 (проверка перед PDF), T75 (снимок Яндекса: 404 и Esri под пропусками), T76 (дороги без полигонов Яндекса).
 RULE: The owner's program and the site change only after the owner's word «выкладывай»; all program work happens in
 the team worktree `.claude/worktrees/team` on branch `team/grado2`.
 
