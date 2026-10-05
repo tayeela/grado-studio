@@ -104,7 +104,7 @@ def _assemble_rings(segments):
 # Теги, уходящие в атрибуты холста (шум вроде source=* отбрасывается).
 _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
               "leisure", "natural", "water", "waterway", "surface", "lanes",
-              "boundary", "admin_level", "amenity")
+              "boundary", "admin_level", "amenity", "railway")
 
 
 def _which_set(tags):

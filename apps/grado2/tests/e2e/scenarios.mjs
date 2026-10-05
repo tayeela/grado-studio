@@ -1307,4 +1307,58 @@ export default async p => {
     check(!r.noneItem && r.noneFts === 0, "T76: дорог нигде нет — на листе их нет и знака «территории автодорог» в легенде нет");
     check(r.udsItem && r.udsFts > 0, "T76: полигонов Яндекса нет — лист берёт УДС по осям (запасной источник), знак в легенде появился");
   });
+  // T80: функции листов альбома 05.10.2026 на малых искусственных полигонах — округ без далёких частей, районы без частей вне округа, порядок СЗЗ, углы с районами
+  await p.group("t80", async () => {
+    const r = JSON.parse(await p.ev(`
+      const box = (w, s, e, n) => [[[w, s], [e, s], [e, n], [w, n], [w, s]]], F = (coords, props = {}) => ({ type: "Feature", properties: props, geometry: coords.length === 1 ? { type: "Polygon", coordinates: coords[0] } : { type: "MultiPolygon", coordinates: coords } });
+      const savedT = TERR, out = {};
+      try {
+        // okrugMain: большая часть; мелкая рядом (< 3 км) — остаётся; мелкая далеко — уходит; ≥ 2 % большой далеко — остаётся; мелкая далеко, но с территорией — остаётся
+        const bigP = box(37.0, 55.0, 37.2, 55.12), nearP = box(37.2, 55.05, 37.205, 55.055), farTiny = box(37.8, 55.0, 37.801, 55.001), farBig = box(37.5, 55.0, 37.53, 55.03), farTerr = box(37.9, 55.0, 37.901, 55.001);
+        const okr = F([bigP, nearP, farTiny, farBig, farTerr]), cnt = f => f.geometry.type === "Polygon" ? 1 : f.geometry.coordinates.length;
+        const has = (f, p) => (f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates).some(c => JSON.stringify(c) === JSON.stringify(p));
+        TERR = turf.feature({ type: "Polygon", coordinates: box(37.05, 55.05, 37.06, 55.06) });
+        const a = okrugMain(okr);
+        out.a = { n: cnt(a), big: has(a, bigP), near: has(a, nearP), tiny: has(a, farTiny), farBig: has(a, farBig), farTerr: has(a, farTerr) };
+        TERR = turf.feature({ type: "Polygon", coordinates: box(37.9002, 55.0002, 37.9006, 55.0006) });
+        const b = okrugMain(okr);
+        out.b = { n: cnt(b), farTerr: has(b, farTerr), tiny: has(b, farTiny) };
+        out.single = okrugMain(F([bigP])) .geometry.type; out.nul = okrugMain(null);
+        // keepParts: часть остаётся, если её внутренняя точка в основной части округа
+        const main = F([bigP]), inP = box(37.01, 55.01, 37.02, 55.02), outP = box(37.5, 55.5, 37.51, 55.51);
+        const k1 = keepParts(F([inP, outP]), main), k2 = keepParts(F([outP]), main), k3 = keepParts(F([inP, box(37.1, 55.05, 37.12, 55.07)]), main);
+        out.k = [k1.geometry.type, k1.geometry.coordinates[0][0][0], k2.geometry, k3.geometry.type, k3.geometry.coordinates.length];
+        // порядок СЗЗ
+        out.szz = [[63, 5, 62, 6, 4].sort((x, y) => SZZ_ORD(x) - SZZ_ORD(y)), SZZ_ORD(62), SZZ_ORD(63), SZZ_ORD(5), Object.keys(SZZ_OGD).map(Number), SZZ_OGD[63].dash.length > 0 && !SZZ_OGD[5].dash];
+        return JSON.stringify(out);
+      } finally { TERR = savedT; }`));
+    check(r.a.n === 3 && r.a.big && r.a.near && r.a.farBig && r.a.farTerr === false && r.a.tiny === false, "T80: okrugMain — большая, ближняя и крупная далёкая части остались, мелкая далёкая ушла: " + JSON.stringify(r.a));
+    check(r.b.farTerr && r.b.tiny === false && r.b.n === 4, "T80: okrugMain — далёкая мелкая часть с территорией остаётся, другая мелкая — нет: " + JSON.stringify(r.b));
+    check(r.single === "Polygon" && r.nul === null, "T80: okrugMain — один полигон и пусто возвращаются как есть");
+    check(r.k[0] === "Polygon" && r.k[1] === 37.01 && r.k[2] === null && r.k[3] === "MultiPolygon" && r.k[4] === 2, "T80: keepParts — часть вне округа уходит, нет частей — geometry null, обе внутри — MultiPolygon: " + JSON.stringify(r.k));
+    check(JSON.stringify(r.szz[0]) === "[4,5,62,63,6]" && r.szz[1] === 5.5 && r.szz[2] === 5.7 && r.szz[3] === 5 && JSON.stringify(r.szz[4]) === "[5,62,63]" && r.szz[5], "T80: СЗЗ — порядок легенды 5, 62, 63 между 4 и 6, пунктир только у 63: " + JSON.stringify(r.szz));
+    // conceptDistricts: углы листа — районы; граница района поверх маски (over) вне ортофото
+    const c = JSON.parse(await p.ev(`
+      const box = (w, s, e, n) => [[[w, s], [e, s], [e, n], [w, n], [w, s]]], D = (nm, okr, b) => ({ type: "Feature", properties: { "Уровень": "район", "Наименование": "район " + nm, "Округ": okr }, geometry: { type: "Polygon", coordinates: box(...b) } });
+      const savedT = TERR, savedA = DATA["gisogd.admin"], bb = [36.9, 54.9, 37.1, 55.1], res = {};
+      const run = (k, ds) => { DATA["gisogd.admin"] = { fc: { type: "FeatureCollection", features: ds } }; const o = { scale: 2000, layers: [], cLegend: [{ title: "Границы", items: [{ label: "а" }, { label: "б" }] }] }; conceptDistricts(o, bb, k); return o; };
+      const H = D("Дом", "СВАО", [36.95, 54.95, 37.05, 55.05]);
+      try {
+        TERR = turf.feature({ type: "Polygon", coordinates: box(36.99, 54.99, 37.01, 55.01) });
+        const A = D("Верхний", "СЗАО", [36.85, 55.05, 37.0, 55.15]), B = D("Нижний", "ЮВАО", [37.0, 54.85, 37.15, 54.95]), B2 = D("Нижний-2", "СЗАО", [37.0, 54.85, 37.15, 54.95]);
+        const o1 = run("sketch", [H, A, B]);
+        res.diff = { tl: o1.mapNote, br: o1.mapNoteBR, over: o1.layers.filter(l => l.over).map(l => l.title), legend: o1.cLegend[0].items.map(i => i.label) };
+        const o2 = run("sketch", [H, A, B2]); res.same = { br: o2.mapNoteBR };
+        const o3 = run("ortho", [H, A, B]); res.ortho = { over: o3.layers.some(l => l.over), tl: !!o3.mapNote, legend: o3.cLegend[0].items.length };
+        const o4 = run("sketch", [H, A]); res.onlyTL = { tl: o4.mapNote || null, br: o4.mapNoteBR || null, signs: o4.layers.map(l => l.title) };
+        const o5 = run("sketch", [H]); res.none = { layers: o5.layers.length, note: o5.mapNote || null };
+      } finally { TERR = savedT; if (savedA) DATA["gisogd.admin"] = savedA; else delete DATA["gisogd.admin"]; }
+      return JSON.stringify(res);`));
+    check(JSON.stringify(c.diff.tl) === '[["Северо-Западный","административный округ"],["район Верхний"]]' && JSON.stringify(c.diff.br) === '[["Юго-Восточный","административный округ"],["район Нижний"]]', "T80: углы — левый верхний и правый нижний районы с округами (разные округа): " + JSON.stringify(c.diff));
+    check(JSON.stringify(c.diff.over) === '["Граница района"]' && JSON.stringify(c.diff.legend) === '["а","района","б"]', "T80: вне ортофото граница района идёт слоем over и пунктом легенды «района»");
+    check(JSON.stringify(c.same.br) === '[["район Нижний-2"]]', "T80: оба угла в одном округе — правый нижний без строки округа: " + JSON.stringify(c.same));
+    check(!c.ortho.over && c.ortho.tl && c.ortho.legend === 2, "T80: на ортофотоплане слоя границы района нет, угловые подписи есть");
+    check(c.onlyTL.tl === null && c.onlyTL.br === null && c.onlyTL.signs.includes("Соседние районы: подписи"), "T80: нет района в одном из углов — угловых надписей нет, район подписан в глубине части: " + JSON.stringify(c.onlyTL));
+    check(c.none.layers === 0 && c.none.note === null, "T80: соседних районов нет — функция ничего не добавляет");
+  });
 };

@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.99.9: station labels «ст. ж/д …», labels off the railway, Генплан legend and colours,
+  coarse-imagery note, album tests.** Team cycle 23. T78 + owner's rule 15: railway stations (OSM land use «railway»
+  with a name, railway=station/halt/yard, Yandex station types, ЕГКО «ст. …»/«станция …») are labelled «ст. ж/д
+  Калошино» (non-breaking spaces, no double prefix; platforms, depots, works, ТЭЦ, parks, posts and «СТ …» garden
+  partnerships are not stations — `web/labelfmt.js`); the railway and the district boundary are obstacles for
+  territory names and numbers (streets unchanged); leaders do not enter the corner captions; leader points closer than
+  4 mm are spread; straight quotes in sheet labels become «ёлочки». OSM keeps the `railway` tag (no new queries). T79:
+  the Old-Moscow Генплан layer keeps the zone name in `naimfunkzony` and the index in `fztip` — the code read only the
+  ТиНАО fields, so zones got the fallback grey and the legend lost its swatches; now both layers are coloured by the
+  MapInfo index table (130 — #AD84AE) and the legend shows each zone type in the frame with its index in the swatch
+  (`web/gpzones.js`). T81: a sheet whose imagery had to be taken at a coarser zoom (> 600 tiles) gets one grey note
+  «снимок грубее обычного…»; the Esri 600 limit counts only tiles under Yandex holes. T80: tests for `over` layers,
+  corner captions, the rail swatch, ЛГР marks, the Yandex/Esri basemap (python) and okrugMain/keepParts, СЗЗ order,
+  district corners (E2E group t80). Checked: КРТ 3229 rebuilt on the test copy — «ст. ж/д Калошино» beside the track,
+  sheet 6 purple with 130 swatches; unit 461 OK with and without PYTHONPATH, connectors OK, E2E green.
 - **2026-10-05, ГРАДО 2 v0.99.8: check before export; sturdier Yandex satellite; roads where Yandex has none.** Team
   cycle 22. T74: before «PDF», «PPTX» (window, «Выгрузка ▾», one-sheet PDF) the album is checked — no territory, empty
   header fields (№ КРТ, округ/район, адрес), sheets «не готов» with reasons, «Фотофиксация: снимков нет», layers empty in

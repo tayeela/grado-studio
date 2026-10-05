@@ -650,3 +650,51 @@ class PptxBasemapAndHeavyMaps(unittest.TestCase):
         out = print_io.pptx_thin([tiny, wavy])
         self.assertEqual(len(out), 1)
         self.assertLess(len(out[0]["rings"][0]), 40)
+
+
+class CoarseTileNote(unittest.TestCase):
+    """T81: уровень снижен из-за >600 тайлов — на листе серая строка; Esri считает только нужные тайлы."""
+    TR = lambda self: print_io.MapTransform((0, 0, 3000, 3000), [37.758, 55.813], 500)
+
+    def test_info_and_note_for_huge_sheet(self):
+        info = {}
+        print_io.tile_ops(self.TR(), (0, 0, 3000, 3000), 500, lambda z, x, y: b"\xff\xd8x", 55.813, zmax=19, info=info)
+        self.assertTrue(info.get("coarse"))
+        import tempfile
+        from unittest import mock
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
+        for size, scale, want_note in (("BA4", 500000, False), ("BAX", 500, True)):
+            spec = {"sheets": [{"size": size, "title": "Лист", "scale": scale, "center": [37.65, 55.80], "basemap": "sat", "layers": [],
+                                "legend": [], "tep": [], "territory": None}]}
+            with tempfile.TemporaryDirectory() as d, mock.patch.object(print_io, "TILE_FAIL_DIR", Path(d)), \
+                    mock.patch.dict(print_io.PAPER, {"BAX": (3000, 3000)}), mock.patch.dict(print_io.SIZES, {"BAX": (3000, 3000)}):
+                doc = print_io.build_document(spec, {}, {}, lambda z, x, y, kind="sat": jpeg)
+                pages = print_io.document_pages_ops(doc, None)
+            notes = [o for o in pages[0][2] if o["op"] == "text" and print_io.TILE_COARSE_NOTE in o["text"]]
+            self.assertEqual(len(notes), 1 if want_note else 0)
+
+    def test_no_note_for_normal_sheet(self):
+        info = {}
+        ops = print_io.tile_ops(self.TR(), (0, 0, 300, 300), 5000, lambda z, x, y: b"\xff\xd8x", 55.813, zmax=19, info=info)
+        self.assertTrue(ops)
+        self.assertFalse(info)
+
+    def test_want_counts_only_wanted_tiles(self):
+        tr, rect = self.TR(), (0, 0, 3000, 3000)
+        asked = []
+        get = lambda z, x, y: (asked.append(z), b"\xff\xd8x")[1]
+        full = {}
+        print_io.tile_ops(tr, rect, 500, get, 55.813, zmax=19, info=full)
+        zs = set(asked)
+        asked.clear()
+        picked = []
+
+        def want(box):                                                           # три тайла на весь лист
+            if box not in picked and len(picked) < 3:
+                picked.append(box)
+            return box in picked
+        info = {}
+        print_io.tile_ops(tr, rect, 500, get, 55.813, zmax=19, want=want, info=info)
+        self.assertFalse(info)
+        self.assertEqual(len(asked), 3)
+        self.assertGreater(max(asked), max(zs))                                  # полный уровень сохранён

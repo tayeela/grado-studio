@@ -232,12 +232,14 @@ PPTKRT_C.forEach(sh => { sh.keys.push("egko.place_labels", "egko.addresses");
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
 const STREET_ABBR = [[W_("улица"), "ул."], [W_("проезд"), "пр-д"], [W_("бульвар"), "бульв."], [W_("шоссе"), "ш."], [W_("переулок"), "пер."],
   [W_("проспект"), "просп."], [W_("набережная"), "наб."], [W_("площадь"), "пл."], [W_("тупик"), "туп."]];
-LABEL_FN.street = f => { let n = String(f.get("Название") || "").trim(); if (!n) return null;
+LABEL_FN.street = f => { let n = LabelFmt.guillemets(String(f.get("Название") || "").trim()); if (!n) return null;
   for (const [re, ab] of STREET_ABBR) if (re.test(n)) { n = n.replace(re, " ").replace(/\s+/g, " ").trim(); return ab === "ул." || ab === "пл." || ab === "просп." ? `${ab} ${n}` : `${n} ${ab}`; }
   return n; };
 // длинное название — в две строки примерно равной длины (владелец 30.09.2026), не больше двух
 // посёлок — «пос.», не «п.» и не полностью (владелец 01.10.2026)
-LABEL_FN.name2 = f => { const n = String(f.get("Название") || "").trim().replace(/\s+/g, " ").replace(/(^|\s)пос[её]лок(?=\s|$)/i, "$1пос."); if (!n) return null;
+// станция — «ст. ж/д Калошино» с неразрывными пробелами (правило 15, владелец 05.10.2026); кавычки — «ёлочки»
+LABEL_FN.name2 = f => { let n = String(f.get("Название") || "").trim().replace(/\s+/g, " ").replace(/(^|\s)пос[её]лок(?=\s|$)/i, "$1пос."); if (!n) return null;
+  n = LabelFmt.guillemets(LabelFmt.placeLabel(f, n));
   const w = n.split(" "); if (n.length <= 14 || w.length < 2) return n;
   let best = 1, d = Infinity;
   for (let i = 1; i < w.length; i++) { const x = Math.abs(w.slice(0, i).join(" ").length - w.slice(i).join(" ").length); if (x < d) { d = x; best = i; } }
@@ -520,6 +522,8 @@ function namedPlaces(out, bb) {
   const L = key => out.layers.find(l => l.key === key), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
   const feats = [], kx = Math.cos(bb[1] * Math.PI / 180);
   (L("egko.place_labels")?.features || []).forEach(ft => { const t = String(ft.props?.["Подпись"] || ft.label || "").trim(), m = PLACE_RE.exec(t);
+    if (ft.g?.type === "Point" && inBox(ft.g.coordinates) && /^(ст\.|станция)\s+\S/i.test(t)) {   // станция ЕГКО — «ст. ж/д …» (правило 15); «СТ Ромашка» (садовое товарищество, без точки) — не станция
+      feats.push({ g: ft.g, nm: true, label: LabelFmt.stationLabel(t), ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); return; }
     if (!m || ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
     const pre = /^(с|село)$/i.test(m[1]) ? "с." : /^(п|пос|рп)$/i.test(m[1]) ? "пос." : "д.";
     feats.push({ g: ft.g, nm: true, label: `${pre} ${titleRu(m[2].replace(/["«»]/g, ""))}`, ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); });
@@ -750,18 +754,12 @@ function conceptSheet(out, sheet, bb) {
     // цвета всех зон — по таблице MapInfo функциональных зон ТиНАО владельца (ФункциональныеЗоны_ПрисоединенныеТер.TAB),
     // по индексу типа зоны (fz_type в ГИС ОГД = ФЗ_тип таблицы), без прозрачности; цвета «Хатминки» отменены
     // (владелец 01.10.2026: «Всё по таблице ТиНАО»). Зона без индекса — по названию, иначе палитра Эталона Генплана
-    const GP_TINAO = { 100: "#f76767", 120: "#ee8e62", 123: "#c07c7e", 124: "#e8b154", 130: "#ad84ae", 134: "#ca9568", 140: "#d5af29",
-      200: "#f3d357", 230: "#c2a9a2", 240: "#c5c557", 300: "#b1b5e1", 340: "#abb9ab", 400: "#78ce93", 600: "#999999", 800: "#e8f2c7" };
-    const gpName = n => String(n || "").toLowerCase().replace(/\s*-\s*/g, "-").replace(/\s+/g, " ").trim();   // «общественно - жилая  зона»
-    const GP_BY_NAME = { "общественная зона": 100, "общественно-жилая зона": 120, "общественно-производственно-жилая зона": 123,
-      "природно-общественно-жилая зона": 124, "общественно-производственная зона": 130, "природно-общественно-производственная зона": 134,
-      "природно-общественная зона": 140, "жилая зона": 200, "производственно-жилая зона": 230, "природно-жилая зона": 240,
-      "производственная зона": 300, "природно-производственная зона": 340, "природная зона": 400, "зона объектов внешнего транспорта": 600,
-      "сельскохозяйственная зона": 800 };
-    const gpFill = (name, idx) => GP_TINAO[+idx] || GP_TINAO[GP_BY_NAME[gpName(name)]] || GPZ[gpName(name)]?.fill;
+    // таблица, названия и выбор цвета — в gpzones.js (чистые функции, тест test_gpzones_js.py); старая Москва несёт индекс
+    // в fztip и имя в naimfunkzony, ТиНАО — fz_type и «Вид зоны»: цвет по индексу берётся из обоих слоёв
+    const gpFill = (name, idx) => GpZones.fill(name, idx, nm => GPZ[nm]?.fill);
     const zoneEdges = [];
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
-      const f0 = gpFill(ft.props?.["Вид зоны"] || ft.props?.naimfunkzony || ft.props?.naimfunkzo, ft.props?.fz_type); if (f0) ft.fill = f0; ft.a = 1;
+      const f0 = gpFill(GpZones.zoneName(ft.props), GpZones.zoneIdx(ft.props)); if (f0) ft.fill = f0; ft.a = 1;
       if (/Polygon/.test(ft.g?.type)) zoneEdges.push(...safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.map(l => l.geometry)) || []);
       ft.w = 0; Object.assign(ft, { lcol: "#141414", lhc: "#ffffff", lh: .4, ul0: true, lss: [1, 1.15] });   // номер и индекс — чёрные, номер подчёркнут, индекс крупнее
     }));
@@ -782,18 +780,18 @@ function conceptSheet(out, sheet, bb) {
     const kk = (out.scale || 2000) / 1000, seenZ = new Map();
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
       if (!/Polygon/.test(ft.g?.type)) return; const x = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, box));
-      const a = x ? m2(x) / (kk * kk) : 0, nm = String(ft.props?.["Вид зоны"] || ft.props?.["Название"] || "").toLowerCase();
-      if (a > .5 && nm) { const z = seenZ.get(nm) || { a: 0, idx: new Set() }; z.a += a; if (ft.props?.fz_type) z.idx.add(String(ft.props.fz_type)); seenZ.set(nm, z); } }));
+      const a = x ? m2(x) / (kk * kk) : 0, name = GpZones.zoneName(ft.props), nm = GpZones.norm(name), ix = GpZones.zoneIdx(ft.props);
+      if (a > .5 && nm) { const z = seenZ.get(nm) || { a: 0, idx: new Set(), name }; z.a += a; if (ix) z.idx.add(ix); seenZ.set(nm, z); } }));
+    // знак — каждая зона, видимая в рамке (по самим объектам слоя, а не по легенде слоя: у старой Москвы имя лежит в
+    // naimfunkzony, а не в «Вид зоны»); текст — название типа зоны как в слое
     const ORDER = ["общественно-жилая зона", "жилая зона", "природно-жилая зона", "природная зона", "общественно-производственно-жилая зона", "общественно-производственная зона"];
-    const zones = out.legend.filter(g => /функц/i.test(g.title)).flatMap(g => g.items)
-      .filter(it => seenZ.has(String(it.label).toLowerCase()))
-      .sort((a, b) => { const ia = ORDER.indexOf(String(a.label).toLowerCase()), ib = ORDER.indexOf(String(b.label).toLowerCase()); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); });
+    const zones = [...seenZ.entries()].map(([nm, z]) => ({ label: z.name, nm, z }))
+      .sort((a, b) => { const ia = ORDER.indexOf(a.nm), ib = ORDER.indexOf(b.nm); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.nm.localeCompare(b.nm, "ru"); });
     // индексы типа функционального назначения — только те, что на карте, с названием типа из тех же зон (как в образце)
     // индекс типа функционального назначения — цифрами в прямоугольнике знака своей зоны, без отдельного списка
     // (владелец 30.09.2026: «впиши цифры в прямоугольник условного обозначения… убрав дублирование»)
-    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(it => { const z = seenZ.get(String(it.label).toLowerCase());
-        return { kind: "fill", fill: gpFill(it.label, z && z.idx.size ? [...z.idx].sort()[0] : undefined) || it.fill, stroke: "#3c3c3c", a: 1, num: z && z.idx.size ? [...z.idx].sort().join(", ") : undefined,
-          label: String(it.label).toLowerCase() }; }),
+    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(({ label, z }) => { const ix = [...z.idx].sort();
+        return { kind: "fill", fill: gpFill(label, ix[0]), stroke: "#3c3c3c", a: 1, num: ix.length ? ix.join(", ") : undefined, label: String(label).toLowerCase() }; }),
       { kind: "text", sample: "10", family: "sans-bold", underline: true, label: "номер функциональной зоны" },
       { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры", widths: [.17, .17, .3, .36],

@@ -196,6 +196,17 @@ def egko_ops(tr, rect, mask, egko):
 _TW_FONTS = {}
 
 
+def _guillemets(text):
+    """Прямые кавычки в подписях листа → «ёлочки»; нечётное число кавычек (обрезанное название) не трогаем."""
+    t = str(text).replace("\u201c", '"').replace("\u201d", '"').replace("\u201e", '"')
+    if '"' not in t or t.count('"') % 2:
+        return t
+    return "".join(("\u00ab" if i == 0 or t[i - 1] in " \u00a0([\u2014\u2013-" else "\u00bb") if c == '"' else c for i, c in enumerate(t))
+
+
+STATION_MARK = "ст.\u00a0ж/д\u00a0"                                   # подпись станции начинается так (правило 15)
+
+
 def _text_w(text, family, size):
     """Ширина строки в мм тем шрифтом, которым её напечатает PDF (для рамки подписи и проверки «целиком в рамке»)."""
     family = family or "ui"
@@ -291,6 +302,8 @@ def _in_ring(x, y, ring):
 # места номера вокруг точки выноски: радиусы, мм (ближние — раньше) и направления через 15° (k × 15°, y вниз):
 # сначала диагонали, потом стороны, потом промежуточные
 LEAD_R = (7, 9, 11, 13, 15.5, 18, 21, 24, 28, 32, 42)
+OBST_PAD = 0.7                                                      # запас подписи от железной дороги и границы района, мм
+SPREAD = 4.0                                                        # точки выносок ближе этого — «кучка», разводятся (владелец 05.10.2026)
 MAP_PAD = 2.5                                                       # поле подписей от края карты, мм (правило 11)
 LEAD_K = (21, 15, 3, 9, 18, 6, 0, 12, 22, 20, 16, 14, 4, 2, 10, 8, 23, 19, 17, 13, 5, 1, 11, 7)
 
@@ -549,6 +562,7 @@ def linetype_ops(pts, name, k, color, width, lib):
 TILE_FAIL_DIR = Path.home() / ".grado2" / "cache" / "tiles" / "_fail"     # метки неудачных тайлов: живут и после перезапуска сервера
 TILE_FAIL_TTL = 3600                                                       # час: тайл, который не скачался, до истечения не запрашивается
 TILE_FAIL_NOTE = "часть плиток подложки не загрузилась ({n}) — повторите через час"
+TILE_COARSE_NOTE = "снимок грубее обычного: лист слишком большой для подробных плиток"
 
 
 class TileGuard:
@@ -588,19 +602,20 @@ class TileGuard:
         return data
 
 
-def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None, want=None, miss_boxes=None):
+def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None, want=None, miss_boxes=None, info=None):
     """Спутниковая подложка (тайлы JPEG) под объектами листа: каждый тайл — картинка по трём углам, пересчитанным в мм
     листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом). proj="3857" — Web Mercator (Esri),
     "3395" — эллипсоидальный Меркатор (спутник Яндекса): у него другая только связь широты и номера ряда.
     missing — список, куда пишется число тайлов, которых не оказалось; miss_boxes — туда же прямоугольники (мм листа) этих тайлов.
     want(bbox_mm) — нужен ли тайл с таким прямоугольником (Esri только под дырами Яндекса). Больше 600 тайлов — уровень
-    крупнее не берётся: z снижается, пока их не станет не больше 600 (раньше лист оставался без снимка)."""
+    крупнее не берётся: z снижается, пока их не станет не больше 600 (раньше лист оставался без снимка); при want считаются
+    только нужные тайлы. info — словарь: info["coarse"]=True, если уровень пришлось снизить (для серой пометки на листе)."""
     fx, fy, fw, fh = rect
     half_x, half_y = fw / 2 / tr.k * 1.25, fh / 2 / tr.k * 1.25                 # метры на местности с запасом на поворот
     lon0, lat0 = tr.lon0, tr.lat0
     dlon, dlat = half_x / (111320 * math.cos(math.radians(lat0))), half_y / 110540
     mpp = scale * 0.00025                                                        # метров на пиксель тайла: ~100 dpi на листе
-    z = max(10, min(zmax, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
+    z = z0 = max(10, min(zmax, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
     while True:
         n = 2 ** z
         tx = lambda lon: int((lon + 180) / 360 * n)
@@ -614,16 +629,30 @@ def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None, wa
             ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
             lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
         x0, x1, y0, y1 = tx(lon0 - dlon), tx(lon0 + dlon), ty(lat0 + dlat), ty(lat0 - dlat)
-        if (x1 - x0 + 1) * (y1 - y0 + 1) <= 600 or z <= 1:
+        def quad(x, y):
+            tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
+            br = (trr[0] + bl[0] - tl[0], trr[1] + bl[1] - tl[1])
+            return tl, trr, bl, (min(tl[0], trr[0], bl[0], br[0]), min(tl[1], trr[1], bl[1], br[1]),
+                                 max(tl[0], trr[0], bl[0], br[0]), max(tl[1], trr[1], bl[1], br[1]))
+        total = (x1 - x0 + 1) * (y1 - y0 + 1)
+        if total > 600 and want is not None and total <= 200000:      # нужные тайлы — только те, что под дырами; счёт до 601
+            total = 0
+            for x in range(x0, x1 + 1):
+                for y in range(y0, y1 + 1):
+                    total += bool(want(quad(x, y)[3]))
+                    if total > 600:
+                        break
+                if total > 600:
+                    break
+        if total <= 600 or z <= 1:
             break
         z -= 1
+    if info is not None and z < z0:
+        info["coarse"] = True
     out = []
     for x in range(x0, x1 + 1):
         for y in range(y0, y1 + 1):
-            tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
-            br = (trr[0] + bl[0] - tl[0], trr[1] + bl[1] - tl[1])
-            box = (min(tl[0], trr[0], bl[0], br[0]), min(tl[1], trr[1], bl[1], br[1]),
-                   max(tl[0], trr[0], bl[0], br[0]), max(tl[1], trr[1], bl[1], br[1]))
+            tl, trr, bl, box = quad(x, y)
             if want is not None and not want(box):
                 continue
             data = tiles(z, x, y)
@@ -658,10 +687,11 @@ class SketchMapFrame(Frame):
         k = tr.k
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
-        guard = None
+        guard, tinfo = None, {}
         late = []                                                       # знаки поверх границы территории (точки съёмки)
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
+        osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -672,16 +702,16 @@ class SketchMapFrame(Frame):
                 # снимок — спутник Яндекса, самый свежий (владелец 05.10.2026); z18 — его самый подробный настоящий уровень.
                 # Где плиток Яндекса нет, под снимком лежит Esri — белых дыр на листе не бывает
                 miss, boxes = [], []
-                ys = tile_ops(tr, rect, sh["scale"], ysat, sh["center"][1], proj="3395", zmax=18, missing=miss, miss_boxes=boxes)
+                ys = tile_ops(tr, rect, sh["scale"], ysat, sh["center"][1], proj="3395", zmax=18, missing=miss, miss_boxes=boxes, info=tinfo)
                 fx, fy, fw, fh = rect
                 boxes = [m for m in boxes if m[0] < fx + fw and fx < m[2] and m[1] < fy + fh and fy < m[3]]   # дыры за краем листа не в счёт
                 if boxes or not ys:
                     # Esri — только под дырами Яндекса (плитка Esri, задевающая любую пропавшую плитку Яндекса); нет ни одной — весь лист
                     hit = (lambda b: any(b[0] < m[2] - .5 and m[0] + .5 < b[2] and b[1] < m[3] - .5 and m[1] + .5 < b[3] for m in boxes)) if ys else None   # .5 мм — запас на поворот сетки
-                    out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], want=hit))
+                    out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], want=hit, info=tinfo))
                 out.extend(ys)
             else:
-                out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+                out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], info=tinfo))
             if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
                 fx, fy, fw, fh = rect
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
@@ -734,7 +764,11 @@ class SketchMapFrame(Frame):
                 continue
             spans.append((layer, len(out)))
             out.append({"op": "layer", "name": layer.get("title") or "Слой"})
+            lkey = layer.get("key") or ""
+            obst = lkey == "yandex.rail" or layer.get("title") == "Граница района" or layer.get("obstacle")
             for f in layer.get("features", []):
+                if isinstance(f.get("label"), str) and ('"' in f["label"] or "\u201c" in f["label"]):
+                    f = {**f, "label": _guillemets(f["label"])}          # кавычки подписей — «ёлочки» (владелец 05.10.2026)
                 kind, parts = _parts(f["g"])
                 w = max(0.08, (f.get("w") or 1) * PX_MM)
                 stroke = hex_to_rgb(f.get("stroke")) if f.get("stroke") else None
@@ -772,6 +806,8 @@ class SketchMapFrame(Frame):
                         pts = [tr.mm(*p[:2]) for p in line]
                         if len(pts) < 2:
                             continue
+                        if obst:                                    # железная дорога и граница района — препятствие для названий
+                            osegs.extend(zip(pts, pts[1:]))
                         if layer.get("key") == "osm.roads":
                             roadsegs.extend((a, b, str(f.get("label") or "")) for a, b in zip(pts, pts[1:]))
                         if f.get("nl"):
@@ -885,13 +921,15 @@ class SketchMapFrame(Frame):
         # своего участка (лист 8: «выноски 9, 8, 10 сходятся в одну точку»)
         seen_ = []
         for k_, m_ in marks.items():
-            if any(math.hypot(m_[0] - p_[0], m_[1] - p_[1]) < 2.5 for p_ in seen_):
-                for c_ in m_[4]:
-                    if all(math.hypot(c_[0] - p_[0], c_[1] - p_[1]) >= 2.5 for p_ in seen_):
-                        m_ = marks[k_] = (c_[0], c_[1], c_[2], m_[3], m_[4])
+            if any(math.hypot(m_[0] - p_[0], m_[1] - p_[1]) < SPREAD for p_ in seen_):
+                for d_ in (SPREAD, 2.5):                                # сначала разводим на 4 мм, потом хотя бы на 2,5
+                    c_ = next((c for c in m_[4] if all(math.hypot(c[0] - p_[0], c[1] - p_[1]) >= d_ for p_ in seen_)), None)
+                    if c_ or all(math.hypot(m_[0] - p_[0], m_[1] - p_[1]) >= d_ for p_ in seen_):
+                        if c_:
+                            m_ = marks[k_] = (c_[0], c_[1], c_[2], m_[3], m_[4])
                         break
             seen_.append(m_)
-        boxes, leads = [], []                                           # все занятые места и линии выносок
+        boxes, leads, caps = [], [], []                                 # все занятые места, линии выносок, угловые надписи
 
         def take(box, avoid=False, ob=None, own=None):
             # ob — повёрнутая коробка подписи улицы (центр, угол, полуразмеры): граница территории проверяется по ней;
@@ -906,6 +944,10 @@ class SketchMapFrame(Frame):
                     b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
                     if any(_seg_box(p, q, b) for p, q in tsegs):
                         return False
+            if avoid and osegs and not ob:                              # названия территорий и номера — не поперёк железной дороги и границы района
+                b = (box[0] - OBST_PAD, box[1] - OBST_PAD, box[2] + OBST_PAD, box[3] + OBST_PAD)
+                if any(_seg_box(p, q, b) for p, q in osegs):
+                    return False
             cells = [(i, j) for i in range(int(box[0] // 10), int(box[2] // 10) + 1)
                      for j in range(int(box[1] // 10), int(box[3] // 10) + 1)]       # сетка 10 мм вместо перебора всех
             if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3])
@@ -921,12 +963,14 @@ class SketchMapFrame(Frame):
             take(callout[0])
         if sh.get("mapNote"):
             n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNote"])
-            take((rx, ry, rx + 102, ry + 7 + 5.4 * n + 3))                  # угол с округом и районом — без подписей карты
+            caps.append((rx, ry, rx + 102, ry + 7 + 5.4 * n + 3))
+            take(caps[-1])                                              # угол с округом и районом — без подписей карты
         if sh.get("mapNoteBR"):                                           # правый нижний угол — район этого угла
             from album_io import ortho_legend_h
             n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNoteBR"])
             lift = ortho_legend_h(sh) + 2 if sh.get("bleed") else 0
-            take((rx + rw - 102, ry + rh - lift - 7 - 5.4 * n, rx + rw, ry + rh - lift))
+            caps.append((rx + rw - 102, ry + rh - lift - 7 - 5.4 * n, rx + rw, ry + rh - lift))
+            take(caps[-1])
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
         # порядок при нехватке места (правила подписей, docs/standards/albums/label-rules.md): надписи на своих местах —
@@ -1090,6 +1134,8 @@ class SketchMapFrame(Frame):
             d_ = math.hypot(ax - cx, ay - cy)
             if d_ > cr + .5:
                 s_ = (cx + (ax - cx) / d_ * cr, cy + (ay - cy) / d_ * cr)
+                if any(_seg_box(s_, (ax, ay), c_) for c_ in caps):          # выноска не заходит в угловые надписи
+                    return False
                 if any(_seg_cross(s_, (ax, ay), p, q) for p, q in leads):
                     return False
                 if lvl >= 2 and any(_seg_box(s_, (ax, ay), (b[0] + .3, b[1] + .3, b[2] - .3, b[3] - .3)) for b in boxes):
@@ -1107,9 +1153,14 @@ class SketchMapFrame(Frame):
             ring = more[0] if more else None
             if f.get("circle"):
                 mk = marks[id(f)]
-                for c_ in mk[4]:                                        # точка выноски — не под уже поставленной подписью
-                    if not any(b[0] - .5 < c_[0] < b[2] + .5 and b[1] - .5 < c_[1] < b[3] + .5 for b in boxes) and all(
-                            math.hypot(c_[0] - m2_[0], c_[1] - m2_[1]) >= 2.5 for k2_, m2_ in marks.items() if k2_ != id(f)):
+                def okp(c_, d_):                                        # точка выноски — не под уже поставленной подписью и не в кучке
+                    return not any(b[0] - .5 < c_[0] < b[2] + .5 and b[1] - .5 < c_[1] < b[3] + .5 for b in boxes) and all(
+                        math.hypot(c_[0] - m2_[0], c_[1] - m2_[1]) >= d_ for k2_, m2_ in marks.items() if k2_ != id(f))
+                for d_ in (SPREAD, 2.5):
+                    if okp(mk, d_):
+                        break
+                    c_ = next((c for c in mk[4] if okp(c, d_)), None)
+                    if c_:
                         mk = marks[id(f)] = (c_[0], c_[1], c_[2], mk[3], mk[4])
                         break
                 x, y = mk[0], mk[1] + float(ls or 2.2) * .35 - float(f.get("ldy") or 0)   # кружок — на точке участка
@@ -1139,7 +1190,9 @@ class SketchMapFrame(Frame):
             if f.get("circle"):                                             # номер в кружке («Хатминки»): коробка — круг
                 cr = max(bw / 2 + ls * .25, ls * .62)
                 bw, up, down = cr * 2, ls * .35 + cr, cr - ls * .35
+            stn = str(text).startswith(STATION_MARK)                          # станция: узкая полоса земли вдоль путей — подпись рядом с ней
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
+                                + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10) for k in range(12)] if stn else [])
                                 if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.5, 4.5, 6.5, 8.5) for k in range(8)]
                                 if f.get("mk") == "view" else [])   # номер точки съёмки — рядом со стрелкой, как в «ГК Царицыно»
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
@@ -1173,7 +1226,7 @@ class SketchMapFrame(Frame):
             for dx, dy, lvl in tries:
                 cx = min(max(x + dx, rx + bw / 2 + MAP_PAD), rx + rw - bw / 2 - MAP_PAD)
                 cy = min(max(y + dy, ry + up + MAP_PAD), ry + rh - down - MAP_PAD)
-                if ring and lvl > 0 and not _in_ring(cx, cy, ring):
+                if ring and lvl > 0 and not stn and not _in_ring(cx, cy, ring):
                     continue
                 if f.get("circle") and lvl > 0 and not free(f, cx, cy - ls * .35, cr, ax, ay, lvl):
                     continue
@@ -1241,9 +1294,10 @@ class SketchMapFrame(Frame):
                             "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam, **ul})
         if callout:
             out.extend(callout[1])
-        if guard and guard.missed:                                      # одна строка на лист, не по числу тайлов
+        notes = ([TILE_COARSE_NOTE] if tinfo.get("coarse") else []) + ([TILE_FAIL_NOTE.format(n=len(guard.missed))] if guard and guard.missed else [])
+        if notes:                                                       # одна строка на лист, не по числу тайлов
             out.append({"op": "text", "x": rect[0] + 2, "y": rect[1] + rect[3] - 2, "size": 2.3, "color": (0.3, 0.3, 0.3),
-                        "text": TILE_FAIL_NOTE.format(n=len(guard.missed))})
+                        "text": "; ".join(notes)})
         out.append({"op": "unclip"})
         for o in out:                                                   # изломы контуров — скруглённые, без острых «шипов»
             if o["op"] == "path":
