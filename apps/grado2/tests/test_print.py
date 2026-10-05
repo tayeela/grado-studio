@@ -1,7 +1,9 @@
 """Sheets of ГРАДО 2: a sheet from styled objects renders to PDF and SVG through the core renderer."""
 
+import base64
 import math
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -115,6 +117,58 @@ class PresentationSlides(unittest.TestCase):
         self.assertIn("77:02:0023014:42", texts)
         self.assertTrue(print_io.render_pdf(spec, {}, {}, tiles).startswith(b"%PDF"))
 
+
+
+class TileNegativeCache(unittest.TestCase):
+    """T69: тайл подложки, который не скачался, на час уходит в отрицательный кэш: повторный лист не ходит в сеть."""
+    SPEC = {"sheets": [{"size": "P", "title": "Лист", "scale": 2000, "center": [37.65, 55.80], "basemap": "sat", "layers": [], "legend": [], "tep": [],
+                        "territory": None}]}
+
+    def setUp(self):
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = print_io.TILE_FAIL_DIR
+        print_io.TILE_FAIL_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        print_io.TILE_FAIL_DIR = self.old
+        self.tmp.cleanup()
+
+    def texts(self, tiles):
+        pages = print_io.document_pages_ops(print_io.build_document(self.SPEC, {}, {}, tiles), None)
+        return [o.get("text") for o in pages[0][2] if o["op"] == "text"]
+
+    def test_failed_tiles_are_not_requested_again_for_an_hour(self):
+        seen = []
+        down = lambda z, x, y: (seen.append((z, x, y)), None)[1]
+        first = self.texts(down)
+        n = len(seen)
+        self.assertTrue(n)
+        self.assertEqual(sum(1 for t in first if t and t.startswith("часть плиток подложки не загрузилась")), 1)
+        self.assertIn(f"часть плиток подложки не загрузилась ({n}) — повторите через час", first)
+        second = self.texts(down)
+        self.assertEqual(len(seen), n)                                    # ни одного нового запроса
+        self.assertIn(f"часть плиток подложки не загрузилась ({n}) — повторите через час", second)
+
+    def test_expired_mark_allows_one_request_and_success_clears_it(self):
+        import os
+        seen = []
+        down = lambda z, x, y: (seen.append((z, x, y)), None)[1]
+        self.texts(down)
+        n = len(seen)
+        marks = sorted(Path(self.tmp.name).glob("*.fail"))
+        self.assertEqual(len(marks), n)
+        old = time.time() - 3601
+        os.utime(marks[0], (old, old))
+        self.texts(down)
+        self.assertEqual(len(seen), n + 1)                                # одна просроченная метка — один запрос
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
+        os.utime(marks[0], (old, old))
+        got = []
+        self.texts(lambda z, x, y: (got.append((z, x, y)), jpeg)[1])
+        self.assertEqual(len(got), 1)
+        self.assertFalse(marks[0].exists())                               # успех стёр метку
+        self.assertEqual(len(list(Path(self.tmp.name).glob("*.fail"))), n - 1)
 
 
 class SlidePanelsAndPhotos(unittest.TestCase):

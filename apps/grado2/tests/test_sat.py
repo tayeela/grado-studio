@@ -2,6 +2,8 @@
 
 import io
 import tempfile
+import time
+import os
 import unittest
 import zipfile
 from pathlib import Path
@@ -83,6 +85,29 @@ class SatExport(unittest.TestCase):
                 def ensure(self, z, x, y):
                     return True
             self.assertTrue(sat_io.export_sat(frame, d, tiles=Only(d), z=15))
+
+    def test_failed_tile_is_remembered_for_an_hour(self):
+        """T69: неудачный тайл — метка .fail на час (ни одного запроса), по истечении один заход, успех стирает метку."""
+        from unittest import mock
+        calls = []
+
+        def down(url):
+            calls.append(url)
+            raise OSError("offline")
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(sat_io.time, "sleep"):
+            ys = sat_io.YandexSat(d, pause=0, transport=down)
+            ys.ensure(15, 1, 1)
+            self.assertEqual(len(calls), 3)                              # три попытки с паузами
+            ys.ensure(15, 1, 1)
+            self.assertEqual(len(calls), 3)                              # час — без сети
+            mark = ys.path(15, 1, 1).with_suffix(".fail")
+            old = time.time() - 3601
+            os.utime(mark, (old, old))
+            ys.transport = lambda url: (calls.append(url), b"\xff\xd8ok")[1]
+            ys.ensure(15, 1, 1)
+            self.assertEqual(len(calls), 4)
+            self.assertFalse(mark.exists())
+            self.assertTrue(ys.path(15, 1, 1).exists())
 
     def test_base_control_chars_stripped(self):
         with tempfile.TemporaryDirectory() as d:

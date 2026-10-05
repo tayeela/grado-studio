@@ -167,7 +167,12 @@ SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway"
 # ОГД и ЕГКО режутся из кэша слоя на диске; Яндекс сам склеивает тайлы, предел у него — время первой выгрузки
 # (около минуты на 1 км²).
 LIMIT_KM2 = {"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0, "yandex_sit": 150.0}
-TILE_KM2 = {"nspd": 4.0, "osm": 25.0}
+TILE_KM2 = {"nspd": 4.0, "osm": 25.0, "egko": 150.0}
+# T70: не больше MAX_TILES частей за одну выгрузку OSM и ЕГКО (по очереди, с паузой TILE_PAUSE_S); больше — отказ с сообщением
+MAX_TILES = 16
+TILE_PAUSE_S = 1.0
+TILE_CAPPED = {"osm": "OSM", "egko": "ЕГКО"}
+DATA_MARGIN_M = 60.0     # поле вокруг границы территории: область данных «граница + 60 м»
 
 # читаемые имена полей; остальные поля проходят как есть
 LABELS = {
@@ -189,6 +194,14 @@ NUMERIC = {"Этажность", "Год постройки", "Площадь, �
 def bbox_km2(b):
     w, s, e, n = b
     return abs(e - w) * 111.32 * math.cos(math.radians((s + n) / 2)) * abs(n - s) * 110.54
+
+
+def territory_bbox(territory, margin_m=DATA_MARGIN_M):
+    """Прямоугольник территории [w, s, e, n] + поле в метрах (область данных листов вместо рамки листа)."""
+    w, s, e, n = [float(v) for v in territory]
+    dy = margin_m / 110540.0
+    dx = margin_m / (111320.0 * math.cos(math.radians((s + n) / 2)))
+    return [w - dx, s - dy, e + dx, n + dy]
 
 
 def split_bbox(b, tile_km2):
@@ -779,8 +792,10 @@ def osm_fetch(bbox, sets, cache_dir=None):
     return OsmOverpass(cache_dir=cache_dir).fetch(bbox, sets)
 
 
-def fetch(bbox, keys):
+def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
     """Реальные слои по прямоугольнику WGS84. Возвращает (layers, errors).
+    territory — [w, s, e, n] территории: для OSM и ЕГКО рамка листа крупного масштаба (сотни км²) заменяется
+    областью данных «территория + margin_m», если рамка больше предела одного запроса (T70).
     Кроме ключей SOURCES — любой слой каталога ГИС ОГД ключом «ogd.<код слоя>» (окно «Исходные данные»)."""
     for k in keys:
         if k.startswith("ogd.") and k not in SOURCES:
@@ -795,9 +810,21 @@ def fetch(bbox, keys):
     keys = [k for k in keys if k in SOURCES]
     area = bbox_km2(bbox)
     layers, errors = {}, {}
+    if territory and area > LIMIT_KM2["osm"]:
+        capped = [k for k in keys if SOURCES[k][0] in TILE_CAPPED]
+        tb = territory_bbox(territory, margin_m)
+        if capped and bbox_km2(tb) < area:
+            keys = [k for k in keys if k not in capped]
+            lay2, err2 = fetch(tb, capped)
+            layers.update(lay2)
+            errors.update(err2)
     for k in keys:
-        lim = LIMIT_KM2[SOURCES[k][0]]
-        if area > lim:
+        kind = SOURCES[k][0]
+        lim = LIMIT_KM2[kind]
+        if kind in TILE_CAPPED:
+            if area > TILE_KM2[kind] * MAX_TILES:
+                errors[k] = f"территория слишком велика для {TILE_CAPPED[kind]} ({area:.0f} км²): загрузите слои частями"
+        elif area > lim:
             errors[k] = f"область {area:.1f} км² больше допустимых {lim:g} км² для источника"
     keys = [k for k in keys if k not in errors]
     split = [k for k in keys if area > TILE_KM2.get(SOURCES[k][0], float("inf"))]
@@ -809,6 +836,8 @@ def fetch(bbox, keys):
         parts = {k: [] for k in ks}
         try:
             for i, cell in enumerate(cells):
+                if i:
+                    time.sleep(TILE_PAUSE_S)        # портал не долбим: пауза между частями
                 for k in ks:
                     PROGRESS[k] = {"title": SOURCES[k][2], "got": i, "total": len(cells), "stage": "cells"}
                 got, bad = fetch(cell, ks)
@@ -2102,7 +2131,12 @@ class Handler(SimpleHTTPRequestHandler):
                 bbox = [float(v) for v in req["bbox"]]
                 if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
                     return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
-                layers, errors = fetch(bbox, list(req.get("sources") or []))
+                terr = req.get("territory")             # [w, s, e, n] территории: OSM и ЕГКО берут «территория + margin_m», не рамку листа
+                if terr is not None:
+                    terr = [float(v) for v in terr]
+                    if len(terr) != 4 or not (-180 <= terr[0] < terr[2] <= 180 and -90 <= terr[1] < terr[3] <= 90):
+                        return self._json(400, {"error": "territory: ожидается [запад, юг, восток, север] в градусах"})
+                layers, errors = fetch(bbox, list(req.get("sources") or []), terr, min(max(float(req.get("margin_m", DATA_MARGIN_M)), 0.0), 2000.0))
                 return self._json(200, {"layers": layers, "errors": errors})
             if self.path == "/api/print/pdf":
                 import print_io

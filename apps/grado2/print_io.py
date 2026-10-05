@@ -9,6 +9,9 @@
 
 import base64
 import math
+import os
+import time
+from pathlib import Path
 
 from grado_connectors import crs
 from grado_layout import A1_LANDSCAPE, A3_LANDSCAPE, Document, Page, PageBorder, StampFrame, TableFrame
@@ -537,6 +540,48 @@ def linetype_ops(pts, name, k, color, width, lib):
     return out
 
 
+TILE_FAIL_DIR = Path.home() / ".grado2" / "cache" / "tiles" / "_fail"     # метки неудачных тайлов: живут и после перезапуска сервера
+TILE_FAIL_TTL = 3600                                                       # час: тайл, который не скачался, до истечения не запрашивается
+TILE_FAIL_NOTE = "часть плиток подложки не загрузилась ({n}) — повторите через час"
+
+
+class TileGuard:
+    """Отрицательный кэш подложки: тайл, который не скачался (таймаут, 4xx/5xx, нет сети), на час получает метку-файл
+    в папке кэша, и листы до её истечения не ходят за ним в сеть (раньше без сети каждый лист ждал 398 с).
+    Удача стирает метку. Три попытки с паузами остаются у самой выгрузки: после них метка — не больше трёх за час."""
+
+    def __init__(self, tiles, fail_dir=None, ttl=None):
+        self.tiles, self.dir = tiles, Path(fail_dir or TILE_FAIL_DIR)
+        self.ttl = TILE_FAIL_TTL if ttl is None else ttl
+        self.missed = set()
+        self.egko = getattr(tiles, "egko", None)
+
+    def __call__(self, z, x, y, kind="sat"):
+        mark = self.dir / f"{kind}_{z}_{x}_{y}.fail"
+        try:
+            if time.time() - mark.stat().st_mtime < self.ttl:
+                self.missed.add((z, x, y))
+                return None
+        except OSError:
+            pass
+        try:
+            data = self.tiles(z, x, y) if kind == "sat" else self.tiles(z, x, y, kind)
+        except OSError:
+            data = None
+        try:
+            if data:
+                mark.unlink(missing_ok=True)
+            else:
+                self.dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                mark.touch()
+                os.utime(mark)
+        except OSError:
+            pass
+        if not data:
+            self.missed.add((z, x, y))
+        return data
+
+
 def tile_ops(tr, rect, scale, tiles, lat):
     """Спутниковая подложка (тайлы Web Mercator, JPEG) под объектами листа: каждый тайл — картинка по трём углам,
     пересчитанным в мм листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом)."""
@@ -586,14 +631,15 @@ class SketchMapFrame(Frame):
         k = tr.k
         out, labels, along, placed, runs = [{"op": "clip", "rect": tuple(rect)}], [], {}, [], {}
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
+        guard = None
         late = []                                                       # знаки поверх границы территории (точки съёмки)
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
-            get = self.tiles if kind == "sat" else (lambda z, x, y: self.tiles(z, x, y, kind))   # спутник — прежний вызов
-            out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+            guard = TileGuard(self.tiles)                                 # неудачный тайл — пустое место и метка на час
+            out.extend(tile_ops(tr, rect, sh["scale"], lambda z, x, y: guard(z, x, y, kind), sh["center"][1]))
             if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
                 fx, fy, fw, fh = rect
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
@@ -1134,6 +1180,9 @@ class SketchMapFrame(Frame):
                             "color": hex_to_rgb(f["lcol"]) if f.get("lcol") else ink, **extra, **fam, **ul})
         if callout:
             out.extend(callout[1])
+        if guard and guard.missed:                                      # одна строка на лист, не по числу тайлов
+            out.append({"op": "text", "x": rect[0] + 2, "y": rect[1] + rect[3] - 2, "size": 2.3, "color": (0.3, 0.3, 0.3),
+                        "text": TILE_FAIL_NOTE.format(n=len(guard.missed))})
         out.append({"op": "unclip"})
         for o in out:                                                   # изломы контуров — скруглённые, без острых «шипов»
             if o["op"] == "path":

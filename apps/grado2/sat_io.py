@@ -31,6 +31,7 @@ from pathlib import Path
 from grado_connectors import crs
 from grado_connectors.yandex_vmap import HALF, HEADERS, lonlat_to_3395
 
+FAIL_TTL = 3600                                           # неудачный тайл не запрашивается час
 URL = "https://core-sat.maps.yandex.net/tiles?l=sat&x={x}&y={y}&z={z}&scale=1&lang=ru_RU"
 TTL = 90 * 24 * 3600
 ZOOM = 18
@@ -76,6 +77,12 @@ class YandexSat:
         p = self.path(z, x, y)
         if p.exists() and time.time() - p.stat().st_mtime < TTL:
             return False
+        mark = p.with_suffix(".fail")                      # отрицательный кэш: неудача — метка на час, без запросов
+        try:
+            if time.time() - mark.stat().st_mtime < FAIL_TTL:
+                return False
+        except OSError:
+            pass
         data = None
         for attempt in range(3):
             if attempt:
@@ -94,6 +101,14 @@ class YandexSat:
             with os.fdopen(fd, "wb") as fh:
                 fh.write(data)
             os.replace(tmp, p)
+            mark.unlink(missing_ok=True)
+        else:
+            try:
+                p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                mark.touch()
+                os.utime(mark)
+            except OSError:
+                pass
         if self.pause:
             time.sleep(self.pause)
         return True

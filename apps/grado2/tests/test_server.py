@@ -204,6 +204,85 @@ class Egko(unittest.TestCase):
         self.assertTrue(all(p["_key"].startswith("base2:") for p in props))
 
 
+class DataBboxT70(unittest.TestCase):
+    """T70: рамка листа не уходит в OSM и ЕГКО; большая область режется на части по очереди, с паузой."""
+    TERR = [37.600, 55.760, 37.620, 55.772]          # ~1,5 x 1,3 км, около 2 км2
+    FRAME = [37.0, 55.4, 38.2, 56.2]                 # рамка крупного листа, тысячи км2
+
+    def _egko_fake(self, calls):
+        class Fake:
+            def __init__(self, **kw):
+                pass
+
+            def fetch(self, bbox, code):
+                calls.append(list(bbox))
+                x = (bbox[0] + bbox[2]) / 2
+                return {"features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, bbox[1]]},
+                                      "properties": {"type_zd": "Нежилое"}, "grado_key": "base2:a:1"},
+                                     {"type": "Feature", "geometry": {"type": "Point", "coordinates": [x, bbox[1]]},
+                                      "properties": {"type_zd": "Нежилое"}, "grado_key": f"base2:{x:.4f}"}],
+                        "source_doc": "ЕГКО", "notes": []}
+        return Fake
+
+    def test_territory_bbox_replaces_sheet_frame_for_osm_and_egko(self):
+        osm_calls, egko_calls = [], []
+        def osm(bbox, sets, cache_dir=None):
+            osm_calls.append(list(bbox))
+            return {"features": [], "source_doc": "OSM", "notes": []}
+        with mock.patch.object(S, "osm_fetch", osm), mock.patch.object(S, "GisogdApi", self._egko_fake(egko_calls)):
+            layers, errors = S.fetch(self.FRAME, ["osm.roads", "egko.buildings"], self.TERR)
+        self.assertEqual(errors, {})
+        want = S.territory_bbox(self.TERR)
+        self.assertEqual(osm_calls, [want])
+        self.assertEqual(egko_calls, [want] * len(S.SOURCES["egko.buildings"][1]))
+        self.assertLess(S.bbox_km2(want), 5)
+        self.assertAlmostEqual(want[0], self.TERR[0] - 60 / (111320 * 0.5629), delta=2e-5)
+
+    def test_without_territory_big_frame_is_refused_with_message(self):
+        layers, errors = S.fetch(self.FRAME, ["osm.roads", "egko.buildings"])
+        self.assertEqual(layers, {})
+        self.assertIn("территория слишком велика для OSM", errors["osm.roads"])
+        self.assertIn("загрузите слои частями", errors["osm.roads"])
+        self.assertIn("территория слишком велика для ЕГКО", errors["egko.buildings"])
+
+    def test_two_limits_means_two_sequential_requests_with_pause_merged_and_deduped(self):
+        calls, sleeps = [], []
+        import math
+        h = 0.1                                     # высота ~11 км; ширина ~1,7 x предела: две части
+        w = 1.7 * 150 / (110.54 * h) / (111.32 * math.cos(math.radians(55.55)))
+        b = [37.0, 55.5, 37.0 + w, 55.5 + h]
+        self.assertGreater(S.bbox_km2(b), 150)
+        self.assertEqual(len(S.split_bbox(b, S.TILE_KM2["egko"])), 2)
+        with mock.patch.object(S, "GisogdApi", self._egko_fake(calls)), mock.patch.object(S.time, "sleep", lambda t: sleeps.append(t)):
+            layers, errors = S.fetch(b, ["egko.fences"])
+        self.assertEqual(errors, {})
+        n_codes = len(S.SOURCES["egko.fences"][1])
+        self.assertEqual(len(calls), 2 * n_codes)
+        self.assertLess(calls[0][0], calls[-1][0], "части идут по очереди слева направо")
+        self.assertEqual(sleeps, [S.TILE_PAUSE_S])
+        keys = [f["properties"]["_key"] for f in layers["egko.fences"]["features"]["features"]]
+        self.assertEqual(len(keys), len(set(keys)))                  # общий объект base2:a:1 — один раз
+        self.assertEqual(keys.count("base2:a:1"), 1)
+
+    def test_osm_sequential_tiles_and_cap(self):
+        calls, sleeps = [], []
+        def osm(bbox, sets, cache_dir=None):
+            calls.append(list(bbox))
+            return {"features": [], "source_doc": "OSM", "notes": []}
+        h = 0.1
+        import math
+        w = lambda km2: km2 / (110.54 * h) / (111.32 * math.cos(math.radians(55.5 + h / 2)))
+        with mock.patch.object(S, "osm_fetch", osm), mock.patch.object(S.time, "sleep", lambda t: sleeps.append(t)):
+            layers, errors = S.fetch([37.0, 55.5, 37.0 + w(300), 55.5 + h], ["osm.roads"])
+            self.assertEqual(errors, {})
+            self.assertEqual(len(calls), len(sleeps) + 1)
+            self.assertTrue(all(S.bbox_km2(c) <= S.TILE_KM2["osm"] for c in calls))
+            calls.clear()
+            layers, errors = S.fetch([37.0, 55.5, 37.0 + w(500), 55.5 + h], ["osm.roads"])
+        self.assertEqual(calls, [])
+        self.assertIn("территория слишком велика для OSM (", errors["osm.roads"])
+
+
 class Yandex(unittest.TestCase):
     """Яндекс Карты — девять источников из тайлов vmap3; все слои одним проходом по тайлам, поля — по-русски."""
     FIX = Path(__file__).resolve().parents[3] / "core/connectors/tests/fixtures/yandex"

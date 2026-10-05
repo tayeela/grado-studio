@@ -1250,4 +1250,15 @@ export default async p => {
     if (shots) await p.shot(`${shots}/t68-style-panel.png`);
     await p.ev(`document.documentElement.dataset.theme = "light"; Object.values(resSrcs).forEach((s, i) => { s.clear(); s.addFeatures(window.__rs67[i]); }); delete window.__rs67; syncPreview(); return 1`);
   });
+  // T71: лист «Месторасположение» — полигоны округов и районов упрощены до масштаба листа: объём спецификации в бюджете, обе карты на месте
+  await p.group("t71", async () => {
+    const r = JSON.parse(await p.ev(`if (!TERR) $("bExample").click(); await new Promise(r => setTimeout(r, 400)); await ensureAdmin();
+      const sh = { ...cloneJ(PPTKRT.find(s => s.title.startsWith("Месторасположение"))), id: "t71", size: "PA3" }, sp = albumSpec([sh]), ps = sp.sheets[0].panels || [];
+      const raw = (DATA["gisogd.admin"]?.fc.features || []).reduce((n, f) => n + JSON.stringify(f.geometry).length, 0), vs = g => JSON.stringify(g).length;
+      const dist = ps[0]?.layers.find(l => l.title === "районы")?.features || [], okr = ps[0]?.layers.find(l => l.title === "округа")?.features || [], d2 = ps[1]?.layers.find(l => l.title === "районы")?.features || [];
+      return JSON.stringify({ bytes: JSON.stringify(sp).length, raw, n: ps.length, dist: dist.length, okr: okr.length, d2: d2.length, labels: okr.every(f => f.label) && d2.every(f => f.label), terr: !!ps[0]?.territory && !!sp.sheets[0].territory_lonlat,
+        home: ps[1]?.mask?.type, ring: Math.max(...dist.map(f => vs(f.g))) })`));
+    check(r.n === 2 && r.dist >= 100 && r.okr === 12 && r.d2 >= 5 && r.labels && r.terr && r.home, `T71: две карты, районов ${r.dist}/${r.d2}, округов ${r.okr}, подписи, территория и маска округа на месте`);
+    check(r.bytes < 600000 && r.bytes < r.raw / 3, `T71: спецификация листа ${r.bytes} байт (бюджет 600 000; полные полигоны слоя — ${r.raw})`);
+  });
 };

@@ -18,6 +18,62 @@ function homeAdm() {
 }
 const okrAbbr = f => f ? LABEL_FN.adm({ get: k => f.properties[k] }) : "";
 
+/* Полигоны схем округов и районов приводятся к масштабу листа (T71): рисовать контур точнее 0,5 пт на бумаге незачем, а
+   полный слой — 111 тыс. вершин на панель — давал SVG в десятки мегабайт и минуты сборки. Упрощение — Дугласа–Пекера по общим
+   рёбрам: вершина, у которой меняется набор объектов, содержащих её, — узел; дуга между узлами упрощается один раз и берётся
+   всеми соседями одинаково, поэтому районы и округ не расходятся. Части площадью меньше 1 пт² отбрасываются (самая большая
+   часть объекта остаётся, чтобы подпись не пропала). Граница территории и метка — не здесь, они идут как есть. */
+const PT_M = 0.3528e-3;                                   // 1 пт на бумаге, м
+function simplifyAdm(feats, scale, tolPt = .5, minPt2 = 1) {
+  const tol = tolPt * PT_M * scale, minA = minPt2 * (PT_M * scale) ** 2, out = new Map();
+  if (!feats.length) return out;
+  const y0 = feats[0].geometry.type === "Polygon" ? feats[0].geometry.coordinates[0][0][1] : feats[0].geometry.coordinates[0][0][0][1];
+  const kx = 111320 * Math.cos(y0 * Math.PI / 180), ky = 110574, key = c => c[0] + "," + c[1];
+  const polysOf = g => g.type === "Polygon" ? [g.coordinates] : g.coordinates;
+  const who = new Map();                                    // вершина → объекты, в которых она есть
+  feats.forEach((f, i) => polysOf(f.geometry).forEach(po => po.forEach(r => r.forEach(c => { const k = key(c); (who.get(k) || who.set(k, new Set()).get(k)).add(i); }))));
+  const sig = new Map(); const sg = c => { const k = key(c); return sig.get(k) || sig.set(k, [...who.get(k)].join(".")).get(k); };
+  const dp = pts => {                                       // Дуглас–Пекер без рекурсии; концы остаются
+    const n = pts.length, keep = new Uint8Array(n), st = [[0, n - 1]]; keep[0] = keep[n - 1] = 1;
+    const P = pts.map(c => [c[0] * kx, c[1] * ky]);
+    while (st.length) {
+      const [a, b] = st.pop(); if (b - a < 2) continue;
+      const [ax, ay] = P[a], dx = P[b][0] - ax, dy = P[b][1] - ay, L = Math.hypot(dx, dy); let m = -1, md = tol;
+      for (let i = a + 1; i < b; i++) { const d = L ? Math.abs((P[i][0] - ax) * dy - (P[i][1] - ay) * dx) / L : Math.hypot(P[i][0] - ax, P[i][1] - ay); if (d > md) { md = d; m = i; } }
+      if (m > 0) { keep[m] = 1; st.push([a, m], [m, b]); }
+    }
+    return pts.filter((_, i) => keep[i]);
+  };
+  const arcs = new Map();                                   // дуга (в канонической ориентации) → упрощённая
+  const arc = pts => {
+    const fwd = key(pts[0]) <= key(pts[pts.length - 1]), q = fwd ? pts : pts.slice().reverse(), id = key(q[0]) + "|" + key(q[q.length - 1]) + "|" + q.length;
+    let r = arcs.get(id); if (!r) arcs.set(id, r = dp(q));
+    return fwd ? r : r.slice().reverse();
+  };
+  const ring = r0 => {
+    const r = r0.slice(0, -1), n = r.length, s = r.map(sg), nodes = [];
+    for (let i = 0; i < n; i++) if (s[i] !== s[(i + n - 1) % n] || s[i] !== s[(i + 1) % n]) nodes.push(i);
+    if (nodes.length < 2) {                                 // кольцо без соседей: узлы — первая и самая далёкая вершина
+      let a = 0, far = 0, fd = -1; r.forEach((c, i) => { if (key(c) < key(r[a])) a = i; });   // от вершины с наименьшим ключом: одинаково для двух колец с одним контуром
+      r.forEach((c, i) => { const d = Math.hypot((c[0] - r[a][0]) * kx, (c[1] - r[a][1]) * ky); if (d > fd) { fd = d; far = i; } });
+      nodes.length = 0; nodes.push(...(a < far ? [a, far] : [far, a]));
+    }
+    const res = [];
+    nodes.forEach((a, j) => { const b = nodes[(j + 1) % nodes.length], seg = []; for (let i = a; ; i = (i + 1) % n) { seg.push(r[i]); if (i === b) break; }
+      res.push(...arc(seg).slice(0, -1)); });
+    if (res.length < 3) return null;
+    res.push(res[0]); return res;
+  };
+  const area = r => Math.abs(r.reduce((a, c, i) => i ? a + (r[i - 1][0] * kx) * (c[1] * ky) - (c[0] * kx) * (r[i - 1][1] * ky) : 0, 0)) / 2;
+  feats.forEach((f, i) => {
+    const parts = polysOf(f.geometry).map(po => { const rs = po.map(ring); return rs[0] ? { po: rs.filter(Boolean), a: area(rs[0]) } : null; }).filter(Boolean);
+    if (!parts.length) return;
+    const big = Math.max(...parts.map(x => x.a)), keep = parts.filter(x => x.a >= minA || x.a === big);
+    out.set(f, keep.length === 1 ? { type: "Polygon", coordinates: keep[0].po } : { type: "MultiPolygon", coordinates: keep.map(x => x.po) });
+  });
+  return out;
+}
+
 /* Карта административного деления в шаблоне ППТ КРТ. adm: "moscow" — вся Москва: районы тонко серым, округа чёрным
    с подписями, свой округ красным с заливкой; "okrug" — свой округ: внутри цветная картооснова ЕГКО (рисует сервер
    по маске mask), снаружи белый фон, районы чёрным с названиями, контур округа жирно — как в шаблоне.
@@ -26,23 +82,26 @@ function admPanelSpec(p) {
   const { adm, okrug } = homeAdm(), abbr = okrAbbr(okrug), scale = sheetScale(p), center = sheetCenter(p);
   const poly = f => /Polygon/.test(f.geometry?.type);
   const lab = { lf: "sans-bold", lh: .6, lcol: "#141414" };
-  let layers;
+  let layers, sg = new Map();
+  const G = f => sg.get(f) || f.geometry;
   if (p.adm === "moscow") {
     const okrs = adm.filter(f => poly(f) && f.properties["Уровень"] === "округ"), dists = adm.filter(f => poly(f) && f.properties["Уровень"] === "район");
+    sg = simplifyAdm([...okrs, ...dists], scale);
     layers = [
-      { title: "свой округ — заливка", features: okrug ? [{ g: okrug.geometry, fill: "#f7d4d4", stroke: "#e93939", w: 0, a: 1 }] : [] },
-      { title: "районы", features: dists.map(f => ({ g: f.geometry, fill: null, stroke: "#a3a3a3", w: .45, a: 0 })) },
-      { title: "округа", features: okrs.map(f => ({ g: f.geometry, fill: null, stroke: "#1a1a1a", w: 1.3, a: 0, label: okrAbbr(f), ls: 3.2, ...lab })) },
-      { title: "свой округ", features: okrug ? [{ g: okrug.geometry, fill: null, stroke: "#e93939", w: 2.8, a: 0 }] : [] }];
+      { title: "свой округ — заливка", features: okrug ? [{ g: G(okrug), fill: "#f7d4d4", stroke: "#e93939", w: 0, a: 1 }] : [] },
+      { title: "районы", features: dists.map(f => ({ g: G(f), fill: null, stroke: "#a3a3a3", w: .45, a: 0 })) },
+      { title: "округа", features: okrs.map(f => ({ g: G(f), fill: null, stroke: "#1a1a1a", w: 1.3, a: 0, label: okrAbbr(f), ls: 3.2, ...lab })) },
+      { title: "свой округ", features: okrug ? [{ g: G(okrug), fill: null, stroke: "#e93939", w: 2.8, a: 0 }] : [] }];
   } else {
     const home = okrug?.properties["Округ"] || okrug?.properties["Наименование"];
     const dists = adm.filter(f => poly(f) && f.properties["Уровень"] === "район" && f.properties["Округ"] === home);
+    sg = simplifyAdm(okrug && poly(okrug) ? [okrug, ...dists] : dists, scale);
     layers = [
-      { title: "районы", features: dists.map(f => ({ g: f.geometry, fill: null, stroke: "#111111", w: .9, a: 0, label: LABEL_FN.adm({ get: k => f.properties[k] }), ls: 2.5, ...lab })) },
-      { title: "округ", features: okrug ? [{ g: okrug.geometry, fill: null, stroke: "#111111", w: 2.6, a: 0 }] : [] }];
+      { title: "районы", features: dists.map(f => ({ g: G(f), fill: null, stroke: "#111111", w: .9, a: 0, label: LABEL_FN.adm({ get: k => f.properties[k] }), ls: 2.5, ...lab })) },
+      { title: "округ", features: okrug ? [{ g: G(okrug), fill: null, stroke: "#111111", w: 2.6, a: 0 }] : [] }];
   }
   return { title: "", size: p.size, scale, center, layers, legend: [], territory: TERR?.geometry || null, terrPoint: 1.0, noFrame: !!p.noFrame,
-    basemap: p.basemap || "", rect: p.rect, ...(p.adm === "okrug" && okrug ? { mask: okrug.geometry } : {}), ...(p.okrugTitle && abbr ? { okrugTitle: `${OKR_FULL[abbr] || abbr} административный округ` } : {}) };
+    basemap: p.basemap || "", rect: p.rect, ...(p.adm === "okrug" && okrug ? { mask: G(okrug) } : {}), ...(p.okrugTitle && abbr ? { okrugTitle: `${OKR_FULL[abbr] || abbr} административный округ` } : {}) };
 }
 
 // поля листа шаблона сверх обычной карты: стиль, выноска «рассматриваемая территория / Район …»
