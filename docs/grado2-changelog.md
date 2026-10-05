@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.99.7: territory by КРТ number; album header filled from data; failed tiles cached; big
+  territories; light «Месторасположение».** Team cycle 21 (audit of the КРТ 3229 album, `docs/ux/audit-2026-10-05-krt3229.md`).
+  T72: the map search understands «КРТ 3229» / «3229»: the server finds the object in the ГИС ОГД layer «Комплексное
+  развитие территорий» (whole layer cached 30 min in memory), the card reads «КРТ № 3229 · ВАО, Гольяново · 2187-ПП от
+  12.08.2026 · 1,66 га» with «Показать на карте» and «Сделать границей территории» (a second click replaces an existing
+  boundary); the KRT number goes into the album header. «Свойства» of any single polygon: «Сделать границей территории» /
+  «Заменить границу территории». T73: «Штамп…» has «№ КРТ», «Округ, район», «Адрес» and «Заполнить по данным»; empty
+  fields are filled at album assembly and before PDF/PPTX — KRT number from the loaded КРТ layer, okrug and district
+  from the administrative layer (no longer from Overpass), address from ЕГКО address points inside the territory
+  («г. Москва, 1-й Иртышский проезд, д. 8»); typed values are never overwritten (`meta.auto`), an import from a file
+  replaces auto-filled values; a title sheet without an address is «не готов: нет адреса» in the window (nothing on
+  paper). T69: a satellite tile that failed is not requested again for an hour (`.fail` marks, `TileGuard`); the Yandex
+  path skips these marks without counting them as failures. T70: OSM and ЕГКО for large frames are fetched for the
+  territory plus a margin, in parts (the page now sends the territory). T71: okrug/district outlines of
+  «Месторасположение» simplified to the sheet scale along shared edges (sheet spec 0,26 MB instead of 2,4 MB). Checked:
+  owner path on the test copy — «КРТ 3229» in the search → boundary 1,66 га → «Собрать альбом ППТ КРТ» → 9 sheets with
+  «№ 3229», «ВАО, район Гольяново», «д. 8» in the header; unit 431 OK; E2E.
 - **2026-10-04, ГРАДО 2 v0.99.6: album assembly shows its progress; saved variants; reserve plot colours; wording.**
   Album (T62): while a section is built the status line and the busy toast read «Лист 3 из 9: Ортофотоплан —
   загрузка … · 12 с»; «Остановить» finishes the current sheet and keeps the ones built («Сборка остановлена: готово
@@ -149,6 +166,10 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   gets зона 2 with `zone_note`. Fixture numbers (20 га, СПП 450/150 тыс. м²): B0 36 844 m², B1 26 746, A1 9 274 — asserted
   through the engine (`test_social_fixture.py`, `test_server.py`). Nothing changes on screen for the social objects
   yet: the «Нормативы» inputs and the plots in the sketch are the next steps.
+- **2026-10-05, ГРАДО 2 v0.98.14: okrug map drops only small distant pieces.** `okrugMain` also keeps every part of
+  at least 2 % of the main part's area, whatever its distance (whole districts such as a separate Крюково or Молжаниновский
+  stay). Checked on all 12 okrugs: every okrug panel shows all its districts (САО 16/16, ЗАО 12/12, ВАО 16/16); ВАО still
+  drops only its two tiny northern pieces (2 and 17 га).
 - **2026-10-05, ГРАДО 2 v0.98.13: okrug map keeps its districts.** v0.98.10 clipped the districts of the okrug panel to
   the okrug's main part with `turf.intersect`, which failed on complex outlines and dropped whole districts (САО showed
   4 of 16; found by the team's E2E). Now each district keeps the parts whose inner point lies in the main part
