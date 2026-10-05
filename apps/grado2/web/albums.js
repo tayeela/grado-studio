@@ -244,8 +244,11 @@ const ZOUIT_LGR = { "Водоохранная зона": 16, "Прибрежна
 // подписи линий в легенде, как в «ГК Царицыно»
 const LGR_LEG = { 1: "красные линии, обозначающие границы территорий общего пользования улично-дорожной сети города Москвы" };
 const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
+// СЗЗ — условными знаками ГИС ОГД (владелец 05.10.2026: «рисуй, но возьми условные для СЗЗ как на ГИС ОГД»; стили
+// слоёв портала virtual1743, virtual1745, virtual1746): только граница, без заливки; штрих 9/7 пикс. — у ориентировочных
+const SZZ_OGD = { 5: { color: "#00ffc5" }, 62: { color: "#f3f707" }, 63: { color: "#df1a07", dash: [9, 7] } }, SZZ_W = 1.4;
 // виды СЗЗ в легенде — друг за другом: установленные (5), затем расчётные (62) (владелец 05.10.2026)
-const SZZ_ORD = c => c === 62 ? 5.5 : c;
+const SZZ_ORD = c => c === 62 ? 5.5 : c === 63 ? 5.7 : c;
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
   return t.toLowerCase().split(/\s+/).map(w => w.replace(/(ые|ие)$/, "ых").replace(/зоны$/, "зон").replace(/полосы$/, "полос").replace(/ая$/, "ой").replace(/зона$/, "зоны").replace(/территории$/, "территорий")
     .replace(/^(объект|режим)ы$/, "$1ов").replace(/^памятники$/, "памятников")).join(" "); };   // «граница объектов природного комплекса» (владелец 05.10.2026)
@@ -574,7 +577,6 @@ function conceptSheet(out, sheet, bb) {
     const byCode = new Map();
     ["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].forEach(key => { const l = L(key); if (!l) return;
       l.features.filter(inFrame).forEach(ft => { const c = zouitCode(key, ft.props || {});
-        if (c === 63) return;                                    // ориентировочные СЗЗ не показываются (владелец 05.10.2026)
         if (c != null && lgr.has(c)) return;                     // граница уже есть линией Сводного плана
         const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, clip)); if (!part) return;
         const k = c ?? "?"; byCode.set(k, [...(byCode.get(k) || []), part]); });
@@ -583,19 +585,21 @@ function conceptSheet(out, sheet, bb) {
     // по границе умеренного с засечками в другую сторону (владелец 30.09.2026)
     const nested = { 66: [65, 64], 65: [64] };
     Object.entries(nested).forEach(([k, inner]) => { if (byCode.has(+k)) byCode.set(+k, [...byCode.get(+k), ...inner.flatMap(c => byCode.get(c) || [])]); });
-    const zoneFeats = [];
+    const zoneFeats = [], zonePoly = new Map();
     byCode.forEach((parts, k) => {
       const c = k === "?" ? null : k, lt = c != null ? Linetypes.forCode(ZONE_LINE[c]?.lt ?? c, -1) : null;
       const one0 = parts.slice(1).reduce((acc, p) => safe(() => turf.union(turf.featureCollection([acc, p]))) || acc, parts[0]);
       // контур без шипов и петель: закрытие и открытие на 1,5 м и упрощение на 1,5 м — на листе это доли миллиметра,
       // а зигзаги исходной геометрии ГИС ОГД пропадают (правило 11, лист 5)
       const one = safe(() => { const r = buf(buf(one0, 1.5), -3); const q = r && buf(r, 1.5); return q && turf.simplify(q, { tolerance: 1.5 / 111320, highQuality: false }); }) || one0;
+      if (c != null) zonePoly.set(c, one);
       const lines = safe(() => turf.polygonToLine(turf.rewind(one)));
       const g = lines && (lines.type === "FeatureCollection" ? { type: "MultiLineString", coordinates: lines.features.flatMap(f => f.geometry.type === "LineString" ? [f.geometry.coordinates] : f.geometry.coordinates) } : lines.geometry);
       if (!g) return;
       if (c != null && !zk.has(c) && !FLOOD_T[c]) zk.set(c, lt || null);
       const ml = g.type === "LineString" ? { type: "MultiLineString", coordinates: [g.coordinates] } : g;
       if (FLOOD_T[c]) { zoneFeats.push({ code: c, g: ml, flood: c, lc: FLOOD_C, w: 1.3 }); return; }   // подтопление — знаками «Хатминки»
+      if (SZZ_OGD[c]) { zoneFeats.push({ code: c, g: ml, lt: [], miss: [], lc: SZZ_OGD[c].color, w: SZZ_W, dash: SZZ_OGD[c].dash }); return; }   // СЗЗ — как на ГИС ОГД
       zoneFeats.push({ code: c, g: ml, lt: lt ? [lt] : [], miss: lt || c == null ? [] : [[c, ""]], lc: LGRC[c] || "#ff0000", w: 1.3,
         ll: lt || c == null ? undefined : LGRS[c]?.line_label }); });
     // контуры зон подтопления ГИС ОГД совпадают неточно: после слияния остаются щели, и граница слабого местами идёт
@@ -616,6 +620,13 @@ function conceptSheet(out, sheet, bb) {
         }
         if (run.length > 1) keep.push(run); });
       f.g = { type: "MultiLineString", coordinates: keep }; });
+    // СЗЗ, чья граница за рамкой (лист целиком внутри зоны): в легенде знака нет — линии на листе не видно (правило 7),
+    // под легендой надпись, что территория в этой зоне (владелец 05.10.2026: СЗЗ показывать)
+    const szzNotes = [];
+    Object.keys(SZZ_OGD).map(Number).forEach(c => { if (!zk.has(c)) return;
+      if (zoneFeats.some(f => f.code === c && safe(() => turf.booleanIntersects({ type: "Feature", geometry: f.g, properties: {} }, box)))) return;
+      zk.delete(c);
+      if (zonePoly.has(c) && safe(() => turf.booleanIntersects(zonePoly.get(c), TERR))) szzNotes.push(`Территория расположена в границах санитарно-защитной зоны (${{ 5: "установленной", 62: "расчётной", 63: "ориентировочной" }[c]})`); });
     if (L("gisogd.zouit")) L("gisogd.zouit").features = zoneFeats;
     else out.layers.push({ title: "ЗОУИТ и зоны ограничений (ОГД)", features: zoneFeats });
     out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
@@ -626,12 +637,14 @@ function conceptSheet(out, sheet, bb) {
       ...(lgr.size || zk.size ? [{ title: "Линии градостроительного регулирования, действующие",
         items: [...[...lgr].map(([c, n]) => [c, n, LGR_LEG[c] || "граница " + zoneGen(LGRT[c] || "")]), ...[...zk].filter(([c]) => !lgr.has(c)).map(([c, n]) => [c, n, "граница " + zoneGen(LGRT[c] || "")])]
           .sort((a, b) => SZZ_ORD(a[0]) - SZZ_ORD(b[0])).map(([c, n, t]) => [c, n, String(t).replace(/(^|\s)мин\.\s/, "$1минимальных ")])   // слово полностью (правило 11)
-          .map(([c, n, t]) => ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5),
+          .map(([c, n, t]) => SZZ_OGD[c] ? { kind: "line", stroke: SZZ_OGD[c].color, width: SZZ_W * .26, dash: SZZ_OGD[c].dash?.map(v => v * .26), label: t }
+            : ({ kind: "lt", name: n || undefined, stroke: ZONE_LINE[c]?.color || LGRC[c] || "#ff0000", dash: n ? undefined : (LGRS[c]?.dash_mm || [3, 1]).map(v => v * .5),
             ll: n || (LGRS[c]?.line_label || "").length > 20 ? undefined : LGRS[c]?.line_label, label: t })) }] : [])];   // длинная надпись в знак 13 мм не входит
     // подтопление — своей группой, знаками и подписями примера «Хатминки»
     const fl = [64, 65, 66].filter(c => zoneFeats.some(f => f.flood === c && f.g.coordinates.length));
     if (fl.length) out.cLegend.push({ title: "Зона подтопления от паводка 1% обеспеченности (глубина залегания грунтовых вод)",
       items: fl.map(c => ({ kind: "flood", code: c, stroke: FLOOD_C, label: FLOOD_T[c] })) });
+    if (szzNotes.length) out.cLegend.push({ items: szzNotes.map(label => ({ kind: "note", label })) });
     // приаэродромная территория — надписью под легендой, как в «Хатминки»: подзоны, которые пересекают территорию
     const af = L("gisogd.airfield"), air = new Map();
     (af?.features || []).forEach(ft => { const [port, n] = String(ft.props?.["Вид зоны"] || "").split("|");

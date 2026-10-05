@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.98.12: СЗЗ in ГИС ОГД symbology.** Owner after the team audit: «рисуй, но возьми условные
+  для СЗЗ как на ГИС ОГД». On the use sheet all sanitary zones are drawn by the portal layer styles (CartoCSS of
+  virtual1743 / 1745 / 1746): established — solid #00FFC5, calculated — solid #F3F707, orientative — red #DF1A07 dashed
+  9/7 px; boundary only, 1,4 px (~0,36 mm); legend «line» swatches in the same order. Orientative zones are drawn again
+  (the morning's «hide» is cancelled). Owner's other answers: the photo sheet is printed as is; ownership is entered by
+  the owner in the parcel's properties. A СЗЗ whose boundary does not cross the frame (the whole sheet inside the zone,
+  as КРТ 3229 in the orientative СЗЗ) gets no legend swatch but a note under the legend.
 - **2026-10-05, ГРАДО 2 v0.98.11: Yandex road polygons on every album sheet; district captions by corner.** Owner:
   «для всех схем используй полигональные дороги яндекс», «в верхнем левом углу район Метрогородок, в правом нижнем
   Гольяново, одинаковый кегль у подписей». Sheets 3–9 draw roads from `yandex.hd_roads` only (no `calc.uds_ya` axis
