@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).** Owner 06.10 chose variant А (window
+  «Слои и листы»). New `sheetlayout.js`: `sheet.layout = {groups:[{id,title,role,items:[{key,on,style?,only?,src?}]}]}`;
+  ППТ КРТ template seeds it (`seedLayout`), `viewLayers`/`sheetSpec` read it through `SheetLayout.resolve` while it
+  matches `keys` (otherwise old fields). Golden check: 59/59 sheet specs identical on КРТ 3229 and Безобразово (copy).
 - **2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).**
   Album ППТ КРТ: sheets 5–9 list only signs whose objects are inside the frame (parcels, buildings, zone number/index,
   ППТ/ПМТ, ГПЗУ/АГР, parcels inside/outside); empty legend groups are dropped; a documentation sheet with no documents in

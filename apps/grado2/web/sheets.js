@@ -36,8 +36,10 @@ function autoScale(frame, bb, exact = false) {
 // состояние слоя в виде (или как сейчас на карте)
 function viewLayers(sheet) {
   // лист раздела: свой набор слоёв (снизу вверх) и своё оформление поверх стиля слоя
-  if (sheet.keys) return sheet.keys.slice().reverse().map(k => lyr(k)).filter(Boolean).map(l => {
-    const st = ST(JSON.parse(JSON.stringify({ ...l.style, ...(sheet.styles?.[l.key] || {}) })));
+  // состав — из sheet.layout (T86a), пока он совпадает с keys; иначе, как раньше, из keys/styles
+  const LR = SheetLayout.resolve(sheet);
+  if (LR.keys) return LR.keys.slice().reverse().map(k => lyr(k)).filter(Boolean).map(l => {
+    const st = ST(JSON.parse(JSON.stringify({ ...l.style, ...(LR.styles[l.key] || {}) })));
     return { key: l.key, title: l.title, geom: l.geom, style: st, visible: true, a: 1, _br: null, cache: new Map() }; });
   const v = VIEWS.find(x => x.id === sheet.view), by = v ? new Map(v.layers.map(x => [x.key, x])) : null, gv = v ? new Map(v.groups.map(x => [x.id, x.visible])) : null;
   // слой, которого не было при сохранении вида, в вид не входит — как при «Показать» (applyView)
@@ -84,12 +86,13 @@ function sheetSpec(sheet) {
   const frameLL = (() => { const [lo, la] = ol.proj.toLonLat([ext[0], ext[1]]), [hi, ha] = ol.proj.toLonLat([ext[2], ext[3]]), k = 1 / 1.15;
     return [center[0] - (center[0] - lo) * k, center[1] - (center[1] - la) * k, center[0] + (hi - center[0]) * k, center[1] + (ha - center[1]) * k]; })();
   const homeOkr = sheet.homeOkrug ? (h => h.okrug?.properties["Округ"] || h.okrug?.properties["Наименование"])(homeAdm()) : null;
+  const LR = SheetLayout.resolve(sheet);
   const vl = viewLayers(sheet).filter(pl => !(pl.style.maxDen && scale > pl.style.maxDen) && !(pl.style.minDen && scale < pl.style.minDen)), layers = [], legend = [];   // видимость по масштабу — и на листе, как в QGIS
   vl.slice().reverse().forEach(pl => {                                   // снизу вверх, как рисует карта
     const st = pl.style, feats = [];
     layerSrc[pl.key]?.forEachFeatureInExtent(ext, f => {
       const g = GJ.writeFeatureObject(f).geometry; if (!g) return;
-      const only = sheet.only?.[pl.key]; if (only && !only.values.includes(f.get(only.field))) return;
+      const only = LR.only[pl.key]; if (only && !only.values.includes(f.get(only.field))) return;
       if (homeOkr && pl.key === "gisogd.admin" && f.get("Уровень") === "район" && f.get("Округ") !== homeOkr) return;   // «Районы …» — только своего округа
       const lab = sheet.labelFn?.[pl.key] ? LABEL_FN[sheet.labelFn[pl.key]](f) : st.label ? f.get(st.label) : null;
       // подсветка: округ и район, в которых лежит территория
@@ -397,10 +400,12 @@ function carryHand(fresh, old, full = true) {
       if (edited) { if (old[k] === undefined) delete fresh[k]; else fresh[k] = cloneJ(old[k]); }
     });
   }
+  if (fresh.layout && !SheetLayout.matches(fresh)) delete fresh.layout;      // слои правлены рукой — состав по ролям из шаблона им не соответствует; лист живёт по keys
   if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];
   if (old.edits) fresh.edits = old.edits; if (old.items) fresh.items = old.items;
 }
 const tplKey = s => JSON.stringify(s, (k, v) => k === "data" && typeof v === "string" && v.length > 500 ? v.length   // снимки — по длине; ключи по алфавиту: порядок полей после переноса правок не считается отличием
+  : k === "layout" ? undefined                                                  // состав по ролям (T86a): сам по себе лист «изменённым» не делает, переносится отдельно (tplRefresh)
   : v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([x], [y]) => x < y ? -1 : 1)) : v);
 const TPL_MAKE = {
   sit_: (s) => makeSitSheet(s.id),
@@ -468,6 +473,7 @@ function tplRefresh(o = {}) {
     res.n++;
     if (fresh.tpl.set !== "tep") carryHand(fresh, s, true);
     if (tplKey(fresh) !== tplKey(s)) { Object.keys(s).forEach(k => delete s[k]); Object.assign(s, fresh); res.changed++; }
+    else if (!sameJ(s.layout, fresh.layout)) { if (fresh.layout) s.layout = fresh.layout; else delete s.layout; }   // только состав по ролям: тихо, без «изменено» (вид листа тот же)
     const why = notReadyWhy(s); if (why) { NOTREADY.set(s.id, why); res.bad.push(s); } else NOTREADY.delete(s.id);
   });
   return res;
