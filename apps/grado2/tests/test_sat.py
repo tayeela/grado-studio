@@ -109,6 +109,21 @@ class SatExport(unittest.TestCase):
             self.assertFalse(mark.exists())
             self.assertTrue(ys.path(15, 1, 1).exists())
 
+    def test_404_is_no_imagery_not_failure(self):
+        import urllib.error
+        from unittest import mock
+
+        def nf(url):
+            raise urllib.error.HTTPError(url, 404, "nf", None, None)
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(sat_io.time, "sleep"):
+            ys = sat_io.YandexSat(d, pause=0, transport=nf)
+            ys.ensure(15, 1, 1)
+            self.assertEqual(ys.last_status, "none")
+            self.assertTrue(ys.path(15, 1, 1).with_suffix(".fail").exists())      # отрицательный кэш прежний
+            ys.transport = lambda url: (_ for _ in ()).throw(OSError("offline"))
+            ys.ensure(15, 2, 2)
+            self.assertEqual(ys.last_status, "fail")
+
     def test_base_control_chars_stripped(self):
         with tempfile.TemporaryDirectory() as d:
             frame = sat_io.frame_msk((37.162, 55.341), [0, 0, 10, 10], 10000)

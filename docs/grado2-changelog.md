@@ -2,6 +2,19 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.99.8: check before export; sturdier Yandex satellite; roads where Yandex has none.** Team
+  cycle 22. T74: before «PDF», «PPTX» (window, «Выгрузка ▾», one-sheet PDF) the album is checked — no territory, empty
+  header fields (№ КРТ, округ/район, адрес), sheets «не готов» with reasons, «Фотофиксация: снимков нет», layers empty in
+  their sheet's frame; if anything is found the window shows one choice bar «не всё готово» with «Выгрузить всё равно» /
+  «Отмена» and up to 6 lines (a line selects its sheet or opens «Штамп…»); only one choice bar is open at a time, Esc
+  answers the visible one; `albumFile(kind, only, force)`. T75: a Yandex 404 is «no imagery», not a failure (does not
+  trip the 10-minute breaker; `sat_io.YandexSat.last_status`); Esri is requested only under missing Yandex tiles, not
+  under the whole sheet; more than 600 tiles → a coarser zoom instead of an empty basemap; `_YSAT` under a lock, expired
+  entries pruned. Older and frozen sheets also get the Yandex satellite (owner 05.10.2026, Безобразово). T76: where a sheet
+  frame has no Yandex road polygons (ТиНАО villages) the sheet takes ЕГКО road polygons, else roads built from axes
+  (`roadsrc.js pickRoadSource`); the «территории автодорог» legend item only when roads are on the sheet. Checked: owner
+  path on a copy of «Безобразово» (30.09): 9 sheets with roads on all of them; КРТ 3229 path from cycle 21; unit 437 OK
+  with and without PYTHONPATH, connectors OK, E2E 375 steps green.
 - **2026-10-05, ГРАДО 2 v0.99.7: territory by КРТ number; album header filled from data; failed tiles cached; big
   territories; light «Месторасположение».** Team cycle 21 (audit of the КРТ 3229 album, `docs/ux/audit-2026-10-05-krt3229.md`).
   T72: the map search understands «КРТ 3229» / «3229»: the server finds the object in the ГИС ОГД layer «Комплексное

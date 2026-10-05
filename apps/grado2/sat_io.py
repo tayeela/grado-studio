@@ -65,6 +65,7 @@ class YandexSat:
         self.cache_dir, self.pause = Path(cache_dir), pause
         self._ctx = None if transport else _ctx()
         self.transport = transport or self._get
+        self.last_status = None          # итог последнего ensure: "cached", "ok", "none" (404: снимка нет), "fail" (сбой), "skip" (метка)
 
     def _get(self, url):
         with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30, context=self._ctx) as r:
@@ -76,15 +77,17 @@ class YandexSat:
     def ensure(self, z, x, y):
         """Тайл на диске. True — пришлось скачать."""
         p = self.path(z, x, y)
+        self.last_status = "cached"
         if p.exists() and time.time() - p.stat().st_mtime < TTL:
             return False
         mark = p.with_suffix(".fail")                      # отрицательный кэш: неудача — метка на час, без запросов
         try:
             if time.time() - mark.stat().st_mtime < FAIL_TTL:
+                self.last_status = "skip"
                 return False
         except OSError:
             pass
-        data = None
+        data, nf = None, False
         for attempt in range(3):
             if attempt:
                 time.sleep(1 + attempt)
@@ -93,6 +96,7 @@ class YandexSat:
                 break
             except urllib.error.HTTPError as e:
                 if e.code == 404:
+                    nf = True
                     break
             except OSError:
                 pass
@@ -103,7 +107,9 @@ class YandexSat:
                 fh.write(data)
             os.replace(tmp, p)
             mark.unlink(missing_ok=True)
+            self.last_status = "ok"
         else:
+            self.last_status = "none" if nf else "fail"
             try:
                 p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                 mark.touch()

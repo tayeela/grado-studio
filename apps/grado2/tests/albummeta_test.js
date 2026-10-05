@@ -24,4 +24,15 @@ M.typed(m, "place"); m.place = "Мой район";
 eq(M.fillMeta(m, { place: "ВАО, район Гольяново" }), [], "after user edit — kept");
 eq(m.place, "Мой район", "user text intact");
 eq(M.fillMeta(m, { address: "" }), [], "empty found value changes nothing");
+
+// T74: что не готово до выгрузки
+const S = (i, o = {}) => ({ i, title: "Лист" + i, why: "", photos: null, empty: [], ...o });
+const full = { short: "№ 1", place: "ВАО", address: "г. Москва" };
+eq(M.exportIssues({ terr: true, meta: full, sheets: [S(0), S(1)] }), [], "everything ready: empty list");
+eq(M.exportIssues({ terr: false, meta: full, sheets: [S(0)] }).map(x => x.text), ["Территория не задана: карты листов будут без границы"], "no territory");
+eq(M.exportIssues({ terr: true, meta: { short: " ", place: "", address: "x" }, sheets: [] }), [{ text: "В шапке не заполнено: № КРТ, округ/район", stamp: true }], "header fields named");
+eq(M.exportIssues({ terr: true, meta: {}, title: false, sheets: [] }), [], "single non-title sheet: header not checked");
+eq(M.exportIssues({ terr: true, meta: { ...full, address: "" }, sheets: [S(2, { why: "нет адреса" })] }).map(x => x.text), ["В шапке не заполнено: адрес"], "«нет адреса» not repeated");
+eq(M.exportIssues({ terr: true, meta: full, sheets: [S(1, { why: "слой «A» не загрузился", empty: ["B", "C"] }), S(4, { photos: 0 }), S(5, { photos: 3 })] }),
+  [{ text: "лист 2 «Лист1»: слой «A» не загрузился; слои «B», «C» в рамке листа пусты", sheet: 1 }, { text: "лист 5 «Лист4»: Фотофиксация: снимков нет", sheet: 4 }], "sheet reasons, empty layers, photos");
 console.log(n + " checks ok");

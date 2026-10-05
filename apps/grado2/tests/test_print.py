@@ -103,6 +103,45 @@ class Print(unittest.TestCase):
         self.assertIn(row, {y for _, _, y in asked})
 
 
+class SatBasemapRobust(unittest.TestCase):
+    """T75: Esri только под дырами Яндекса; больше 600 тайлов — крупнее не берём, а не пустой лист."""
+    def _frame_images(self, ysat_fn):
+        import tempfile
+        from unittest import mock
+        jpeg = base64.b64decode(SlidePanelsAndPhotos.JPEG)
+        esri = []
+
+        class Tiles:
+            def __call__(self, z, x, y, kind="sat"):
+                esri.append((z, x, y))
+                return jpeg
+        t = Tiles()
+        t.ysat = lambda z, x, y: ysat_fn(jpeg, z, x, y)
+        spec = {"sheets": [{"size": "P", "title": "Лист", "scale": 2000, "center": [37.65, 55.80], "basemap": "sat", "layers": [], "legend": [],
+                            "tep": [], "territory": None}]}
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(print_io, "TILE_FAIL_DIR", Path(d)):
+            doc = print_io.build_document(spec, {}, {}, t)
+            pages = print_io.document_pages_ops(doc, None)
+        return sum(1 for o in pages[0][2] if o["op"] == "image"), esri
+
+    def test_esri_only_under_missing_yandex(self):
+        n_all, esri_all = self._frame_images(lambda j, z, x, y: None)            # Яндекса нет совсем: Esri на весь лист
+        n_none, esri_none = self._frame_images(lambda j, z, x, y: j)             # Яндекс целый: Esri не нужен
+        n_half, esri_half = self._frame_images(lambda j, z, x, y: j if x % 2 else None)
+        self.assertTrue(esri_all)
+        self.assertEqual(esri_none, [])
+        self.assertTrue(0 < len(esri_half) < len(esri_all))                      # Esri только там, где Яндекса нет
+        self.assertLess(n_half, n_all + n_none)
+
+    def test_over_600_tiles_draws_coarser(self):
+        tr = print_io.MapTransform((0, 0, 3000, 3000), [37.758, 55.813], 500)
+        asked = []
+        ops = print_io.tile_ops(tr, (0, 0, 3000, 3000), 500, lambda z, x, y: (asked.append(z), b"\xff\xd8x")[1], 55.813, zmax=19)
+        self.assertTrue(ops)
+        self.assertLessEqual(len(asked), 600)
+        self.assertLess(max(asked), 19)
+
+
 class Clip(unittest.TestCase):
     def test_ring_is_clipped_to_the_frame(self):
         ring = [(-100, -100), (300, -100), (300, 300), (-100, 300)]

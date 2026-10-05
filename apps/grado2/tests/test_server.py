@@ -331,6 +331,42 @@ class Yandex(unittest.TestCase):
         self.assertIn("в сдаваемые материалы не включать", layers["yandex.buildings"]["source"])
 
 
+class YandexSatBreaker(unittest.TestCase):
+    """T75: 404 Яндекса («снимка нет») не считается сбоем; настоящие сбои по-прежнему отключают Яндекс на 10 минут."""
+
+    def _run(self, exc, n):
+        import tempfile
+        import urllib.error
+        import sat_io
+        real = sat_io.YandexSat
+
+        def transport(url):
+            raise exc(url) if exc is urllib.error.HTTPError else exc("x")
+        saved = dict(S._YSAT)
+        S._YSAT.update({"fails": 0, "off_until": 0.0, "bad": {}})
+        try:
+            with tempfile.TemporaryDirectory() as d, mock.patch.object(S, "CACHE", Path(d)), \
+                    mock.patch.object(sat_io.time, "sleep"), mock.patch.object(S.time, "sleep"), \
+                    mock.patch.object(sat_io, "YandexSat", lambda p: real(p, pause=0, transport=transport)):
+                for i in range(n):
+                    self.assertIsNone(S.yandex_sat_tile(18, i, 7))
+                return dict(S._YSAT)
+        finally:
+            S._YSAT.clear()
+            S._YSAT.update(saved)
+
+    def test_404_does_not_trip_breaker(self):
+        import urllib.error
+        st = self._run(lambda url: urllib.error.HTTPError(url, 404, "nf", None, None), 8)
+        self.assertEqual(st["fails"], 0)
+        self.assertEqual(st["off_until"], 0.0)
+        self.assertEqual(len(st["bad"]), 8)                                      # но «нет снимка» запомнено
+
+    def test_real_failures_trip_breaker(self):
+        st = self._run(OSError, 5)
+        self.assertGreater(st["off_until"], 0)
+
+
 class SituationPlanSources(unittest.TestCase):
     """Ситуационный план: слои Яндекса с z16 в один поток, железная дорога — только главные пути."""
 

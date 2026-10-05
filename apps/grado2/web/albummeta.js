@@ -35,7 +35,21 @@
     return done;
   }
   const typed = (meta, k) => { if (meta.auto) delete meta.auto[k]; };   // владелец правит поле — оно больше не «автоматическое»
-  const api = { FIELDS, parseAddr, addressText, krtText, placeJoin, fillMeta, typed };
+  // Что не готово до выгрузки альбома (T74): строки для окна «Выгрузить всё равно / Отмена». st: { terr, meta, sheets: [{ i, title, why, photos (число снимков у листа «фотофиксация», иначе null), empty: [названия слоёв пустых в рамке] }], title (проверять шапку) }
+  // Строка: { text, sheet? (номер листа с 0), stamp? }. «Нет адреса» у титула здесь не повторяется: его закрывает строка про шапку.
+  function exportIssues(st) {
+    const out = [], m = st.meta || {}, name = x => `лист ${x.i + 1} «${x.title || "без названия"}»`;
+    if (!st.terr) out.push({ text: "Территория не задана: карты листов будут без границы" });
+    const hd = [["short", "№ КРТ"], ["place", "округ/район"], ["address", "адрес"]].filter(([k]) => !String(m[k] || "").trim()).map(x => x[1]);
+    if (st.title !== false && hd.length) out.push({ text: `В шапке не заполнено: ${hd.join(", ")}`, stamp: true });
+    (st.sheets || []).forEach(x => {
+      const why = [x.why && x.why !== "нет адреса" ? x.why : "", (x.empty || []).length ? `${x.empty.length > 1 ? "слои" : "слой"} ${x.empty.map(t => "«" + t + "»").join(", ")} в рамке листа пусты` : ""].filter(Boolean).join("; ");
+      if (why) out.push({ text: `${name(x)}: ${why}`, sheet: x.i });
+      if (x.photos === 0) out.push({ text: `${name(x)}: Фотофиксация: снимков нет`, sheet: x.i });
+    });
+    return out;
+  }
+  const api = { FIELDS, parseAddr, addressText, krtText, placeJoin, fillMeta, typed, exportIssues };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.AlbumMeta = api;
 })(typeof window !== "undefined" ? window : globalThis);

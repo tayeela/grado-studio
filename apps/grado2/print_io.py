@@ -588,40 +588,51 @@ class TileGuard:
         return data
 
 
-def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None):
+def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None, want=None, miss_boxes=None):
     """Спутниковая подложка (тайлы JPEG) под объектами листа: каждый тайл — картинка по трём углам, пересчитанным в мм
     листа (МСК повёрнута относительно Меркатора — тайл ложится параллелограммом). proj="3857" — Web Mercator (Esri),
     "3395" — эллипсоидальный Меркатор (спутник Яндекса): у него другая только связь широты и номера ряда.
-    missing — список, куда пишется число тайлов, которых не оказалось."""
+    missing — список, куда пишется число тайлов, которых не оказалось; miss_boxes — туда же прямоугольники (мм листа) этих тайлов.
+    want(bbox_mm) — нужен ли тайл с таким прямоугольником (Esri только под дырами Яндекса). Больше 600 тайлов — уровень
+    крупнее не берётся: z снижается, пока их не станет не больше 600 (раньше лист оставался без снимка)."""
     fx, fy, fw, fh = rect
     half_x, half_y = fw / 2 / tr.k * 1.25, fh / 2 / tr.k * 1.25                 # метры на местности с запасом на поворот
     lon0, lat0 = tr.lon0, tr.lat0
     dlon, dlat = half_x / (111320 * math.cos(math.radians(lat0))), half_y / 110540
     mpp = scale * 0.00025                                                        # метров на пиксель тайла: ~100 dpi на листе
     z = max(10, min(zmax, round(math.log2(156543.03 * math.cos(math.radians(lat0)) / mpp))))
-    n = 2 ** z
-    tx = lambda lon: int((lon + 180) / 360 * n)
-    lon_of = lambda x: x / n * 360 - 180
-    if proj == "3395":
-        from grado_connectors.yandex_vmap import HALF, lat_from_3395, lonlat_to_3395
-        size = 2 * HALF / n
-        ty = lambda la: int((HALF - lonlat_to_3395(0, la)[1]) / size)
-        lat_of = lambda y: lat_from_3395(HALF - y * size)
-    else:
-        ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
-        lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
-    x0, x1, y0, y1 = tx(lon0 - dlon), tx(lon0 + dlon), ty(lat0 + dlat), ty(lat0 - dlat)
-    if (x1 - x0 + 1) * (y1 - y0 + 1) > 600:
-        return []
+    while True:
+        n = 2 ** z
+        tx = lambda lon: int((lon + 180) / 360 * n)
+        lon_of = lambda x: x / n * 360 - 180
+        if proj == "3395":
+            from grado_connectors.yandex_vmap import HALF, lat_from_3395, lonlat_to_3395
+            size = 2 * HALF / n
+            ty = lambda la: int((HALF - lonlat_to_3395(0, la)[1]) / size)
+            lat_of = lambda y: lat_from_3395(HALF - y * size)
+        else:
+            ty = lambda la: int((1 - math.asinh(math.tan(math.radians(la))) / math.pi) / 2 * n)
+            lat_of = lambda y: math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+        x0, x1, y0, y1 = tx(lon0 - dlon), tx(lon0 + dlon), ty(lat0 + dlat), ty(lat0 - dlat)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) <= 600 or z <= 1:
+            break
+        z -= 1
     out = []
     for x in range(x0, x1 + 1):
         for y in range(y0, y1 + 1):
+            tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
+            br = (trr[0] + bl[0] - tl[0], trr[1] + bl[1] - tl[1])
+            box = (min(tl[0], trr[0], bl[0], br[0]), min(tl[1], trr[1], bl[1], br[1]),
+                   max(tl[0], trr[0], bl[0], br[0]), max(tl[1], trr[1], bl[1], br[1]))
+            if want is not None and not want(box):
+                continue
             data = tiles(z, x, y)
             if not data:
                 if missing is not None:
                     missing.append((z, x, y))
+                if miss_boxes is not None:
+                    miss_boxes.append(box)
                 continue
-            tl, trr, bl = tr.mm(lon_of(x), lat_of(y)), tr.mm(lon_of(x + 1), lat_of(y)), tr.mm(lon_of(x), lat_of(y + 1))
             # тайлы внахлёст на пиксель: иначе на стыках снимков просвечивают белые точки
             e, ux, uy, vx, vy = 1 / 256, trr[0] - tl[0], trr[1] - tl[1], bl[0] - tl[0], bl[1] - tl[1]
             tl, trr, bl = ((tl[0] - (ux + vx) * e, tl[1] - (uy + vy) * e), (trr[0] + (ux - vx) * e, trr[1] + (uy - vy) * e),
@@ -660,10 +671,14 @@ class SketchMapFrame(Frame):
             if ysat:
                 # снимок — спутник Яндекса, самый свежий (владелец 05.10.2026); z18 — его самый подробный настоящий уровень.
                 # Где плиток Яндекса нет, под снимком лежит Esri — белых дыр на листе не бывает
-                miss = []
-                ys = tile_ops(tr, rect, sh["scale"], ysat, sh["center"][1], proj="3395", zmax=18, missing=miss)
-                if miss or not ys:
-                    out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))
+                miss, boxes = [], []
+                ys = tile_ops(tr, rect, sh["scale"], ysat, sh["center"][1], proj="3395", zmax=18, missing=miss, miss_boxes=boxes)
+                fx, fy, fw, fh = rect
+                boxes = [m for m in boxes if m[0] < fx + fw and fx < m[2] and m[1] < fy + fh and fy < m[3]]   # дыры за краем листа не в счёт
+                if boxes or not ys:
+                    # Esri — только под дырами Яндекса (плитка Esri, задевающая любую пропавшую плитку Яндекса); нет ни одной — весь лист
+                    hit = (lambda b: any(b[0] < m[2] - .5 and m[0] + .5 < b[2] and b[1] < m[3] - .5 and m[1] + .5 < b[3] for m in boxes)) if ys else None   # .5 мм — запас на поворот сетки
+                    out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], want=hit))
                 out.extend(ys)
             else:
                 out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1]))

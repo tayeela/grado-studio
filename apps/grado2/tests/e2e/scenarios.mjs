@@ -831,7 +831,7 @@ export default async p => {
     // T36: пока собирается PDF, пункты PDF и PPTX серые с пояснением «Идёт сборка…»
     check(await p.ev(`const f = window.fetch; window.fetch = async (u, ...a) => { if (/api[/]print[/]pdf/.test(u)) { await new Promise(r => setTimeout(r, 600)); return new Response("{}", { status: 500 }); } return f(u, ...a); };
       try {
-        window.albumFile("pdf"); await new Promise(r => setTimeout(r, 100)); $("bExpMore").click();
+        window.albumFile("pdf", null, true); await new Promise(r => setTimeout(r, 100)); $("bExpMore").click();
         const during = $("bExpPdf").disabled && $("bExpPptx").disabled && /Идёт сборка…/.test($("bExpPdf").innerText) && /Идёт сборка…/.test($("bExpPptx").innerText) && window.albumBuilding === true;
         await new Promise(r => setTimeout(r, 900)); const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
         return during && after;
@@ -1223,7 +1223,7 @@ export default async p => {
         window.__why62 = "лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8: в таблицу не поместились 7 строк — возьмите формат А1 или сократите таблицу";
         window.fetch = async (u, o) => String(u) === "/api/print/pdf" ? new Response(new Blob(["%PDF"]), { status: 200, headers: { "X-Grado-Not-Ready": "6,8", "X-Grado-Not-Ready-Why": encodeURIComponent(window.__why62) } }) : window.__f62(u, o);
         HTMLAnchorElement.prototype.click = function () { };
-        await albumFile0("pdf"); await new Promise(r => setTimeout(r, 200)); return 1`);
+        await albumFile0("pdf", null, true); await new Promise(r => setTimeout(r, 200)); return 1`);
       const w = await p.ev(`return [$("toast").textContent, $("shStat").textContent, document.querySelector('#sheetsBody .shrow[data-sh="5"] .ic span[title*="Не готов"]')?.title || "", document.querySelector('#sheetsBody .shrow[data-sh="7"] .ic span[title*="Не готов"]')?.title || "", FITWHY.size]`);
       check(/Не готовы: лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8: в таблицу не поместились 7 строк/.test(w[0]), "T62: сообщение о PDF называет листы и причины");
       check(/не готово: \d+ \(лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8:/.test(w[1]), `T62: строка состояния: «не готово: … (лист 6: легенда из 23 позиций…)» — ${w[1]}`);
@@ -1276,5 +1276,35 @@ export default async p => {
     // на карте округа — все его районы (их 4–17 в зависимости от округа, где лежит территория этого прогона)
     check(r.n === 2 && r.dist >= 100 && r.okr === 12 && r.d2 >= 4 && r.d2 === r.own && r.labels && r.terr && r.home, `T71: две карты, районов ${r.dist}/${r.d2} (в округе ${r.own}), округов ${r.okr}, подписи, территория и маска округа на месте`);
     check(r.bytes < 600000 && r.bytes < r.raw / 3, `T71: спецификация листа ${r.bytes} байт (бюджет 600 000; полные полигоны слоя — ${r.raw})`);
+  });
+  // T74: перед выгрузкой владелец видит, что не готово; пустой список — выгрузка как раньше (здесь проверяется только строка выбора, файл не собирается)
+  await p.group("t74", async () => {
+    await p.ev(`if (!TERR) $("bExample").click(); await new Promise(r => setTimeout(r, 400)); window.__t74 = ALBUM.sheets.splice(0); const m0 = { ...ALBUM.meta }; window.__t74m = m0; ALBUM.meta.short = ""; ALBUM.meta.place = ""; ALBUM.meta.address = ""; ALBUM.meta.object = "";
+      ALBUM.sheets.push({ id: "t74p", kind: "photos", title: "Фотофиксация", photos: [], size: "PA3", scale: 5000, center: [37, 55] }); winOpen("wSheets", true); renderSheets(); return 1`);
+    await p.ev(`window.__t74dl = 0; const oc = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__t74dl++; else oc.call(this); }; window.__t74oc = oc; albumFile("pdf"); await new Promise(r => setTimeout(r, 500)); return 1`);
+    const t = await p.ev(`return $("shImpBar")?.innerText || ""`);
+    check(/не всё готово/.test(t) && /Фотофиксация: снимков нет/.test(t), "T74: перед PDF строка «не всё готово» называет лист без снимков (шапку программа могла заполнить сама по слоям)");
+    check(await p.ev(`const b = $("shImpBar"); return document.activeElement === b.querySelector("button") && /Выгрузить всё равно/.test(b.querySelector("button").textContent) && !!b.querySelector('[data-shexp="cancel"]') && window.__t74dl === 0`), "T74: фокус на «Выгрузить всё равно», файл ещё не собран");
+    check(await p.ev(`document.querySelector('[data-shexpl]').click(); await new Promise(r => setTimeout(r, 200)); return !!$("shImpBar") && selIdx() === 0`), "T74: щелчок по строке листа выбирает его, строка выбора остаётся");
+    check(await p.ev(`shEl().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); await new Promise(r => setTimeout(r, 200)); return !$("shImpBar") && window.__t74dl === 0`), "T74: Esc — «Отмена», выгрузки нет");
+    await p.ev(`HTMLAnchorElement.prototype.click = window.__t74oc; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...window.__t74); Object.assign(ALBUM.meta, window.__t74m); renderSheets(); return 1`);
+  });
+  // T76: дороги листа — полигоны Яндекса; где их нет, запасной источник (УДС по осям), и знак «территории автодорог» только при дорогах в рамке
+  await p.group("t76", async () => {
+    const r = JSON.parse(await p.ev(`if (!TERR) $("bExample").click(); await new Promise(r => setTimeout(r, 400));
+      const keys = ["yandex.hd_roads", "egko.roads", "calc.uds_ya"], saved = Object.fromEntries(keys.map(k => [k, DATA[k]?.fc])), empty = { type: "FeatureCollection", features: [] };
+      const sh = { ...cloneJ(PPTKRT_C.find(s => s.concept === "ortho")), id: "t76", size: "PA3" };
+      const roadItem = sp => (sp.sheets[0].cLegend || []).flatMap(g => g.items || []).some(it => /автодорог/.test(it.label));
+      const roadFts = sp => (sp.sheets[0].layers.find(l => l.key === "yandex.hd_roads")?.features || []).length;
+      try {
+        ["yandex.hd_roads", "egko.roads"].forEach(k => { if (DATA[k]) setLayerData(k, empty); }); delete DATA["calc.uds_ya"];
+        const none = albumSpec([sh]);
+        const [w, s, e, n] = turf.bbox(TERR), ax = turf.bboxPolygon([w - .0005, s - .0005, e + .0005, n + .0005]).geometry;
+        DATA["calc.uds_ya"] = { fc: { type: "FeatureCollection", features: [{ type: "Feature", geometry: ax, properties: { "Вид": "по оси" } }] } };
+        const uds = albumSpec([sh]);
+        return JSON.stringify({ noneItem: roadItem(none), noneFts: roadFts(none), udsItem: roadItem(uds), udsFts: roadFts(uds) });
+      } finally { keys.forEach(k => { if (saved[k]) { DATA[k].fc = saved[k]; if (k !== "calc.uds_ya") setLayerData(k, saved[k]); } else if (k === "calc.uds_ya") delete DATA[k]; }); }`));
+    check(!r.noneItem && r.noneFts === 0, "T76: дорог нигде нет — на листе их нет и знака «территории автодорог» в легенде нет");
+    check(r.udsItem && r.udsFts > 0, "T76: полигонов Яндекса нет — лист берёт УДС по осям (запасной источник), знак в легенде появился");
   });
 };

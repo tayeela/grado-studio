@@ -608,9 +608,24 @@ async function previewSheet(i) {
 // карты — фигурами по слоям, снимки — рисунками)
 let buildingN = 0;      // идущие сборки; пока >0, пункты PDF и PPTX в меню «Выгрузка» серые (app.js: expSync)
 const setBuilding = on => { buildingN += on ? 1 : -1; window.albumBuilding = buildingN > 0; if (!$("expMenu").hidden) window.expSync?.(); };
-const albumFile = (kind, only) => track(() => albumFile0(kind, only));
-async function albumFile0(kind = "pdf", only = null) {
+const albumFile = (kind, only, force) => track(() => albumFile0(kind, only, force));
+// T74: что не готово до выгрузки. Пустой слой в рамке листа считается по уже загруженным данным (ничего не скачивается)
+function emptyInFrame(sh) {
+  if (sh.frozen || sh.panels || ["tep", "title", "photos"].includes(sh.kind)) return [];
+  const bb = safe(() => frameBox(sh)); if (!bb) return [];
+  return (sh.keys || []).filter(k => { const f = DATA[k]?.fc?.features; if (!f || ERRORS[k] || !CHECKED.has(k) || f.length > 30000) return false;
+    return !f.some(x => { try { const b = turf.bbox(x); return b[0] <= bb[2] && b[2] >= bb[0] && b[1] <= bb[3] && b[3] >= bb[1]; } catch { return false; } }); }).map(k => SOURCES[k]?.title || k);
+}
+function exportIssues(kind, only) {
+  autoMeta();
+  const list = only ? [only] : ALBUM.sheets;
+  return AlbumMeta.exportIssues({ terr: !!TERR, meta: ALBUM.meta, title: only ? only.kind === "title" : true, sheets: list.map(s => {
+    const i = ALBUM.sheets.indexOf(s), why = [NOTREADY.get(s.id), FITWHY.get(s.id), LOSTNOTE.has(s.id) ? "часть слоёв не загрузилась при сборке" : ""].filter(Boolean).join("; ");
+    return { i, title: s.title, why, photos: s.kind === "photos" ? (s.photos || []).length : null, empty: emptyInFrame(s) }; }) });
+}
+async function albumFile0(kind = "pdf", only = null, force = false) {
   if (!ALBUM.sheets.length) return toast("В альбоме нет листов: «Добавить лист».");
+  if (!force) { const lines = exportIssues(kind, only); if (lines.length) return askExport(kind, only, lines); }
   const list = only ? [only] : ALBUM.sheets;
   busy(true); setBuilding(true);
   bpBegin(`${kind === "pdf" ? "PDF" : "PPTX"}: вёрстка ${list.length} ${shWord(list.length)} на сервере (лист за листом, остановить нельзя)…`, false);
@@ -690,7 +705,7 @@ function albumOfJson(j) {
   throw new Error("в файле нет листов альбома");
 }
 function readAlbumFile(file, confirmed) {
-  BUILDASK = null;
+  BUILDASK = null; EXPASK = null;
   if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект.");
   if (file.size > PROJECT_CAP) return toast(`Файл ${mb(file.size)} МБ больше предела проекта (${mb(PROJECT_CAP)} МБ): импорт отменён.`);
   if (!confirmed && file.size > IMPORT_WARN) { IMPORT = { name: file.name, size: file.size, file }; renderSheets(); return; }
@@ -704,7 +719,35 @@ function readAlbumFile(file, confirmed) {
   } catch (e) { toast("Файл не открыт: " + (e instanceof SyntaxError ? "это не JSON" : e.message)); } finally { busy(false); } };
   rd.readAsText(file);
 }
+/* Строка выбора перед выгрузкой, если что-то не готово (T74): тот же вид и клавиши, что у импорта; Esc — «Отмена» */
+let EXPASK = null;    // { kind, only, lines }
+function askExport(kind, only, lines) {
+  IMPORT = null; BUILDASK = null; EXPASK = { kind, only, lines };
+  window.winOpen?.("wSheets", true); renderSheets();
+  toast(`${kind === "pdf" ? "PDF" : "PPTX"}: есть что проверить (${lines.length}). Выгрузить всё равно или отменить?`);
+}
+function expAnswer(go) {
+  const a = EXPASK; EXPASK = null; renderSheets();
+  if (go && a) return albumFile0Tracked(a.kind, a.only);
+}
+const albumFile0Tracked = (kind, only) => track(() => albumFile0(kind, only, true));
+function expLine(l, k) {
+  const t = esc(l.text);
+  return l.sheet != null || l.stamp ? `<button class="btn" style="display:block;text-align:left;border:0;background:none;padding:1px 0;text-decoration:underline dotted" data-shexpl="${k}" title="${l.stamp ? "Открыть «Штамп»" : "Выбрать этот лист"}">${t}</button>` : `<div>${t}</div>`;
+}
+function expBarHTML() {
+  const a = EXPASK, L = a.lines, more = L.length - 6;
+  return `<div class="pad shbar" id="shImpBar"><div class="row" style="flex-wrap:wrap"><span class="note" style="padding:0 6px 0 0">${a.kind === "pdf" ? "PDF" : "PPTX"}: не всё готово</span><button class="btn primary" data-shexp="go">Выгрузить всё равно</button><button class="btn" data-shexp="cancel">Отмена</button></div>`
+    + `<div class="note" style="padding:4px 0 0">${L.slice(0, 6).map((l, k) => expLine(l, k)).join("")}${more > 0 ? `<div>и ещё ${more}</div>` : ""}</div></div>`;
+}
+function expPick(k) {
+  const l = EXPASK?.lines[k]; if (!l) return;
+  if (l.sheet != null) return pickSheet(l.sheet);
+  STAMP_OPEN = true; renderSheets(); const box = $("shStampBox");
+  (["short", "place", "address"].map(f => box?.querySelector(`[data-meta="${f}"]`)).find(i => i && !i.value.trim()) || box?.querySelector("input"))?.focus();
+}
 function importBarHTML() {
+  if (EXPASK) return expBarHTML();
   if (BUILDASK) return buildBarHTML();
   if (!IMPORT) return "";
   if (IMPORT.file) return `<div class="pad row shbar" style="flex-wrap:wrap" id="shImpBar"><span class="note" style="padding:0 6px 0 0">Файл ${mb(IMPORT.size)} МБ: проект станет большим, сохранение и совместная работа будут медленнее. Продолжить?</span><button class="btn primary" data-shimp="go">Продолжить</button><button class="btn" data-shimp="cancel">Отмена</button></div>`;
@@ -714,7 +757,7 @@ function importBarHTML() {
 /* Строка выбора при сборке набора поверх чужих листов: тот же вид и те же клавиши, что у импорта (Esc — «Отмена») */
 let BUILDASK = null;    // { name, n, run }
 function askBuild(name, n, run) {
-  IMPORT = null; BUILDASK = { name, n, run }; renderSheets();
+  IMPORT = null; EXPASK = null; BUILDASK = { name, n, run }; renderSheets();
   toast(`«${name}»: в альбоме уже есть другие листы. Выберите: заменить или добавить.`);
 }
 function buildAnswer(mode) {
@@ -871,7 +914,7 @@ function renderSheets() {
     + `${mi("shImport", "folder-open", "Из файла…", "Листы из проекта .grado2 или готовой вёрстки", "Взять листы альбома из файла: проекта .grado2 или готовой вёрстки. Файл читается в браузере, на сервер не уходит")}</div>`
     + `<input type="file" id="shImpFile" accept=".grado2,.json,application/json" hidden>`;
   icons(); syncBusy();
-  if (IMPORT || BUILDASK) $("shImpBar")?.querySelector("button")?.focus();   // выбор по клавиатуре: фокус на первую кнопку строки
+  if (IMPORT || BUILDASK || EXPASK) $("shImpBar")?.querySelector("button")?.focus();   // выбор по клавиатуре: фокус на первую кнопку строки
   else if (focusRow >= 0) el.querySelector(`.shrow[data-sh="${focusRow}"]`)?.focus();
 }
 function shMenu(id, on, btn) {
@@ -888,6 +931,7 @@ function shMenu(id, on, btn) {
 addEventListener("pointerdown", e => { if (SHM.open && !e.target.closest(".shmenu") && !e.target.closest("#shAdd,#shBuild")) shMenu(SHM.open, false); });
 const shEl = () => $("sheetsBody");
 shEl().addEventListener("keydown", e => {
+  if (e.key === "Escape" && EXPASK) { e.preventDefault(); e.stopPropagation(); expAnswer(false); return; }
   if (e.key === "Escape" && BUILDASK) { e.preventDefault(); e.stopPropagation(); buildAnswer("cancel"); return; }
   if (e.key === "Escape" && IMPORT) { e.preventDefault(); e.stopPropagation(); importAlbum("cancel"); return; }   // Esc в строке выбора — «Отмена»; Enter нажимает кнопку в фокусе сам
   const menu = e.target.closest?.(".shmenu"), trg = e.target.closest?.("#shAdd,#shBuild");
@@ -942,6 +986,8 @@ shEl().addEventListener("click", e => {
   if (b.id === "shSit") buildSituation();
   if (b.id === "shRefresh") tplManual();
   if (b.id === "shImport") { if (isViewer()) return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); $("shImpFile").click(); }
+  if (b.dataset.shexp) expAnswer(b.dataset.shexp === "go");
+  if (b.dataset.shexpl) expPick(+b.dataset.shexpl);
   if (b.dataset.shimp) importAlbum(b.dataset.shimp);
   if (b.dataset.shbuild) buildAnswer(b.dataset.shbuild);
   if (b.dataset.shpdf) albumFile("pdf", ALBUM.sheets[+b.dataset.shpdf]);
