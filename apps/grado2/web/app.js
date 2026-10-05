@@ -370,7 +370,11 @@ async function boundaryByNumbers(q) {
       if (TERR && !tAsk) { btn.dataset.lb = btn.textContent; btn.textContent = krt ? "Заменить вашу границу контуром КРТ?" : "Заменить вашу границу участками?"; tAsk = setTimeout(() => tBack(btn), 5000); return; }
       tBack(btn);
       if (krt) { const g = R.list[0]; if (!/Polygon/.test(g?.geometry?.type)) { toast("У найденной КРТ нет контура — граница не изменена."); return; }
-        setTerritory(g); toast(`Граница — контур ${(R.cards[0] || "КРТ").split(" · ")[0]}: ${fmt(TERR_M2 / 1e4, 2)} га.`); close(); return; }
+        setTerritory(g);
+        // номер КРТ — в шапку альбома, если владелец его не вписал сам (T73: meta.auto — заполнено программой)
+        const num = g.properties?.num_krt, m = (typeof ALBUM !== "undefined" ? ALBUM : null)?.meta;
+        if (num != null && m && (!m.short || m.auto?.short)) { m.short = `№ ${Math.round(+num) || num}`; m.auto = { ...(m.auto || {}), short: true }; window.markDirty?.(); if (typeof renderSheets === "function") renderSheets(); }
+        toast(`Граница — контур ${(R.cards[0] || "КРТ").split(" · ")[0]}: ${fmt(TERR_M2 / 1e4, 2)} га.`); close(); return; }
       if (parcelsToTerritory(R.list)) close(); return; }
     if (krt) { const ex = ol.extent.createEmpty(); R.list.forEach(f => ol.extent.extend(ex, toOl(f).getGeometry().getExtent())); mk.addFeatures(R.list.map(toOl)); fitExt(ex); return; }
     addParcels(R.list); const ex = ol.extent.createEmpty(); R.list.forEach(f => ol.extent.extend(ex, toOl(f).getGeometry().getExtent())); fitExt(ex); toast(`На карте: ${parcelsWord(R.list.length)} в слое «${DATA["nspd.parcels"]?.title || "Земельные участки (ЕГРН)"}».`); };
