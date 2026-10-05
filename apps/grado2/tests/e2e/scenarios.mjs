@@ -1271,8 +1271,10 @@ export default async p => {
       const raw = (DATA["gisogd.admin"]?.fc.features || []).reduce((n, f) => n + JSON.stringify(f.geometry).length, 0), vs = g => JSON.stringify(g).length;
       const dist = ps[0]?.layers.find(l => l.title === "районы")?.features || [], okr = ps[0]?.layers.find(l => l.title === "округа")?.features || [], d2 = ps[1]?.layers.find(l => l.title === "районы")?.features || [];
       return JSON.stringify({ bytes: JSON.stringify(sp).length, raw, n: ps.length, dist: dist.length, okr: okr.length, d2: d2.length, labels: okr.every(f => f.label) && d2.every(f => f.label), terr: !!ps[0]?.territory && !!sp.sheets[0].territory_lonlat,
-        home: ps[1]?.mask?.type, ring: Math.max(...dist.map(f => vs(f.g))) })`));
-    check(r.n === 2 && r.dist >= 100 && r.okr === 12 && r.d2 >= 5 && r.labels && r.terr && r.home, `T71: две карты, районов ${r.dist}/${r.d2}, округов ${r.okr}, подписи, территория и маска округа на месте`);
+        home: ps[1]?.mask?.type, ring: Math.max(...dist.map(f => vs(f.g))),
+        own: (() => { const o = homeAdm().okrug?.properties["Округ"]; return (DATA["gisogd.admin"]?.fc.features || []).filter(f => f.properties["Уровень"] === "район" && f.properties["Округ"] === o).length; })() })`));
+    // на карте округа — все его районы (их 4–17 в зависимости от округа, где лежит территория этого прогона)
+    check(r.n === 2 && r.dist >= 100 && r.okr === 12 && r.d2 >= 4 && r.d2 === r.own && r.labels && r.terr && r.home, `T71: две карты, районов ${r.dist}/${r.d2} (в округе ${r.own}), округов ${r.okr}, подписи, территория и маска округа на месте`);
     check(r.bytes < 600000 && r.bytes < r.raw / 3, `T71: спецификация листа ${r.bytes} байт (бюджет 600 000; полные полигоны слоя — ${r.raw})`);
   });
 };
