@@ -228,6 +228,8 @@ PPTKRT_C.forEach(sh => { sh.keys.push("egko.place_labels", "egko.addresses");
   sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN }; });
 // станции метро, МЦК и МЦД (правило 16): точки Яндекса в тех же тайлах, что дороги; на листе — значок и название (railStations)
 PPTKRT_C.forEach(sh => { sh.keys.push("yandex.stations"); sh.styles = { ...sh.styles, "yandex.stations": C_HIDDEN }; });
+// состав листа по ролям (T86a): начальный layout шаблона повторяет keys/styles/only 1:1, сборка листа читает его (sheetlayout.js)
+for (const sh of PPTKRT_C) sh.layout = SheetLayout.seedLayout(sh);
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
