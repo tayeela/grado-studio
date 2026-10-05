@@ -149,6 +149,11 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   gets зона 2 with `zone_note`. Fixture numbers (20 га, СПП 450/150 тыс. м²): B0 36 844 m², B1 26 746, A1 9 274 — asserted
   through the engine (`test_social_fixture.py`, `test_server.py`). Nothing changes on screen for the social objects
   yet: the «Нормативы» inputs and the plots in the sketch are the next steps.
+- **2026-10-05, ГРАДО 2 v0.98.13: okrug map keeps its districts.** v0.98.10 clipped the districts of the okrug panel to
+  the okrug's main part with `turf.intersect`, which failed on complex outlines and dropped whole districts (САО showed
+  4 of 16; found by the team's E2E). Now each district keeps the parts whose inner point lies in the main part
+  (`keepParts`): САО 15 of 16 (Молжаниновский, the distant part, is left out by design), СВАО 17/17, ВАО 16/16. The part
+  of the okrug that holds the territory is always kept (team architect).
 - **2026-10-05, ГРАДО 2 v0.98.12: СЗЗ in ГИС ОГД symbology.** Owner after the team audit: «рисуй, но возьми условные
   для СЗЗ как на ГИС ОГД». On the use sheet all sanitary zones are drawn by the portal layer styles (CartoCSS of
   virtual1743 / 1745 / 1746): established — solid #00FFC5, calculated — solid #F3F707, orientative — red #DF1A07 dashed

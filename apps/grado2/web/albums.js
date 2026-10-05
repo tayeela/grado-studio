@@ -23,10 +23,18 @@ function okrugMain(f, km = 3) {
   if (f?.geometry?.type !== "MultiPolygon") return f;
   const parts = f.geometry.coordinates.map(c => turf.polygon(c)), big = parts.reduce((a, b) => m2(b) > m2(a) ? b : a);
   const edge = turf.lineString(big.geometry.coordinates[0]);
-  const keep = parts.filter(p => p === big || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
+  const tc = TERR && turf.centroid(TERR);                    // часть, где лежит сама территория, остаётся всегда
+  const keep = parts.filter(p => p === big || (tc && safe(() => turf.booleanPointInPolygon(tc, p))) || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
   return { ...f, geometry: keep.length === 1 ? keep[0].geometry : { type: "MultiPolygon", coordinates: keep.map(p => p.geometry.coordinates) } };
 }
 window.okrugMain = okrugMain;
+// район без частей в отброшенных частях округа: каждая часть остаётся, если её внутренняя точка — в основной части.
+// Пересечение (turf.intersect) не годится: на сложных контурах оно падало, и район пропадал целиком (у САО оставалось 4 из 16)
+function keepParts(f, main) {
+  const g = f.geometry, ps = g?.type === "MultiPolygon" ? g.coordinates : g?.type === "Polygon" ? [g.coordinates] : [];
+  const keep = ps.filter(c => safe(() => turf.booleanPointInPolygon(turf.pointOnFeature(turf.polygon(c)), main)));
+  return { ...f, geometry: !keep.length ? null : keep.length === 1 ? { type: "Polygon", coordinates: keep[0] } : { type: "MultiPolygon", coordinates: keep } };
+}
 
 /* Полигоны схем округов и районов приводятся к масштабу листа (T71): рисовать контур точнее 0,5 пт на бумаге незачем, а
    полный слой — 111 тыс. вершин на панель — давал SVG в десятки мегабайт и минуты сборки. Упрощение — Дугласа–Пекера по общим
@@ -106,7 +114,7 @@ function admPanelSpec(p) {
     const home = okrug?.properties["Округ"] || okrug?.properties["Наименование"], main = okrugMain(okrug);
     // районы — только в пределах основной части округа (далёкие части не показываются)
     const dists = adm.filter(f => poly(f) && f.properties["Уровень"] === "район" && f.properties["Округ"] === home)
-      .map(f => main === okrug ? f : { ...f, geometry: safe(() => inter(f, main))?.geometry }).filter(f => f.geometry);
+      .map(f => main === okrug ? f : keepParts(f, main)).filter(f => f.geometry);
     sg = simplifyAdm(main && poly(main) ? [main, ...dists] : dists, scale);
     layers = [
       { title: "районы", features: dists.map(f => ({ g: G(f), fill: null, stroke: "#111111", w: .9, a: 0, label: LABEL_FN.adm({ get: k => f.properties[k] }), ls: 2.5, ...lab })) },
