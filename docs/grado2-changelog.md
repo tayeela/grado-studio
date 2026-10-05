@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).**
+  Album ППТ КРТ: sheets 5–9 list only signs whose objects are inside the frame (parcels, buildings, zone number/index,
+  ППТ/ПМТ, ГПЗУ/АГР, parcels inside/outside); empty legend groups are dropped; a documentation sheet with no documents in
+  the frame is «не готов» with the reason (`conceptWhy` in albums.js, used by `notReadyWhy`). River labels use roads
+  from project data by the vector-sheet rule (`sharedRoads`), so places match on all sheets. Pure rules in
+  `legendrules.js`, tests `legendrules_test.js`.
 - **2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.** Owner 06.10: «сделай на всех
   векторных схемах дороги ЕГКО, чтобы остались только полигональные, сделай красиво». Vector sheets (4–8): ЕГКО road
   polygons first, Yandex polygons only where ЕГКО has less than 20 % of Yandex's area in the frame; satellite sheets

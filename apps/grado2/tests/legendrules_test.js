@@ -1,0 +1,31 @@
+// legendrules.js: легенда только из нарисованного и общие препятствия подписей рек (запуск — tests/test_legendrules_js.py). T85a/T85b, 06.10.2026.
+const assert = require("assert");
+const R = require("../web/legendrules.js"), { pickRoadSource } = require("../web/roadsrc.js");
+let n = 0; const eq = (a, b, msg) => { assert.deepStrictEqual(a, b, "FAIL: " + msg); n++; };
+const PPT = "Схема обеспеченности территории разработанной документацией ППТ и ПМТ", GZ = "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР";
+eq(R.docKinds("ppt", { ppt: true, pmt: true }), ["ppt", "pmt"], "оба документа");
+eq(R.docKinds("ppt", { pmt: true }), ["pmt"], "только ПМТ");
+eq(R.docKinds("ppt", {}), [], "ничего");
+eq(R.docKinds("parcels", { ppt: true }), [], "лист без документов");
+eq(R.docTitle("ppt", PPT, { ppt: true, pmt: true }), PPT, "оба — название целиком");
+eq(R.docTitle("ppt", PPT, { ppt: true }), PPT.replace("ППТ и ПМТ", "ППТ"), "нет ПМТ");
+eq(R.docTitle("ppt", PPT, { pmt: true }), PPT.replace("ППТ и ПМТ", "ПМТ"), "нет ППТ");
+eq(R.docTitle("ppt", PPT, {}), PPT, "ничего нет — название не трогаем");
+eq(R.docTitle("gpzu", GZ, { gpzu: true }), GZ.replace("ГПЗУ и АГР", "ГПЗУ"), "нет АГР");
+eq(R.docTitle("gpzu", GZ, { agr: true }), GZ.replace("ГПЗУ и АГР", "АГР"), "нет ГПЗУ");
+eq(R.docTitle("gpzu", GZ, {}), GZ, "ничего нет");
+eq(R.docTitle("ppt", "«" + PPT + "»", { ppt: true }), "«" + PPT.replace("ППТ и ПМТ", "ППТ") + "»", "кавычка после названия");
+eq(R.docTitle("use", "Схема", { ppt: true }), "Схема", "чужой лист не трогаем");
+eq(R.docWhy("ppt", {}), "в рамке нет ППТ и ПМТ", "причина ППТ и ПМТ");
+eq(R.docWhy("gpzu", {}), "в рамке нет ГПЗУ и АГР", "причина ГПЗУ и АГР");
+eq(R.docWhy("ppt", { pmt: true }), "", "есть ПМТ — готов");
+eq(R.docWhy("gpzu", { agr: true }), "", "есть АГР — готов");
+eq(R.docWhy("use", {}), "", "лист без документов не «не готов»");
+eq(R.pruneGroups([{ title: "A", items: [1] }, { title: "B", items: [] }, { title: "C" }, null, { items: [2] }]).map(g => g.title), ["A", undefined], "пустые группы убраны");
+eq(R.pruneGroups(undefined), [], "нет легенды");
+// T85b: источник препятствий не зависит от листа: только площади в рамке из данных проекта, правило векторных схем
+eq(R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), "egko", "ЕГКО первым, как на листах 4–8");
+eq(R.obstacleSource({ ya: 1000, egko: 0 }, pickRoadSource), "yandex", "ЕГКО нет — Яндекс");
+eq(R.obstacleSource({ ya: 0, egko: 0 }, pickRoadSource), "none", "дорог нет");
+eq(R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), "повтор тот же");
+console.log(n + " checks ok");

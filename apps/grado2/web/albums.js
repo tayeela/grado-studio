@@ -390,6 +390,18 @@ const WATER_GENERIC = /^(пр\.?|ручей|пруд|р\.|кан\.?|оз\.?|вд
 // места подписей рек — одни для всех листов с той же рамкой и тем же масштабом (владелец 30.09.2026: «р. Моча на
 // разных листах в разных местах, на одном листе нет»): считаются по данным проекта, а не по набору слоёв листа
 const WL_MEMO = new Map();
+// общий набор препятствий для подписей рек: проезжая часть из данных проекта в рамке — источник выбирает roadsrc по
+// правилу векторных схем (ЕГКО первым), геометрия очищается как на листе (roadclean). Не зависит от слоёв листа
+function sharedRoads(bb) {
+  const polys = key => dataFts(key).filter(ft => /Polygon/.test(ft.g?.type));
+  const ya = polys("yandex.hd_roads"), eg = polys("egko.roads");
+  const area = g => safe(() => { const c = turf.bboxClip({ type: "Feature", geometry: g, properties: {} }, bb); return c?.geometry?.coordinates?.length ? turf.area(c) : 0; }) || 0;
+  const sum = fts => fts.reduce((s, f) => s + area(f.g), 0);
+  const src = LegendRules.obstacleSource({ ya: sum(ya), egko: sum(eg) }, RoadSrc.pickRoadSource);
+  const fts = src === "egko" ? eg : src === "yandex" ? ya : [];
+  const g = fts.length ? RoadClean.clean(turf, fts.map(f => f.g), bb) : null;
+  return g ? [{ g, b: turf.bbox(g) }].filter(x => !(x.b[2] < bb[0] || x.b[0] > bb[2] || x.b[3] < bb[1] || x.b[1] > bb[3])) : [];
+}
 const dataFts = key => (DATA[key]?.fc?.features || []).map(f => ({ g: f.geometry, props: f.properties || {} }));
 function waterLabels(out, bb) {
   const wl = out.layers.find(l => l.key === "egko.water_labels"); if (!wl) return;
@@ -433,9 +445,9 @@ function waterLabels(out, bb) {
   const nearest = arr => arr.reduce((x, y) => turf.distance(y, tc) < turf.distance(x, tc) ? y : x);
   // место подписи: прямоугольник текста на местности (ширина по числу знаков, кегль из листа) целиком в рамке и не
   // поперёк дорог — дороги-полигоны листа (владелец 30.09.2026: «р. Вороновка» пересекала дороги)
-  const roads = (out.layers.find(l => l.key === "yandex.hd_roads")?.features || [])   // уже с запасным источником (roadSource)
-    .filter(ft => /Polygon/.test(ft.g?.type)).map(ft => ({ g: ft.g, b: turf.bbox(ft.g) }))
-    .filter(x => !(x.b[2] < bb[0] || x.b[0] > bb[2] || x.b[3] < bb[1] || x.b[1] > bb[3]));
+  // дороги — из данных проекта по правилам векторных схем, а не из слоёв листа (T85b, правило 0): на листе 9 дорог нет,
+  // и подпись, посчитанная там первой, ложилась бы поперёк дорог на листах 5–8
+  const roads = sharedRoads(bb);
   turf.flatten(turf.polygonToLine(TERR)).features.forEach(l => roads.push({ g: l.geometry, b: turf.bbox(l) }));   // и границу территории
   const rect = (c, ang, text, ls) => {
     const L = text.length * .62 * ls * k / 2 + ls * k * .4, H = ls * .75 * k, a = ang * Math.PI / 180, ux = Math.cos(a), uy = Math.sin(a);
@@ -753,8 +765,10 @@ function conceptSheet(out, sheet, bb) {
       if (zonePoly.has(c) && safe(() => turf.booleanIntersects(zonePoly.get(c), TERR))) szzNotes.push(`Территория расположена в границах санитарно-защитной зоны (${{ 5: "установленной", 62: "расчётной", 63: "ориентировочной" }[c]})`); });
     if (L("gisogd.zouit")) L("gisogd.zouit").features = zoneFeats;
     else out.layers.push({ title: "ЗОУИТ и зоны ограничений (ОГД)", features: zoneFeats });
-    out.cLegend = [{ title: "Границы", items: [terr, { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] },
-      { title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] },
+    // правило 7 (T85a): участки и застройка — знаком, только если есть в рамке
+    const hasParcels = (L("nspd.parcels")?.features || []).some(inFrame), hasBuild = (L("egko.buildings")?.features || []).some(inFrame);
+    out.cLegend = [{ title: "Границы", items: [terr, ...(hasParcels ? [{ kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] : [])] },
+      ...(hasBuild ? [{ title: "Застройка", items: [{ kind: "fill", fill: "#ffffff", stroke: "#8c8c8c", label: "существующая" }] }] : []),
       ...(seen.size ? [{ title: "Виды разрешённого использования земельных участков, территорий",
         items: LAND_USE.filter(([n]) => seen.has(n)).map(([n, c]) => ({ kind: "fill", fill: c, stroke: "#7a7a7a",
           label: n === "территории улиц и дорог" ? ROADS_WORD : n })) }] : []),   // формулировка образца на всех листах (правило 11)
@@ -818,10 +832,11 @@ function conceptSheet(out, sheet, bb) {
     // индексы типа функционального назначения — только те, что на карте, с названием типа из тех же зон (как в образце)
     // индекс типа функционального назначения — цифрами в прямоугольнике знака своей зоны, без отдельного списка
     // (владелец 30.09.2026: «впиши цифры в прямоугольник условного обозначения… убрав дублирование»)
-    out.cLegend = [bounds, { title: "Функциональные зоны", items: [...zones.map(({ label, z }) => { const ix = [...z.idx].sort();
+    // пояснения номера и индекса — только если зоны видны (правило 7, T85a)
+    out.cLegend = [bounds, ...(zones.length ? [{ title: "Функциональные зоны", items: [...zones.map(({ label, z }) => { const ix = [...z.idx].sort();
         return { kind: "fill", fill: gpFill(label, ix[0]), stroke: "#3c3c3c", a: 1, num: ix.length ? ix.join(", ") : undefined, label: String(label).toLowerCase() }; }),
       { kind: "text", sample: "10", family: "sans-bold", underline: true, label: "номер функциональной зоны" },
-      { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }];
+      { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }] : [])];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры", widths: [.17, .17, .3, .36],
       // «функц. зоны» не разрывается (владелец 01.10.2026, правило 6.12)
       cols: ["Номер функц.\u00a0зоны", "Индекс функц.\u00a0зоны", "Тип функц.\u00a0зоны", "Прогнозируемый фонд застройки функц.\u00a0зоны, тыс.\u00a0кв.\u00a0м"],
@@ -833,11 +848,12 @@ function conceptSheet(out, sheet, bb) {
       { key: "gisogd.pmt", title: "Проекты межевания территории", color: "#00d000", text: p => p.document_1 ? docLine(p) : ["Проект межевания территории", p.document_n ? `№\u00a0${p.document_n}` : "", p.document_d ? `от ${dateRu(p.document_d)} г.` : ""].filter(Boolean).join(" ") }]);
     // легенда и название листа — только то, что попало в рамку (правила 7, 11, 12)
     const has = key => (L(key)?.features || []).some(inFrame);
-    if (!has("gisogd.pmt")) out.title = String(out.title || sheet.title || "").replace(/\s+и\s+ПМТ(?=$|[\s,.»])/, "");
-    if (!has("gisogd.ppt")) out.title = String(out.title || sheet.title || "").replace(/ППТ\s+и\s+(?=ПМТ)/, "");
-    out.cLegend = [bounds, { title: "Разработанная документация", items: [
-      ...(has("gisogd.ppt") ? [{ kind: "fill", hatch: true, fill: "#222222", stroke: "#222222", angle: 135, label: "проекты планировки территории" }] : []),
-      ...(has("gisogd.pmt") ? [{ kind: "fill", stroke: "#00d000", width: .5, label: "проекты межевания территории" }] : [])] }];
+    // ничего нет — название не трогаем, группы «Разработанная документация» нет, лист «не готов» (conceptWhy)
+    const hv = { ppt: has("gisogd.ppt"), pmt: has("gisogd.pmt") };
+    out.title = LegendRules.docTitle("ppt", out.title || sheet.title || "", hv);
+    out.cLegend = LegendRules.pruneGroups([bounds, { title: "Разработанная документация", items: [
+      ...(hv.ppt ? [{ kind: "fill", hatch: true, fill: "#222222", stroke: "#222222", angle: 135, label: "проекты планировки территории" }] : []),
+      ...(hv.pmt ? [{ kind: "fill", stroke: "#00d000", width: .5, label: "проекты межевания территории" }] : [])] }]);
   }
   if (k === "gpzu") {
     // ГПЗУ с номером на карте; свидетельство АГР на том же участке — второй строкой того же пункта, как в образце
@@ -851,13 +867,13 @@ function conceptSheet(out, sheet, bb) {
         + (q ? `\nАГР ${q.document_n ? "№\u00a0" + q.document_n : ""} ${q.document_d ? `от ${dateRu(q.document_d)} г.` : ""}`.replace(/\s+$/, "") : ""); } }]);
     (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
     out.cLists = lists;
-    if (!agr.length) {                                          // АГР в рамке нет — и в названиях его нет (правило 12)
-      out.title = String(out.title || sheet.title || "").replace(/\s+и\s+АГР(?=$|[\s,.»])/, "");
-      lists.forEach(l => { l.title = String(l.title).replace(/\s+и свидетельства об утверждении АГР$/, ""); });
-    }
-    out.cLegend = [bounds, { title: "Разработанная документация", items: [
-      ...(agr.length ? [{ kind: "fill", hatch: true, fill: "#ff3b3b", stroke: "#ff3b3b", angle: 135, label: "архитектурно-градостроительное решение" }] : []),   // только если АГР в рамке
-      { kind: "fill", hatch: true, fill: "#7b7bf2", stroke: "#7b7bf2", angle: 45, label: "градостроительный план земельного участка" }] }];
+    // название и знаки — по тому, что в рамке (правила 7, 12); ничего нет — группы нет, лист «не готов» (conceptWhy)
+    const hv = { gpzu: (L("gisogd.gpzu")?.features || []).some(inFrame), agr: agr.length > 0 };
+    out.title = LegendRules.docTitle("gpzu", out.title || sheet.title || "", hv);
+    if (!agr.length) lists.forEach(l => { l.title = String(l.title).replace(/\s+и свидетельства об утверждении АГР$/, ""); });
+    out.cLegend = LegendRules.pruneGroups([bounds, { title: "Разработанная документация", items: [
+      ...(hv.agr ? [{ kind: "fill", hatch: true, fill: "#ff3b3b", stroke: "#ff3b3b", angle: 135, label: "архитектурно-градостроительное решение" }] : []),
+      ...(hv.gpzu ? [{ kind: "fill", hatch: true, fill: "#7b7bf2", stroke: "#7b7bf2", angle: 45, label: "градостроительный план земельного участка" }] : [])] }]);
   }
   if (k === "parcels") {
     const pl = L("nspd.parcels"), cards = [], marks = [];
@@ -866,7 +882,7 @@ function conceptSheet(out, sheet, bb) {
       if (!x || m2(x) < Math.min(50, m2(f) * .05)) return;
       ft.stroke = "#0000ff"; ft.fill = "#0000ff"; ft.w = 1;   // толщина — как у участков за границей (владелец 30.09.2026)
       const p = f.properties, kn = p["Кадастровый номер"] || "—";
-      cards.push({ area: m2(f), rows: [["Кадастровый номер", kn], ["Адрес", p["Адрес"] || "—"],
+      cards.push({ feat: ft, area: m2(f), rows: [["Кадастровый номер", kn], ["Адрес", p["Адрес"] || "—"],
         // площадь — уточнённая по ЕГРН (она же площадь границы в МСК), затем площадь из записи, затем посчитанная;
         // форма собственности — как записана (правится в свойствах участка: «Общая долевая собственность», «Аренда с …»)
         ["Площадь (га)", fmt((+p["Площадь уточнённая, м²"] || +p["Площадь участка, м²"] || m2(f)) / 1e4, 4)], ["Вид разрешённого использования", p["ВРИ"] || "—"],
@@ -891,12 +907,15 @@ function conceptSheet(out, sheet, bb) {
       rows: cards.map((c, i) => [String(i + 1), val(c, "Кадастровый номер"), val(c, "Площадь (га)"), val(c, "Вид разрешённого использования"),
         String(val(c, "Форма собственности")).replace(/(^|\s)(с|по|от|до)\s/g, "$1$2\u00a0")]) };   // «с 02.05.2023» не разрывается (правило 11)
     out.veil = .35;                                             // белая дымка на снимке — границы участков не сливаются
+    // правило 7 (T85a): участки вне и в границах территории — каждый знак только если такие участки видны
+    const outside = (pl?.features || []).some(ft => inFrame(ft) && !cards.some(c => c.feat === ft));
     out.cLegend = [{ title: "Границы", items: [terr,
-      { kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" },
-      { kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" },
-      { kind: "num", sample: "1", stroke: "#1f3fbf", label: "порядковый номер земельного участка в таблице" }] }];   // знак номера, как в «Хатминки» (правило 11)
+      ...(outside ? [{ kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" }] : []),
+      ...(cards.length ? [{ kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" },
+        { kind: "num", sample: "1", stroke: "#1f3fbf", label: "порядковый номер земельного участка в таблице" }] : [])] }];   // знак номера, как в «Хатминки» (правило 11)
   }
   out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
+  if (out.cLegend) out.cLegend = LegendRules.pruneGroups(out.cLegend);   // группа без знаков не печатается (T85a)
   if (!out.cLegend && k !== "photos") out.cLegend = [bounds];
   conceptRail(out, box, k);
   conceptStations(out, k);
@@ -955,6 +974,20 @@ function conceptDistricts(out, bb, k) {
     label: nm(f), ls: 14.3 * .3528, lf: "sans-bold", lh: .6, lcol: "#9e1717", la: 0 })) });
 }
 window.conceptSheet = conceptSheet;
+// лист документации, у которого в рамке нет ни одного документа его вида, «не готов» с причиной (T85a, правило 7): считается
+// по уже загруженным данным, без сборки листа. Слой, который не скачался, причиной не считается (это другая причина)
+const DOC_KEYS = { ppt: { ppt: "gisogd.ppt", pmt: "gisogd.pmt" }, gpzu: { gpzu: "gisogd.gpzu", agr: "gisogd.agr" } };
+function conceptWhy(s) {
+  const keys = DOC_KEYS[s?.concept]; if (!keys || s.frozen || !TERR) return "";
+  const bb = safe(() => frameBox(s)); if (!bb) return "";
+  const box = turf.bboxPolygon(bb), has = {};
+  for (const [kind, key] of Object.entries(keys)) {
+    if (ERRORS[key] || !CHECKED.has(key)) return "";
+    has[kind] = (DATA[key]?.fc?.features || []).some(f => /Polygon|Line/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, box)));
+  }
+  return LegendRules.docWhy(s.concept, s.concept === "gpzu" ? { gpzu: has.gpzu, agr: has.agr } : has);
+}
+window.conceptWhy = conceptWhy;   // sheets.js notReadyWhy: причина в значке листа и в окне выгрузки
 
 /* План реализации ППТ КРТ: шапка и листы 1–2 — по шаблону владельца, листы 3–9 — как в «ГК Царицыно». */
 const PPTKRT = [

@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Слои и листы — макет</title>
+<meta name="viewport" content="width=1440">
+<style>
+:root{
+  --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line:#d4d4d4; --line-2:#bdbdbd;
+  --text:#1d1d1f; --muted:#5f6368; --faint:#6b6e73; --hover:#e4e4e4; --selrow:#d3e3f8;
+  --accent:#2f6fc4; --accent-ink:#fff; --good:#1f7a4d; --warn:#9a5b00; --bad:#b3261e;
+  --canvas:#f5f4f0; --graph:#e6e6e2; --sh-2:0 4px 14px rgba(0,0,0,.2);
+  --ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  color-scheme:dark; --bg:#1f1f1f; --panel:#2a2a2a; --field:#1e1e1e; --line:#3a3a3a; --line-2:#6a6a6a;
+  --text:#e8e8e8; --muted:#b0b0b0; --faint:#a0a0a0; --hover:#353535; --selrow:#203550;
+  --accent:#6aa8f2; --accent-ink:#0f0f0f; --good:#5cc08c; --warn:#e0a13a; --bad:#f5806f;
+  --graph:#181818; --canvas:#232321; --sh-2:0 4px 14px rgba(0,0,0,.4);
+}}
+*{box-sizing:border-box}
+body{margin:0;width:1440px;height:900px;background:var(--bg);color:var(--text);font:12px/1.35 var(--ui);position:relative;overflow:hidden}
+svg.i{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.top{height:38px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--muted)}
+.top b{color:var(--text);font-weight:600;margin-right:8px}
+.top .t{padding:4px 9px;border-radius:3px}
+.map{position:absolute;top:38px;bottom:24px;left:0;right:0;background:var(--canvas);
+  background-image:linear-gradient(var(--graph) 1px,transparent 1px),linear-gradient(90deg,var(--graph) 1px,transparent 1px);background-size:48px 48px}
+.status{position:absolute;bottom:0;left:0;right:0;height:24px;background:var(--panel);border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 10px;color:var(--muted)}
+.status b{color:var(--text);font-weight:600}
+.status .r{margin-left:auto}
+/* окно */
+.win{position:absolute;left:92px;top:58px;width:1256px;height:790px;background:var(--panel);border:1px solid var(--line-2);border-radius:6px;box-shadow:var(--sh-2);display:flex;flex-direction:column;overflow:hidden}
+.wh{height:30px;display:flex;align-items:center;gap:8px;padding:0 6px 0 12px;border-bottom:1px solid var(--line);font-weight:600}
+.wh .sp{flex:1}
+.wh .b{font-weight:400;color:var(--muted);padding:3px 8px;border-radius:3px;border:1px solid transparent}
+.wh .b.on{background:var(--field);border-color:var(--line-2);color:var(--text)}
+.bar{height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);color:var(--muted)}
+.bar .sel{background:var(--field);border:1px solid var(--line-2);border-radius:3px;padding:3px 8px;color:var(--text)}
+.bar .sp{flex:1}
+.btn{padding:3px 9px;border:1px solid var(--line-2);border-radius:3px;background:var(--field);color:var(--text)}
+.cols{flex:1;display:grid;grid-template-columns:318px 1fr 300px;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+.col:last-child{border-right:0}
+.ch{height:26px;display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--faint);text-transform:uppercase;font-size:11px;letter-spacing:.04em;border-bottom:1px solid var(--line)}
+.ch .sp{flex:1}
+.ch .n{text-transform:none;letter-spacing:0}
+.list{flex:1;overflow:hidden;padding:4px 0}
+/* листы */
+.sh{display:grid;grid-template-columns:20px 1fr auto;gap:4px 6px;align-items:start;padding:6px 10px;margin:0 4px;border-radius:3px;border:1px solid transparent}
+.sh .no{color:var(--faint);text-align:right;padding-top:1px}
+.sh .nm{line-height:1.3}
+.sh .mt{color:var(--faint);grid-column:2/4;margin-top:-2px}
+.sh.cur{background:var(--selrow)}
+.sh.tgt{background:var(--selrow);border:1px solid var(--accent);outline:2px solid color-mix(in srgb,var(--accent),transparent 65%)}
+.sh.tgt .mt{color:var(--accent);font-weight:600}
+.sh.frz .nm{color:var(--muted)}
+.chip{display:inline-flex;align-items:center;gap:3px;padding:0 6px;border-radius:9px;font-size:11px;line-height:16px;border:1px solid var(--line-2);color:var(--muted);white-space:nowrap}
+.chip.warn{color:var(--warn);border-color:currentColor}
+.chip.bad{color:var(--bad);border-color:currentColor}
+.chip.good{color:var(--good);border-color:currentColor}
+.chip.acc{color:var(--accent);border-color:currentColor}
+/* роли */
+.hd,.rl{display:grid;grid-template-columns:22px 26px minmax(120px,1fr) 92px 150px 150px;align-items:center;column-gap:8px;padding:0 12px}
+.hd{height:24px;color:var(--faint);font-size:11px;border-bottom:1px solid var(--line)}
+.rl{height:32px;border-bottom:1px solid var(--line)}
+.rl.cur{background:var(--selrow)}
+.rl.off .nm,.rl.off .src{color:var(--faint)}
+.rl .nm{font-weight:600}
+.rl .src{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rl svg.eye{color:var(--text)} .rl.off svg.eye{color:var(--faint)}
+.cov{display:flex;align-items:center;gap:6px}
+.cov .tr{flex:1;height:4px;background:var(--hover);border-radius:2px;overflow:hidden}
+.cov .tr i{display:block;height:100%;background:var(--good)}
+.cov.w .tr i{background:var(--warn)} .cov.n .tr i{background:var(--line-2)}
+.cov span{width:44px;white-space:nowrap;text-align:right;color:var(--muted)}
+.chain{background:var(--field);border-bottom:1px solid var(--line);padding:6px 12px 8px 66px}
+.chain .t{color:var(--faint);margin-bottom:4px}
+.ch2{display:grid;grid-template-columns:18px 22px 1fr 150px 130px;gap:8px;align-items:center;height:26px;border:1px solid var(--line);border-radius:3px;margin-bottom:3px;padding:0 8px;background:var(--panel)}
+.ch2.use{border-color:var(--accent)}
+.grip{color:var(--faint)}
+.rl .gp{width:14px}
+.sep{height:22px;display:flex;align-items:center;padding:0 12px;color:var(--faint);font-size:11px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--hover),transparent 50%)}
+.note{padding:8px 12px;color:var(--muted)}
+.note .chip{margin-right:6px}
+/* банк */
+.bk{padding:5px 12px 2px;font-weight:600;color:var(--text);display:flex;gap:6px;align-items:center}
+.bk small{font-weight:400;color:var(--faint)}
+.bl{display:grid;grid-template-columns:14px 1fr auto;gap:6px;align-items:center;height:24px;padding:0 12px 0 22px;color:var(--text)}
+.bl .ons{color:var(--faint);font-size:11px}
+.bl.drag{background:var(--selrow);color:var(--accent)}
+.bl.drag .ons{color:var(--accent)}
+.ghost{position:absolute;left:330px;top:400px;display:flex;align-items:center;gap:6px;padding:4px 9px;background:var(--field);border:1px solid var(--accent);border-radius:3px;box-shadow:var(--sh-2);z-index:5;color:var(--text)}
+.hint{position:absolute;left:330px;top:434px;max-width:330px;background:var(--text);color:var(--bg);padding:5px 9px;border-radius:3px;z-index:5}
+.hint b{font-weight:600}
+.outs{border-top:1px solid var(--line);padding:6px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;color:var(--muted);background:var(--panel)}
+.outs div{border:1px solid var(--line);border-radius:3px;padding:5px 8px;background:var(--field)}
+.outs b{display:block;color:var(--text);font-weight:600;margin-bottom:2px}
+.outs .bad b{color:var(--bad)} .outs .good b{color:var(--good)}
+kbd{font:inherit;border:1px solid var(--line-2);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:var(--field);color:var(--text)}
+.keys{padding:6px 12px;border-top:1px solid var(--line);color:var(--muted);line-height:1.9}
+</style></head><body>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 5.1A9.7 9.7 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3 3.7M6.6 6.7A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 4-.9"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+<symbol id="grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01"/></symbol>
+<symbol id="chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="chevd" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="undo" viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3"/></symbol>
+</defs></svg>
+
+<div class="top"><b>ГРАДО 2</b><span class="t">Файл</span><span class="t">Данные</span><span class="t">Чертёж</span><span class="t">Окна</span><span class="t">Альбом КРТ 3229</span></div>
+<div class="map"></div>
+
+<div class="win">
+  <div class="wh"><svg class="i"><use href="#grip"/></svg>Слои и листы · альбом КРТ 3229<span class="sp"></span><span class="b">Свернуть</span><span class="b">Закрепить</span><span class="b">×</span></div>
+  <div class="bar">
+    <span>Лист:</span><span class="sel">5 · Схема существующего использования…</span>
+    <span class="chip good">лист готов к печати</span>
+    <span class="chip warn">1 предупреждение</span>
+    <span class="sp"></span>
+    <span class="btn">Собрать альбом</span><span class="btn">Скопировать лист…</span>
+  </div>
+  <div class="cols">
+    <!-- ЛИСТЫ -->
+    <div class="col">
+      <div class="ch">Листы альбома<span class="sp"></span><span class="n">9</span></div>
+      <div class="list">
+        <div class="sh frz"><span class="no">1</span><span class="nm">Титульный</span><span class="chip"><svg class="i"><use href="#lock"/></svg>готов</span><span class="mt">Шаблон, слоёв нет</span></div>
+        <div class="sh frz"><span class="no">2</span><span class="nm">Месторасположение</span><span class="chip"><svg class="i"><use href="#lock"/></svg>готов</span><span class="mt">1 роль · районы и округа</span></div>
+        <div class="sh"><span class="no">3</span><span class="nm">Ортофотоплан</span><span></span><span class="mt">снимок · 6 ролей</span></div>
+        <div class="sh"><span class="no">4</span><span class="nm">Фотофиксация</span><span></span><span class="mt">белая основа · 7 ролей</span></div>
+        <div class="sh cur"><span class="no">5</span><span class="nm">Схема существующего использования территории и ЗОУИТ</span><span class="chip warn">1</span><span class="mt">белая основа · 9 ролей</span></div>
+        <div class="sh"><span class="no">6</span><span class="nm">Генплан. Функциональные зоны</span><span></span><span class="mt">белая основа · 6 ролей</span></div>
+        <div class="sh tgt"><span class="no">7</span><span class="nm">ППТ и ПМТ. Обеспеченность документацией</span><span></span><span class="mt">Отпустите: включить «Рельс и станции»</span></div>
+        <div class="sh"><span class="no">8</span><span class="nm">ГПЗУ и АГР</span><span></span><span class="mt">белая основа · 7 ролей</span></div>
+        <div class="sh"><span class="no">9</span><span class="nm">Землепользователи</span><span class="chip bad">не готов</span><span class="mt">нет участков НСПД в территории</span></div>
+      </div>
+      <div class="keys"><kbd>↑</kbd><kbd>↓</kbd> лист · <kbd>→</kbd> к ролям листа · <kbd>Enter</kbd> открыть лист на холсте</div>
+    </div>
+
+    <!-- РОЛИ ВЫБРАННОГО ЛИСТА -->
+    <div class="col">
+      <div class="ch">Что на листе 5, сверху вниз<span class="sp"></span><span class="n">порядок задан образцом</span></div>
+      <div class="hd"><span></span><span></span><span>Роль</span><span>Источник</span><span>Покрытие рамки</span><span>Состояние</span></div>
+      <div class="list" style="padding:0">
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Участки</span><span class="src">НСПД</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span></span></div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">ЗОУИТ</span><span class="src">ГИС ОГД · 3 слоя слиты</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span></span></div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Красные линии</span><span class="src">ГИС ОГД</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span></span></div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Здания</span><span class="src">ЕГКО</span><div class="cov w"><div class="tr"><i style="width:88%"></i></div><span>88 %</span></div><span class="chip warn">на 12 % рамки нет</span></div>
+        <div class="rl cur"><svg class="i eye"><use href="#eye"/></svg><svg class="i" style="color:var(--muted)"><use href="#chevd"/></svg><span class="nm">Дороги</span><span class="src">ЕГКО</span><div class="cov"><div class="tr"><i style="width:93%"></i></div><span>93 %</span></div><span class="chip acc"><svg class="i"><use href="#undo"/></svg>изменено вручную</span></div>
+        <div class="chain">
+          <div class="t">Откуда брать дороги. Верхний источник главный, нижний — запасной. Тяните за <svg class="i" style="vertical-align:-2px"><use href="#grip"/></svg>, чтобы поменять.</div>
+          <div class="ch2 use"><svg class="i grip"><use href="#grip"/></svg><span class="no">1</span><span>ЕГКО, дороги</span><div class="cov"><div class="tr"><i style="width:93%"></i></div><span>93 %</span></div><span class="chip good">используется</span></div>
+          <div class="ch2"><svg class="i grip"><use href="#grip"/></svg><span class="no">2</span><span>Яндекс, дороги HD</span><div class="cov w"><div class="tr"><i style="width:61%"></i></div><span>61 %</span></div><span class="chip warn">окно 40 км²</span></div>
+          <div class="ch2"><svg class="i grip"><use href="#grip"/></svg><span class="no">3</span><span>OSM, оси улиц</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span class="chip">только подписи</span></div>
+          <div class="t" style="margin:5px 0 0">Выбор вручную с 06.10, 14:20. <span style="color:var(--accent)">Вернуть автоматический выбор</span> (Яндекс первым, где он покрывает рамку)</div>
+        </div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Вода</span><span class="src">ЕГКО</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span></span></div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Рельс и станции</span><span class="src">Яндекс</span><div class="cov w"><div class="tr"><i style="width:62%"></i></div><span>62 %</span></div><span class="chip warn">станция вне окна</span></div>
+        <div class="rl"><svg class="i eye"><use href="#eye"/></svg><span></span><span class="nm">Названия улиц</span><span class="src">OSM</span><div class="cov"><div class="tr"><i style="width:100%"></i></div><span>100 %</span></div><span></span></div>
+        <div class="rl off"><svg class="i eye"><use href="#eyeoff"/></svg><span></span><span class="nm">Аэродром</span><span class="src">ГИС ОГД</span><div class="cov n"><div class="tr"><i style="width:0"></i></div><span>0 %</span></div><span class="chip">в рамке нет</span></div>
+        <div class="sep">Роли, которых на этом листе по образцу нет: Генплан, ППТ и ПМТ, ГПЗУ, АГР, Землепользователи</div>
+        <div class="note"><span class="chip warn">Яндекс</span>Рамка листа шире окна Яндекса (40 км²). За окном дорог, рельсов и станций метро нет; ЕГКО закрывает 93 %. Откройте строку «Дороги», чтобы выбрать источник.</div>
+      </div>
+      <div class="keys"><kbd>Пробел</kbd> глаз · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник выше/ниже · <kbd>R</kbd> вернуть авто · <kbd>M</kbd> «Перенести на лист…» · <kbd>Esc</kbd> отмена</div>
+    </div>
+
+    <!-- БАНК -->
+    <div class="col">
+      <div class="ch">Слои проекта<span class="sp"></span><span class="n">где используется</span></div>
+      <div class="list">
+        <div class="bk">Дороги <small>3</small></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ЕГКО, дороги</span><span class="ons">3 4 5 6 7 8</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>Яндекс, дороги HD</span><span class="ons">3 4 5 6 7 8</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>OSM, оси улиц</span><span class="ons">3 4 5 6 7 8</span></div>
+        <div class="bk">Рельс и станции <small>1</small></div>
+        <div class="bl drag"><svg class="i grip"><use href="#grip"/></svg><span>Яндекс, рельс и станции</span><span class="ons">3 4 5 6 8</span></div>
+        <div class="bk">Здания <small>1</small></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ЕГКО, здания</span><span class="ons">4 5 6 7 8</span></div>
+        <div class="bk">Вода <small>1</small></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ЕГКО, вода</span><span class="ons">3 4 5 6 7 8 9</span></div>
+        <div class="bk">Участки и ЗОУИТ <small>5</small></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>НСПД, участки</span><span class="ons">5 9</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ГИС ОГД, ЗОУИТ</span><span class="ons">5</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ГИС ОГД, красные линии</span><span class="ons">5</span></div>
+        <div class="bk">Генплан и документы <small>6</small></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>Функциональные зоны</span><span class="ons">6</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ППТ, ПМТ</span><span class="ons">7</span></div>
+        <div class="bl"><svg class="i grip"><use href="#grip"/></svg><span>ГПЗУ, АГР</span><span class="ons">8</span></div>
+      </div>
+      <div class="keys"><kbd>Tab</kbd> между колонками · <kbd>M</kbd> перенести выбранный слой на лист</div>
+    </div>
+  </div>
+  <div class="outs">
+    <div class="good"><b>Лист принимает</b>Подсветка рамкой и подпись «Отпустите: включить…». Слой встаёт в роль, порядок задан образцом.</div>
+    <div class="bad"><b>Лист не принимает (лист 9)</b>Красная подпись у курсора: «На листе 9 нет роли «Рельс и станции». По образцу её там не показывают.» Слой возвращается в банк.</div>
+    <div class="bad"><b>Лист готов (листы 1, 2)</b>Серая подпись: «Лист готов, замок. Alt при отпускании — копия как рабочий лист.» Сам лист не меняется.</div>
+  </div>
+  <div class="ghost"><svg class="i"><use href="#grip"/></svg>Яндекс, рельс и станции</div>
+  <div class="hint">Лист 7 «ППТ и ПМТ»: <b>включить роль «Рельс и станции»</b>. Alt — копия на лист, а не перенос.</div>
+</div>
+
+<div class="status"><span><b>Что дальше:</b> отпустите слой на листе 7 — рельс и станции появятся там. Esc — отмена.</span><span class="r">Альбом КРТ 3229 · правки хранятся отдельно от автосбора</span></div>
+</body></html>

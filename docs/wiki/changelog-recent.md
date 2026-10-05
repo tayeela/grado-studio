@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).
 - 2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.
 - 2026-10-06, ГРАДО 2 v0.99.11: station names always red and always placed.
 - 2026-10-06, ГРАДО 2 v0.99.10: metro, МЦК and МЦД stations with icons; nested quotes.
@@ -21,4 +22,3 @@
 - 2026-10-03, ГРАДО 2 v0.98.2: dark theme polish, help texts, graph labels scale with the interface.
 - 2026-10-03, ГРАДО 2 v0.98.1: shared album merged sheet by sheet; «Выгрузка» menu leftovers.
 - 2026-10-03, ГРАДО 2 v0.98.0: the «Листы и альбом» window rebuilt; one «Выгрузка» menu.
-- 2026-10-03, ГРАДО 2 v0.97.0: an album can be imported from a project file («Листы» → «Из файла…»).

@@ -445,7 +445,8 @@ function notReadyWhy(s) {
   const bad = ks.filter(k => ERRORS[k]), miss = ks.filter(k => !bad.includes(k) && !lyr(k) && !DATA[k] && SOURCES[k] && !CHECKED.has(k));
   const w = (a, one, many) => `${a.length > 1 ? "слои" : "слой"} ${a.map(x => "«" + t(x) + "»").join(", ")} ${a.length > 1 ? many : one}`;      // пустой результат выгрузки не в счёт: слой запрашивали
   const osmBad = bad.filter(k => k.startsWith("osm.")), otherBad = bad.filter(k => !k.startsWith("osm."));   // OSM: «улицы OSM не загрузились (портал ответил 504) — повторите сборку позже»
-  return [...osmBad.map(k => lostPhrase(k)), otherBad.length ? w(otherBad, "не загрузился", "не загрузились") : "", miss.length ? w(miss, "не загружен", "не загружены") : ""].filter(Boolean).join("; ");
+  return [...osmBad.map(k => lostPhrase(k)), otherBad.length ? w(otherBad, "не загрузился", "не загрузились") : "", miss.length ? w(miss, "не загружен", "не загружены") : "",
+    window.conceptWhy?.(s) || ""].filter(Boolean).join("; ");   // лист документации без документов в рамке (albums.js, T85a)
 }
 // лист проекта старого формата (нет sheet.tpl): ничего не меняется, записывается только откуда он (legacy: true) — автоматически такой лист не пересобирается
 function tplAdopt() {

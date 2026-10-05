@@ -18,6 +18,7 @@
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
+| `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
@@ -37,6 +38,7 @@
 | `gpzones_test.js` | JS | 11 |
 | `insol_test.js` | JS | 22 |
 | `labelfmt_test.js` | JS | 28 |
+| `legendrules_test.js` | JS | 24 |
 | `migrate_test.js` | JS | 22 |
 | `railstations_test.js` | JS | 30 |
 | `roadclean_test.js` | JS | 17 |
