@@ -1920,6 +1920,55 @@ class SearchCadastral(unittest.TestCase):
         self.assertTrue(any("нет контура" in x for x in o["notes"]))
 
 
+class SearchKrt(unittest.TestCase):
+    """T72: поиск по номеру КРТ в слое «Комплексное развитие территорий (ОГД)»; слой подменён, сети нет."""
+    FEAT = {"type": "Feature", "grado_key": "pzz_krt_virtual:3784",
+            "geometry": {"type": "Polygon", "coordinates": [[[37.8, 55.8], [37.8025, 55.8], [37.8025, 55.8015], [37.8, 55.8]]]},
+            "properties": {"num_krt": 3229.0, "okrug": "ВАО", "rayon": "Гольяново", "pzz": "2187-ПП от 12.08.2026", "p_krt": 1.65667491492196}}
+
+    def setUp(self):
+        S.KRT_CACHE[:] = [0.0, None]
+        self.api = mock.patch.object(S, "GisogdApi")
+        self.fetch = self.api.start().return_value.fetch
+        self.fetch.return_value = {"features": [self.FEAT, {"type": "Feature", "geometry": None, "properties": {"num_krt": 1.0}}]}
+
+    def tearDown(self):
+        self.api.stop()
+        S.KRT_CACHE[:] = [0.0, None]
+
+    def test_number_forms(self):
+        for q in ("КРТ 3229", "крт 3229", "КРТ №3229", "krt3229", " 3229 "):
+            self.assertEqual(S.krt_number(q)[0], 3229, q)
+        self.assertTrue(S.krt_number("крт 3229")[1])
+        self.assertFalse(S.krt_number("3229")[1])
+        for q in ("50:27:0000000:126", "улица 3229", "КРТ", "1234567", ""):
+            self.assertIsNone(S.krt_number(q), q)
+
+    def test_card_and_cache(self):
+        s, o = S.search_any("КРТ 3229")
+        self.assertEqual((s, o["type"]), (200, "krt"))
+        self.assertEqual(o["cards"], ["КРТ № 3229 · ВАО, Гольяново · 2187-ПП от 12.08.2026 · 1,66 га"])
+        self.assertEqual(o["features"][0]["geometry"]["type"], "Polygon")
+        S.search_any("3229")
+        self.assertEqual(self.fetch.call_count, 1)                    # слой грузится один раз
+
+    def test_bare_number_not_found_falls_to_address(self):
+        with mock.patch.object(S.geocode_mod, "geocode", return_value=[]) as g:
+            s, o = S.search_any("999")
+        self.assertEqual((s, o["type"]), (200, "address"))
+        g.assert_called_once()
+
+    def test_not_found_with_word_is_missing(self):
+        s, o = S.search_any("КРТ 999")
+        self.assertEqual((s, o["type"], o["features"], o["missing"]), (200, "krt", [], ["КРТ 999"]))
+
+    def test_layer_failure_is_502_ascii(self):
+        self.fetch.side_effect = S.ConnectorError("ГИС ОГД: нет связи")
+        s, o = S.search_any("КРТ 3229")
+        self.assertEqual(s, 502)
+        self.assertTrue(o["error"].isascii())
+
+
 class SearchAddress(unittest.TestCase):
     """GET /api/search/address и /api/search; Nominatim подменён."""
     setUp, tearDown = SearchCadastral.setUp, SearchCadastral.tearDown

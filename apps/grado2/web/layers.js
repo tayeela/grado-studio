@@ -931,7 +931,7 @@ function renderObject(el) {
     const keys = Object.keys(f.getProperties()).filter(k => !hiddenField(k));
     el.innerHTML = `<div class="pad"><div class="ph"><b>${esc(l.title)}</b></div><div class="note" style="padding:0 0 6px">${kind === "area" ? fmt(v, 1) + " м²" : kind === "len" ? fmt(v, 2) + " м" : ""}${f.get("_edited") ? " · изменён вручную" : ""}${f.get("_lt") ? " · " + esc(f.get("_lt").join(", ")) : ""}</div></div>${decisionBar()}${floorsBar()}
       <div class="pg">${keys.map(k => `<div class="ro" title="${esc(k)}">${esc(k)}</div><div><input type="text" data-attr="${esc(k)}" value="${esc(f.get(k))}"></div>`).join("")}</div>
-      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>${vertexTable(f)}`;
+      <div class="pad"><div class="row"><input type="text" id="newField" placeholder="Новое поле"><button class="btn" id="bAddField">Добавить</button></div></div>${/Polygon/.test(f.getGeometry()?.getType() || "") ? `<div class="pad" style="padding-top:0"><button class="btn" id="bToTerr" title="Контур этого объекта становится границей территории">${TERR ? "Заменить границу территории" : "Сделать границей территории"}</button></div>` : ""}${vertexTable(f)}`;
     return;
   }
   // несколько объектов: сводка и, если они из одного слоя, общая правка атрибутов (как «Изменить атрибуты выбранных» в QGIS)
@@ -958,6 +958,11 @@ document.addEventListener("click", e => {
   if (b.id === "bAddField") {
     const n = $("newField").value.trim(); if (!n || !SEL.length || new Set(SEL.map(s => s.key)).size > 1) return;
     pushUndo(featRec(SEL, `новое поле «${n}»`)); SEL.forEach(s => { s.f.set(n, ""); s.f.set("_edited", true); }); syncFromSource(SEL[0].key); renderRight(); return;
+  }
+  if (b.id === "bToTerr") {      // контур выбранного объекта → граница территории (КРТ, участок, зона…); существующую границу заменяем со второго щелчка
+    const f = SEL.length === 1 ? SEL[0].f : null; if (!f || !/Polygon/.test(f.getGeometry()?.getType() || "")) return;
+    if (TERR && !b.dataset.lb) { b.dataset.lb = b.textContent; b.textContent = "Заменить границу? Нажмите ещё раз"; setTimeout(() => { if (b.isConnected && b.dataset.lb) { b.textContent = b.dataset.lb; delete b.dataset.lb; } }, 5000); return; }
+    setTerritory(GJ.writeFeatureObject(f)); toast(`Граница территории — контур объекта слоя «${lyr(SEL[0].key)?.title || ""}»: ${fmt(TERR_M2 / 1e4, 2)} га.`); renderRight(); return;
   }
   if (b.dataset.only) { setSel(SEL.filter(s => s.key === b.dataset.only)); return; }
   if (b.dataset.decide) return setDecision(b.dataset.decide);

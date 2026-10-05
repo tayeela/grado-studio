@@ -280,6 +280,7 @@ const parcelsWord = n => plural(n, ["участок", "участка", "уча�
 const haOf = f => { const a = m2(f) / 1e4; return fmt(a, a < 1 ? 4 : 2) + " га"; };
 const srchErr = e => { const m = String(e?.message || e);
   return /busy/i.test(m) ? "Поиск занят другим запросом — повторите через минуту"
+    : /KRT/i.test(m) ? "Слой КРТ портала ГИС ОГД не получен — повторите позже"
     : /NSPD/i.test(m) ? "Портал НСПД не ответил — повторите позже"
     : /Nominatim/i.test(m) ? "Сервис адресов OpenStreetMap не ответил — повторите позже"
     : /no valid cadastral/i.test(m) ? "Не похоже на кадастровый номер. Пример: 50:27:0000000:126"
@@ -328,7 +329,11 @@ async function boundaryByNumbers(q) {
   const setAct = i => { const it = marks(); if (!it.length) return; act = (i + it.length) % it.length; it.forEach((el, j) => { el.classList.toggle("act", j === act); el.setAttribute("aria-selected", j === act); }); it[act].scrollIntoView({ block: "nearest" }); };
   function render() {
     const notes = (R.notes || []).filter(n => !/^Ничего не найдено/.test(n));
-    if (R.type === "address") {
+    if (R.type === "krt") {
+      box.innerHTML = R.list.map((f, i) => `<div class="sri" role="option" data-i="${i}"><b>${esc(R.cards[i] || "")}</b></div>`).join("")
+        + notes.map(n => `<div class="srm">${esc(n)}</div>`).join("")
+        + `<div class="sra"><button class="btn" data-a="show">Показать на карте</button><button class="btn" data-a="terr">Сделать границей территории</button></div>`;
+    } else if (R.type === "address") {
       box.innerHTML = R.list.map((x, i) => `<div class="sri" role="option" data-i="${i}"><b>${esc(x.name || x.display)}</b>${x.name && x.display ? `<span>${esc(x.display)}</span>` : ""}</div>`).join("")
         + notes.map(n => `<div class="srm">${esc(n)}</div>`).join("");
     } else {
@@ -351,17 +356,23 @@ async function boundaryByNumbers(q) {
     ctl?.abort(); ctl = new AbortController(); const sig = ctl.signal;
     clearMark(); pend = true; go.disabled = true; inp.setAttribute("aria-busy", "true"); box.hidden = false; say("Ищу…"); const my = ++tok;
     try { const r = await searchApi("", q, sig); if (my !== tok || sig.aborted) return;
-      if (r.type === "cadastral") { R = { type: "cadastral", list: (r.features || []), missing: r.missing || [], notes: r.notes || [] };
+      if (r.type === "krt") { R = { type: "krt", list: r.features || [], cards: r.cards || [], missing: r.missing || [], notes: r.notes || [] };
+        if (!R.list.length) return say(`Номер ${R.missing[0] || ""} не найден в слое «Комплексное развитие территорий»`, true); render(); }
+      else if (r.type === "cadastral") { R = { type: "cadastral", list: (r.features || []), missing: r.missing || [], notes: r.notes || [] };
         if (!R.list.length && !R.missing.length) return say(R.notes[0] || "Ничего не нашлось", true); render(); }
       else { const list = r.results || []; if (!list.length) return say("Ничего не нашлось в Москве и области"); R = { type: "address", list, notes: r.notes || [] }; render(); }
     } catch (e) { if (my === tok) say(srchErr(e), true); }
     finally { if (my === tok) { ctl = null; pend = false; go.disabled = false; inp.removeAttribute("aria-busy"); } }
   }
   const tBack = b => { clearTimeout(tAsk); tAsk = null; if (b?.dataset.lb) { b.textContent = b.dataset.lb; delete b.dataset.lb; } };
-  const act2 = (a, btn) => { if (!R || R.type !== "cadastral") return; clearMark();
+  const act2 = (a, btn) => { if (!R || (R.type !== "cadastral" && R.type !== "krt")) return; clearMark(); const krt = R.type === "krt";
     if (a === "terr") {      // чужую границу молча не заменяем: первый щелчок — вопрос на месте (как у «Пример»), второй за 5 с — замена
-      if (TERR && !tAsk) { btn.dataset.lb = btn.textContent; btn.textContent = "Заменить вашу границу участками?"; tAsk = setTimeout(() => tBack(btn), 5000); return; }
-      tBack(btn); if (parcelsToTerritory(R.list)) close(); return; }
+      if (TERR && !tAsk) { btn.dataset.lb = btn.textContent; btn.textContent = krt ? "Заменить вашу границу контуром КРТ?" : "Заменить вашу границу участками?"; tAsk = setTimeout(() => tBack(btn), 5000); return; }
+      tBack(btn);
+      if (krt) { const g = R.list[0]; if (!/Polygon/.test(g?.geometry?.type)) { toast("У найденной КРТ нет контура — граница не изменена."); return; }
+        setTerritory(g); toast(`Граница — контур ${(R.cards[0] || "КРТ").split(" · ")[0]}: ${fmt(TERR_M2 / 1e4, 2)} га.`); close(); return; }
+      if (parcelsToTerritory(R.list)) close(); return; }
+    if (krt) { const ex = ol.extent.createEmpty(); R.list.forEach(f => ol.extent.extend(ex, toOl(f).getGeometry().getExtent())); mk.addFeatures(R.list.map(toOl)); fitExt(ex); return; }
     addParcels(R.list); const ex = ol.extent.createEmpty(); R.list.forEach(f => ol.extent.extend(ex, toOl(f).getGeometry().getExtent())); fitExt(ex); toast(`На карте: ${parcelsWord(R.list.length)} в слое «${DATA["nspd.parcels"]?.title || "Земельные участки (ЕГРН)"}».`); };
   go.onclick = run;
   inp.addEventListener("keydown", e => {
@@ -522,7 +533,8 @@ async function loadKeys(keys, bb, opts = {}) {
   }, 800);
   await Promise.all(parts.map(async part => {
     try {
-      const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part });
+      // граница территории — серверу: OSM и ЕГКО у большой рамки берут «территория + поле», а не всю рамку листа (T70)
+      const r = await api("/api/fetch", { bbox: [w, s, e, n], sources: part, ...(TERR ? { territory: turf.bbox(TERR) } : {}) });
       // пока шла выгрузка, открыт или создан другой проект: результат относится к прежнему и в новый не пишется
       if (epoch !== window.PROJ_EPOCH) { dropped = true; return; }
       Object.assign(ERRORS, r.errors);

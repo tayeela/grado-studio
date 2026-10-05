@@ -132,12 +132,23 @@ function sheetSpec(sheet) {
   if (sheet.kind === "situation") situationExtras(sheet, out, frameLL);
   return out;
 }
-const albumSpec = list => ({ meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || placeText(), date: ALBUM.meta.date || monthYear() }, sheets: list.map(s => ({ ...sheetSpec(s), edits: s.edits || {}, items: s.items || [] })) });   // правки макета — в печать
+const albumSpec = list => (autoMeta(), { meta: { ...ALBUM.meta, short: ALBUM.meta.short || "", place: ALBUM.meta.place || "", date: ALBUM.meta.date || monthYear() }, sheets: list.map(s => ({ ...sheetSpec(s), edits: s.edits || {}, items: s.items || [] })) });   // правки макета — в печать
 const monthYear = () => { const d = new Date(); return ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"][d.getMonth()] + " " + d.getFullYear(); };
 const OKR = { "Центральный": "ЦАО", "Северный": "САО", "Северо-Восточный": "СВАО", "Восточный": "ВАО", "Юго-Восточный": "ЮВАО", "Южный": "ЮАО", "Юго-Западный": "ЮЗАО",
   "Западный": "ЗАО", "Северо-Западный": "СЗАО", "Зеленоградский": "ЗелАО", "Новомосковский": "НАО", "Троицкий": "ТАО" };
-const placeText = () => { const tp = RESULT.tepNode ? tepParams(RESULT.tepNode) : {}, o = String(tp.okrug || "").replace(/\s*административный округ/i, "").trim();
-  return [OKR[o] || o, tp.district ? "район " + tp.district.replace(/^район\s+/i, "") : ""].filter(Boolean).join(", "); };
+// шапка альбома по данным проекта (T73, 05.10.2026): № КРТ — загруженный слой gisogd.krt, округ и район — gisogd.admin, адрес — точки ЕГКО в территории.
+// Overpass не нужен; слои здесь не скачиваются; введённое владельцем не меняется (albummeta.js)
+function metaVals() {
+  const v = { short: "", place: "", address: "" }; if (!TERR) return v;
+  safe(() => { const { okrug, district } = homeAdm(); v.place = AlbumMeta.placeJoin(okrAbbr(okrug), district ? LABEL_FN.adm({ get: k => district.properties[k] }) : ""); });
+  safe(() => { v.short = AlbumMeta.krtText(DATA["gisogd.krt"]?.fc.features, f => { const x = turf.intersect(turf.featureCollection([f, TERR])); return x ? m2(x) : 0; }); });
+  safe(() => { v.address = AlbumMeta.addressText((DATA["egko.addresses"]?.fc.features || []).filter(f => f.geometry?.type === "Point" && turf.booleanPointInPolygon(f, TERR)).map(f => f.properties?.["Адрес"])); });
+  return v;
+}
+const autoMeta = () => { const d = AlbumMeta.fillMeta(ALBUM.meta, metaVals()); syncAddrWhy(); return d; };
+// титульный лист без адреса печатал бы «АДРЕС»: строка листа в окне говорит «не готов: нет адреса» (на бумаге ничего не добавляется)
+const noAddrWhy = () => ALBUM.meta.address || ALBUM.meta.object ? "" : "нет адреса";
+function syncAddrWhy() { ALBUM.sheets.forEach(s => { if (s.kind !== "title") return; const w = noAddrWhy(); if (w) NOTREADY.set(s.id, w); else NOTREADY.delete(s.id); }); }
 // подписи листов, собранные из нескольких полей: подзона ПЗЗ — «плотность / высота / застроенность», Ф — по факту
 const codes = t => [...new Set(String(t || "").match(/\d{1,2}(\.\d{1,2}){1,3}/g) || [])];
 const wrapLab = (parts, n) => parts.reduce((ls, p) => { const l = ls[ls.length - 1]; if (l && (l + ", " + p).length <= n) ls[ls.length - 1] = l + ", " + p; else ls.push(p); return ls; }, []).join("\n");
@@ -426,7 +437,7 @@ function lostPhrase(k, why = ERRORS[k]) {
 }
 const NOTREADY = new Map();        // id листа → почему не готов; не сохраняется в проект, считается при каждом обновлении
 function notReadyWhy(s) {
-  if (s.kind === "title") return "";
+  if (s.kind === "title") return noAddrWhy();
   if ((s.kind === "tep" || s.tep) && !RESULT.tepNode?._tep) return "показатели ещё не посчитаны: постройте эскиз застройки";
   if (s.kind === "tep") return "";
   if (!TERR) return "нет границы территории";
@@ -573,7 +584,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
   const used = built.flatMap(s => s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []);
   tidyLayers(new Set(LYR.map(l => l.key).filter(k => !before.has(k) || used.includes(k) || need.has(k))));
-  ALBUM.meta.builtAt = new Date().toISOString();
+  ALBUM.meta.builtAt = new Date().toISOString(); autoMeta();
   window.markDirty?.(); renderSheets();
   const lostT = lost.length ? `Листы собраны без части данных: ${lost.join("; ")}. ` : "";
   toast(stopped ? `${lostT}Сборка остановлена: готово ${nDone} из ${sheets.length} листов — «${name}», остальные листы прежние (если были). Чтобы собрать всё, запустите сборку снова.`
@@ -743,7 +754,8 @@ function importAlbum(mode) {
   window.hideSheetFrame?.();
   if (mode === "add") ALBUM.sheets.push(...list); else ALBUM.sheets.splice(0, was, ...list);
   const m = ALBUM.meta, empty = v => v == null || v === "" || (Array.isArray(v) && !v.length);   // заполненное в проекте остаётся, пустое берётся из файла
-  ["object", "code", "stage", "org", "short", "place", "date", "ogdCodes"].forEach(k => { if (empty(m[k]) && !empty(imp.album.meta[k])) m[k] = imp.album.meta[k]; });
+  // пустое или заполненное программой само (meta.auto, T73) поле берётся из файла; введённое владельцем остаётся
+  ["object", "code", "stage", "org", "short", "place", "address", "date", "ogdCodes"].forEach(k => { if ((empty(m[k]) || m.auto?.[k]) && !empty(imp.album.meta[k])) { m[k] = imp.album.meta[k]; if (m.auto) delete m.auto[k]; } });
   m.builtAt = new Date().toISOString(); m.importedFrom = imp.name;
   window.markDirty?.(); renderSheets(); previewSheet(old);
   toast(`${mode === "add" ? "Добавлено" : "Загружено"} ${list.length} л. из файла «${imp.name}»${mode === "add" ? `, всего ${ALBUM.sheets.length}` : ""}.${warn ? " Внимание: " + warn + "." : ""}`);
@@ -845,7 +857,8 @@ function renderSheets() {
     + `<button class="btn primary" id="shPdf" ${n ? "" : "disabled"} title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF</button>`
     + `<button class="btn" id="shPptx" ${n ? "" : "disabled"} title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button></div></div>`
     + `<div class="shstamp"><button id="shStampBtn" aria-expanded="${STAMP_OPEN}" aria-controls="shStampBox" title="Основная надпись листов: объект, шифр, стадия, организация"><i data-lucide="chevron-right"></i><span id="shStampSum">${stampSum()}</span></button>`
-    + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}`
+    + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}${inp("short", "№ КРТ")}${inp("place", "Округ, район")}${inp("address", "Адрес")}`
+    + `<div class="row" style="grid-column:1/-1"><button class="btn" id="shMetaFill" title="Заполнить пустые поля «№ КРТ», «Округ, район» и «Адрес» по загруженным слоям; то, что вы ввели сами, не меняется"><i data-lucide="wand-sparkles"></i>Заполнить по данным</button></div>`
     + `<label>Формат слайдов раздела<select id="shSlide" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (m.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></label></div></div>`
     + importBarHTML()
     + (n ? `<div class="shmain"><div class="shlist" role="listbox" aria-label="Листы альбома">${ALBUM.sheets.map((s, i) => `<div class="shrow" role="option" data-sh="${i}" aria-selected="${i === sel}" tabindex="${i === sel ? 0 : -1}">${rowInner(s, i)}</div>`).join("")}</div>${detHTML(ALBUM.sheets[sel], sel)}</div>` : emptyHTML())
@@ -898,7 +911,7 @@ shEl().addEventListener("dblclick", e => { if (e.target.id === "sheetPrev" && e.
 const refreshRow = i => { const r = shEl().querySelector(`.shrow[data-sh="${i}"]`); if (r) { r.innerHTML = rowInner(ALBUM.sheets[i], i); icons(); } };
 shEl().addEventListener("change", e => {
   const t = e.target, row = t.closest("[data-sh]");
-  if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; touch(); const s = $("shStampSum"); if (s) s.innerHTML = stampSum(); return; }
+  if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; AlbumMeta.typed(ALBUM.meta, t.dataset.meta); touch(); syncAddrWhy(); const s = $("shStampSum"); if (s) s.innerHTML = stampSum(); renderSheets(); return; }
   if (t.id === "shImpFile") { if (isViewer()) { t.value = ""; return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); } const f = t.files?.[0]; t.value = ""; if (f) readAlbumFile(f); return; }
   // формат слайдов раздела: новый раздел строится в нём, собранные слайды переводятся сразу (масштаб — заново, по рамке)
   if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });
@@ -923,6 +936,7 @@ shEl().addEventListener("click", e => {
   if (b.id === "shStop" && BP.on) { BP.stop = true; BP.stopAt = BP.cur; bpShow(); syncBusy(); }
   if (b.id === "shPdf") albumFile("pdf");
   if (b.id === "shPptx") albumFile("pptx");
+  if (b.id === "shMetaFill") { const d = autoMeta(); touch(); renderSheets(); toast(d.length ? "Заполнено: " + d.map(k => ({ short: "№ КРТ", place: "округ, район", address: "адрес" })[k]).join(", ") : "Нечего заполнять: поля уже заполнены или слоёв нет (нужны слои «КРТ», «Административное деление», «Адреса»)"); }
   if (b.id === "shSec1") buildSection();
   if (b.id === "shPptKrt" || b.dataset.shact === "pptkrt") track(() => window.buildAlbum?.("pptkrt"));
   if (b.id === "shSit") buildSituation();

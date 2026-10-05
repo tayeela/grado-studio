@@ -506,8 +506,68 @@ def search_addr(q):
     return 200, {"results": res, "notes": notes}
 
 
+KRT_RE = re.compile(r"\s*(?:(крт|krt)\s*)?(?:№|n|no\.?)?\s*(\d{1,5})\s*", re.I)
+KRT_CACHE = [0.0, None]           # [время загрузки, {номер КРТ: объект}]: слой портала грузится целиком один раз, дальше из кэша
+KRT_CACHE_SEC = 30 * 60
+KRT_LOCK = threading.Lock()
+
+
+def krt_number(q):
+    """«КРТ 3229», «крт №3229», «3229» → (число, есть ли слово КРТ); иначе None. Кадастровый номер (с «:») сюда не попадает."""
+    m = KRT_RE.fullmatch(q[:40]) if ":" not in q else None
+    return (int(m.group(2)), bool(m.group(1))) if m else None
+
+
+def krt_layer():
+    """Все объекты слоя «Комплексное развитие территорий (ОГД)» по номеру КРТ (num_krt). Слой берётся у коннектора
+    (диск-кэш портала), копия живёт в памяти KRT_CACHE_SEC; сбой портала — ConnectorError."""
+    with KRT_LOCK:
+        if KRT_CACHE[1] is not None and time.time() - KRT_CACHE[0] < KRT_CACHE_SEC:
+            return KRT_CACHE[1]
+        feats = {}
+        for code in SOURCES["gisogd.krt"][1]:
+            for f in GisogdApi(cache_dir=CACHE / "gisogd").fetch((-180, -90, 180, 90), code)["features"]:
+                try:
+                    n = int(float((f.get("properties") or {}).get("num_krt")))
+                except (TypeError, ValueError):
+                    continue
+                if f.get("geometry"):
+                    feats.setdefault(n, f)
+        KRT_CACHE[:] = [time.time(), feats]
+        return feats
+
+
+def krt_card(p):
+    """Строка результата: «КРТ № 3229 · ВАО, Гольяново · 2187-ПП от 12.08.2026 · 1,66 га»."""
+    try:
+        ha = float(p.get("p_krt") if p.get("p_krt") not in (None, "") else float(p.get("shape_area")) / 1e4)
+    except (TypeError, ValueError):
+        ha = None
+    where = ", ".join(str(p[k]).strip() for k in ("okrug", "rayon") if str(p.get(k) or "").strip())
+    parts = [f"КРТ № {int(float(p['num_krt']))}", where, str(p.get("pzz") or "").strip(), f"{ha:.2f} га".replace(".", ",") if ha is not None else ""]
+    return " · ".join(x for x in parts if x)
+
+
+def search_krt(n):
+    """Номер КРТ → (code, ответ). 200 — features (0 или 1 объект), cards, missing; 502 — слой портала не получен (ASCII)."""
+    try:
+        f = krt_layer().get(n)
+    except ConnectorError:
+        return 502, {"error": "KRT layer not available, try again later"}
+    if f is None:
+        return 200, {"features": [], "cards": [], "missing": [f"КРТ {n}"], "notes": []}
+    return 200, {"features": [{"type": "Feature", "geometry": f["geometry"], "properties": dict(f.get("properties") or {}), "grado_key": f.get("grado_key")}],
+                 "cards": [krt_card(f.get("properties") or {})], "missing": [], "notes": []}
+
+
 def search_any(q):
-    """Одна строка: есть кадастровые номера → поиск участка, иначе адрес. В ответ добавляется type."""
+    """Одна строка: номер КРТ → объект слоя КРТ; кадастровые номера → поиск участка, иначе адрес. В ответ добавляется type.
+    Голое число, которого нет среди КРТ, уходит в поиск адреса."""
+    k = krt_number(q)
+    if k:
+        code, obj = search_krt(k[0])
+        if k[1] or (code == 200 and obj["features"]):
+            return code, ({**obj, "type": "krt"} if code == 200 else obj)
     nums, _bad = nspd_mod.normalize_cadastral(q[:2000])
     if nums:
         try:
@@ -742,6 +802,9 @@ def yandex_sat_tile(z, x, y):
     # Яндекс отказывает (капча, бан, нет сети): 5 неудач подряд — 10 минут к нему не ходим, тайл без ответа — час;
     # иначе печать листа ждала бы по 5 с на каждый из сотен тайлов (подложка тогда — Esri)
     if _YSAT["off_until"] > now or _YSAT["bad"].get((z, x, y), 0) > now:
+        return p.read_bytes() if p.exists() else None
+    fail = p.with_suffix(".fail")                     # метка неудачи T69 (sat_io): тайла нет, но это не новый сбой Яндекса
+    if fail.exists() and now - fail.stat().st_mtime < getattr(sat_io, "FAIL_TTL", 3600):
         return p.read_bytes() if p.exists() else None
     with _TILE_LOCK:
         try:
@@ -2172,7 +2235,11 @@ class Handler(SimpleHTTPRequestHandler):
                     terr = [float(v) for v in terr]
                     if len(terr) != 4 or not (-180 <= terr[0] < terr[2] <= 180 and -90 <= terr[1] < terr[3] <= 90):
                         return self._json(400, {"error": "territory: ожидается [запад, юг, восток, север] в градусах"})
-                layers, errors = fetch(bbox, list(req.get("sources") or []), terr, min(max(float(req.get("margin_m", DATA_MARGIN_M)), 0.0), 2000.0))
+                try:
+                    margin = min(max(float(req.get("margin_m", DATA_MARGIN_M)), 0.0), 2000.0)
+                except (TypeError, ValueError):
+                    return self._json(400, {"error": "margin_m: number expected"})
+                layers, errors = fetch(bbox, list(req.get("sources") or []), terr, margin)
                 return self._json(200, {"layers": layers, "errors": errors})
             if self.path == "/api/print/pdf":
                 import print_io

@@ -535,10 +535,13 @@ export default async p => {
   const sqParcel = { type: "Feature", geometry: { type: "Polygon", coordinates: [[[37.600, 55.750], [37.604, 55.750], [37.604, 55.753], [37.600, 55.753], [37.600, 55.750]]] },
     properties: { "Кадастровый номер": "77:01:0000000:1", "ВРИ": "под жилую застройку", _key: "77:01:0000000:1" } };
   const sqCad = { type: "cadastral", features: [sqParcel], missing: [], notes: [] };
+  const sqKrtRing = [[37.80, 55.80], [37.8025, 55.80], [37.8025, 55.8015], [37.80, 55.8015], [37.80, 55.80]];   // T72: КРТ — заглушка слоя ОГД, сети нет
+  const sqKrt = { type: "krt", features: [{ type: "Feature", geometry: { type: "Polygon", coordinates: [sqKrtRing] }, properties: { num_krt: 3229, okrug: "ВАО", rayon: "Гольяново", pzz: "2187-ПП от 12.08.2026", p_krt: 1.6567 }, grado_key: "pzz_krt_virtual:3784" }],
+    cards: ["КРТ № 3229 · ВАО, Гольяново · 2187-ПП от 12.08.2026 · 1,66 га"], missing: [], notes: [] };
   const sqAddr = { type: "address", results: [{ name: "Тестовая улица", display: "Москва, Тестовая улица", lon: 37.7, lat: 55.7, bbox: [37.69, 55.69, 37.71, 55.71], kind: "road" }], notes: [] };
   await p.ev(`window.__f0 = window.fetch; window.__p0 = window.prompt; window.__sq = [];
     window.fetch = async (u, o) => { u = String(u); if (!u.startsWith("/api/search")) return window.__f0(u, o); window.__sq.push(u);
-      const q = decodeURIComponent(u.split("q=")[1] || ""); return new Response(JSON.stringify(/\\d+:\\d+/.test(q) ? ${JSON.stringify(sqCad)} : ${JSON.stringify(sqAddr)}), { status: 200, headers: { "Content-Type": "application/json" } }); }; return 1`);
+      const q = decodeURIComponent(u.split("q=")[1] || ""); return new Response(JSON.stringify(/крт|^\\d{3,5}$/i.test(q) ? ${JSON.stringify(sqKrt)} : /\\d+:\\d+/.test(q) ? ${JSON.stringify(sqCad)} : ${JSON.stringify(sqAddr)}), { status: 200, headers: { "Content-Type": "application/json" } }); }; return 1`);
   try {
     await p.key("Escape", "Escape", { vk: 27 });
     await p.key("f", "KeyF", { ctrl: true, vk: 70 });
@@ -569,6 +572,16 @@ export default async p => {
     await p.ev(`const f = ${JSON.stringify(sqParcel)}; addParcels([{ ...f, properties: { ...f.properties, _key: "portal-id-1" } }]); return 1`);
     check(await p.ev(`return layerSrc["nspd.parcels"].getFeatures().length === 1 && DATA["nspd.parcels"].fc.features.length === 1`), "участок с тем же кадастровым номером, но другим ключом, не дублируется");
     check(await p.ev(`const f = ${JSON.stringify(sqParcel)}, m = mergeDownload("nspd.parcels", DATA["nspd.parcels"], { type: "FeatureCollection", features: [{ ...f, properties: { ...f.properties, _key: "portal-id-1" } }] }, null); return m.counts.removed === 0 && m.counts.added === 0`), "выгрузка по области: тот же кадастровый номер — тот же объект, «исчезло» не растёт");
+    // T72: номер КРТ в поиске → карточка слоя «Комплексное развитие территорий», граница территории из неё (граница уже есть — второй щелчок заменяет)
+    await p.ev(`$("sq").focus(); $("sq").value = ""; return 1`); await p.type("КРТ 3229"); await p.key("Enter", "Enter", { vk: 13 }); await p.sleep(400);
+    check(await p.ev(`const t = $("sres").innerText; return t.includes("КРТ № 3229 · ВАО, Гольяново · 2187-ПП от 12.08.2026 · 1,66 га") && t.includes("Сделать границей территории")`), "T72: поиск «КРТ 3229»: карточка «КРТ № 3229 · ВАО, Гольяново · документ · га» и кнопка «Сделать границей территории»");
+    const kt = await p.ev(`const r = [...$("sres").querySelectorAll("[data-a]")].find(b => b.dataset.a === "terr").getBoundingClientRect(); return [r.left + 10, r.top + 8]`);
+    await p.click(kt[0], kt[1], { wait: 300 });
+    check(await p.ev(`return /^Заменить вашу границу/.test([...$("sres").querySelectorAll("[data-a]")].find(b => b.dataset.a === "terr").textContent)`), "T72: граница уже есть — первый щелчок спрашивает «Заменить вашу границу…»");
+    await p.click(kt[0], kt[1], { wait: 500 });
+    check(await p.ev(`const g = turf.polygon([${JSON.stringify(sqKrtRing)}]); return Math.abs(TERR_M2 - m2(g)) < 1 && /Граница — контур КРТ № 3229/.test($("toast").textContent) && $("sres").hidden`), "T72: второй щелчок: граница территории — контур КРТ 3229");
+    // «Свойства» выбранного полигона любого слоя: кнопка границы; граница есть — текст «Заменить границу территории»
+    check(await p.ev(`const f = layerSrc["nspd.parcels"].getFeatures()[0]; setSel([{ key: "nspd.parcels", f }]); const d = document.createElement("div"); renderObject(d); const b = d.querySelector("#bToTerr"); setSel([]); return !!b && b.textContent === "Заменить границу территории"`), "T72: «Свойства» полигона: кнопка «Заменить границу территории» (границы нет — «Сделать границей территории»; проверка вручную)");
   } finally { await p.ev(`window.fetch = window.__f0; window.prompt = window.__p0; return 1`); }
   check(await p.ev(`return window.fetch === window.__f0`), "fetch восстановлен после проверок поиска");
 
@@ -988,7 +1001,8 @@ export default async p => {
     await p.ev(`winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const i=document.querySelector('[data-nid="doo_z1"]'); i.focus(); i.select(); return 1`); await p.type("50"); await p.key("Enter", "Enter", { vk: 13, wait: 1500 });
     let st = "";
     for (let k = 0; k < 20 && !/Листы обновлены по новым показателям/.test(st); k++) { await p.sleep(400); st = await p.ev(`return $("stHint").textContent`); }
-    check(st === "Листы обновлены по новым показателям", `T55: строка состояния после смены норматива: «${st}»`);
+    // «· не готово: N» после неё — листы без адреса (T73) и т. п.; здесь важен сам факт обновления
+    check(/^Листы обновлены по новым показателям( · не готово: \d+)?$/.test(st), `T55: строка состояния после смены норматива: «${st}»`);
     const after = [await tepRowsOf(T), await tepRowsOf(3)];
     check(after[0] !== before[0] && /Нормативы изменены вручную","1"/.test(after[0]), "T55: на листе «Таблица ТЭП» строки показателей изменились, появилась строка «Нормативы изменены вручную: 1»");
     check(after[1] !== before[1] && /Нормативы изменены вручную","1"/.test(after[1]), "T55: на листе шаблона с таблицей ТЭП — то же");
@@ -1059,7 +1073,7 @@ export default async p => {
     await p.ev(`window.setHint(""); TPL_SIG = { tep: tplSig().tep, all: "a" }; tplAuto(); await new Promise(r=>setTimeout(r,600)); return 1`);
     check(await p.ev(`return !/Листы обновлены/.test($("stHint").textContent)`), "T66: показатели «изменились», но ни один лист не изменился — подсказки «Листы обновлены» нет");
     await p.ev(`window.setHint(""); ALBUM.sheets[4].styles = {}; TPL_SIG = { tep: tplSig().tep, all: "b" }; tplAuto(); await new Promise(r=>setTimeout(r,600)); return 1`);
-    check(await p.ev(`return $("stHint").textContent === "Листы обновлены по новым показателям"`), "T66: лист действительно изменился — подсказка есть");
+    check(await p.ev(`return /^Листы обновлены по новым показателям( · не готово: \\d+)?$/.test($("stHint").textContent)`), "T66: лист действительно изменился — подсказка есть");
     // лист старого проекта: формат, изменённый владельцем, не откатывается при «Обновить листы»
     const lg = await p.ev(`const s = ALBUM.sheets[2]; s.size = "A3"; delete s.tpl; tplAdopt(); const legacy = s.tpl?.legacy === true; tplRefresh({ legacy: true });
       const s5 = ALBUM.sheets[5]; delete s5.tpl; tplAdopt(); tplRefresh({ legacy: true }); return [legacy, s.size === "A3", s5.size === "PA3"]`);
