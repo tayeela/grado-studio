@@ -1,0 +1,43 @@
+<!-- генерируется tools/wiki.py — не править руками -->
+
+# Листы альбомов
+
+Состав листов задают массивы ниже; дальнейший выбор (источник дорог, станции, районы, зоны) делает
+`conceptSheet` в albums.js по данным рамки листа. Подробно о правилах — rules.md.
+
+## План реализации ППТ КРТ, листы 3–9 (albums.js PPTKRT_C; 1 — титул, 2 — месторасположение)
+
+| № | лист | concept / kind | основа | ключи слоёв |
+|---|---|---|---|---|
+| 3 | Ортофотоплан | ortho | sat | `yandex.hd_roads`, `osm.landuse`, `osm.roads`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
+| 4 | Материалы фотофиксации | photos / photos | белая | `egko.water`, `yandex.hd_roads`, `egko.buildings`, `yandex.rail`, `osm.landuse`, `osm.roads`, `egko.water_labels` |
+| 5 | Схема существующего использования территорий с границами зон с особыми условиями использования территорий | use | белая | `egko.water`, `yandex.hd_roads`, `egko.buildings`, `yandex.rail`, `nspd.parcels`, `gisogd.zouit`, `gisogd.szz`, `gisogd.vodookhr`, `gisogd.red_lines`, `gisogd.airfield`, `osm.landuse`, `osm.roads`, `egko.water_labels` |
+| 6 | Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон» | gp | белая | `gisogd.func_zones`, `gisogd.func_zones_tinao`, `egko.water`, `yandex.hd_roads`, `egko.buildings`, `yandex.rail`, `osm.landuse`, `osm.roads`, `egko.water_labels` |
+| 7 | Схема обеспеченности территории разработанной документацией ППТ и ПМТ | ppt | белая | `egko.water`, `yandex.hd_roads`, `egko.buildings`, `yandex.rail`, `gisogd.ppt`, `gisogd.pmt`, `osm.landuse`, `osm.roads`, `egko.water_labels` |
+| 8 | Схема обеспеченности территории разработанной документацией ГПЗУ и АГР | gpzu | белая | `egko.water`, `yandex.hd_roads`, `egko.buildings`, `yandex.rail`, `gisogd.gpzu`, `gisogd.agr`, `osm.landuse`, `osm.roads`, `egko.water_labels` |
+| 9 | Схема существующих землепользователей разрабатываемой территории | parcels | sat | `nspd.parcels`, `osm.landuse`, `osm.roads`, `egko.water`, `egko.water_labels` |
+
+## Раздел «Существующее положение» (sheets.js SEC1)
+
+| № | лист | concept / kind | основа | ключи слоёв |
+|---|---|---|---|---|
+| 1 | Подготовка проекта планировки территории | title | белая |  |
+| 2 | Месторасположение рассматриваемой территории | — | белая | `gisogd.admin` |
+| 3 | Ортофотоплан | — | sat | `gisogd.admin` |
+| 4 | Ортофотоплан | — | sat | `osm.roads` |
+| 5 | Существующее состояние и использование территории с имеющимися ограничениями | — | белая | `nspd.zouit`, `gisogd.zouit`, `gisogd.szz`, `gisogd.vodookhr`, `egko.green`, `egko.water`, `calc.uds_osm`, `nspd.parcels`, `egko.buildings`, `gisogd.okn`, `gisogd.red_lines` |
+| 6 | Существующее использование территории с характеристикой по землепользованию | — | sat | `nspd.parcels` |
+| 7 | Материалы фотофиксации | photos | белая | `calc.uds_osm`, `egko.buildings`, `osm.roads` |
+| 8 | Фрагменты схем Генерального плана города Москвы | — | белая | `gisogd.func_zones`, `gisogd.func_zones_tinao` |
+| 9 | Фрагменты схем правил землепользования и застройки города Москвы | — | белая | `gisogd.pzz_zones` |
+| 10 | Схема об утверждённой и разрабатываемой документации | — | белая | `calc.uds_osm`, `egko.buildings`, `gisogd.gpzu`, `gisogd.krt`, `gisogd.ppt` |
+| 11 | Объекты социальной инфраструктуры и радиусы обслуживания | — | белая | `egko.buildings`, `osm.social` |
+
+### Ключи, добавляемые всем листам ППТ КРТ (forEach в albums.js)
+
+- `yandex.hd_roads`
+- `yandex.rail`
+- `egko.place_labels`, `egko.addresses`
+- `yandex.stations`
+
+Ветки conceptSheet по виду листа: `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `use`.

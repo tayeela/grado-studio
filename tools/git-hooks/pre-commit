@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Вики (docs/wiki) пересобирается из кода перед каждым коммитом и входит в него. Быстро (<0,2 с), без сети.
+# Коммит с указанием путей (git commit -- docs/team) хук может не дополнить — страховка: tools/wiki.py --check в tools/gate.sh.
+top=$(git rev-parse --show-toplevel)
+[ -f "$top/tools/wiki.py" ] || exit 0
+python3 "$top/tools/wiki.py" >/dev/null 2>&1 || exit 0
+git -C "$top" add docs/wiki 2>/dev/null
+exit 0

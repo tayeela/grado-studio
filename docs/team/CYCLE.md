@@ -1,5 +1,10 @@
 # ГРАДО 2 team — the lead's cycle
 
+Since 06.10.2026: start every cycle with `docs/team/prompts/lead-cycle-start.md`; build every agent brief from the
+templates in `docs/team/prompts/` and point agents to `docs/wiki/` pages instead of pasting file contents; the test
+gate is `tools/gate.sh` (`E2E=1` for the browser scenarios). Team work lives on `team/t60` (worktree
+`.claude/worktrees/team2`); the older `team/grado2` worktree is not used.
+
 This file is the procedure of one working cycle of the ГРАДО 2 team. The lead is the session that runs it
 (started by the owner: the «ГРАДО 2: команда» task in the Claude app, or the words «команда, за работу» in any
 session in `~/grado-studio`). Roles are the agents in `.claude/agents/grado-*.md`. The owner-facing description
