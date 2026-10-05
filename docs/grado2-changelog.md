@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-05, ГРАДО 2 v0.98.14: okrug map drops only small distant pieces.** `okrugMain` also keeps every part of
+  at least 2 % of the main part's area, whatever its distance (whole districts such as a separate Крюково or Молжаниновский
+  stay). Checked on all 12 okrugs: every okrug panel shows all its districts (САО 16/16, ЗАО 12/12, ВАО 16/16); ВАО still
+  drops only its two tiny northern pieces (2 and 17 га).
 - **2026-10-05, ГРАДО 2 v0.98.13: okrug map keeps its districts.** v0.98.10 clipped the districts of the okrug panel to
   the okrug's main part with `turf.intersect`, which failed on complex outlines and dropped whole districts (САО showed
   4 of 16; found by the team's E2E). Now each district keeps the parts whose inner point lies in the main part

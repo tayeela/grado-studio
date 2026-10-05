@@ -24,7 +24,9 @@ function okrugMain(f, km = 3) {
   const parts = f.geometry.coordinates.map(c => turf.polygon(c)), big = parts.reduce((a, b) => m2(b) > m2(a) ? b : a);
   const edge = turf.lineString(big.geometry.coordinates[0]);
   const tc = TERR && turf.centroid(TERR);                    // часть, где лежит сама территория, остаётся всегда
-  const keep = parts.filter(p => p === big || (tc && safe(() => turf.booleanPointInPolygon(tc, p))) || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
+  // крупная часть (≥ 2 % самой большой) — целые районы, например Крюково у ЗелАО: остаётся при любом расстоянии
+  const bigA = m2(big);
+  const keep = parts.filter(p => p === big || m2(p) >= bigA * .02 || (tc && safe(() => turf.booleanPointInPolygon(tc, p))) || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
   return { ...f, geometry: keep.length === 1 ? keep[0].geometry : { type: "MultiPolygon", coordinates: keep.map(p => p.geometry.coordinates) } };
 }
 window.okrugMain = okrugMain;
