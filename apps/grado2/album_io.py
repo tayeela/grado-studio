@@ -301,18 +301,26 @@ class MapNoteFrame(Frame):
     (владелец 29.09.2026), строки по центру, Montserrat жирный тёмно-красным с белым ореолом — читается и на снимке.
     Каждый блок — список строк; строка-текст переносится по 25 знаков."""
 
-    def __init__(self, rect, lines):
+    def __init__(self, rect, lines, corner="tl", lift=0.0):
         super().__init__(rect)
-        self.lines = lines
+        self.lines, self.corner, self.lift = lines, corner, lift
 
     def ops(self, ctx):
-        x, y, _, _ = self.rect
-        out, yy = [], y + 7.7
-        for n, block in enumerate(self.lines):                        # три строки с равным интервалом, как в образце (правило 11)
-            for line in (block if isinstance(block, list) else _wrap(block, 25)):
-                out.append({**_text(x + 50, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
-                yy += 5.4
+        x, y, w, h = self.rect
+        rows = [line for block in self.lines for line in (block if isinstance(block, list) else _wrap(block, 25))]
+        # правый нижний угол — район, в котором лежит этот угол листа, тем же кеглем (владелец 05.10.2026)
+        out, yy = [], (y + 7.7 if self.corner == "tl" else y + h - self.lift - 3 - 5.4 * (len(rows) - 1))
+        cx = x + 50 if self.corner == "tl" else x + w - 50
+        for line in rows:                                             # три строки с равным интервалом, как в образце (правило 11)
+            out.append({**_text(cx, yy, 14.3, line, DARK_RED, "sans-bold", "middle"), "halo": 0.6})
+            yy += 5.4
         return out
+
+
+def ortho_legend_h(sheet):
+    """Высота плашки легенды ортофотоплана от нижнего края листа (OrthoLegendFrame)."""
+    n = sum(len(g.get("items", [])) for g in sheet.get("cLegend") or [])
+    return 6.5 + 5.7 + 5.8 * n + 4.5
 
 
 # ---------- листы по образцу «ГК Царицыно» (look: "concept"): карта слева, колонка справа ----------
@@ -362,6 +370,10 @@ def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
         if it.get("ll"):                        # надпись знака над линией — как в образце «ГК Царицыно»
             size_mm = min(1.25, (w + 1) / (len(it["ll"]) * .56))      # не шире знака: длинная надпись — мельче
             out.append({**_text(x + w / 2, y + h / 2 - .45, size_mm / PT, it["ll"], _rgb(it.get("stroke"), (1, 0, 0)), "sans", "middle")})
+    elif k == "rail":                                   # железная дорога — как на карте: чёрная линия, белые штрихи
+        line = [[(x, y + h / 2), (x + w, y + h / 2)]]
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": (0.12, 0.12, 0.12), "width": 1.04, "dash": None, "rings": line})
+        out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.42, "dash": _dash_fit([2.0, 2.0], w), "rings": line})
     elif k == "flood":                                   # подтопление — знаки примера «Хатминки», засечки вниз
         from print_io import flood_ops
         out.extend(flood_ops([(x, y + h / 2 - .4), (x + w, y + h / 2 - .4)], int(it["code"]), _rgb(it.get("stroke"), (0.01, 0.51, 0.25)), side=1))
@@ -629,6 +641,8 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
             frames = [map_frame(r, sh), ConceptColumnFrame(CONCEPT_COL, sh, lib)]
         if sh.get("mapNote"):
             frames.append(MapNoteFrame(r, sh["mapNote"]))
+        if sh.get("mapNoteBR"):                       # на ортофотоплане — над плашкой легенды
+            frames.append(MapNoteFrame(r, sh["mapNoteBR"], "br", ortho_legend_h(sh) + 2 if sh.get("bleed") else 0))
         return frames + [deco]
     frames = []
     if sh.get("panels"):

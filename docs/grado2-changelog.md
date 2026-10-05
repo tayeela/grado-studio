@@ -149,6 +149,38 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   gets зона 2 with `zone_note`. Fixture numbers (20 га, СПП 450/150 тыс. м²): B0 36 844 m², B1 26 746, A1 9 274 — asserted
   through the engine (`test_social_fixture.py`, `test_server.py`). Nothing changes on screen for the social objects
   yet: the «Нормативы» inputs and the plots in the sketch are the next steps.
+- **2026-10-05, ГРАДО 2 v0.98.12: СЗЗ in ГИС ОГД symbology.** Owner after the team audit: «рисуй, но возьми условные
+  для СЗЗ как на ГИС ОГД». On the use sheet all sanitary zones are drawn by the portal layer styles (CartoCSS of
+  virtual1743 / 1745 / 1746): established — solid #00FFC5, calculated — solid #F3F707, orientative — red #DF1A07 dashed
+  9/7 px; boundary only, 1,4 px (~0,36 mm); legend «line» swatches in the same order. Orientative zones are drawn again
+  (the morning's «hide» is cancelled). Owner's other answers: the photo sheet is printed as is; ownership is entered by
+  the owner in the parcel's properties. A СЗЗ whose boundary does not cross the frame (the whole sheet inside the zone,
+  as КРТ 3229 in the orientative СЗЗ) gets no legend swatch but a note under the legend.
+- **2026-10-05, ГРАДО 2 v0.98.11: Yandex road polygons on every album sheet; district captions by corner.** Owner:
+  «для всех схем используй полигональные дороги яндекс», «в верхнем левом углу район Метрогородок, в правом нижнем
+  Гольяново, одинаковый кегль у подписей». Sheets 3–9 draw roads from `yandex.hd_roads` only (no `calc.uds_ya` axis
+  driveways, no `egko.roads`); the use sheet's «roads» share test, the photo sheet casing and the label obstacles use
+  the same polygons. When the frame's top-left and bottom-right corners lie in different districts, the top-left
+  caption names that corner's district (with its okrug) and a new bottom-right caption (`mapNoteBR`,
+  `album_io.MapNoteFrame(corner="br")`, above the legend plate on the ortho sheet; print reserves the space for map
+  labels) names the other, both 14,3 pt; a district without a corner gets a 14,3 pt label inside its part.
+- **2026-10-05, ГРАДО 2 v0.98.10: album ППТ КРТ after the owner's review of КРТ 3229 (Гольяново).** Rules first:
+  `docs/standards/albums/label-rules.md` item 14. Print: REDLN97 line marks (СЗЗ «Т», природный комплекс triangles)
+  were stroked with the line width (0,3 mm) on ~0,6 mm glyphs and came out as blobs with spikes — marks now get their
+  own width (0,15 of the glyph scale) and round joins, in the legend and on the map; this fixes Безобразово too on its
+  next PDF export (its frozen sheets are rendered by the server). Legend: «граница объектов природного комплекса»
+  (also «режимов», «памятников»); orientative СЗЗ (code 63) are not drawn and not listed, other СЗЗ kinds sit together.
+  Satellite on sheets 3 and 9 — Yandex (`server.yandex_sat_tile`, EPSG:3395 grid in `print_io.tile_ops(proj="3395")`,
+  z ≤ 18, the cache of the AutoCAD export); Esri goes underneath only when a Yandex tile is missing. This reverses the
+  old «Yandex imagery not in deliverables» rule (owner 05.10.2026). Sheet 3 roads — Yandex road-surface polygons only
+  (`yandex.hd_roads`), no axis-built driveways or ЕГКО roads. Railway main tracks on sheets 4–8: new source
+  `yandex.rail` (z18, `transport-railway`), black line with white dashes, legend «Транспорт → железнодорожные пути»
+  only when visible. Neighbouring districts in the frame: red district boundary on sheets 4–9 (as on sheet 3) and
+  «район …» labels deep inside each neighbour's part; layers with `over` (district boundary, railway) are drawn above
+  the white mask. Sheet 2 okrug map: parts farther than 3 km from the main body are dropped (`okrugMain`; ВАО's
+  northern exclave), so the okrug is drawn larger; the Moscow-wide panel is unchanged. Deploy script goes Mac → msk →
+  grado (was via AEZA-US). Note: branch `team/t60` (v0.98.3–0.99.6, unmerged) also edits `albums.js`, `print_io.py`,
+  `server.py`, `sat_io.py` — reconcile on its merge. Tests: print (thin round marks, 3395 rows), server source list.
 - **2026-10-03, ГРАДО 2 v0.98.2: dark theme polish, help texts, graph labels scale with the interface.** Second-pass
   leftovers (`docs/ux/audit-2026-10-03-pass2.md`, creative spec `docs/ux/spec-2026-10-03-dark-theme.md`). Dark theme:
   the scale line and the map attribution sit on a panel-coloured plate instead of a white one; the halves of

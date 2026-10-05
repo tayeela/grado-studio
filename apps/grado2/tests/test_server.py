@@ -290,7 +290,7 @@ class Yandex(unittest.TestCase):
     def test_sources_and_limit(self):
         keys = [k for k in S.SOURCES if k.startswith("yandex.")]
         self.assertEqual(set(keys), {"yandex.hd_roads", "yandex.buildings", "yandex.roads", "yandex.road_edges", "yandex.landuse",
-                                     "yandex.green", "yandex.water", "yandex.parking", "yandex.transport"})
+                                     "yandex.green", "yandex.water", "yandex.parking", "yandex.transport", "yandex.rail"})
         self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
         self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
         self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")

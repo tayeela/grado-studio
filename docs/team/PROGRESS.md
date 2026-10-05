@@ -43,6 +43,79 @@ handle the shortcut that toggles that window (F1 from the help search field, v0.
 RULE: DBF text fields from portals are capped at 254 bytes (≈127 Cyrillic characters): any portal shapefile with long
 text needs the attribute refill (CSV/GeoJSON) — check every new document layer for cut values (v0.96.1).
 
+- 04.10.2026, цикл 20 (прерван лимитом сессии ~12:00 MSK) — в team2 (team/t60, после v0.99.6) НЕ закоммичены:
+  T69 готова (негативный кэш плиток в print_io.py/sat_io.py, test_print 44 OK, apps 417 OK; ревью и E2E не
+  проводились), T70 (server.py/коннекторы) и T71 (albums.js) — исполнители ещё работали. Следующей сессии: прочитать
+  `git -C .claude/worktrees/team2 status`, провести ревью T69–T71, общий прогон, коммит v0.99.7; затем слияние
+  team/t60 → team/grado2 и выкладка по слову владельца.
+- 04.10.2026, цикл 19 (07:00–11:30 MSK, ветка team/t60) — T62 (исполнитель упал на ошибке API, перезапущен с
+  сохранёнными правками; ревью FAIL: двойной повтор к порталу → исправлено), T59 (ревью FAIL: права зрителя, нет
+  предела → исправлено), осмотр креативного директора v0.99.5 → T67/T68 (ревью FAIL по контрасту подписей →
+  исправлено руководителем). Итог v0.99.6: connectors 167 OK, compute 51 OK, apps 416 OK, E2E 363 ok / 0 failed.
+  Исполнитель T59 один раз запустил `pkill -f` по ошибке (ничего не задето) — напоминание в брифах.
+RULE: Every subagent brief repeats the ban on `pkill -f` and `git stash`/`checkout`; a brief without it is the
+lead's fault (cycle 19: one stray `pkill -f`).
+RULE: Portal retries live in exactly one place (the connector, with pauses); the page never repeats a failed portal
+request itself (T62: 3 × 2 attempts without a pause).
+- 04.10.2026, цикл 18 (03:30–07:00 MSK, ветка team/t60) — T6 шаги 3–4 (черновик другой сессии перенесён в team2 и
+  доведён; ревью FAIL: таймер по часам → недетерминизм и ложное «не помещается» → бюджет шагов, граница свободной
+  земли как препятствие; повторное ревью FAIL: прерванный результат не кэшировался → шторм пересчётов → исправлено
+  руководителем), T56 (blocks.js, хук в urbanBlocks; на примере эффекта нет — соседние кварталы; бюджет relax
+  переведён на шаги руководителем; вопрос владельцу А/Б/В), T65/T66 (ревью PASS). Итог v0.99.5: apps 413 OK,
+  blocks/roles/collab ok, E2E 320 ok / 0 failed. Другая сессия: T6 в `team` без движения с 18:19 03.10 — её
+  черновик использован, её рабочая копия не тронута.
+RULE: Any search or relaxation that can be cut short is bounded by step counts, never by wall-clock time, and a
+cut-short result is cached under the same key (deterministic) — a time bound gives different sketches on different
+machines and an uncached partial result re-runs on every render (T6, T56).
+- 04.10.2026, цикл 17 (00:40–03:30 MSK, ветка team/t60) — T64 (v0.99.3; ревью PASS, правка руководителя: контуры с
+  обводкой не выбрасывать), T61 (ревью FAIL: подмена ключей ломала загрузку листов альбома, K1=1,0 при молчании OSM →
+  исправлено), T55 (возврат руководителя до ревью: старые листы сбрасывались бы к шаблону при открытии → только по
+  «Обновить листы» с вопросом; опрос заменён хуками; ревью PASS). Итог v0.99.4 (c…): apps 412 OK, E2E 276 ok / 0
+  failed (новый харнес: группы t52, t55, t61). Другая сессия: T6 в `team` без движения с 18:19 03.10.
+RULE: Any automatic rebuild of the owner's content (sheets, layers, graph) on project open is forbidden: adopt the
+current state as the base and rebuild only on an explicit action with a two-click confirmation (T55).
+RULE: A layer-key alias (`gisogd.X` ↔ `ogd.X`) is applied only where the user picks from the catalog; code that
+loads layers for albums/sheets keeps exact keys (iron rule 5) — T61 first version broke album loads.
+- 03.10.2026, цикл 16 (22:30–00:40 MSK, ветка team/t60) — T57 (v0.99.1: стоянки площадью; площадь на место в
+  945-ПП нет — допущения 25/30/25 с пометкой), T52+T53+T63 (v0.99.2: док — два окна в зоне, 32 %, вкладки, «Нормативы»
+  справа, «Показатели» от 1400 px; ревью PASS; гейт первый раз 249 ok / 4 failed — все четыре в проверках, исправлены
+  исполнителем; итог 253 ok / 0 failed, apps 402 OK), T58 (проверка: PPTX из готовой вёрстки 9 слайдов, совместная
+  работа с альбомом 17 МБ — PASS; найдены T64 плитки не обрезаны и слайд 2 обычного альбома 159 МБ XML, T65 сборка
+  добавляет к импортированным). Другая сессия: правки T6 в `team` без движения с 18:19. Дальше: слияние team/t60 →
+  team/grado2 (после T6 или по слову владельца), T55, T61, T62, T64, T65.
+- 03.10.2026, цикл 15 (20:40–22:30 MSK) — T60 (v0.99.0): роли слоёв; две правки app.js (robust() отбрасывает кольца
+  < 4 точек, EXIST_KEY по роли) сделаны в отдельной рабочей копии `.claude/worktrees/team2` на ветке `team/t60`, чтобы
+  не трогать несохранённые правки T6 другой сессии в `team` (без движения с 18:19). Ревью PASS; проверка на копии
+  Безобразово с границей КРТ 3141: ЗОУИТ 8 зон из 9 слоёв, вода 3, здания 1541, эскиз 13 корпусов без пересечений с
+  водой и домами, консоль чистая; гейт: apps 400 OK, roles 22 ok, E2E 236 ok / 0 failed. Слияние team/t60 →
+  team/grado2 — после коммита T6 (ожидается конфликт только в app.js вокруг robust()/EXIST_KEY, легко).
+- 03.10.2026, цикл 14 (18:20–20:40 MSK, вторая сессия параллельно с T6) — совещание (продакт, архитектор, креативный
+  директор, два круга) → очередь T50–T59 (DECISIONS). T54 (v0.98.5, 1b73e85): альбом — отдельный раздел хаба, meta-правка
+  7,9 КБ вместо 19,5 МБ; ревью PASS; гейт на слепке HEAD + 4 файла: apps 395 OK, collab 84, E2E collab OK. T51 часть 1
+  (b7502f8): харнес не останавливается на первом сбое, SUMMARY, группы/E2E_ONLY, свободный порт, ожидание готовности;
+  полный прогон 236 ok. T50: замер пути на копии проекта сайта — 5,7 мин машинного времени (альбом 4 мин); находка:
+  ограничения и здания ищут `gisogd.*`/`nspd.*`/`osm.*`, а проект хранит `ogd.<код>`/`egko.*` — ограничения пустые,
+  эскиз на реке; в проекте сайта `territory: null`. → T60 первой, T61–T63. Файлы другой сессии (app.js, index.html,
+  scenarios.mjs) не трогались; коммиты path-limited.
+RULE: The owner's real projects store catalog layers as `ogd.<code>` and `egko.*`; every feature that looks up a
+layer by a fixed key (`gisogd.*`, `nspd.*`, `osm.*`) is silently empty on them — look up layers by role, and test on
+the copy of the site project (`/tmp/grado-team/transfer/bezobrazovo.server.grado2`), not only on the example.
+- 03.10.2026, цикл 13 (19:50–20:45 MSK) — T6 шаг 2 (фронтенд: «Условия проекта» в «Нормативах»; ревью PASS с тремя
+  правками: ключ «Вариантов» учитывает свободные места, текст источника зоны выводится из состояния, а не из серверной
+  строки, `tepParams` не дописывает ключи при чтении). Снимок владельческого прогона 0.98.3 на `git archive` (1d0843b):
+  владельческий OK; совместный упал на первом шаге и прошёл отдельно (гонка списка проектов при двух сценариях подряд).
+  Итог: v0.98.4 (61e5c92), apps 391 OK, E2E оба сценария OK, console clean.
+RULE: `test_e2e.py` prints only the last 4000 characters of a scenario's output: a step near the start of
+`scenarios.mjs` never shows an «ok» line in the log — a green run is the proof, not the grep.
+- 03.10.2026, цикл 12 (18:55–19:50 MSK) — T38 (решение «карта Б, Carto»: плитки CARTO пришли заглушками «API KEY
+  REQUIRED» — проверено curl и снимком; заменено на Esri Canvas World_Dark_Gray_Base, проверено z10–17; ревью руководителя),
+  T6 шаг 1 (архитектор разбил задачу на 4 шага — plan-T6.md; бэкенд: пресет + /api/tep + place_info; ревью PASS с правкой
+  руководителя: свободные места — только целые). Итог: v0.98.3 (1d0843b), compute 51 OK, apps 391 OK (без PYTHONPATH),
+  E2E оба сценария OK, console clean. Внутренние решения по вопросам архитектора — в plan-T6.md.
+RULE: An external tile or data service is checked with one real request (size and a look at the tile) before it is
+wired in: CARTO basemaps returned HTTP 200 with an «API KEY REQUIRED» placeholder (03.10.2026).
+RULE: Reviewers never run `git stash` in the shared worktree, even «for a probe» — it reverts other agents' work under a
+running E2E (03.10.2026, restored by pop; that gate stayed green, so it was not repeated).
 - 03.10.2026 (18:50 MSK), выкладка по слову владельца — v0.98.2: main чистый, team ← main (20bf925, только docs/team),
   unit 388 OK, main ← team/grado2, «Готово: на сервере версия 0.98.2», main отправлен. Ответы владельца: 1В 2А 3А 4А 5А,
   карта Б (CARTO) → T6 открыт, T38 добавлен.
