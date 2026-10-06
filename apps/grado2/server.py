@@ -614,6 +614,7 @@ def body_limit(path):
 
 
 INTERNAL_ERROR = "внутренняя ошибка, подробности в журнале сервера"
+PRINT_PROGRESS = {}  # ход выгрузки альбома: {"kind": "pdf"|"pptx", "got": готово листов, "total": всего} (GET /api/print/progress)
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
 _OGD_CAT = {}
 
@@ -758,8 +759,9 @@ ESRI_SERVICES = {"sat": ("esri", "World_Imagery"), "light": ("esri-light", "Canv
 
 def egko_features(bbox, code):
     """Объекты слоя ЕГКО (картооснова base2) в прямоугольнике — для цветной основы схемы округа (print_io.egko_ops).
-    Только из кэша на диске и с портала по обычным правилам коннектора; ошибка — слой пропускается."""
-    return GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=True, ttl=EGKO_TTL).fetch(bbox, code)["features"]
+    Только из кэша на диске и с портала по обычным правилам коннектора; ошибка — слой пропускается.
+    Без обрезки по рамке (clip=False): 290 тыс. объектов округа резались 40 секунд, а печать и так режет основу контуром округа."""
+    return GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=False, ttl=EGKO_TTL).fetch(bbox, code)["features"]
 
 
 def esri_tile(z, x, y, kind="sat"):
@@ -1750,6 +1752,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
         if self.path == "/api/progress":
             return self._json(200, dict(PROGRESS))
+        if self.path == "/api/print/progress":
+            return self._json(200, dict(PRINT_PROGRESS))
         if self.path == "/api/ogd_all/tree":
             import ogd_all
             try:
@@ -2260,7 +2264,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"layers": layers, "errors": errors})
             if self.path == "/api/print/pdf":
                 import print_io
-                body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile)
+                prog = lambda got, total: PRINT_PROGRESS.update(kind="pdf", got=got, total=total)
+                try:
+                    body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile, prog)
+                finally:
+                    PRINT_PROGRESS.clear()
                 self.send_response(200)
                 for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
                     self.send_header(h, v)
@@ -2271,7 +2279,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.wfile.write(body)
             if self.path == "/api/print/pptx":
                 import print_io
-                body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile)
+                prog = lambda got, total: PRINT_PROGRESS.update(kind="pptx", got=got, total=total)
+                try:
+                    body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile, prog)
+                finally:
+                    PRINT_PROGRESS.clear()
                 self.send_response(200)
                 for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
                     self.send_header(h, v)

@@ -6,11 +6,11 @@
 
 ## Сервер и печать (apps/grado2/*.py)
 
-### `apps/grado2/album_io.py` — 687 стр.
+### `apps/grado2/album_io.py` — 757 стр.
 
 Альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint («ППТ_КРТ Шаблон (И).pptx», А3 альбомный, красная шапка) и «Градостроительная концепция» — по образцу «ГК Царицыно» (А3 альбомный, белый лист, заголовок справа).
 
-Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
+Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `_text_boxes`, `_callout_route`, `_remember_ops`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
 
 ### `apps/grado2/dxf_io.py` — 311 стр.
 
@@ -48,11 +48,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2285 стр.
+### `apps/grado2/print_io.py` — 2473 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
-Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `pptx_notes`, `render_pptx`, `render_preview_svg`
+Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `ops_cache_get`, `ops_cache_put`, `egko_ops`, `_egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `pptx_notes`, `render_pptx`, `render_preview_svg`
 
 ### `apps/grado2/rail_icons.py` — 123 стр.
 
@@ -66,7 +66,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2575 стр.
+### `apps/grado2/server.py` — 2587 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -74,16 +74,21 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 ## Страница (apps/grado2/web/*.js)
 
+### `apps/grado2/web/albumgeo.js` — 29 стр.
+
+ГРАДО 2 · мелкая геометрия листов альбома без карты (T10/T11, 06.10.2026): кэш по объекту и углы рамки листа в МСК. Чистые функции; tests/test_albumgeo_js.py.
+
+
 ### `apps/grado2/web/albummeta.js` — 55 стр.
 
 ГРАДО 2 · шапка альбома: «№ КРТ», «Округ, район», «Адрес» заполняются сами из слоёв (T73, 05.10.2026). Чистые функции без обращения к карте: слои и проверка «внутри территории» передаёт sheets.js. Запуск проверок — tests/test_albummeta_js.py. Правило: введённое владельцем не затирается; сам заполненный текст помечен в meta.auto[поле] и обновляется при пересборке.
 
 
-### `apps/grado2/web/albums.js` — 1010 стр.
+### `apps/grado2/web/albums.js` — 1096 стр.
 
 ГРАДО 2 · альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint (А3 альбомный, красная шапка; оформление листа — album_io.py) и «Градостроительная концепция» — по образцу «ГК Царицыно». Листы собираются той же сборкой, что раздел 1 (buildSection в sheets.js), со своим префиксом id. Состав листов — по «ГК Царицыно» (решение владельца 27.09.2026), оформление — шаблон ППТ КРТ.
 
-Функции: `homeAdm`, `okrAbbr`, `okrugMain`, `keepParts`, `simplifyAdm`, `admPanelSpec`, `albumExtra`, `MM`, `C_ROADS`, `C_STREETS`, `W_`, `VRI_CLS`, `landUseOf`, `osmUseOf`, `SZZ_ORD`, `zoneGen`, `zouitCode`, `bigRing`, `conceptDocs`, `docTitle`, `docLine`, `sharedRoads`, `dataFts`, `waterLabels`, `railStations`, `conceptStations`, `titleRu`, `namedPlaces`, `roadSource`, `conceptSheet`, `conceptRail`, `conceptDistricts`, `conceptWhy`, `buildAlbum`
+Функции: `homeAdm`, `okrAbbr`, `okrugMainCalc`, `okrugMain`, `keepParts`, `simplifyAdm`, `admPanelSpec`, `albumExtra`, `MM`, `C_ROADS`, `C_STREETS`, `cSheet`, `W_`, `VRI_CLS`, `inNewMoscow`, `landUseOf`, `osmUseOf`, `SZZ_ORD`, `zoneGen`, `cornerReserve`, `zouitCode`, `bigRing`, `conceptDocs`, `docTitle`, `docLine`, `sharedRoads`, `dataFts`, `waterLabels`, `railStations`, `conceptStations`, `titleRu`, `namedPlaces`, `roadSource`, `conceptSheet`, `conceptRail`, `conceptDistricts`, `conceptWhy`, `buildAlbum`
 
 ### `apps/grado2/web/analysis.js` — 157 стр.
 
@@ -91,13 +96,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2372 стр.
+### `apps/grado2/web/app.js` — 2376 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
 Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 135
 
-### `apps/grado2/web/blocks.js` — 61 стр.
+### `apps/grado2/web/blocks.js` — 63 стр.
 
 ГРАДО 2 · урбан-блоки: дозированное понижение этажности секций, чьи фасады не получают нормы инсоляции (задача T56). Критерий тот же, что в «Проверке норм» (constraints.js, checkNorms): у секции без северных фасадов норму СанПиН 1.2.3685-21 (см. insol.js) должна получать не меньше половины точек фасада (шаг 6 м, шаг солнца 10 мин, окно на z над землёй). Метод: пока есть секции ниже 50 %, для каждой подбирается соседняя секция (чаще всего южное крыло своего квартала или торец соседнего), понижение которой на этаж даёт больше всего света на потерянный м² этажей; если ничто не помогает, секция сн…
 
@@ -130,7 +135,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · листы альбома на карте — как фреймы в Figma или видовые экраны в AutoCAD. Каждый лист-карта альбома (ALBUM.sheets) — рамка на карте: её размер = карта листа (frameMM) × масштаб. Инструмент «Лист»: тяните прямоугольник — пропорции формата держатся сами (по умолчанию А3 без штампа), масштаб считается из размера; появляется новый лист альбома. Выбранный лист: тянуть внутри — сдвиг (sheet.center), за угол — размер (sheet.scale), над листом панель: название, формат, ориентация, масштаб, «Загрузить сюда», «ГИС ОГД в DXF», «Просмотр», удалить. Листы раздела (строятся по территории) видны на…
 
 
-### `apps/grado2/web/gpzones.js` — 21 стр.
+### `apps/grado2/web/gpzones.js` — 34 стр.
 
 Генплан (лист 6 альбома): название и индекс типа функциональной зоны, цвет по таблице MapInfo ТиНАО (правило 13). Старая Москва (gisogd.func_zones, virtual1742) несёт naimfunkzony + fztip; ТиНАО (gisogd.func_zones_tinao) — «Вид зоны» + fz_type. Цвет — по индексу из любого слоя, сплошной; нет индекса — по названию, иначе fallback (палитра Эталона). Тесты — tests/test_gpzones_js.py.
 
@@ -146,7 +151,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · инсоляция: положение солнца, инсоляционный фронт существующих окон, солнечный потолок участка. Предпроектная оценка по методам ГОСТ Р 57795-2017 и нормам СанПиН 1.2.3685-21 (табл. 5.58, центральная зона): расчётные даты 22 апреля и 22 августа, время солнечное, первый час после восхода и последний перед заходом не учитываются (на 55–56° с. ш. — как на инсографике МАрхИ: 6:00–18:00); норма — 2 ч непрерывно или 2,5 ч прерывисто при одном периоде не короче 1 ч. Это НЕ сертифицированный расчёт для экспертизы. Упрощения: рельеф плоский, высота этажа задаётся одна, теневые углы окон — одним…
 
 
-### `apps/grado2/web/labelfmt.js` — 53 стр.
+### `apps/grado2/web/labelfmt.js` — 83 стр.
 
 Оформление подписей альбома (albums.js): железнодорожные станции и кавычки. Чистые функции, без карты. Правило 15 (владелец 05.10.2026): станция подписывается «ст. ж/д Калошино», сокращение не отрывается от названия (неразрывные пробелы). Станция — по признакам данных, а не по названию: землепользование OSM «railway» с названием, тег railway = station / halt / yard и т. п., типы Яндекса «транспорт: станция». Депо, заводы и прочее на железной дороге, и названия без признаков станции не переименовываются. Запуск проверок — tests/test_labelfmt_js.py.
 
@@ -163,7 +168,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `layoutEl`, `setAdding`, `sheetOf`, `laySnap`, `remember`, `layHist`, `isItem`, `itemOf`, `editOf`, `layHint`, `openLayout`, `closeLayout`, `renderLayout`, `layZoom`, `selEl`, `markSel`, `boxOf`, `drawGuides`, `svgPt`, `layDown`, `moveSel`, `hideSel`, `curOf`, `layPanel`
 
-### `apps/grado2/web/legendrules.js` — 33 стр.
+### `apps/grado2/web/legendrules.js` — 53 стр.
 
 Легенда листов 5–9 — только из нарисованного (правило 7, T85a) и общие препятствия подписей рек (правило 0, T85b). Чистые функции, без карты: albums.js даёт им «что есть в рамке», они отвечают «что писать». Проверки — tests/test_legendrules_js.py. Слово владельца 06.10.2026: «всё должно быть не по предустановленному скрипту, а максимально гибко, но при этом под цели сбора».
 
@@ -209,7 +214,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 Станции рельсового каркаса на листах альбома (albums.js): метро, МЦК и МЦД — значок и название (правило 16 label-rules.md, владелец 05.10.2026 и 06.10.2026). Чистые функции, без карты; проверки — tests/test_railstations_js.py. Источник — точки Яндекс Карт transport_p (слой yandex.stations), по одной на каждую линию станции: ft_type_name = transport-metro-station, closed ≠ 1 (закрытая станция не рисуется); network = moscow_metro, line = moscow_metro-14 (или p_name «Московское центральное кольцо») — МЦК; network = moscow_metro, прочие line = moscow_metro-N — метро (N — номер линии, в том числе Б…
 
 
-### `apps/grado2/web/roadclean.js` — 64 стр.
+### `apps/grado2/web/roadclean.js` — 81 стр.
 
 Картографическая чистка полигонов дорог листа альбома (albums.js, roadSource). Владелец 06.10.2026 (T84): «сделай на всех векторных схемах дороги ЕГКО, чтобы остались только полигональные, сделай красиво по лучшим правилам оформления градостроительных схем». Куски проезжей части (особенно ЕГКО) лежат внахлёст и с волосяными щелями — на листе видны швы. Порядок: рамка с запасом 5 % → слияние в одну фигуру (сначала по плиткам: работа ограничена) → закрытие щелей (буфер +0.4 м, затем −0.4 м) → без обрывков < 10 м² и дыр-«островов» < 25 м² → упрощение ~0.3 м. Решение (фильтры, плитки) — чистые фун…
 
@@ -234,7 +239,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · состав слоёв листа по ролям: sheet.layout (T86a, 06.10.2026, слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание»). Чистые функции без карты: слои проекта и шаблон передаёт sheets.js / albums.js. layout = { groups: [{ id, title, role, items: [{ key, on, style?, only?, src? }] }] }. Порядок групп и элементов — порядок рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной). Переходный релиз: keys, …
 
 
-### `apps/grado2/web/sheets.js` — 1106 стр.
+### `apps/grado2/web/sheets.js` — 1110 стр.
 
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
 
@@ -368,11 +373,11 @@ AutoCAD complex linetypes: reading .SHX (compiled shapes) and .LIN (linetypes).
 
 Функции: `jpeg_info`, `_jpeg_info`, `_f`, `_to_unicode_cmap`, `PdfBackend`
 
-### `core/render/grado_render/backend_pptx.py` — 544 стр.
+### `core/render/grado_render/backend_pptx.py` — 603 стр.
 
 PPTX-бэкенд: тот же список операций, что у PDF и SVG, — в редактируемую презентацию PowerPoint.
 
-Функции: `_hex`, `_t`, `clip_polygon`, `_segment`, `clip_polyline`, `_bbox`, `_inside_box`, `_meet`, `_area2`, `_in_ring`, `orient`, `_Slide`, `PptxBackend`, `_scheme`
+Функции: `_hex`, `_t`, `clip_polygon`, `_segment`, `clip_polyline`, `_bbox`, `_inside_box`, `_meet`, `_area2`, `_in_ring`, `orient`, `_eot`, `_Slide`, `PptxBackend`, `_scheme`
 
 ### `core/render/grado_render/backend_svg.py` — 134 стр.
 

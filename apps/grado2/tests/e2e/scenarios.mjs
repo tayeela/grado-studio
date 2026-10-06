@@ -343,14 +343,16 @@ export default async p => {
   check(low["ИЖС"].guest >= Math.ceil(low["ИЖС"].n * .16 * .8) && low["Блокированные"].guest > 0, `гостевые места по 945-ПП: ИЖС ${low["ИЖС"].guest} на ${low["ИЖС"].n} домов, блокированные ${low["Блокированные"].guest}`);
   check(low["Блокированные"].n > 0 && low["Блокированные"].plots > low["Блокированные"].n && low["Блокированные"].maxF <= 3 && low["Блокированные"].streets > 0, `блокированные: ${low["Блокированные"].n} домов, ${low["Блокированные"].plots} участков блоков, проезды`);
   check(low["Урбан-блоки"].n > low["Урбан-блоки"].grp && low["Урбан-блоки"].plots > 0 && low.gap === 0, `урбан-блоки: ${low["Урбан-блоки"].n} секций в ${low["Урбан-блоки"].grp} кварталах, дворы; вплотную стоящие секции квартала — не нарушение разрыва`);
-  // T56: «Квартал» (урбан-блоки) без секций ниже 50 % нормы из-за затенения собственным кварталом: с понижением крыльев (blocks.js) и без него
+  // T56: «Квартал» (урбан-блоки) без секций ниже 50 % нормы из-за затенения собственным кварталом: с понижением крыльев (blocks.js, переключатель «Понижать этажность ради инсоляции соседей») и без него; по умолчанию выключен
   await p.group("t56", async () => {
     const R = JSON.parse(await p.ev(`const pn=RESULT.placeNode, w0=pn.widgets[5].value, t0=pn.widgets[0].value, out={}; pn.widgets[5].value="заданной"; pn.widgets[0].value="Урбан-блоки";
-      for (const off of [true, false]) { window.NO_BLOCKS_RELAX=off; pn._ck=null; const t=performance.now(); recompute(true); await new Promise(r=>setTimeout(r,400)); const ms=Math.round(performance.now()-t-400), sk=RESULT.sketch;
+      for (const off of [true, false]) { pn.widgets[8].value=!off; pn._ck=null; const t=performance.now(); recompute(true); await new Promise(r=>setTimeout(r,400)); const ms=Math.round(performance.now()-t-400), sk=RESULT.sketch;
         await runCheck(null); const bad=catValues("cons:check","Нарушение").filter(x=>/норму получают/.test(x[0])).reduce((s,x)=>s+x[1],0);
         out[off?"before":"after"]={n:sk.length, bad, spp:Math.round(sk.reduce((s,b)=>s+b.m2*b.floors,0)), goal:sk.goal||"", ms}; }
-      window.NO_BLOCKS_RELAX=false; pn.widgets[0].value=t0; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return JSON.stringify(out)`));
+      pn.widgets[8].value=false; pn.widgets[0].value=t0; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return JSON.stringify(out)`));
     p.log("  T56: " + JSON.stringify(R));
+    check(await p.ev(`return RESULT.placeNode.widgets[8].value===false && placeParams(RESULT.placeNode).relax===false`), "T12: переключатель понижения по умолчанию выключен");
+    check(await p.ev(`const pn=RESULT.placeNode; pn.widgets[0].value="Урбан-блоки"; pn.widgets[8].value=true; renderParams(); const el=document.querySelector("[data-tg]"); const ok1=!!el && el.checked && /Понижать этажность ради инсоляции соседей/.test($("params").textContent); pn.widgets[8].value=false; pn.widgets[0].value="Секции"; renderParams(); return ok1`), "T12: в окне «Эскиз» есть переключатель с нужной подписью");
     check(R.before.n > 0 && R.after.n > 0 && R.after.bad <= R.before.bad, `T56 урбан-блоки: секций ниже нормы инсоляции было ${R.before.bad}, стало ${R.after.bad} (корпусов ${R.before.n} → ${R.after.n}), СПП ${R.before.spp} → ${R.after.spp} м²`);
     check(R.after.spp >= R.before.spp * .95, `T56: СПП урбан-блоков после правки не ниже 95 % (${(100 * R.after.spp / R.before.spp).toFixed(1)} %)`);
   });
@@ -899,7 +901,8 @@ export default async p => {
     check(mh[0] <= 33 && mh[1] >= 55 && mh[2], `T52: нижняя зона ${mh[0]} % поля карты (не больше 32), карта ${mh[1]} % (не меньше 55)`);
     check(await p.ev(`(WST.wSheets ||= {}).dock = "b"; winOpen("wSheets", true); await new Promise(r=>setTimeout(r,300)); WST.hb = 300; syncZones(); await new Promise(r=>setTimeout(r,100)); const px = DZ.b.offsetHeight; delete WST.hb; syncZones(); return px === 300`), "T52: своя высота нижней зоны (WST.hb) главнее умолчания");
     // 7. «Показатели» в шапке на 1440
-    check(await p.ev(`return innerWidth < 1400 || (!!document.querySelector('.wins [data-win=wTep]').offsetParent && document.querySelector("header.top").scrollWidth <= document.querySelector("header.top").clientWidth)`), "T63: на 1440 px «Показатели» стоит в шапке, шапка не переполнена");
+    const hd = await p.ev(`const h = document.querySelector("header.top"), w = document.querySelector('.wins [data-win=wTep]'); return { wide: innerWidth >= 1400, inTop: !!w?.offsetParent, sw: h.scrollWidth, cw: h.clientWidth, font: getComputedStyle(h).fontFamily }`);
+    check(!hd.wide || (hd.inTop && hd.sw <= hd.cw), `T63: на 1440 px «Показатели» стоит в шапке, шапка не переполнена (в шапке: ${hd.inTop}, ширина содержимого ${hd.sw} из ${hd.cw} px)`);
     // T53: «Варианты», «Листы и альбом», подписи этажей, штриховка, пустое дерево слоёв
     check(await p.ev(`winOpen("wVars", true); await new Promise(r=>setTimeout(r,300)); const v=$("varMsg"); v.textContent="Перебор типологий"; const bar=v.parentElement, y=[...bar.children].filter(c=>c.offsetParent).map(c=>Math.round(c.getBoundingClientRect().top));
       return v.textContent === "Перебор типологий" && Math.max(...y) - Math.min(...y) < 8 && (bar.clientWidth >= 520) === (v.offsetParent !== null)`), "T53: «Варианты» — шапка в одну строку, подпись «Перебор типологий» видна только при ширине шапки от 520 px");
@@ -1254,20 +1257,22 @@ export default async p => {
     const shots = process.env.E2E_SHOTS;
     await p.ev(`winOpen("wSketch", true); const c = centroid(ringsXY(RESULT.site)[0]), box = (dx, dy, w, h) => polyLL([[c[0]+dx, c[1]+dy], [c[0]+dx+w, c[1]+dy], [c[0]+dx+w, c[1]+dy+h], [c[0]+dx, c[1]+dy+h]]);
       window.__rs67 = Object.values(resSrcs).map(s => s.getFeatures().slice()); Object.values(resSrcs).forEach(s => s.clear());
-      [["участок ДОО", -140, -60], ["участок школы", 0, -60], ["участок поликлиники", 140, -60]].forEach(([k, dx, dy]) => { const f = toOl(box(dx, dy, 110, 90)); f.set("kind", k); resSrcs[k].addFeature(f); });
+      // участки резерва кладём функцией: фоновый ответ сервера по ТЭП (tepRequest → fillSketch) на медленной машине приходит позже и очищает resSrcs, поэтому перед каждым чтением кладём заново
+      window.__seed67 = () => { Object.values(resSrcs).forEach(s => s.clear()); [["участок ДОО", -140, -60], ["участок школы", 0, -60], ["участок поликлиники", 140, -60]].forEach(([k, dx, dy]) => { const f = toOl(box(dx, dy, 110, 90)); f.set("kind", k); resSrcs[k].addFeature(f); }); };
+      window.__seed67();
       RES.forEach(r => { r.on = true; }); syncPreview(); renderTree(); mMain.updateSize(); sharedView.setCenter(toOl(box(0, 0, 1, 1)).getGeometry().getFirstCoordinate()); return 1`);
     const tok = async th => JSON.parse(await p.ev(`document.documentElement.dataset.theme = "${th}"; await new Promise(r => setTimeout(r, 200)); const g = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return JSON.stringify(["doo", "school", "clinic"].map(k => [g("--res-" + k), g("--res-" + k + "-ln")]).concat([[g("--site-hatch")]]))`));
     const L = await tok("light"), D = await tok("dark");
     check(L.slice(0, 3).every((x, i) => /^#/.test(x[0]) && /^#/.test(x[1]) && x[0] !== D[i][0] && x[1] !== D[i][1]), "T67: у каждого вида участка в светлой и тёмной теме свои заливка и контур");
     check(L[2][0] === "#ecd9a8" && L[2][0] !== L[3][0], "T67: поликлиника в светлой теме — приглушённая охра, не бирюза и не цвет штриховки пятна");
     for (const th of ["light", "dark"]) for (const den of [5000, 2000, 8000]) {
-      const r = JSON.parse(await p.ev(`document.documentElement.dataset.theme = "${th}"; Object.values(resSrcs).forEach(s => s.changed()); sharedView.setResolution(${den} / (Math.cos(ol.proj.toLonLat(sharedView.getCenter())[1] * Math.PI / 180) / 0.000264583)); await new Promise(r => setTimeout(r, 900));
+      const r = JSON.parse(await p.ev(`document.documentElement.dataset.theme = "${th}"; Object.values(resSrcs).forEach(s => s.changed()); sharedView.setResolution(${den} / (Math.cos(ol.proj.toLonLat(sharedView.getCenter())[1] * Math.PI / 180) / 0.000264583)); await new Promise(r => setTimeout(r, 900)); window.__seed67();
         const caps = Object.entries(resSrcs).map(([k, s]) => { const f = s.getFeatures()[0], st = resStyle(f), t = st.getText(); return [t ? t.getText() : null, st.getFill().getColor(), st.getStroke().getColor(), st.getStroke().getWidth()]; }); return JSON.stringify(caps)`));
       const want = den <= 5000;
       check(r.every((c, i) => (want ? c[0] === ["ДОО", "школа", "поликлиника"][i] : c[0] === null) && c[3] === 1 && c[1] === (th === "light" ? L : D)[i][0] && c[2] === (th === "light" ? L : D)[i][1]), `T67: 1:${den}, ${th}: подпись вида ${want ? "есть («ДОО», «школа», «поликлиника»)" : "не рисуется"}, заливка и контур из токенов, контур 1 px`);
       if (shots && den !== 8000) { await p.ev(`return 1`); await p.shot(`${shots}/t67-${th}-${den}.png`); }
     }
-    const lg = await p.ev(`renderTree(); const rows = [...document.querySelectorAll("#layerTree [data-res]")].map(i => i.closest("label")); return JSON.stringify(rows.map(l => [l.querySelector(".nm").textContent, l.querySelector(".sym").getAttribute("style"), l.querySelector(".meta").textContent]))`);
+    const lg = await p.ev(`window.__seed67(); renderTree(); const rows = [...document.querySelectorAll("#layerTree [data-res]")].map(i => i.closest("label")); return JSON.stringify(rows.map(l => [l.querySelector(".nm").textContent, l.querySelector(".sym").getAttribute("style"), l.querySelector(".meta").textContent]))`);
     const rows = JSON.parse(lg), nm = rows.map(x => x[0]);
     check(["Участки и улицы эскиза", "Резерв: ДОО", "Резерв: школа", "Резерв: поликлиника"].every(x => nm.includes(x)) && rows.filter(x => /Резерв/.test(x[0])).every(x => /var\(--res-(doo|school|clinic)\)/.test(x[1]) && x[2] === "1"), "T67: «Предпросмотр схемы» показывает участки эскиза и три вида резерва со своими цветами и числом участков");
     if (shots) { await p.ev(`document.documentElement.dataset.theme = "light"; document.getElementById("layerTree").scrollIntoView({block:"center"}); return 1`); await p.shot(`${shots}/t67-legend-light.png`); await p.ev(`document.documentElement.dataset.theme = "dark"; return 1`); await p.shot(`${shots}/t67-legend-dark.png`); }
@@ -1279,7 +1284,7 @@ export default async p => {
       return JSON.stringify({ w: innerWidth, names: ls.map(l => l.textContent), cut, tri: col === warn })`));
     check(lw.cut.length === 0 && lw.names.includes("Роль в расчётах") && lw.tri, `T68: ширина ${lw.w}: подписи панели стиля целиком (${lw.names.length} шт., обрезано: ${lw.cut.join(", ") || "нет"}); значок «не готов» — цвет --warn`);
     if (shots) await p.shot(`${shots}/t68-style-panel.png`);
-    await p.ev(`document.documentElement.dataset.theme = "light"; Object.values(resSrcs).forEach((s, i) => { s.clear(); s.addFeatures(window.__rs67[i]); }); delete window.__rs67; syncPreview(); return 1`);
+    await p.ev(`document.documentElement.dataset.theme = "light"; Object.values(resSrcs).forEach((s, i) => { s.clear(); s.addFeatures(window.__rs67[i]); }); delete window.__rs67; delete window.__seed67; syncPreview(); return 1`);
   });
   // T71: лист «Месторасположение» — полигоны округов и районов упрощены до масштаба листа: объём спецификации в бюджете, обе карты на месте
   await p.group("t71", async () => {
@@ -1338,9 +1343,14 @@ export default async p => {
         setLayerData("yandex.hd_roads", ya); setLayerData("egko.roads", eg);
         const vec = roads(albumSpec([mk("use")])), sat = roads(albumSpec([mk("ortho")]));
         setLayerData("egko.roads", fc([])); const yaOnly = roads(albumSpec([mk("use")]));
-        return JSON.stringify({ vec: vec.length, vecType: vec[0]?.g.type, vecAbove: vec[0] && turf.bbox(vec[0].g)[1] > s + (n - s) * .4, sat: sat.length, satBelow: sat[0] && turf.bbox(sat[0].g)[3] < s + (n - s) * .4, yaOnly: yaOnly.length });
+        // части векторного листа: ЕГКО (две полосы со щелью) — одной частью сверху; дорога Яндекса, которой у ЕГКО нет, —
+        // добавлена отдельной частью снизу (lr 19, F4 06.10.2026)
+        const parts = vec.flatMap(f => f.g.type === "MultiPolygon" ? f.g.coordinates.map(c => ({ type: "Polygon", coordinates: c })) : [f.g]);
+        const above = parts.filter(g => turf.bbox(g)[1] > s + (n - s) * .4).length, below = parts.filter(g => turf.bbox(g)[3] < s + (n - s) * .4).length;
+        return JSON.stringify({ vec: vec.length, above, below, sat: sat.length, satBelow: sat[0] && turf.bbox(sat[0].g)[3] < s + (n - s) * .4, yaOnly: yaOnly.length });
       } finally { keys.forEach(k => setLayerData(k, saved[k] || fc([]))); }`));
-    check(r.vec === 1 && r.vecType === "Polygon" && r.vecAbove, "T84: векторный лист — дороги ЕГКО (не Яндекса), две части со щелью слиты в один полигон");
+    check(r.vec === 1 && r.above === 1, "T84: векторный лист — дороги ЕГКО, две части со щелью слиты в один полигон");
+    check(r.below === 1, "T84/F4: дорога Яндекса, которой нет у ЕГКО, добавлена на векторный лист");
     check(r.sat === 1 && r.satBelow, "T84: лист-снимок — полигоны Яндекса первыми");
     check(r.yaOnly === 1, "T84: у ЕГКО в рамке пусто — векторный лист берёт Яндекс");
   });

@@ -53,6 +53,19 @@ const evil = { ...turf, buffer: (f, d, o) => d > 0 ? turf.buffer(f, d, o) : { ty
 const ev = R.clean(evil, [rect(0, 0, 100, 20)], BB);
 ok(ev && A(ev) > 1800, "страховка: буфер потерял площадь — взята фигура без буфера (" + (ev && Math.round(A(ev))) + " м²)");
 
+// F4: дороги Яндекса там, где у ЕГКО их нет (край двух источников расходится на 1–2 м)
+const E1 = rect(0, 0, 200, 8), Y1 = rect(0, 1, 200, 9), Yonly = rect(100, 9, 108, 120), blob = sq(150, 40, 6), sliver = rect(0, 10, 200, 12);
+let gp = R.gapFill(turf, [E1], [Y1, Yonly, blob, sliver], BB);
+ok(gp.length === 1, "дополнение: одна дорога, которой нет у ЕГКО (" + gp.length + ")");
+ok(gp.length && A(gp[0]) > 0.9 * 8 * 100 && A(gp[0]) < 1.2 * (8 * 111 + 4 * 8 * 4), "дополнение — вся дорога, не обрезана (" + (gp[0] && Math.round(A(gp[0]))) + " м²)");
+const merged = R.clean(turf, [E1, ...gp], BB);
+ok(merged && merged.type === "Polygon" && merged.coordinates.length === 1, "ЕГКО + дополнение — один полигон без шва и дыр");
+ok(R.gapFill(turf, [E1], [Y1], BB).length === 0, "ЕГКО полная (Яндекс совпадает) — дополнения нет");
+ok(R.gapFill(turf, [E1], [blob], BB).length === 0, "Яндекс-обрывок меньше порога — нет");
+ok(R.gapFill(turf, [E1], [sliver], BB).length === 0, "полоса 2 м у края — не дорога, а разница границ");
+ok(R.gapFill(turf, [], [Yonly], BB).length === 1, "ЕГКО пусто — Яндекс целиком");
+ok(R.gapFill(turf, [E1], [], BB).length === 0, "Яндекса нет — пусто");
+
 // скорость на синтетике: ТиНАО (48 га, 290 кусков) и плотная Москва 1:1000 (3000 кусков)
 function strip(x0, y0, x1, y1, w) { const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy), nx = -dy / L * w / 2, ny = dx / L * w / 2;
   return { type: "Polygon", coordinates: [[[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny], [x0 + nx, y0 + ny]].map(ll)] }; }

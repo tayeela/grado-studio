@@ -2,7 +2,7 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-06, ГРАДО 2 v0.99.21: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
+- **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,
   offer, push_alignment_guide) is ported to `web/snap.js`: a dragged label in «Макет листа» meets the edges and centres of
@@ -10,6 +10,58 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   without snapping. Snapshot history of the sheet's edits/items: Ctrl+Z / Ctrl+Shift+Z (and header buttons), typing in
   one field or arrow nudges in a row are one step. Stored edits format unchanged, PDF/PPTX pipeline untouched. Tests:
   `tests/snap_test.js`, e2e step in the layout block. License: `web/vendor/LICENSE-designcraft`.
+- **2026-10-06, ГРАДО 2 v0.99.30: ППТ КРТ sheets share one style table; okrugMain cached; corner districts by the МСК
+  frame (#10, #11).** `C_VEC`/`C_BODY`/`C_TAIL`/`C_RAIL` and `cSheet` replace per-sheet copies (PPTKRT_C content
+  identical, sha256); `albumgeo.js`: `memoByGeometry`, `cornerPoints`. album_check gol and bez: no differences.
+- **2026-10-06, ГРАДО 2 v0.99.29: «Понижать этажность ради инсоляции соседей» — switch in «Эскиз», off by default
+  (#12, owner «А»).** Node «Посадка застройки» gets a `relax` toggle (urban blocks only); the T56 lowering in
+  `urbanBlocks` runs only when it is on (`relaxIf` in blocks.js); old projects open with it off. Безобразово, 18 floors:
+  off 931 743 m² / max 17 floors, on 925 864 m² with sections 17→10.
+- **2026-10-06, ГРАДО 2 v0.99.28: street labels keep 1.6 mm from the territory dashes, labels clear photo arrows
+  (#8, #9).** The 1.6 mm gap was measured from the dash axis while the territory sign is 2.4 mm wide (0.4 mm left to
+  the squares): now from the edge of the dashes, relaxed step by step only when there is no other place. Photo sheet:
+  labels avoid arrows by their rotated outline and the arrow numbers, the far side of the road is tried; touching an
+  arrow is the last resort. album_check: Cyrillic captions on crops, moved labels are not reported as text changes.
+- **2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.** Title sheet: «Об утверждении
+  проекта планировки территории по адресу:», address and district are one text block — in PPTX one text box with
+  paragraphs (`block`/`para` on text ops, `textblock` in backend_pptx), in PDF the same lines. Photo sheet: labels avoid
+  view arrows, a street at the territory may touch an arrow only when there is no other place; arrows are drawn above
+  labels. Export shows «PDF/PPTX: лист N из M» from `GET /api/print/progress` (T87).
+- **2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.** Owner 06.10: «не может быть в старой
+  москве территорий сельскохозяйственного назначения, приоритет всегда у ври, если благоустройство то это
+  благоустройство». Old Moscow classifier codes «1.2.9», «1.2.13» (warehouses, railway) are no longer cut to federal «1.2»
+  (grain growing) — class by words; outside Новомосковский/Троицкий okrugs agricultural classes 25–28 are never used (ВРИ
+  or OSM); «благоустройство» → природно-рекреационная. КРТ 3229: railway strip is railway, :28 is storage.
+- **2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.** Land use: ВРИ with «завод/фабрика/
+  комбинат/цех» is production (class 14); OSM `commercial` is business (class 8), only `retail` is trade — the pink
+  «торгово-бытовой» strip by ул. Тагильская is gone. Territory boundary is drawn above every layer (over layers go
+  between the white veil and the boundary). The SZZ footnote is not printed. Sheet 9 veil 0.35 → 0.15 (Yandex z18
+  is the finest imagery there, same as on yandex.ru). Photo sheet: panoramas captured without house-number tags.
+- **2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.** Sheet 5 legend: groups
+  «Функциональные зоны специализированного назначения» and «Транспортная инфраструктура», names and colours from the
+  owner's picture (`SPEC_ZONES`, label-rules 21); classification by ВРИ is unchanged. District boundary bold (1.2 mm),
+  ЛГР and red lines 1.5× thicker (≥ 0.5 mm) and drawn above the white veil, ЛГР signs larger on the map and in the
+  legend (`LT_SHAPE_MM`, `linetype_ops(shape_k=…)`); «территории автодорог, улиц и местных проездов» on all sheets.
+- **2026-10-06, ГРАДО 2 v0.99.23: owner remarks on the Гольяново album.** Sanitary zones: established — solid black,
+  indicative — black dashed, drawn above the white veil outside the territory (layer `gisogd.szz.lines`, over).
+  Sheet 5 land use: Voronoi gap fill no longer leaves a saw of triangles — seed points every 2 m (was 8 m), cells of
+  one colour dissolved and simplified. Photo sheet: 8 Yandex panorama frames from the owner's links with view points
+  and directions (data in the project, label-rules 14).
+- **2026-10-06, ГРАДО 2 v0.99.22: Гольяново album check, last fixes (F7, F9).** Sheet 2: callout lines route around
+  district and okrug captions (`_callout_route` in album_io, map frames remember their text ops). Genplan zone number:
+  deepest spot also away from the territory border (≥ 4 mm) and not on or inside a building. Street labels keep
+  1.6 mm from the territory dashes when placed along a road. Checked on КРТ 3229 rebuilt with owner data (lease rows
+  from ЕГРН extracts, address «вл. 8» from the ДГП letter): PDF 18 s, PPTX 20 s with Montserrat embedded.
+- **2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).** Sheet 5: each
+  sanitary zone drawn by its own border (established ones were lost in a merged outline), one note on all SZZ kinds
+  with a full stop (`LegendRules.szzNote`), «охранная зона электроэнергетики» without the stray «О» and not inside the
+  corner caption reserve. Sheet 6: one legend row per sign (`gpzones.legendRows`). Roads: Yandex road polygons fill
+  gaps where ЕГКО has none (`RoadClean.gapFill`) — the road south of НИКИЭТ is back on sheets 4, 6–8. Sheet 9: wider
+  ВРИ column, capital first letter, short prepositions bound by a non-breaking space. Sheet 3: «ЖК «…»» (rule 17).
+  «вл.1» → «вл. 1». label-rules item 20.
+  PowerPoint export: was ~20 min for КРТ 3229, now 112 s cold / 22 s warm (PDF 128 s / 16 s): ЕГКО base of the
+  okrug map cached on disk (`~/.grado2/cache/print_ops`, 12 h), PPTX raster fills polygons only within their extent,
+  sub-0.1 mm outlines skipped; Montserrat embedded into PPTX (`ppt/fonts/*.fntdata`); `GET /api/print/progress`.
 - **2026-10-06, ГРАДО 2 v0.99.20: fixes from the live album rebuild check.** ЕГКО road polygon with a hole touching the
   outer ring (clip by the request box) collapsed in `RoadClean.clean` (JSTS buffer on an invalid polygon) and sheet 4 lost
   its roads: normalise with `union(f,f)` before buffering, and fall back to the unbuffered shape if cleaning loses > 50 %

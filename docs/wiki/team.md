@@ -7,6 +7,8 @@
 
 ## Правила команды (RULE из PROGRESS.md)
 
+- Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
+- A script started from a git hook inherits GIT_DIR/GIT_INDEX_FILE: before running git in another repository, unset them and check `git rev-parse --show-toplevel` (06.10.2026 the wiki publisher committed wiki pages over the program on team/t60; caught by `git show --stat`, branch restored to the previous commit, main untouched).
 - A change to album download or label placement is accepted only after a real album rebuild with network on a fresh project copy plus a page-by-page PDF comparison with the previous baseline on two territories (T86: mocked download and spec-JSON golden both passed while sheet 4 lost roads and the station label moved onto a road).
 - Cycle start = `git merge main` in the team branch → `tools/gate.sh` → read `docs/wiki/INDEX.md` and `docs/wiki/team.md`; agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasting file ranges.
 - A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
@@ -47,12 +49,13 @@
 
 ## Последние циклы
 
+- 06.10.2026, цикл 27 — полная проверка альбома Гольяново (нормы, оформление, данные: AUD-*.md в /tmp/grado-team/2026-10-06),
+  сводный список F1–F12 + PPTX. Сделано v0.99.21–0.99.22: СЗЗ установленные, дорога-пробел ЕГКО, легенда генплана,
+  таблица участков, ЖК, выноски листа 2, номер зоны, PPTX 20 мин → 20 с и встроенный Montserrat. Данные владельца:
+  аренда :85/:86 из выписок ЕГРН, адрес «вл. 8» по письму ДГП. Новые PDF/PPTX/проект — в папке выдачи, прежние в
+  «прежняя версия/выдача 05.10». Осталось: строка «лист N из 9» при выгрузке (сервер готов, UI нет), подпись улицы у
+  границы (F8 не сработал: подпись ставится другим путём), лист 4 без снимков (ждём владельца).
 - 06.10.2026, цикл 26 — T86a–f в копии `.claude/worktrees/t86` (team/t86), каждый шаг: эталон спецификаций листов
   59/59 (КРТ 3229 + Безобразово копия, `/tmp/grado-team/2026-10-06/T86a-golden/dump.js`), живая проверка со снимками,
   gate; ревью руководителя по снимкам дало правки T86b (дубли ролей, обрезка, «Границы», «100 % + в рамке нет») и
   баг подписи станции на добавленной ж/д (T86d). Ждёт «выкладывай».
-- 06.10.2026, цикл 25 и выкладка («выкладывай и продолжай»). Совет по единой логике листов (продакт, архитектор,
-  креативный директор) → T86, макет одобрен владельцем (А). T85a/b приняты: легенда из нарисованного, подписи рек от
-  данных проекта; причина «не готов» для листов документации перенесена в `notReadyWhy` вызовом `window.conceptWhy`
-  (без подмены функции). Полный gate с E2E зелёный; main ff до 3c25040, сайт: версия 0.99.13. T86a идёт в отдельной
-  копии `.claude/worktrees/t86` (ветка team/t86) с эталоном спецификаций листов до/после.

@@ -152,7 +152,56 @@ EGKO_BASE = (("forest", "#c5dcb0", None), ("gazons", "#c5dcb0", None), ("hidrogr
              ("dorogi_pol", "#ffffff", "#d7d7d7"), ("virtual6", "#cdcdcd", None))
 
 
+PRINT_OPS_CACHE = Path.home() / ".grado2" / "cache" / "print_ops"      # готовые операции тяжёлых рамок: PDF и PPTX берут одни и те же
+PRINT_OPS_TTL = 12 * 3600                                                # картооснова обновляется редко; дольше суток держать нельзя
+PRINT_OPS_KEEP = 6
+
+
+def ops_cache_get(key):
+    """Операции рамки из кэша на диске (PDF и PPTX одного альбома считают одну и ту же основу ЕГКО, 3,5 минуты на лист)."""
+    import pickle
+    import time
+    p = PRINT_OPS_CACHE / f"{key}.pkl"
+    try:
+        if time.time() - p.stat().st_mtime < PRINT_OPS_TTL:
+            return pickle.loads(p.read_bytes())
+    except (OSError, pickle.PickleError, EOFError, AttributeError, ValueError):
+        pass
+    return None
+
+
+def ops_cache_put(key, ops):
+    import os
+    import pickle
+    try:
+        PRINT_OPS_CACHE.mkdir(parents=True, exist_ok=True)
+        tmp = PRINT_OPS_CACHE / f"{key}.{os.getpid()}.tmp"
+        tmp.write_bytes(pickle.dumps(ops, protocol=pickle.HIGHEST_PROTOCOL))
+        os.replace(tmp, PRINT_OPS_CACHE / f"{key}.pkl")
+        old = sorted(PRINT_OPS_CACHE.glob("*.pkl"), key=lambda q: q.stat().st_mtime, reverse=True)[PRINT_OPS_KEEP:]
+        for q in old:
+            q.unlink(missing_ok=True)
+    except OSError:                                                      # кэш — ускорение, не условие: диск занят — считаем заново
+        pass
+
+
 def egko_ops(tr, rect, mask, egko):
+    """Основа ЕГКО листа с кэшем: ключ — маска округа, рамка, привязка и масштаб листа (всё, от чего зависит результат)."""
+    import hashlib
+    import json as _json
+    key = hashlib.sha1(_json.dumps([mask, list(rect), tr.lon0, tr.lat0, tr.k, tr.t, EGKO_BASE, 2], sort_keys=True,
+                                   default=str).encode("utf-8")).hexdigest()[:24]
+    got = ops_cache_get("egko-" + key)
+    if got is not None:
+        return got
+    failed = []
+    out = _egko_ops(tr, rect, mask, egko, failed)
+    if len(out) > 2 and not failed:                                      # слой не ответил (портал, сеть) — результат неполный, в кэш не идёт
+        ops_cache_put("egko-" + key, out)
+    return out
+
+
+def _egko_ops(tr, rect, mask, egko, failed=None):
     """Цветная основа ЕГКО только внутри контура mask (GeoJSON округа): светлый фон, леса и газоны, вода, дороги,
     здания. Снаружи остаётся бледная подложка. Здания мельче 0,3 мм на листе пропускаются, контуры упрощаются до
     0,12 мм — схема округа в масштабе 1:100 000–1:250 000 иначе весила бы десятки мегабайт."""
@@ -167,11 +216,25 @@ def egko_ops(tr, rect, mask, egko):
     lats = [p[1] for poly in parts for r in poly for p in r]
     bbox = (min(lons), min(lats), max(lons), max(lats))
     small = 0.3 / tr.k                                                  # 0,3 мм листа в метрах
+    tiny = 0.1 / tr.k
+    (ta, tb, taa, tab, tbb), (tc, te, tcc, tce, tee) = tr.t                  # MapTransform.mm без вызова на каждую вершину (4 млн вызовов)
+    lon0, lat0, kk = tr.lon0, tr.lat0, tr.k
+    ox, oy = tr.rect[0] + tr.rect[2] / 2, tr.rect[1] + tr.rect[3] / 2
+
+    def pm(ring):
+        res = []
+        for p in ring:
+            dl, dp = p[0] - lon0, p[1] - lat0
+            res.append((ox + (ta * dl + tb * dp + .5 * taa * dl * dl + tab * dl * dp + .5 * tbb * dp * dp) * kk,
+                        oy - (tc * dl + te * dp + .5 * tcc * dl * dl + tce * dl * dp + .5 * tee * dp * dp) * kk))
+        return res
     kx = 111320 * math.cos(math.radians((bbox[1] + bbox[3]) / 2))
     for code, fill, edge in EGKO_BASE:
         try:
             feats = egko(bbox, code)
         except Exception:                                               # ЕГКО не отдала слой — схема без него
+            if failed is not None:
+                failed.append(code)
             continue
         for f in feats:
             if not (f.get("geometry") or {}).get("coordinates"):
@@ -180,12 +243,13 @@ def egko_ops(tr, rect, mask, egko):
             for poly in fparts:
                 if not poly or len(poly[0]) < 3:
                     continue
-                if code == "virtual6":
-                    lo = [p[0] for p in poly[0]]
-                    la = [p[1] for p in poly[0]]
-                    if (max(lo) - min(lo)) * kx < small and (max(la) - min(la)) * 110540 < small:
-                        continue
-                prs = [r for r in (_simplify([tr.mm(*p[:2]) for p in ring], 0.12) for ring in poly) if len(r) >= 3]
+                lo = [p[0] for p in poly[0]]
+                la = [p[1] for p in poly[0]]
+                # контур меньше порога на листе не виден: здания — 0,3 мм, остальное — 0,1 мм (полпикселя при 200 dpi); ломать
+                # каждую вершину и упрощать сотни тысяч таких контуров стоило 80 секунд
+                if (max(lo) - min(lo)) * kx < (small if code == "virtual6" else tiny) and (max(la) - min(la)) * 110540 < (small if code == "virtual6" else tiny):
+                    continue
+                prs = [r for r in (_simplify(pm(ring), 0.12) for ring in poly) if len(r) >= 3]
                 if prs:
                     out.append({"op": "path", "rings": prs, "closed": True, "fill": hex_to_rgb(fill),
                                 "stroke": hex_to_rgb(edge) if edge else None, "width": 0.08, "dash": None})
@@ -506,11 +570,13 @@ def _parts(g):
 # Рисунок типов линий ЛГР на листе — постоянный на бумаге при любом масштабе (как PSLTSCALE в AutoCAD): единица шаблона
 # REDLN97 = 0,25 мм, засечки границ зон — через 5 мм, как в образце «ГК Царицыно» (владелец 30.09.2026). Прежде шаблон
 # шёл в метрах местности, и в 1:10 000 граница зоны сливалась в сплошную линию.
-LT_MM = 0.25
+LT_MM = 0.35                                  # мм листа на метр шаблона REDLN97: знаки ЛГР крупнее (владелец 06.10.2026; было 0,25)
+LT_SHAPE_MM = 0.6                             # масштаб самих знаков ЛГР (засечки, треугольники): крупнее шага (владелец 06.10.2026)
 
 
-def linetype_ops(pts, name, k, color, width, lib):
+def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
     """Сложный тип линии AutoCAD (REDLN97) вдоль ломаной в мм листа; k — мм на метр чертежа.
+    shape_k — свой масштаб знаков (легенда: шаг сжат под ширину знака, а сами знаки — как на карте).
     Короче двух длин шаблона — сплошная линия (правило AutoCAD, как на экране)."""
     lt = lib["linetypes"].get(name)
     shapes = {n.upper(): s for n, s in lib["shapes"].items()}
@@ -561,11 +627,12 @@ def linetype_ops(pts, name, k, color, width, lib):
                 px, py, ux, uy = at(t)
                 vx, vy = uy, -ux                                   # «слева по ходу» при оси y вниз
                 r = math.radians(e.get("r") or 0)
-                cr, sr, sc = math.cos(r), math.sin(r), (e.get("s") or 1) * k
+                kk = shape_k or k
+                cr, sr, sc = math.cos(r), math.sin(r), (e.get("s") or 1) * kk
                 ax, ay, bx, by = (1, 0, 0, -1) if e.get("abs") else (ux, uy, vx, vy)
-                ox = px + (e.get("x") or 0) * k * ux + (e.get("y") or 0) * k * vx
-                oy = py + (e.get("x") or 0) * k * uy + (e.get("y") or 0) * k * vy
-                sw = round(min(width, 0.15 * sc), 4)
+                ox = px + (e.get("x") or 0) * k * ux + (e.get("y") or 0) * kk * vx
+                oy = py + (e.get("x") or 0) * k * uy + (e.get("y") or 0) * kk * vy
+                sw = round(min(width, 0.12 * sc), 4)
                 for path in s["paths"]:
                     ring = []
                     for sx, sy in path:
@@ -710,10 +777,16 @@ class SketchMapFrame(Frame):
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
         guard, tinfo = None, {}
         late = []                                                       # знаки поверх границы территории (точки съёмки)
+        numboxes = []                                                   # места номеров точек съёмки: подпись улицы обходит и их
+        viewboxes = []                                                  # стрелки точек съёмки: подписи их обходят (лист 4, 06.10.2026)
+        IGNV = [0]                                                      # стрелки точек съёмки: 0 — обходить по описанному прямоугольнику,
+        #                                                                 1 — по контуру повёрнутой подписи, 2 — не учитывать (крайний случай)
+        TGAP = [None]                                                   # зазор подписи улицы от оси пунктира, мм; None — полный (край пунктира + 1,6 мм)
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
         railsegs, roadrings = [], []                                    # только пути (мм) и кольца полигонов дорог (мм): подпись станции (T86g)
+        bldsegs, bldrings = [], []                                                    # контуры зданий (мм): номер зоны Генплана — не на углу здания (F9)
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -804,6 +877,9 @@ class SketchMapFrame(Frame):
                             roadrings.extend(rings)
                         if layer.get("key") == "egko.water":
                             watersegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
+                        if layer.get("key") == "egko.buildings":
+                            bldsegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
+                            bldrings.extend(rings[:1])
                         if not rings:
                             continue
                         a = f.get("a")
@@ -843,11 +919,11 @@ class SketchMapFrame(Frame):
                             out.extend(flood_ops(pts, int(f["flood"]), color, side=f.get("fside", -1)))
                         elif f.get("lt"):
                             for name in f["lt"]:
-                                out.extend(linetype_ops(pts, name, LT_MM, color, max(w, 0.25), self.lib))
+                                out.extend(linetype_ops(pts, name, LT_MM, color, max(w * 1.5, 0.5), self.lib, shape_k=LT_SHAPE_MM))   # ЛГР толще (владелец 06.10.2026)
                         elif f.get("miss"):
                             for code, _sign in f["miss"]:
                                 dash = self.lgr_dash.get(int(code))
-                                out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w, 0.25),
+                                out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w * 1.5, 0.5),
                                             "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts]})
                             if f.get("ll"):                     # надпись знака вдоль линии (Эталон ЛГР: «техническая зона», «береговая»)
                                 from grado_render.scene import line_label_ops
@@ -878,10 +954,15 @@ class SketchMapFrame(Frame):
                             continue
                         if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
                             # поверх маски и границы территории: стрелка у границы не бледнеет и не прячется под пунктиром
-                            late.extend(_view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf")))
+                            vm = _view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf"))
+                            late.extend(vm)
+                            r_ = vm[0]["rings"][0]                      # подписи обходят стрелку, пока есть другое место
+                            viewboxes.append((min(p[0] for p in r_) - .5, min(p[1] for p in r_) - .5, max(p[0] for p in r_) + .5, max(p[1] for p in r_) + .5))
                             if f.get("label"):
                                 b = math.radians(float(f.get("dir") or 0))
                                 labels.append((x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8, f["label"], f.get("ls"), f))
+                                nx_, ny_ = x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8      # номер точки рядом со стрелкой — тоже занят
+                                numboxes.append((nx_ - 2.2, ny_ - 3.2, nx_ + 2.2, ny_ + 1.2))
                             continue
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
@@ -897,7 +978,12 @@ class SketchMapFrame(Frame):
                     keep_from.append((a_, b_))
             for a_, b_ in reversed(keep_from):
                 del out[a_:b_]
-            late[:0] = moved
+        else:
+            moved = []
+        # слои over — над белой маской, но под границей территории: граница всегда поверх всех слоёв (владелец 06.10.2026)
+        if not (sh.get("territory") and sh.get("terrMask") and not sh.get("terrPoint")):
+            out.extend(moved)
+            moved = []
         if sh.get("territory"):
             out.append({"op": "layer", "name": "Граница территории"})
         if sh.get("territory") and sh.get("terrPoint"):
@@ -912,23 +998,26 @@ class SketchMapFrame(Frame):
                 holes = [[tr.mm(*p[:2]) for p in poly[0]] for poly in parts]
                 out.append({"op": "path", "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]] + holes, "closed": True,
                             "fill": (1, 1, 1), "alpha": float(sh["terrMask"]), "stroke": None, "width": 0, "dash": None, "evenodd": True})
+                out.extend(moved)
+                moved = []
             for poly in parts:
                 ts = sh.get("terrStyle") or {}                        # слайды раздела: граница ППТ — сплошная пурпурная
                 out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True,
                             "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
                             "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
-        out.extend(late)
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
         mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
         # граница территории — препятствие для названий территорий и деревень (правила подписей, владелец 30.09.2026)
-        tsegs, tpad = [], float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2 + 0.4
+        tw_half = float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2        # половина ширины знака границы территории
+        tsegs, tpad, trings = [], tw_half + 0.4, []
         if sh.get("territory") and not sh.get("terrPoint"):
             for poly in _parts(sh["territory"])[1]:
                 for r in poly:
                     pts = [tr.mm(*p[:2]) for p in r]
                     tsegs.extend(zip(pts, pts[1:]))
+                    trings.append(pts)
 
         # номера в кружках (листы 7–9): точка выноски — в глубине своего участка; кружок не закрывает чужие точки,
         # не стоит на чужом участке, линии выносок не пересекают друг друга и чужие подписи (владелец 30.09.2026)
@@ -963,9 +1052,21 @@ class SketchMapFrame(Frame):
             # подписи не закрывают точки выносок номеров (own — свой номер)
             if avoid and any(k_ != own and box[0] - 1 < m[0] < box[2] + 1 and box[1] - 1 < m[1] < box[3] + 1 for k_, m in marks.items()):
                 return False
+            vbs = viewboxes + numboxes if ob else viewboxes
+            if avoid and IGNV[0] < 2 and vbs:
+                if ob and IGNV[0] == 1:                                 # подпись улицы вдоль наклонной дороги: стрелка проверяется по контуру подписи
+                    if any(_obox_hit(ob[0], ob[1], ob[2], ob[3], ob[4], [((v[0], v[1]), (v[2], v[1])), ((v[2], v[1]), (v[2], v[3])),
+                                                                          ((v[2], v[3]), (v[0], v[3])), ((v[0], v[3]), (v[0], v[1]))]) for v in vbs
+                           if not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3])):
+                        return False
+                elif any(not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3]) for v in vbs):
+                    return False                                        # обязательная подпись без места (avoid=False) — может рядом
             if avoid and tsegs:
                 if ob:
-                    if _obox_hit(ob[0], ob[1], ob[2], ob[3] + tpad, ob[4] + tpad, tsegs):
+                    # зазор считается от КРАЯ пунктира (знак территории толстый, 2,4 мм), а не от его оси: на оси 1,6 мм
+                    # оставляли ~0,4 мм до квадратиков пунктира (F8, #8); подпись улицы — не ближе 1,6 мм к пунктиру
+                    sp_ = tw_half + 1.6 if TGAP[0] is None else TGAP[0]
+                    if _obox_hit(ob[0], ob[1], ob[2], ob[3] + sp_, ob[4] + sp_, tsegs):
                         return False
                 else:
                     b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
@@ -1098,6 +1199,12 @@ class SketchMapFrame(Frame):
                 else:
                     wins = sorted(wins, key=lambda w_: (math.hypot(w_[1] - hx, w_[2] - hy) if hx is not None else 0) + w_[0] * 20)[:400]
                 cands = [(True, wx, wy, wa) for _dv, wx, wy, wa in wins]
+                if IGNV[0] == 1:                                            # дальние стороны дороги — но не внутрь территории (#9)
+                    near_o = (off * 1.5, -off * 1.5, off * 2, -off * 2) if beside else ()
+                    cands += [(True, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
+                              for o in near_o for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)
+                              if not any(_in_ring(rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, r_)
+                                         for r_ in trings)]
                 cands += [(True, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
                           for o in ((0.0, off, -off) if beside else (0.0,)) for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)
                           if o or rd >= tw * 1.04]                          # на коротком прямом участке подпись свисала бы с дороги
@@ -1128,6 +1235,25 @@ class SketchMapFrame(Frame):
                 if res:
                     ls, tw = ls0 * k_, tw0 * k_
                     break
+            if not res and tsegs and any(near_terr(p_[0], p_[1]) < 12 for c_ in chains_ for p_ in c_[::3] + c_[-1:]):
+                # улица у территории подписана всегда (lr «Основные» 1). Порядок уступок: сначала полный зазор 1,6 мм от
+                # пунктира и обход стрелок по контуру подписи (#9), затем стрелки можно задеть (рисуются поверх подписей),
+                # и лишь в крайнем случае — «иначе подписи нет вовсе» — зазор от пунктира уменьшается ступенями (#8)
+                for tg_ in (None, tw_half + 1.2, tw_half + .8, tw_half + .4, tpad):
+                    for vm_ in ((1, 2) if viewboxes else (0,)):
+                        if tg_ is None and vm_ == 0:
+                            continue                                    # этот проход уже был выше
+                        IGNV[0], TGAP[0] = vm_, tg_
+                        for n_, (k_, tk_, bs_) in enumerate(levels):
+                            res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * tk_), n_ == 0, bs_)
+                            if res:
+                                ls, tw = ls0 * k_, tw0 * k_
+                                break
+                        if res:
+                            break
+                    if res:
+                        break
+                IGNV[0], TGAP[0] = 0, None
             if not res and af.get("must"):
                 # обязательная улица короче подписи в этой рамке (лист 4, 1:10 000): подпись продолжает ту же дорогу —
                 # к оси улицы присоединяются примыкающие к её концам дороги (Сипягинское ш. — продолжение Придорожной)
@@ -1240,7 +1366,19 @@ class SketchMapFrame(Frame):
             if f.get("ul0") and ring:
                 # номер зоны Генплана — в самой глубокой точке видимой части зоны, не ближе 6 мм к краю карты и
                 # подальше от берегов; кусок зоны меньше подписи не подписывается (правило 11: «8 / 123» у края)
-                pl_ = _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6), watersegs)
+                pl_ = _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6), watersegs + tsegs)   # и не у границы территории (F9)
+                if pl_ and bldsegs:                                       # из глубоких точек — первая не на здании (F9: «6/130» на углу здания)
+                    hw = max(_text_w(ln, f.get("lf"), sizes[i]) for i, ln in enumerate(lines)) / 2
+                    def _clear(c):
+                        bx = (c[0] - hw - 1, c[1] - sizes[0] - 1, c[0] + hw + 1, c[1] + offs[-1] + sizes[-1] * .5 + 1)
+                        if any(_in_ring(px_, py_, r_) for r_ in bldrings for px_ in (bx[0], c[0], bx[2]) for py_ in (bx[1], c[1], bx[3])):
+                            return False                                    # внутри здания (на крыше) — тоже нет
+                        return c[2] >= 4 and not any(_seg_box(p_, q_, bx) for p_, q_ in bldsegs
+                                                     if not (max(p_[0], q_[0]) < bx[0] or min(p_[0], q_[0]) > bx[2]
+                                                             or max(p_[1], q_[1]) < bx[1] or min(p_[1], q_[1]) > bx[3]))
+                    pick = next((c for c in pl_ if _clear(c)), None)
+                    if pick:
+                        pl_ = [pick] + [c for c in pl_ if c is not pick]
                 need = max(_text_w(ln, f.get("lf"), sizes[i]) for i, ln in enumerate(lines)) / 2
                 if not pl_ or _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6))[0][2] < max(need * .8, (offs[-1] + sizes[0]) * .7):
                     continue
@@ -1369,6 +1507,9 @@ class SketchMapFrame(Frame):
         for o in out:                                                   # изломы контуров — скруглённые, без острых «шипов»
             if o["op"] == "path":
                 o.setdefault("join", "round")
+        if late:                                                        # стрелки точек съёмки — поверх подписей: улица у
+            out.append({"op": "layer", "name": "Точки съёмки"})          # территории подписана и стрелка видна (06.10.2026)
+            out.extend(late)
         out.append({"op": "layer", "name": "Рамка"})
         if sh.get("noFrame"):
             pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
@@ -1865,13 +2006,22 @@ def _edited(o, e):
     return o
 
 
-def _pages(spec, lib, lgr_dash, tiles):
-    pages = document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None)
+def _pages(spec, lib, lgr_dash, tiles, progress=None):
+    """Операции листов альбома. progress(готово, всего) зовётся до каждого листа и после последнего: строка «лист N из M»."""
+    from grado_layout.compose import _ctx, sheet_titles
+    doc = build_document(spec, lib, lgr_dash, tiles)
+    titles, pages, n = sheet_titles(doc), [], len(doc.pages)
+    for i, page in enumerate(doc.pages, start=1):
+        if progress:
+            progress(i - 1, n)
+        pages.append((page.size[0], page.size[1], page.ops(_ctx(doc, None, None, None, i, titles[i - 1]))))
+    if progress:
+        progress(n, n)
     return [(w, h, apply_edits(ops, sh)) for (w, h, ops), sh in zip(pages, spec["sheets"])]
 
 
-def render_pdf(spec, lib, lgr_dash, tiles=None):
-    return PdfBackend(None).render(_pages(spec, lib, lgr_dash, tiles))
+def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
+    return PdfBackend(None).render(_pages(spec, lib, lgr_dash, tiles, progress))
 
 
 def not_ready(spec):
@@ -2102,6 +2252,13 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
     px = lambda p: ((p[0] - x0) * k, (p[1] - y0) * k)
     layers = [Image.new("RGBA", (cw, ch), (0, 0, 0, 0))]
     masks = []
+    draws = {}
+
+    def draw_of(layer):                                              # один ImageDraw на слой, а не новый на каждый из 200 тыс. контуров
+        d = draws.get(id(layer))
+        if d is None:
+            d = draws[id(layer)] = ImageDraw.Draw(layer)
+        return d
 
     def poly_mask(rings):
         m = Image.new("1", (cw, ch), 0)
@@ -2110,6 +2267,34 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
             ImageDraw.Draw(t).polygon([px(p) for p in r], fill=1)
             m = ImageChops.logical_xor(m, t)
         return m.convert("L")
+
+    def fill_rings(layer, rings, rgb):
+        """Сплошная заливка контура с дырами (чётно-нечётно) только в его охвате: маска и вставка на весь холст
+        (десятки мегапикселей) на каждый из тысяч контуров занимали 15 из 20 минут выгрузки (T86)."""
+        pts = [[px(p) for p in r] for r in rings]
+        xs, ys = [q[0] for r in pts for q in r], [q[1] for r in pts for q in r]
+        l, t = max(0, int(min(xs)) - 1), max(0, int(min(ys)) - 1)
+        r_, b_ = min(cw, int(max(xs)) + 2), min(ch, int(max(ys)) + 2)
+        if r_ <= l or b_ <= t:
+            return
+        col = rgb + (255,)
+        if len(pts) == 1:
+            draw_of(layer).polygon(pts[0], fill=col)
+            return
+        m = Image.new("1", (r_ - l, b_ - t), 0)
+        for i, r in enumerate(pts):
+            if i == 0:
+                ImageDraw.Draw(m).polygon([(x - l, y - t) for x, y in r], fill=1)
+                continue
+            # чётно-нечётно: кольцо вычитается (XOR) только в своём охвате, а не по всей маске
+            bl, bt = max(0, int(min(x for x, _ in r)) - 1 - l), max(0, int(min(y for _, y in r)) - 1 - t)
+            br, bb = min(m.width, int(max(x for x, _ in r)) + 2 - l), min(m.height, int(max(y for _, y in r)) + 2 - t)
+            if br <= bl or bb <= bt:
+                continue
+            tmp = Image.new("1", (br - bl, bb - bt), 0)
+            ImageDraw.Draw(tmp).polygon([(x - l - bl, y - t - bt) for x, y in r], fill=1)
+            m.paste(ImageChops.logical_xor(m.crop((bl, bt, br, bb)), tmp), (bl, bt))
+        layer.paste(col, (l, t, r_, b_), m.convert("L"))
 
     def blend(layer, rings, color, alpha, bb):
         a = max(0, min(1, float(alpha)))
@@ -2146,6 +2331,7 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
                 m = masks.pop()
                 if m is not None:
                     top = layers.pop()
+                    draws.pop(id(top), None)
                     top.putalpha(ImageChops.multiply(top.getchannel("A"), m))
                     layers[-1].alpha_composite(top)
         elif t == "path":
@@ -2158,13 +2344,10 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
                 alpha = o.get("alpha")
                 if alpha is not None and float(alpha) < 1:
                     blend(layer, rings, fill, alpha, None)
-                elif len(rings) == 1:
-                    ImageDraw.Draw(layer).polygon([px(p) for p in rings[0]], fill=rgb + (255,))
                 else:
-                    m = poly_mask(rings)
-                    layer.paste(Image.new("RGBA", (cw, ch), rgb + (255,)), (0, 0), m)
+                    fill_rings(layer, rings, rgb)
             if stroke is not None:
-                d = ImageDraw.Draw(layer)
+                d = draw_of(layer)
                 col = tuple(int(round(v * 255)) for v in stroke) + (255,)
                 wpx = max(1, int(round(float(o.get("width") or 0.1) * k)))
                 for r in rings:
@@ -2188,6 +2371,7 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
             rest.append(o)
     while len(layers) > 1:
         top = layers.pop()
+        draws.pop(id(top), None)
         layers[-1].alpha_composite(top)
     img = layers[0].resize((W, H), Image.LANCZOS) if ss > 1 else layers[0]
     buf = io.BytesIO()
@@ -2248,7 +2432,7 @@ def pptx_notes(data, notes):
     return buf.getvalue()
 
 
-def render_pptx(spec, lib, lgr_dash, tiles=None):
+def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
     """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом.
     Тайлы подложки режутся по рамке карты; слайд, где фигур больше PPTX_MAX_SHAPES, получает карту картинкой (PNG
     200 dpi) — подписи, легенда и рамка остаются векторными, в заметках слайда сказано, что карта растровая."""
@@ -2257,6 +2441,8 @@ def render_pptx(spec, lib, lgr_dash, tiles=None):
     doc = build_document(spec, lib, lgr_dash, tiles)
     titles, pages, notes = sheet_titles(doc), [], {}
     for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
+        if progress:
+            progress(i - 1, len(doc.pages))
         ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
         groups = []
         for f in page.frames:
@@ -2277,6 +2463,8 @@ def render_pptx(spec, lib, lgr_dash, tiles=None):
                 notes[i] = RASTER_NOTE
         own = own_texts(sh)
         pages.append((page.size[0], page.size[1], groups + ([("Свои надписи", own)] if own else [])))
+    if progress:
+        progress(len(doc.pages), len(doc.pages))
     return pptx_notes(PptxBackend(doc.title).render(pages), notes)
 
 

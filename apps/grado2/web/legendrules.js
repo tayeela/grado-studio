@@ -27,7 +27,27 @@
   // правилу векторных схем (ЕГКО первым, Яндекс — если у ЕГКО нет пригодного), а не из слоёв листа. areas: { ya, egko } м²
   // в рамке; pick — RoadSrc.pickRoadSource
   const obstacleSource = (areas, pick) => pick(areas, { vector: true });
-  const api = { docKinds, docTitle, docWhy, pruneGroups, obstacleSource };
+  // Пояснение под легендой про санитарно-защитные зоны (правило 14, F1 06.10.2026): территория лежит в зонах каждого вида,
+  // а не в одной «ориентировочной». kinds: [{ code, n, share }] — код вида (5 установленные, 62 расчётные, 63 ориентировочные),
+  // n — сколько зон этого вида задевает территорию, share — доля территории под зонами вида (0…1). Весь вид (≥ 99,5 %) —
+  // «расположена в границах», часть — «частично расположена в границах». Полное предложение с точкой (правило 2.43)
+  const SZZ_ADJ = { 5: ["установленной", "установленных"], 62: ["расчётной", "расчётных"], 63: ["ориентировочной", "ориентировочных"] };
+  const SZZ_ORD = { 5: 0, 62: 1, 63: 2 };
+  function szzPhrase(ks) {
+    const one = ks.every(k => k.n <= 1), many = ks.every(k => k.n > 1), adj = k => SZZ_ADJ[k.code][k.n > 1 ? 1 : 0];
+    const zone = n => n > 1 ? "санитарно-защитных зон" : "санитарно-защитной зоны", join = a => a.length > 1 ? a.slice(0, -1).join(", ") + " и " + a.at(-1) : a[0];
+    return one || many ? join(ks.map(adj)) + " " + zone(ks[0].n) : join(ks.map(k => adj(k) + " " + zone(k.n)));
+  }
+  function szzNote(kinds, full = .995, min = .005) {
+    const ks = (kinds || []).filter(k => SZZ_ADJ[k.code] && k.n > 0 && k.share > min).sort((a, b) => SZZ_ORD[a.code] - SZZ_ORD[b.code]);
+    const all = ks.filter(k => k.share >= full), part = ks.filter(k => k.share < full);
+    return [all.length ? "Территория расположена в границах " + szzPhrase(all) + "." : "",
+      part.length ? "Территория частично расположена в границах " + szzPhrase(part) + "." : ""].filter(Boolean).join(" ");
+  }
+  // пояснения без заголовка (группа из одних строк «note») — после всех групп легенды (слайд-правило 5.9, F12)
+  const isNoteGroup = g => !g.title && (g.items || []).length > 0 && g.items.every(i => i.kind === "note");
+  const notesLast = groups => { const g = groups || []; return [...g.filter(x => !isNoteGroup(x)), ...g.filter(isNoteGroup)]; };
+  const api = { docKinds, docTitle, docWhy, pruneGroups, obstacleSource, szzNote, notesLast };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.LegendRules = api;
 })(typeof window !== "undefined" ? window : globalThis);

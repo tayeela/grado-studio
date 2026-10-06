@@ -10,10 +10,12 @@
 """
 
 import hashlib
+import struct
 import io
 import math
 import re
 import zipfile
+from pathlib import Path
 from xml.sax.saxutils import escape
 
 from .ttf import Font, find_font
@@ -146,6 +148,34 @@ def orient(rings):
 
 
 # ---------- фигуры ----------
+
+def _eot(ttf):
+    """TrueType → EOT (Embedded OpenType, версия 2.1, без сжатия и шифрования): так PowerPoint хранит ppt/fonts/*.fntdata."""
+    t = {ttf[o:o + 4].decode("latin1"): struct.unpack(">II", ttf[o + 8:o + 16]) for o in
+         (12 + 16 * i for i in range(struct.unpack(">H", ttf[4:6])[0]))}
+    sub = lambda tag: ttf[t[tag][0]:t[tag][0] + t[tag][1]]
+    os2, head, name = sub("OS/2"), sub("head"), sub("name")
+    ver, = struct.unpack(">H", os2[:2])
+    weight, fstype = struct.unpack(">HH", os2[4:6] + os2[8:10])
+    panose = os2[32:42]
+    ur = struct.unpack(">IIII", os2[42:58])
+    cp = struct.unpack(">II", os2[78:86]) if ver >= 1 else (1, 0)
+    italic = 1 if struct.unpack(">H", os2[62:64])[0] & 1 else 0
+    cnt, off = struct.unpack(">HH", name[2:6])
+    names = {}
+    for i in range(cnt):
+        pid, eid, lid, nid, ln, so = struct.unpack(">6H", name[6 + 12 * i:18 + 12 * i])
+        raw = name[off + so:off + so + ln]
+        if pid == 3 and eid in (1, 10) and nid in (1, 2, 5, 4):
+            names.setdefault(nid, raw.decode("utf-16-be").encode("utf-16-le"))
+        elif pid == 1 and nid in (1, 2, 5, 4):
+            names.setdefault(nid, raw.decode("mac_roman", "replace").encode("utf-16-le"))
+    strs = b"".join(struct.pack("<HH", 0, len(names.get(n, b""))) + names.get(n, b"") for n in (1, 2, 5, 4)) + struct.pack("<HH", 0, 0)
+    body = (struct.pack("<II", 0x00020001, 0) + panose + struct.pack("<BBIHH", 1, italic, weight, fstype, 0x504C)
+            + struct.pack("<IIII", *ur) + struct.pack("<II", *cp) + struct.pack("<I", struct.unpack(">I", head[8:12])[0])
+            + b"\0" * 16 + strs)
+    return struct.pack("<II", 8 + len(body) + len(ttf), len(ttf)) + body + ttf
+
 
 class _Slide:
     def __init__(self, pres, k):
@@ -402,9 +432,10 @@ class PptxBackend:
 
     def __init__(self, title="Альбом"):
         self.title = title
-        self._fonts, self._media = {}, {}
+        self._fonts, self._media, self._used = {}, {}, set()
 
     def font(self, family):
+        self._used.add(family)                                      # какие начертания реально в тексте: их и встраиваем
         if family not in self._fonts:
             self._fonts[family] = Font(find_font(family))
         return self._fonts[family]
@@ -448,6 +479,29 @@ class PptxBackend:
             s.close()
         return s
 
+    def _embed_fonts(self):
+        """Шрифты, использованные в тексте, встраиваются в файл (p:embeddedFontLst, части ppt/fonts/fontN.fntdata): без этого
+        PowerPoint и Keynote на компьютере без Montserrat/PT подставляют другой шрифт и вид ломается. Как у Google Slides,
+        часть — сам TrueType-файл без сжатия и шифрования (GUID-обфускация — схема Word, odttf; в PPTX её нет).
+        Возвращает (части {путь: байты}, связи presentation.xml.rels, блок для presentation.xml); rId — от 100."""
+        faces = {}                                                  # гарнитура → {"regular"|"bold": (путь файла)}
+        for fam in sorted(self._used):
+            if fam in FONTS and FONTS[fam][0] != "Courier New":
+                face, bold = FONTS[fam]
+                faces.setdefault(face, {})["bold" if bold else "regular"] = find_font(fam)
+        parts, rels, lst, n = {}, "", "", 0
+        for face, kinds in faces.items():
+            lst += f'<p:embeddedFont><p:font typeface="{face}"/>'
+            for kind in ("regular", "bold"):
+                if kind in kinds:
+                    n += 1
+                    parts[f"ppt/fonts/font{n}.fntdata"] = _eot(Path(kinds[kind]).read_bytes())
+                    rels += (f'<Relationship Id="rId{99 + n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" '
+                             f'Target="fonts/font{n}.fntdata"/>')
+                    lst += f'<p:{kind} r:id="rId{99 + n}"/>'
+            lst += "</p:embeddedFont>"
+        return parts, rels, (f"<p:embeddedFontLst>{lst}</p:embeddedFontLst>" if lst else "")
+
     def render(self, pages):
         W, H = pages[0][0], pages[0][1]
         slides = [self._page(w, h, groups, W, H) for w, h, groups in pages]
@@ -455,10 +509,12 @@ class PptxBackend:
         buf = io.BytesIO()
         z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
         exts = {name.rsplit(".", 1)[1] for name, _ in self._media.values()}
+        embedded = self._embed_fonts()                              # [(гарнитура, {начертание: путь части})], байты шрифтов
         z.writestr("[Content_Types].xml", XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
                    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
                    '<Default Extension="xml" ContentType="application/xml"/>'
                    + "".join(f'<Default Extension="{e}" ContentType="image/{e}"/>' for e in sorted(exts))
+                   + ('<Default Extension="fntdata" ContentType="application/x-fontdata"/>' if embedded[0] else "")
                    + '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
                    '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
                    '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
@@ -481,16 +537,17 @@ class PptxBackend:
                    '</cp:coreProperties>')
         z.writestr("docProps/app.xml", XML + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
                    f'<Application>ГРАДО 2</Application><Slides>{n}</Slides></Properties>')
-        z.writestr("ppt/presentation.xml", XML + f'<p:presentation {NS} saveSubsetFonts="1">'
+        z.writestr("ppt/presentation.xml", XML + f'<p:presentation {NS} embedTrueTypeFonts="1">'
                    '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>'
                    + "".join(f'<p:sldId id="{255 + i}" r:id="rId{i + 1}"/>' for i in range(1, n + 1))
                    + f'</p:sldIdLst><p:sldSz cx="{int(round(W * EMU))}" cy="{int(round(H * EMU))}"/><p:notesSz cx="6858000" cy="9144000"/>'
-                   '</p:presentation>')
+                   + embedded[2] + '</p:presentation>')
         z.writestr("ppt/_rels/presentation.xml.rels", rels(
             rel("rId1", "slideMaster", "slideMasters/slideMaster1.xml")
             + "".join(rel(f"rId{i + 1}", "slide", f"slides/slide{i}.xml") for i in range(1, n + 1))
             + rel(f"rId{n + 2}", "presProps", "presProps.xml") + rel(f"rId{n + 3}", "viewProps", "viewProps.xml")
-            + rel(f"rId{n + 4}", "theme", "theme/theme1.xml") + rel(f"rId{n + 5}", "tableStyles", "tableStyles.xml")))
+            + rel(f"rId{n + 4}", "theme", "theme/theme1.xml") + rel(f"rId{n + 5}", "tableStyles", "tableStyles.xml")
+            + embedded[1]))
         z.writestr("ppt/presProps.xml", XML + f'<p:presentationPr {NS}/>')
         z.writestr("ppt/viewProps.xml", XML + f'<p:viewPr {NS}><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/>'
                    '</p:normalViewPr><p:gridSpacing cx="72008" cy="72008"/></p:viewPr>')
@@ -520,6 +577,8 @@ class PptxBackend:
                 + "".join(rel(rid, "image", f"../media/{name}") for name, rid in s.rels.items())))
         for name, data in names.items():
             z.writestr(f"ppt/media/{name}", data)
+        for name, data in embedded[0].items():
+            z.writestr(name, data)
         z.close()
         return buf.getvalue()
 

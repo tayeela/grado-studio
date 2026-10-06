@@ -6,6 +6,7 @@
 
 | файл | классы | проверок |
 |---|---|---|
+| `test_albumgeo_js.py` | AlbumGeoJs | 1 |
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |
 | `test_cadcore.py` | CadCore | 1 |
@@ -33,17 +34,20 @@
 | `test_t78_labels.py` | StationNotOnRail, StationNotOnDiagonalRail, StationBestSpot, DistrictBoundaryObstacle, Quotes, LeadersAndCaptions, NestedQuotes | 11 |
 | `test_t80_albums_print.py` | OverLayerOrder, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 10 |
 | `test_t82_rail_icons.py` | RailIcons | 9 |
+| `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
+| `test_t89_labels.py` | StreetGapFromDash, StreetAvoidsViewArrow | 3 |
+| `albumgeo_test.js` | JS | 12 |
 | `albummeta_test.js` | JS | 24 |
-| `blocks_test.js` | JS | 7 |
+| `blocks_test.js` | JS | 9 |
 | `cadcore_test.js` | JS | 60 |
 | `collab_test.js` | JS | 83 |
-| `gpzones_test.js` | JS | 11 |
+| `gpzones_test.js` | JS | 18 |
 | `insol_test.js` | JS | 22 |
-| `labelfmt_test.js` | JS | 28 |
-| `legendrules_test.js` | JS | 24 |
+| `labelfmt_test.js` | JS | 51 |
+| `legendrules_test.js` | JS | 35 |
 | `migrate_test.js` | JS | 22 |
 | `railstations_test.js` | JS | 30 |
-| `roadclean_test.js` | JS | 19 |
+| `roadclean_test.js` | JS | 27 |
 | `roadsrc_test.js` | JS | 15 |
 | `roles_test.js` | JS | 22 |
 | `sheetlayout_test.js` | JS | 302 |
