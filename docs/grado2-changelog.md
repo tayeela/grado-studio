@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).** Project layer onto a sheet or a role row
+  (joins the role group, or a new group in template order if the role is allowed by the sheet template; otherwise a
+  plain-language refusal); role onto another sheet moves it, Alt copies; road source queue reorders by grip or
+  Alt+↑/↓ and `roadSource` follows the sheet `src` only when the owner changed it. One undo entry per action; edited
+  layouts survive «Обновить листы» (`carryLayout`). Golden 59/59 unchanged on untouched sheets.
 - **2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).** Menu «Окна» → «Слои и листы»: album sheets (lock,
   «не готов» with reason), roles of the selected sheet top to bottom (eye hides a role on this sheet only, source,
   frame coverage, badges; road source queue unfolds), project layers grouped by role with sheet numbers. One row per

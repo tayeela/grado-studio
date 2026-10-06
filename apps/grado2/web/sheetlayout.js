@@ -191,8 +191,143 @@
     const base = sheet.basemap === "sat" ? "снимок" : "белая основа", n = new Set((info.layout?.groups || []).map(g => g.role)).size;
     return info.layout ? `${base} · ${plural(n, ["роль", "роли", "ролей"])}` : base;
   }
+  /* ---- перетаскивание в окне «Слои и листы» (T86c): чистые функции правки состава листа; карты и страницы здесь нет ---- */
+  const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  const cap = t => t ? t[0].toUpperCase() + t.slice(1) : t;
+  const TXT = { frozen: "Лист готов, замок — Alt при отпускании сделает рабочую копию", nomap: n => `У листа ${n} нет слоёв карты`,
+    norole: (n, t) => `На листе ${n} нет роли «${t}» — по образцу её там не показывают`, border: n => `На листе ${n} границы не добавляются: территория и район рисуются сами`,
+    have: (n, t) => `Слой «${t}» уже включён на листе ${n}`, haveRole: (n, t) => `Роль «${t}» уже полностью на листе ${n}`, here: (n, t) => `Роль «${t}» уже на листе ${n}`,
+    wrongRow: (t, r, w) => `Слой «${t}» относится к роли «${r}», а не «${w}»` };
+  // порядок ролей по образцу: первое появление роли в начальном layout шаблона листа (повторные группы той же роли — не в счёт)
+  function refRank(tplLayout) { const m = new Map(); (tplLayout?.groups || []).forEach(g => { if (!m.has(g.role)) m.set(g.role, m.size); }); return m; }
+  const rankOf = (role, ref) => ref.has(role) ? ref.get(role) : 1000 + ROLES.concat([OTHER]).findIndex(r => r.role === role);
+  // допустимые роли листа: роли образца (начальный layout шаблона) + роли, которые лист уже имеет; в порядке образца, лишние — по ROLES
+  function allowedRoles(layout, tplLayout) {
+    const ref = refRank(tplLayout), have = new Set((layout?.groups || []).map(g => g.role)), all = new Set([...ref.keys(), ...have]);
+    return [...all].sort((a, b) => rankOf(a, ref) - rankOf(b, ref));
+  }
+  // ключи и оформление листа повторяют layout (иначе resolve откатился бы к старым полям: matches сравнивает keys с layout)
+  function syncFields(sheet) {
+    const items = flatten(sheet.layout), st = {}, on = {};
+    items.forEach(it => { if (it.style !== undefined) st[it.key] = clone(it.style); if (it.only !== undefined) on[it.key] = clone(it.only); });
+    sheet.keys = items.map(it => it.key); sheet.styles = st; sheet.only = on;
+  }
+  // оформление нового элемента: как слой выглядит в образце этого листа, иначе на других листах альбома (ctx.tpl, ctx.others — layout'ы)
+  function hintItem(key, ctx) { for (const l of [ctx?.tpl, ...(ctx?.others || [])]) { const it = flatten(l).find(x => x.key === key); if (it) return it; } return null; }
+  function newItem(key, sheet, ctx) {
+    const it = { key, on: true }, h = hintItem(key, ctx);
+    if (h?.style !== undefined) it.style = clone(h.style); if (h?.only !== undefined) it.only = clone(h.only);
+    if (key === "yandex.hd_roads") it.src = roadQueue(sheet.basemap);
+    return it;
+  }
+  const uniqId = (layout, role) => { const ids = new Set(layout.groups.map(g => g.id)); let id = role, k = 1; while (ids.has(id)) id = role + "-" + (++k); return id; };
+  // положить элемент в роль: в конец последней группы этой роли; если роли нет — новая группа на место по образцу
+  function putItem(layout, role, item, ctx) {
+    const gs = layout.groups.filter(g => g.role === role);
+    if (gs.length) { gs[gs.length - 1].items.push(item); return gs[gs.length - 1].id; }
+    const ref = refRank(ctx?.tpl), at = layout.groups.findIndex(g => rankOf(g.role, ref) > rankOf(role, ref)), g = { id: uniqId(layout, role), title: roleTitle(role), role, items: [item] };
+    layout.groups.splice(at < 0 ? layout.groups.length : at, 0, g); return g.id;
+  }
+  // можно ли положить на лист роль role. o = { n: номер листа с 1, viewOf, tpl }. ok: true и info листа, иначе { code, tone, text }
+  function targetCheck(sheet, role, o = {}) {
+    const n = o.n, info = layoutFor(sheet, o.viewOf), bad = (code, text, tone = "bad") => ({ ok: false, code, tone, text });
+    if (info.kind === "frozen") return bad("frozen", TXT.frozen, "frozen");
+    if (info.kind === "title" || info.kind === "tep") return bad("nomap", TXT.nomap(n));
+    if (!info.editable) return bad("noedit", cap(info.why || "лист не меняется") + ".");
+    if (!allowedRoles(info.layout, o.tpl).includes(role)) return bad("norole", role === "border" ? TXT.border(n) : TXT.norole(n, roleTitle(role)));
+    return { ok: true, info };
+  }
+  // слой банка → лист: включить. Лист не меняется при отказе. Результат { ok, changed, groupId } или { ok: false, code, tone, text }
+  function addItem(sheet, key, ctx = {}) {
+    const role = roleOf(key).role, t = targetCheck(sheet, role, ctx); if (!t.ok) return t;
+    const title = ctx.title || key, hit = flatten(t.info.layout).find(it => it.key === key);
+    if (hit && hit.on !== false) return { ok: false, code: "have", tone: "none", text: TXT.have(ctx.n, title) };
+    if (!t.info.stored) sheet.layout = t.info.layout;
+    let gid;
+    if (hit) { sheet.layout.groups.forEach(g => g.items.forEach(it => { if (it.key === key) { it.on = true; gid = g.id; } })); }
+    else gid = putItem(sheet.layout, role, newItem(key, sheet, ctx), ctx);
+    syncFields(sheet); return { ok: true, changed: true, groupId: gid };
+  }
+  const roleItems = (layout, role) => (layout?.groups || []).filter(g => g.role === role).flatMap(g => g.items || []);
+  // роль листа src → лист dst: перенос (с src роль убирается) или копия. Элементы, что уже есть на dst, не дублируются (выключенный включается)
+  function moveRole(src, dst, role, ctx = {}, copy = false) {
+    const title = roleTitle(role), s = layoutFor(src, ctx.viewOf);
+    if (src === dst) return { ok: false, code: "same", tone: "none", text: TXT.here(ctx.n, title) };
+    if (!s.editable || !s.layout) return { ok: false, code: "noedit", tone: "bad", text: cap(s.why || "лист не меняется") + "." };
+    const items = roleItems(s.layout, role).map(clone); if (!items.length) return { ok: false, code: "norole", tone: "bad", text: TXT.norole(ctx.n, title) };
+    const t = targetCheck(dst, role, ctx); if (!t.ok) return t;
+    const L = t.info.stored ? dst.layout : t.info.layout, mine = new Map(flatten(L).map(it => [it.key, it])); let changed = false;
+    const hasGroup = L.groups.some(g => g.role === role);
+    items.forEach(it => {
+      const x = mine.get(it.key);
+      if (x) { if (x.on === false) { L.groups.forEach(g => g.items.forEach(y => { if (y.key === it.key) y.on = true; })); changed = true; } return; }
+      it.on = true; putItem(L, role, it, ctx); changed = true;
+    });
+    if (!changed) return { ok: false, code: "have", tone: "none", text: TXT.haveRole(ctx.n, title) };
+    dst.layout = L; syncFields(dst);
+    if (!copy) { if (!s.stored) src.layout = s.layout; src.layout.groups = src.layout.groups.filter(g => g.role !== role); syncFields(src); }
+    return { ok: true, changed: true, hasGroup };
+  }
+  // очередь источников роли: { head, queue } — как её строит roleRows (только источники, что есть на листе)
+  function srcQueue(layout, role) {
+    const items = roleItems(layout, role), head = items.find(it => Array.isArray(it.src) && it.src.length); if (!head) return null;
+    const present = head.src.filter(k => items.some(it => it.key === k));
+    return { head, queue: present.length ? present : head.src.slice() };
+  }
+  // порядок источников дорог: источник с индексом from встаёт на место to. Главный — первый. true — лист изменён
+  function reorderSrc(sheet, role, from, to, viewOf) {
+    const info = layoutFor(sheet, viewOf); if (!info.editable) return false;
+    const q = srcQueue(info.layout, role); if (!q) return false;
+    const a = q.queue.slice(); if (from === to || from < 0 || to < 0 || from >= a.length || to >= a.length) return false;
+    a.splice(to, 0, a.splice(from, 1)[0]);
+    if (!info.stored) sheet.layout = info.layout;
+    const h = srcQueue(sheet.layout, role).head; h.src = a.concat(h.src.filter(k => !a.includes(k))); return true;
+  }
+  // порядок источников дорог, который владелец поменял (иначе null — сборка выбирает как раньше, по roadsrc.js)
+  function roadOrder(sheet) {
+    if (!matches(sheet)) return null;
+    const q = srcQueue(sheet.layout, "roads"); if (!q || same(q.head.src, roadQueue(sheet.basemap))) return null;
+    return q.queue;
+  }
+  // источник по порядку владельца: первый, у которого в рамке есть полигоны. ya, egko — площади
+  function pickByOrder(order, { ya = 0, egko = 0 } = {}) {
+    for (const k of order || []) { if (k === "yandex.hd_roads" && ya > 0) return "yandex"; if (k === "egko.roads" && egko > 0) return "egko"; }
+    return "none";
+  }
+  // при пересборке листа по шаблону правленный состав переходит: ключи листа уже перенесены (carryHand), а layout — из шаблона, он им не
+  // соответствует; берётся прежний layout (оформление слоёв из шаблона обновляется), если он годен и ключи те же
+  function carryLayout(fresh, old) {
+    if (!old?.layout || old.frozen || !fresh || (fresh.layout && matches(fresh)) || !matches(old) || !same(fresh.keys, old.keys)) return false;
+    const l = clone(old.layout), tpl = new Map(flatten(fresh.layout || { groups: [] }).map(it => [it.key, it]));
+    l.groups.forEach(g => g.items.forEach(it => { const t = tpl.get(it.key); if (t) { if (t.style !== undefined) it.style = clone(t.style); else delete it.style; if (t.only !== undefined) it.only = clone(t.only); else delete it.only; } }));
+    fresh.layout = l; return true;
+  }
+  // что покажет цель перетаскивания: { ok, tone: ok | bad | frozen | none, text }. drag = { type: "layer", key, title } | { type: "role", from, role }.
+  // o = { copy, n (лист с 1), viewOf, ctx(sheet) → { tpl, others }, row (роль строки под курсором), titleOf(key) }
+  function dropCheck(sheets, i, drag, o = {}) {
+    const sh = sheets[i], n = i + 1, ctx = { ...(o.ctx?.(sh) || {}), n, viewOf: o.viewOf };
+    if (!sh) return { ok: false, tone: "none", text: "" };
+    if (drag.type === "layer") {
+      const role = roleOf(drag.key).role, title = drag.title || o.titleOf?.(drag.key) || drag.key;
+      if (o.row && o.row !== role) return { ok: false, tone: "bad", text: TXT.wrongRow(title, roleOf(drag.key).title, roleTitle(o.row)) };
+      const t = targetCheck(sh, role, ctx); if (!t.ok) return t;
+      if (flatten(t.info.layout).some(it => it.key === drag.key && it.on !== false)) return { ok: false, tone: "none", text: TXT.have(n, title) };
+      return { ok: true, tone: "ok", text: `Отпустите: включить «${title}» на листе ${n}` };
+    }
+    if (drag.type === "role") {
+      const title = roleTitle(drag.role);
+      if (sheets[drag.from] === sh) return { ok: false, tone: "none", text: TXT.here(n, title) };
+      const t = targetCheck(sh, drag.role, ctx); if (!t.ok) return t;
+      const sl = layoutFor(sheets[drag.from], o.viewOf); if (!sl.editable) return { ok: false, tone: "bad", code: "noedit", text: cap(sl.why || "лист не меняется") + "." };
+      const mine = new Set(flatten(t.info.layout).filter(it => it.on !== false).map(it => it.key)), src = sl;
+      if (roleItems(src.layout, drag.role).every(it => mine.has(it.key))) return { ok: false, tone: "none", text: TXT.haveRole(n, title) };
+      return { ok: true, tone: "ok", text: `Отпустите: ${o.copy ? "скопировать" : "перенести"} роль «${title}» на лист ${n}` };
+    }
+    return { ok: false, tone: "none", text: "" };
+  }
   const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate,
-    plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta };
+    plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta,
+    allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, dropCheck, targetCheck, roadQueue };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.SheetLayout = api;
 })(typeof window !== "undefined" ? window : globalThis);

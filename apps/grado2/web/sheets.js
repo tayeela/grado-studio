@@ -400,6 +400,7 @@ function carryHand(fresh, old, full = true) {
       if (edited) { if (old[k] === undefined) delete fresh[k]; else fresh[k] = cloneJ(old[k]); }
     });
   }
+  SheetLayout.carryLayout(fresh, old);                                       // состав, правленный перетаскиванием (T86c): ключи уже перенесены, layout идёт с ними
   if (fresh.layout && !SheetLayout.matches(fresh)) delete fresh.layout;      // слои правлены рукой — состав по ролям из шаблона им не соответствует; лист живёт по keys
   SheetLayout.carryOn(fresh, old);                                           // глаз на роли (T86b) переживает пересборку по шаблону
   if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];

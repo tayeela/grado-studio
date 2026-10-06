@@ -130,4 +130,86 @@ eq(L.sheetMeta({ basemap: "sat" }, { layout: lay, kind: "map" }), "снимок 
 eq(L.sheetMeta({}, { kind: "frozen" }), "готовая вёрстка из файла", "готовый"); eq(L.sheetMeta({}, { kind: "title" }), "шаблон, слоёв нет", "титул");
 eq([1, 2, 5, 11, 12, 21, 25].map(k => L.plural(k, ["роль", "роли", "ролей"])), ["1 роль", "2 роли", "5 ролей", "11 ролей", "12 ролей", "21 роль", "25 ролей"], "склонение");
 eq(L.providerName("gisogd.zouit"), "ГИС ОГД", "портал"); eq(L.roleTitle("roads"), "Дороги", "роль");
+// ---- T86c: перетаскивание ----
+const mk = keys => { const sh = { id: "s" + Math.random(), keys: keys.slice(), basemap: undefined }; sh.layout = L.seedLayout({ keys }); return sh; };
+const T9 = L.seedLayout({ keys: ["nspd.parcels", "osm.landuse", "osm.roads", "egko.water", "egko.water_labels", "yandex.stations"] });      // образец листа 9
+const T5 = L.seedLayout(tpl);
+eq(L.allowedRoles(T9, T9), ["parcels", "names", "water", "rail"], "допустимые роли: образец листа 9");
+eq(L.allowedRoles(T5, T5), ["water", "roads", "buildings", "rail", "parcels", "zouit", "redlines", "names"], "допустимые роли: образец листа 5");
+eq(L.allowedRoles(L.seedLayout({ keys: ["egko.buildings"] }), T9), ["parcels", "names", "water", "rail", "buildings"], "роль, что лист уже имеет, допустима (в конце)");
+eq(L.allowedRoles(null, null), [], "нет ни образца, ни состава");
+// слой банка → лист: роль есть
+const a1 = mk(["egko.water", "yandex.hd_roads", "egko.roads", "egko.buildings"]), c1 = { tpl: T5, n: 5, title: "Здания (ЕГКО)" };
+let r = L.addItem(a1, "egko.buildings", c1); eq([r.ok, r.code, r.tone], [false, "have", "none"], "слой уже включён — отказ-подсказка");
+L.setRole(a1, "buildings", false); r = L.addItem(a1, "egko.buildings", c1); eq([r.ok, r.changed, r.groupId], [true, true, "buildings"], "выключенный включается");
+eq(L.layoutKeys(a1.layout), a1.keys, "после включения keys = layout");
+// роль есть, слоя нет: в конец группы
+const a2 = mk(["egko.water", "yandex.rail", "egko.buildings"]); r = L.addItem(a2, "yandex.stations", { ...c1, tpl: T5 });
+eq(a2.layout.groups.map(g => g.id + ":" + g.items.map(i => i.key).join("+")), ["water:egko.water", "rail:yandex.rail+yandex.stations", "buildings:egko.buildings"], "слой встал в конец группы своей роли");
+eq(a2.keys, ["egko.water", "yandex.rail", "yandex.stations", "egko.buildings"], "keys следуют за layout"); eq(L.matches(a2), true, "layout годен");
+// роли нет, по образцу допустима: группа на место по образцу
+const a3 = mk(["egko.water", "egko.buildings", "osm.roads"]); r = L.addItem(a3, "yandex.rail", { tpl: T5, n: 3, title: "Железная дорога" });
+eq(a3.layout.groups.map(g => g.id), ["water", "buildings", "rail", "names"], "роль рельс — после зданий, перед названиями (порядок образца, не курсор)");
+eq(a3.keys, ["egko.water", "egko.buildings", "yandex.rail", "osm.roads"], "порядок рисования сохранён");
+const a3b = mk(["osm.roads", "egko.buildings"]); L.addItem(a3b, "egko.water", { tpl: T5, n: 1 }); eq(a3b.layout.groups.map(g => g.role), ["water", "names", "buildings"], "вода — в самое начало образца");
+// оформление нового слоя — из образца, затем из других листов
+const T5s = L.seedLayout({ keys: ["yandex.rail"], styles: { "yandex.rail": { fill: "#111" } } }), a4 = mk(["egko.water"]);
+L.addItem(a4, "yandex.rail", { tpl: T5s, n: 2 }); eq(a4.styles, { "yandex.rail": { fill: "#111" } }, "стиль из образца"); eq(a4.layout.groups[0].items[0].style, { fill: "#111" }, "и в layout");
+const a4b = mk(["egko.water"]); L.addItem(a4b, "yandex.rail", { tpl: L.seedLayout({ keys: ["egko.water", "yandex.rail"] }), others: [L.seedLayout({ keys: ["yandex.rail"], styles: { "yandex.rail": { fill: "#222" } } })], n: 2 });
+eq(a4b.styles["yandex.rail"], undefined, "образец главнее других листов (в нём стиля нет)");
+const a4c = mk(["egko.water"]); L.addItem(a4c, "yandex.rail", { tpl: L.seedLayout({ keys: ["egko.water", "yandex.stations"] }), others: [null, L.seedLayout({ keys: ["yandex.rail"], styles: { "yandex.rail": { fill: "#222" } } })], n: 2 });
+eq(a4c.styles["yandex.rail"], { fill: "#222" }, "нет в образце — стиль с другого листа");
+// дороги: источник Яндекса получает очередь
+const a5 = mk(["egko.water"]); L.addItem(a5, "yandex.hd_roads", { tpl: T5, n: 4 }); eq(a5.layout.groups[1].items[0].src, ["egko.roads", "yandex.hd_roads"], "очередь дорог на векторной схеме");
+// отказы
+const f9 = mk(["nspd.parcels", "osm.roads"]); r = L.addItem(f9, "egko.buildings", { tpl: T9, n: 9, title: "Здания (ЕГКО)" });
+eq([r.ok, r.code, r.text], [false, "norole", "На листе 9 нет роли «Здания» — по образцу её там не показывают"], "лист 9: зданий по образцу нет"); eq(f9.keys, ["nspd.parcels", "osm.roads"], "отказ не меняет лист");
+r = L.addItem({ frozen: true, keys: ["egko.water"] }, "egko.water", { n: 2 }); eq([r.ok, r.code, r.tone, r.text], [false, "frozen", "frozen", "Лист готов, замок — Alt при отпускании сделает рабочую копию"], "готовый лист");
+r = L.addItem({ kind: "title" }, "egko.water", { n: 1 }); eq(r.code, "nomap", "титул"); r = L.addItem({ panels: [{}] }, "egko.water", { n: 1 }); eq(r.code, "noedit", "две карты");
+r = L.addItem(mk(["osm.roads"]), "gisogd.admin", { tpl: T9, n: 9 }); eq(r.text, "На листе 9 границы не добавляются: территория и район рисуются сами", "границы");
+r = L.addItem(mk(["osm.roads"]), "my.layer", { tpl: T9, n: 9, title: "Мой" }); eq(r.code, "norole", "свой слой — прочее, по образцу нет");
+// лист без layout, но с keys: layout записывается
+const old1 = { keys: ["egko.water", "osm.roads"] }; r = L.addItem(old1, "egko.buildings", { tpl: T5, n: 6 }); eq([r.ok, !!old1.layout, old1.keys], [true, true, ["egko.water", "egko.buildings", "osm.roads"]], "лист без layout получает его");
+// роль на другой лист
+const s5 = mk(KEYS5), s6 = mk(["egko.water", "egko.buildings", "osm.roads"]), t3 = mk(["yandex.hd_roads", "osm.roads"]);
+r = L.moveRole(s5, s6, "rail", { tpl: T5, n: 6 }, true); eq(r.ok, true, "копия роли"); eq(L.roleRows(s6.layout, () => ({})).map(x => x.role), ["water", "buildings", "rail", "names"], "роль встала по образцу");
+eq(L.layoutKeys(s5.layout).includes("yandex.rail"), true, "с листа 5 копия не убрала"); eq(s6.keys.filter(k => /yandex/.test(k)), ["yandex.rail", "yandex.stations"], "оба слоя роли и в keys"); eq(L.matches(s6), true, "лист 6 годен");
+const r1 = L.moveRole(s5, s6, "rail", { tpl: T5, n: 6 }, true); eq([r1.ok, r1.code], [false, "have"], "повторная копия — уже есть");
+const k5 = s5.keys.length, rl = L.moveRole(s5, t3, "rail", { tpl: T5, n: 3 }, false); eq(rl.ok, true, "перенос");
+eq(s5.keys.filter(k => /rail|stations/.test(k)), [], "перенос убрал роль с листа 5 (обе группы роли)"); eq(s5.keys.length, k5 - 2, "keys листа 5 сократились"); eq(L.matches(s5), true, "лист 5 годен");
+eq(t3.keys.includes("yandex.stations"), true, "на лист 3 пришли"); eq(s5.layout.groups.some(g => g.role === "rail"), false, "групп роли на листе 5 нет");
+eq(L.moveRole(s5, s5, "water", { n: 5 }).code, "same", "на тот же лист"); eq(L.moveRole(s5, f9, "water", { tpl: T9, n: 9 }, false).ok, true, "вода на лист 9 по образцу можно");
+eq(L.moveRole(s5, f9, "buildings", { tpl: T9, n: 9 }, false).code, "norole", "здания на лист 9 — нельзя"); eq(L.layoutKeys(s5.layout).includes("egko.buildings"), true, "отказ не убрал роль с источника");
+eq(L.moveRole(s5, { frozen: true }, "roads", { n: 2 }).tone, "frozen", "на готовый лист"); eq(L.moveRole(s5, s6, "parcels", { tpl: T5, n: 6 }).ok, true, "участки на лист 6 — по образцу листа 5, который передан как образец цели");
+// выключенный на цели элемент включается переносом
+const d1 = mk(["egko.water", "egko.buildings"]); L.setRole(d1, "buildings", false); eq(L.moveRole(s6, d1, "buildings", { tpl: T5, n: 1 }, true).ok, true, "выключенное включено"); eq(L.layoutKeys(d1.layout), ["egko.water", "egko.buildings"], "элемент не продублирован");
+// порядок источников
+const q1 = mk(["egko.water", "yandex.hd_roads", "egko.roads"]); eq(L.srcQueue(q1.layout, "roads").queue, ["egko.roads", "yandex.hd_roads"], "очередь");
+eq(L.roadOrder(q1), null, "не менял — порядок не задан"); eq(L.reorderSrc(q1, "roads", 1, 0), true, "Яндекс первым"); eq(L.srcQueue(q1.layout, "roads").queue, ["yandex.hd_roads", "egko.roads"], "порядок записан");
+eq(L.roadOrder(q1), ["yandex.hd_roads", "egko.roads"], "порядок владельца"); eq(L.reorderSrc(q1, "roads", 0, 0), false, "то же место"); eq(L.reorderSrc(q1, "roads", 0, 5), false, "за краем"); eq(L.reorderSrc(q1, "water", 0, 1), false, "нет очереди у воды");
+eq(L.reorderSrc(q1, "roads", 0, 1), true, "и обратно"); eq(L.roadOrder(q1), null, "вернули как было — порядка владельца нет");
+eq(L.reorderSrc({ frozen: true, keys: ["yandex.hd_roads"] }, "roads", 0, 1), false, "готовый лист");
+const q2 = { keys: ["yandex.hd_roads", "egko.roads"] }; eq(L.reorderSrc(q2, "roads", 1, 0), true, "лист без layout: layout записывается"); eq(!!q2.layout, true, "layout записан");
+eq(L.roadOrder({ keys: ["a"], layout: L.seedLayout({ keys: ["yandex.hd_roads"] }) }), null, "layout не годен — порядка нет (keys иные)");
+eq(L.roadOrder({ keys: ["yandex.hd_roads"], layout: { groups: [{ id: "roads", role: "roads", items: [{ key: "yandex.hd_roads", on: true, src: ["yandex.hd_roads", "egko.roads"] }] }] } }), ["yandex.hd_roads"], "src иной, чем по умолчанию, — порядок задан (на листе один Яндекс)");
+eq(L.pickByOrder(["yandex.hd_roads", "egko.roads"], { ya: 5, egko: 9 }), "yandex", "порядок владельца: главный Яндекс"); eq(L.pickByOrder(["yandex.hd_roads", "egko.roads"], { ya: 0, egko: 9 }), "egko", "главного в рамке нет — запасной");
+eq(L.pickByOrder(["egko.roads", "yandex.hd_roads"], { ya: 5, egko: 0.1 }), "egko", "главный ЕГКО — хоть немного"); eq(L.pickByOrder([], { ya: 1 }), "none", "порядка нет");
+// пересборка по шаблону: правленный layout переходит, оформление — из шаблона
+const oldB = mk(["egko.water", "yandex.hd_roads", "egko.roads"]); L.reorderSrc(oldB, "roads", 1, 0); L.addItem(oldB, "egko.buildings", { tpl: L.seedLayout({ keys: ["egko.water", "egko.buildings"] }), n: 5 });
+const fr3 = { keys: oldB.keys.slice(), layout: L.seedLayout({ keys: ["egko.water", "yandex.hd_roads", "egko.roads"], styles: { "egko.water": { fill: "#abc" } } }) };
+fr3.layout.groups.forEach(g => g.items.forEach(() => {})); eq(L.matches(fr3), false, "шаблон не совпал с правленными ключами");
+eq(L.carryLayout(fr3, oldB), true, "правленный состав перенесён"); eq(L.matches(fr3), true, "годен"); eq(L.srcQueue(fr3.layout, "roads").queue, ["yandex.hd_roads", "egko.roads"], "порядок источников переехал"); eq(fr3.layout.groups[0].items[0].style, { fill: "#abc" }, "оформление из шаблона");
+eq(L.carryLayout({ keys: ["x"] }, oldB), false, "ключи иные — не переносится"); eq(L.carryLayout(fr3, oldB), false, "уже годен");
+// что показывается на цели
+const SHS = [{ kind: "title" }, mk(KEYS5), s6, f9, { frozen: true, keys: ["egko.water"] }], oc = { ctx: sh => ({ tpl: sh === f9 ? T9 : T5 }), titleOf: k => k };
+let dc = L.dropCheck(SHS, 3, { type: "layer", key: "egko.buildings", title: "Здания (ЕГКО)" }, oc); eq([dc.ok, dc.tone, dc.text], [false, "bad", "На листе 4 нет роли «Здания» — по образцу её там не показывают"], "цель: отказ красной подписью");
+dc = L.dropCheck(SHS, 2, { type: "layer", key: "egko.roads", title: "Дороги ЕГКО" }, oc); eq(dc.ok, true, "цель: принимает"); eq(dc.text, "Отпустите: включить «Дороги ЕГКО» на листе 3", "цель: подпись");
+dc = L.dropCheck(SHS, 4, { type: "layer", key: "egko.water", title: "Вода" }, oc); eq([dc.ok, dc.tone], [false, "frozen"], "цель: готовый лист");
+dc = L.dropCheck(SHS, 1, { type: "layer", key: "egko.water", title: "Вода" }, oc); eq([dc.ok, dc.tone], [false, "none"], "цель: слой уже включён");
+dc = L.dropCheck(SHS, 2, { type: "layer", key: "egko.water", title: "Вода" }, { ...oc, row: "roads" }); eq([dc.ok, dc.tone, dc.text], [false, "bad", "Слой «Вода» относится к роли «Вода», а не «Дороги»"], "слой на строку чужой роли");
+dc = L.dropCheck(SHS, 2, { type: "role", from: 1, role: "zouit" }, { ...oc, copy: true }); eq([dc.ok, dc.text], [true, "Отпустите: скопировать роль «ЗОУИТ» на лист 3"], "роль, копия"); dc = L.dropCheck(SHS, 2, { type: "role", from: 1, role: "zouit" }, oc); eq(dc.text, "Отпустите: перенести роль «ЗОУИТ» на лист 3", "роль, перенос");
+dc = L.dropCheck(SHS, 1, { type: "role", from: 1, role: "water" }, oc); eq([dc.ok, dc.tone], [false, "none"], "роль на тот же лист");
+dc = L.dropCheck(SHS, 3, { type: "role", from: 1, role: "buildings" }, oc); eq(dc.tone, "bad", "роль на лист без неё по образцу");
+dc = L.dropCheck(SHS, 0, { type: "role", from: 1, role: "water" }, oc); eq(dc.code, "nomap", "роль на титул");
+
 console.log(n + " checks ok");

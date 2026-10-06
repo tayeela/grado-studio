@@ -1,7 +1,8 @@
 /* ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам
    и перетаскивание, всё красиво и интуитивно понятно», макет — docs/team/mockups/2026-10-06-sheet-layers.png, вариант А).
    Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с
-   номерами листов. Пока без перетаскивания (T86c). Строки, покрытие и номера листов считает sheetlayout.js (чистые функции,
+   номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия),
+   источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc отменяет. Правила допустимости — sheetlayout.js (чистые функции). Строки, покрытие и номера листов считает sheetlayout.js (чистые функции,
    tests/sheetlayout_test.js); здесь только страница. Глаз правит sheet.layout (item.on) через sheetlayout.setRole, запись идёт
    в отмену (layers.js, вид записи "layout") и в проект (touch). Скрипт стоит сразу после app.js: клавиши окна перехватываются
    раньше команд карты и дерева слоёв (те слушают window в фазе перехвата и забрали бы стрелки и Пробел). */
@@ -9,7 +10,7 @@
   "use strict";
   const ID = "wSheetLayers", SL = () => window.SheetLayout;
   const el = () => document.getElementById(ID), bodyEl = () => document.getElementById("shlBody");
-  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false };
+  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false, qsel: null, used: {}, flash: null, drag: null, pend: null, swallow: false };
   const CACHE = new Map(), PICK = new Map(), PENDING = new Set();
   const isOpen = () => !!el() && !el().hidden;
   const readOnly = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
@@ -65,14 +66,15 @@
   // дороги: какой источник сборка берёт на самом деле (roadsrc.js, по площади полигонов в рамке) — считается после показа окна
   function pickFor(sh, fr) {
     if (!fr || typeof RoadSrc === "undefined") return null;
-    const id = `${sh.id}|${fr.ext.map(Math.round).join(",")}|${dsig("yandex.hd_roads")}|${dsig("egko.roads")}|${sh.basemap || ""}`;
+    const order = SL().roadOrder(sh), id = `${sh.id}|${fr.ext.map(Math.round).join(",")}|${dsig("yandex.hd_roads")}|${dsig("egko.roads")}|${sh.basemap || ""}|${order ? order.join(">") : ""}`;
     if (PICK.has(id)) return PICK.get(id);
     if (!PENDING.has(id)) { PENDING.add(id);
       setTimeout(() => { PENDING.delete(id);
         const area = key => { let a = 0, src = layerSrc[key]; if (!src) return 0;
           src.forEachFeatureInExtent(fr.ext, f => { const t = f.getGeometry()?.getType(); if (!/Polygon/.test(t || "")) return;
             a += safe(() => { const c = turf.bboxClip({ type: "Feature", geometry: GJ.writeFeatureObject(f).geometry, properties: {} }, fr.bb); return c?.geometry?.coordinates?.length ? turf.area(c) : 0; }) || 0; }); return a; };
-        const p = RoadSrc.pickRoadSource({ ya: area("yandex.hd_roads"), egko: area("egko.roads") }, { vector: sh.basemap !== "sat" });
+        const areas = { ya: area("yandex.hd_roads"), egko: area("egko.roads") };
+        const p = order ? SL().pickByOrder(order, areas) : RoadSrc.pickRoadSource(areas, { vector: sh.basemap !== "sat" });     // порядок владельца главнее правила roadsrc.js (как в albums.js)
         PICK.set(id, p === "egko" ? "egko.roads" : p === "yandex" ? "yandex.hd_roads" : ""); if (PICK.size > 200) PICK.clear();
         refresh(); }, 40); }
     return null;
@@ -99,7 +101,7 @@
     }).join("");
     return `<section class="shl-col shl-c1" aria-label="Листы альбома"><div class="shl-ch">Листы альбома<span class="sp"></span><span class="n">${sheets().length}</span></div>`
       + `<div class="shl-list" role="listbox" aria-label="Листы альбома">${list || `<div class="shl-empty">В альбоме нет листов.</div>`}</div>`
-      + `<div class="shl-keys"><kbd>↑</kbd><kbd>↓</kbd> лист · <kbd>Enter</kbd> открыть лист на холсте</div></section>`;
+      + `<div class="shl-keys"><kbd>↑</kbd><kbd>↓</kbd> лист · <kbd>Enter</kbd> открыть лист на холсте · перетащите слой или роль на лист</div></section>`;
   }
   const covHtml = (cover, empty) => {
     if (cover === null || cover === undefined) return `<div class="cov n"><div class="tr"><i style="width:0"></i></div><span>—</span></div>`;
@@ -122,13 +124,14 @@
         const eye = `<button class="shl-eye" tabindex="-1" data-eye="${esc(r.id)}" ${ed ? "" : "disabled"} aria-label="${r.on ? "Скрыть" : "Показать"} роль «${esc(r.title)}» на этом листе" title="${esc(ed ? (r.on ? "Скрыть роль на этом листе (Пробел)" : "Показать роль на этом листе (Пробел)") : why)}">${r.on ? I.eye : I.eyeoff}</button>`;
         const chev = r.queue ? `<button class="shl-chv" tabindex="-1" data-open="${esc(r.id)}" aria-label="Источники роли" aria-expanded="${!!open}" title="${open ? "Свернуть" : "Откуда брать: очередь источников"}">${open ? I.chevd : I.chev}</button>` : "";
         const lt = r.items.map(it => srcTitle(it.key)).join("; ");
-        let h = `<div class="shl-rl${r.id === ST.row ? " cur" : ""}${r.on ? "" : " off"}" role="row" data-g="${esc(r.id)}" aria-selected="${r.id === ST.row}" title="${esc("Слои: " + lt)}">`
+        let h = `<div class="shl-rl${r.id === ST.row ? " cur" : ""}${r.on ? "" : " off"}" role="row" data-g="${esc(r.id)}" data-role="${esc(r.role)}" data-title="${esc(r.title)}" aria-selected="${r.id === ST.row}" title="${esc("Слои: " + lt + ". Перетащите роль на другой лист: перенос, с Alt — копия")}">`
           + `${eye}<span class="cv">${chev}</span><span class="nm">${esc(r.title)}<small> ${r.count}</small></span><span class="srcn" title="${esc(r.source)}">${esc(r.source)}</span>${covHtml(r.empty ? null : r.cover, r.empty)}<span class="stt">${chipHtml(r.badge)}</span></div>`;
         if (open) {
-          const q = SL().queueRows(r.queue.keys, probe, r.queue.chosen);
-          h += `<div class="shl-chain"><div class="t">Откуда брать «${esc(r.title.toLowerCase())}». Первый источник главный, ниже — запасные. Автомат берёт первый, который закрывает рамку на 90 % и больше; порядок пока менять нельзя.</div>`
-            + q.map(x => `<div class="ch2${x.used ? " use" : ""}"><span class="no">${x.n}</span><span class="t2" title="${esc(srcTitle(x.key))}">${esc(srcTitle(x.key))}</span>${covHtml(x.cover, false)}${x.used ? `<span class="shl-chip good">используется</span>` : chipHtml(x.badge)}</div>`).join("") + `</div>`;
+          const q = SL().queueRows(r.queue.keys, probe, r.queue.chosen), many = q.length > 1;
+          h += `<div class="shl-chain" data-g="${esc(r.id)}"><div class="t">Откуда брать «${esc(r.title.toLowerCase())}». Первый источник главный, ниже — запасные. Автомат берёт первый, который закрывает рамку на 90 % и больше. ${many ? "Порядок меняется перетаскиванием за ручку ⋮⋮ или Alt+↑ / Alt+↓." : "На этом листе источник один."}</div>`
+            + q.map(x => `<div class="ch2${x.used ? " use" : ""}${many && x.key === ST.qsel ? " qsel" : ""}" data-key="${esc(x.key)}" data-n="${x.n - 1}"><span class="grip${many && ed ? "" : " off"}" ${many && ed ? 'data-grip title="Перетащите, чтобы поменять порядок"' : ""}>⋮⋮</span><span class="no">${x.n}</span><span class="t2" title="${esc(srcTitle(x.key))}">${esc(srcTitle(x.key))}</span>${covHtml(x.cover, false)}${x.used ? `<span class="shl-chip good">используется</span>` : chipHtml(x.badge)}</div>`).join("") + `</div>`;
         }
+        if (r.queue) ST.used[r.id] = r.queue.chosen;
         return h;
       }).join("");
       const miss = SL().missingRoles(sheets().map(s => infoOf(s).layout), idx);
@@ -140,17 +143,17 @@
     return `<section class="shl-col shl-c2" aria-label="Что на листе"><div class="shl-ch">Что на листе ${idx + 1}, сверху вниз<span class="sp"></span><span class="n">порядок задан образцом</span></div>`
       + `<div class="shl-hd"><span></span><span></span><span>Роль</span><span>Источник</span><span>Покрытие рамки</span><span>Состояние</span></div>`
       + `<div class="shl-list" role="grid" aria-label="Роли листа">${rows}${sep}${note}</div>`
-      + `<div class="shl-keys"><kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Esc</kbd> закрыть окно</div></section>`;
+      + `<div class="shl-keys"><kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник выше или ниже · <kbd>Esc</kbd> закрыть окно</div></section>`;
   }
   function bankCol(idx) {
     const L = typeof LYR !== "undefined" ? LYR : [], g = SL().bankGroups(L.map(l => ({ key: l.key, title: l.title })), sheets(), viewKeys);
     const cur = idx + 1;
     const rows = g.map(gr => `<div class="shl-bk">${esc(gr.title)} <small>${gr.items.length}</small></div>` + gr.items.map(it =>
-      `<div class="shl-bl${it.key === ST.bank ? " sel" : ""}" role="option" aria-selected="${it.key === ST.bank}" data-k="${esc(it.key)}" title="Щелчок — подсветить листы со слоем, двойной — показать слой на холсте"><span class="nm">${esc(it.title)}</span>`
+      `<div class="shl-bl${it.key === ST.bank ? " sel" : ""}" role="option" aria-selected="${it.key === ST.bank}" data-k="${esc(it.key)}" title="Щелчок — подсветить листы со слоем, двойной — показать слой на холсте. Перетащите на лист или на строку роли, чтобы включить слой на этом листе"><span class="nm">${esc(it.title)}</span>`
       + `<span class="ons num">${it.sheets.length ? it.sheets.map(n => n === cur ? `<b>${n}</b>` : n).join(" ") : `<i>нигде</i>`}</span></div>`).join("")).join("");
     return `<section class="shl-col shl-c3" aria-label="Слои проекта"><div class="shl-ch">Слои проекта<span class="sp"></span><span class="n">где используется</span></div>`
       + `<div class="shl-list" role="listbox" aria-label="Слои проекта">${rows || `<div class="shl-empty">В проекте пока нет слоёв.</div>`}</div>`
-      + `<div class="shl-keys">Щелчок — подсветить листы · двойной — показать слой на холсте</div></section>`;
+      + `<div class="shl-keys">Перетащите слой на лист или на роль — он включится там · щелчок — подсветить листы</div></section>`;
   }
   function hint(idx) {
     const sh = sheets()[idx];
@@ -160,8 +163,8 @@
     const info = infoOf(sh);
     if (readOnly()) return "режим просмотра: слои листа меняет тот, кто правит проект.";
     if (!info.editable && info.why) return info.why + ".";
-    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, Cmd+Z — отмена.`; }
-    return "глаз скрывает роль только на этом листе; выберите роль в средней колонке и нажмите Пробел.";
+    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, Cmd+Z — отмена. Перетащите роль на другой лист: перенос, с Alt — копия.`; }
+    return "перетащите слой из правой колонки на лист или на строку роли — он включится на этом листе. Роль можно перетащить на другой лист (Alt — копия). Глаз скрывает роль только на этом листе.";
   }
   function render() {
     const b = bodyEl(); if (!b) return;
@@ -177,14 +180,17 @@
     b.innerHTML = bar + `<div class="shl-grid">${sheetsCol(idx, hl)}${rolesCol(idx)}${bankCol(idx)}</div>`
       + `<div class="shl-foot"><b>Что дальше:</b> ${esc(hint(idx))}<span class="sp"></span><span class="r">правки состава хранятся в проекте</span></div>`;
     b.querySelectorAll(".shl-list").forEach((x, i) => { x.scrollTop = keep[i] || 0; });
+    if (ST.flash) { const f = ST.flash; (f.sheet !== undefined ? b.querySelector(`.shl-sh[data-i="${f.sheet}"]`) : b.querySelector(`.shl-rl[data-g="${CSS.escape(f.row)}"]`))?.classList.add("fresh"); }
     b.querySelector(".shl-sh.cur")?.scrollIntoView?.({ block: "nearest" });
     document.getElementById("shlTitle").textContent = `Слои и листы${typeof ALBUM !== "undefined" && ALBUM.meta?.short ? " · альбом " + ALBUM.meta.short : ""}`;
   }
   let raf = 0;
-  const refresh = () => { if (!isOpen() || raf) return; raf = requestAnimationFrame(() => { raf = 0; if (isOpen()) render(); }); };
+  const refresh = () => { if (!isOpen() || raf || ST.drag) return; raf = requestAnimationFrame(() => { raf = 0; if (isOpen()) render(); }); };
 
   /* ---- правка: глаз на роли ---- */
-  function snap(id) { const s = sheets().find(x => x.id === id); return s ? JSON.stringify(s.layout ?? null) : null; }
+  // слепок листа для отмены: состав и поля, что с ним согласованы (keys, styles, only). key — id листа или несколько через «|» (перенос между листами)
+  const stateOf = s => JSON.stringify([s.layout ?? null, s.keys ?? null, s.styles ?? null, s.only ?? null]);
+  function snap(key) { return JSON.stringify(String(key).split("|").map(id => { const s = sheets().find(x => x.id === id); return [id, s ? stateOf(s) : null]; })); }
   function changed(sh) {
     const i = sheets().indexOf(sh);
     if (typeof touch === "function") touch(); else window.markDirty?.();
@@ -193,10 +199,12 @@
     if (typeof LAY !== "undefined" && LAY && LAY.i === i && typeof renderLayout === "function") renderLayout();       // открытый макет листа перерисовывается сразу
     refresh();
   }
-  function restore(id, s) {
-    const sh = sheets().find(x => x.id === id); if (!sh) return;
-    const l = s ? JSON.parse(s) : null; if (l) sh.layout = l; else delete sh.layout;
-    changed(sh);
+  function restore(key, snapStr) {
+    JSON.parse(snapStr).forEach(([id, st]) => {
+      const sh = sheets().find(x => x.id === id); if (!sh || !st) return;
+      ["layout", "keys", "styles", "only"].forEach((f, j) => { const v = JSON.parse(st)[j]; if (v === null) delete sh[f]; else sh[f] = v; });
+      changed(sh);
+    });
   }
   function toggleRole(idx, gid, on) {
     const sh = sheets()[idx]; if (!sh) return;
@@ -216,6 +224,111 @@
     const ex = layerSrc[key]?.getExtent(); if (ex && isFinite(ex[0])) sharedView.fit(ex, { padding: [40, 40, 40, 40], maxZoom: 18 });
   }
   const hasQueue = (info, g) => info.layout.groups.some(x => x.role === g.role && x.items.some(it => Array.isArray(it.src) && it.src.length));
+
+  /* ---- перетаскивание (T86c): указатель, а не HTML5 drag — призрак у курсора, подсветка цели, Esc и Alt работают одинаково ---- */
+  const TPLC = new Map();                                        // образец листа (начальный layout шаблона) на время одного перетаскивания
+  function ctxOf(sh) {
+    if (!TPLC.has(sh.id)) TPLC.set(sh.id, (() => { try { return typeof tplMake === "function" ? tplMake(sh)?.layout || null : null; } catch { return null; } })());
+    return { tpl: TPLC.get(sh.id), others: sheets().filter(x => x !== sh).map(x => infoOf(x).layout).filter(Boolean) };
+  }
+  const roleGroup = (info, role) => info.layout?.groups.find(g => g.role === role);
+  const flash = f => { ST.flash = f; setTimeout(() => { if (ST.flash === f) ST.flash = null; }, 1600); };
+  function dropLayer(i, key, title) {
+    const sh = sheets()[i]; if (!sh) return; const before = snap(sh.id);
+    const r = SL().addItem(sh, key, { ...ctxOf(sh), n: i + 1, viewOf, title }); if (!r.ok) return toast(r.text + ".");
+    pushUndo({ kind: "layout", key: sh.id, label: `лист ${i + 1}: слой «${title}» включён`, snap: before });
+    ST.sel = i; ST.bank = null; ST.row = roleGroup(infoOf(sh), SL().roleOf(key).role)?.id || null; if (ST.row) flash({ row: ST.row });
+    changed(sh); if (typeof setHint === "function") setHint(`Лист ${i + 1}: слой «${title}» включён. Cmd+Z — отмена.`);
+  }
+  function dropRole(from, to, role, copy) {
+    const a = sheets()[from], b = sheets()[to]; if (!a || !b) return; const rt = SL().roleTitle(role), before = snap(a.id + "|" + b.id);
+    const r = SL().moveRole(a, b, role, { ...ctxOf(b), n: to + 1, viewOf }, copy); if (!r.ok) return toast(r.text + ".");
+    pushUndo({ kind: "layout", key: a.id + "|" + b.id, label: `лист ${to + 1}: роль «${rt}» ${copy ? "скопирована" : "перенесена"} с листа ${from + 1}`, snap: before });
+    if (!copy && ST.row && !infoOf(a).layout?.groups.some(x => x.id === ST.row)) ST.row = null;
+    flash({ sheet: to }); if (!copy) changed(a); changed(b);
+    if (typeof setHint === "function") setHint(`Роль «${rt}» ${copy ? "скопирована" : "перенесена"} на лист ${to + 1}. Cmd+Z — отмена.`);
+  }
+  function reorderQueue(i, gid, from, to, say) {
+    const sh = sheets()[i], info = infoOf(sh), g = info.layout?.groups.find(x => x.id === gid); if (!g) return false;
+    const q = SL().srcQueue(info.layout, g.role); if (!q) return false; const key = q.queue[from], before = snap(sh.id);
+    if (!SL().reorderSrc(sh, g.role, from, to, viewOf)) return false;
+    pushUndo({ kind: "layout", key: sh.id, label: `лист ${i + 1}: источник «${srcTitle(key)}» на место ${to + 1}`, snap: before });
+    ST.qsel = key; ST.open.add(gid); changed(sh);
+    if (typeof setHint === "function") setHint(`Лист ${i + 1}: «${srcTitle(key)}» ${to === 0 ? "теперь главный источник" : "на месте " + (to + 1)}. Cmd+Z — отмена.`);
+    return true;
+  }
+  // Alt+↑ / Alt+↓: выбранный источник очереди выше или ниже (выбран — щелчком по строке; иначе тот, что используется)
+  function nudgeSource(dir) {
+    const i = selIndex(), sh = sheets()[i], info = infoOf(sh), g = ST.row && info.layout?.groups.find(x => x.id === ST.row);
+    if (readOnly()) return toast("Только просмотр: слои листа меняет тот, кто правит проект.");
+    if (!info.editable) return info.why && toast(info.why[0].toUpperCase() + info.why.slice(1) + ".");
+    if (!g) return toast("Сначала выберите строку «Дороги» в средней колонке.");
+    const q = SL().srcQueue(info.layout, g.role); if (!q) return toast(`У роли «${g.title}» одна очередь источников нет: Alt+↑ и Alt+↓ работают у дорог.`);
+    if (q.queue.length < 2) return toast("На этом листе источник один: менять порядок не из чего.");
+    const key = q.queue.includes(ST.qsel) ? ST.qsel : q.queue.includes(ST.used[g.id]) ? ST.used[g.id] : q.queue[0], from = q.queue.indexOf(key), to = from + dir;
+    if (to < 0 || to >= q.queue.length) return toast(dir < 0 ? "Этот источник уже главный." : "Этот источник уже последний.");
+    reorderQueue(i, g.id, from, to);
+  }
+  function onDown(e) {
+    ST.swallow = false;
+    if (e.button !== 0 || ST.drag || readOnly()) return;
+    const t = e.target; if (t.closest("button,input,select,textarea,a")) return;
+    let spec = null, grip = t.closest("[data-grip]");
+    if (grip) { const ch = grip.closest(".ch2"), chain = grip.closest(".shl-chain"); spec = { type: "src", gid: chain.dataset.g, from: +ch.dataset.n, label: ch.querySelector(".t2").textContent }; }
+    else if (t.closest(".shl-chain")) return;
+    else if (t.closest(".shl-bl")) { const bl = t.closest(".shl-bl"); spec = { type: "layer", key: bl.dataset.k, label: bl.querySelector(".nm").textContent }; }
+    else if (t.closest(".shl-rl")) { const rl = t.closest(".shl-rl"); spec = { type: "role", from: selIndex(), role: rl.dataset.role, label: rl.dataset.title }; }
+    if (!spec) return;
+    ST.pend = { spec, x: e.clientX, y: e.clientY };
+    addEventListener("pointermove", onMove, true); addEventListener("pointerup", onUp, true); addEventListener("pointercancel", onCancel, true);
+  }
+  function stopListen() { removeEventListener("pointermove", onMove, true); removeEventListener("pointerup", onUp, true); removeEventListener("pointercancel", onCancel, true); }
+  function beginDrag() {
+    const g = document.createElement("div"); g.className = "shl-ghost"; g.innerHTML = `<span>${esc(ST.pend.spec.label)}</span>`; document.body.appendChild(g);
+    ST.drag = { ...ST.pend.spec, ghost: g, x: ST.pend.x, y: ST.pend.y, alt: false, tgt: null, res: null }; TPLC.clear();
+    document.body.classList.add("shl-dragging"); getSelection()?.removeAllRanges();
+  }
+  function clearMarks() { bodyEl()?.querySelectorAll(".drop,.ins-b,.ins-a").forEach(x => x.classList.remove("drop", "drop-ok", "drop-bad", "drop-frozen", "drop-none", "ins-b", "ins-a")); bodyEl()?.querySelectorAll(".shl-dcap").forEach(x => x.remove()); }
+  function setFoot(text, tone) { const f = bodyEl()?.querySelector(".shl-foot"); if (!f) return; f.innerHTML = `<b>Перетаскивание:</b> <span class="dt ${tone || ""}">${esc(text)}</span><span class="sp"></span><span class="r">Esc — отмена</span>`; }
+  function updateDrag() {
+    const d = ST.drag; if (!d) return;
+    d.ghost.style.transform = `translate(${d.x + 14}px,${d.y + 12}px)`; d.ghost.classList.toggle("cp", !!d.alt && d.type === "role");
+    const el = document.elementFromPoint(d.x, d.y); clearMarks(); d.tgt = null; d.res = null;
+    if (d.type === "src") {
+      const chain = el?.closest(".shl-chain"); if (chain && chain.dataset.g === d.gid) {
+        const rows = [...chain.querySelectorAll(".ch2")], slot = rows.filter(r => { const b = r.getBoundingClientRect(); return b.top + b.height / 2 < d.y; }).length, to = slot > d.from ? slot - 1 : slot;
+        d.tgt = { to }; const ref = rows[slot] || rows[rows.length - 1]; ref.classList.add(rows[slot] ? "ins-b" : "ins-a");
+        d.res = to === d.from ? { ok: false, tone: "none", text: "Источник остаётся на месте" } : { ok: true, tone: "ok", text: to === 0 ? `Отпустите: «${d.label}» станет главным источником` : `Отпустите: «${d.label}» встанет на место ${to + 1}` };
+      }
+    } else {
+      const sh = el?.closest(".shl-sh"), rl = el?.closest(".shl-rl"), list = el?.closest(".shl-c2");
+      const t = sh ? { i: +sh.dataset.i, el: sh } : rl ? { i: selIndex(), el: rl, row: rl.dataset.role } : list ? { i: selIndex(), el: list.querySelector(".shl-list") } : null;
+      if (t) { d.tgt = t; d.res = SL().dropCheck(sheets(), t.i, d.type === "layer" ? { type: "layer", key: d.key, title: d.label } : { type: "role", from: d.from, role: d.role },
+        { copy: d.alt, viewOf, ctx: ctxOf, row: d.type === "layer" ? t.row : undefined, titleOf: srcTitle }); }
+    }
+    if (d.res && d.tgt?.el) { const t = d.tgt.el; t.classList.add("drop", "drop-" + d.res.tone); if (d.res.text && d.res.tone !== "none") t.insertAdjacentHTML("beforeend", `<span class="shl-dcap ${d.res.tone}" title="${esc(d.res.text)}">${esc(d.res.text)}</span>`); }
+    d.ghost.dataset.tone = d.res?.tone || "";
+    setFoot(d.res?.text || (d.type === "src" ? "переставьте источник на новое место в очереди" : d.type === "layer" ? `«${d.label}»: отпустите на лист или на строку роли, чтобы включить слой на этом листе` : `роль «${d.label}»: отпустите на другой лист (Alt — копия)`), d.res?.tone);
+  }
+  function onMove(e) {
+    const p = ST.pend; if (!p) return;
+    if (!ST.drag) { if (Math.hypot(e.clientX - p.x, e.clientY - p.y) < 5) return; beginDrag(); }
+    e.preventDefault(); ST.drag.x = e.clientX; ST.drag.y = e.clientY; ST.drag.alt = e.altKey; updateDrag();
+  }
+  function onUp(e) { if (ST.drag) { ST.drag.x = e.clientX; ST.drag.y = e.clientY; ST.drag.alt = e.altKey; updateDrag(); } endDrag(true); }
+  function onCancel() { endDrag(false); }
+  function endDrag(apply) {
+    const d = ST.drag; stopListen(); ST.pend = null; ST.drag = null; if (!d) return;
+    ST.swallow = true; setTimeout(() => { ST.swallow = false; }, 0);          // щелчок, которым кончается перетаскивание, строке не нужен
+    d.ghost.remove(); document.body.classList.remove("shl-dragging"); clearMarks(); TPLC.clear();
+    const res = d.res;
+    if (apply && res?.ok) {
+      if (d.type === "layer") dropLayer(d.tgt.i, d.key, d.label);
+      else if (d.type === "role") dropRole(d.from, d.tgt.i, d.role, d.alt);
+      else reorderQueue(selIndex(), d.gid, d.from, d.tgt.to);
+    } else if (apply && res && res.tone !== "none" && res.text) toast(res.text + ".");
+    render();
+  }
   const openSheet = i => { if (typeof openLayout === "function") openLayout(i); };
 
   /* ---- события ---- */
@@ -223,6 +336,7 @@
     const t = e.target;
     if (t.closest("[data-sheets]")) { winOpen("wSheets", true); return; }
     const eye = t.closest("[data-eye]"); if (eye) { ST.row = eye.dataset.eye; ST.bank = null; toggleRole(selIndex(), eye.dataset.eye); bodyEl().focus({ preventScroll: true }); return; }
+    const qr = t.closest(".ch2"); if (qr) { ST.qsel = qr.dataset.key; ST.row = qr.closest(".shl-chain").dataset.g; ST.bank = null; render(); bodyEl().focus({ preventScroll: true }); return; }
     const op = t.closest("[data-open]"); if (op) { const id = op.dataset.open; ST.open.has(id) ? ST.open.delete(id) : ST.open.add(id); ST.row = id; render(); bodyEl().focus({ preventScroll: true }); return; }
     const sh = t.closest(".shl-sh"); if (sh) { ST.sel = +sh.dataset.i; ST.row = null; render(); bodyEl().focus({ preventScroll: true }); return; }
     const rl = t.closest(".shl-rl"); if (rl) { ST.row = rl.dataset.g; ST.bank = null; render(); bodyEl().focus({ preventScroll: true }); return; }
@@ -236,11 +350,13 @@
   }
   // клавиши окна: перехват стоит раньше команд карты, поэтому берём только свои клавиши и только когда фокус внутри окна
   function onKey(e) {
+    if (ST.drag) { if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); endDrag(false); } else if (e.key === "Alt") { ST.drag.alt = true; updateDrag(); } return; }   // во время перетаскивания Esc отменяет его, а не закрывает окно
     if (!isOpen() || !e.target.closest?.("#" + ID) || e.target.closest("input,select,textarea") || e.metaKey || e.ctrlKey) return;
     const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
     const n = sheets().length, idx = selIndex();
     if (e.key === "Escape") { take(); winOpen(ID, false); return; }
     if (e.target.closest("[data-sheets]") && (e.key === "Enter" || e.key === " ")) return;           // кнопка «Листы и альбом…» нажимается сама
+    if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); nudgeSource(e.key === "ArrowUp" ? -1 : 1); return; }
     if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); ST.sel = Math.min(n - 1, Math.max(0, idx + (e.key === "ArrowDown" ? 1 : -1))); ST.row = null; render(); return; }
     if (e.key === " " && n) { take(); if (ST.row) toggleRole(idx, ST.row); else toast("Сначала выберите роль в средней колонке."); return; }
     if (e.key === "Enter" && n) { take(); const info = infoOf(sheets()[idx]), g = ST.row && info.layout?.groups.find(x => x.id === ST.row);
@@ -251,13 +367,15 @@
   function setMin(on) { ST.min = on; el().classList.toggle("shmin", on); const b = document.getElementById("shlMin"); b.setAttribute("aria-pressed", on); b.title = on ? "Развернуть окно" : "Свернуть окно до заголовка"; b.innerHTML = on ? I.chevd : I.min; }
   function init() {
     const w = el(); if (!w || w.dataset.ready) return; w.dataset.ready = "1";
-    const b = bodyEl(); b.addEventListener("click", onClick); b.addEventListener("dblclick", onDbl);
+    const b = bodyEl(); b.addEventListener("click", e => { if (ST.swallow) { ST.swallow = false; e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+    b.addEventListener("pointerdown", onDown); b.addEventListener("click", onClick); b.addEventListener("dblclick", onDbl);
     document.getElementById("shlMin").onclick = () => { setMin(!ST.min); if (!ST.min) render(); };
     document.getElementById("shlMin").innerHTML = I.min;
     // «Листы и альбом» и дерево слоёв перерисовываются при любой правке листов и слоёв — окно следует за ними
     ["renderSheets", "renderTree"].forEach(fn => { const f = window[fn]; if (typeof f === "function" && !f.shl) { const g = function () { const r = f.apply(this, arguments); refresh(); return r; }; g.shl = 1; window[fn] = g; } });
   }
   addEventListener("keydown", onKey, true);
+  addEventListener("keyup", e => { if (ST.drag && e.key === "Alt") { ST.drag.alt = false; updateDrag(); } }, true);
   WIN_OPEN[ID] = () => { init(); if (ST.min) setMin(false); render(); };
   window.SheetLayers = { snap, restore, render, refresh, toggleRole };
 })();

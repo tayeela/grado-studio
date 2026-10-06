@@ -607,7 +607,9 @@ function roadSource(out, sheet, bb) {
   const hd = out.layers.find(l => l.key === "yandex.hd_roads"), eg = out.layers.find(l => l.key === "egko.roads");
   const area = g => /Polygon/.test(g?.type) ? (safe(() => { const c = turf.bboxClip({ type: "Feature", geometry: g, properties: {} }, bb); return c?.geometry?.coordinates?.length ? turf.area(c) : 0; }) || 0) : 0;
   const sum = fts => fts.reduce((s, f) => s + area(f.g), 0);
-  const src = RoadSrc.pickRoadSource({ ya: sum(hd?.features || []), egko: sum(eg?.features || []) }, { vector: sheet.basemap !== "sat" });
+  const areas = { ya: sum(hd?.features || []), egko: sum(eg?.features || []) }, order = SheetLayout.roadOrder(sheet);
+  // порядок источников, который владелец поменял в окне «Слои и листы» (T86c), главнее правила roadsrc.js; не менял — как раньше
+  const src = order ? SheetLayout.pickByOrder(order, areas) : RoadSrc.pickRoadSource(areas, { vector: sheet.basemap !== "sat" });
   const chosen = src === "egko" ? eg : src === "yandex" ? hd : null;
   let layer = hd;
   if (src === "egko" && !hd) { eg.key = "yandex.hd_roads"; layer = eg; }
