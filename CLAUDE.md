@@ -8,6 +8,7 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules
   from all remarks. A new owner remark goes there and to `docs/standards/albums/label-rules.md` before code.
 - Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit.
+  Cloud sessions: `.claude/hooks/session-start.sh` builds `~/.grado2/venv` and sets `$CHROME`, so gate and E2E run as on the Mac.
 - History: `docs/grado2-changelog.md` (newest on top), `git log`; old studio and the former CLAUDE.md —
   `docs/session-log-archive.md`.
 
