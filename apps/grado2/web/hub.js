@@ -121,7 +121,8 @@ let inited = null, bootP = null;
 function enter(user, again) {
   st.me = user; st.names[user.login] = user.name || user.login;
   setText("hubAccName", user.name || user.login); $("hubAcc").title = `Вы вошли как ${user.name || user.login} (${user.login})`;
-  $("hubAdminItem").hidden = !user.admin; $("hubAccMenu").querySelector('[data-hubact="pw"]').hidden = !!user.guest;   // у гостя пароля нет $("hubBar").hidden = false; $("hubCTool").hidden = false;
+  $("hubAdminItem").hidden = !user.admin; $("hubBar").hidden = false; $("hubCTool").hidden = false;
+  $("hubAccMenu").querySelector('[data-hubact="pw"]').hidden = !!user.guest;   // у гостя пароля нет
   if (inited !== user.login) { inited = user.login; C()?.init?.(user); }
   if (again) return;
   if (getJoin()) { doJoin().then(ok => { if (!ok) startPage(); }); return; }
