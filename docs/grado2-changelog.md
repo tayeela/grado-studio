@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.23: owner remarks on the Гольяново album.** Sanitary zones: established — solid black,
+  indicative — black dashed, drawn above the white veil outside the territory (layer `gisogd.szz.lines`, over).
+  Sheet 5 land use: Voronoi gap fill no longer leaves a saw of triangles — seed points every 2 m (was 8 m), cells of
+  one colour dissolved and simplified. Photo sheet: 8 Yandex panorama frames from the owner's links with view points
+  and directions (data in the project, label-rules 14).
 - **2026-10-06, ГРАДО 2 v0.99.22: Гольяново album check, last fixes (F7, F9).** Sheet 2: callout lines route around
   district and okrug captions (`_callout_route` in album_io, map frames remember their text ops). Genplan zone number:
   deepest spot also away from the territory border (≥ 4 mm) and not on or inside a building. Street labels keep
