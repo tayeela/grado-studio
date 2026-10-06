@@ -111,6 +111,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-10-06 (v0.99.32–0.99.33, audit): «Нормативы» show «район не определён — выберите зону» after a failed lookup —
+  checked on screen. Guest entry checked: opens at once as «Гость», «Выйти» → login with «Войти гостем, без пароля»,
+  console clean. Not yet: all guests are one account «Гость» — in comments, presence and history colleagues cannot be
+  told apart; a name prompt for guests (kept in the browser) would fix it.
 - 2026-10-06 (v0.99.21, «Макет листа», ported from DesignCraft): done — labels snap to edges and centres of other labels
   and of the sheet with a magenta guide (Alt off), Ctrl+Z / Ctrl+Shift+Z and header buttons. Audit: works on a test sheet,
   console clean. Not yet (DesignCraft `crates/tools/src/snap.rs` has them): snap to the map frame, legend and table boxes
