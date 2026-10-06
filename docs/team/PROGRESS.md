@@ -2,6 +2,9 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page
+text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
+
 RULE: A script started from a git hook inherits GIT_DIR/GIT_INDEX_FILE: before running git in another repository, unset
 them and check `git rev-parse --show-toplevel` (06.10.2026 the wiki publisher committed wiki pages over the program on
 team/t60; caught by `git show --stat`, branch restored to the previous commit, main untouched).

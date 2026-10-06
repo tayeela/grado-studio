@@ -135,6 +135,7 @@
 
 ## Правила команды (RULE из PROGRESS.md)
 
+- Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
 - A script started from a git hook inherits GIT_DIR/GIT_INDEX_FILE: before running git in another repository, unset them and check `git rev-parse --show-toplevel` (06.10.2026 the wiki publisher committed wiki pages over the program on team/t60; caught by `git show --stat`, branch restored to the previous commit, main untouched).
 - A change to album download or label placement is accepted only after a real album rebuild with network on a fresh project copy plus a page-by-page PDF comparison with the previous baseline on two territories (T86: mocked download and spec-JSON golden both passed while sheet 4 lost roads and the station label moved onto a road).
 - Cycle start = `git merge main` in the team branch → `tools/gate.sh` → read `docs/wiki/INDEX.md` and `docs/wiki/team.md`; agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasting file ranges.
