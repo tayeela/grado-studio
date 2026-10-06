@@ -8,6 +8,10 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 06.10.2026, цикл 26 — T86a–f в копии `.claude/worktrees/t86` (team/t86), каждый шаг: эталон спецификаций листов
+  59/59 (КРТ 3229 + Безобразово копия, `/tmp/grado-team/2026-10-06/T86a-golden/dump.js`), живая проверка со снимками,
+  gate; ревью руководителя по снимкам дало правки T86b (дубли ролей, обрезка, «Границы», «100 % + в рамке нет») и
+  баг подписи станции на добавленной ж/д (T86d). Ждёт «выкладывай».
 - 06.10.2026, цикл 25 и выкладка («выкладывай и продолжай»). Совет по единой логике листов (продакт, архитектор,
   креативный директор) → T86, макет одобрен владельцем (А). T85a/b приняты: легенда из нарисованного, подписи рек от
   данных проекта; причина «не готов» для листов документации перенесена в `notReadyWhy` вызовом `window.conceptWhy`
