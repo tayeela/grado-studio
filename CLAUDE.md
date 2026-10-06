@@ -11,6 +11,12 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
 - History: `docs/grado2-changelog.md` (newest on top), `git log`; old studio and the former CLAUDE.md —
   `docs/session-log-archive.md`.
 
+## GitHub is the source of truth (since 06.10.2026)
+Tasks and the owner's words — GitHub Issues (`gh issue list`); work — branches and PRs into `team/t60`; landing —
+merging the PR `team/t60 → main`, then `git pull` in the main checkout deploys; album deliveries — releases
+`album-*`; album_check baselines — release `album-baseline`; wiki — repo `tayeela/grado-wiki`. Details:
+`docs/team/CYCLE.md`. `BOARD.md` and `OWNER.md` are archives.
+
 ## Context hygiene (Anthropic best practices)
 - One task per session: after a task is accepted and committed — new session or `/clear`; state is in
   `docs/team/BOARD.md`, `PROGRESS.md` and `/tmp/grado-team/<date>/*-notes.md`. Two failed fixes of the same thing —

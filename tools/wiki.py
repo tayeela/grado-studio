@@ -238,13 +238,11 @@ def tests():
 # ---------- команда: очередь и последние циклы ----------
 def team():
     b, p = read(ROOT / "docs/team/BOARD.md"), read(ROOT / "docs/team/PROGRESS.md")
-    out = [GEN, "# Команда: что ждёт, что в очереди, что готово\n\n",
-           "Источник — docs/team/BOARD.md и PROGRESS.md (там же полные тексты).\n"]
-    for sec in ("Ждёт владельца", "В работе", "Очередь", "Готово к выкладке"):
-        m = re.search(r"^## " + sec + r"\n(.*?)(?=^## |\Z)", b, re.S | re.M)
-        if m:
-            body = m.group(1).strip()
-            out.append(f"\n## {sec}\n\n{body}\n")
+    out = [GEN, "# Команда: доска на GitHub, правила команды\n\n",
+           "С 06.10.2026 доска задач — GitHub Issues репозитория tayeela/grado-studio (метки «задача», «замечание "
+           "владельца», «ждёт владельца», «в работе», «готово к выкладке»), работа — ветки и Pull Request, выкладка — "
+           "слияние PR в main. Смотреть: `gh issue list`, `gh pr list`; порядок — docs/team/CYCLE.md.\n"
+           "Прежняя доска docs/team/BOARD.md — архив до 06.10.2026.\n"]
     rules_ = re.findall(r"^RULE: .*(?:\n(?!RULE:|- |\n).*)*", p, re.M)
     if rules_:
         out.append("\n## Правила команды (RULE из PROGRESS.md)\n\n")

@@ -9,7 +9,8 @@ body: JSON.stringify(albumSpec(ALBUM.sheets))})` (docs/wiki/recipes.md).
   ~/.grado2/venv/bin/python tools/album_check.py --spec <папка проектов>/_specX.grado2 --name gol \
       [--server http://localhost:8671] [--update]      # --update: текущий результат становится эталоном
 
-Эталоны: ~/.grado2/album-baseline/<name>/p-N.png; отчёт: /tmp/grado-album-check/<name>/ (report.md, summary.png,
+Эталоны: ~/.grado2/album-baseline/<name>/p-N.png, копия на GitHub — релиз `album-baseline` репозитория (архив
+<name>.zip): нет на диске — скачивается оттуда, `--update` — выкладывается туда (процесс на GitHub, 06.10.2026); отчёт: /tmp/grado-album-check/<name>/ (report.md, summary.png,
 crops/). Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати.
 Ошибки сервера печатаются как есть; порт 8650 (программа владельца) запрещён.
 """
@@ -93,6 +94,35 @@ def compare(a, b):
     return n / (W * H) * 100, boxes, A, B
 
 
+REL = "album-baseline"
+
+
+def gh(*args):
+    return subprocess.run(["gh", *args], capture_output=True, text=True)
+
+
+def fetch_baseline(name, base):
+    """Эталона нет на диске — взять из релиза GitHub album-baseline (архив <name>.zip)."""
+    tmp = OUT / f"_{name}.zip"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    r = gh("release", "download", REL, "--pattern", f"{name}.zip", "--output", str(tmp), "--clobber")
+    if r.returncode:
+        return False
+    base.mkdir(parents=True, exist_ok=True)
+    shutil.unpack_archive(str(tmp), str(base))
+    return True
+
+
+def publish_baseline(name, base):
+    """Эталон — в релиз GitHub album-baseline (создаётся при первом запуске)."""
+    arc = shutil.make_archive(str(OUT / name), "zip", str(base))
+    if gh("release", "view", REL).returncode:
+        gh("release", "create", REL, "--title", "Эталоны альбомов для tools/album_check.py", "--prerelease",
+           "--notes", "Страницы альбомов (PNG 100 dpi) и PDF, принятые владельцем. Обновляются `album_check.py --update`.")
+    r = gh("release", "upload", REL, arc, "--clobber")
+    print("baseline on GitHub:" if not r.returncode else "baseline NOT uploaded:", REL, f"{name}.zip", r.stderr.strip()[:200])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spec", required=True)
@@ -103,6 +133,8 @@ def main():
     out, base = OUT / a.name, BASE / a.name
     shutil.rmtree(out, ignore_errors=True)
     (out / "crops").mkdir(parents=True)
+    if not base.exists() and not a.update:
+        fetch_baseline(a.name, base)
     render(a.server, a.spec, out / "album.pdf")
     cur = pages(out / "album.pdf", out)
     if a.update or not base.exists():
@@ -112,6 +144,7 @@ def main():
             shutil.copy(p, base / p.name)
         shutil.copy(out / "album.pdf", base / "album.pdf")
         print(f"baseline {'updated' if a.update else 'created'}: {base} ({len(cur)} pages)")
+        publish_baseline(a.name, base)
         return 0
     rows, tiles = [], []
     old = sorted(base.glob("p-*.png"), key=lambda p: int(p.stem.split("-")[-1]))
