@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.** When the OSM portal
+  does not answer (or there is no territory yet) the district lookup ends without a district, and the zone source line
+  kept saying «район определяется…»; now it says «район не определён — выберите зону» once the lookup is over, as
+  «Показатели» does. E2E «Условия проекта» waits for the lookup to end instead of 0.5 s (it failed on CI when the portal
+  was slow).
 - **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,

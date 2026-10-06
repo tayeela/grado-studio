@@ -85,7 +85,8 @@
   function zoneSrc(tp) {
     if (zoneManual(tp)) return `выбрана вручную${tp.zoneDist != null ? ` · <button class="btn" data-nzone-auto title="Снова взять зону по району территории">по району</button>` : ""}`;
     if (tp.zoneNote) return "зона 2 принята: район не в списках 2151-ПП";
-    return tp.district ? `по району ${esc(tp.district)}` : "район определяется…";
+    // портал не ответил — поиск закончен, «определяется…» висело бы вечно (как «не определён» в «Показателях»)
+    return tp.district ? `по району ${esc(tp.district)}` : node()?._placeBusy ? "район определяется…" : "район не определён — выберите зону";
   }
   const newest = () => CAT.norms.map(n => n.edition).filter(Boolean).map(e => ({ e, k: e.split(".").reverse().join("") })).sort((a, b) => b.k.localeCompare(a.k))[0]?.e;
   function rowHtml(n) {
