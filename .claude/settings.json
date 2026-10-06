@@ -2,7 +2,27 @@
   "claudeMdExcludes": [
     "/Users/tayeela/CLAUDE.md"
   ],
+  "permissions": {
+    "deny": [
+      "Read(//Users/tayeela/Documents/ГРАДО 2/**)",
+      "Edit(//Users/tayeela/Documents/ГРАДО 2/**)",
+      "Write(//Users/tayeela/Documents/ГРАДО 2/**)",
+      "Bash(*Documents/ГРАДО 2/*)",
+      "Bash(*:8650*)"
+    ]
+  },
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
     "UserPromptSubmit": [
       {
         "hooks": [
@@ -27,6 +47,11 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/grado2_test_gate.py\"",
+            "timeout": 900
+          },
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/grado2_ux_gate.py\""
