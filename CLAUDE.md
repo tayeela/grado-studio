@@ -3,6 +3,8 @@
 **Start with `docs/wiki/INDEX.md`** (generated from the code on every commit by `tools/wiki.py`: sources, sheets,
 rules, modules, API, tests, team queue; hand-written: architecture, recipes). Read wiki pages, not big files whole.
 Test gate: `tools/gate.sh` (`E2E=1` adds browser scenarios). Agent briefs: `docs/team/prompts/`.
+**Album work (any sheet, legend, label, line, export): first read `docs/wiki/album-rules.md`** — the owner's rules distilled
+from all remarks; every new owner remark goes there (and to `docs/standards/albums/label-rules.md`) before code.
 
 Keep this file short: it is loaded into every turn and every subagent. History lives in docs:
 `docs/grado2-changelog.md` (ГРАДО 2, newest on top), `docs/grado2-plan.md`, `docs/ux/grado2-ux.md`,
