@@ -28,4 +28,17 @@ eq(R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), "egko", "ЕГКО 
 eq(R.obstacleSource({ ya: 1000, egko: 0 }, pickRoadSource), "yandex", "ЕГКО нет — Яндекс");
 eq(R.obstacleSource({ ya: 0, egko: 0 }, pickRoadSource), "none", "дорог нет");
 eq(R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), R.obstacleSource({ ya: 1000, egko: 800 }, pickRoadSource), "повтор тот же");
+// F1 (06.10.2026): пояснение про СЗЗ — все виды, в которых лежит территория; точка в конце
+eq(R.szzNote([{ code: 5, n: 4, share: 1 }, { code: 63, n: 2, share: 1 }]), "Территория расположена в границах установленных и ориентировочных санитарно-защитных зон.", "два вида, по несколько зон");
+eq(R.szzNote([{ code: 63, n: 1, share: 1 }]), "Территория расположена в границах ориентировочной санитарно-защитной зоны.", "одна зона");
+eq(R.szzNote([{ code: 63, n: 1, share: 1 }, { code: 5, n: 1, share: 1 }]), "Территория расположена в границах установленной и ориентировочной санитарно-защитной зоны.", "порядок видов и единственное число");
+eq(R.szzNote([{ code: 5, n: 3, share: 1 }, { code: 63, n: 1, share: 1 }]), "Территория расположена в границах установленных санитарно-защитных зон и ориентировочной санитарно-защитной зоны.", "разное число — каждый вид отдельно");
+eq(R.szzNote([{ code: 5, n: 2, share: .6 }, { code: 63, n: 1, share: 1 }]), "Территория расположена в границах ориентировочной санитарно-защитной зоны. Территория частично расположена в границах установленных санитарно-защитных зон.", "часть — отдельным предложением");
+eq(R.szzNote([{ code: 5, n: 1, share: .001 }]), "", "касается краем — не пишем");
+eq(R.szzNote([]), "", "зон нет");
+eq(R.szzNote([{ code: 5, n: 1, share: 1 }, { code: 62, n: 1, share: 1 }]).endsWith("."), true, "точка в конце");
+const NT = { items: [{ kind: "note", label: "x" }] }, G1 = { title: "A", items: [{ label: "a" }] }, G2 = { title: "Транспорт", items: [{ kind: "rail" }] };
+eq(R.notesLast([G1, NT, G2]).map(g => g.title), ["A", "Транспорт", undefined], "пояснение — последним");
+eq(R.notesLast([G1, G2]).map(g => g.title), ["A", "Транспорт"], "без пояснений порядок тот же");
+eq(R.notesLast(undefined), [], "нет легенды");
 console.log(n + " checks ok");
