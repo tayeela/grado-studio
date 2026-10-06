@@ -11,6 +11,13 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
 - History: `docs/grado2-changelog.md` (newest on top), `git log`; old studio and the former CLAUDE.md —
   `docs/session-log-archive.md`.
 
+## Context hygiene (Anthropic best practices)
+- One task per session: after a task is accepted and committed — new session or `/clear`; state is in
+  `docs/team/BOARD.md`, `PROGRESS.md` and `/tmp/grado-team/<date>/*-notes.md`. Two failed fixes of the same thing —
+  `/clear` and a sharper prompt. Run ГРАДО sessions from `~/grado-studio` (project roles, skills and hooks load there).
+- Compact instructions: keep the list of changed files, current version, gate/album_check commands and results,
+  open owner questions (А/Б/В), the owner's latest words verbatim.
+
 ## What it is
 Urban-planning workspace: existing situation → АГК → ППТ, album ППТ КРТ to PDF/PPTX. The working program is
 **ГРАДО 2 (`apps/grado2`)**; old studio, wizard and calc-web are closed (code kept for core tests). The owner is an urban
