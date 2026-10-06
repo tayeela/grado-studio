@@ -21,9 +21,11 @@ async function launch(name) {
     "--no-first-run", "--no-default-browser-check", "--no-sandbox", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
   procs.push({ chrome, profile });
   let port = 0;
-  for (let i = 0; i < 100 && !port; i++) { if (existsSync(join(profile, "DevToolsActivePort"))) port = +readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]; else await sleep(100); }
-  let targets; for (let i = 0; i < 50; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); break; } catch { await sleep(100); } }
-  const ws = new WebSocket(targets.find(t => t.type === "page").webSocketDebuggerUrl);
+  for (let i = 0; i < 300 && !port; i++) { if (existsSync(join(profile, "DevToolsActivePort"))) port = +readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]; else await sleep(100); }
+  // ждём, пока Chrome отдаст страницу (на медленном раннере /json отвечает не сразу или пустым списком); 30 с, не 5
+  let page; for (let i = 0; i < 300 && !page; i++) { try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === "page"); } catch { } if (!page) await sleep(100); }
+  if (!page) throw new Error(`${name}: Chrome не отдал страницу для управления (порт ${port})`);
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise(r => ws.onopen = r);
   let id = 0; const pending = new Map(), logs = [];
   const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
@@ -339,6 +341,8 @@ try {
   // 6. «только приглашённые» — у B доступа нет
   await setTacc("none");
   await B.until(`return !Collab.pid && $("hubProjName").textContent==="Выберите проект" && !$("wHubProjects").hidden`, "B: проект закрыт, открыт список", 10000);
+  // список проектов обновляется отдельным запросом после закрытия (loadProjects), на медленной машине позже: ждём условие, а не время
+  await B.until(`return /нет доступа/.test($("toast").textContent) && !${anyRow}`, "B: сообщение «больше нет доступа» и проекта нет в списке", 10000);
   check(await B.ev(`return /нет доступа/.test($("toast").textContent) && !document.body.classList.contains("hub-viewer") && !${anyRow}`), "B: «только приглашённые» — сообщение «больше нет доступа», проект закрыт, в списке его нет");
 
   // 7. снова «вся команда правит», затем A убирает B из команды
