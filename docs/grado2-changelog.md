@@ -6,7 +6,9 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   does not answer (or there is no territory yet) the district lookup ends without a district, and the zone source line
   kept saying «район определяется…»; now it says «район не определён — выберите зону» once the lookup is over, as
   «Показатели» does. E2E «Условия проекта» waits for the lookup to end instead of 0.5 s (it failed on CI when the portal
-  was slow).
+  was slow). Two more timing-only E2E steps made robust: «GeoJSON для QGIS» looks for «GeoJSON готов» among all toasts
+  shown during the export (a «Создан слой…» toast could replace it at once), T62 «секунды растут» waits up to 6 s for
+  «· 2 с» instead of reading one point after 2.2 s (each download counts its own seconds).
 - **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,

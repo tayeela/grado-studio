@@ -742,9 +742,12 @@ export default async p => {
     check(await p.ev(`return !$("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "true" && document.activeElement === $("bExport") && /Excel/.test($("expMenu").innerText) && /ГИС ОГД в DXF/.test($("expMenu").innerText) && /PPTX альбома/.test($("expMenu").innerText)`), "«Выгрузка ▾» открывает меню, фокус на первом пункте «Чертёж DXF»");
     await p.key("Escape", "Escape", { vk: 27 });
     check(await p.ev(`return $("expMenu").hidden`), "Esc закрывает меню выгрузок");
-    await p.ev(`$("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
+    // все сообщения за время выгрузки: «GeoJSON готов» может сразу перекрыть другое (например, «Создан слой…») — смотрим журнал, а не последнее
+    await p.ev(`window.__toasts = []; window.__tobs = new MutationObserver(() => window.__toasts.push($("toast").textContent)); window.__tobs.observe($("toast"), { childList: true, characterData: true, subtree: true });
+      $("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100));
+      for (let i = 0; i < 30 && !window.__toasts.some(t => /GeoJSON готов/.test(t)); i++) await new Promise(r=>setTimeout(r,100)); window.__tobs.disconnect(); return 1`);
     check(await p.ev(`const e = window.__ex[0]; return !!e && e.u === "/api/export/geojson" && e.st === 200 && e.ct === "application/zip" && e.pk && $("expMenu").hidden
-      && e.body.layers.length === Object.keys(DATA).length + (TERR ? 1 : 0) && e.body.layers.every(l => l.name && l.features) && /GeoJSON готов/.test($("toast").textContent)`), "«GeoJSON для QGIS»: тот же набор слоёв, что у DXF (плюс граница), ответ — zip");
+      && e.body.layers.length === Object.keys(DATA).length + (TERR ? 1 : 0) && e.body.layers.every(l => l.name && l.features) && window.__toasts.some(t => /GeoJSON готов/.test(t))`), "«GeoJSON для QGIS»: тот же набор слоёв, что у DXF (плюс граница), ответ — zip");
     await p.ev(`$("bExpMore").click(); $("bExpXls").click(); for (let i = 0; i < 400 && window.__ex.length < 2; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
     check(await p.ev(`const e = window.__ex[1], t = RESULT.tepNode._tep; return !!e && e.u === "/api/export/xlsx" && e.st === 200 && /spreadsheetml/.test(e.ct) && e.pk
       && e.body.tep.length > 5 && e.body.tep.every(r => typeof r.value === "number" || r.value === null) && e.body.tep.some(r => typeof r.value === "number" && r.value > 0)
@@ -1230,8 +1233,9 @@ export default async p => {
         seen = await p.ev(`const t = $("shStat").textContent; return /^Лист \\d+ из 9: .+ — загрузка .+… · \\d+ с$/.test(t) && !$("shStop").hidden ? [t, $("toast").textContent] : null`); }
       check(!!seen, `T62: во время сборки в строке состояния «${seen?.[0]}»`);
       check(seen && /^Лист \d+ из 9: /.test(seen[1]), "T62: то же — в сообщении «" + (seen?.[1] || "").slice(0, 70) + "»");
-      await p.sleep(2200);                           // первая выгрузка (лист 3) ещё идёт: 4 с на запрос
-      const el = await p.ev(`return $("shStat").textContent`);
+      // запрос длится 4 с, счёт секунд — свой у каждой выгрузки: ждём «2 с» и больше (до 6 с), а не одну точку через 2,2 с —
+      // первая строка могла попасть на конец выгрузки, и через 2,2 с шла уже следующая с «1 с»
+      let el = ""; for (let i = 0; i < 24 && !/ · [2-9] с$/.test(el); i++) { await p.sleep(250); el = await p.ev(`return $("shStat").textContent`); }
       check(/ · [2-9] с$/.test(el), `T62: секунды растут: «${el}»`);
       // 3. «Остановить»: сборка заканчивается после текущего листа, собранные листы остаются
       const k = await p.ev(`const m = /^Лист (\\d+) из 9/.exec($("shStat").textContent); $("shStop").click(); await new Promise(r => setTimeout(r, 100)); return [m ? +m[1] : -1, $("shStat").textContent, $("shStop").disabled]`);
