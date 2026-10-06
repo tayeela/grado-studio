@@ -933,6 +933,35 @@ class HubHttp(unittest.TestCase):
         self.assertEqual(s, 200, j)
         return j["id"]
 
+    def test_guest_mode(self):
+        """GRADO2_GUEST=1 (владелец 06.10.2026): сайт открывается гостем без пароля; гость — не администратор, видит только
+        проекты, куда позван; после «Выйти» — экран входа (кука grado_noguest), кнопка «Войти гостем» возвращает гостя."""
+        self.assertEqual(self.call("/api/hub/guest", {})[0], 403)                 # выключено — гостевого входа нет
+        with mock.patch.object(S, "GUEST", True):
+            s, r, j = self.call("/api/hub/me")
+            self.assertEqual((s, j["user"]["login"], j["user"]["admin"], j["user"].get("guest")), (200, "guest", False, True))
+            guest = r.getheader("Set-Cookie").split(";")[0]
+            self.assertEqual(self.call("/api/hub/me", cookie=guest)[2]["user"]["name"], "Гость")
+            ann = self.login("ann")
+            pid = self.new_project(ann, "Чужой")
+            self.assertEqual(self.call("/api/hub/projects", cookie=guest)[2]["projects"], [])     # чужие проекты не видны
+            self.assertEqual(self.call("/api/hub/invites", {}, guest)[0], 403)                    # приглашать может только администратор
+            self.assertEqual(self.call("/api/hub/login", {"login": "guest", "password": ""})[0], 401)   # по паролю гостем не войти
+            s, _, j = self.call(f"/api/hub/project/{pid}/members", {"login": "guest", "role": "editor"}, ann)
+            self.assertEqual(s, 200, j)
+            self.assertEqual([p["id"] for p in self.call("/api/hub/projects", cookie=guest)[2]["projects"]], [pid])   # позвали — виден
+            s, r, _ = self.call("/api/hub/logout", {}, guest)
+            out = r.getheader("Set-Cookie")
+            self.assertIn("grado_noguest=1", out)
+            s, _, j = self.call("/api/hub/me", cookie="grado_noguest=1")
+            self.assertEqual((s, j.get("guest")), (401, True))                     # экран входа с кнопкой «Войти гостем»
+            s, r, j = self.call("/api/hub/guest", {}, "grado_noguest=1")
+            self.assertEqual((s, j["user"]["login"]), (200, "guest"))
+            self.assertIn("grado_noguest=; ", r.getheader("Set-Cookie"))
+        self.hub.update_user(self.hub.session_user(self.login("boss").split("=", 1)[1]), "guest", disabled=True)
+        with mock.patch.object(S, "GUEST", True):
+            self.assertEqual(self.call("/api/hub/me")[0], 403)                    # администратор отключил гостя
+
     @staticmethod
     def layer(title="Слой", n=0):
         return {"spec": {"title": title, "geom": "poly"}, "data": {"type": "FeatureCollection", "features": [

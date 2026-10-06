@@ -35,6 +35,7 @@ from pathlib import Path
 # ---------- параметры (константы модуля: тесты подменяют их) ----------
 SCRYPT_N = 2 ** 14                 # стоимость scrypt; в тестах снижается
 SESSION_TTL = 30 * 24 * 3600       # сессия живёт 30 дней с последнего обращения (скользящий срок)
+GUEST_LOGIN = "guest"                # гостевая учётная запись (GRADO2_GUEST=1 на сервере): вход без пароля
 SESSION_TOUCH = 600                # last_seen обновляется на диске не чаще раза в 10 минут
 INVITE_TTL = 7 * 24 * 3600
 LOGIN_FAILS = 5                    # неудач на один логин
@@ -482,7 +483,10 @@ class Hub:
 
     def _public(self, login):
         u = self.users[login]
-        return {"login": login, "name": u.get("name") or login, "admin": bool(u.get("admin"))}
+        out = {"login": login, "name": u.get("name") or login, "admin": bool(u.get("admin"))}
+        if u.get("guest"):
+            out["guest"] = True
+        return out
 
     def _actor(self, user):
         """Свежая запись пользователя по словарю от session_user (не верим устаревшему admin)."""
@@ -662,6 +666,25 @@ class Hub:
             if self.users.get(lk, {}).get("disabled"):
                 raise HubError(403, "учётная запись отключена")
             return self._new_session(lk, ua), self._public(lk)
+
+    def guest_session(self, ua=""):
+        """Гостевой вход (сервер с GRADO2_GUEST=1, владелец 06.10.2026): учётная запись GUEST_LOGIN без известного пароля,
+        не администратор — видит свои проекты и те, куда её позвали в «Доступе». Логин, занятый обычным человеком,
+        гостю не отдаётся. Отключённый в «Пользователях» гость не входит."""
+        salt = os.urandom(16)
+        pw = _hash_password(secrets.token_urlsafe(32), salt)      # пароль никто не знает: войти по паролю нельзя
+        with self.lock:
+            self._sync()
+            u = self.users.get(GUEST_LOGIN)
+            if u is None:
+                self.users[GUEST_LOGIN] = {"pw": pw, "salt": salt.hex(), "admin": False, "name": "Гость",
+                                           "created": _now(), "disabled": False, "guest": True}
+                self._save("users.json", self.users)
+            elif not u.get("guest"):
+                raise HubError(409, "логин guest занят обычной учётной записью")
+            elif u.get("disabled"):
+                raise HubError(403, "гостевой вход отключён администратором")
+            return self._new_session(GUEST_LOGIN, ua), self._public(GUEST_LOGIN)
 
     def register(self, invite, login, name, password, ip, ua=""):
         ip = str(ip or "?")[:64]

@@ -30,7 +30,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_walk`, `_pts`, `_explode`, `system_of`, `to_wgs84`, `_clean`, `read_geojson`, `_kml_coords`, `_kml_geoms`, `read_kml`, `_prj_hint`, `read_shp_set`, `check_size`, `_check_unpacked`, `import_files`
 
-### `apps/grado2/hub.py` — 1830 стр.
+### `apps/grado2/hub.py` — 1853 стр.
 
 Хаб совместной работы ГРАДО 2 (режим GRADO2_HUB=1): аккаунты, проекты с ролями, ревизии разделов, живые события (presence, комментарии), история версий.
 
@@ -66,7 +66,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2587 стр.
+### `apps/grado2/server.py` — 2610 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -140,11 +140,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 Генплан (лист 6 альбома): название и индекс типа функциональной зоны, цвет по таблице MapInfo ТиНАО (правило 13). Старая Москва (gisogd.func_zones, virtual1742) несёт naimfunkzony + fztip; ТиНАО (gisogd.func_zones_tinao) — «Вид зоны» + fz_type. Цвет — по индексу из любого слоя, сплошной; нет индекса — по названию, иначе fallback (палитра Эталона). Тесты — tests/test_gpzones_js.py.
 
 
-### `apps/grado2/web/hub.js` — 829 стр.
+### `apps/grado2/web/hub.js` — 841 стр.
 
 ГРАДО 2 · совместная работа: интерфейс (вход, проекты, доступ, комментарии, история, присутствие на карте). Работает только в совместном режиме (window.HUB_MODE ставит project.js после /api/health); в обычном ничего не показывает. Движок — web/collab.js (window.Collab); здесь только окна, шапка и наложения на карту.
 
-Функции: `C`, `lsGet`, `lsSet`, `myRole`, `canEdit`, `isOwner`, `q`, `plural`, `two`, `toMs`, `when`, `size`, `uname`, `initials`, `safeColor`, `ink`, `rgba`, `list`, `lyTitle`, `setText`, `hub`, `fail`, `typing`, `draw`, `armedIs`, `twoStep`, `setLmode`, `lock`, `showLogin`, `askLogin`, `submitLogin`, `sessionLost`, `enter`, `startPage`, `grabJoin`, `getJoin`, `clearJoin`, `doJoin`, `boot`, `openProject`, `closedProject`, `loadProjects`, `loadTeams`, `myTeam`, `teamOpts`, `fillNewTeam`, `refreshMeta`, `setSync`, `renderBar`, `renderAv`, `applyRole`, `menu`, `norm`, `teamName`, `projGroups`, `createProject`, `copyProject`, `el_copyName`, `wireProjects`, `linkUrl`, `linkBlock`, `loadLink`, `setLink`, `wireShare`, `wireTeams`, `uidIndex`, `findByUid`, `geomPoint`, `anchorPoint`, `anchorText`, `sortedComments`, `loadComments`, `cpath`, `flyTo`, `selectComment`, `startDraft`, `endDraft`, `setCMode`, `wireComments`, `loadHistory` и ещё 15
+Функции: `C`, `lsGet`, `lsSet`, `myRole`, `canEdit`, `isOwner`, `q`, `plural`, `two`, `toMs`, `when`, `size`, `uname`, `initials`, `safeColor`, `ink`, `rgba`, `list`, `lyTitle`, `setText`, `hub`, `fail`, `typing`, `draw`, `armedIs`, `twoStep`, `setLmode`, `lock`, `showLogin`, `askLogin`, `submitLogin`, `guestLogin`, `sessionLost`, `enter`, `startPage`, `grabJoin`, `getJoin`, `clearJoin`, `doJoin`, `boot`, `openProject`, `closedProject`, `loadProjects`, `loadTeams`, `myTeam`, `teamOpts`, `fillNewTeam`, `refreshMeta`, `setSync`, `renderBar`, `renderAv`, `applyRole`, `menu`, `norm`, `teamName`, `projGroups`, `createProject`, `copyProject`, `el_copyName`, `wireProjects`, `linkUrl`, `linkBlock`, `loadLink`, `setLink`, `wireShare`, `wireTeams`, `uidIndex`, `findByUid`, `geomPoint`, `anchorPoint`, `anchorText`, `sortedComments`, `loadComments`, `cpath`, `flyTo`, `selectComment`, `startDraft`, `endDraft`, `setCMode`, `wireComments` и ещё 16
 
 ### `apps/grado2/web/insol.js` — 189 стр.
 

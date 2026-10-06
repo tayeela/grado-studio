@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
+  без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
+  built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest
+  sees own projects and those it is invited to («Доступ» → guest). «Выйти» sets the browser-session cookie `grado_noguest`,
+  so the login screen stays for the administrator; it has «Войти гостем, без пароля» (`POST /api/hub/guest`). A normal
+  account already named `guest` is never handed out (409); a disabled guest gets 403. Off by default: nothing changes until
+  the env is set. Test `HubHttp.test_guest_mode`; how-to in `docs/grado2-collab.md`.
 - **2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.** When the OSM portal
   does not answer (or there is no territory yet) the district lookup ends without a district, and the zone source line
   kept saying «район определяется…»; now it says «район не определён — выберите зону» once the lookup is over, as

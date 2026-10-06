@@ -51,7 +51,7 @@ async function hub(path, body) {
   catch { throw new Error("нет связи с сервером"); }
   let j = null; try { j = await r.json(); } catch { }
   if (r.status === 401 && !/^(login|register|me|password)$/.test(path)) { sessionLost(); throw Object.assign(new Error("нужно войти заново"), { status: 401 }); }
-  if (!r.ok) throw Object.assign(new Error(j?.error || "ошибка сервера " + r.status), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(j?.error || "ошибка сервера " + r.status), { status: r.status, guest: !!j?.guest });
   return j;
 }
 const fail = pre => e => { if (e.status !== 401) toast((pre ? pre + ": " : "") + e.message); };
@@ -100,6 +100,17 @@ async function submitLogin(e) {
   } catch (err) { msg(err.message); }
   finally { $("hubGo").disabled = false; }
 }
+// гостевой вход (сервер с GRADO2_GUEST=1): без логина и пароля, учётная запись «Гость»
+async function guestLogin() {
+  $("hubGuest").disabled = true; setText("hubMsg", "");
+  try {
+    const r = await hub("guest", {});
+    if (st.me && r.user.login !== st.me.login) return location.reload();
+    $("hubLogin").hidden = true; lock(false);
+    const res = loginRes; loginRes = null; res?.(r.user);
+  } catch (err) { setText("hubMsg", err.message); }
+  finally { $("hubGuest").disabled = false; }
+}
 function sessionLost() {
   if (!$("hubLogin").hidden) return;
   askLogin("Вход закончился. Войдите снова — несохранённые правки остаются на экране и уйдут на сервер.").then(u => { enter(u, true); C()?.resume?.(); loadProjects(); });
@@ -110,7 +121,7 @@ let inited = null, bootP = null;
 function enter(user, again) {
   st.me = user; st.names[user.login] = user.name || user.login;
   setText("hubAccName", user.name || user.login); $("hubAcc").title = `Вы вошли как ${user.name || user.login} (${user.login})`;
-  $("hubAdminItem").hidden = !user.admin; $("hubBar").hidden = false; $("hubCTool").hidden = false;
+  $("hubAdminItem").hidden = !user.admin; $("hubAccMenu").querySelector('[data-hubact="pw"]').hidden = !!user.guest;   // у гостя пароля нет $("hubBar").hidden = false; $("hubCTool").hidden = false;
   if (inited !== user.login) { inited = user.login; C()?.init?.(user); }
   if (again) return;
   if (getJoin()) { doJoin().then(ok => { if (!ok) startPage(); }); return; }
@@ -147,7 +158,7 @@ async function doJoin() {
 function boot() {
   return bootP ||= (async () => {
     wire();
-    let u = null; try { u = (await hub("me")).user; } catch { }
+    let u = null; try { u = (await hub("me")).user; } catch (e) { $("hubGuest").hidden = !e.guest; }   // гостевой сайт: кнопка «Войти гостем»
     if (!u) u = await askLogin();
     return u;
   })();
@@ -789,6 +800,7 @@ function wire() {
   hubHooks(); ALLMAPS.forEach(overlays);
   const att = window.attachDataLayers; window.attachDataLayers = m => { att?.(m); overlays(m); };
   $("hubLoginForm").addEventListener("submit", submitLogin);
+  $("hubGuest").onclick = guestLogin;
   document.querySelectorAll("[data-lmode]").forEach(b => b.onclick = () => setLmode(b.dataset.lmode));
   wireProjects(); wireShare(); wireTeams(); wireComments(); wireHistory(); wireAdmin(); wireAccount();
   addEventListener("keydown", e => { if (e.key === "Escape" && st.cMode && !e.target.closest?.("input,textarea")) setCMode(false); });
