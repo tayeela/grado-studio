@@ -12,17 +12,25 @@ export default async p => {
   check(await p.ev(`return !$("start").hidden`), "пустой проект показывает «С чего начать»");
   check(await p.ev(`try{localStorage.removeItem("grado2.start")}catch{} startOff=false; selectTerr(false); setTool("select"); syncStatus(); await new Promise(r=>setTimeout(r,100)); const t=$("start").innerText; return !$("start").hidden && /Начните с границы/.test(t) && /Нарисовать границу/.test(t) && /Пример/.test(t) && $("start").querySelectorAll(".btn").length===2`), "T27: приветствие на пустой карте — одна фраза и два действия «Нарисовать границу», «Пример»");
   check(await p.ev(`const a=uiK(); document.documentElement.dataset.ui="large"; await new Promise(r=>setTimeout(r,100)); const b=uiK(); delete document.documentElement.dataset.ui; return a===1 && Math.abs(b-7/6)<.01`), "T27: uiK() читает масштаб интерфейса (1 и 7/6 при «крупном»)");
-  check(await p.ev(`const src=()=>{const l=mMain.getLayers().getArray().find(x=>x.get("basemap")); return String(l.getSource().getUrls?.()?.[0]||"osm:"+l.getSource().constructor.name)}, urlOk=u=>/cartocdn/.test(u);
+  const t38 = await p.ev(`const src=()=>{const l=mMain.getLayers().getArray().find(x=>x.get("basemap")); return String(l.getSource().getUrls?.()?.[0]||"osm:"+l.getSource().constructor.name)}, urlOk=u=>/cartocdn/.test(u);
     let md=0; const om=window.markDirty; window.markDirty=(...a)=>{md++; return om?.(...a)}; const d0=PROJ.dirty, b0=BASE;
-    document.documentElement.dataset.theme="light"; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));   // light -> dark
+    // подложка меняется не сразу (медленный раннер CI): ждём смены источника до 3 с, а не 0,2 с
+    const until=async f=>{ for (let i=0; i<30 && !f(); i++) await new Promise(r=>setTimeout(r,100)); };
+    document.documentElement.dataset.theme="light"; $("bTheme").click(); await until(()=>/World_Dark_Gray_Base/.test(src()));   // light -> dark
     const dark=src(), darkAttr=mMain.getLayers().getArray().find(x=>x.get("basemap")).getSource().getAttributions()?.({})?.join?.(" ")||"";
-    $("bTheme").click(); await new Promise(r=>setTimeout(r,200));   // dark -> light
+    $("bTheme").click(); await until(()=>/openstreetmap/.test(src()));   // dark -> light
     const light=src(); window.markDirty=om;
-    return /World_Dark_Gray_Base/.test(dark) && /Esri/.test(darkAttr) && !/cartocdn/.test(light) && /openstreetmap/.test(light) && md===0 && PROJ.dirty===d0 && BASE===b0 && $("baseSel").options.length>=1`), "T38: тёмная тема — тёмная подложка Esri, светлая — OSM; смена темы не делает проект несохранённым, выбор подложки не меняется");
-  check(await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
-    const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
-    const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
-    window.markDirty=om; Collab.touched=ot; return light===dark && bg0!==bg1 && nb0!==nb1 && lgc.clear_background_color===bg0 && md===0 && tc===0`), "T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет");
+    const r=[/World_Dark_Gray_Base/.test(dark), /Esri/.test(darkAttr), !/cartocdn/.test(light) && /openstreetmap/.test(light), md===0, PROJ.dirty===d0, BASE===b0, $("baseSel").options.length>=1];
+    return r.every(Boolean) || JSON.stringify({r, dark: dark.slice(0, 80), light: light.slice(0, 80), md})`);
+  check(t38 === true, `T38: тёмная тема — тёмная подложка Esri, светлая — OSM; смена темы не делает проект несохранённым, выбор подложки не меняется${t38 === true ? "" : " " + t38}`);
+  // смена темы на медленном раннере CI — не за 0,2 с: ждём смены цвета холста (до 3 с) и при сбое называем условие
+  const t27 = await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
+    const until=async f=>{ for (let i=0; i<30 && !f(); i++) await new Promise(r=>setTimeout(r,100)); };
+    const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await until(()=>lgc.clear_background_color!==bg0);
+    const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await until(()=>lgc.clear_background_color===bg0);
+    window.markDirty=om; Collab.touched=ot; const r=[light===dark, bg0!==bg1, nb0!==nb1, lgc.clear_background_color===bg0, md===0, tc===0];
+    return r.every(Boolean) || JSON.stringify({r, md, tc})`);
+  check(t27 === true, `T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет${t27 === true ? "" : " " + t27}`);
   {
     const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
     const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900); const r10 = await res(), c1 = await at();
@@ -402,11 +410,12 @@ export default async p => {
   await p.ev(`$("normQ").value=""; $("normQ").dispatchEvent(new Event("input",{bubbles:true})); const r=document.querySelector('.nrow[data-id="doo_z2"]'); r.classList.remove("bad"); r.querySelector(".nerr").hidden=true; r.querySelector("input").value="63"; return 1`);
   check(await p.ev(`document.body.classList.add("hub-viewer"); window.Norms.refresh(); const ok=[...document.querySelectorAll("#norms input[type=number]")].every(i=>i.disabled) && !document.querySelector("#norms .nro").hidden && $("normAll").disabled; document.body.classList.remove("hub-viewer"); window.Norms.refresh(); return ok`), "наблюдатель видит окно нормативов только для чтения");
   // T6 шаг 2: «Условия проекта» в «Нормативах» — свободные места и зона; пересчёт, «Резерв участков», сохранение, зона не затирается районом
-  await p.ev(`winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const q=$("normQ"); q.value=""; q.dispatchEvent(new Event("input",{bubbles:true}));
-    const t0=Date.now(); while (Date.now()-t0<15000 && /определяется/.test($("normZoneSrc").textContent)) await new Promise(r=>setTimeout(r,200));   // район ещё определяется (медленный раннер CI)
-    return 1`);
+  // поиск района идёт через портал OSM (до 30 с) — ждём его конца, а не время
+  // поиск района (портал OSM, до 30 с) стартует с задержкой 0,4 с: ждём, пока он завершён для этой границы (tp.rev),
+  // иначе он закончится посреди следующих шагов и поменяет граф проекта
+  await p.ev(`for (let i = 0; i < 350 && (RESULT.tepNode?._placeBusy || tepParams(RESULT.tepNode).rev !== TERR_REV); i++) await new Promise(r=>setTimeout(r,100)); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const q=$("normQ"); q.value=""; q.dispatchEvent(new Event("input",{bubbles:true})); return 1`);
   const cd0 = await p.ev(`const tp=tepParams(RESULT.tepNode); return [!!document.querySelector("#norms .ncond"), ["doo","school","clinic"].every(k=>document.querySelector('[data-fid="'+k+'"]')), $("normZone").value === String(tp.zone), JSON.stringify(tp.free ?? null), tp.zoneSet, tp.auto, $("normZoneSrc").textContent.trim(), !!RESULT.tepNode._tep.m.social_res_ha || RESULT.tepNode._tep.m.social_res_ha === 0]`);
-  check(cd0[0] && cd0[1] && cd0[2] && cd0[3] === 'null' && !cd0[4] && /по району|район не в списках/.test(cd0[6]), `блок «Условия проекта» над группами: зона и три поля по 0, источник зоны «${cd0[6]}»`);
+  check(cd0[0] && cd0[1] && cd0[2] && cd0[3] === 'null' && !cd0[4] && /по району|район не в списках|район не определён/.test(cd0[6]), `блок «Условия проекта» над группами: зона и три поля по 0, источник зоны «${cd0[6]}»`);
   check(await p.ev(`const tp=tepParams(RESULT.tepNode); winOpen("wNorms", false); await new Promise(r=>setTimeout(r,200)); const a=JSON.stringify(graph.serialize()); recompute(true); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,900)); window.Norms.refresh(); const b=JSON.stringify(graph.serialize());
     return a===b && !("free" in tp) && !("zoneSet" in tp)`), "без правок открытие «Нормативов» и пересчёт ТЭП не меняют граф проекта: tp.free и tp.zoneSet не создаются");
   for (const [k, v] of [["doo", "175"], ["school", "400"], ["clinic", "100"]]) {
@@ -743,9 +752,12 @@ export default async p => {
     check(await p.ev(`return !$("expMenu").hidden && $("bExpMore").getAttribute("aria-expanded") === "true" && document.activeElement === $("bExport") && /Excel/.test($("expMenu").innerText) && /ГИС ОГД в DXF/.test($("expMenu").innerText) && /PPTX альбома/.test($("expMenu").innerText)`), "«Выгрузка ▾» открывает меню, фокус на первом пункте «Чертёж DXF»");
     await p.key("Escape", "Escape", { vk: 27 });
     check(await p.ev(`return $("expMenu").hidden`), "Esc закрывает меню выгрузок");
-    await p.ev(`$("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
+    // все сообщения за время выгрузки: «GeoJSON готов» может сразу перекрыть другое (например, «Создан слой…») — смотрим журнал, а не последнее
+    await p.ev(`window.__toasts = []; window.__tobs = new MutationObserver(() => window.__toasts.push($("toast").textContent)); window.__tobs.observe($("toast"), { childList: true, characterData: true, subtree: true });
+      $("bExpMore").click(); $("bExpGeo").click(); for (let i = 0; i < 400 && !window.__ex.length; i++) await new Promise(r=>setTimeout(r,100));
+      for (let i = 0; i < 30 && !window.__toasts.some(t => /GeoJSON готов/.test(t)); i++) await new Promise(r=>setTimeout(r,100)); window.__tobs.disconnect(); return 1`);
     check(await p.ev(`const e = window.__ex[0]; return !!e && e.u === "/api/export/geojson" && e.st === 200 && e.ct === "application/zip" && e.pk && $("expMenu").hidden
-      && e.body.layers.length === Object.keys(DATA).length + (TERR ? 1 : 0) && e.body.layers.every(l => l.name && l.features) && /GeoJSON готов/.test($("toast").textContent)`), "«GeoJSON для QGIS»: тот же набор слоёв, что у DXF (плюс граница), ответ — zip");
+      && e.body.layers.length === Object.keys(DATA).length + (TERR ? 1 : 0) && e.body.layers.every(l => l.name && l.features) && window.__toasts.some(t => /GeoJSON готов/.test(t))`), "«GeoJSON для QGIS»: тот же набор слоёв, что у DXF (плюс граница), ответ — zip");
     await p.ev(`$("bExpMore").click(); $("bExpXls").click(); for (let i = 0; i < 400 && window.__ex.length < 2; i++) await new Promise(r=>setTimeout(r,100)); return 1`);
     check(await p.ev(`const e = window.__ex[1], t = RESULT.tepNode._tep; return !!e && e.u === "/api/export/xlsx" && e.st === 200 && /spreadsheetml/.test(e.ct) && e.pk
       && e.body.tep.length > 5 && e.body.tep.every(r => typeof r.value === "number" || r.value === null) && e.body.tep.some(r => typeof r.value === "number" && r.value > 0)
@@ -1231,8 +1243,9 @@ export default async p => {
         seen = await p.ev(`const t = $("shStat").textContent; return /^Лист \\d+ из 9: .+ — загрузка .+… · \\d+ с$/.test(t) && !$("shStop").hidden ? [t, $("toast").textContent] : null`); }
       check(!!seen, `T62: во время сборки в строке состояния «${seen?.[0]}»`);
       check(seen && /^Лист \d+ из 9: /.test(seen[1]), "T62: то же — в сообщении «" + (seen?.[1] || "").slice(0, 70) + "»");
-      await p.sleep(2200);                           // первая выгрузка (лист 3) ещё идёт: 4 с на запрос
-      const el = await p.ev(`return $("shStat").textContent`);
+      // запрос длится 4 с, счёт секунд — свой у каждой выгрузки: ждём «2 с» и больше (до 6 с), а не одну точку через 2,2 с —
+      // первая строка могла попасть на конец выгрузки, и через 2,2 с шла уже следующая с «1 с»
+      let el = ""; for (let i = 0; i < 24 && !/ · [2-9] с$/.test(el); i++) { await p.sleep(250); el = await p.ev(`return $("shStat").textContent`); }
       check(/ · [2-9] с$/.test(el), `T62: секунды растут: «${el}»`);
       // 3. «Остановить»: сборка заканчивается после текущего листа, собранные листы остаются
       const k = await p.ev(`const m = /^Лист (\\d+) из 9/.exec($("shStat").textContent); $("shStop").click(); await new Promise(r => setTimeout(r, 100)); return [m ? +m[1] : -1, $("shStat").textContent, $("shStop").disabled]`);

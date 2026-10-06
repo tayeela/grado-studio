@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
+  без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
+  built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest
+  sees own projects and those it is invited to («Доступ» → guest). «Выйти» sets the browser-session cookie `grado_noguest`,
+  so the login screen stays for the administrator; it has «Войти гостем, без пароля» (`POST /api/hub/guest`). A normal
+  account already named `guest` is never handed out (409); a disabled guest gets 403. Off by default: nothing changes until
+  the env is set. Test `HubHttp.test_guest_mode`; how-to in `docs/grado2-collab.md`.
+- **2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.** When the OSM portal
+  does not answer (or there is no territory yet) the district lookup ends without a district, and the zone source line
+  kept saying «район определяется…»; now it says «район не определён — выберите зону» once the lookup is over, as
+  «Показатели» does. E2E «Условия проекта» waits for the lookup to end instead of 0.5 s (it failed on CI when the portal
+  was slow). Two more timing-only E2E steps made robust: «GeoJSON для QGIS» looks for «GeoJSON готов» among all toasts
+  shown during the export (a «Создан слой…» toast could replace it at once), T62 «секунды растут» waits up to 6 s for
+  «· 2 с» instead of reading one point after 2.2 s (each download counts its own seconds). T38 (theme → basemap) waits up to 3 s for
+  the basemap source to change instead of 0.2 s and names the failed condition; T27 (theme → graph canvas) waits for the
+  canvas colour the same way; «Условия проекта» waits until the district lookup has finished for the current boundary
+  (`tp.rev === TERR_REV`), not only while it is busy — it starts after 0.4 s and used to end in the middle of the next step. Collab
+  «B: открыл «Проверка»» waits up to 5 s for the header (name, role), which updates just after `Collab.pid`.
 - **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,

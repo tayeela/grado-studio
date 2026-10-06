@@ -58,6 +58,7 @@ body.hub-cmode #mMain{cursor:crosshair!important}
 .hublogin label[hidden]{display:none}
 .hublogin input,.hubdlg input{height:var(--h-lg);border:1px solid var(--line-2);background:var(--field);color:var(--text);border-radius:var(--r-1);padding:0 8px;width:100%}
 .hublogin .btn.primary{height:var(--h-lg);justify-content:center;font-size:var(--fs-l)}
+.hublogin #hubGuest{justify-content:center}
 .hubtabs{display:flex;border-bottom:1px solid var(--line)}
 .hubtabs button{flex:1 1 auto;border:1px solid transparent;border-bottom:0;background:none;height:28px;padding:0 8px;border-radius:var(--r-1) 3px 0 0;color:var(--muted)}
 .hubtabs button[aria-selected="true"]{background:var(--field);border-color:var(--line);color:var(--text);margin-bottom:-1px}
