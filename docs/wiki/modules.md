@@ -140,7 +140,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 Генплан (лист 6 альбома): название и индекс типа функциональной зоны, цвет по таблице MapInfo ТиНАО (правило 13). Старая Москва (gisogd.func_zones, virtual1742) несёт naimfunkzony + fztip; ТиНАО (gisogd.func_zones_tinao) — «Вид зоны» + fz_type. Цвет — по индексу из любого слоя, сплошной; нет индекса — по названию, иначе fallback (палитра Эталона). Тесты — tests/test_gpzones_js.py.
 
 
-### `apps/grado2/web/hub.js` — 841 стр.
+### `apps/grado2/web/hub.js` — 842 стр.
 
 ГРАДО 2 · совместная работа: интерфейс (вход, проекты, доступ, комментарии, история, присутствие на карте). Работает только в совместном режиме (window.HUB_MODE ставит project.js после /api/health); в обычном ничего не показывает. Движок — web/collab.js (window.Collab); здесь только окна, шапка и наложения на карту.
 
