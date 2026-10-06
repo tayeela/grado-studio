@@ -1321,9 +1321,14 @@ export default async p => {
         setLayerData("yandex.hd_roads", ya); setLayerData("egko.roads", eg);
         const vec = roads(albumSpec([mk("use")])), sat = roads(albumSpec([mk("ortho")]));
         setLayerData("egko.roads", fc([])); const yaOnly = roads(albumSpec([mk("use")]));
-        return JSON.stringify({ vec: vec.length, vecType: vec[0]?.g.type, vecAbove: vec[0] && turf.bbox(vec[0].g)[1] > s + (n - s) * .4, sat: sat.length, satBelow: sat[0] && turf.bbox(sat[0].g)[3] < s + (n - s) * .4, yaOnly: yaOnly.length });
+        // части векторного листа: ЕГКО (две полосы со щелью) — одной частью сверху; дорога Яндекса, которой у ЕГКО нет, —
+        // добавлена отдельной частью снизу (lr 19, F4 06.10.2026)
+        const parts = vec.flatMap(f => f.g.type === "MultiPolygon" ? f.g.coordinates.map(c => ({ type: "Polygon", coordinates: c })) : [f.g]);
+        const above = parts.filter(g => turf.bbox(g)[1] > s + (n - s) * .4).length, below = parts.filter(g => turf.bbox(g)[3] < s + (n - s) * .4).length;
+        return JSON.stringify({ vec: vec.length, above, below, sat: sat.length, satBelow: sat[0] && turf.bbox(sat[0].g)[3] < s + (n - s) * .4, yaOnly: yaOnly.length });
       } finally { keys.forEach(k => setLayerData(k, saved[k] || fc([]))); }`));
-    check(r.vec === 1 && r.vecType === "Polygon" && r.vecAbove, "T84: векторный лист — дороги ЕГКО (не Яндекса), две части со щелью слиты в один полигон");
+    check(r.vec === 1 && r.above === 1, "T84: векторный лист — дороги ЕГКО, две части со щелью слиты в один полигон");
+    check(r.below === 1, "T84/F4: дорога Яндекса, которой нет у ЕГКО, добавлена на векторный лист");
     check(r.sat === 1 && r.satBelow, "T84: лист-снимок — полигоны Яндекса первыми");
     check(r.yaOnly === 1, "T84: у ЕГКО в рамке пусто — векторный лист берёт Яндекс");
   });

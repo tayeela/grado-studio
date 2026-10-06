@@ -217,17 +217,21 @@ class PptKrtFrame(Frame):
                         "rings": [[(0, 0), (224.8, 0), (224.8, h), (0, h)]]})
             out.append({"op": "path", "closed": True, "fill": None, "stroke": (1, 1, 1), "width": 1.6, "dash": None,
                         "rings": [[(16, 16.4), (224.8, 16.4), (224.8, 280.5), (16, 280.5)]]})
-            yy = 132
-            for line in _wrap("Об одобрении плана реализации и утверждении проекта планировки комплексного развития "
-                              "территории по адресу:", 34):
-                out.append(_text(24, yy, 20, line, (1, 1, 1), "sans"))
+            # название — один текстовый блок (владелец 06.10.2026: «Об утверждении проекта планировки территории по адресу:
+            # и дальше по тексту единым текстовым блоком, а не каждая строка в отдельном поле»): в PPTX — одно поле с
+            # абзацами (block, para), в PDF — те же строки
+            blk, yy = [], 132
+            for line in _wrap("Об утверждении проекта планировки территории по адресу:", 34):
+                blk.append({**_text(24, yy, 20, line, (1, 1, 1), "sans"), "para": 0, "lead": 9})
                 yy += 9
             yy += 4
             for line in _wrap(m.get("address") or m.get("object") or "АДРЕС", 30):
-                out.append(_text(24, yy, 22, line, (1, 1, 1), "sans-bold"))
+                blk.append({**_text(24, yy, 22, line, (1, 1, 1), "sans-bold"), "para": 1, "lead": 9.5})
                 yy += 9.5
             if place:
-                out.append(_text(24, yy + 5, 20, f"({place})", (1, 1, 1), "sans"))
+                blk.append({**_text(24, yy + 5, 20, f"({place})", (1, 1, 1), "sans"), "para": 2, "lead": 9})
+            bw = max(_tw(o["text"], o["font_family"], o["size"]) for o in blk) + 3
+            out.extend({**o, "block": "title", "bw": bw} for o in blk)
             if m.get("date"):
                 out.append(_text(24, 268, 22, m["date"], (1, 1, 1), "sans-bold"))   # общий левый край с текстом
             return out

@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.
 - 2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.
 - 2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.
 - 2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.10: metro, МЦК and МЦД stations with icons; nested quotes.
 - 2026-10-05, ГРАДО 2 v0.99.8: check before export; sturdier Yandex satellite; roads where Yandex has none.
 - 2026-10-04, ГРАДО 2 v0.99.6: album assembly shows its progress; saved variants; reserve plot colours; wording.
-- 2026-10-04, ГРАДО 2 v0.99.4: template sheets refresh themselves; re-download updates the layer; honest status line.

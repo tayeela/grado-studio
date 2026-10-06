@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.** Title sheet: «Об утверждении
+  проекта планировки территории по адресу:», address and district are one text block — in PPTX one text box with
+  paragraphs (`block`/`para` on text ops, `textblock` in backend_pptx), in PDF the same lines. Photo sheet: labels avoid
+  view arrows, a street at the territory may touch an arrow only when there is no other place; arrows are drawn above
+  labels. Export shows «PDF/PPTX: лист N из M» from `GET /api/print/progress` (T87).
 - **2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.** Owner 06.10: «не может быть в старой
   москве территорий сельскохозяйственного назначения, приоритет всегда у ври, если благоустройство то это
   благоустройство». Old Moscow classifier codes «1.2.9», «1.2.13» (warehouses, railway) are no longer cut to federal «1.2»

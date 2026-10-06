@@ -670,7 +670,11 @@ async function albumFile0(kind = "pdf", only = null, force = false) {
   if (!force) { const lines = exportIssues(kind, only); if (lines.length) return askExport(kind, only, lines); }
   const list = only ? [only] : ALBUM.sheets;
   busy(true); setBuilding(true);
-  bpBegin(`${kind === "pdf" ? "PDF" : "PPTX"}: вёрстка ${list.length} ${shWord(list.length)} на сервере (лист за листом, остановить нельзя)…`, false);
+  const KN = kind === "pdf" ? "PDF" : "PPTX";
+  bpBegin(`${KN}: вёрстка ${list.length} ${shWord(list.length)} на сервере (лист за листом, остановить нельзя)…`, false);
+  // ход выгрузки: «PPTX: лист 3 из 9» — по серверу (GET /api/print/progress), раз в секунду, пока идёт выгрузка (T87)
+  const poll = setInterval(async () => { try { const p = await (await fetch("/api/print/progress")).json();
+    if (p && p.kind === kind && p.total) bpStep(`${KN}: лист ${Math.min(p.got + 1, p.total)} из ${p.total}${p.got >= p.total ? " — сборка файла" : ""}…`); } catch { } }, 1000);
   try {
     const r = await fetch("/api/print/" + kind, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(albumSpec(list)) });
     if (!r.ok) throw new Error((await r.json()).error);
@@ -681,7 +685,7 @@ async function albumFile0(kind = "pdf", only = null, force = false) {
     toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
       + (nr ? ` Не готовы: ${nr}. Причина — и серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
-  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { bpEnd(); busy(false); setBuilding(false); }
+  } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { clearInterval(poll); bpEnd(); busy(false); setBuilding(false); }
 }
 // спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF
 // сразу, только если путь к нему полный: папку загрузок браузера программа спрашивает один раз, архив называется

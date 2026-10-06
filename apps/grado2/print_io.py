@@ -777,6 +777,8 @@ class SketchMapFrame(Frame):
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
         guard, tinfo = None, {}
         late = []                                                       # знаки поверх границы территории (точки съёмки)
+        viewboxes = []                                                  # стрелки точек съёмки: подписи их обходят (лист 4, 06.10.2026)
+        IGNV = [False]                                                  # улица у территории без другого места — можно рядом со стрелкой
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
@@ -949,7 +951,10 @@ class SketchMapFrame(Frame):
                             continue
                         if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
                             # поверх маски и границы территории: стрелка у границы не бледнеет и не прячется под пунктиром
-                            late.extend(_view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf")))
+                            vm = _view_mark(x, y, float(f.get("dir") or 0), hex_to_rgb(f.get("fill") or "#1f3fbf"))
+                            late.extend(vm)
+                            r_ = vm[0]["rings"][0]                      # подписи обходят стрелку, пока есть другое место
+                            viewboxes.append((min(p[0] for p in r_) - .5, min(p[1] for p in r_) - .5, max(p[0] for p in r_) + .5, max(p[1] for p in r_) + .5))
                             if f.get("label"):
                                 b = math.radians(float(f.get("dir") or 0))
                                 labels.append((x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8, f["label"], f.get("ls"), f))
@@ -996,7 +1001,6 @@ class SketchMapFrame(Frame):
                             "fill": _mix(ts["fill"], .35) if ts.get("fill") else None,
                             "stroke": hex_to_rgb(ts.get("stroke", "#b3261f")), "width": ts.get("width", 0.6),
                             "dash": ts.get("dash") if ts else [4, 1.2, 0.6, 1.2]})
-        out.extend(late)
         grid = {}                                                     # подписи без наложений: первая занявшая место остаётся
         rx, ry, rw, rh = rect
         mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
@@ -1041,6 +1045,8 @@ class SketchMapFrame(Frame):
             # подписи не закрывают точки выносок номеров (own — свой номер)
             if avoid and any(k_ != own and box[0] - 1 < m[0] < box[2] + 1 and box[1] - 1 < m[1] < box[3] + 1 for k_, m in marks.items()):
                 return False
+            if avoid and not IGNV[0] and any(not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3]) for v in viewboxes):
+                return False                                            # обязательная подпись без места (avoid=False) — может рядом
             if avoid and tsegs:
                 if ob:
                     sp_ = max(tpad, 1.6)                               # подпись улицы — не ближе 1,6 мм к пунктиру территории (F8)
@@ -1207,6 +1213,17 @@ class SketchMapFrame(Frame):
                 if res:
                     ls, tw = ls0 * k_, tw0 * k_
                     break
+            if not res and viewboxes and tsegs and any(math.hypot(p_[0] - q_[0][0], p_[1] - q_[0][1]) < 12
+                                                         for c_ in chains_ for p_ in c_[::3] for q_ in tsegs[::2]):
+                # улица у территории подписана всегда (lr «Основные» 1): мешают только стрелки точек съёмки — их можно
+                # задеть, стрелки рисуются поверх подписей (лист 4, «1-й Иртышский пр-д», 06.10.2026)
+                IGNV[0] = True
+                for n_, (k_, tk_, bs_) in enumerate(levels):
+                    res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * tk_), n_ == 0, bs_)
+                    if res:
+                        ls, tw = ls0 * k_, tw0 * k_
+                        break
+                IGNV[0] = False
             if not res and af.get("must"):
                 # обязательная улица короче подписи в этой рамке (лист 4, 1:10 000): подпись продолжает ту же дорогу —
                 # к оси улицы присоединяются примыкающие к её концам дороги (Сипягинское ш. — продолжение Придорожной)
@@ -1460,6 +1477,9 @@ class SketchMapFrame(Frame):
         for o in out:                                                   # изломы контуров — скруглённые, без острых «шипов»
             if o["op"] == "path":
                 o.setdefault("join", "round")
+        if late:                                                        # стрелки точек съёмки — поверх подписей: улица у
+            out.append({"op": "layer", "name": "Точки съёмки"})          # территории подписана и стрелка видна (06.10.2026)
+            out.extend(late)
         out.append({"op": "layer", "name": "Рамка"})
         if sh.get("noFrame"):
             pass                                                        # карта без рамки (схемы Москвы в шаблоне ППТ КРТ)
