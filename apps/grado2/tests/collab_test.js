@@ -241,4 +241,42 @@ const byUid = (sec, u) => sec.data.fc.features.find(f => f.properties._uid === u
   eq(keepUid(dl[0], undefined), dl[0], "нет старого объекта — вход как есть");
 }
 
+// --- T86e: лист по группам layout — разные роли одного листа сводятся, одна и та же — конфликт
+{
+  const SL = require("../web/sheetlayout.js");
+  const mk = f => { const sh = { id: "s5", num: "5", title: "Лист 5", layout: SL.build(["nspd.parcels", "gisogd.red_lines", "egko.buildings", "egko.roads", "egko.water"], {}, {}, "osm") }; SL.syncFields(sh); f && f(sh); SL.syncFields(sh); return sh; };
+  const alb = (f, extra) => ({ meta: {}, sheets: [mk(f), { id: "s6", num: "6", title: "Лист 6" }].concat(extra || []) });
+  const roleOn = (sh, role, on) => sh.layout.groups.find(g => g.role === role).items.forEach(it => { it.on = on; });
+  const run = (m, t, b) => { const i = { conflicts: [] }, r = merge3(b || alb(), m, t, "album", i); return [r, i.conflicts]; };
+  const onOf = (r, role) => r.sheets[0].layout.groups.find(g => g.role === role).items.map(it => it.on);
+  // 1: я выключил здания, они — воду
+  { const [r, c] = run(alb(s => roleOn(s, "buildings", false)), alb(s => roleOn(s, "water", false)));
+    eq([onOf(r, "buildings"), onOf(r, "water"), c], [[false], [false], []], "лист: разные роли у двоих — обе правки, без конфликта");
+    eq(r.sheets[0].keys, ["nspd.parcels", "gisogd.red_lines", "egko.buildings", "egko.roads", "egko.water"], "keys пересчитаны из layout (выключенные остаются)"); }
+  // 2: один и тот же элемент (key) с обеих сторон — конфликт как раньше, берётся чужой
+  { const g = (s, f) => f(s.layout.groups.find(x => x.role === "roads").items[0]);
+    const [r, c] = run(alb(s => g(s, it => { it.on = false; })), alb(s => g(s, it => { it.style = { color: "#123456" }; })));
+    eq([r.sheets[0].layout.groups.find(x => x.role === "roads").items[0].on, c], [true, ["album:лист 5"]], "один элемент правлен с обеих сторон — конфликт, чужой элемент целиком"); }
+  { const g = (s, f) => f(s.layout.groups.find(x => x.role === "roads").items[0]);
+    const [r, c] = run(alb(s => g(s, it => { it.style = { color: "#111111" }; })), alb(s => g(s, it => { it.style = { color: "#222222" }; })));
+    eq([r.sheets[0].layout.groups.find(x => x.role === "roads").items[0].style.color, c], ["#222222", ["album:лист 5"]], "одна роль и одно поле: чужое, конфликт «album:лист 5»"); }
+  // 3: я добавил свою роль (новая группа), они — другую; порядок и ключи
+  { const add = (key, role, title) => s => { s.layout.groups.push({ id: role, title, role, items: [{ key, on: true }] }); };
+    const [r, c] = run(alb(add("user:a", "own", "Свои слои")), alb(add("gisogd.ppt", "docs", "Генплан и документы")));
+    eq([r.sheets[0].layout.groups.map(g => g.id).slice(-2).sort(), c, r.sheets[0].keys.includes("user:a"), r.sheets[0].keys.includes("gisogd.ppt")], [["docs", "own"], [], true, true], "новые роли обеих сторон сохранены"); }
+  // 4: я убрал роль, они не трогали — ушла; они правили — осталась с правкой
+  { const rm = s => { s.layout.groups = s.layout.groups.filter(g => g.role !== "water"); };
+    const [r] = run(alb(rm), alb()); ok(!r.sheets[0].layout.groups.some(g => g.role === "water"), "роль убрана мной, ими не тронута — убрана");
+    const [r2] = run(alb(rm), alb(s => roleOn(s, "water", false))); eq(onOf(r2, "water"), [false], "роль убрана мной, ими правлена — осталась с правкой"); }
+  // 5: поле листа вне layout: по-разному — чужой лист целиком, конфликт; layout-правка и title — разные поля листа, но rest правил один: свод
+  { const [r, c] = run(alb(s => { s.title = "Моё"; }), alb(s => roleOn(s, "water", false)));
+    eq([r.sheets[0].title, onOf(r, "water"), c], ["Моё", [false], []], "title правил я, layout они — обе правки");
+    const [r2, c2] = run(alb(s => { s.title = "Моё"; roleOn(s, "water", false); }), alb(s => { s.title = "Чужое"; }));
+    eq([r2.sheets[0].title, c2], ["Чужое", ["album:лист 5"]], "title по-разному — чужой лист целиком, конфликт"); }
+  // 6: keys правлены рукой (не совпадают с layout) — старое правило, лист целиком
+  { const m6 = alb(); m6.sheets[0].keys = ["x"]; m6.sheets[0].title = "Моё";
+    const [r, c] = run(m6, alb(s => roleOn(s, "water", false)));
+    eq([r.sheets[0].keys.length, r.sheets[0].title, c], [5, "Лист 5", ["album:лист 5"]], "keys рукой + layout у них: старое правило — конфликт, чужой лист целиком"); }
+}
+
 console.log("collab: " + n + " checks ok");

@@ -416,10 +416,42 @@
     }
     return { ok: false, tone: "none", text: "" };
   }
+  /* ---- выгрузка по ролям (T86e, бывшие T85d/e): что качать при сборке альбома. Чистая функция, сети нет ---- */
+  // units: [{ id, frame: [з, ю, в, с], layout?, keys?, basemap? }] — лист (или половина слайда с картой). Берётся layout, пока он годен
+  // (matches), иначе keys. Качаются только включённые (on) элементы: выключенное глазом не качается. У роли с очередью источников
+  // (src: дороги) в первой фазе качается главный; запасные — во второй, и только для тех листов, где главный не закрыл рамку.
+  // coverage(key, frame) → доля рамки 0…1 по уже выгруженному (null/undefined — нет данных: считается 0); не передан — второй фазы нет,
+  // запасные лежат в deferred. o: expand(key) → ключи (расчётные слои → источники), fetchable(key) → нужен ли ключ, threshold (0.9).
+  // phase: [{ key, bbox, units: [id], why }] — bbox объединение рамок листов, которым ключ нужен
+  function fetchPlan(units, coverage, o = {}) {
+    const expand = o.expand || (k => [k]), okKey = o.fetchable || (() => true), thr = o.threshold ?? .9, grow = (a, b) => a ? [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])] : b.slice();
+    const p1 = new Map(), p2 = new Map(), off = new Map(), deferred = [];
+    const add = (map, key, frame, id, why) => { const r = map.get(key) || { key, bbox: null, units: [], why }; r.bbox = grow(r.bbox, frame); if (!r.units.includes(id)) r.units.push(id); map.set(key, r); };
+    (units || []).forEach(u => {
+      if (!Array.isArray(u?.frame)) return;
+      const items = matches(u) ? flatten(u.layout) : (u.keys || []).map(key => ({ key, on: true, role: key, group: key }));
+      const byRole = new Map(); items.forEach(it => { const r = byRole.get(it.role) || []; r.push(it); byRole.set(it.role, r); });
+      byRole.forEach(list => {
+        const on = list.filter(it => it.on !== false), head = list.find(it => Array.isArray(it.src) && it.src.length);
+        const queue = head ? head.src.filter(k => on.some(it => it.key === k)) : [], back = queue.length > 1 ? queue.slice(1) : [];
+        list.filter(it => it.on === false).forEach(it => { if (!off.has(it.key)) off.set(it.key, []); off.get(it.key).push(u.id); });
+        on.filter(it => !back.includes(it.key)).forEach(it => expand(it.key).filter(okKey).forEach(k => add(p1, k, u.frame, u.id, "включён на листе")));
+        back.forEach(k => deferred.push({ key: k, unit: u.id, frame: u.frame, main: queue[0] }));
+      });
+    });
+    const covered = (key, frame) => { const r = p1.get(key); return !!r && frameCover(frame, r.bbox) >= thr; };
+    if (typeof coverage === "function") deferred.forEach(d => {
+      if (covered(d.key, d.frame)) return;
+      const c = coverage(d.main, d.frame), pct = c == null ? 0 : c;
+      if (pct < thr) expand(d.key).filter(okKey).forEach(k => add(p2, k, d.frame, d.unit, `запасной: «${d.main}» закрывает ${Math.round(pct * 100)} % рамки`));
+    });
+    const never = [...off.keys()].filter(k => !p1.has(k) && !p2.has(k));
+    return { phase1: [...p1.values()], phase2: [...p2.values()], deferred, off: never };
+  }
   const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate,
     plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta,
     OWN, OTHER, FREE, isOwnKey, roleTitle, adopt, baselineOf, diffFromSeed, diffNote, resetRole, resetSheet, workingCopy, copyTitle, hintItem,
-    allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, dropCheck, targetCheck, roadQueue };
+    fetchPlan, allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, dropCheck, targetCheck, roadQueue };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.SheetLayout = api;
 })(typeof window !== "undefined" ? window : globalThis);

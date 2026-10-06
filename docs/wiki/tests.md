@@ -35,7 +35,7 @@
 | `albummeta_test.js` | JS | 24 |
 | `blocks_test.js` | JS | 7 |
 | `cadcore_test.js` | JS | 60 |
-| `collab_test.js` | JS | 73 |
+| `collab_test.js` | JS | 83 |
 | `gpzones_test.js` | JS | 11 |
 | `insol_test.js` | JS | 22 |
 | `labelfmt_test.js` | JS | 28 |
@@ -45,6 +45,6 @@
 | `roadclean_test.js` | JS | 17 |
 | `roadsrc_test.js` | JS | 15 |
 | `roles_test.js` | JS | 22 |
-| `sheetlayout_test.js` | JS | 272 |
+| `sheetlayout_test.js` | JS | 289 |
 
 Группы браузерных сценариев (E2E_ONLY=…): `t52`, `t55`, `t56`, `t59`, `t6`, `t61`, `t62`, `t66`, `t67`, `t71`, `t74`, `t76`, `t80`, `t84`

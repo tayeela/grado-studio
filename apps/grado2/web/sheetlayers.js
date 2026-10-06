@@ -10,7 +10,7 @@
   "use strict";
   const ID = "wSheetLayers", SL = () => window.SheetLayout;
   const el = () => document.getElementById(ID), bodyEl = () => document.getElementById("shlBody");
-  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false, qsel: null, used: {}, flash: null, drag: null, pend: null, swallow: false, confirm: null };
+  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false, qsel: null, used: {}, flash: null, drag: null, pend: null, swallow: false, confirm: null, col: "sheets", bankOpen: false, pick: null };
   const CACHE = new Map(), PICK = new Map(), PENDING = new Set();
   const isOpen = () => !!el() && !el().hidden;
   const readOnly = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
@@ -106,9 +106,9 @@
         + `<span class="no">${i + 1}</span><span class="nm">${esc(sh.title || "Без названия")}</span><span class="st">${dot}${chip}</span>`
         + `<span class="mt${why ? " bad" : ""}">${esc(why || SL().sheetMeta(sh, info))}</span></div>`;
     }).join("");
-    return `<section class="shl-col shl-c1" aria-label="Листы альбома"><div class="shl-ch">Листы альбома<span class="sp"></span><span class="n">${sheets().length}</span></div>`
+    return `<section class="shl-col shl-c1${ST.col === "sheets" ? " act" : ""}" aria-label="Листы альбома"><div class="shl-ch">Листы альбома<span class="sp"></span><span class="n">${sheets().length}</span></div>`
       + `<div class="shl-list" role="listbox" aria-label="Листы альбома">${list || `<div class="shl-empty">В альбоме нет листов.</div>`}</div>`
-      + `<div class="shl-keys"><kbd>↑</kbd><kbd>↓</kbd> лист · <kbd>Enter</kbd> открыть лист на холсте · перетащите слой или роль на лист</div></section>`;
+      + `<div class="shl-keys">Щелчок — выбрать лист · двойной — открыть на холсте · перетащите слой или роль на лист</div></section>`;
   }
   const covHtml = (cover, empty) => {
     if (cover === null || cover === undefined) return `<div class="cov n"><div class="tr"><i style="width:0"></i></div><span>—</span></div>`;
@@ -152,10 +152,10 @@
       if (info.layout.groups.some(g => g.items.some(it => probe(it.key).est))) note += `<div class="shl-note"><span class="shl-chip">оценка</span>Покрытие — оценка по рамкам листов; станет точным после новой выгрузки слоя.</div>`;
       if (!ed && why) note += `<div class="shl-note"><span class="shl-chip">глаз выключен</span>${esc(why)}.</div>`;
     }
-    return `<section class="shl-col shl-c2" aria-label="Что на листе"><div class="shl-ch">Что на листе ${idx + 1}, сверху вниз<span class="sp"></span><span class="n">порядок задан образцом</span></div>`
+    return `<section class="shl-col shl-c2${ST.col === "roles" ? " act" : ""}" aria-label="Что на листе"><div class="shl-ch">Что на листе ${idx + 1}, сверху вниз<span class="sp"></span><span class="n">порядок задан образцом</span></div>`
       + `<div class="shl-hd"><span></span><span></span><span>Роль</span><span>Источник</span><span>Покрытие рамки</span><span>Состояние</span></div>`
       + `<div class="shl-list" role="grid" aria-label="Роли листа">${rows}${sep}${note}</div>`
-      + `<div class="shl-keys"><kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник выше или ниже · <kbd>R</kbd> вернуть авто · <kbd>Esc</kbd> закрыть окно</div></section>`;
+      + `<div class="shl-keys">Перетащите роль на другой лист: перенос, с Alt — копия · двойной щелчок по дорогам — источники</div></section>`;
   }
   function bankCol(idx) {
     const L = typeof LYR !== "undefined" ? LYR : [], g = SL().bankGroups(L.map(l => ({ key: l.key, title: l.title })), sheets(), viewKeys);
@@ -163,7 +163,7 @@
     const rows = g.map(gr => `<div class="shl-bk">${esc(gr.title)} <small>${gr.items.length}</small></div>` + gr.items.map(it =>
       `<div class="shl-bl${it.key === ST.bank ? " sel" : ""}" role="option" aria-selected="${it.key === ST.bank}" data-k="${esc(it.key)}" title="Щелчок — подсветить листы со слоем, двойной — показать слой на холсте. Перетащите на лист или на строку роли, чтобы включить слой на этом листе"><span class="nm">${esc(it.title)}</span>`
       + `<span class="ons num">${it.sheets.length ? it.sheets.map(n => n === cur ? `<b>${n}</b>` : n).join(" ") : `<i>нигде</i>`}</span></div>`).join("")).join("");
-    return `<section class="shl-col shl-c3" aria-label="Слои проекта"><div class="shl-ch">Слои проекта<span class="sp"></span><span class="n">где используется</span></div>`
+    return `<section class="shl-col shl-c3${ST.col === "bank" ? " act" : ""}" aria-label="Слои проекта"><div class="shl-ch">Слои проекта<span class="sp"></span><span class="n">где используется</span></div>`
       + `<div class="shl-list" role="listbox" aria-label="Слои проекта">${rows || `<div class="shl-empty">В проекте пока нет слоёв.</div>`}</div>`
       + `<div class="shl-keys">Перетащите слой на лист или на роль — он включится там · щелчок — подсветить листы</div></section>`;
   }
@@ -176,7 +176,7 @@
     if (readOnly()) return "режим просмотра: слои листа меняет тот, кто правит проект.";
     if (sh.frozen) return info.why + ". Кнопка «Скопировать как рабочий» сверху (или Alt при отпускании слоя на лист) делает рабочую копию, исходный лист не меняется.";
     if (!info.editable && info.why) return info.why + ".";
-    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, Cmd+Z — отмена.${r && handOf(sh, info).roles[r.role] ? " R — вернуть роль к образцу." : ""} Перетащите роль на другой лист: перенос, с Alt — копия.`; }
+    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, M — перенести на другой лист, Cmd+Z — отмена.${r && handOf(sh, info).roles[r.role] ? " R — вернуть роль к образцу." : ""} Перетащите роль на другой лист: перенос, с Alt — копия.`; }
     return "перетащите слой из правой колонки на лист или на строку роли — он включится на этом листе. Роль можно перетащить на другой лист (Alt — копия). Глаз скрывает роль только на этом листе.";
   }
   // верхняя строка: у готового листа — «Скопировать как рабочий»; у листа с ручными правками — «Вернуть весь лист к образцу» (с подтверждением)
@@ -198,9 +198,11 @@
     const bar = `<div class="shl-bar"><span>Лист:</span><span class="shl-cur" title="${esc(sh.title || "")}">${idx + 1} · ${esc(sh.title || "Без названия")}</span>`
       + (sh.frozen ? `<span class="shl-chip">${I.lock}готовый лист</span>` : why ? `<span class="shl-chip bad" title="${esc(why)}">не готов</span>` : info.layout ? `<span class="shl-chip good">лист готов к печати</span>` : "")
       + (handBar(sh, info))
-      + `<span class="sp"></span><button class="btn" data-sheets title="Рамки, масштаб и выгрузка листов">Листы и альбом…</button></div>`;
-    b.innerHTML = bar + `<div class="shl-grid">${sheetsCol(idx, hl)}${rolesCol(idx)}${bankCol(idx)}</div>`
-      + `<div class="shl-foot"><b>Что дальше:</b> ${esc(hint(idx))}<span class="sp"></span><span class="r">правки состава хранятся в проекте</span></div>`;
+      + `<span class="sp"></span><button class="btn shl-bankbtn" data-bankbtn aria-expanded="${ST.bankOpen}" title="Слои проекта: перетащите слой на лист или на роль (Tab)">Слои проекта ${ST.bankOpen ? "◂" : "▸"}</button><button class="btn" data-sheets title="Рамки, масштаб и выгрузка листов">Листы и альбом…</button></div>`;
+    b.classList.toggle("bnk", ST.bankOpen);
+    b.innerHTML = bar + `<div class="shl-grid">${sheetsCol(idx, hl)}${rolesCol(idx)}${bankCol(idx)}${pickHtml()}</div>`
+      + `<div class="shl-foot"><b>Что дальше:</b> ${esc(hint(idx))}<span class="sp"></span><span class="r">правки состава хранятся в проекте</span></div>` + kbLine();
+    b.querySelector(".shl-pick .cur")?.scrollIntoView?.({ block: "nearest" });
     b.querySelectorAll(".shl-list").forEach((x, i) => { x.scrollTop = keep[i] || 0; });
     if (ST.flash) { const f = ST.flash; (f.sheet !== undefined ? b.querySelector(`.shl-sh[data-i="${f.sheet}"]`) : b.querySelector(`.shl-rl[data-g="${CSS.escape(f.row)}"]`))?.classList.add("fresh"); }
     b.querySelector(".shl-sh.cur")?.scrollIntoView?.({ block: "nearest" });
@@ -414,10 +416,71 @@
   }
   const openSheet = i => { if (typeof openLayout === "function") openLayout(i); };
 
+  /* ---- клавиатура (T86f): колонки по Tab, «Перенести на лист…» по M ---- */
+  const COLS = ["sheets", "roles", "bank"], narrow = () => (bodyEl()?.clientWidth || 0) < 1100;
+  const kbLine = () => `<div class="shl-kb">${ST.pick
+    ? "<kbd>↑</kbd><kbd>↓</kbd> лист · <kbd>1</kbd>–<kbd>9</kbd> номер листа · <kbd>Enter</kbd> перенести · <kbd>Alt</kbd>+<kbd>Enter</kbd> копия · <kbd>Esc</kbd> отмена"
+    : "<kbd>Tab</kbd> колонка · <kbd>↑</kbd><kbd>↓</kbd> выбор · <kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> источники или открыть · <kbd>M</kbd> перенести на лист… · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник · <kbd>R</kbd> вернуть авто · <kbd>Esc</kbd> закрыть"}</div>`;
+  function setCol(c) {
+    ST.col = c;
+    if (narrow()) ST.bankOpen = c === "bank";            // на узком окне слои проекта открываются поверх справа, пока в них выбор
+  }
+  const pickDrag = i => { const p = ST.pick; return { res: SL().dropCheck(sheets(), i, p.type === "layer" ? { type: "layer", key: p.key, title: p.label } : { type: "role", from: p.from, role: p.role },
+    { copy: false, viewOf, ctx: ctxOf, titleOf: srcTitle }) }; };
+  function pickHtml() {
+    const p = ST.pick; if (!p) return "";
+    TPLC.clear();
+    const rows = sheets().map((sh, i) => { const r = pickDrag(i).res, mark = i === p.from && p.type === "role" ? "·" : r.ok ? "✓" : r.tone === "none" ? "·" : "✕";
+      return `<div class="pk${i === p.at ? " cur" : ""}${r.ok ? " ok" : r.tone === "none" ? " no" : " bad"}" role="option" aria-selected="${i === p.at}" data-pk="${i}"><span class="m">${mark}</span><span class="no">${i + 1}</span><span class="nm">${esc(sh.title || "Без названия")}</span></div>`; }).join("");
+    const r = pickDrag(p.at).res, copyNote = p.type === "role" ? " Alt+Enter — копия, роль останется и на листе " + (p.from + 1) + "." : "";
+    TPLC.clear();
+    return `<div class="shl-pick" role="dialog" aria-label="Перенести на лист"><div class="t">${p.type === "role" ? `Перенести роль «${esc(p.label)}» с листа ${p.from + 1} на лист…` : `Включить слой «${esc(p.label)}» на листе…`}</div>`
+      + `<div class="l" role="listbox">${rows}</div><div class="n ${r.ok ? "ok" : r.tone === "none" ? "" : "bad"}">${esc(r.ok ? r.text.replace(/^Отпустите:\s*/, "Enter — ") + "." : r.text ? r.text + "." : "")}${r.ok && !r.workingCopy ? esc(copyNote) : ""}</div></div>`;
+  }
+  function openPick() {
+    const n = sheets().length, idx = selIndex(); if (!n) return;
+    if (readOnly()) return toast("Только просмотр: слои листа меняет тот, кто правит проект.");
+    let spec = null;
+    if (ST.col === "bank" && ST.bank) spec = { type: "layer", key: ST.bank, label: srcTitle(ST.bank), from: idx };
+    else if (ST.row) { const g = infoOf(sheets()[idx]).layout?.groups.find(x => x.id === ST.row); if (g) spec = { type: "role", role: g.role, label: g.title || SL().roleTitle(g.role), from: idx }; }
+    else if (ST.bank) spec = { type: "layer", key: ST.bank, label: srcTitle(ST.bank), from: idx };
+    if (!spec) return toast("Сначала выберите роль в средней колонке или слой справа: M переносит их на другой лист.");
+    ST.pick = { ...spec, at: spec.type === "role" ? (idx + 1) % n : idx }; render();
+  }
+  function pickApply(copy) {
+    const p = ST.pick, i = p.at, d = { type: p.type, key: p.key, role: p.role, from: p.from, label: p.label, alt: copy, tgt: { i } };
+    TPLC.clear();
+    const res = SL().dropCheck(sheets(), i, p.type === "layer" ? { type: "layer", key: p.key, title: p.label } : { type: "role", from: p.from, role: p.role }, { copy, viewOf, ctx: ctxOf, titleOf: srcTitle });
+    if (!res.ok) { if (res.tone !== "none" && res.text) toast(res.text + "."); render(); return; }      // отказ — теми же словами, что у мыши; список остаётся
+    ST.pick = null; TPLC.clear();
+    if (res.workingCopy) dropWorking(d); else if (p.type === "layer") dropLayer(i, p.key, p.label); else dropRole(p.from, i, p.role, copy);
+    render();
+  }
+  function moveCol(dir) {
+    const b = bodyEl(), step = (list, cur, set) => { if (!list.length) return false; const k = list.indexOf(cur), j = Math.min(list.length - 1, Math.max(0, k < 0 ? (dir > 0 ? 0 : list.length - 1) : k + dir)); set(list[j]); return true; };
+    if (ST.col === "roles") { if (!step([...b.querySelectorAll(".shl-rl")].map(x => x.dataset.g), ST.row, v => { ST.row = v; ST.bank = null; })) return false; render(); b.querySelector(".shl-rl.cur")?.scrollIntoView?.({ block: "nearest" }); return true; }
+    if (ST.col === "bank") { if (!step([...b.querySelectorAll(".shl-bl")].map(x => x.dataset.k), ST.bank, v => { ST.bank = v; })) return false; render(); b.querySelector(".shl-bl.sel")?.scrollIntoView?.({ block: "nearest" }); return true; }
+    return false;
+  }
+  function onPickKey(e) {
+    const p = ST.pick, n = sheets().length, take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
+    if (e.key === "Escape") { take(); ST.pick = null; render(); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { take(); p.at = Math.min(n - 1, Math.max(0, p.at + (e.key === "ArrowDown" ? 1 : -1))); render(); return; }
+    if (/^[1-9]$/.test(e.key) && +e.key <= n) { take(); p.at = +e.key - 1; render(); return; }
+    if (e.key === "Enter") { take(); pickApply(e.altKey); return; }
+    if (e.key === "Tab") { take(); return; }
+    take();                                                                  // пока открыт список, остальные клавиши окна молчат
+  }
+
   /* ---- события ---- */
   function onClick(e) {
     const t = e.target;
     if (t.closest("[data-sheets]")) { winOpen("wSheets", true); return; }
+    if (t.closest("[data-bankbtn]")) { ST.bankOpen = !ST.bankOpen; ST.col = ST.bankOpen ? "bank" : "sheets"; render(); bodyEl().focus({ preventScroll: true }); return; }
+    const pk = t.closest("[data-pk]"); if (pk && ST.pick) { ST.pick.at = +pk.dataset.pk; pickApply(e.altKey); return; }
+    if (ST.pick && !t.closest(".shl-pick")) { ST.pick = null; render(); }
+    const colOf = t.closest(".shl-col"); if (colOf) { const c = colOf.classList.contains("shl-c1") ? "sheets" : colOf.classList.contains("shl-c2") ? "roles" : "bank"; if (c !== ST.col) { ST.col = c; if (narrow() && c !== "bank" && ST.bankOpen) ST.bankOpen = false; } }
+    else if (ST.bankOpen && narrow() && !t.closest("[data-bankbtn]")) { ST.bankOpen = false; if (ST.col === "bank") ST.col = "sheets"; render(); }
     const rs = t.closest("[data-reset]"); if (rs) { e.preventDefault(); ST.row = rs.dataset.reset; ST.bank = null; resetRoleUI(selIndex(), rs.dataset.reset); bodyEl().focus({ preventScroll: true }); return; }
     if (t.closest("[data-resetsheet]")) { e.preventDefault(); ST.confirm = sheets()[selIndex()]?.id || null; render(); return; }
     if (t.closest("[data-resetsheet-yes]")) { resetSheetUI(selIndex()); return; }
@@ -442,9 +505,14 @@
     if (!isOpen() || !e.target.closest?.("#" + ID) || e.target.closest("input,select,textarea") || e.metaKey || e.ctrlKey) return;
     const take = () => { e.preventDefault(); e.stopImmediatePropagation(); };
     const n = sheets().length, idx = selIndex();
-    if (e.key === "Escape") { take(); winOpen(ID, false); return; }
+    if (ST.pick) return onPickKey(e);
+    if (e.key === "Escape") { take(); if (ST.bankOpen && narrow()) { ST.bankOpen = false; if (ST.col === "bank") ST.col = "sheets"; render(); } else winOpen(ID, false); return; }
+    if (e.key === "Tab" && n && (e.target === bodyEl() || e.target.closest(".shl-grid")) && !e.target.closest("button")) { take(); const k = COLS.indexOf(ST.col); setCol(COLS[(k + (e.shiftKey ? 2 : 1)) % 3]); render(); return; }
+    if (e.code === "KeyM" && !e.altKey && !e.shiftKey && n) { take(); openPick(); return; }
+    if (e.key === "Enter" && n && ST.col === "bank" && ST.bank) { take(); showLayer(ST.bank); return; }
     if (e.target.closest("[data-sheets]") && (e.key === "Enter" || e.key === " ")) return;           // кнопка «Листы и альбом…» нажимается сама
     if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); nudgeSource(e.key === "ArrowUp" ? -1 : 1); return; }
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n && ST.col !== "sheets") { take(); moveCol(e.key === "ArrowDown" ? 1 : -1); return; }
     if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); ST.sel = Math.min(n - 1, Math.max(0, idx + (e.key === "ArrowDown" ? 1 : -1))); ST.row = null; render(); return; }
     if (e.code === "KeyR" && !e.altKey && !e.shiftKey && n) { take(); if (ST.row) resetRoleUI(idx, ST.row); else toast("Сначала выберите роль в средней колонке: R возвращает её к образцу."); return; }
     if (e.key === " " && n) { take(); if (ST.row) toggleRole(idx, ST.row); else toast("Сначала выберите роль в средней колонке."); return; }

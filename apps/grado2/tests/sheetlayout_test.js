@@ -293,5 +293,44 @@ dz = L.dropCheck(SH2, 0, { type: "layer", key: "gisogd.admin", title: "Гран�
 const oldSeed = mk(KEYS5); L.reorderSrc(oldSeed, "roads", 1, 0); const frSeed = { keys: oldSeed.keys.slice(), layout: L.seedLayout({ keys: oldSeed.keys }) };
 eq(L.carryLayout(frSeed, oldSeed), false, "уже годен — не переносится"); const tplNew = { keys: oldSeed.keys.slice(), layout: L.seedLayout({ keys: ["x.y"] }) };
 eq(L.carryLayout(tplNew, oldSeed), true, "перенос"); eq(tplNew.layout.seed, L.seedLayout({ keys: ["x.y"] }).groups, "seed — свежий шаблон: правки считаются от него");
+// T86e: выгрузка по ролям — что качать (чистая функция, сети нет)
+{
+  const FR1 = [37.0, 55.0, 37.2, 55.1], FR2 = [37.1, 55.05, 37.4, 55.2], mkU = (id, frame, f, basemap) => { const sh = { id, frame, keys: KEYS5.slice(), layout: L.seedLayout({ keys: KEYS5, basemap }), basemap }; f && f(sh); return sh; };
+  const ks = r => r.map(x => x.key), roleOf = (sh, role) => sh.layout.groups.filter(g => g.role === role);
+  let u1 = mkU("a", FR1); let pl = L.fetchPlan([u1]);
+  eq([ks(pl.phase1).includes("egko.roads"), ks(pl.phase1).includes("yandex.hd_roads"), pl.phase1.length, pl.phase2, pl.deferred.map(d => d.key)], [true, false, 16, [], ["yandex.hd_roads"]], "главный источник дорог — в первой фазе, запасной ждёт");
+  eq(pl.phase1.find(x => x.key === "egko.water").bbox, FR1, "рамка ключа — рамка листа");
+  eq(ks(L.fetchPlan([u1], () => 0.95).phase2), [], "главный закрыл рамку (95 %) — запасной не качается");
+  const p9 = L.fetchPlan([u1], () => 0.5); eq([ks(p9.phase2), p9.phase2[0].units, p9.phase2[0].why], [["yandex.hd_roads"], ["a"], "запасной: «egko.roads» закрывает 50 % рамки"], "главный не закрыл (50 %) — запасной во второй фазе");
+  eq(ks(L.fetchPlan([u1], () => 0.9).phase2), [], "ровно 90 % — закрыл"); eq(ks(L.fetchPlan([u1], () => null).phase2), ["yandex.hd_roads"], "покрытие неизвестно или слой не загрузился — запасной");
+  // два листа: у одного главный закрыл, у другого нет — bbox запасного только по второму
+  const u2 = mkU("b", FR2); const pm = L.fetchPlan([u1, u2], (k, fr) => fr === FR1 ? 1 : 0.2);
+  eq([ks(pm.phase2), pm.phase2[0].bbox, pm.phase2[0].units], [["yandex.hd_roads"], FR2, ["b"]], "запасной качается только для рамки листа, где нужен");
+  eq(pm.phase1.find(x => x.key === "egko.water").bbox, [37.0, 55.0, 37.4, 55.2], "первая фаза: объединение рамок листов");
+  // глаз: выключенная роль не качается; ключ, включённый на другом листе, качается только по нему
+  const u3 = mkU("c", FR1, sh => { roleOf(sh, "water").forEach(g => g.items.forEach(it => { it.on = false; })); roleOf(sh, "buildings").forEach(g => g.items.forEach(it => { it.on = false; })); });
+  const p3 = L.fetchPlan([u3, u2]);
+  eq([p3.phase1.find(x => x.key === "egko.water").bbox, p3.phase1.find(x => x.key === "egko.water").units, p3.off], [FR2, ["b"], []], "выключено на одном листе, включено на другом — по второму");
+  const p4 = L.fetchPlan([u3]); eq([ks(p4.phase1).includes("egko.water"), ks(p4.phase1).includes("egko.buildings"), p4.off.sort()], [false, false, ["egko.buildings", "egko.water"]], "выключенное глазом не качается нигде");
+  // дороги целиком выключены — ни главного, ни запасного; один из двух выключен — второй главный без запасных
+  const u5 = mkU("d", FR1, sh => { roleOf(sh, "roads").forEach(g => g.items.forEach(it => { it.on = false; })); }); const p5 = L.fetchPlan([u5], () => 0);
+  eq([ks(p5.phase1).some(k => /roads/.test(k) && !k.startsWith("osm")), ks(p5.phase2), p5.deferred], [false, [], []], "роль дорог выключена — не качается ничего");
+  const u6 = mkU("e", FR1, sh => { roleOf(sh, "roads")[0].items.find(it => it.key === "egko.roads").on = false; }); const p6 = L.fetchPlan([u6], () => 0);
+  eq([ks(p6.phase1).includes("yandex.hd_roads"), ks(p6.phase1).includes("egko.roads"), p6.deferred], [true, false, []], "оставлен один источник — он главный, запасного нет");
+  // снимок: Яндекс главный, ЕГКО запасной
+  const u7 = mkU("f", FR1, null, "sat"); const p7 = L.fetchPlan([u7], () => 0.3);
+  eq([ks(p7.phase1).includes("yandex.hd_roads"), ks(p7.phase1).includes("egko.roads"), ks(p7.phase2)], [true, false, ["egko.roads"]], "на снимке: Яндекс главный, ЕГКО запасной");
+  // запасной уже в первой фазе по другому листу и покрывает рамку — второй раз не качается
+  const u8 = mkU("g", FR1, sh => { roleOf(sh, "roads")[0].items.forEach(it => { delete it.src; }); }); const p8 = L.fetchPlan([u8, u1], () => 0);
+  eq([ks(p8.phase1).includes("yandex.hd_roads"), ks(p8.phase2)], [true, []], "запасной уже качается для этой рамки");
+  // лист без layout (по keys), ключи расчётных слоёв раскрываются, лишние отбрасываются
+  const old = { id: "o", frame: FR1, keys: ["calc.uds_ya", "egko.water", "gisogd.admin"] };
+  const po = L.fetchPlan([old, { id: "x" }, { id: "t", frame: FR1, keys: [] }], null, { expand: k => k === "calc.uds_ya" ? ["yandex.hd_roads", "yandex.roads"] : [k], fetchable: k => k !== "gisogd.admin" });
+  eq([ks(po.phase1), po.phase2], [["yandex.hd_roads", "yandex.roads", "egko.water"], []], "лист без layout: все ключи листа, расчётные раскрыты, ненужные убраны");
+  // layout не соответствует keys (правка рукой) — лист живёт по keys
+  const hand = mkU("h", FR1, sh => { sh.keys = ["egko.water"]; }); eq(ks(L.fetchPlan([hand]).phase1), ["egko.water"], "layout не годен — по keys");
+  // КРТ-образец: листы 5 и 7 шаблона
+  eq(L.fetchPlan([]).phase1, [], "нет листов — нечего качать");
+}
 
 console.log(n + " checks ok");

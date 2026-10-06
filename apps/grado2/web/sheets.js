@@ -533,6 +533,13 @@ function tplManual() {
     + (r.bad.length ? ` Не готовы: ${r.bad.map(s => `«${s.title}» — ${NOTREADY.get(s.id)}`).join("; ")}. Недостающие слои выгружает «Собрать».` : ""));
 }
 
+// листы → единицы плана выгрузки (лист или половина слайда с картой) с рамкой в градусах; план — SheetLayout.fetchPlan (T86e)
+function planUnits(list) {
+  return list.flatMap(s => s.frozen ? [] : s.panels ? s.panels.map((p, j) => ({ id: `${s.id}#${j}`, keys: p.keys, frame: frameBox({ ...p, size: s.size, part: "half" }) })) : s.keys ? [{ id: s.id, keys: s.keys, layout: s.layout, basemap: s.basemap, frame: frameBox(s) }] : []);
+}
+const PLAN_OPT = { expand: k => DERIVED[k] || [k], fetchable: k => k !== "gisogd.admin" && !!SOURCES[k] };
+// что скачала бы сборка альбома сейчас по листам (без сети): window.albumFetchPlan(cover?) — cover(key, рамка) → доля; без неё запасные в deferred
+window.albumFetchPlan = (cover, list = ALBUM.sheets) => SheetLayout.fetchPlan(planUnits(list), cover, PLAN_OPT);
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 const buildSection = (...a) => track(() => buildSection0(...a));
@@ -547,23 +554,29 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 132). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
   await ensureAdmin();
-  // остальные слои — по самой большой рамке листа, где слой нужен; одинаковые рамки — одной выгрузкой
-  const need = new Map();
-  sheets.flatMap(s => s.panels ? s.panels.map(p => ({ ...p, size: s.size, part: "half" })) : [s]).filter(s => s.keys).forEach(s => { const bb = frameBox(s); s.keys.flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k]).forEach(k => {
-    const cur = need.get(k); need.set(k, cur ? [Math.min(cur[0], bb[0]), Math.min(cur[1], bb[1]), Math.max(cur[2], bb[2]), Math.max(cur[3], bb[3])] : bb); }); });
-  // УДС Яндекса: вокруг территории (холст, анализ) и по рамкам листов, где дороги — полигоны Яндекса (альбом ППТ КРТ)
-  ["yandex.hd_roads", "yandex.roads"].forEach(k => { const t = turf.bbox(buf(TERR, 400)), cur = need.get(k);
-    need.set(k, cur ? [Math.min(cur[0], t[0]), Math.min(cur[1], t[1]), Math.max(cur[2], t[2]), Math.max(cur[3], t[3])] : t); });
-  // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую
-  // область сервер берёт по частям и склеивает
-  const LIM = { yandex: 40 };
-  need.forEach((bb, k) => { const lim = LIM[k.split(".")[0]]; if (!lim) return;
+  // слои — по плану выгрузки (T86e, SheetLayout.fetchPlan): качается то, что ВКЛЮЧЕНО на листах (глаз на роли — «не качать»), по самой большой
+  // рамке листа, где слой нужен; запасной источник очереди роли (дороги) — второй фазой и только там, где главный не закрыл рамку.
+  // Прежние правки владельца (состав, глаз) переносятся до выгрузки: что выключено в прежней сборке, не качается и теперь
+  const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
+  sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o && !o.frozen) { SheetLayout.carryLayout(s, o); if (s.layout && SheetLayout.matches(s)) SheetLayout.carryOn(s, o); } });
+  const units = planUnits(sheets);
+  const PLAN = PLAN_OPT, plan = SheetLayout.fetchPlan(units, null, PLAN);
+  // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую область сервер берёт по частям и склеивает
+  const LIM = { yandex: 40 }, capBox = (k, bb) => { const lim = LIM[k.split(".")[0]]; if (!lim) return bb;
     const [w, s, e, n] = bb, c = turf.centroid(TERR).geometry.coordinates, kx = 111.32 * Math.cos(c[1] * Math.PI / 180), ky = 110.54, a = (e - w) * kx * (n - s) * ky;
-    if (a <= lim * .97) return; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;
-    need.set(k, [c[0] - hx, c[1] - hy, c[0] + hx, c[1] + hy]); });
-  const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
+    if (a <= lim * .97) return bb; const f = Math.sqrt(lim * .97 / a), hx = (e - w) * f / 2, hy = (n - s) * f / 2;
+    return [c[0] - hx, c[1] - hy, c[0] + hx, c[1] + hy]; };
+  const toGroups = (list, terr = true) => { const need = new Map(list.map(r => [r.key, r.bbox]));
+    // УДС Яндекса: вокруг территории (холст, анализ) и по рамкам листов, где дороги — полигоны Яндекса (альбом ППТ КРТ); территория нужна холсту и при выключенных дорогах листов
+    (terr ? ["yandex.hd_roads", "yandex.roads"] : list.map(r => r.key).filter(k => /^yandex\.(hd_roads|roads)$/.test(k))).forEach(k => { const t = turf.bbox(buf(TERR, 400)), cur = need.get(k);
+      need.set(k, cur ? [Math.min(cur[0], t[0]), Math.min(cur[1], t[1]), Math.max(cur[2], t[2]), Math.max(cur[3], t[3])] : t); });
+    need.forEach((bb, k) => need.set(k, capBox(k, bb)));
+    const groups = new Map(); need.forEach((bb, k) => { const g = bb.map(v => v.toFixed(5)).join(","); (groups.get(g) || groups.set(g, { bb, keys: [] }).get(g)).keys.push(k); });
+    return { need, groups }; };
+  const { need, groups } = toGroups(plan.phase1);
   // ход сборки (T62): группа слоёв — за листом, которому она нужна первому; листы идут по порядку, «Остановить» работает по границе листа
-  const sheetNeeds = sheets.map(s => new Set((s.panels ? s.panels.flatMap(p => p.keys || []) : s.keys || []).flatMap(k => DERIVED[k] || [k]).filter(k => k !== "gisogd.admin" && SOURCES[k])));
+  const ofSheet = (r, s) => r.units.some(id => id === s.id || id.startsWith(s.id + "#"));
+  const sheetNeeds = sheets.map(s => new Set(plan.phase1.filter(r => ofSheet(r, s)).map(r => r.key)));
   const todo = [...groups.values()].map(g => ({ ...g, first: Math.max(0, sheetNeeds.findIndex(ks => g.keys.some(k => ks.has(k)))) })).sort((a, b) => a.first - b.first);
   const loaded = new Set(), frontier = () => { const i = sheetNeeds.findIndex(ks => [...ks].some(k => !loaded.has(k))); return i < 0 ? sheets.length : i; };   // первый лист, которому ещё не хватает слоёв
   const what = ks => { const nm = ks.map(k => OSM_NOUN[k] || SOURCES[k]?.title || k); return nm.slice(0, 2).join(", ") + (nm.length > 2 ? ` и ещё ${nm.length - 2}` : ""); };
@@ -578,6 +591,20 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
       keys.forEach(k => loaded.add(k));
       keys.filter(k => ERRORS[k]).forEach(k => failed.set(k, { bb, why: ERRORS[k] }));
     }
+    // вторая фаза (T86e): запасной источник роли — только для листов, где главный не закрыл рамку (не загрузился, пуст или не покрывает ≥ 90 %)
+    if (!BP.stop) {
+      const cover = (k, fr) => failed.has(k) || !DATA[k]?.bbox ? 0 : SheetLayout.frameCover(fr, DATA[k].bbox);
+      const p2 = SheetLayout.fetchPlan(units, cover, PLAN).phase2;
+      console.debug("[T86e] запасные источники:", p2.map(r => `${r.key} (${r.why})`).join("; ") || "не нужны");
+      if (p2.length) {
+        p2.forEach(r => sheets.forEach((sh, i) => { if (ofSheet(r, sh)) sheetNeeds[i].add(r.key); }));
+        for (const { bb, keys } of toGroups(p2, false).groups.values()) {
+          if (BP.stop) break;
+          step(keys, "Запасной источник. "); keys.forEach(k => CHECKED.add(k)); await loadKeys(keys, bb); keys.forEach(k => loaded.add(k));
+          keys.filter(k => ERRORS[k]).forEach(k => failed.set(k, { bb, why: ERRORS[k] }));
+        }
+      }
+    }
     // повтор упавшего слоя — один раз; «область больше допустимой» повторять бессмысленно
     if (!BP.stop) for (const [k, { bb, why }] of [...failed]) {
       if (/област.* больш|слишком больш|портал/i.test(why)) continue;       // сервер уже повторял с паузами (3 попытки): сразу ещё раз — против правил порталов
@@ -590,7 +617,6 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   buildUds();
   // пересборка раздела не теряет добавленные снимки и правки макета (надписи, свои тексты) — по листу с тем же видом и названием
   // — по id листа (он задан шаблоном), а не по названию: переименованный лист не теряет снимки и надписи
-  const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
   built.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o) carryHand(s, o, false); });
   // остановка: листы раздела, до которых сборка не дошла, остаются прежними (прежняя сборка не пропадает молча)
   const rest = stopped ? ALBUM.sheets.filter(s => String(s.id).startsWith(prefix) && !(parseInt(String(s.id).slice(prefix.length), 10) < nDone)) : [];

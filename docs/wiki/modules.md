@@ -113,11 +113,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · геометрия черчения в метрах МСК (X на восток, Y на север). Без DOM и OpenLayers — проверяется под node (tests/cadcore_test.js). Цепочка — массив точек [x, y]; у замкнутой первая точка повторена в конце. Здесь всё, что считают команды AutoCAD: пересечения, перпендикуляр, касательные, дуги по трём точкам, правильные многоугольники, подобие (offset), обрезка, удлинение, разрыв, сопряжение, соединение.
 
 
-### `apps/grado2/web/collab.js` — 692 стр.
+### `apps/grado2/web/collab.js` — 753 стр.
 
 ГРАДО 2 · совместная работа: движок синхронизации (контракт — docs/grado2-collab-spec.md). Сервер хранит проект целиком, разбитым на разделы, и нумерует правки; клиенты сводят правки сами: · разделы: «meta» (граница, группы, виды, граф, источники, порядок слоёв), «album» (альбом: meta и листы — отдельно, чтобы правка meta не пересылала альбом) и «layer:<ключ>» = {spec, data}; · после каждой правки (markDirty → Collab.touched) с паузой 400 мс (не дольше 3 с) меняются только изменившиеся разделы; · сервер отвечает 409, если раздел успел поменять кто-то ещё: правки сводятся по трём версиям (база,…
 
-Функции: `stable`, `same`, `isObj`, `js`, `quick`, `R9`, `cg`, `canonGeom`, `canonF`, `sameF`, `h12`, `keepUid`, `ensureUids`, `uidMap`, `split`, `join`, `mergeObj`, `mergeFeature`, `decide`, `mergeFC`, `mergeLayer`, `mergeOrder`, `mergeAlbum`, `mergeMeta`, `eqLayer`, `merge3`, `install`, `emit`, `setStatus`, `editable`, `http`, `P`, `isLayerName`, `secText`, `baseMeta`, `baseAlbum`, `sameSection`, `baseName`, `normSection`, `localState`, `enqueue`, `queuePush`, `queueCatchUp`, `schedulePush`, `netFail`, `pushOnce`, `pushLoop`, `markSaved`, `recover`, `catchUp`, `fullSync`, `lost`, `authExpired`, `integrate`, `typing`, `diffApply`, `createLayerFrom`, `applyLayer`, `applyTerritory`, `applyGraph`, `applyMeta`, `applyAlbum`, `applyResults`, `VKEY`, `savePersonal`, `personal`, `loadProject`, `updateRole`, `refreshRole`, `connect`, `probeStream`, `onEvent`, `close`, `sendPresence`
+Функции: `stable`, `same`, `isObj`, `js`, `quick`, `R9`, `cg`, `canonGeom`, `canonF`, `sameF`, `h12`, `keepUid`, `ensureUids`, `uidMap`, `split`, `join`, `mergeObj`, `mergeFeature`, `decide`, `mergeFC`, `mergeLayer`, `mergeOrder`, `layoutDerived`, `layoutConsistent`, `three`, `mergeKeyed`, `mergeGroup`, `mergeSheet`, `mergeAlbum`, `mergeMeta`, `eqLayer`, `merge3`, `install`, `emit`, `setStatus`, `editable`, `http`, `P`, `isLayerName`, `secText`, `baseMeta`, `baseAlbum`, `sameSection`, `baseName`, `normSection`, `localState`, `enqueue`, `queuePush`, `queueCatchUp`, `schedulePush`, `netFail`, `pushOnce`, `pushLoop`, `markSaved`, `recover`, `catchUp`, `fullSync`, `lost`, `authExpired`, `integrate`, `typing`, `diffApply`, `createLayerFrom`, `applyLayer`, `applyTerritory`, `applyGraph`, `applyMeta`, `applyAlbum`, `applyResults`, `VKEY`, `savePersonal`, `personal`, `loadProject`, `updateRole`, `refreshRole`, `connect`, `probeStream`, `onEvent`, `close`, `sendPresence`
 
 ### `apps/grado2/web/constraints.js` — 361 стр.
 
@@ -224,21 +224,21 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · роли слоёв в расчётах. Ограничения, анализ и эскиз ищут данные по РОЛИ слоя, а не по фиксированному ключу: в проектах владельца каталожные слои лежат как `ogd.<код>` и `egko.*`, а не `gisogd.*`/`nspd.*`/`osm.*`. Роль слоя определяется так (по убыванию силы): а) вручную: поле `role` в описании слоя (роль из списка или "none" — слой не участвует в расчётах); нет поля = «авто»; б) по ключу источника (таблица SOURCE_ROLE: `nspd.zouit` → zouit, `egko.buildings` → buildings…); в) по коду каталога для `ogd.<код>` — таблица с сервера (GET /api/layer_roles, строится из SOURCES), грузится лени…
 
 
-### `apps/grado2/web/sheetlayers.js` — 470 стр.
+### `apps/grado2/web/sheetlayers.js` — 538 стр.
 
 ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание, всё красиво и интуитивно понятно», макет — docs/team/mockups/2026-10-06-sheet-layers.png, вариант А). Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия), источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc от…
 
 
-### `apps/grado2/web/sheetlayout.js` — 425 стр.
+### `apps/grado2/web/sheetlayout.js` — 457 стр.
 
 ГРАДО 2 · состав слоёв листа по ролям: sheet.layout (T86a, 06.10.2026, слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание»). Чистые функции без карты: слои проекта и шаблон передаёт sheets.js / albums.js. layout = { groups: [{ id, title, role, items: [{ key, on, style?, only?, src? }] }] }. Порядок групп и элементов — порядок рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной). Переходный релиз: keys, …
 
 
-### `apps/grado2/web/sheets.js` — 1079 стр.
+### `apps/grado2/web/sheets.js` — 1105 стр.
 
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
 
-Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `sheetCenter`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer`, `mb`, `isReadySheet`, `albumOfJson`, `readAlbumFile`, `askExport`, `expAnswer`, `albumFile0Tracked` и ещё 37
+Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `sheetCenter`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `planUnits`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer`, `mb`, `isReadySheet`, `albumOfJson`, `readAlbumFile`, `askExport`, `expAnswer` и ещё 38
 
 ### `apps/grado2/web/uisize.js` — 3 стр.
 

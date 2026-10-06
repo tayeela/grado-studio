@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.18: collaboration by role groups, download by roles, keyboard and narrow window (T86e, T86f).**
+  `mergeSheet` (collab.js) merges `sheet.layout` groups by id and items by key, so two people editing different roles
+  of one sheet no longer conflict. `fetchPlan` (sheetlayout.js) drives `buildSection0`: only roles switched on are
+  downloaded, the fallback road source is fetched in a second phase only where the main one covers < 90 % of the
+  frame. «Слои и листы»: Tab between columns, M «Перенести на лист…» (Enter move, Alt+Enter copy); under 1100 px the
+  project layers column folds into a button.
 - **2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).** «Слои и листы»:
   blue «изменено вручную» on a role differing from the template (`diffFromSeed`) and a dot on the sheet; R / link
   «Вернуть автоматический выбор»; «Вернуть весь лист к образцу» with confirmation; locked sheet + Alt drop or

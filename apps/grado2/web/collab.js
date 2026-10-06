@@ -160,6 +160,64 @@ function mergeOrder(b, m, t) {
   m.forEach((k, i) => { if (has.has(k)) return; const at = i ? out.indexOf(m[i - 1]) + 1 : 0; out.splice(at, 0, k); has.add(k); });
   return out;
 }
+/* лист альбома, правленный с обеих сторон (T86e): состав слоёв sheet.layout.groups сводится по group.id, элементы групп — по key
+   (порядок — mergeOrder), так что два человека с разными ролями одного листа не конфликтуют. keys/styles/only — производные от layout,
+   пересчитываются из итога. Остальные поля листа — как раньше: правила обе стороны по-разному — чужое целиком и конфликт.
+   Нет layout у какой-либо стороны или keys/styles/only не совпадают с layout (правка рукой) — старое правило, лист целиком.
+   Возвращает { sheet, conflicts: [..] } (пусто — слито без конфликтов). */
+const SHEET_DERIVED = ["keys", "styles", "only"];
+function layoutDerived(l) {
+  const items = (l.groups || []).flatMap(g => g.items || []), st = {}, on = {};
+  items.forEach(it => { if (it.style !== undefined) st[it.key] = it.style; if (it.only !== undefined) on[it.key] = it.only; });
+  return { keys: items.map(it => it.key), styles: st, only: on };
+}
+function layoutConsistent(s) {
+  if (!isObj(s.layout) || !Array.isArray(s.layout.groups) || s.frozen) return false;
+  if (!s.layout.groups.every(g => isObj(g) && g.id != null && Array.isArray(g.items) && g.items.every(it => isObj(it) && it.key != null))) return false;
+  const d = layoutDerived(s.layout);
+  return same(s.keys, d.keys) && same(s.styles || {}, d.styles) && same(s.only || {}, d.only);
+}
+// 3-way по одному значению: {v, c} — c: обе стороны правили по-разному (взято чужое)
+function three(b, m, t) { return same(m, b) ? { v: t, c: false } : same(t, b) ? { v: m, c: false } : same(m, t) ? { v: m, c: false } : { v: t, c: true }; }
+// список записей с id: убранная одной стороной и правленная другой остаётся с правкой; новые записи обеих сторон сохраняются
+function mergeKeyed(b, m, t, idOf, one) {
+  const idx = a => new Map(a.map(x => [idOf(x), x])), B = idx(b), M = idx(m), T = idx(t);
+  const back = [...B.keys()].filter(k => !M.has(k) && T.has(k) && !same(T.get(k), B.get(k)));
+  const order = mergeOrder([...B.keys()].filter(k => !back.includes(k)), [...M.keys()], [...T.keys()]), out = [];
+  for (const k of order) {
+    const bs = B.get(k), ms = M.get(k), ts = T.get(k);
+    if (ms && ts) out.push(bs && same(ms, bs) ? ts : bs && same(ts, bs) ? ms : same(ms, ts) ? ms : one(bs, ms, ts));
+    else if (ms) { if (!bs || !same(ms, bs)) out.push(ms); }
+    else if (ts) { if (!bs || !same(ts, bs)) out.push(ts); }
+  }
+  return out;
+}
+function mergeGroup(b, m, t, conf) {
+  const { items: bi, ...br } = b || {}, { items: mi, ...mr } = m, { items: ti, ...tr } = t;
+  const r = three(br, mr, tr); if (r.c) conf.push("group");
+  const items = mergeKeyed(bi || [], mi, ti, it => it.key, (_b, _m, t2) => { conf.push("item"); return t2; });
+  return { ...r.v, items };
+}
+function mergeSheet(b, m, t) {
+  const conflicts = [], whole = () => { const r = three(b, m, t); return { sheet: r.v, conflicts: r.c ? ["sheet"] : [] }; };
+  b = b || {};
+  if (!layoutConsistent(m) || !layoutConsistent(t)) return whole();
+  const { layout: bl, ...br0 } = b, { layout: ml, ...mr0 } = m, { layout: tl, ...tr0 } = t;
+  const strip = r => { const o = { ...r }; SHEET_DERIVED.forEach(k => delete o[k]); return o; };
+  const rest = three(strip(br0), strip(mr0), strip(tr0)); if (rest.c) return { sheet: t, conflicts: ["sheet"] };   // как раньше: чужой лист целиком
+  const BL = isObj(bl) && Array.isArray(bl.groups) ? bl : { groups: [] }, { groups: bg, ...blr } = BL, { groups: mg, ...mlr } = ml, { groups: tg, ...tlr } = tl;
+  const lo = three(blr, mlr, tlr); if (lo.c) conflicts.push("layout");
+  const dupe = a => new Set(a.map(g => g.id)).size !== a.length;
+  if (dupe(bg) || dupe(mg) || dupe(tg)) return whole();
+  const conf = [];
+  const groups = mergeKeyed(bg, mg, tg, g => g.id, (gb, gm, gt) => mergeGroup(gb, gm, gt, conf));
+  conflicts.push(...conf);
+  // один ключ не может стоять в двух группах: оставляем первое место
+  const seen = new Set(); groups.forEach(g => { g.items = g.items.filter(it => { if (seen.has(it.key)) { conflicts.push("dup"); return false; } seen.add(it.key); return true; }); });
+  const layout = { ...lo.v, groups }, sheet = { ...rest.v, layout };
+  if (Array.isArray(m.keys) || Array.isArray(t.keys)) Object.assign(sheet, layoutDerived(layout));
+  return { sheet, conflicts };
+}
 /* альбом: meta и прочие ключи — как mergeMeta, листы — по `id` (старые проекты без id и списки с повтором id — целиком, см. ниже).
    Лист, правленный только с одной стороны, берётся оттуда; по-разному с обеих — чужой, конфликт «album:лист …»;
    убранный одной стороной и правленный другой — остаётся с правкой. Новые листы обеих сторон сохраняются (порядок — mergeOrder). */
@@ -186,7 +244,10 @@ function mergeAlbum(b, m, t, info) {
     let v;
     if (ms && ts) {
       if (bs && same(ms, bs)) v = ts; else if (bs && same(ts, bs)) v = ms; else if (same(ms, ts)) v = ms;
-      else { v = ts; info?.conflicts.push("album:лист " + (ts.num ?? ts.title ?? ts.id ?? k.slice(1))); }
+      else {
+        const r = mergeSheet(bs, ms, ts), name = "album:лист " + (ts.num ?? ts.title ?? ts.id ?? k.slice(1));
+        v = r.sheet; if (r.conflicts.length) info?.conflicts.push(name);
+      }
     } else if (ms) v = bs && same(ms, bs) ? undefined : ms;         // у них убран: если я правил — остаётся
     else if (ts) v = bs && same(ts, bs) ? undefined : ts;           // у меня убран: если они правили — остаётся
     if (v !== undefined) sheets.push(v);
