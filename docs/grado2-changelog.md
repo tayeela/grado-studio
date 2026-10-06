@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.29: «Понижать этажность ради инсоляции соседей» — switch in «Эскиз», off by default
+  (#12, owner «А»).** Node «Посадка застройки» gets a `relax` toggle (urban blocks only); the T56 lowering in
+  `urbanBlocks` runs only when it is on (`relaxIf` in blocks.js); old projects open with it off. Безобразово, 18 floors:
+  off 931 743 m² / max 17 floors, on 925 864 m² with sections 17→10.
 - **2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.** Title sheet: «Об утверждении
   проекта планировки территории по адресу:», address and district are one text block — in PPTX one text box with
   paragraphs (`block`/`para` on text ops, `textblock` in backend_pptx), in PDF the same lines. Photo sheet: labels avoid

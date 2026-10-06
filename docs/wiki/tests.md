@@ -34,7 +34,7 @@
 | `test_t82_rail_icons.py` | RailIcons | 9 |
 | `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
 | `albummeta_test.js` | JS | 24 |
-| `blocks_test.js` | JS | 7 |
+| `blocks_test.js` | JS | 9 |
 | `cadcore_test.js` | JS | 60 |
 | `collab_test.js` | JS | 83 |
 | `gpzones_test.js` | JS | 18 |

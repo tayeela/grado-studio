@@ -951,6 +951,7 @@ function NPlace() {
   this.addWidget("combo", "этажность по", "заданной", () => { }, { values: FLOOR_MODES });
   this.addWidget("slider", "участок, соток", 10, () => { }, { min: 4, max: 20, precision: 0, slider_color: "#8fb3e0" });   // ИЖС
   this.addWidget("slider", "квартал, м", 110, () => { }, { min: 60, max: 200, precision: 0, slider_color: "#8fb3e0" });    // урбан-блоки
+  this.addWidget("toggle", "понижать этажность ради инсоляции", false, () => { });    // T12: выкл. по умолчанию; в старых проектах поля нет — выключено
   this.properties = { run: false };        // как в TestFit: посадка строится только по команде «Построить эскиз»
   finish(this, "gen", 240);
 }
@@ -971,7 +972,7 @@ function placeParams(n) {
   const w = n.widgets, mode = FLOOR_MODES.includes(w[5]?.value) ? w[5].value : FLOOR_MODES[0];
   return { typ: TYPOLOGIES.includes(w[0].value) ? w[0].value : "Секции", width: Math.round(w[1].value), floors: n.getInputData?.(1) ?? Math.round(w[2].value), gap: +w[3].value, angle: Math.round(w[4].value),
     cap: n.inputs?.[2] ? n.getInputData?.(2) || null : null, goal: mode === FLOOR_MODES[1] ? densityGoal() : null,
-    plot: Math.round(w[6]?.value ?? 10), block: Math.round(w[7]?.value ?? 110) };
+    plot: Math.round(w[6]?.value ?? 10), block: Math.round(w[7]?.value ?? 110), relax: !!w[8]?.value };
 }
 /* цель плотности берётся из узла ТЭП графа: нужная СПП новой застройки = цель × территория − СПП сохраняемых */
 function densityGoal() {
@@ -1298,9 +1299,9 @@ function place(site, p) {
       });
       plot(polyLL(W(rect(x0 + d, y0 + d, x1 - d, y1 - d))), "двор", { "Блок": grp });
       // T56: секции, чьи фасады не набирают 50 % нормы инсоляции из-за затенения своим кварталом, — понижение соседних крыльев (blocks.js)
-      if (window.BLOCKS?.relax && !window.NO_BLOCKS_RELAX && typeof TERR !== "undefined" && TERR) {
+      if (p.relax && window.BLOCKS?.relaxIf && typeof TERR !== "undefined" && TERR) {
         const g = out.filter(b => b.grp === grp), secs = g.map(b => ({ ring: prismsOf(b.f, 0)[0].ring, floors: b.floors }));
-        BLOCKS.relax(secs, { lat: turf.centroid(TERR).geometry.coordinates[1], floorH: CONS.floorH, norm: CONS.norm * 60, z: CONS.z, reveal: CONS.reveal });
+        BLOCKS.relaxIf(secs, { on: p.relax, lat: turf.centroid(TERR).geometry.coordinates[1], floorH: CONS.floorH, norm: CONS.norm * 60, z: CONS.z, reveal: CONS.reveal });
         g.forEach((b, i) => { b.floors = secs[i].floors; });
         g.forEach((b, i) => { if (!secs[i].floors) out.splice(out.indexOf(b), 1); });
       }
@@ -1599,6 +1600,7 @@ function publishedControls() {
   if (p && typ === "Урбан-блоки") out.push({ n: p, w: "квартал, м", label: "Квартал по длинной стороне, м", min: Math.ceil((2 * Math.round(p.widgets[1].value) + 20) / .8 / 5) * 5, max: 200, step: 5, hint: "квартал — длина × 0,8; между кварталами улицы 20 м; ставится только квартал, целиком помещающийся в пятно" });
   if (p && typ !== "ИЖС") out.push({ n: p, w: "ширина корпуса, м", label: typ === "Блокированные" ? "Глубина дома, м" : "Ширина корпуса, м", min: 12, max: 24, step: 1, hint: typ === "Блокированные" ? "берётся от 10 до 14 м; блок 7 м по фасаду, до 6 блоков в ряду, палисадник 5 м и сад 12 м" : "" });
   if (p && !LOWRISE.has(typ) && typ !== "Урбан-блоки") out.push({ n: p, w: "разрыв / высота", min: .5, max: 2, step: .05, hint: "разрыв между длинными сторонами = коэф. × высота, но не меньше 15 м (2–3 эт.) и 20 м (4 эт. и выше), СП 42.13330 п. 7.1" });
+  if (p && typ === "Урбан-блоки" && p.widgets[8]) out.push({ n: p, w: "понижать этажность ради инсоляции", label: "Понижать этажность ради инсоляции соседей", type: "toggle", hint: "Программа проверяет, получают ли окна солнце, и понижает этажность секций, которые затеняют соседей. Это улучшает инсоляцию, но уменьшает площадь застройки и делает расчёт дольше. Выключено — этажность не меняется; предупреждения «Проверки норм» по инсоляции остаются." });
   if (p) out.push({ n: p, w: "поворот, °", label: "Поворот относительно длинной стороны участка, °", min: -90, max: 90, step: 1, hint: "0 — ряды (кварталы) вдоль длинной стороны каждого участка, 90 — поперёк" });
   graph._nodes.filter(n => n.type === "Геометрия/Буфер").forEach(n => out.push({ n, w: "расстояние, м", label: n.title + ", м", min: 0, max: 40, step: 1 }));
   if (t) out.push({ n: t, w: "доля жилья, %", min: 0, max: 100, step: 5 }, { n: t, w: "цель, тыс. м²/га", label: "Целевая плотность, тыс. м²/га", min: 5, max: 45, step: 1 });
@@ -1615,10 +1617,12 @@ function renderParams() {
   const chk = window.LASTCHECK, check = pn ? `<div class="ctl"><div class="row" style="margin:0"><button class="btn" data-check ${RESULT.sketch.length ? "" : "disabled"} title="Инсоляция новых домов и соседей, корпуса на запретах, разрывы между корпусами — слой «Проверка норм» с причиной у каждой точки"><i data-lucide="shield-check"></i>Проверить нормы</button></div>${chk ? `<small>${esc(chk.text)}; новые дома — норму получают ${chk.own} % фасадов; соседи, потерявшие норму: ${chk.lost}</small>` : ""}</div>` : "";
   $("params").innerHTML = head + svSketchBar() + `<div id="resNote"></div>` + check + cs.map((c, i) => { const w = c.n.widgets.find(x => x.name === c.w), lbl = c.label || c.w[0].toUpperCase() + c.w.slice(1);
     if (c.type === "seg") return `<div class="ctl"><div class="t"><span>${esc(lbl)}</span></div><div class="seg">${c.opts.map(o => `<button data-seg="${i}" data-v="${o}" title="${o}" aria-pressed="${w.value === o}">${o}</button>`).join("")}</div>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
+    if (c.type === "toggle") return `<div class="ctl"><label class="t" style="justify-content:flex-start;gap:8px;cursor:pointer"><input type="checkbox" id="pc${i}" data-tg="${i}" ${w.value ? "checked" : ""}><span>${esc(lbl)}</span></label>${c.hint ? `<small>${c.hint}</small>` : ""}</div>`;
     return `<div class="ctl"><div class="t"><label for="pc${i}">${esc(lbl)}</label><span id="pv${i}">${fmt(w.value, c.step < 1 ? 2 : 0)}</span></div><input type="range" id="pc${i}" data-pc="${i}" min="${c.min}" max="${c.max}" step="${c.step}" value="${Number(w.value)}" title="${esc(lbl)}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу">${c.hint ? `<small>${c.hint}</small>` : ""}</div>`; }).join("")
     + `<div class="note">Параметры блоков схемы, вынесенные в панель: правка здесь меняет схему, и наоборот.</div>`;
   icons(); renderResNote();
   $("params").oninput = e => { const i = e.target.dataset.pc; if (i == null) return; const c = cs[+i], w = c.n.widgets.find(x => x.name === c.w); w.value = +e.target.value; $("pv" + i).textContent = fmt(w.value, c.step < 1 ? 2 : 0); recompute(); };
+  $("params").onchange = e => { const i = e.target.dataset.tg; if (i == null) return; const c = cs[+i]; c.n.widgets.find(x => x.name === c.w).value = e.target.checked; recompute(true); };
   $("params").onclick = e => {
     const r = e.target.closest("[data-run]"); if (r) {
       if (r.dataset.run === "1" && !TERR) return toast("Эскиз строится внутри границы территории, а её нет. Задайте границу: команда BO (кнопка «Граница» на ленте) или «Пример территории» в окне «Данные».");

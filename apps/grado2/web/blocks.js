@@ -56,6 +56,8 @@
     const pts = I.frontPoints(P, 6, o.z ?? 2); I.evalFront(pts, I.obstacleIndex(P), paths, { norm: o.norm ?? 120, reveal: o.reveal ?? 0 });
     return secs.map((_, i) => { const q = pts.filter(p => p.b === i && !p.orient); return q.length ? q.filter(p => p.worst.ok).length / q.length : null; });
   }
-  const BLOCKS = { relax, shares };
+  /* переключатель «Понижать этажность ради инсоляции соседей» (окно «Эскиз»): выключен — секции не трогаются (o.on не задан или false) */
+  function relaxIf(secs, o) { return o && o.on ? relax(secs, o) : { failBefore: 0, failAfter: 0, lowered: 0, dropped: [], off: true }; }
+  const BLOCKS = { relax, relaxIf, shares };
   if (typeof module !== "undefined" && module.exports) module.exports = BLOCKS; else root.BLOCKS = BLOCKS;
 })(typeof window !== "undefined" ? window : globalThis);

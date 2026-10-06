@@ -343,14 +343,16 @@ export default async p => {
   check(low["ИЖС"].guest >= Math.ceil(low["ИЖС"].n * .16 * .8) && low["Блокированные"].guest > 0, `гостевые места по 945-ПП: ИЖС ${low["ИЖС"].guest} на ${low["ИЖС"].n} домов, блокированные ${low["Блокированные"].guest}`);
   check(low["Блокированные"].n > 0 && low["Блокированные"].plots > low["Блокированные"].n && low["Блокированные"].maxF <= 3 && low["Блокированные"].streets > 0, `блокированные: ${low["Блокированные"].n} домов, ${low["Блокированные"].plots} участков блоков, проезды`);
   check(low["Урбан-блоки"].n > low["Урбан-блоки"].grp && low["Урбан-блоки"].plots > 0 && low.gap === 0, `урбан-блоки: ${low["Урбан-блоки"].n} секций в ${low["Урбан-блоки"].grp} кварталах, дворы; вплотную стоящие секции квартала — не нарушение разрыва`);
-  // T56: «Квартал» (урбан-блоки) без секций ниже 50 % нормы из-за затенения собственным кварталом: с понижением крыльев (blocks.js) и без него
+  // T56: «Квартал» (урбан-блоки) без секций ниже 50 % нормы из-за затенения собственным кварталом: с понижением крыльев (blocks.js, переключатель «Понижать этажность ради инсоляции соседей») и без него; по умолчанию выключен
   await p.group("t56", async () => {
     const R = JSON.parse(await p.ev(`const pn=RESULT.placeNode, w0=pn.widgets[5].value, t0=pn.widgets[0].value, out={}; pn.widgets[5].value="заданной"; pn.widgets[0].value="Урбан-блоки";
-      for (const off of [true, false]) { window.NO_BLOCKS_RELAX=off; pn._ck=null; const t=performance.now(); recompute(true); await new Promise(r=>setTimeout(r,400)); const ms=Math.round(performance.now()-t-400), sk=RESULT.sketch;
+      for (const off of [true, false]) { pn.widgets[8].value=!off; pn._ck=null; const t=performance.now(); recompute(true); await new Promise(r=>setTimeout(r,400)); const ms=Math.round(performance.now()-t-400), sk=RESULT.sketch;
         await runCheck(null); const bad=catValues("cons:check","Нарушение").filter(x=>/норму получают/.test(x[0])).reduce((s,x)=>s+x[1],0);
         out[off?"before":"after"]={n:sk.length, bad, spp:Math.round(sk.reduce((s,b)=>s+b.m2*b.floors,0)), goal:sk.goal||"", ms}; }
-      window.NO_BLOCKS_RELAX=false; pn.widgets[0].value=t0; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return JSON.stringify(out)`));
+      pn.widgets[8].value=false; pn.widgets[0].value=t0; pn.widgets[5].value=w0; pn._ck=null; recompute(true); return JSON.stringify(out)`));
     p.log("  T56: " + JSON.stringify(R));
+    check(await p.ev(`return RESULT.placeNode.widgets[8].value===false && placeParams(RESULT.placeNode).relax===false`), "T12: переключатель понижения по умолчанию выключен");
+    check(await p.ev(`const pn=RESULT.placeNode; pn.widgets[0].value="Урбан-блоки"; pn.widgets[8].value=true; renderParams(); const el=document.querySelector("[data-tg]"); const ok1=!!el && el.checked && /Понижать этажность ради инсоляции соседей/.test($("params").textContent); pn.widgets[8].value=false; pn.widgets[0].value="Секции"; renderParams(); return ok1`), "T12: в окне «Эскиз» есть переключатель с нужной подписью");
     check(R.before.n > 0 && R.after.n > 0 && R.after.bad <= R.before.bad, `T56 урбан-блоки: секций ниже нормы инсоляции было ${R.before.bad}, стало ${R.after.bad} (корпусов ${R.before.n} → ${R.after.n}), СПП ${R.before.spp} → ${R.after.spp} м²`);
     check(R.after.spp >= R.before.spp * .95, `T56: СПП урбан-блоков после правки не ниже 95 % (${(100 * R.after.spp / R.before.spp).toFixed(1)} %)`);
   });
