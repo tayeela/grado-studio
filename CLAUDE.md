@@ -29,6 +29,7 @@ merging the PR `team/t60 → main`, then `git pull` in the main checkout deploys
 Urban-planning workspace: existing situation → АГК → ППТ, album ППТ КРТ to PDF/PPTX. The working program is
 **ГРАДО 2 (`apps/grado2`)**; old studio, wizard and calc-web are closed (code kept for core tests). The owner is an urban
 planner, not a programmer (QGIS, AutoCAD, macOS): Russian, plain words, no emoji, results described as what is on screen.
+Asking the owner to do something on the Mac — always give the exact Terminal command, ready to paste (owner 06.10.2026).
 
 ## Run and test
 - Owner's server: port 8650, projects in `~/Documents/ГРАДО 2` — **never test there**. Test servers and project copies —
