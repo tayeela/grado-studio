@@ -23,10 +23,14 @@ export default async p => {
     const r=[/World_Dark_Gray_Base/.test(dark), /Esri/.test(darkAttr), !/cartocdn/.test(light) && /openstreetmap/.test(light), md===0, PROJ.dirty===d0, BASE===b0, $("baseSel").options.length>=1];
     return r.every(Boolean) || JSON.stringify({r, dark: dark.slice(0, 80), light: light.slice(0, 80), md})`);
   check(t38 === true, `T38: тёмная тема — тёмная подложка Esri, светлая — OSM; смена темы не делает проект несохранённым, выбор подложки не меняется${t38 === true ? "" : " " + t38}`);
-  check(await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
-    const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
-    const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await new Promise(r=>setTimeout(r,200));
-    window.markDirty=om; Collab.touched=ot; return light===dark && bg0!==bg1 && nb0!==nb1 && lgc.clear_background_color===bg0 && md===0 && tc===0`), "T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет");
+  // смена темы на медленном раннере CI — не за 0,2 с: ждём смены цвета холста (до 3 с) и при сбое называем условие
+  const t27 = await p.ev(`let md=0, tc=0; const om=window.markDirty, ot=Collab.touched; window.markDirty=(...a)=>{md++; return om?.(...a)}; Collab.touched=(...a)=>{tc++; return ot.apply(Collab,a)};
+    const until=async f=>{ for (let i=0; i<30 && !f(); i++) await new Promise(r=>setTimeout(r,100)); };
+    const light=JSON.stringify(graph.serialize()); const bg0=lgc.clear_background_color, nb0=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await until(()=>lgc.clear_background_color!==bg0);
+    const dark=JSON.stringify(graph.serialize()), bg1=lgc.clear_background_color, nb1=LiteGraph.NODE_DEFAULT_BGCOLOR; $("bTheme").click(); await until(()=>lgc.clear_background_color===bg0);
+    window.markDirty=om; Collab.touched=ot; const r=[light===dark, bg0!==bg1, nb0!==nb1, lgc.clear_background_color===bg0, md===0, tc===0];
+    return r.every(Boolean) || JSON.stringify({r, md, tc})`);
+  check(t27 === true, `T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет${t27 === true ? "" : " " + t27}`);
   {
     const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
     const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900); const r10 = await res(), c1 = await at();
@@ -407,7 +411,9 @@ export default async p => {
   check(await p.ev(`document.body.classList.add("hub-viewer"); window.Norms.refresh(); const ok=[...document.querySelectorAll("#norms input[type=number]")].every(i=>i.disabled) && !document.querySelector("#norms .nro").hidden && $("normAll").disabled; document.body.classList.remove("hub-viewer"); window.Norms.refresh(); return ok`), "наблюдатель видит окно нормативов только для чтения");
   // T6 шаг 2: «Условия проекта» в «Нормативах» — свободные места и зона; пересчёт, «Резерв участков», сохранение, зона не затирается районом
   // поиск района идёт через портал OSM (до 30 с) — ждём его конца, а не время
-  await p.ev(`for (let i = 0; i < 350 && RESULT.tepNode?._placeBusy; i++) await new Promise(r=>setTimeout(r,100)); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const q=$("normQ"); q.value=""; q.dispatchEvent(new Event("input",{bubbles:true})); return 1`);
+  // поиск района (портал OSM, до 30 с) стартует с задержкой 0,4 с: ждём, пока он завершён для этой границы (tp.rev),
+  // иначе он закончится посреди следующих шагов и поменяет граф проекта
+  await p.ev(`for (let i = 0; i < 350 && (RESULT.tepNode?._placeBusy || tepParams(RESULT.tepNode).rev !== TERR_REV); i++) await new Promise(r=>setTimeout(r,100)); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,500)); const q=$("normQ"); q.value=""; q.dispatchEvent(new Event("input",{bubbles:true})); return 1`);
   const cd0 = await p.ev(`const tp=tepParams(RESULT.tepNode); return [!!document.querySelector("#norms .ncond"), ["doo","school","clinic"].every(k=>document.querySelector('[data-fid="'+k+'"]')), $("normZone").value === String(tp.zone), JSON.stringify(tp.free ?? null), tp.zoneSet, tp.auto, $("normZoneSrc").textContent.trim(), !!RESULT.tepNode._tep.m.social_res_ha || RESULT.tepNode._tep.m.social_res_ha === 0]`);
   check(cd0[0] && cd0[1] && cd0[2] && cd0[3] === 'null' && !cd0[4] && /по району|район не в списках|район не определён/.test(cd0[6]), `блок «Условия проекта» над группами: зона и три поля по 0, источник зоны «${cd0[6]}»`);
   check(await p.ev(`const tp=tepParams(RESULT.tepNode); winOpen("wNorms", false); await new Promise(r=>setTimeout(r,200)); const a=JSON.stringify(graph.serialize()); recompute(true); winOpen("wNorms", true); await new Promise(r=>setTimeout(r,900)); window.Norms.refresh(); const b=JSON.stringify(graph.serialize());
