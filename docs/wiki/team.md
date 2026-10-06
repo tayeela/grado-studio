@@ -135,6 +135,7 @@
 
 ## Правила команды (RULE из PROGRESS.md)
 
+- A change to album download or label placement is accepted only after a real album rebuild with network on a fresh project copy plus a page-by-page PDF comparison with the previous baseline on two territories (T86: mocked download and spec-JSON golden both passed while sheet 4 lost roads and the station label moved onto a road).
 - Cycle start = `git merge main` in the team branch → `tools/gate.sh` → read `docs/wiki/INDEX.md` and `docs/wiki/team.md`; agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasting file ranges.
 - A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 - Any new choice bar in «Листы и альбом» closes the pending one (only one bar at a time) and old E2E steps that export on purpose pass `force` — T74's export gate broke t62/t66 until then.

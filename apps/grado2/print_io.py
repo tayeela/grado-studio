@@ -321,6 +321,7 @@ def _in_ring(x, y, ring):
 # места номера вокруг точки выноски: радиусы, мм (ближние — раньше) и направления через 15° (k × 15°, y вниз):
 # сначала диагонали, потом стороны, потом промежуточные
 LEAD_R = (7, 9, 11, 13, 15.5, 18, 21, 24, 28, 32, 42)
+ROAD_POLY_KEYS = ("yandex.hd_roads", "egko.roads")                  # полигоны проезжей части: подпись станции на них не стоит (T86g)
 OBST_PAD = 0.7                                                      # запас подписи от железной дороги и границы района, мм
 SPREAD = 4.0                                                        # точки выносок ближе этого — «кучка», разводятся (владелец 05.10.2026)
 STATION_ICON_H = 3.5                                                # высота значка станции метро / МЦК / МЦД, мм (правило 16)
@@ -712,6 +713,7 @@ class SketchMapFrame(Frame):
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
+        railsegs, roadrings = [], []                                    # только пути (мм) и кольца полигонов дорог (мм): подпись станции (T86g)
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -775,6 +777,7 @@ class SketchMapFrame(Frame):
                             rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
                             if rings:
                                 polys.append((rings, f))
+                                roadrings.extend(rings)
                 for rings, f in polys:
                     out.append({"op": "path", "rings": rings, "closed": True, "fill": None, "width": max(0.08, (f.get("w") or 1) * PX_MM) * 2,
                                 "stroke": hex_to_rgb(f.get("stroke") or "#a0a0a0"), "dash": None})
@@ -797,6 +800,8 @@ class SketchMapFrame(Frame):
                     best = None                                                 # подпись — одна на объект: у самой большой части
                     for poly in parts:
                         rings = [c for c in (clip_ring([tr.mm(*p[:2]) for p in r], rect) for r in poly) if len(c) >= 3]
+                        if lkey in ROAD_POLY_KEYS:
+                            roadrings.extend(rings)
                         if layer.get("key") == "egko.water":
                             watersegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
                         if not rings:
@@ -828,6 +833,8 @@ class SketchMapFrame(Frame):
                             continue
                         if obst:                                    # железная дорога и граница района — препятствие для названий
                             osegs.extend(zip(pts, pts[1:]))
+                            if lkey == "yandex.rail":
+                                railsegs.extend(zip(pts, pts[1:]))
                         if layer.get("key") == "osm.roads":
                             roadsegs.extend((a, b, str(f.get("label") or "")) for a, b in zip(pts, pts[1:]))
                         if f.get("nl"):
@@ -1172,6 +1179,38 @@ class SketchMapFrame(Frame):
                         return False
             return True
 
+        def station_spot(x, y, bw, up, down, own):
+            """Место подписи станции (T86g): среди мест вокруг точки лучшее по штрафу, а не «последняя попытка без проверки».
+            Запрещено: пересекать железную дорогу, полигоны дорог, чужие подписи, угловые надписи районов, точки выносок;
+            штраф: граница района и граница территории (красные линии) — большой, расстояние от точки станции — по мм.
+            Подпись горизонтальная. Нет места без запретов — None (дальше обычный перебор)."""
+            near = (x - 70, y - 50, x + 70, y + 50)
+            nr = [r for r in roadrings if len(r) > 2 and not (max(p[0] for p in r) < near[0] or min(p[0] for p in r) > near[2]
+                                                              or max(p[1] for p in r) < near[1] or min(p[1] for p in r) > near[3])]
+            redges = [(a, b) for r in nr for a, b in zip(r, r[1:] + r[:1])]
+            rs_ = {(tuple(a), tuple(b)) for a, b in railsegs}
+            bnd = [(a, b) for a, b in list(osegs) + list(tsegs) if (tuple(a), tuple(b)) not in rs_]
+            spots = [(0.0, 0.0)] + [(r * math.cos(k * math.pi / 8), r * math.sin(k * math.pi / 8))
+                                    for r in (2, 3.5, 5, 7, 9, 11, 13.5, 16, 19, 22, 26, 30) for k in range(16)]
+            best = None
+            for dx, dy in spots:
+                cx = min(max(x + dx, rx + bw / 2 + MAP_PAD), rx + rw - bw / 2 - MAP_PAD)
+                cy = min(max(y + dy, ry + up + MAP_PAD), ry + rh - down - MAP_PAD)
+                box = (cx - bw / 2, cy - up, cx + bw / 2, cy + down)
+                pb = (box[0] - OBST_PAD, box[1] - OBST_PAD, box[2] + OBST_PAD, box[3] + OBST_PAD)
+                if any(_seg_box(a, b, pb) for a, b in railsegs):
+                    continue
+                if any(_seg_box(a, b, box) for a, b in redges) or any(_in_ring(cx, cy, r) for r in nr):
+                    continue
+                if any(box[0] - 1 < m[0] < box[2] + 1 and box[1] - 1 < m[1] < box[3] + 1 for k_, m in marks.items() if k_ != own):
+                    continue
+                if any(not (box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]) for b in boxes):
+                    continue
+                score = math.hypot(cx - x, cy - y) + (200 if any(_seg_box(a, b, pb) for a, b in bnd) else 0)
+                if best is None or score < best[0]:
+                    best = (score, cx, cy)
+            return (best[1], best[2]) if best else None
+
         for x, y, text, ls, f, *more in labels:
             ring = more[0] if more else None
             if f.get("circle"):
@@ -1246,6 +1285,11 @@ class SketchMapFrame(Frame):
                     + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") or f.get("mk") == "view" else []) \
                     + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else [])   # номер снимка есть всегда
             spot = None
+            if stn and not f.get("circle"):
+                s_ = station_spot(x, y, bw, up, down, id(f))
+                if s_ and take((s_[0] - bw / 2, s_[1] - up, s_[0] + bw / 2, s_[1] + down), avoid=False, own=id(f)):
+                    spot = s_
+                    tries = []
             for dx, dy, lvl in tries:
                 cx = min(max(x + dx, rx + bw / 2 + MAP_PAD), rx + rw - bw / 2 - MAP_PAD)
                 cy = min(max(y + dy, ry + up + MAP_PAD), ry + rh - down - MAP_PAD)

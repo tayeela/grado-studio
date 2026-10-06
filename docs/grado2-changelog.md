@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.20: fixes from the live album rebuild check.** ЕГКО road polygon with a hole touching the
+  outer ring (clip by the request box) collapsed in `RoadClean.clean` (JSTS buffer on an invalid polygon) and sheet 4 lost
+  its roads: normalise with `union(f,f)` before buffering, and fall back to the unbuffered shape if cleaning loses > 50 %
+  of the area (fixture `egko_road_hole_on_edge.json`). Station labels: `station_spot` in print_io picks the best place by
+  penalty (never across rails, road polygons, other labels or corner captions; penalty for district/territory borders
+  and distance), Безобразово unchanged on all 21 pages. Empty downloads record their request area (`emptyCover`), so the
+  «оценка» note disappears after a fresh download.
 - **2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).** `carryManual` keeps roles that
   differ from the sheet template (moves, copies, added layers, source order, eye) through «Обновить листы» and
   «Собрать заново» with replace; «Вернуть лист к образцу» still restores the template. E2E group `t86` covers the window.

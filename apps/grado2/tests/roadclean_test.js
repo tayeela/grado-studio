@@ -44,6 +44,15 @@ const cut = R.clean(turf, [rect(-2000, 0, 2000, 8)], BB), cb = turf.bbox({ type:
 ok(cb[0] >= BB[0] - (BB[2] - BB[0]) * .051 && cb[2] <= BB[2] + (BB[2] - BB[0]) * .051, "длинная дорога обрезана рамкой с запасом 5 %");
 ok(R.clean(turf, [], BB) === null, "пусто — null");
 
+// T86g: полигон ЕГКО (КРТ 3229, лист 4) с дырой на краю внешнего кольца; раньше буфер +0.4/−0.4 м сводил 7988 м² к 0.035 м² → null
+const edge = JSON.parse(require("fs").readFileSync(path.join(__dirname, "fixtures/egko_road_hole_on_edge.json"), "utf8")), eb = turf.bbox({ type: "Feature", geometry: edge, properties: {} });
+const er = R.clean(turf, [edge], [eb[0] - .002, eb[1] - .002, eb[2] + .002, eb[3] + .002]);
+ok(er && A(er) > 7500 && A(er) < 8500, "дыра на краю кольца: площадь сохранена " + (er && Math.round(A(er))) + " м² (было 7988)");
+// страховка: закрытие щелей, потерявшее > 50 % площади, не принимается (подмена turf.buffer на «съедающий»)
+const evil = { ...turf, buffer: (f, d, o) => d > 0 ? turf.buffer(f, d, o) : { type: "Feature", geometry: sq(0, 0, 5), properties: {} } };
+const ev = R.clean(evil, [rect(0, 0, 100, 20)], BB);
+ok(ev && A(ev) > 1800, "страховка: буфер потерял площадь — взята фигура без буфера (" + (ev && Math.round(A(ev))) + " м²)");
+
 // скорость на синтетике: ТиНАО (48 га, 290 кусков) и плотная Москва 1:1000 (3000 кусков)
 function strip(x0, y0, x1, y1, w) { const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy), nx = -dy / L * w / 2, ny = dx / L * w / 2;
   return { type: "Polygon", coordinates: [[[x0 + nx, y0 + ny], [x1 + nx, y1 + ny], [x1 - nx, y1 - ny], [x0 - nx, y0 - ny], [x0 + nx, y0 + ny]].map(ll)] }; }

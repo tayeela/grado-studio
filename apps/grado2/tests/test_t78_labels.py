@@ -93,6 +93,45 @@ class StationNotOnDiagonalRail(unittest.TestCase):
         self.assertFalse(print_io._seg_box(p, q, box), f"подпись {box} лежит на железной дороге {p}-{q}")
 
 
+class StationBestSpot(unittest.TestCase):
+    """T86g: подпись станции выбирается по штрафу, а не «последней попыткой без проверки»: не на путях, не на полигоне дороги,
+    не на красной линии района, пока есть свободное место; на листе КРТ 3229 прежняя подпись уезжала на дорогу или резала границу."""
+
+    def _box(self, o):
+        w = print_io._text_w(o["text"], o.get("font_family"), o["size"])
+        return (o["x"] - w / 2, o["y"] - o["size"], o["x"] + w / 2, o["y"] + o["size"] * .3)
+
+    def test_avoids_rail_road_polygon_and_district_line(self):
+        area = {"g": sq(.0016, .0006), "fill": "#cccccc", "stroke": "#999999", "w": .5, "a": .3, "label": STN, "ls": 3.8}
+        road = {"g": {"type": "Polygon", "coordinates": [[[LON - .004, LAT + .0012], [LON + .0002, LAT + .0012], [LON + .0002, LAT - .0012],
+                                                           [LON - .004, LAT - .0012], [LON - .004, LAT + .0012]]]}, "fill": "#ffffff", "stroke": "#999999", "w": 1}
+        layers = [{"key": "osm.landuse", "title": "Землепользование", "features": [area]},
+                  {"key": "yandex.hd_roads", "title": "Дороги", "features": [road]},
+                  {"key": "yandex.rail", "title": "Железная дорога", "over": True, "features": [{"g": hline(LAT), "stroke": "#1f1f1f", "w": 4}]},
+                  {"title": "Граница района", "over": True, "features": [{"g": hline(LAT + .0008), "stroke": "#e30613", "fill": "#e30613", "w": 2, "a": 0}]}]
+        sh = sheet(layers)
+        tr = print_io.MapTransform((25, 10, 250, 214), sh["center"], sh["scale"])
+        yr = tr.mm(LON, LAT)[1]                                        # железная дорога
+        yb = tr.mm(LON, LAT + .0008)[1]                                # красная линия района
+        xr = tr.mm(LON + .0002, LAT)[0]                                # правый край полигона дороги
+        t = texts(ops_of(sh), "Калошино")
+        self.assertTrue(t, "подпись станции есть")
+        b = self._box(t[0])
+        self.assertFalse(b[1] - .7 < yr < b[3] + .7, "подпись на путях")
+        self.assertFalse(b[1] < yb < b[3], "подпись режет красную линию района")
+        self.assertGreater(b[0], xr, "подпись на полигоне дороги")
+
+    def test_never_overlaps_other_label(self):
+        area = {"g": sq(.0016, .0006), "fill": "#cccccc", "stroke": "#999999", "w": .5, "a": .3, "label": STN, "ls": 3.8}
+        other = {"g": {"type": "Point", "coordinates": [LON, LAT]}, "nm": True, "label": "д. Соседняя", "ls": 4.6, "la": 0}
+        layers = [{"key": "osm.landuse", "title": "Землепользование", "features": [area]}, {"title": "Населённые пункты", "features": [other]}]
+        ops = ops_of(sheet(layers))
+        a, c = texts(ops, "Калошино"), texts(ops, "Соседняя")
+        self.assertTrue(a and c)
+        ba, bc = self._box(a[0]), self._box(c[0])
+        self.assertTrue(ba[2] < bc[0] or ba[0] > bc[2] or ba[3] < bc[1] or ba[1] > bc[3], "подписи наложились")
+
+
 class DistrictBoundaryObstacle(unittest.TestCase):
     def test_label_avoids_district_line(self):
         area = {"g": sq(.0016, .0006), "fill": "#cccccc", "stroke": "#999999", "w": .5, "a": .3, "label": "СНТ Ручеёк", "ls": 3.8}

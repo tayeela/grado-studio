@@ -31,13 +31,13 @@
   function frameOf(sh) {
     try { const g = frameGeom(sh), c = g.clone(); c.transform("EPSG:3857", "EPSG:4326"); return { ext: g.getExtent(), bb: c.getExtent() }; } catch { return null; }
   }
-  const dsig = k => `${typeof DATA !== "undefined" ? (DATA[k]?.count ?? "-") + "/" + (DATA[k]?.bbox || "") : ""}`;
+  const dsig = k => `${typeof DATA !== "undefined" ? (DATA[k]?.count ?? "-") + "/" + (dataBBox(k) || "") : ""}`;
   const mapSheet = s => !(s.frozen || s.panels || s.kind === "title" || s.kind === "tep");
   // что выгружено по слою: область выгрузки из данных слоя (bbox пишется в проект с v0.99.15); у слоя из прежнего проекта области нет —
   // она восстанавливается так же, как её задаёт сборка альбома (sheets.js buildSection): объединение рамок листов, где слой нужен,
   // для Яндекса — вокруг территории и не больше 40 км². est — оценка. Слой, который не нужен ни одному листу, остаётся без области
   function requested(key, all) {
-    const d = typeof DATA !== "undefined" ? DATA[key] : null; if (d?.bbox) return { bb: d.bbox, est: false };
+    const d = typeof DATA !== "undefined" ? DATA[key] : null, db = typeof dataBBox === "function" ? dataBBox(key) : d?.bbox; if (db) return { bb: db, est: false };
     if (typeof DERIVED === "undefined" || !TERR) return null;
     let u = null; const add = b => { u = u ? [Math.min(u[0], b[0]), Math.min(u[1], b[1]), Math.max(u[2], b[2]), Math.max(u[3], b[3])] : b.slice(); };
     all.forEach(({ sh, fr }) => { if (fr && (sh.keys || []).flatMap(k => DERIVED[k] || [k]).includes(key)) add(fr.bb); });
@@ -52,7 +52,7 @@
   function makeProbe(sh, fr, all, asig) {
     const sig = fr ? fr.ext.map(Math.round).join(",") : "";
     return key => {
-      const id = `${sh.id}|${key}|${sig}|${dsig(key)}|${typeof ERRORS !== "undefined" && ERRORS[key] ? 1 : 0}|${DATA[key]?.bbox ? "" : asig}`;
+      const id = `${sh.id}|${key}|${sig}|${dsig(key)}|${typeof ERRORS !== "undefined" && ERRORS[key] ? 1 : 0}|${dataBBox(key) ? "" : asig}`;
       let r = CACHE.get(id); if (r) return r;
       const d = typeof DATA !== "undefined" ? DATA[key] : null, src = typeof layerSrc !== "undefined" ? layerSrc[key] : null;
       // выгружен: есть данные или слой, либо выгрузку делали и в области ничего не нашлось (CHECKED); пусто в рамке — ни одного объекта

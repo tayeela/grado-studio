@@ -50,7 +50,7 @@ function collectProject() {
     view: { center: ol.proj.toLonLat(v.getCenter()), zoom: v.getZoom(), basemap: BASE },
     territory: TERR,
     imports: Object.fromEntries(Object.entries(SOURCES).filter(([k, s]) => k.startsWith("import:") || s.kind === "fgistp")),
-    checked: [...CHECKED],
+    checked: [...CHECKED], emptyCover: { ...EMPTYCOV },
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style, ...(l.role ? { role: l.role } : {}) })),
@@ -78,7 +78,7 @@ function clearProject() {
   window.PROJ_EPOCH = (window.PROJ_EPOCH || 0) + 1;              // идущие выгрузки и подбор вариантов относятся к прежнему проекту
   if (typeof varRun !== "undefined" && varRun) varRun.stop = true;
   LYR.splice(0).forEach(l => ALLMAPS.forEach(m => m.getLayers().getArray().filter(x => x.get("key") === l.key).forEach(x => m.removeLayer(x))));
-  Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); });
+  Object.keys(DATA).forEach(k => { delete DATA[k]; layerSrc[k]?.clear(); }); Object.keys(EMPTYCOV).forEach(k => delete EMPTYCOV[k]);
   Object.keys(SOURCES).filter(k => k.startsWith("import:") || SOURCES[k].kind === "fgistp").forEach(k => delete SOURCES[k]);
   Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", short: "", place: "", address: "", auto: undefined, slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined, editedAt: undefined, peak: undefined });   // штамп нового проекта — не от прежнего
   TERR = null; TERRSEL = false; TERR_M2 = 0; TERR_REV++; terrSrc.clear(); $("bLoad").disabled = true;
@@ -100,6 +100,7 @@ function applyProject(p) {
     clearProject();
     Object.entries(safeObj(p.imports)).forEach(([k, s]) => { if (s && typeof s === "object") SOURCES[k] = { ...safeObj(s), title: String(s.title ?? k), kind: String(s.kind ?? "import") }; });
     CHECKED.clear(); (p.checked || []).forEach(k => CHECKED.add(k));
+    Object.entries(safeObj(p.emptyCover)).forEach(([k, b]) => { if (Array.isArray(b) && b.length === 4 && b.every(Number.isFinite)) EMPTYCOV[k] = b; });
     if (p.territory) setTerritory(p.territory);
     for (const s of p.layers || []) {
       const d = p.data?.[s.key]; if (!d) continue;

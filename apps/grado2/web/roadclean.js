@@ -5,7 +5,7 @@
    без обрывков < 10 м² и дыр-«островов» < 25 м² → упрощение ~0.3 м. Решение (фильтры, плитки) — чистые функции без turf;
    turf передаётся параметром и касается только слияния и буфера. Проверки — tests/roadclean_test.js. */
 (function (root) {
-  const OPT = { margin: .05, close: .4, minPart: 10, minHole: 25, simplify: .3, tiles: 4 };
+  const OPT = { margin: .05, close: .4, minPart: 10, minHole: 25, simplify: .3, tiles: 4, maxLoss: .5 };
   const planar = (ring, f) => { let s = 0; for (let i = 0, n = ring.length - 1; i < n; i++) s += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]; return Math.abs(s) / 2 * f; };
   // площадь кольца (м²) по градусам: плоское приближение с широтой кольца; для тестов и как запасной вариант
   function ringArea(ring) {
@@ -45,10 +45,16 @@
       const parts = tiles(clipped.map(bboxOf), fr, op.tiles).map(ix => {
         return union(ix.map(i => snap(feat(clipped[i])))); });
       let all = union(parts);
-      if (op.close > 0) { const b = turf.buffer(all, op.close, { units: "meters" }), e = b?.geometry && turf.buffer(b, -op.close, { units: "meters" }); if (e?.geometry) all = e; }
+      // нормализация: у ЕГКО бывает дыра, лежащая на краю внешнего кольца (обрезка рамкой запроса) — для JSTS это невалидный
+      // полигон, буфер +0.4 м «съедал» 7988 м² до 326 м², а −0.4 м — до 0.035 м² (лист 4 КРТ 3229, T86g). Объединение фигуры с самой
+      // собой (polygon-clipping) раскладывает такую дыру на края; страховка — закрытие не должно терять > 50 % площади
+      if (op.close > 0) { const area0 = turf.area(all), norm = f => { try { const u = turf.union(turf.featureCollection([f, f])); return u?.geometry ? u : f; } catch { return f; } },
+          src = norm(all), b = turf.buffer(src, op.close, { units: "meters" }), e = b?.geometry && turf.buffer(b, -op.close, { units: "meters" });
+        if (e?.geometry && turf.area(e) >= area0 * (1 - op.maxLoss)) all = e; else if (o.debug) console.warn("roadclean: закрытие щелей потеряло площадь, взята фигура без буфера"); }
       let g = filterParts(all.geometry, op.minPart, op.minHole);
       if (g && op.simplify > 0) { const s = turf.simplify(feat(g), { tolerance: op.simplify / 111320, highQuality: false, mutate: false }); g = filterParts(s.geometry, op.minPart, op.minHole) || g; }
       if (!g) return null;
+      if (g && turf.area(feat(g)) < turf.area(all) * (1 - op.maxLoss)) g = all.geometry;   // страховка: чистка не должна терять > 50 % площади
       const c = turf.bboxClip(feat(g), fr); return c?.geometry?.coordinates?.length ? c.geometry : null;
     } catch (e) { if (o.debug) console.warn(e); return { type: "MultiPolygon", coordinates: items.flatMap(x => polysOf(x.g)) }; }
   }

@@ -166,6 +166,10 @@ const redLineStyle = f => new ol.style.Style({ renderer(coords, st) {
 /* ---------- состояние проекта ---------- */
 let SOURCES = {};                 // ключ → {title, kind}
 const DATA = {};                  // ключ → {title, source, fetched_at, fc, count, fields}
+// область выгрузки слоёв, давших пустой результат (слоя в DATA нет): ключ → [w, s, e, n]; без неё покрытие листа считалось бы «оценкой» (T86g)
+const EMPTYCOV = {};
+const dataBBox = k => DATA[k]?.bbox || EMPTYCOV[k] || null;
+window.dataBBox = dataBBox; window.EMPTYCOV = EMPTYCOV;
 let ERRORS = {};
 let TERR = null, TERR_M2 = 0, dataRev = 0, TERR_REV = 0, TERRSEL = false;   // TERRSEL — граница выбрана для правки: на ней ручки (cad.js). TERR_REV — номер версии границы: узлы графа пересчитываются при её перерисовке
 const terrSrc = new ol.source.Vector(), layerSrc = {};
@@ -544,10 +548,11 @@ async function loadKeys(keys, bb, opts = {}) {
       Object.assign(ERRORS, r.errors);
       for (const [k, v] of Object.entries(r.layers)) {
         // пустая первая выгрузка не заводит слой в списке: в области этого нет, сказано в итоге
-        if (!DATA[k] && !v.features.features.length) { empty.push(v.title); continue; }
+        if (!DATA[k] && !v.features.features.length) { empty.push(v.title); const p0 = EMPTYCOV[k];
+          EMPTYCOV[k] = p0 ? [Math.min(p0[0], w), Math.min(p0[1], s), Math.max(p0[2], e), Math.max(p0[3], n)] : [w, s, e, n]; continue; }
         const prev = DATA[k], fields = [...new Set(v.features.features.slice(0, 200).flatMap(f => Object.keys(f.properties)))];
         const m = prev && layerSrc[k] ? mergeDownload(k, prev, v.features, [w, s, e, n]) : null;
-        const cover = prev?.bbox ? [Math.min(prev.bbox[0], w), Math.min(prev.bbox[1], s), Math.max(prev.bbox[2], e), Math.max(prev.bbox[3], n)] : [w, s, e, n];
+        const pb = prev?.bbox || EMPTYCOV[k], cover = pb ? [Math.min(pb[0], w), Math.min(pb[1], s), Math.max(pb[2], e), Math.max(pb[3], n)] : [w, s, e, n];
         // имя, данное слою вами, переживает перевыгрузку: по нему слой находят узлы графа
         DATA[k] = { ...v, title: prev?.title || v.title, fc: m ? m.fc : v.features, count: (m ? m.fc : v.features).features.length, fields, original: m?.original || v.features, bbox: cover,
           history: [...(prev?.history || []), { date: v.fetched_at, n: v.features.features.length, ...(m?.counts || {}) }] };

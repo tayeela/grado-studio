@@ -356,9 +356,9 @@ async function buildSituation0(mode) {
   try {
     stp("зелени, воды, дорог, зданий и железной дороги Яндекса"); await loadKeys(["sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"], bb);
     // вблизи территории — подробная основа Яндекса (z18): крупнее 1:7 500 обзорные слои не видны, их сменяет она
-    const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(DATA[k]?.bbox && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(DATA[k].bbox))));
+    const near = ["yandex.buildings", "yandex.hd_roads", "yandex.roads", "yandex.green", "yandex.water"].filter(k => !(dataBBox(k) && turf.booleanWithin(turf.bboxPolygon(turf.bbox(buf(TERR, 150))), turf.bboxPolygon(dataBBox(k)))));
     if (near.length) { stp("подробной основы Яндекса"); await loadKeys(near, turf.bbox(buf(TERR, 300))); }
-    const rb = DATA["osm.roads"]?.bbox; if (!rb || !(rb[0] <= ob[0] && rb[1] <= ob[1] && rb[2] >= ob[2] && rb[3] >= ob[3])) { stp("улиц OSM"); await loadKeys(["osm.roads"], ob); }
+    const rb = dataBBox("osm.roads"); if (!rb || !(rb[0] <= ob[0] && rb[1] <= ob[1] && rb[2] >= ob[2] && rb[3] >= ob[3])) { stp("улиц OSM"); await loadKeys(["osm.roads"], ob); }
     if (ERRORS["osm.roads"]) LOSTNOTE.set(sh.id, lostPhrase("osm.roads")); else LOSTNOTE.delete(sh.id);
     bpStep(`Лист 1 из 1: ${sh.title} — отрисовка…`);
   } finally { bpEnd(); }
@@ -594,7 +594,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
     }
     // вторая фаза (T86e): запасной источник роли — только для листов, где главный не закрыл рамку (не загрузился, пуст или не покрывает ≥ 90 %)
     if (!BP.stop) {
-      const cover = (k, fr) => failed.has(k) || !DATA[k]?.bbox ? 0 : SheetLayout.frameCover(fr, DATA[k].bbox);
+      const cover = (k, fr) => failed.has(k) || !dataBBox(k) ? 0 : SheetLayout.frameCover(fr, dataBBox(k));
       const p2 = SheetLayout.fetchPlan(units, cover, PLAN).phase2;
       console.debug("[T86e] запасные источники:", p2.map(r => `${r.key} (${r.why})`).join("; ") || "не нужны");
       if (p2.length) {

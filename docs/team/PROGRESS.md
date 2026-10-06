@@ -2,6 +2,10 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: A change to album download or label placement is accepted only after a real album rebuild with network on a
+fresh project copy plus a page-by-page PDF comparison with the previous baseline on two territories (T86: mocked
+download and spec-JSON golden both passed while sheet 4 lost roads and the station label moved onto a road).
+
 RULE: Cycle start = `git merge main` in the team branch → `tools/gate.sh` → read `docs/wiki/INDEX.md` and `docs/wiki/team.md`;
 agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasting file ranges.
 
