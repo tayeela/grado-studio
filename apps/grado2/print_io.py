@@ -570,11 +570,13 @@ def _parts(g):
 # Рисунок типов линий ЛГР на листе — постоянный на бумаге при любом масштабе (как PSLTSCALE в AutoCAD): единица шаблона
 # REDLN97 = 0,25 мм, засечки границ зон — через 5 мм, как в образце «ГК Царицыно» (владелец 30.09.2026). Прежде шаблон
 # шёл в метрах местности, и в 1:10 000 граница зоны сливалась в сплошную линию.
-LT_MM = 0.25
+LT_MM = 0.35                                  # мм листа на метр шаблона REDLN97: знаки ЛГР крупнее (владелец 06.10.2026; было 0,25)
+LT_SHAPE_MM = 0.6                             # масштаб самих знаков ЛГР (засечки, треугольники): крупнее шага (владелец 06.10.2026)
 
 
-def linetype_ops(pts, name, k, color, width, lib):
+def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
     """Сложный тип линии AutoCAD (REDLN97) вдоль ломаной в мм листа; k — мм на метр чертежа.
+    shape_k — свой масштаб знаков (легенда: шаг сжат под ширину знака, а сами знаки — как на карте).
     Короче двух длин шаблона — сплошная линия (правило AutoCAD, как на экране)."""
     lt = lib["linetypes"].get(name)
     shapes = {n.upper(): s for n, s in lib["shapes"].items()}
@@ -625,11 +627,12 @@ def linetype_ops(pts, name, k, color, width, lib):
                 px, py, ux, uy = at(t)
                 vx, vy = uy, -ux                                   # «слева по ходу» при оси y вниз
                 r = math.radians(e.get("r") or 0)
-                cr, sr, sc = math.cos(r), math.sin(r), (e.get("s") or 1) * k
+                kk = shape_k or k
+                cr, sr, sc = math.cos(r), math.sin(r), (e.get("s") or 1) * kk
                 ax, ay, bx, by = (1, 0, 0, -1) if e.get("abs") else (ux, uy, vx, vy)
-                ox = px + (e.get("x") or 0) * k * ux + (e.get("y") or 0) * k * vx
-                oy = py + (e.get("x") or 0) * k * uy + (e.get("y") or 0) * k * vy
-                sw = round(min(width, 0.15 * sc), 4)
+                ox = px + (e.get("x") or 0) * k * ux + (e.get("y") or 0) * kk * vx
+                oy = py + (e.get("x") or 0) * k * uy + (e.get("y") or 0) * kk * vy
+                sw = round(min(width, 0.12 * sc), 4)
                 for path in s["paths"]:
                     ring = []
                     for sx, sy in path:
@@ -911,11 +914,11 @@ class SketchMapFrame(Frame):
                             out.extend(flood_ops(pts, int(f["flood"]), color, side=f.get("fside", -1)))
                         elif f.get("lt"):
                             for name in f["lt"]:
-                                out.extend(linetype_ops(pts, name, LT_MM, color, max(w, 0.25), self.lib))
+                                out.extend(linetype_ops(pts, name, LT_MM, color, max(w * 1.5, 0.5), self.lib, shape_k=LT_SHAPE_MM))   # ЛГР толще (владелец 06.10.2026)
                         elif f.get("miss"):
                             for code, _sign in f["miss"]:
                                 dash = self.lgr_dash.get(int(code))
-                                out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w, 0.25),
+                                out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": max(w * 1.5, 0.5),
                                             "dash": [d * LT_MM for d in dash] if dash else None, "rings": [pts]})
                             if f.get("ll"):                     # надпись знака вдоль линии (Эталон ЛГР: «техническая зона», «береговая»)
                                 from grado_render.scene import line_label_ops
