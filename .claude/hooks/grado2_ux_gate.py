@@ -44,8 +44,9 @@ mark.write_text(f"{digest} {now}\n")
 print(json.dumps({"decision": "block", "reason": (
     "ГРАДО 2 changed since the last UX audit. Before finishing, do this yourself in this session. "
     "Do not start a workflow and do not spawn subagents for this audit.\n"
-    "1. Open the grado2 preview and walk the scenarios in docs/ux/grado2-ux.md as the owner would "
-    "(an urban planner, not a programmer). Check the console for errors.\n"
+    "1. Open the grado2 preview and walk the scenarios in docs/ux/grado2-ux.md that touch what changed "
+    "(not all of them; owner 06.10.2026, «А»), as the owner would (an urban planner, not a programmer). "
+    "Check the console for errors. A browser check already done in this session for this change counts.\n"
     "2. List what is unclear, awkward or broken, judged by the principles in that file.\n"
     "3. Fix what is small; add the rest to the queue section of that file.\n"
     "4. Tell the owner in two or three lines what you found and what you fixed.")}))
