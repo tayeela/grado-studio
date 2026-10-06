@@ -313,6 +313,27 @@
     if (fresh.layout?.groups) l.seed = clone(fresh.layout.groups);          // образец — свежий шаблон: правки владельца считаются от него
     fresh.layout = l; return true;
   }
+  /* ручной состав переживает любую пересборку (T86e+): роли, которыми лист отличается от своего образца (diffFromSeed), берутся из прежнего
+     листа целиком — добавленные, убранные, перенесённые, с глазом и порядком источников; остальные роли — из свежего шаблона.
+     Образец (seed) — свежий шаблон. true — состав перенесён (keys/styles/only пересчитаны); false — правок нет или лист живёт по keys */
+  function carryManual(fresh, old) {
+    if (!old?.layout || old.frozen || !fresh?.layout || fresh.layout.seed || !matches(old)) return false;
+    const base = baselineOf(old, fresh.layout); if (!base) return false;
+    const d = diffFromSeed(old.layout, base); if (!d.changed) return false;
+    const tpl = new Map(flatten(fresh.layout).map(it => [it.key, it])), seed = clone(fresh.layout.groups);
+    let groups = clone(fresh.layout.groups);
+    Object.keys(d.roles).forEach(role => {
+      const og = clone(old.layout.groups.filter(g => g.role === role));
+      og.forEach(g => g.items.forEach(it => { const t = tpl.get(it.key); if (t) { if (t.style !== undefined) it.style = clone(t.style); else delete it.style; if (t.only !== undefined) it.only = clone(t.only); else delete it.only; } }));
+      const at = groups.findIndex(g => g.role === role);
+      if (at >= 0) { const out = []; groups.forEach((g, i) => { if (g.role !== role) out.push(g); else if (i === at) out.push(...og); }); groups = out; return; }
+      const oi = old.layout.groups.findIndex(g => g.role === role); let k = 0;
+      for (let j = oi - 1; j >= 0 && !k; j--) { const f = groups.findIndex(g => g.id === old.layout.groups[j].id); if (f >= 0) k = f + 1; }
+      groups.splice(k, 0, ...og);
+    });
+    d.lost.forEach(role => { groups = groups.filter(g => g.role !== role); });
+    fresh.layout = { ...fresh.layout, groups, seed }; syncFields(fresh); return true;
+  }
   /* ---- ручные правки отдельно от автоматики (T86d): сравнение с образцом, «вернуть авто», рабочая копия ---- */
   // образец, с которым сравнивается лист: seed, записанный вместе с layout (состав до первой правки), иначе начальный layout шаблона (tplLayout).
   // Лист без записанного layout правок не имеет — образца нет
@@ -451,7 +472,7 @@
   const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate,
     plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta,
     OWN, OTHER, FREE, isOwnKey, roleTitle, adopt, baselineOf, diffFromSeed, diffNote, resetRole, resetSheet, workingCopy, copyTitle, hintItem,
-    fetchPlan, allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, dropCheck, targetCheck, roadQueue };
+    fetchPlan, allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, carryManual, dropCheck, targetCheck, roadQueue };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.SheetLayout = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).
 - 2026-10-06, ГРАДО 2 v0.99.18: collaboration by role groups, download by roles, keyboard and narrow window (T86e, T86f).
 - 2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).
 - 2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).
@@ -21,4 +22,3 @@
 - 2026-10-03, ГРАДО 2 v0.98.5: the album is its own section of a shared project.
 - 2026-10-05, ГРАДО 2 v0.98.14: okrug map drops only small distant pieces.
 - 2026-10-05, ГРАДО 2 v0.98.13: okrug map keeps its districts.
-- 2026-10-05, ГРАДО 2 v0.98.12: СЗЗ in ГИС ОГД symbology.

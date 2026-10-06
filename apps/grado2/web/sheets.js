@@ -406,7 +406,8 @@ function carryHand(fresh, old, full = true) {
       if (edited) { if (old[k] === undefined) delete fresh[k]; else fresh[k] = cloneJ(old[k]); }
     });
   }
-  SheetLayout.carryLayout(fresh, old);                                       // состав, правленный перетаскиванием (T86c): ключи уже перенесены, layout идёт с ними
+  if (!SheetLayout.carryManual(fresh, old)) SheetLayout.carryLayout(fresh, old);   // ручной состав (перенос, копия, слои, порядок, глаз) переживает пересборку; иначе — прежний путь
+  //                                                                         состав, правленный перетаскиванием (T86c): ключи уже перенесены, layout идёт с ними
   if (fresh.layout && !SheetLayout.matches(fresh)) delete fresh.layout;      // слои правлены рукой — состав по ролям из шаблона им не соответствует; лист живёт по keys
   SheetLayout.carryOn(fresh, old);                                           // глаз на роли (T86b) переживает пересборку по шаблону
   if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];
@@ -558,7 +559,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   // рамке листа, где слой нужен; запасной источник очереди роли (дороги) — второй фазой и только там, где главный не закрыл рамку.
   // Прежние правки владельца (состав, глаз) переносятся до выгрузки: что выключено в прежней сборке, не качается и теперь
   const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
-  sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o && !o.frozen) { SheetLayout.carryLayout(s, o); if (s.layout && SheetLayout.matches(s)) SheetLayout.carryOn(s, o); } });
+  sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o && !o.frozen) { if (!SheetLayout.carryManual(s, o)) SheetLayout.carryLayout(s, o); if (s.layout && SheetLayout.matches(s)) SheetLayout.carryOn(s, o); } });
   const units = planUnits(sheets);
   const PLAN = PLAN_OPT, plan = SheetLayout.fetchPlan(units, null, PLAN);
   // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую область сервер берёт по частям и склеивает

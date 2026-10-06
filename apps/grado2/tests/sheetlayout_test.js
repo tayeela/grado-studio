@@ -332,5 +332,24 @@ eq(L.carryLayout(tplNew, oldSeed), true, "перенос"); eq(tplNew.layout.see
   // КРТ-образец: листы 5 и 7 шаблона
   eq(L.fetchPlan([]).phase1, [], "нет листов — нечего качать");
 }
+// T86e+: ручной состав переживает пересборку (перенос роли 5 → 7), «вернуть лист к образцу» возвращает образец
+{
+  const K5 = ["egko.water", "egko.buildings", "nspd.parcels", "osm.roads"], K7 = ["egko.buildings", "nspd.parcels", "osm.roads"];
+  const tpl5 = () => { const t = { keys: K5.slice(), layout: L.seedLayout({ keys: K5 }) }; return t; }, tpl7 = () => ({ keys: K7.slice(), layout: L.seedLayout({ keys: K7 }) });
+  const s5 = { id: "a", keys: K5.slice(), layout: L.seedLayout({ keys: K5 }) }, s7 = { id: "b", keys: K7.slice(), layout: L.seedLayout({ keys: K7 }) };
+  eq(L.moveRole(s5, s7, "water", { tpl: tpl5().layout, n: 7 }, false).ok, true, "перенос воды 5 → 7");
+  eq(L.layoutKeys(s5.layout).includes("egko.water"), false, "на 5 воды нет"); L.setRole(s5, "buildings", false);
+  // пересборка: свежие листы из шаблона, правки переносятся
+  const f5 = tpl5(), f7 = tpl7(); eq([L.carryManual(f5, s5), L.carryManual(f7, s7)], [true, true], "ручной состав перенесён");
+  eq([f5.keys, f7.keys], [["egko.buildings", "nspd.parcels", "osm.roads"], ["egko.water", "egko.buildings", "nspd.parcels", "osm.roads"].filter(k => f7.keys.includes(k))], "keys пересчитаны");
+  eq([L.layoutKeys(f5.layout).includes("egko.water"), L.layoutKeys(f7.layout).includes("egko.water"), L.matches(f5), L.matches(f7)], [false, true, true, true], "роль на 7 осталась, на 5 нет, лист читает layout");
+  eq(L.layoutKeys(f5.layout).includes("egko.buildings"), false, "глаз на 5 (здания выкл) тоже переехал"); eq(L.carryManual(f5, s5), false, "повторно (образец уже записан) — без изменений");
+  eq(f7.layout.seed, L.seedLayout({ keys: K7 }).groups, "образец — свежий шаблон, а не правленный состав");
+  // вернуть лист к образцу
+  eq(L.resetSheet(f7, L.baselineOf(f7, null)), true, "7: вернуть к образцу"); eq(f7.keys, K7, "образец 7 — без воды");
+  eq(L.resetSheet(f5, L.baselineOf(f5, null)), true, "5: вернуть к образцу"); eq(L.layoutKeys(f5.layout), K5, "образец 5 — с водой и зданиями");
+  // нет правок / готовый лист / слои правлены рукой — не переносится
+  eq([L.carryManual(tpl5(), { id: "x", keys: K5.slice(), layout: L.seedLayout({ keys: K5 }) }), L.carryManual(tpl5(), { frozen: true, layout: s5.layout }), L.carryManual(tpl5(), { ...s7, keys: ["x"] })], [false, false, false], "без правок, готовый, keys рукой — нет");
+}
 
 console.log(n + " checks ok");

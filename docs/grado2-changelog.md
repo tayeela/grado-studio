@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).** `carryManual` keeps roles that
+  differ from the sheet template (moves, copies, added layers, source order, eye) through «Обновить листы» and
+  «Собрать заново» with replace; «Вернуть лист к образцу» still restores the template. E2E group `t86` covers the window.
 - **2026-10-06, ГРАДО 2 v0.99.18: collaboration by role groups, download by roles, keyboard and narrow window (T86e, T86f).**
   `mergeSheet` (collab.js) merges `sheet.layout` groups by id and items by key, so two people editing different roles
   of one sheet no longer conflict. `fetchPlan` (sheetlayout.js) drives `buildSection0`: only roles switched on are

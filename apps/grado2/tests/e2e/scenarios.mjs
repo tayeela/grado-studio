@@ -1381,4 +1381,40 @@ export default async p => {
     check(c.onlyTL.tl === null && c.onlyTL.br === null && c.onlyTL.signs.includes("Соседние районы: подписи"), "T80: нет района в одном из углов — угловых надписей нет, район подписан в глубине части: " + JSON.stringify(c.onlyTL));
     check(c.none.layers === 0 && c.none.note === null, "T80: соседних районов нет — функция ничего не добавляет");
   });
+  // T86: окно «Слои и листы» — выбор листа 5, глаз «Дороги», клавиша M переносит роль на лист 7, отмена; сети нет, листы собраны в самом сценарии
+  await p.group("t86", async () => {
+    const sheets = () => p.ev(`return JSON.stringify(ALBUM.sheets.map(s => [s.id, SheetLayout.layoutFor(s, null).layout?.groups.map(g => g.role + ":" + g.items.map(i => i.on === false ? "off" : "on").join("+")) || null]))`).then(JSON.parse);
+    const state = async () => { const a = await sheets(); return { s5: a[4][1], s7: a[6][1], keys5: await p.ev(`return ALBUM.sheets[4].keys.join()`), keys7: await p.ev(`return ALBUM.sheets[6].keys.join()`) }; };
+    await p.ev(`window.__t86keep = ALBUM.sheets; const mk = (i, keys) => { const s = { id: "t86_" + i, title: "Лист " + i, size: "PA3", orient: "L", scale: 2000, keys: keys.slice(), basemap: null, layout: SheetLayout.build(keys, {}, {}, null) }; SheetLayout.syncFields(s); return s; };
+      const W = ["egko.water", "egko.buildings", "yandex.hd_roads"], list = [1, 2, 3, 4].map(i => mk(i, ["egko.buildings"])); list.push(mk(5, W)); list.push(mk(6, ["egko.buildings"])); const s7 = mk(7, W);
+      s7.layout.groups.find(g => g.role === "water").items.forEach(it => { it.on = false; }); SheetLayout.syncFields(s7); list.push(s7);
+      ALBUM.sheets = list; winOpen("wSheetLayers", true); await new Promise(r => setTimeout(r, 400)); document.querySelector('.shl-sh[data-i="4"]').click(); await new Promise(r => setTimeout(r, 200)); $("shlBody").focus(); return 1`);
+    check(await p.ev(`return !$("wSheetLayers").hidden && document.querySelectorAll(".shl-sh").length === 7 && document.querySelector(".shl-sh.cur .no").textContent === "5"`), "T86: окно «Слои и листы» открыто, выбран лист 5");
+    let st = await state(); check(st.s5.includes("roads:on") && st.s5.includes("water:on"), "T86: на листе 5 роли «Дороги» и «Вода» включены");
+    // глаз «Дороги»: выбрать строку, Пробел — выключить, ещё раз — включить
+    await p.ev(`document.querySelector('.shl-rl[data-role="roads"]').click(); $("shlBody").focus(); return 1`);
+    await p.key(" ", "Space", { text: " ", vk: 32 }); await p.sleep(150); st = await state();
+    check(st.s5.includes("roads:off") && st.keys5.includes("yandex.hd_roads"), "T86: Пробел на роли «Дороги» — глаз выключен (слой остаётся в составе листа, но не рисуется)");
+    await p.key(" ", "Space", { text: " ", vk: 32 }); await p.sleep(150); st = await state(); check(st.s5.includes("roads:on"), "T86: Пробел ещё раз — «Дороги» снова включены");
+    // M: роль «Вода» с листа 5 на лист 7, где она скрыта; потом отказ на лист 1 (по образцу воды нет) не меняет составы
+    await p.ev(`document.querySelector('.shl-rl[data-role="water"]').click(); $("shlBody").focus(); return 1`);
+    await p.key("Tab", "Tab", { vk: 9 }); await p.key("m", "KeyM", { text: "m", vk: 77 }); await p.sleep(150);
+    check(await p.ev(`return !!document.querySelector(".shl-pick") && /Перенести роль/.test(document.querySelector(".shl-pick .t").textContent)`), "T86: M открывает список «Перенести на лист…» для выбранной роли");
+    await p.key("7", "Digit7", { text: "7", vk: 55 }); await p.key("Enter", "Enter", { vk: 13 }); await p.sleep(250); st = await state();
+    check(!st.s5.some(x => x.startsWith("water")) && st.s7.includes("water:on") && !st.keys5.includes("egko.water"), "T86: Enter — «Вода» перенесена на лист 7 (включена) и ушла с листа 5");
+    check(await p.ev(`return !document.querySelector(".shl-pick")`), "T86: после переноса список закрыт");
+    // отмена
+    await p.ev(`undo(); await new Promise(r => setTimeout(r, 250)); return 1`); st = await state();
+    check(st.s5.includes("water:on") && st.s7.includes("water:off"), "T86: отмена возвращает «Воду» на лист 5 и скрывает её на листе 7");
+    // Alt+Enter — копия: на листе 5 роль остаётся
+    await p.ev(`document.querySelector('.shl-sh[data-i="4"]').click(); document.querySelector('.shl-rl[data-role="water"]').click(); $("shlBody").focus(); return 1`);
+    await p.key("m", "KeyM", { text: "m", vk: 77 }); await p.key("7", "Digit7", { text: "7", vk: 55 }); await p.key("Enter", "Enter", { vk: 13, alt: true }); await p.sleep(250); st = await state();
+    check(st.s5.includes("water:on") && st.s7.includes("water:on"), "T86: Alt+Enter — копия: «Вода» и на листе 5, и на листе 7");
+    await p.ev(`undo(); await new Promise(r => setTimeout(r, 250)); return 1`);
+    // ручной состав переживает пересборку по шаблону (чистая функция): перенос 5 → 7, затем свежие листы из шаблона
+    check(await p.ev(`const K = ["egko.water", "egko.buildings"], T = keys => ({ keys: keys.slice(), layout: SheetLayout.seedLayout({ keys }) }), a = T(K), b = T(["egko.buildings"]);
+      const r = SheetLayout.moveRole(a, b, "water", { tpl: T(K).layout, n: 7 }, false); const fa = T(K), fb = T(["egko.buildings"]);
+      const c = [SheetLayout.carryManual(fa, a), SheetLayout.carryManual(fb, b)]; return r.ok && c[0] && c[1] && !fa.keys.includes("egko.water") && fb.keys.includes("egko.water")`), "T86: ручной перенос роли переживает пересборку (на 7 осталась, на 5 нет)");
+    await p.ev(`ALBUM.sheets = window.__t86keep; winOpen("wSheetLayers", false); return 1`);
+  });
 };
