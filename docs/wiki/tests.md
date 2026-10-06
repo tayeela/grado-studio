@@ -33,6 +33,7 @@
 | `test_t80_albums_print.py` | OverLayerOrder, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 10 |
 | `test_t82_rail_icons.py` | RailIcons | 9 |
 | `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
+| `test_t89_labels.py` | StreetGapFromDash, StreetAvoidsViewArrow | 3 |
 | `albummeta_test.js` | JS | 24 |
 | `blocks_test.js` | JS | 7 |
 | `cadcore_test.js` | JS | 60 |

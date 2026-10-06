@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.28: street labels keep 1.6 mm from the territory dashes, labels clear photo arrows
+  (#8, #9).** The 1.6 mm gap was measured from the dash axis while the territory sign is 2.4 mm wide (0.4 mm left to
+  the squares): now from the edge of the dashes, relaxed step by step only when there is no other place. Photo sheet:
+  labels avoid arrows by their rotated outline and the arrow numbers, the far side of the road is tried; touching an
+  arrow is the last resort. album_check: Cyrillic captions on crops, moved labels are not reported as text changes.
 - **2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.** Title sheet: «Об утверждении
   проекта планировки территории по адресу:», address and district are one text block — in PPTX one text box with
   paragraphs (`block`/`para` on text ops, `textblock` in backend_pptx), in PDF the same lines. Photo sheet: labels avoid
