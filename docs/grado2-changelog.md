@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.** Land use: ВРИ with «завод/фабрика/
+  комбинат/цех» is production (class 14); OSM `commercial` is business (class 8), only `retail` is trade — the pink
+  «торгово-бытовой» strip by ул. Тагильская is gone. Territory boundary is drawn above every layer (over layers go
+  between the white veil and the boundary). The SZZ footnote is not printed. Sheet 9 veil 0.35 → 0.15 (Yandex z18
+  is the finest imagery there, same as on yandex.ru). Photo sheet: panoramas captured without house-number tags.
 - **2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.** Sheet 5 legend: groups
   «Функциональные зоны специализированного назначения» and «Транспортная инфраструктура», names and colours from the
   owner's picture (`SPEC_ZONES`, label-rules 21); classification by ВРИ is unchanged. District boundary bold (1.2 mm),

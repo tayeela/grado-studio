@@ -279,7 +279,7 @@ const VRI_T = {
   27: ["сельскохозяйственного производства", "#b8a47f", ["1.0"]],
   28: ["научного обеспечения сельского хозяйства", "#dcd5b6", ["1.14"]]};
 // слова в тексте ВРИ → класс шаблона; порядок важен (частное раньше общего)
-const VRI_WORDS = [[/многофункц/i, 1], [/физкультур|оздоровительн[а-яё]* комплекс|(^|[^а-яё])спорт/i, 9],
+const VRI_WORDS = [[/многофункц/i, 1], [/завод|фабрик|комбинат|(^|[^а-яё])цех/i, 14],   // «эксплуатации зданий завода» — производственная (06.10.2026) [/физкультур|оздоровительн[а-яё]* комплекс|(^|[^а-яё])спорт/i, 9],
   [/выращивани|овощн|плодово|ягодн/i, 25], [/(^|[^а-яё])газ([^а-яё]|опровод)|(^|[^а-яё])азс([^а-яё]|$)/i, 17], [/мотел|гостиниц|хостел|общежит/i, 2], [/обслуживани[ея] жилой застройки|общественно-жил/i, 13],
   [/историко-культурн/i, 23], [/научн[а-яё]* обеспечени[ея] сельск/i, 28], [/полев[а-яё]* участк|животновод|скотовод|зверовод|птицевод|свиновод|пчеловод|рыбовод|переработк[а-яё]* сельскохоз|обеспечени[ея] сельскохоз/i, 26],
   [/сельскохозяйственн[а-яё]* производств/i, 27], [/огородн/i, 25],
@@ -319,7 +319,7 @@ const landUseOf = p => { const v = String(p["ВРИ"] || p["Разрешенно
 const OSM_USE = [[/^(farmland|orchard|plant_nursery|greenhouse_horticulture|vineyard)$/, 25], [/^(farmyard|animal_keeping)$/, 26],
   [/^(forest|wood|scrub|grassland|heath|meadow|grass|park|garden|recreation_ground|village_green)$/, 18], [/^nature_reserve$/, 19],
   [/^(cemetery|quarry|landfill|military)$/, 15], [/^allotments$/, 12], [/^residential$/, 12],
-  [/^industrial$/, 14], [/^(commercial|retail)$/, 2], [/^garages$/, 16], [/^(depot|storage)$/, 17], [/^railway$/, 20],
+  [/^industrial$/, 14], [/^retail$/, 2], [/^commercial$/, 8],   // commercial в OSM — офисы, не торговля (владелец 06.10.2026: «откуда торгово-бытовой?») [/^garages$/, 16], [/^(depot|storage)$/, 17], [/^railway$/, 20],
   [/^religious$/, 7], [/^education$/, 5], [/^(pitch|playground)$/, 9], [/^(brownfield|construction)$/, 14]];
 const LAND_BASE = VRI_CLS(18)[0];                             // всё, что не закрыто ни участком, ни OSM: белых пятен и «отсутствия
                                                               // хозяйственной деятельности» быть не должно (владелец 30.09.2026)
@@ -845,7 +845,9 @@ function conceptSheet(out, sheet, bb) {
     const fl = [64, 65, 66].filter(c => zoneFeats.some(f => f.flood === c && f.g.coordinates.length));
     if (fl.length) out.cLegend.push({ title: "Зона подтопления от паводка 1% обеспеченности (глубина залегания грунтовых вод)",
       items: fl.map(c => ({ kind: "flood", code: c, stroke: FLOOD_C, label: FLOOD_T[c] })) });
-    if (szzNotes.length) out.cLegend.push({ items: szzNotes.map(label => ({ kind: "note", label })) });
+    // пояснение «Территория расположена в границах … санитарно-защитных зон» не печатается (владелец 06.10.2026: «эту
+    // сноску убери»)
+    void szzNotes;
     // приаэродромная территория — надписью под легендой, как в «Хатминки»: подзоны, которые пересекают территорию
     const af = L("gisogd.airfield"), air = new Map();
     (af?.features || []).forEach(ft => { const [port, n] = String(ft.props?.["Вид зоны"] || "").split("|");
@@ -968,7 +970,7 @@ function conceptSheet(out, sheet, bb) {
       rows: cards.map((c, i) => [String(i + 1), val(c, "Кадастровый номер"), val(c, "Площадь (га)"), LabelFmt.vri(val(c, "Вид разрешённого использования")),
         LabelFmt.tieShort(String(val(c, "Форма собственности")))]) };
     out.gpTable.widths = LabelFmt.colWidths(out.gpTable.cols, out.gpTable.rows);   // ширины — по содержимому, ВРИ самая широкая (F5)   // «с 02.05.2023» не разрывается (правило 11)
-    out.veil = .35;                                             // белая дымка на снимке — границы участков не сливаются
+    out.veil = .15;                                             // белая дымка на снимке — границы участков не сливаются; слабее (владелец 06.10.2026: «спутник плохого качества»)
     // правило 7 (T85a): участки вне и в границах территории — каждый знак только если такие участки видны
     const outside = (pl?.features || []).some(ft => inFrame(ft) && !cards.some(c => c.feat === ft));
     out.cLegend = [{ title: "Границы", items: [terr,

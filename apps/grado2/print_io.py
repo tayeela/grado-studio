@@ -968,7 +968,12 @@ class SketchMapFrame(Frame):
                     keep_from.append((a_, b_))
             for a_, b_ in reversed(keep_from):
                 del out[a_:b_]
-            late[:0] = moved
+        else:
+            moved = []
+        # слои over — над белой маской, но под границей территории: граница всегда поверх всех слоёв (владелец 06.10.2026)
+        if not (sh.get("territory") and sh.get("terrMask") and not sh.get("terrPoint")):
+            out.extend(moved)
+            moved = []
         if sh.get("territory"):
             out.append({"op": "layer", "name": "Граница территории"})
         if sh.get("territory") and sh.get("terrPoint"):
@@ -983,6 +988,8 @@ class SketchMapFrame(Frame):
                 holes = [[tr.mm(*p[:2]) for p in poly[0]] for poly in parts]
                 out.append({"op": "path", "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]] + holes, "closed": True,
                             "fill": (1, 1, 1), "alpha": float(sh["terrMask"]), "stroke": None, "width": 0, "dash": None, "evenodd": True})
+                out.extend(moved)
+                moved = []
             for poly in parts:
                 ts = sh.get("terrStyle") or {}                        # слайды раздела: граница ППТ — сплошная пурпурная
                 out.append({"op": "path", "rings": [[tr.mm(*p[:2]) for p in poly[0]]], "closed": True,
