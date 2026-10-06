@@ -339,6 +339,8 @@ try {
   // 6. «только приглашённые» — у B доступа нет
   await setTacc("none");
   await B.until(`return !Collab.pid && $("hubProjName").textContent==="Выберите проект" && !$("wHubProjects").hidden`, "B: проект закрыт, открыт список", 10000);
+  // список проектов обновляется отдельным запросом после закрытия (loadProjects), на медленной машине позже: ждём условие, а не время
+  await B.until(`return /нет доступа/.test($("toast").textContent) && !${anyRow}`, "B: сообщение «больше нет доступа» и проекта нет в списке", 10000);
   check(await B.ev(`return /нет доступа/.test($("toast").textContent) && !document.body.classList.contains("hub-viewer") && !${anyRow}`), "B: «только приглашённые» — сообщение «больше нет доступа», проект закрыт, в списке его нет");
 
   // 7. снова «вся команда правит», затем A убирает B из команды
