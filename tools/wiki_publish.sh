@@ -5,6 +5,9 @@
 # tools/wiki_publish.sh. Без изменений ничего не пушит. Ошибки сети не мешают коммиту.
 set -u
 ROOT=$(git rev-parse --show-toplevel) || exit 0
+# хук git выставляет GIT_DIR/GIT_INDEX_FILE: без сброса команды git ниже работали бы с репозиторием программы, а не вики
+# (06.10.2026 так в ветку команды попал коммит, заменивший программу страницами вики)
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR
 DEST="$HOME/.grado2/wiki-repo"
 REPO="tayeela/grado-wiki"
 if [ ! -d "$DEST/.git" ]; then
@@ -12,6 +15,9 @@ if [ ! -d "$DEST/.git" ]; then
   gh repo clone "$REPO" "$DEST" >/dev/null 2>&1 || { mkdir -p "$DEST" && git -C "$DEST" init -q -b main && git -C "$DEST" remote add origin "https://github.com/$REPO.git"; }
 fi
 cd "$DEST" || exit 0
+# защита: работаем только в репозитории вики
+[ "$(git rev-parse --show-toplevel 2>/dev/null)" = "$(cd "$DEST" && pwd -P)" ] || exit 0
+git remote get-url origin 2>/dev/null | grep -q 'grado-wiki' || exit 0
 git pull -q --rebase origin main 2>/dev/null || true
 find . -maxdepth 1 -name "*.md" -delete; rm -f llms.txt
 cp "$ROOT"/docs/wiki/*.md .
@@ -47,4 +53,4 @@ PY
 git add -A
 if git diff --cached --quiet; then exit 0; fi
 git commit -qm "wiki: $BR $SHA (v$VER)"
-git push -q -u origin main 2>/dev/null || git push -q origin HEAD:main 2>/dev/null || true
+git push -q origin HEAD:main 2>/dev/null || true
