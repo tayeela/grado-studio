@@ -1,2 +1,8 @@
 #!/usr/bin/env bash
-exec "$(git rev-parse --show-toplevel)/tools/git-hooks/deploy-if-main.sh"
+# вики на GitHub (tayeela/grado-wiki) — в фоне, если коммит менял docs/wiki; на main и ветке команды (06.10.2026)
+ROOT="$(git rev-parse --show-toplevel)"
+BR="$(git rev-parse --abbrev-ref HEAD)"
+if { [ "$BR" = main ] || [ "$BR" = team/t60 ]; } && git diff-tree --no-commit-id --name-only -r HEAD | grep -q '^docs/wiki/'; then
+  ( "$ROOT/tools/wiki_publish.sh" >/dev/null 2>&1 & )
+fi
+exec "$ROOT/tools/git-hooks/deploy-if-main.sh"

@@ -363,7 +363,7 @@ AutoCAD complex linetypes: reading .SHX (compiled shapes) and .LIN (linetypes).
 
 Функции: `jpeg_info`, `_jpeg_info`, `_f`, `_to_unicode_cmap`, `PdfBackend`
 
-### `core/render/grado_render/backend_pptx.py` — 656 стр.
+### `core/render/grado_render/backend_pptx.py` — 603 стр.
 
 PPTX-бэкенд: тот же список операций, что у PDF и SVG, — в редактируемую презентацию PowerPoint.
 
