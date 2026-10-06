@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.29: «Понижать этажность ради инсоляции соседей» — switch in «Эскиз», off by default
+  (#12, owner «А»).** Node «Посадка застройки» gets a `relax` toggle (urban blocks only); the T56 lowering in
+  `urbanBlocks` runs only when it is on (`relaxIf` in blocks.js); old projects open with it off. Безобразово, 18 floors:
+  off 931 743 m² / max 17 floors, on 925 864 m² with sections 17→10.
 - **2026-10-06, ГРАДО 2 v0.99.28: street labels keep 1.6 mm from the territory dashes, labels clear photo arrows
   (#8, #9).** The 1.6 mm gap was measured from the dash axis while the territory sign is 2.4 mm wide (0.4 mm left to
   the squares): now from the edge of the dashes, relaxed step by step only when there is no other place. Photo sheet:
