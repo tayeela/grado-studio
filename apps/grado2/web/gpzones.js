@@ -15,7 +15,20 @@
   const zoneIdx = p => pick(p, "fztip", "fztype", "fz_type").split(".")[0];
   // fallback — вызывающий передаёт то, что делал раньше (палитра Эталона по названию)
   const fill = (name, idx, fallback) => TABLE[+idx] || TABLE[BY_NAME[norm(name)]] || (fallback ? fallback(norm(name)) : undefined);
-  const api = { TABLE, BY_NAME, norm, zoneName, zoneIdx, fill };
+  // строки легенды листа 6 (F3, 06.10.2026): один знак — одна строка. Зоны с одним цветом (130 «коммунальные» и «промышленные»)
+  // на карте не различить, поэтому они сливаются; название — у зоны, в которой лежит территория (оно же в таблице листа),
+  // иначе у самой большой. items: [{ name, idx, fill, a, terr }]; order — порядок названий образца
+  function legendRows(items, order = []) {
+    const g = new Map();
+    (items || []).forEach(it => { const nm = norm(it.name); if (!nm) return; const k = it.fill || nm, r = g.get(k) || { fill: it.fill, idx: new Set(), best: null, a: 0 };
+      if (it.idx) r.idx.add(it.idx); r.a += it.a || 0;
+      if (!r.best || (it.terr && !r.best.terr) || (!!it.terr === !!r.best.terr && (it.a || 0) > (r.best.a || 0))) r.best = it;
+      g.set(k, r); });
+    const ix = r => { const i = order.indexOf(norm(r.best.name)); return i < 0 ? 99 : i; };
+    return [...g.values()].sort((a, b) => ix(a) - ix(b) || norm(a.best.name).localeCompare(norm(b.best.name), "ru"))
+      .map(r => ({ name: r.best.name, nm: norm(r.best.name), fill: r.fill, idx: [...r.idx].sort(), a: r.a }));
+  }
+  const api = { TABLE, BY_NAME, norm, zoneName, zoneIdx, fill, legendRows };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.GpZones = api;
 })(typeof window !== "undefined" ? window : globalThis);

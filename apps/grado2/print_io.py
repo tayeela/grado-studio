@@ -152,7 +152,56 @@ EGKO_BASE = (("forest", "#c5dcb0", None), ("gazons", "#c5dcb0", None), ("hidrogr
              ("dorogi_pol", "#ffffff", "#d7d7d7"), ("virtual6", "#cdcdcd", None))
 
 
+PRINT_OPS_CACHE = Path.home() / ".grado2" / "cache" / "print_ops"      # готовые операции тяжёлых рамок: PDF и PPTX берут одни и те же
+PRINT_OPS_TTL = 12 * 3600                                                # картооснова обновляется редко; дольше суток держать нельзя
+PRINT_OPS_KEEP = 6
+
+
+def ops_cache_get(key):
+    """Операции рамки из кэша на диске (PDF и PPTX одного альбома считают одну и ту же основу ЕГКО, 3,5 минуты на лист)."""
+    import pickle
+    import time
+    p = PRINT_OPS_CACHE / f"{key}.pkl"
+    try:
+        if time.time() - p.stat().st_mtime < PRINT_OPS_TTL:
+            return pickle.loads(p.read_bytes())
+    except (OSError, pickle.PickleError, EOFError, AttributeError, ValueError):
+        pass
+    return None
+
+
+def ops_cache_put(key, ops):
+    import os
+    import pickle
+    try:
+        PRINT_OPS_CACHE.mkdir(parents=True, exist_ok=True)
+        tmp = PRINT_OPS_CACHE / f"{key}.{os.getpid()}.tmp"
+        tmp.write_bytes(pickle.dumps(ops, protocol=pickle.HIGHEST_PROTOCOL))
+        os.replace(tmp, PRINT_OPS_CACHE / f"{key}.pkl")
+        old = sorted(PRINT_OPS_CACHE.glob("*.pkl"), key=lambda q: q.stat().st_mtime, reverse=True)[PRINT_OPS_KEEP:]
+        for q in old:
+            q.unlink(missing_ok=True)
+    except OSError:                                                      # кэш — ускорение, не условие: диск занят — считаем заново
+        pass
+
+
 def egko_ops(tr, rect, mask, egko):
+    """Основа ЕГКО листа с кэшем: ключ — маска округа, рамка, привязка и масштаб листа (всё, от чего зависит результат)."""
+    import hashlib
+    import json as _json
+    key = hashlib.sha1(_json.dumps([mask, list(rect), tr.lon0, tr.lat0, tr.k, tr.t, EGKO_BASE, 2], sort_keys=True,
+                                   default=str).encode("utf-8")).hexdigest()[:24]
+    got = ops_cache_get("egko-" + key)
+    if got is not None:
+        return got
+    failed = []
+    out = _egko_ops(tr, rect, mask, egko, failed)
+    if len(out) > 2 and not failed:                                      # слой не ответил (портал, сеть) — результат неполный, в кэш не идёт
+        ops_cache_put("egko-" + key, out)
+    return out
+
+
+def _egko_ops(tr, rect, mask, egko, failed=None):
     """Цветная основа ЕГКО только внутри контура mask (GeoJSON округа): светлый фон, леса и газоны, вода, дороги,
     здания. Снаружи остаётся бледная подложка. Здания мельче 0,3 мм на листе пропускаются, контуры упрощаются до
     0,12 мм — схема округа в масштабе 1:100 000–1:250 000 иначе весила бы десятки мегабайт."""
@@ -167,11 +216,25 @@ def egko_ops(tr, rect, mask, egko):
     lats = [p[1] for poly in parts for r in poly for p in r]
     bbox = (min(lons), min(lats), max(lons), max(lats))
     small = 0.3 / tr.k                                                  # 0,3 мм листа в метрах
+    tiny = 0.1 / tr.k
+    (ta, tb, taa, tab, tbb), (tc, te, tcc, tce, tee) = tr.t                  # MapTransform.mm без вызова на каждую вершину (4 млн вызовов)
+    lon0, lat0, kk = tr.lon0, tr.lat0, tr.k
+    ox, oy = tr.rect[0] + tr.rect[2] / 2, tr.rect[1] + tr.rect[3] / 2
+
+    def pm(ring):
+        res = []
+        for p in ring:
+            dl, dp = p[0] - lon0, p[1] - lat0
+            res.append((ox + (ta * dl + tb * dp + .5 * taa * dl * dl + tab * dl * dp + .5 * tbb * dp * dp) * kk,
+                        oy - (tc * dl + te * dp + .5 * tcc * dl * dl + tce * dl * dp + .5 * tee * dp * dp) * kk))
+        return res
     kx = 111320 * math.cos(math.radians((bbox[1] + bbox[3]) / 2))
     for code, fill, edge in EGKO_BASE:
         try:
             feats = egko(bbox, code)
         except Exception:                                               # ЕГКО не отдала слой — схема без него
+            if failed is not None:
+                failed.append(code)
             continue
         for f in feats:
             if not (f.get("geometry") or {}).get("coordinates"):
@@ -180,12 +243,13 @@ def egko_ops(tr, rect, mask, egko):
             for poly in fparts:
                 if not poly or len(poly[0]) < 3:
                     continue
-                if code == "virtual6":
-                    lo = [p[0] for p in poly[0]]
-                    la = [p[1] for p in poly[0]]
-                    if (max(lo) - min(lo)) * kx < small and (max(la) - min(la)) * 110540 < small:
-                        continue
-                prs = [r for r in (_simplify([tr.mm(*p[:2]) for p in ring], 0.12) for ring in poly) if len(r) >= 3]
+                lo = [p[0] for p in poly[0]]
+                la = [p[1] for p in poly[0]]
+                # контур меньше порога на листе не виден: здания — 0,3 мм, остальное — 0,1 мм (полпикселя при 200 dpi); ломать
+                # каждую вершину и упрощать сотни тысяч таких контуров стоило 80 секунд
+                if (max(lo) - min(lo)) * kx < (small if code == "virtual6" else tiny) and (max(la) - min(la)) * 110540 < (small if code == "virtual6" else tiny):
+                    continue
+                prs = [r for r in (_simplify(pm(ring), 0.12) for ring in poly) if len(r) >= 3]
                 if prs:
                     out.append({"op": "path", "rings": prs, "closed": True, "fill": hex_to_rgb(fill),
                                 "stroke": hex_to_rgb(edge) if edge else None, "width": 0.08, "dash": None})
@@ -1865,13 +1929,22 @@ def _edited(o, e):
     return o
 
 
-def _pages(spec, lib, lgr_dash, tiles):
-    pages = document_pages_ops(build_document(spec, lib, lgr_dash, tiles), None)
+def _pages(spec, lib, lgr_dash, tiles, progress=None):
+    """Операции листов альбома. progress(готово, всего) зовётся до каждого листа и после последнего: строка «лист N из M»."""
+    from grado_layout.compose import _ctx, sheet_titles
+    doc = build_document(spec, lib, lgr_dash, tiles)
+    titles, pages, n = sheet_titles(doc), [], len(doc.pages)
+    for i, page in enumerate(doc.pages, start=1):
+        if progress:
+            progress(i - 1, n)
+        pages.append((page.size[0], page.size[1], page.ops(_ctx(doc, None, None, None, i, titles[i - 1]))))
+    if progress:
+        progress(n, n)
     return [(w, h, apply_edits(ops, sh)) for (w, h, ops), sh in zip(pages, spec["sheets"])]
 
 
-def render_pdf(spec, lib, lgr_dash, tiles=None):
-    return PdfBackend(None).render(_pages(spec, lib, lgr_dash, tiles))
+def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
+    return PdfBackend(None).render(_pages(spec, lib, lgr_dash, tiles, progress))
 
 
 def not_ready(spec):
@@ -2102,6 +2175,13 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
     px = lambda p: ((p[0] - x0) * k, (p[1] - y0) * k)
     layers = [Image.new("RGBA", (cw, ch), (0, 0, 0, 0))]
     masks = []
+    draws = {}
+
+    def draw_of(layer):                                              # один ImageDraw на слой, а не новый на каждый из 200 тыс. контуров
+        d = draws.get(id(layer))
+        if d is None:
+            d = draws[id(layer)] = ImageDraw.Draw(layer)
+        return d
 
     def poly_mask(rings):
         m = Image.new("1", (cw, ch), 0)
@@ -2110,6 +2190,34 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
             ImageDraw.Draw(t).polygon([px(p) for p in r], fill=1)
             m = ImageChops.logical_xor(m, t)
         return m.convert("L")
+
+    def fill_rings(layer, rings, rgb):
+        """Сплошная заливка контура с дырами (чётно-нечётно) только в его охвате: маска и вставка на весь холст
+        (десятки мегапикселей) на каждый из тысяч контуров занимали 15 из 20 минут выгрузки (T86)."""
+        pts = [[px(p) for p in r] for r in rings]
+        xs, ys = [q[0] for r in pts for q in r], [q[1] for r in pts for q in r]
+        l, t = max(0, int(min(xs)) - 1), max(0, int(min(ys)) - 1)
+        r_, b_ = min(cw, int(max(xs)) + 2), min(ch, int(max(ys)) + 2)
+        if r_ <= l or b_ <= t:
+            return
+        col = rgb + (255,)
+        if len(pts) == 1:
+            draw_of(layer).polygon(pts[0], fill=col)
+            return
+        m = Image.new("1", (r_ - l, b_ - t), 0)
+        for i, r in enumerate(pts):
+            if i == 0:
+                ImageDraw.Draw(m).polygon([(x - l, y - t) for x, y in r], fill=1)
+                continue
+            # чётно-нечётно: кольцо вычитается (XOR) только в своём охвате, а не по всей маске
+            bl, bt = max(0, int(min(x for x, _ in r)) - 1 - l), max(0, int(min(y for _, y in r)) - 1 - t)
+            br, bb = min(m.width, int(max(x for x, _ in r)) + 2 - l), min(m.height, int(max(y for _, y in r)) + 2 - t)
+            if br <= bl or bb <= bt:
+                continue
+            tmp = Image.new("1", (br - bl, bb - bt), 0)
+            ImageDraw.Draw(tmp).polygon([(x - l - bl, y - t - bt) for x, y in r], fill=1)
+            m.paste(ImageChops.logical_xor(m.crop((bl, bt, br, bb)), tmp), (bl, bt))
+        layer.paste(col, (l, t, r_, b_), m.convert("L"))
 
     def blend(layer, rings, color, alpha, bb):
         a = max(0, min(1, float(alpha)))
@@ -2146,6 +2254,7 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
                 m = masks.pop()
                 if m is not None:
                     top = layers.pop()
+                    draws.pop(id(top), None)
                     top.putalpha(ImageChops.multiply(top.getchannel("A"), m))
                     layers[-1].alpha_composite(top)
         elif t == "path":
@@ -2158,13 +2267,10 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
                 alpha = o.get("alpha")
                 if alpha is not None and float(alpha) < 1:
                     blend(layer, rings, fill, alpha, None)
-                elif len(rings) == 1:
-                    ImageDraw.Draw(layer).polygon([px(p) for p in rings[0]], fill=rgb + (255,))
                 else:
-                    m = poly_mask(rings)
-                    layer.paste(Image.new("RGBA", (cw, ch), rgb + (255,)), (0, 0), m)
+                    fill_rings(layer, rings, rgb)
             if stroke is not None:
-                d = ImageDraw.Draw(layer)
+                d = draw_of(layer)
                 col = tuple(int(round(v * 255)) for v in stroke) + (255,)
                 wpx = max(1, int(round(float(o.get("width") or 0.1) * k)))
                 for r in rings:
@@ -2188,6 +2294,7 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
             rest.append(o)
     while len(layers) > 1:
         top = layers.pop()
+        draws.pop(id(top), None)
         layers[-1].alpha_composite(top)
     img = layers[0].resize((W, H), Image.LANCZOS) if ss > 1 else layers[0]
     buf = io.BytesIO()
@@ -2248,7 +2355,7 @@ def pptx_notes(data, notes):
     return buf.getvalue()
 
 
-def render_pptx(spec, lib, lgr_dash, tiles=None):
+def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
     """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом.
     Тайлы подложки режутся по рамке карты; слайд, где фигур больше PPTX_MAX_SHAPES, получает карту картинкой (PNG
     200 dpi) — подписи, легенда и рамка остаются векторными, в заметках слайда сказано, что карта растровая."""
@@ -2257,6 +2364,8 @@ def render_pptx(spec, lib, lgr_dash, tiles=None):
     doc = build_document(spec, lib, lgr_dash, tiles)
     titles, pages, notes = sheet_titles(doc), [], {}
     for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
+        if progress:
+            progress(i - 1, len(doc.pages))
         ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
         groups = []
         for f in page.frames:
@@ -2277,6 +2386,8 @@ def render_pptx(spec, lib, lgr_dash, tiles=None):
                 notes[i] = RASTER_NOTE
         own = own_texts(sh)
         pages.append((page.size[0], page.size[1], groups + ([("Свои надписи", own)] if own else [])))
+    if progress:
+        progress(len(doc.pages), len(doc.pages))
     return pptx_notes(PptxBackend(doc.title).render(pages), notes)
 
 

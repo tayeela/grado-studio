@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).** Sheet 5: each
+  sanitary zone drawn by its own border (established ones were lost in a merged outline), one note on all SZZ kinds
+  with a full stop (`LegendRules.szzNote`), «охранная зона электроэнергетики» without the stray «О» and not inside the
+  corner caption reserve. Sheet 6: one legend row per sign (`gpzones.legendRows`). Roads: Yandex road polygons fill
+  gaps where ЕГКО has none (`RoadClean.gapFill`) — the road south of НИКИЭТ is back on sheets 4, 6–8. Sheet 9: wider
+  ВРИ column, capital first letter, short prepositions bound by a non-breaking space. Sheet 3: «ЖК «…»» (rule 17).
+  «вл.1» → «вл. 1». label-rules item 20.
+  PowerPoint export: was ~20 min for КРТ 3229, now 112 s cold / 22 s warm (PDF 128 s / 16 s): ЕГКО base of the
+  okrug map cached on disk (`~/.grado2/cache/print_ops`, 12 h), PPTX raster fills polygons only within their extent,
+  sub-0.1 mm outlines skipped; Montserrat embedded into PPTX (`ppt/fonts/*.fntdata`); `GET /api/print/progress`.
 - **2026-10-06, ГРАДО 2 v0.99.20: fixes from the live album rebuild check.** ЕГКО road polygon with a hole touching the
   outer ring (clip by the request box) collapsed in `RoadClean.clean` (JSTS buffer on an invalid polygon) and sheet 4 lost
   its roads: normalise with `union(f,f)` before buffering, and fall back to the unbuffered shape if cleaning loses > 50 %

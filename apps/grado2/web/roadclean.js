@@ -58,7 +58,24 @@
       const c = turf.bboxClip(feat(g), fr); return c?.geometry?.coordinates?.length ? c.geometry : null;
     } catch (e) { if (o.debug) console.warn(e); return { type: "MultiPolygon", coordinates: items.flatMap(x => polysOf(x.g)) }; }
   }
-  const api = { OPT, ringArea, filterParts, tiles, clean };
+  // Дороги Яндекса там, где у ЕГКО их нет (F4, 06.10.2026: на листах 7–8 пропала дорога южнее НИКИЭТ — у ЕГКО её полигона нет,
+  // а площади хватало на правило «ЕГКО первым»). Яндекс минус ЕГКО с запасом near (край у двух источников не совпадает на
+  // 2–4 м) → без полос уже open (обводка у края ЕГКО) и без кусков меньше minGap м² → каждый кусок возвращается назад на near
+  // внутри Яндекса, чтобы с ЕГКО не было шва. Возвращает геометрии для clean() вместе с ЕГКО; пусто — ЕГКО полная
+  const GAP = { near: 4, open: 2, minGap: 150 };
+  function gapFill(turf, egko, yandex, bb, o = {}) {
+    const op = { ...GAP, ...o }, E = clean(turf, egko, bb, o), Y = clean(turf, yandex, bb, o);
+    if (!Y) return [];
+    if (!E) return [Y];
+    try {
+      const d = turf.difference(turf.featureCollection([feat(Y), turf.buffer(feat(E), op.near, { units: "meters" })]));
+      if (!d?.geometry) return [];
+      const opened = turf.buffer(turf.buffer(d, -op.open, { units: "meters" }), op.open, { units: "meters" });
+      const parts = polysOf(opened?.geometry).map(p => ({ type: "Polygon", coordinates: p })).filter(g => ringArea(g.coordinates[0]) >= op.minGap);
+      return parts.map(g => { const back = turf.intersect(turf.featureCollection([turf.buffer(feat(g), op.near + .5, { units: "meters" }), feat(Y)])); return back?.geometry || g; });
+    } catch (e) { if (o.debug) console.warn(e); return []; }
+  }
+  const api = { OPT, GAP, ringArea, filterParts, tiles, clean, gapFill };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.RoadClean = api;
 })(typeof window !== "undefined" ? window : globalThis);
