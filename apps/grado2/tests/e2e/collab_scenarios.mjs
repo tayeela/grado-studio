@@ -21,9 +21,11 @@ async function launch(name) {
     "--no-first-run", "--no-default-browser-check", "--no-sandbox", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
   procs.push({ chrome, profile });
   let port = 0;
-  for (let i = 0; i < 100 && !port; i++) { if (existsSync(join(profile, "DevToolsActivePort"))) port = +readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]; else await sleep(100); }
-  let targets; for (let i = 0; i < 50; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); break; } catch { await sleep(100); } }
-  const ws = new WebSocket(targets.find(t => t.type === "page").webSocketDebuggerUrl);
+  for (let i = 0; i < 300 && !port; i++) { if (existsSync(join(profile, "DevToolsActivePort"))) port = +readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]; else await sleep(100); }
+  // ждём, пока Chrome отдаст страницу (на медленном раннере /json отвечает не сразу или пустым списком); 30 с, не 5
+  let page; for (let i = 0; i < 300 && !page; i++) { try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === "page"); } catch { } if (!page) await sleep(100); }
+  if (!page) throw new Error(`${name}: Chrome не отдал страницу для управления (порт ${port})`);
+  const ws = new WebSocket(page.webSocketDebuggerUrl);
   await new Promise(r => ws.onopen = r);
   let id = 0; const pending = new Map(), logs = [];
   const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
