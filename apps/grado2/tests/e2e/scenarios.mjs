@@ -620,6 +620,23 @@ export default async p => {
   const nFeat = await p.ev(`return LYR.reduce((n, l) => n + layerSrc[l.key].getFeatures().length, 0)`);
   await p.ev(`LAY.sel = ${JSON.stringify(lay[1])}; document.activeElement?.blur?.(); return 1`); await p.key("Delete", "Delete", { vk: 46 }); await p.sleep(600);
   check(await p.ev(`return ALBUM.sheets[${lay[0]}].edits[${JSON.stringify(lay[1])}].hide === true && LYR.reduce((n, l) => n + layerSrc[l.key].getFeatures().length, 0) === ${nFeat}`), "макет: Delete скрывает надпись листа, объекты карты целы");
+  // вёрстка (из DesignCraft): надпись, пущенная на 2 пикселя мимо левого края другой надписи, встаёт ровно к нему, при
+  // перетаскивании видна направляющая; Ctrl+Z отменяет сдвиг, Ctrl+Shift+Z возвращает
+  const sn = await p.ev(`ALBUM.sheets[${lay[0]}].items = [{ id: "snapA", x: 40, y: 60, text: "Опорная надпись", size: 3.5, font: "ui", color: "#1a1a1a" },
+      { id: "snapB", x: 55, y: 90, text: "Надпись для сдвига", size: 3.5, font: "ui", color: "#1a1a1a" }]; await renderLayout();
+    const el = id => LAY.svg.querySelector('text[data-key="item:' + id + '"]'), A = { b: boxOf(el("snapA")) }, B = { t: el("snapB"), b: boxOf(el("snapB")), r: el("snapB").getBoundingClientRect() };
+    const k = LAY.svg.getScreenCTM().a, o = { bubbles: true, button: 0, pointerId: 1 }, cx = B.r.x + 8, cy = B.r.y + B.r.height / 2, key = B.t.dataset.key;
+    B.t.dispatchEvent(new PointerEvent("pointerdown", { ...o, clientX: cx, clientY: cy }));
+    B.t.dispatchEvent(new PointerEvent("pointermove", { ...o, clientX: cx + (A.b.x0 - B.b.x0) * k + 2, clientY: cy }));
+    const g = LAY.svg.querySelectorAll("#layGuides line").length; B.t.dispatchEvent(new PointerEvent("pointerup", o)); await new Promise(r => setTimeout(r, 900));
+    const u = [...LAY.svg.querySelectorAll("text[data-key]")].find(x => x.dataset.key === key);
+    return [g, Math.abs(boxOf(u).x0 - A.b.x0), !LAY.svg.querySelector("#layGuides"), key, ALBUM.sheets[${lay[0]}].items.find(x => x.id === "snapB").x]`);
+  check(sn && sn[0] >= 1 && sn[1] < .05 && sn[2], `макет: надпись встаёт к краю соседней, видна направляющая (${sn})`);
+  if (sn) { await p.ev(`document.activeElement?.blur?.(); return 1`); await p.key("z", "KeyZ", { ctrl: true }); await p.sleep(700);
+    const und = await p.ev(`return ALBUM.sheets[${lay[0]}].items.find(x => x.id === "snapB").x`);
+    await p.key("Z", "KeyZ", { ctrl: true, shift: true }); await p.sleep(700);
+    check(und === 55 && await p.ev(`return ALBUM.sheets[${lay[0]}].items.find(x => x.id === "snapB").x`) === sn[4], `макет: Ctrl+Z отменяет сдвиг надписи, Ctrl+Shift+Z возвращает (${und})`);
+    await p.ev(`ALBUM.sheets[${lay[0]}].items = []; return 1`); }
   await p.key("Escape", "Escape", { vk: 27 });
   check(await p.ev(`const r = $("layEd").hidden && !LAY; ALBUM.sheets.splice(${lay[0]}, 1); renderSheets(); return r`), "макет: Esc закрывает окно макета");
 
