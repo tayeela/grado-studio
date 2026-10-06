@@ -324,7 +324,8 @@ const LGR_LEG = { 1: "красные линии, обозначающие гра
 const ZONE_GEN = { 5: "санитарно-защитных зон (установленных)", 62: "санитарно-защитных зон (расчётных)", 63: "санитарно-защитных зон (ориентировочных)" };
 // СЗЗ — условными знаками ГИС ОГД (владелец 05.10.2026: «рисуй, но возьми условные для СЗЗ как на ГИС ОГД»; стили
 // слоёв портала virtual1743, virtual1745, virtual1746): только граница, без заливки; штрих 9/7 пикс. — у ориентировочных
-const SZZ_OGD = { 5: { color: "#00ffc5" }, 62: { color: "#f3f707" }, 63: { color: "#df1a07", dash: [9, 7] } }, SZZ_W = 1.4;
+// владелец 06.10.2026: «установленные СЗЗ — чёрный контур, ориентировочные — пунктир, чёрный контур» (расчётные — как на портале)
+const SZZ_OGD = { 5: { color: "#000000" }, 62: { color: "#f3f707" }, 63: { color: "#000000", dash: [9, 7] } }, SZZ_W = 1.4;
 // виды СЗЗ в легенде — друг за другом: установленные (5), затем расчётные (62) (владелец 05.10.2026)
 const SZZ_ORD = c => c === 62 ? 5.5 : c === 63 ? 5.7 : c;
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
@@ -699,7 +700,7 @@ function conceptSheet(out, sheet, bb) {
     // где ни участка, ни OSM — продолжение ближайших зон (владелец 30.09.2026: «экстраполировать ближайшие зоны»): точки по
     // границам закрашенных контуров → ячейки ближайшего соседа (Вороного) цветом своего контура, под всеми заливками
     const pts = [], seenPt = new Set(), per = seeds.reduce((a, x) => a + (safe(() => turf.length(turf.polygonToLine({ type: "Feature", geometry: x.g, properties: {} }), { units: "meters" })) || 0), 0);
-    const step = Math.max(8, per / 6000);                         // не больше ~6000 точек на лист
+    const step = Math.max(2, per / 20000);                        // не больше ~20000 точек на лист: шаг 2 м — стык цветов без «пилы» (06.10.2026)
     seeds.forEach(({ g, u }) => (g.type === "Polygon" ? [g.coordinates] : g.coordinates).forEach(poly => {
       const ring = turf.lineString(poly[0]), L0 = turf.length(ring, { units: "meters" });
       for (let d = 0; d < L0; d += step) { const c = turf.along(ring, d, { units: "meters" }).geometry.coordinates;
@@ -708,7 +709,14 @@ function conceptSheet(out, sheet, bb) {
         pts.push(turf.point(c, { fill: u[1] })); } }));
     const dx = (bb[2] - bb[0]) * .02, dy = (bb[3] - bb[1]) * .02;          // рамка с запасом: точки на краю ломают ячейки
     const cells = pts.length > 2 ? safe(() => turf.voronoi(turf.featureCollection(pts), { bbox: [bb[0] - dx, bb[1] - dy, bb[2] + dx, bb[3] + dy] })) : null;
-    if (cells) use.splice(1, 0, ...cells.features.map((c, i) => c && ({ g: c.geometry, fill: pts[i].properties.fill, stroke: pts[i].properties.fill, w: .6, a: 1 })).filter(Boolean));
+    // ячейки одного цвета сливаются, стык двух цветов сглаживается: у соседей точки идут вперемешку, и граница ячеек
+    // была «пилой» с зубцами в шаг точек (владелец 06.10.2026: «на сущполе странно покрашено треугольниками»)
+    const merged = cells && safe(() => {
+      const fc = turf.featureCollection(cells.features.map((c, i) => c && turf.feature(c.geometry, { fill: pts[i].properties.fill })).filter(Boolean));
+      return turf.dissolve(fc, { propertyName: "fill" }).features.map(f => safe(() => turf.simplify(f, { tolerance: step * 1.2 / 111320, highQuality: false })) || f);
+    });
+    if (merged) use.splice(1, 0, ...merged.map(c => ({ g: c.geometry, fill: c.properties.fill, stroke: c.properties.fill, w: .6, a: 1 })));
+    else if (cells) use.splice(1, 0, ...cells.features.map((c, i) => c && ({ g: c.geometry, fill: pts[i].properties.fill, stroke: pts[i].properties.fill, w: .6, a: 1 })).filter(Boolean));
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(ROAD_USE[0], ROAD_USE[1]);                         // территории улиц и дорог — белые, в легенде всегда
     if ((L("egko.water")?.features || []).some(inFrame)) seen.set(WATER_USE[0], WATER_USE[1]);   // вода — класс 22 шаблона
@@ -797,8 +805,12 @@ function conceptSheet(out, sheet, bb) {
       f.g = { type: "MultiLineString", coordinates: f.g.coordinates.filter(l => !hit.includes(l)) };
       noText.push({ ...f, g: { type: "MultiLineString", coordinates: hit }, ll: undefined }); });
     zoneFeats.push(...noText.filter(f => f.g.coordinates.length));
-    if (L("gisogd.zouit")) L("gisogd.zouit").features = zoneFeats;
-    else out.layers.push({ title: "ЗОУИТ и зоны ограничений (ОГД)", features: zoneFeats });
+    // СЗЗ — чёрным поверх белой дымки за территорией (владелец 06.10.2026: «установленные СЗЗ черный контур»; под дымкой
+    // чёрный печатался серым)
+    const szzOver = zoneFeats.filter(f => SZZ_OGD[f.code]), zoneRest = zoneFeats.filter(f => !SZZ_OGD[f.code]);
+    if (L("gisogd.zouit")) L("gisogd.zouit").features = zoneRest;
+    else out.layers.push({ title: "ЗОУИТ и зоны ограничений (ОГД)", features: zoneRest });
+    if (szzOver.length) out.layers.push({ key: "gisogd.szz.lines", title: "Санитарно-защитные зоны", over: true, features: szzOver });
     // правило 7 (T85a): участки и застройка — знаком, только если есть в рамке
     const hasParcels = (L("nspd.parcels")?.features || []).some(inFrame), hasBuild = (L("egko.buildings")?.features || []).some(inFrame);
     out.cLegend = [{ title: "Границы", items: [terr, ...(hasParcels ? [{ kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков, поставленных на кадастровый учёт" }] : [])] },
