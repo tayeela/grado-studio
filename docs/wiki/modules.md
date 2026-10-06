@@ -6,11 +6,11 @@
 
 ## Сервер и печать (apps/grado2/*.py)
 
-### `apps/grado2/album_io.py` — 687 стр.
+### `apps/grado2/album_io.py` — 753 стр.
 
 Альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint («ППТ_КРТ Шаблон (И).pptx», А3 альбомный, красная шапка) и «Градостроительная концепция» — по образцу «ГК Царицыно» (А3 альбомный, белый лист, заголовок справа).
 
-Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
+Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `_text_boxes`, `_callout_route`, `_remember_ops`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
 
 ### `apps/grado2/dxf_io.py` — 311 стр.
 
@@ -48,7 +48,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2396 стр.
+### `apps/grado2/print_io.py` — 2413 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 

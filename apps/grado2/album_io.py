@@ -10,6 +10,7 @@
 
 import base64
 import binascii
+import math
 import re
 from pathlib import Path
 
@@ -265,22 +266,86 @@ class PptKrtFrame(Frame):
         return out
 
 
+def _text_boxes(ops, pad=0.8):
+    """Рамки надписей карты (мм листа): по одной (x0, y0, x1, y1) на каждую текстовую операцию; повёрнутая надпись —
+    описанный прямоугольник её контура. pad — запас вокруг (ореол буквы)."""
+    out = []
+    for o in ops:
+        if o.get("op") != "text" or not o.get("text") or not o.get("size"):
+            continue
+        size = float(o["size"])
+        try:
+            w = _tw(o["text"], o.get("font_family") or "sans", size)
+        except Exception:
+            w = size * .6 * len(str(o["text"]))
+        anchor = o.get("anchor") or "start"
+        dx0 = -w / 2 if anchor == "middle" else -w if anchor == "end" else 0.0
+        a = abs(float(o.get("angle") or 0))
+        ca, sa = math.cos(a), math.sin(a)
+        xs, ys = [], []
+        for dx, dy in ((dx0, -size * .8), (dx0 + w, -size * .8), (dx0, size * .3), (dx0 + w, size * .3)):
+            for s in (1, -1):                                          # знак поворота не важен: берём оба
+                xs.append(o["x"] + dx * ca - s * dy * sa)
+                ys.append(o["y"] + s * dx * sa + dy * ca)
+        out.append((min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad))
+    return out
+
+
+def _callout_route(sx, cy, tx, ty, boxes):
+    """Линия выноски от края рамки (sx, cy) к точке (tx, ty): горизонталь до излома и дальше прямая к точке. Излом
+    сдвигается, пока линия не пересечёт ни одной надписи карты (правило 4.10: выноска не режет подписи); если по прямой
+    не выходит — излом с вертикальным ходом. Нет чистого пути — исходная линия."""
+    from print_io import _seg_box
+    base = (sx + tx) / 2
+
+    def clean(pts):
+        return not any(_seg_box(p, q, b) for p, q in zip(pts, pts[1:]) for b in boxes
+                       if not (b[0] <= tx <= b[2] and b[1] <= ty <= b[3]))      # надпись под самой точкой — не в счёт
+
+    first = [(sx, cy), (base, cy), (tx, ty)]
+    if clean(first):
+        return first
+    lo, hi = min(sx, tx), max(sx, tx)
+    for k in range(1, 81):
+        for m in (base + k * 1.5, base - k * 1.5):
+            if lo - 30 <= m <= hi + 30:
+                pts = [(sx, cy), (m, cy), (tx, ty)]
+                if clean(pts):
+                    return pts
+    for k in range(0, 81):                                                 # излом с вертикальным ходом: горизонталь — вертикаль — горизонталь
+        for m in (base + k * 1.5, base - k * 1.5):
+            if lo - 30 <= m <= hi + 30:
+                pts = [(sx, cy), (m, cy), (m, ty), (tx, ty)]
+                if clean(pts):
+                    return pts
+    return first
+
+
+def _remember_ops(fn, frame):
+    """Обёртка ops рамки: последний результат лежит в frame.last_ops (выноска читает надписи карты)."""
+    def wrapped(ctx):
+        frame.last_ops = fn(ctx)
+        return frame.last_ops
+    return wrapped
+
+
 class CalloutFrame(Frame):
     """Выноска шаблона «рассматриваемая территория / Район …»: скруглённая пунктирная рамка между двумя картами
-    и тонкие линии от неё к точке территории на каждой карте (точка — кружок на конце линии)."""
+    и тонкие линии от неё к точке территории на каждой карте (точка — кружок на конце линии). Линии обходят
+    надписи карт (maps — рамки карт: их операции запоминаются при печати)."""
 
-    def __init__(self, box, lines, targets):
+    def __init__(self, box, lines, targets, maps=()):
         super().__init__(box)
-        self.lines, self.targets = lines, targets        # targets — [(x, y) мм листа]
+        self.lines, self.targets, self.maps = lines, targets, list(maps)
 
     def ops(self, ctx):
         x, y, w, h = self.rect
         out = []
+        boxes = [b for m in self.maps for b in _text_boxes(getattr(m, "last_ops", None) or [])]
         for tx, ty in self.targets:
             sx = x if tx < x else x + w
-            mid = (sx + tx) / 2
             out.append({"op": "path", "closed": False, "fill": None, "stroke": (0, 0, 0), "width": 0.22, "dash": None,
-                        "rings": [[(sx, y + h / 2), (mid, y + h / 2), (tx, ty)]]})
+                        "rings": [_callout_route(sx, y + h / 2, tx, ty, boxes)]})
         r = 3.0
         ring = [(x + r, y), (x + w - r, y), (x + w, y + r), (x + w, y + h - r), (x + w - r, y + h), (x + r, y + h),
                 (x, y + h - r), (x, y + r)]
@@ -654,6 +719,7 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
         maps = []
         for p in sh["panels"]:
             f = map_frame(tuple(p["rect"]), p)
+            f.ops = _remember_ops(f.ops, f)                # выноска обходит надписи этой карты
             maps.append(f)
             frames.append(f)
             if p.get("okrugTitle"):
@@ -669,7 +735,7 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
             need = max(_tw(t, "sans-bold" if i else "sans", 9 * PT) for i, t in enumerate(sh["callout"])) + 6
             if need > box[2]:
                 box = (box[0] - (need - box[2]) / 2, box[1], need, box[3])
-            frames.append(CalloutFrame(box, [(t, i > 0) for i, t in enumerate(sh["callout"])], pts))
+            frames.append(CalloutFrame(box, [(t, i > 0) for i, t in enumerate(sh["callout"])], pts, maps))
     elif sh.get("kind") == "photos":
         from print_io import PhotoGridFrame
         r = tuple(sh.get("rect") or PHOTO_MAP_RECT)

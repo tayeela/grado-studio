@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.22: Гольяново album check, last fixes (F7, F9).** Sheet 2: callout lines route around
+  district and okrug captions (`_callout_route` in album_io, map frames remember their text ops). Genplan zone number:
+  deepest spot also away from the territory border (≥ 4 mm) and not on or inside a building. Street labels keep
+  1.6 mm from the territory dashes when placed along a road. Checked on КРТ 3229 rebuilt with owner data (lease rows
+  from ЕГРН extracts, address «вл. 8» from the ДГП letter): PDF 18 s, PPTX 20 s with Montserrat embedded.
 - **2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).** Sheet 5: each
   sanitary zone drawn by its own border (established ones were lost in a merged outline), one note on all SZZ kinds
   with a full stop (`LegendRules.szzNote`), «охранная зона электроэнергетики» without the stray «О» and not inside the

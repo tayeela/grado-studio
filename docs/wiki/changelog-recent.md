@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-06, ГРАДО 2 v0.99.22: Гольяново album check, last fixes (F7, F9).
 - 2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).
 - 2026-10-06, ГРАДО 2 v0.99.20: fixes from the live album rebuild check.
 - 2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).
@@ -21,4 +22,3 @@
 - 2026-10-03, ГРАДО 2 v0.99.2: the dock no longer crowds out the map; CSS smalls.
 - 2026-10-03, ГРАДО 2 v0.99.1: parking as required area in «Показатели» (server part).
 - 2026-10-03, ГРАДО 2 v0.99.0: layers are found by role — constraints and the sketch work on real projects.
-- 2026-10-03, ГРАДО 2 v0.98.5: the album is its own section of a shared project.

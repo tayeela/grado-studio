@@ -778,6 +778,7 @@ class SketchMapFrame(Frame):
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
         railsegs, roadrings = [], []                                    # только пути (мм) и кольца полигонов дорог (мм): подпись станции (T86g)
+        bldsegs, bldrings = [], []                                                    # контуры зданий (мм): номер зоны Генплана — не на углу здания (F9)
         if sh.get("basemap") in ("sat", "light") and self.tiles:
             out.append({"op": "layer", "name": "Подложка"})             # метки слоёв — группы фигур в PPTX (PDF их не видит)
             kind = sh["basemap"]
@@ -868,6 +869,9 @@ class SketchMapFrame(Frame):
                             roadrings.extend(rings)
                         if layer.get("key") == "egko.water":
                             watersegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
+                        if layer.get("key") == "egko.buildings":
+                            bldsegs.extend(e for r in rings for e in zip(r, r[1:] + r[:1]))
+                            bldrings.extend(rings[:1])
                         if not rings:
                             continue
                         a = f.get("a")
@@ -1029,7 +1033,8 @@ class SketchMapFrame(Frame):
                 return False
             if avoid and tsegs:
                 if ob:
-                    if _obox_hit(ob[0], ob[1], ob[2], ob[3] + tpad, ob[4] + tpad, tsegs):
+                    sp_ = max(tpad, 1.6)                               # подпись улицы — не ближе 1,6 мм к пунктиру территории (F8)
+                    if _obox_hit(ob[0], ob[1], ob[2], ob[3] + sp_, ob[4] + sp_, tsegs):
                         return False
                 else:
                     b = (box[0] - tpad, box[1] - tpad, box[2] + tpad, box[3] + tpad)
@@ -1304,7 +1309,19 @@ class SketchMapFrame(Frame):
             if f.get("ul0") and ring:
                 # номер зоны Генплана — в самой глубокой точке видимой части зоны, не ближе 6 мм к краю карты и
                 # подальше от берегов; кусок зоны меньше подписи не подписывается (правило 11: «8 / 123» у края)
-                pl_ = _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6), watersegs)
+                pl_ = _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6), watersegs + tsegs)   # и не у границы территории (F9)
+                if pl_ and bldsegs:                                       # из глубоких точек — первая не на здании (F9: «6/130» на углу здания)
+                    hw = max(_text_w(ln, f.get("lf"), sizes[i]) for i, ln in enumerate(lines)) / 2
+                    def _clear(c):
+                        bx = (c[0] - hw - 1, c[1] - sizes[0] - 1, c[0] + hw + 1, c[1] + offs[-1] + sizes[-1] * .5 + 1)
+                        if any(_in_ring(px_, py_, r_) for r_ in bldrings for px_ in (bx[0], c[0], bx[2]) for py_ in (bx[1], c[1], bx[3])):
+                            return False                                    # внутри здания (на крыше) — тоже нет
+                        return c[2] >= 4 and not any(_seg_box(p_, q_, bx) for p_, q_ in bldsegs
+                                                     if not (max(p_[0], q_[0]) < bx[0] or min(p_[0], q_[0]) > bx[2]
+                                                             or max(p_[1], q_[1]) < bx[1] or min(p_[1], q_[1]) > bx[3]))
+                    pick = next((c for c in pl_ if _clear(c)), None)
+                    if pick:
+                        pl_ = [pick] + [c for c in pl_ if c is not pick]
                 need = max(_text_w(ln, f.get("lf"), sizes[i]) for i, ln in enumerate(lines)) / 2
                 if not pl_ or _pole([ring], (rx + 6, ry + 6, rx + rw - 6, ry + rh - 6))[0][2] < max(need * .8, (offs[-1] + sizes[0]) * .7):
                     continue
