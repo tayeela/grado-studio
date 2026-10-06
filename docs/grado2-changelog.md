@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.** Sheet 5 legend: groups
+  «Функциональные зоны специализированного назначения» and «Транспортная инфраструктура», names and colours from the
+  owner's picture (`SPEC_ZONES`, label-rules 21); classification by ВРИ is unchanged. District boundary bold (1.2 mm),
+  ЛГР and red lines 1.5× thicker (≥ 0.5 mm) and drawn above the white veil, ЛГР signs larger on the map and in the
+  legend (`LT_SHAPE_MM`, `linetype_ops(shape_k=…)`); «территории автодорог, улиц и местных проездов» on all sheets.
 - **2026-10-06, ГРАДО 2 v0.99.23: owner remarks on the Гольяново album.** Sanitary zones: established — solid black,
   indicative — black dashed, drawn above the white veil outside the territory (layer `gisogd.szz.lines`, over).
   Sheet 5 land use: Voronoi gap fill no longer leaves a saw of triangles — seed points every 2 m (was 8 m), cells of

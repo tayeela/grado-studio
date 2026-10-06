@@ -418,7 +418,7 @@ def _dash_fit(dash, w):
 
 def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
     """Знак легенды 8 × 3 мм: заливка (с штриховкой), контур, линия (со штрихом), тип линии REDLN97, образец текста."""
-    from print_io import _mix, hatch_ops, linetype_ops
+    from print_io import _mix, hatch_ops, linetype_ops, LT_SHAPE_MM
     k, out = it.get("kind", "fill"), []
     rect = [[(x, y), (x + w, y), (x + w, y + h), (x, y + h)]]
     if k == "line":
@@ -428,9 +428,9 @@ def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
         if lib and it.get("name"):
             # как на карте, но не крупнее, чем нужно для двух шаблонов на 8 мм знака — иначе знак сплошной
             n = float((lib.get("linetypes", {}).get(it["name"]) or {}).get("length") or 1)
-            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], min(0.25, w / (2.05 * n)), _rgb(it.get("stroke"), (1, 0, 0)), 0.3, lib))   # 0,25 — как на карте
+            out.extend(linetype_ops([(x, y + h / 2), (x + w, y + h / 2)], it["name"], min(0.35, w / (2.05 * n)), _rgb(it.get("stroke"), (1, 0, 0)), 0.5, lib, shape_k=LT_SHAPE_MM))   # 0,35 и 0,5 мм — как на карте (06.10.2026)
         else:
-            out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.45,
+            out.append({"op": "path", "closed": False, "fill": None, "stroke": _rgb(it.get("stroke"), (1, 0, 0)), "width": 0.6,
                         "dash": it.get("dash"), "rings": [[(x, y + h / 2), (x + w, y + h / 2)]]})
         if it.get("ll"):                        # надпись знака над линией — как в образце «ГК Царицыно»
             size_mm = min(1.25, (w + 1) / (len(it["ll"]) * .56))      # не шире знака: длинная надпись — мельче
