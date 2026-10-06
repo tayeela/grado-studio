@@ -18,7 +18,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   «· 2 с» instead of reading one point after 2.2 s (each download counts its own seconds). T38 (theme → basemap) waits up to 3 s for
   the basemap source to change instead of 0.2 s and names the failed condition; T27 (theme → graph canvas) waits for the
   canvas colour the same way; «Условия проекта» waits until the district lookup has finished for the current boundary
-  (`tp.rev === TERR_REV`), not only while it is busy — it starts after 0.4 s and used to end in the middle of the next step.
+  (`tp.rev === TERR_REV`), not only while it is busy — it starts after 0.4 s and used to end in the middle of the next step. Collab
+  «B: открыл «Проверка»» waits up to 5 s for the header (name, role), which updates just after `Collab.pid`.
 - **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,

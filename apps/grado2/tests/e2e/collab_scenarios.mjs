@@ -119,7 +119,10 @@ try {
   await B.until(`return [...document.querySelectorAll("#hubProjList tbody tr")].some(r=>/Проверка/.test(r.textContent))`, "в списке B виден проект «Проверка»");
   await B.clickEl('#hubProjList [data-act="open"]');
   await B.until(`return Collab.pid && Collab.role==="editor" && $("wHubProjects").hidden`, "B открыл проект");
-  check(await B.ev(`return $("hubProjName").textContent==="Проверка" && $("hubRole").textContent==="правка" && !document.body.classList.contains("hub-viewer")`), "B: открыл «Проверка» из списка, роль «правка»");
+  // шапка (название, роль) обновляется чуть позже Collab.pid — ждём её до 5 с, при сбое показываем, что в ней было
+  const bOpen = await B.ev(`const ok=()=>$("hubProjName").textContent==="Проверка" && $("hubRole").textContent==="правка" && !document.body.classList.contains("hub-viewer");
+    for (let i=0; i<50 && !ok(); i++) await new Promise(r=>setTimeout(r,100)); return ok() || [$("hubProjName").textContent, $("hubRole").textContent, document.body.classList.contains("hub-viewer")].join(" | ")`);
+  check(bOpen === true, `B: открыл «Проверка» из списка, роль «правка»${bOpen === true ? "" : " (" + bOpen + ")"}`);
   await A.until(`return document.querySelectorAll("#hubAv .av").length===1`, "A видит аватар B");
   check(await A.ev(`return document.querySelector("#hubAv .av").textContent.length>0 && /Борис/.test(document.querySelector("#hubAv .av").title)`), "A: в шапке аватар B — кто в проекте");
 
