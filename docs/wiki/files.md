@@ -19,7 +19,8 @@
 
 | вопрос | где |
 |---|---|
-| что сказал владелец, решения по датам | `docs/team/OWNER.md`; полные правила оформления — `docs/standards/albums/label-rules.md` |
+| задачи, слова владельца, что ждёт ответа | **GitHub Issues** `tayeela/grado-studio` (`gh issue list`), PR — `gh pr list`; архив до 06.10 — `docs/team/OWNER.md`, `BOARD.md` |
+| что сказал владелец, решения по датам (архив) | `docs/team/OWNER.md`; полные правила оформления — `docs/standards/albums/label-rules.md` |
 | правила вёрстки слайдов (формат, сетка, типографика) | `docs/standards/albums/slide-layout-rules.md` |
 | образцы владельца (шапка, ВРИ, Генплан, значки станций) | `docs/standards/albums/` (`pptkrt-header.jpg`, `ВРИ земельных участков_RGB.dxf`, `УСЛОВКИ от Генплана.dxf`, `icons/`) |
 | типы линий ЛГР, Эталон, стили | `docs/standards/redln97/`, `core/render/grado_render/styles/*.json` (генерируются `tools/gen_*.py`) |
@@ -35,13 +36,14 @@
 | тесты и браузерные сценарии | `docs/wiki/tests.md`; `apps/grado2/tests/`, сценарии — `apps/grado2/tests/e2e/scenarios.mjs` |
 | проверка перед коммитом | `tools/gate.sh` (`E2E=1` — с браузером) |
 | что менялось | `docs/grado2-changelog.md` (новые сверху), `docs/wiki/changelog-recent.md` |
-| очередь команды, что ждёт владельца, готово к выкладке | `docs/team/BOARD.md`, `docs/wiki/team.md` |
+| очередь команды, что ждёт владельца, готово к выкладке | GitHub Issues и PR выкладки `team/t60 → main` |
+| выданные альбомы (PDF, PPTX) | релизы GitHub `album-*` (`gh release list`) и папки выдачи на Mac |
 | порядок работы команды, роли, шаблоны заданий | `docs/team/CYCLE.md`, `.claude/agents/grado-*.md`, `docs/team/prompts/` |
 | уроки команды (обязательные) | строки `RULE:` в `docs/team/PROGRESS.md` |
 | решения совета команды | `docs/team/DECISIONS.md` |
 | выкладка на сайт grado.tailink.tech | `tools/deploy-server.sh`, хуки `tools/git-hooks/`; рецепт — `docs/wiki/recipes.md` |
 | снимки панорам Яндекса для фотофиксации | `tools/panorama_shot.mjs` |
-| проверка альбома «до / после» (картинки и текст страниц) | `tools/album_check.py`; эталоны — `~/.grado2/album-baseline/<gol|bez>/`, отчёт — `/tmp/grado-album-check/<имя>/` |
+| проверка альбома «до / после» (картинки и текст страниц) | `tools/album_check.py`; эталоны — релиз GitHub `album-baseline` (копия в `~/.grado2/album-baseline/`), отчёт — `/tmp/grado-album-check/<имя>/` |
 | готовые сценарии (навыки) | `.claude/skills/album-verify` (проверка), `owner-remark` (замечание владельца), `land` (выкладка) |
 | вики на GitHub (приватно) | `tayeela/grado-wiki`: README, llms.txt, AGENTS.md; выкладка — `tools/wiki_publish.sh` (хук post-commit) |
 | эта вики | генератор `tools/wiki.py` (страницы из кода при каждом коммите); вручную — `architecture.md`, `recipes.md`, `album-rules.md`, `files.md` |
