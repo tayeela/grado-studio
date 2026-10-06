@@ -20,7 +20,7 @@
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (52):
+Все упомянутые в коде пути (54):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -34,6 +34,7 @@
 - `/api/fgistp/layers`
 - `/api/health`
 - `/api/hub/`
+- `/api/hub/guest`
 - `/api/hub/invites`
 - `/api/hub/join`
 - `/api/hub/login`
@@ -63,6 +64,7 @@
 - `/api/print/`
 - `/api/print/pdf`
 - `/api/print/pptx`
+- `/api/print/progress`
 - `/api/print/svg`
 - `/api/progress`
 - `/api/project`

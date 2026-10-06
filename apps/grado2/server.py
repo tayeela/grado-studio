@@ -614,6 +614,7 @@ def body_limit(path):
 
 
 INTERNAL_ERROR = "внутренняя ошибка, подробности в журнале сервера"
+PRINT_PROGRESS = {}  # ход выгрузки альбома: {"kind": "pdf"|"pptx", "got": готово листов, "total": всего} (GET /api/print/progress)
 PROGRESS = {}        # ключ источника → ход первой выгрузки слоя ГИС ОГД / ЕГКО целиком (GET /api/progress)
 _OGD_CAT = {}
 
@@ -758,8 +759,9 @@ ESRI_SERVICES = {"sat": ("esri", "World_Imagery"), "light": ("esri-light", "Canv
 
 def egko_features(bbox, code):
     """Объекты слоя ЕГКО (картооснова base2) в прямоугольнике — для цветной основы схемы округа (print_io.egko_ops).
-    Только из кэша на диске и с портала по обычным правилам коннектора; ошибка — слой пропускается."""
-    return GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=True, ttl=EGKO_TTL).fetch(bbox, code)["features"]
+    Только из кэша на диске и с портала по обычным правилам коннектора; ошибка — слой пропускается.
+    Без обрезки по рамке (clip=False): 290 тыс. объектов округа резались 40 секунд, а печать и так режет основу контуром округа."""
+    return GisogdApi(cache_dir=CACHE / "egko", map_name="base2", clip=False, ttl=EGKO_TTL).fetch(bbox, code)["features"]
 
 
 def esri_tile(z, x, y, kind="sat"):
@@ -1663,6 +1665,10 @@ _LOGIN_FAILS, _LOGIN_LOCK = {}, threading.Lock()
 # локальная работа. В этом режиме GRADO2_TOKEN не действует: вход заменяют учётные записи.
 HUB = None
 SESSION_COOKIE = "grado_session"
+# Гостевой вход (владелец 06.10.2026): GRADO2_GUEST=1 — совместный сайт открывается без пароля под учётной записью «Гость»
+# (hub.guest_session). После «Выйти» кука NOGUEST_COOKIE держит экран входа, чтобы войти своим логином.
+GUEST = os.environ.get("GRADO2_GUEST") == "1"
+NOGUEST_COOKIE = "grado_noguest"
 BIG_BODY = threading.BoundedSemaphore(3)    # одновременных запросов крупнее MAX_BODY в совместном режиме
 EVENTS_RECHECK = 10               # как часто открытый поток событий заново проверяет сессию и доступ (секунды)
 EVENTS_WRITE_TIMEOUT = 60         # сколько одна запись в поток может ждать читателя
@@ -1704,7 +1710,8 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         for k, v in (headers or {}).items():
-            self.send_header(k, v)
+            for one in (v if isinstance(v, list) else [v]):      # список — несколько заголовков (две куки)
+                self.send_header(k, one)
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1750,6 +1757,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
         if self.path == "/api/progress":
             return self._json(200, dict(PROGRESS))
+        if self.path == "/api/print/progress":
+            return self._json(200, dict(PRINT_PROGRESS))
         if self.path == "/api/ogd_all/tree":
             import ogd_all
             try:
@@ -1925,11 +1934,19 @@ class Handler(SimpleHTTPRequestHandler):
 
     # ---------- совместный режим (hub.py): вход по сессии, маршруты /api/hub/* ----------
     def _session_token(self):
+        return self._cookie_value(SESSION_COOKIE)
+
+    def _cookie_value(self, name):
         for part in (self.headers.get("Cookie") or "").split(";"):
             k, _, v = part.strip().partition("=")
-            if k == SESSION_COOKIE:
+            if k == name:
                 return v
         return ""
+
+    def _noguest_cookie(self, on):
+        """После «Выйти» на гостевом сайте — экран входа до закрытия браузера (кука без срока); вход любым способом её снимает."""
+        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
+        return f"{NOGUEST_COOKIE}={'1' if on else ''}; Path=/; HttpOnly; SameSite=Lax" + ("" if on else "; Max-Age=0") + ("; Secure" if tls else "")
 
     def _who(self):
         """Пользователь по куке grado_session ({login, name, admin}) или None; на запрос считается один раз."""
@@ -1946,7 +1963,7 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         if self._local_probe(method, path):
             return False
-        if method == "POST" and path in ("/api/hub/login", "/api/hub/register"):
+        if method == "POST" and path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
             return False
         if method == "GET" and path == "/api/hub/me":
             return False
@@ -1995,7 +2012,12 @@ class Handler(SimpleHTTPRequestHandler):
         q = parse_qs(urlparse(self.path).query)
         u = self._who()
         if path == "/api/hub/me":
-            return self._json(200, {"user": u}) if u else self._json(401, {"error": "нужен вход"})
+            if u:
+                return self._json(200, {"user": u})
+            if GUEST and not self._cookie_value(NOGUEST_COOKIE):     # гостевой сайт: сразу внутрь, без экрана входа
+                token, user = HUB.guest_session(self.headers.get("User-Agent") or "")
+                return self._json(200, {"user": user}, {"Set-Cookie": self._session_cookie(token, 2592000)})
+            return self._json(401, {"error": "нужен вход", **({"guest": True} if GUEST else {})})
         if path == "/api/hub/users":
             return self._json(200, {"users": HUB.list_users(u)})
         if path == "/api/hub/invites":
@@ -2075,15 +2097,20 @@ class Handler(SimpleHTTPRequestHandler):
     def _hub_post(self, path, req):
         u = self._who()
         ip, ua = self._client_ip(), self.headers.get("User-Agent") or ""
-        if path in ("/api/hub/login", "/api/hub/register"):
+        if path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
             if path == "/api/hub/login":
                 token, user = HUB.login(req.get("login"), req.get("password"), ip, ua)
+            elif path == "/api/hub/guest":
+                if not GUEST:
+                    return self._json(403, {"error": "гостевой вход выключен"})
+                token, user = HUB.guest_session(ua)
             else:
                 token, user = HUB.register(req.get("invite"), req.get("login"), req.get("name"), req.get("password"), ip, ua)
-            return self._json(200, {"user": user}, {"Set-Cookie": self._session_cookie(token, 2592000)})
+            return self._json(200, {"user": user}, {"Set-Cookie": [self._session_cookie(token, 2592000)] + ([self._noguest_cookie(False)] if GUEST else [])})
         if path == "/api/hub/logout":
             HUB.logout(self._session_token())
-            return self._json(200, {"ok": True}, {"Set-Cookie": self._session_cookie("", 0)})
+            cookies = [self._session_cookie("", 0)] + ([self._noguest_cookie(True)] if GUEST else [])
+            return self._json(200, {"ok": True}, {"Set-Cookie": cookies})
         if path == "/api/hub/password":
             HUB.change_password(u, req.get("old"), req.get("new"), keep_token=self._session_token())   # остальные входы гасятся
             return self._json(200, {"ok": True})
@@ -2260,7 +2287,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {"layers": layers, "errors": errors})
             if self.path == "/api/print/pdf":
                 import print_io
-                body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile)
+                prog = lambda got, total: PRINT_PROGRESS.update(kind="pdf", got=got, total=total)
+                try:
+                    body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile, prog)
+                finally:
+                    PRINT_PROGRESS.clear()
                 self.send_response(200)
                 for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
                     self.send_header(h, v)
@@ -2271,7 +2302,11 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.wfile.write(body)
             if self.path == "/api/print/pptx":
                 import print_io
-                body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile)
+                prog = lambda got, total: PRINT_PROGRESS.update(kind="pptx", got=got, total=total)
+                try:
+                    body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile, prog)
+                finally:
+                    PRINT_PROGRESS.clear()
                 self.send_response(200)
                 for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
                     self.send_header(h, v)

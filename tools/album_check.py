@@ -22,7 +22,16 @@ import sys
 import urllib.request
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+FONT = next((str(p) for p in (Path(__file__).resolve().parents[1] / "docs" / "standards" / "fonts").glob("Montserrat*Regular*.ttf")), None)
+
+
+def _font(size=14):
+    try:
+        return ImageFont.truetype(FONT, size) if FONT else ImageFont.load_default()
+    except OSError:
+        return ImageFont.load_default()
 
 BASE = Path.home() / ".grado2" / "album-baseline"
 OUT = Path("/tmp/grado-album-check")
@@ -60,6 +69,8 @@ def page_text(pdf, n):
 def text_diff(old_pdf, new_pdf, n):
     """Строки текста страницы, которые исчезли и появились (пиксели не видят подмену букв при той же вёрстке)."""
     a, b = page_text(old_pdf, n), page_text(new_pdf, n)
+    if sorted("".join(a).replace(" ", "")) == sorted("".join(b).replace(" ", "")):
+        return [], []                                  # те же буквы, иначе разложены строками (подпись сдвинулась) — не текстовое изменение
     sa, sb = set(a), set(b)
     return [x for x in a if x not in sb], [x for x in b if x not in sa]
 
@@ -169,7 +180,7 @@ def main():
             w, h = ca.size
             t = Image.new("RGB", (w * 2 + 12, h + 22), "white")
             t.paste(ca, (0, 22)); t.paste(cb, (w + 12, 22))
-            ImageDraw.Draw(t).text((4, 4), f"лист {i}, место {k}: было | стало", fill=(200, 0, 0))
+            ImageDraw.Draw(t).text((4, 3), f"лист {i}, место {k}: было | стало", fill=(200, 0, 0), font=_font())
             f = out / "crops" / f"L{i}-{k}.png"
             t.save(f)
             tiles.append(t)

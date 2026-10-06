@@ -34,6 +34,23 @@ jobs:
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
           python -m unittest discover -s apps/grado2/tests -p "test_*.py"
           python -m unittest discover -s core/connectors/tests -p "test_*.py"
+      - name: Fonts for the interface (as on the owner's Mac)
+        # интерфейс: system-ui, Segoe UI, Roboto, Helvetica Neue, Arial. На ubuntu system-ui и sans-serif дают DejaVu Sans — он шире,
+        # и шапка на 1440 px переполняется (T63). Ставим Roboto и делаем его первым в fontconfig для sans-serif и самого DejaVu Sans.
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-roboto fontconfig
+          mkdir -p ~/.config/fontconfig
+          cat > ~/.config/fontconfig/fonts.conf <<'EOF'
+          <?xml version="1.0"?>
+          <!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+          <fontconfig>
+            <alias binding="same"><family>sans-serif</family><prefer><family>Roboto</family></prefer></alias>
+            <alias binding="same"><family>system-ui</family><prefer><family>Roboto</family></prefer></alias>
+            <alias binding="same"><family>DejaVu Sans</family><prefer><family>Roboto</family></prefer></alias>
+          </fontconfig>
+          EOF
+          fc-cache -f
+          fc-match sans-serif; fc-match system-ui; fc-match "DejaVu Sans"
       - name: Browser scenarios (headless Chrome, offline data)
         env:
           CHROME: /usr/bin/google-chrome
@@ -42,6 +59,8 @@ jobs:
           GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py
 
   build:
+    # сборка Windows и macOS дорога (минуты macOS в приватном репозитории считаются с множителем): только по тегу и вручную, не на каждом PR
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/grado2-v')
     needs: test
     permissions:
       contents: write  # нужен только шагу Release (публикация по тегу)

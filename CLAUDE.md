@@ -8,6 +8,7 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules
   from all remarks. A new owner remark goes there and to `docs/standards/albums/label-rules.md` before code.
 - Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit.
+  Cloud sessions: `.claude/hooks/session-start.sh` builds `~/.grado2/venv` and sets `$CHROME`, so gate and E2E run as on the Mac.
 - History: `docs/grado2-changelog.md` (newest on top), `git log`; old studio and the former CLAUDE.md —
   `docs/session-log-archive.md`.
 
@@ -28,6 +29,7 @@ merging the PR `team/t60 → main`, then `git pull` in the main checkout deploys
 Urban-planning workspace: existing situation → АГК → ППТ, album ППТ КРТ to PDF/PPTX. The working program is
 **ГРАДО 2 (`apps/grado2`)**; old studio, wizard and calc-web are closed (code kept for core tests). The owner is an urban
 planner, not a programmer (QGIS, AutoCAD, macOS): Russian, plain words, no emoji, results described as what is on screen.
+Asking the owner to do something on the Mac — always give the exact Terminal command, ready to paste (owner 06.10.2026).
 
 ## Run and test
 - Owner's server: port 8650, projects in `~/Documents/ГРАДО 2` — **never test there**. Test servers and project copies —

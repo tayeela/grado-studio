@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>ГРАДО 2 — Вёрстка (макет)</title>
+<style>
+:root{--bg:#ececec;--panel:#f7f7f7;--field:#fff;--line:#d4d4d4;--line-2:#bdbdbd;--text:#1d1d1f;--muted:#5f6368;--faint:#6b6e73;--hover:#e4e4e4;--selrow:#d3e3f8;--accent:#2f6fc4;--accent-ink:#fff;--good:#1f7a4d;--warn:#9a5b00;--bad:#b3261e;--graph:#d9d9d6;--sh:0 4px 14px rgba(0,0,0,.2);--guide-m:#d6249f;--guide-c:#0a9bb5;--ui:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+:root[data-theme=dark]{color-scheme:dark;--bg:#1f1f1f;--panel:#2a2a2a;--field:#1e1e1e;--line:#3a3a3a;--line-2:#6a6a6a;--text:#e8e8e8;--muted:#b0b0b0;--faint:#a0a0a0;--hover:#353535;--selrow:#203550;--accent:#6aa8f2;--accent-ink:#0f0f0f;--good:#5cc08c;--warn:#e0a13a;--bad:#f5806f;--graph:#181818;--sh:0 4px 14px rgba(0,0,0,.4);--guide-m:#ff6fd0;--guide-c:#4fd6ee}
+*{box-sizing:border-box}
+html,body{margin:0;width:1440px;height:900px;overflow:hidden}
+body{background:var(--bg);color:var(--text);font:12px/1.35 var(--ui);display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:38px 40px minmax(0,1fr) 24px;user-select:none}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button{font:inherit;color:inherit;background:none;border:1px solid transparent;border-radius:3px;height:28px;padding:0 8px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+button:hover{background:var(--hover)}
+button.on{background:var(--selrow);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+button.sq{width:28px;padding:0;justify-content:center}
+kbd{font:11px var(--ui);color:var(--faint)}
+.vs{width:1px;height:20px;background:var(--line);margin:0 5px;flex:none}
+.bar{display:flex;align-items:center;padding:0 8px;background:var(--panel);border-bottom:1px solid var(--line);gap:1px}
+.bar b{font-weight:600}.sp{flex:1}
+.back{border-color:var(--line-2);background:var(--field)}
+.work{display:grid;grid-template-columns:172px minmax(0,1fr) 304px;min-height:0}
+.pages{background:var(--panel);border-right:1px solid var(--line);overflow:hidden;padding:8px 10px;display:flex;flex-direction:column;gap:8px}
+.pages h4,.props h4{margin:0;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.th{position:relative;display:flex;flex-direction:column;gap:2px;align-items:center}
+.th .im{width:134px;height:95px;border:1px solid var(--line-2);background:#fff url(file:///Users/tayeela/.grado2/album-baseline/gol/p-1.png) center/cover;position:relative}
+.th.sel .im{outline:2px solid var(--accent);outline-offset:1px}
+.th span{font-size:11px;color:var(--muted)}.th.sel span{color:var(--text);font-weight:600}
+.th .dot{position:absolute;right:3px;top:3px;width:9px;height:9px;border-radius:50%;background:var(--accent);border:1.5px solid #fff}
+.canvas{position:relative;background:var(--graph);overflow:hidden}
+.rt{position:absolute;left:18px;right:0;top:0;height:18px;background:var(--panel);border-bottom:1px solid var(--line);font-size:9px;color:var(--faint)}
+.rl{position:absolute;left:0;top:18px;bottom:0;width:18px;background:var(--panel);border-right:1px solid var(--line);font-size:9px;color:var(--faint)}
+.rt i,.rl i{position:absolute;font-style:normal}
+.rt i{top:4px;padding-left:2px;border-left:1px solid var(--line-2);height:14px}
+.rl i{left:0;width:18px;border-top:1px solid var(--line-2);padding-top:1px;text-align:center;writing-mode:vertical-rl;transform:rotate(180deg);height:auto}
+.corner{position:absolute;left:0;top:0;width:18px;height:18px;background:var(--panel);border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sheet{position:absolute;left:58px;top:44px;width:860px;height:608px;background:#fff;box-shadow:var(--sh);}
+.sheet img{position:absolute;inset:0;width:100%;height:100%;display:block}
+.sheet svg.ov{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.float{position:absolute;left:58px;top:668px;width:860px;display:flex;gap:10px;color:var(--muted);font-size:11px}
+.zoomhint{position:absolute;right:12px;bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:6px;box-shadow:var(--sh);padding:4px 8px;font-size:11px;color:var(--muted)}
+.props{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.ph{padding:10px 12px 8px;border-bottom:1px solid var(--line)}
+.ph .t{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center}
+.ph .s{color:var(--muted);margin-top:2px}
+.link{margin:8px 12px 0;padding:8px 10px;border:1px solid color-mix(in srgb,var(--accent) 50%,var(--line-2));background:color-mix(in srgb,var(--accent) 9%,var(--field));border-radius:6px}
+.link .r{display:flex;align-items:center;gap:6px}.link b{font-weight:600}
+.link small{display:block;color:var(--muted);margin:3px 0 7px;font-size:11px}
+.btn2{border:1px solid var(--line-2);background:var(--field);height:26px}
+.tabs{display:flex;margin:10px 12px 0;border-bottom:1px solid var(--line)}
+.tabs div{padding:5px 7px;color:var(--muted);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs .a{color:var(--text);border-color:var(--accent);font-weight:600}
+.body{padding:10px 12px;display:flex;flex-direction:column;gap:9px;overflow:hidden}
+.row{display:grid;grid-template-columns:86px 1fr;align-items:center;gap:6px}
+.row>label{color:var(--muted)}
+.fld{height:24px;border:1px solid var(--line-2);background:var(--field);border-radius:3px;padding:0 6px;display:flex;align-items:center;justify-content:space-between}
+.fld u{text-decoration:none;color:var(--faint);font-size:11px}
+.seg{display:flex;gap:2px}.seg button{border-color:var(--line-2);background:var(--field);height:24px;width:28px;padding:0;justify-content:center}
+.seg button.on{background:var(--selrow)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.sample{border:1px solid var(--line);background:var(--field);border-radius:3px;padding:8px;color:var(--bad);font-weight:600;font-size:15px;font-family:Montserrat,var(--ui)}
+hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
+.status{display:flex;align-items:center;gap:14px;padding:0 10px;background:var(--panel);border-top:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.status .h{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis}
+</style></head><body>
+<script>
+const P={back:'m12 19-7-7 7-7M19 12H5',undo:'M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11',redo:'m15 14 5-5-5-5M20 9H9.5a5.5 5.5 0 0 0 0 11H13',minus:'M5 12h14',plus:'M5 12h14M12 5v14',sel:'M4 4l16 6.5-6.5 2-2 6.5z',txt:'M12 4v16M4 7V5h16v2M9 20h6',shape:'M3 3h18v18H3z',arrow:'M7 7h10v10M7 17 17 7',call:'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',img:'M3 3h18v18H3zM21 15l-3.5-3.5a2 2 0 0 0-3 0L6 21M9 8h.01',grid:'M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18',guide:'M3 8h18M3 16h18M8 3v18M16 3v18',magnet:'m6 15-4-4 6.75-6.77a7.79 7.79 0 0 1 11 11L13 22l-4-4 6.39-6.36a2.14 2.14 0 0 0-3-3L6 15M5 8l4 4M12 15l4 4',al:'M4 3v18M8 7h12v4H8zM8 14h7v4H8z',ac:'M12 3v18M5 7h14v4H5zM8 14h8v4H8z',ar:'M20 3v18M4 7h12v4H4zM9 14h7v4H9z',at:'M3 4h18M7 8v12h4V8zM14 8v7h4V8z',am:'M3 12h18M7 5v14h4V5zM14 8v8h4V8z',ab:'M3 20h18M7 4v12h4V4zM14 9v7h4V9z',dist:'M3 3v18M21 3v18M9 7h6v10H9z',lock:'M5 11h14v10H5zM7 11V7a5 5 0 0 1 10 0v4',b:'M6 12h9a4 4 0 0 1 0 8H7V4h7a4 4 0 0 1 0 8',it:'M19 4h-9M14 20H5M15 4 9 20',un:'M6 4v6a6 6 0 0 0 12 0V4M4 20h16',l:'M21 6H3M15 12H3M17 18H3',c:'M21 6H3M17 12H7M19 18H5',r:'M21 6H3M21 12H9M21 18H7',j:'M3 6h18M3 12h18M3 18h18',rot:'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5',eye:'M2 2l20 20M10.7 5.1a10.7 10.7 0 0 1 11.2 6.5 1 1 0 0 1 0 .7 10.7 10.7 0 0 1-1.4 2.5M14 14.2a3 3 0 0 1-4.2-4.2M17.5 17.5a10.7 10.7 0 0 1-15.4-5.2 1 1 0 0 1 0-.7 10.7 10.7 0 0 1 4.4-5.1',pen:'M12 20h9M16.4 3.6a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',link:'M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7'};
+const I=(n,e='')=>`<svg class="i" viewBox="0 0 24 24" ${e}><path d="${P[n]}"/></svg>`;
+</script>
+
+<div class="bar">
+  <button class="back" id="b1"></button><div class="vs"></div>
+  <b>Вёрстка</b><span style="color:var(--muted);margin-left:8px">ППТ КРТ № 3229 · Лист 5 из 9 · А3 420 × 297 мм</span>
+  <div class="sp"></div>
+  <span id="sv" style="color:var(--good)">Сохранено · правок на листе: 2</span>
+</div>
+<div class="bar" id="tools"></div>
+
+<div class="work">
+  <div class="pages" id="pages"><h4>Листы</h4></div>
+  <div class="canvas">
+    <div class="corner"></div><div class="rt" id="rt"></div><div class="rl" id="rl"></div>
+    <div class="sheet">
+      <img src="file:///Users/tayeela/.grado2/album-baseline/gol/p-5.png" alt="Лист 5">
+      <svg class="ov" viewBox="0 0 1654 1170">
+        <!-- живая рамка карты -->
+        <rect x="27" y="172" width="1099" height="942" fill="none" stroke="var(--accent)" stroke-width="1" vector-effect="non-scaling-stroke" stroke-dasharray="6 4" opacity=".55"/>
+        <g transform="translate(40 1070)"><rect width="188" height="30" rx="5" fill="var(--panel)" stroke="var(--accent)" vector-effect="non-scaling-stroke" opacity=".96"/><text x="12" y="21" font-size="19" fill="var(--text)" font-family="system-ui,sans-serif">Карта · связь с проектом</text></g>
+        <!-- направляющие -->
+        <line x1="1140" y1="120" x2="1140" y2="1150" stroke="var(--guide-m)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <line x1="0" y1="172" x2="1654" y2="172" stroke="var(--guide-c)" stroke-width="1" vector-effect="non-scaling-stroke"/>
+        <g transform="translate(1146 1128)"><rect width="330" height="30" rx="5" fill="var(--guide-m)"/><text x="10" y="21" font-size="19" fill="#fff" font-family="system-ui,sans-serif">по левому краю легенды · 289,5 мм</text></g>
+        <!-- рамка легенды -->
+        <rect x="1140" y="172" width="495" height="650" fill="color-mix(in srgb,var(--accent) 5%,transparent)" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        <g fill="#fff" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke">
+          <rect x="1131" y="163" width="18" height="18"/><rect x="1380" y="163" width="18" height="18"/><rect x="1626" y="163" width="18" height="18"/>
+          <rect x="1131" y="488" width="18" height="18"/><rect x="1626" y="488" width="18" height="18"/>
+          <rect x="1131" y="813" width="18" height="18"/><rect x="1380" y="813" width="18" height="18"/><rect x="1626" y="813" width="18" height="18"/>
+        </g>
+        <g transform="translate(1388 838)"><rect x="-96" width="192" height="32" rx="5" fill="var(--text)"/><text x="0" y="22" font-size="21" text-anchor="middle" fill="var(--bg)" font-family="system-ui,sans-serif">125,7 × 165,0 мм</text></g>
+        <g transform="translate(1140 130)"><rect width="230" height="30" rx="5" fill="var(--panel)" stroke="var(--line-2)" vector-effect="non-scaling-stroke"/><text x="10" y="21" font-size="18" fill="var(--text)" font-family="system-ui,sans-serif">Легенда · строится сама</text></g>
+        <!-- подпись улицы -->
+        <g transform="translate(1012 435) rotate(60)">
+          <rect x="-82" y="-19" width="164" height="38" fill="color-mix(in srgb,var(--accent) 12%,transparent)" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-dasharray="7 4"/>
+          <line x1="0" y1="-19" x2="0" y2="-58" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+          <circle cx="0" cy="-66" r="10" fill="var(--accent)"/>
+          <path d="M-5 -66a5 5 0 1 0 2 -4M-3 -73v4h4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" transform="translate(0 0)"/>
+          <g fill="#fff" stroke="var(--accent)" stroke-width="1.5" vector-effect="non-scaling-stroke"><rect x="-91" y="-28" width="18" height="18" transform="translate(0 0)"/><rect x="73" y="-28" width="18" height="18"/><rect x="-91" y="10" width="18" height="18"/><rect x="73" y="10" width="18" height="18"/></g>
+          <g transform="translate(94 -34) rotate(-60)"><circle r="14" fill="var(--warn)"/><path d="M-6 0l4 4 8-8" stroke="#fff" stroke-width="2.4" fill="none" transform="scale(0)"/><text y="6" font-size="17" font-weight="700" fill="#fff" text-anchor="middle" font-family="system-ui,sans-serif">✎</text></g>
+        </g>
+        <g transform="translate(838 520)"><rect width="190" height="54" rx="5" fill="var(--panel)" stroke="var(--line-2)" vector-effect="non-scaling-stroke"/><text x="10" y="22" font-size="18" fill="var(--text)" font-family="system-ui,sans-serif" font-weight="600">ул. Тагильская</text><text x="10" y="44" font-size="16" fill="var(--warn)" font-family="system-ui,sans-serif">сдвиг +4,2 / −1,1 мм · поворот 60°</text></g>
+      </svg>
+    </div>
+    <div class="zoomhint">Колесо — масштаб · пробел + мышь — рука · Alt при перетаскивании — без привязки</div>
+  </div>
+
+  <div class="props">
+    <div class="ph"><div class="t"><span style="color:var(--accent)" id="ph1"></span>ул. Тагильская</div><div class="s">Подпись на карте · лист 5 · слой «Улицы»</div></div>
+    <div class="link">
+      <div class="r"><span style="color:var(--warn)" id="lk1"></span><b>Изменено вручную</b><span style="flex:1"></span></div>
+      <small>Сдвиг и поворот ваши. Название и размер — автоматически. При пересборке альбома правка сохранится.</small>
+      <div class="r"><button class="btn2" id="rv"></button><button class="btn2" id="hd"></button></div>
+    </div>
+    <div class="tabs"><div>Расположение</div><div class="a">Текст</div><div>Оформление</div><div>Связь</div></div>
+    <div class="body">
+      <div class="row"><label>Шрифт</label><div class="fld">Montserrat<u>▾</u></div></div>
+      <div class="row"><label>Начертание</label><div class="seg" id="sty"></div></div>
+      <div class="row"><label>Кегль</label><div class="two"><div class="fld">11 пт<u>▾</u></div><div class="fld">Авто<u>размер</u></div></div></div>
+      <div class="row"><label>Выравнивание</label><div class="seg" id="aln"></div></div>
+      <div class="row"><label>Межстрочный</label><div class="two"><div class="fld">1,0<u>×</u></div><div class="fld">0<u>трекинг</u></div></div></div>
+      <div class="row"><label>Абзац</label><div class="two"><div class="fld">0 мм<u>до</u></div><div class="fld">0 мм<u>после</u></div></div></div>
+      <div class="row"><label>Стиль</label><div class="fld">Подпись улицы<u>▾</u></div></div>
+      <hr>
+      <div class="sample">ул. Тагильская</div>
+      <div style="color:var(--muted);font-size:11px">Правка названия — двойной щелчок по подписи на листе. Оно запомнится как «своё» и не сотрётся при обновлении данных.</div>
+    </div>
+  </div>
+</div>
+
+<div class="status"><span class="h"><b>Что дальше:</b> потяните ручку над подписью, чтобы повернуть · Enter — править текст · Del — скрыть подпись (не удалить) · Esc — снять выделение</span><span>X 233,4  Y 110,5 мм</span><span>Привязка: сетка 5 мм, направляющие, края рамок</span><span>Масштаб 52 %</span></div>
+
+<script>
+const th=location.hash.includes('dark');if(th)document.documentElement.dataset.theme='dark';
+b1.innerHTML=I('back')+'Назад к карте <kbd>Esc Esc</kbd>';
+const T=[['sel','Выбор','V',1],['txt','Текст','T'],['shape','Фигура','M'],['arrow','Стрелка','L'],['call','Выноска','C'],['img','Картинка','I']];
+let h=`<button class="sq" title="Отменить">${I('undo')}</button><button class="sq" title="Повторить">${I('redo')}</button><div class="vs"></div><button class="sq">${I('minus')}</button><button style="width:62px;justify-content:center">52 %</button><button class="sq">${I('plus')}</button><button>Лист целиком</button><div class="vs"></div>`;
+T.forEach(t=>h+=`<button class="${t[3]?'on':''}">${I(t[0])}${t[1]} <kbd>${t[2]}</kbd></button>`);
+h+=`<div class="vs"></div>`;['al','ac','ar','at','am','ab','dist'].forEach(a=>h+=`<button class="sq">${I(a)}</button>`);
+h+=`<div class="vs"></div><button class="on">${I('grid')}Сетка</button><button class="on">${I('guide')}Направляющие</button><button class="on">${I('magnet')}Привязка</button><div class="vs"></div><button class="sq">${I('lock')}</button>`;
+tools.innerHTML=h;
+const pg=document.getElementById('pages');
+for(let n=1;n<=9;n++){const d=document.createElement('div');d.className='th'+(n==5?' sel':'');d.innerHTML=`<div class="im" style="background-image:url(file:///Users/tayeela/.grado2/album-baseline/gol/p-${n}.png)">${n==5||n==7?'<i class="dot" title="есть ручные правки"></i>':''}</div><span>${n}</span>`;pg.appendChild(d)}
+let r='';for(let m=0;m<=420;m+=50)r+=`<i style="left:${m*860/420}px">${m}</i>`;rt.innerHTML=r;
+r='';for(let m=0;m<=297;m+=50)r+=`<i style="top:${44+m*860/420-18+0}px">${m}</i>`;rl.innerHTML=r;
+ph1.innerHTML=I('txt');lk1.innerHTML=I('pen');rv.innerHTML=I('rot')+'Вернуть авто';hd.innerHTML=I('eye')+'Скрыть';
+sty.innerHTML=['b','it','un'].map((x,i)=>`<button class="${i==0?'on':''}">${I(x)}</button>`).join('');
+aln.innerHTML=['l','c','r','j'].map((x,i)=>`<button class="${i==1?'on':''}">${I(x)}</button>`).join('');
+</script>
+</body></html>

@@ -21,4 +21,9 @@ ok(r2.failBefore === 0 && r2.lowered === 0 && S2.every(s => s.floors === 12), "�
 // двор 20 м при 24 этажах: понижения хватает или секции снимаются, но ниже нормы не остаётся ничего
 const S3 = [R(0, 0, 100, 16, 24), R(0, 36, 100, 52, 24), R(0, 16, 16, 36, 24), R(84, 16, 100, 36, 24)], r3 = B.relax(S3, O);
 ok(bad(S3.filter(s => s.floors > 0), B.shares(S3.filter(s => s.floors > 0), O)) === 0, `двор 20 м, 24 этажа: после правки секций ниже нормы нет (понижено ${r3.lowered}, снято ${r3.dropped.length})`);
+// T12: переключатель — выключен (или не задан) этажность не трогается, включён — работает как relax
+const S4 = mk(), r4 = B.relaxIf(S4, { ...O }), r4b = B.relaxIf(S4, { ...O, on: false });
+ok(r4.off && r4b.off && S4.every(s => s.floors === 12), "relaxIf без on / с on:false — этажность секций не меняется");
+const S5 = mk(), r5 = B.relaxIf(S5, { ...O, on: true });
+ok(!r5.off && r5.failBefore === 1 && S5[0].floors < 12, `relaxIf с on:true — понижено южное крыло (${S5[0].floors} эт.)`);
 console.log("все проверки пройдены");
