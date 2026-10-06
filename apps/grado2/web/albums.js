@@ -19,7 +19,7 @@ function homeAdm() {
 const okrAbbr = f => f ? LABEL_FN.adm({ get: k => f.properties[k] }) : "";
 // округ без далёких отдельных частей (владелец 05.10.2026: «северный анклав можно убрать», карта округа крупнее):
 // остаются самая большая часть и части не дальше km от неё (у ВАО — пос. Восточный, ~1,5 км)
-function okrugMain(f, km = 3) {
+function okrugMainCalc(f, km) {
   if (f?.geometry?.type !== "MultiPolygon") return f;
   const parts = f.geometry.coordinates.map(c => turf.polygon(c)), big = parts.reduce((a, b) => m2(b) > m2(a) ? b : a);
   const edge = turf.lineString(big.geometry.coordinates[0]);
@@ -29,6 +29,9 @@ function okrugMain(f, km = 3) {
   const keep = parts.filter(p => p === big || m2(p) >= bigA * .02 || (tc && safe(() => turf.booleanPointInPolygon(tc, p))) || turf.coordAll(p).filter((c, i, a) => i % Math.max(1, Math.floor(a.length / 50)) === 0).some(c => turf.pointToLineDistance(c, edge) < km));
   return { ...f, geometry: keep.length === 1 ? keep[0].geometry : { type: "MultiPolygon", coordinates: keep.map(p => p.geometry.coordinates) } };
 }
+// считается один раз на округ (по геометрии слоя), расстояние и центр территории: её часть остаётся всегда (T11, 06.10.2026)
+const okrugMainMemo = AlbumGeo.memoByGeometry(okrugMainCalc);
+const okrugMain = (f, km = 3) => okrugMainMemo(f, TERR ? turf.centroid(TERR).geometry.coordinates.join() : "", km);
 window.okrugMain = okrugMain;
 // район без частей в отброшенных частях округа: каждая часть остаётся, если её внутренняя точка — в основной части.
 // Пересечение (turf.intersect) не годится: на сложных контурах оно падало, и район пропадал целиком (у САО оставалось 4 из 16)
@@ -156,7 +159,9 @@ const C_ROAD = "#b4b4b4";
 // толщина линии на бумаге в мм → ширина стиля: печать переводит ширину в мм множителем PX_MM = 0,26 (print_io.py)
 const MM = mm => mm / .26;
 const C_LBL = { lf: "sans-bold", lh: .55, lcol: "#141414" };
-const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false,
+// отбор дорог — общий у всех листов (у ортофотоплана добавляется граница района)
+const C_ONLY = { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } };
+const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false, only: C_ONLY,
   labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 3.8, "osm.landuse": 3.8, "egko.water_labels": 3.8 },   // кегль чуть меньше (владелец 30.09.2026)
   labelStyle: { "osm.roads": C_LBL, "osm.landuse": C_LBL, "egko.water_labels": { lf: "sans-bold", lh: .55 } } };
 // реки и водоёмы — подписями ЕГКО, голубым с белой обводкой (владелец 29.09.2026)
@@ -171,7 +176,27 @@ const C_NAMES = { "osm.landuse": { mode: "single", fill: "#ffffff", stroke: "#ff
 const C_STREETS = (fill = C_ROAD) => ({ "osm.roads": { mode: "single", fill, width: 0, label: "Название", lineOff: true } });
 // застройка — белая с серым контуром на листах 4–8 (правило 3.28; владелец 01.10.2026)
 const C_PLAN = { ...C_ROADS(C_ROAD), ...C_WATER, ...C_WATER_VIS, "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#8c8c8c", width: 1, opacity: 1 } };
-const C_ONLY = { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } };
+// общие части листов 4–8: названия и улицы + дороги, вода и застройка (C_PLAN); листы задают только отличия
+const C_VEC = { ...C_NAMES, ...C_STREETS(), ...C_PLAN };
+const C_BODY = ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail"], C_TAIL = ["osm.landuse", "osm.roads", "egko.water_labels"];
+// деревни и улицы без названия в OSM — на всех листах обязательно (правила подписей): подписи и адреса картоосновы ЕГКО
+const C_HIDDEN = { mode: "single", fill: "#141414", stroke: "#141414", width: 0, opacity: 0, marker: false, label: "" };
+// железная дорога на белых схемах (листы 4–8): чёрная линия, белые штрихи рисует conceptRail (владелец 05.10.2026)
+const C_RAIL = { mode: "single", fill: "#1f1f1f", stroke: "#1f1f1f", width: 4, label: "" };
+// что есть у каждого листа: источник дорог, железная дорога, подписи, станции метро (правило 16: точки Яндекса в тех же
+// тайлах, что дороги; на листе — значок и название, railStations); затем состав листа по ролям (T86a): начальный layout
+// шаблона повторяет keys/styles/only 1:1, сборка листа читает его (sheetlayout.js)
+function cSheet(sh) {
+  // полигоны ЕГКО добавлены в ключи и стили листов — слой режется из кэша слоя на диске (портал — только при первой выгрузке,
+  // раз в срок кэша); на векторных схемах он первый, на снимке — запасной. Дороги по осям (calc.uds_*) не рисуются никогда
+  const i = sh.keys.indexOf("yandex.hd_roads");
+  if (i >= 0) { sh.keys.splice(i + 1, 0, "egko.roads"); sh.styles = { ...sh.styles, "egko.roads": sh.styles["yandex.hd_roads"] }; }
+  if (sh.keys.includes("yandex.rail")) sh.styles = { ...sh.styles, "yandex.rail": { ...C_RAIL } };
+  sh.keys.push("egko.place_labels", "egko.addresses", "yandex.stations");
+  sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN, "yandex.stations": C_HIDDEN };
+  sh.layout = SheetLayout.seedLayout(sh);
+  return sh;
+}
 const PPTKRT_C = [
   { ...C_BASE, concept: "ortho", title: "Ортофотоплан", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], ctx: 2.2,
     // дороги — только полигоны проезжей части Яндекса, без проездов по осям и дорог ЕГКО (владелец 05.10.2026)
@@ -180,56 +205,39 @@ const PPTKRT_C = [
       "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: 2, label: "" } },
     only: { ...C_ONLY, "gisogd.admin": { field: "Уровень", values: ["район"] } } },
   { ...C_BASE, concept: "photos", kind: "photos", title: "Материалы фотофиксации", rect: [7, 44, 198, 152], ctx: 1.3,
-    keys: ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail", "osm.landuse", "osm.roads", "egko.water_labels"],
+    keys: [...C_BODY, ...C_TAIL],
     styles: { ...C_NAMES, ...C_STREETS("#ffffff"), ...C_WATER, ...C_WATER_VIS, "yandex.hd_roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
-      "egko.buildings": C_PLAN["egko.buildings"] }, only: C_ONLY },
+      "egko.buildings": C_PLAN["egko.buildings"] } },
   { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
     // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
     // заливка C_ROAD, как на листах 6–8, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
-    keys: ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail", "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: MM(.2), opacity: 0, label: "" },   // 0,2 мм (владелец 30.09.2026: «чуть тоньше»)
+    keys: [...C_BODY, "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", ...C_TAIL],
+    styles: { ...C_VEC, "nspd.parcels": { mode: "single", fill: "#0000ff", stroke: "#0000ff", width: MM(.2), opacity: 0, label: "" },   // 0,2 мм (владелец 30.09.2026: «чуть тоньше»)
       "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
       "gisogd.airfield": { mode: "single", fill: "#000000", stroke: "#000000", width: 0, opacity: 0, label: "" },   // только надпись под легендой
-      ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) }, only: C_ONLY },
+      ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) } },
   { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
-    keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail", "osm.landuse", "osm.roads", "egko.water_labels"], extra: "genplan",
+    keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", ...C_BODY, ...C_TAIL], extra: "genplan",
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "egko.water": { mode: "single", fill: "#00689d", stroke: "#00689d", width: 0, opacity: 1, label: "" },   // вода — как в «Хатминки»
       ...C_ROADS(C_ROAD), "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 1 } },
     labelFn: { ...C_BASE.labelFn, "gisogd.func_zones": "gp", "gisogd.func_zones_tinao": "gp" },
     labelMM: { ...C_BASE.labelMM, "gisogd.func_zones": 5.2, "gisogd.func_zones_tinao": 5.2 },   // на треть мельче; индекс ×1,15 (правило 11)
     labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" },
-      "gisogd.func_zones_tinao": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" } }, only: C_ONLY },
+      "gisogd.func_zones_tinao": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" } } },
   { ...C_BASE, concept: "ppt", title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
     // документы — над всеми слоями карты (дорогами и застройкой), под границей территории (владелец 01.10.2026)
-    keys: ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail", "gisogd.ppt", "gisogd.pmt", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } }, only: C_ONLY },
+    keys: [...C_BODY, "gisogd.ppt", "gisogd.pmt", ...C_TAIL],
+    styles: { ...C_VEC, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } } },
   { ...C_BASE, concept: "gpzu", title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР",
     // документы — над всеми слоями карты, АГР выше ГПЗУ; под границей территории (владелец 01.10.2026)
-    keys: ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail", "gisogd.gpzu", "gisogd.agr", "osm.landuse", "osm.roads", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_PLAN,
+    keys: [...C_BODY, "gisogd.gpzu", "gisogd.agr", ...C_TAIL],
+    styles: { ...C_VEC,
       "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", width: 1, opacity: 1 },
-      "gisogd.agr": { mode: "single", fill: "#ff3b3b", stroke: "#ff3b3b", hatch: true, hatchPat: "135", width: 1, opacity: 1 } }, only: C_ONLY },
+      "gisogd.agr": { mode: "single", fill: "#ff3b3b", stroke: "#ff3b3b", hatch: true, hatchPat: "135", width: 1, opacity: 1 } } },
   { ...C_BASE, concept: "parcels", title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat",
     keys: ["nspd.parcels", "osm.landuse", "osm.roads", "egko.water", "egko.water_labels"],
-    styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } }, only: C_ONLY },
-];
-
-// источник дорог (T76/T84, roadsrc.js): полигоны ЕГКО добавлены в ключи и стили листов — слой ЕГКО режется из кэша слоя на
-// диске (портал — только при первой выгрузке, раз в срок кэша); на векторных схемах он первый, на снимке — запасной.
-// Дороги по осям (calc.uds_*) на листах альбома не рисуются никогда
-PPTKRT_C.forEach(sh => { const i = sh.keys.indexOf("yandex.hd_roads"); if (i < 0) return;
-  sh.keys.splice(i + 1, 0, "egko.roads"); sh.styles = { ...sh.styles, "egko.roads": sh.styles["yandex.hd_roads"] }; });
-// железная дорога на белых схемах (листы 4–8): чёрная линия, белые штрихи рисует conceptRail (владелец 05.10.2026)
-PPTKRT_C.forEach(sh => { if (sh.keys.includes("yandex.rail")) sh.styles = { ...sh.styles, "yandex.rail": { mode: "single", fill: "#1f1f1f", stroke: "#1f1f1f", width: 4, label: "" } }; });
-
-// деревни и улицы без названия в OSM — на всех листах обязательно (правила подписей): подписи и адреса картоосновы ЕГКО
-const C_HIDDEN = { mode: "single", fill: "#141414", stroke: "#141414", width: 0, opacity: 0, marker: false, label: "" };
-PPTKRT_C.forEach(sh => { sh.keys.push("egko.place_labels", "egko.addresses");
-  sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN }; });
-// станции метро, МЦК и МЦД (правило 16): точки Яндекса в тех же тайлах, что дороги; на листе — значок и название (railStations)
-PPTKRT_C.forEach(sh => { sh.keys.push("yandex.stations"); sh.styles = { ...sh.styles, "yandex.stations": C_HIDDEN }; });
-// состав листа по ролям (T86a): начальный layout шаблона повторяет keys/styles/only 1:1, сборка листа читает его (sheetlayout.js)
-for (const sh of PPTKRT_C) sh.layout = SheetLayout.seedLayout(sh);
+    styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } } },
+].map(cSheet);
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -1031,9 +1039,12 @@ function conceptDistricts(out, bb, k) {
   // районы по углам листа (владелец 05.10.2026: «в верхнем левом углу район Метрогородок, в правом нижнем Гольяново,
   // одинаковый кегль у подписей»): в левом верхнем углу — округ и район этого угла, в правом нижнем — район этого угла,
   // тем же кеглем; угловые надписи рисует album_io.MapNoteFrame
-  const dx = (bb[2] - bb[0]) * .03, dy = (bb[3] - bb[1]) * .03, nm = f => "район " + LABEL_FN.adm({ get: q => f.properties[q] });
+  // углы листа — по рамке в МСК (рамка в градусах по углам смещена: МСК повёрнута относительно меридианов; T11, 06.10.2026)
+  const nm = f => "район " + LABEL_FN.adm({ get: q => f.properties[q] });
   const at = c => near.find(f => safe(() => turf.booleanPointInPolygon(c, f)));
-  const tl = at([bb[0] + dx, bb[3] - dy]), br = at([bb[2] - dx, bb[1] + dy]);
+  const cn = out.rect && out.center && out.scale ? AlbumGeo.cornerPoints(out.center, out.rect, out.scale, MSK)
+    : { tl: [bb[0] + (bb[2] - bb[0]) * .03, bb[3] - (bb[3] - bb[1]) * .03], br: [bb[2] - (bb[2] - bb[0]) * .03, bb[1] + (bb[3] - bb[1]) * .03] };
+  const tl = at(cn.tl), br = at(cn.br);
   const okrOf = f => { const a = f.properties["Округ"]; return [OKR_FULL[a] || a, "административный округ"]; };
   let named = new Set();
   if (tl && br && tl !== br) {

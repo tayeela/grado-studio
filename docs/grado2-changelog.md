@@ -2,6 +2,9 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.30: ППТ КРТ sheets share one style table; okrugMain cached; corner districts by the МСК
+  frame (#10, #11).** `C_VEC`/`C_BODY`/`C_TAIL`/`C_RAIL` and `cSheet` replace per-sheet copies (PPTKRT_C content
+  identical, sha256); `albumgeo.js`: `memoByGeometry`, `cornerPoints`. album_check gol and bez: no differences.
 - **2026-10-06, ГРАДО 2 v0.99.29: «Понижать этажность ради инсоляции соседей» — switch in «Эскиз», off by default
   (#12, owner «А»).** Node «Посадка застройки» gets a `relax` toggle (urban blocks only); the T56 lowering in
   `urbanBlocks` runs only when it is on (`relaxIf` in blocks.js); old projects open with it off. Безобразово, 18 floors:

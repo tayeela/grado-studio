@@ -6,6 +6,7 @@
 
 | файл | классы | проверок |
 |---|---|---|
+| `test_albumgeo_js.py` | AlbumGeoJs | 1 |
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |
 | `test_cadcore.py` | CadCore | 1 |
@@ -34,6 +35,7 @@
 | `test_t82_rail_icons.py` | RailIcons | 9 |
 | `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
 | `test_t89_labels.py` | StreetGapFromDash, StreetAvoidsViewArrow | 3 |
+| `albumgeo_test.js` | JS | 12 |
 | `albummeta_test.js` | JS | 24 |
 | `blocks_test.js` | JS | 9 |
 | `cadcore_test.js` | JS | 60 |
