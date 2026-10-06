@@ -162,11 +162,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `ramp`, `okn`, `cleanStyle`, `ST`, `stDefaults`, `tidyLayers`, `defaultStyle`, `lyr`, `grp`, `shown`, `isBig`, `geomOf`, `hiddenField`, `fieldsOfKey`, `ensureLayer`, `kindOf`, `glSwitchRes`, `denToRes`, `outOfScale`, `olLayersFor`, `attachLayer`, `rebuildLayer`, `mainOl`, `applyOrder`, `normGroups`, `newUid`, `writeFC`, `bindFC`, `setLayerData`, `syncFromSource`, `isNum`, `numOf`, `catValues`, `numFields`, `assignCats`, `breaks`, `testRule`, `symbolOf`, `rgba`, `css`, `upright`, `labelDeg`, `floorsDenOf`, `labelStyle`, `symAll`, `glStyle`, `frameless`, `ruleCount`, `styleFor`, `portalStyles`, `portalStylesOnce`, `labelAngles`, `restyle`, `symHTML`, `legendItems`, `rowHTML`, `sheetKeys`, `sheetView`, `sheetEditable`, `mapSheets`, `sheetTreeHTML`, `showSheet`, `sheetSet`, `sheetMenu`, `setBySheet`, `normQ`, `renderTree0`, `tree`, `rowId`, `rowById`, `focusRow`, `renderTree`, `decorateTree`, `dropRow`, `makeRegister`, `setDecision`, `newGroup`, `groupMenu`, `renameGroup`, `closeMenu` и ещё 81
 
-### `apps/grado2/web/layout.js` — 162 стр.
+### `apps/grado2/web/layout.js` — 203 стр.
 
-ГРАДО 2 · редактор макета листа (как «Макет» в QGIS): готовый лист во весь экран, любая надпись листа — заголовок, шапка, подписи карты, легенда — выбирается щелчком и правится: текст, шрифт, кегль, цвет, обводка, поворот, место (тянуть мышью или стрелками). «Текст» добавляет свою надпись. Правки хранятся в листе (edits — по ключу «текст#n», items — свои надписи) и попадают в PDF и PPTX: лист собирает тот же рендер ядра (print_io.apply_edits). Правка — ручная поправка поверх автоматических подписей листа: правила подписей сами по себе не меняются.
+ГРАДО 2 · редактор макета листа (как «Макет» в QGIS): готовый лист во весь экран, любая надпись листа — заголовок, шапка, подписи карты, легенда — выбирается щелчком и правится: текст, шрифт, кегль, цвет, обводка, поворот, место (тянуть мышью или стрелками). «Текст» добавляет свою надпись. Правки хранятся в листе (edits — по ключу «текст#n», items — свои надписи) и попадают в PDF и PPTX: лист собирает тот же рендер ядра (print_io.apply_edits). Правка — ручная поправка поверх автоматических подписей листа: правила подписей сами по себе не меняются. Вёрстка как в InDesign (из DesignCraft, 06.10.…
 
-Функции: `layoutEl`, `setAdding`, `sheetOf`, `isItem`, `itemOf`, `editOf`, `layHint`, `openLayout`, `closeLayout`, `renderLayout`, `layZoom`, `selEl`, `markSel`, `svgPt`, `layDown`, `moveSel`, `hideSel`, `curOf`, `layPanel`
+Функции: `layoutEl`, `setAdding`, `sheetOf`, `laySnap`, `remember`, `layHist`, `isItem`, `itemOf`, `editOf`, `layHint`, `openLayout`, `closeLayout`, `renderLayout`, `layZoom`, `selEl`, `markSel`, `boxOf`, `drawGuides`, `svgPt`, `layDown`, `moveSel`, `hideSel`, `curOf`, `layPanel`
 
 ### `apps/grado2/web/legendrules.js` — 53 стр.
 
@@ -244,6 +244,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
 
 Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `sheetCenter`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `planUnits`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer`, `mb`, `isReadySheet`, `albumOfJson`, `readAlbumFile`, `askExport`, `expAnswer` и ещё 38
+
+### `apps/grado2/web/snap.js` — 49 стр.
+
+Привязка и умные направляющие для редактора макета листа (layout.js), как в InDesign. Перенос прохода выравнивания из DesignCraft (crates/tools/src/snap.rs: pass_align, offer_box, offer, push_alignment_guide; MIT, лицензия — vendor/LICENSE-designcraft). Владелец 06.10.2026: «используй код этой программы для нашего редактора листов — вёрстка». Надпись при перетаскивании встаёт краем к краю или серединой к середине другой надписи или листа, если до них не дальше зоны привязки (4 пикселя экрана); по каждой оси — ближайшее совпадение, и рисуется одна направляющая. Чистые функции, рамки в мм листа …
+
 
 ### `apps/grado2/web/uisize.js` — 3 стр.
 

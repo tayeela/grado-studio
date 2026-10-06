@@ -1,4 +1,5 @@
 Third-party libraries, served locally so ГРАДО 2 works offline.
 OpenLayers 10.10.0 (BSD-2), Turf 7.1.0 (MIT), litegraph.js 0.7.18 (MIT), Lucide 0.469.0 (ISC). Licenses are next to the files.
+Ported code: snap.js follows the alignment pass of DesignCraft (crates/tools/src/snap.rs, https://github.com/storytold/designcraft, MIT); license in LICENSE-designcraft.
 Update: download the same paths from https://cdn.jsdelivr.net/npm/<package>@<version>/...
 Local patch: litegraph.min.js — wrapFunctionAsNode returns at once (the demo Math/Logic nodes were built with new Function and broke the CSP without unsafe-eval; project.js unregisters them anyway). Repeat the patch after updating the library.

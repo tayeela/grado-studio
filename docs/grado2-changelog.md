@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
+  код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
+  cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,
+  offer, push_alignment_guide) is ported to `web/snap.js`: a dragged label in «Макет листа» meets the edges and centres of
+  other labels and of the sheet within 4 screen pixels, nearest hit per axis, magenta guide while dragging; Alt drags
+  without snapping. Snapshot history of the sheet's edits/items: Ctrl+Z / Ctrl+Shift+Z (and header buttons), typing in
+  one field or arrow nudges in a row are one step. Stored edits format unchanged, PDF/PPTX pipeline untouched. Tests:
+  `tests/snap_test.js`, e2e step in the layout block. License: `web/vendor/LICENSE-designcraft`.
 - **2026-10-06, ГРАДО 2 v0.99.30: ППТ КРТ sheets share one style table; okrugMain cached; corner districts by the МСК
   frame (#10, #11).** `C_VEC`/`C_BODY`/`C_TAIL`/`C_RAIL` and `cSheet` replace per-sheet copies (PPTKRT_C content
   identical, sha256); `albumgeo.js`: `memoByGeometry`, `cornerPoints`. album_check gol and bez: no differences.
