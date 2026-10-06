@@ -777,8 +777,11 @@ class SketchMapFrame(Frame):
         roadsegs = []                                                   # оси дорог OSM (мм) с названием: подписи их не пересекают
         guard, tinfo = None, {}
         late = []                                                       # знаки поверх границы территории (точки съёмки)
+        numboxes = []                                                   # места номеров точек съёмки: подпись улицы обходит и их
         viewboxes = []                                                  # стрелки точек съёмки: подписи их обходят (лист 4, 06.10.2026)
-        IGNV = [False]                                                  # улица у территории без другого места — можно рядом со стрелкой
+        IGNV = [0]                                                      # стрелки точек съёмки: 0 — обходить по описанному прямоугольнику,
+        #                                                                 1 — по контуру повёрнутой подписи, 2 — не учитывать (крайний случай)
+        TGAP = [None]                                                   # зазор подписи улицы от оси пунктира, мм; None — полный (край пунктира + 1,6 мм)
         streetlines = {}                                                # название улицы → её линии (мм)
         watersegs = []                                                  # берега (мм): номер зоны Генплана — не на реке
         osegs = []                                                      # железная дорога и граница района (мм): названия не лежат на них
@@ -958,6 +961,8 @@ class SketchMapFrame(Frame):
                             if f.get("label"):
                                 b = math.radians(float(f.get("dir") or 0))
                                 labels.append((x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8, f["label"], f.get("ls"), f))
+                                nx_, ny_ = x - math.sin(b) * 4.2, y + math.cos(b) * 4.2 + 1.8      # номер точки рядом со стрелкой — тоже занят
+                                numboxes.append((nx_ - 2.2, ny_ - 3.2, nx_ + 2.2, ny_ + 1.2))
                             continue
                         out.append({"op": "circle", "x": x, "y": y, "r": max(0.5, (f.get("w") or 1) * 0.35),
                                     "fill": _mix(f.get("fill") or "#666666", 1), "stroke": stroke or (0.2, 0.2, 0.2), "width": 0.15})
@@ -1005,12 +1010,14 @@ class SketchMapFrame(Frame):
         rx, ry, rw, rh = rect
         mem = self.memo.setdefault((tuple(round(v, 1) for v in rect), tuple(round(float(c), 7) for c in sh["center"]), sh["scale"]), {})
         # граница территории — препятствие для названий территорий и деревень (правила подписей, владелец 30.09.2026)
-        tsegs, tpad = [], float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2 + 0.4
+        tw_half = float((sh.get("terrStyle") or {}).get("width", 0.6)) / 2        # половина ширины знака границы территории
+        tsegs, tpad, trings = [], tw_half + 0.4, []
         if sh.get("territory") and not sh.get("terrPoint"):
             for poly in _parts(sh["territory"])[1]:
                 for r in poly:
                     pts = [tr.mm(*p[:2]) for p in r]
                     tsegs.extend(zip(pts, pts[1:]))
+                    trings.append(pts)
 
         # номера в кружках (листы 7–9): точка выноски — в глубине своего участка; кружок не закрывает чужие точки,
         # не стоит на чужом участке, линии выносок не пересекают друг друга и чужие подписи (владелец 30.09.2026)
@@ -1045,11 +1052,20 @@ class SketchMapFrame(Frame):
             # подписи не закрывают точки выносок номеров (own — свой номер)
             if avoid and any(k_ != own and box[0] - 1 < m[0] < box[2] + 1 and box[1] - 1 < m[1] < box[3] + 1 for k_, m in marks.items()):
                 return False
-            if avoid and not IGNV[0] and any(not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3]) for v in viewboxes):
-                return False                                            # обязательная подпись без места (avoid=False) — может рядом
+            vbs = viewboxes + numboxes if ob else viewboxes
+            if avoid and IGNV[0] < 2 and vbs:
+                if ob and IGNV[0] == 1:                                 # подпись улицы вдоль наклонной дороги: стрелка проверяется по контуру подписи
+                    if any(_obox_hit(ob[0], ob[1], ob[2], ob[3], ob[4], [((v[0], v[1]), (v[2], v[1])), ((v[2], v[1]), (v[2], v[3])),
+                                                                          ((v[2], v[3]), (v[0], v[3])), ((v[0], v[3]), (v[0], v[1]))]) for v in vbs
+                           if not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3])):
+                        return False
+                elif any(not (box[2] < v[0] or box[0] > v[2] or box[3] < v[1] or box[1] > v[3]) for v in vbs):
+                    return False                                        # обязательная подпись без места (avoid=False) — может рядом
             if avoid and tsegs:
                 if ob:
-                    sp_ = max(tpad, 1.6)                               # подпись улицы — не ближе 1,6 мм к пунктиру территории (F8)
+                    # зазор считается от КРАЯ пунктира (знак территории толстый, 2,4 мм), а не от его оси: на оси 1,6 мм
+                    # оставляли ~0,4 мм до квадратиков пунктира (F8, #8); подпись улицы — не ближе 1,6 мм к пунктиру
+                    sp_ = tw_half + 1.6 if TGAP[0] is None else TGAP[0]
                     if _obox_hit(ob[0], ob[1], ob[2], ob[3] + sp_, ob[4] + sp_, tsegs):
                         return False
                 else:
@@ -1183,6 +1199,12 @@ class SketchMapFrame(Frame):
                 else:
                     wins = sorted(wins, key=lambda w_: (math.hypot(w_[1] - hx, w_[2] - hy) if hx is not None else 0) + w_[0] * 20)[:400]
                 cands = [(True, wx, wy, wa) for _dv, wx, wy, wa in wins]
+                if IGNV[0] == 1:                                            # дальние стороны дороги — но не внутрь территории (#9)
+                    near_o = (off * 1.5, -off * 1.5, off * 2, -off * 2) if beside else ()
+                    cands += [(True, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
+                              for o in near_o for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)
+                              if not any(_in_ring(rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, r_)
+                                         for r_ in trings)]
                 cands += [(True, rx0 + math.cos(ra) * t - math.sin(ra) * o, ry0 + math.sin(ra) * t + math.cos(ra) * o, ra)
                           for o in ((0.0, off, -off) if beside else (0.0,)) for rd, rx0, ry0, ra, _f in order for t in shifts(rd, rx0, ry0, ra)
                           if o or rd >= tw * 1.04]                          # на коротком прямом участке подпись свисала бы с дороги
@@ -1213,17 +1235,25 @@ class SketchMapFrame(Frame):
                 if res:
                     ls, tw = ls0 * k_, tw0 * k_
                     break
-            if not res and viewboxes and tsegs and any(math.hypot(p_[0] - q_[0][0], p_[1] - q_[0][1]) < 12
-                                                         for c_ in chains_ for p_ in c_[::3] for q_ in tsegs[::2]):
-                # улица у территории подписана всегда (lr «Основные» 1): мешают только стрелки точек съёмки — их можно
-                # задеть, стрелки рисуются поверх подписей (лист 4, «1-й Иртышский пр-д», 06.10.2026)
-                IGNV[0] = True
-                for n_, (k_, tk_, bs_) in enumerate(levels):
-                    res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * tk_), n_ == 0, bs_)
+            if not res and tsegs and any(near_terr(p_[0], p_[1]) < 12 for c_ in chains_ for p_ in c_[::3] + c_[-1:]):
+                # улица у территории подписана всегда (lr «Основные» 1). Порядок уступок: сначала полный зазор 1,6 мм от
+                # пунктира и обход стрелок по контуру подписи (#9), затем стрелки можно задеть (рисуются поверх подписей),
+                # и лишь в крайнем случае — «иначе подписи нет вовсе» — зазор от пунктира уменьшается ступенями (#8)
+                for tg_ in (None, tw_half + 1.2, tw_half + .8, tw_half + .4, tpad):
+                    for vm_ in ((1, 2) if viewboxes else (0,)):
+                        if tg_ is None and vm_ == 0:
+                            continue                                    # этот проход уже был выше
+                        IGNV[0], TGAP[0] = vm_, tg_
+                        for n_, (k_, tk_, bs_) in enumerate(levels):
+                            res = place(ls0 * k_, tw0 * k_, max(.6, ls0 * k_ * tk_), n_ == 0, bs_)
+                            if res:
+                                ls, tw = ls0 * k_, tw0 * k_
+                                break
+                        if res:
+                            break
                     if res:
-                        ls, tw = ls0 * k_, tw0 * k_
                         break
-                IGNV[0] = False
+                IGNV[0], TGAP[0] = 0, None
             if not res and af.get("must"):
                 # обязательная улица короче подписи в этой рамке (лист 4, 1:10 000): подпись продолжает ту же дорогу —
                 # к оси улицы присоединяются примыкающие к её концам дороги (Сипягинское ш. — продолжение Придорожной)
