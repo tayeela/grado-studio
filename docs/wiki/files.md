@@ -41,6 +41,7 @@
 | решения совета команды | `docs/team/DECISIONS.md` |
 | выкладка на сайт grado.tailink.tech | `tools/deploy-server.sh`, хуки `tools/git-hooks/`; рецепт — `docs/wiki/recipes.md` |
 | снимки панорам Яндекса для фотофиксации | `tools/panorama_shot.mjs` |
+| вики на GitHub (приватно) | `tayeela/grado-wiki`: README, llms.txt, AGENTS.md; выкладка — `tools/wiki_publish.sh` (хук post-commit) |
 | эта вики | генератор `tools/wiki.py` (страницы из кода при каждом коммите); вручную — `architecture.md`, `recipes.md`, `album-rules.md`, `files.md` |
 
 ## Вне репозитория (на Mac владельца)
