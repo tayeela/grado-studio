@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.** Owner 06.10: «не может быть в старой
+  москве территорий сельскохозяйственного назначения, приоритет всегда у ври, если благоустройство то это
+  благоустройство». Old Moscow classifier codes «1.2.9», «1.2.13» (warehouses, railway) are no longer cut to federal «1.2»
+  (grain growing) — class by words; outside Новомосковский/Троицкий okrugs agricultural classes 25–28 are never used (ВРИ
+  or OSM); «благоустройство» → природно-рекреационная. КРТ 3229: railway strip is railway, :28 is storage.
 - **2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.** Land use: ВРИ with «завод/фабрика/
   комбинат/цех» is production (class 14); OSM `commercial` is business (class 8), only `retail` is trade — the pink
   «торгово-бытовой» strip by ул. Тагильская is gone. Territory boundary is drawn above every layer (over layers go
