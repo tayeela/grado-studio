@@ -1346,7 +1346,7 @@ function pasteClip() {
 }
 const snapF = (key, f) => layerSrc[key]?.hasFeature(f) ? { g: f.getGeometry()?.clone(), p: propsOf(f) } : null;
 const featRec = (items, label) => ({ kind: "feat", label, items: items.map(({ key, f }) => ({ key, f, s: snapF(key, f) })) });
-const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : u.kind === "rmlayer" ? u.snaps.map(x => x.l.key) : [u.key];
+const undoKeys = u => u.kind === "feat" ? u.items.map(i => i.key) : u.kind === "rmlayer" ? u.snaps.map(x => x.l.key) : u.kind === "layout" ? [] : [u.key];   // layout — состав слоёв листа (sheetlayers.js), с слоями проекта не связан
 function pushUndo(rec) { UNDO.push(rec); if (UNDO.length > 80) UNDO.shift(); REDO.length = 0; syncRibbon(); }
 // ползунок и ввод числа дают десятки событий — одна запись на серию правок одного поля в течение 1,5 с
 function pushStyleUndo(l, tag) {
@@ -1358,12 +1358,14 @@ function capture(rec) {
   if (rec.kind === "terr") return { ...rec, geom: TERR?.geometry || null };
   if (rec.kind === "feat") return { ...rec, items: rec.items.map(it => ({ ...it, s: snapF(it.key, it.f) })) };
   if (rec.kind === "layer") return { ...rec, fs: layerSrc[rec.key].getFeatures() };
+  if (rec.kind === "layout") return { ...rec, snap: window.SheetLayers.snap(rec.key) };
   const l = lyr(rec.key); return { ...rec, t: 0, style: JSON.stringify(l.style), lop: l.layerOpacity };
 }
 function applyRec(rec) {
   if (rec.kind === "terr") { if (rec.geom) setTerritory({ geometry: rec.geom }, { keep: true }); return; }          // граница: тем же путём, что и правка
   if (rec.kind === "style") { const l = lyr(rec.key); l.style = ST(JSON.parse(rec.style)); l.layerOpacity = rec.lop; restyle(l); applyOrder(); UIS.rt = "style"; if (CUR !== l.key) setCurrentQuiet(l.key); renderRight(); return; }
   if (rec.kind === "layer") { const src = layerSrc[rec.key]; src.clear(true); src.addFeatures(rec.fs); syncFromSource(rec.key); return; }
+  if (rec.kind === "layout") { window.SheetLayers.restore(rec.key, rec.snap); return; }
   const keys = new Set();
   rec.items.forEach(({ key, f, s }) => {
     const src = layerSrc[key]; if (!src) return; keys.add(key);
@@ -1377,7 +1379,7 @@ function applyRec(rec) {
 function stepHistory(from, to, verb) {
   const rec = from.pop(); if (!rec) return toast(from === UNDO ? "Отменять нечего." : "Возвращать нечего.");
   if (rec.kind === "rmlayer") { restoreLayers(rec); setHint(`${verb}: ${rec.label}.`); syncRibbon(); return; }      // возврат удалённого слоя; «Вернуть» его заново не удаляет
-  if (rec.kind !== "feat" && rec.kind !== "terr" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
+  if (rec.kind !== "feat" && rec.kind !== "terr" && rec.kind !== "layout" && !lyr(rec.key)) return stepHistory(from, to, verb);   // слой удалён
   const inv = capture(rec); applyRec(rec); to.push(inv);
   setSel(SEL); setHint(`${verb}: ${rec.label}.`); syncRibbon();
 }

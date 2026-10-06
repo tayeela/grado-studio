@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).** Menu «Окна» → «Слои и листы»: album sheets (lock,
+  «не готов» with reason), roles of the selected sheet top to bottom (eye hides a role on this sheet only, source,
+  frame coverage, badges; road source queue unfolds), project layers grouped by role with sheet numbers. One row per
+  role; eye writes `item.on` in `sheet.layout` with undo («layout» kind in layers.js) and survives template refresh
+  (`carryOn`). Layer download bbox is now saved in the project (coverage). Golden 59/59 unchanged. `sheetlayers.js`.
 - **2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).** Owner 06.10 chose variant А (window
   «Слои и листы»). New `sheetlayout.js`: `sheet.layout = {groups:[{id,title,role,items:[{key,on,style?,only?,src?}]}]}`;
   ППТ КРТ template seeds it (`seedLayout`), `viewLayers`/`sheetSpec` read it through `SheetLayout.resolve` while it

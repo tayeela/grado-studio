@@ -54,7 +54,7 @@ function collectProject() {
     current: CUR,
     groups: GROUPS.map(g => ({ ...g })), views: VIEWS, album: ALBUM,
     layers: LYR.map(l => ({ key: l.key, title: l.title, geom: l.geom, visible: l.visible, layerOpacity: l.layerOpacity, open: l.open, group: l.group, style: l.style, ...(l.role ? { role: l.role } : {}) })),
-    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
+    data: Object.fromEntries(Object.entries(DATA).map(([k, d]) => [k, { title: d.title, source: d.source, fetched_at: d.fetched_at, notes: d.notes, history: d.history, shp: d.shp, bbox: d.bbox, fc: d.fc, original: d.original === d.fc ? "=fc" : d.original }])),   // нетронутая выгрузка не пишется дважды
     graph: graph.serialize(),
   };
 }

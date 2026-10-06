@@ -401,6 +401,7 @@ function carryHand(fresh, old, full = true) {
     });
   }
   if (fresh.layout && !SheetLayout.matches(fresh)) delete fresh.layout;      // слои правлены рукой — состав по ролям из шаблона им не соответствует; лист живёт по keys
+  SheetLayout.carryOn(fresh, old);                                           // глаз на роли (T86b) переживает пересборку по шаблону
   if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];
   if (old.edits) fresh.edits = old.edits; if (old.items) fresh.items = old.items;
 }

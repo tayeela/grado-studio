@@ -4,7 +4,7 @@
    рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов
    { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной).
    Переходный релиз: keys, styles и only у листа живут по-прежнему и заполняются как раньше. Лист читает layout, только пока
-   он совпадает с keys (resolve): правка keys рукой (layers.js) не теряется. Листов без layout это не касается. Запуск проверок —
+   он совпадает с keys (resolve; выключенные глазом элементы в keys остаются, но не рисуются): правка keys рукой (layers.js) не теряется. Листов без layout это не касается. Запуск проверок —
    tests/test_sheetlayout_js.py. */
 (function (root) {
   // роль слоя — по ключу; порядок ролей — как «Слои и листы» будет показывать их в окне. Нет в таблице — «прочее»
@@ -52,10 +52,11 @@
   const layoutStyles = layout => Object.fromEntries(flatten(layout).filter(it => it.on !== false && it.style !== undefined).map(it => [it.key, it.style]));
   const layoutOnly = layout => Object.fromEntries(flatten(layout).filter(it => it.on !== false && it.only !== undefined).map(it => [it.key, it.only]));
 
-  // layout, пока keys листа ему не противоречат (тот же набор в том же порядке); иначе лист живёт по keys/styles/only
+  // layout, пока keys листа ему не противоречат: тот же набор слоёв в том же порядке. Выключенный глазом элемент остаётся в keys
+  // (on: false только прячет слой на листе), поэтому сравниваются все ключи, а не только включённые; иначе лист живёт по keys/styles/only
   function matches(sheet) {
     if (!sheet?.layout || sheet.frozen) return false;
-    const a = layoutKeys(sheet.layout), b = sheet.keys || [];
+    const a = flatten(sheet.layout).map(it => it.key), b = sheet.keys || [];
     return a.length === b.length && a.every((k, i) => k === b[i]);
   }
   // что читает сборка листа: ключи, стили и отборы — из layout, если он годен, иначе из полей листа
@@ -77,7 +78,121 @@
     }
     return null;
   }
-  const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate };
+
+  /* ---- окно «Слои и листы» (T86b): чистые функции строк, покрытия и номеров листов; карты и страницы здесь нет ---- */
+  const plural = (n, [a, b, c]) => { const m = Math.abs(n) % 100, d = m % 10; return `${n} ${m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c}`; };
+  const PROVIDERS = { gisogd: "ГИС ОГД", ogd: "ГИС ОГД", egko: "ЕГКО", nspd: "НСПД", yandex: "Яндекс", sit: "Яндекс", osm: "OSM", calc: "расчёт" };
+  const providerName = key => PROVIDERS[String(key).split(".")[0]] || "файл";
+  const roleTitle = role => (ROLES.find(r => r.role === role) || OTHER).title;
+  // доля рамки (0…1), лежащая внутри выгруженной области; обе рамки — [запад, юг, восток, север] в градусах (отношение площадей
+  // прямоугольников в градусах равно отношению в метрах: широта у обеих одна). Нет рамки или области — null
+  function frameCover(frame, bbox) {
+    if (!Array.isArray(frame) || !Array.isArray(bbox)) return null;
+    const area = (w, s, e, n) => Math.max(0, e - w) * Math.max(0, n - s), A = area(...frame); if (!(A > 0)) return null;
+    return Math.min(1, area(Math.max(frame[0], bbox[0]), Math.max(frame[1], bbox[1]), Math.min(frame[2], bbox[2]), Math.min(frame[3], bbox[3])) / A);
+  }
+  // бейдж состояния строки: { text, tone } или null. probe = { loaded, cover (0…1 | null), empty, error }
+  function coverBadge(key, probe) {
+    if (probe?.error) return { text: "не загрузился", tone: "bad" };
+    if (!probe?.loaded) return { text: "не выгружен", tone: "warn" };
+    const c = probe.cover;
+    if (c !== null && c !== undefined && c < .005) return { text: "данные вне рамки", tone: "warn" };
+    if (c !== null && c !== undefined && c < .995) return { text: providerName(key) === "Яндекс" ? "окно 40 км²" : `на ${Math.min(99, Math.max(1, Math.round((1 - c) * 100)))} % рамки нет`, tone: "warn" };
+    return probe.empty ? { text: "в рамке нет", tone: "none" } : null;
+  }
+  // очередь источников роли: какой ключ берётся. picked — решение сборки (если известно), иначе первый с покрытием ≥ 90 %, иначе лучший
+  function chooseSource(queue, probe, picked) {
+    const q = queue || []; if (picked && q.includes(picked)) return picked;
+    const cv = k => probe(k)?.cover ?? 0, ok = q.find(k => probe(k)?.loaded && cv(k) >= .9);
+    return ok || q.slice().sort((a, b) => cv(b) - cv(a))[0] || null;
+  }
+  const queueRows = (queue, probe, chosen) => (queue || []).map((key, i) => {
+    const p = probe(key) || {}; return { key, n: i + 1, provider: providerName(key), cover: p.cover ?? null, badge: coverBadge(key, p), used: key === chosen, loaded: !!p.loaded }; });
+  // «ГИС ОГД · 3 слоя · ЕГКО» из ключей элементов
+  function sourceText(keys) {
+    const by = new Map(); keys.forEach(k => { const n = providerName(k); by.set(n, (by.get(n) || 0) + 1); });
+    return [...by].map(([n, c]) => c > 1 ? `${n} · ${plural(c, ["слой", "слоя", "слоёв"])}` : n).join(" · ");
+  }
+  // строки ролей листа: одна строка на роль, на месте первого появления в layout (повторные группы той же роли сливаются:
+  // роль может встретиться дважды из-за порядка рисования). probe(key) → { loaded, cover, empty }; opts.chosen(item) → ключ очереди src
+  function roleRows(layout, probe, opts = {}) {
+    const by = new Map();
+    (layout?.groups || []).forEach(g => { const r = by.get(g.role); if (r) { r.ids.push(g.id); r.items.push(...(g.items || [])); } else by.set(g.role, { id: g.id, ids: [g.id], role: g.role, title: g.title || roleTitle(g.role), items: [...(g.items || [])] }); });
+    return [...by.values()].map(g => {
+      const items = g.items, head = items.find(it => Array.isArray(it.src) && it.src.length);
+      // очередь — только те источники, что есть на листе среди слоёв роли: лист, собранный раньше, ЕГКО-дорог может не содержать
+      const queue = head ? (head.src.filter(k => items.some(it => it.key === k)).length ? head.src.filter(k => items.some(it => it.key === k)) : head.src) : null;
+      const chosen = head ? chooseSource(queue, probe, opts.chosen?.(head)) : null;
+      const keys = head ? [chosen].filter(Boolean) : items.map(it => it.key), ps = keys.map(k => [k, probe(k) || {}]);
+      const known = ps.filter(([, p]) => p.cover !== null && p.cover !== undefined), cover = known.length ? Math.min(...known.map(([, p]) => p.cover)) : null;
+      const worst = ps.map(([k, p]) => ({ k, p, b: coverBadge(k, p) })).filter(x => x.b).sort((a, b) => (a.b.tone === "warn" ? 0 : 1) - (b.b.tone === "warn" ? 0 : 1))[0];
+      const empty = ps.length > 0 && ps.every(([, p]) => p.loaded && p.empty);
+      const on = items.some(it => it.on !== false);
+      return { id: g.id, ids: g.ids, role: g.role, title: g.title, on, count: items.length, items: items.map(it => ({ key: it.key, on: it.on !== false })),
+        source: sourceText(keys), cover, empty, badge: worst?.b || null, queue: head ? { head: head.key, keys: queue, chosen } : null };
+    });
+  }
+  // лист → layout для показа. stored — состав уже лежит в листе и совпадает с keys; editable — глаз можно переключать (запись migrate безопасна).
+  // viewOf(sheet) → вид листа ({layers}) для листа «по виду»; такой лист показывается, но глаз у него неактивен
+  function layoutFor(sheet, viewOf) {
+    const none = (why, kind) => ({ layout: null, stored: false, editable: false, why, kind: kind || "" });
+    if (!sheet) return none("");
+    if (sheet.frozen) return none("готовый лист: состав зашит в файл", "frozen");
+    if (sheet.kind === "title") return none("", "title");
+    if (sheet.kind === "tep") return none("", "tep");
+    if (sheet.panels) return none("лист из двух карт: у каждой карты свой состав", "panels");
+    if (matches(sheet)) return { layout: sheet.layout, stored: true, editable: true, why: "", kind: "map" };
+    if (Array.isArray(sheet.keys)) { const l = migrate({ ...sheet, layout: undefined }, null), same = !!l && flatten(l).length === sheet.keys.length && flatten(l).every((it, i) => it.key === sheet.keys[i]);
+      return { layout: l, stored: false, editable: same, why: same ? "" : "в списке слоёв листа есть повторы: глаз выключен", kind: "map" }; }
+    const v = viewOf?.(sheet), l = v ? migrate({ ...sheet, layout: undefined }, v) : null;
+    return l ? { layout: l, stored: false, editable: false, why: "состав листа задан видом карты: меняется в окне «Виды»", kind: "view" } : none("лист показывает текущую карту", "map");
+  }
+  // глаз на роли: включить или выключить все элементы группы (или нескольких групп одной роли — groupId массивом). Нет годного layout — сначала записывается migrate. true — лист изменён
+  function setRole(sheet, groupId, on, viewOf) {
+    const info = layoutFor(sheet, viewOf); if (!info.editable) return false;
+    const ids = [].concat(groupId), gs = info.layout.groups.filter(x => ids.includes(x.id)); if (!gs.length) return false;
+    if (!gs.some(g => g.items.some(it => (it.on !== false) !== !!on))) return false;
+    if (!info.stored) sheet.layout = info.layout;
+    sheet.layout.groups.filter(x => ids.includes(x.id)).forEach(g => g.items.forEach(it => { it.on = !!on; }));
+    return true;
+  }
+  // при пересборке листа по шаблону скрытая роль остаётся скрытой: группа, выключенная целиком, выключается целиком (в шаблоне мог
+  // появиться новый слой роли), остальное — по ключу элемента
+  function carryOn(fresh, old) {
+    if (!fresh?.layout || !old?.layout) return;
+    const was = new Map(flatten(old.layout).map(it => [it.group + "|" + it.key, it.on !== false])), offGroup = new Set(old.layout.groups.filter(g => (g.items || []).length && g.items.every(it => it.on === false)).map(g => g.id));
+    fresh.layout.groups.forEach(g => g.items.forEach(it => { if (offGroup.has(g.id) || was.get(g.id + "|" + it.key) === false) it.on = false; }));
+  }
+  // номера листов (с 1), где слой включён; viewKeys(sheet) → ключи видимых слоёв вида (или null)
+  function sheetKeysOn(sheet, viewKeys) {
+    if (!sheet || sheet.frozen || sheet.kind === "title" || sheet.kind === "tep") return [];
+    if (sheet.panels) return [...new Set(sheet.panels.flatMap(p => p.keys || []))];
+    return resolve(sheet).keys || viewKeys?.(sheet) || [];
+  }
+  const layerSheets = (sheets, key, viewKeys) => (sheets || []).map((s, i) => sheetKeysOn(s, viewKeys).includes(key) ? i + 1 : 0).filter(Boolean);
+  // слои проекта по ролям: [{ role, title, items: [{ key, title, sheets }] }]; роли идут в порядке ROLES, «Прочее» — последним
+  function bankGroups(layers, sheets, viewKeys) {
+    const by = new Map();
+    (layers || []).forEach(l => { const r = roleOf(l.key); if (!by.has(r.role)) by.set(r.role, { role: r.role, title: r.title, items: [] }); by.get(r.role).items.push({ key: l.key, title: l.title, sheets: layerSheets(sheets, l.key, viewKeys) }); });
+    return [...ROLES, OTHER].map(r => by.get(r.role)).filter(Boolean);
+  }
+  // роли, которые есть на других листах альбома, а на этом по образцу нет (в порядке ROLES)
+  function missingRoles(layouts, i) {
+    const mine = new Set((layouts[i]?.groups || []).map(g => g.role)), all = new Set(layouts.flatMap(l => (l?.groups || []).map(g => g.role)));
+    // границы территории и района есть на каждом листе (рисуются сами), в «нет по образцу» не попадают
+    return [...ROLES, OTHER].filter(r => r.role !== "border" && all.has(r.role) && !mine.has(r.role)).map(r => r.title);
+  }
+  // вторая строка листа в колонке листов: основа и число ролей (или что лист такое)
+  function sheetMeta(sheet, info) {
+    if (info.kind === "frozen") return "готовая вёрстка из файла";
+    if (info.kind === "title") return "шаблон, слоёв нет";
+    if (info.kind === "tep") return "таблица показателей";
+    if (info.kind === "panels") return "две карты на слайде";
+    const base = sheet.basemap === "sat" ? "снимок" : "белая основа", n = new Set((info.layout?.groups || []).map(g => g.role)).size;
+    return info.layout ? `${base} · ${plural(n, ["роль", "роли", "ролей"])}` : base;
+  }
+  const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate,
+    plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.SheetLayout = api;
 })(typeof window !== "undefined" ? window : globalThis);

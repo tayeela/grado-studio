@@ -45,6 +45,6 @@
 | `roadclean_test.js` | JS | 17 |
 | `roadsrc_test.js` | JS | 15 |
 | `roles_test.js` | JS | 22 |
-| `sheetlayout_test.js` | JS | 28 |
+| `sheetlayout_test.js` | JS | 111 |
 
 Группы браузерных сценариев (E2E_ONLY=…): `t52`, `t55`, `t56`, `t59`, `t6`, `t61`, `t62`, `t66`, `t67`, `t71`, `t74`, `t76`, `t80`, `t84`
