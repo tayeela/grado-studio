@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).
 - 2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).
 - 2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).
 - 2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).
@@ -21,4 +22,3 @@
 - 2026-10-05, ГРАДО 2 v0.98.13: okrug map keeps its districts.
 - 2026-10-05, ГРАДО 2 v0.98.12: СЗЗ in ГИС ОГД symbology.
 - 2026-10-05, ГРАДО 2 v0.98.11: Yandex road polygons on every album sheet; district captions by corner.
-- 2026-10-05, ГРАДО 2 v0.98.10: album ППТ КРТ after the owner's review of КРТ 3229 (Гольяново).

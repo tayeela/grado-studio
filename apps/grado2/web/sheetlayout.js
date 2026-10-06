@@ -21,8 +21,12 @@
     { role: "border", title: "Границы", keys: ["gisogd.admin"] },
   ];
   const OTHER = { role: "other", title: "Прочее" };
+  // свои слои владельца (T86d): нарисованные («user:…») и загруженные файлом («import:…») — роли образца у них нет. «Свои слои» и «Прочее»
+  // свободные роли: их можно положить на любой рабочий лист, они рисуются поверх данных листа, но под подписями и рамкой
+  const OWN = { role: "own", title: "Свои слои" }, FREE = ["other", "own"];
   const BY_KEY = new Map(ROLES.flatMap(r => r.keys.map(k => [k, r])));
-  const roleOf = key => BY_KEY.get(key) || OTHER;
+  const isOwnKey = key => /^(user|import):/.test(String(key));
+  const roleOf = key => BY_KEY.get(key) || (isOwnKey(key) ? OWN : OTHER);
   const clone = x => x === undefined ? undefined : JSON.parse(JSON.stringify(x));
   // дороги: очередь источников полигонов — на векторной схеме ЕГКО первым, на снимке Яндекс (решение T84, roadsrc.js)
   const roadQueue = basemap => basemap === "sat" ? ["yandex.hd_roads", "egko.roads"] : ["egko.roads", "yandex.hd_roads"];
@@ -83,7 +87,7 @@
   const plural = (n, [a, b, c]) => { const m = Math.abs(n) % 100, d = m % 10; return `${n} ${m > 10 && m < 20 ? c : d === 1 ? a : d > 1 && d < 5 ? b : c}`; };
   const PROVIDERS = { gisogd: "ГИС ОГД", ogd: "ГИС ОГД", egko: "ЕГКО", nspd: "НСПД", yandex: "Яндекс", sit: "Яндекс", osm: "OSM", calc: "расчёт" };
   const providerName = key => PROVIDERS[String(key).split(".")[0]] || "файл";
-  const roleTitle = role => (ROLES.find(r => r.role === role) || OTHER).title;
+  const roleTitle = role => (ROLES.concat([OTHER, OWN]).find(r => r.role === role) || OTHER).title;
   // доля рамки (0…1), лежащая внутри выгруженной области; обе рамки — [запад, юг, восток, север] в градусах (отношение площадей
   // прямоугольников в градусах равно отношению в метрах: широта у обеих одна). Нет рамки или области — null
   function frameCover(frame, bbox) {
@@ -152,7 +156,7 @@
     const info = layoutFor(sheet, viewOf); if (!info.editable) return false;
     const ids = [].concat(groupId), gs = info.layout.groups.filter(x => ids.includes(x.id)); if (!gs.length) return false;
     if (!gs.some(g => g.items.some(it => (it.on !== false) !== !!on))) return false;
-    if (!info.stored) sheet.layout = info.layout;
+    if (!info.stored) adopt(sheet, info.layout);
     sheet.layout.groups.filter(x => ids.includes(x.id)).forEach(g => g.items.forEach(it => { it.on = !!on; }));
     return true;
   }
@@ -174,13 +178,13 @@
   function bankGroups(layers, sheets, viewKeys) {
     const by = new Map();
     (layers || []).forEach(l => { const r = roleOf(l.key); if (!by.has(r.role)) by.set(r.role, { role: r.role, title: r.title, items: [] }); by.get(r.role).items.push({ key: l.key, title: l.title, sheets: layerSheets(sheets, l.key, viewKeys) }); });
-    return [...ROLES, OTHER].map(r => by.get(r.role)).filter(Boolean);
+    return [...ROLES, OTHER, OWN].map(r => by.get(r.role)).filter(Boolean);
   }
   // роли, которые есть на других листах альбома, а на этом по образцу нет (в порядке ROLES)
   function missingRoles(layouts, i) {
     const mine = new Set((layouts[i]?.groups || []).map(g => g.role)), all = new Set(layouts.flatMap(l => (l?.groups || []).map(g => g.role)));
     // границы территории и района есть на каждом листе (рисуются сами), в «нет по образцу» не попадают
-    return [...ROLES, OTHER].filter(r => r.role !== "border" && all.has(r.role) && !mine.has(r.role)).map(r => r.title);
+    return [...ROLES, OTHER, OWN].filter(r => r.role !== "border" && !FREE.includes(r.role) && all.has(r.role) && !mine.has(r.role)).map(r => r.title);   // свободные роли («Прочее», «Свои слои») есть у любого листа
   }
   // вторая строка листа в колонке листов: основа и число ролей (или что лист такое)
   function sheetMeta(sheet, info) {
@@ -200,12 +204,16 @@
     wrongRow: (t, r, w) => `Слой «${t}» относится к роли «${r}», а не «${w}»` };
   // порядок ролей по образцу: первое появление роли в начальном layout шаблона листа (повторные группы той же роли — не в счёт)
   function refRank(tplLayout) { const m = new Map(); (tplLayout?.groups || []).forEach(g => { if (!m.has(g.role)) m.set(g.role, m.size); }); return m; }
-  const rankOf = (role, ref) => ref.has(role) ? ref.get(role) : 1000 + ROLES.concat([OTHER]).findIndex(r => r.role === role);
-  // допустимые роли листа: роли образца (начальный layout шаблона) + роли, которые лист уже имеет; в порядке образца, лишние — по ROLES
+  // свободные роли — в самом конце порядка рисования (поверх данных листа; подписи и рамка рисуются после слоёв)
+  const rankOf = (role, ref) => ref.has(role) ? ref.get(role) : FREE.includes(role) ? 5000 + FREE.indexOf(role) : 1000 + ROLES.findIndex(r => r.role === role);
+  // допустимые роли листа: роли образца (начальный layout шаблона) + роли, которые лист уже имеет; в порядке образца (свободные роли — targetCheck).
   function allowedRoles(layout, tplLayout) {
     const ref = refRank(tplLayout), have = new Set((layout?.groups || []).map(g => g.role)), all = new Set([...ref.keys(), ...have]);
     return [...all].sort((a, b) => rankOf(a, ref) - rankOf(b, ref));
   }
+  // layout записывается в лист при первой правке; вместе с ним — seed: состав «как было до ручных правок» (то, к чему возвращает «Вернуть автоматический выбор»).
+  // Лист из шаблона seed не хранит: образцом служит шаблон
+  function adopt(sheet, layout) { sheet.layout = layout; if (!layout.seed) layout.seed = clone(layout.groups); }
   // ключи и оформление листа повторяют layout (иначе resolve откатился бы к старым полям: matches сравнивает keys с layout)
   function syncFields(sheet) {
     const items = flatten(sheet.layout), st = {}, on = {};
@@ -234,7 +242,8 @@
     if (info.kind === "frozen") return bad("frozen", TXT.frozen, "frozen");
     if (info.kind === "title" || info.kind === "tep") return bad("nomap", TXT.nomap(n));
     if (!info.editable) return bad("noedit", cap(info.why || "лист не меняется") + ".");
-    if (!allowedRoles(info.layout, o.tpl).includes(role)) return bad("norole", role === "border" ? TXT.border(n) : TXT.norole(n, roleTitle(role)));
+    const blank = !o.tpl;           // лист без образца (свой лист, рабочая копия готового листа) принимает любую роль, кроме границ: ограничивать нечем
+    if (!FREE.includes(role) && !(blank && role !== "border") && !allowedRoles(info.layout, o.tpl).includes(role)) return bad("norole", role === "border" ? TXT.border(n) : TXT.norole(n, roleTitle(role)));
     return { ok: true, info };
   }
   // слой банка → лист: включить. Лист не меняется при отказе. Результат { ok, changed, groupId } или { ok: false, code, tone, text }
@@ -242,7 +251,7 @@
     const role = roleOf(key).role, t = targetCheck(sheet, role, ctx); if (!t.ok) return t;
     const title = ctx.title || key, hit = flatten(t.info.layout).find(it => it.key === key);
     if (hit && hit.on !== false) return { ok: false, code: "have", tone: "none", text: TXT.have(ctx.n, title) };
-    if (!t.info.stored) sheet.layout = t.info.layout;
+    if (!t.info.stored) adopt(sheet, t.info.layout);
     let gid;
     if (hit) { sheet.layout.groups.forEach(g => g.items.forEach(it => { if (it.key === key) { it.on = true; gid = g.id; } })); }
     else gid = putItem(sheet.layout, role, newItem(key, sheet, ctx), ctx);
@@ -256,7 +265,8 @@
     if (!s.editable || !s.layout) return { ok: false, code: "noedit", tone: "bad", text: cap(s.why || "лист не меняется") + "." };
     const items = roleItems(s.layout, role).map(clone); if (!items.length) return { ok: false, code: "norole", tone: "bad", text: TXT.norole(ctx.n, title) };
     const t = targetCheck(dst, role, ctx); if (!t.ok) return t;
-    const L = t.info.stored ? dst.layout : t.info.layout, mine = new Map(flatten(L).map(it => [it.key, it])); let changed = false;
+    const L = t.info.stored ? dst.layout : t.info.layout; if (!t.info.stored && !L.seed) L.seed = clone(L.groups);
+    const mine = new Map(flatten(L).map(it => [it.key, it])); let changed = false;
     const hasGroup = L.groups.some(g => g.role === role);
     items.forEach(it => {
       const x = mine.get(it.key);
@@ -265,7 +275,7 @@
     });
     if (!changed) return { ok: false, code: "have", tone: "none", text: TXT.haveRole(ctx.n, title) };
     dst.layout = L; syncFields(dst);
-    if (!copy) { if (!s.stored) src.layout = s.layout; src.layout.groups = src.layout.groups.filter(g => g.role !== role); syncFields(src); }
+    if (!copy) { if (!s.stored) adopt(src, s.layout); src.layout.groups = src.layout.groups.filter(g => g.role !== role); syncFields(src); }
     return { ok: true, changed: true, hasGroup };
   }
   // очередь источников роли: { head, queue } — как её строит roleRows (только источники, что есть на листе)
@@ -280,7 +290,7 @@
     const q = srcQueue(info.layout, role); if (!q) return false;
     const a = q.queue.slice(); if (from === to || from < 0 || to < 0 || from >= a.length || to >= a.length) return false;
     a.splice(to, 0, a.splice(from, 1)[0]);
-    if (!info.stored) sheet.layout = info.layout;
+    if (!info.stored) adopt(sheet, info.layout);
     const h = srcQueue(sheet.layout, role).head; h.src = a.concat(h.src.filter(k => !a.includes(k))); return true;
   }
   // порядок источников дорог, который владелец поменял (иначе null — сборка выбирает как раньше, по roadsrc.js)
@@ -300,7 +310,84 @@
     if (!old?.layout || old.frozen || !fresh || (fresh.layout && matches(fresh)) || !matches(old) || !same(fresh.keys, old.keys)) return false;
     const l = clone(old.layout), tpl = new Map(flatten(fresh.layout || { groups: [] }).map(it => [it.key, it]));
     l.groups.forEach(g => g.items.forEach(it => { const t = tpl.get(it.key); if (t) { if (t.style !== undefined) it.style = clone(t.style); else delete it.style; if (t.only !== undefined) it.only = clone(t.only); else delete it.only; } }));
+    if (fresh.layout?.groups) l.seed = clone(fresh.layout.groups);          // образец — свежий шаблон: правки владельца считаются от него
     fresh.layout = l; return true;
+  }
+  /* ---- ручные правки отдельно от автоматики (T86d): сравнение с образцом, «вернуть авто», рабочая копия ---- */
+  // образец, с которым сравнивается лист: seed, записанный вместе с layout (состав до первой правки), иначе начальный layout шаблона (tplLayout).
+  // Лист без записанного layout правок не имеет — образца нет
+  function baselineOf(sheet, tplLayout) {
+    if (!sheet?.layout || sheet.frozen) return null;
+    return Array.isArray(sheet.layout.seed) ? { groups: sheet.layout.seed } : (tplLayout?.groups ? tplLayout : null);
+  }
+  const roleView = layout => { const m = new Map();
+    (layout?.groups || []).forEach(g => { const r = m.get(g.role) || m.set(g.role, { on: new Map(), items: [] }).get(g.role); (g.items || []).forEach(it => { r.on.set(it.key, it.on !== false); r.items.push(it); }); });
+    return m; };
+  // чем layout отличается от образца: по ролям — добавлено, убрано, спрятано глазом, показано, порядок источников. Оформление (style, only) не в счёт.
+  // → { changed, roles: { роль: { added, removed, hidden, shown, queue, whole } }, lost: [роли образца, которых на листе нет] }; нет образца — правок нет
+  function diffFromSeed(layout, seed) {
+    const out = { changed: false, roles: {}, lost: [] }; if (!layout?.groups || !seed?.groups) return out;
+    const a = roleView(layout), b = roleView(seed);
+    a.forEach((r, role) => {
+      const o = b.get(role), d = { added: [], removed: [], hidden: [], shown: [], queue: false, whole: !o };
+      if (!o) d.added = [...r.on.keys()];
+      else {
+        r.on.forEach((on, k) => { if (!o.on.has(k)) d.added.push(k); else if (on !== o.on.get(k)) (on ? d.shown : d.hidden).push(k); });
+        o.on.forEach((_, k) => { if (!r.on.has(k)) d.removed.push(k); });
+        const qa = srcQueue(layout, role), qb = srcQueue(seed, role); d.queue = !!(qa && qb && !same(qa.queue, qb.queue));
+      }
+      if (d.whole || d.added.length || d.removed.length || d.hidden.length || d.shown.length || d.queue) out.roles[role] = d;
+    });
+    b.forEach((_, role) => { if (!a.has(role)) out.lost.push(role); });
+    out.changed = !!Object.keys(out.roles).length || !!out.lost.length; return out;
+  }
+  // короткое пояснение к метке «изменено вручную»; titleOf(key) → название слоя
+  function diffNote(d, titleOf = k => k) {
+    if (!d) return ""; const list = ks => ks.map(titleOf).join(", "), t = [];
+    if (d.whole) return "Роль добавлена на этот лист вручную: по образцу её здесь нет";
+    if (d.hidden.length) t.push("скрыто глазом: " + list(d.hidden)); if (d.shown.length) t.push("включено: " + list(d.shown));
+    if (d.added.length) t.push("добавлено: " + list(d.added)); if (d.removed.length) t.push("убрано: " + list(d.removed));
+    if (d.queue) t.push("порядок источников изменён"); return t.join("; ");
+  }
+  // «Вернуть автоматический выбор» для роли: роль листа становится такой, как в образце (глаз, состав, очередь источников). Роли нет в образце — она убирается с листа;
+  // роли нет на листе, а в образце есть — возвращается на своё место. true — лист изменён
+  function resetRole(sheet, role, seed, viewOf) {
+    const info = layoutFor(sheet, viewOf); if (!info.editable || !info.stored || !seed?.groups) return false;
+    const L = sheet.layout, before = JSON.stringify(L.groups), sg = new Map(seed.groups.filter(g => g.role === role).map(g => [g.id, clone(g)])), used = new Set();
+    // группы роли заменяются на месте (роль может стоять в двух местах порядка рисования: рельс и станции); лишние — убираются
+    L.groups = L.groups.flatMap(g => g.role !== role ? [g] : sg.has(g.id) && !used.has(g.id) ? (used.add(g.id), [sg.get(g.id)]) : []);
+    seed.groups.forEach((g, si) => {                          // группа образца, которой на листе нет, встаёт после ближайшей предыдущей группы образца (иначе перед следующей, иначе по рангу роли)
+      if (g.role !== role || used.has(g.id)) return;
+      const ng = sg.get(g.id), idx = id => L.groups.findIndex(x => x.id === id);
+      if (L.groups.some(x => x.id === ng.id)) ng.id = uniqId(L, role);
+      let pos = -1; for (let k = si - 1; k >= 0 && pos < 0; k--) { const f = idx(seed.groups[k].id); if (f >= 0) pos = f + 1; }
+      for (let k = si + 1; k < seed.groups.length && pos < 0; k++) { const f = idx(seed.groups[k].id); if (f >= 0) pos = f; }
+      if (pos < 0) { const ref = refRank(seed), f = L.groups.findIndex(x => rankOf(x.role, ref) > rankOf(role, ref)); pos = f < 0 ? L.groups.length : f; }
+      L.groups.splice(pos, 0, ng); used.add(g.id);
+    });
+    if (JSON.stringify(L.groups) === before) return false;
+    syncFields(sheet); return true;
+  }
+  // «Вернуть весь лист к образцу»: layout и поля листа — как в образце. true — лист изменён
+  function resetSheet(sheet, seed, viewOf) {
+    const info = layoutFor(sheet, viewOf); if (!info.editable || !info.stored || !seed?.groups) return false;
+    if (same(sheet.layout.groups, seed.groups)) return false;
+    sheet.layout = { groups: clone(seed.groups), seed: clone(seed.groups) }; syncFields(sheet); return true;
+  }
+  const COPY_TAIL = " (рабочая копия)";
+  const copyTitle = t => String(t || "Без названия").replace(/\s*\(рабочая копия\)( \d+)?$/, "") + COPY_TAIL;
+  // рабочая копия листа: новый лист (в альбом его вставляет окно — сразу после исходного) с тем же шаблоном, без замка; исходный не меняется.
+  // Готовый лист (frozen) — вёрстка из файла, состава по ролям у него нет: копия берёт формат, рамку и масштаб, а слои — те же, что в его описании
+  // (layers[].key, как рисует сборка), с оформлением как на других листах (o.others — их layout). o = { id, others, known(key) }
+  function workingCopy(src, o = {}) {
+    if (!src || !o.id) return null;
+    if (!src.frozen) { const c = clone(src); c.id = o.id; c.title = copyTitle(src.title); return c; }
+    const base = {}; ["size", "orient", "scale", "center", "rect", "basemap", "note", "fit"].forEach(k => { if (src[k] !== undefined) base[k] = clone(src[k]); });
+    if (typeof base.scale !== "number") delete base.scale;
+    const keys = [...new Set((src.layers || []).map(l => l?.key).filter(k => typeof k === "string" && k && !/\.dash$/.test(k) && (!o.known || o.known(k))))], styles = {}, only = {};
+    keys.forEach(k => { const h = hintItem(k, { others: o.others }); if (h?.style !== undefined) styles[k] = clone(h.style); if (h?.only !== undefined) only[k] = clone(h.only); });
+    const c = { ...base, id: o.id, title: copyTitle(src.title), legend: true, tep: false, view: "", scale: base.scale ?? 0, keys, styles, only };
+    c.layout = build(keys, styles, only, base.basemap); c.layout.seed = clone(c.layout.groups); return c;
   }
   // что покажет цель перетаскивания: { ok, tone: ok | bad | frozen | none, text }. drag = { type: "layer", key, title } | { type: "role", from, role }.
   // o = { copy, n (лист с 1), viewOf, ctx(sheet) → { tpl, others }, row (роль строки под курсором), titleOf(key) }
@@ -310,6 +397,8 @@
     if (drag.type === "layer") {
       const role = roleOf(drag.key).role, title = drag.title || o.titleOf?.(drag.key) || drag.key;
       if (o.row && o.row !== role) return { ok: false, tone: "bad", text: TXT.wrongRow(title, roleOf(drag.key).title, roleTitle(o.row)) };
+      if (sh.frozen && o.copy && (sh.layers || []).some(l => l?.key === drag.key)) return { ok: false, tone: "none", text: TXT.have(n, title) };   // слой уже в вёрстке готового листа: копия не нужна
+      if (sh.frozen && o.copy) return role === "border" ? { ok: false, tone: "bad", text: TXT.border(n) } : { ok: true, tone: "ok", workingCopy: true, text: `Отпустите: сделать рабочую копию листа ${n} и добавить в неё «${title}»` };
       const t = targetCheck(sh, role, ctx); if (!t.ok) return t;
       if (flatten(t.info.layout).some(it => it.key === drag.key && it.on !== false)) return { ok: false, tone: "none", text: TXT.have(n, title) };
       return { ok: true, tone: "ok", text: `Отпустите: включить «${title}» на листе ${n}` };
@@ -317,6 +406,8 @@
     if (drag.type === "role") {
       const title = roleTitle(drag.role);
       if (sheets[drag.from] === sh) return { ok: false, tone: "none", text: TXT.here(n, title) };
+      if (sh.frozen && o.copy) { const sl0 = layoutFor(sheets[drag.from], o.viewOf); if (!sl0.editable) return { ok: false, tone: "bad", code: "noedit", text: cap(sl0.why || "лист не меняется") + "." };
+        return drag.role === "border" ? { ok: false, tone: "bad", text: TXT.border(n) } : { ok: true, tone: "ok", workingCopy: true, text: `Отпустите: сделать рабочую копию листа ${n} и скопировать в неё роль «${title}»` }; }
       const t = targetCheck(sh, drag.role, ctx); if (!t.ok) return t;
       const sl = layoutFor(sheets[drag.from], o.viewOf); if (!sl.editable) return { ok: false, tone: "bad", code: "noedit", text: cap(sl.why || "лист не меняется") + "." };
       const mine = new Set(flatten(t.info.layout).filter(it => it.on !== false).map(it => it.key)), src = sl;
@@ -327,6 +418,7 @@
   }
   const api = { ROLES, roleOf, seedLayout, build, flatten, layoutKeys, layoutStyles, layoutOnly, matches, resolve, migrate,
     plural, providerName, roleTitle, frameCover, coverBadge, chooseSource, queueRows, sourceText, roleRows, layoutFor, setRole, carryOn, sheetKeysOn, layerSheets, bankGroups, missingRoles, sheetMeta,
+    OWN, OTHER, FREE, isOwnKey, roleTitle, adopt, baselineOf, diffFromSeed, diffNote, resetRole, resetSheet, workingCopy, copyTitle, hintItem,
     allowedRoles, syncFields, addItem, moveRole, srcQueue, reorderSrc, roadOrder, pickByOrder, carryLayout, dropCheck, targetCheck, roadQueue };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.SheetLayout = api;

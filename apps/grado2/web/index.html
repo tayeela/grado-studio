@@ -586,6 +586,14 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 .shl-keys{padding:5px 12px;border-top:1px solid var(--line);color:var(--muted);line-height:1.8;flex:0 0 auto}
 .shl-chip{display:inline-flex;align-items:center;gap:3px;padding:0 6px;border-radius:9px;font-size:var(--fs-s);line-height:16px;border:1px solid var(--line-2);color:var(--muted);white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .shl-chip.warn{color:var(--warn);border-color:currentColor}.shl-chip.bad{color:var(--bad);border-color:currentColor}.shl-chip.good{color:var(--good);border-color:currentColor}
+/* ручные правки отдельно от автоматики (T86d): синяя метка, точка у листа, «вернуть авто» */
+.shl-chip.hand{color:var(--accent);border-color:currentColor;background:none;font:inherit;font-size:var(--fs-s);line-height:16px;cursor:pointer}
+button.shl-chip.hand:hover:not(:disabled){background:color-mix(in srgb,var(--accent),transparent 88%)}button.shl-chip.hand:disabled{cursor:default}
+.shl-chip.hand .shl-i{width:11px;height:11px}
+.shl-dot{display:inline-block;width:7px;height:7px;margin:0 4px 1px 0;border-radius:50%;background:var(--accent);flex:none}
+.shl-sh .st{display:flex;align-items:center;justify-content:flex-end;min-width:0}
+.shl-ask{color:var(--text);min-width:0}
+.shl-hand-t{color:var(--muted)!important}.shl-hand-t a{color:var(--accent);text-decoration:none}.shl-hand-t a:hover{text-decoration:underline}.shl-hand-t .k{color:var(--faint)}
 /* листы */
 .shl-sh{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:2px 6px;align-items:start;padding:6px 10px;margin:0 4px;border-radius:var(--r-1);border:1px solid transparent;cursor:default}
 .shl-sh:hover{background:var(--hover)}.shl-sh.cur{background:var(--selrow)}
@@ -602,7 +610,7 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 .shl-eye,.shl-chv{border:0;background:none;color:var(--text);padding:0;height:calc(24px*var(--k));display:grid;place-items:center;border-radius:var(--r-1)}
 .shl-eye:hover:not(:disabled),.shl-chv:hover{background:var(--press)}.shl-rl.off .shl-eye{color:var(--faint)}.shl-eye:disabled{color:var(--faint);opacity:.6}
 .shl-chv{color:var(--muted);width:18px}
-.shl-rl .stt{min-width:0;display:flex}
+.shl-rl .stt{min-width:0;display:flex;flex-wrap:wrap;gap:2px 4px;align-items:center;padding:3px 0}
 .cov{display:flex;align-items:center;gap:6px;min-width:0}.cov .tr{flex:1;height:4px;background:var(--hover);border-radius:2px;overflow:hidden}.cov .tr i{display:block;height:100%;background:var(--good)}
 .cov.w .tr i{background:var(--warn)}.cov.n .tr i{background:var(--line-2)}.cov span{width:40px;white-space:nowrap;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
 .shl-chain{background:var(--field);border-bottom:1px solid var(--line);padding:6px 12px 8px 52px}

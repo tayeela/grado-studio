@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).** «Слои и листы»:
+  blue «изменено вручную» on a role differing from the template (`diffFromSeed`) and a dot on the sheet; R / link
+  «Вернуть автоматический выбор»; «Вернуть весь лист к образцу» with confirmation; locked sheet + Alt drop or
+  «Скопировать как рабочий» makes a working copy next to it, original untouched (deep-equal test). Own layers
+  («Свои слои», user:/import:) go onto any working sheet above data, under labels, and into the legend. Station
+  label search radius widened (print_io) so «ст. ж/д …» leaves the rail line on sheets 5–9.
 - **2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).** Project layer onto a sheet or a role row
   (joins the role group, or a new group in template order if the role is allowed by the sheet template; otherwise a
   plain-language refusal); role onto another sheet moves it, Alt copies; road source queue reorders by grip or

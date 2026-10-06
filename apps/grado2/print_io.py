@@ -1215,7 +1215,7 @@ class SketchMapFrame(Frame):
                 bw, up, down = cr * 2, ls * .35 + cr, cr - ls * .35
             stn = str(text).startswith(STATION_MARK)                          # станция: узкая полоса земли вдоль путей — подпись рядом с ней
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
-                                + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10) for k in range(12)] if stn else [])
+                                + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10, 13, 16, 20, 24) for k in range(12)] if stn else [])
                                 if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.5, 4.5, 6.5, 8.5) for k in range(8)]
                                 if f.get("mk") == "view" else [])   # номер точки съёмки — рядом со стрелкой, как в «ГК Царицыно»
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)

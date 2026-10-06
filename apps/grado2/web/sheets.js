@@ -132,6 +132,12 @@ function sheetSpec(sheet) {
       : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
   if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   if (sheet.look === "concept") conceptSheet(out, sheet, frameLL);           // шапка ППТ КРТ, остальное — как в «ГК Царицыно» (albums.js)
+  // свои слои владельца: легенда листа по шаблону (cLegend) о них не знает — они дописываются в неё (T86d)
+  if (out.cLegend) [["own", "Свои слои"]].forEach(([role, title]) => {      // «Прочее» (служебные слои вроде УДС) в легенду не идёт: их знак шаблон уже даёт сам
+    const items = vl.filter(pl => SheetLayout.roleOf(pl.key).role === role && pl.style.mode !== "lgr").flatMap(pl => {
+      const li = legendItems(pl).filter(it => !it.off).slice(0, 14), one = li.length <= 1, st = pl.style;
+      return (li.length ? li : [{ v: pl.title, c: st.fill }]).map(it => ({ kind: pl.geom === "line" ? "line" : "fill", fill: it.c, stroke: pl.geom === "line" ? it.c : pl.geom === "poly" ? st.stroke : it.c, width: .5, hatch: st.hatch, label: one ? pl.title : `${pl.title}: ${it.v}` })); });
+    if (items.length) out.cLegend.push({ title, items }); });
   if (sheet.kind === "situation") situationExtras(sheet, out, frameLL);
   return out;
 }

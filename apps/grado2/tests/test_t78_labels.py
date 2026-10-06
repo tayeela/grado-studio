@@ -71,6 +71,28 @@ class StationNotOnRail(unittest.TestCase):
             self.assertFalse(crosses(o, y_line), f"подпись {o['y']:.1f} лежит на линии {y_line:.1f}")
 
 
+class StationNotOnDiagonalRail(unittest.TestCase):
+    """T86d: дорога идёт по диагонали через длинную полосу станции — подписи в радиусе 10 мм места не было, и она ложилась на пути.
+    Теперь станция ищет место дальше (до 24 мм), но не на железной дороге."""
+
+    def test_label_avoids_diagonal_rail(self):
+        area = {"g": sq(.0016, .0006), "fill": "#cccccc", "stroke": "#999999", "w": .5, "a": .3, "label": STN, "ls": 3.8}
+        d = .0012
+        rail = {"type": "LineString", "coordinates": [[LON - d, LAT - d * .5], [LON + d, LAT + d * .5]]}
+        layers = [{"key": "osm.landuse", "title": "Землепользование", "features": [area]},
+                  {"key": "yandex.rail", "title": "Железная дорога", "over": True, "features": [{"g": rail, "stroke": "#1f1f1f", "w": 4}]}]
+        sh = sheet(layers)
+        tr = print_io.MapTransform((0, 0, 400, 277), sh["center"], sh["scale"])
+        p, q = (tr.mm(*c) for c in rail["coordinates"])
+        t = texts(ops_of(sh), "Калошино")
+        self.assertTrue(t, "подпись станции осталась на листе")
+        o = t[0]
+        w = print_io._text_w(o["text"], o.get("font_family"), o["size"])
+        g = print_io.OBST_PAD            # запас подписи от дороги — как у самой сборки листа
+        box = (o["x"] - w / 2 - g, o["y"] - o["size"] - g, o["x"] + w / 2 + g, o["y"] + o["size"] * .3 + g)
+        self.assertFalse(print_io._seg_box(p, q, box), f"подпись {box} лежит на железной дороге {p}-{q}")
+
+
 class DistrictBoundaryObstacle(unittest.TestCase):
     def test_label_avoids_district_line(self):
         area = {"g": sq(.0016, .0006), "fill": "#cccccc", "stroke": "#999999", "w": .5, "a": .3, "label": "СНТ Ручеёк", "ls": 3.8}

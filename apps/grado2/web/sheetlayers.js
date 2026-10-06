@@ -10,7 +10,7 @@
   "use strict";
   const ID = "wSheetLayers", SL = () => window.SheetLayout;
   const el = () => document.getElementById(ID), bodyEl = () => document.getElementById("shlBody");
-  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false, qsel: null, used: {}, flash: null, drag: null, pend: null, swallow: false };
+  const ST = { sel: -1, row: null, open: new Set(), bank: null, min: false, qsel: null, used: {}, flash: null, drag: null, pend: null, swallow: false, confirm: null };
   const CACHE = new Map(), PICK = new Map(), PENDING = new Set();
   const isOpen = () => !!el() && !el().hidden;
   const readOnly = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
@@ -23,6 +23,7 @@
     eyeoff: svg('<path d="M3 3l18 18M10.6 5.1A9.7 9.7 0 0 1 12 5c6 0 10 7 10 7a17 17 0 0 1-3 3.7M6.6 6.7A17 17 0 0 0 2 12s4 7 10 7a9.6 9.6 0 0 0 4-.9"/>'),
     lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'),
     chev: svg('<path d="M9 6l6 6-6 6"/>'), chevd: svg('<path d="M6 9l6 6 6-6"/>'), min: svg('<path d="M5 12h14"/>'), x: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
+    undo: svg('<path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'),
     list: svg('<path d="M3 5h4M3 12h4M3 19h4M11 5h10M11 12h10M11 19h10"/>'),
   };
 
@@ -57,7 +58,7 @@
       // выгружен: есть данные или слой, либо выгрузку делали и в области ничего не нашлось (CHECKED); пусто в рамке — ни одного объекта
       const loaded = !!d || (typeof lyr === "function" && !!lyr(key)) || (typeof CHECKED !== "undefined" && CHECKED.has(key));
       let empty = false; if (loaded && fr) { if (!src) empty = true; else { let any = false; try { src.forEachFeatureInExtent(fr.ext, () => (any = true)); } catch { any = true; } empty = !any; } }
-      const rq = loaded && fr ? requested(key, all) : null;
+      const rq = loaded && fr && !SL().isOwnKey(key) ? requested(key, all) : null;                // у своих слоёв области выгрузки нет: покрытие не считается
       r = { loaded, empty, error: !!(typeof ERRORS !== "undefined" && ERRORS[key]), cover: rq ? SL().frameCover(fr.bb, rq.bb) : null, est: !!rq?.est };
       if (CACHE.size > 3000) CACHE.clear();
       CACHE.set(id, r); return r;
@@ -88,6 +89,11 @@
     return ST.sel;
   }
   const infoOf = sh => SL().layoutFor(sh, viewOf);
+  // образец листа (начальный layout шаблона) и ручные правки относительно него (T86d); кэш живёт одну отрисовку
+  let SEED = new Map();
+  const tplLayoutOf = sh => { if (!SEED.has(sh.id)) SEED.set(sh.id, (() => { try { const f = typeof tplMake === "function" ? tplMake(sh) : null; return f ? (f.layout || SL().seedLayout(f)) : null; } catch { return null; } })()); return SEED.get(sh.id); };
+  const baseOf = sh => SL().baselineOf(sh, tplLayoutOf(sh));
+  const handOf = (sh, info = infoOf(sh)) => info.stored && info.editable ? SL().diffFromSeed(info.layout, baseOf(sh)) : { changed: false, roles: {}, lost: [] };
   const plusN = (n, w) => SL().plural(n, w);
 
   /* ---- разметка ---- */
@@ -95,8 +101,9 @@
     const list = sheets().map((sh, i) => {
       const info = infoOf(sh), why = typeof whyOf === "function" ? whyOf(sh) : "";
       const chip = sh.frozen ? `<span class="shl-chip" title="Готовый лист: слои не меняются">${I.lock}готов</span>` : why ? `<span class="shl-chip bad" title="${esc(why)}">не готов</span>` : "";
+      const hd = handOf(sh, info), dot = hd.changed ? `<span class="shl-dot" title="${esc("Есть ручные правки: " + [...Object.keys(hd.roles).map(r => SL().roleTitle(r)), ...hd.lost.map(r => "нет роли «" + SL().roleTitle(r) + "»")].join(", ") + ". Образец — шаблон листа")}"></span>` : "";
       return `<div class="shl-sh${i === idx ? " cur" : ""}${hl.has(i) ? " hl" : ""}${sh.frozen ? " frz" : ""}" role="option" aria-selected="${i === idx}" data-i="${i}" title="Щелчок — выбрать лист, двойной — открыть на холсте">`
-        + `<span class="no">${i + 1}</span><span class="nm">${esc(sh.title || "Без названия")}</span><span class="st">${chip}</span>`
+        + `<span class="no">${i + 1}</span><span class="nm">${esc(sh.title || "Без названия")}</span><span class="st">${dot}${chip}</span>`
         + `<span class="mt${why ? " bad" : ""}">${esc(why || SL().sheetMeta(sh, info))}</span></div>`;
     }).join("");
     return `<section class="shl-col shl-c1" aria-label="Листы альбома"><div class="shl-ch">Листы альбома<span class="sp"></span><span class="n">${sheets().length}</span></div>`
@@ -109,14 +116,18 @@
     return `<div class="cov${empty ? " n" : cover < .9 ? " w" : ""}"><div class="tr"><i style="width:${p}%"></i></div><span>${p} %</span></div>`;
   };
   const chipHtml = b => b ? `<span class="shl-chip ${b.tone === "none" ? "" : b.tone}" title="${esc(b.text)}">${esc(b.text)}</span>` : "";
+  const keyTitle = k => srcTitle(k);
+  const handNote = d => { const t = SL().diffNote(d, keyTitle); return t ? t[0].toUpperCase() + t.slice(1) : t; };
+  // синяя метка «изменено вручную»: щелчок по ней возвращает роль к образцу (то же, что клавиша R и ссылка под раскрытой строкой)
+  const handChip = (r, d, ed) => d ? `<button class="shl-chip hand" tabindex="-1" data-reset="${esc(r.id)}" ${ed ? "" : "disabled"} title="${esc(handNote(d) + (ed ? ". Щелчок или R — вернуть автоматический выбор" : ""))}">${I.undo}изменено вручную</button>` : "";
   function rolesCol(idx) {
     const sh = sheets()[idx];
     if (!sh) return `<section class="shl-col shl-c2"><div class="shl-ch">Что на листе</div><div class="shl-list"><div class="shl-empty">Выберите лист слева.</div></div></section>`;
-    const info = infoOf(sh), fr = frameOf(sh), all = sheets().map(x => ({ sh: x, fr: mapSheet(x) ? frameOf(x) : null })), asig = all.map(x => x.fr ? x.fr.ext.map(Math.round).join(",") : "").join(";"), probe = makeProbe(sh, fr, all, asig), ed = info.editable && !readOnly();
+    const info = infoOf(sh), hand = handOf(sh, info), fr = frameOf(sh), all = sheets().map(x => ({ sh: x, fr: mapSheet(x) ? frameOf(x) : null })), asig = all.map(x => x.fr ? x.fr.ext.map(Math.round).join(",") : "").join(";"), probe = makeProbe(sh, fr, all, asig), ed = info.editable && !readOnly();
     const why = readOnly() ? "Только просмотр: слои листа меняет тот, кто правит проект" : info.why;
     let rows = "", note = "", sep = "";
     if (!info.layout) {
-      rows = `<div class="shl-empty">${info.kind === "map" || !info.kind ? "Лист показывает текущую карту: состава слоёв у него нет." : info.kind === "frozen" ? "Готовый лист: вёрстка и слои зашиты в файл, здесь они не меняются." : info.kind === "panels" ? "Две карты на слайде: у каждой свой состав, здесь он пока не показан." : "У этого листа нет слоёв карты."}</div>`;
+      rows = `<div class="shl-empty">${info.kind === "map" || !info.kind ? "Лист показывает текущую карту: состава слоёв у него нет." : info.kind === "frozen" ? "Готовый лист: вёрстка и слои зашиты в файл, здесь они не меняются. Кнопка «Скопировать как рабочий» (или Alt при отпускании слоя на лист) делает рабочую копию: она встаёт следом и меняется как обычный лист." : info.kind === "panels" ? "Две карты на слайде: у каждой свой состав, здесь он пока не показан." : "У этого листа нет слоёв карты."}</div>`;
     } else {
       const R = SL().roleRows({ groups: info.layout.groups.slice().reverse() }, probe, { chosen: () => pickFor(sh, fr) || undefined });
       rows = R.map(r => {
@@ -125,11 +136,11 @@
         const chev = r.queue ? `<button class="shl-chv" tabindex="-1" data-open="${esc(r.id)}" aria-label="Источники роли" aria-expanded="${!!open}" title="${open ? "Свернуть" : "Откуда брать: очередь источников"}">${open ? I.chevd : I.chev}</button>` : "";
         const lt = r.items.map(it => srcTitle(it.key)).join("; ");
         let h = `<div class="shl-rl${r.id === ST.row ? " cur" : ""}${r.on ? "" : " off"}" role="row" data-g="${esc(r.id)}" data-role="${esc(r.role)}" data-title="${esc(r.title)}" aria-selected="${r.id === ST.row}" title="${esc("Слои: " + lt + ". Перетащите роль на другой лист: перенос, с Alt — копия")}">`
-          + `${eye}<span class="cv">${chev}</span><span class="nm">${esc(r.title)}<small> ${r.count}</small></span><span class="srcn" title="${esc(r.source)}">${esc(r.source)}</span>${covHtml(r.empty ? null : r.cover, r.empty)}<span class="stt">${chipHtml(r.badge)}</span></div>`;
+          + `${eye}<span class="cv">${chev}</span><span class="nm">${esc(r.title)}<small> ${r.count}</small></span><span class="srcn" title="${esc(r.source)}">${esc(r.source)}</span>${covHtml(r.empty ? null : r.cover, r.empty)}<span class="stt">${handChip(r, hand.roles[r.role], ed)}${chipHtml(r.badge)}</span></div>`;
         if (open) {
           const q = SL().queueRows(r.queue.keys, probe, r.queue.chosen), many = q.length > 1;
           h += `<div class="shl-chain" data-g="${esc(r.id)}"><div class="t">Откуда брать «${esc(r.title.toLowerCase())}». Первый источник главный, ниже — запасные. Автомат берёт первый, который закрывает рамку на 90 % и больше. ${many ? "Порядок меняется перетаскиванием за ручку ⋮⋮ или Alt+↑ / Alt+↓." : "На этом листе источник один."}</div>`
-            + q.map(x => `<div class="ch2${x.used ? " use" : ""}${many && x.key === ST.qsel ? " qsel" : ""}" data-key="${esc(x.key)}" data-n="${x.n - 1}"><span class="grip${many && ed ? "" : " off"}" ${many && ed ? 'data-grip title="Перетащите, чтобы поменять порядок"' : ""}>⋮⋮</span><span class="no">${x.n}</span><span class="t2" title="${esc(srcTitle(x.key))}">${esc(srcTitle(x.key))}</span>${covHtml(x.cover, false)}${x.used ? `<span class="shl-chip good">используется</span>` : chipHtml(x.badge)}</div>`).join("") + `</div>`;
+            + (hand.roles[r.role] ? `<div class="t shl-hand-t">${esc(handNote(hand.roles[r.role]))}. ${ed ? `<a href="#" data-reset="${esc(r.id)}">Вернуть автоматический выбор</a> <span class="k">(клавиша R)</span>` : ""}</div>` : "") + q.map(x => `<div class="ch2${x.used ? " use" : ""}${many && x.key === ST.qsel ? " qsel" : ""}" data-key="${esc(x.key)}" data-n="${x.n - 1}"><span class="grip${many && ed ? "" : " off"}" ${many && ed ? 'data-grip title="Перетащите, чтобы поменять порядок"' : ""}>⋮⋮</span><span class="no">${x.n}</span><span class="t2" title="${esc(srcTitle(x.key))}">${esc(srcTitle(x.key))}</span>${covHtml(x.cover, false)}${x.used ? `<span class="shl-chip good">используется</span>` : chipHtml(x.badge)}</div>`).join("") + `</div>`;
         }
         if (r.queue) ST.used[r.id] = r.queue.chosen;
         return h;
@@ -137,13 +148,14 @@
       const miss = SL().missingRoles(sheets().map(s => infoOf(s).layout), idx);
       sep = miss.length ? `<div class="shl-sep">Роли, которых на этом листе по образцу нет: ${esc(miss.join(", "))}</div>` : "";
       if (R.some(r => r.badge && /^окно 40/.test(r.badge.text))) note = `<div class="shl-note"><span class="shl-chip warn">Яндекс</span>Яндекс отдаёт данные только в окне 40 км² вокруг территории. Рамка листа шире окна: за его краем слоя Яндекса нет.${R.some(r => r.queue) ? " Откройте строку «Дороги»: запасной источник виден там." : ""}</div>`;
+      if (hand.lost.length) note += `<div class="shl-note"><span class="shl-chip hand">${I.undo}изменено вручную</span>С листа убраны роли: ${esc(hand.lost.map(r => "«" + SL().roleTitle(r) + "»").join(", "))}. ${ed ? `<a href="#" data-resetsheet>Вернуть весь лист к образцу</a>` : ""}</div>`;
       if (info.layout.groups.some(g => g.items.some(it => probe(it.key).est))) note += `<div class="shl-note"><span class="shl-chip">оценка</span>Покрытие — оценка по рамкам листов; станет точным после новой выгрузки слоя.</div>`;
       if (!ed && why) note += `<div class="shl-note"><span class="shl-chip">глаз выключен</span>${esc(why)}.</div>`;
     }
     return `<section class="shl-col shl-c2" aria-label="Что на листе"><div class="shl-ch">Что на листе ${idx + 1}, сверху вниз<span class="sp"></span><span class="n">порядок задан образцом</span></div>`
       + `<div class="shl-hd"><span></span><span></span><span>Роль</span><span>Источник</span><span>Покрытие рамки</span><span>Состояние</span></div>`
       + `<div class="shl-list" role="grid" aria-label="Роли листа">${rows}${sep}${note}</div>`
-      + `<div class="shl-keys"><kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник выше или ниже · <kbd>Esc</kbd> закрыть окно</div></section>`;
+      + `<div class="shl-keys"><kbd>Пробел</kbd> глаз роли · <kbd>Enter</kbd> / двойной щелчок: источники · <kbd>Alt</kbd>+<kbd>↑</kbd><kbd>↓</kbd> источник выше или ниже · <kbd>R</kbd> вернуть авто · <kbd>Esc</kbd> закрыть окно</div></section>`;
   }
   function bankCol(idx) {
     const L = typeof LYR !== "undefined" ? LYR : [], g = SL().bankGroups(L.map(l => ({ key: l.key, title: l.title })), sheets(), viewKeys);
@@ -162,12 +174,21 @@
       return `слой «${it?.title || ST.bank}» ${ns.length ? "включён на " + (ns.length > 1 ? "листах " : "листе ") + ns.join(", ") : "ни на одном листе не включён"}. Двойной щелчок — показать его на холсте.`; }
     const info = infoOf(sh);
     if (readOnly()) return "режим просмотра: слои листа меняет тот, кто правит проект.";
+    if (sh.frozen) return info.why + ". Кнопка «Скопировать как рабочий» сверху (или Alt при отпускании слоя на лист) делает рабочую копию, исходный лист не меняется.";
     if (!info.editable && info.why) return info.why + ".";
-    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, Cmd+Z — отмена. Перетащите роль на другой лист: перенос, с Alt — копия.`; }
+    if (ST.row) { const r = info.layout?.groups.find(g => g.id === ST.row); return `глаз скрывает роль «${r?.title || ""}» только на этом листе (лист ${idx + 1}); на других листах она остаётся. Пробел — глаз, Cmd+Z — отмена.${r && handOf(sh, info).roles[r.role] ? " R — вернуть роль к образцу." : ""} Перетащите роль на другой лист: перенос, с Alt — копия.`; }
     return "перетащите слой из правой колонки на лист или на строку роли — он включится на этом листе. Роль можно перетащить на другой лист (Alt — копия). Глаз скрывает роль только на этом листе.";
   }
+  // верхняя строка: у готового листа — «Скопировать как рабочий»; у листа с ручными правками — «Вернуть весь лист к образцу» (с подтверждением)
+  function handBar(sh, info) {
+    if (readOnly()) return "";
+    if (sh.frozen) return `<button class="btn" data-wcopy title="Рабочая копия встанет сразу после этого листа, с теми же слоями и без замка. Сам готовый лист не меняется">Скопировать как рабочий</button>`;
+    const hd = handOf(sh, info); if (!hd.changed) { ST.confirm = null; return ""; }
+    if (ST.confirm === sh.id) return `<span class="shl-ask">Вернуть весь лист к образцу? Ручные правки состава этого листа пропадут (Cmd+Z вернёт).</span><button class="btn primary" data-resetsheet-yes>Да, вернуть</button><button class="btn" data-resetsheet-no>Нет</button>`;
+    return `<span class="shl-chip hand" title="Состав листа отличается от образца: ручные правки хранятся отдельно от автоматики">${I.undo}есть ручные правки</span><button class="btn" data-resetsheet title="Состав листа снова станет таким, как задаёт образец альбома">Вернуть весь лист к образцу</button>`;
+  }
   function render() {
-    const b = bodyEl(); if (!b) return;
+    const b = bodyEl(); if (!b) return; SEED = new Map();
     const n = sheets().length, idx = selIndex(), keep = [...b.querySelectorAll(".shl-list")].map(x => x.scrollTop);
     const sh = sheets()[idx];
     let hl = new Set(); if (ST.bank) hl = new Set(SL().layerSheets(sheets(), ST.bank, viewKeys).map(x => x - 1));
@@ -176,6 +197,7 @@
     const info = infoOf(sh), why = typeof whyOf === "function" ? whyOf(sh) : "";
     const bar = `<div class="shl-bar"><span>Лист:</span><span class="shl-cur" title="${esc(sh.title || "")}">${idx + 1} · ${esc(sh.title || "Без названия")}</span>`
       + (sh.frozen ? `<span class="shl-chip">${I.lock}готовый лист</span>` : why ? `<span class="shl-chip bad" title="${esc(why)}">не готов</span>` : info.layout ? `<span class="shl-chip good">лист готов к печати</span>` : "")
+      + (handBar(sh, info))
       + `<span class="sp"></span><button class="btn" data-sheets title="Рамки, масштаб и выгрузка листов">Листы и альбом…</button></div>`;
     b.innerHTML = bar + `<div class="shl-grid">${sheetsCol(idx, hl)}${rolesCol(idx)}${bankCol(idx)}</div>`
       + `<div class="shl-foot"><b>Что дальше:</b> ${esc(hint(idx))}<span class="sp"></span><span class="r">правки состава хранятся в проекте</span></div>`;
@@ -190,7 +212,12 @@
   /* ---- правка: глаз на роли ---- */
   // слепок листа для отмены: состав и поля, что с ним согласованы (keys, styles, only). key — id листа или несколько через «|» (перенос между листами)
   const stateOf = s => JSON.stringify([s.layout ?? null, s.keys ?? null, s.styles ?? null, s.only ?? null]);
-  function snap(key) { return JSON.stringify(String(key).split("|").map(id => { const s = sheets().find(x => x.id === id); return [id, s ? stateOf(s) : null]; })); }
+  // «+id» — лист целиком и его место в альбоме (рабочая копия: отмена убирает лист, возврат ставит его обратно); без плюса — только состав листа
+  function snap(key) {
+    return JSON.stringify(String(key).split("|").map(id => {
+      if (id[0] === "+") { const k = sheets().findIndex(x => x.id === id.slice(1)); return [id, k < 0 ? null : JSON.stringify([k, sheets()[k]])]; }
+      const s = sheets().find(x => x.id === id); return [id, s ? stateOf(s) : null]; }));
+  }
   function changed(sh) {
     const i = sheets().indexOf(sh);
     if (typeof touch === "function") touch(); else window.markDirty?.();
@@ -200,11 +227,22 @@
     refresh();
   }
   function restore(key, snapStr) {
+    let moved = false;
     JSON.parse(snapStr).forEach(([id, st]) => {
+      if (id[0] === "+") {
+        const k = sheets().findIndex(x => x.id === id.slice(1)); moved = true;
+        if (st === null) { if (k >= 0) sheets().splice(k, 1); return; }
+        const [at, obj] = JSON.parse(st); if (k >= 0) sheets()[k] = obj; else sheets().splice(Math.min(at, sheets().length), 0, obj); return;
+      }
       const sh = sheets().find(x => x.id === id); if (!sh || !st) return;
       ["layout", "keys", "styles", "only"].forEach((f, j) => { const v = JSON.parse(st)[j]; if (v === null) delete sh[f]; else sh[f] = v; });
       changed(sh);
     });
+    if (moved) {
+      const n = sheets().length; ST.sel = Math.min(ST.sel, n - 1); try { if (typeof SHI !== "undefined" && SHI >= n) SHI = Math.max(0, n - 1); } catch { }
+      if (typeof touch === "function") touch(); else window.markDirty?.();
+      window.renderSheets?.(); refresh();
+    }
   }
   function toggleRole(idx, gid, on) {
     const sh = sheets()[idx]; if (!sh) return;
@@ -216,6 +254,27 @@
     pushUndo({ kind: "layout", key: sh.id, label: `лист ${idx + 1}: роль «${g.title}» ${next ? "показана" : "скрыта"}`, snap: before });
     changed(sh);
     if (typeof setHint === "function") setHint(`Лист ${idx + 1}: роль «${g.title}» ${next ? "показана" : "скрыта"} только на этом листе. Cmd+Z — отмена.`);
+  }
+  // «Вернуть автоматический выбор» (клавиша R, ссылка под строкой, синяя метка): роль листа снова как в образце; одна запись отмены
+  function resetRoleUI(idx, gid) {
+    const sh = sheets()[idx]; if (!sh) return;
+    if (readOnly()) return toast("Только просмотр: слои листа меняет тот, кто правит проект.");
+    const info = infoOf(sh); if (!info.editable) return info.why && toast(info.why[0].toUpperCase() + info.why.slice(1) + ".");
+    const g = info.layout.groups.find(x => x.id === gid); if (!g) return;
+    const base = info.stored ? baseOf(sh) : null, before = snap(sh.id), had = !!(base && SL().diffFromSeed(info.layout, base).roles[g.role]);
+    if (!had || !SL().resetRole(sh, g.role, base, viewOf)) return toast(`Роль «${g.title}» уже как по образцу: ручных правок нет.`);
+    const gone = !infoOf(sh).layout.groups.some(x => x.role === g.role);
+    pushUndo({ kind: "layout", key: sh.id, label: `лист ${idx + 1}: роль «${g.title}» возвращена к образцу`, snap: before });
+    ST.row = gone ? null : infoOf(sh).layout.groups.find(x => x.role === g.role).id; if (ST.row) flash({ row: ST.row });
+    changed(sh); if (typeof setHint === "function") setHint(gone ? `Лист ${idx + 1}: роли «${g.title}» по образцу здесь нет, она убрана. Cmd+Z — отмена.` : `Лист ${idx + 1}: роль «${g.title}» снова как по образцу. Cmd+Z — отмена.`);
+  }
+  function resetSheetUI(idx) {
+    const sh = sheets()[idx]; ST.confirm = null; if (!sh) return;
+    if (readOnly()) return toast("Только просмотр: слои листа меняет тот, кто правит проект.");
+    const info = infoOf(sh), base = info.editable && info.stored ? baseOf(sh) : null, before = snap(sh.id);
+    if (!base || !SL().resetSheet(sh, base, viewOf)) { render(); return toast(`Лист ${idx + 1} уже как по образцу.`); }
+    pushUndo({ kind: "layout", key: sh.id, label: `лист ${idx + 1}: состав возвращён к образцу`, snap: before });
+    ST.row = null; changed(sh); if (typeof setHint === "function") setHint(`Лист ${idx + 1}: состав слоёв снова как по образцу. Cmd+Z — отмена.`);
   }
   function showLayer(key) {
     const l = typeof lyr === "function" && lyr(key); if (!l) return;
@@ -239,6 +298,29 @@
     pushUndo({ kind: "layout", key: sh.id, label: `лист ${i + 1}: слой «${title}» включён`, snap: before });
     ST.sel = i; ST.bank = null; ST.row = roleGroup(infoOf(sh), SL().roleOf(key).role)?.id || null; if (ST.row) flash({ row: ST.row });
     changed(sh); if (typeof setHint === "function") setHint(`Лист ${i + 1}: слой «${title}» включён. Cmd+Z — отмена.`);
+  }
+  // рабочая копия листа с замком (Alt при отпускании или кнопка): новый лист сразу после исходного, с теми же слоями, без замка; исходный не меняется.
+  // fill(copy) кладёт в копию то, что тянули; одна запись отмены на всё (копию и содержимое)
+  function workingCopyOf(i, fill, label) {
+    const src = sheets()[i]; if (!src) return null;
+    if (readOnly()) { toast("Только просмотр: слои листа меняет тот, кто правит проект."); return null; }
+    const had = new Set(sheets().map(x => x.id)), t = Date.now().toString(36); let id, k = 0; do { id = `wc_${t}${k++}`; } while (had.has(id));
+    const cp = SL().workingCopy(src, { id, others: sheets().filter(x => x !== src).map(x => infoOf(x).layout).filter(Boolean), known: key => typeof lyr === "function" && !!lyr(key) });
+    if (!cp) return null;
+    const key = src.id + "|+" + cp.id, before = snap(key);
+    sheets().splice(i + 1, 0, cp);
+    const r = fill ? fill(cp, { tpl: null, others: sheets().filter(x => x !== cp).map(x => infoOf(x).layout).filter(Boolean), n: i + 2, viewOf }) : { ok: true };
+    if (!r.ok) { sheets().splice(i + 1, 1); toast(r.text + "."); return null; }
+    pushUndo({ kind: "layout", key, label: `рабочая копия листа ${i + 1}${label ? ": " + label : ""}`, snap: before });
+    ST.sel = i + 1; ST.bank = null; ST.row = null; flash({ sheet: i + 1 }); changed(cp);
+    if (typeof setHint === "function") setHint(`Лист ${i + 2}: рабочая копия листа ${i + 1}${label ? ", " + label : ""}. Исходный лист не менялся. Cmd+Z — отмена.`);
+    return cp;
+  }
+  function dropWorking(d) {
+    const i = d.tgt.i;
+    if (d.type === "layer") return workingCopyOf(i, (cp, ctx) => SL().addItem(cp, d.key, { ...ctx, title: d.label }), `слой «${d.label}» добавлен`);
+    const from = sheets()[d.from], rt = SL().roleTitle(d.role);
+    return workingCopyOf(i, (cp, ctx) => SL().moveRole(from, cp, d.role, ctx, true), `роль «${rt}» скопирована с листа ${d.from + 1}`);
   }
   function dropRole(from, to, role, copy) {
     const a = sheets()[from], b = sheets()[to]; if (!a || !b) return; const rt = SL().roleTitle(role), before = snap(a.id + "|" + b.id);
@@ -323,7 +405,8 @@
     d.ghost.remove(); document.body.classList.remove("shl-dragging"); clearMarks(); TPLC.clear();
     const res = d.res;
     if (apply && res?.ok) {
-      if (d.type === "layer") dropLayer(d.tgt.i, d.key, d.label);
+      if (res.workingCopy) dropWorking(d);
+      else if (d.type === "layer") dropLayer(d.tgt.i, d.key, d.label);
       else if (d.type === "role") dropRole(d.from, d.tgt.i, d.role, d.alt);
       else reorderQueue(selIndex(), d.gid, d.from, d.tgt.to);
     } else if (apply && res && res.tone !== "none" && res.text) toast(res.text + ".");
@@ -335,10 +418,15 @@
   function onClick(e) {
     const t = e.target;
     if (t.closest("[data-sheets]")) { winOpen("wSheets", true); return; }
+    const rs = t.closest("[data-reset]"); if (rs) { e.preventDefault(); ST.row = rs.dataset.reset; ST.bank = null; resetRoleUI(selIndex(), rs.dataset.reset); bodyEl().focus({ preventScroll: true }); return; }
+    if (t.closest("[data-resetsheet]")) { e.preventDefault(); ST.confirm = sheets()[selIndex()]?.id || null; render(); return; }
+    if (t.closest("[data-resetsheet-yes]")) { resetSheetUI(selIndex()); return; }
+    if (t.closest("[data-resetsheet-no]")) { ST.confirm = null; render(); return; }
+    if (t.closest("[data-wcopy]")) { const i = selIndex(); workingCopyOf(i, null, ""); return; }
     const eye = t.closest("[data-eye]"); if (eye) { ST.row = eye.dataset.eye; ST.bank = null; toggleRole(selIndex(), eye.dataset.eye); bodyEl().focus({ preventScroll: true }); return; }
     const qr = t.closest(".ch2"); if (qr) { ST.qsel = qr.dataset.key; ST.row = qr.closest(".shl-chain").dataset.g; ST.bank = null; render(); bodyEl().focus({ preventScroll: true }); return; }
     const op = t.closest("[data-open]"); if (op) { const id = op.dataset.open; ST.open.has(id) ? ST.open.delete(id) : ST.open.add(id); ST.row = id; render(); bodyEl().focus({ preventScroll: true }); return; }
-    const sh = t.closest(".shl-sh"); if (sh) { ST.sel = +sh.dataset.i; ST.row = null; render(); bodyEl().focus({ preventScroll: true }); return; }
+    const sh = t.closest(".shl-sh"); if (sh) { ST.sel = +sh.dataset.i; ST.row = null; ST.confirm = null; render(); bodyEl().focus({ preventScroll: true }); return; }
     const rl = t.closest(".shl-rl"); if (rl) { ST.row = rl.dataset.g; ST.bank = null; render(); bodyEl().focus({ preventScroll: true }); return; }
     const bl = t.closest(".shl-bl"); if (bl) { ST.bank = ST.bank === bl.dataset.k ? null : bl.dataset.k; render(); bodyEl().focus({ preventScroll: true }); return; }
   }
@@ -358,6 +446,7 @@
     if (e.target.closest("[data-sheets]") && (e.key === "Enter" || e.key === " ")) return;           // кнопка «Листы и альбом…» нажимается сама
     if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); nudgeSource(e.key === "ArrowUp" ? -1 : 1); return; }
     if ((e.key === "ArrowDown" || e.key === "ArrowUp") && n) { take(); ST.sel = Math.min(n - 1, Math.max(0, idx + (e.key === "ArrowDown" ? 1 : -1))); ST.row = null; render(); return; }
+    if (e.code === "KeyR" && !e.altKey && !e.shiftKey && n) { take(); if (ST.row) resetRoleUI(idx, ST.row); else toast("Сначала выберите роль в средней колонке: R возвращает её к образцу."); return; }
     if (e.key === " " && n) { take(); if (ST.row) toggleRole(idx, ST.row); else toast("Сначала выберите роль в средней колонке."); return; }
     if (e.key === "Enter" && n) { take(); const info = infoOf(sheets()[idx]), g = ST.row && info.layout?.groups.find(x => x.id === ST.row);
       if (g && hasQueue(info, g)) { ST.open.has(g.id) ? ST.open.delete(g.id) : ST.open.add(g.id); render(); } else openSheet(idx); }
@@ -377,5 +466,5 @@
   addEventListener("keydown", onKey, true);
   addEventListener("keyup", e => { if (ST.drag && e.key === "Alt") { ST.drag.alt = false; updateDrag(); } }, true);
   WIN_OPEN[ID] = () => { init(); if (ST.min) setMin(false); render(); };
-  window.SheetLayers = { snap, restore, render, refresh, toggleRole };
+  window.SheetLayers = { snap, restore, render, refresh, toggleRole, resetRoleUI, resetSheetUI, workingCopyOf };
 })();

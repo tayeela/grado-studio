@@ -167,7 +167,7 @@ eq([r.ok, r.code, r.text], [false, "norole", "На листе 9 нет роли 
 r = L.addItem({ frozen: true, keys: ["egko.water"] }, "egko.water", { n: 2 }); eq([r.ok, r.code, r.tone, r.text], [false, "frozen", "frozen", "Лист готов, замок — Alt при отпускании сделает рабочую копию"], "готовый лист");
 r = L.addItem({ kind: "title" }, "egko.water", { n: 1 }); eq(r.code, "nomap", "титул"); r = L.addItem({ panels: [{}] }, "egko.water", { n: 1 }); eq(r.code, "noedit", "две карты");
 r = L.addItem(mk(["osm.roads"]), "gisogd.admin", { tpl: T9, n: 9 }); eq(r.text, "На листе 9 границы не добавляются: территория и район рисуются сами", "границы");
-r = L.addItem(mk(["osm.roads"]), "my.layer", { tpl: T9, n: 9, title: "Мой" }); eq(r.code, "norole", "свой слой — прочее, по образцу нет");
+const my9 = mk(["osm.roads"]); r = L.addItem(my9, "my.layer", { tpl: T9, n: 9, title: "Мой" }); eq([r.ok, my9.keys], [true, ["osm.roads", "my.layer"]], "«Прочее» (слой без роли образца) кладётся на любой рабочий лист — в отказах его больше нет");
 // лист без layout, но с keys: layout записывается
 const old1 = { keys: ["egko.water", "osm.roads"] }; r = L.addItem(old1, "egko.buildings", { tpl: T5, n: 6 }); eq([r.ok, !!old1.layout, old1.keys], [true, true, ["egko.water", "egko.buildings", "osm.roads"]], "лист без layout получает его");
 // роль на другой лист
@@ -211,5 +211,87 @@ dc = L.dropCheck(SHS, 2, { type: "role", from: 1, role: "zouit" }, { ...oc, copy
 dc = L.dropCheck(SHS, 1, { type: "role", from: 1, role: "water" }, oc); eq([dc.ok, dc.tone], [false, "none"], "роль на тот же лист");
 dc = L.dropCheck(SHS, 3, { type: "role", from: 1, role: "buildings" }, oc); eq(dc.tone, "bad", "роль на лист без неё по образцу");
 dc = L.dropCheck(SHS, 0, { type: "role", from: 1, role: "water" }, oc); eq(dc.code, "nomap", "роль на титул");
+
+// ---- T86d: ручные правки отдельно от автоматики ----
+const keysOf = sh => L.layoutKeys(sh.layout);
+const snapAll = o => JSON.stringify(o);
+// diffFromSeed: чистое сравнение с образцом
+const A = L.seedLayout(tpl);
+eq(L.diffFromSeed(A, A), { changed: false, roles: {}, lost: [] }, "тот же состав — правок нет");
+eq(L.diffFromSeed(A, null).changed, false, "нет образца — правок нет"); eq(L.diffFromSeed(null, A).changed, false, "нет layout — правок нет");
+const A1 = JSON.parse(JSON.stringify(A)); A1.groups[1].items.forEach(it => { it.on = false; });
+let d = L.diffFromSeed(A1, A); eq([d.changed, Object.keys(d.roles), d.roles.roads.hidden], [true, ["roads"], ["yandex.hd_roads", "egko.roads"]], "глаз «Дороги»: метка только у дорог");
+eq(L.diffNote(d.roles.roads, k => k), "скрыто глазом: yandex.hd_roads, egko.roads", "пояснение: скрыто");
+const A2 = JSON.parse(JSON.stringify(A)); A2.groups[1].items[0].style = { fill: "#000" }; A2.groups[0].items[0].only = { field: "x", values: [1] }; eq(L.diffFromSeed(A2, A).changed, false, "оформление и отбор правкой состава не считаются");
+const A3 = L.seedLayout(tpl); A3.groups[1].items[0].src = ["yandex.hd_roads", "egko.roads"]; d = L.diffFromSeed(A3, A); eq([d.roles.roads.queue, d.roles.roads.hidden], [true, []], "порядок источников изменён");
+eq(L.diffNote(d.roles.roads), "порядок источников изменён", "пояснение: очередь");
+const A4 = L.seedLayout({ keys: [...KEYS5, "user:mine"] }); d = L.diffFromSeed(A4, A); eq([d.roles.own.whole, d.roles.own.added], [true, ["user:mine"]], "своя роль: добавлена вручную"); eq(L.diffNote(d.roles.own), "Роль добавлена на этот лист вручную: по образцу её здесь нет", "пояснение: роль добавлена");
+const A5 = L.seedLayout({ keys: KEYS5.filter(k => k !== "egko.roads") }); d = L.diffFromSeed(A5, A); eq(d.roles.roads.removed, ["egko.roads"], "слой убран"); eq(d.changed, true, "убран слой — правка");
+const A6 = L.seedLayout({ keys: KEYS5.filter(k => !/rail|stations/.test(k)) }); d = L.diffFromSeed(A6, A); eq([d.changed, d.lost, Object.keys(d.roles)], [true, ["rail"], []], "роль убрана с листа: метка листа, строки нет");
+// baselineOf: seed, записанный при первой правке, иначе шаблон
+const legacy = { keys: KEYS5.filter(k => k !== "egko.roads"), styles: ST, only: ONLY };       // лист старого проекта: ключи отстали от шаблона
+eq(L.baselineOf(legacy, A), null, "layout не записан — образца нет, правок нет");
+eq(L.setRole(legacy, "roads", false), true, "глаз на старом листе"); eq(Array.isArray(legacy.layout.seed), true, "seed записан вместе с layout");
+eq(L.diffFromSeed(legacy.layout, L.baselineOf(legacy, A)).roles.roads.hidden, ["yandex.hd_roads"], "метка: скрыта роль; отставание ключей от шаблона правкой не считается");
+eq(Object.keys(L.diffFromSeed(legacy.layout, L.baselineOf(legacy, A)).roles), ["roads"], "и ничего больше");
+eq(L.baselineOf({ layout: A, frozen: true }, A), null, "готовый лист — без образца"); eq(L.baselineOf({ layout: A }, A), A, "layout из шаблона без seed — образец шаблон");
+// resetRole
+const SB = L.baselineOf(legacy, A);
+eq(L.resetRole(legacy, "roads", SB), true, "R: роль вернулась"); eq(L.diffFromSeed(legacy.layout, SB).changed, false, "метки нет"); eq(L.matches(legacy), true, "keys сходятся с layout"); eq(legacy.keys.includes("yandex.hd_roads"), true, "дорога в keys");
+eq(L.resetRole(legacy, "roads", SB), false, "уже как по образцу — ничего");
+// очередь источников и добавленный слой возвращаются
+const rs = mk(KEYS5), rsSeed = L.seedLayout(tpl); L.reorderSrc(rs, "roads", 1, 0); L.addItem(rs, "user:x", { tpl: rsSeed, n: 5 }); L.setRole(rs, "water", false);
+rs.layout.seed = JSON.parse(JSON.stringify(rsSeed.groups));
+d = L.diffFromSeed(rs.layout, L.baselineOf(rs, rsSeed)); eq(Object.keys(d.roles).sort(), ["own", "roads", "water"], "три правки — три метки");
+eq(L.resetRole(rs, "roads", rsSeed), true, "очередь вернулась"); eq(L.srcQueue(rs.layout, "roads").queue, ["egko.roads", "yandex.hd_roads"], "очередь как по образцу"); eq(L.roadOrder(rs), null, "порядка владельца нет");
+eq(L.resetRole(rs, "own", rsSeed), true, "свой слой убран: по образцу такой роли нет"); eq(keysOf(rs).includes("user:x"), false, "слоя нет"); eq(rs.keys.includes("user:x"), false, "и в keys");
+eq(L.resetRole(rs, "water", rsSeed), true, "вода включена"); eq(L.diffFromSeed(rs.layout, L.baselineOf(rs, rsSeed)).changed, false, "правок нет");
+// роль, которую унесли, возвращается на своё место
+const mvr = mk(KEYS5); mvr.layout.seed = JSON.parse(JSON.stringify(mvr.layout.groups)); const mvRef = L.seedLayout(tpl);
+mvr.layout.groups = mvr.layout.groups.filter(g => g.role !== "rail"); L.syncFields(mvr); eq(L.resetRole(mvr, "rail", mvRef), true, "роль вернулась"); eq(keysOf(mvr), KEYS5, "ключи в том же порядке, что в образце");
+// resetSheet
+const rw = mk(KEYS5); L.setRole(rw, "water", false); L.addItem(rw, "user:y", { tpl: A, n: 1 }); rw.layout.seed = JSON.parse(JSON.stringify(A.groups));
+eq(L.resetSheet(rw, A), true, "лист возвращён к образцу"); eq(keysOf(rw), KEYS5, "состав как в образце"); eq([rw.keys, rw.styles, rw.only], [KEYS5, ST, ONLY], "поля листа — как в образце"); eq(L.resetSheet(rw, A), false, "уже образец");
+eq(L.resetSheet({ frozen: true, keys: KEYS5 }, A), false, "готовый лист не трогается");
+// «Прочее»: свободные роли
+eq(L.roleOf("user:a1b2").role, "own", "нарисованный слой — «Свои слои»"); eq(L.roleOf("import:файл.shp").role, "own", "загруженный файл — «Свои слои»"); eq(L.roleOf("osm.buildings").role, "other", "слой портала без роли — «Прочее»");
+eq(L.roleTitle("own"), "Свои слои", "название роли");
+const fr5o = mk(KEYS5), ownKeys = ["user:poly", "import:a.gpkg"]; ownKeys.forEach(k => eq(L.addItem(fr5o, k, { tpl: T5, n: 5, title: k }).ok, true, "свой слой на лист 5: " + k));
+eq(keysOf(fr5o).slice(-2), ownKeys, "свои слои — в самом конце порядка рисования: поверх данных, подписи и рамка рисуются после слоёв");
+eq(fr5o.layout.groups.at(-1).role, "own", "одна группа «Свои слои» последней"); eq(fr5o.layout.groups.at(-1).title, "Свои слои", "название группы");
+const fr3o = mk(["egko.water"]); eq(L.addItem(fr3o, "user:poly", { tpl: L.seedLayout({ keys: ["egko.water"] }), n: 3 }).ok, true, "на лист 3 образца без своей роли");
+eq(L.addItem({ kind: "title" }, "user:poly", { n: 1 }).code, "nomap", "титул свои слои не принимает"); eq(L.addItem({ frozen: true }, "user:poly", { n: 1 }).tone, "frozen", "готовый лист — замок");
+eq(L.missingRoles([fr5o.layout, L.seedLayout({ keys: ["egko.water"] })], 1), ["Участки", "Красные линии", "Здания", "Дороги", "Рельс и станции", "ЗОУИТ"].sort((a, b) => L.ROLES.findIndex(r => r.title === a) - L.ROLES.findIndex(r => r.title === b)).concat(["Названия улиц и мест"]), "свободные роли в «нет по образцу» не попадают");
+eq(L.bankGroups([{ key: "user:a", title: "Мой" }, { key: "x.y", title: "Прочее слой" }, { key: "egko.water", title: "В" }], []).map(g => g.role), ["water", "other", "own"], "банк: «Свои слои» последними");
+const mvOwn = mk(KEYS5); L.addItem(mvOwn, "user:poly", { tpl: T5, n: 5, title: "Мой" }); const dstOwn = mk(["egko.water"]);
+eq(L.moveRole(mvOwn, dstOwn, "own", { tpl: L.seedLayout({ keys: ["egko.water"] }), n: 3 }, true).ok, true, "роль «Свои слои» переносится на другой лист");
+let dcFree = L.dropCheck([mk(["egko.water"])], 0, { type: "layer", key: "user:poly", title: "Мой" }, { ctx: () => ({ tpl: L.seedLayout({ keys: ["egko.water"] }) }) }); eq([dcFree.ok, dcFree.text], [true, "Отпустите: включить «Мой» на листе 1"], "цель принимает свой слой");
+// workingCopy
+const srcWc = mk(KEYS5); srcWc.title = "Лист 5"; srcWc.tpl = { set: "pptkrt_", i: 4, size: "PA3", base: { title: "Лист 5" } }; srcWc.layout.seed = JSON.parse(JSON.stringify(srcWc.layout.groups)); srcWc.edits = { a: [1, { b: 2 }] };
+const beforeS = snapAll(srcWc), cpy = L.workingCopy(srcWc, { id: "wc_1" });
+eq(snapAll(srcWc), beforeS, "исходный лист не изменился ни в одном поле (глубокое сравнение)");
+eq([cpy.id, cpy.title, cpy.frozen, cpy.tpl, cpy.keys], ["wc_1", "Лист 5 (рабочая копия)", undefined, srcWc.tpl, KEYS5], "копия: id, имя, тот же шаблон, без замка");
+cpy.layout.groups[0].items[0].on = false; cpy.tpl.i = 9; cpy.edits.a[1].b = 3; eq(snapAll(srcWc), beforeS, "копия не делит объекты с исходным");
+eq(L.workingCopy(cpy, { id: "wc_2" }).title, "Лист 5 (рабочая копия)", "копия копии не наращивает хвост");
+// готовый лист
+const frz = { id: "imp_1", frozen: true, title: "Готовый", size: "A3", orient: "L", scale: 5000, center: [37.7, 55.8], basemap: "sat", legend: [{ title: "x", items: [] }], tep: [["a", "b"]],
+  layers: [{ key: "egko.water", features: [{ g: 1 }] }, { key: "yandex.rail", features: [] }, { key: "yandex.rail.dash", features: [] }, { title: "Станции", features: [] }, { key: "user:z", features: [] }] };
+const frzBefore = snapAll(frz), wf = L.workingCopy(frz, { id: "wc_f", others: [L.seedLayout({ keys: ["egko.water"], styles: { "egko.water": { fill: "#123" } } })], known: k => k !== "user:z" });
+eq(snapAll(frz), frzBefore, "готовый лист не изменился"); eq([wf.frozen, wf.title, wf.size, wf.scale, wf.center, wf.basemap, wf.legend, wf.tep, wf.layers, wf.panels], [undefined, "Готовый (рабочая копия)", "A3", 5000, [37.7, 55.8], "sat", true, false, undefined, undefined], "поля листа без вёрстки из файла");
+eq(wf.keys, ["egko.water", "yandex.rail"], "слои — из описания листа, без штрихов и неизвестных"); eq(wf.styles, { "egko.water": { fill: "#123" } }, "оформление — как на других листах"); eq(L.matches(wf), true, "копия готового листа годна и правится");
+eq(L.addItem(wf, "egko.buildings", { n: 3 }).ok, true, "в копию готового листа можно положить слой без образца"); eq(L.addItem(wf, "gisogd.admin", { n: 3 }).code, "norole", "границы — нет");
+const wEmpty = L.workingCopy({ frozen: true, title: "Пустой", size: "A4" }, { id: "wc_e" }); eq([wEmpty.keys, wEmpty.layout.groups], [[], []], "готовый лист без слоёв — пустая рабочая копия"); eq(L.addItem(wEmpty, "nspd.parcels", { n: 1 }).ok, true, "и в пустую копию слой кладётся");
+eq(L.resolve(wEmpty).keys, ["nspd.parcels"], "лист читает свой состав");
+// Alt на готовом листе
+const SH2 = [{ frozen: true, keys: [] }, mk(KEYS5)];
+let dz = L.dropCheck(SH2, 0, { type: "layer", key: "egko.water", title: "Вода" }, { copy: true, ctx: () => ({}) }); eq([dz.ok, dz.workingCopy, dz.text], [true, true, "Отпустите: сделать рабочую копию листа 1 и добавить в неё «Вода»"], "Alt на готовом листе");
+dz = L.dropCheck(SH2, 0, { type: "layer", key: "egko.water", title: "Вода" }, { copy: false, ctx: () => ({}) }); eq([dz.ok, dz.tone], [false, "frozen"], "без Alt — отказ с подсказкой");
+dz = L.dropCheck(SH2, 0, { type: "role", from: 1, role: "zouit" }, { copy: true, ctx: () => ({}) }); eq([dz.ok, dz.workingCopy, dz.text], [true, true, "Отпустите: сделать рабочую копию листа 1 и скопировать в неё роль «ЗОУИТ»"], "роль Alt на готовый лист");
+dz = L.dropCheck([{ frozen: true, layers: [{ key: "egko.water" }] }], 0, { type: "layer", key: "egko.water", title: "Вода" }, { copy: true, ctx: () => ({}) }); eq([dz.ok, dz.tone, dz.text], [false, "none", "Слой «Вода» уже включён на листе 1"], "слой уже в вёрстке готового листа — копия не нужна");
+dz = L.dropCheck(SH2, 0, { type: "layer", key: "gisogd.admin", title: "Границы" }, { copy: true, ctx: () => ({}) }); eq(dz.ok, false, "границы и в копию не кладутся");
+// пересборка по шаблону: образец обновляется
+const oldSeed = mk(KEYS5); L.reorderSrc(oldSeed, "roads", 1, 0); const frSeed = { keys: oldSeed.keys.slice(), layout: L.seedLayout({ keys: oldSeed.keys }) };
+eq(L.carryLayout(frSeed, oldSeed), false, "уже годен — не переносится"); const tplNew = { keys: oldSeed.keys.slice(), layout: L.seedLayout({ keys: ["x.y"] }) };
+eq(L.carryLayout(tplNew, oldSeed), true, "перенос"); eq(tplNew.layout.seed, L.seedLayout({ keys: ["x.y"] }).groups, "seed — свежий шаблон: правки считаются от него");
 
 console.log(n + " checks ok");
