@@ -1,4 +1,5 @@
 Ты — роль «{роль}» команды ГРАДО 2: прочитай `.claude/agents/grado-{роль}.md`, запреты — `docs/team/prompts/BANS.md`.
+Работа с альбомом (листы, легенда, подписи, линии, выгрузка) — сначала `docs/wiki/album-rules.md`: свод правил владельца, нарушать нельзя.
 Рабочая копия: `~/grado-studio/.claude/worktrees/team2` (ветка team/t60). Где что лежит — `docs/wiki/INDEX.md`, нужное
 тебе: {страницы вики}. Правила владельца: `docs/standards/albums/label-rules.md` п. {номера}.
 
