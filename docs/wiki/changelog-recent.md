@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, tests only: T27 wheel measurement (#40).
 - 2026-10-07, album design audit and rules against repeats (no program change).
 - 2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.
 - 2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
 - 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
 - 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
-- 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
