@@ -166,7 +166,11 @@ SOURCES["yandex.rail"] = ("yandex", ["transport_way"], "Железная дор�
 # по одной на каждую линию: network moscow_metro (line moscow_metro-14 — МЦК, остальные — метро) или moscow_mcd (line
 # moscow_mcd-D1…D5); закрытые (closed = 1) не берутся. Разбор видов — web/railstations.js. Тайлы те же, что у yandex.rail
 SOURCES["yandex.stations"] = ("yandex", ["transport_p"], "Станции метро, МЦК и МЦД (Яндекс)")
-SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
+# станции на карте района (#47): та же точка transport_p, но крупным тайлом z16, как ситплан, — рамка района (≈ 10 × 6 км) в предел
+# тайлов z18 не входит
+SOURCES["sit.stations"] = ("yandex_sit", ["transport_p"], "Ситплан: станции метро, МЦК и МЦД (Яндекс)")
+SIT_FILTER = {"sit.stations": lambda p: p.get("ft_type_name") == "transport-metro-station" and str(p.get("closed")) != "1",
+              "sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
               "yandex.rail": lambda p: p.get("ft_type_name") == "transport-railway",
               "yandex.stations": lambda p: p.get("ft_type_name") == "transport-metro-station" and str(p.get("closed")) != "1"}
 

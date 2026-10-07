@@ -372,7 +372,7 @@ class SituationPlanSources(unittest.TestCase):
 
     def test_coarse_tiles_one_thread_main_tracks_only(self):
         keys = [k for k in S.SOURCES if k.startswith("sit.")]
-        self.assertEqual(set(keys), {"sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"})
+        self.assertEqual(set(keys), {"sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail", "sit.stations"})   # sit.stations — станции карты района (#47)
         self.assertTrue(all(S.SOURCES[k][0] == "yandex_sit" for k in keys))
         calls = []
 

@@ -2,7 +2,7 @@
 
 # Источники данных (server.py, SOURCES)
 
-40 ключей. Ключ слоя — `источник.имя`; вид — коннектор (gisogd, egko, nspd, osm, yandex…).
+41 ключей. Ключ слоя — `источник.имя`; вид — коннектор (gisogd, egko, nspd, osm, yandex…).
 
 | ключ | вид | название | строка |
 |---|---|---|---|
@@ -34,6 +34,7 @@
 | `sit.rail` | yandex_sit | Ситплан: железная дорога, главные пути (Яндекс) | server.py:162 |
 | `sit.roads` | yandex_sit | Ситплан: оси дорог (Яндекс) | server.py:160 |
 | `sit.roads_hd` | yandex_sit | Ситплан: проезжая часть (Яндекс) | server.py:159 |
+| `sit.stations` | yandex_sit | Ситплан: станции метро, МЦК и МЦД (Яндекс) | server.py:171 |
 | `sit.water` | yandex_sit | Ситплан: вода (Яндекс) | server.py:158 |
 | `yandex.buildings` | yandex | Здания (Яндекс) | server.py:145 |
 | `yandex.green` | yandex | Озеленение (Яндекс) | server.py:149 |
@@ -49,6 +50,6 @@
 
 Предел области выгрузки, км² (LIMIT_KM2): `{"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0, "yandex_sit": 150.0}`
 
-Слои с фильтром объектов (SIT_FILTER): `egko.fences`, `egko.place_labels`, `egko.water_labels`, `relief.contours`, `sit.rail`, `yandex.rail`, `yandex.stations`
+Слои с фильтром объектов (SIT_FILTER): `egko.fences`, `egko.place_labels`, `egko.water_labels`, `relief.contours`, `sit.rail`, `sit.stations`, `yandex.rail`, `yandex.stations`
 
 Общие настройки задаются циклами `for _k in (…)` в server.py.

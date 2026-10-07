@@ -1146,6 +1146,8 @@ class SketchMapFrame(Frame):
                 continue
             mem.setdefault(("p", text), (x, y))
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
+            if pf.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+                extra["halo_color"] = hex_to_rgb(pf["lhc"])
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for t_, rr in runs.items():                                     # обязательная улица с участками только у края рамки
@@ -1279,6 +1281,8 @@ class SketchMapFrame(Frame):
             x, y, ang = res
             mem.setdefault(("s", text), (x, y, ang))
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
+            if af.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+                extra["halo_color"] = hex_to_rgb(af["lhc"])
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
         # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
@@ -1559,6 +1563,8 @@ class SketchMapFrame(Frame):
         side, up = W / 2 + 1.0 + tw / 2, -(H / 2 + ey + .3)
         cands = [(side, 0), (-side, 0), (W / 2 + tw / 2, up), (W / 2 + tw / 2, -up), (-(W / 2 + tw / 2), up), (-(W / 2 + tw / 2), -up), (0, up), (0, -up)]
         extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh") or .55)) if v}
+        if pf.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+            extra["halo_color"] = hex_to_rgb(pf["lhc"])
         put = lambda cx_, cy_: out.append({"op": "text", "x": cx_, "y": cy_ + ls * .35, "size": ls, "text": text,
                                           "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": 0.0, **extra})
         inside = lambda cx_, cy_: cx_ - tw / 2 >= rx + M and cx_ + tw / 2 <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M

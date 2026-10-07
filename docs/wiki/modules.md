@@ -6,11 +6,11 @@
 
 ## Сервер и печать (apps/grado2/*.py)
 
-### `apps/grado2/album_io.py` — 757 стр.
+### `apps/grado2/album_io.py` — 783 стр.
 
 Альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint («ППТ_КРТ Шаблон (И).pptx», А3 альбомный, красная шапка) и «Градостроительная концепция» — по образцу «ГК Царицыно» (А3 альбомный, белый лист, заголовок справа).
 
-Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `_text_boxes`, `_callout_route`, `_remember_ops`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
+Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `_text_boxes`, `_callout_route`, `_remember_ops`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `TwinCaptionFrame`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
 
 ### `apps/grado2/dxf_io.py` — 311 стр.
 
@@ -48,7 +48,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2479 стр.
+### `apps/grado2/print_io.py` — 2485 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -66,7 +66,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2610 стр.
+### `apps/grado2/server.py` — 2614 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -84,7 +84,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · шапка альбома: «№ КРТ», «Округ, район», «Адрес» заполняются сами из слоёв (T73, 05.10.2026). Чистые функции без обращения к карте: слои и проверка «внутри территории» передаёт sheets.js. Запуск проверок — tests/test_albummeta_js.py. Правило: введённое владельцем не затирается; сам заполненный текст помечен в meta.auto[поле] и обновляется при пересборке.
 
 
-### `apps/grado2/web/albums.js` — 1190 стр.
+### `apps/grado2/web/albums.js` — 1242 стр.
 
 ГРАДО 2 · альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint (А3 альбомный, красная шапка; оформление листа — album_io.py) и «Градостроительная концепция» — по образцу «ГК Царицыно». Листы собираются той же сборкой, что раздел 1 (buildSection в sheets.js), со своим префиксом id. Состав листов — по «ГК Царицыно» (решение владельца 27.09.2026), оформление — шаблон ППТ КРТ.
 
@@ -239,11 +239,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · состав слоёв листа по ролям: sheet.layout (T86a, 06.10.2026, слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание»). Чистые функции без карты: слои проекта и шаблон передаёт sheets.js / albums.js. layout = { groups: [{ id, title, role, items: [{ key, on, style?, only?, src? }] }] }. Порядок групп и элементов — порядок рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной). Переходный релиз: keys, …
 
 
-### `apps/grado2/web/sheets.js` — 1134 стр.
+### `apps/grado2/web/sheets.js` — 1153 стр.
 
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
 
-Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `sheetCenter`, `schemeSetting`, `isScheme`, `schemeScale`, `schemeCover`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `coverFrameBox`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `planUnits`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer`, `mb` и ещё 43
+Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `areaBox`, `sheetCenter`, `schemeSetting`, `isScheme`, `schemeScale`, `schemeCover`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `coverFrameBox`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `planUnits`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer` и ещё 44
 
 ### `apps/grado2/web/snap.js` — 49 стр.
 

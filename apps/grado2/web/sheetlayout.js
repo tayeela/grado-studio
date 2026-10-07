@@ -14,7 +14,7 @@
     { role: "redlines", title: "Красные линии", keys: ["gisogd.red_lines"] },
     { role: "buildings", title: "Здания", keys: ["egko.buildings"] },
     { role: "roads", title: "Дороги", keys: ["yandex.hd_roads", "egko.roads"] },
-    { role: "rail", title: "Рельс и станции", keys: ["yandex.rail", "yandex.stations"] },
+    { role: "rail", title: "Рельс и станции", keys: ["yandex.rail", "yandex.stations", "sit.stations"] },
     { role: "water", title: "Вода", keys: ["egko.water"] },
     { role: "names", title: "Названия улиц и мест", keys: ["osm.landuse", "osm.roads", "egko.water_labels", "egko.place_labels", "egko.addresses"] },
     { role: "docs", title: "Генплан и документы", keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", "gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr"] },

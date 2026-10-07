@@ -1015,19 +1015,19 @@ export default async p => {
     // выгрузка слоёв из сети в тесте не нужна: листы строятся по шаблону и тому, что уже есть в проекте
     await p.ev(`window.__t55 = { keep: ALBUM.sheets.splice(0), lk: window.loadKeys, ea: window.ensureAdmin, c: new Set(CHECKED) }; window.loadKeys = async () => {}; window.ensureAdmin = async () => { CHECKED.add("gisogd.admin"); }; TPL_SIG = null; NOTREADY.clear();
       ALBUM.meta.builtAt = undefined; ALBUM.meta.editedAt = undefined; await buildAlbum("pptkrt"); winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); return 1`);
-    const b = await p.ev(`const n = ALBUM.sheets.length; return [n, ALBUM.sheets.every((s, i) => s.tpl?.set === "pptkrt_" && s.tpl.i === i && s.id === "pptkrt_" + i), JSON.stringify(ALBUM.sheets).includes("Плотность"), ALBUM.sheets[3].title]`);
+    const b = await p.ev(`window.I3 = ALBUM.sheets.findIndex(s => s.id === "pptkrt_3"); window.I4 = ALBUM.sheets.findIndex(s => s.id === "pptkrt_4"); const n = ALBUM.sheets.length; return [n, ALBUM.sheets.every((s, i) => s.tpl?.set === "pptkrt_" && s.tpl.i === PPTKRT_ORDER[i] && s.id === "pptkrt_" + PPTKRT_ORDER[i]), JSON.stringify(ALBUM.sheets).includes("Плотность"), ALBUM.sheets[I3].title]`);
     check(b[0] >= 5 && b[1] && !b[2], `T55: «Альбом ППТ КРТ» — ${b[0]} листов, у каждого sheet.tpl (набор и номер в шаблоне); строк ТЭП в листах не хранится`);
     // таблица ТЭП — лист «Таблица ТЭП» из списка листов, и лист шаблона с включённой таблицей ТЭП
     await p.ev(`$("shAddA3").click(); await new Promise(r=>setTimeout(r,500)); const sel = document.querySelector("[data-sh='${b[0]}'] [data-sk='view']"); sel.value = "__tep"; sel.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
-    const T = b[0];
-    await p.ev(`pickSheet(3); await new Promise(r=>setTimeout(r,200)); const c = document.querySelector('#sheetsBody [data-sk="tep"]'); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
-    check(await p.ev(`return ALBUM.sheets[${T}].kind === "tep" && ALBUM.sheets[${T}].tpl?.set === "tep" && ALBUM.sheets[3].tep === true`), "T55: лист «Таблица ТЭП» помечен как лист по шаблону, на листе шаблона включена таблица ТЭП");
+    const T = b[0], I3 = await p.ev(`return window.I3`);   // лист шаблона № 3 (фотофиксация): порядок показа — PPTKRT_ORDER (#47)
+    await p.ev(`pickSheet(I3); await new Promise(r=>setTimeout(r,200)); const c = document.querySelector('#sheetsBody [data-sk="tep"]'); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`return ALBUM.sheets[${T}].kind === "tep" && ALBUM.sheets[${T}].tpl?.set === "tep" && ALBUM.sheets[I3].tep === true`), "T55: лист «Таблица ТЭП» помечен как лист по шаблону, на листе шаблона включена таблица ТЭП");
     // рукой: название, рамка (центр и масштаб), подпись, надпись «Макета» и свой текст
-    const hand = await p.ev(`const s = ALBUM.sheets[3]; s.title = "Моя схема"; s.center = [37.5, 55.7]; s.scale = 7500; s.note = "Моя подпись"; s.edits = { t1: { text: "правка" } }; s.items = [{ text: "свой текст", x: 10, y: 10 }];
+    const hand = await p.ev(`const s = ALBUM.sheets[I3]; s.title = "Моя схема"; s.center = [37.5, 55.7]; s.scale = 7500; s.note = "Моя подпись"; s.edits = { t1: { text: "правка" } }; s.items = [{ text: "свой текст", x: 10, y: 10 }];
       const fz = { id: "imp_t55_0", frozen: true, title: "Готовый лист", size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [["Плотность", "1,0 тыс. м²/га"]] }; ALBUM.sheets.push(fz);
-      window.__fz = JSON.stringify(fz); window.__k3 = JSON.stringify(ALBUM.sheets[3].keys); return ALBUM.sheets.indexOf(fz)`);
+      window.__fz = JSON.stringify(fz); window.__k3 = JSON.stringify(ALBUM.sheets[I3].keys); return ALBUM.sheets.indexOf(fz)`);
     const F = hand;
-    const before = [await tepRowsOf(T), await tepRowsOf(3)];
+    const before = [await tepRowsOf(T), await tepRowsOf(I3)];
     check(!/Нормативы изменены/.test(before[0]) && /Плотность/.test(before[0]) && /Плотность/.test(before[1]), "T55: до правки норматива строки «Нормативы изменены вручную» на листах нет");
     await p.ev(`pickSheet(${T}); await new Promise(r=>setTimeout(r,200)); previewSheet(${T}); await new Promise(r=>setTimeout(r,2500)); return 1`);
     await shot("t55-tep-before");
@@ -1037,19 +1037,19 @@ export default async p => {
     for (let k = 0; k < 20 && !/Листы обновлены по новым показателям/.test(st); k++) { await p.sleep(400); st = await p.ev(`return $("stHint").textContent`); }
     // «· не готово: N» после неё — листы без адреса (T73) и т. п.; здесь важен сам факт обновления
     check(/^Листы обновлены по новым показателям( · не готово: \d+)?$/.test(st), `T55: строка состояния после смены норматива: «${st}»`);
-    const after = [await tepRowsOf(T), await tepRowsOf(3)];
+    const after = [await tepRowsOf(T), await tepRowsOf(I3)];
     check(after[0] !== before[0] && /Нормативы изменены вручную","1"/.test(after[0]), "T55: на листе «Таблица ТЭП» строки показателей изменились, появилась строка «Нормативы изменены вручную: 1»");
     check(after[1] !== before[1] && /Нормативы изменены вручную","1"/.test(after[1]), "T55: на листе шаблона с таблицей ТЭП — то же");
     await p.sleep(2500); await shot("t55-tep-after");
-    check(await p.ev(`const s = ALBUM.sheets[3]; return s.title === "Моя схема" && JSON.stringify(s.center) === "[37.5,55.7]" && s.scale === 7500 && s.note === "Моя подпись" && s.edits.t1.text === "правка" && s.items[0].text === "свой текст" && s.tep === true && JSON.stringify(s.keys) === window.__k3 && s.tpl.set === "pptkrt_" && s.tpl.i === 3`), "T55: название, рамка, масштаб, подпись, надписи «Макета» и свои тексты после обновления на месте; слои — по шаблону");
+    check(await p.ev(`const s = ALBUM.sheets[I3]; return s.title === "Моя схема" && JSON.stringify(s.center) === "[37.5,55.7]" && s.scale === 7500 && s.note === "Моя подпись" && s.edits.t1.text === "правка" && s.items[0].text === "свой текст" && s.tep === true && JSON.stringify(s.keys) === window.__k3 && s.tpl.set === "pptkrt_" && s.tpl.i === 3`), "T55: название, рамка, масштаб, подпись, надписи «Макета» и свои тексты после обновления на месте; слои — по шаблону");
     check(await p.ev(`return JSON.stringify(ALBUM.sheets[${F}]) === window.__fz && !NOTREADY.has("imp_t55_0")`), "T55: лист «готовая вёрстка» из файла не изменился");
     // «Обновить листы» в «Собрать ▾»: шаблонная часть возвращается к шаблону, правленное остаётся; клавишей Enter
-    check(await p.ev(`ALBUM.sheets[4].styles = {}; ALBUM.sheets[4].rect = [0, 0, 1, 1]; TPL_SIG = null; NOTREADY.clear(); $("toast").textContent = ""; winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); $("shBuild").click(); await new Promise(r=>setTimeout(r,300)); $("shRefresh").focus();
-      return document.activeElement === $("shRefresh") && JSON.stringify(ALBUM.sheets[4].styles) !== JSON.stringify(PPTKRT[4].styles)`), "T55: перед «Обновить листы» шаблонная часть листа 5 устарела, пункт меню в фокусе");
+    check(await p.ev(`ALBUM.sheets[I4].styles = {}; ALBUM.sheets[I4].rect = [0, 0, 1, 1]; TPL_SIG = null; NOTREADY.clear(); $("toast").textContent = ""; winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); $("shBuild").click(); await new Promise(r=>setTimeout(r,300)); $("shRefresh").focus();
+      return document.activeElement === $("shRefresh") && JSON.stringify(ALBUM.sheets[I4].styles) !== JSON.stringify(PPTKRT[4].styles)`), "T55: перед «Обновить листы» шаблонная часть листа 5 устарела, пункт меню в фокусе");
     await p.key("Enter", "Enter", { vk: 13, text: "\r", wait: 600 });
-    check(await p.ev(`const s = ALBUM.sheets[4], t = PPTKRT[4]; return JSON.stringify(s.styles) === JSON.stringify(t.styles) && JSON.stringify(s.rect) === JSON.stringify(t.rect) && ALBUM.sheets[3].title === "Моя схема" && /Листы обновлены по новым показателям/.test($("toast").textContent) && JSON.stringify(ALBUM.sheets[${F}]) === window.__fz`), "T55: «Обновить листы» (клавиша Enter на пункте) возвращает слои и оформление листа к шаблону, название и рамка остаются, лист из файла цел");
+    check(await p.ev(`const s = ALBUM.sheets[I4], t = PPTKRT[4]; return JSON.stringify(s.styles) === JSON.stringify(t.styles) && JSON.stringify(s.rect) === JSON.stringify(t.rect) && ALBUM.sheets[I3].title === "Моя схема" && /Листы обновлены по новым показателям/.test($("toast").textContent) && JSON.stringify(ALBUM.sheets[${F}]) === window.__fz`), "T55: «Обновить листы» (клавиша Enter на пункте) возвращает слои и оформление листа к шаблону, название и рамка остаются, лист из файла цел");
     // не готов: слои листа не загружены
-    await p.ev(`CHECKED.delete("egko.buildings"); await tplManual(); await new Promise(r=>setTimeout(r,500)); pickSheet(3); await new Promise(r=>setTimeout(r,300)); return 1`);
+    await p.ev(`CHECKED.delete("egko.buildings"); await tplManual(); await new Promise(r=>setTimeout(r,500)); pickSheet(I3); await new Promise(r=>setTimeout(r,300)); return 1`);
     check(await p.ev(`return /слой «Здания \\(ЕГКО\\)» не загружен/.test(NOTREADY.get("pptkrt_3") || "") && /Не готов:/.test(document.querySelector("#sheetsBody .snote")?.textContent || "") && /не готово: \\d+/.test($("shStat").textContent) && !NOTREADY.has("imp_t55_0")`), "T55: лист без нужных слоёв помечен «Не готов» с причиной, в строке альбома — число таких листов");
     // проект старого формата (листы без sheet.tpl), лист 6 правлен рукой: при открытии ничего не меняется; пересборка — только после второго нажатия
     const lg = await p.ev(`const s = ALBUM.sheets[5]; s.keys = s.keys.slice(1); s.legend = !s.legend; s.title = "Старое название"; const k5 = JSON.stringify(s.keys), l5 = s.legend;
@@ -1078,7 +1078,7 @@ export default async p => {
     // синтетический альбом из файла: 3 листа готовой вёрстки
     await p.ev(`const fz = i => ({ id: "x" + i, frozen: true, title: "Готовый " + i, size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [] });
       readAlbumFile(new File([JSON.stringify({ sheets: [fz(0), fz(1), fz(2)] })], "t66.json")); for (let k = 0; k < 40 && ALBUM.sheets.length < 3; k++) await new Promise(r=>setTimeout(r,150)); return 1`);
-    const N = await p.ev(`return ALBUM.sheets.length`), M = await p.ev(`return PPTKRT.length`);
+    const N = await p.ev(`return ALBUM.sheets.length`), M = await p.ev(`return PPTKRT_ORDER.length`);   // листов в альбоме — по порядку показа (#47)
     check(N === 3 && await p.ev(`return ALBUM.sheets.every(s => s.frozen)`), `T66: импортирован альбом из файла, ${N} листа готовой вёрстки`);
     const ask = () => p.ev(`buildAlbum("pptkrt"); await new Promise(r=>setTimeout(r,500)); const b = $("shImpBar"); return [ALBUM.sheets.length, !!b, b ? [...b.querySelectorAll("button")].map(x => x.textContent.trim()).join("|") : "", b?.textContent.includes("в альбоме") ?? false]`);
     let a = await ask();
@@ -1230,7 +1230,7 @@ export default async p => {
     try {
       // 1. полная сборка: Overpass отвечает 504 — раздел собран, у листов с улицами OSM заметка без сырого кода, сообщение понятное
       await p.ev(`await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 300)); return 1`);
-      const NP = await p.ev(`return PPTKRT.length`);                  // листов в шаблоне альбома (титул, месторасположение, листы 3–9, листы «в границах сит. плана»)
+      const NP = await p.ev(`return PPTKRT_ORDER.length`);                  // листов в шаблоне альбома (титул, месторасположение, листы 3–9, листы «в границах сит. плана»)
       const a = await p.ev(`const note = ALBUM.sheets.map(s => LOSTNOTE.get(s.id)).filter(Boolean), tip = [...document.querySelectorAll("#sheetsBody .shrow .ic span[title]")].map(e => e.title).join("|");
         return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, note, tip, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden]`);
       check(a[0] === NP && a[1].length >= 1 && a[1].every(t => t === "улицы OSM не загрузились (портал ответил 504) — повторите сборку позже" || /не загрузил/.test(t)), `T62: сбой OSM — листы собраны (${a[0]} из ${NP}), у ${a[1].length} заметка «${a[1][0]}»`);

@@ -2,6 +2,18 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 (task/45, #45, #47): album ППТ КРТ by the owner's remarks of 07.10.** Sheet order and set by the owner
+  (`PPTKRT_ORDER` in `TPL_SETS.pptkrt_.order`, ids and `tpl.i` stay by template so photos and edits of old projects keep their
+  sheets): title, location, district map, ortho, photos, land use, land users, documentation, ПЗЗ, Генплан; no «ППТ и ПМТ», «ГПЗУ и
+  АГР», second Генплан. Scheme frame by the owner's outline (`ALBUM.meta.area`): every template map sheet except location and district
+  map covers it (centre — outline centre, scale from the series). Ortho and district map look like the owner's samples: white veil outside
+  the territory's district (`distMask`), district names in capitals, callout «Проектируемая территория – N га» in a magenta box; district
+  map — names without «район» with a thin black outline, exact scale (district whole, fills the sheet), thin district border. Land use:
+  OSM `residential` in old Moscow → apartment housing (not individual), legend «производственного вида». Documentation sheet: no АГР and
+  КРТ, Сводный план lines (СПРИТ) under the hatches with their legend. ПЗЗ — two schemes on one sheet (`twin`; album_io
+  `TwinCaptionFrame`): zones with ВРИ codes and subzones (`gisogd.pzz_sub`) with density / height / coverage in three lines.
+  Photo sheet: 8 Yandex panorama frames from the owner's links, the link is stored with each photo (`photo.link`);
+  `tools/panorama_shot.mjs` takes `CHROME` (cloud). Rules: album-rules § 5, § 9; label-rules.
 - **2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).**
   New concept `docs` in `PPTKRT_D` (between the district map and the Genplan, `sit: true`, `fit: "cover"`): ППТ, ПМТ, ГПЗУ (with АГР
   as the second line of its item) and КРТ on one light base by the analogue ДПТ «Профсоюзная» — buildings light grey without outline,

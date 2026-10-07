@@ -39,4 +39,4 @@
 | 10 | Схема об утверждённой и разрабатываемой документации | — | белая | `calc.uds_osm`, `egko.buildings`, `gisogd.gpzu`, `gisogd.krt`, `gisogd.ppt` |
 | 11 | Объекты социальной инфраструктуры и радиусы обслуживания | — | белая | `egko.buildings`, `osm.social` |
 
-Ветки conceptSheet по виду листа: `district`, `docs`, `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `pzz`, `use`.
+Ветки conceptSheet по виду листа: `district`, `docs`, `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `pzz`, `pzzsub`, `use`.

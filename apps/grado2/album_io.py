@@ -475,6 +475,19 @@ def concept_swatch(x, y, it, lib=None, w=SW_W, h=3.0):
     return out
 
 
+class TwinCaptionFrame(Frame):
+    """Подпись над схемой листа из двух схем: жирная, по центру, до двух строк (как в образце владельца, #47)."""
+
+    def __init__(self, rect, text):
+        super().__init__(rect)
+        self.text = text
+
+    def ops(self, ctx):
+        x, y, w, _ = self.rect
+        lines = _wrap_mm(str(self.text), "sans-bold", S10, w - 4)[:3]
+        return [_text(x + w / 2, y - 3 - (len(lines) - 1 - i) * 4.4, 10, line, INK, "sans-bold", "middle") for i, line in enumerate(lines)]
+
+
 class ConceptColumnFrame(Frame):
     """Правая колонка листа по образцу «ГК Царицыно»: «Условные обозначения» (Century Gothic 12 пт жирный), группы
     с подчёркнутым заголовком, знаки 8 × 3 мм и подписи 10 пт; ниже — таблица зон Генплана, списки документов
@@ -490,8 +503,9 @@ class ConceptColumnFrame(Frame):
         yy = y + S12
         full = False
         if sh.get("cLegend"):
-            out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "sans-bold"))
-            yy += 8
+            if not sh.get("legendNoHead"):                # вторая схема листа — без второго заголовка (#47)
+                out.append(_text(x, yy, 12.3, "Условные обозначения", INK, "sans-bold"))
+                yy += 8
             # знаки легенды на всех листах одного размера 13 × 3 мм: в 8 мм рисунок линии ЗОУИТ не различим (правила 11, 12)
             sw_, ind_ = SW_W, SW_W + 2.5
             for gi, g in enumerate(sh["cLegend"]):
@@ -704,6 +718,18 @@ def build_pptkrt(page, sh, meta, lib, lgr_dash, tiles, map_frame):
         return [deco]
     if sh.get("look") == "concept":                   # шапка ППТ КРТ, остальное — как в «ГК Царицыно»
         pw, ph = page.size
+        if sh.get("twin"):                            # две схемы (ПЗЗ: зоны и подзоны, владелец 07.10.2026, #47): подпись над картой, легенда под ней
+            frames = []
+            for p in sh["twin"]:
+                r = tuple(p["rect"])
+                frames += [map_frame(r, p), TwinCaptionFrame(r, p.get("caption", ""))]
+                if p.get("legendRect"):
+                    frames.append(ConceptColumnFrame(tuple(p["legendRect"]), p, lib))
+                if p.get("mapNote"):
+                    frames.append(MapNoteFrame(r, p["mapNote"]))
+                if p.get("mapNoteBR"):
+                    frames.append(MapNoteFrame(r, p["mapNoteBR"], "br"))
+            return frames + [deco]
         if sh.get("kind") == "photos":
             r = tuple(sh.get("rect") or PHOTO_MAP)
             frames = [map_frame(r, sh), ConceptPhotoFrame(sh)]
