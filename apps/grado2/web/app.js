@@ -179,6 +179,16 @@ const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: () => TERR
 
 /* ================= данные территории ================= */
 const mMain = newMap("mMain", [terrLayer()]);
+// карта принимает фокус с клавиатуры (аудит #30): стрелки сдвигают, + и − меняют масштаб (клавиатурные действия OpenLayers);
+// объекты карты для экранного диктора — в «Таблице атрибутов» текущего слоя (ссылка «Таблица объектов слоя» в начале страницы)
+Object.assign($("mMain"), { tabIndex: 0 }); $("mMain").setAttribute("role", "region");
+$("mMain").setAttribute("aria-label", "Карта. Стрелки — сдвиг, плюс и минус — масштаб. Объекты слоя списком — «Таблица атрибутов».");
+document.querySelector(".skip")?.addEventListener("click", e => {
+  const k = e.target.closest("[data-skip]")?.dataset.skip; if (!k) return;
+  if (k === "map") $("mMain").focus();
+  if (k === "layers") ($("layerTree").querySelector("button, input, [tabindex]") || $("lySearch")).focus();
+  if (k === "table") { window.openTable?.(true); setTimeout(() => { const w = $("wTable"); (w.querySelector("table, button, input, select") || w).focus?.(); }, 50); }
+});
 /* opt.keep — правка вершин: вид карты остаётся. Правка границы идёт тем же путём, что и новая граница: площадь, номер версии,
    узлы графа, автосохранение и совместная работа реагируют одинаково */
 function setTerritory(feature, opt) {
@@ -202,7 +212,9 @@ const coverSrc = new ol.source.Vector();
 const coverStyle = new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
   text: new ol.style.Text({ text: "область загрузки данных", font: "12px system-ui, sans-serif", placement: "line", fill: new ol.style.Fill({ color: "#1a5fb4" }),
     stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
-const coverLayer = new ol.layer.Vector({ source: coverSrc, style: coverStyle, zIndex: 105, visible: false });
+// область = рамки листов — у рамок свои подписи («Лист N…»), вторая подпись легла бы на них (аудит 07.10.2026, #29)
+const coverLine = new ol.style.Style({ stroke: coverStyle.getStroke() });
+const coverLayer = new ol.layer.Vector({ source: coverSrc, style: () => typeof ALBUM !== "undefined" && ALBUM.sheets.includes(coverSheets()[0]) ? coverLine : coverStyle, zIndex: 105, visible: false });
 mMain.addLayer(coverLayer);
 function coverSheets() {
   const sh = (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels && !s.frozen);
@@ -1389,10 +1401,22 @@ function fitGraph(min = .6) {
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
   const k = uiK(), s = Math.max(min * k, Math.min(1.1 * k, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка; на крупном экране масштаб графа растёт вместе с интерфейсом (--k = размер шрифта страницы / 12, то же читает uiK()), положения узлов в файле не меняются
   lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
+  go.fit = { min, ds: dsSig() }; markGraphCut();
 }
+// часть схемы за краем окна — видно на кнопке «Вся схема» (аудит #26: узлы терялись за краем незаметно)
+function markGraphCut() {
+  const b = $("graphbox").getBoundingClientRect(), s = lgc.ds.scale, o = lgc.ds.offset, T = LiteGraph.NODE_TITLE_HEIGHT || 20;
+  const cut = b.width && graph._nodes.some(n => { const x = (n.pos[0] + o[0]) * s, y = (n.pos[1] - T + o[1]) * s; return x < 0 || y < 0 || x + n.size[0] * s > b.width || y + (n.size[1] + T) * s > b.height; });
+  const btn = $("bFitGraph"); btn.classList.toggle("warn", !!cut); btn.lastChild.textContent = cut ? "Вся схема (часть за краем)" : "Вся схема";
+}
+// вид схемы после нашего вписывания: пока его не меняли руками, окно при смене размера вписывает схему заново (аудит #26)
+const dsSig = () => [lgc.ds.scale, ...lgc.ds.offset].map(v => v.toFixed(3)).join();
+const fitUntouched = () => go.fit && go.fit.ds === dsSig();
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
-new ResizeObserver(sizeGraph).observe($("graphbox"));
-$("bFitGraph").onclick = () => fitGraph();
+new ResizeObserver(() => { const auto = fitUntouched(); sizeGraph(); if (auto && !$("wGraph").hidden) fitGraph(go.fit.min); }).observe($("graphbox"));
+// «Вся схема»: читаемо (не мельче 0,6); второе нажатие подряд — целиком, как бы мелко ни было (в низком окне иначе часть схемы за краем)
+["pointerup", "wheel"].forEach(ev => $("graphbox").addEventListener(ev, () => setTimeout(markGraphCut, 50), { passive: true }));
+$("bFitGraph").onclick = () => fitGraph(fitUntouched() && go.fit.min >= .45 ? .05 : .6);
 $("bRunGraph").onclick = () => { graph._nodes.forEach(n => { n._ck = n._cacheKey = n._key = null; }); recompute(true); };
 const LIB = { "Данные": ["Данные/Территория", "Данные/Слой"], "Параметры": ["Параметры/Число"], "Геометрия": ["Геометрия/Буфер", "Геометрия/Вычесть", "Геометрия/Объединить", "Геометрия/Пересечь"], "Эскиз": ["Эскиз/Посадка застройки"], "Показатели": ["Показатели/ТЭП КРТ"] };
 const LIBICON = { "Данные": "database", "Параметры": "sliders-horizontal", "Геометрия": "shapes", "Эскиз": "building-2", "Показатели": "calculator" };
@@ -1720,9 +1744,13 @@ function renderTep() {
         return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
       ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
   const nch = t.constantsChanged?.length ? `<button class="normsline" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы изменены вручную: ${t.constantsChanged.length}</button>` : "";
+  // аудит 07.10.2026 (#28): пока новых корпусов нет, нули от новой застройки — не результат, а «ещё не рассчитано»
+  const noSk = !(t.n > 0), notYet = `<span class="muted" title="Ещё не рассчитано: появится после эскиза">—</span>`;
+  const skNote = noSk ? `<div class="note warn" role="status"><b>Эскиз не построен</b> — показатели новой застройки появятся после расчёта. Выберите типологию в окне «Эскиз» и нажмите «Построить эскиз». Территория и сохраняемая застройка ниже уже посчитаны.<br><button class="btn" data-win-sketch>Открыть «Эскиз»</button></div>` : "";
+  const val = (v, txt) => noSk && !v ? notYet : txt;
   const rs = reserveState(), sumLine = `<div class="resline" title="Площади участков — минимум по таблице норм; здания, СПП и плотность от резерва не меняются">${esc(reserveSummary(t))}</div>`;
-  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + sumLine + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
-    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
+  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + skNote + (noSk ? "" : sumLine) + kv([["Новые корпуса", t.n], ["СПП новая", val(t.sppNew, fmt(t.sppNew / 1000, 2) + " тыс. м²")], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", val(t.density, fmt(t.density, 2) + " тыс. м²/га"), noSk && !t.density ? "" : dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", val(t.cover, fmt(t.cover * 100, 1) + " %")], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
+    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, val(m.value, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit))])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
     + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
 $("tep").addEventListener("change", e => {
@@ -1736,6 +1764,7 @@ $("tep").addEventListener("click", e => {
   if (!RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
   if (e.target.closest("[data-tp-auto]")) { tp.auto = true; if (tp.zoneSet) { delete tp.zoneSet; tp.zone = tp.zoneDist ?? tp.zone; } tp.rev = -1; recompute(true); }
   if (e.target.closest("[data-tp-pzz]")) takePzzTarget();
+  if (e.target.closest("[data-win-sketch]")) winOpen("wSketch", true);
   if (e.target.closest("[data-tp-reset]")) { Object.assign(tp, { mode: 1, nonres: 6, unbuilt: 25 }); window.markDirty?.(); recompute(true); }
 });
 function renderSketch() {
@@ -2158,7 +2187,7 @@ function dragWin(w, e, onTap) {
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
   // при первом открытии граф вписывается читаемо (не мельче 0,8); «Вся схема» ужимает до 0,6
-  wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.8); go.fitted = k; } updateAnalysisMap(); },
+  wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.45); go.fitted = k; } requestAnimationFrame(markGraphCut); updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { syncCmpHint(); if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), cmpLayer(), terrLayer()]); fillCmp(); svSync(true); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
@@ -2248,12 +2277,21 @@ $("winMenu").addEventListener("keydown", e => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
 });
 addEventListener("pointerdown", e => { if (!$("winMenu").hidden && (!e.target.closest(".more") || e.target.closest(".expmore"))) winMenu(false); });
+// «Широкая карта» (аудит #26): одна кнопка на карте прячет обе боковые панели, второе нажатие возвращает как было
+let WIDE = null;
+function wideMap() {
+  const w = $("work").classList;
+  if (WIDE) { if (WIDE.L) toggleDock("L", true); if (WIDE.R) toggleDock("R", true); WIDE = null; }
+  else { WIDE = { L: !w.contains("noL"), R: !w.contains("noR") }; if (!WIDE.L && !WIDE.R) { WIDE = null; return toast("Боковые панели уже скрыты: вернуть — меню «Окна»."); } toggleDock("L", false); toggleDock("R", false); }
+  $("bWide").setAttribute("aria-pressed", !!WIDE); $("bWide").title = WIDE ? "Вернуть панели слоёв и свойств" : "Широкая карта: скрыть панели слоёв и свойств";
+}
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
   // узкое окно: панели выезжают поверх карты — открыта только одна, иначе вдвоём они закрывают почти всю карту
   if (narrow() && !$("work").classList.contains(cls)) $("work").classList.add(side === "L" ? "noR" : "noL");
   WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize();
 }
+$("bWide").onclick = wideMap;
 // Протаскивание мышью не выделяет текст: пока кнопка нажата вне полей и ячеек таблицы, на <html> стоит .nosel (user-select:none
 // для всей страницы, в том числе для ячеек, через которые проводят окно или разделитель); снимается при отпускании,
 // отмене, потере фокуса окна — даже если мышь отпустили за пределами окна браузера. Рукоятки не начинают выделение и сами.

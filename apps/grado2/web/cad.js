@@ -457,6 +457,8 @@ addEventListener("keydown", e => {
   if (F) { e.preventDefault(); toggle(F); return; }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "Escape" && CMD) { e.preventDefault(); e.stopImmediatePropagation(); cancel(); return; }
+  // Enter и пробел на кнопке, ссылке, пункте меню нажимают её, а не повторяют команду (аудит 07.10.2026, #30: с клавиатуры кнопки не нажимались)
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest?.("button,a[href],summary,[role=button],[role=menuitem],[role=tab],[role=option]")) return;
   if ((e.key === "Enter" || e.key === " ") && (CMD || LAST)) { e.preventDefault(); e.stopImmediatePropagation(); CMD ? enter() : start(LAST); return; }
   if ((e.key === "Delete" || e.key === "Backspace") && CMD?.id === "grip") { e.preventDefault(); e.stopImmediatePropagation(); const o = CMD.opts()[0]; if (o) { o.fn(); after(); } return; }
   // во время команды Backspace убирает последнюю точку (если есть что убирать), но никогда не удаляет выбранное

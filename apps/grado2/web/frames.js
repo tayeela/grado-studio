@@ -22,6 +22,11 @@
   const corners = sh => { const [w, h] = sizeM(sh), [cx, cy] = centerMsk(sh); return [[cx - w / 2, cy - h / 2], [cx + w / 2, cy - h / 2], [cx + w / 2, cy + h / 2], [cx - w / 2, cy + h / 2]]; };
   const fmtT = sh => (SIZE_T[sh.size] || sh.size).replace(" без штампа", "") + (isPaper(sh.size) && sh.orient === "P" ? " книжн." : "");
   const label = sh => { const n = `Лист ${ALBUM.sheets.indexOf(sh) + 1}`; return `${n}${sh.title && sh.title !== n ? ` «${sh.title}»` : ""} · ${fmtT(sh)} · 1:${fmt(Math.round(sheetScale(sh)))}`; };
+  // подпись рамки на карте — короткая (аудит 07.10.2026, #29): длинное название не закрывает карту; полное — в поле над
+  // выбранным листом (и в его подсказке) и в окне «Листы»
+  const SHORT = 28;
+  const mapLabel = sh => { const n = `Лист ${ALBUM.sheets.indexOf(sh) + 1}`, t = sh.title && sh.title !== n ? sh.title : "";
+    return `${n}${t ? ` «${t.length > SHORT ? t.slice(0, SHORT - 1).trimEnd() + "…" : t}»` : ""} · ${fmtT(sh)} · 1:${fmt(Math.round(sheetScale(sh)))}`; };
   window.sheetMsk = sh => ({ c: centerMsk(sh), wh: sizeM(sh) });
 
   const src = new ol.source.Vector();
@@ -45,7 +50,7 @@
   // fromSheets — вызов из renderSheets: таблицу обратно не перерисовываем
   function redraw(fromSheets) {
     src.clear();
-    ALBUM.sheets.forEach(sh => { if (!sheetOnMap(sh, sh === SELF)) return; const r = corners(sh).map(toMap), f = new ol.Feature(new ol.geom.Polygon([[...r, r[0]]])); f.set("sh", sh); f.set("label", label(sh)); src.addFeature(f); });
+    ALBUM.sheets.forEach(sh => { if (!sheetOnMap(sh, sh === SELF)) return; const r = corners(sh).map(toMap), f = new ol.Feature(new ol.geom.Polygon([[...r, r[0]]])); f.set("sh", sh); f.set("label", mapLabel(sh)); src.addFeature(f); });
     if (!drag) placeBar();
     window.updateCover?.(); window.syncSheetBadge?.();
     if (fromSheets !== true && !drag && !$("wSheets").hidden) window.renderSheets?.();
@@ -55,7 +60,7 @@
     if (!SELF || !ALBUM.sheets.includes(SELF)) { SELF = null; ov.setPosition(undefined); return; }
     ov.setPosition(toMap(corners(SELF)[3]));
     const sc = Math.round(sheetScale(SELF)), pap = isPaper(SELF.size);
-    bar.innerHTML = `<input data-k="title" class="ti" value="${esc(SELF.title || "")}" aria-label="Название листа" title="Название листа — печатается на листе">`
+    bar.innerHTML = `<input data-k="title" class="ti" value="${esc(SELF.title || "")}" aria-label="Название листа" title="${esc(SELF.title || "")} — название печатается на листе">`
       + `<select data-k="size" title="Формат листа: без штампа — карта на весь лист; ГОСТ — со штампом и легендой; слайды — для презентации">${Object.keys(SIZE_T).map(k => `<option value="${k}" ${k === SELF.size ? "selected" : ""}>${SIZE_T[k]}</option>`).join("")}</select>`
       + (pap ? `<button class="tb" data-a="orient" title="${SELF.orient === "P" ? "Книжная — сделать альбомной" : "Альбомная — сделать книжной"}"><i data-lucide="${SELF.orient === "P" ? "rectangle-vertical" : "rectangle-horizontal"}"></i></button>` : "")
       // типовые масштабы — обычный список, не datalist: подсказки datalist оставались висеть на карте, когда панель

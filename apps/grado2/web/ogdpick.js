@@ -14,6 +14,18 @@
   const GROUPS = [["nspd", "ЕГРН · НСПД"], ["gisogd", "ГИС ОГД — подборки ГРАДО"], ["ogd", "ГИС ОГД — все слои портала"],
     ["egko", "ЕГКО — картооснова ГИС ОГД"], ["osm", "OpenStreetMap"], ["yandex", "Яндекс Карты (для анализа и эскиза, не для сдачи)"], ["terrain", "Рельеф"]];
   const isOgd = k => k.startsWith("ogd.");
+  /* Готовые наборы под типовые задачи (аудит 07.10.2026, #27): щелчок отмечает слои набора, повторный — снимает; состав —
+     в подсказке, дальше можно поправить флажками. «Альбом ППТ КРТ» — ровно слои листов альбома (PPTKRT в albums.js). */
+  const PRESETS = [
+    ["exist", "Существующее положение", "Здания, вода, землепользование, дороги и ж/д, участки ЕГРН, районы и подписи — основа любой схемы",
+      ["egko.buildings", "egko.water", "egko.water_labels", "egko.green", "osm.landuse", "osm.roads", "yandex.hd_roads", "yandex.rail", "yandex.stations", "nspd.parcels", "gisogd.admin", "egko.place_labels", "egko.addresses"]],
+    ["limits", "Ограничения", "ЗОУИТ, СЗЗ, водоохранные зоны, красные линии, аэродромы, ОКН — для проверки ограничений и эскиза",
+      ["gisogd.zouit", "nspd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", "gisogd.okn"]],
+    ["docs", "Градостроительная документация", "Функциональные зоны ГП, зоны ПЗЗ, ППТ, ПМТ, ГПЗУ, АГР, КРТ",
+      ["gisogd.func_zones", "gisogd.func_zones_tinao", "gisogd.pzz_zones", "gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr", "gisogd.krt"]],
+    ["album", "Альбом ППТ КРТ", "Все слои листов альбома «План реализации ППТ КРТ»", null]];
+  const presetKeys = p => [...new Set(p[3] || (typeof PPTKRT !== "undefined" ? PPTKRT.flatMap(s => s.keys || []) : []))].filter(k => SOURCES[k]);
+  const presetOn = p => { const ks = presetKeys(p); return ks.length && ks.every(k => st.sel.has(k)); };
   const ogdNode = n => n.code ? { key: "ogd." + n.code, num: n.num, name: n.name, path: n.path } : { num: "ogd:" + n.num, name: n.name, label: n.num, children: n.children.map(ogdNode) };
   function tree() {
     return GROUPS.map(([g, name]) => {
@@ -57,6 +69,8 @@
       + `<div class="bar"><input type="search" data-a="q" placeholder="Поиск слоя или папки" value="${esc(st.q)}" aria-label="Поиск слоя">`
       + `<label title="Скрыть слои ГИС ОГД, у которых в области нет объектов"><input type="checkbox" data-a="only" ${st.only ? "checked" : ""}>ГИС ОГД — только с объектами</label>`
       + `<span class="sp"></span><button class="btn" data-a="obj" ${st.counts ? "" : "disabled"} title="Отметить все слои ГИС ОГД, у которых в области есть объекты">ГИС ОГД с объектами${nObj != null ? ` (${nObj})` : ""}</button><button class="btn" data-a="none">Снять все</button></div>`
+      + `<div class="presets" role="group" aria-label="Готовые наборы"><span class="pl">Готовые наборы:</span>${PRESETS.map(p => { const ks = presetKeys(p), on = presetOn(p);
+          return `<button class="btn${on ? " on" : ""}" data-preset="${p[0]}" aria-pressed="${on}" title="${esc(p[2])}. Слоёв: ${ks.length} — ${esc(ks.map(k => SOURCES[k].title).join(", "))}. ${on ? "Щелчок — снять набор" : "Щелчок — отметить, дальше можно поправить флажками"}">${esc(p[1])} <span class="n">${ks.length}</span></button>`; }).join("")}</div>`
       + `<div class="tree">${TREE.map(n => nodeHtml(n, 0)).join("") || `<div class="note">Ничего не найдено.</div>`}</div>`
       + `<footer><span class="note">${st.counts ? "" : "Считаю объекты ГИС ОГД в области… "}Отмечено: <b>${st.sel.size}</b>${nOgd ? `, из них слоёв портала ГИС ОГД — ${nOgd}` : ""}. Большая область для НСПД и OpenStreetMap загружается по частям, части склеиваются.</span><span class="sp"></span>`
       + `<button class="btn" data-a="close">Отмена</button>`
@@ -75,6 +89,8 @@
     const a = e.target.closest("[data-a]")?.dataset.a;
     if (a === "close") dlg.close();
     if (a === "none") { st.sel.clear(); render(); }
+    const pr = PRESETS.find(p => p[0] === e.target.closest("[data-preset]")?.dataset.preset);
+    if (pr) { const on = presetOn(pr); presetKeys(pr).forEach(k => on ? st.sel.delete(k) : st.sel.add(k)); render(); }
     if (a === "obj" && st.counts) { Object.keys(st.counts).filter(c => st.counts[c]).forEach(c => st.sel.add("ogd." + c)); render(); }
     if (a === "load") {
       keep();
