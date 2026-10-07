@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.34: sheets 5–9 of the ППТ КРТ album at 1:2000 (#31).** Owner: «Переделай листы 5-9 в 1:2000»
+  (КРТ 3229 Гольяново gave 1:1000 there). Template sheets get `minScale: 2000` (albums.js `PPTKRT_C`: use, gp, ppt, gpzu,
+  parcels); `sheetScale` (sheets.js) = the manual `scale`, else the automatic one but never larger than 1:2000, so a
+  territory that does not fit at 1:2000 still gets a larger scale and its border is not cut (rule 3.2). Sheets 3–4 unchanged.
+  Rules: label-rules «Общие» 8, album-rules, slide-layout-rules 3.3. Existing albums take the new scale on «Собрать»;
+  a hand-set sheet scale is kept.
 - **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
   без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
   built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest

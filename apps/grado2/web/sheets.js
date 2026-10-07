@@ -49,7 +49,8 @@ function viewLayers(sheet) {
 }
 const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
   : TERR ? turf.centroid(TERR).geometry.coordinates : ol.proj.toLonLat(sharedView.getCenter()));
-const sheetScale = sheet => sheet.scale || autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm);
+// minScale — нижний предел знаменателя у листов шаблона (листы 5–9 альбома ППТ КРТ: не крупнее 1:2000); не помещается — как раньше, крупнее по ряду
+const sheetScale = sheet => sheet.scale || Math.max(sheet.minScale || 0, autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm));
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {
   const t = RESULT.tepNode?._tep; if (!t) return [];
