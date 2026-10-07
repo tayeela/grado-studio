@@ -268,9 +268,10 @@ const PPTKRT_D = [
   // участков тонкими синими линиями, документы штриховкой; рамка «по границам выгрузки»
   [cSheet({ ...C_BASE, concept: "docs", sit: true, fit: "cover",
     // название владельца сокращено («градостроительных планов земельных участков» → «ГПЗУ»): в 176 знаков оно не помещается в две строки по 18 пт (правило 13)
-    title: "Схема с отображением границ территорий с имеющимися территориальными и отраслевыми схемами, документацией по планировке территории и ГПЗУ",
+    // ППТ и ПМТ — на этом листе, ГПЗУ — на следующем (владелец 07.10.2026, #48)
+    title: "Схема с отображением границ территорий с имеющимися территориальными и отраслевыми схемами, документацией по планировке территории",
     // без АГР и КРТ, под штриховками документов — линии Сводного плана (СПРИТ) (владелец 07.10.2026, #47)
-    keys: ["egko.green", ...C_BODY, "nspd.parcels", "gisogd.red_lines", "gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", ...C_TAIL],
+    keys: ["egko.green", ...C_BODY, "nspd.parcels", "gisogd.red_lines", "gisogd.ppt", "gisogd.pmt", ...C_TAIL],
     styles: { ...C_VEC, "egko.green": { mode: "single", fill: "#e4efdb", stroke: "#e4efdb", width: 0, opacity: 1, label: "" },
       "egko.water": { mode: "single", fill: "#d9e8f3", stroke: "#d9e8f3", width: 0, opacity: 1, label: "" },
       "yandex.hd_roads": { mode: "single", fill: "#ffffff", stroke: "#ffffff", width: 0, opacity: 1 },
@@ -297,6 +298,11 @@ const PPTKRT_D = [
         "gisogd.krt": { mode: "single", fill: "#1f3fbf", stroke: "#1f3fbf", hatch: true, hatchPat: "45", hatchStep: 10, width: 1, opacity: 1, label: "" } },
       labelFn: { ...C_BASE.labelFn, "gisogd.pzz_zones": "vri" }, labelMM: { ...C_BASE.labelMM, "gisogd.pzz_zones": 3.4 },
       labelStyle: { ...C_BASE.labelStyle, "gisogd.pzz_zones": { lf: "sans-bold", lh: .5, lcol: "#141414" } } })]));
+// лист 14 — ГПЗУ отдельно от ППТ и ПМТ (владелец 07.10.2026, #48): та же схема документации, в альбоме — сразу за ней (PPTKRT_ORDER);
+// в конце шаблона, чтобы номера листов 10–13 в проектах не сдвинулись
+PPTKRT_D.push((() => { const d = PPTKRT_D.find(s => s.concept === "docs");
+  return { ...cloneJ(d), title: "Схема с отображением границ территорий с выданными градостроительными планами земельных участков",
+    keys: d.keys.map(k => k === "gisogd.ppt" ? "gisogd.gpzu" : k).filter(k => k !== "gisogd.pmt") }; })());
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -1118,7 +1124,9 @@ function conceptSheet(out, sheet, bb) {
     // схема документации (#37, п. 2 владельца 07.10.2026): ППТ, ПМТ, ГПЗУ, АГР и КРТ на одной светлой подложке по аналогии с ДПТ «Профсоюзная»;
     // номера и списки — у ближайших документов (в колонку их помещается около восьми), остальные нарисованы без номера, как в аналоге
     const agr = [], used = new Set();                              // АГР на этом листе нет (владелец 07.10.2026, #47)
-    const lists = conceptDocs(out, bb, [PPT_GROUP, PMT_GROUP, gpzuGroup(agr, used)], { total: DOCS_TOTAL, minEach: 2 });
+    // ППТ и ПМТ — на одном листе, ГПЗУ — на другом (#48): виды документов — по слоям листа
+    const groups = [L("gisogd.ppt") && PPT_GROUP, L("gisogd.pmt") && PMT_GROUP, L("gisogd.gpzu") && gpzuGroup(agr, used)].filter(Boolean);
+    const lists = conceptDocs(out, bb, groups, { total: DOCS_TOTAL, minEach: 2 });
     (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
     if (!agr.length) lists.forEach(l => { l.title = String(l.title).replace(/\s+и свидетельства об утверждении АГР$/, ""); });
     out.cLists = lists;
@@ -1353,13 +1361,16 @@ window.conceptSheet = conceptSheet;
 const DOC_KEYS = { ppt: { ppt: "gisogd.ppt", pmt: "gisogd.pmt" }, gpzu: { gpzu: "gisogd.gpzu", agr: "gisogd.agr" },
   docs: { ppt: "gisogd.ppt", pmt: "gisogd.pmt", gpzu: "gisogd.gpzu" } };   // АГР на листе документации нет (#47)
 function conceptWhy(s) {
-  const keys = DOC_KEYS[s?.concept]; if (!keys || s.frozen || !TERR) return "";
+  let keys = DOC_KEYS[s?.concept]; if (!keys || s.frozen || !TERR) return "";
+  // схема документации: ППТ и ПМТ на одном листе, ГПЗУ на другом (#48) — виды по слоям листа
+  if (s.concept === "docs") keys = Object.fromEntries(Object.entries(keys).filter(([, key]) => (s.keys || []).includes(key)));
   const bb = safe(() => frameBox(s)); if (!bb) return "";
   const box = turf.bboxPolygon(bb), has = {};
   for (const [kind, key] of Object.entries(keys)) {
     if (ERRORS[key] || !CHECKED.has(key)) return "";
     has[kind] = (DATA[key]?.fc?.features || []).some(f => /Polygon|Line/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, box)));
   }
+  if (s.concept === "docs") return Object.values(has).some(Boolean) ? "" : "в рамке нет " + (keys.gpzu && !keys.ppt ? "ГПЗУ" : "ППТ и ПМТ");
   return LegendRules.docWhy(s.concept, s.concept === "gpzu" ? { gpzu: has.gpzu, agr: has.agr } : has);
 }
 window.conceptWhy = conceptWhy;   // sheets.js notReadyWhy: причина в значке листа и в окне выгрузки
@@ -1374,9 +1385,9 @@ const PPTKRT = [
   ...PPTKRT_D,
 ];
 
-// порядок листов альбома (владелец 07.10.2026, #47): титул, месторасположение, карта района, ортофотоплан, фотофиксация, сущпол,
-// землепользователи, документация, ПЗЗ, Генплан; листов «ППТ и ПМТ», «ГПЗУ и АГР» и второго Генплана в альбоме нет
-const PPTKRT_ORDER = [0, 1, 9, 2, 3, 4, 8, 10, 12, 5];
+// порядок листов альбома (владелец 07.10.2026, #47, #48): титул, месторасположение, карта района, ортофотоплан, фотофиксация, сущпол,
+// землепользователи, документация (ППТ и ПМТ), ГПЗУ, ПЗЗ, Генплан; листов «ППТ и ПМТ», «ГПЗУ и АГР» и второго Генплана в альбоме нет
+const PPTKRT_ORDER = [0, 1, 9, 2, 3, 4, 8, 10, 13, 12, 5];   // 10 — ППТ и ПМТ, 13 — ГПЗУ (#48)
 TPL_SETS.pptkrt_ = { list: () => PPTKRT, size: () => "PA3", order: PPTKRT_ORDER };       // обновление листов по шаблону (sheets.js, tplRefresh)
 
 async function buildAlbum(kind) {

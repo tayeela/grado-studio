@@ -1635,7 +1635,7 @@ export default async p => {
         put("gisogd.func_zones", "Функциональные зоны (ГП)", [ft({ n: 6, fztip: "130", naimfunkzony: "коммунальные зоны" }, box(-.02, -.012, .02, .012))]);
         put("gisogd.pzz_zones", "ПЗЗ: территориальные зоны", [ft({ "Номер зоны": "6", "ВРИ (коды)": "4.9; 6.9; 3.1", "Индекс": "" }, box(-.012, -.006, .003, .006)), ft({ "Номер зоны": "7", "ВРИ (коды)": "2.6", "Индекс": "" }, box(.003, -.006, .008, .006))]);
         const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t91" + id, size: "PA3" });
-        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = PPTKRT.slice(-2), g12 = { ...cloneJ(tail[0]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[1]), id: "t91pzz", size: "PA3" };
+        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = [PPTKRT.find(x => x.concept === "gp" && x.sit), PPTKRT.find(x => x.concept === "pzz")], g12 = { ...cloneJ(tail[0]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[1]), id: "t91pzz", size: "PA3" };
         out.tpl = [tail.map(x => x.concept).join("|"), tail.every(x => x.sit === true), PPTKRT_D.length, g12.fit, z13.fit, g12.title.length, z13.title.length];
         ALBUM.sheets.push(ortho, use, gp, g12, z13);
         delete ALBUM.meta.schemeScale; out.auto = [Math.round(sheetScale(use)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
@@ -1652,7 +1652,7 @@ export default async p => {
         window.__t91 = { prevT, keep, saved, keys, svg2: t2, svg1: t1 }; out.shot = 1;
         return JSON.stringify(out);
       } catch (e) { window.__t91 = { prevT, keep, saved, keys }; throw e; }`));
-    check(r.tpl[0] === "gp|pzz" && r.tpl[1] && r.tpl[2] === 4 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в конце шаблона альбома листы gp и pzz с флагом sit (PPTKRT_D — четыре листа); fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
+    check(r.tpl[0] === "gp|pzz" && r.tpl[1] && r.tpl[2] === 5 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в шаблоне альбома листы gp и pzz с флагом sit (PPTKRT_D — пять листов, #48); fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
     check(r.auto[1] === 4000 && r.auto[2] === 4000, `T91: рамка листов 12 и 13 — по границам выгрузки без всякой настройки: 1:4000 (${r.auto.join(" / ")})`);
     check(r.num[0] === 5000 && r.num[1] === 5000 && r.num[2] === 4000 && r.num[3] === 4000, `T91: настройка «Масштаб схем» числом (1:5000) двигает схемы 5–9, а листы 12 и 13 — нет (${r.num.join(" / ")})`);
     check(r.cover.every(v => v === 4000), `T91: «по границам выгрузки» — у схем 5–9 и листов 12–13 одна рамка (${r.cover.join(" / ")})`);
@@ -1689,9 +1689,15 @@ export default async p => {
         put("egko.buildings", "Здания", [[-.002, .0018], [.0025, .001], [-.0045, -.001], [.0035, -.002], [.001, .003]].map(c => ({ type: "Feature", properties: {}, geometry: at(c[0], c[1], .0008, .0005) })));
         const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t92" + id, size: "PA3" });
         const ortho = mk("ortho", "ortho"), dsh = { ...cloneJ(PPTKRT.find(x => x.concept === "docs")), id: "t92docs", size: "PA3" };
-        ALBUM.sheets.push(ortho, dsh);
+        const gsh = { ...cloneJ(PPTKRT.filter(x => x.concept === "docs")[1]), id: "t92gpzu", size: "PA3" };
+        ALBUM.sheets.push(ortho, dsh, gsh);
+        const spg = albumSpec([gsh]).sheets[0], Lg = k => spg.layers.find(l => l.key === k || l.title === k);
+        out.gpzu = { drawn: ["gisogd.ppt", "gisogd.pmt", "gisogd.gpzu"].map(k => (Lg(k)?.features || []).length), num: (Lg("Номера документов")?.features || []).map(f => f.label),
+          lists: (spg.cLists || []).map(l => [l.title, l.items.length]), legend: (spg.cLegend || []).flatMap(g => (g.items || []).map(i => i.label)), title: gsh.title,
+          at: PPTKRT_ORDER.indexOf(PPTKRT.indexOf(PPTKRT.filter(x => x.concept === "docs")[1])) - PPTKRT_ORDER.indexOf(PPTKRT.indexOf(PPTKRT.find(x => x.concept === "docs"))),
+          why: [conceptWhy({ ...gsh, keys: gsh.keys }), conceptWhy(dsh)] };
         const sp = albumSpec([dsh]), sh = sp.sheets[0], L = k => sh.layers.find(l => l.key === k || l.title === k);
-        out.tpl = [dsh.sit, dsh.fit, dsh.title.length, PPTKRT.map(x => x.concept).slice(-4).join("|")];
+        out.tpl = [dsh.sit, dsh.fit, dsh.title.length, PPTKRT.map(x => x.concept).slice(-5).join("|")];
         out.scale = Math.round(sheetScale(dsh));
         out.drawn = ["gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr", "nspd.parcels"].map(k => (L(k)?.features || []).length);
         out.num = (L("Номера документов")?.features || []).map(f => f.label);
@@ -1705,13 +1711,17 @@ export default async p => {
         window.__t92 = { prevT, keep, saved, keys, svg: txt }; out.shot = 1;
         return JSON.stringify(out);
       } catch (e) { window.__t92 = { prevT, keep, saved, keys }; throw e; }`));
-    check(r.tpl[0] === true && r.tpl[1] === "cover" && r.tpl[3] === "district|docs|gp|pzz", `T92: лист «docs» — флаг sit, рамка cover, порядок листов 10–13 district, docs, gp, pzz (${JSON.stringify(r.tpl)})`);
+    check(r.tpl[0] === true && r.tpl[1] === "cover" && r.tpl[3] === "district|docs|gp|pzz|docs", `T92: лист «docs» — флаг sit, рамка cover, в шаблоне листы 10–14 district, docs, gp, pzz, docs (ГПЗУ, #48) (${JSON.stringify(r.tpl)})`);
     check(r.scale === 4000, `T92: рамка по границам выгрузки — 1:4000 (${r.scale})`);
-    check(JSON.stringify(r.drawn) === "[6,3,3,0,6]", `T92: нарисованы все документы, а не только пронумерованные: ППТ 6, ПМТ 3, ГПЗУ 3, участков 6; АГР на листе нет (#47) (${r.drawn})`);
-    check(r.num.length === 7 && r.num.join(",") === "1,2,3,4,5,6,7", `T92: номера — только у ближайших семи из двенадцати, у каждого вида не меньше двух, сквозные (#47) (${r.num.join(",")})`);
-    check(r.lists.reduce((a, l) => a + l[1], 0) === 7 && r.lists.length === 3 && r.lists.every(l => l[1] >= 2) && /Проекты планировки/.test(r.lists[0][0]) && /Проекты межевания/.test(r.lists[1][0]) && /ГПЗУ/.test(r.lists[2][0]), `T92: списки справа — ППТ, ПМТ, ГПЗУ, всего 7 пунктов, у каждого не меньше двух (${JSON.stringify(r.lists.map(l => [l[0].slice(0, 12), l[1]]))})`);
+    check(JSON.stringify(r.drawn) === "[6,3,0,0,6]", `T92: на листе ППТ и ПМТ нарисованы все документы, а не только пронумерованные: ППТ 6, ПМТ 3, участков 6; ГПЗУ — на своём листе (#48), АГР нет (#47) (${r.drawn})`);
+    check(r.num.length === 7 && r.num.join(",") === "1,2,3,4,5,6,7", `T92: номера — только у ближайших семи из девяти, у каждого вида не меньше двух, сквозные (#47) (${r.num.join(",")})`);
+    check(r.lists.reduce((a, l) => a + l[1], 0) === 7 && r.lists.length === 2 && r.lists.every(l => l[1] >= 2) && /Проекты планировки/.test(r.lists[0][0]) && /Проекты межевания/.test(r.lists[1][0]), `T92: списки справа — ППТ и ПМТ, всего 7 пунктов, у каждого не меньше двух (${JSON.stringify(r.lists.map(l => [l[0].slice(0, 12), l[1]]))})`);
     check(r.krt === 0, `T92: КРТ на листе нет (владелец 07.10.2026, #47) (${r.krt})`);
-    check(["разрабатываемой территории", "земельных участков, поставленных на кадастровый учёт", "проекты планировки территории", "проекты межевания территории", "градостроительный план земельного участка"].every(t => r.legend.some(x => x.includes(t))) && !r.legend.some(x => /архитектурно-градостроительное|комплексное развитие/.test(x)), `T92: легенда — граница, участки, ППТ, ПМТ, ГПЗУ; без АГР и КРТ (${r.legend.length} знаков)`);
+    check(["разрабатываемой территории", "земельных участков, поставленных на кадастровый учёт", "проекты планировки территории", "проекты межевания территории"].every(t => r.legend.some(x => x.includes(t))) && !r.legend.some(x => /градостроительный план|архитектурно-градостроительное|комплексное развитие/.test(x)), `T92: легенда — граница, участки, ППТ, ПМТ; без ГПЗУ, АГР и КРТ (${r.legend.length} знаков)`);
+    const g = r.gpzu;
+    check(JSON.stringify(g.drawn) === "[0,0,3]" && g.num.join(",") === "1,2,3" && g.lists.length === 1 && /ГПЗУ/.test(g.lists[0][0]) && g.lists[0][1] === 3 && g.at === 1 && /градостроительными планами/.test(g.title),
+      `T92: ГПЗУ — на отдельном листе сразу за ППТ и ПМТ (владелец 07.10.2026, #48): ГПЗУ 3 с номерами 1–3, один список, ППТ и ПМТ нет (${JSON.stringify(g.drawn)}, ${JSON.stringify(g.lists)}, место ${g.at})`);
+    check(g.legend.some(x => /градостроительный план земельного участка/.test(x)) && !g.legend.some(x => /проекты планировки|проекты межевания/.test(x)) && g.why.join("|") === "|", `T92: легенда листа ГПЗУ — без ППТ и ПМТ; оба листа готовы (${JSON.stringify(g.legend)}, «${g.why.join("» / «")}»)`);
     check(r.styles[0] === "#e1e1e1" && Math.abs(r.styles[2] - .58) < .1, `T92: светлая подложка: здания светло-серые, границы участков тонкие синие (${r.styles[0]}, ширина ${r.styles[2]})`);
     check(r.svg[0] === 200 && !r.svg[1] && r.svg[2], `T92: сервер рисует лист, название и списки помещаются (код ${r.svg[0]}; «не готов»: «${r.svg[1]}»; название в рисунке: ${r.svg[2]})`);
     if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t92.svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t92img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);

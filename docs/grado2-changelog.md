@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 (task/45, #48): documentation sheet split in two.** Sheet «Схема … документацией по планировке
+  территории» now shows only ППТ and ПМТ; ГПЗУ moved to a new template sheet 14 «Схема с отображением границ территорий с
+  выданными градостроительными планами земельных участков» (same light base, numbers and list), placed right after it
+  (`PPTKRT_ORDER` = 0, 1, 9, 2, 3, 4, 8, 10, 13, 12, 5). Lists, legend and «не готов» follow the sheet's own layers. Tests T91, T92.
 - **2026-10-07, ГРАДО 2 (task/45, #47, evening remarks): toponyms from Yandex and sheet fixes.** Street labels — Yandex `road_label`
   lines (`yandex.road_labels`, z18; `sit.road_labels`, z16 on the district map; `road_label`/`place_label` no longer skipped by
   yandex_vmap), «МКАД», «МСД» (СВХ not labelled), Yandex «Наримановская ул.» → «ул. Наримановская»; OSM labels only as fallback
