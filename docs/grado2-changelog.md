@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).** A row «Готовые наборы» above the
+  tree: «Существующее положение» (13 layers), «Ограничения» (7), «Градостроительная документация» (8), «Альбом ППТ КРТ» (24 —
+  exactly the layers of the album sheets, taken from `PPTKRT`). A click checks the set, a second click unchecks it; the
+  tooltip lists the layers; the tree stays for fine-tuning. Checked on a screenshot at 1365 × 923.
 - **2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).** On 1365 × 923 with the
   graph docked at the bottom (233–262 px) 8–9 of 14 nodes were outside. Now: first open fits the graph down to 0.45; «Вся
   схема» first press — readable (0.6), second press in a row — the whole graph (0.22 here, 0 nodes outside); while the view
