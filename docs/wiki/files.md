@@ -53,6 +53,9 @@
 | выкладка на сайт grado.tailink.tech | `tools/deploy-server.sh`, хуки `tools/git-hooks/`; рецепт — `docs/wiki/recipes.md` |
 | снимки панорам Яндекса для фотофиксации | `tools/panorama_shot.mjs` |
 | проверка альбома «до / после» (картинки и текст страниц) | `tools/album_check.py`; эталоны — релиз GitHub `album-baseline` (копия в `~/.grado2/album-baseline/`), отчёт — `/tmp/grado-album-check/<имя>/` |
+| проверка оформления готового альбома (наложения, края, переносы, «ё», неразрывные пробелы в PPTX) | `tools/album_lint.py` (его же запускает `album_check.py`); чек-лист — `docs/standards/albums/layout-qa.md` |
+| контрольные строки альбома (адрес титула, выноска территории, число листов) | `tools/album_expect/*.json` (формат — `tools/album_expect/README.md`) |
+| аудит оформления альбома по плиткам | шаблон `docs/team/prompts/album-design-audit.md`; итоги первого прогона — задача #53 |
 | готовые сценарии (навыки) | `.claude/skills/album-verify` (проверка), `owner-remark` (замечание владельца), `land` (выкладка) |
 | закрытая студия, прежние аудиты и планы | `docs/archive/` (читать только как историю) |
 | вики на GitHub (приватно) | `tayeela/grado-wiki`: README, llms.txt, AGENTS.md; обновляет `.github/workflows/wiki.yml` и `tools/wiki_publish.sh` |
