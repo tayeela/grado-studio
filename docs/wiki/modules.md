@@ -570,17 +570,19 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 ## Инструменты (tools/)
 
-### `tools/album_check.py` — 221 стр.
+### `tools/album_check.py` — 242 стр.
 
 Визуальная проверка альбома «до / после» (06.10.2026): печать PDF по спецификации на тестовом сервере, страницы в PNG, постраничное сравнение с эталоном, вырезки изменённых мест и свод одной картинкой.
 
 Функции: `_font`, `render`, `pages`, `page_text`, `text_diff`, `compare`, `design_lint`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
 
-### `tools/album_lint.py` — 186 стр.
+### `tools/album_lint.py` — 437 стр.
 
-Автоматические проверки оформления страниц альбома по готовому PDF — то, что компьютер видит сам, без глаз (см. docs/standards/albums/layout-qa.md).
+Автоматические проверки оформления страниц альбома по готовому PDF (и PPTX) — то, что компьютер видит сам, без глаз (см. docs/standards/albums/layout-qa.md).
 
-Функции: `run`, `pages_words`, `tile`, `box_mm`, `inter_area`, `area`, `check_words`, `check_fonts`, `check_images`, `lint`, `format_lines`, `main`
+Разделы по порядку: разбор PDF и PPTX · проверки слов и строк страницы · шрифты, растры, свод
+
+Функции: `run`, `_unescape`, `parse_pages`, `pages_words`, `pptx_pages`, `tile`, `box_mm`, `inter_area`, `area`, `core`, `norm`, `finding`, `check_words`, `check_frame`, `check_wrap`, `check_text`, `check_expect`, `load_expect`, `check_pptx`, `check_fonts`, `check_images`, `lint`, `format_lines`, `frames_from_spec`, `main`
 
 ### `tools/docs_check.py` — 214 стр.
 

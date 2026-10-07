@@ -11,7 +11,8 @@ body: JSON.stringify(albumSpec(ALBUM.sheets))})` (docs/wiki/recipes.md).
 
 Эталоны: ~/.grado2/album-baseline/<name>/p-N.png, копия на GitHub — релиз `album-baseline` репозитория (архив
 <name>.zip): нет на диске — скачивается оттуда, `--update` — выкладывается туда (процесс на GitHub, 06.10.2026); отчёт: /tmp/grado-album-check/<name>/ (report.md, summary.png,
-crops/). Заодно PDF проверяет tools/album_lint.py (наложения слов, края, мелкий кегль, шрифты, разрешение растров): отчёт — в конце
+crops/). Заодно альбом проверяет tools/album_lint.py: PDF (наложения слов, края листа и рамки карты, мелкий кегль, переносы, «ё», шрифты, разрешение растров),
+PPTX (неразрывные пробелы; его печатает та же команда, отключается --no-pptx) и контрольные строки tools/album_expect/all.json и <имя>.json. Отчёт — в конце
 report.md. Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати,
 3 — album_lint нашёл ошибки оформления (важнее отличий: их чинят, а не принимают эталоном).
 Ошибки сервера печатаются как есть; порт 8650 (программа владельца) запрещён.
@@ -44,16 +45,26 @@ DPI = 100            # для сравнения достаточно; выре�
 THRESH = 24          # разница яркости, ниже которой пиксель «тот же» (сглаживание шрифтов)
 
 
-def render(server, spec, pdf):
+def render(server, spec, path, kind="pdf"):
+    """Печать альбома по спецификации: kind "pdf" — обязательно (ошибка → код 2), "pptx" — по возможности (ошибка → None, проверка презентации пропущена)."""
     if ":8650" in server:
         sys.exit("port 8650 is the owner's program: use a test server (8651+)")
-    req = urllib.request.Request(server.rstrip("/") + "/api/print/pdf", data=Path(spec).read_bytes(), method="POST")
-    with urllib.request.urlopen(req, timeout=1800) as r:
-        data = r.read()
-    if not data.startswith(b"%PDF"):
+    req = urllib.request.Request(server.rstrip("/") + f"/api/print/{kind}", data=Path(spec).read_bytes(), method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=1800) as r:
+            data = r.read()
+    except OSError as e:
+        if kind == "pdf":
+            raise
+        print(f"PPTX не напечатан ({e}); неразрывные пробелы не проверены", file=sys.stderr)
+        return None
+    if not data.startswith(b"%PDF" if kind == "pdf" else b"PK"):
         print(data[:400].decode("utf-8", "replace"), file=sys.stderr)
-        sys.exit(2)
-    pdf.write_bytes(data)
+        if kind == "pdf":
+            sys.exit(2)
+        return None
+    path.write_bytes(data)
+    return path
 
 
 def pages(pdf, d):
@@ -110,12 +121,20 @@ def compare(a, b):
     return n / (W * H) * 100, boxes, A, B
 
 
-def design_lint(pdf):
-    """Проверка оформления самого PDF (album_lint): ([строки отчёта], число ошибок). Без poppler — пустой отчёт, не падение."""
+EXPECT_DIR = Path(__file__).resolve().parent / "album_expect"
+
+
+def design_lint(pdf, spec=None, pptx=None, name=None):
+    """Проверка оформления альбома (album_lint): ([строки отчёта], число ошибок). Контрольные строки — album_expect/all.json и <name>.json,
+    рамки карт — из спецификации печати. Без poppler — пометка в отчёте, не падение; любая другая поломка линта считается ошибкой."""
+    files = [f for f in (EXPECT_DIR / "all.json", EXPECT_DIR / f"{name}.json") if name and f.exists()]
     try:
-        findings, n_pages = album_lint.lint(str(pdf))
+        findings, n_pages = album_lint.lint(str(pdf), expect=album_lint.load_expect(files) if files else None, pptx=str(pptx) if pptx else None,
+                                            frames=album_lint.frames_from_spec(spec) if spec else None)
     except (OSError, subprocess.CalledProcessError) as e:
         return [f"album_lint: не запущен ({e.__class__.__name__}), оформление не проверено"], 0
+    except Exception as e:                                          # поломка самого линта не должна пройти молча как «ошибок нет»
+        return [f"album_lint: упал ({e.__class__.__name__}: {e})"], 1
     return album_lint.format_lines(findings, n_pages), sum(1 for f in findings if f["sev"] == "error")
 
 
@@ -154,6 +173,7 @@ def main():
     ap.add_argument("--name", required=True, help="имя эталона: gol, bez, …")
     ap.add_argument("--server", default="http://localhost:8671")
     ap.add_argument("--update", action="store_true")
+    ap.add_argument("--no-pptx", action="store_true", help="не печатать PPTX (экономит ~20 с, но неразрывные пробелы не проверяются)")
     a = ap.parse_args()
     out, base = OUT / a.name, BASE / a.name
     shutil.rmtree(out, ignore_errors=True)
@@ -161,6 +181,7 @@ def main():
     if not base.exists() and not a.update:
         fetch_baseline(a.name, base)
     render(a.server, a.spec, out / "album.pdf")
+    pptx = None if a.no_pptx else render(a.server, a.spec, out / "album.pptx", "pptx")
     cur = pages(out / "album.pdf", out)
     if a.update or not base.exists():
         shutil.rmtree(base, ignore_errors=True)
@@ -169,7 +190,7 @@ def main():
             shutil.copy(p, base / p.name)
         shutil.copy(out / "album.pdf", base / "album.pdf")
         print(f"baseline {'updated' if a.update else 'created'}: {base} ({len(cur)} pages)")
-        print("\n".join(design_lint(out / "album.pdf")[0]))     # эталон принимают с открытыми глазами: что линт видит в нём
+        print("\n".join(design_lint(out / "album.pdf", a.spec, pptx, a.name)[0]))     # эталон принимают с открытыми глазами: что линт видит в нём
         publish_baseline(a.name, base)
         return 0
     rows, tiles = [], []
@@ -207,7 +228,7 @@ def main():
         for t in sc:
             S.paste(t, (0, y)); y += t.height + 8
         S.save(out / "summary.png")
-    lint_lines, lint_errors = design_lint(out / "album.pdf")
+    lint_lines, lint_errors = design_lint(out / "album.pdf", a.spec, pptx, a.name)
     (out / "report.md").write_text(f"# Сравнение альбома «{a.name}» с эталоном\n\n" + "\n".join(rows)
                                    + (f"\n\nСвод вырезок: {out / 'summary.png'}\n" if changed else "\n\nОтличий нет.\n")
                                    + "\n## Оформление страниц (tools/album_lint.py)\n\n```\n" + "\n".join(lint_lines) + "\n```\n")
