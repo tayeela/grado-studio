@@ -202,7 +202,9 @@ const coverSrc = new ol.source.Vector();
 const coverStyle = new ol.style.Style({ stroke: new ol.style.Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
   text: new ol.style.Text({ text: "область загрузки данных", font: "12px system-ui, sans-serif", placement: "line", fill: new ol.style.Fill({ color: "#1a5fb4" }),
     stroke: new ol.style.Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
-const coverLayer = new ol.layer.Vector({ source: coverSrc, style: coverStyle, zIndex: 105, visible: false });
+// область = рамки листов — у рамок свои подписи («Лист N…»), вторая подпись легла бы на них (аудит 07.10.2026, #29)
+const coverLine = new ol.style.Style({ stroke: coverStyle.getStroke() });
+const coverLayer = new ol.layer.Vector({ source: coverSrc, style: () => typeof ALBUM !== "undefined" && ALBUM.sheets.includes(coverSheets()[0]) ? coverLine : coverStyle, zIndex: 105, visible: false });
 mMain.addLayer(coverLayer);
 function coverSheets() {
   const sh = (typeof ALBUM !== "undefined" ? ALBUM.sheets : []).filter(s => !["tep", "title", "photos"].includes(s.kind) && !s.fit && !s.panels && !s.frozen);

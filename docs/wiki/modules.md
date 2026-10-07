@@ -96,7 +96,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2381 стр.
+### `apps/grado2/web/app.js` — 2383 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
@@ -130,7 +130,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `fireGap`, `isResidential`, `isChildren`, `groundAt`, `ringMid`, `decisionOf`, `consLayer`, `clip`, `protectR`, `polyFeats`, `cleanTitle`, `roleFeats`, `nameOf`, `usedLine`, `computeConstraints`, `consExclude`, `consCeiling`, `NCons`, `ensureConsNode`, `renderCons`, `openRing`, `prismsOf`, `keptForCheck`, `sketchFromLayer`, `yieldUI`, `evalChunked`, `checkNorms`, `runCheck`, `ownInsolation`
 
-### `apps/grado2/web/frames.js` — 188 стр.
+### `apps/grado2/web/frames.js` — 193 стр.
 
 ГРАДО 2 · листы альбома на карте — как фреймы в Figma или видовые экраны в AutoCAD. Каждый лист-карта альбома (ALBUM.sheets) — рамка на карте: её размер = карта листа (frameMM) × масштаб. Инструмент «Лист»: тяните прямоугольник — пропорции формата держатся сами (по умолчанию А3 без штампа), масштаб считается из размера; появляется новый лист альбома. Выбранный лист: тянуть внутри — сдвиг (sheet.center), за угол — размер (sheet.scale), над листом панель: название, формат, ориентация, масштаб, «Загрузить сюда», «ГИС ОГД в DXF», «Просмотр», удалить. Листы раздела (строятся по территории) видны на…
 

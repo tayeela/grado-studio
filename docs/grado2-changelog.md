@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).** A sheet frame on the map is labelled
+  «Лист N «first 28 characters…» · format · scale»; the full title stays in the field above the selected sheet (and in its
+  tooltip) and in «Листы». The «область загрузки данных» caption is not drawn when the area is the sheet frames themselves
+  — it lay on top of the sheet label (seen on the screenshot).
 - **2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).**
   While there are no new buildings (`t.n === 0`), the «Эскиз» section opens with «Эскиз не построен — показатели новой
   застройки появятся после расчёта…» and an «Открыть «Эскиз»» button; zero values of new-building metrics, new SPP, density
