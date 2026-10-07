@@ -1608,8 +1608,8 @@ export default async p => {
     check(r.roads.n === 4 && !r.roads.labels.includes("Тестовая улица"), `T90: на карте магистрали и улицы районного значения, жилая улица не рисуется (${r.roads.n} линии)`);
     check(r.roads.ws[0] > r.roads.ws[2] && r.roads.ws[2] > r.roads.ws[3] && r.roads.color === "#f3d98c", `T90: линии жёлтые, ширина по классу: магистраль толще второстепенной (${r.roads.ws.join(", ")}; ${r.roads.color})`);
     check(r.roads.labels[0] === "МКАД" && r.roads.labels[1] === "Щёлковское ш." && r.roads.labels[2] == null && r.roads.labels[3] == null, `T90: подписаны только магистраль и главная улица (${JSON.stringify(r.roads.labels)})`);
-    check(r.adm === 3 && Math.abs(r.admW - 4.6) < 0.2, `T90: границы трёх районов красные жирные 1,2 мм (${r.adm} шт., ширина ${r.admW})`);
-    check(r.names.some(n => /Гольяново/.test(n)), `T90: свой район подписан (${JSON.stringify(r.names)})`);
+    check(r.adm === 3 && Math.abs(r.admW - 2.3) < 0.2, `T90: границы трёх районов тонкие 0,6 мм (владелец 07.10.2026, #45) (${r.adm} шт., ширина ${r.admW})`);
+    check(r.names.some(n => /Гольяново/i.test(n)), `T90: свой район подписан, заглавными (${JSON.stringify(r.names)})`);
     check(r.callout, "T90: выноска «Территория рассмотрения» на месте");
     check(r.legend.includes("автомобильные дороги") && r.legend.includes("района") && r.legend.some(t => /территории рассмотрения/.test(t)), `T90: легенда — граница территории, района, автомобильные дороги (${JSON.stringify(r.legend)})`);
     check(r.svg[0] === 200 && r.svg[2] && !r.svg[3], `T90: сервер рисует лист (код ${r.svg[0]}, ${r.svg[1]} знаков, заголовок есть: ${r.svg[2]}, «не готов»: «${r.svg[3]}»)`);
