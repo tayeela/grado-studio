@@ -50,7 +50,7 @@ CLAUDE.md просит запускать сессии из `~/grado-studio`: р
 | Путь | Что это |
 |---|---|
 | `.claude/launch.json` | настройки запуска предпросмотра, в `.gitignore`. По CLAUDE.md `grado2-test` указывает на основную копию; в рабочей копии команды файл правят локально, помечают `skip-worktree` и не коммитят |
-| `.claude/worktrees/` | рабочие копии команды, например `team2` (ветка `team/t60`); создаются командой `git worktree add` (см. docs/team/CYCLE.md). В `.gitignore` не записаны |
+| `.claude/worktrees/` | рабочие копии команды, например `team2` (ветка `team/t60`); создаются командой `git worktree add` (см. docs/team/CYCLE.md). Записаны в `.gitignore` |
 | `.claude/.grado2_ux_audited` | метка UX-аудита, пишет `grado2_ux_gate.py`; в `.gitignore` |
 | `~/.grado2/test_gate_passed` | отметки прошедших проверок, пишет `grado2_test_gate.py`; вне репозитория |
 

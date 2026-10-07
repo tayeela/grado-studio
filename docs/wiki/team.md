@@ -7,6 +7,8 @@
 
 ## Правила команды (RULE из PROGRESS.md)
 
+- Navigation is checked by `python3 tools/docs_check.py` (in `tools/gate.sh` and CI `docs.yml`): a document is moved with `git mv` and the checker runs at once; a new `.md` under `docs/` is named in the README of its shelf (`docs/CLAUDE.md`); every code file starts with a «what it is» header; a new top-level file or folder is named in `INDEX.md` (07.10.2026, issue #50).
+- Every package with tests is in `tools/gate.sh` and in `.github/workflows/grado2-release.yml`: the tests of `core/compute`, `geom`, `layout`, `model`, `reactive`, `render` (232) were run by nobody until 07.10.2026; a new tests folder gets a line in both files the same day.
 - A browser step waits for the element or text it checks (`until`), never reads it right after a window becomes visible: the collab step «A: список проектов пуст» read `hubProjList` before `loadProjects()` drew it and failed on the slow GitHub runner; T27 and T61 failed the same way on other runs of one PR (07.10.2026, issue #40).
 - Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
 - A script started from a git hook inherits GIT_DIR/GIT_INDEX_FILE: before running git in another repository, unset them and check `git rev-parse --show-toplevel` (06.10.2026 the wiki publisher committed wiki pages over the program on team/t60; caught by `git show --stat`, branch restored to the previous commit, main untouched).
@@ -50,6 +52,12 @@
 
 ## Последние циклы
 
+- 07.10.2026, наведение порядка в репозитории (задача #50, PR #52; по просьбе владельца): влиты в `team/t60` PR #46 (альбом по замечаниям 07.10, #45 #47 #48 #44), #36 (релей НСПД)
+  и #49 (версия 0.99.45, устойчивые T27 и T61, #40). `docs/` разложен по полкам (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`, карта `docs/INDEX.md`), 65 файлов
+  перенесены `git mv`; новые `README.md`, `INDEX.md`, `AGENTS.md`, `CLAUDE.md` и README в каждой папке; `tools/docs_check.py` в gate и CI; вики сама пересобирается (`wiki.yml`) и
+  берёт состав листов из `albums.js`; тесты остального ядра в gate и CI. Проверка: `tools/gate.sh` зелёный, CI. Не сделано без вашего действия: секрет `WIKI_TOKEN` (вики в `tayeela/grado-wiki`
+  всё ещё версии 0.99.27 до первой выкладки), удаление 21 влитой ветки (облачной сессии запрещено; команда `tools/prune-merged-branches.sh --yes` на Mac), решение по PR #34. Аудит оформления
+  презентации по Гольяново (огрехи и правила) — отдельной задачей GitHub, итог в `docs/standards/albums/layout-qa.md`.
 - 07.10.2026, выкладка по слову владельца («выкладывай») — v0.99.43: три листа «в границах сит. плана» (#37, PR #38 и #39,
   v0.99.40–0.99.43): рамка «по границам выгрузки» и третье значение настройки «Масштаб схем 5–9»; новые листы 10–13 в конце
   альбома ППТ КРТ — карта района, схема документации (ППТ, ПМТ, ГПЗУ, АГР, КРТ), Генплан и ПЗЗ в рамке сит. плана. Настройка
@@ -67,9 +75,3 @@
   (Mac → msk без перехода на другой хост, перезапуск обеих копий, при сбое возврат прежней версии) — PR #41, выложен в main
   второй короткой выкладкой по тому же слову владельца. Версия 0.99.43 попадает на сайт командой `git pull` в `~/grado-studio` на
   Mac: хук запускает `tools/deploy-server.sh`; «Сервер занят выгрузкой… отложено» или ошибка — на сайте прежняя версия, повторить.
-- 06.10.2026, цикл 27 — полная проверка альбома Гольяново (нормы, оформление, данные: AUD-*.md в /tmp/grado-team/2026-10-06),
-  сводный список F1–F12 + PPTX. Сделано v0.99.21–0.99.22: СЗЗ установленные, дорога-пробел ЕГКО, легенда генплана,
-  таблица участков, ЖК, выноски листа 2, номер зоны, PPTX 20 мин → 20 с и встроенный Montserrat. Данные владельца:
-  аренда :85/:86 из выписок ЕГРН, адрес «вл. 8» по письму ДГП. Новые PDF/PPTX/проект — в папке выдачи, прежние в
-  «прежняя версия/выдача 05.10». Осталось: строка «лист N из 9» при выгрузке (сервер готов, UI нет), подпись улицы у
-  границы (F8 не сработал: подпись ставится другим путём), лист 4 без снимков (ждём владельца).
