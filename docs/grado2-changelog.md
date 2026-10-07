@@ -2,6 +2,41 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).**
+  New concept `docs` in `PPTKRT_D` (between the district map and the Genplan, `sit: true`, `fit: "cover"`): ППТ, ПМТ, ГПЗУ (with АГР
+  as the second line of its item) and КРТ on one light base by the analogue ДПТ «Профсоюзная» — buildings light grey without outline,
+  roads white, water and green pale, parcel boundaries thin blue (`nspd.parcels`), no white mask. `conceptDocs(out, bb, groups, { total })`
+  now takes an optional global cap: numbers and lists only for the nearest `DOCS_TOTAL` = 8 documents of all kinds together (the column
+  holds about eight items), the others are drawn without a number as in the analogue; groups of sheets 7–8 moved to `PPT_GROUP`,
+  `PMT_GROUP`, `gpzuGroup` (no change for them). КРТ of the territory itself is not hatched, neighbours' are. The sheet is «не готов»
+  when no document of any kind is in the frame (`legendrules.js` concept `docs`, `joinRu`; unit test). The title of the owner is cut
+  («градостроительных планов земельных участков» → «ГПЗУ»): 176 characters do not fit two lines of 18 pt. E2E group `t92`.
+- **2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).** `PPTKRT_D` (albums.js) gets two
+  more sheets with the flag `sit: true` and `fit: "cover"` (frame = `coverFrameBox`, v0.99.40): sheet 12 is a copy of the template of sheet 6
+  (`concept: "gp"`: colours by the MapInfo table, number and index, legend, table of zones) with the title «Размещение территории в
+  материалах территориального планирования (Генеральный план города Москвы)»; sheet 13 is the new concept `pzz` (branch in
+  `conceptSheet`): boundaries of the territorial zones (`gisogd.pzz_zones`, #6a3d9a 0,5 mm) with the VRI codes (`LABEL_FN.vri`) on the
+  base of sheets 7–8, legend only of what is visible; title «Размещение территории в материалах градостроительного зонирования (ПЗЗ
+  города Москвы)». The `sit` sheets never take the project's numeric «Масштаб схем 5–9» (`isScheme`, sheets.js). Subzones of the PZZ
+  (`gisogd.pzz_sub`) are not on the sheet: a separate sheet only on the owner's word. E2E group `t91`.
+- **2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).** New
+  `PPTKRT_D` in albums.js (appended to `PPTKRT` after sheet 9, so sheets 1–9 keep their numbers): concept `district`, Yandex satellite
+  on the whole sheet under the header (`bleed`, rect 0,44,420,253 like sheet 3), frame = the district of the territory (`fit: "district"`,
+  scale from the ladder, 1:20000 for a ≈ 4 × 3.5 km district), OSM roads as yellow lines by class (`osm.roads`, motorway … tertiary,
+  width on paper 2,2 … 0,7 mm, only motorway/trunk/primary named), red district boundary 1,2 mm (`gisogd.admin`), names of the district
+  and its neighbours (`conceptDistricts`), metro stations, the territory callout and a legend of what is visible (`conceptSheet`
+  branch `ortho || district`). `cSheet(sh, { places: false })` leaves out village and address labels. The E2E T62 checks use
+  `PPTKRT.length` instead of 9. E2E group `t90` (synthetic districts and roads; the server draws the sheet). Not checked on the real
+  Гольяново data: the cloud session cannot reach ГИС ОГД, НСПД, Overpass.
+- **2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).** Owner on the three sit-plan sheets: «см карту границы выгрузки, не
+  менее этого». `coverFrameBox()` (sheets.js): the smallest rectangle centred on the territory's bbox centre (rule 3.4) that holds the
+  data-loading area (`coverBox()`, the blue dashed «область загрузки данных»), the frame of sheet 3 «Ортофотоплан» (without it:
+  territory × 2,2) and the territory × 1,25. `fitBox` returns it for a sheet with `fit: "cover"` (new sheets of #37) and for the
+  five scheme sheets when the project setting «Масштаб схем 5–9» is «по границам выгрузки» (`ALBUM.meta.schemeScale === "cover"`,
+  second item of the list). `sheetScale` then takes the smallest scale of the row that fits it (sit plan 840 × 506 m → 1:4000 on the
+  279 × 239 mm map), «Собрать» loads data by the same frames. The sheet's properties show «как в проекте». E2E group `t89`
+  (130 m territory, a hand-drawn sheet widening the loading area, the list, the project file). Rules: label-rules «Общие» 8,
+  album-rules, spec `docs/team/spec-37-sitplan-sheets.md`.
 - **2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).** Owner: «Переделай листы 5-9 в 1:2000» (КРТ 3229
   Гольяново gave 1:1000 there), then «масштаб для каждого проекта должен быть настраиваемым». A line «Масштаб схем 5–9» under
   «Штамп» in «Листы и альбом»: «авто по территории» (default, as before) or 1:500 … 1:10 000; it is `ALBUM.meta.schemeScale`

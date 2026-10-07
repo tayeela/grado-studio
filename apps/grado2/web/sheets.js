@@ -49,11 +49,14 @@ function viewLayers(sheet) {
 }
 const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
   : TERR ? turf.centroid(TERR).geometry.coordinates : ol.proj.toLonLat(sharedView.getCenter()));
-// схемы альбома ППТ КРТ (листы 5–9 шаблона) — один масштаб на проект: ALBUM.meta.schemeScale (окно «Листы и альбом» → «Штамп»), 0 — авто по
-// территории. Территория не помещается — крупнее по ряду, граница не обрезается (правило 3.2); масштаб, выбранный в строке листа, главнее
+// схемы альбома ППТ КРТ (листы 5–9 шаблона) — один масштаб на проект: ALBUM.meta.schemeScale (окно «Листы и альбом», строка «Масштаб схем 5–9»):
+// 0 — авто по территории, число из ряда — этот масштаб, "cover" — по границам выгрузки (рамка coverFrameBox, владелец 07.10.2026, #37).
+// Территория не помещается — крупнее по ряду, граница не обрезается (правило 3.2); масштаб, выбранный в свойствах листа, главнее
 const SCHEME_CONCEPTS = new Set(["use", "gp", "ppt", "gpzu", "parcels"]);
-const schemeSetting = () => { const v = +ALBUM.meta?.schemeScale; return SCALES.includes(v) ? v : 0; };
-const schemeScale = sheet => SCHEME_CONCEPTS.has(sheet.concept) ? schemeSetting() : 0;
+const schemeSetting = () => { const v = ALBUM.meta?.schemeScale; return v === "cover" ? v : SCALES.includes(+v) ? +v : 0; };
+const isScheme = sheet => SCHEME_CONCEPTS.has(sheet.concept) && !sheet.sit;      // листы «в границах сит. плана» (sit, #37) свою рамку берут сами и настройку схем не берут
+const schemeScale = sheet => isScheme(sheet) && schemeSetting() !== "cover" ? schemeSetting() : 0;
+const schemeCover = sheet => isScheme(sheet) && schemeSetting() === "cover";
 const sheetScale = sheet => sheet.scale || Math.max(schemeScale(sheet), autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm));
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {
@@ -182,8 +185,20 @@ const LABEL_FN = {
   if (/не предусмотрено/.test(f.get("Регламент") || "")) return "0 / 0 / 0"; const v = x => x == null || x === "" ? "Ф" : String(x).replace(".", ",");
   return [p, h, z].every(x => x == null || x === "") ? "Ф" : `${v(p)} / ${v(h)} / ${v(z)}`; } };
 // рамка содержания листа: территория с полями, район или округ территории (из слоя административного деления)
+/* Рамка «по границам выгрузки» (владелец 07.10.2026: «см карту границы выгрузки, не менее этого», #37): наименьший прямоугольник с
+   центром в центре габарита территории (правило 3.4), в котором помещаются область загрузки данных (синий пунктир в окне «Данные»,
+   coverBox), рамка сит. плана — лист 3 «Ортофотоплан» (нет его в альбоме — территория × 2,2) и территория × 1,25 */
+function coverFrameBox() {
+  if (!TERR) return null;
+  const [w, s, e, n] = turf.bbox(TERR), cx = (w + e) / 2, cy = (s + n) / 2, around = ctx => [cx - (e - w) * ctx / 2, cy - (n - s) * ctx / 2, cx + (e - w) * ctx / 2, cy + (n - s) * ctx / 2];
+  const orth = ALBUM.sheets.find(x => x.concept === "ortho");
+  const boxes = [around(1.25), (orth && safe(() => frameBox(orth))) || around(2.2), typeof coverBox === "function" ? safe(() => coverBox()) : null].filter(b => Array.isArray(b) && b.every(Number.isFinite));
+  const hx = Math.max(...boxes.map(b => Math.max(cx - b[0], b[2] - cx))), hy = Math.max(...boxes.map(b => Math.max(cy - b[1], b[3] - cy)));
+  return [cx - hx, cy - hy, cx + hx, cy + hy];
+}
 function fitBox(sheet) {
   if (!TERR) return null;
+  if (sheet.fit === "cover" || schemeCover(sheet)) return coverFrameBox();
   const c = turf.centroid(TERR).geometry.coordinates, adm = DATA["gisogd.admin"]?.fc.features || [];
   if (sheet.fit === "moscow") { const o = adm.filter(x => x.properties["Уровень"] === "округ"); return o.length ? turf.bbox(turf.featureCollection(o)) : turf.bbox(buf(TERR, 20000)); }
   if (sheet.fit === "district" || sheet.fit === "okrug") {
@@ -906,7 +921,7 @@ function detHTML(s, i) {
   const nrw = whyOf(s), noteAll = (nrw ? `<b>Не готов:</b> ${esc(nrw)}. ` : "") + note;
   const content = s.frozen ? `<select disabled aria-label="Содержание листа" title="Готовая вёрстка из файла: слои и оформление записаны в самом листе"><option>готовая вёрстка</option></select>`
     : s.keys || s.panels ? `<select disabled aria-label="Содержание листа" title="Лист раздела: слои, оформление и рамка заданы шаблоном раздела"><option>слои раздела</option></select>` : `<select data-sk="view" aria-label="Содержание листа">${vopts}</select>`;
-  const scale = `<select data-sk="scale" aria-label="Масштаб" ${tepS} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : s.frozen ? `<option>${+s.scale ? "1:" + fmt(Math.round(+s.scale)) : "—"}</option>` : ""}<option value="0" title="${schemeScale(s) ? "Масштаб схем проекта (окно «Листы и альбом» → «Штамп»); территория не помещается — крупнее" : "Масштаб подобран так, чтобы территория поместилась на лист"}">${schemeScale(s) ? "как в проекте" : "авто"} 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select>`;
+  const scale = `<select data-sk="scale" aria-label="Масштаб" ${tepS} ${s.panels ? "disabled title=\"Две карты: у каждой свой масштаб\"" : ""}>${s.panels ? "<option>у каждой карты свой</option>" : s.frozen ? `<option>${+s.scale ? "1:" + fmt(Math.round(+s.scale)) : "—"}</option>` : ""}<option value="0" title="${schemeScale(s) || schemeCover(s) ? "Масштаб схем проекта (окно «Листы и альбом», строка «Масштаб схем 5–9»); территория не помещается — крупнее" : "Масштаб подобран так, чтобы территория поместилась на лист"}">${schemeScale(s) || schemeCover(s) ? "как в проекте" : "авто"} 1:${fmt(sheetScale({ ...s, scale: 0 }))}</option>${(+s.scale && !SCALES.includes(+s.scale) ? [+s.scale, ...SCALES] : SCALES).map(v => `<option value="${+v}" ${v === +s.scale ? "selected" : ""}>1:${fmt(Math.round(v))}</option>`).join("")}</select>`;
   const t = (a, ic, tip, extra = "") => `<button class="tb" ${a} ${extra} title="${tip}" aria-label="${tip.split(".")[0].split(":")[0]}"><i data-lucide="${ic}"></i></button>`;
   const tools = (s.kind === "photos" ? t(`data-shphoto="${i}"`, "camera", `Добавить снимки (${(s.photos || []).length} из 12). Точка съёмки на карте берётся из GPS снимка`) + ((s.photos || []).length ? t(`data-shphotox="${i}"`, "image-off", "Убрать все снимки со слайда") : "") : "")
     + (["tep", "title"].includes(s.kind) || s.panels || s.frozen ? "" : t(`data-shframe="${i}"`, "frame", `Рамка листа на карте: тяните её мышью, чтобы выбрать, что попадёт на лист${s.center ? ". Сейчас лист сдвинут — «Вернуть» центрирует его на территории" : ""}`, `aria-pressed="${FRAME?.i === i}"`))
@@ -954,7 +969,7 @@ function renderSheets() {
     + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}${inp("short", "№ КРТ")}${inp("place", "Округ, район")}${inp("address", "Адрес")}`
     + `<div class="row" style="grid-column:1/-1"><button class="btn" id="shMetaFill" title="Заполнить пустые поля «№ КРТ», «Округ, район» и «Адрес» по загруженным слоям; то, что вы ввели сами, не меняется"><i data-lucide="wand-sparkles"></i>Заполнить по данным</button></div>`
     + `<label>Формат слайдов раздела<select id="shSlide" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (m.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></label></div></div>`
-    + `<div class="shscale"><label for="shSchemeScale">Масштаб схем 5–9</label><select id="shSchemeScale" title="Один масштаб для схем альбома ППТ КРТ — листов 5–9 — в этом проекте. «Авто» — по размеру территории; не помещается — крупнее. Масштаб, выбранный в свойствах листа, главнее. Данные за прежней рамкой докачивает «Собрать»"><option value="0">авто по территории</option>${SCALES.filter(v => v <= 10000).map(v => `<option value="${v}" ${v === schemeSetting() ? "selected" : ""}>1:${fmt(v)}</option>`).join("")}</select></div>`
+    + `<div class="shscale"><label for="shSchemeScale">Масштаб схем 5–9</label><select id="shSchemeScale" title="Один масштаб для схем альбома ППТ КРТ — листов 5–9 — в этом проекте. «Авто» — по размеру территории; «по границам выгрузки» — рамка не меньше области загрузки данных (синий пунктир в окне «Данные») и сит. плана; не помещается — крупнее. Масштаб, выбранный в свойствах листа, главнее. Данные за прежней рамкой докачивает «Собрать»"><option value="0">авто по территории</option><option value="cover" ${schemeSetting() === "cover" ? "selected" : ""}>по границам выгрузки</option>${SCALES.filter(v => v <= 10000).map(v => `<option value="${v}" ${v === schemeSetting() ? "selected" : ""}>1:${fmt(v)}</option>`).join("")}</select></div>`
     + importBarHTML()
     + (n ? `<div class="shmain"><div class="shlist" role="listbox" aria-label="Листы альбома">${ALBUM.sheets.map((s, i) => `<div class="shrow" role="option" data-sh="${i}" aria-selected="${i === sel}" tabindex="${i === sel ? 0 : -1}">${rowInner(s, i)}</div>`).join("")}</div>${detHTML(ALBUM.sheets[sel], sel)}</div>` : emptyHTML())
     + `</div>`
@@ -1010,8 +1025,9 @@ shEl().addEventListener("change", e => {
   if (t.dataset.meta) { ALBUM.meta[t.dataset.meta] = t.value; AlbumMeta.typed(ALBUM.meta, t.dataset.meta); touch(); syncAddrWhy(); const s = $("shStampSum"); if (s) s.innerHTML = stampSum(); renderSheets(); return; }
   if (t.id === "shImpFile") { if (isViewer()) { t.value = ""; return toast("Только просмотр: импорт листов доступен тому, кто правит проект."); } const f = t.files?.[0]; t.value = ""; if (f) readAlbumFile(f); return; }
   // формат слайдов раздела: новый раздел строится в нём, собранные слайды переводятся сразу (масштаб — заново, по рамке)
-  if (t.id === "shSchemeScale") { ALBUM.meta.schemeScale = +t.value || undefined; touch(); if (FRAME) showFrame(FRAME.i); renderSheets();
-    return toast(+t.value ? `Масштаб схем 1:${fmt(+t.value)}. Данные карты за прежней рамкой докачает «Собрать» → «Альбом ППТ КРТ» (он заменит листы набора).` : "Масштаб схем — авто, по размеру территории."); }
+  if (t.id === "shSchemeScale") { ALBUM.meta.schemeScale = t.value === "cover" ? "cover" : +t.value || undefined; touch(); if (FRAME) showFrame(FRAME.i); renderSheets();
+    return toast(t.value === "cover" ? "Масштаб схем — по границам выгрузки: рамка не меньше области загрузки данных, сит. плана и территории. Данные карты за прежней рамкой докачает «Собрать» → «Альбом ППТ КРТ» (он заменит листы набора)."
+      : +t.value ? `Масштаб схем 1:${fmt(+t.value)}. Данные карты за прежней рамкой докачает «Собрать» → «Альбом ППТ КРТ» (он заменит листы набора).` : "Масштаб схем — авто, по размеру территории."); }
   if (t.id === "shSlide") { ALBUM.meta.slide = t.value; ALBUM.sheets.filter(x => String(x.id).startsWith("sec1_")).forEach(x => { x.size = t.value; x.scale = 0; });
     touch(); if (FRAME) showFrame(FRAME.i); renderSheets(); return; }
   if (!row || !t.dataset.sk) return; const s = ALBUM.sheets[+row.dataset.sh], k = t.dataset.sk;

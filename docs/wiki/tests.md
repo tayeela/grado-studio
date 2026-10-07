@@ -44,7 +44,7 @@
 | `gpzones_test.js` | JS | 18 |
 | `insol_test.js` | JS | 22 |
 | `labelfmt_test.js` | JS | 51 |
-| `legendrules_test.js` | JS | 35 |
+| `legendrules_test.js` | JS | 38 |
 | `migrate_test.js` | JS | 22 |
 | `railstations_test.js` | JS | 30 |
 | `roadclean_test.js` | JS | 27 |
@@ -53,4 +53,4 @@
 | `sheetlayout_test.js` | JS | 302 |
 | `snap_test.js` | JS | 11 |
 
-Группы браузерных сценариев (E2E_ONLY=…): `t52`, `t55`, `t56`, `t59`, `t6`, `t61`, `t62`, `t66`, `t67`, `t71`, `t74`, `t76`, `t80`, `t84`, `t86`, `t88`
+Группы браузерных сценариев (E2E_ONLY=…): `t52`, `t55`, `t56`, `t59`, `t6`, `t61`, `t62`, `t66`, `t67`, `t71`, `t74`, `t76`, `t80`, `t84`, `t86`, `t88`, `t89`, `t90`, `t91`, `t92`
