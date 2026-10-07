@@ -1,3 +1,9 @@
+"""Проверяет рендер листа (grado_render): шрифты, сцену, PDF и SVG, штриховку, знаки ЛГР, стили.
+
+Запуск: python -m unittest discover -s core/render/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+Тест с pdftotext пропускается, если утилиты pdftotext нет.
+"""
+
 import re
 import sys
 import tempfile

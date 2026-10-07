@@ -1,3 +1,8 @@
+"""Проверяет PPTX-бэкенд (grado_render): обрезку по рамке, пакет OOXML, живой текст и ореол PDF.
+
+Запуск: python -m unittest discover -s core/render/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import io
 import re
 import unittest

@@ -1,3 +1,8 @@
+"""Геометрия проекта (grado_model.geometry): площадь и длина, дыры, WKB и GPKG-blob, проверка типа.
+
+Запуск: python -m unittest discover -s core/model/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 
 from grado_model import geometry

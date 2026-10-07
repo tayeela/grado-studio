@@ -1,3 +1,8 @@
+"""Выражения пресетов grado_compute: арифметика, функции, имена, отказ от небезопасного кода.
+
+Запуск: python -m unittest discover -s core/compute/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 
 from grado_compute import expressions

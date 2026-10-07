@@ -1,4 +1,6 @@
 #!/bin/sh
+# Собирает packaging/AppIcon.icns из packaging/AppIcon.svg: PNG 16, 32, 128, 256, 512 px и их @2x-версии (ImageMagick).
+# Запускать на Mac (нужна утилита iconutil) перед сборкой приложения, если менялся AppIcon.svg.
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

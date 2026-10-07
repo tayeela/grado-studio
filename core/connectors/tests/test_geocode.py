@@ -1,3 +1,9 @@
+"""Проверяет модуль geocode: поиск адреса через Nominatim (паузы, кэш, повторы, ошибки).
+
+Без сети: транспорт и часы подменены (класс Fake).
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import json
 import unittest
 import urllib.parse

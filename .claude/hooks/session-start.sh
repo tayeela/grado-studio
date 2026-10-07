@@ -10,3 +10,6 @@ VENV="$HOME/.grado2/venv"
 "$VENV/bin/python" -m pip install -q --disable-pip-version-check -r apps/grado2/requirements.txt
 CH=$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1 || true)
 if [ -n "$CH" ] && [ -n "${CLAUDE_ENV_FILE:-}" ]; then echo "export CHROME=\"$CH\"" >> "$CLAUDE_ENV_FILE"; fi
+# хуки git репозитория (tools/git-hooks): pre-commit пересобирает вики, как на Mac; выкладка на сайт из облака невозможна — только с Mac владельца
+git config core.hooksPath tools/git-hooks
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then echo "export GRADO_NO_DEPLOY=1" >> "$CLAUDE_ENV_FILE"; fi

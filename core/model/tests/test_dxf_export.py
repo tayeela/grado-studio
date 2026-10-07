@@ -1,3 +1,8 @@
+"""Выгрузка проекта в DXF R12 (grado_model.dxf_export): структура, слои, cp1251, дыры полигонов.
+
+Запуск: python -m unittest discover -s core/model/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import tempfile
 import unittest
 from pathlib import Path

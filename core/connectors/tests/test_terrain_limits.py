@@ -1,3 +1,9 @@
+"""Проверяет границы шага горизонталей (terrain): некорректные значения и слишком мелкий шаг.
+
+Без сети: тайлы рельефа генерирует сам тест; без Pillow класс тестов пропускается.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import io
 import unittest
 

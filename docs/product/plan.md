@@ -26,6 +26,8 @@ under a day, the console is clean, and the Windows installer runs on a clean mac
 
 ## Where we are (02.10.2026, v0.91.1) — checked by the team council
 
+> The newest state is the top of `docs/grado2-changelog.md` and the open issues (`gh issue list`); this section is the snapshot of 02.10.2026.
+
 The sections below («23.09.2026») are history. Status of Э8–Э12 against the changelog and the code:
 - Э8 acceptance: mostly done (v0.22: green release run, ТиНАО package in 24 s). Open: install on a clean Windows
   machine, a cold-cache timing, Хорошёво repeated with the new ТЭП, the owner's own run.
@@ -44,7 +46,8 @@ The sections below («23.09.2026») are history. Status of Э8–Э12 against th
 - Tests: 355 unit tests pass (2 skipped). The hub events route logs a 500 during the tests, and the collaboration
   browser scenario failed 2 of 4 runs on 01.10.
 
-The working queue is kept in `docs/team/BOARD.md` (main checkout); the reasons are in `docs/team/DECISIONS.md`.
+The working queue is the open issues of `tayeela/grado-studio` (`gh issue list`; the board before 06.10.2026 is `docs/archive/team/BOARD.md`);
+the reasons are in `docs/team/DECISIONS.md`.
 
 ## Where we are (23.09.2026, v0.14.0)
 
@@ -217,7 +220,7 @@ Constraints come before more generation: a sketch that ignores ЗОУИТ and in
 
 ## Generation under constraints
 
-Research notes and sources: `docs/research/2026-09-23-generative-constraints.md`. The consensus of
+Research notes and sources: `docs/product/research-2026-09-23-generative-constraints.md`. The consensus of
 the literature and of production tools: hard geometry first, search only inside the feasible region.
 ML generators are not usable for norm compliance (no Moscow training data, not verifiable).
 

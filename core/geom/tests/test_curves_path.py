@@ -1,3 +1,8 @@
+"""Проверяет дуги и пути grado_geom: пикетаж, сопряжения, офсеты, аффинные преобразования.
+
+Запуск: python -m unittest discover -s core/geom/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import math
 import unittest
 

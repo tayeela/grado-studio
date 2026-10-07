@@ -1,3 +1,8 @@
+"""Обмен DXF в ГРАДО 2 (dxf_io): красные линии и их типы, надписи, размеры, МСК и ГИС ОГД.
+
+Запуск: python -m unittest discover -s apps/grado2/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import io
 import json
 import sys

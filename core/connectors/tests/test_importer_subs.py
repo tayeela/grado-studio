@@ -1,3 +1,9 @@
+"""Проверяет импорт снимка в проект (importer) и подписки на изменения источника (Subscriptions).
+
+Без сети: ФГИС ТП подменён функцией-транспортом; снимки и проект — во временной папке.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import json
 import tempfile
 import unittest

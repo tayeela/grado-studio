@@ -1,3 +1,8 @@
+"""Проверяет площадь полигонов внутри других (grado_geom.overlay): дубли, дыры, общие границы.
+
+Запуск: python -m unittest discover -s core/geom/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 
 from grado_geom.overlay import union_intersection_area

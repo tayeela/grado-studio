@@ -1,3 +1,8 @@
+"""Листы альбома (grado_layout): штамп, карта с легендой, таблица, PDF и SVG, демо-альбом.
+
+Запуск: python -m unittest discover -s core/layout/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import sys
 import tempfile
 import unittest
