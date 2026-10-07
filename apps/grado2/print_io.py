@@ -807,6 +807,12 @@ class SketchMapFrame(Frame):
                 out.extend(ys)
             else:
                 out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], info=tinfo))
+            dm = sh.get("distMask")
+            if dm and dm.get("geometry"):                                 # маска района: всё за его границей — под белой дымкой (владелец 07.10.2026, #45)
+                fx, fy, fw, fh = rect
+                holes = [[tr.mm(*p[:2]) for p in poly[0]] for poly in _parts(dm["geometry"])[1]]
+                out.append({"op": "path", "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]] + holes, "closed": True,
+                            "fill": (1, 1, 1), "alpha": float(dm.get("alpha") or .45), "stroke": None, "width": 0, "dash": None, "evenodd": True})
             if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
                 fx, fy, fw, fh = rect
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
@@ -1484,12 +1490,12 @@ class SketchMapFrame(Frame):
                 if f.get("lead"):                                       # выноска: белый пунктир от плашки к точке территории
                     tx, ty = tr.mm(*f["lead"][:2])
                     bottom = y + ls * .35 + (len(lines) - 1) * lh + pad * .6
-                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": [1.4, 0.9],
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": None if f.get("leadSolid") else [1.4, 0.9],
                                 "rings": [[(x, top if ty < top else bottom), (tx, ty)]]})
                     out.append({"op": "circle", "x": tx, "y": ty, "r": 0.7, "fill": (1, 1, 1), "stroke": None, "width": 0})
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": f.get("lboxAlpha"),
                             "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
-                            "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, top), (x + bw / 2 + pad, top),
+                            "width": float(f.get("lboxW") or 0.2), "dash": None, "rings": [[(x - bw / 2 - pad, top), (x + bw / 2 + pad, top),
                                                                     (x + bw / 2 + pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6),
                                                                     (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
             for i, line in enumerate(lines):

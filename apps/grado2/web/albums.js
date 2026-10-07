@@ -251,7 +251,7 @@ const PPTKRT_D = [
   { ...C_BASE, concept: "district", sit: true, title: "Фрагмент карты административно-планировочной структуры города Москвы", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], fit: "district",
     keys: ["osm.roads", "gisogd.admin", "egko.water", "egko.water_labels"],
     styles: { "osm.roads": { mode: "single", fill: ROAD_YELLOW, width: MM(.7), label: "Название" }, ...C_WATER,
-      "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: MM(1.2), label: "" } },
+      "gisogd.admin": { mode: "single", opacity: 0, fill: "#b3392f", stroke: "#b3392f", width: MM(.6), label: "" } },   // тоньше (владелец 07.10.2026, #45)
     only: { "osm.roads": { field: "Тип дороги", values: D_ROADS }, "gisogd.admin": { field: "Уровень", values: ["район"] } },
     labelMM: { "osm.roads": 3.2, "egko.water_labels": 3.8 } },
 ].map(sh => cSheet(sh, { places: false })).concat(
@@ -745,7 +745,9 @@ function conceptSheet(out, sheet, bb) {
     const edge = safe(() => inter(TERR, turf.bboxPolygon(up ? [w, n - (n - s) * .3, e, n] : [w, s, e, s + (n - s) * .3])));
     const tgt = (edge && safe(() => turf.pointOnFeature(edge))) || turf.pointOnFeature(TERR), [tx] = tgt.geometry.coordinates;
     out.layers.push({ title: "Выноска территории", features: [{ g: { type: "Point", coordinates: [tx, up ? n : s] }, nodot: true, lead: tgt.geometry.coordinates,
-      label: `Территория\nрассмотрения\n(${ha} га)`, ls: 4.5, lf: "sans", lcol: "#4a4a4a", lbox: true, lboxAlpha: .75, ldy: up ? -22 : 16 }] });
+      label: `Проектируемая территория – ${ha} га`, ls: 3.4, lf: "sans-bold", lcol: "#111111", lbox: C_TERR, lboxW: .7, lboxAlpha: 1, leadSolid: true, ldy: up ? -22 : 16 }] });   // владелец 07.10.2026 (#45): плашка в пурпурной рамке, чёрный текст в одну строку, белая линия к территории
+    // маска района (владелец 07.10.2026, #45: «это маска от района, все кроме района светлое»): всё за границей района своей территории — под белой дымкой
+    const home = homeAdm().district; if (home) { const part = safe(() => inter(home, turf.bboxPolygon(bb))); if (part?.geometry) out.distMask = { alpha: .45, geometry: part.geometry }; }
     // граница района — в легенде, только если она видна на листе
     const box = turf.bboxPolygon(bb), dist = (L("gisogd.admin")?.features || []).some(ft => /Polygon/.test(ft.g?.type)
       && safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.some(l => turf.booleanIntersects(l, box))));
@@ -1149,7 +1151,9 @@ function conceptDistricts(out, bb, k) {
   const mine = k === "district" && !named.has(district) ? safe(() => inter(district, box)) : null;   // карта района: подписан и район территории
   if (mine) rest.push({ f: district, part: mine });
   if (rest.length) out.layers.push({ title: "Соседние районы: подписи", features: rest.map(({ f, part }) => ({ g: deep(part).geometry, nm: true, nudge: true,
-    label: nm(f), ls: 14.3 * .3528, lf: "sans-bold", lh: .6, lcol: "#9e1717", la: 0 })) });
+    label: k === "ortho" || k === "district" ? nm(f).toUpperCase() : nm(f), ls: 14.3 * .3528, lf: "sans-bold", lh: .6, lcol: "#9e1717", la: 0,
+    // снимок (владелец 07.10.2026, #45): ортофотоплан — тёмно-красные заглавные с белой обводкой, карта района — белые заглавные с тёмной обводкой
+    ...(k === "ortho" ? { lcol: "#8b1a1a", lh: .9 } : k === "district" ? { lcol: "#ffffff", lh: .7, lhc: "#1a1a1a" } : {}) })) });
 }
 window.conceptSheet = conceptSheet;
 // лист документации, у которого в рамке нет ни одного документа его вида, «не готов» с причиной (T85a, правило 7): считается
