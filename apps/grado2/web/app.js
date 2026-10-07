@@ -1720,9 +1720,13 @@ function renderTep() {
         return `<div class="row"><label title="Средняя предельная плотность подзон ПЗЗ внутри границы, взвешенная по площади">Цель по ПЗЗ</label><b>${fmt(pz.value, 1)}</b><small>тыс. м²/га · ${Math.round(pz.share * 100)} % границы${pz.vals.length > 1 ? ` · подзоны ${pz.vals.map(v => fmt(v, 1)).join(", ")}` : ""}</small>${Math.abs(t.target - pz.value) >= 0.5 ? `<button class="btn" data-tp-pzz title="Поставить цель плотности эскиза по ПЗЗ">взять цель</button>` : ""}</div>`; })()}
       ${(tp.notes || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("")}</div>`;
   const nch = t.constantsChanged?.length ? `<button class="normsline" data-norms-open title="Открыть окно «Нормативы расчёта»">Нормативы изменены вручную: ${t.constantsChanged.length}</button>` : "";
+  // аудит 07.10.2026 (#28): пока новых корпусов нет, нули от новой застройки — не результат, а «ещё не рассчитано»
+  const noSk = !(t.n > 0), notYet = `<span class="muted" title="Ещё не рассчитано: появится после эскиза">—</span>`;
+  const skNote = noSk ? `<div class="note warn" role="status"><b>Эскиз не построен</b> — показатели новой застройки появятся после расчёта. Выберите типологию в окне «Эскиз» и нажмите «Построить эскиз». Территория и сохраняемая застройка ниже уже посчитаны.<br><button class="btn" data-win-sketch>Открыть «Эскиз»</button></div>` : "";
+  const val = (v, txt) => noSk && !v ? notYet : txt;
   const rs = reserveState(), sumLine = `<div class="resline" title="Площади участков — минимум по таблице норм; здания, СПП и плотность от резерва не меняются">${esc(reserveSummary(t))}</div>`;
-  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + sumLine + kv([["Новые корпуса", t.n], ["СПП новая", fmt(t.sppNew / 1000, 2) + " тыс. м²"], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", fmt(t.density, 2) + " тыс. м²/га", dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", fmt(t.cover * 100, 1) + " %"], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
-    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit)])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
+  $("tep").innerHTML = nch + place + `<div class="sect">Эскиз</div>` + skNote + (noSk ? "" : sumLine) + kv([["Новые корпуса", t.n], ["СПП новая", val(t.sppNew, fmt(t.sppNew / 1000, 2) + " тыс. м²")], ["СПП сохраняемая", fmt(t.sppKept / 1000, 2) + " тыс. м²"], ["Плотность итоговая", val(t.density, fmt(t.density, 2) + " тыс. м²/га"), noSk && !t.density ? "" : dCls], ["Цель", fmt(t.target) + " тыс. м²/га"], ["Застроенность", val(t.cover, fmt(t.cover * 100, 1) + " %")], ["Сохраняется", t.kept.length + " зд."], ["Под снос", t.demolN + " зд. · " + fmt(t.demolSpp / 1000, 2) + " тыс. м²"]])
+    + Object.entries(byGroup).sort((a, b) => (GROUP_ORDER.indexOf(a[0]) + 99) % 99 - (GROUP_ORDER.indexOf(b[0]) + 99) % 99).map(([g, ms]) => `<div class="sect">${esc(g)}</div>` + kv(ms.map(m => [m.title, val(m.value, fmt(m.value, m.precision ?? 3) + " " + esc(m.unit))])) + (g === "Резерв участков" ? (rs?.warns || []).map(x => `<div class="note warn">${esc(x)}</div>`).join("") : "")).join("")
     + `<div class="note">Методика «Калькулятора 2.0» (Москва): 2151-ПП, 2150-ПП, 2152-ПП, 1557-ПП, 945-ПП. Население, соцобъекты и машино-места — от новой застройки; люди, места и машино-места округлены вверх, площади — математически (СПП — 2 знака, остальное — 3). K1 — по пешеходному маршруту по улицам OSM от центра территории до ближайшего входа или станции (пока маршрут считается — прямое расстояние × 1,3). ${t.existKey === "osm.buildings" ? "Существующие здания взяты из OSM: ЕГРН не загружен. " : ""}</div>`;
 }
 $("tep").addEventListener("change", e => {
@@ -1736,6 +1740,7 @@ $("tep").addEventListener("click", e => {
   if (!RESULT.tepNode) return; const tp = tepParams(RESULT.tepNode);
   if (e.target.closest("[data-tp-auto]")) { tp.auto = true; if (tp.zoneSet) { delete tp.zoneSet; tp.zone = tp.zoneDist ?? tp.zone; } tp.rev = -1; recompute(true); }
   if (e.target.closest("[data-tp-pzz]")) takePzzTarget();
+  if (e.target.closest("[data-win-sketch]")) winOpen("wSketch", true);
   if (e.target.closest("[data-tp-reset]")) { Object.assign(tp, { mode: 1, nonres: 6, unbuilt: 25 }); window.markDirty?.(); recompute(true); }
 });
 function renderSketch() {

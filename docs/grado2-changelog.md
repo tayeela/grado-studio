@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).**
+  While there are no new buildings (`t.n === 0`), the «Эскиз» section opens with «Эскиз не построен — показатели новой
+  застройки появятся после расчёта…» and an «Открыть «Эскиз»» button; zero values of new-building metrics, new SPP, density
+  and coverage show «—» (tooltip «Ещё не рассчитано»). Territory and kept buildings stay as computed.
 - **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
   без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
   built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest

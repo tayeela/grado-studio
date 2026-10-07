@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
 - 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
 - 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
 - 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).
 - 2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).
 - 2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.
-- 2026-10-06, ГРАДО 2 v0.99.11: station names always red and always placed.
