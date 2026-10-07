@@ -37,6 +37,7 @@ if ! cmp -s $A/apps/grado2/requirements.txt $A.new/apps/grado2/requirements.txt;
 fi
 rm -rf $A.prev && mv $A $A.prev && mv $A.new $A
 systemctl restart grado
+systemctl restart grado-guest 2>/dev/null || true   # гостевая копия (вход guest, свои проекты) — тот же код, с 07.10.2026
 health() { curl -s -m 5 -H 'Host: 127.0.0.1:8650' http://127.0.0.1:8650/api/health; }
 for i in $(seq 1 20); do
   if health | grep -q "\"version\": \"$VER\""; then echo "Готово: на сервере версия $VER"; exit 0; fi
@@ -45,7 +46,7 @@ done
 echo "Новая версия не ответила — возвращаю прежнюю"
 journalctl -u grado -n 15 --no-pager | tail -15
 rm -rf $A.failed && mv $A $A.failed && mv $A.prev $A
-systemctl restart grado; sleep 3
+systemctl restart grado; systemctl restart grado-guest 2>/dev/null || true; sleep 3
 echo "Сейчас на сервере: $(health)"
 exit 1
 REMOTE
