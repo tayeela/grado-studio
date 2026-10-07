@@ -2,6 +2,10 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: A browser step waits for the element or text it checks (`until`), never reads it right after a window becomes visible:
+the collab step «A: список проектов пуст» read `hubProjList` before `loadProjects()` drew it and failed on the slow GitHub
+runner; T27 and T61 failed the same way on other runs of one PR (07.10.2026, issue #40).
+
 RULE: Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page
 text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
 
@@ -19,6 +23,19 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 07.10.2026, выкладка по слову владельца («выкладывай») — v0.99.43: три листа «в границах сит. плана» (#37, PR #38 и #39,
+  v0.99.40–0.99.43): рамка «по границам выгрузки» и третье значение настройки «Масштаб схем 5–9»; новые листы 10–13 в конце
+  альбома ППТ КРТ — карта района, схема документации (ППТ, ПМТ, ГПЗУ, АГР, КРТ), Генплан и ПЗЗ в рамке сит. плана. Настройка
+  «Масштаб схем» (#31) ушла в main раньше, PR #35 (v0.99.39). Проверка: wiki, unit, connectors; браузерные сценарии на GitHub
+  зелёные (451 ok; у PR три красных запуска на посторонних шагах T27, T61, collab — гонки по времени в тестах, задача #40,
+  упавшее перезапущено один раз); локально сбой только T68 (шрифты облачной среды, то же на чистой team/t60). Листы нарисованы
+  сервером и выгружены в PDF (4 страницы А3) и PPTX (4 слайда) на синтетических данных, страницы просмотрены.
+  НЕ сделано: пересборка альбома и сравнение страниц на Гольяново и Безобразово (`album-verify`, `tools/album_check.py
+  --name gol|bez`) — в облаке нет проектов, ГИС ОГД, ЕГКО, НСПД и Overpass не отвечают; владелец знает и выложить велел.
+  После выкладки на Mac: листы 1–9 не должны измениться, листы 10–13 сравнить с образцами `docs/team/samples/2026-10-07`;
+  первая загрузка слоёв для листа 10 (район около 40 км²) заметно дольше прежней. Сайт: из облака выкладка недоступна (путь
+  Mac → msk → grado), нужен `git pull` в `~/grado-studio` на Mac, хук запустит `tools/deploy-server.sh`; 07.10 в 12:15 UTC
+  grado.tailink.tech отвечал 503 (служба за входным сервером не отвечает, причина неизвестна) — перезапуск службы с Mac.
 - 06.10.2026, цикл 27 — полная проверка альбома Гольяново (нормы, оформление, данные: AUD-*.md в /tmp/grado-team/2026-10-06),
   сводный список F1–F12 + PPTX. Сделано v0.99.21–0.99.22: СЗЗ установленные, дорога-пробел ЕГКО, легенда генплана,
   таблица участков, ЖК, выноски листа 2, номер зоны, PPTX 20 мин → 20 с и встроенный Montserrat. Данные владельца:
