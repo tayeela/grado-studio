@@ -54,6 +54,6 @@
 
 Предел области выгрузки, км² (LIMIT_KM2): `{"gisogd_admin": 1e9, "nspd": 250.0, "osm": 150.0, "gisogd": 150.0, "egko": 150.0, "terrain": 150.0, "yandex": 40.0, "yandex_sit": 150.0}`
 
-Слои с фильтром объектов (SIT_FILTER): `egko.fences`, `egko.place_labels`, `egko.water_labels`, `relief.contours`, `sit.rail`, `sit.stations`, `yandex.rail`, `yandex.stations`
+Слои с фильтром объектов (SIT_FILTER): `sit.places`, `sit.rail`, `sit.stations`, `yandex.rail`, `yandex.rail_stations`, `yandex.stations`
 
 Общие настройки задаются циклами `for _k in (…)` в server.py.

@@ -34,6 +34,10 @@ jobs:
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
           python -m unittest discover -s apps/grado2/tests -p "test_*.py"
           python -m unittest discover -s core/connectors/tests -p "test_*.py"
+      - name: Unit tests of the other core packages (compute, geom, layout, model, reactive, render)
+        run: |
+          export PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2"
+          for m in compute geom layout model reactive render; do python -m unittest discover -s core/$m/tests -p "test_*.py"; done
       - name: Fonts for the interface (as on the owner's Mac)
         # интерфейс: system-ui, Segoe UI, Roboto, Helvetica Neue, Arial. На ubuntu system-ui и sans-serif дают DejaVu Sans — он шире,
         # и шапка на 1440 px переполняется (T63). Ставим Roboto и делаем его первым в fontconfig для sans-serif и самого DejaVu Sans.

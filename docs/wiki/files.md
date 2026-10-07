@@ -16,7 +16,8 @@
 | оглавление вики | `docs/wiki/INDEX.md` |
 | **свод правил альбома ППТ КРТ** (до любой работы с листами) | `docs/wiki/album-rules.md` |
 | как устроена программа | `docs/wiki/architecture.md` |
-| как писать код и документы, как добавить источник, лист, маршрут | `docs/wiki/conventions.md`, `docs/CLAUDE.md` |
+| как писать код и документы | `docs/wiki/conventions.md`, `docs/CLAUDE.md` |
+| как добавить источник данных, маршрут, лист альбома, правило подписей, модуль страницы, тест | `docs/wiki/howto.md` |
 | как проверить, собрать альбом, выложить | `docs/wiki/recipes.md` |
 
 ## Вопрос → файл
@@ -55,7 +56,7 @@
 | готовые сценарии (навыки) | `.claude/skills/album-verify` (проверка), `owner-remark` (замечание владельца), `land` (выкладка) |
 | закрытая студия, прежние аудиты и планы | `docs/archive/` (читать только как историю) |
 | вики на GitHub (приватно) | `tayeela/grado-wiki`: README, llms.txt, AGENTS.md; обновляет `.github/workflows/wiki.yml` и `tools/wiki_publish.sh` |
-| эта вики | генератор `tools/wiki.py` (страницы из кода); вручную — `architecture.md`, `recipes.md`, `album-rules.md`, `files.md`, `conventions.md` |
+| эта вики | генератор `tools/wiki.py` (страницы из кода); вручную — `architecture.md`, `recipes.md`, `album-rules.md`, `files.md`, `conventions.md`, `howto.md` |
 
 ## Вне репозитория
 

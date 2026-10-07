@@ -26,7 +26,8 @@
 | что где лежит в коде и на машине владельца | [wiki/files.md](wiki/files.md) |
 | правила оформления альбома (читать до любой работы с листами) | [wiki/album-rules.md](wiki/album-rules.md), полный текст — [standards/albums/label-rules.md](standards/albums/label-rules.md) |
 | как устроена программа | [wiki/architecture.md](wiki/architecture.md) |
-| как писать код и документы, как добавить источник, лист, маршрут | [wiki/conventions.md](wiki/conventions.md) |
+| как писать код и документы | [wiki/conventions.md](wiki/conventions.md) |
+| как добавить источник данных, маршрут, лист альбома, правило подписей, модуль страницы, тест | [wiki/howto.md](wiki/howto.md) |
 | как проверить, собрать альбом, выложить, срочно исправить | [wiki/recipes.md](wiki/recipes.md) |
 | какие слои откуда | [wiki/sources.md](wiki/sources.md) |
 | из каких листов состоит альбом | [wiki/sheets.md](wiki/sheets.md) |

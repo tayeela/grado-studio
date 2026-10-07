@@ -38,6 +38,7 @@
 | правила оформления альбома | [docs/wiki/album-rules.md](docs/wiki/album-rules.md) |
 | как устроена программа | [docs/wiki/architecture.md](docs/wiki/architecture.md) |
 | как писать код и документы | [docs/wiki/conventions.md](docs/wiki/conventions.md), [docs/CLAUDE.md](docs/CLAUDE.md) |
+| как добавить источник, маршрут, лист, подпись, модуль, тест | [docs/wiki/howto.md](docs/wiki/howto.md) |
 | как проверить, собрать альбом, выложить | [docs/wiki/recipes.md](docs/wiki/recipes.md) |
 | процесс команды и GitHub | [docs/team/CYCLE.md](docs/team/CYCLE.md) |
 | что менялось | [docs/grado2-changelog.md](docs/grado2-changelog.md) |

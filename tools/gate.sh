@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой):
-#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы, свежесть вики, навигация документов (tools/docs_check.py)
+#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py)
 #   E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы
 # Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
@@ -18,6 +18,7 @@ step docs       python3 tools/docs_check.py
 step unit       env PYTHONPATH="$PP" "$PY" -m unittest discover -s apps/grado2/tests -p "test_*.py"
 step unit-bare  bash -c "cd apps/grado2 && env -u PYTHONPATH '$PY' -m unittest discover -s tests -p 'test_*.py'"
 step connectors env PYTHONPATH="$PP" "$PY" -m unittest discover -s core/connectors/tests -p "test_*.py"
+step core       bash -c "set -e; for m in compute geom layout model reactive render; do PYTHONPATH='$PP' '$PY' -m unittest discover -s core/\$m/tests -p 'test_*.py'; done"
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   step e2e      env PYTHONPATH="$PP" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
 fi

@@ -3,7 +3,7 @@
 
 Зачем: агенту и человеку нужна короткая и всегда свежая сводка (что где лежит, какие источники данных, какие листы
 и правила), вместо чтения больших файлов целиком. Страницы, помеченные «генерируется», переписываются этим
-скриптом; architecture.md, recipes.md, album-rules.md, files.md и conventions.md пишутся руками и здесь не трогаются.
+скриптом; architecture.md, recipes.md, album-rules.md, files.md, conventions.md и howto.md пишутся руками и здесь не трогаются.
 sheets.md берётся из самого albums.js, выполненного в Node (tools/wiki_albums.mjs); без Node страница не пересобирается.
 
   python3 tools/wiki.py          — пересобрать docs/wiki/
@@ -52,7 +52,14 @@ def sources():
         line = s.count("\n", 0, m.start()) + 1
         rows.append((m.group(1), kind, title, line))
     loops = re.findall(r'^for _k in \(([^)]*)\):', s, re.M)
-    filt = sorted(set(re.findall(r'"([a-z_]+\.[a-z_0-9.]+)":\s*lambda', s)))
+    filt, m = [], re.search(r"^SIT_FILTER\s*=\s*\{", s, re.M)          # словарь «ключ слоя → фильтр объектов» целиком
+    if m:
+        i, depth = m.end() - 1, 0
+        for j in range(i, len(s)):
+            depth += {"{": 1, "}": -1}.get(s[j], 0)
+            if depth == 0:
+                break
+        filt = sorted(set(re.findall(r'"([a-z_]+\.[a-z_0-9.]+)"\s*:', s[i:j + 1])))
     lim = re.search(r"^LIMIT_KM2\s*=\s*(\{[^}]*\})", s, re.M)
     out = [GEN, "# Источники данных (server.py, SOURCES)\n\n",
            f"{len(rows)} ключей. Ключ слоя — `источник.имя`; вид — коннектор (gisogd, egko, nspd, osm, yandex…).\n\n",
@@ -319,7 +326,8 @@ def index():
             "| [architecture.md](architecture.md) | как устроена программа: части, данные, печать (вручную) |\n"
             "| [files.md](files.md) | **где что лежит: вопрос → файл, места на Mac владельца, ветки** (вручную) |\n"
             "| [album-rules.md](album-rules.md) | **свод правил альбома ППТ КРТ — читать до любой работы с листами** (вручную) |\n"
-            "| [conventions.md](conventions.md) | как писать код и документы; как добавить источник данных, маршрут, лист альбома, тест (вручную) |\n"
+            "| [conventions.md](conventions.md) | как писать код и документы: порядок чтения, имена, тесты, полки (вручную) |\n"
+            "| [howto.md](howto.md) | рецепты по шагам: добавить источник данных, маршрут сервера, лист альбома, правило подписей, модуль страницы, тест (вручную) |\n"
             "| [recipes.md](recipes.md) | как: проверить, собрать альбом на тестовой копии, выложить, срочно исправить (вручную) |\n"
             "| [sources.md](sources.md) | источники данных: ключи слоёв, порталы, пределы |\n"
             "| [sheets.md](sheets.md) | листы альбомов: состав, ключи слоёв, основа |\n"

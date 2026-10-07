@@ -8,7 +8,7 @@
 2. [INDEX.md](INDEX.md) — карта папок: что где лежит. У каждой папки есть свой `README.md`.
 3. [docs/wiki/files.md](docs/wiki/files.md) — вопрос → файл; [docs/wiki/INDEX.md](docs/wiki/INDEX.md) — страницы вики (большая часть собирается из кода сама).
 4. Работа с альбомом ППТ КРТ — сначала [docs/wiki/album-rules.md](docs/wiki/album-rules.md).
-5. Как писать код и документы — [docs/CLAUDE.md](docs/CLAUDE.md) и [docs/wiki/conventions.md](docs/wiki/conventions.md).
+5. Как писать код и документы — [docs/CLAUDE.md](docs/CLAUDE.md) и [docs/wiki/conventions.md](docs/wiki/conventions.md); пошаговые рецепты (источник данных, маршрут, лист, подпись, модуль, тест) — [docs/wiki/howto.md](docs/wiki/howto.md).
 
 ## Команды
 
