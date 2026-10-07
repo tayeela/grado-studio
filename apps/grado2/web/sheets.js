@@ -54,8 +54,9 @@ const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fit
 // Территория не помещается — крупнее по ряду, граница не обрезается (правило 3.2); масштаб, выбранный в свойствах листа, главнее
 const SCHEME_CONCEPTS = new Set(["use", "gp", "ppt", "gpzu", "parcels"]);
 const schemeSetting = () => { const v = ALBUM.meta?.schemeScale; return v === "cover" ? v : SCALES.includes(+v) ? +v : 0; };
-const schemeScale = sheet => SCHEME_CONCEPTS.has(sheet.concept) && schemeSetting() !== "cover" ? schemeSetting() : 0;
-const schemeCover = sheet => SCHEME_CONCEPTS.has(sheet.concept) && schemeSetting() === "cover";
+const isScheme = sheet => SCHEME_CONCEPTS.has(sheet.concept) && !sheet.sit;      // листы «в границах сит. плана» (sit, #37) свою рамку берут сами и настройку схем не берут
+const schemeScale = sheet => isScheme(sheet) && schemeSetting() !== "cover" ? schemeSetting() : 0;
+const schemeCover = sheet => isScheme(sheet) && schemeSetting() === "cover";
 const sheetScale = sheet => sheet.scale || Math.max(schemeScale(sheet), autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm));
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {

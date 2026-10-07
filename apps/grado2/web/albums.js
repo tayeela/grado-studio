@@ -247,13 +247,21 @@ const PPTKRT_C = [
    линиями по классам, красная граница района, названия районов, главных дорог и станций метро, выноска территории */
 const ROAD_YELLOW = "#f3d98c", D_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary", "motorway_link", "trunk_link", "primary_link"];
 const PPTKRT_D = [
-  { ...C_BASE, concept: "district", title: "Фрагмент карты административно-планировочной структуры города Москвы", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], fit: "district",
+  { ...C_BASE, concept: "district", sit: true, title: "Фрагмент карты административно-планировочной структуры города Москвы", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], fit: "district",
     keys: ["osm.roads", "gisogd.admin", "egko.water", "egko.water_labels"],
     styles: { "osm.roads": { mode: "single", fill: ROAD_YELLOW, width: MM(.7), label: "Название" }, ...C_WATER,
       "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: MM(1.2), label: "" } },
     only: { "osm.roads": { field: "Тип дороги", values: D_ROADS }, "gisogd.admin": { field: "Уровень", values: ["район"] } },
     labelMM: { "osm.roads": 3.2, "egko.water_labels": 3.8 } },
-].map(sh => cSheet(sh, { places: false }));
+].map(sh => cSheet(sh, { places: false })).concat(
+  // лист 12 — п. 3, Генплан: шаблон листа 6 с рамкой «по границам выгрузки» (sheets.js coverFrameBox); лист 13 — п. 3, ПЗЗ: границы
+  // территориальных зон с кодами видов разрешённого использования на той же основе, что листы 7–8
+  [{ ...JSON.parse(JSON.stringify(PPTKRT_C.find(s => s.concept === "gp"))), sit: true, fit: "cover", title: "Размещение территории в материалах территориального планирования (Генеральный план города Москвы)" },
+    cSheet({ ...C_BASE, concept: "pzz", sit: true, fit: "cover", title: "Размещение территории в материалах градостроительного зонирования (ПЗЗ города Москвы)",
+      keys: [...C_BODY, "gisogd.pzz_zones", ...C_TAIL],
+      styles: { ...C_VEC, "gisogd.pzz_zones": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#6a3d9a", width: MM(.5), label: "ВРИ (коды)" } },
+      labelFn: { ...C_BASE.labelFn, "gisogd.pzz_zones": "vri" }, labelMM: { ...C_BASE.labelMM, "gisogd.pzz_zones": 3.4 },
+      labelStyle: { ...C_BASE.labelStyle, "gisogd.pzz_zones": { lf: "sans-bold", lh: .5, lcol: "#4b2a7a" } } })]);
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -950,6 +958,12 @@ function conceptSheet(out, sheet, bb) {
       cols: ["Номер функц.\u00a0зоны", "Индекс функц.\u00a0зоны", "Тип функц.\u00a0зоны", "Прогнозируемый фонд застройки функц.\u00a0зоны, тыс.\u00a0кв.\u00a0м"],
       rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[3]]) };
     out.table = undefined;
+  }
+  if (k === "pzz") {
+    // выкопировка из ПЗЗ (#37): границы территориальных зон и коды видов разрешённого использования; в легенде — только видимое (правило 7)
+    const zs = (L("gisogd.pzz_zones")?.features || []).filter(inFrame);
+    out.cLegend = [{ title: "Границы", items: [terr, ...(zs.length ? [{ kind: "line", stroke: "#6a3d9a", width: .5, label: "территориальных зон" }] : [])] },
+      ...(zs.some(ft => ft.label) ? [{ title: "Подписи", items: [{ kind: "text", sample: "4.9", family: "sans-bold", label: "коды видов разрешённого использования земельных участков и объектов капитального строительства" }] }] : [])];
   }
   if (k === "ppt") {
     out.cLists = conceptDocs(out, bb, [{ key: "gisogd.ppt", title: "Проекты планировки территории", text: docLine },

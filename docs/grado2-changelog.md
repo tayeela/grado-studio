@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).** `PPTKRT_D` (albums.js) gets two
+  more sheets with the flag `sit: true` and `fit: "cover"` (frame = `coverFrameBox`, v0.99.40): sheet 12 is a copy of the template of sheet 6
+  (`concept: "gp"`: colours by the MapInfo table, number and index, legend, table of zones) with the title «Размещение территории в
+  материалах территориального планирования (Генеральный план города Москвы)»; sheet 13 is the new concept `pzz` (branch in
+  `conceptSheet`): boundaries of the territorial zones (`gisogd.pzz_zones`, #6a3d9a 0,5 mm) with the VRI codes (`LABEL_FN.vri`) on the
+  base of sheets 7–8, legend only of what is visible; title «Размещение территории в материалах градостроительного зонирования (ПЗЗ
+  города Москвы)». The `sit` sheets never take the project's numeric «Масштаб схем 5–9» (`isScheme`, sheets.js). Subzones of the PZZ
+  (`gisogd.pzz_sub`) are not on the sheet: a separate sheet only on the owner's word. E2E group `t91`.
 - **2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).** New
   `PPTKRT_D` in albums.js (appended to `PPTKRT` after sheet 9, so sheets 1–9 keep their numbers): concept `district`, Yandex satellite
   on the whole sheet under the header (`bleed`, rect 0,44,420,253 like sheet 3), frame = the district of the territory (`fit: "district"`,

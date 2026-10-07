@@ -1595,14 +1595,14 @@ export default async p => {
         out.callout = !!sh.layers.find(l => l.title === "Выноска территории");
         out.legend = (sh.cLegend || []).flatMap(g => (g.items || []).map(i => i.label));
         out.look = [sh.look, sh.bleed, sh.basemap, sh.rect];
-        out.tpl = [PPTKRT.length, PPTKRT[PPTKRT.length - 1].concept, PPTKRT_D.length];
+        out.tpl = [PPTKRT.length, PPTKRT_D[0].concept, PPTKRT_D.length];
         const resp = await fetch("/api/print/svg", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...sp, index: 0 }) });
         const txt = await resp.text();
         out.svg = [resp.status, txt.length, /Фрагмент карты административно-планировочной структуры/.test(txt), resp.headers.get("X-Grado-Not-Ready") || "", txt.slice(0, 120)];
         window.__t90svg = txt; out.shot = 1;
         return JSON.stringify(out);
       } finally { window.__t90 = { prevT, keep, saved, keys }; }`));
-    check(r.tpl[0] >= 10 && r.tpl[1] === "district" && r.tpl[2] === 1, `T90: в шаблоне альбома лист «district» последний (листов ${r.tpl[0]})`);
+    check(r.tpl[0] >= 10 && r.tpl[1] === "district" && r.tpl[2] >= 1, `T90: первый лист «в границах сит. плана» (PPTKRT_D) — «district», он десятый в альбоме (листов в шаблоне ${r.tpl[0]})`);
     check(r.scale >= 15000 && r.scale <= 25000 && r.inFrame, `T90: рамка — район целиком, масштаб 1:${r.scale} (район ≈ 3,7 × 3,6 км на карте 420 × 253 мм)`);
     check(r.look[0] === "concept" && r.look[1] === true && r.look[2] === "sat" && JSON.stringify(r.look[3]) === "[0,44,420,253]", `T90: снимок на весь лист под шапкой, как лист 3 (${JSON.stringify(r.look)})`);
     check(r.roads.n === 4 && !r.roads.labels.includes("Тестовая улица"), `T90: на карте магистрали и улицы районного значения, жилая улица не рисуется (${r.roads.n} линии)`);
@@ -1616,5 +1616,51 @@ export default async p => {
     if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t90svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t90img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
       await p.shot(`${shots}/t90-district.png`); await p.ev(`document.getElementById("t90img")?.remove(); return 1`); }
     await p.ev(`const k = window.__t90; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); k.keys.forEach(x => setLayerData(x, k.saved[x] || { type: "FeatureCollection", features: [] })); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  });
+  // T91: листы 12 и 13 (#37, п. 3 владельца): Генплан и ПЗЗ в границах сит. плана — рамка «по границам выгрузки» (общая с настройкой «Масштаб схем 5–9»,
+  // но настройку числом они не берут), Генплан как лист 6, ПЗЗ — границы территориальных зон с кодами ВРИ, легенда только из видимого
+  await p.group("t91", async () => {
+    const shots = process.env.T91_SHOTS;
+    const r = JSON.parse(await p.ev(`
+      const prevT = TERR ? JSON.stringify(TERR.geometry) : "", keep = ALBUM.sheets.splice(0), out = {}, wait = ms => new Promise(r => setTimeout(r, ms));
+      const keys = ["gisogd.func_zones", "gisogd.pzz_zones"], saved = Object.fromEntries(keys.map(k => [k, DATA[k]?.fc])), fc = fs => ({ type: "FeatureCollection", features: fs });
+      const sq = (x, s) => [[x, x], [x + s, x], [x + s, x + s], [x, x + s]];
+      const put = (key, title, feats) => { const f = fc(feats); DATA[key] = DATA[key] ? { ...DATA[key], fc: f } : { fc: f, title, source: "тест" }; ensureLayer(key, title); setLayerData(key, f); };
+      try {
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } }); await wait(300);
+        const [x0, y0] = turf.centroid(TERR).geometry.coordinates, box = (w, s, e, n) => turf.bboxPolygon([x0 + w, y0 + s, x0 + e, y0 + n]).geometry;
+        const ft = (props, g) => ({ type: "Feature", properties: props, geometry: g });
+        put("gisogd.func_zones", "Функциональные зоны (ГП)", [ft({ n: 6, fztip: "130", naimfunkzony: "коммунальные зоны" }, box(-.02, -.012, .02, .012))]);
+        put("gisogd.pzz_zones", "ПЗЗ: территориальные зоны", [ft({ "Номер зоны": "6", "ВРИ (коды)": "4.9; 6.9; 3.1", "Индекс": "" }, box(-.012, -.006, .003, .006)), ft({ "Номер зоны": "7", "ВРИ (коды)": "2.6", "Индекс": "" }, box(.003, -.006, .008, .006))]);
+        const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t91" + id, size: "PA3" });
+        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = PPTKRT.slice(-3), g12 = { ...cloneJ(tail[1]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[2]), id: "t91pzz", size: "PA3" };
+        out.tpl = [tail.map(x => x.concept).join("|"), tail.every(x => x.sit === true), PPTKRT_D.length, g12.fit, z13.fit, g12.title.length, z13.title.length];
+        ALBUM.sheets.push(ortho, use, gp, g12, z13);
+        delete ALBUM.meta.schemeScale; out.auto = [Math.round(sheetScale(use)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
+        ALBUM.meta.schemeScale = 5000; out.num = [Math.round(sheetScale(use)), Math.round(sheetScale(gp)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
+        ALBUM.meta.schemeScale = "cover"; out.cover = [Math.round(sheetScale(use)), Math.round(sheetScale(gp)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
+        delete ALBUM.meta.schemeScale;
+        const spG = albumSpec([g12]).sheets[0], spP = albumSpec([z13]).sheets[0], LL = (sp, k) => sp.layers.find(l => l.key === k || l.title === k);
+        out.gp = { edges: (LL(spG, "Границы функциональных зон")?.features || []).length, legend: (spG.cLegend || []).flatMap(g => (g.items || []).map(i => i.label)), table: !!spG.gpTable };
+        const zs = LL(spP, "gisogd.pzz_zones")?.features || [];
+        out.pzz = { n: zs.length, labels: zs.map(f => f.label), w: zs[0]?.w, stroke: zs[0]?.stroke, legend: (spP.cLegend || []).flatMap(g => (g.items || []).map(i => i.label)), scale: spP.scale, look: [spP.look, !!spP.bleed] };
+        const svg = async sp => { const resp = await fetch("/api/print/svg", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...sp, index: 0 }) }); const t = await resp.text(); return [resp.status, resp.headers.get("X-Grado-Not-Ready-Why") ? decodeURIComponent(resp.headers.get("X-Grado-Not-Ready-Why")) : "", t]; };
+        const [s1, w1, t1] = await svg(albumSpec([g12])), [s2, w2, t2] = await svg(albumSpec([z13]));
+        out.svg = [s1, w1, /Генеральный план города Москвы/.test(t1), s2, w2, /ПЗЗ города Москвы/.test(t2)];
+        window.__t91 = { prevT, keep, saved, keys, svg2: t2, svg1: t1 }; out.shot = 1;
+        return JSON.stringify(out);
+      } catch (e) { window.__t91 = { prevT, keep, saved, keys }; throw e; }`));
+    check(r.tpl[0] === "district|gp|pzz" && r.tpl[1] && r.tpl[2] === 3 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в конце шаблона альбома листы district, gp, pzz с флагом sit; fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
+    check(r.auto[1] === 4000 && r.auto[2] === 4000, `T91: рамка листов 12 и 13 — по границам выгрузки без всякой настройки: 1:4000 (${r.auto.join(" / ")})`);
+    check(r.num[0] === 5000 && r.num[1] === 5000 && r.num[2] === 4000 && r.num[3] === 4000, `T91: настройка «Масштаб схем» числом (1:5000) двигает схемы 5–9, а листы 12 и 13 — нет (${r.num.join(" / ")})`);
+    check(r.cover.every(v => v === 4000), `T91: «по границам выгрузки» — у схем 5–9 и листов 12–13 одна рамка (${r.cover.join(" / ")})`);
+    check(r.gp.edges >= 1 && r.gp.legend.some(t => /коммунальные зоны/.test(t)) && r.gp.legend.some(t => /номер функциональной зоны/.test(t)), `T91: лист 12 — как лист 6: границы зон, легенда зон (${JSON.stringify(r.gp.legend)})`);
+    check(r.pzz.n === 2 && r.pzz.labels[0] === "4.9, 6.9, 3.1" && r.pzz.labels[1] === "2.6" && Math.abs(r.pzz.w - 1.9) < .2 && r.pzz.stroke === "#6a3d9a", `T91: лист 13 — две территориальные зоны с кодами ВРИ, линия 0,5 мм фиолетовая (${JSON.stringify(r.pzz.labels)}, w ${r.pzz.w}, ${r.pzz.stroke})`);
+    check(r.pzz.legend.includes("территориальных зон") && r.pzz.legend.some(t => /коды видов разрешённого использования/.test(t)) && r.pzz.look[0] === "concept" && r.pzz.look[1] === false, `T91: лист 13 — легенда: граница территории, зон, подпись кодов (${JSON.stringify(r.pzz.legend)})`);
+    check(r.svg[0] === 200 && !r.svg[1] && r.svg[2] && r.svg[3] === 200 && !r.svg[4] && r.svg[5], `T91: сервер рисует оба листа (коды ${r.svg[0]} / ${r.svg[3]}; «не готов»: «${r.svg[1]}» / «${r.svg[4]}»; названия в рисунке: ${r.svg[2]} / ${r.svg[5]})`);
+    if (shots) for (const [n, k] of [["gp12", "svg1"], ["pzz13", "svg2"]]) {
+      await p.ev(`const u = URL.createObjectURL(new Blob([window.__t91.${k}], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t91img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
+      await p.shot(`${shots}/t91-${n}.png`); await p.ev(`document.getElementById("t91img")?.remove(); return 1`); }
+    await p.ev(`const k = window.__t91; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; k.keys.forEach(x => setLayerData(x, k.saved[x] || { type: "FeatureCollection", features: [] })); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
   });
 };
