@@ -1502,7 +1502,7 @@ export default async p => {
     check(r.hand === 3000, `T88: масштаб, выбранный в строке листа, главнее настройки проекта (${r.hand})`);
     check(r.junk === r.auto.use, `T88: значение не из ряда масштабов в проекте игнорируется — авто (${r.junk})`);
     check(r.bigSet === r.bigAuto && r.bigAuto > 1000, `T88: территория не помещается в выбранный масштаб — масштаб крупнее по ряду, как у «авто» (${r.bigSet} = ${r.bigAuto})`);
-    check(r.ui0[0] === "0" && /^авто по территории\|1:500\|1:1\s?000/.test(r.ui0[1]) && r.ui0[5] && r.ui0[2] === "авто1:1000" && r.ui0[3] === "·1:1000" && r.ui0[4] === "·1:2000" && r.ui0[6] === "авто1:2000",
+    check(r.ui0[0] === "0" && /^авто по территории\|по границам выгрузки\|1:500\|1:1\s?000/.test(r.ui0[1]) && r.ui0[5] && r.ui0[2] === "авто1:1000" && r.ui0[3] === "·1:1000" && r.ui0[4] === "·1:2000" && r.ui0[6] === "авто1:2000",
       `T88: под «Штампом» видна строка «Масштаб схем 5–9» (стоит на «авто по территории»); в свойствах схемы «авто 1:1 000», ортофотоплана «авто 1:2 000» (${r.ui0.join(" / ")})`);
     check(r.ui1[0] === 2000 && r.ui1[1] === "2000" && r.ui1[2] === "каквпроекте1:2000" && r.ui1[3] === "·1:2000" && r.ui1[5] === 2000,
       `T88: выбор 1:2000 записан в проект: у схемы в свойствах «как в проекте 1:2 000», в списке 1:2 000 (${r.ui1.slice(0, 6).join(" / ")})`);
@@ -1512,5 +1512,55 @@ export default async p => {
     const rt = JSON.parse(await p.ev(`const j = JSON.parse(JSON.stringify(collectProject())); const inFile = j.album?.meta?.schemeScale; clearProject(); const cleared = ALBUM.meta.schemeScale; applyProject(j); await new Promise(r => setTimeout(r, 500)); return JSON.stringify({ inFile, cleared: cleared ?? null, back: ALBUM.meta.schemeScale });`));
     check(rt.inFile === 2000 && rt.cleared === null && rt.back === 2000, `T88: настройка лежит в файле проекта, при очистке проекта сбрасывается, при открытии возвращается (${JSON.stringify(rt)})`);
     await p.ev(`const k = window.__t88; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; winOpen("wSheets", false); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  });
+  // T89: «по границам выгрузки» — рамка схем (листы 5–9 по настройке проекта и новые листы с fit "cover"): наименьший прямоугольник с центром на
+  // территории, где помещаются область загрузки данных (coverBox), рамка листа 3 «Ортофотоплан» и территория (владелец 07.10.2026: «см карту
+  // границы выгрузки, не менее этого», #37)
+  await p.group("t89", async () => {
+    const shots = process.env.T89_SHOTS;
+    const r = JSON.parse(await p.ev(`
+      const prevT = TERR ? JSON.stringify(TERR.geometry) : "", keep = ALBUM.sheets.splice(0), out = {}, wait = ms => new Promise(r => setTimeout(r, ms));
+      const sq = (x, s) => [[x, x], [x + s, x], [x + s, x + s], [x, x + s]];
+      const mk = (c, id) => ({ ...cloneJ(PPTKRT_C.find(x => x.concept === c)), id: "t89" + (id || c), size: "PA3" });
+      const has = (a, b) => a[0] <= b[0] + 1e-9 && a[1] <= b[1] + 1e-9 && a[2] >= b[2] - 1e-9 && a[3] >= b[3] - 1e-9;
+      const norm = t => String(t || "").replace(/\\s/g, "");
+      try {
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } });   // 130 × 130 м
+        await wait(300);
+        const ortho = mk("ortho"), use = mk("use"), gp = mk("gp"), gpc = { ...mk("gp", "gpc"), fit: "cover" }, photos = mk("photos");
+        ALBUM.sheets.push(ortho, use, gp, gpc, photos);
+        delete ALBUM.meta.schemeScale; out.auto = Math.round(sheetScale(use));
+        ALBUM.meta.schemeScale = "cover";
+        const fo = frameBox(ortho), fu = frameBox(use), tb = turf.bbox(TERR), cx = (tb[0] + tb[2]) / 2, cy = (tb[1] + tb[3]) / 2;
+        out.cover = { use: Math.round(sheetScale(use)), gp: Math.round(sheetScale(gp)), gpc: Math.round(sheetScale(gpc)), ortho: Math.round(sheetScale(ortho)), photos: Math.round(sheetScale(photos)),
+          hasOrtho: has(fu, fo), hasTerr: has(fu, tb), dc: Math.hypot((fu[0] + fu[2]) / 2 - cx, (fu[1] + fu[3]) / 2 - cy) * 111320 };
+        const hand = { ...mk("use", "hand"), scale: 3000 }; out.hand = Math.round(sheetScale(hand));
+        // рамка листа, нарисованная вручную, крупнее сит. плана: область загрузки данных растёт — схемы тоже
+        const own = { id: "t89own", title: "свой лист", size: "A3", scale: 8000, view: "", legend: true, tep: false }; ALBUM.sheets.push(own);
+        const cb = coverBox(), f2 = frameBox(use);
+        out.big = { use: Math.round(sheetScale(use)), hasCover: has(f2, cb), ownAcross: Math.round((cb[2] - cb[0]) * 111320 * Math.cos(cb[1] * Math.PI / 180)) };
+        ALBUM.sheets.pop();
+        // окно: пункт «по границам выгрузки», свойства схемы — «как в проекте»
+        delete ALBUM.meta.schemeScale; ALBUM.sheets.splice(0, ALBUM.sheets.length, ortho, use); winOpen("wSheets", true); STAMP_OPEN = false; renderSheets(); await wait(250);
+        const sel = $("shSchemeScale"); out.ui0 = [sel?.value, [...(sel?.options || [])].slice(0, 3).map(o => o.textContent).join("|")];
+        sel.value = "cover"; sel.dispatchEvent(new Event("change", { bubbles: true })); await wait(250);
+        pickSheet(1); await wait(200);
+        const det = () => norm(document.querySelector('#sheetsBody select[data-sk="scale"] option[value="0"]')?.textContent);
+        out.ui1 = [ALBUM.meta.schemeScale, $("shSchemeScale").value, det(), $("toast")?.textContent || ""];
+        out.shot = 1;
+        return JSON.stringify(out);
+      } finally { window.__t89 = { prevT, keep }; }`));
+    if (shots) await p.shot(`${shots}/t89-cover.png`);
+    check(r.auto === 1000, "T89: без настройки схема на участке 130 м — авто 1:1000 (" + r.auto + ")");
+    check(r.cover.use === 4000 && r.cover.gp === 4000 && r.cover.gpc === 4000, `T89: «по границам выгрузки» — схемы 5–9 и лист с fit «cover» получают одну рамку: сит. план 840 × 506 м помещается на карте 279 × 239 мм только в 1:4000 (${r.cover.use} / ${r.cover.gp} / ${r.cover.gpc})`);
+    check(r.cover.hasOrtho && r.cover.hasTerr && r.cover.dc < 0.5, `T89: рамка схемы содержит рамку листа 3 и территорию, центр — центр территории (смещение ${r.cover.dc.toFixed(2)} м)`);
+    check(r.cover.ortho === 2000 && r.cover.photos === 2000, `T89: ортофотоплан и фотофиксация настройку не берут (${r.cover.ortho} / ${r.cover.photos})`);
+    check(r.hand === 3000, `T89: масштаб, выбранный в свойствах листа, главнее (${r.hand})`);
+    check(r.big.hasCover && r.big.use > r.cover.use, `T89: область загрузки данных шире сит. плана (${r.big.ownAcross} м) — рамка схем её содержит, масштаб мельче: 1:${r.big.use}`);
+    check(r.ui0[0] === "0" && /^авто по территории\|по границам выгрузки\|1:500/.test(r.ui0[1]), `T89: в списке «Масштаб схем 5–9» второй пункт — «по границам выгрузки» (${r.ui0.join(" / ")})`);
+    check(r.ui1[0] === "cover" && r.ui1[1] === "cover" && r.ui1[2] === "каквпроекте1:4000" && /по границам выгрузки/.test(r.ui1[3]) && /Собрать/.test(r.ui1[3]), `T89: выбор записан в проект, в свойствах схемы «как в проекте 1:4 000», под выбором подсказка (${r.ui1.join(" / ")})`);
+    const rt = JSON.parse(await p.ev(`const j = JSON.parse(JSON.stringify(collectProject())); const inFile = j.album?.meta?.schemeScale; clearProject(); const cleared = ALBUM.meta.schemeScale; applyProject(j); await new Promise(r => setTimeout(r, 500)); return JSON.stringify({ inFile, cleared: cleared ?? null, back: ALBUM.meta.schemeScale });`));
+    check(rt.inFile === "cover" && rt.cleared === null && rt.back === "cover", `T89: значение «cover» лежит в файле проекта, при очистке сбрасывается, при открытии возвращается (${JSON.stringify(rt)})`);
+    await p.ev(`const k = window.__t89; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; winOpen("wSheets", false); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
   });
 };

@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).** Owner on the three sit-plan sheets: «см карту границы выгрузки, не
+  менее этого». `coverFrameBox()` (sheets.js): the smallest rectangle centred on the territory's bbox centre (rule 3.4) that holds the
+  data-loading area (`coverBox()`, the blue dashed «область загрузки данных»), the frame of sheet 3 «Ортофотоплан» (without it:
+  territory × 2,2) and the territory × 1,25. `fitBox` returns it for a sheet with `fit: "cover"` (new sheets of #37) and for the
+  five scheme sheets when the project setting «Масштаб схем 5–9» is «по границам выгрузки» (`ALBUM.meta.schemeScale === "cover"`,
+  second item of the list). `sheetScale` then takes the smallest scale of the row that fits it (sit plan 840 × 506 m → 1:4000 on the
+  279 × 239 mm map), «Собрать» loads data by the same frames. The sheet's properties show «как в проекте». E2E group `t89`
+  (130 m territory, a hand-drawn sheet widening the loading area, the list, the project file). Rules: label-rules «Общие» 8,
+  album-rules, spec `docs/team/spec-37-sitplan-sheets.md`.
 - **2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).** Owner: «Переделай листы 5-9 в 1:2000» (КРТ 3229
   Гольяново gave 1:1000 there), then «масштаб для каждого проекта должен быть настраиваемым». A line «Масштаб схем 5–9» under
   «Штамп» in «Листы и альбом»: «авто по территории» (default, as before) or 1:500 … 1:10 000; it is `ALBUM.meta.schemeScale`
