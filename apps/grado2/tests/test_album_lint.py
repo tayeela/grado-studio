@@ -65,5 +65,20 @@ class AlbumLintTest(unittest.TestCase):
         self.assertIn("size", self.codes(findings))
 
 
+class FormatLinesTest(unittest.TestCase):
+    """Текст отчёта (его печатают album_lint.py и album_check.py): poppler не нужен."""
+
+    def test_header_counts_and_order(self):
+        row = lambda page, sev, code, tile="": {"page": page, "sev": sev, "code": code, "text": "x", "mm": [], "tile": tile, "msg": "m"}
+        lines = album_lint.format_lines([row(2, "warn", "edge", "01"), row(2, "error", "overlap"), row(1, "warn", "tiny")], 2)
+        self.assertEqual(lines[0], "album_lint: страниц 2, ошибок 1, предупреждений 2")
+        self.assertIn("стр.  1", lines[1], "страницы идут по порядку")
+        self.assertIn("error", lines[2], "на странице сначала ошибки")
+        self.assertIn("плитка 01", lines[3])
+
+    def test_no_findings_is_one_line(self):
+        self.assertEqual(album_lint.format_lines([], 11), ["album_lint: страниц 11, ошибок 0, предупреждений 0"])
+
+
 if __name__ == "__main__":
     unittest.main()

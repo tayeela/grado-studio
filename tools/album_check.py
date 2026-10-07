@@ -11,7 +11,9 @@ body: JSON.stringify(albumSpec(ALBUM.sheets))})` (docs/wiki/recipes.md).
 
 Эталоны: ~/.grado2/album-baseline/<name>/p-N.png, копия на GitHub — релиз `album-baseline` репозитория (архив
 <name>.zip): нет на диске — скачивается оттуда, `--update` — выкладывается туда (процесс на GitHub, 06.10.2026); отчёт: /tmp/grado-album-check/<name>/ (report.md, summary.png,
-crops/). Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати.
+crops/). Заодно PDF проверяет tools/album_lint.py (наложения слов, края, мелкий кегль, шрифты, разрешение растров): отчёт — в конце
+report.md. Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати,
+3 — album_lint нашёл ошибки оформления (важнее отличий: их чинят, а не принимают эталоном).
 Ошибки сервера печатаются как есть; порт 8650 (программа владельца) запрещён.
 """
 import argparse
@@ -23,6 +25,9 @@ import urllib.request
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import album_lint
 
 FONT = next((str(p) for p in (Path(__file__).resolve().parents[1] / "docs" / "standards" / "fonts").glob("Montserrat*Regular*.ttf")), None)
 
@@ -105,6 +110,15 @@ def compare(a, b):
     return n / (W * H) * 100, boxes, A, B
 
 
+def design_lint(pdf):
+    """Проверка оформления самого PDF (album_lint): ([строки отчёта], число ошибок). Без poppler — пустой отчёт, не падение."""
+    try:
+        findings, n_pages = album_lint.lint(str(pdf))
+    except (OSError, subprocess.CalledProcessError) as e:
+        return [f"album_lint: не запущен ({e.__class__.__name__}), оформление не проверено"], 0
+    return album_lint.format_lines(findings, n_pages), sum(1 for f in findings if f["sev"] == "error")
+
+
 REL = "album-baseline"
 
 
@@ -155,6 +169,7 @@ def main():
             shutil.copy(p, base / p.name)
         shutil.copy(out / "album.pdf", base / "album.pdf")
         print(f"baseline {'updated' if a.update else 'created'}: {base} ({len(cur)} pages)")
+        print("\n".join(design_lint(out / "album.pdf")[0]))     # эталон принимают с открытыми глазами: что линт видит в нём
         publish_baseline(a.name, base)
         return 0
     rows, tiles = [], []
@@ -192,11 +207,14 @@ def main():
         for t in sc:
             S.paste(t, (0, y)); y += t.height + 8
         S.save(out / "summary.png")
+    lint_lines, lint_errors = design_lint(out / "album.pdf")
     (out / "report.md").write_text(f"# Сравнение альбома «{a.name}» с эталоном\n\n" + "\n".join(rows)
-                                   + (f"\n\nСвод вырезок: {out / 'summary.png'}\n" if changed else "\n\nОтличий нет.\n"))
+                                   + (f"\n\nСвод вырезок: {out / 'summary.png'}\n" if changed else "\n\nОтличий нет.\n")
+                                   + "\n## Оформление страниц (tools/album_lint.py)\n\n```\n" + "\n".join(lint_lines) + "\n```\n")
     print((out / "report.md").read_text())
-    print(json.dumps({"changed": bool(changed), "summary": str(out / "summary.png") if changed else None}, ensure_ascii=False))
-    return 1 if changed else 0
+    print(json.dumps({"changed": bool(changed), "summary": str(out / "summary.png") if changed else None,
+                      "lint_errors": lint_errors}, ensure_ascii=False))
+    return 3 if lint_errors else 1 if changed else 0
 
 
 if __name__ == "__main__":

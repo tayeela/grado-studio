@@ -157,6 +157,16 @@ def lint(pdf, margin_mm=2.5, size=A3):
     return out, len(pages)
 
 
+def format_lines(findings, n_pages):
+    """Текст отчёта: заголовок со счётом и по строке на находку (сначала ошибки каждой страницы). Нужен и album_check.py."""
+    errors = sum(1 for f in findings if f["sev"] == "error")
+    lines = [f"album_lint: страниц {n_pages}, ошибок {errors}, предупреждений {len(findings) - errors}"]
+    for f in sorted(findings, key=lambda f: (f["page"], f["sev"] != "error", f["code"])):
+        where = f" плитка {f['tile']}" if f["tile"] else ""
+        lines.append(f"  стр. {f['page']:>2} {f['sev']:5s} {f['code']:7s} «{f['text']}»{where}: {f['msg']}")
+    return lines
+
+
 def main(argv):
     ap = argparse.ArgumentParser(description="автоматические проверки оформления страниц альбома (PDF)")
     ap.add_argument("pdf")
@@ -168,10 +178,7 @@ def main(argv):
     if args.json:
         print(json.dumps({"pages": n_pages, "errors": errors, "findings": findings}, ensure_ascii=False, indent=1))
     else:
-        print(f"album_lint: страниц {n_pages}, ошибок {errors}, предупреждений {len(findings) - errors}")
-        for f in sorted(findings, key=lambda f: (f["page"], f["sev"] != "error", f["code"])):
-            where = f" плитка {f['tile']}" if f["tile"] else ""
-            print(f"  стр. {f['page']:>2} {f['sev']:5s} {f['code']:7s} «{f['text']}»{where}: {f['msg']}")
+        print("\n".join(format_lines(findings, n_pages)))
     return 1 if errors else 0
 
 

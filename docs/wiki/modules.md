@@ -570,17 +570,17 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 ## Инструменты (tools/)
 
-### `tools/album_check.py` — 203 стр.
+### `tools/album_check.py` — 221 стр.
 
 Визуальная проверка альбома «до / после» (06.10.2026): печать PDF по спецификации на тестовом сервере, страницы в PNG, постраничное сравнение с эталоном, вырезки изменённых мест и свод одной картинкой.
 
-Функции: `_font`, `render`, `pages`, `page_text`, `text_diff`, `compare`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
+Функции: `_font`, `render`, `pages`, `page_text`, `text_diff`, `compare`, `design_lint`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
 
-### `tools/album_lint.py` — 179 стр.
+### `tools/album_lint.py` — 186 стр.
 
 Автоматические проверки оформления страниц альбома по готовому PDF — то, что компьютер видит сам, без глаз (см. docs/standards/albums/layout-qa.md).
 
-Функции: `run`, `pages_words`, `tile`, `box_mm`, `inter_area`, `area`, `check_words`, `check_fonts`, `check_images`, `lint`, `main`
+Функции: `run`, `pages_words`, `tile`, `box_mm`, `inter_area`, `area`, `check_words`, `check_fonts`, `check_images`, `lint`, `format_lines`, `main`
 
 ### `tools/docs_check.py` — 214 стр.
 
