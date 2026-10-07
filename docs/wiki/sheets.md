@@ -17,6 +17,12 @@
 | 8 | Схема обеспеченности территории разработанной документацией ГПЗУ и АГР | gpzu | белая | `gisogd.gpzu`, `gisogd.agr` |
 | 9 | Схема существующих землепользователей разрабатываемой территории | parcels | sat | `nspd.parcels`, `osm.landuse`, `osm.roads`, `egko.water`, `egko.water_labels` |
 
+## План реализации ППТ КРТ, листы «в границах сит. плана», с 10-го (albums.js PPTKRT_D; в конец альбома, #37)
+
+| № | лист | concept / kind | основа | ключи слоёв |
+|---|---|---|---|---|
+| 10 | Фрагмент карты административно-планировочной структуры города Москвы | district | sat | `osm.roads`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
+
 ## Раздел «Существующее положение» (sheets.js SEC1)
 
 | № | лист | concept / kind | основа | ключи слоёв |
@@ -33,4 +39,4 @@
 | 10 | Схема об утверждённой и разрабатываемой документации | — | белая | `calc.uds_osm`, `egko.buildings`, `gisogd.gpzu`, `gisogd.krt`, `gisogd.ppt` |
 | 11 | Объекты социальной инфраструктуры и радиусы обслуживания | — | белая | `egko.buildings`, `osm.social` |
 
-Ветки conceptSheet по виду листа: `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `use`.
+Ветки conceptSheet по виду листа: `district`, `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `use`.

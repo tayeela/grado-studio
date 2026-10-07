@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).** New
+  `PPTKRT_D` in albums.js (appended to `PPTKRT` after sheet 9, so sheets 1–9 keep their numbers): concept `district`, Yandex satellite
+  on the whole sheet under the header (`bleed`, rect 0,44,420,253 like sheet 3), frame = the district of the territory (`fit: "district"`,
+  scale from the ladder, 1:20000 for a ≈ 4 × 3.5 km district), OSM roads as yellow lines by class (`osm.roads`, motorway … tertiary,
+  width on paper 2,2 … 0,7 mm, only motorway/trunk/primary named), red district boundary 1,2 mm (`gisogd.admin`), names of the district
+  and its neighbours (`conceptDistricts`), metro stations, the territory callout and a legend of what is visible (`conceptSheet`
+  branch `ortho || district`). `cSheet(sh, { places: false })` leaves out village and address labels. The E2E T62 checks use
+  `PPTKRT.length` instead of 9. E2E group `t90` (synthetic districts and roads; the server draws the sheet). Not checked on the real
+  Гольяново data: the cloud session cannot reach ГИС ОГД, НСПД, Overpass.
 - **2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).** Owner on the three sit-plan sheets: «см карту границы выгрузки, не
   менее этого». `coverFrameBox()` (sheets.js): the smallest rectangle centred on the territory's bbox centre (rule 3.4) that holds the
   data-loading area (`coverBox()`, the blue dashed «область загрузки данных»), the frame of sheet 3 «Ортофотоплан» (without it:

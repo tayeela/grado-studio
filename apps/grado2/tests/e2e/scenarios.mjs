@@ -1230,9 +1230,10 @@ export default async p => {
     try {
       // 1. полная сборка: Overpass отвечает 504 — раздел собран, у листов с улицами OSM заметка без сырого кода, сообщение понятное
       await p.ev(`await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 300)); return 1`);
+      const NP = await p.ev(`return PPTKRT.length`);                  // листов в шаблоне альбома (титул, месторасположение, листы 3–9, листы «в границах сит. плана»)
       const a = await p.ev(`const note = ALBUM.sheets.map(s => LOSTNOTE.get(s.id)).filter(Boolean), tip = [...document.querySelectorAll("#sheetsBody .shrow .ic span[title]")].map(e => e.title).join("|");
         return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, note, tip, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden]`);
-      check(a[0] === 9 && a[1].length >= 1 && a[1].every(t => t === "улицы OSM не загрузились (портал ответил 504) — повторите сборку позже" || /не загрузил/.test(t)), `T62: сбой OSM — листы собраны (${a[0]} из 9), у ${a[1].length} заметка «${a[1][0]}»`);
+      check(a[0] === NP && a[1].length >= 1 && a[1].every(t => t === "улицы OSM не загрузились (портал ответил 504) — повторите сборку позже" || /не загрузил/.test(t)), `T62: сбой OSM — листы собраны (${a[0]} из ${NP}), у ${a[1].length} заметка «${a[1][0]}»`);
       check(await p.ev(`const c = {}; window.__req62.filter(k => k.startsWith("osm.")).forEach(k => c[k] = (c[k] || 0) + 1); return Object.keys(c).length > 0 && Object.values(c).every(n => n === 1)`), "T62: слой, на который портал ответил 504, не запрашивается повторно сразу (сервер уже повторял с паузами)");
       check(/улицы OSM не загрузились \(портал ответил 504\) — повторите сборку позже/.test(a[2]) && !/HTTP|Overpass|Errno/.test(a[2] + a[3]), "T62: заметка в подсказке строки листа и в сообщении без сырых кодов (HTTP, Overpass)");
       check(/Листы собраны без части данных/.test(a[3]) && a[5] === true, "T62: сообщение «Листы собраны без части данных…», кнопка «Остановить» после сборки скрыта");
@@ -1240,19 +1241,19 @@ export default async p => {
       await p.ev(`window.__delay62 = 4000; window.__osm62 = false; ALBUM.sheets = []; LOSTNOTE.clear(); renderSheets(); window.__b62 = buildSection(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); window.__t62 = []; return 1`);
       let seen = null;
       for (let i = 0; i < 60 && !seen; i++) { await p.sleep(250);
-        seen = await p.ev(`const t = $("shStat").textContent; return /^Лист \\d+ из 9: .+ — загрузка .+… · \\d+ с$/.test(t) && !$("shStop").hidden ? [t, $("toast").textContent] : null`); }
+        seen = await p.ev(`const t = $("shStat").textContent; return /^Лист \\d+ из ${NP}: .+ — загрузка .+… · \\d+ с$/.test(t) && !$("shStop").hidden ? [t, $("toast").textContent] : null`); }
       check(!!seen, `T62: во время сборки в строке состояния «${seen?.[0]}»`);
-      check(seen && /^Лист \d+ из 9: /.test(seen[1]), "T62: то же — в сообщении «" + (seen?.[1] || "").slice(0, 70) + "»");
+      check(seen && new RegExp(`^Лист \\d+ из ${NP}: `).test(seen[1]), "T62: то же — в сообщении «" + (seen?.[1] || "").slice(0, 70) + "»");
       // запрос длится 4 с, счёт секунд — свой у каждой выгрузки: ждём «2 с» и больше (до 6 с), а не одну точку через 2,2 с —
       // первая строка могла попасть на конец выгрузки, и через 2,2 с шла уже следующая с «1 с»
       let el = ""; for (let i = 0; i < 24 && !/ · [2-9] с$/.test(el); i++) { await p.sleep(250); el = await p.ev(`return $("shStat").textContent`); }
       check(/ · [2-9] с$/.test(el), `T62: секунды растут: «${el}»`);
       // 3. «Остановить»: сборка заканчивается после текущего листа, собранные листы остаются
-      const k = await p.ev(`const m = /^Лист (\\d+) из 9/.exec($("shStat").textContent); $("shStop").click(); await new Promise(r => setTimeout(r, 100)); return [m ? +m[1] : -1, $("shStat").textContent, $("shStop").disabled]`);
+      const k = await p.ev(`const m = /^Лист (\\d+) из ${NP}/.exec($("shStat").textContent); $("shStop").click(); await new Promise(r => setTimeout(r, 100)); return [m ? +m[1] : -1, $("shStat").textContent, $("shStop").disabled]`);
       check(/остановка после этого листа/.test(k[1]) && k[2] === true, `T62: после «Остановить» — «…остановка после этого листа…»`);
       await p.ev(`await window.__b62; await new Promise(r => setTimeout(r, 300)); return 1`);
       const z = await p.ev(`return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden, SHBUILD]`);
-      check(z[0] >= k[0] && z[0] < 9 && /Сборка остановлена: готово \d+ из 9/.test(z[1]) && z[3] && z[4] === 0, `T62: остановка на листе ${k[0]}: в альбоме ${z[0]} из 9 листов, «${z[1].slice(0, 60)}», «Остановить» скрыта`);
+      check(z[0] >= k[0] && z[0] < NP && new RegExp(`Сборка остановлена: готово \\d+ из ${NP}`).test(z[1]) && z[3] && z[4] === 0, `T62: остановка на листе ${k[0]}: в альбоме ${z[0]} из ${NP} листов, «${z[1].slice(0, 60)}», «Остановить» скрыта`);
       // 4. «не поместилось»: причины сервера — в подсказке строки, строке состояния и сообщении о PDF
       await p.ev(`ALBUM.sheets = []; renderSheets(); window.__delay62 = 5; await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 200));
         window.__why62 = "лист 6: легенда из 23 позиций не помещается — уменьшите число слоёв или шрифт; лист 8: в таблицу не поместились 7 строк — возьмите формат А1 или сократите таблицу";
@@ -1562,5 +1563,58 @@ export default async p => {
     const rt = JSON.parse(await p.ev(`const j = JSON.parse(JSON.stringify(collectProject())); const inFile = j.album?.meta?.schemeScale; clearProject(); const cleared = ALBUM.meta.schemeScale; applyProject(j); await new Promise(r => setTimeout(r, 500)); return JSON.stringify({ inFile, cleared: cleared ?? null, back: ALBUM.meta.schemeScale });`));
     check(rt.inFile === "cover" && rt.cleared === null && rt.back === "cover", `T89: значение «cover» лежит в файле проекта, при очистке сбрасывается, при открытии возвращается (${JSON.stringify(rt)})`);
     await p.ev(`const k = window.__t89; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; winOpen("wSheets", false); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  });
+  // T90: лист 10 — карта района (#37, п. 1 владельца 07.10.2026): снимок на весь лист, район целиком, дороги OSM жёлтыми линиями по классам
+  // (подписаны только магистрали), красная граница района, подпись своего района, выноска территории, легенда только из видимого
+  await p.group("t90", async () => {
+    const shots = process.env.T90_SHOTS;
+    const r = JSON.parse(await p.ev(`
+      const prevT = TERR ? JSON.stringify(TERR.geometry) : "", keep = ALBUM.sheets.splice(0), out = {}, wait = ms => new Promise(r => setTimeout(r, ms));
+      const keys = ["gisogd.admin", "osm.roads"], saved = Object.fromEntries(keys.map(k => [k, DATA[k]?.fc])), fc = fs => ({ type: "FeatureCollection", features: fs });
+      const sq = (x, s) => [[x, x], [x + s, x], [x + s, x + s], [x, x + s]];
+      const put = (key, title, feats) => { const f = fc(feats); DATA[key] = DATA[key] ? { ...DATA[key], fc: f } : { fc: f, title, source: "тест" }; ensureLayer(key, title); setLayerData(key, f); };
+      try {
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } }); await wait(300);
+        const [x0, y0] = turf.centroid(TERR).geometry.coordinates, box = (w, s, e, n) => turf.bboxPolygon([x0 + w, y0 + s, x0 + e, y0 + n]).geometry;
+        const dist = (name, okr, g) => ({ type: "Feature", properties: { "Уровень": "район", "Наименование": name, "Округ": okr }, geometry: g });
+        put("gisogd.admin", "Административное деление", [dist("район Гольяново", "ВАО", box(-.03, -.016, .03, .016)), dist("район Метрогородок", "ВАО", box(-.09, -.016, -.03, .016)),
+          dist("район Северное Измайлово", "ВАО", box(-.03, -.05, .03, -.016))]);
+        const road = (t, name, a, b) => ({ type: "Feature", properties: { "Тип дороги": t, "Название": name }, geometry: { type: "LineString", coordinates: [[x0 + a[0], y0 + a[1]], [x0 + b[0], y0 + b[1]]] } });
+        put("osm.roads", "Улицы OSM", [road("motorway", "МКАД", [.028, -.03], [.028, .03]), road("primary", "Щёлковское шоссе", [-.06, -.012], [.04, -.012]), road("secondary", "Байкальская улица", [-.012, -.03], [-.012, .03]),
+          road("tertiary", "Алтайская улица", [-.03, .008], [.02, .008]), road("residential", "Тестовая улица", [-.02, .004], [.01, .004])]);
+        const dsh = { ...cloneJ(PPTKRT.find(x => x.concept === "district")), id: "t90district", size: "PA3" };
+        ALBUM.sheets.push(dsh);
+        const fb = frameBox(dsh), db = turf.bbox(DATA["gisogd.admin"].fc.features[0]);
+        const sp = albumSpec([dsh]), sh = sp.sheets[0], L = k => sh.layers.find(l => l.key === k) || sh.layers.find(l => l.title === k);
+        const rd = L("osm.roads")?.features || [], byT = t => rd.find(f => (f.lc || f.fill) && f.label === t);
+        out.scale = Math.round(sheetScale(dsh)); out.inFrame = fb[0] <= db[0] && fb[1] <= db[1] && fb[2] >= db[2] && fb[3] >= db[3];
+        out.roads = { n: rd.length, ws: rd.map(f => +f.w.toFixed(1)), labels: rd.map(f => f.label), color: rd[0]?.fill };
+        out.adm = (L("gisogd.admin")?.features || []).length;
+        out.admW = L("gisogd.admin")?.features[0]?.w;
+        out.names = sh.layers.filter(l => /подписи/.test(l.title)).flatMap(l => l.features.map(f => f.label));
+        out.callout = !!sh.layers.find(l => l.title === "Выноска территории");
+        out.legend = (sh.cLegend || []).flatMap(g => (g.items || []).map(i => i.label));
+        out.look = [sh.look, sh.bleed, sh.basemap, sh.rect];
+        out.tpl = [PPTKRT.length, PPTKRT[PPTKRT.length - 1].concept, PPTKRT_D.length];
+        const resp = await fetch("/api/print/svg", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...sp, index: 0 }) });
+        const txt = await resp.text();
+        out.svg = [resp.status, txt.length, /Фрагмент карты административно-планировочной структуры/.test(txt), resp.headers.get("X-Grado-Not-Ready") || "", txt.slice(0, 120)];
+        window.__t90svg = txt; out.shot = 1;
+        return JSON.stringify(out);
+      } finally { window.__t90 = { prevT, keep, saved, keys }; }`));
+    check(r.tpl[0] >= 10 && r.tpl[1] === "district" && r.tpl[2] === 1, `T90: в шаблоне альбома лист «district» последний (листов ${r.tpl[0]})`);
+    check(r.scale >= 15000 && r.scale <= 25000 && r.inFrame, `T90: рамка — район целиком, масштаб 1:${r.scale} (район ≈ 3,7 × 3,6 км на карте 420 × 253 мм)`);
+    check(r.look[0] === "concept" && r.look[1] === true && r.look[2] === "sat" && JSON.stringify(r.look[3]) === "[0,44,420,253]", `T90: снимок на весь лист под шапкой, как лист 3 (${JSON.stringify(r.look)})`);
+    check(r.roads.n === 4 && !r.roads.labels.includes("Тестовая улица"), `T90: на карте магистрали и улицы районного значения, жилая улица не рисуется (${r.roads.n} линии)`);
+    check(r.roads.ws[0] > r.roads.ws[2] && r.roads.ws[2] > r.roads.ws[3] && r.roads.color === "#f3d98c", `T90: линии жёлтые, ширина по классу: магистраль толще второстепенной (${r.roads.ws.join(", ")}; ${r.roads.color})`);
+    check(r.roads.labels[0] === "МКАД" && r.roads.labels[1] === "Щёлковское ш." && r.roads.labels[2] == null && r.roads.labels[3] == null, `T90: подписаны только магистраль и главная улица (${JSON.stringify(r.roads.labels)})`);
+    check(r.adm === 3 && Math.abs(r.admW - 4.6) < 0.2, `T90: границы трёх районов красные жирные 1,2 мм (${r.adm} шт., ширина ${r.admW})`);
+    check(r.names.some(n => /Гольяново/.test(n)), `T90: свой район подписан (${JSON.stringify(r.names)})`);
+    check(r.callout, "T90: выноска «Территория рассмотрения» на месте");
+    check(r.legend.includes("автомобильные дороги") && r.legend.includes("района") && r.legend.some(t => /территории рассмотрения/.test(t)), `T90: легенда — граница территории, района, автомобильные дороги (${JSON.stringify(r.legend)})`);
+    check(r.svg[0] === 200 && r.svg[2] && !r.svg[3], `T90: сервер рисует лист (код ${r.svg[0]}, ${r.svg[1]} знаков, заголовок есть: ${r.svg[2]}, «не готов»: «${r.svg[3]}»)`);
+    if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t90svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t90img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
+      await p.shot(`${shots}/t90-district.png`); await p.ev(`document.getElementById("t90img")?.remove(); return 1`); }
+    await p.ev(`const k = window.__t90; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); k.keys.forEach(x => setLayerData(x, k.saved[x] || { type: "FeatureCollection", features: [] })); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
   });
 };

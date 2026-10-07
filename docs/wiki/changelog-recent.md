@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).
 - 2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).
 - 2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).
 - 2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).
 - 2026-10-06, ГРАДО 2 v0.99.20: fixes from the live album rebuild check.
 - 2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).
-- 2026-10-06, ГРАДО 2 v0.99.18: collaboration by role groups, download by roles, keyboard and narrow window (T86e, T86f).

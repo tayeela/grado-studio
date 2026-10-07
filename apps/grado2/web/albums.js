@@ -186,14 +186,17 @@ const C_RAIL = { mode: "single", fill: "#1f1f1f", stroke: "#1f1f1f", width: 4, l
 // что есть у каждого листа: источник дорог, железная дорога, подписи, станции метро (правило 16: точки Яндекса в тех же
 // тайлах, что дороги; на листе — значок и название, railStations); затем состав листа по ролям (T86a): начальный layout
 // шаблона повторяет keys/styles/only 1:1, сборка листа читает его (sheetlayout.js)
-function cSheet(sh) {
+function cSheet(sh, opts = {}) {
   // полигоны ЕГКО добавлены в ключи и стили листов — слой режется из кэша слоя на диске (портал — только при первой выгрузке,
   // раз в срок кэша); на векторных схемах он первый, на снимке — запасной. Дороги по осям (calc.uds_*) не рисуются никогда
   const i = sh.keys.indexOf("yandex.hd_roads");
   if (i >= 0) { sh.keys.splice(i + 1, 0, "egko.roads"); sh.styles = { ...sh.styles, "egko.roads": sh.styles["yandex.hd_roads"] }; }
   if (sh.keys.includes("yandex.rail")) sh.styles = { ...sh.styles, "yandex.rail": { ...C_RAIL } };
-  sh.keys.push("egko.place_labels", "egko.addresses", "yandex.stations");
-  sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN, "yandex.stations": C_HIDDEN };
+  if (opts.places === false) { sh.keys.push("yandex.stations"); sh.styles = { ...sh.styles, "yandex.stations": C_HIDDEN }; }   // карта района: подписи деревень и адресов не нужны
+  else {
+    sh.keys.push("egko.place_labels", "egko.addresses", "yandex.stations");
+    sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN, "yandex.stations": C_HIDDEN };
+  }
   sh.layout = SheetLayout.seedLayout(sh);
   return sh;
 }
@@ -237,7 +240,20 @@ const PPTKRT_C = [
   { ...C_BASE, concept: "parcels", title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat",
     keys: ["nspd.parcels", "osm.landuse", "osm.roads", "egko.water", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } } },
-].map(cSheet);
+].map(sh => cSheet(sh));
+
+/* Листы «в границах сит. плана» (владелец 07.10.2026, задача #37, docs/team/spec-37-sitplan-sheets.md): в конец альбома, листы 1–9 не
+   трогаются. Лист 10 — п. 1: карта района — снимок Яндекса на весь лист, район территории целиком (fit "district"), дороги OSM жёлтыми
+   линиями по классам, красная граница района, названия районов, главных дорог и станций метро, выноска территории */
+const ROAD_YELLOW = "#f3d98c", D_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary", "motorway_link", "trunk_link", "primary_link"];
+const PPTKRT_D = [
+  { ...C_BASE, concept: "district", title: "Фрагмент карты административно-планировочной структуры города Москвы", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], fit: "district",
+    keys: ["osm.roads", "gisogd.admin", "egko.water", "egko.water_labels"],
+    styles: { "osm.roads": { mode: "single", fill: ROAD_YELLOW, width: MM(.7), label: "Название" }, ...C_WATER,
+      "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: MM(1.2), label: "" } },
+    only: { "osm.roads": { field: "Тип дороги", values: D_ROADS }, "gisogd.admin": { field: "Уровень", values: ["район"] } },
+    labelMM: { "osm.roads": 3.2, "egko.water_labels": 3.8 } },
+].map(sh => cSheet(sh, { places: false }));
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
@@ -682,7 +698,7 @@ function conceptSheet(out, sheet, bb) {
   // на листе 3 быть не должно)
   if (sheet.basemap === "sat") (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) ft.nl = true; });
   namedPlaces(out, bb, railStations(out, bb));
-  if (k === "ortho") {
+  if (k === "ortho" || k === "district") {
     // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
     // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)
     const [w, s, e, n] = turf.bbox(TERR), up = (bb[3] - n) * 110540 / ((out.scale || 2000) / 1000) >= 35;
@@ -693,8 +709,15 @@ function conceptSheet(out, sheet, bb) {
     // граница района — в легенде, только если она видна на листе
     const box = turf.bboxPolygon(bb), dist = (L("gisogd.admin")?.features || []).some(ft => /Polygon/.test(ft.g?.type)
       && safe(() => turf.flatten(turf.polygonToLine({ type: "Feature", geometry: ft.g, properties: {} })).features.some(l => turf.booleanIntersects(l, box))));
+    // карта района (лист «в границах сит. плана»): дороги OSM — линии по классам, ширина на бумаге в мм; подписаны только магистрали и главные улицы
+    const dRoads = k === "district" ? (L("osm.roads")?.features || []).filter(inFrame) : [];
+    if (k === "district") {
+      const W = { motorway: 2.2, trunk: 1.8, primary: 1.4, secondary: 1, tertiary: .7, motorway_link: .9, trunk_link: .9, primary_link: .8 }, NAMED = new Set(["motorway", "trunk", "primary"]);
+      (L("osm.roads")?.features || []).forEach(ft => { const t = ft.props?.["Тип дороги"]; ft.w = MM(W[t] || .5); if (!NAMED.has(t)) ft.label = null; });
+    }
     out.cLegend = [{ items: [terr, ...(dist ? [{ kind: "line", stroke: "#e30613", width: 1.2, label: "района" }] : []),
-      ...(hasRoads ? [{ kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: ROADS_WORD }] : [])] }];   // правило 7: только то, что видно
+      ...(k === "district" ? (dRoads.length ? [{ kind: "line", stroke: ROAD_YELLOW, width: 1.2, label: "автомобильные дороги" }] : [])
+        : hasRoads ? [{ kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: ROADS_WORD }] : [])] }];   // правило 7: только то, что видно
   }
   if (k === "photos") {
     out.casing = ["yandex.hd_roads"];               // дороги контуром — один общий контур на все куски
@@ -1027,8 +1050,8 @@ function conceptDistricts(out, bb, k) {
   const near = adm.filter(f => f.properties["Уровень"] === "район" && /Polygon/.test(f.geometry?.type) && safe(() => turf.booleanIntersects(f, box)));
   const others = near.filter(f => f !== district).map(f => ({ f, part: safe(() => inter(f, box)) }))
     .filter(x => x.part && m2(x.part) / (kk * kk) > 400);          // больше 4 см² на бумаге — иначе подписи негде стоять
-  if (!others.length) return;
-  if (k !== "ortho") {                                            // на ортофотоплане граница района уже есть (слой gisogd.admin)
+  if (!others.length && k !== "district") return;                  // на карте района свой район подписывается и без соседей
+  if (k !== "ortho" && k !== "district") {                        // на ортофотоплане и карте района граница района уже есть (слой gisogd.admin)
     const g = safe(() => turf.polygonToLine(district));
     const lines = g && (g.type === "FeatureCollection" ? g.features : [g]);
     // поверх белой маски: под ней красная граница района бледнеет и сливается с красными линиями
@@ -1060,6 +1083,8 @@ function conceptDistricts(out, bb, k) {
       const d = Math.min(...ls.map(l => turf.pointToLineDistance(pt, turf.lineString(l)))); if (d > bd) { bd = d; best = pt; } }
     return best; };
   const rest = others.filter(({ f }) => !named.has(f));
+  const mine = k === "district" && !named.has(district) ? safe(() => inter(district, box)) : null;   // карта района: подписан и район территории
+  if (mine) rest.push({ f: district, part: mine });
   if (rest.length) out.layers.push({ title: "Соседние районы: подписи", features: rest.map(({ f, part }) => ({ g: deep(part).geometry, nm: true, nudge: true,
     label: nm(f), ls: 14.3 * .3528, lf: "sans-bold", lh: .6, lcol: "#9e1717", la: 0 })) });
 }
@@ -1086,6 +1111,7 @@ const PPTKRT = [
     { keys: ["gisogd.admin"], adm: "moscow", fit: "moscow", rect: [25, 48, 174, 229], noFrame: true },
     { keys: ["gisogd.admin"], adm: "okrug", fit: "okrug", rect: [212, 48, 188, 229], okrugTitle: true, noFrame: true }] },   // за округом — белый фон (владелец)
   ...PPTKRT_C,
+  ...PPTKRT_D,
 ];
 
 TPL_SETS.pptkrt_ = { list: () => PPTKRT, size: () => "PA3" };       // обновление листов по шаблону (sheets.js, tplRefresh)
