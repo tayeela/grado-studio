@@ -31,6 +31,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-node@v4          # страница вики sheets.md строится выполнением albums.js в Node (tools/wiki_albums.mjs)
+        with:
+          node-version: "22"
       - name: Пересобрать docs/wiki из кода и закоммитить, если изменилось
         run: |
           git config user.name "grado-wiki-bot"
