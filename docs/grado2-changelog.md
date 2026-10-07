@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).** Owner: «Переделай листы 5-9 в 1:2000» (КРТ 3229
+  Гольяново gave 1:1000 there), then «масштаб для каждого проекта должен быть настраиваемым». A line «Масштаб схем 5–9» under
+  «Штамп» in «Листы и альбом»: «авто по территории» (default, as before) or 1:500 … 1:10 000; it is `ALBUM.meta.schemeScale`
+  (in the project file, reset when another project opens). `sheetScale` (sheets.js) for the five scheme sheets (`concept` use, gp,
+  ppt, gpzu, parcels; sheets 3–4 do not take it) = the scale chosen in the sheet's properties, else the project's one but never
+  larger than the territory needs (a territory that does not fit gets a larger scale, border not cut, rule 3.2); a value outside the
+  scale row is ignored. Because the build plan (`planUnits`) reads the same `sheetScale`, «Собрать» loads the data for the new
+  frames; the sheet's properties show «как в проекте 1:2 000» instead of «авто». Rules: label-rules «Общие» 8, album-rules,
+  slide-layout-rules 3.3. Test: E2E group `t88` (scales on a 130 m and a 650 m territory, the window, the project round-trip).
 - **2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).** A row «Готовые наборы» above the
   tree: «Существующее положение» (13 layers), «Ограничения» (7), «Градостроительная документация» (8), «Альбом ППТ КРТ» (24 —
   exactly the layers of the album sheets, taken from `PPTKRT`). A click checks the set, a second click unchecks it; the

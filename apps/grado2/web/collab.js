@@ -592,7 +592,7 @@ function applyMeta(meta, mine, flags) {
 function applyAlbum(a, flags) {
   {
     a = a || {};
-    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", builtAt: undefined, pdfAt: undefined, pptxAt: undefined }, safeObj(a.meta)); window.hideSheetFrame?.();
+    Object.assign(ALBUM.meta, { object: "", code: "", stage: "ПП", org: "", slide: "P", schemeScale: undefined, builtAt: undefined, pdfAt: undefined, pptxAt: undefined }, safeObj(a.meta)); window.hideSheetFrame?.();
     ALBUM.sheets.splice(0, ALBUM.sheets.length, ...(a.sheets || []).map(s => { const x = { ...s }; if (x.scale != null) x.scale = okn(x.scale, 0); if (x.view != null) x.view = safeId(x.view); if (x.photos != null && !Array.isArray(x.photos)) delete x.photos; return x; }));
     ALBUM.frames = a.frames; window.migrateFrames?.(); flags.album = true;
   }
