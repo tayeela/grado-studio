@@ -1,3 +1,8 @@
+"""Золотые числа пресета КРТ Москвы (moscow_krt.json): площади, население, соцнормы, парковки.
+
+Запуск: python -m unittest discover -s core/compute/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 from pathlib import Path
 

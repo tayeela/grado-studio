@@ -1,0 +1,57 @@
+name: Вики (пересборка и выкладка)
+
+# Вики ГРАДО 2 живёт в docs/wiki и собирается из кода (tools/wiki.py). Здесь она обновляется сама:
+#   1. на каждый пуш в main и team/t60 страницы пересобираются; если что-то изменилось, ветка получает коммит
+#      «wiki: пересборка из кода» (так вики не отстаёт, даже когда коммитили без хука pre-commit — из облака, с телефона, слиянием PR);
+#   2. после пуша в team/t60 копия docs/wiki уходит в приватный репозиторий tayeela/grado-wiki (tools/wiki_publish.sh) —
+#      только если задан секрет WIKI_TOKEN (один раз: docs/wiki/recipes.md, раздел «Вики на GitHub»). Без секрета шаг
+#      честно пишет предупреждение и ничего не ломает: вики на Mac обновляет хук post-commit.
+# Коммиты бота не запускают другие проверки (так задумано у GitHub для GITHUB_TOKEN), поэтому бесконечного цикла нет.
+
+on:
+  push:
+    branches:
+      - main
+      - team/t60
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  wiki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Пересобрать docs/wiki из кода и закоммитить, если изменилось
+        run: |
+          git config user.name "grado-wiki-bot"
+          git config user.email "grado-wiki-bot@users.noreply.github.com"
+          for attempt in 1 2 3; do
+            python3 tools/wiki.py
+            if [ -z "$(git status --porcelain -- docs/wiki)" ]; then echo "вики уже свежая"; break; fi
+            git add docs/wiki
+            git commit -q -m "wiki: пересборка из кода [skip ci]"
+            if git push -q origin "HEAD:${GITHUB_REF_NAME}"; then echo "вики обновлена (попытка $attempt)"; break; fi
+            # в ветку успели запушить другое: берём её свежую голову и пересобираем заново
+            git fetch -q origin "${GITHUB_REF_NAME}"
+            git reset -q --hard "origin/${GITHUB_REF_NAME}"
+          done
+      - name: Выложить копию в tayeela/grado-wiki
+        if: github.ref_name == 'team/t60' || github.event_name == 'workflow_dispatch'
+        env:
+          WIKI_TOKEN: ${{ secrets.WIKI_TOKEN }}
+        run: |
+          if [ -z "$WIKI_TOKEN" ]; then
+            echo "::warning::Секрет WIKI_TOKEN не задан — копия вики в tayeela/grado-wiki не обновлена (docs/wiki/recipes.md, «Вики на GitHub»)."
+            exit 0
+          fi
+          WIKI_DEST="$RUNNER_TEMP/wiki-repo" tools/wiki_publish.sh

@@ -1,10 +1,16 @@
+"""Проверяет модуль crs: пересчёт координат (UTM 37N, веб-Меркатор, МСК, ОГД) против эталонов PROJ.
+
+Без сети: эталоны — числа из PROJ (pyproj), записаны прямо в тесте; pyproj не нужен.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import math
 import unittest
 
 import _paths  # noqa: F401
 from grado_connectors import crs
 
-# Эталоны — PROJ 8 (pyproj из QGIS-LTR), см. docs/architecture.md
+# Эталоны — PROJ 8 (pyproj из QGIS-LTR), см. docs/archive/studio/architecture.md
 UTM_CASES = [
     ((37.6176, 55.7558), (413242.9638, 6179766.5783)),
     ((39.0, 55.0), (500000.0000, 6094791.4210)),

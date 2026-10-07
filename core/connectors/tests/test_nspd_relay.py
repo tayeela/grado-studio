@@ -1,3 +1,9 @@
+"""Проверяет переключение НСПД на релей (GRADO_NSPD_BASE, токен) и загрузку файлов сертификатов.
+
+Без сети: запросы подменены; токен и сертификат в тесте — тестовые заглушки.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import json
 import os
 import ssl

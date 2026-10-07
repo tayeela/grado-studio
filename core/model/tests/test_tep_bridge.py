@@ -1,3 +1,8 @@
+"""Мост от геометрии проекта к расчёту ТЭП (grado_model.tep_bridge): площади входов и движок КРТ.
+
+Запуск: python -m unittest discover -s core/model/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import sys
 import tempfile
 import unittest

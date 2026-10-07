@@ -6,6 +6,7 @@
 
 | файл | классы | проверок |
 |---|---|---|
+| `test_album_lint.py` | AlbumLintTest | 3 |
 | `test_albumgeo_js.py` | AlbumGeoJs | 1 |
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |

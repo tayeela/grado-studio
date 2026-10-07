@@ -1,7 +1,7 @@
 # Рецепты (пишется вручную)
 
 ## Проверка
-`tools/gate.sh` — unit (с PYTHONPATH и без), коннекторы, свежесть вики. `E2E=1 tools/gate.sh` — плюс браузерные
+`tools/gate.sh` — свежесть вики, навигация документов (`tools/docs_check.py`), unit (с PYTHONPATH и без), коннекторы. `E2E=1 tools/gate.sh` — плюс браузерные
 сценарии (~6 мин; во время прогона не держать открытыми тестовые серверы — медленный старт страницы даёт ложный сбой).
 `E2E_ONLY=t71,t82 tools/gate.sh` — только группы. Журналы шагов — `/tmp/grado-gate/<шаг>.log`.
 
@@ -13,13 +13,22 @@
 на релей. Проверку сертификатов отключать нельзя (правило 4).
 
 ## Вики
-Собирается сама (pre-commit, `tools/wiki.py`). Вручную — только `architecture.md` и `recipes.md`. Вики устарела →
-`python3 tools/wiki.py`.
+Страницы с пометкой «генерируется» собирает `tools/wiki.py` из кода; `sheets.md` — из самого `albums.js`, выполненного в Node
+(`tools/wiki_albums.mjs`). Вручную пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `album-rules.md`.
+Обновляется само, в три слоя:
+1. хук `pre-commit` (`tools/git-hooks`, включается `git config core.hooksPath tools/git-hooks`; в облачных сессиях — сам) пересобирает вики перед коммитом;
+2. GitHub Actions `docs.yml` на каждом PR проверяет, что вики совпадает с кодом (`python3 tools/wiki.py --check`), а `wiki.yml` после пуша в
+   `team/t60` и `main` пересобирает её и коммитит «wiki: пересборка из кода»;
+3. после пуша в `team/t60` `wiki.yml` кладёт копию в приватный репозиторий `tayeela/grado-wiki` (нужен секрет `WIKI_TOKEN`, один раз —
+   `.github/workflows/README.md`). Вручную или из облачной сессии: `tools/wiki_publish.sh`.
+Вики устарела → `python3 tools/wiki.py`. Навигация сломана (ссылка, путь, файл без заголовка) → `python3 tools/docs_check.py`.
 
 ## Где работать
-- Команда — ветка `team/t60`, рабочая копия `.claude/worktrees/team2`. Начало цикла: `git merge main`, `tools/gate.sh`,
+- Любая сессия (Mac или облако): ветка `task/<номер задачи>-<имя>` от `team/t60` → `tools/gate.sh` → PR в `team/t60` (CI проверяет сам) → слияние.
+  В `main` — только по слову владельца «выкладывай» (навык `land`).
+- Команда на Mac — ветка `team/t60`, рабочая копия `.claude/worktrees/team2`. Начало цикла: `git merge main`, `tools/gate.sh`,
   прочитать `docs/wiki/INDEX.md` и `docs/wiki/team.md`.
-- `main` — программа владельца и сайт: коммит программы в `main` сам выкладывает сайт (хук `deploy-if-main.sh`).
+- `main` — программа владельца и сайт: слияние программы в `main` и `git pull` на Mac сами выкладывают сайт (хук `deploy-if-main.sh`).
   Только документы команды — `GRADO_NO_DEPLOY=1 git commit -- docs/team`.
 
 ## Тестовая копия программы (не 8650!)
@@ -34,10 +43,10 @@
 `pdftoppm -r 100 -png a.pdf p`. Проверять глазами (железное правило 6) и на живых данных — не только на тестовых.
 
 ## Выкладка (только по слову владельца «выкладывай»)
-`git -C ~/grado-studio status --porcelain -- apps/grado2 core docs` пусто → в ветке команды `git merge main` →
-`E2E=1 tools/gate.sh` → в main `git merge --ff-only team/t60` (хук выложит сайт; при обрыве сети — повторить
-`tools/deploy-server.sh`, путь Mac → msk; ГРАДО на msk с 07.10.2026) → `git push origin main team/t60` → запись в ЛОГ taiLink
-(`~/.claude/guard/log_append.py`).
+Навык `land` (`.claude/skills/land/SKILL.md`): `git -C ~/grado-studio status --porcelain -- apps/grado2 core docs` пусто → в ветке команды
+`git merge main` → `E2E=1 tools/gate.sh`, CI зелёный → PR `team/t60 → main` слить на GitHub → на Mac в основной копии `git pull --ff-only`
+(хук выложит сайт; при обрыве сети — повторить `tools/deploy-server.sh`, путь Mac → msk; ГРАДО на msk с 07.10.2026) →
+закрыть задачи, убрать метку «готово к выкладке» → запись в ЛОГ taiLink (`~/.claude/guard/log_append.py`).
 
 ## Срочное исправление на сайте
 Ошибка уже на сайте и владелец ждёт: правка прямо в main → `tools/gate.sh` → коммит (выкладка сама) → сразу

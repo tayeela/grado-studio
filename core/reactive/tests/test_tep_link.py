@@ -1,3 +1,8 @@
+"""Проверяет пересчёт ТЭП (grado_reactive.TepLink, grado_compute) после правок, undo и смены ветки.
+
+Запуск: python -m unittest discover -s core/reactive/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import tempfile
 import unittest
 from pathlib import Path

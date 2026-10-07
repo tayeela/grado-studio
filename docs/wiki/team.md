@@ -3,7 +3,7 @@
 # Команда: доска на GitHub, правила команды
 
 С 06.10.2026 доска задач — GitHub Issues репозитория tayeela/grado-studio (метки «задача», «замечание владельца», «ждёт владельца», «в работе», «готово к выкладке»), работа — ветки и Pull Request, выкладка — слияние PR в main. Смотреть: `gh issue list`, `gh pr list`; порядок — docs/team/CYCLE.md.
-Прежняя доска docs/team/BOARD.md — архив до 06.10.2026.
+Прежняя доска и указания владельца — архив до 06.10.2026: docs/archive/team/BOARD.md, docs/archive/team/OWNER.md.
 
 ## Правила команды (RULE из PROGRESS.md)
 

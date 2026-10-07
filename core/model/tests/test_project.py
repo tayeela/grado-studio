@@ -1,3 +1,8 @@
+"""Файл проекта .grado (grado_model.Project): GPKG, слои и объекты, схема v2, миграция с v1.
+
+Запуск: python -m unittest discover -s core/model/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import sqlite3
 import tempfile
 import unittest

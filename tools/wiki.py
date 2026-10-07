@@ -3,7 +3,8 @@
 
 Зачем: агенту и человеку нужна короткая и всегда свежая сводка (что где лежит, какие источники данных, какие листы
 и правила), вместо чтения больших файлов целиком. Страницы, помеченные «генерируется», переписываются этим
-скриптом; architecture.md, recipes.md, album-rules.md и files.md пишутся руками и здесь не трогаются.
+скриптом; architecture.md, recipes.md, album-rules.md, files.md и conventions.md пишутся руками и здесь не трогаются.
+sheets.md берётся из самого albums.js, выполненного в Node (tools/wiki_albums.mjs); без Node страница не пересобирается.
 
   python3 tools/wiki.py          — пересобрать docs/wiki/
   python3 tools/wiki.py --check  — код 1, если вики устарела (часть проверки tools/gate.sh)
@@ -12,6 +13,7 @@
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -65,7 +67,7 @@ def sources():
     return "".join(out)
 
 
-# ---------- листы альбомов (albums.js PPTKRT_C, sheets.js SEC1 / SIT) ----------
+# ---------- листы альбомов (albums.js выполняется в Node; sheets.js SEC1 — разбор текста) ----------
 def _array_block(src, name):
     m = re.search(r"const " + re.escape(name) + r"\s*=\s*\[", src)
     if not m:
@@ -110,19 +112,39 @@ def _sheet_rows(src, name):
     return rows
 
 
+def album_sheets():
+    """Состав альбома ППТ КРТ из albums.js, выполненного в Node (tools/wiki_albums.mjs); None — Node нет или сбой."""
+    try:
+        r = subprocess.run(["node", str(ROOT / "tools/wiki_albums.mjs")], capture_output=True, text=True, timeout=60, cwd=ROOT)
+        return json.loads(r.stdout) if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
 def sheets():
+    alb = album_sheets()
+    if alb is None:
+        return None                       # без Node страница остаётся прежней (иначе разные машины писали бы её по-разному)
     a, s = read(WEB / "albums.js"), read(WEB / "sheets.js")
+    order = alb["order"]
+    by_i = {x["i"]: x for x in alb["sheets"]}
+
+    def row(n, x):
+        ck = x["concept"] or x["kind"] or "—"
+        return (f"| {n} | {x['title']} | {ck} | {x['basemap'] or 'белая'} | {', '.join(x['flags']) or '—'} | "
+                f"{', '.join(f'`{k}`' for k in x['keys'])} | {x['i']} |\n")
+    head = "| № | лист | концепт / вид | основа | рамка | ключи слоёв | шаблон # |\n|---|---|---|---|---|---|---|\n"
     out = [GEN, "# Листы альбомов\n\n",
-           "Состав листов задают массивы ниже; дальнейший выбор (источник дорог, станции, районы, зоны) делает\n",
-           "`conceptSheet` в albums.js по данным рамки листа. Подробно о правилах — rules.md.\n"]
-    for title, src, name, first in (("План реализации ППТ КРТ, листы 3–9 (albums.js PPTKRT_C; 1 — титул, 2 — месторасположение)", a, "PPTKRT_C", 3),
-                                    ("План реализации ППТ КРТ, листы «в границах сит. плана», с 10-го (albums.js PPTKRT_D; в конец альбома, #37)", a, "PPTKRT_D", 10),
-                                    ("Раздел «Существующее положение» (sheets.js SEC1)", s, "SEC1", 1)):
-        rows = _sheet_rows(src, name)
-        out.append(f"\n## {title}\n\n| № | лист | concept / kind | основа | ключи слоёв |\n|---|---|---|---|---|\n")
-        for n, r in enumerate(rows, first):
-            ck = " / ".join(x for x in (r["concept"], r["kind"]) if x) or "—"
-            out.append(f"| {n} | {r['title']} | {ck} | {r['basemap'] or 'белая'} | {', '.join(f'`{k}`' for k in r['keys'])} |\n")
+           "Состав и порядок листов альбома ППТ КРТ берутся из самого `apps/grado2/web/albums.js` (его выполняет\n"
+           "`tools/wiki_albums.mjs` в Node), поэтому таблица совпадает с тем, что собирает программа. Порядок выдачи — `PPTKRT_ORDER`;\n"
+           "«шаблон #» — номер листа в массиве (по нему хранятся снимки и правки проектов). Дальнейший выбор источников (дороги,\n"
+           "станции, районы, зоны) делает `conceptSheet` в albums.js по данным рамки листа. Правила — album-rules.md и rules.md.\n",
+           f"\n## Альбом «План реализации ППТ КРТ» — {len(order)} листов в порядке выдачи (PPTKRT_ORDER)\n\n", head]
+    out += [row(n, by_i[i]) for n, i in enumerate(order, 1) if i in by_i]
+    rest = [x for x in alb["sheets"] if x["i"] not in order]
+    if rest:
+        out.append("\n## В шаблоне, но не в выдаче\n\n" + head)
+        out += [row("—", x) for x in rest]
     pushes = re.findall(r"PPTKRT_C\.forEach\(sh => \{([^\n]*)", a)
     if pushes:
         out.append("\n### Ключи, добавляемые всем листам ППТ КРТ (forEach в albums.js)\n\n")
@@ -132,6 +154,11 @@ def sheets():
     concepts = sorted(set(re.findall(r'k === "([a-z]+)"', a)))
     if concepts:
         out.append(f"\nВетки conceptSheet по виду листа: {', '.join(f'`{c}`' for c in concepts)}.\n")
+    rows = _sheet_rows(s, "SEC1")
+    out.append("\n## Раздел «Существующее положение» (sheets.js SEC1)\n\n| № | лист | концепт / вид | основа | ключи слоёв |\n|---|---|---|---|---|\n")
+    for n, r in enumerate(rows, 1):
+        ck = " / ".join(x for x in (r["concept"], r["kind"]) if x) or "—"
+        out.append(f"| {n} | {r['title']} | {ck} | {r['basemap'] or 'белая'} | {', '.join(f'`{k}`' for k in r['keys'])} |\n")
     return "".join(out)
 
 
@@ -149,7 +176,15 @@ def api():
 
 
 # ---------- модули: файл, строки, первый комментарий, функции ----------
-def _lead_comment(text, py):
+def _lead_comment(text, py, sh=False):
+    if sh:                                           # скрипты оболочки: комментарии после #!, до первой команды
+        lines = []
+        for ln in text.splitlines()[1:]:
+            if ln.startswith("#"):
+                lines.append(ln.lstrip("# ").strip())
+            elif lines or ln.strip():
+                break
+        return " ".join(x for x in lines if x)
     if py:
         m = re.match(r'\s*(?:#[^\n]*\n)*\s*"""(.*?)"""', text, re.S)
         return (m.group(1).strip().split("\n\n")[0] if m else "").replace("\n", " ")
@@ -165,8 +200,10 @@ def _lead_comment(text, py):
     return " ".join(lines)
 
 
-def _functions(text, py):
+def _functions(text, py, sh=False):
     names = []
+    if sh:
+        return re.findall(r"^(\w+)\(\)\s*\{", text, re.M)
     if py:
         for m in re.finditer(r"^(?:class|def) (\w+)", text, re.M):
             names.append(m.group(1))
@@ -176,21 +213,33 @@ def _functions(text, py):
     return names
 
 
+def _files(folder, *patterns):
+    out = []
+    for pat in patterns:
+        out += sorted((ROOT / folder).glob(pat))
+    return out
+
+
 def modules():
     out = [GEN, "# Модули ГРАДО 2\n\n",
-           "Файл — строк — назначение (первый комментарий файла) — функции и классы верхнего уровня.\n"]
-    for title, files in (("Сервер и печать (apps/grado2/*.py)", sorted(APP.glob("*.py"))),
-                         ("Страница (apps/grado2/web/*.js)", sorted(WEB.glob("*.js"))),
-                         ("Ядро: коннекторы (core/connectors/grado_connectors)", sorted((ROOT / "core/connectors/grado_connectors").glob("*.py"))),
-                         ("Ядро: печать (core/render/grado_render)", sorted((ROOT / "core/render/grado_render").glob("*.py")))):
+           "Файл — строк — назначение (первый комментарий файла) — функции и классы верхнего уровня. Заголовок есть у каждого файла кода\n"
+           "(его требует `tools/docs_check.py`): добавляя файл, начните его с одной фразы «что это» (docs/CLAUDE.md).\n"]
+    groups = [("Сервер и печать (apps/grado2/*.py)", _files("apps/grado2", "*.py")),
+              ("Страница (apps/grado2/web/*.js)", _files("apps/grado2/web", "*.js"))]
+    for mod in ("connectors", "compute", "model", "reactive", "geom", "render", "layout"):
+        pkg = next(iter(sorted((ROOT / "core" / mod).glob("grado_*"))), None)
+        if pkg:
+            groups.append((f"Ядро: {mod} (core/{mod}/{pkg.name})", sorted(pkg.glob("*.py"))))
+    groups.append(("Инструменты (tools/)", _files("tools", "*.py", "*.sh", "*.mjs") + _files("tools/git-hooks", "*.sh")))
+    for title, files in groups:
         out.append(f"\n## {title}\n")
         for f in files:
-            if f.name.startswith("_") and f.name != "__init__.py" or f.name == "__init__.py":
+            if f.name == "__init__.py" or (f.name.startswith("_") and f.name != "__init__.py"):
                 continue
             t = read(f)
-            py = f.suffix == ".py"
-            lead = _lead_comment(t, py)
-            fn = _functions(t, py)
+            kind = f.suffix
+            lead = _lead_comment(t, kind == ".py", kind == ".sh")
+            fn = _functions(t, kind == ".py", kind == ".sh") if kind != ".mjs" else _functions(t, False)
             out.append(f"\n### `{rel(f)}` — {t.count(chr(10))} стр.\n\n")
             if lead:
                 out.append(lead[:600] + ("…" if len(lead) > 600 else "") + "\n\n")
@@ -238,12 +287,12 @@ def tests():
 
 # ---------- команда: очередь и последние циклы ----------
 def team():
-    b, p = read(ROOT / "docs/team/BOARD.md"), read(ROOT / "docs/team/PROGRESS.md")
+    p = read(ROOT / "docs/team/PROGRESS.md")
     out = [GEN, "# Команда: доска на GitHub, правила команды\n\n",
            "С 06.10.2026 доска задач — GitHub Issues репозитория tayeela/grado-studio (метки «задача», «замечание "
            "владельца», «ждёт владельца», «в работе», «готово к выкладке»), работа — ветки и Pull Request, выкладка — "
            "слияние PR в main. Смотреть: `gh issue list`, `gh pr list`; порядок — docs/team/CYCLE.md.\n"
-           "Прежняя доска docs/team/BOARD.md — архив до 06.10.2026.\n"]
+           "Прежняя доска и указания владельца — архив до 06.10.2026: docs/archive/team/BOARD.md, docs/archive/team/OWNER.md.\n"]
     rules_ = re.findall(r"^RULE: .*(?:\n(?!RULE:|- |\n).*)*", p, re.M)
     if rules_:
         out.append("\n## Правила команды (RULE из PROGRESS.md)\n\n")
@@ -270,6 +319,7 @@ def index():
             "| [architecture.md](architecture.md) | как устроена программа: части, данные, печать (вручную) |\n"
             "| [files.md](files.md) | **где что лежит: вопрос → файл, места на Mac владельца, ветки** (вручную) |\n"
             "| [album-rules.md](album-rules.md) | **свод правил альбома ППТ КРТ — читать до любой работы с листами** (вручную) |\n"
+            "| [conventions.md](conventions.md) | как писать код и документы; как добавить источник данных, маршрут, лист альбома, тест (вручную) |\n"
             "| [recipes.md](recipes.md) | как: проверить, собрать альбом на тестовой копии, выложить, срочно исправить (вручную) |\n"
             "| [sources.md](sources.md) | источники данных: ключи слоёв, порталы, пределы |\n"
             "| [sheets.md](sheets.md) | листы альбомов: состав, ключи слоёв, основа |\n"
@@ -291,6 +341,9 @@ def main(argv):
     OUT.mkdir(parents=True, exist_ok=True)
     for name, fn in PAGES.items():
         text = fn()
+        if text is None:                  # страница зависит от внешней программы (Node), которой нет: оставляем как есть
+            print(f"wiki: {name} пропущена (нет Node)")
+            continue
         p = OUT / name
         if read(p) != text:
             stale.append(name)

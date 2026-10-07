@@ -1,0 +1,30 @@
+name: Документы и вики
+
+# Быстрая проверка (меньше минуты, без зависимостей): ссылки и пути в Markdown ведут на существующие файлы, у каждой папки
+# есть README, у каждого файла кода есть заголовок, вики docs/wiki совпадает с кодом. То же делает tools/gate.sh локально.
+# Запускается на каждый PR и на пуши в main и team/t60 — раньше правка только документов не проверялась ничем.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - team/t60
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Навигация, ссылки, заголовки файлов (tools/docs_check.py)
+        run: python3 tools/docs_check.py
+      - name: Вики совпадает с кодом (tools/wiki.py --check)
+        run: python3 tools/wiki.py --check

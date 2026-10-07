@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой):
-#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы, свежесть вики
+#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы, свежесть вики, навигация документов (tools/docs_check.py)
 #   E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы
 # Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
 cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)" || exit 2
@@ -14,6 +14,7 @@ step() {  # имя, команда…
   else echo "FAIL $name — $LOG/$name.log"; grep -E 'STEP FAILED|^FAIL:|^ERROR:|stale' "$LOG/$name.log" | sort -u | head -8; fail+=("$name"); fi
 }
 step wiki       python3 tools/wiki.py --check
+step docs       python3 tools/docs_check.py
 step unit       env PYTHONPATH="$PP" "$PY" -m unittest discover -s apps/grado2/tests -p "test_*.py"
 step unit-bare  bash -c "cd apps/grado2 && env -u PYTHONPATH '$PY' -m unittest discover -s tests -p 'test_*.py'"
 step connectors env PYTHONPATH="$PP" "$PY" -m unittest discover -s core/connectors/tests -p "test_*.py"

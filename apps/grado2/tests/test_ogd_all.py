@@ -1,3 +1,8 @@
+"""Выгрузка слоёв портала ОГД в DXF (ogd_all): порядок слоёв, имена для AutoCAD, XDATA, атрибуты.
+
+Запуск: python -m unittest discover -s apps/grado2/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import io
 import sys
 import time

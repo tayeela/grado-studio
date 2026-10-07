@@ -1,3 +1,8 @@
+"""Движок grado_compute (Engine): порядок вычисления, пересчёт зависимых, ошибки входов и пресета.
+
+Запуск: python -m unittest discover -s core/compute/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 
 from grado_compute import Engine, PresetError

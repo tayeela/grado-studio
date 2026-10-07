@@ -1,3 +1,8 @@
+"""Серверные тесты ГРАДО 2 (server.py): ТЭП, ЕГКО, ОГД, Яндекс, НСПД, проекты, HTTP, хаб, поиск.
+
+Запуск: python -m unittest discover -s apps/grado2/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import json
 import sys
 import os

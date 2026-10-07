@@ -1,3 +1,8 @@
+"""Лимиты выражений grado_compute: огромные степени, длина, глубина, NUL-байт, повторный расчёт.
+
+Запуск: python -m unittest discover -s core/compute/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import time
 import unittest
 

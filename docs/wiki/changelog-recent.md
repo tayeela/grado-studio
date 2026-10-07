@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.
 - 2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.
 - 2026-10-07, tests (#40): two browser steps no longer depend on timing.
 - 2026-10-07, ГРАДО 2 v0.99.44 (#48): documentation sheet split in two.
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
 - 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
 - 2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.
-- 2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.

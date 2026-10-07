@@ -1,0 +1,27 @@
+name: Замечание владельца
+description: Слово владельца по альбому, листу, подписи, условному обозначению или программе — дословно и с датой
+title: "Замечание: "
+labels: ["замечание владельца"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Слова владельца записываются дословно, в кавычках, с датой: по ним потом проверяют работу.
+        Порядок работы с замечанием — навык `owner-remark` (`.claude/skills/owner-remark/SKILL.md`) и `docs/team/CYCLE.md`.
+  - type: textarea
+    id: words
+    attributes:
+      label: Слова владельца (дословно)
+      description: «…» и дата, как в чате.
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Где
+      description: Лист альбома, слой, окно программы — что именно имеется в виду.
+  - type: textarea
+    id: done
+    attributes:
+      label: Когда задача считается выполненной
+      description: Что владелец должен увидеть на экране или в PDF/PPTX.

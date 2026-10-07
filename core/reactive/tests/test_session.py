@@ -1,3 +1,8 @@
+"""Проверяет сессию правок (grado_reactive.Session): undo/redo, пакетные правки, журнал, подписчики.
+
+Запуск: python -m unittest discover -s core/reactive/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import tempfile
 import unittest
 from pathlib import Path

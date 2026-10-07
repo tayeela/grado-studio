@@ -2,7 +2,8 @@
 
 # Модули ГРАДО 2
 
-Файл — строк — назначение (первый комментарий файла) — функции и классы верхнего уровня.
+Файл — строк — назначение (первый комментарий файла) — функции и классы верхнего уровня. Заголовок есть у каждого файла кода
+(его требует `tools/docs_check.py`): добавляя файл, начните его с одной фразы «что это» (docs/CLAUDE.md).
 
 ## Сервер и печать (apps/grado2/*.py)
 
@@ -120,7 +121,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 ### `apps/grado2/web/collab.js` — 753 стр.
 
-ГРАДО 2 · совместная работа: движок синхронизации (контракт — docs/grado2-collab-spec.md). Сервер хранит проект целиком, разбитым на разделы, и нумерует правки; клиенты сводят правки сами: · разделы: «meta» (граница, группы, виды, граф, источники, порядок слоёв), «album» (альбом: meta и листы — отдельно, чтобы правка meta не пересылала альбом) и «layer:<ключ>» = {spec, data}; · после каждой правки (markDirty → Collab.touched) с паузой 400 мс (не дольше 3 с) меняются только изменившиеся разделы; · сервер отвечает 409, если раздел успел поменять кто-то ещё: правки сводятся по трём версиям (база,…
+ГРАДО 2 · совместная работа: движок синхронизации (контракт — docs/specs/collab-contract.md). Сервер хранит проект целиком, разбитым на разделы, и нумерует правки; клиенты сводят правки сами: · разделы: «meta» (граница, группы, виды, граф, источники, порядок слоёв), «album» (альбом: meta и листы — отдельно, чтобы правка meta не пересылала альбом) и «layer:<ключ>» = {spec, data}; · после каждой правки (markDirty → Collab.touched) с паузой 400 мс (не дольше 3 с) меняются только изменившиеся разделы; · сервер отвечает 409, если раздел успел поменять кто-то ещё: правки сводятся по трём версиям (ба…
 
 Функции: `stable`, `same`, `isObj`, `js`, `quick`, `R9`, `cg`, `canonGeom`, `canonF`, `sameF`, `h12`, `keepUid`, `ensureUids`, `uidMap`, `split`, `join`, `mergeObj`, `mergeFeature`, `decide`, `mergeFC`, `mergeLayer`, `mergeOrder`, `layoutDerived`, `layoutConsistent`, `three`, `mergeKeyed`, `mergeGroup`, `mergeSheet`, `mergeAlbum`, `mergeMeta`, `eqLayer`, `merge3`, `install`, `emit`, `setStatus`, `editable`, `http`, `P`, `isLayerName`, `secText`, `baseMeta`, `baseAlbum`, `sameSection`, `baseName`, `normSection`, `localState`, `enqueue`, `queuePush`, `queueCatchUp`, `schedulePush`, `netFail`, `pushOnce`, `pushLoop`, `markSaved`, `recover`, `catchUp`, `fullSync`, `lost`, `authExpired`, `integrate`, `typing`, `diffApply`, `createLayerFrom`, `applyLayer`, `applyTerritory`, `applyGraph`, `applyMeta`, `applyAlbum`, `applyResults`, `VKEY`, `savePersonal`, `personal`, `loadProject`, `updateRole`, `refreshRole`, `connect`, `probeStream`, `onEvent`, `close`, `sendPresence`
 
@@ -231,7 +232,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 ### `apps/grado2/web/sheetlayers.js` — 538 стр.
 
-ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание, всё красиво и интуитивно понятно», макет — docs/team/mockups/2026-10-06-sheet-layers.png, вариант А). Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия), источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc от…
+ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание, всё красиво и интуитивно понятно», макет — docs/ux/mockups/2026-10-06-sheet-layers.png, вариант А). Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия), источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc отме…
 
 
 ### `apps/grado2/web/sheetlayout.js` — 478 стр.
@@ -261,7 +262,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `clone`, `captureView`, `applyView`, `legendHTML`, `renderViews`
 
-## Ядро: коннекторы (core/connectors/grado_connectors)
+## Ядро: connectors (core/connectors/grado_connectors)
 
 ### `core/connectors/grado_connectors/clip.py` — 147 стр.
 
@@ -359,7 +360,123 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_varint`, `_parse`, `_varints`, `_zz`, `_value`, `decode`, `lonlat_to_3395`, `lat_from_3395`, `to_lonlat`, `scale_3395`, `tile_range`, `tile_to_3395`, `_ring_area`, `_poly_area_m2`, `_line_len_m`, `_closed`, `_ll`, `_to_grid`, `_grid_to_3395`, `_sarea`, `_seam`, `_clean`, `_inside`, `_dissolve`, `_join`, `features_from_tiles`, `_ssl_context`, `YandexVmap`
 
-## Ядро: печать (core/render/grado_render)
+## Ядро: compute (core/compute/grado_compute)
+
+### `core/compute/grado_compute/engine.py` — 162 стр.
+
+ТЭП-движок: декларативные метрики над входными параметрами.
+
+Функции: `PresetError`, `Metric`, `Engine`
+
+### `core/compute/grado_compute/expressions.py` — 143 стр.
+
+Безопасный вычислитель выражений метрик.
+
+Функции: `round_half_up`, `ExpressionError`, `_pow`, `_PowGuard`, `_depth`, `parse`, `names`, `evaluate`
+
+## Ядро: model (core/model/grado_model)
+
+### `core/model/grado_model/classifier.py` — 77 стр.
+
+Классификатор: реестр видов объектов.
+
+Функции: `ClassifierError`, `ClassifierClass`, `Classifier`
+
+### `core/model/grado_model/dxf_export.py` — 141 стр.
+
+Экспорт проекта в DXF R12 (AC1009) — читается AutoCAD/nanoCAD/QGIS.
+
+Функции: `_g`, `_centroid`, `_polyline`, `_text`, `_label`, `project_to_dxf`
+
+### `core/model/grado_model/geometry.py` — 186 стр.
+
+Геометрия: GeoJSON-подобные структуры, WKB и GPKG-блобы, метрики.
+
+Функции: `GeometryError`, `_check_coords`, `validate`, `_enc_point`, `_enc_ring`, `_enc_body`, `wkb_encode`, `_Reader`, `_dec_geometry`, `wkb_decode`, `gpkg_blob`, `gpkg_parse`, `_ring_area`, `area`, `length`
+
+### `core/model/grado_model/gpkg.py` — 138 стр.
+
+Минимальный GeoPackage-писатель/читатель на чистом sqlite3.
+
+Функции: `now_iso`, `create_gpkg`, `GpkgError`, `quote_ident`, `add_feature_table`, `update_bounds`
+
+### `core/model/grado_model/project.py` — 440 стр.
+
+Проектная БД: файл .grado = GeoPackage с расширенными таблицами.
+
+Функции: `ProjectError`, `_q`, `_table_name`, `Layer`, `_flat_points`, `Project`
+
+### `core/model/grado_model/tep_bridge.py` — 36 стр.
+
+Мост модель → ТЭП-движок.
+
+Функции: `collect_inputs`, `apply_to_engine`
+
+## Ядро: reactive (core/reactive/grado_reactive)
+
+### `core/reactive/grado_reactive/deltas.py` — 50 стр.
+
+Дельта — атомарное изменение одного объекта модели.
+
+Функции: `snapshot`, `invert`, `apply`, `affected_layers`
+
+### `core/reactive/grado_reactive/journal.py` — 135 стр.
+
+Журнал дельт — персистентный лог изменений внутри файла проекта.
+
+Функции: `JournalError`, `Journal`
+
+### `core/reactive/grado_reactive/session.py` — 190 стр.
+
+Сессия — единственный путь изменения модели.
+
+Функции: `Session`
+
+### `core/reactive/grado_reactive/tep_link.py` — 42 стр.
+
+Связка сессии с ТЭП-движком: прообраз графа зависимостей ядра.
+
+Функции: `TepLink`
+
+## Ядро: geom (core/geom/grado_geom)
+
+### `core/geom/grado_geom/affine.py` — 55 стр.
+
+Аффинные преобразования точек: поворот, масштаб, зеркало.
+
+Функции: `_pairs`, `rotate`, `scale`, `mirror`
+
+### `core/geom/grado_geom/coverage.py` — 183 стр.
+
+Топологическое покрытие (coverage): зоны с общими границами.
+
+Функции: `CoverageError`, `_norm`, `_ring_area`, `_ccw`, `Coverage`
+
+### `core/geom/grado_geom/curves.py` — 153 стр.
+
+Дуги окружностей — параметрическое хранение, линеаризация по допуску.
+
+Функции: `CurveError`, `Arc`, `_finite`, `curve_spec`, `tessellate_curve`
+
+### `core/geom/grado_geom/overlay.py` — 119 стр.
+
+Площадь объединения полигонов внутри объединения других полигонов.
+
+Функции: `_edges`, `_bbox`, `_merge`, `_intersect_len`, `union_intersection_area`
+
+### `core/geom/grado_geom/path.py` — 194 стр.
+
+Составной путь: отрезки и дуги. Пикетаж, офсеты, сопряжения.
+
+Функции: `PathError`, `_line_intersect`, `Path`
+
+### `core/geom/grado_geom/snap.py` — 123 стр.
+
+Движок привязок: конец / пересечение / середина / ближайшая точка.
+
+Функции: `SnapResult`, `_seg_intersect`, `_nearest_on_seg`, `Snapper`
+
+## Ядро: render (core/render/grado_render)
 
 ### `core/render/grado_render/acad_lin.py` — 320 стр.
 
@@ -402,3 +519,114 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 Минимальный разбор TrueType для встраивания в PDF.
 
 Функции: `FontError`, `find_font`, `Font`
+
+## Ядро: layout (core/layout/grado_layout)
+
+### `core/layout/grado_layout/compose.py` — 36 стр.
+
+Сборка документа: листы → операции → PDF (печать) или SVG (экран).
+
+Функции: `_ctx`, `sheet_titles`, `document_pages_ops`, `render_document_pdf`, `render_page_svg`
+
+### `core/layout/grado_layout/frames.py` — 302 стр.
+
+Фреймы альбома: рамка листа, карта, легенда, таблица, текст, штамп.
+
+Функции: `_rect_ops`, `_text`, `_hline`, `_vline`, `PageBorder`, `MapFrame`, `LegendFrame`, `TableFrame`, `TextFrame`, `SheetHeader`, `CalloutFrame`, `SectionedLegendFrame`, `StampFrame`
+
+### `core/layout/grado_layout/model.py` — 47 стр.
+
+Документная модель альбома: документ → листы → фреймы.
+
+Функции: `Frame`, `Page`, `Document`
+
+## Инструменты (tools/)
+
+### `tools/album_check.py` — 203 стр.
+
+Визуальная проверка альбома «до / после» (06.10.2026): печать PDF по спецификации на тестовом сервере, страницы в PNG, постраничное сравнение с эталоном, вырезки изменённых мест и свод одной картинкой.
+
+Функции: `_font`, `render`, `pages`, `page_text`, `text_diff`, `compare`, `gh`, `fetch_baseline`, `publish_baseline`, `main`
+
+### `tools/album_lint.py` — 179 стр.
+
+Автоматические проверки оформления страниц альбома по готовому PDF — то, что компьютер видит сам, без глаз (см. docs/standards/albums/layout-qa.md).
+
+Функции: `run`, `pages_words`, `tile`, `box_mm`, `inter_area`, `area`, `check_words`, `check_fonts`, `check_images`, `lint`, `main`
+
+### `tools/docs_check.py` — 214 стр.
+
+Проверка навигации репозитория: ссылки, пути, оглавления, заголовки файлов (шаг `docs` в tools/gate.sh и в CI).
+
+Функции: `git_files`, `err`, `is_journal`, `exists`, `prose`, `check_markdown`, `check_readmes`, `check_root`, `check_index`, `lead_ok`, `check_headers`, `main`
+
+### `tools/gen_lgr_sheet.py` — 134 стр.
+
+Каталог условных знаков ЛГР (приказ Москомархитектуры №65) — один лист.
+
+Функции: `zone_rect`, `tile_ops`, `build_sheet`, `main`
+
+### `tools/gen_moscow_genplan.py` — 353 стр.
+
+Функции: `to_px`, `slug`, `entry`
+
+### `tools/gen_moscow_lgr.py` — 441 стр.
+
+Функции: `to_px`
+
+### `tools/gen_osm_highway.py` — 119 стр.
+
+Знаки дорог OSM → core/render/grado_render/styles/osm_highway.json.
+
+Функции: `to_px`, `build`, `main`
+
+### `tools/gen_redln97.py` — 33 стр.
+
+Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln97.json.
+
+Функции: `build`
+
+### `tools/wiki.py` — 363 стр.
+
+Вики проекта ГРАДО 2 (docs/wiki/) — собирается из файлов репозитория, без сети и без кэша данных.
+
+Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
+
+### `tools/deploy-server.sh` — 52 стр.
+
+Обновить ГРАДО 2 на сервере grado.tailink.tech одной командой:  tools/deploy-server.sh Отправляет последний коммит (не рабочие правки) на msk (ONEDASH-RU, 93.88.203.245), ставит его рядом с работающей версией, переключает каталог и перезапускает службу grado. Если после перезапуска /api/health не отвечает новой версией — сам возвращает прежнюю и завершается с ошибкой. С 07.10.2026 ГРАДО работает на самом msk (перенос с AEZA-GRADO, который перестал отвечать), поэтому выкладка идёт Mac → msk без перехода на другой хост. Перенос и откат — в ЛОГе taiLink за 07.10.2026; установка прежнего сервера —…
+
+Функции: `health`
+
+### `tools/gate.sh` — 24 стр.
+
+Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы, свежесть вики, навигация документов (tools/docs_check.py) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
+
+Функции: `step`
+
+### `tools/prune-merged-branches.sh` — 23 стр.
+
+Показывает (и по флагу --yes удаляет на GitHub) ветки, целиком влитые в main или в team/t60: их коммиты остаются в истории, ничего не теряется. Не трогает main, team/t60 и ветки открытых PR. По умолчанию — только список (SHA рядом: ветку можно вернуть командой `git push origin <sha>:refs/heads/<имя>`). tools/prune-merged-branches.sh          — список tools/prune-merged-branches.sh --yes    — удалить перечисленные ветки Лучше включить и встроенную очистку GitHub: Settings → General → Pull Requests → «Automatically delete head branches».
+
+
+### `tools/wiki_publish.sh` — 79 стр.
+
+Выкладка вики ГРАДО в приватный репозиторий GitHub tayeela/grado-wiki (владелец 06.10.2026: «выложи вики с удобной навигацией для ИИ на гитхаб»). Копирует docs/wiki, добавляет README.md (вход для человека и ИИ), llms.txt (список страниц для ИИ) и AGENTS.md (как работать). Без изменений ничего не пушит; ошибки сети не мешают коммиту. Кто запускает (везде одна и та же вики, последний запуск побеждает): * GitHub Actions — .github/workflows/wiki.yml на каждый пуш в team/t60 (нужен секрет WIKI_TOKEN, см. docs/wiki/recipes.md); * Mac владельца — хук post-commit, если коммит менял docs/wiki (в ветках…
+
+
+### `tools/panorama_shot.mjs` — 24 стр.
+
+Снимок панорамы Яндекса для листа «Фотофиксация» без наложений (владелец 06.10.2026: «должно быть только фото»): Chrome headless + CDP, скрыты метки домов, кнопки, логотип и миникарта. Запуск: node tools/panorama_shot.mjs <ссылка> <out.png> (WAIT=мс — ожидание загрузки, по умолчанию 12000). Кадр для листа: вырезать (550, 0, 2650, 1400) и уменьшить до 1500×1000; точка и направление съёмки — из развёрнутой ссылки (panorama[point], panorama[direction]).
+
+Функции: `sleep`, `cmd`
+
+### `tools/wiki_albums.mjs` — 42 стр.
+
+Состав альбома ППТ КРТ как JSON для tools/wiki.py (страница вики sheets.md): выполняет apps/grado2/web/albums.js в песочнице Node (глобальные имена других файлов страницы подменяются заглушками), поэтому список листов и порядок выдачи — ровно то, что собирает программа, а не разбор текста регулярными выражениями. Запуск: node tools/wiki_albums.mjs (нужен только Node).
+
+Функции: `stub`, `get`
+
+### `tools/git-hooks/deploy-if-main.sh` — 22 стр.
+
+Автообновление сервера grado.tailink.tech: git-хуки post-commit и post-merge вызывают этот файл. Обновляет, только если мы на ветке main и с прошлой выкладки менялась программа (apps/grado2, core, docs/standards). Последний выложенный коммит — в .git/grado-deployed (общий для всех рабочих копий). Выкладку делает tools/deploy-server.sh (проверка версии и автооткат). Отключить разово: GRADO_NO_DEPLOY=1. Коммит хук не отменяет никогда: неудача выкладки — только предупреждение.
+

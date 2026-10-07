@@ -1,3 +1,9 @@
+"""Проверяет снимки (store), диф, ZIP-выгрузки ГИС ОГД (gisogd), поиск ogr2ogr и текст ошибок.
+
+Без сети. Тест SHP МСК-50 → WGS84 нужен ogr2ogr (GDAL/QGIS); без него он пропускается.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import io
 import json
 import stat
