@@ -1119,9 +1119,11 @@ class SketchMapFrame(Frame):
                 continue
             ang = -math.radians(float(deg or 0))              # на листе ось Y вниз: против часовой на карте — «минус»
             text = text[:60]
-            tw = _text_w(text, pf.get("lf"), ls)
+            plines = text.split("\n")[:3]                    # подпись в две-три строки (районы, природные территории, #47)
+            tw = max(_text_w(t_, pf.get("lf"), ls) for t_ in plines)
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
-            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            th_ = ls * .6 + (len(plines) - 1) * ls * .6
+            ex, ey = ca * tw / 2 + sa * th_, sa * tw / 2 + ca * th_
             # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём; подпись — целиком в рамке
             # сдвигаемые подписи (номера, деревни) обходят границу территории; последняя попытка — без этого условия
             # сдвигаемые подписи (деревни, СНТ, улицы по адресам): сначала места без пересечения проездов, потом любые;
@@ -1148,8 +1150,10 @@ class SketchMapFrame(Frame):
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
             if pf.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
                 extra["halo_color"] = hex_to_rgb(pf["lhc"])
-            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
-                        "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
+            for i_, t_ in enumerate(plines):
+                o_ = ls * .35 + (i_ - (len(plines) - 1) / 2) * ls * 1.15        # строки — друг под другом, по центру точки
+                out.append({"op": "text", "x": x - math.sin(ang) * o_, "y": y + math.cos(ang) * o_, "size": ls, "text": t_,
+                            "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for t_, rr in runs.items():                                     # обязательная улица с участками только у края рамки
             if t_ not in along and rr[0][4].get("must"):
                 b = max(rr, key=lambda r: r[0])
@@ -1403,8 +1407,8 @@ class SketchMapFrame(Frame):
             stn = str(text).startswith(STATION_MARK)                          # станция: узкая полоса земли вдоль путей — подпись рядом с ней
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10, 13, 16, 20, 24) for k in range(12)] if stn else [])
-                                if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.5, 4.5, 6.5, 8.5) for k in range(8)]
-                                if f.get("mk") == "view" else [])   # номер точки съёмки — рядом со стрелкой, как в «ГК Царицыно»
+                                if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.0, 3.0, 4.0) for k in range(8)]
+                                if f.get("mk") == "view" else [])   # номер точки съёмки — у самой стрелки, не дальше 4 мм (владелец 07.10.2026, #47: «цифра 2 должна быть рядом со стрелкой»)
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
             if f.get("circle"):
                 ax, ay = mk[0], mk[1]

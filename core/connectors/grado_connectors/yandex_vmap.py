@@ -44,8 +44,8 @@ R = 6378137.0
 E = 0.0818191908426          # эксцентриситет WGS84
 HALF = math.pi * R
 # служебные слои рендера — не выгружаются (маски во весь тайл, подписи, суша, границы населённых пунктов)
-SKIP = frozenset({"hd_road_interchange", "land", "locality_a", "model_p", "road_label", "roadnet_a_label",
-                  "road_symbol", "place_label"})
+# road_label и place_label (подписи улиц и мест) больше не пропускаются: их берут листы альбома (#47), остальные источники их не просят
+SKIP = frozenset({"hd_road_interchange", "land", "locality_a", "model_p", "roadnet_a_label", "road_symbol"})
 SOURCE_DOC = "Яндекс Карты (векторные тайлы vmap3) — для анализа и эскиза; в сдаваемые материалы не включать"
 
 

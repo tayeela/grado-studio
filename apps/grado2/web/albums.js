@@ -136,7 +136,7 @@ function albumExtra(sheet) {
   const out = { style: sheet.style };
   if (sheet.callout && TERR) {
     const { district } = homeAdm();
-    out.callout = ["рассматриваемая территория", `Район ${district ? LABEL_FN.adm({ get: k => district.properties[k] }) : "—"}`];
+    out.callout = ["разрабатываемая территория", `Район ${district ? LABEL_FN.adm({ get: k => district.properties[k] }) : "—"}`];
     out.territory_lonlat = turf.centroid(TERR).geometry.coordinates;
   }
   // на картах листов — округ и район в углу, как в «ГК Царицыно»
@@ -162,8 +162,9 @@ const C_LBL = { lf: "sans-bold", lh: .55, lcol: "#141414" };
 // отбор дорог — общий у всех листов (у ортофотоплана добавляется граница района)
 const C_ONLY = { "osm.roads": { field: "Тип дороги", values: ["motorway", "trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"] } };
 const C_BASE = { style: "pptkrt", look: "concept", fit: "terr", ctx: 1.25, rect: [7, 44, 279, 239], legend: false, only: C_ONLY,
-  labelFn: { "osm.roads": "street", "osm.landuse": "name2" }, labelMM: { "osm.roads": 3.8, "osm.landuse": 3.8, "egko.water_labels": 3.8 },   // кегль чуть меньше (владелец 30.09.2026)
-  labelStyle: { "osm.roads": C_LBL, "osm.landuse": C_LBL, "egko.water_labels": { lf: "sans-bold", lh: .55 } } };
+  labelFn: { "osm.roads": "street", "osm.landuse": "name2", "yandex.road_labels": "yaStreet", "sit.road_labels": "yaStreet" },
+  labelMM: { "osm.roads": 3.8, "osm.landuse": 3.8, "egko.water_labels": 3.8, "yandex.road_labels": 3.8, "sit.road_labels": 3.4 },   // кегль чуть меньше (владелец 30.09.2026)
+  labelStyle: { "osm.roads": C_LBL, "osm.landuse": C_LBL, "egko.water_labels": { lf: "sans-bold", lh: .55 }, "yandex.road_labels": C_LBL, "sit.road_labels": C_LBL } };
 // реки и водоёмы — подписями ЕГКО, голубым с белой обводкой (владелец 29.09.2026)
 const C_WATER = { "egko.water_labels": { mode: "single", fill: "#1f8fe0", width: 1, marker: false, label: "Подпись", labelColor: "#1f8fe0" },
   "egko.water": { mode: "single", fill: "#a9cfe5", stroke: "#a9cfe5", width: 0, opacity: 0, label: "" } };   // на снимке вода видна сама — контуры только для подписи
@@ -173,12 +174,15 @@ const C_WATER_VIS = { "egko.water": { mode: "single", fill: "#bfe0f5", stroke: "
 // на всех схемах — только полигоны проезжей части Яндекса, без проездов по осям и дорог ЕГКО (владелец 05.10.2026)
 const C_ROADS = fill => ({ "yandex.hd_roads": { mode: "single", fill, stroke: fill, width: 0, opacity: 1 } });
 const C_NAMES = { "osm.landuse": { mode: "single", fill: "#ffffff", stroke: "#ffffff", width: 0, opacity: 0, label: "Название" } };
-const C_STREETS = (fill = C_ROAD) => ({ "osm.roads": { mode: "single", fill, width: 0, label: "Название", lineOff: true } });
+// подписи улиц — линии road_label Яндекса прямо по дорогам Яндекса (владелец 07.10.2026, #47: «попробуй взять топонимы из яндекса»);
+// подписи OSM остаются запасными: если у Яндекса в рамке подписей нет (conceptSheet)
+const C_STREETS = (fill = C_ROAD) => ({ "osm.roads": { mode: "single", fill, width: 0, label: "Название", lineOff: true },
+  "yandex.road_labels": { mode: "single", fill, width: 0, label: "Название", lineOff: true } });
 // застройка — белая с серым контуром на листах 4–8 (правило 3.28; владелец 01.10.2026)
 const C_PLAN = { ...C_ROADS(C_ROAD), ...C_WATER, ...C_WATER_VIS, "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#8c8c8c", width: 1, opacity: 1 } };
 // общие части листов 4–8: названия и улицы + дороги, вода и застройка (C_PLAN); листы задают только отличия
 const C_VEC = { ...C_NAMES, ...C_STREETS(), ...C_PLAN };
-const C_BODY = ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail"], C_TAIL = ["osm.landuse", "osm.roads", "egko.water_labels"];
+const C_BODY = ["egko.water", "yandex.hd_roads", "egko.buildings", "yandex.rail"], C_TAIL = ["osm.landuse", "osm.roads", "yandex.road_labels", "egko.water_labels"];
 // деревни и улицы без названия в OSM — на всех листах обязательно (правила подписей): подписи и адреса картоосновы ЕГКО
 const C_HIDDEN = { mode: "single", fill: "#141414", stroke: "#141414", width: 0, opacity: 0, marker: false, label: "" };
 // железная дорога на белых схемах (листы 4–8): чёрная линия, белые штрихи рисует conceptRail (владелец 05.10.2026)
@@ -194,8 +198,8 @@ function cSheet(sh, opts = {}) {
   if (sh.keys.includes("yandex.rail")) sh.styles = { ...sh.styles, "yandex.rail": { ...C_RAIL } };
   if (opts.places === false) { sh.keys.push("sit.stations"); sh.styles = { ...sh.styles, "sit.stations": C_HIDDEN }; }   // станции — тайлом z16: рамка района велика для z18 (#47)   // карта района: подписи деревень и адресов не нужны
   else {
-    sh.keys.push("egko.place_labels", "egko.addresses", "yandex.stations");
-    sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN, "yandex.stations": C_HIDDEN };
+    sh.keys.push("egko.place_labels", "egko.addresses", "yandex.stations", "yandex.rail_stations");
+    sh.styles = { ...sh.styles, "egko.place_labels": { ...C_HIDDEN, label: "Подпись" }, "egko.addresses": C_HIDDEN, "yandex.stations": C_HIDDEN, "yandex.rail_stations": C_HIDDEN };
   }
   sh.layout = SheetLayout.seedLayout(sh);
   return sh;
@@ -203,7 +207,8 @@ function cSheet(sh, opts = {}) {
 const PPTKRT_C = [
   { ...C_BASE, concept: "ortho", title: "Ортофотоплан", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], ctx: 2.2,
     // дороги — только полигоны проезжей части Яндекса, без проездов по осям и дорог ЕГКО (владелец 05.10.2026)
-    keys: ["yandex.hd_roads", "osm.landuse", "osm.roads", "gisogd.admin", "egko.water", "egko.water_labels"],
+    // железная дорога — линией (владелец 07.10.2026, #47: «нет линии самой железной дороги»)
+    keys: ["yandex.hd_roads", "yandex.rail", "osm.landuse", "osm.roads", "yandex.road_labels", "gisogd.admin", "egko.water", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS("#f3d98c"), "yandex.hd_roads": { mode: "single", fill: "#f3d98c", stroke: "#f3d98c", width: 0, opacity: 1 }, ...C_WATER,
       "gisogd.admin": { mode: "single", opacity: 0, fill: "#e30613", stroke: "#e30613", width: 2, label: "" } },
     only: { ...C_ONLY, "gisogd.admin": { field: "Уровень", values: ["район"] } } },
@@ -245,15 +250,19 @@ const PPTKRT_C = [
 /* Листы «в границах сит. плана» (владелец 07.10.2026, задача #37, docs/team/spec-37-sitplan-sheets.md): в конец альбома, листы 1–9 не
    трогаются. Лист 10 — п. 1: карта района — снимок Яндекса на весь лист, район территории целиком (fit "district"), дороги OSM жёлтыми
    линиями по классам, красная граница района, названия районов, главных дорог и станций метро, выноска территории */
-const DOCS_TOTAL = 8;   // схема документации: номера у ближайших восьми документов (колонка листа 11)
+const DOCS_TOTAL = 7;   // схема документации: номера у ближайших семи документов, у каждого вида не меньше двух — три списка помещаются в колонку (#47)
 const ROAD_YELLOW = "#f3d98c", D_ROADS = ["motorway", "trunk", "primary", "secondary", "tertiary", "motorway_link", "trunk_link", "primary_link"];
 const PPTKRT_D = [
   { ...C_BASE, concept: "district", sit: true, title: "Фрагмент карты административно-планировочной структуры города Москвы", basemap: "sat", bleed: true, rect: [0, 44, 420, 253], fit: "district",
-    keys: ["osm.roads", "gisogd.admin", "egko.water", "egko.water_labels"],
+    // подписи — Яндекса крупным тайлом: улицы городского значения, МКАД, МСД, названия природных территорий (#47); мелкая вода не подписывается
+    keys: ["osm.roads", "sit.road_labels", "sit.places", "gisogd.admin", "egko.water", "egko.water_labels"],
     styles: { "osm.roads": { mode: "single", fill: ROAD_YELLOW, width: MM(.7), label: "Название" }, ...C_WATER,
+      "sit.road_labels": { mode: "single", fill: ROAD_YELLOW, width: 0, label: "Название", lineOff: true },
+      "sit.places": { ...C_HIDDEN, label: "Название" },   // «национальный парк Лосиный остров» — точка Яндекса   // «Лосиный Остров» и заказники — только название
       "gisogd.admin": { mode: "single", opacity: 0, fill: "#b3392f", stroke: "#b3392f", width: MM(.6), label: "" } },   // тоньше (владелец 07.10.2026, #45)
     only: { "osm.roads": { field: "Тип дороги", values: D_ROADS }, "gisogd.admin": { field: "Уровень", values: ["район"] } },
-    labelMM: { "osm.roads": 3.2, "egko.water_labels": 3.8 } },
+    labelMM: { "osm.roads": 3.2, "egko.water_labels": 3.8, "sit.road_labels": 3.2, "osm.nature": 4.2 },
+    labelStyle: { ...C_BASE.labelStyle, "osm.nature": { lf: "sans-bold", lh: .35, lhc: "#000000", lcol: "#ffffff" } } },
 ].map(sh => cSheet(sh, { places: false })).concat(
   // лист 11 — п. 2, схема документации на светлой подложке (как ДПТ «Профсоюзная»): здания светло-серые без контура, дороги белые, границы
   // участков тонкими синими линиями, документы штриховкой; рамка «по границам выгрузки»
@@ -267,32 +276,42 @@ const PPTKRT_D = [
       "yandex.hd_roads": { mode: "single", fill: "#ffffff", stroke: "#ffffff", width: 0, opacity: 1 },
       "egko.buildings": { mode: "single", fill: "#e1e1e1", stroke: "#e1e1e1", width: 0, opacity: 1 },
       "nspd.parcels": { mode: "single", fill: "#1f3fbf", stroke: "#1f3fbf", width: MM(.15), opacity: 0, label: "" },
-      "gisogd.ppt": { mode: "single", fill: "#8c8c8c", stroke: "#8c8c8c", hatch: true, hatchPat: "135", width: 1, opacity: 1, label: "" },
+      "gisogd.ppt": { mode: "single", fill: "#8c8c8c", stroke: "#8c8c8c", hatch: true, hatchPat: "135", hatchStep: 12, width: 1, opacity: 1, label: "" },
       "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0, label: "" },
-      "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", width: 1, opacity: 1, label: "" },
+      "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", hatchStep: 12, width: 1, opacity: 1, label: "" },
       } })].concat(
   // лист 12 — п. 3, Генплан: шаблон листа 6 с рамкой «по границам выгрузки» (sheets.js coverFrameBox); лист 13 — п. 3, ПЗЗ: границы
   // территориальных зон с кодами видов разрешённого использования на той же основе, что листы 7–8
   [{ ...JSON.parse(JSON.stringify(PPTKRT_C.find(s => s.concept === "gp"))), sit: true, fit: "cover", title: "Размещение территории в материалах территориального планирования (Генеральный план города Москвы)" },
     // ПЗЗ — две схемы, как в образце владельца (07.10.2026, #47): зоны с кодами ВРИ и подзоны с предельными параметрами
     cSheet({ ...C_BASE, concept: "pzz", sit: true, fit: "cover", title: "Размещение территории в материалах градостроительного зонирования (ПЗЗ города Москвы)",
-      keys: [...C_BODY, "gisogd.pzz_zones", "gisogd.pzz_sub", ...C_TAIL],
-      twin: [{ concept: "pzz", rect: [7, 62, 200, 144], legendRect: [7, 211, 200, 76],
+      // схемы квадратные (1 : 1), линии зон и подзон — чёрные нежирные, КРТ — синей штриховкой на обеих, из топонимов — только улицы;
+      // легенда общая под левой схемой, под правой — только параметры (владелец 07.10.2026, #47, как в образце)
+      keys: [...C_BODY, "gisogd.krt", "gisogd.pzz_zones", "gisogd.pzz_sub", ...C_TAIL],
+      twin: [{ concept: "pzz", rect: [40, 62, 160, 160], legendRect: [40, 226, 160, 62],
         caption: "Границы территориальных зон и видов разрешенного использования земельных участков и объектов капитального строительства" },
-      { concept: "pzzsub", rect: [213, 62, 200, 144], legendRect: [213, 211, 200, 76],
+      { concept: "pzzsub", rect: [220, 62, 160, 160], legendRect: [220, 226, 160, 62],
         caption: "Границы подзон территориальных зон и параметров разрешенного использования земельных участков и объектов капитального строительства" }],
-      styles: { ...C_VEC, "gisogd.pzz_zones": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#6a3d9a", width: MM(.5), label: "ВРИ (коды)" },
-        "gisogd.pzz_sub": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#1f3fbf", width: MM(.4), dash: [6, 4], label: "" } },
+      styles: { ...C_VEC, "gisogd.pzz_zones": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#000000", width: MM(.25), label: "ВРИ (коды)" },
+        "gisogd.pzz_sub": { mode: "single", fill: "#ffffff", opacity: 0, stroke: "#000000", width: MM(.25), label: "" },
+        "gisogd.krt": { mode: "single", fill: "#1f3fbf", stroke: "#1f3fbf", hatch: true, hatchPat: "45", hatchStep: 10, width: 1, opacity: 1, label: "" } },
       labelFn: { ...C_BASE.labelFn, "gisogd.pzz_zones": "vri" }, labelMM: { ...C_BASE.labelMM, "gisogd.pzz_zones": 3.4 },
-      labelStyle: { ...C_BASE.labelStyle, "gisogd.pzz_zones": { lf: "sans-bold", lh: .5, lcol: "#4b2a7a" } } })]));
+      labelStyle: { ...C_BASE.labelStyle, "gisogd.pzz_zones": { lf: "sans-bold", lh: .5, lcol: "#141414" } } })]));
 
 // подписи улиц — как в образце: «ул. Промышленная», «Кавказский бульв.», «Тарный пр-д»
 const W_ = w => new RegExp(`(^|\\s)${w}(?=\\s|$)`, "i");            // целое слово: \b в JS кириллицу не видит
 const STREET_ABBR = [[W_("улица"), "ул."], [W_("проезд"), "пр-д"], [W_("бульвар"), "бульв."], [W_("шоссе"), "ш."], [W_("переулок"), "пер."],
   [W_("проспект"), "просп."], [W_("набережная"), "наб."], [W_("площадь"), "пл."], [W_("тупик"), "туп."]];
 LABEL_FN.street = f => { let n = LabelFmt.guillemets(String(f.get("Название") || "").trim()); if (!n) return null;
+  if (/^МКАД(\s|,|$)/.test(n)) return "МКАД"; if (/^Северо-Восточная хорда$/i.test(n)) return "МСД";   // как у Яндекса (#47)
   for (const [re, ab] of STREET_ABBR) if (re.test(n)) { n = n.replace(re, " ").replace(/\s+/g, " ").trim(); return ab === "ул." || ab === "пл." || ab === "просп." ? `${ab} ${n}` : `${n} ${ab}`; }
   return n; };
+// подпись улицы Яндекса («Наримановская ул.», «1-й Иртышский пр.», «МКАД 103 км») → как в образце: «ул. Наримановская», «1-й Иртышский
+// пр-д», «МКАД»; «СВХ» — второе имя того же полотна, что «МСД», не подписывается (владелец 07.10.2026, #47)
+LABEL_FN.yaStreet = f => { let n = String(f.get("Название") || f.get("name") || "").replace(/[\s\u00a0]+/g, " ").trim(); if (!n || /^СВХ$/i.test(n)) return null;
+  if (/^МКАД(\s|$)/.test(n)) return "МКАД";
+  for (const [re, ab] of [[/\s+ул\.$/, "ул."], [/\s+пл\.$/, "пл."], [/\s+просп\.$/, "просп."]]) if (re.test(n)) return `${ab} ${n.replace(re, "")}`;
+  return LabelFmt.guillemets(n.replace(/\s+пр\.(?=\s|$)/, " пр-д").replace(/\s+бул\.(?=\s|$)/, " бульв.")); };
 // длинное название — в две строки примерно равной длины (владелец 30.09.2026), не больше двух
 // посёлок — «пос.», не «п.» и не полностью (владелец 01.10.2026)
 // станция — «ст. ж/д Калошино» с неразрывными пробелами (правило 15, владелец 05.10.2026); кавычки — «ёлочки»
@@ -353,15 +372,16 @@ const VRI_WORDS = [[/многофункц/i, 1], [/благоустройств/
 // названия и цвета в легенде сущпола — по образцу владельца (06.10.2026: «названия и цвета в легенде сущпола должны быть
 // такими»): «Функциональные зоны специализированного назначения» и «Транспортная инфраструктура». Класс шаблона ВРИ (по коду
 // и словам ВРИ, как раньше) → зона образца; несколько классов шаблона могут давать одну зону
-const SPEC_ZONES = [["многофункционального", "#c07c7e", [1]], ["административно-делового", "#cbb2cc", [8]],
-  ["культурно-просветительского", "#f99f9f", [7, 23]], ["торгово-бытового", "#f4b598", [2]], ["лечебно-оздоровительного", "#b0d9d5", [4, 3, 10]],
-  ["спортивно-рекреационного", "#b9e592", [9]], ["учебно-воспитательного", "#cde1b7", [5]], ["учебно-образовательного", "#d5a9aa", [6]],
+// нежилые зоны — «… вида» (владелец 07.10.2026, #47: «все кроме жилых не могут быть просто прилагательным»)
+const SPEC_ZONES = [["многофункционального вида", "#c07c7e", [1]], ["административно-делового вида", "#cbb2cc", [8]],
+  ["культурно-просветительского вида", "#f99f9f", [7, 23]], ["торгово-бытового вида", "#f4b598", [2]], ["лечебно-оздоровительного вида", "#b0d9d5", [4, 3, 10]],
+  ["спортивно-рекреационного вида", "#b9e592", [9]], ["учебно-воспитательного вида", "#cde1b7", [5]], ["учебно-образовательного вида", "#d5a9aa", [6]],
   ["общественно-жилого", "#ee8e62", [13]], ["многоквартирной жилой застройки", "#f9e79f", [11]], ["индивидуальной жилой застройки", "#e5e57f", [12]],
-  ["сельскохозяйственного назначения", "#e8f2c7", [25]], ["общественно-производственного", "#ad84ae", []],
-  ["сельскохозяйственно-производственного", "#b8a47f", [27, 28]], ["фермерско-производственного", "#c0c000", [26]], ["производственного вида", "#cfd1eb", [14]],   // владелец 07.10.2026, #47: «не просто производственного, а производственного вида»
+  ["сельскохозяйственного назначения", "#e8f2c7", [25]], ["общественно-производственного вида", "#ad84ae", []],
+  ["сельскохозяйственно-производственного вида", "#b8a47f", [27, 28]], ["фермерско-производственного вида", "#c0c000", [26]], ["производственного вида", "#cfd1eb", [14]],   // владелец 07.10.2026, #47: «не просто производственного, а производственного вида»
   
-  ["коммунально-складского", "#dcd5b6", [17]], ["жилищно-коммунального", "#d7c6c1", [16]], ["специального", "#c7d1c7", [15]],
-  ["природно-рекреационного", "#c0e3b5", [18]], ["природоохранного", "#597f47", [19]], ["водные поверхности", "#336699", [22]], ["прочие", "#f7faf5", [24]]];
+  ["коммунально-складского вида", "#dcd5b6", [17]], ["жилищно-коммунального вида", "#d7c6c1", [16]], ["специального вида", "#c7d1c7", [15]],
+  ["природно-рекреационного вида", "#c0e3b5", [18]], ["природоохранного вида", "#597f47", [19]], ["водные поверхности", "#336699", [22]], ["прочие", "#f7faf5", [24]]];
 const TRANSPORT_ZONES = [["территории железнодорожного транспорта", "#ada4a0", [20]], ["территории автодорог, улиц и местных проездов", "#ffffff", [21]]];
 const ZONE_OF = new Map([...SPEC_ZONES, ...TRANSPORT_ZONES].flatMap(([name, color, ns]) => ns.map(n => [n, [name, color]])));
 const LAND_USE = Object.keys(VRI_T).map(n => [...ZONE_OF.get(+n), null, +n]);
@@ -409,7 +429,8 @@ const ZONE_GEN = { 5: "санитарно-защитных зон (устано�
 // СЗЗ — условными знаками ГИС ОГД (владелец 05.10.2026: «рисуй, но возьми условные для СЗЗ как на ГИС ОГД»; стили
 // слоёв портала virtual1743, virtual1745, virtual1746): только граница, без заливки; штрих 9/7 пикс. — у ориентировочных
 // владелец 06.10.2026: «установленные СЗЗ — чёрный контур, ориентировочные — пунктир, чёрный контур» (расчётные — как на портале)
-const SZZ_OGD = { 5: { color: "#000000" }, 62: { color: "#f3f707" }, 63: { color: "#000000", dash: [9, 7] } }, SZZ_W = 2.1;   // толще (владелец 06.10.2026: «все ЛГР потолще»)
+// расчётные — чёрный точка-пунктир, все границы СЗЗ чуть тоньше (владелец 07.10.2026, #47)
+const SZZ_OGD = { 5: { color: "#000000" }, 62: { color: "#000000", dash: [9, 3, 1.5, 3] }, 63: { color: "#000000", dash: [9, 7] } }, SZZ_W = 1.5;   // толще (владелец 06.10.2026: «все ЛГР потолще»)
 // виды СЗЗ в легенде — друг за другом: установленные (5), затем расчётные (62) (владелец 05.10.2026)
 const SZZ_ORD = c => c === 62 ? 5.5 : c === 63 ? 5.7 : c;
 const zoneGen = t => { const c = Object.entries(LGRT).find(([, v]) => v === t)?.[0]; if (ZONE_GEN[c]) return ZONE_GEN[c];
@@ -454,7 +475,10 @@ function conceptDocs(out, bb, groups, opts = {}) {
     });
     return [...seen.values()].filter(d => d.at).sort((a, b) => a.dist - b.dist).slice(0, g.max || 12);
   });
-  if (opts.total) { const keep = new Set(per.flat().sort((a, b) => a.dist - b.dist).slice(0, opts.total)); per.forEach((docs, i) => { per[i] = docs.filter(d => keep.has(d)); }); }
+  // opts.minEach — у каждой группы не меньше стольких ближайших номеров (владелец 07.10.2026, #47: «к проектам межевания тоже должны быть выноски и пояснения сбоку»)
+  if (opts.total) { const keep = new Set(per.flatMap(docs => docs.slice(0, opts.minEach || 0)));
+    per.flat().sort((a, b) => a.dist - b.dist).forEach(d => { if (keep.size < opts.total) keep.add(d); });
+    per.forEach((docs, i) => { per[i] = docs.filter(d => keep.has(d)); }); }
   groups.forEach((g, gi) => {
     const docs = per[gi]; if (!docs.length) return;
     const items = docs.map(d => {
@@ -642,6 +666,7 @@ function railStations(out, bb) {
   l.features = [];
   const inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
   const vis = sts.filter(s => inBox(s.at));
+  // название станции со значком печать в две строки не переносит (вместо переноса — квадрат): одна строка
   if (vis.length) out.layers.unshift({ title: "Станции метро, МЦК и МЦД", features: vis.map(s => ({ g: { type: "Point", coordinates: s.at }, nm: true, label: s.name, ls: 4.4,
     lf: "sans-bold", lh: .55, lcol: s.color, la: 0, nudge: true, ic: s.icons })) });
   out._stations = vis;                                         // для легенды (conceptStations)
@@ -672,7 +697,9 @@ function namedPlaces(out, bb, rail = []) {
     const pre = /^(с|село)$/i.test(m[1]) ? "с." : /^(п|пос|рп)$/i.test(m[1]) ? "пос." : "д.";
     feats.push({ g: ft.g, nm: true, label: `${pre} ${titleRu(m[2].replace(/["«»]/g, ""))}`, ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); });
   // улицы из адресов: «Придорожная улица 7 соор.1» → «Придорожная улица»
-  const known = new Set((L("osm.roads")?.features || []).map(ft => String(ft.props?.["Название"] || "").toLowerCase()).filter(Boolean));
+  // улица, которая есть среди дорог OSM где угодно (не только в рамке), по адресам не подписывается: у домов ЖК «Открытый парк» адрес
+  // «Открытое шоссе», а само шоссе — за рамкой (владелец 07.10.2026, #47: «открытое шоссе написано очень далеко от самой дороги»)
+  const known = new Set([...(L("osm.roads")?.features || []), ...dataFts("osm.roads")].map(ft => String(ft.props?.["Название"] || "").toLowerCase()).filter(Boolean));
   const streets = new Map();
   (L("egko.addresses")?.features || []).forEach(ft => { if (ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
     const m = /^(.*?(улица|переулок|проезд|шоссе|тупик|бульвар|площадь|набережная|проспект|аллея)(?:\s+[А-ЯЁа-яё-]+)?)[,\s]+\d/i.exec(String(ft.props?.["Адрес"] || ""));
@@ -729,9 +756,86 @@ function roadSource(out, sheet, bb) {
   if (eg && eg !== layer) eg.features = [];
   return src !== "none" && !!layer?.features.length;
 }
+// карта района (#47): подпись улицы — одна на название, на середине самого длинного почти прямого участка (поворот не больше 8°),
+// вдоль дороги; участок короче подписи — улица не подписывается. Печать вдоль линий в 1:26 000 места почти не находила: между
+// перекрёстками участки короче подписи
+function districtRoadLabels(out, bb) {
+  const kk = (out.scale || 2000) / 1000, mx = 111320 * Math.cos((bb[1] + bb[3]) / 2 * Math.PI / 180), my = 110540;
+  const runs = new Map();
+  const turnOf = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+  ["sit.road_labels", "osm.roads"].forEach(key => (out.layers.find(l => l.key === key)?.features || []).forEach(ft => {
+    if (!ft.label || !/Line/.test(ft.g?.type)) return; const t = String(ft.label), ls = ft.ls || 3.2, need = t.length * .6 * 3.4;
+    (ft.g.type === "LineString" ? [ft.g.coordinates] : ft.g.coordinates).forEach(line => {
+      // участок — пока направление каждого отрезка отличается от начального не больше чем на 10° (плавная дуга МКАД — не прямая)
+      let st = 0, len = 0, a0 = null;
+      const close = i => { if (len / kk < need || (runs.has(t) && runs.get(t).len >= len)) return;
+        let half = len / 2, k = st; while (k < i) { const d = Math.hypot((line[k + 1][0] - line[k][0]) * mx, (line[k + 1][1] - line[k][1]) * my); if (half <= d) break; half -= d; k++; }
+        const d = Math.hypot((line[k + 1][0] - line[k][0]) * mx, (line[k + 1][1] - line[k][1]) * my) || 1, f = half / d;
+        runs.set(t, { len, c: [line[k][0] + (line[k + 1][0] - line[k][0]) * f, line[k][1] + (line[k + 1][1] - line[k][1]) * f], a: a0 }); };
+      for (let i = 1; i < line.length; i++) {
+        const dx = (line[i][0] - line[i - 1][0]) * mx, dy = (line[i][1] - line[i - 1][1]) * my, a = Math.atan2(dy, dx) * 180 / Math.PI;
+        if (a0 != null && turnOf(a, a0) > 10) { close(i - 1); st = i - 1; len = 0; a0 = a; }
+        if (a0 == null) a0 = a;
+        len += Math.hypot(dx, dy);
+      }
+      close(line.length - 1);
+    });
+    ft.label = null; }));
+  const feats = [...runs].map(([t, r]) => { let a = r.a; if (a > 90) a -= 180; if (a <= -90) a += 180;
+    return { g: { type: "Point", coordinates: r.c }, nm: true, label: t, ls: 3.4, lf: "sans-bold", lh: .55, lcol: "#141414", la: a }; })
+    .filter(f => f.g.coordinates[0] >= bb[0] && f.g.coordinates[0] <= bb[2] && f.g.coordinates[1] >= bb[1] && f.g.coordinates[1] <= bb[3]);
+  if (feats.length) out.layers.push({ title: "Подписи улиц", features: feats });
+}
+// станция ж/д (подпись ЕГКО или землепользования OSM «ст. ж/д …») — у самих путей: точка подписи переносится на ближайшую точку
+// железной дороги не дальше 500 м (владелец 07.10.2026, #47: «подписи станции жд находятся на удалении от железной дороги»)
+function snapStations(out, bb) {
+  const rail = [...(out.layers.find(l => l.key === "yandex.rail")?.features || []), ...dataFts("yandex.rail")].filter(ft => /Line/.test(ft.g?.type))
+    .flatMap(ft => (ft.g.type === "LineString" ? [ft.g.coordinates] : ft.g.coordinates).filter(l => l.length > 1).map(l => turf.lineString(l)));
+  if (!rail.length) return;
+  const moved = [];
+  out.layers.forEach(l => l.features.forEach(ft => { if (!ft.label || !String(ft.label).startsWith(LabelFmt.STN_PREFIX) || !ft.g) return;
+    const c = ft.g.type === "Point" ? turf.point(ft.g.coordinates) : safe(() => turf.pointOnFeature({ type: "Feature", geometry: ft.g, properties: {} })); if (!c) return;
+    let best = null; rail.forEach(r => { const q = safe(() => turf.nearestPointOnLine(r, c, { units: "meters" })); if (q && (!best || q.properties.dist < best.properties.dist)) best = q; });
+    if (!best || best.properties.dist > 500) return;
+    if (ft.g.type === "Point") ft.g = best.geometry; else { moved.push({ g: best.geometry, nm: true, label: ft.label, ls: ft.ls || 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }); ft.label = null; } }));
+  const seen = new Set(); moved.forEach(f => seen.has(f.label) ? null : seen.add(f.label));
+  if (moved.length) out.layers.unshift({ title: "Станции ж/д", features: moved.filter((f, i, a) => a.findIndex(x => x.label === f.label) === i) });
+}
+// топонимы Яндекса (#47): подписи улиц — по линиям road_label (на карте района — только улицы городского значения, fc ≤ 5, МКАД и МСД),
+// подписи OSM при этом не ставятся; станции ж/д — точкой Яндекса на путях; названия природных территорий карты района — place_label / poi
+function yandexToponyms(out, k, bb, inFrame) {
+  const L = key => out.layers.find(l => l.key === key), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
+  const yrl = L("yandex.road_labels") || L("sit.road_labels");
+  if (yrl) {
+    yrl.features = yrl.features.filter(ft => ft.label && /Line/.test(ft.g?.type) && inFrame(ft) && (k !== "district" || (+(ft.props?.fc ?? 9)) <= 5));
+    yrl.features.forEach(ft => { ft.nl = true; });
+    // на карте района у Яндекса крупным тайлом подписаны только главные дороги: улицы городского значения — подписями OSM, если у Яндекса
+    // такого названия нет; на листах-схемах подписи OSM не ставятся
+    const ya = new Set(yrl.features.map(ft => ft.label));
+    if (yrl.features.length) (L("osm.roads")?.features || []).forEach(ft => { if (k !== "district" || ya.has(ft.label)) ft.label = null; });
+  }
+  const yst = L("yandex.rail_stations");
+  if (yst) {
+    yst.features = yst.features.filter(ft => ft.g?.type === "Point" && inBox(ft.g.coordinates) && ft.props?.["Название"])
+      .map(ft => ({ g: ft.g, nm: true, label: LabelFmt.stationLabel(ft.props["Название"]), ls: 4.6, lf: "sans-bold", lh: .55, lcol: "#141414", la: 0, nudge: true }))
+      .filter((f, i, a) => a.findIndex(x => x.label === f.label) === i);
+    if (yst.features.length) out._yaStations = true;
+  }
+  // природные территории карты района — точкой Яндекса («национальный парк Лосиный остров», тип vegetation-natpark): «Национальный парк
+  // «Лосиный остров»» в две строки; точка за рамкой (центр парка севернее) — подпись у ближнего края рамки, если до него не больше 3 км
+  const pl = L("sit.places");
+  if (pl) { const mg = [(bb[2] - bb[0]) * .08, (bb[3] - bb[1]) * .08], seen = new Set();
+    // из данных проекта, а не из слоя листа: в слой листа попадает только то, что в рамке, а точка парка — в его середине, за рамкой
+    pl.features = dataFts("sit.places").filter(ft => ft.g?.type === "Point" && /natpark|nature|reserve|forest/.test(String(ft.props?.ft_type_name || "")) && ft.props?.["Название"]).flatMap(ft => {
+      const c = ft.g.coordinates, q = [Math.min(bb[2] - mg[0], Math.max(bb[0] + mg[0], c[0])), Math.min(bb[3] - mg[1], Math.max(bb[1] + mg[1], c[1]))];
+      if (turf.distance(c, q) > 3) return [];
+      const n = String(ft.props["Название"]).replace(/\s+/g, " ").trim(), m = /^(национальный парк|природный парк|заказник|природно-исторический парк)\s+(.+)$/i.exec(n);
+      const label = m ? LabelFmt.capFirst(m[1]) + "\n«" + LabelFmt.capFirst(m[2]) + "»" : n; if (seen.has(label)) return []; seen.add(label);
+      return [{ g: { type: "Point", coordinates: q }, nm: true, label, ls: 4.2, lf: "sans-bold", lh: .35, lhc: "#000000", lcol: "#ffffff", la: 0 }]; }); }
+}
 const ROADS_WORD = "территории автодорог, улиц и местных проездов";   // как в образце владельца 06.10.2026 (было «…, улиц, местных…»)   // как в образце «ГК Царицыно», лист 5
 function conceptSheet(out, sheet, bb) {
-  const ha = fmt(m2(TERR) / 1e4, 2), terr = { kind: "line", stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW], label: `территории рассмотрения (${ha} га)` };
+  const ha = fmt(m2(TERR) / 1e4, 2), terr = { kind: "line", stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW], label: `разрабатываемой территории (${ha} га)` };
   out.look = "concept"; out.noFrame = true; out.callout = undefined; out.bleed = !!sheet.bleed;
   // полупрозрачная белая маска за границей территории — на схемах с белой основой, как в примере «Хатминки»; на снимке и
   // на фрагменте Генплана её нет (владелец 30.09.2026)
@@ -741,11 +845,17 @@ function conceptSheet(out, sheet, bb) {
   const L = key => out.layers.find(l => l.key === key), bounds = { title: "Границы", items: [terr] };
   const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
   const k = sheet.concept, hasRoads = roadSource(out, sheet, bb);
+  yandexToponyms(out, k, bb, inFrame);
   waterLabels(out, bb);
+  if (k === "district") { const wl = L("egko.water_labels"); if (wl) wl.features = []; }   // мелкая вода на карте района не подписывается (#47)
   // тонкие реки ЕГКО нужны только для подписей ручьёв: на снимке вода видна сама (владелец 30.09.2026: голубых линий
   // на листе 3 быть не должно)
   if (sheet.basemap === "sat") (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) ft.nl = true; });
   namedPlaces(out, bb, railStations(out, bb));
+  snapStations(out, bb);
+  if (out._yaStations) {                                       // станции ж/д — по Яндексу, на путях; подписи ЕГКО и OSM тех же станций — вдали от путей (#47)
+    out.layers.forEach(l => { if (l.key === "yandex.rail_stations") return; l.features.forEach(ft => { if (ft.label && String(ft.label).startsWith(LabelFmt.STN_PREFIX)) ft.label = null; }); });
+    delete out._yaStations; }
   if (k === "ortho" || k === "district") {
     // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
     // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)
@@ -762,7 +872,7 @@ function conceptSheet(out, sheet, bb) {
     // карта района (лист «в границах сит. плана»): дороги OSM — линии по классам, ширина на бумаге в мм; подписаны только магистрали и главные улицы
     const dRoads = k === "district" ? (L("osm.roads")?.features || []).filter(inFrame) : [];
     if (k === "district") {
-      const W = { motorway: 2.2, trunk: 1.8, primary: 1.4, secondary: 1, tertiary: .7, motorway_link: .9, trunk_link: .9, primary_link: .8 }, NAMED = new Set(["motorway", "trunk", "primary"]);
+      const W = { motorway: 2.2, trunk: 1.8, primary: 1.4, secondary: 1, tertiary: .7, motorway_link: .9, trunk_link: .9, primary_link: .8 }, NAMED = new Set(["motorway", "trunk", "primary", "secondary"]);   // и улицы городского значения (#47)
       (L("osm.roads")?.features || []).forEach(ft => { const t = ft.props?.["Тип дороги"]; ft.w = MM(W[t] || .5); if (!NAMED.has(t)) ft.label = null; });
     }
     out.cLegend = [{ items: [terr, ...(dist ? [{ kind: "line", stroke: "#e30613", width: 1.2, label: "района" }] : []),
@@ -983,7 +1093,9 @@ function conceptSheet(out, sheet, bb) {
     ["gisogd.func_zones", "gisogd.func_zones_tinao"].forEach(key => (L(key)?.features || []).forEach(ft => {
       if (!/Polygon/.test(ft.g?.type)) return; const x = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, box));
       const a = x ? m2(x) / (kk * kk) : 0, name = GpZones.zoneName(ft.props), ix = GpZones.zoneIdx(ft.props);
-      if (a > .5) seenZ.push({ name, idx: ix, fill: gpFill(name, ix), a, terr: !!safe(() => turf.booleanIntersects({ type: "Feature", geometry: ft.g, properties: {} }, TERR)) }); }));
+      // зона в легенде — если на листе её видно: не меньше 25 мм² (владелец 07.10.2026, #47: «на схеме нет зон 500,600, а в условных она есть» — узкая полоска)
+      // белая заливка (зоны линейных объектов 500, 600) на листе не видна — не отличить от дорог, в легенде её нет
+      if (a >= 25 && !/^#?f{3}(f{3})?$/i.test(String(gpFill(name, ix) || ""))) seenZ.push({ name, idx: ix, fill: gpFill(name, ix), a, terr: !!safe(() => turf.booleanIntersects({ type: "Feature", geometry: ft.g, properties: {} }, TERR)) }); }));
     // знак — каждая зона, видимая в рамке; зоны одного цвета — одной строкой (F3); текст — название типа зоны как в слое
     const ORDER = ["общественно-жилая зона", "жилая зона", "природно-жилая зона", "природная зона", "общественно-производственно-жилая зона", "общественно-производственная зона"];
     const zones = GpZones.legendRows(seenZ, ORDER).map(r => ({ label: r.name, z: { idx: new Set(r.idx) } }));
@@ -997,15 +1109,16 @@ function conceptSheet(out, sheet, bb) {
       { kind: "text", sample: "500", family: "sans-bold", label: "индекс типа функционального назначения территории" }] }] : [])];
     if (out.table?.rows?.length) out.gpTable = { title: "Функциональные зоны и их параметры", widths: [.17, .17, .3, .36],
       // «функц. зоны» не разрывается (владелец 01.10.2026, правило 6.12)
-      cols: ["Номер функц.\u00a0зоны", "Индекс функц.\u00a0зоны", "Тип функц.\u00a0зоны", "Прогнозируемый фонд застройки функц.\u00a0зоны, тыс.\u00a0кв.\u00a0м"],
-      rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[3]]) };
+      // фонд — на разрабатываемую территорию: фонд зоны × доля территории в площади зоны (владелец 07.10.2026, #47)
+      cols: ["Номер функц.\u00a0зоны", "Индекс функц.\u00a0зоны", "Тип функц.\u00a0зоны", "Прогнозируемый фонд застройки в границах разрабатываемой территории, тыс.\u00a0кв.\u00a0м"],
+      rows: out.table.rows.map(r => [r[0], r[1], String(r[2]).toLowerCase(), r[4] == null ? r[3] : String(r[3]).replace(/\d+(?:,\d+)?/g, v => fmt(+v.replace(",", ".") * r[4], 2))]) };
     out.table = undefined;
   }
   if (k === "docs") {
     // схема документации (#37, п. 2 владельца 07.10.2026): ППТ, ПМТ, ГПЗУ, АГР и КРТ на одной светлой подложке по аналогии с ДПТ «Профсоюзная»;
     // номера и списки — у ближайших документов (в колонку их помещается около восьми), остальные нарисованы без номера, как в аналоге
     const agr = [], used = new Set();                              // АГР на этом листе нет (владелец 07.10.2026, #47)
-    const lists = conceptDocs(out, bb, [PPT_GROUP, PMT_GROUP, gpzuGroup(agr, used)], { total: DOCS_TOTAL });
+    const lists = conceptDocs(out, bb, [PPT_GROUP, PMT_GROUP, gpzuGroup(agr, used)], { total: DOCS_TOTAL, minEach: 2 });
     (L("gisogd.gpzu")?.features || []).forEach(ft => { ft.fill = "#7b7bf2"; ft.stroke = "#7b7bf2"; });   // цвет ГПЗУ — общий, рамки списка — чёрные
     if (!agr.length) lists.forEach(l => { l.title = String(l.title).replace(/\s+и свидетельства об утверждении АГР$/, ""); });
     out.cLists = lists;
@@ -1033,31 +1146,44 @@ function conceptSheet(out, sheet, bb) {
         ll: n || (LGRS[c]?.line_label || "").length > 20 ? undefined : LGRS[c]?.line_label,
         label: String(LGR_LEG[c] || "граница " + zoneGen(LGRT[c] || "")).replace(/(^|\s)мин\.\s/, "$1минимальных ") })) }]);
   }
-  if (k === "pzzsub") {
-    // подзоны ПЗЗ (#47): граница подзоны и предельные параметры в три строки — плотность (тыс. м²/га), высота (м), застроенность (%), как в ПЗЗ Москвы
-    if (L("gisogd.pzz_zones")) L("gisogd.pzz_zones").features = [];
-    const sub = (L("gisogd.pzz_sub")?.features || []).filter(inFrame);
-    // значение — по тексту регламента («плотность 15 тыс. м²/га · высота не установлена · …»): «не установлена» — прочерк, а не 0
-    const val = (p, word, re) => { const r = String(p["Регламент"] || ""), m = new RegExp(word + "\\s+([^·]+)", "i").exec(r);
-      if (m) { const t = m[1].trim(); if (/не установлен/i.test(t)) return "–"; const n = /[\d.,]+/.exec(t); return n ? n[0].replace(".", ",") : "–"; }
-      const k = Object.keys(p).find(x => re.test(x)); const v = k != null ? p[k] : null; return v == null || v === "" ? "–" : String(v).replace(".", ","); };
-    sub.forEach(ft => { const p = ft.props || {};
-      const v3 = [val(p, "плотность", /^Плотность/), val(p, "высота", /^Высота/), val(p, "застроенность", /^Застроенность/)];
-      ft.label = v3.every(v => v === "–") ? null : v3.join(" / ");   // одной строкой; подзона без параметров — без подписи
-      Object.assign(ft, { ls: 3.2, lf: "sans-bold", lh: .5, lcol: "#1f3fbf" }); });
-    out.cLegend = [{ title: "Границы", items: [terr, ...(sub.length ? [{ kind: "line", stroke: "#1f3fbf", width: .4, dash: [1.5, 1], label: "подзон территориальных зон" }] : [])] },
-      ...(sub.length ? [{ title: "Предельные параметры разрешенного строительства, реконструкции объектов капитального строительства", items: [
-        { kind: "text", sample: "15/75/60", family: "sans-bold", label: "максимальная плотность застройки земельных участков (тыс. м²/га) / максимальная высота застройки (м) / максимальная застроенность земельных участков (%)" },
-        { kind: "text", sample: "–", family: "sans-bold", label: "параметр не установлен; подзона без установленных параметров — без подписи" }] }] : [])];
-  }
-  if (k === "pzz") {
-    // выкопировка из ПЗЗ (#37): границы территориальных зон и коды видов разрешённого использования; в легенде — только видимое (правило 7)
-    if (L("gisogd.pzz_sub")) L("gisogd.pzz_sub").features = [];     // подзоны — на второй схеме листа (#47)
-    const zs = (L("gisogd.pzz_zones")?.features || []).filter(inFrame);
-    // коды ВРИ — у зон, в которых лежит территория (как в образце владельца, #47): у всех зон рамки списки кодов налезали друг на друга
-    zs.forEach(ft => { const x = /Polygon/.test(ft.g?.type) && safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, TERR)); if (!x || m2(x) < m2(TERR) * .05) ft.label = null; });
-    out.cLegend = [{ title: "Границы", items: [terr, ...(zs.length ? [{ kind: "line", stroke: "#6a3d9a", width: .5, label: "территориальных зон" }] : [])] },
-      ...(zs.some(ft => ft.label) ? [{ title: "Подписи", items: [{ kind: "text", sample: "4.9", family: "sans-bold", label: "коды видов разрешённого использования земельных участков и объектов капитального строительства" }] }] : [])];
+  if (k === "pzz" || k === "pzzsub") {
+    // ПЗЗ — две схемы (#47, образец владельца): линии зон и подзон чёрные нежирные, подписи чёрные — у всех зон, где текст помещается
+    // в свой контур; КРТ — синей штриховкой на обеих; из топонимов — только названия улиц
+    const kk = (out.scale || 2000) / 1000, LS = 2.6;
+    const fits = (ft, text) => { if (!text || !/Polygon/.test(ft.g?.type)) return false;
+      const part = safe(() => inter({ type: "Feature", geometry: ft.g, properties: {} }, box)); if (!part) return false;
+      const [w, s0, e, n] = turf.bbox(part), pw = (e - w) * 111320 * Math.cos((s0 + n) / 2 * Math.PI / 180) / kk, ph = (n - s0) * 110540 / kk;
+      const lines = String(text).split("\n"), tw = Math.max(...lines.map(t => t.length)) * .56 * LS, th = lines.length * LS * 1.25;
+      return tw <= pw * .9 && th <= ph * .9 && tw * th <= m2(part) / (kk * kk) * .6; };
+    const own = key => (L(key)?.features || []).filter(inFrame);
+    if (k === "pzzsub") {
+      if (L("gisogd.pzz_zones")) L("gisogd.pzz_zones").features = [];
+      // значение — по тексту регламента («плотность 15 тыс. м²/га · высота не установлена · …»): «не установлена» — прочерк, а не 0
+      const val = (p, word, re) => { const r = String(p["Регламент"] || ""), m = new RegExp(word + "\\s+([^·]+)", "i").exec(r);
+        if (m) { const t = m[1].trim(); if (/не установлен/i.test(t)) return "–"; const n = /[\d.,]+/.exec(t); return n ? n[0].replace(".", ",") : "–"; }
+        const kx = Object.keys(p).find(x => re.test(x)); const v = kx != null ? p[kx] : null; return v == null || v === "" ? "–" : String(v).replace(".", ","); };
+      own("gisogd.pzz_sub").forEach(ft => { const p = ft.props || {};
+        const t = [val(p, "плотность", /^Плотность/), val(p, "высота", /^Высота/), val(p, "застроенность", /^Застроенность/)].join("\n");   // три строки, как в ПЗЗ
+        ft.label = fits(ft, t) ? t : null; Object.assign(ft, { ls: LS, lf: "sans-bold", lh: .5, lcol: "#141414", lss: [1, 1, 1] }); });
+    } else {
+      if (L("gisogd.pzz_sub")) L("gisogd.pzz_sub").features = [];
+      own("gisogd.pzz_zones").forEach(ft => { if (!fits(ft, ft.label)) ft.label = null; Object.assign(ft, { ls: LS, lcol: "#141414" }); });
+    }
+    // топонимы: только улицы
+    const STREET = /(^|\s)(ул\.|пр-д|ш\.|бульв\.|пер\.|просп\.|наб\.|пл\.|туп\.|МКАД|МСД)(\s|$)/;
+    out.layers.forEach(l => { if (/^(osm\.roads|yandex\.road_labels)$/.test(l.key || "") || /^gisogd\.pzz/.test(l.key || "")) return;
+      l.features.forEach(ft => { if (ft.label && !STREET.test(String(ft.label))) ft.label = null; }); });
+    out._stations = [];
+    const krt = own("gisogd.krt").length > 0;
+    out.cLegend = k === "pzzsub" ? [{ title: "Предельные параметры разрешенного строительства, реконструкции объектов капитального строительства", items: [
+        { kind: "text", sample: "15", family: "sans-bold", label: "максимальная плотность застройки земельных участков (тыс. м²/га)" },
+        { kind: "text", sample: "75", family: "sans-bold", label: "максимальная высота застройки (м)" },
+        { kind: "text", sample: "60", family: "sans-bold", label: "максимальная застроенность земельных участков (%)" },
+        { kind: "text", sample: "–", family: "sans-bold", label: "параметр не установлен" }] }]
+      : [{ title: "Границы", items: [terr, { kind: "line", stroke: "#000000", width: .25, label: "территориальных зон и подзон территориальных зон" },
+          ...(krt ? [{ kind: "fill", hatch: true, fill: "#1f3fbf", stroke: "#1f3fbf", angle: 45, label: "комплексного развития территории" }] : [])] },
+        { title: "Подписи", items: [{ kind: "text", sample: "4.9", family: "sans-bold", label: "коды видов разрешённого использования земельных участков и объектов капитального строительства" }] }];
+    out.noRailLegend = k === "pzz";                                 // железная дорога — под правой схемой: под левой место занято общей легендой
   }
   if (k === "ppt") {
     out.cLists = conceptDocs(out, bb, [PPT_GROUP, PMT_GROUP]);
@@ -1112,7 +1238,7 @@ function conceptSheet(out, sheet, bb) {
       label: String(i + 1), ls: 4.2, lf: "sans-bold", lcol: "#1f3fbf" }));
     // все участки — одной таблицей (карточки не помещались); номер — только в таблице, на схеме — кадастровый номер
     const val = (c, k) => (c.rows.find(r => r[0] === k) || [, "—"])[1];
-    out.gpTable = { title: "Сведения о земельных участках в границах территории рассмотрения",
+    out.gpTable = { title: "Сведения о земельных участках в границах разрабатываемой территории",
       cols: ["№", "Кадастровый номер", "Площадь, га", "Вид разрешённого использования", "Форма собственности"], widths: [.06, .27, .13, .33, .21], fs: 8,   // widths — запас, ниже пересчитывается
       rows: cards.map((c, i) => [String(i + 1), val(c, "Кадастровый номер"), val(c, "Площадь (га)"), LabelFmt.vri(val(c, "Вид разрешённого использования")),
         LabelFmt.tieShort(String(val(c, "Форма собственности")))]) };
@@ -1121,13 +1247,14 @@ function conceptSheet(out, sheet, bb) {
     // правило 7 (T85a): участки вне и в границах территории — каждый знак только если такие участки видны
     const outside = (pl?.features || []).some(ft => inFrame(ft) && !cards.some(c => c.feat === ft));
     out.cLegend = [{ title: "Границы", items: [terr,
-      ...(outside ? [{ kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ территории рассмотрения, поставленных на кадастровый учёт" }] : []),
-      ...(cards.length ? [{ kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах территории рассмотрения, поставленных на кадастровый учёт" },
+      ...(outside ? [{ kind: "line", stroke: "#c9c9ff", width: .35, label: "земельных участков вне границ разрабатываемой территории, поставленных на кадастровый учёт" }] : []),
+      ...(cards.length ? [{ kind: "line", stroke: "#0000ff", width: .35, label: "земельных участков в границах разрабатываемой территории, поставленных на кадастровый учёт" },
         { kind: "num", sample: "1", stroke: "#1f3fbf", label: "порядковый номер земельного участка в таблице" }] : [])] }];   // знак номера, как в «Хатминки» (правило 11)
   }
   out.layers.forEach(l => l.features.forEach(ft => { delete ft.props; }));   // свойства нужны были только здесь
   if (out.cLegend) out.cLegend = LegendRules.pruneGroups(out.cLegend);   // группа без знаков не печатается (T85a)
   if (!out.cLegend && k !== "photos") out.cLegend = [bounds];
+  if (k === "district") districtRoadLabels(out, bb);
   conceptRail(out, box, k);
   conceptStations(out, k);
   if (out.cLegend) out.cLegend = LegendRules.notesLast(out.cLegend);   // пояснения под легендой — после всех групп, включая «Транспорт» (слайд-правило 5.9)
@@ -1149,7 +1276,7 @@ function conceptRail(out, box, k) {
   if (!rail.features.length) return;
   rail.over = true;                                               // знак виден и за территорией, поверх белой маски
   out.layers.push({ key: "yandex.rail.dash", title: "Железная дорога: штрихи", over: true, features: rail.features.map(f => ({ ...f, fill: "#ffffff", stroke: "#ffffff", lc: "#ffffff", w: 1.6, dash: [7.7, 7.7], label: null })) });
-  if (k !== "photos" && out.cLegend) out.cLegend.push({ title: "Транспорт", items: [{ kind: "rail", label: "железнодорожные пути" }] });
+  if (k !== "photos" && out.cLegend && !out.noRailLegend) out.cLegend.push({ title: "Транспорт", items: [{ kind: "rail", label: "железнодорожные пути" }] });
 }
 // соседние районы (владелец 05.10.2026: «на севере и юге другой район, а подписано только Гольяново»): если в рамку
 // попадает другой район, на листах 3–9 видна граница района (красная, как на ортофотоплане) и каждый чужой район
@@ -1199,6 +1326,22 @@ function conceptDistricts(out, bb, k) {
   const rest = others.filter(({ f }) => !named.has(f));
   const mine = k === "district" && !named.has(district) ? safe(() => inter(district, box)) : null;   // карта района: подписан и район территории
   if (mine) rest.push({ f: district, part: mine });
+  // карта района (#47): название — в одну строку или в две, и большей частью на своём районе (из девяти точек коробки подписи
+  // не меньше семи — внутри района); не помещается — не подписывается
+  if (k === "district") {
+    const LS = 14.3 * .3528, mxd = 111320 * Math.cos((bb[1] + bb[3]) / 2 * Math.PI / 180), kk = (out.scale || 2000) / 1000;
+    const variants = t => { const w = t.split(" "); if (w.length < 2) return [t]; let best = null;
+      for (let i = 1; i < w.length; i++) { const a = w.slice(0, i).join(" "), b = w.slice(i).join(" "), d = Math.abs(a.length - b.length); if (!best || d < best[0]) best = [d, a + "\n" + b]; }
+      return [t, best[1]]; };
+    const feats = [];
+    rest.forEach(({ f, part }) => { const t = nm(f).replace(/^район\s+/i, "").toUpperCase();
+      for (const v of variants(t)) { const lines = v.split("\n"), hw = Math.max(...lines.map(x => x.length)) * .62 * LS / 2 * kk / mxd, hh = lines.length * LS * 1.15 / 2 * kk / 110540;
+        const c = deep(part, hw).geometry.coordinates, pts = [-1, 0, 1].flatMap(i => [-1, 0, 1].map(j => [c[0] + i * hw, c[1] + j * hh]));
+        if (pts.filter(q => safe(() => turf.booleanPointInPolygon(q, part))).length < 7) continue;
+        feats.push({ g: { type: "Point", coordinates: c }, nm: true, label: v, ls: LS, lf: "sans-bold", lh: .35, lhc: "#000000", lcol: "#ffffff", la: 0 }); break; } });
+    if (feats.length) out.layers.push({ title: "Соседние районы: подписи", features: feats });
+    return;
+  }
   if (rest.length) out.layers.push({ title: "Соседние районы: подписи", features: rest.map(({ f, part }) => ({ g: deep(part, onSat ? nm(f).replace(/^район\s+/i, "").length * .62 * 5.04 / 2 * (out.scale || 2000) / 1000 / (111320 * Math.cos((bb[1] + bb[3]) / 2 * Math.PI / 180)) : 0).geometry, nm: true, nudge: true,
     label: k === "district" ? nm(f).replace(/^район\s+/i, "").toUpperCase() : k === "ortho" ? nm(f).toUpperCase() : nm(f), ls: 14.3 * .3528, lf: "sans-bold", lh: .6, lcol: "#9e1717", la: 0,
     // снимок (владелец 07.10.2026, #45): ортофотоплан — тёмно-красные заглавные с белой обводкой, карта района — белые заглавные с тёмной обводкой

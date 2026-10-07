@@ -149,7 +149,7 @@ function sheetSpec(sheet) {
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
     out.callout = sheet.style === "pptkrt" ? ["Рассматриваемая территория", `S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га`]   // как в шаблоне ППТ КРТ
       : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
-  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
+  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница разрабатываемой территории" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   if (sheet.look === "concept") conceptSheet(out, sheet, frameLL);           // шапка ППТ КРТ, остальное — как в «ГК Царицыно» (albums.js)
   // свои слои владельца: легенда листа по шаблону (cLegend) о них не знает — они дописываются в неё (T86d)
   if (out.cLegend) [["own", "Свои слои"]].forEach(([role, title]) => {      // «Прочее» (служебные слои вроде УДС) в легенду не идёт: их знак шаблон уже даёт сам
@@ -239,7 +239,8 @@ function genplanTable(out) {
   const z = ["gisogd.func_zones", "gisogd.func_zones_tinao"].flatMap(k => DATA[k]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => { const x = inter(f, TERR); return x && m2(x) > 20; }));
   if (!z.length) return;
   out.table = { title: "Функциональные зоны на территории", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .5, "left"], ["тыс. м²", .23, "right"]],
-    rows: z.map(f => { const p = f.properties; return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p)]; }) };
+    // пятое поле — доля территории в площади зоны: фонд зоны на разрабатываемую территорию (владелец 07.10.2026, #47)
+    rows: z.map(f => { const p = f.properties, x = safe(() => inter(f, TERR)); return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p), x ? m2(x) / Math.max(m2(f), 1) : null]; }) };
 }
 // документы на листе (ППТ и ПМТ, ГПЗУ и АГР — как в «ГК Царицыно»): номер у документа на карте и нумерованный список
 // «Название №… от … г.» в колонке листа; ближние к территории — первыми, нумерация сквозная по группам
@@ -650,6 +651,11 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
       if (/област.* больш|слишком больш|портал/i.test(why)) continue;       // сервер уже повторял с паузами (3 попытки): сразу ещё раз — против правил порталов
       step([k], "Повтор. "); await loadKeys([k], bb); if (!ERRORS[k]) failed.delete(k); else failed.get(k).why = ERRORS[k]; }
   } finally { bpEnd(); }
+  // карта района: названия природных территорий (Яндекс) — с запасом 1,5 км вокруг рамки (предел источника 150 км²): точка «национального парка Лосиный остров»
+  // стоит в середине парка, за рамкой листа, а подпись нужна (владелец 07.10.2026, #47)
+  if (!BP.stop) for (const s of sheets.filter(x => x.concept === "district" && (x.keys || []).includes("sit.places"))) {
+    const fb = safe(() => frameBox(s)); if (!fb) continue; const dx = 1.5 / (111.32 * Math.cos((fb[1] + fb[3]) / 2 * Math.PI / 180)), dy = 1.5 / 110.54;
+    step(["sit.places"]); CHECKED.add("sit.places"); await loadKeys(["sit.places"], [fb[0] - dx, fb[1] - dy, fb[2] + dx, fb[3] + dy]); }
   const nDone = frontier();                      // собранные листы — первые, чьи слои все загружены (или запрошены: сбой — в заметке листа)
   const stopped = nDone < sheets.length, built = sheets.slice(0, nDone);
   const lost = [...failed.keys()].filter(k => sheetNeeds.slice(0, nDone).some(ks => ks.has(k))).map(k => lostPhrase(k, failed.get(k).why));
