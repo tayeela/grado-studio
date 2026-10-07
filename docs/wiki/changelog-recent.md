@@ -3,6 +3,11 @@
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
 - 2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).
+- 2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).
+- 2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).
+- 2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).
+- 2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).
+- 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
 - 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
 - 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
 - 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
@@ -17,8 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.19: manual sheet composition survives any rebuild (T86e).
 - 2026-10-06, ГРАДО 2 v0.99.18: collaboration by role groups, download by roles, keyboard and narrow window (T86e, T86f).
 - 2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).
-- 2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).
-- 2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).
-- 2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).
-- 2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).
-- 2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.
