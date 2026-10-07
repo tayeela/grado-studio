@@ -1401,10 +1401,22 @@ function fitGraph(min = .6) {
   const x0 = Math.min(...ns.map(n => n.pos[0])), y0 = Math.min(...ns.map(n => n.pos[1])) - 30, x1 = Math.max(...ns.map(n => n.pos[0] + n.size[0])), y1 = Math.max(...ns.map(n => n.pos[1] + n.size[1]));
   const k = uiK(), s = Math.max(min * k, Math.min(1.1 * k, (box.width - 40) / (x1 - x0), (box.height - 60) / (y1 - y0))); // мельче 0,6 подписи узлов не читаются — дальше прокрутка; на крупном экране масштаб графа растёт вместе с интерфейсом (--k = размер шрифта страницы / 12, то же читает uiK()), положения узлов в файле не меняются
   lgc.ds.scale = s; lgc.ds.offset = [20 / s - x0, 50 / s - y0]; lgc.setDirty(true, true);
+  go.fit = { min, ds: dsSig() }; markGraphCut();
 }
+// часть схемы за краем окна — видно на кнопке «Вся схема» (аудит #26: узлы терялись за краем незаметно)
+function markGraphCut() {
+  const b = $("graphbox").getBoundingClientRect(), s = lgc.ds.scale, o = lgc.ds.offset, T = LiteGraph.NODE_TITLE_HEIGHT || 20;
+  const cut = b.width && graph._nodes.some(n => { const x = (n.pos[0] + o[0]) * s, y = (n.pos[1] - T + o[1]) * s; return x < 0 || y < 0 || x + n.size[0] * s > b.width || y + (n.size[1] + T) * s > b.height; });
+  const btn = $("bFitGraph"); btn.classList.toggle("warn", !!cut); btn.lastChild.textContent = cut ? "Вся схема (часть за краем)" : "Вся схема";
+}
+// вид схемы после нашего вписывания: пока его не меняли руками, окно при смене размера вписывает схему заново (аудит #26)
+const dsSig = () => [lgc.ds.scale, ...lgc.ds.offset].map(v => v.toFixed(3)).join();
+const fitUntouched = () => go.fit && go.fit.ds === dsSig();
 function sizeGraph() { const b = $("graphbox").getBoundingClientRect(); if (b.width) { lgc.resize(Math.round(b.width), Math.round(b.height)); lgc.setDirty(true, true); } }
-new ResizeObserver(sizeGraph).observe($("graphbox"));
-$("bFitGraph").onclick = () => fitGraph();
+new ResizeObserver(() => { const auto = fitUntouched(); sizeGraph(); if (auto && !$("wGraph").hidden) fitGraph(go.fit.min); }).observe($("graphbox"));
+// «Вся схема»: читаемо (не мельче 0,6); второе нажатие подряд — целиком, как бы мелко ни было (в низком окне иначе часть схемы за краем)
+["pointerup", "wheel"].forEach(ev => $("graphbox").addEventListener(ev, () => setTimeout(markGraphCut, 50), { passive: true }));
+$("bFitGraph").onclick = () => fitGraph(fitUntouched() && go.fit.min >= .45 ? .05 : .6);
 $("bRunGraph").onclick = () => { graph._nodes.forEach(n => { n._ck = n._cacheKey = n._key = null; }); recompute(true); };
 const LIB = { "Данные": ["Данные/Территория", "Данные/Слой"], "Параметры": ["Параметры/Число"], "Геометрия": ["Геометрия/Буфер", "Геометрия/Вычесть", "Геометрия/Объединить", "Геометрия/Пересечь"], "Эскиз": ["Эскиз/Посадка застройки"], "Показатели": ["Показатели/ТЭП КРТ"] };
 const LIBICON = { "Данные": "database", "Параметры": "sliders-horizontal", "Геометрия": "shapes", "Эскиз": "building-2", "Показатели": "calculator" };
@@ -2175,7 +2187,7 @@ function dragWin(w, e, onTap) {
 function winFront(w) { document.querySelectorAll(".win.front").forEach(x => x.classList.remove("front")); w.classList.add("front"); }
 const WIN_OPEN = {
   // при первом открытии граф вписывается читаемо (не мельче 0,8); «Вся схема» ужимает до 0,6
-  wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.8); go.fitted = k; } updateAnalysisMap(); },
+  wGraph: () => { sizeGraph(); const k = $("graphbox").clientWidth + "x" + $("graphbox").clientHeight; if (go.fitted !== k) { fitGraph(.45); go.fitted = k; } requestAnimationFrame(markGraphCut); updateAnalysisMap(); },
   wSketch: () => renderParams(), wTep: () => renderTep(), w3d: () => draw3d(),
   wCmp: () => { syncCmpHint(); if (!mBefore) { mBefore = newMap("mBefore", [terrLayer()]); mAfter = newMap("mAfter", [keptLayer(), cmpLayer(), terrLayer()]); fillCmp(); svSync(true); } },
   wTable: () => window.renderTable?.(), wData: () => renderSources(), wCons: () => window.renderCons?.(), wViews: () => window.renderViews?.(), wSheets: () => window.renderSheets?.() };
@@ -2265,12 +2277,21 @@ $("winMenu").addEventListener("keydown", e => {
   if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length].focus(); }
 });
 addEventListener("pointerdown", e => { if (!$("winMenu").hidden && (!e.target.closest(".more") || e.target.closest(".expmore"))) winMenu(false); });
+// «Широкая карта» (аудит #26): одна кнопка на карте прячет обе боковые панели, второе нажатие возвращает как было
+let WIDE = null;
+function wideMap() {
+  const w = $("work").classList;
+  if (WIDE) { if (WIDE.L) toggleDock("L", true); if (WIDE.R) toggleDock("R", true); WIDE = null; }
+  else { WIDE = { L: !w.contains("noL"), R: !w.contains("noR") }; if (!WIDE.L && !WIDE.R) { WIDE = null; return toast("Боковые панели уже скрыты: вернуть — меню «Окна»."); } toggleDock("L", false); toggleDock("R", false); }
+  $("bWide").setAttribute("aria-pressed", !!WIDE); $("bWide").title = WIDE ? "Вернуть панели слоёв и свойств" : "Широкая карта: скрыть панели слоёв и свойств";
+}
 function toggleDock(side, on) {
   const cls = side === "L" ? "noL" : "noR"; $("work").classList.toggle(cls, on === undefined ? undefined : !on);
   // узкое окно: панели выезжают поверх карты — открыта только одна, иначе вдвоём они закрывают почти всю карту
   if (narrow() && !$("work").classList.contains(cls)) $("work").classList.add(side === "L" ? "noR" : "noL");
   WST["dock" + side] = !$("work").classList.contains(cls); saveWins(); syncWinButtons(); mMain.updateSize();
 }
+$("bWide").onclick = wideMap;
 // Протаскивание мышью не выделяет текст: пока кнопка нажата вне полей и ячеек таблицы, на <html> стоит .nosel (user-select:none
 // для всей страницы, в том числе для ячеек, через которые проводят окно или разделитель); снимается при отпускании,
 // отмене, потере фокуса окна — даже если мышь отпустили за пределами окна браузера. Рукоятки не начинают выделение и сами.

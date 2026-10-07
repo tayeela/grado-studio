@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).** On 1365 × 923 with the
+  graph docked at the bottom (233–262 px) 8–9 of 14 nodes were outside. Now: first open fits the graph down to 0.45; «Вся
+  схема» first press — readable (0.6), second press in a row — the whole graph (0.22 here, 0 nodes outside); while the view
+  is untouched the graph refits when its window changes size; when part of it is outside, the button reads «Вся схема
+  (часть за краем)» in the warning colour. New map button «Широкая карта» (top right, next to the basemap) hides both side
+  panels at once (map 795 → 1365 px) and brings them back as they were. Checked on screenshots at 1365 × 923.
 - **2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).** Enter and Space on a focused button, link, menu item or tab press
   it: before, the AutoCAD-style «repeat last command» took them (after drawing a line, Enter on «Виды» restarted the line
   instead of opening the window — checked before/after in the browser). The first Tab shows «К карте», «К слоям»,

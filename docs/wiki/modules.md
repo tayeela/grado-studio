@@ -96,11 +96,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2393 стр.
+### `apps/grado2/web/app.js` — 2414 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
-Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 135
+Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 139
 
 ### `apps/grado2/web/blocks.js` — 63 стр.
 

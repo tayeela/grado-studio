@@ -173,6 +173,7 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .sect{padding:4px 8px;font-weight:600;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:-1px}
 .note{padding:8px;color:var(--muted);line-height:1.45}
 .muted{color:var(--faint)}
+.gbar .btn.warn{color:var(--warn)}
 .skip{position:fixed;left:8px;top:8px;z-index:9999;display:flex;gap:6px}.skip button{position:absolute;left:-9999px;padding:6px 10px;background:var(--bg,#fff);border:2px solid var(--accent,#1a5fb4);border-radius:6px;font:inherit;color:var(--text)}
 .skip button:focus{position:static}
 #mMain:focus-visible{outline:2px solid var(--accent,#1a5fb4);outline-offset:-2px}
@@ -726,7 +727,7 @@ body.shl-dragging,body.shl-dragging *{cursor:grabbing!important;user-select:none
     </aside>
     <div class="center"><div class="hubhint" id="hubViewHint" role="status" hidden><i data-lucide="eye"></i>Только просмотр: попросите владельца дать права на правку</div><div class="mapbox"><div class="m" id="mMain"></div><div class="pv" id="pv" hidden></div>
       <div class="msearch" id="msearch" role="search"><div class="msf"><input type="text" id="sq" placeholder="Адрес, кадастровый номер или № КРТ" autocomplete="off" spellcheck="false" aria-label="Поиск по адресу или кадастровому номеру" aria-controls="sres"><button class="tb" id="sqGo" title="Найти (Enter)" aria-label="Найти"><i data-lucide="search"></i></button></div><div class="sres" id="sres" role="listbox" hidden></div></div>
-      <div class="mtools"><button class="tb" id="hubCTool" aria-pressed="false" hidden title="Комментарий: щёлкните по карте, где нужна метка (Esc — отмена)"><i data-lucide="message-square-plus"></i></button><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
+      <div class="mtools"><button class="tb" id="bWide" aria-pressed="false" title="Широкая карта: скрыть панели слоёв и свойств" aria-label="Широкая карта"><i data-lucide="maximize-2"></i></button><button class="tb" id="hubCTool" aria-pressed="false" hidden title="Комментарий: щёлкните по карте, где нужна метка (Esc — отмена)"><i data-lucide="message-square-plus"></i></button><select id="baseSel" title="Подложка карты" aria-label="Подложка карты"></select></div>
       <div class="start" id="start" hidden role="dialog" aria-label="С чего начать"><div class="starth"><b>С чего начать</b><button class="tb" data-close-start title="Закрыть (Esc). Эти действия есть в справке F1" aria-label="Закрыть"><i data-lucide="x"></i></button></div>
         <p class="startp">Начните с границы территории: по ней загрузятся данные, построится эскиз и соберётся лист PDF.</p>
         <button class="btn primary" data-go="terr"><i data-lucide="scan"></i>Нарисовать границу<kbd>BO</kbd></button>
@@ -754,7 +755,7 @@ body.shl-dragging,body.shl-dragging *{cursor:grabbing!important;user-select:none
 <section class="win" id="wGraph" hidden aria-label="Схема расчёта — анализ территории">
   <header class="wh"><i data-lucide="workflow"></i><b>Схема расчёта</b><small title="выход выбранного узла — на карте оранжевым">выход выбранного узла — на карте оранжевым</small><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
   <div class="wb"><div class="gwrap"><div class="lib" id="lib"></div><div class="graphbox" id="graphbox"><canvas id="gcv"></canvas>
-      <div class="gbar"><button class="btn" id="bFitGraph" title="Показать всю схему в окне"><i data-lucide="scan"></i>Вся схема</button><button class="btn" id="bRunGraph" title="Пересчитать схему заново от начала до конца"><i data-lucide="play"></i>Пересчитать</button><button class="btn" id="bBakeNode" title="Выход выбранного узла — обычным слоем проекта (с таблицей показателей у узлов анализа)"><i data-lucide="stamp"></i>В слой</button></div></div></div></div>
+      <div class="gbar"><button class="btn" id="bFitGraph" title="Показать схему в окне: первое нажатие — читаемо, второе подряд — целиком"><i data-lucide="scan"></i>Вся схема</button><button class="btn" id="bRunGraph" title="Пересчитать схему заново от начала до конца"><i data-lucide="play"></i>Пересчитать</button><button class="btn" id="bBakeNode" title="Выход выбранного узла — обычным слоем проекта (с таблицей показателей у узлов анализа)"><i data-lucide="stamp"></i>В слой</button></div></div></div></div>
 </section>
 <section class="win" id="wSketch" hidden aria-label="Эскиз — параметры">
   <header class="wh"><i data-lucide="building-2"></i><b>Эскиз</b><span class="sp"></span><button class="tb" data-close title="Закрыть"><i data-lucide="x"></i></button></header>
