@@ -41,9 +41,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_now`, `HubError`, `Conflict`, `_norm_album`, `_layer_key_ok`, `_norm_meta`, `album_summary`, `split_project`, `join_sections`, `_check_sections`, `_clean_name`, `_clean_login`, `_check_password`, `_clean_client`, `_check_pid`, `_is_num`, `_clean_text`, `_clean_anchor`, `_hash_password`, `_color`, `Subscription`, `Hub`, `default_root`, `_read_password`, `main`
 
-### `apps/grado2/ogd_all.py` — 879 стр.
+### `apps/grado2/ogd_all.py` — 891 стр.
 
 «Всё из ГИС ОГД в DWG»: все слои портала ИСОГД по области — одним чертежом, слой портала = слой чертежа.
+
+Разделы по порядку: Пределы AutoCAD и память о слоях, которые портал не отдаёт · Каталог портала: дерево слоёв и список слоёв выгрузки · Типы линий и коды линий ЛГР · Линии границ: сторона полигона слева · XDATA: атрибуты объекта в чертеже · Область выгрузки: рамка листа · Цвет, штриховка и линия слоя: стиль портала и оформление «по Эталону» · Подписи объектов: углы вдоль линий · Сборка чертежа DXF · Стили слоёв портала (CartoCSS, кэш на диске) · Просмотр области: сколько объектов каждого слоя есть в кэше · Фоновая выгрузка: одна за раз, состояние и отмена
 
 Функции: `_load_failed`, `_save_failed`, `catalog_tree`, `layer_list`, `_linetypes`, `_lgr_code`, `_polys`, `_inside`, `orient_lines`, `_cut_bytes`, `_xdata`, `sheet_box`, `sheet_bbox_wgs`, `portal_color`, `_decls`, `_hex`, `_num`, `etalon_code`, `lgr_entry`, `dxf_hatch`, `etalon_style`, `layer_style`, `portal_style`, `label_siblings`, `label_angles`, `set_label_angles`, `_zone_hatch`, `_label`, `build_drawing`, `portal_styles`, `_save_json`, `scan`, `Job`
 
