@@ -672,7 +672,7 @@ function conceptSheet(out, sheet, bb) {
   // полупрозрачная белая маска за границей территории — на схемах с белой основой, как в примере «Хатминки»; на снимке и
   // на фрагменте Генплана её нет (владелец 30.09.2026)
   // листы документации (7, 8) — без маски: документы почти все снаружи (владелец 30.09.2026, как в образцах)
-  out.terrMask = sheet.basemap !== "sat" && ["photos", "use"].includes(sheet.concept) ? .55 : undefined;
+  out.terrMask = sheet.basemap !== "sat" && !sheet.plain && ["photos", "use"].includes(sheet.concept) ? .55 : undefined;   // plain — схема ограничений на основе ЕГКО: основа видна целиком
   out.terrStyle = { stroke: C_TERR, width: C_TW, dash: [C_TW, C_TW] };
   const L = key => out.layers.find(l => l.key === key), bounds = { title: "Границы", items: [terr] };
   const box = turf.bboxPolygon(bb), inFrame = ft => /Polygon|Line/.test(ft.g?.type) && safe(() => turf.booleanIntersects(ft.g, box));
@@ -707,7 +707,10 @@ function conceptSheet(out, sheet, bb) {
   if (k === "use") {
     // снизу вверх: вся рамка — природные территории, поверх — землепользование OSM (крупные раньше мелких), поверх —
     // участки ЕГРН по ВРИ; УДС белые сверху. Белых пятен, кроме улиц и дорог, нет (владелец 30.09.2026)
-    const pl = L("nspd.parcels"), use = [], seen = new Map(), base = LAND_USE.find(([n]) => n === LAND_BASE);
+    // sheet.plain — схема ограничений (ЛГР, СЗЗ, ЗОУИТ) на основе ЕГКО без заливки по землепользованию: ни заливок, ни их легенды
+    const seen = new Map();
+    if (!sheet.plain) {
+    const pl = L("nspd.parcels"), use = [], base = LAND_USE.find(([n]) => n === LAND_BASE);
     const seeds = [];                                            // закрашенные участки и контуры OSM — для продолжения зон
     const put = (g, u, seed) => { use.push({ g, fill: u[1], stroke: null, w: 0, a: 1 }); seen.set(u[0], u[1]); if (seed) seeds.push({ g, u }); };
     put(turf.bboxPolygon(bb).geometry, base);
@@ -755,6 +758,7 @@ function conceptSheet(out, sheet, bb) {
     out.layers.unshift({ title: "Вид функционального использования", features: use });
     seen.set(ROAD_USE[0], ROAD_USE[1]);                         // территории улиц и дорог — белые, в легенде всегда
     if ((L("egko.water")?.features || []).some(inFrame)) seen.set(WATER_USE[0], WATER_USE[1]);   // вода — класс 22 шаблона
+    }
     // линии Сводного плана: код знака каждой линии; зона, у которой есть своя линия, по контуру второй раз не рисуется
     const lgr = new Map();
     (L("gisogd.red_lines")?.features || []).forEach(ft => { if (!inFrame(ft)) return;

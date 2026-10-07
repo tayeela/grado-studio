@@ -2,6 +2,11 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.34: sheet flag `plain` — restrictions scheme on the ЕГКО base.** Owner: one A3 sheet for a single
+  parcel, ЕГКО base, ЛГР + СЗЗ + ЗОУИТ + СПРИТ lines of ГИС ОГД, no planning documents. A concept-`use` sheet with `plain: true`
+  draws the same restriction lines and legend groups as sheet 5 but without the land-use fill (OSM/parcels/Voronoi) and
+  without its legend groups and the 55 % veil behind the territory, so the ЕГКО base stays visible. Off by default: albums
+  are unchanged.
 - **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
   без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
   built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest
