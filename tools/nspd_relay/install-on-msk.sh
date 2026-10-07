@@ -18,21 +18,24 @@ say() { echo "== $*"; }
 command -v caddy >/dev/null && command -v certbot >/dev/null || { echo "нет caddy или certbot — это не msk?"; exit 1; }
 
 say "1/6 корни Минцифры → /etc/caddy/nspd-ca.pem (сверка отпечатков SHA-256)"
-if [ ! -s /etc/caddy/nspd-ca.pem ]; then
-  D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
-  curl -fsS -m 30 -o "$D/root.cer" https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer
-  curl -fsS -m 30 -o "$D/sub.cer"  https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer
-  for n in root sub; do
-    if head -c 12 "$D/$n.cer" | grep -q BEGIN; then cp "$D/$n.cer" "$D/$n.pem"
-    else openssl x509 -inform DER -in "$D/$n.cer" -outform PEM -out "$D/$n.pem"; fi
-  done
-  [ "$(openssl x509 -in "$D/root.pem" -noout -fingerprint -sha256 | cut -d= -f2)" = "$ROOT_SHA" ] || { echo "ОТПЕЧАТОК КОРНЯ НЕ СОВПАЛ — стоп"; exit 1; }
-  [ "$(openssl x509 -in "$D/sub.pem"  -noout -fingerprint -sha256 | cut -d= -f2)" = "$SUB_SHA" ]  || { echo "ОТПЕЧАТОК ПОДЧИНЁННОГО НЕ СОВПАЛ — стоп"; exit 1; }
-  cat "$D/root.pem" "$D/sub.pem" > /etc/caddy/nspd-ca.pem
-  chown root:caddy /etc/caddy/nspd-ca.pem; chmod 644 /etc/caddy/nspd-ca.pem
-fi
-echo | openssl s_client -connect nspd.gov.ru:443 -servername nspd.gov.ru -CAfile /etc/caddy/nspd-ca.pem -verify_return_error 2>&1 \
-  | grep -q "Verify return code: 0" || { echo "бандл не подтверждает сертификат nspd.gov.ru — стоп"; exit 1; }
+# бандл собирается заново при каждом запуске (маленький, а битый файл от прошлой попытки не должен остаться)
+D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
+curl -fsS -m 30 -o "$D/root.cer" https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer
+curl -fsS -m 30 -o "$D/sub.cer"  https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer
+for n in root sub; do
+  # через openssl в обоих случаях: на выходе ровный PEM с переводом строки в конце
+  if grep -q "BEGIN CERTIFICATE" "$D/$n.cer"; then openssl x509 -in "$D/$n.cer" -outform PEM -out "$D/$n.pem"
+  else openssl x509 -inform DER -in "$D/$n.cer" -outform PEM -out "$D/$n.pem"; fi
+done
+[ "$(openssl x509 -in "$D/root.pem" -noout -fingerprint -sha256 | cut -d= -f2)" = "$ROOT_SHA" ] || { echo "ОТПЕЧАТОК КОРНЯ НЕ СОВПАЛ — стоп"; exit 1; }
+[ "$(openssl x509 -in "$D/sub.pem"  -noout -fingerprint -sha256 | cut -d= -f2)" = "$SUB_SHA" ]  || { echo "ОТПЕЧАТОК ПОДЧИНЁННОГО НЕ СОВПАЛ — стоп"; exit 1; }
+cat "$D/root.pem" "$D/sub.pem" > "$D/bundle.pem"
+VERIFY=$(echo | timeout 20 openssl s_client -connect nspd.gov.ru:443 -servername nspd.gov.ru -CAfile "$D/bundle.pem" 2>&1 || true)
+case "$VERIFY" in
+  *"Verify return code: 0 (ok)"*) ;;
+  *) echo "бандл не подтверждает сертификат nspd.gov.ru — стоп"; exit 1 ;;
+esac
+install -m 0644 -o root -g caddy "$D/bundle.pem" /etc/caddy/nspd-ca.pem
 echo "ok: сертификат НСПД проверяется по корням Минцифры"
 
 say "2/6 токен релея → /etc/caddy/relay-token (права 640, в вывод не печатается)"
