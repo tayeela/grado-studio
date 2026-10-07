@@ -32,13 +32,21 @@ export default async p => {
     return r.every(Boolean) || JSON.stringify({r, md, tc})`);
   check(t27 === true, `T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет${t27 === true ? "" : " " + t27}`);
   {
-    const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
-    const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900);
-    // читаем после остановки карты: разрешение не меняется 300 мс (на медленном раннере плавный зум идёт дольше 0,9 с; гонка в CI, #40)
-    let r10 = await res(); for (let k = 0, same = 0; k < 50 && same < 3; k++) { await p.sleep(100); const r = await res(); same = r === r10 ? same + 1 : 0; r10 = r; }
-    const c1 = await at();
-    p.log("wheel: 1 notch", (r0 / r1).toFixed(3), "10 notches", (r0 / r10).toFixed(3));
-    check(r0 / r10 > 1.5 && r0 / r10 <= 2.3 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) / r10 < 1.5, "T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте");
+    const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`);
+    // Точка под курсором читается вместе с рамкой карты и после renderSync: getCoordinateFromPixel берёт кадр прошлой отрисовки, а рамка карты на медленном раннере
+    // CI ещё могла измениться (тема, подсказки) между чтениями. Рамка изменилась — измерение недействительно, повторяем один раз; настоящий сбой печатает все числа (#40)
+    const probe = () => p.ev(`mMain.updateSize(); mMain.renderSync(); const b=$("mMain").getBoundingClientRect(); return {res: sharedView.getResolution(), box: [b.left, b.top, b.width, b.height].map(Math.round), at: mMain.getCoordinateFromPixel([${mx}-b.left, ${my}-b.top])}`);
+    let a0, a1, r1, tries = 0;
+    do {
+      tries++;
+      a0 = await probe(); await p.wheel(mx, my, -100, { wait: 700 }); r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900);
+      // читаем после остановки карты: разрешение не меняется 300 мс (на медленном раннере плавный зум идёт дольше 0,9 с; гонка в CI, #40)
+      let r10 = await res(); for (let k = 0, same = 0; k < 50 && same < 3; k++) { await p.sleep(100); const r = await res(); same = r === r10 ? same + 1 : 0; r10 = r; }
+      a1 = await probe();
+    } while (a0.box.join() !== a1.box.join() && tries < 2);
+    const ratio = a0.res / a1.res, drift = Math.hypot(a1.at[0] - a0.at[0], a1.at[1] - a0.at[1]) / a1.res, ok27 = ratio > 1.5 && ratio <= 2.3 && drift < 1.5;
+    p.log("wheel: 1 notch", (a0.res / r1).toFixed(3), "10 notches", ratio.toFixed(3), "drift px", drift.toFixed(2), "box", a0.box.join(), "->", a1.box.join(), "tries", tries);
+    check(ok27, `T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте${ok27 ? "" : ` (масштаб ×${ratio.toFixed(3)}, сдвиг ${drift.toFixed(2)} пикс., рамка карты ${a0.box.join()} -> ${a1.box.join()}, попыток ${tries})`}`);
     const q0 = await res(); for (let i = 0; i < 30; i++) await p.wheel(mx, my, -6, { ctrl: true, wait: 16 }); await p.sleep(500); const q1 = await res();
     p.log("pinch: 30 events dy=-6 ctrl", (q0 / q1).toFixed(3)); check(q0 / q1 > 1.3, "T27: щипок (Ctrl, мелкие шаги) остаётся быстрым");
   }

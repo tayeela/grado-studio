@@ -2,6 +2,7 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, tests only: T27 wheel measurement (#40).** The step «десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте» failed once more on a slow GitHub runner (run 47 of PR #52, a docs-only commit; the same code passed in runs 44, 45, 46, 48): the ratio was fine (1.735), so the drift of the point under the cursor was ≥ 1.5 px. The point is now read after `renderSync()` together with the map frame box; if the box changed between the two reads the measurement is repeated once, and a real failure prints the ratio, the drift in px and both boxes. 48 local runs under CPU contention: drift 0.00 px, box stable. The cause of the CI failure is not proven — issue #40 stays open until the numbers of the next failure or ten green runs.
 - **2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.** `docs/` now has
   shelves (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`; map — `docs/INDEX.md`), 65 files moved with `git mv`
   (closed studio, executed plans, old audits, the old board and owner notes → `docs/archive/`), all references fixed. Root: new `README.md`
