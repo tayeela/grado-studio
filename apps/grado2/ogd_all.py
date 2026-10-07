@@ -37,6 +37,7 @@ from grado_connectors.gisogd_api import GisogdApi, catalog
 
 import dxf_io
 
+# ---------- Пределы AutoCAD и память о слоях, которые портал не отдаёт ----------
 _BAD = dxf_io._ACAD_BAD                 # те же запрещённые знаки, что у acad_name (с запятой)
 _XDATA_LIMIT = 15000            # AutoCAD: не больше 16 КБ XDATA на объект
 _XDATA_STR = 250                # и не больше 255 БАЙТ в строке XDATA: русская буква — 2 байта (с 464 байтами AutoCAD не открывал чертёж)
@@ -57,6 +58,7 @@ def _save_failed(cache_dir, failed):
     _save_json(cache_dir / _FAILED_FILE, failed)
 
 
+# ---------- Каталог портала: дерево слоёв и список слоёв выгрузки ----------
 def catalog_tree(cat):
     """Дерево каталога в порядке портала: [{"name", "num", "code"?, "children"}]. num — номер по дереву («11.02.04»):
     под корнем «Слои» — от раздела (номера разделов совпадают с порталом), под «Территория» — с приставкой «Т».
@@ -112,6 +114,7 @@ def layer_list(cat, codes=None):
     return out
 
 
+# ---------- Типы линий и коды линий ЛГР ----------
 def _linetypes(props, redln):
     """Код линии ГИС ОГД объекта → имена типов линий: REDLN97, а для кодов, которых в REDLN97 нет (29 — технические
     зоны и др.), — штриховой LGR_NN по Эталону ЛГР (redln["dash"], метры). Пусто, если кода нет."""
@@ -129,6 +132,7 @@ def _lgr_code(name):
     return int(name[4:]) if name.startswith("LGR_") else dxf_io._code_of(name)
 
 
+# ---------- Линии границ: сторона полигона слева ----------
 # Слой границ → (слой полигонов той же папки ГИС ОГД, код линии, чья сторона смотрит на эти полигоны).
 _AREA_OF = {"l18": ("virtual138", 18), "l21": ("virtual139", 21)}
 
@@ -219,6 +223,7 @@ def orient_lines(lines, areas, code):
     return flipped
 
 
+# ---------- XDATA: атрибуты объекта в чертеже ----------
 def _cut_bytes(s, limit):
     """Строка не длиннее limit байт UTF-8, без разрезанной посередине буквы."""
     b = s.encode("utf-8")
@@ -238,6 +243,7 @@ def _xdata(props):
     return tags
 
 
+# ---------- Область выгрузки: рамка листа ----------
 SHEET_MAX_M = 100_000.0         # сторона листа на местности, м: A0 в 1:50 000 — около 60 км; площадь дальше режет сервер (LIMIT_KM2)
 
 
@@ -259,6 +265,7 @@ def sheet_bbox_wgs(sheet):
             max(p[0] for p in pts) + 1e-5, max(p[1] for p in pts) + 1e-5)
 
 
+# ---------- Цвет, штриховка и линия слоя: стиль портала и оформление «по Эталону» ----------
 _KIND = {"Point": 1, "MultiPoint": 1, "LineString": 2, "MultiLineString": 2, "Polygon": 3, "MultiPolygon": 3}
 _CSS_ORDER = ("text-fill", "line-color", "marker-line-color", "polygon-fill", "marker-fill")
 
@@ -481,6 +488,7 @@ def portal_style(css, geom):
     return out
 
 
+# ---------- Подписи объектов: углы вдоль линий ----------
 def label_siblings(cat, code):
     """Слои той же папки ГИС ОГД, что и слой надписей code (границы и зоны), — по ним подпись ставится вдоль линии."""
     me = next((x for x in cat if x.get("code") == code), None)
@@ -543,6 +551,7 @@ def set_label_angles(features, siblings):
     return features
 
 
+# ---------- Сборка чертежа DXF ----------
 def _zone_hatch(msp, geom, layer, sheet):
     """Штриховка зоны по Эталону ЛГР (HATCH): цвет штриховки знака, угол, шаг — мм на бумаге в масштабе листа
     (без листа — М 1:2000, масштаб Эталона). ANSI31 — косые через 3,175 единицы под 45°, поворачивается до угла знака."""
@@ -719,6 +728,7 @@ def build_drawing(layers, boundary=None, frame=None, sheet=None, redln=None):
     return out.getvalue(), bool(dwg)
 
 
+# ---------- Стили слоёв портала (CartoCSS, кэш на диске) ----------
 def portal_styles(cache_dir, get=None):
     """styles(code) → CartoCSS слоя портала (GET /layers/{code}/, поле css_style). Кэш на диске 30 дней: цвета нужны
     только слоям с объектами на листе, первый раз — по запросу на слой с паузой."""
@@ -753,6 +763,7 @@ def _save_json(path, data):
         pass
 
 
+# ---------- Просмотр области: сколько объектов каждого слоя есть в кэше ----------
 def scan(bbox, cache_dir, cat):
     """Сколько объектов каждого слоя на листе — только из кэша на диске (портал не трогается): {code: n};
     слоя нет в кэше или он устарел — None (узнать можно только выгрузкой)."""
@@ -767,6 +778,7 @@ def scan(bbox, cache_dir, cat):
     return counts
 
 
+# ---------- Фоновая выгрузка: одна за раз, состояние и отмена ----------
 class Job:
     """Одна фоновая выгрузка. Состояние читает GET /api/ogd_all/status."""
 
