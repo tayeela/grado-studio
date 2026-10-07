@@ -138,6 +138,10 @@ SOURCES["egko.water_labels"] = ("egko", {"podpisi_k_vodnoj_poverhnosti": None, "
                                 "Подписи рек и водоёмов (ЕГКО)")
 # пояснительные подписи картоосновы: деревни и СНТ («Д. БЕЗОБРАЗОВО») — населённые пункты подписываются на листах всегда
 SOURCES["egko.place_labels"] = ("egko", {"pojasnitelnye_podpisi": None}, "Пояснительные подписи (ЕГКО)")
+# названия улиц и дорог картоосновы — линии, вдоль которых сама ЕГКО ставит название («Киевское шоссе»); у полигонов дорог названий нет
+SOURCES["egko.road_labels"] = ("egko", {"podpisi_k_dorogam": None}, "Названия улиц и дорог (ЕГКО)")
+# надписи УДС Сводного плана («пр. проезд N 7085»): точки с углом вдоль красных линий
+SOURCES["gisogd.uds_labels"] = ("gisogd", {"virtual14": None}, "Надписи УДС Сводного плана (ОГД)")
 SOURCES["egko.fences"] = ("egko", {"fence2k": None}, "Заборы (ЕГКО)")
 SOURCES["egko.addresses"] = ("egko", {"adres": None}, "Адреса (ЕГКО)")
 EGKO_EXTRA = {"egko.buildings": "Состояние", "egko.green": "Вид"}     # куда пишется значение кода слоя
@@ -383,7 +387,7 @@ PRESENT = {"gisogd.pzz_sub": pzz_sub_props, "gisogd.pzz_zones": pzz_zone_props, 
            "osm.social": social_props,
            "egko.buildings": egko_building_props, "egko.roads": egko_road_props, "egko.paths": egko_path_props,
            "egko.green": egko_green_props, "egko.water": egko_water_props, "egko.fences": lambda p: {},
-           "egko.addresses": egko_address_props, "egko.water_labels": lambda p: {"Подпись": _v(p.get("text"))}, "egko.place_labels": lambda p: {"Подпись": _v(p.get("value_n"))},
+           "egko.road_labels": lambda p: {"Название": _v(p.get("name_str"))}, "egko.addresses": egko_address_props, "egko.water_labels": lambda p: {"Подпись": _v(p.get("text"))}, "egko.place_labels": lambda p: {"Подпись": _v(p.get("value_n"))},
            "yandex.hd_roads": _renamed({"type": "Тип", "struct": "Конструкция", "z_level": "Уровень"}),
            "yandex.buildings": _renamed({"height": "Высота, м", "ft_type_name": "Назначение"})}
 for _k in SOURCES:

@@ -453,7 +453,7 @@ function waterLabels(out, bb) {
   if (WL_MEMO.has(mkey)) { wl.features = WL_MEMO.get(mkey).map(f => ({ ...f })); return; }
   const box = turf.bboxPolygon(bb), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
   const water = dataFts("egko.water").filter(ft => ft.g && safe(() => turf.booleanIntersects(ft.g, box)));
-  const polys = water.filter(ft => /Polygon/.test(ft.g?.type))
+  const polys = water.filter(ft => /Polygon/.test(ft.g?.type) && !/болот|заболоч/i.test(ft.props?.["Вид"] || ""))   // заболоченность — не русло: «р. Сетунь» уходила на неё (владелец 07.10.2026)
     .map(ft => { const f = { type: "Feature", geometry: ft.g, properties: {} }, pr = ft.props || {};
       return { f, a: m2(f), v: turf.coordAll(f), b: turf.bbox(f), name: String(pr["Название"] || "").trim(), river: /река|ручей|канал/i.test(pr["Вид"] || "") }; });
   const lines = water.filter(ft => /LineString/.test(ft.g?.type))
@@ -524,8 +524,12 @@ function waterLabels(out, bb) {
     const inFrame = pts.filter(pt => inBox(pt.geometry.coordinates));
     const cand = polys.filter(p => !used.has(p) && (!p.name || p.name.toLowerCase() === base) && pts.some(pt => dist(pt, p) < .4));
     let res = null;
-    if (cand.length) {
-      const best = cand.reduce((x, y) => y.a > x.a ? y : x), part = safe(() => inter(best.f, box)) || best.f;
+    // «р. Сетунь», у которой на подпись претендует только пруд (русло — линия ЕГКО «Река» с тем же названием): подпись — на русле,
+    // а не в пруду рядом (владелец 07.10.2026)
+    const best0 = cand.length ? cand.reduce((x, y) => y.a > x.a ? y : x) : null;
+    const riverOnLine = /^р\.\s/i.test(t) && best0 && !best0.river && lines.some(l => l.name && l.name.toLowerCase() === base && pts.some(pt => thin(pt.geometry.coordinates, [l]).length));
+    if (cand.length && !riverOnLine) {
+      const best = best0, part = safe(() => inter(best.f, box)) || best.f;
       used.add(best);
       // широкая вода (пруд, озеро, водохранилище на реке) — по центру вдоль длинной оси; ось — по точкам внутри
       // контура, а не по вершинам: у изрезанного берега вершины скучены и уводят ось (правило 11, «р. Поляница»)
@@ -624,6 +628,28 @@ function namedPlaces(out, bb, rail = []) {
   const axis = pts => { let mx = 0, my = 0; pts.forEach(([x, y]) => { mx += x * kx; my += y; }); mx /= pts.length; my /= pts.length;
     let sxx = 0, syy = 0, sxy = 0; pts.forEach(([x, y]) => { const dx = x * kx - mx, dy = y - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; });
     let a = .5 * Math.atan2(2 * sxy, sxx - syy) * 180 / Math.PI; if (a > 90) a -= 180; if (a <= -90) a += 180; return a; };
+  // ЕГКО «Названия улиц и дорог»: линии, вдоль которых картооснова сама ставит название. Подпись идёт строго вдоль дороги и
+  // обязательна (владелец 07.10.2026: «улицы подписаны непараллельно», шоссе без подписи); улица, уже стоящая по линии ЕГКО,
+  // по домам не повторяется — по рядам домов угол выходил кривым
+  const rnames = L("egko.road_labels");
+  if (rnames) {
+    const nm = ft => String(ft.props?.["Название"] || "").trim();
+    rnames.features = rnames.features.filter(ft => /Line/.test(ft.g?.type) && nm(ft))
+      .map(ft => ({ g: ft.g, nl: true, must: true, label: LABEL_FN.street({ get: () => nm(ft) }), ls: 3.8, lf: "sans-bold", lh: .55, lcol: "#141414" }));
+    const have = new Set(rnames.features.map(f => f.label));
+    [...streets.keys()].forEach(n => { if (have.has(LABEL_FN.street({ get: () => n }))) streets.delete(n); });
+  }
+  // надписи УДС Сводного плана ГИС ОГД: «пр. проезд N 7085» → «Проектируемый проезд № 7085», на своём месте и под своим углом
+  const uds = L("gisogd.uds_labels");
+  if (uds) {
+    const tc = turf.centroid(TERR), one = new Map();
+    uds.features.forEach(ft => { const m = /^пр\.?\s*(?:проезд|пр\.?)\s*(?:N|№)?\s*(\d+)\s*$/i.exec(String(ft.props?.text || "").trim());
+      if (!m || ft.g?.type !== "Point" || !inBox(ft.g.coordinates)) return;
+      const d = turf.distance(turf.point(ft.g.coordinates), tc), was = one.get(m[1]); if (!was || d < was.d) one.set(m[1], { d, ft }); });
+    one.forEach(({ ft }, n) => feats.push({ g: ft.g, nm: true, label: `Проектируемый проезд №\u00a0${n}`, ls: 3.8, lf: "sans-bold", lh: .55, lcol: "#141414",
+      la: upright(-(+ft.props.textangle || 0)), nudge: true }));
+    uds.features = [];
+  }
   streets.forEach((pts, n) => {
     const label = LABEL_FN.street({ get: () => n }), votes = new Map();
     pts.forEach(p => { let best = null;
@@ -682,6 +708,8 @@ function conceptSheet(out, sheet, bb) {
   // на листе 3 быть не должно)
   if (sheet.basemap === "sat") (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) ft.nl = true; });
   namedPlaces(out, bb, railStations(out, bb));
+  // схема ограничений на основе ЕГКО: реки и ручьи — тонкой голубой линией, иначе подпись «р. Сетунь» висит над невидимым руслом
+  if (sheet.plain) (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) Object.assign(ft, { w: MM(.3), lc: "#5aa9e6", a: 1 }); });
   if (k === "ortho") {
     // выноска как в «ГК Царицыно»: полупрозрачная белая плашка без рамки, серый текст в три строки, белый пунктир к точке
     // внутри территории; плашка — над территорией, а если до верхнего края листа меньше 35 мм — под ней (правила подписей)

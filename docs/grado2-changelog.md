@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.36: street, road and river names on the ЕГКО base.** Owner on the one-off sheet of 77:17:0110504:6308:
+  street labels not parallel to the street, «р. Сетунь» above the river, Киевское шоссе / проезд № 7085 not labelled. New sources
+  `egko.road_labels` (ЕГКО «Подписи к дорогам»: lines along which the base itself names a road) and `gisogd.uds_labels` (Сводный
+  план «Надписи УДС»: «пр. проезд N 7085» → «Проектируемый проезд № 7085» at its own angle). In `namedPlaces` a street named by an
+  ЕГКО line is labelled along that line (must) and is not repeated by its houses; sheets without these layers (the album) are
+  unchanged. `waterLabels` (all sheets): a swamp polygon no longer hosts a river label, and a river whose only candidate is a pond is
+  labelled on the named ЕГКО river line instead. Flag `plain` also draws thin river/stream lines.
 - **2026-10-07, ГРАДО 2 v0.99.35: new source `egko.bridges` («Мосты (ЕГКО)»).** Owner: the ЕГКО base has no bridges, so roads
   have holes. The roads layer `dorogi_pol` is cut at bridges and interchanges; the portal keeps them in the separate layer
   `bridge`. Loadable like other ЕГКО layers, default canvas style = roads, role «Дороги» in «Слои и листы». Album sheets are
