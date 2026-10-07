@@ -2,6 +2,11 @@
 
 Новые циклы сверху. Строки `RULE:` — уроки, которые обязана прочитать каждая следующая задача.
 
+RULE: An owner remark that names concrete wording («вл. 8», «выноска такая») gets a line in `tools/album_expect/` in the same commit as the rule in `album-rules.md`;
+`tools/album_check.py` runs the lint and those lines on every comparison (exit 3 on errors); a sheet without a baseline gets a full tile audit before delivery; a rule that
+supersedes an older one edits the older line in place (07.10.2026, audit #53: the title address, the ortho callout and a label under the legend passed unseen on the new sheets,
+and two lines of the rule base gave two colours for the calculated СЗЗ).
+
 RULE: Navigation is checked by `python3 tools/docs_check.py` (in `tools/gate.sh` and CI `docs.yml`): a document is moved with `git mv` and the checker
 runs at once; a new `.md` under `docs/` is named in the README of its shelf (`docs/CLAUDE.md`); every code file starts with a «what it is» header; a new top-level
 file or folder is named in `INDEX.md` (07.10.2026, issue #50).
@@ -30,6 +35,7 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 07.10.2026, аудит оформления презентации по Гольяново и правила против повтора (задача #53; по просьбе владельца): 13 аудиторов Haiku дали 103 находки, руководитель свёл их в 26 причин (P0 — 3: адрес титула «д. 8» вместо «вл. 8», нет выноски на ортофотоплане, подпись «ул. Амурская» под легендой; P1 — 12; P2 — 11) и отбросил 6 после проверки глазами. Исправления — отдельные задачи #55–#63, вопросы владельцу — #54 (ответ буквой). Против повтора: `tools/album_lint.py` проверяет рамку карты, переносы, «ё», тире, неразрывные пробелы в PPTX и контрольные строки `tools/album_expect/`; `tools/album_check.py` запускает всё это при каждом сравнении «до / после» (код выхода 3 при ошибках); чек-лист `docs/standards/albums/layout-qa.md` перестроен (порядок, 30 проверок, коды линта, известные не-огрехи, предложения до слова владельца); строки свода про цвет расчётных СЗЗ и про маску исправлены (код рисует по позднему слову владельца). Не сделано: исправление самих огрехов в альбоме; эталон `gol` в `~/.grado2/album-baseline` и релизе `album-baseline` остаётся прежним (9 страниц), его обновляют `--update` после приёмки нового альбома на Mac.
 - 07.10.2026, наведение порядка в репозитории (задача #50, PR #52; по просьбе владельца): влиты в `team/t60` PR #46 (альбом по замечаниям 07.10, #45 #47 #48 #44), #36 (релей НСПД)
   и #49 (версия 0.99.45, устойчивые T27 и T61, #40). `docs/` разложен по полкам (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`, карта `docs/INDEX.md`), 65 файлов
   перенесены `git mv`; новые `README.md`, `INDEX.md`, `AGENTS.md`, `CLAUDE.md` и README в каждой папке верхнего уровня и на каждой полке docs; `tools/docs_check.py` в gate и CI; вики сама пересобирается (`wiki.yml`) и
