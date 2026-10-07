@@ -2,6 +2,30 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).** A row «Готовые наборы» above the
+  tree: «Существующее положение» (13 layers), «Ограничения» (7), «Градостроительная документация» (8), «Альбом ППТ КРТ» (24 —
+  exactly the layers of the album sheets, taken from `PPTKRT`). A click checks the set, a second click unchecks it; the
+  tooltip lists the layers; the tree stays for fine-tuning. Checked on a screenshot at 1365 × 923.
+- **2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).** On 1365 × 923 with the
+  graph docked at the bottom (233–262 px) 8–9 of 14 nodes were outside. Now: first open fits the graph down to 0.45; «Вся
+  схема» first press — readable (0.6), second press in a row — the whole graph (0.22 here, 0 nodes outside); while the view
+  is untouched the graph refits when its window changes size; when part of it is outside, the button reads «Вся схема
+  (часть за краем)» in the warning colour. New map button «Широкая карта» (top right, next to the basemap) hides both side
+  panels at once (map 795 → 1365 px) and brings them back as they were. Checked on screenshots at 1365 × 923.
+- **2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).** Enter and Space on a focused button, link, menu item or tab press
+  it: before, the AutoCAD-style «repeat last command» took them (after drawing a line, Enter on «Виды» restarted the line
+  instead of opening the window — checked before/after in the browser). The first Tab shows «К карте», «К слоям»,
+  «Таблица объектов слоя» (visible only in focus); the map takes focus (outline, arrows pan, + and − zoom) and is labelled
+  for screen readers, pointing to the attribute table as the text way to the objects. Page Tab order already started at
+  «Проект» and the header sections; the audit's «ПРИВЯЗКА» came after a click on the map.
+- **2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).** A sheet frame on the map is labelled
+  «Лист N «first 28 characters…» · format · scale»; the full title stays in the field above the selected sheet (and in its
+  tooltip) and in «Листы». The «область загрузки данных» caption is not drawn when the area is the sheet frames themselves
+  — it lay on top of the sheet label (seen on the screenshot).
+- **2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).**
+  While there are no new buildings (`t.n === 0`), the «Эскиз» section opens with «Эскиз не построен — показатели новой
+  застройки появятся после расчёта…» and an «Открыть «Эскиз»» button; zero values of new-building metrics, new SPP, density
+  and coverage show «—» (tooltip «Ещё не рассчитано»). Territory and kept buildings stay as computed.
 - **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
   без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
   built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest

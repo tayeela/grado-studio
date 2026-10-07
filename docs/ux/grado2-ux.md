@@ -111,6 +111,11 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-10-07 (v0.99.34–0.99.38, external audit #25): done and checked on screenshots — «ещё не рассчитано» in «Показатели»,
+  short sheet labels, Enter on buttons + skip links + focusable map, whole graph on second «Вся схема» + «Широкая карта»,
+  source sets. Not yet: the right panel «Стиль / Объект» keeps its width while empty («Выберите слой в дереве») — could
+  collapse to a strip until a layer is chosen; the bottom-docked graph is only ~250 px high on 1365 × 923 — a taller
+  default for that dock; a full screen-reader pass (VoiceOver) of the map objects through «Таблица атрибутов».
 - 2026-10-06 (v0.99.32–0.99.33, audit): «Нормативы» show «район не определён — выберите зону» after a failed lookup —
   checked on screen. Guest entry checked: opens at once as «Гость», «Выйти» → login with «Войти гостем, без пароля»,
   console clean. Not yet: all guests are one account «Гость» — in comments, presence and history colleagues cannot be
