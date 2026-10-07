@@ -29,7 +29,7 @@
 ## Выкладка (только по слову владельца «выкладывай»)
 `git -C ~/grado-studio status --porcelain -- apps/grado2 core docs` пусто → в ветке команды `git merge main` →
 `E2E=1 tools/gate.sh` → в main `git merge --ff-only team/t60` (хук выложит сайт; при обрыве сети — повторить
-`tools/deploy-server.sh`, путь Mac → msk → grado) → `git push origin main team/t60` → запись в ЛОГ taiLink
+`tools/deploy-server.sh`, путь Mac → msk; ГРАДО на msk с 07.10.2026) → `git push origin main team/t60` → запись в ЛОГ taiLink
 (`~/.claude/guard/log_append.py`).
 
 ## Срочное исправление на сайте
@@ -37,5 +37,5 @@
 `git merge main` в ветку команды.
 
 ## Файл проекта на сайте
-Проекты — `/var/lib/grado/projects` на grado (Mac → msk → grado). Перед заменой — копия в `.bak/` с датой, замена через
+Проекты — `/var/lib/grado/projects` на msk (с 07.10.2026; `ssh msk`). Перед заменой — копия в `.bak/` с датой, замена через
 временный файл и `mv`, проверка sha256 и `/api/projects`, запись в ЛОГ.
