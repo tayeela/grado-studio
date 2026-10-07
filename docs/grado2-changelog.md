@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.**
+  Облако не достаёт `nspd.gov.ru` (портал рвёт соединение с иностранных адресов), поэтому коннектор умеет ходить
+  через релей на российском сервере: `GRADO_NSPD_BASE` (вместо `https://nspd.gov.ru`) и `GRADO_NSPD_RELAY_TOKEN`
+  (заголовок `X-Grado-Relay-Token`; токен уходит только на релей, на сам НСПД не отправляется). Без переменных
+  поведение прежнее. Релей — Caddy на msk, конфиг и установка в `tools/nspd_relay/`; он пропускает только GET/POST на
+  `/api/geoportal/*` с токеном, проверка сертификата НСПД по корням Минцифры включена. Заодно исправлена подсказка
+  `_CERT_HELP` (актуальные имена `russian_trusted_root_ca.cer` / `russian_trusted_sub_ca.cer`), а `~/.grado2/ca/`
+  принимает `.cer` и в DER, и в PEM. Тесты: `core/connectors/tests/test_nspd_relay.py`.
 - **2026-10-07, tests (#40): two browser steps no longer depend on timing.** T27 (wheel zoom keeps the point under the cursor) reads
   the resolution and the point after the map has stopped (the resolution stays unchanged for 300 ms) instead of after a fixed 0.9 s; T61 (no
   answer from `/api/place`) waits for the real district lookup of the opened window to finish, cancels the deferred repeat, counts the
