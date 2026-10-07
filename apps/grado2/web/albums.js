@@ -601,7 +601,7 @@ function conceptStations(out, k) {
    эти подписи ставятся раньше всех. */
 const PLACE_RE = /^(д|дер|с|п|пос|рп|х|село|деревня)\.?\s+(.+)$/i;
 const titleRu = t => t.toLowerCase().replace(/(^|[\s-])([а-яё])/g, (m, a, b) => a + b.toUpperCase());
-function namedPlaces(out, bb, rail = []) {
+function namedPlaces(out, bb, rail = [], manual = null) {
   const L = key => out.layers.find(l => l.key === key), inBox = c => c[0] >= bb[0] && c[0] <= bb[2] && c[1] >= bb[1] && c[1] <= bb[3];
   const feats = [], kx = Math.cos(bb[1] * Math.PI / 180);
   (L("egko.place_labels")?.features || []).forEach(ft => { const t = String(ft.props?.["Подпись"] || ft.label || "").trim(), m = PLACE_RE.exec(t);
@@ -634,9 +634,11 @@ function namedPlaces(out, bb, rail = []) {
   let roadLs = ROAD_LS[0];
   // надписи УДС Сводного плана ГИС ОГД: «пр. проезд N 7085» → «Проектируемый проезд № 7085». Точка надписи лишь около коридора красных
   // линий УДС: ось коридора — середина между ближайшими красными линиями слева и справа поперёк направления надписи; подпись
-  // ставится на самом прямом участке оси, ближе к своей точке. Коридора рядом нет (чистое поле) — подписи нет
+  // ставится на самом прямом участке оси, ближе к своей точке. Коридора рядом нет (чистое поле) — подписи нет.
+  // manual — названия, которых нет в данных (sheet.roadLabels: [{ text, short?, at: [lon, lat] }], слово владельца): точка лежит на
+  // дороге, направление оси находит сама программа по коридору
   const uds = L("gisogd.uds_labels");
-  if (uds) {
+  if (uds || manual?.length) {
     const tc = turf.centroid(TERR), x0 = (bb[0] + bb[2]) / 2, y0 = (bb[1] + bb[3]) / 2, mx = 111320 * kx, my = 110540;
     const toM = c => [(c[0] - x0) * mx, (c[1] - y0) * my], toLL = m => [x0 + m[0] / mx, y0 + m[1] / my];
     const segs = [];
@@ -650,39 +652,57 @@ function namedPlaces(out, bb, rail = []) {
         const ap = [a[0] - p[0], a[1] - p[1]], t = cr(ap, d) / den, u = cr(ap, n) / den;
         if (u < 0 || u > 1) return; if (t <= 0 && t > l) l = t; if (t > 0 && t < r) r = t; });
       return l > -70 && r < 70 && r - l <= 100 ? { c: [p[0] + n[0] * (l + r) / 2, p[1] + n[1] * (l + r) / 2], w: r - l } : null; };
-    const place = (ft, ls, text) => {            // лучший участок оси для подписи кегля ls: [отклонение от прямой, смещение, центр, угол]
-      const p0 = toM(ft.g.coordinates), ang = -(+ft.props.textangle || 0) * Math.PI / 180, u = [Math.cos(ang), Math.sin(ang)], n = [-u[1], u[0]];
-      const near = segs.filter(([a, b]) => Math.max(a[0], b[0]) > p0[0] - 320 && Math.min(a[0], b[0]) < p0[0] + 320 && Math.max(a[1], b[1]) > p0[1] - 320 && Math.min(a[1], b[1]) < p0[1] + 320);
-      const half = text.length * .64 * ls * kmm / 2, steps = Math.max(4, Math.ceil(half * 2 / 10));
+    // пороги — в миллиметрах бумаги, поэтому лист 1:2000 считается так же аккуратно, как 1:5000
+    const RANGE = 30 * kmm, STEP = 2 * kmm, DEV = 1.6 * kmm;
+    // направление дороги в точке: поперёк которого коридор уже всего
+    const roadAngle = (p0, near) => { let best = null;
+      for (let a = 0; a < 180; a += 5) { const r = a * Math.PI / 180, q = section(p0, [-Math.sin(r), Math.cos(r)], near); if (q && (!best || q.w < best.w)) best = { a: r, w: q.w }; }
+      return best && best.a; };
+    // дорога, названная вручную, может лежать в развязке, где красные линии УДС охватывают всю территорию развязки: ось — по краям
+    // полигонов дорог ЕГКО (проезжая часть листа и мосты), ближайшим слева и справа
+    const roadSegs = [], roadPolys = [];
+    ["yandex.hd_roads", "egko.bridges"].forEach(k => (L(k)?.features || []).forEach(ft => { if (!/Polygon/.test(ft.g?.type)) return; roadPolys.push(ft.g);
+      (ft.g.type === "Polygon" ? [ft.g.coordinates] : ft.g.coordinates).forEach(poly => poly.forEach(r => { for (let i = 1; i < r.length; i++) roadSegs.push([toM(r[i - 1]), toM(r[i])]); })); }));
+    const place = (ft, ls, text) => {            // лучший участок оси для подписи кегля ls: центр и угол
+      const p0 = toM(ft.g.coordinates);
+      const near = (ft.auto ? roadSegs : segs).filter(([a, b]) => Math.max(a[0], b[0]) > p0[0] - RANGE - 120 && Math.min(a[0], b[0]) < p0[0] + RANGE + 120 && Math.max(a[1], b[1]) > p0[1] - RANGE - 120 && Math.min(a[1], b[1]) < p0[1] + RANGE + 120);
+      const ang = ft.auto ? roadAngle(p0, near) : -(+ft.props.textangle || 0) * Math.PI / 180;
+      if (ang == null) return null;
+      const u = [Math.cos(ang), Math.sin(ang)], n = [-u[1], u[0]];
+      const half = text.length * .64 * ls * kmm / 2, steps = Math.max(4, Math.ceil(half * 2 / STEP));
       let best = null;
-      for (let s0 = -150; s0 <= 150; s0 += 10) {
+      for (let s0 = -RANGE; s0 <= RANGE; s0 += STEP) {
         const a = []; let ok = true;
         for (let i = 0; i <= steps && ok; i++) { const s = s0 - half + 2 * half * i / steps, q = section([p0[0] + u[0] * s, p0[1] + u[1] * s], n, near); if (q) a.push(q.c); else ok = false; }
         if (!ok) continue;
         const f = a[0], g = a[a.length - 1], L0 = Math.hypot(g[0] - f[0], g[1] - f[1]) || 1;
         const dev = Math.max(...a.map(c => Math.abs(cr([g[0] - f[0], g[1] - f[1]], [c[0] - f[0], c[1] - f[1]])) / L0));
-        if (dev > 8) continue;                                            // участок не прямой: ось уходит от прямой подписи больше чем на 8 м (1,6 мм на бумаге в 1:5000)
+        if (dev > DEV) continue;                                          // участок не прямой: ось уходит от прямой подписи больше чем на 1,6 мм бумаги
         const sc = dev + Math.abs(s0) * .04;
         if (!best || sc < best.sc) best = { sc, c: [(f[0] + g[0]) / 2, (f[1] + g[1]) / 2], ang: Math.atan2(g[1] - f[1], g[0] - f[0]) * 180 / Math.PI };
       }
       return best; };
-    const cands = new Map();                                              // номер → точки надписей этого проезда
-    uds.features.forEach(ft => { const m = /^пр\.?\s*(?:проезд|пр\.?)\s*(?:N|№)?\s*(\d+)\s*$/i.exec(String(ft.props?.text || "").trim());
-      if (m && ft.g?.type === "Point" && inBox(ft.g.coordinates)) (cands.get(m[1]) || cands.set(m[1], []).get(m[1])).push(ft); });
-    // полное название; на изогнутой оси, где оно не ложится, — короче («Пр. проезд № 7527»)
-    const texts = n => [`Проектируемый проезд №\u00a0${n}`, `Пр.\u00a0проезд №\u00a0${n}`];
+    const cands = new Map();                                              // ключ → { fts: точки, texts: названия от полного к короткому }
+    (uds?.features || []).forEach(ft => { const m = /^пр\.?\s*(?:проезд|пр\.?)\s*(?:N|№)?\s*(\d+)\s*$/i.exec(String(ft.props?.text || "").trim());
+      if (m && ft.g?.type === "Point" && inBox(ft.g.coordinates)) (cands.get(m[1]) || cands.set(m[1], { fts: [], texts: [`Проектируемый проезд №\u00a0${m[1]}`, `Пр.\u00a0проезд №\u00a0${m[1]}`] }).get(m[1])).fts.push(ft); });
+    // at — ломаная вдоль дороги (грубо, рукой): от неё берутся точки через 12 м, лежащие на проезжей части и в рамке
+    (manual || []).forEach((r, i) => { const line = (Array.isArray(r?.at?.[0]) ? r.at : r?.at ? [r.at] : []).map(toM), at = [];
+      for (let j = 0; j < line.length; j++) { const a = line[j], b = line[j + 1] || a, len = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.max(1, Math.round(len / 12));
+        for (let t = 0; t < n; t++) at.push(toLL([a[0] + (b[0] - a[0]) * t / n, a[1] + (b[1] - a[1]) * t / n])); }
+      const ok = at.filter(c => inBox(c) && roadPolys.some(g => safe(() => turf.booleanPointInPolygon(c, { type: "Feature", geometry: g, properties: {} }))));
+      if (ok.length) cands.set("m" + i, { fts: ok.map(c => ({ g: { type: "Point", coordinates: c }, auto: true })), texts: [r.text, r.short].filter(Boolean) }); });
     const fit = ls => { const res = new Map();
-      cands.forEach((fts, n) => { let best = null;
-        for (const text of texts(n)) {
-          fts.forEach(ft => { const b = place(ft, ls, text); if (!b) return; const d = turf.distance(turf.point(toLL(b.c)), tc); if (!best || d < best.d) best = { ...b, d, text }; });
+      cands.forEach(({ fts, texts }, n) => { let best = null;
+        for (const text of texts) {                                       // полное название; на изогнутой оси, где оно не ложится, — короче
+          fts.forEach(ft => { const b = place(ft, ls, text); if (!b) return; const d = ft.auto ? b.sc : turf.distance(turf.point(toLL(b.c)), tc); if (!best || d < best.d) best = { ...b, d, text }; });
           if (best) break; }
         if (best) res.set(n, best); });
       return res; };
     const smallest = fit(ROAD_LS[ROAD_LS.length - 1]);
     let chosen = smallest;
     for (const ls of ROAD_LS) { const r = fit(ls); if (r.size === smallest.size) { roadLs = ls; chosen = r; break; } }
-    chosen.forEach((b, n) => feats.push({ g: { type: "Point", coordinates: toLL(b.c) }, nm: true, label: b.text, ls: roadLs, lf: "sans-bold", lh: .55, lcol: "#141414", la: upright(b.ang) }));
-    uds.features = [];
+    chosen.forEach(b => feats.push({ g: { type: "Point", coordinates: toLL(b.c) }, nm: true, label: b.text, ls: roadLs, lf: "sans-bold", lh: .55, lcol: "#141414", la: upright(b.ang) }));
+    if (uds) uds.features = [];
   }
   // ЕГКО «Названия улиц и дорог»: линии, вдоль которых картооснова сама ставит название. Подпись идёт строго вдоль дороги и
   // обязательна (владелец 07.10.2026: «улицы подписаны непараллельно», шоссе без подписи); улица, уже стоящая по линии ЕГКО,
@@ -752,7 +772,7 @@ function conceptSheet(out, sheet, bb) {
   // тонкие реки ЕГКО нужны только для подписей ручьёв: на снимке вода видна сама (владелец 30.09.2026: голубых линий
   // на листе 3 быть не должно)
   if (sheet.basemap === "sat") (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) ft.nl = true; });
-  namedPlaces(out, bb, railStations(out, bb));
+  namedPlaces(out, bb, railStations(out, bb), sheet.roadLabels);
   // схема ограничений на основе ЕГКО: реки и ручьи — тонкой голубой линией, иначе подпись «р. Сетунь» висит над невидимым руслом
   if (sheet.plain) (out.layers.find(l => l.key === "egko.water")?.features || []).forEach(ft => { if (/Line/.test(ft.g?.type)) Object.assign(ft, { w: MM(.3), lc: "#5aa9e6", a: 1 }); });
   if (k === "ortho") {

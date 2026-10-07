@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.38: manual road names (`roadLabels`) and scale-independent label tolerances.** Owner: «Филатовское
+  шоссе — продолжение проектируемого проезда 7085 южнее Киевского шоссе» (no name in ЕГКО or Сводный план). A sheet may carry
+  `roadLabels: [{ text, short?, at: polyline along the road }]`: points every 12 m that lie on the ЕГКО road polygon are tried, the
+  axis and direction are found from the road edges (the УДС red lines there enclose a whole interchange), the straightest stretch wins,
+  size is the sheet's common road size. The search tolerances of road labels are now in paper millimetres (30 mm range, 2 mm step,
+  1.6 mm deviation), so a 1:2000 sheet is placed as carefully as 1:5000.
 - **2026-10-07, ГРАДО 2 v0.99.37: road labels sit on the road axis, on the straightest stretch, one size.** Owner (sketch): labels
   of roads must be closer to the axis, on straighter stretches, most of the text on the road itself; the size may shrink but then
   for all such labels. «Надписи УДС» (`gisogd.uds_labels`) are now placed by the corridor of the УДС red lines (linelineco ±1): the
