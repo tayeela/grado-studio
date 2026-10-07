@@ -33,7 +33,10 @@ export default async p => {
   check(t27 === true, `T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет${t27 === true ? "" : " " + t27}`);
   {
     const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
-    const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900); const r10 = await res(), c1 = await at();
+    const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900);
+    // читаем после остановки карты: разрешение не меняется 300 мс (на медленном раннере плавный зум идёт дольше 0,9 с; гонка в CI, #40)
+    let r10 = await res(); for (let k = 0, same = 0; k < 50 && same < 3; k++) { await p.sleep(100); const r = await res(); same = r === r10 ? same + 1 : 0; r10 = r; }
+    const c1 = await at();
     p.log("wheel: 1 notch", (r0 / r1).toFixed(3), "10 notches", (r0 / r10).toFixed(3));
     check(r0 / r10 > 1.5 && r0 / r10 <= 2.3 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) / r10 < 1.5, "T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте");
     const q0 = await res(); for (let i = 0; i < 30; i++) await p.wheel(mx, my, -6, { ctrl: true, wait: 16 }); await p.sleep(500); const q1 = await res();
@@ -982,13 +985,20 @@ export default async p => {
       const r = await p.ev(`
         setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
         winOpen("wTep", true); await new Promise(r => setTimeout(r, 400));
-        const n = RESULT.tepNode, tp = tepParams(n); window.__st61 = window.setTimeout; window.__calls61 = [];
+        const n = RESULT.tepNode, tp = tepParams(n);
+        // настоящий запрос района от открытия окна и отложенный повтор (app.js, placeLookup) заканчиваем до подмены: иначе внутри неё
+        // стартует второй запрос, таймеров на 30 с выходит два, а _placeBusy остаётся занятым (гонка в CI, #40)
+        for (let k = 0; k < 200 && n._placeBusy; k++) await new Promise(r => setTimeout(r, 100));
+        clearTimeout(n._placeT);
+        window.__st61 = window.setTimeout; window.__calls61 = [];
         window.fetch = (u, o) => String(u) === "/api/place" ? new Promise((_, rej) => o.signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))) : window.__f61(u, o);
         window.setTimeout = (fn, ms, ...a) => { if (ms === 30000) { window.__calls61.push(ms); ms = 20; } return window.__st61(fn, ms, ...a); };
-        tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); await new Promise(r => window.__st61(r, 60));
+        tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); const timers = window.__calls61.length;   // таймеры считаем у этого запроса
+        await new Promise(r => window.__st61(r, 60));
         const busyText = $("tep").innerText.includes("определяется…"); await new Promise(r => window.__st61(r, 300));
+        for (let k = 0; k < 30 && n._placeBusy; k++) await new Promise(r => window.__st61(r, 50));   // подмена ещё действует: запрос оборвётся за 20 мс
         window.setTimeout = window.__st61; const t = $("tep").innerText;
-        return [window.__calls61.length, busyText, t.includes("определяется…"), /район не определён: портал OSM не ответил — задайте зону вручную/.test(t), n._placeBusy]`);
+        return [timers, busyText, t.includes("определяется…"), /район не определён: портал OSM не ответил — задайте зону вручную/.test(t), n._placeBusy]`);
       check(r[0] === 1 && !r[2] && r[3] && r[4] === false, `T61: нет ответа /api/place — запрос обрывается по таймеру 30 с, строка «район не определён… задайте зону вручную», «определяется…» нет (${JSON.stringify(r)})`);
       // сбой с текстом сервера: чистая русская фраза, сырого Overpass в окне нет
       const t2 = await p.ev(`

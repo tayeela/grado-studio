@@ -2,11 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-07, ГРАДО 2 (task/45, #48): documentation sheet split in two.** Sheet «Схема … документацией по планировке
+- **2026-10-07, tests (#40): two browser steps no longer depend on timing.** T27 (wheel zoom keeps the point under the cursor) reads
+  the resolution and the point after the map has stopped (the resolution stays unchanged for 300 ms) instead of after a fixed 0.9 s; T61 (no
+  answer from `/api/place`) waits for the real district lookup of the opened window to finish, cancels the deferred repeat, counts the
+  30 s timers of its own lookup only and waits for the substituted lookup to end. The third step of the issue (collab «A: список проектов
+  пуст») was already fixed in v0.99.44. Open until ten CI runs in a row stay green.
+- **2026-10-07, ГРАДО 2 v0.99.44 (#48): documentation sheet split in two.** Sheet «Схема … документацией по планировке
   территории» now shows only ППТ and ПМТ; ГПЗУ moved to a new template sheet 14 «Схема с отображением границ территорий с
   выданными градостроительными планами земельных участков» (same light base, numbers and list), placed right after it
   (`PPTKRT_ORDER` = 0, 1, 9, 2, 3, 4, 8, 10, 13, 12, 5). Lists, legend and «не готов» follow the sheet's own layers. Tests T91, T92.
-- **2026-10-07, ГРАДО 2 (task/45, #47, evening remarks): toponyms from Yandex and sheet fixes.** Street labels — Yandex `road_label`
+- **2026-10-07, ГРАДО 2 v0.99.44 (#47, evening remarks): toponyms from Yandex and sheet fixes.** Street labels — Yandex `road_label`
   lines (`yandex.road_labels`, z18; `sit.road_labels`, z16 on the district map; `road_label`/`place_label` no longer skipped by
   yandex_vmap), «МКАД», «МСД» (СВХ not labelled), Yandex «Наримановская ул.» → «ул. Наримановская»; OSM labels only as fallback
   (district map: OSM city streets whose name Yandex lacks). District map: one label per street on the middle of its longest straight
@@ -19,7 +24,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   names, common legend under the left scheme and parameters under the right. Genplan: forecast fund for the developed territory
   (zone fund × territory share of the zone area), legend only zones visible ≥ 25 mm² and not white. «разрабатываемая территория»
   instead of «территория рассмотрения». Print: label halo colour (`lhc`) passed on in all label paths.
-- **2026-10-07, ГРАДО 2 (task/45, #45, #47): album ППТ КРТ by the owner's remarks of 07.10.** Sheet order and set by the owner
+- **2026-10-07, ГРАДО 2 v0.99.44 (#45, #47): album ППТ КРТ by the owner's remarks of 07.10.** Sheet order and set by the owner
   (`PPTKRT_ORDER` in `TPL_SETS.pptkrt_.order`, ids and `tpl.i` stay by template so photos and edits of old projects keep their
   sheets): title, location, district map, ortho, photos, land use, land users, documentation, ПЗЗ, Генплан; no «ППТ и ПМТ», «ГПЗУ и
   АГР», second Генплан. Scheme frame by the owner's outline (`ALBUM.meta.area`): every template map sheet except location and district
