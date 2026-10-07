@@ -1589,6 +1589,7 @@ export default async p => {
         const rd = L("osm.roads")?.features || [], byT = t => rd.find(f => (f.lc || f.fill) && f.label === t);
         out.scale = Math.round(sheetScale(dsh)); out.inFrame = fb[0] <= db[0] && fb[1] <= db[1] && fb[2] >= db[2] && fb[3] >= db[3];
         out.roads = { n: rd.length, ws: rd.map(f => +f.w.toFixed(1)), labels: rd.map(f => f.label), color: rd[0]?.fill };
+        out.streets = (sh.layers.find(l => l.title === "Подписи улиц")?.features || []).map(f => f.label);
         out.adm = (L("gisogd.admin")?.features || []).length;
         out.admW = L("gisogd.admin")?.features[0]?.w;
         out.names = sh.layers.filter(l => /подписи/.test(l.title)).flatMap(l => l.features.map(f => f.label));
@@ -1607,7 +1608,8 @@ export default async p => {
     check(r.look[0] === "concept" && r.look[1] === true && r.look[2] === "sat" && JSON.stringify(r.look[3]) === "[0,44,420,253]", `T90: снимок на весь лист под шапкой, как лист 3 (${JSON.stringify(r.look)})`);
     check(r.roads.n === 4 && !r.roads.labels.includes("Тестовая улица"), `T90: на карте магистрали и улицы районного значения, жилая улица не рисуется (${r.roads.n} линии)`);
     check(r.roads.ws[0] > r.roads.ws[2] && r.roads.ws[2] > r.roads.ws[3] && r.roads.color === "#f3d98c", `T90: линии жёлтые, ширина по классу: магистраль толще второстепенной (${r.roads.ws.join(", ")}; ${r.roads.color})`);
-    check(r.roads.labels[0] === "МКАД" && r.roads.labels[1] === "Щёлковское ш." && r.roads.labels[2] === "ул. Байкальская" && r.roads.labels[3] == null, `T90: подписаны магистрали и улицы городского значения, местная — нет (#47) (${JSON.stringify(r.roads.labels)})`);
+    check(["МКАД", "Щёлковское ш.", "ул. Байкальская"].every(t => r.streets.includes(t)) && r.streets.length === 3 && r.roads.labels.every(t => t == null),
+      `T90: подписаны магистрали и улицы городского значения — отдельным слоем, одна подпись на улицу; местная — нет (#47) (${JSON.stringify(r.streets)})`);
     check(r.adm === 3 && Math.abs(r.admW - 2.3) < 0.2, `T90: границы трёх районов тонкие 0,6 мм (владелец 07.10.2026, #45) (${r.adm} шт., ширина ${r.admW})`);
     check(r.names.some(n => /Гольяново/i.test(n)), `T90: свой район подписан, заглавными (${JSON.stringify(r.names)})`);
     check(r.callout, "T90: выноска «Территория рассмотрения» на месте");
