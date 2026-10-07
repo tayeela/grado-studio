@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).**
+  New concept `docs` in `PPTKRT_D` (between the district map and the Genplan, `sit: true`, `fit: "cover"`): ППТ, ПМТ, ГПЗУ (with АГР
+  as the second line of its item) and КРТ on one light base by the analogue ДПТ «Профсоюзная» — buildings light grey without outline,
+  roads white, water and green pale, parcel boundaries thin blue (`nspd.parcels`), no white mask. `conceptDocs(out, bb, groups, { total })`
+  now takes an optional global cap: numbers and lists only for the nearest `DOCS_TOTAL` = 8 documents of all kinds together (the column
+  holds about eight items), the others are drawn without a number as in the analogue; groups of sheets 7–8 moved to `PPT_GROUP`,
+  `PMT_GROUP`, `gpzuGroup` (no change for them). КРТ of the territory itself is not hatched, neighbours' are. The sheet is «не готов»
+  when no document of any kind is in the frame (`legendrules.js` concept `docs`, `joinRu`; unit test). The title of the owner is cut
+  («градостроительных планов земельных участков» → «ГПЗУ»): 176 characters do not fit two lines of 18 pt. E2E group `t92`.
 - **2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).** `PPTKRT_D` (albums.js) gets two
   more sheets with the flag `sit: true` and `fit: "cover"` (frame = `coverFrameBox`, v0.99.40): sheet 12 is a copy of the template of sheet 6
   (`concept: "gp"`: colours by the MapInfo table, number and index, legend, table of zones) with the title «Размещение территории в

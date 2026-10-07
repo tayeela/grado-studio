@@ -1633,7 +1633,7 @@ export default async p => {
         put("gisogd.func_zones", "Функциональные зоны (ГП)", [ft({ n: 6, fztip: "130", naimfunkzony: "коммунальные зоны" }, box(-.02, -.012, .02, .012))]);
         put("gisogd.pzz_zones", "ПЗЗ: территориальные зоны", [ft({ "Номер зоны": "6", "ВРИ (коды)": "4.9; 6.9; 3.1", "Индекс": "" }, box(-.012, -.006, .003, .006)), ft({ "Номер зоны": "7", "ВРИ (коды)": "2.6", "Индекс": "" }, box(.003, -.006, .008, .006))]);
         const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t91" + id, size: "PA3" });
-        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = PPTKRT.slice(-3), g12 = { ...cloneJ(tail[1]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[2]), id: "t91pzz", size: "PA3" };
+        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = PPTKRT.slice(-2), g12 = { ...cloneJ(tail[0]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[1]), id: "t91pzz", size: "PA3" };
         out.tpl = [tail.map(x => x.concept).join("|"), tail.every(x => x.sit === true), PPTKRT_D.length, g12.fit, z13.fit, g12.title.length, z13.title.length];
         ALBUM.sheets.push(ortho, use, gp, g12, z13);
         delete ALBUM.meta.schemeScale; out.auto = [Math.round(sheetScale(use)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
@@ -1650,7 +1650,7 @@ export default async p => {
         window.__t91 = { prevT, keep, saved, keys, svg2: t2, svg1: t1 }; out.shot = 1;
         return JSON.stringify(out);
       } catch (e) { window.__t91 = { prevT, keep, saved, keys }; throw e; }`));
-    check(r.tpl[0] === "district|gp|pzz" && r.tpl[1] && r.tpl[2] === 3 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в конце шаблона альбома листы district, gp, pzz с флагом sit; fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
+    check(r.tpl[0] === "gp|pzz" && r.tpl[1] && r.tpl[2] === 4 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в конце шаблона альбома листы gp и pzz с флагом sit (PPTKRT_D — четыре листа); fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
     check(r.auto[1] === 4000 && r.auto[2] === 4000, `T91: рамка листов 12 и 13 — по границам выгрузки без всякой настройки: 1:4000 (${r.auto.join(" / ")})`);
     check(r.num[0] === 5000 && r.num[1] === 5000 && r.num[2] === 4000 && r.num[3] === 4000, `T91: настройка «Масштаб схем» числом (1:5000) двигает схемы 5–9, а листы 12 и 13 — нет (${r.num.join(" / ")})`);
     check(r.cover.every(v => v === 4000), `T91: «по границам выгрузки» — у схем 5–9 и листов 12–13 одна рамка (${r.cover.join(" / ")})`);
@@ -1662,5 +1662,58 @@ export default async p => {
       await p.ev(`const u = URL.createObjectURL(new Blob([window.__t91.${k}], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t91img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
       await p.shot(`${shots}/t91-${n}.png`); await p.ev(`document.getElementById("t91img")?.remove(); return 1`); }
     await p.ev(`const k = window.__t91; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; k.keys.forEach(x => setLayerData(x, k.saved[x] || { type: "FeatureCollection", features: [] })); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  });
+  // T92: лист 11 — схема документации (#37, п. 2 владельца 07.10.2026): ППТ, ПМТ, ГПЗУ, АГР и КРТ на светлой подложке, рамка «по границам выгрузки»;
+  // номера и списки только у ближайших восьми документов, остальные нарисованы без номера; КРТ самой территории не штрихуется; легенда из видимого
+  await p.group("t92", async () => {
+    const shots = process.env.T92_SHOTS;
+    const r = JSON.parse(await p.ev(`
+      const prevT = TERR ? JSON.stringify(TERR.geometry) : "", keep = ALBUM.sheets.splice(0), out = {}, wait = ms => new Promise(r => setTimeout(r, ms));
+      const keys = ["nspd.parcels", "egko.buildings", "gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr", "gisogd.krt"], saved = Object.fromEntries(keys.map(k => [k, DATA[k]?.fc])), fc = fs => ({ type: "FeatureCollection", features: fs });
+      const sq = (x, s) => [[x, x], [x + s, x], [x + s, x + s], [x, x + s]];
+      const put = (key, title, feats) => { const f = fc(feats); DATA[key] = DATA[key] ? { ...DATA[key], fc: f } : { fc: f, title, source: "тест" }; ensureLayer(key, title); setLayerData(key, f); };
+      try {
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } }); await wait(300);
+        const [x0, y0] = turf.centroid(TERR).geometry.coordinates, tb = turf.bbox(TERR);
+        const at = (cx, cy, w = .0016, h = .0009) => turf.bboxPolygon([x0 + cx - w / 2, y0 + cy - h / 2, x0 + cx + w / 2, y0 + cy + h / 2]).geometry;
+        const doc = (n, g, title) => ({ type: "Feature", properties: { document_n: n + "-ПП", document_d: "2021-12-20", document_1: title }, geometry: g });
+        const ppt = [[-.004, .002], [.003, .0025], [-.005, -.002], [.005, -.003], [0, .0033], [-.0065, .0005]].map((c, i) => doc("P" + (i + 1), at(...c), "Об утверждении проекта планировки территории"));
+        const pmt = [[.0015, -.0025], [-.002, -.0033], [.0062, .001]].map((c, i) => doc("M" + (i + 1), at(...c), "Об утверждении проекта межевания территории"));
+        const gz = [[-.0015, .0012], [.0035, -.0008], [-.003, -.0005]].map((c, i) => doc("G" + (i + 1), at(...c), ""));
+        put("gisogd.ppt", "ППТ", ppt); put("gisogd.pmt", "ПМТ", pmt); put("gisogd.gpzu", "ГПЗУ", gz); put("gisogd.agr", "АГР", [doc("A1", at(-.0015, .0012), "")]);
+        const pad = (e, k) => [tb[0] - (tb[2] - tb[0]) * k, tb[1] - (tb[3] - tb[1]) * k, tb[2] + (tb[2] - tb[0]) * k, tb[3] + (tb[3] - tb[1]) * k];
+        put("gisogd.krt", "КРТ", [{ type: "Feature", properties: { document_n: "KRT-1" }, geometry: turf.bboxPolygon(pad(0, .05)).geometry }, { type: "Feature", properties: { document_n: "KRT-2" }, geometry: at(.0055, .0025, .0014, .0007) }]);
+        put("nspd.parcels", "Участки", [[-.001, .0005], [.002, .0], [-.0035, .001], [.0045, .002], [-.0055, -.0025], [.0, -.0015]].map(c => ({ type: "Feature", properties: { "Кадастровый номер": "77:00:0:" + c[0] }, geometry: at(c[0], c[1], .0012, .0007) })));
+        put("egko.buildings", "Здания", [[-.002, .0018], [.0025, .001], [-.0045, -.001], [.0035, -.002], [.001, .003]].map(c => ({ type: "Feature", properties: {}, geometry: at(c[0], c[1], .0008, .0005) })));
+        const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t92" + id, size: "PA3" });
+        const ortho = mk("ortho", "ortho"), dsh = { ...cloneJ(PPTKRT.find(x => x.concept === "docs")), id: "t92docs", size: "PA3" };
+        ALBUM.sheets.push(ortho, dsh);
+        const sp = albumSpec([dsh]), sh = sp.sheets[0], L = k => sh.layers.find(l => l.key === k || l.title === k);
+        out.tpl = [dsh.sit, dsh.fit, dsh.title.length, PPTKRT.map(x => x.concept).slice(-4).join("|")];
+        out.scale = Math.round(sheetScale(dsh));
+        out.drawn = ["gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr", "nspd.parcels"].map(k => (L(k)?.features || []).length);
+        out.num = (L("Номера документов")?.features || []).map(f => f.label);
+        out.lists = (sh.cLists || []).map(l => [l.title, l.items.length, l.items.map(i => i.text.split(" ")[0])]);
+        out.agrLine = (sh.cLists || []).flatMap(l => l.items.map(i => i.text)).some(t => /\\nАГР/.test(t));
+        out.krt = (L("gisogd.krt")?.features || []).length;
+        out.legend = (sh.cLegend || []).flatMap(g => (g.items || []).map(i => i.label));
+        out.styles = [L("egko.buildings")?.features[0]?.fill, L("yandex.hd_roads")?.features?.length || 0, L("nspd.parcels")?.features[0]?.w];
+        const resp = await fetch("/api/print/svg", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...sp, index: 0 }) });
+        const txt = await resp.text(); out.svg = [resp.status, resp.headers.get("X-Grado-Not-Ready-Why") ? decodeURIComponent(resp.headers.get("X-Grado-Not-Ready-Why")) : "", /Схема с отображением границ территорий/.test(txt)];
+        window.__t92 = { prevT, keep, saved, keys, svg: txt }; out.shot = 1;
+        return JSON.stringify(out);
+      } catch (e) { window.__t92 = { prevT, keep, saved, keys }; throw e; }`));
+    check(r.tpl[0] === true && r.tpl[1] === "cover" && r.tpl[3] === "district|docs|gp|pzz", `T92: лист «docs» — флаг sit, рамка cover, порядок листов 10–13 district, docs, gp, pzz (${JSON.stringify(r.tpl)})`);
+    check(r.scale === 4000, `T92: рамка по границам выгрузки — 1:4000 (${r.scale})`);
+    check(JSON.stringify(r.drawn) === "[6,3,3,1,6]", `T92: нарисованы все документы, а не только пронумерованные: ППТ 6, ПМТ 3, ГПЗУ 3, АГР 1, участков 6 (${r.drawn})`);
+    check(r.num.length === 8 && r.num.join(",") === "1,2,3,4,5,6,7,8", `T92: номера — только у ближайших восьми из двенадцати, сквозные (${r.num.join(",")})`);
+    check(r.lists.reduce((a, l) => a + l[1], 0) === 8 && r.lists.length === 3 && /Проекты планировки/.test(r.lists[0][0]) && /Проекты межевания/.test(r.lists[1][0]) && /ГПЗУ/.test(r.lists[2][0]), `T92: списки справа — ППТ, ПМТ, ГПЗУ, всего 8 пунктов (${JSON.stringify(r.lists.map(l => [l[0].slice(0, 12), l[1]]))})`);
+    check(r.krt === 1, `T92: КРТ самой территории не штрихуется, чужое — штрихуется (${r.krt})`);
+    check(["территории рассмотрения", "земельных участков, поставленных на кадастровый учёт", "проекты планировки территории", "проекты межевания территории", "градостроительный план земельного участка", "архитектурно-градостроительное решение", "комплексное развитие территории"].every(t => r.legend.some(x => x.includes(t))), `T92: легенда — граница, участки, ППТ, ПМТ, ГПЗУ, АГР, КРТ (${r.legend.length} знаков)`);
+    check(r.styles[0] === "#e1e1e1" && Math.abs(r.styles[2] - .58) < .1, `T92: светлая подложка: здания светло-серые, границы участков тонкие синие (${r.styles[0]}, ширина ${r.styles[2]})`);
+    check(r.svg[0] === 200 && !r.svg[1] && r.svg[2], `T92: сервер рисует лист, название и списки помещаются (код ${r.svg[0]}; «не готов»: «${r.svg[1]}»; название в рисунке: ${r.svg[2]})`);
+    if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t92.svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t92img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
+      await p.shot(`${shots}/t92-docs.png`); await p.ev(`document.getElementById("t92img")?.remove(); return 1`); }
+    await p.ev(`const k = window.__t92; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); k.keys.forEach(x => setLayerData(x, k.saved[x] || { type: "FeatureCollection", features: [] })); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
   });
 };
