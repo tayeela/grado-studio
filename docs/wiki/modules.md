@@ -7,9 +7,11 @@
 
 ## Сервер и печать (apps/grado2/*.py)
 
-### `apps/grado2/album_io.py` — 783 стр.
+### `apps/grado2/album_io.py` — 787 стр.
 
 Альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint («ППТ_КРТ Шаблон (И).pptx», А3 альбомный, красная шапка) и «Градостроительная концепция» — по образцу «ГК Царицыно» (А3 альбомный, белый лист, заголовок справа).
+
+Разделы по порядку: Образцы владельца: пути, цвета, шапка · Текст: перенос, ширина, заголовки, колонки таблиц · Рамки шаблона ППТ КРТ: титул, выноска, примечание · листы по образцу «ГК Царицыно» (look: "concept"): карта слева, колонка справа · Страница альбома: build_pptkrt выбирает рамку по полям листа
 
 Функции: `photo_bytes`, `_header`, `_glue`, `_wrap`, `_text`, `_tw`, `_hyph_parts`, `_wrap_para`, `_wrap_mm`, `_title_lines`, `_col_widths`, `_not_ready`, `_tab`, `PptKrtFrame`, `_text_boxes`, `_callout_route`, `_remember_ops`, `CalloutFrame`, `MapNoteFrame`, `ortho_legend_h`, `_rgb`, `_dash_fit`, `concept_swatch`, `TwinCaptionFrame`, `ConceptColumnFrame`, `OrthoLegendFrame`, `ConceptPhotoFrame`, `OkrugTitleFrame`, `build_pptkrt`
 
@@ -35,6 +37,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Хаб совместной работы ГРАДО 2 (режим GRADO2_HUB=1): аккаунты, проекты с ролями, ревизии разделов, живые события (presence, комментарии), история версий.
 
+Разделы по порядку: параметры (константы модуля: тесты подменяют их) · разделы проекта · проверки входных значений · живые события · хаб · файлы · пользователи · ограничение попыток входа · сессии · приглашения и управление пользователями (админ) · проекты: служебное · проекты · история · переименование, доступ, удаление, файл · команды · избранное · доступ по ссылке · комментарии · присутствие и события · командная строка
+
 Функции: `_now`, `HubError`, `Conflict`, `_norm_album`, `_layer_key_ok`, `_norm_meta`, `album_summary`, `split_project`, `join_sections`, `_check_sections`, `_clean_name`, `_clean_login`, `_check_password`, `_clean_client`, `_check_pid`, `_is_num`, `_clean_text`, `_clean_anchor`, `_hash_password`, `_color`, `Subscription`, `Hub`, `default_root`, `_read_password`, `main`
 
 ### `apps/grado2/ogd_all.py` — 879 стр.
@@ -49,9 +53,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2489 стр.
+### `apps/grado2/print_io.py` — 2498 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
+
+Разделы по порядку: Размеры листов, поля, перевод миллиметров (MapTransform) · Основа ЕГКО: операции рисования и их кэш на диске · Текст: кавычки, ширина, подбор кегля · Знаки на линиях и заливки (подтопление, ЛГР) · Геометрия подписей: пересечения, оси, выноски, препятствия · Подложка: плитки и защита от неполной выгрузки (TileGuard) · Карта листа — SketchMapFrame: слои, подписи без наложений, знаки ЛГР · Прочие рамки листа: ТЭП, слайд, фотосетка · Вывод в PDF: шрифты, тексты листа, render_pdf · PPTX: тайлы подложки по рамке карты, тяжёлые карты — растром
 
 Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `ops_cache_get`, `ops_cache_put`, `egko_ops`, `_egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `pptx_notes`, `render_pptx`, `render_preview_svg`
 
@@ -67,9 +73,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2627 стр.
+### `apps/grado2/server.py` — 2638 стр.
 
 ГРАДО 2: локальный сервер.
+
+Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · Handler: маршруты GET и POST · совместный режим (hub.py): вход по сессии, маршруты /api/hub · Запуск: версия кода, повторный запуск, сервер
 
 Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_in_ring`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `Handler`, `_bad`, `code_stamp`, `_probe`, `_running`, `_is_grado` и ещё 3
 
@@ -85,9 +93,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · шапка альбома: «№ КРТ», «Округ, район», «Адрес» заполняются сами из слоёв (T73, 05.10.2026). Чистые функции без обращения к карте: слои и проверка «внутри территории» передаёт sheets.js. Запуск проверок — tests/test_albummeta_js.py. Правило: введённое владельцем не затирается; сам заполненный текст помечен в meta.auto[поле] и обновляется при пересборке.
 
 
-### `apps/grado2/web/albums.js` — 1396 стр.
+### `apps/grado2/web/albums.js` — 1408 стр.
 
 ГРАДО 2 · альбомы по образцам владельца (26.09.2026): «План реализации ППТ КРТ» — по его шаблону PowerPoint (А3 альбомный, красная шапка; оформление листа — album_io.py) и «Градостроительная концепция» — по образцу «ГК Царицыно». Листы собираются той же сборкой, что раздел 1 (buildSection в sheets.js), со своим префиксом id. Состав листов — по «ГК Царицыно» (решение владельца 27.09.2026), оформление — шаблон ППТ КРТ.
+
+Разделы по порядку: округа и районы: подписи, карта административного деления · Листы 3–9: шапка ППТ КРТ, остальное — как в «ГК Царицыно» (решение владельца 27.09.2026) · состав листов: PPTKRT_C (по «ГК Царицыно») · подписи улиц, названий и ВРИ · виды разрешённого использования и классы землепользования (сущпол) · документы: ППТ, ПМТ, ГПЗУ, АГР — названия и группы · conceptSheet: сборка листа по его виду (ortho, district, use, gp, docs, pzz, ppt, gpzu, pa · железная дорога, соседние районы, документы по рамке
 
 Функции: `homeAdm`, `okrAbbr`, `okrugMainCalc`, `okrugMain`, `keepParts`, `simplifyAdm`, `admPanelSpec`, `albumExtra`, `MM`, `C_ROADS`, `C_STREETS`, `cSheet`, `W_`, `VRI_CLS`, `inNewMoscow`, `landUseOf`, `osmUseOf`, `SZZ_ORD`, `zoneGen`, `cornerReserve`, `zouitCode`, `bigRing`, `conceptDocs`, `docTitle`, `docLine`, `gpzuGroup`, `sharedRoads`, `dataFts`, `waterLabels`, `railStations`, `conceptStations`, `titleRu`, `namedPlaces`, `roadSource`, `districtRoadLabels`, `snapStations`, `yandexToponyms`, `conceptSheet`, `conceptRail`, `conceptDistricts`, `conceptWhy`, `buildAlbum`
 
@@ -101,6 +111,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
+Разделы по порядку: геометрия · карта (EPSG:3857, подложка OSM) · знаки: ЛГР (коды, цвета, штрих) и Генплан — из библиотек ядра · состояние проекта · данные территории · поиск над картой: адрес (OpenStreetMap) и кадастровый номер (НСПД); сервер — /api/search · ФГИС ТП: документы терпланирования, чей охват накрывает территорию → их слои · импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile — кнопкой или перетаскиванием на карту, ка · граф анализа (litegraph.js) · генератор посадки (локальная рамка, метры) · граф по умолчанию · T6: резерв участков ДОО, школы и поликлиники · результат графа на основной карте · эскиз · варианты · сохранённые варианты (T59) · плавающие окна и панели
+
 Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 139
 
 ### `apps/grado2/web/blocks.js` — 63 стр.
@@ -111,6 +123,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ### `apps/grado2/web/cad.js` — 1595 стр.
 
 ГРАДО 2 · черчение как в AutoCAD. Команды вызываются кнопкой на ленте или набором псевдонима (L, PL, C, A, REC, POL, PO, M, CO, RO, SC, MI, O, TR, EX, F, BR, J, X, E, DI, AA, BO) и Enter или пробелом в любой раскладке; Enter или пробел без команды повторяют последнюю. У курсора — поле динамического ввода: длина, длина<угол, @dx;dy, X;Y (МСК), буквы параметров команды ([З]амкнуть, [Р]адиус…). Режимы строки состояния, как у AutoCAD: ПРИВЯЗКА (F3, набор привязок), ОТСЛЕЖ (F11: наведите курсор на точку привязки, пока не появится «+», — дальше пунктирные линии выравнивания и продолжения), ПОЛЯР (F1…
+
+Разделы по порядку: режимы · слой предпросмотра · ручки выбранных объектов, как в AutoCAD: квадраты на вершинах, треугольники на серединах с · кандидаты привязки у курсора · объектное отслеживание · точка под курсором: привязка → отслеживание → ближайшая → орто · предпросмотр · подсказка у курсора и динамический ввод · запуск команд · запись в слои · общие части команд · команды · работа с вектором, как в QGIS: разрезать, объединить, вычесть, буфер, свойства, деление, п · лента и строка состояния
 
 Функции: `toM`, `saveST`, `fLine`, `fPoly`, `fPt`, `vertices`, `syncGrips`, `gripAt`, `chainsOf`, `inSweep`, `gather`, `acquireTick`, `acquire`, `parTick`, `trackLines`, `resolve`, `refresh`, `f2`, `tip`, `toEn`, `normNum`, `openInput`, `closeInput`, `autoc`, `typedNum`, `bad`, `submit`, `matchOpt`, `parsePoint`, `title`, `start`, `cancel`, `finish`, `MODK`, `plural`, `result`, `drawSummary`, `editSummary`, `downloadWarn`, `note`, `hist`, `showHist`, `toggleHist`, `showCmd`, `after`, `enter`, `syncButtons`, `toggle`, `targetFor`, `newFeature`, `copyFeat`, `addNew`, `edit`, `worldChains`, `xformGeom`, `xformCad`, `affineOf`, `ghosts`, `opt`, `optStr`, `selection`, `pickChain`, `replaced`, `piecesEdit`, `boundaries`, `CURKEY`, `annoLayer`, `def`, `closeOpt`, `contourAt`, `regionAt`, `regionIn`, `zoomAll`, `chainCmd`, `distFin`, `areaFin`, `terrFin`, `transformCmd`, `trimInfo`, `arrayGroup` и ещё 20
 
@@ -129,6 +143,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 ГРАДО 2 · ограничения для генерации (этап Э4 плана). Окно «Ограничения» строит из загруженных данных обычные слои группы «Ограничения»: ЗОУИТ и охранные зоны, отступ от красных линий, противопожарные разрывы до сохраняемых зданий, подзоны ПЗЗ без нового строительства, инсоляционный фронт существующих окон и солнечный потолок участка. Слои видны, стилизуются и выключаются как любые другие; узел графа «Ограничения» читает только ВКЛЮЧЁННЫЕ слои группы — выключил слой в дереве, и посадка его больше не учитывает (что видно на карте, то и учитывает генерация). Инсоляция — предпроектная оценка по ме…
 
+Разделы по порядку: расчёт · узел графа «Ограничения»: читает включённые слои группы · окно · проверка норм эскиза (этап Э5): после «Построить эскиз» или правки принятого слоя
+
 Функции: `fireGap`, `isResidential`, `isChildren`, `groundAt`, `ringMid`, `decisionOf`, `consLayer`, `clip`, `protectR`, `polyFeats`, `cleanTitle`, `roleFeats`, `nameOf`, `usedLine`, `computeConstraints`, `consExclude`, `consCeiling`, `NCons`, `ensureConsNode`, `renderCons`, `openRing`, `prismsOf`, `keptForCheck`, `sketchFromLayer`, `yieldUI`, `evalChunked`, `checkNorms`, `runCheck`, `ownInsolation`
 
 ### `apps/grado2/web/frames.js` — 193 стр.
@@ -145,6 +161,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 ГРАДО 2 · совместная работа: интерфейс (вход, проекты, доступ, комментарии, история, присутствие на карте). Работает только в совместном режиме (window.HUB_MODE ставит project.js после /api/health); в обычном ничего не показывает. Движок — web/collab.js (window.Collab); здесь только окна, шапка и наложения на карту.
 
+Разделы по порядку: общее · вход и регистрация · вход выполнен: шапка, движок, проект · вход по ссылке #join=… · шапка · окно «Совместные проекты» · окно «Доступ» · окно «Команды» · комментарии · история · пользователи и приглашения (администратор) · учётная запись · наложения на карту: метки комментариев и присутствие · присутствие: что отправляем · окна: открытие и подсказка для наблюдателя · запуск
+
 Функции: `C`, `lsGet`, `lsSet`, `myRole`, `canEdit`, `isOwner`, `q`, `plural`, `two`, `toMs`, `when`, `size`, `uname`, `initials`, `safeColor`, `ink`, `rgba`, `list`, `lyTitle`, `setText`, `hub`, `fail`, `typing`, `draw`, `armedIs`, `twoStep`, `setLmode`, `lock`, `showLogin`, `askLogin`, `submitLogin`, `guestLogin`, `sessionLost`, `enter`, `startPage`, `grabJoin`, `getJoin`, `clearJoin`, `doJoin`, `boot`, `openProject`, `closedProject`, `loadProjects`, `loadTeams`, `myTeam`, `teamOpts`, `fillNewTeam`, `refreshMeta`, `setSync`, `renderBar`, `renderAv`, `applyRole`, `menu`, `norm`, `teamName`, `projGroups`, `createProject`, `copyProject`, `el_copyName`, `wireProjects`, `linkUrl`, `linkBlock`, `loadLink`, `setLink`, `wireShare`, `wireTeams`, `uidIndex`, `findByUid`, `geomPoint`, `anchorPoint`, `anchorText`, `sortedComments`, `loadComments`, `cpath`, `flyTo`, `selectComment`, `startDraft`, `endDraft`, `setCMode`, `wireComments` и ещё 16
 
 ### `apps/grado2/web/insol.js` — 189 стр.
@@ -160,6 +178,8 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ### `apps/grado2/web/layers.js` — 1513 стр.
 
 ГРАДО 2 · слои проекта как в QGIS: дерево с порядком прорисовки (перетаскивание), видимость, оформление (единое / категории / диапазоны / правила / знаки ЛГР), подписи, таблица атрибутов. Строка инструментов как в AutoCAD: рисование в текущий слой, вершины, перенос, удаление, замеры; правка выгрузок с возвратом к исходной. Данные слоя живут в DATA[key].fc (WGS84) — их же читает граф анализа.
+
+Разделы по порядку: модель · оформление · дерево слоёв · дерево слоёв: клавиатура, правый щелчок, роли для чтения с экрана · реестр существующих зданий: решение по каждому зданию · группы · правая панель: оформление и объект · таблица атрибутов · выбор: щелчок, Shift+щелчок, рамка · строка инструментов · отмена и возврат: правки объектов, стили, возврат выгрузки · окно «Клавиши»: собирается из тех же таблиц, что и обработчики, поэтому не расходится с ни · пустой проект: с чего начать
 
 Функции: `ramp`, `okn`, `cleanStyle`, `ST`, `stDefaults`, `tidyLayers`, `defaultStyle`, `lyr`, `grp`, `shown`, `isBig`, `geomOf`, `hiddenField`, `fieldsOfKey`, `ensureLayer`, `kindOf`, `glSwitchRes`, `denToRes`, `outOfScale`, `olLayersFor`, `attachLayer`, `rebuildLayer`, `mainOl`, `applyOrder`, `normGroups`, `newUid`, `writeFC`, `bindFC`, `setLayerData`, `syncFromSource`, `isNum`, `numOf`, `catValues`, `numFields`, `assignCats`, `breaks`, `testRule`, `symbolOf`, `rgba`, `css`, `upright`, `labelDeg`, `floorsDenOf`, `labelStyle`, `symAll`, `glStyle`, `frameless`, `ruleCount`, `styleFor`, `portalStyles`, `portalStylesOnce`, `labelAngles`, `restyle`, `symHTML`, `legendItems`, `rowHTML`, `sheetKeys`, `sheetView`, `sheetEditable`, `mapSheets`, `sheetTreeHTML`, `showSheet`, `sheetSet`, `sheetMenu`, `setBySheet`, `normQ`, `renderTree0`, `tree`, `rowId`, `rowById`, `focusRow`, `renderTree`, `decorateTree`, `dropRow`, `makeRegister`, `setDecision`, `newGroup`, `groupMenu`, `renameGroup`, `closeMenu` и ещё 81
 
@@ -208,6 +228,8 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 ГРАДО 2 · проект: сохранение в «Документы/ГРАДО 2» (файл .grado2 = JSON), открытие, новый проект, автосохранение с восстановлением после перезагрузки страницы. В файле: граница, слои (порядок, стиль, видимость), их данные с исходной выгрузкой, граф, вид карты.
 
+Разделы по порядку: автосохранение: после каждой правки, с паузой 2 с · окно «Проекты» · старт: восстановить последнюю работу
+
 Функции: `migrate`, `markDirty`, `syncProjTitle`, `collectProject`, `jsonOf`, `projectJSON`, `clearProject`, `safeObj`, `safeId`, `applyProject`, `hubSave`, `saveProject`, `openProject`, `newProject`, `confirmLoss`, `autosave`, `fmtDate`, `fmtSize`, `albumLine`, `renderProjects`, `openProjects`
 
 ### `apps/grado2/web/railstations.js` — 66 стр.
@@ -240,9 +262,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · состав слоёв листа по ролям: sheet.layout (T86a, 06.10.2026, слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание»). Чистые функции без карты: слои проекта и шаблон передаёт sheets.js / albums.js. layout = { groups: [{ id, title, role, items: [{ key, on, style?, only?, src? }] }] }. Порядок групп и элементов — порядок рисования (как у sheet.keys). style — оформление слоя на этом листе поверх стиля слоя проекта; only — отбор объектов { field, values }; src — очередь источников (только у дорог: кто первый, кто запасной). Переходный релиз: keys, …
 
 
-### `apps/grado2/web/sheets.js` — 1159 стр.
+### `apps/grado2/web/sheets.js` — 1178 стр.
 
 ГРАДО 2 · листы и альбом (этап Э6). Лист = вид карты (или текущая карта) в рамке А3/А1 с масштабом, легендой вида, таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте.
+
+Разделы по порядку: альбом и листы: состояние, размеры, рамка листа · описание листа для печати: sheetSpec и шапка альбома · подписи: функции форматирования по видам слоёв · таблицы и особые листы: Генплан, документы, радиусы, ситуационный план · ситуационный план (раздел «Существующее положение») · Листы по шаблону: как лист собран и как он обновляется (T55) · шаблоны листов: сборка по шаблону, обновление, ручная правка · сборка раздела: загрузка слоёв и создание листов · просмотр и выгрузка альбома (PDF, PPTX, файл) · импорт и экспорт альбома файлом · окно «Листы и альбом»: строки, меню, фотографии, рамки на карте
 
 Функции: `isPaper`, `paperMM`, `isSlide`, `frameMM`, `newSheet`, `autoScale`, `viewLayers`, `areaBox`, `sheetCenter`, `schemeSetting`, `isScheme`, `schemeScale`, `schemeCover`, `sheetScale`, `tepRows`, `sheetSpec`, `albumSpec`, `monthYear`, `metaVals`, `autoMeta`, `noAddrWhy`, `syncAddrWhy`, `codes`, `wrapLab`, `gpNum`, `gpIdx`, `gpFund`, `coverFrameBox`, `fitBox`, `shortRight`, `parcelsSheet`, `cut`, `genplanTable`, `dateRu`, `docsSheet`, `radiiSheet`, `udsLayer`, `buildUds`, `ensureAdmin`, `situationExtras`, `buildSituation`, `buildSituation0`, `cloneJ`, `sameJ`, `tplBase`, `makeTplSheet`, `makeSitSheet`, `carryHand`, `tplKey`, `tplSet`, `tplMake`, `whyOf`, `readFit`, `lostPhrase`, `notReadyWhy`, `tplAdopt`, `tplRefresh`, `tplSig`, `tplAfter`, `tplAuto`, `tplSchedule`, `tplManual`, `planUnits`, `buildSection`, `buildSection0`, `frameBox`, `previewSheet`, `setBuilding`, `albumFile`, `emptyInFrame`, `exportIssues`, `albumFile0`, `dlDir`, `satFile`, `stampAlbum`, `stampText`, `shWord`, `albumStatText`, `syncAlbumStat`, `isViewer` и ещё 44
 
@@ -357,6 +381,8 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ### `core/connectors/grado_connectors/yandex_vmap.py` — 584 стр.
 
 Яндекс Карты: векторные тайлы vmap3 (обратная разработка, сверено 23.09.2026) — только стандартная библиотека.
+
+Разделы по порядку: protobuf без схемы · EPSG:3395 ↔ WGS84 · площадь и длина на местности · склейка кусков по стыкам тайлов (без shapely)
 
 Функции: `_varint`, `_parse`, `_varints`, `_zz`, `_value`, `decode`, `lonlat_to_3395`, `lat_from_3395`, `to_lonlat`, `scale_3395`, `tile_range`, `tile_to_3395`, `_ring_area`, `_poly_area_m2`, `_line_len_m`, `_closed`, `_ll`, `_to_grid`, `_grid_to_3395`, `_sarea`, `_seam`, `_clean`, `_inside`, `_dissolve`, `_join`, `features_from_tiles`, `_ssl_context`, `YandexVmap`
 
@@ -586,11 +612,13 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `build`
 
-### `tools/wiki.py` — 371 стр.
+### `tools/wiki.py` — 389 стр.
 
 Вики проекта ГРАДО 2 (docs/wiki/) — собирается из файлов репозитория, без сети и без кэша данных.
 
-Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
+Разделы по порядку: источники данных (server.py SOURCES) · листы альбомов (albums.js выполняется в Node; sheets.js SEC1 — разбор текста) · маршруты сервера · модули: файл, строки, первый комментарий, функции · правила оформления (label-rules.md) · тесты · команда: очередь и последние циклы · журнал: последние записи · оглавление
+
+Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
 ### `tools/deploy-server.sh` — 52 стр.
 

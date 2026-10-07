@@ -207,6 +207,21 @@ def _lead_comment(text, py, sh=False):
     return " ".join(lines)
 
 
+BANNER = re.compile(r"^\s*(?:#|//|/\*)\s*[-=─━]{5,}\s*(.*?)\s*(?:[-=─━]{3,}\s*)?(?:\*/)?\s*$")
+
+
+def _sections(text):
+    """Названия разделов файла — строки вида «# ---------- Название ----------» (в JS — /* ---------- … */)."""
+    out = []
+    for ln in text.splitlines():
+        m = BANNER.match(ln)
+        if m:
+            name = m.group(1).strip(" -=*/")
+            if name:
+                out.append(name[:90])
+    return out
+
+
 def _functions(text, py, sh=False):
     names = []
     if sh:
@@ -247,9 +262,12 @@ def modules():
             kind = f.suffix
             lead = _lead_comment(t, kind == ".py", kind == ".sh")
             fn = _functions(t, kind == ".py", kind == ".sh") if kind != ".mjs" else _functions(t, False)
+            sec = _sections(t)
             out.append(f"\n### `{rel(f)}` — {t.count(chr(10))} стр.\n\n")
             if lead:
                 out.append(lead[:600] + ("…" if len(lead) > 600 else "") + "\n\n")
+            if len(sec) >= 3:
+                out.append("Разделы по порядку: " + " · ".join(sec[:40]) + "\n\n")
             if fn:
                 out.append("Функции: " + ", ".join(f"`{n}`" for n in fn[:80]) + (f" и ещё {len(fn) - 80}" if len(fn) > 80 else "") + "\n")
     return "".join(out)

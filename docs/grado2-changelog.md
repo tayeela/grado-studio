@@ -15,6 +15,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   `docs/standards/albums/layout-qa.md` (checklist before «готово»), prompt template of the design audit, `tools/prune-merged-branches.sh`.
   Found on the way and fixed: the tests of `core/compute`, `geom`, `layout`, `model`, `reactive`, `render` (232 tests) were run by nobody — `tools/gate.sh` has a `core` step
   now and CI runs them; `album-rules.md` described a Genplan sheet of the sit.-plan series that is not in the album; `sources.md` listed the wrong keys under SIT_FILTER.
+  The five biggest files (`server.py`, `print_io.py`, `album_io.py`, `sheets.js`, `albums.js`) got section banners `# ---------- Название ----------` (comments only);
+  `modules.md` lists the sections of every file in order.
   New hand-written wiki pages `conventions.md` (how to read and write code and docs) and `howto.md` (step-by-step: add a data source, a route, an album sheet, a label rule, a page module, a test).
 - **2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.**
   Облако не достаёт `nspd.gov.ru` (портал рвёт соединение с иностранных адресов), поэтому коннектор умеет ходить

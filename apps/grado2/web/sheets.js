@@ -2,6 +2,8 @@
    таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов
    считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его
    собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте. */
+
+/* ---------- альбом и листы: состояние, размеры, рамка листа ---------- */
 const ALBUM = { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] };
 const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000, 100000, 200000, 500000, 1000000];
 const FRAME_MM = { A3: [275, 224], A1: [636, 521] };   // размер карты на листе по ГОСТ (как layout() в print_io.py)
@@ -71,6 +73,8 @@ function tepRows(all) {
     .concat(t.constantsChanged?.length ? [["Нормативы изменены вручную", String(t.constantsChanged.length)]] : [])      // правки в окне «Нормативы расчёта» видны и на листе
     .concat((all ? ms : ms.slice(0, 30)).map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + m.unit]));
 }
+
+/* ---------- описание листа для печати: sheetSpec и шапка альбома ---------- */
 function sheetSpec(sheet) {
   if (sheet.frozen) { const { id, frozen, view, ...ready } = sheet; return ready; }   // готовая вёрстка из файла: слои уже внутри листа (импорт «Из файла…»)
   if (sheet.adm) return admPanelSpec(sheet);                               // схемы административного деления альбомов (albums.js)
@@ -185,6 +189,8 @@ const wrapLab = (parts, n) => parts.reduce((ls, p) => { const l = ls[ls.length -
 const gpNum = p => p.n != null && p.n !== "" ? String(+p.n || p.n) : p.number_fz ? String(+String(p.number_fz).slice(-3) || p.number_fz) : "";
 const gpIdx = p => p.fztip || (p.fz_type != null && p.fz_type !== "" ? String(p.fz_type) : "");
 const gpFund = p => p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : p.interval_fo && p.interval_fo !== "*" ? String(p.interval_fo).replace(/\s*-\s*/, "–") : "—";
+
+/* ---------- подписи: функции форматирования по видам слоёв ---------- */
 const LABEL_FN = {
   // ПЗЗ, территориальные зоны: коды ВРИ, как на схеме 120-ПП (полные названия — в карточке объекта)
   vri: f => { const c = codes(f.get("ВРИ (коды)") || f.get("ВРИ")); return c.length ? wrapLab(c.length > 24 ? c.slice(0, 23).concat("…") : c, 26) : null; },
@@ -234,6 +240,8 @@ function parcelsSheet(layers) {
     rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь уточнённая, м²"] || +f.properties["Площадь участка, м²"] || Math.round(m2(f))), shortRight(f.properties["Вид права"] || f.properties["Форма собственности"] || "—")]) } };   // длинное печать ещё и ужмёт
 }
 const cut = (t, n) => { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+
+/* ---------- таблицы и особые листы: Генплан, документы, радиусы, ситуационный план ---------- */
 // Генплан: функциональные зоны на территории — номер, индекс, наименование, суммарный поэтажный фонд
 function genplanTable(out) {
   const z = ["gisogd.func_zones", "gisogd.func_zones_tinao"].flatMap(k => DATA[k]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => { const x = inter(f, TERR); return x && m2(x) > 20; }));
@@ -372,6 +380,8 @@ function situationExtras(sheet, out, frameLL) {
   out.kind = "situation"; out.legend = [];
 }
 const buildSituation = () => track(() => buildSituation0());
+
+/* ---------- ситуационный план (раздел «Существующее положение») ---------- */
 async function buildSituation0(mode) {
   if (!TERR) { toast("Выберите файл границы (DXF, DWG, GeoJSON, KML, Shapefile) — лист строится вокруг неё."); return window.pickBoundary(buildSituation0); }
   if (typeof mode !== "string" && ALBUM.sheets.some(s => !String(s.id).startsWith("sit_"))) return askBuild("Ситуационный план A4", 1, m => track(() => buildSituation0(m)));
@@ -417,6 +427,8 @@ async function buildSituation0(mode) {
    «шаблонная» часть листа (слои, оформление, рамки в мм, состав) — её и пересобирает tplRefresh тем же кодом, что
    «Собрать» (makeTplSheet), а рукой правленное (название, рамка и масштаб, снимки, надписи «Макета», свои тексты)
    переносит carryHand. Листы «готовая вёрстка» (frozen, импорт из файла) не трогаются никогда. */
+
+/* ---------- шаблоны листов: сборка по шаблону, обновление, ручная правка ---------- */
 const TPL_SETS = { sec1_: { list: () => SEC1, size: () => ALBUM.meta.slide || "P" } };   // albums.js добавляет pptkrt_
 const TPL_COND = ["title", "legend", "tep", "size", "keys", "scale", "center", "note", "orient", "view", "kind"];
 const TPL_LEGACY = ["title", "scale", "center", "note", "orient", "size"];      // у листа без sheet.tpl рукой правленным считается то, что отличается от шаблона
@@ -576,6 +588,8 @@ window.albumFetchPlan = (cover, list = ALBUM.sheets) => SheetLayout.fetchPlan(pl
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 const buildSection = (...a) => track(() => buildSection0(...a));
+
+/* ---------- сборка раздела: загрузка слоёв и создание листов ---------- */
 async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»", mode) {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
   // в альбоме есть листы не этого набора (из файла, другой набор, свои): набор не вставляется молча рядом — выбор в строке, как при импорте
@@ -680,6 +694,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }
 
+/* ---------- просмотр и выгрузка альбома (PDF, PPTX, файл) ---------- */
 async function previewSheet(i) {
   if (ALBUM.sheets.length && i !== selIdx()) { SHI = i; renderSheets(); }
   busy(true);
@@ -789,6 +804,8 @@ const IMPORT_WARN = 25 * 2**20, PROJECT_CAP = 400 * 2**20;   // предел т�
 const isViewer = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
 const mb = n => Math.max(1, Math.round(n / 2**20));
 const isReadySheet = s => Array.isArray(s?.layers) && s.layers.every(l => Array.isArray(l?.features)) || !!s?.panels?.some?.(p => Array.isArray(p?.layers));
+
+/* ---------- импорт и экспорт альбома файлом ---------- */
 function albumOfJson(j) {
   if (!j || typeof j !== "object") throw new Error("это не альбом и не проект ГРАДО 2");
   if (j.format === "grado2") { const p = window.migrateProject ? window.migrateProject(j) : j; if (!p.album) throw new Error("в проекте нет альбома"); return p.album; }   // формат проекта — по миграциям project.js
@@ -929,6 +946,8 @@ const scaleText = s => ["tep", "title", "photos"].includes(s.kind) ? "" : s.pane
 // строка штампа — обычный заголовок раздела «Штамп» и мелким серым то, что заполнено (не «Штамп: ПП», похожее на сообщение об ошибке)
 const stampSum = () => { const m = ALBUM.meta, p = [m.object, m.code, m.stage].filter(Boolean); return `<b>Штамп</b><em>${p.length ? esc(p.join(" · ")) : "не заполнен"}</em>`; };
 const mi = (id, ic, t, h, title) => `<button role="menuitem" id="${id}" title="${esc(title || h)}"><i data-lucide="${ic}"></i><span class="mi"><b>${t}</b><small>${h}</small></span></button>`;
+
+/* ---------- окно «Листы и альбом»: строки, меню, фотографии, рамки на карте ---------- */
 function rowInner(s, i, on) {
   const ic = (cond, name, tip) => cond ? `<span title="${tip}"><i data-lucide="${name}"></i></span>` : "";
   const sc = scaleText(s);
