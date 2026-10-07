@@ -3,7 +3,7 @@
 Loaded into every turn and every subagent: keep it short, details live in the wiki.
 
 - **Orientation:** `INDEX.md` (map of the repository) → `docs/wiki/files.md` (question → file, places on the owner's Mac, branches) →
-  `docs/wiki/INDEX.md`. Every folder has a `README.md`; nested `CLAUDE.md` files (`docs/`, `apps/grado2/`, `core/`) load when you work there.
+  `docs/wiki/INDEX.md`. Every top-level folder and every `docs/` shelf has a `README.md` (`docs/` has `INDEX.md`); nested `CLAUDE.md` files (`docs/`, `apps/grado2/`, `core/`) load when you work there.
   Read wiki pages, not big files whole. The wiki is generated from the code (`tools/wiki.py`: pre-commit hook and CI `wiki.yml` on `team/t60`
   and `main`) and mirrored to the private GitHub repo `tayeela/grado-wiki` (`tools/wiki_publish.sh`).
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules

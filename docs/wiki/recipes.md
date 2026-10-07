@@ -14,11 +14,11 @@
 
 ## Вики
 Страницы с пометкой «генерируется» собирает `tools/wiki.py` из кода; `sheets.md` — из самого `albums.js`, выполненного в Node
-(`tools/wiki_albums.mjs`). Вручную пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `album-rules.md`.
+(`tools/wiki_albums.mjs`). Вручную пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `howto.md`, `album-rules.md`.
 Обновляется само, в три слоя:
 1. хук `pre-commit` (`tools/git-hooks`, включается `git config core.hooksPath tools/git-hooks`; в облачных сессиях — сам) пересобирает вики перед коммитом;
 2. GitHub Actions `docs.yml` на каждом PR проверяет, что вики совпадает с кодом (`python3 tools/wiki.py --check`), а `wiki.yml` после пуша в
-   `team/t60` и `main` пересобирает её и коммитит «wiki: пересборка из кода»;
+   `team/t60` и `main` пересобирает её и коммитит «wiki: пересборка из кода [skip ci]»;
 3. после пуша в `team/t60` `wiki.yml` кладёт копию в приватный репозиторий `tayeela/grado-wiki` (нужен секрет `WIKI_TOKEN`, один раз —
    `.github/workflows/README.md`). Вручную или из облачной сессии: `tools/wiki_publish.sh`.
 Вики устарела → `python3 tools/wiki.py`. Навигация сломана (ссылка, путь, файл без заголовка) → `python3 tools/docs_check.py`.

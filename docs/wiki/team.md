@@ -54,7 +54,7 @@
 
 - 07.10.2026, наведение порядка в репозитории (задача #50, PR #52; по просьбе владельца): влиты в `team/t60` PR #46 (альбом по замечаниям 07.10, #45 #47 #48 #44), #36 (релей НСПД)
   и #49 (версия 0.99.45, устойчивые T27 и T61, #40). `docs/` разложен по полкам (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`, карта `docs/INDEX.md`), 65 файлов
-  перенесены `git mv`; новые `README.md`, `INDEX.md`, `AGENTS.md`, `CLAUDE.md` и README в каждой папке; `tools/docs_check.py` в gate и CI; вики сама пересобирается (`wiki.yml`) и
+  перенесены `git mv`; новые `README.md`, `INDEX.md`, `AGENTS.md`, `CLAUDE.md` и README в каждой папке верхнего уровня и на каждой полке docs; `tools/docs_check.py` в gate и CI; вики сама пересобирается (`wiki.yml`) и
   берёт состав листов из `albums.js`; тесты остального ядра в gate и CI. Проверка: `tools/gate.sh` зелёный, CI. Не сделано без вашего действия: секрет `WIKI_TOKEN` (вики в `tayeela/grado-wiki`
   всё ещё версии 0.99.27 до первой выкладки), удаление 21 влитой ветки (облачной сессии запрещено; команда `tools/prune-merged-branches.sh --yes` на Mac), решение по PR #34. Аудит оформления
   презентации по Гольяново (огрехи и правила) — отдельной задачей GitHub, итог в `docs/standards/albums/layout-qa.md`.

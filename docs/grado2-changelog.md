@@ -5,7 +5,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
 - **2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.** `docs/` now has
   shelves (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`; map — `docs/INDEX.md`), 65 files moved with `git mv`
   (closed studio, executed plans, old audits, the old board and owner notes → `docs/archive/`), all references fixed. Root: new `README.md`
-  (ГРАДО 2, no longer the closed studio), `INDEX.md` (map of the repository), `AGENTS.md`, updated `CLAUDE.md`; every folder has a `README.md`,
+  (ГРАДО 2, no longer the closed studio), `INDEX.md` (map of the repository), `AGENTS.md`, updated `CLAUDE.md`; every top-level folder and every docs shelf has a `README.md`,
   nested `CLAUDE.md` in `docs/`, `apps/grado2/`, `core/`. `tools/docs_check.py` (in `tools/gate.sh` and the new CI `docs.yml`) checks links, paths,
   shelves, the map of the root and a header comment in every code file (32 test files and `packaging/build_icon.sh` got one). Wiki: `sheets.md` is built from
   `albums.js` run in Node (`tools/wiki_albums.mjs`; it was stale: 11 sheets of the album in the real order), `modules.md` covers all core packages and tools,

@@ -7,7 +7,7 @@
 - **Owner's words** → an issue with label `замечание владельца`, the words quoted verbatim with the date (skill
   `owner-remark`); `docs/archive/team/OWNER.md` is the archive before 06.10. Questions to the owner → issue `ждёт владельца` with А/Б/В.
 - **Work** → branch `task/<issue>-<slug>` from `team/t60`, PR into `team/t60` with `Closes #<issue>`; CI
-  (`.github/workflows/grado2-release.yml`) runs the tests on every PR. Progress notes → comments on the issue
+  (`.github/workflows/grado2-release.yml`) runs the tests on every PR that touches `apps/grado2`, `core` or `packaging/grado2*` (the check `docs.yml` runs on every PR). Progress notes → comments on the issue
   (`gh issue comment`), not `/tmp` files; `/tmp/grado-team/` is scratch only.
 - **Review** → a fresh reviewer agent comments on the PR (`gh pr review --comment`), only correctness and the owner's
   requirements. Album changes: `tools/album_check.py` report pasted into the PR, crops uploaded to the issue's
@@ -16,7 +16,7 @@
   (`gh pr merge --merge`), then in the main checkout `git pull --ff-only` — the post-merge hook deploys the site.
 - **Deliverables** (album PDF/PPTX) → a GitHub release `album-<project>-<date>` (pre-release), plus the owner's
   delivery folder and the chat. **Baselines** for album_check → release `album-baseline` (`gol.zip`, `bez.zip`).
-- **Wiki** → private repo `tayeela/grado-wiki`, published on every commit that changes `docs/wiki`.
+- **Wiki** → private repo `tayeela/grado-wiki`: the hook `post-commit` on the Mac for a commit in `main` or `team/t60` that changes `docs/wiki`, and the workflow `wiki.yml` after a push to `team/t60` (needs the secret `WIKI_TOKEN`).
 - Local folders (worktrees, `/tmp`, `~/.grado2`) are working copies and caches; nothing lives only there.
 
 Since 06.10.2026 (Anthropic best practices, audit 06.10): one task per session — after a task is accepted and committed,

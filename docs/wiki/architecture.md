@@ -11,7 +11,7 @@
   работа на сайте grado.tailink.tech. Маршруты — api.md.
 - **Коннекторы** `core/connectors/grado_connectors` — ГИС ОГД (`gisogd_api.py`: слой целиком в кэш, срез по рамке),
   ЕГКО (та же схема, карта base2), НСПД, OSM (Overpass), Яндекс (векторные плитки `yandex_vmap.py`), ФГИС ТП. Кэш на
-  диске `~/.grado2/cache/<портал>`. Повторы и паузы — только здесь. Источники по ключам — sources.md.
+  диске `~/.grado2/cache/<портал>`. Повторы и паузы живут здесь и в выгрузках сервера (`server.py`, `sat_io.py`, `ogd_all.py`). Источники по ключам — sources.md.
 - **Страница** `apps/grado2/web` — OpenLayers + turf, без сборки. `app.js` (карта, территория, поиск, данные),
   `layers.js` (слои, стили, «Свойства»), `cad.js` (черчение), `sheets.js` (листы, альбом, выгрузки), `albums.js`
   (альбом ППТ КРТ: шаблоны листов `PPTKRT_C` и `PPTKRT_D`, порядок выдачи `PPTKRT_ORDER`, выбор источников — `conceptSheet`), малые модули с чистыми функциями (`labelfmt.js`, `roadsrc.js`,
@@ -40,6 +40,6 @@
 
 - Сайт grado.tailink.tech — та же программа в совместном режиме (`server.py --hub`) на сервере `msk` (службы `grado` и `grado-guest`);
   выкладывает его только Mac владельца: `tools/deploy-server.sh` (запускают хуки git после слияния в `main`).
-- GitHub Actions (`.github/workflows/README.md`): `grado2-release.yml` — модульные и браузерные тесты на каждом PR и сборка установщиков;
+- GitHub Actions (`.github/workflows/README.md`): `grado2-release.yml` — модульные и браузерные тесты на PR, которые меняют `apps/grado2`, `core` или `packaging/grado2*`, и сборка установщиков по тегу и вручную;
   `docs.yml` — навигация документов и свежесть вики; `wiki.yml` — пересборка вики и копия в `tayeela/grado-wiki`.
 - Где что читать дальше: карта папок — `INDEX.md`, карта документов — `docs/INDEX.md`, соглашения по коду — `conventions.md`.
