@@ -290,7 +290,7 @@ class Yandex(unittest.TestCase):
     def test_sources_and_limit(self):
         keys = [k for k in S.SOURCES if k.startswith("yandex.")]
         self.assertEqual(set(keys), {"yandex.hd_roads", "yandex.buildings", "yandex.roads", "yandex.road_edges", "yandex.landuse",
-                                     "yandex.green", "yandex.water", "yandex.parking", "yandex.transport", "yandex.rail", "yandex.stations"})
+                                     "yandex.green", "yandex.water", "yandex.parking", "yandex.transport", "yandex.rail", "yandex.stations", "yandex.road_labels", "yandex.rail_stations"})   # топонимы Яндекса (#47)
         self.assertTrue(all(S.SOURCES[k][2].endswith("(Яндекс)") for k in keys))
         self.assertEqual(S.SOURCES["yandex.green"][1], ["vegetation", "vegetation_planned", "hd_road_vegetation"])
         self.assertFalse({"poi", "poi_navi"} & {n for k in keys for n in S.SOURCES[k][1]}, "POI и организации не выгружаются")
@@ -372,7 +372,7 @@ class SituationPlanSources(unittest.TestCase):
 
     def test_coarse_tiles_one_thread_main_tracks_only(self):
         keys = [k for k in S.SOURCES if k.startswith("sit.")]
-        self.assertEqual(set(keys), {"sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail"})
+        self.assertEqual(set(keys), {"sit.green", "sit.water", "sit.roads_hd", "sit.roads", "sit.buildings", "sit.rail", "sit.stations", "sit.road_labels", "sit.places"})   # станции, подписи улиц и названия территорий карты района (#47)
         self.assertTrue(all(S.SOURCES[k][0] == "yandex_sit" for k in keys))
         calls = []
 

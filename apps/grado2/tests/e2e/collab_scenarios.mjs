@@ -96,6 +96,8 @@ try {
   await A.fill("#hubLg", "anna"); await A.fill("#hubPw", ADMIN_PW); await A.clickEl("#hubGo");
   await A.until(`return $("hubLogin").hidden && HubUI.state.me?.login==="anna"`, "вход A");
   await A.until(`return !$("wHubProjects").hidden`, "окно проектов");
+  // список подгружается после открытия окна: ждём текст, а не проверяем в тот же миг (гонка в CI, 07.10.2026)
+  for (let k = 0; k < 40 && !await A.ev(`return /Совместных проектов пока нет/.test($("hubProjList").textContent)`); k++) await new Promise(r => setTimeout(r, 250));
   check(await A.ev(`return /Совместных проектов пока нет/.test($("hubProjList").textContent)`), "A: список проектов пуст, подсказка как начать");
   await A.fill("#hubNewName", "Проверка"); await A.clickEl("#hubNew");
   await A.until(`return Collab.pid && $("hubProjName").textContent==="Проверка" && $("wHubProjects").hidden`, "проект «Проверка» создан и открыт");

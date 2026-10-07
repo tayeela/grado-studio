@@ -9,7 +9,7 @@
 
 | № | лист | concept / kind | основа | ключи слоёв |
 |---|---|---|---|---|
-| 3 | Ортофотоплан | ortho | sat | `yandex.hd_roads`, `osm.landuse`, `osm.roads`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
+| 3 | Ортофотоплан | ortho | sat | `yandex.hd_roads`, `yandex.rail`, `osm.landuse`, `osm.roads`, `yandex.road_labels`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
 | 4 | Материалы фотофиксации | photos / photos | белая |  |
 | 5 | Схема существующего использования территорий с границами зон с особыми условиями использования территорий | use | белая | `nspd.parcels`, `gisogd.zouit`, `gisogd.szz`, `gisogd.vodookhr`, `gisogd.red_lines`, `gisogd.airfield` |
 | 6 | Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон» | gp | белая | `gisogd.func_zones`, `gisogd.func_zones_tinao` |
@@ -21,7 +21,7 @@
 
 | № | лист | concept / kind | основа | ключи слоёв |
 |---|---|---|---|---|
-| 10 | Фрагмент карты административно-планировочной структуры города Москвы | district | sat | `osm.roads`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
+| 10 | Фрагмент карты административно-планировочной структуры города Москвы | district | sat | `osm.roads`, `sit.road_labels`, `sit.places`, `gisogd.admin`, `egko.water`, `egko.water_labels` |
 
 ## Раздел «Существующее положение» (sheets.js SEC1)
 
@@ -39,4 +39,4 @@
 | 10 | Схема об утверждённой и разрабатываемой документации | — | белая | `calc.uds_osm`, `egko.buildings`, `gisogd.gpzu`, `gisogd.krt`, `gisogd.ppt` |
 | 11 | Объекты социальной инфраструктуры и радиусы обслуживания | — | белая | `egko.buildings`, `osm.social` |
 
-Ветки conceptSheet по виду листа: `district`, `docs`, `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `pzz`, `use`.
+Ветки conceptSheet по виду листа: `district`, `docs`, `gp`, `gpzu`, `ortho`, `parcels`, `photos`, `ppt`, `pzz`, `pzzsub`, `use`.

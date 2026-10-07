@@ -2,6 +2,35 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 (task/45, #48): documentation sheet split in two.** Sheet «Схема … документацией по планировке
+  территории» now shows only ППТ and ПМТ; ГПЗУ moved to a new template sheet 14 «Схема с отображением границ территорий с
+  выданными градостроительными планами земельных участков» (same light base, numbers and list), placed right after it
+  (`PPTKRT_ORDER` = 0, 1, 9, 2, 3, 4, 8, 10, 13, 12, 5). Lists, legend and «не готов» follow the sheet's own layers. Tests T91, T92.
+- **2026-10-07, ГРАДО 2 (task/45, #47, evening remarks): toponyms from Yandex and sheet fixes.** Street labels — Yandex `road_label`
+  lines (`yandex.road_labels`, z18; `sit.road_labels`, z16 on the district map; `road_label`/`place_label` no longer skipped by
+  yandex_vmap), «МКАД», «МСД» (СВХ not labelled), Yandex «Наримановская ул.» → «ул. Наримановская»; OSM labels only as fallback
+  (district map: OSM city streets whose name Yandex lacks). District map: one label per street on the middle of its longest straight
+  run (turn ≤ 10° from the run start, along the road), no small water labels, «Национальный парк «Лосиный остров»» from the Yandex
+  poi `vegetation-natpark` (`sit.places`), district names in one or two lines and mostly inside their district or dropped. Railway
+  station labels snapped to the nearest railway line (≤ 500 m); Yandex station points used where they exist. Ortho: railway line.
+  Photo numbers within 4 mm of their arrow. Land use: SZZ thinner, calculated SZZ black dash-dot, non-residential zones «… вида».
+  Documentation: hatch step 3 mm, at least two numbered documents of each kind (ПМТ list too), 7 in all. ПЗЗ: square schemes, black
+  thin zone and subzone lines, labels wherever they fit, subzone parameters in three lines, КРТ blue hatch on both, only street
+  names, common legend under the left scheme and parameters under the right. Genplan: forecast fund for the developed territory
+  (zone fund × territory share of the zone area), legend only zones visible ≥ 25 mm² and not white. «разрабатываемая территория»
+  instead of «территория рассмотрения». Print: label halo colour (`lhc`) passed on in all label paths.
+- **2026-10-07, ГРАДО 2 (task/45, #45, #47): album ППТ КРТ by the owner's remarks of 07.10.** Sheet order and set by the owner
+  (`PPTKRT_ORDER` in `TPL_SETS.pptkrt_.order`, ids and `tpl.i` stay by template so photos and edits of old projects keep their
+  sheets): title, location, district map, ortho, photos, land use, land users, documentation, ПЗЗ, Генплан; no «ППТ и ПМТ», «ГПЗУ и
+  АГР», second Генплан. Scheme frame by the owner's outline (`ALBUM.meta.area`): every template map sheet except location and district
+  map covers it (centre — outline centre, scale from the series). Ortho and district map look like the owner's samples: white veil outside
+  the territory's district (`distMask`), district names in capitals, callout «Проектируемая территория – N га» in a magenta box; district
+  map — names without «район» with a thin black outline, exact scale (district whole, fills the sheet), thin district border. Land use:
+  OSM `residential` in old Moscow → apartment housing (not individual), legend «производственного вида». Documentation sheet: no АГР and
+  КРТ, Сводный план lines (СПРИТ) under the hatches with their legend. ПЗЗ — two schemes on one sheet (`twin`; album_io
+  `TwinCaptionFrame`): zones with ВРИ codes and subzones (`gisogd.pzz_sub`) with density / height / coverage in three lines.
+  Photo sheet: 8 Yandex panorama frames from the owner's links, the link is stored with each photo (`photo.link`);
+  `tools/panorama_shot.mjs` takes `CHROME` (cloud). Rules: album-rules § 5, § 9; label-rules.
 - **2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).**
   New concept `docs` in `PPTKRT_D` (between the district map and the Genplan, `sit: true`, `fit: "cover"`): ППТ, ПМТ, ГПЗУ (with АГР
   as the second line of its item) and КРТ on one light base by the analogue ДПТ «Профсоюзная» — buildings light grey without outline,

@@ -43,6 +43,8 @@ OSM_SETS = {
                 'relation["landuse"]',
                 'relation["leisure"~"^(park|garden|pitch|playground)$"]',
                 'relation["natural"~"^(wood|scrub|grassland|heath)$"]'],
+    # природные территории (национальный парк «Лосиный Остров», заказники) — только для названий на карте района (#47)
+    "nature": ['relation["boundary"="national_park"]["name"]', 'relation["leisure"="nature_reserve"]["name"]', 'way["leisure"="nature_reserve"]["name"]'],
     "water": ['way["natural"="water"]',
               'way["water"]',
               'way["waterway"~"^(riverbank|dock|canal)$"]',
@@ -110,6 +112,8 @@ _KEEP_TAGS = ("highway", "name", "building", "building:levels", "landuse",
 def _which_set(tags):
     if tags.get("boundary") == "administrative" and "admin_level" in tags:
         return "boundaries"
+    if tags.get("boundary") == "national_park" or tags.get("leisure") == "nature_reserve":
+        return "nature"
     if "building" in tags:
         return "buildings"
     if "highway" in tags:
