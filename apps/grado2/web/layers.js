@@ -105,6 +105,7 @@ function defaultStyle(key, fc) {
     "egko.addresses": { fill: "#6b6b6b", stroke: "#ffffff", width: .5, opacity: 1 },
     "egko.paths": { fill: "#b09b7a", width: .8 },
     "egko.roads": { fill: "#e4e1da", stroke: "#b7b2a8", width: .5, opacity: .9 },
+    "egko.bridges": { fill: "#e4e1da", stroke: "#b7b2a8", width: .5, opacity: .9 },     // мосты — тем же тоном, что дороги: без них дорога рвётся
     "egko.water": { fill: "#b9d6ec", stroke: "#6fa6e6", width: .8, opacity: 1 },
     "egko.green": { fill: "#cfe3b4", stroke: "#8fb573", width: .4, opacity: .7 },
     // Яндекс — подложка для анализа и эскиза, спокойные тона; куски тайлов склеены по стыкам, контур без швов

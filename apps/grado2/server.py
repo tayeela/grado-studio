@@ -127,6 +127,8 @@ ADMIN_FILE, ADMIN_REV = ROOT / "docs" / "standards" / "admin" / "moscow-adm.geoj
 SOURCES["egko.buildings"] = ("egko", {"virtual6": "действующее", "virtual15": "строящееся", "virtual16": "разрушенное",
                                       "virtual17": "нулевой цикл (фундамент)"}, "Здания (ЕГКО)")
 SOURCES["egko.roads"] = ("egko", {"dorogi_pol": None}, "Дороги (ЕГКО)")
+# мосты и путепроводы — отдельный слой картоосновы: в «Дорогах» (dorogi_pol) на их месте дыры, у реки и развязки дорога рвётся
+SOURCES["egko.bridges"] = ("egko", {"bridge": None}, "Мосты (ЕГКО)")
 SOURCES["egko.paths"] = ("egko", {"tropinki": None}, "Пешеходные дороги (ЕГКО)")
 SOURCES["egko.green"] = ("egko", {"gazons": "газон", "forest": "растительность"}, "Газоны и растительность (ЕГКО)")
 # тонкие реки и ручьи — линиями: по ним ставятся подписи узких рек (подпись на русле, владелец 30.09.2026)

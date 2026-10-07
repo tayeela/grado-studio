@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.35: new source `egko.bridges` («Мосты (ЕГКО)»).** Owner: the ЕГКО base has no bridges, so roads
+  have holes. The roads layer `dorogi_pol` is cut at bridges and interchanges; the portal keeps them in the separate layer
+  `bridge`. Loadable like other ЕГКО layers, default canvas style = roads, role «Дороги» in «Слои и листы». Album sheets are
+  not changed (they still draw ЕГКО roads without bridges): adding the layer there needs an album_check pass, owner's call.
 - **2026-10-07, ГРАДО 2 v0.99.34: sheet flag `plain` — restrictions scheme on the ЕГКО base.** Owner: one A3 sheet for a single
   parcel, ЕГКО base, ЛГР + СЗЗ + ЗОУИТ + СПРИТ lines of ГИС ОГД, no planning documents. A concept-`use` sheet with `plain: true`
   draws the same restriction lines and legend groups as sheet 5 but without the land-use fill (OSM/parcels/Voronoi) and

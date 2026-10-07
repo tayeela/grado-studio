@@ -13,7 +13,7 @@
     { role: "zouit", title: "ЗОУИТ", keys: ["nspd.zouit", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.airfield"] },
     { role: "redlines", title: "Красные линии", keys: ["gisogd.red_lines"] },
     { role: "buildings", title: "Здания", keys: ["egko.buildings"] },
-    { role: "roads", title: "Дороги", keys: ["yandex.hd_roads", "egko.roads"] },
+    { role: "roads", title: "Дороги", keys: ["yandex.hd_roads", "egko.roads", "egko.bridges"] },
     { role: "rail", title: "Рельс и станции", keys: ["yandex.rail", "yandex.stations"] },
     { role: "water", title: "Вода", keys: ["egko.water"] },
     { role: "names", title: "Названия улиц и мест", keys: ["osm.landuse", "osm.roads", "egko.water_labels", "egko.place_labels", "egko.addresses"] },

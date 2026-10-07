@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, ГРАДО 2 v0.99.35: new source `egko.bridges` («Мосты (ЕГКО)»).
 - 2026-10-07, ГРАДО 2 v0.99.34: sheet flag `plain` — restrictions scheme on the ЕГКО base.
 - 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
 - 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).
 - 2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).
 - 2026-10-06, ГРАДО 2 v0.99.13: legend only from what is drawn (T85a), river labels independent of sheet order (T85b).
-- 2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.
