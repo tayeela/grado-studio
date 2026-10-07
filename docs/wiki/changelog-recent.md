@@ -2,9 +2,11 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
-- 2026-10-07, ГРАДО 2 (task/45, #48): documentation sheet split in two.
-- 2026-10-07, ГРАДО 2 (task/45, #47, evening remarks): toponyms from Yandex and sheet fixes.
-- 2026-10-07, ГРАДО 2 (task/45, #45, #47): album ППТ КРТ by the owner's remarks of 07.10.
+- 2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.
+- 2026-10-07, tests (#40): two browser steps no longer depend on timing.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#48): documentation sheet split in two.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#47, evening remarks): toponyms from Yandex and sheet fixes.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#45, #47): album ППТ КРТ by the owner's remarks of 07.10.
 - 2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).
 - 2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).
 - 2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).
@@ -20,5 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
 - 2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.
 - 2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.
-- 2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.
-- 2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.

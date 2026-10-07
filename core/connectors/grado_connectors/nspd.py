@@ -14,6 +14,11 @@ nspd.gov.ru при «поиске в области», без авторизац
      "categories": [{"id": N}]}          ← именно объекты {"id": ...}
 Ответ — та же FeatureCollection, что перехватывал мост, поэтому
 нормализация переиспользует NspdCapture.
+
+Релей (когда НСПД недоступен с места запуска, например из облака): задайте
+GRADO_NSPD_BASE=https://<домен релея> и GRADO_NSPD_RELAY_TOKEN=<токен> — запросы
+пойдут на релей в РФ, а он — на nspd.gov.ru. Токен уходит только на релей.
+Описание — tools/nspd_relay/README.md.
 """
 
 import hashlib
@@ -101,8 +106,33 @@ class NspdCapture(Connector):
 
 # --- прямая выгрузка по экстенту (без браузерного моста) --------------------
 
-INTERSECTS_URL = ("https://nspd.gov.ru/api/geoportal/v1/intersects"
-                  "?typeIntersect=fullObject")
+NSPD_BASE = "https://nspd.gov.ru"
+INTERSECTS_PATH = "/api/geoportal/v1/intersects?typeIntersect=fullObject"
+INTERSECTS_URL = NSPD_BASE + INTERSECTS_PATH      # адрес по умолчанию (без релея)
+RELAY_TOKEN_HEADER = "X-Grado-Relay-Token"
+
+
+def _base_url():
+    """Базовый адрес геопортала: GRADO_NSPD_BASE (релей) или сам НСПД."""
+    raw = (os.environ.get("GRADO_NSPD_BASE") or "").strip().rstrip("/")
+    if not raw:
+        return NSPD_BASE
+    parsed = urllib.parse.urlsplit(raw)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.path or parsed.query:
+        raise ConnectorError("GRADO_NSPD_BASE must look like https://host (https only, no path)")
+    return raw
+
+
+def _relay_headers(base):
+    """Токен релея — только если базовый адрес не сам НСПД (токен не должен уйти на nspd.gov.ru)."""
+    token = (os.environ.get("GRADO_NSPD_RELAY_TOKEN") or "").strip()
+    if token and base != NSPD_BASE:
+        return {RELAY_TOKEN_HEADER: token}
+    return {}
+
+
+def _intersects_url():
+    return _base_url() + INTERSECTS_PATH
 
 # Категории геопортала НСПД (проверены живыми intersects-запросами 07.2026).
 NSPD_CATEGORIES = {
@@ -121,11 +151,11 @@ _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) grado-studio/0.1"
 
 _CERT_HELP = (
     "НСПД: сертификат nspd.gov.ru не прошёл проверку — корневой сертификат "
-    "НУЦ Минцифры не установлен. Скачайте russian_trusted_root_ca_pem.crt и "
-    "russian_trusted_sub_ca_pem.crt с gu-st.ru/content/Other/doc/ и положите "
-    "их в папку ~/.grado2/ca/ (либо укажите файл PEM в переменной "
-    "GRADO_NSPD_CA). Проверка сертификата отключается только явно: "
-    "GRADO_NSPD_INSECURE=1.")
+    "НУЦ Минцифры не установлен. Скачайте russian_trusted_root_ca.cer и "
+    "russian_trusted_sub_ca.cer с gu-st.ru/content/Other/doc/ и положите "
+    "их в папку ~/.grado2/ca/ (либо укажите файл в переменной "
+    "GRADO_NSPD_CA). Подойдут .cer, .crt и .pem. Проверка сертификата "
+    "отключается только явно: GRADO_NSPD_INSECURE=1.")
 
 _insecure_warned = False
 
@@ -139,7 +169,7 @@ def _extra_ca_files():
     for d in (Path.home() / ".grado2" / "ca", Path(__file__).parent / "certs"):
         try:
             files.extend(sorted(p for p in d.iterdir()
-                                if p.suffix.lower() in (".crt", ".pem")))
+                                if p.suffix.lower() in (".crt", ".pem", ".cer")))
         except OSError:
             pass
     return files
@@ -157,7 +187,11 @@ def _ssl_context():
     # его корни из файлов (битые и нечитаемые пропускаем молча).
     for f in _extra_ca_files():
         try:
-            ctx.load_verify_locations(cafile=str(f))
+            raw = f.read_bytes()
+            if b"-----BEGIN" in raw[:4096]:
+                ctx.load_verify_locations(cadata=raw.decode("ascii", "ignore"))
+            else:                                  # .cer от Минцифры — обычно DER
+                ctx.load_verify_locations(cadata=ssl.DER_cert_to_PEM_cert(raw))
         except (ssl.SSLError, OSError, ValueError):
             pass
     return ctx
@@ -195,9 +229,10 @@ class NspdDirect(Connector):
 
     def _http_post(self, url, body):
         data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers={
-            "User-Agent": _UA, "Content-Type": "application/json",
-            "Referer": "https://nspd.gov.ru/map"})
+        headers = {"User-Agent": _UA, "Content-Type": "application/json",
+                   "Referer": "https://nspd.gov.ru/map"}
+        headers.update(_relay_headers(_base_url()))
+        req = urllib.request.Request(url, data=data, headers=headers)
         ctx = _ssl_context()
         last = None
         for attempt in range(3):
@@ -251,7 +286,7 @@ class NspdDirect(Connector):
                 time.sleep(0.4)   # бережём лимит частоты геопортала
             try:
                 data = self.transport(
-                    INTERSECTS_URL,
+                    _intersects_url(),
                     {"geom": geom, "categories": [{"id": int(cid)}]})
             except ConnectorError as e:
                 notes.append(f"{NSPD_CATEGORIES.get(int(cid), cid)}: {e}")
@@ -276,7 +311,8 @@ class NspdDirect(Connector):
 # Ответ — GeoJSON EPSG:3857 с геометрией и атрибутами; дальше путь тот же,
 # что у выгрузки по области (NspdCapture): options → opt_*, координаты → WGS84.
 
-SEARCH_URL = "https://nspd.gov.ru/api/geoportal/v2/search/geoportal"
+SEARCH_PATH = "/api/geoportal/v2/search/geoportal"
+SEARCH_URL = NSPD_BASE + SEARCH_PATH              # адрес по умолчанию (без релея)
 CAD_RE = re.compile(r"^[0-9]{2}:[0-9]{2}:[0-9]{6,7}:[0-9]+$")
 SEARCH_MAX = 20
 
@@ -286,10 +322,11 @@ class _Retryable(ConnectorError):
 
 
 def _http_get(url):
-    req = urllib.request.Request(url, headers={
-        "User-Agent": _UA, "Accept": "application/json",
-        "Referer": "https://nspd.gov.ru/map?thematic=PKK",
-        "Origin": "https://nspd.gov.ru"})
+    headers = {"User-Agent": _UA, "Accept": "application/json",
+               "Referer": "https://nspd.gov.ru/map?thematic=PKK",
+               "Origin": "https://nspd.gov.ru"}
+    headers.update(_relay_headers(_base_url()))
+    req = urllib.request.Request(url, headers=headers)
     ctx = _ssl_context()
     for _ in range(2):                       # второй заход — только для явного GRADO_NSPD_INSECURE=1
         try:
@@ -354,7 +391,7 @@ def search_cadastral(numbers, transport=None, pause=0.5, sleep=time.sleep, error
     for i, num in enumerate(nums):
         if i:
             sleep(pause)
-        url = SEARCH_URL + "?" + urllib.parse.urlencode({"query": num, "thematicSearchId": 1})
+        url = _base_url() + SEARCH_PATH + "?" + urllib.parse.urlencode({"query": num, "thematicSearchId": 1})
         data = None
         for attempt in range(3):
             try:
