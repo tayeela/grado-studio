@@ -1459,4 +1459,58 @@ export default async p => {
       const c = [SheetLayout.carryManual(fa, a), SheetLayout.carryManual(fb, b)]; return r.ok && c[0] && c[1] && !fa.keys.includes("egko.water") && fb.keys.includes("egko.water")`), "T86: ручной перенос роли переживает пересборку (на 7 осталась, на 5 нет)");
     await p.ev(`ALBUM.sheets = window.__t86keep; winOpen("wSheetLayers", false); return 1`);
   });
+  // T88: масштаб схем проекта (листы 5–9 альбома ППТ КРТ) — «Листы и альбом» → «Штамп» → «Масштаб схем»: по умолчанию авто; один масштаб всем пяти
+  // схемам, а ортофотоплан и фотофиксация не меняются; территория не помещается — крупнее; масштаб строки листа главнее; лежит в проекте и не
+  // переходит в другой (владелец 07.10.2026: «масштаб для каждого проекта должен быть настраиваемым», #31)
+  await p.group("t88", async () => {
+    const shots = process.env.T88_SHOTS;
+    const r = JSON.parse(await p.ev(`
+      const prevT = TERR ? JSON.stringify(TERR.geometry) : "", keep = ALBUM.sheets.splice(0), out = {}, wait = ms => new Promise(r => setTimeout(r, ms));
+      const sq = (x, s) => [[x, x], [x + s, x], [x + s, x + s], [x, x + s]];
+      const mk = c => ({ ...cloneJ(PPTKRT_C.find(x => x.concept === c)), id: "t88" + c, size: "PA3" });
+      const sc = () => Object.fromEntries(["ortho", "photos", "use", "gp", "ppt", "gpzu", "parcels"].map(c => [c, Math.round(sheetScale(mk(c)))]));
+      const norm = t => String(t || "").replace(/\\s/g, "");
+      try {
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } });   // 130 × 130 м: как участок КРТ 3229
+        await wait(300);
+        delete ALBUM.meta.schemeScale; out.auto = sc();
+        ALBUM.meta.schemeScale = 5000; out.s5000 = sc();
+        const hand = mk("use"); hand.scale = 3000; out.hand = Math.round(sheetScale(hand));
+        ALBUM.meta.schemeScale = 1234; out.junk = sc().use;
+        // территория 690 × 660 м: при 1:1000 не помещается — крупнее, как у «авто»
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 650), sq(30000, 650)[0]].map(w => MSK.toWgs(w))] } }); await wait(300);
+        delete ALBUM.meta.schemeScale; out.bigAuto = sc().use; ALBUM.meta.schemeScale = 1000; out.bigSet = sc().use;
+        setTerritory({ geometry: { type: "Polygon", coordinates: [[...sq(30000, 130), sq(30000, 130)[0]].map(w => MSK.toWgs(w))] } }); await wait(300);
+        // окно: строка «Масштаб схем» под штампом; в свойствах листа «как в проекте», в списке листов масштаб
+        delete ALBUM.meta.schemeScale; ALBUM.sheets.push(mk("use"), mk("ortho")); winOpen("wSheets", true); STAMP_OPEN = false; renderSheets(); await wait(250);
+        const det = () => norm(document.querySelector('#sheetsBody select[data-sk="scale"] option[value="0"]')?.textContent), rowSc = i => norm(document.querySelector('#sheetsBody .shrow[data-sh="' + i + '"] .sc')?.textContent);
+        const sel = $("shSchemeScale"), box = sel?.getBoundingClientRect(), win = $("sheetsBody").getBoundingClientRect();
+        out.ui0 = [sel?.value, [...(sel?.options || [])].map(o => o.textContent).join("|"), det(), rowSc(0), rowSc(1), !!box && box.top >= win.top && box.bottom <= win.bottom];
+        pickSheet(1); await wait(200); out.ui0.push(det()); pickSheet(0); await wait(200);
+        const sel2 = $("shSchemeScale"); sel2.value = "2000"; sel2.dispatchEvent(new Event("change", { bubbles: true })); await wait(250);   // окно перерисовано выбором листа — список берём заново
+        const t1 = $("toast")?.textContent || "";
+        out.ui1 = [ALBUM.meta.schemeScale, $("shSchemeScale").value, det(), rowSc(0), rowSc(1), sheetScale(ALBUM.sheets[0]), sheetScale(ALBUM.sheets[1]), t1];
+        pickSheet(1); await wait(200); out.ui1.push(det()); pickSheet(0); await wait(200);
+        out.shot = 1;
+        return JSON.stringify(out);
+      } finally { window.__t88 = { prevT, keep }; }`));
+    if (shots) await p.shot(`${shots}/t88-stamp.png`);
+    check(JSON.stringify([r.auto.use, r.auto.gp, r.auto.ppt, r.auto.gpzu, r.auto.parcels]) === "[1000,1000,1000,1000,1000]" && r.auto.ortho === 2000 && r.auto.photos === 2000,
+      `T88: без настройки схемы 5–9 — авто по территории (1:1000 для участка 130 × 130 м), ортофотоплан и фотофиксация 1:2000 (${JSON.stringify(r.auto)})`);
+    check(JSON.stringify([r.s5000.use, r.s5000.gp, r.s5000.ppt, r.s5000.gpzu, r.s5000.parcels]) === "[5000,5000,5000,5000,5000]" && r.s5000.ortho === 2000 && r.s5000.photos === 2000,
+      `T88: настройка 1:5000 — все пять схем в 1:5000, ортофотоплан и фотофиксация не меняются (${JSON.stringify(r.s5000)})`);
+    check(r.hand === 3000, `T88: масштаб, выбранный в строке листа, главнее настройки проекта (${r.hand})`);
+    check(r.junk === r.auto.use, `T88: значение не из ряда масштабов в проекте игнорируется — авто (${r.junk})`);
+    check(r.bigSet === r.bigAuto && r.bigAuto > 1000, `T88: территория не помещается в выбранный масштаб — масштаб крупнее по ряду, как у «авто» (${r.bigSet} = ${r.bigAuto})`);
+    check(r.ui0[0] === "0" && /^авто по территории\|1:500\|1:1\s?000/.test(r.ui0[1]) && r.ui0[5] && r.ui0[2] === "авто1:1000" && r.ui0[3] === "·1:1000" && r.ui0[4] === "·1:2000" && r.ui0[6] === "авто1:2000",
+      `T88: под «Штампом» видна строка «Масштаб схем 5–9» (стоит на «авто по территории»); в свойствах схемы «авто 1:1 000», ортофотоплана «авто 1:2 000» (${r.ui0.join(" / ")})`);
+    check(r.ui1[0] === 2000 && r.ui1[1] === "2000" && r.ui1[2] === "каквпроекте1:2000" && r.ui1[3] === "·1:2000" && r.ui1[5] === 2000,
+      `T88: выбор 1:2000 записан в проект: у схемы в свойствах «как в проекте 1:2 000», в списке 1:2 000 (${r.ui1.slice(0, 6).join(" / ")})`);
+    check(r.ui1[6] === 2000 && r.ui1[8] === "авто1:2000", `T88: ортофотоплан настройку не берёт — остался «авто» (${r.ui1[6]} / ${r.ui1[8]})`);
+    check(/Масштаб схем 1:2.000/.test(r.ui1[7]) && /Собрать/.test(r.ui1[7]), `T88: после выбора — подсказка, что данные за прежней рамкой докачает «Собрать» (${r.ui1[7]})`);
+    // в файле проекта и не переходит в другой проект
+    const rt = JSON.parse(await p.ev(`const j = JSON.parse(JSON.stringify(collectProject())); const inFile = j.album?.meta?.schemeScale; clearProject(); const cleared = ALBUM.meta.schemeScale; applyProject(j); await new Promise(r => setTimeout(r, 500)); return JSON.stringify({ inFile, cleared: cleared ?? null, back: ALBUM.meta.schemeScale });`));
+    check(rt.inFile === 2000 && rt.cleared === null && rt.back === 2000, `T88: настройка лежит в файле проекта, при очистке проекта сбрасывается, при открытии возвращается (${JSON.stringify(rt)})`);
+    await p.ev(`const k = window.__t88; ALBUM.sheets.splice(0, ALBUM.sheets.length, ...k.keep); delete ALBUM.meta.schemeScale; winOpen("wSheets", false); selectTerr(false); if (k.prevT) setTerritory({ geometry: JSON.parse(k.prevT) }); UNDO.length = 0; REDO.length = 0; return 1`);
+  });
 };

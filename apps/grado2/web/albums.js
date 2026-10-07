@@ -208,7 +208,7 @@ const PPTKRT_C = [
     keys: [...C_BODY, ...C_TAIL],
     styles: { ...C_NAMES, ...C_STREETS("#ffffff"), ...C_WATER, ...C_WATER_VIS, "yandex.hd_roads": { mode: "single", fill: "#ffffff", stroke: "#a0a0a0", width: 1, opacity: 1 },
       "egko.buildings": C_PLAN["egko.buildings"] } },
-  { ...C_BASE, concept: "use", minScale: 2000, title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
+  { ...C_BASE, concept: "use", title: "Схема существующего использования территорий с границами зон с особыми условиями использования территорий",
     // линии Сводного плана и ЗОУИТ ГИС ОГД — типами линий REDLN97 (оформление задаёт conceptSheet); проезжая часть — серая
     // заливка C_ROAD, как на листах 6–8, территории автодорог (участки под дорогами) — белые, как в «ГК Царицыно»
     keys: [...C_BODY, "nspd.parcels", "gisogd.zouit", "gisogd.szz", "gisogd.vodookhr", "gisogd.red_lines", "gisogd.airfield", ...C_TAIL],
@@ -216,7 +216,7 @@ const PPTKRT_C = [
       "egko.water": { mode: "single", fill: "#336699", stroke: "#336699", width: 0, opacity: 1, label: "" },   // вода — класс 22 шаблона
       "gisogd.airfield": { mode: "single", fill: "#000000", stroke: "#000000", width: 0, opacity: 0, label: "" },   // только надпись под легендой
       ...Object.fromEntries(["gisogd.zouit", "gisogd.szz", "gisogd.vodookhr"].map(k => [k, { mode: "single", fill: "#ff0000", stroke: "#ff0000", width: 1, opacity: 0, label: "" }])) } },
-  { ...C_BASE, concept: "gp", minScale: 2000, legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
+  { ...C_BASE, concept: "gp", legend: true, title: "Генеральный план города Москвы. Фрагмент схемы «Карта функциональных зон»",
     keys: ["gisogd.func_zones", "gisogd.func_zones_tinao", ...C_BODY, ...C_TAIL], extra: "genplan",
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "egko.water": { mode: "single", fill: "#00689d", stroke: "#00689d", width: 0, opacity: 1, label: "" },   // вода — как в «Хатминки»
       ...C_ROADS(C_ROAD), "egko.buildings": { mode: "single", fill: "#ffffff", stroke: "#5f5f73", width: 1, opacity: 1 } },
@@ -224,17 +224,17 @@ const PPTKRT_C = [
     labelMM: { ...C_BASE.labelMM, "gisogd.func_zones": 5.2, "gisogd.func_zones_tinao": 5.2 },   // на треть мельче; индекс ×1,15 (правило 11)
     labelStyle: { ...C_BASE.labelStyle, "gisogd.func_zones": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" },
       "gisogd.func_zones_tinao": { lfs: ["sans-bold", "sans-bold"], lcol: "#141414", lh: .4, lhc: "#ffffff" } } },
-  { ...C_BASE, concept: "ppt", minScale: 2000, title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
+  { ...C_BASE, concept: "ppt", title: "Схема обеспеченности территории разработанной документацией ППТ и ПМТ",
     // документы — над всеми слоями карты (дорогами и застройкой), под границей территории (владелец 01.10.2026)
     keys: [...C_BODY, "gisogd.ppt", "gisogd.pmt", ...C_TAIL],
     styles: { ...C_VEC, "gisogd.pmt": { mode: "single", fill: "#00d000", stroke: "#00d000", width: 4, opacity: 0 } } },
-  { ...C_BASE, concept: "gpzu", minScale: 2000, title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР",
+  { ...C_BASE, concept: "gpzu", title: "Схема обеспеченности территории разработанной документацией ГПЗУ и АГР",
     // документы — над всеми слоями карты, АГР выше ГПЗУ; под границей территории (владелец 01.10.2026)
     keys: [...C_BODY, "gisogd.gpzu", "gisogd.agr", ...C_TAIL],
     styles: { ...C_VEC,
       "gisogd.gpzu": { mode: "single", fill: "#7b7bf2", stroke: "#7b7bf2", hatch: true, hatchPat: "45", width: 1, opacity: 1 },
       "gisogd.agr": { mode: "single", fill: "#ff3b3b", stroke: "#ff3b3b", hatch: true, hatchPat: "135", width: 1, opacity: 1 } } },
-  { ...C_BASE, concept: "parcels", minScale: 2000, title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat",
+  { ...C_BASE, concept: "parcels", title: "Схема существующих землепользователей разрабатываемой территории", basemap: "sat",
     keys: ["nspd.parcels", "osm.landuse", "osm.roads", "egko.water", "egko.water_labels"],
     styles: { ...C_NAMES, ...C_STREETS(), ...C_WATER, "nspd.parcels": { mode: "single", fill: "#c9c9ff", stroke: "#c9c9ff", width: 1, opacity: 0, label: "" } } },
 ].map(cSheet);

@@ -2,12 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-07, ГРАДО 2 v0.99.34: sheets 5–9 of the ППТ КРТ album at 1:2000 (#31).** Owner: «Переделай листы 5-9 в 1:2000»
-  (КРТ 3229 Гольяново gave 1:1000 there). Template sheets get `minScale: 2000` (albums.js `PPTKRT_C`: use, gp, ppt, gpzu,
-  parcels); `sheetScale` (sheets.js) = the manual `scale`, else the automatic one but never larger than 1:2000, so a
-  territory that does not fit at 1:2000 still gets a larger scale and its border is not cut (rule 3.2). Sheets 3–4 unchanged.
-  Rules: label-rules «Общие» 8, album-rules, slide-layout-rules 3.3. Existing albums take the new scale on «Собрать»;
-  a hand-set sheet scale is kept.
+- **2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).** Owner: «Переделай листы 5-9 в 1:2000» (КРТ 3229
+  Гольяново gave 1:1000 there), then «масштаб для каждого проекта должен быть настраиваемым». A line «Масштаб схем 5–9» under
+  «Штамп» in «Листы и альбом»: «авто по территории» (default, as before) or 1:500 … 1:10 000; it is `ALBUM.meta.schemeScale`
+  (in the project file, reset when another project opens). `sheetScale` (sheets.js) for the five scheme sheets (`concept` use, gp,
+  ppt, gpzu, parcels; sheets 3–4 do not take it) = the scale chosen in the sheet's properties, else the project's one but never
+  larger than the territory needs (a territory that does not fit gets a larger scale, border not cut, rule 3.2); a value outside the
+  scale row is ignored. Because the build plan (`planUnits`) reads the same `sheetScale`, «Собрать» loads the data for the new
+  frames; the sheet's properties show «как в проекте 1:2 000» instead of «авто». Rules: label-rules «Общие» 8, album-rules,
+  slide-layout-rules 3.3. Test: E2E group `t88` (scales on a 130 m and a 650 m territory, the window, the project round-trip).
 - **2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.** Owner: «открой доступ к программе
   без пароля и логина» → chose «гостевой вход». Server env `GRADO2_GUEST=1`: `/api/hub/me` without a session signs in as the
   built-in account `guest` («Гость», no known password, not admin; `hub.guest_session`), so the site opens at once; the guest
