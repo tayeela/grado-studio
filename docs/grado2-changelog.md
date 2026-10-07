@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.37: road labels sit on the road axis, on the straightest stretch, one size.** Owner (sketch): labels
+  of roads must be closer to the axis, on straighter stretches, most of the text on the road itself; the size may shrink but then
+  for all such labels. «Надписи УДС» (`gisogd.uds_labels`) are now placed by the corridor of the УДС red lines (linelineco ±1): the
+  axis is the middle between the nearest red lines across the label angle, the label takes the straightest stretch of the axis within
+  150 m of its point (deviation ≤ 8 m), shortened to «Пр. проезд № N» where the full name does not lie on a bent axis; no corridor
+  nearby (a field) — no label. One size for all road labels of the sheet (3,8 → 3,4 → 3,0 → 2,6 mm), ЕГКО street names follow it.
+  Only sheets that carry `gisogd.uds_labels` / `egko.road_labels` are affected (not the album).
 - **2026-10-07, ГРАДО 2 v0.99.36: street, road and river names on the ЕГКО base.** Owner on the one-off sheet of 77:17:0110504:6308:
   street labels not parallel to the street, «р. Сетунь» above the river, Киевское шоссе / проезд № 7085 not labelled. New sources
   `egko.road_labels` (ЕГКО «Подписи к дорогам»: lines along which the base itself names a road) and `gisogd.uds_labels` (Сводный

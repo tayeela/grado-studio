@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, ГРАДО 2 v0.99.37: road labels sit on the road axis, on the straightest stretch, one size.
 - 2026-10-07, ГРАДО 2 v0.99.36: street, road and river names on the ЕГКО base.
 - 2026-10-07, ГРАДО 2 v0.99.35: new source `egko.bridges` («Мосты (ЕГКО)»).
 - 2026-10-07, ГРАДО 2 v0.99.34: sheet flag `plain` — restrictions scheme on the ЕГКО base.
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.17: manual edits, return to template, working copy, own layers (T86d).
 - 2026-10-06, ГРАДО 2 v0.99.16: drag and drop in «Слои и листы» (T86c).
 - 2026-10-06, ГРАДО 2 v0.99.15: window «Слои и листы» (T86b).
-- 2026-10-06, ГРАДО 2 v0.99.14: sheet layout by roles (T86a, invisible step).
