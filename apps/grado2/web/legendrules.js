@@ -3,8 +3,9 @@
    Слово владельца 06.10.2026: «всё должно быть не по предустановленному скрипту, а максимально гибко, но при этом под цели сбора». */
 (function (root) {
   // has: { ppt, pmt, gpzu, agr } — есть ли документ этого вида в рамке листа
-  const BASE = { ppt: { ppt: "ППТ", pmt: "ПМТ" }, gpzu: { gpzu: "ГПЗУ", agr: "АГР" } };
-  const KINDS = { ppt: ["ppt", "pmt"], gpzu: ["gpzu", "agr"] };
+  const BASE = { ppt: { ppt: "ППТ", pmt: "ПМТ" }, gpzu: { gpzu: "ГПЗУ", agr: "АГР" }, docs: { ppt: "ППТ", pmt: "ПМТ", gpzu: "ГПЗУ", agr: "АГР" } };
+  const KINDS = { ppt: ["ppt", "pmt"], gpzu: ["gpzu", "agr"], docs: ["ppt", "pmt", "gpzu", "agr"] };
+  const joinRu = a => a.length > 1 ? a.slice(0, -1).join(", ") + " и " + a.at(-1) : a[0];   // «А», «А и Б», «А, Б и В»
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // виды документов листа, которые есть в рамке, в порядке знаков легенды
   const docKinds = (concept, has = {}) => (KINDS[concept] || []).filter(k => has[k]);
@@ -19,7 +20,7 @@
   // почему лист «не готов»: в рамке нет ни одного документа его вида
   function docWhy(concept, has = {}) {
     const all = KINDS[concept]; if (!all || docKinds(concept, has).length) return "";
-    return "в рамке нет " + all.map(k => BASE[concept][k]).join(" и ");
+    return "в рамке нет " + joinRu(all.map(k => BASE[concept][k]));
   }
   // группы легенды без знаков не печатаются (заголовок без пунктов)
   const pruneGroups = groups => (groups || []).filter(g => g && (g.items || []).length);
