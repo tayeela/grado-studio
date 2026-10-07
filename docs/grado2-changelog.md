@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.32: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.**
+  Облако не достаёт `nspd.gov.ru` (портал рвёт соединение с иностранных адресов), поэтому коннектор умеет ходить
+  через релей на российском сервере: `GRADO_NSPD_BASE` (вместо `https://nspd.gov.ru`) и `GRADO_NSPD_RELAY_TOKEN`
+  (заголовок `X-Grado-Relay-Token`; токен уходит только на релей, на сам НСПД не отправляется). Без переменных
+  поведение прежнее. Релей — Caddy на msk, конфиг и установка в `tools/nspd_relay/`; он пропускает только GET/POST на
+  `/api/geoportal/*` с токеном, проверка сертификата НСПД по корням Минцифры включена. Заодно исправлена подсказка
+  `_CERT_HELP` (актуальные имена `russian_trusted_root_ca.cer` / `russian_trusted_sub_ca.cer`), а `~/.grado2/ca/`
+  принимает `.cer` и в DER, и в PEM. Тесты: `core/connectors/tests/test_nspd_relay.py`.
 - **2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).** Owner: «используй
   код этой программы для нашего редактора листов — вёрстка» (https://github.com/storytold/designcraft, Rust, MIT). Rust
   cannot be linked in (no new dependencies), so its alignment pass (`crates/tools/src/snap.rs`: pass_align, offer_box,

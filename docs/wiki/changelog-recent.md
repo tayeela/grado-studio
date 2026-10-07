@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-07, ГРАДО 2 v0.99.32: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.
 - 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
 - 2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.
 - 2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.
@@ -21,4 +22,3 @@
 - 2026-10-06, ГРАДО 2 v0.99.12: ЕГКО road polygons on vector sheets, cleaned up.
 - 2026-10-06, ГРАДО 2 v0.99.11: station names always red and always placed.
 - 2026-10-06, ГРАДО 2 v0.99.10: metro, МЦК and МЦД stations with icons; nested quotes.
-- 2026-10-05, ГРАДО 2 v0.99.8: check before export; sturdier Yandex satellite; roads where Yandex has none.

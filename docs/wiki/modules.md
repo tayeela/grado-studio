@@ -323,11 +323,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_HttpsOnlyRedirect`, `open_url`, `read_capped`
 
-### `core/connectors/grado_connectors/nspd.py` — 396 стр.
+### `core/connectors/grado_connectors/nspd.py` — 433 стр.
 
 Коннектор НСПД (Росреестр): захват моста + прямая выгрузка по экстенту.
 
-Функции: `_flatten_options`, `_geom_sig`, `NspdCapture`, `_extra_ca_files`, `_ssl_context`, `_ssl_context_unverified`, `_warn_insecure`, `_short`, `NspdDirect`, `_Retryable`, `_http_get`, `normalize_cadastral`, `_search_features`, `search_cadastral`
+Функции: `_flatten_options`, `_geom_sig`, `NspdCapture`, `_base_url`, `_relay_headers`, `_intersects_url`, `_extra_ca_files`, `_ssl_context`, `_ssl_context_unverified`, `_warn_insecure`, `_short`, `NspdDirect`, `_Retryable`, `_http_get`, `normalize_cadastral`, `_search_features`, `search_cadastral`
 
 ### `core/connectors/grado_connectors/osm.py` — 434 стр.
 

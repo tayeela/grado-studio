@@ -1,0 +1,51 @@
+# Релей к НСПД (nspd.gov.ru) для облачных сессий, у которых нет российского выхода.
+# Пример блока для Caddy 2.x на российском сервере. Секретов здесь нет: токен лежит в отдельном файле.
+# Замените relay.example.ru на домен релея и пути к сертификату на свои.
+#
+#   Принимает только GET и POST на /api/geoportal/*; всё остальное — 404.
+#   Нужен заголовок X-Grado-Relay-Token со значением из файла токена; нет или не тот — 401.
+#   Дальше запрос идёт на https://nspd.gov.ru с проверкой его сертификата по корням Минцифры.
+#   Журнал доступа выключен (в нём не должно быть ни заголовков, ни тела).
+#
+# Ограничение частоты: в обычном Caddy нет limit_req. Бережёт портал max_conns_per_host 1 (один запрос
+# к НСПД за раз) и пауза 0,4 с между запросами в самом коннекторе.
+
+https://relay.example.ru {
+	tls /etc/caddy/certs/relay/fullchain.pem /etc/caddy/certs/relay/privkey.pem
+	log {
+		output discard
+	}
+
+	@allowed {
+		path /api/geoportal/*
+		method GET POST
+	}
+	handle @allowed {
+		@token header X-Grado-Relay-Token {file./etc/caddy/relay-token}
+		handle @token {
+			request_body {
+				max_size 2MB
+			}
+			reverse_proxy https://nspd.gov.ru {
+				header_up Host nspd.gov.ru
+				header_up Referer https://nspd.gov.ru/map
+				header_up Origin https://nspd.gov.ru
+				header_up -X-Grado-Relay-Token
+				header_up -X-Forwarded-For
+				header_up -X-Forwarded-Proto
+				header_up -X-Forwarded-Host
+				header_up -Via
+				transport http {
+					tls_server_name nspd.gov.ru
+					tls_trusted_ca_certs /etc/caddy/nspd-ca.pem
+					dial_timeout 10s
+					response_header_timeout 60s
+					read_timeout 60s
+					max_conns_per_host 1
+				}
+			}
+		}
+		respond "unauthorized" 401
+	}
+	respond "not found" 404
+}
