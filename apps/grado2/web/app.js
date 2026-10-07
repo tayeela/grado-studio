@@ -179,6 +179,16 @@ const terrLayer = () => new ol.layer.Vector({ source: terrSrc, style: () => TERR
 
 /* ================= данные территории ================= */
 const mMain = newMap("mMain", [terrLayer()]);
+// карта принимает фокус с клавиатуры (аудит #30): стрелки сдвигают, + и − меняют масштаб (клавиатурные действия OpenLayers);
+// объекты карты для экранного диктора — в «Таблице атрибутов» текущего слоя (ссылка «Таблица объектов слоя» в начале страницы)
+Object.assign($("mMain"), { tabIndex: 0 }); $("mMain").setAttribute("role", "region");
+$("mMain").setAttribute("aria-label", "Карта. Стрелки — сдвиг, плюс и минус — масштаб. Объекты слоя списком — «Таблица атрибутов».");
+document.querySelector(".skip")?.addEventListener("click", e => {
+  const k = e.target.closest("[data-skip]")?.dataset.skip; if (!k) return;
+  if (k === "map") $("mMain").focus();
+  if (k === "layers") ($("layerTree").querySelector("button, input, [tabindex]") || $("lySearch")).focus();
+  if (k === "table") { window.openTable?.(true); setTimeout(() => { const w = $("wTable"); (w.querySelector("table, button, input, select") || w).focus?.(); }, 50); }
+});
 /* opt.keep — правка вершин: вид карты остаётся. Правка границы идёт тем же путём, что и новая граница: площадь, номер версии,
    узлы графа, автосохранение и совместная работа реагируют одинаково */
 function setTerritory(feature, opt) {

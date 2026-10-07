@@ -173,6 +173,9 @@ select,input[type=text]{height:var(--h-sm);border:1px solid var(--line-2);backgr
 .sect{padding:4px 8px;font-weight:600;background:var(--panel);border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin-top:-1px}
 .note{padding:8px;color:var(--muted);line-height:1.45}
 .muted{color:var(--faint)}
+.skip{position:fixed;left:8px;top:8px;z-index:9999;display:flex;gap:6px}.skip button{position:absolute;left:-9999px;padding:6px 10px;background:var(--bg,#fff);border:2px solid var(--accent,#1a5fb4);border-radius:6px;font:inherit;color:var(--text)}
+.skip button:focus{position:static}
+#mMain:focus-visible{outline:2px solid var(--accent,#1a5fb4);outline-offset:-2px}
 .lnk{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;cursor:pointer;font:inherit}.lnk:hover{text-decoration:none}
 .mapbox{position:relative;min-width:0;min-height:0;background:var(--canvas)}
 .mapbox .m{position:absolute;inset:0}
@@ -678,6 +681,8 @@ body.shl-dragging,body.shl-dragging *{cursor:grabbing!important;user-select:none
 <link rel="stylesheet" href="hub.css">
 <link rel="stylesheet" href="norms.css">
 
+<!-- быстрый переход с клавиатуры (аудит 07.10.2026, #30): видны только в фокусе, первый Tab на странице -->
+<nav class="skip" aria-label="Быстрый переход"><button type="button" data-skip="map">К карте</button><button type="button" data-skip="layers">К слоям</button><button type="button" data-skip="table">Таблица объектов слоя</button></nav>
 <div class="app">
   <header class="top">
     <span class="brand">ГРАДО</span><button class="btn proj" id="bProj"><i data-lucide="folder-open"></i><span class="lb">Без названия</span></button>

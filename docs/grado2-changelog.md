@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).** Enter and Space on a focused button, link, menu item or tab press
+  it: before, the AutoCAD-style «repeat last command» took them (after drawing a line, Enter on «Виды» restarted the line
+  instead of opening the window — checked before/after in the browser). The first Tab shows «К карте», «К слоям»,
+  «Таблица объектов слоя» (visible only in focus); the map takes focus (outline, arrows pan, + and − zoom) and is labelled
+  for screen readers, pointing to the attribute table as the text way to the objects. Page Tab order already started at
+  «Проект» and the header sections; the audit's «ПРИВЯЗКА» came after a click on the map.
 - **2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).** A sheet frame on the map is labelled
   «Лист N «first 28 characters…» · format · scale»; the full title stays in the field above the selected sheet (and in its
   tooltip) and in «Листы». The «область загрузки данных» caption is not drawn when the area is the sheet frames themselves
