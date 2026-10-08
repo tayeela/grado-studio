@@ -1,0 +1,8 @@
+{
+  "name": "grado-tools",
+  "private": true,
+  "description": "Developer tools only (type check of apps/grado2/web). Not shipped in the program or the installers.",
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

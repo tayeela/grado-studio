@@ -19,6 +19,9 @@ step unit       env PYTHONPATH="$PP" "$PY" -m unittest discover -s apps/grado2/t
 step unit-bare  bash -c "cd apps/grado2 && env -u PYTHONPATH '$PY' -m unittest discover -s tests -p 'test_*.py'"
 step connectors env PYTHONPATH="$PP" "$PY" -m unittest discover -s core/connectors/tests -p "test_*.py"
 step core       bash -c "set -e; for m in compute geom layout model reactive render; do PYTHONPATH='$PP' '$PY' -m unittest discover -s core/\$m/tests -p 'test_*.py'; done"
+if [ -x tools/node_modules/.bin/tsc ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
+  step types    tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json
+else echo "skip types — no tools/node_modules (cd tools && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   step e2e      env PYTHONPATH="$PP" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
 fi

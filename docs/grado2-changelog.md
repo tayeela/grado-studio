@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
+  - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped
+    in the program or the installers. Files stay `.js` and opt in with `// @ts-check`.
+  - Checked now: `msk.js`, `labelfmt.js`, `uisize.js`, `cadcore.js`. Baseline with every file checked: 1027 findings,
+    most in `app.js` (271), `layers.js` (158), `hub.js` (124), `sheets.js` (110).
+  - `tools/gate.sh` step `types`; skipped with a note when `tools/node_modules` is absent (`cd tools && npm ci`).
+  - Project rule changed by the owner: ready libraries over hand-written code (`CLAUDE.md`). Engine survey:
+    `docs/product/research-2026-10-08-engines.md`.
+
 - **2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).**
   - Ortho territory callout «Проектируемая территория – N га» is never dropped: its box is reserved before street labels,
     it is placed first among point labels and moves aside if taken (`print_io._callout_box`, `_callout_steps`) (#57).

@@ -130,7 +130,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `toM`, `saveST`, `fLine`, `fPoly`, `fPt`, `vertices`, `syncGrips`, `gripAt`, `chainsOf`, `inSweep`, `gather`, `acquireTick`, `acquire`, `parTick`, `trackLines`, `resolve`, `refresh`, `f2`, `tip`, `toEn`, `normNum`, `openInput`, `closeInput`, `autoc`, `typedNum`, `bad`, `submit`, `matchOpt`, `parsePoint`, `title`, `start`, `cancel`, `finish`, `MODK`, `plural`, `result`, `drawSummary`, `editSummary`, `downloadWarn`, `note`, `hist`, `showHist`, `toggleHist`, `showCmd`, `after`, `enter`, `syncButtons`, `toggle`, `targetFor`, `newFeature`, `copyFeat`, `addNew`, `edit`, `worldChains`, `xformGeom`, `xformCad`, `affineOf`, `ghosts`, `opt`, `optStr`, `selection`, `pickChain`, `replaced`, `piecesEdit`, `boundaries`, `CURKEY`, `annoLayer`, `def`, `closeOpt`, `contourAt`, `regionAt`, `regionIn`, `zoomAll`, `chainCmd`, `distFin`, `areaFin`, `terrFin`, `transformCmd`, `trimInfo`, `arrayGroup` и ещё 20
 
-### `apps/grado2/web/cadcore.js` — 255 стр.
+### `apps/grado2/web/cadcore.js` — 256 стр.
 
 ГРАДО 2 · геометрия черчения в метрах МСК (X на восток, Y на север). Без DOM и OpenLayers — проверяется под node (tests/cadcore_test.js). Цепочка — массив точек [x, y]; у замкнутой первая точка повторена в конце. Здесь всё, что считают команды AutoCAD: пересечения, перпендикуляр, касательные, дуги по трём точкам, правильные многоугольники, подобие (offset), обрезка, удлинение, разрыв, сопряжение, соединение.
 
@@ -172,7 +172,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 ГРАДО 2 · инсоляция: положение солнца, инсоляционный фронт существующих окон, солнечный потолок участка. Предпроектная оценка по методам ГОСТ Р 57795-2017 и нормам СанПиН 1.2.3685-21 (табл. 5.58, центральная зона): расчётные даты 22 апреля и 22 августа, время солнечное, первый час после восхода и последний перед заходом не учитываются (на 55–56° с. ш. — как на инсографике МАрхИ: 6:00–18:00); норма — 2 ч непрерывно или 2,5 ч прерывисто при одном периоде не короче 1 ч. Это НЕ сертифицированный расчёт для экспертизы. Упрощения: рельеф плоский, высота этажа задаётся одна, теневые углы окон — одним…
 
 
-### `apps/grado2/web/labelfmt.js` — 83 стр.
+### `apps/grado2/web/labelfmt.js` — 84 стр.
 
 Оформление подписей альбома (albums.js): железнодорожные станции и кавычки. Чистые функции, без карты. Правило 15 (владелец 05.10.2026): станция подписывается «ст. ж/д Калошино», сокращение не отрывается от названия (неразрывные пробелы). Станция — по признакам данных, а не по названию: землепользование OSM «railway» с названием, тег railway = station / halt / yard и т. п., типы Яндекса «транспорт: станция». Депо, заводы и прочее на железной дороге, и названия без признаков станции не переименовываются. Запуск проверок — tests/test_labelfmt_js.py.
 
@@ -211,7 +211,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · переименование «потолок» → «предельная высота» в проектах (решение владельца 01.10.2026). Идемпотентно и без смены номера формата: идёт при каждой загрузке проекта (project.js → migrate, в том числе из совместной работы: collab.js → join → applyProject). Трогает только служебный слой «cons:ceiling» (поля, стиль) и гнёзда узлов графа «Данные/Ограничения» и «Эскиз/Посадка застройки»; одноимённые поля в слоях пользователя остаются как есть. Проверяется под node (tests/migrate_test.js).
 
 
-### `apps/grado2/web/msk.js` — 49 стр.
+### `apps/grado2/web/msk.js` — 50 стр.
 
 ГРАДО 2 · рабочая местная система Москвы МСК (как пользовательская СК «МСК» в QGIS владельца) в браузере. Перенос core/connectors/grado_connectors/crs.py (msk_to_wgs84 / wgs84_to_msk) один в один: обратный поперечный Меркатор на эллипсоиде Бесселя без сдвига начала (+x_0=0 +y_0=0), 7-параметрический Хельмерт (Position Vector), WGS84. X — на восток, Y — на север, метры: так же, как в DXF и на листах. Система ГИС ОГД — та же формула со сдвигом начала (16,098; 14,512) м, в браузере она не нужна. Сверено с PROJ в tests/test_msk.py (меньше 1 мм).
 
@@ -277,7 +277,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 Привязка и умные направляющие для редактора макета листа (layout.js), как в InDesign. Перенос прохода выравнивания из DesignCraft (crates/tools/src/snap.rs: pass_align, offer_box, offer, push_alignment_guide; MIT, лицензия — vendor/LICENSE-designcraft). Владелец 06.10.2026: «используй код этой программы для нашего редактора листов — вёрстка». Надпись при перетаскивании встаёт краем к краю или серединой к середине другой надписи или листа, если до них не дальше зоны привязки (4 пикселя экрана); по каждой оси — ближайшее совпадение, и рисуется одна направляющая. Чистые функции, рамки в мм листа …
 
 
-### `apps/grado2/web/uisize.js` — 3 стр.
+### `apps/grado2/web/uisize.js` — 4 стр.
 
 Размер интерфейса, выбранный в «Окна» → «Размер интерфейса»: ставится до отрисовки, чтобы страница не прыгала. Отдельный файл, а не скрипт в index.html: политика страницы (CSP script-src 'self') встроенные скрипты не выполняет.
 
@@ -616,7 +616,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `build`
 
-### `tools/wiki.py` — 389 стр.
+### `tools/wiki.py` — 390 стр.
 
 Вики проекта ГРАДО 2 (docs/wiki/) — собирается из файлов репозитория, без сети и без кэша данных.
 
@@ -624,7 +624,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
-### `tools/gate.sh` — 25 стр.
+### `tools/gate.sh` — 28 стр.
 
 Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
 
