@@ -195,6 +195,7 @@ def _lead_comment(text, py, sh=False):
     if py:
         m = re.match(r'\s*(?:#[^\n]*\n)*\s*"""(.*?)"""', text, re.S)
         return (m.group(1).strip().split("\n\n")[0] if m else "").replace("\n", " ")
+    text = re.sub(r"\A\s*// @ts-check[^\n]*\n", "", text)   # TypeScript marker (tools/ts), not the description
     m = re.match(r"\s*/\*(.*?)\*/", text, re.S)
     if m:
         return " ".join(m.group(1).split())
