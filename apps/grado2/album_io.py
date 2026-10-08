@@ -52,7 +52,8 @@ def _header():
 
 
 _NB = "\xa0"
-_GLUE_AFTER = re.compile(r"(?<![\w.])(№|[А-Яа-яЁёA-Za-z]{1,2}\.?|ул\.|пер\.|пр-д|просп\.|ш\.|р\.|д\.|пос\.|оз\.|тыс\.|им\.|кв\.|т\.) (?=\S)")
+_DASH_SPACED = re.compile(r"(?<=\S) —(?=\s|$)")              # длинное тире с пробелом перед ним (и в конце строки)
+_GLUE_AFTER = re.compile(r"(?<![\w.])(№|[А-Яа-яЁёA-Za-z]{1,2}\.?|ул\.|пер\.|пр-д|просп\.|ш\.|р\.|д\.|вл\.|ст\.|ж/д|пос\.|оз\.|тыс\.|им\.|кв\.|т\.|бульв\.|наб\.|пл\.) (?=\S)")
 _GLUE_BEFORE = re.compile(r"(?<=\S) (г\.|гг\.|га|м|м²|мм|км|млн|—|–)(?=$|[\s,.;:)»])")
 
 
@@ -61,10 +62,26 @@ def _glue(text):
     """Общепринятые правила вёрстки (правило 12): предлоги, союзы, частицы и короткие слова не висят в конце строки,
     сокращения держатся за своё слово («№ 1218», «ул. Садовая», «2021 г.», «тыс. кв. м», «48,52 га»), тире не
     начинает строку — между ними неразрывный пробел."""
-    t = str(text or "")
+    t = _DASH_SPACED.sub(" –", str(text or ""))           # тире между словами — одно, короткое (#60); до переноса строк
     for _ in range(2):                                   # «с по» и цепочки коротких слов — за два прохода
         t = _GLUE_AFTER.sub(lambda m: m.group(1) + _NB, t)
     return _GLUE_BEFORE.sub(lambda m: _NB + m.group(1), t)
+
+
+
+
+
+def typo(text):
+    """Типографика всего текста альбома на выходе (#60): неразрывные пробелы по правилу (_glue: «№ 2682-ПП», «1,66 га»,
+    «2023 г.», «тыс. кв. м», «ул. Амурская», «вл. 8», «ст. ж/д …»), тире между словами одно — короткое «–» с пробелами,
+    как в выноске «Проектируемая территория – N га». Строки уже разбиты переносом, ширина неразрывного пробела
+    у шрифтов альбома та же, что у обычного, — вёрстка не сдвигается. «ё» не трогается (вопрос владельцу #54)."""
+    return _glue(text)
+
+
+def typo_ops(ops):
+    """typo() для каждой текстовой операции листа — одна точка для PDF и PPTX (print_io._pages, render_pptx)."""
+    return [{**o, "text": typo(o["text"])} if o.get("op") == "text" and isinstance(o.get("text"), str) else o for o in ops]
 
 
 def _wrap(text, n):
@@ -348,7 +365,8 @@ class CalloutFrame(Frame):
     def ops(self, ctx):
         x, y, w, h = self.rect
         out = []
-        boxes = [b for m in self.maps for b in _text_boxes(getattr(m, "last_ops", None) or [])]
+        # запас 1,5 мм: при 0,8 линия шла вплотную к концу «Соколиная Гора» и на печати сливалась с подписью (#62)
+        boxes = [b for m in self.maps for b in _text_boxes(getattr(m, "last_ops", None) or [], pad=1.5)]
         for tx, ty in self.targets:
             sx = x if tx < x else x + w
             out.append({"op": "path", "closed": False, "fill": None, "stroke": (0, 0, 0), "width": 0.22, "dash": None,
@@ -389,10 +407,36 @@ class MapNoteFrame(Frame):
         return out
 
 
+def _ortho_legend_rows(sheet):
+    """Строки плашки легенды ортофотоплана и карты района по группам: заголовок группы (подчёркнутый, без двоеточия —
+    как в колонке легенды других листов, #61), затем её знаки. Группа без знаков не печатается."""
+    rows = []
+    for g in sheet.get("cLegend") or []:
+        items = g.get("items") or []
+        if not items:
+            continue
+        if g.get("title"):
+            rows.append(("title", g["title"]))
+        rows.extend(("item", it) for it in items)
+    return rows
+
+
 def ortho_legend_h(sheet):
     """Высота плашки легенды ортофотоплана от нижнего края листа (OrthoLegendFrame)."""
-    n = sum(len(g.get("items", [])) for g in sheet.get("cLegend") or [])
-    return 6.5 + 5.7 + 5.8 * n + 4.5
+    return 6.5 + 5.7 + 5.8 * max(len(_ortho_legend_rows(sheet)) - 1, 0) + 4.5
+
+
+def ortho_legend_box(sheet, page_w, page_h):
+    """Плашка легенды ортофотоплана на листе, мм: (x0, y0, x1, y1). Та же коробка — препятствие для подписей карты
+    (print_io, #58: «ул. Амурская» заходила под легенду)."""
+    items = [r[1] for r in _ortho_legend_rows(sheet) if r[0] == "item"]
+    titles = [r[1] for r in _ortho_legend_rows(sheet) if r[0] == "title"]
+    # плашка растягивается влево, чтобы каждая подпись шла одной строкой и не заходила под номер листа (x ≥ 399 мм)
+    text_w = max([_tw(it.get("label", ""), "sans", 9 * PT) for it in items] + [_tw(t, "sans", 9 * PT) - (SW_W + 2.5) for t in titles]
+                 + [_tw("Условные обозначения", "sans-bold", 12.2 * PT) - 18])
+    right = page_w
+    x = min(right - 122, 396 - text_w - (3.6 + SW_W + 2.5))
+    return (x, page_h - ortho_legend_h(sheet), right, page_h)
 
 
 # ---------- листы по образцу «ГК Царицыно» (look: "concept"): карта слева, колонка справа ----------
@@ -648,25 +692,19 @@ class OrthoLegendFrame(Frame):
         self.sheet = sheet
 
     def ops(self, ctx):
-        _, y, w, h = self.rect
-        right = self.rect[0] + w
-        groups = self.sheet.get("cLegend") or []
-        items = [it for g in groups for it in g.get("items", [])]
-        # плашка растягивается влево, чтобы каждая подпись шла одной строкой и не заходила под номер листа (x ≥ 399 мм)
-        text_w = max([_tw(it.get("label", ""), "sans", 9 * PT) for it in items] + [_tw("Условные обозначения", "sans-bold", 12.2 * PT) - 18])
-        x = min(right - 122, 396 - text_w - (3.6 + SW_W + 2.5))
-        body = 6.5 + 5.7 + 5.8 * len(items) + 4.5
-        top = y + h - body
+        x, top, right, bottom = ortho_legend_box(self.sheet, self.rect[0] + self.rect[2], self.rect[1] + self.rect[3])
         out = [{"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": 0.72, "stroke": None, "width": 0, "dash": None,
-                "rings": [[(x, top), (right, top), (right, y + h), (x, y + h)]]}]
+                "rings": [[(x, top), (right, top), (right, bottom), (x, bottom)]]}]
         yy = top + 6.5
         out.append(_text(x + 3.6, yy, 12.2, "Условные обозначения", INK, "sans-bold"))
-        yy += 5.7
-        out.append(_text(x + 3.6, yy, 9, "Границы:", INK2, "sans-bold"))
-        for it in items:
+        yy -= 5.8 - 5.7                                              # первая строка — через 5,7 мм, остальные через 5,8
+        for kind, v in _ortho_legend_rows(self.sheet):
             yy += 5.8
-            out.extend(concept_swatch(x + 3.6, yy - 2.6, it, None, w=SW_W, h=3))   # тот же размер знака, что на других листах
-            out.append(_text(x + 3.6 + SW_W + 2.5, yy, 9, it.get("label", ""), INK2, "sans"))
+            if kind == "title":                                      # заголовок группы — как в колонке легенды других листов (#61)
+                out.append({**_text(x + 3.6, yy, 9, v, INK2, "sans"), "underline": True})
+                continue
+            out.extend(concept_swatch(x + 3.6, yy - 2.6, v, None, w=SW_W, h=3))   # тот же размер знака, что на других листах
+            out.append(_text(x + 3.6 + SW_W + 2.5, yy, 9, v.get("label", ""), INK2, "sans"))
         return out
 
 

@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).**
+  - Ortho territory callout «Проектируемая территория – N га» is never dropped: its box is reserved before street labels,
+    it is placed first among point labels and moves aside if taken (`print_io._callout_box`, `_callout_steps`) (#57).
+  - The legend plate on the ortho and district sheets is an obstacle for map labels (`album_io.ortho_legend_box`) (#58).
+  - That legend has the same groups as the column legend: underlined «Границы», «Транспорт», no colon. One «Транспорт»
+    group holds the railway too. The district swatch takes the colour and width of the sheet's own line style (#61).
+  - PZZ sub-zones: «0» explained in the legend; density unit «тыс. кв. м/га» (#60, #61).
+  - Typography on output of all album text, PDF and PPTX (`album_io.typo`, `typo_ops`): non-breaking spaces after «№»,
+    before «га» and «г.», in «тыс. кв. м», after «ул.», «вл.», «ст.», «ж/д». A spaced «—» becomes «–» before wrapping.
+    «ё» is untouched (#54) (#60).
+  - Sheet 2 callout line keeps 1.5 mm off map labels (#62).
+  - An address auto-filled from the registry marks the title sheet «адрес из реестра — сверьте с письмом ДГП» and shows a note under «Адрес» in «Штамп…»
+    (`AlbumMeta.addrWhy`) (#56).
+  - Not changed, see the PR:
+    - the ВАО enclave Восточный (0.2 km from the main part, 2 % of its area — not «далёкий» by lr 18; owner question);
+    - number «2» inside its ГПЗУ (owner rule 30.09);
+    - ГПЗУ numbers (they match ГИС ОГД).
+  - Tests: test_print (callout, ortho legend, typography), test_t80 (legend height, callout clearance), albummeta_test (addrWhy).
 - **2026-10-07, tests only: T27 wheel measurement (#40).** The step «десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте» failed once more on a slow GitHub runner (run 47 of PR #52, a docs-only commit; the same code passed in runs 44, 45, 46, 48): the ratio was fine (1.735), so the drift of the point under the cursor was ≥ 1.5 px. The point is now read after `renderSync()` together with the map frame box; if the box changed between the two reads the measurement is repeated once, and a real failure prints the ratio, the drift in px and both boxes. 48 local runs under CPU contention: drift 0.00 px, box stable. The cause of the CI failure is not proven — issue #40 stays open until the numbers of the next failure or ten green runs.
 - **2026-10-07, album design audit and rules against repeats (no program change).** Audit of the Golyanovo album (11 sheets, issue #53): 13 Haiku auditors, 103 raw findings → 26 causes (P0 3, P1 12, P2 11), 6 findings dropped after a visual check; fixes are separate issues #55–#63, questions to the owner — #54. `tools/album_lint.py` now also checks the map frame (`frame`), line breaks (`hang`, `widow`), «ё» and dashes across the album (`yo`, `dash`), non-breaking spaces in the PPTX (`nbsp`) and control strings (`expect`); overlaps are counted on the middle of a word box (dense document lists no longer give false errors). New `tools/album_expect/` (`all.json`, `gol.json`: required and forbidden text with a reason — the address `вл. 8` on the title, the callout «Проектируемая территория – 1,66 га» on sheets 3 and 4, 11 pages); `tools/album_check.py` prints the PPTX, runs the lint and the strings on every comparison and exits with code 3 on errors. `docs/standards/albums/layout-qa.md` is rebuilt (order, 30 checks, codes, known non-defects, proposals waiting for the owner); audit template, skill `owner-remark` and `album-rules.md` updated (the calculated СЗЗ colour and the mask lines were stale: the code draws the later words of the owner). Section banners in `ogd_all.py`. Tests: `test_album_lint.py` (28).
 - **2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.** `docs/` now has

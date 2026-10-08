@@ -360,6 +360,27 @@ def flood_ops(pts, code, color, width=0.35, tick=0.6, side=1):
 
 
 # ---------- Геометрия подписей: пересечения, оси, выноски, препятствия ----------
+def _callout_box(x, y, f):
+    """Коробка плашки выноски территории (мм листа) на её исходном месте: точка подписи (x, y) смещена на ldy, как при
+    размещении; поля плашки — ls·0,45 (как рисуется lbox). Подписи улиц обходят её до того, как ставится сама выноска (#57)."""
+    ls = float(f.get("ls") or 2.2)
+    yc = y + float(f.get("ldy") or 0)
+    hw = _text_w(str(f.get("label") or ""), f.get("lf"), ls) / 2 + ls * .45
+    return (x - hw, yc - ls - ls * .27, x + hw, yc + ls * .35 + ls * .27)
+
+
+def _callout_steps(ldy):
+    """Запасные места выноски территории (сдвиги, мм), если исходное занято: дальше от территории по линии выноски, затем
+    вбок на 12 и 24 мм, затем ближе к территории. Первое — само исходное место (#57)."""
+    away = -6.0 if ldy < 0 else 6.0
+    out = [(0.0, 0.0)]
+    for dy in (0.0, away, 2 * away, -away):
+        for dx in (0.0, -12.0, 12.0, -24.0, 24.0):
+            if (dx, dy) != (0.0, 0.0):
+                out.append((dx, dy))
+    return out
+
+
 def _seg_box(p, q, box):
     """Отрезок p–q (мм) задевает прямоугольник box (x0, y0, x1, y1): отсечение Лианга — Барски."""
     (x0, y0), (x1, y1) = p, q
@@ -964,6 +985,8 @@ class SketchMapFrame(Frame):
                         if f.get("nodot"):                               # подпись-плашка без значка (кадастровый номер)
                             if f.get("label"):
                                 labels.append((x, y, f["label"], f.get("ls"), f))
+                                if f.get("lead"):                        # выноска территории: её место заранее занято — подписи улиц
+                                    numboxes.append(_callout_box(x, y, f))   # обходят плашку (#57: на ортофото выноску вытесняли)
                             continue
                         if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
                             # поверх маски и границы территории: стрелка у границы не бледнеет и не прячется под пунктиром
@@ -1111,6 +1134,11 @@ class SketchMapFrame(Frame):
             n = sum(len(b) if isinstance(b, list) else 2 for b in sh["mapNoteBR"])
             lift = ortho_legend_h(sh) + 2 if sh.get("bleed") else 0
             caps.append((rx + rw - 102, ry + rh - lift - 7 - 5.4 * n, rx + rw, ry + rh - lift))
+            take(caps[-1])
+        if sh.get("bleed") and sh.get("kind") != "photos" and sh.get("cLegend"):   # плашка легенды на снимке — без подписей карты (#58)
+            from album_io import ortho_legend_box
+            lb = ortho_legend_box(sh, rx + rw, ry + rh)
+            caps.append((lb[0] - 1, lb[1] - 1, lb[2], lb[3]))
             take(caps[-1])
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
@@ -1298,7 +1326,8 @@ class SketchMapFrame(Frame):
                         "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
         # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
         # рядом внутри своего контура (названия СНТ не пропадают из-за подписи улицы)
-        labels.sort(key=lambda t: -(t[6] if len(t) > 6 else 0))
+        # выноска территории — первой из точечных подписей: она обязательна (#57)
+        labels.sort(key=lambda t: -(float("inf") if t[4].get("lead") else t[6] if len(t) > 6 else 0))
         def free(f, cx, cy, cr, ax, ay, lvl):
             others = [m for k_, m in marks.items() if k_ != id(f)]
             if any(math.hypot(o[0] - cx, o[1] - cy) < cr + 1.5 for o in others):
@@ -1416,6 +1445,8 @@ class SketchMapFrame(Frame):
                                 + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10, 13, 16, 20, 24) for k in range(12)] if stn else [])
                                 if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.0, 3.0, 4.0) for k in range(8)]
                                 if f.get("mk") == "view" else [])   # номер точки съёмки — у самой стрелки, не дальше 4 мм (владелец 07.10.2026, #47: «цифра 2 должна быть рядом со стрелкой»)
+            if f.get("lead"):                                               # выноска территории: место занято — дальше вдоль линии или вбок
+                steps = _callout_steps(float(f.get("ldy") or 0))
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
             if f.get("circle"):
                 ax, ay = mk[0], mk[1]
@@ -1442,7 +1473,8 @@ class SketchMapFrame(Frame):
                 # названия территорий: сначала места без проездов под текстом (правило 11), потом любые в контуре
                 tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + ([(dx, dy, 2) for dx, dy in steps] if ring else []) \
                     + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") or f.get("mk") == "view" else []) \
-                    + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else [])   # номер снимка есть всегда
+                    + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else []) \
+                    + ([(0, 0, -1)] if f.get("lead") else [])   # номер снимка и выноска территории есть всегда (#57)
             spot = None
             if stn and not f.get("circle"):
                 s_ = station_spot(x, y, bw, up, down, id(f))
@@ -2042,7 +2074,8 @@ def _pages(spec, lib, lgr_dash, tiles, progress=None):
         pages.append((page.size[0], page.size[1], page.ops(_ctx(doc, None, None, None, i, titles[i - 1]))))
     if progress:
         progress(n, n)
-    return [(w, h, apply_edits(ops, sh)) for (w, h, ops), sh in zip(pages, spec["sheets"])]
+    from album_io import typo_ops
+    return [(w, h, typo_ops(apply_edits(ops, sh))) for (w, h, ops), sh in zip(pages, spec["sheets"])]   # типографика — #60
 
 
 def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
@@ -2463,6 +2496,7 @@ def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
     200 dpi) — подписи, легенда и рамка остаются векторными, в заметках слайда сказано, что карта растровая."""
     from grado_layout.compose import _ctx, sheet_titles
     from grado_render.backend_pptx import PptxBackend
+    from album_io import typo_ops
     doc = build_document(spec, lib, lgr_dash, tiles)
     titles, pages, notes = sheet_titles(doc), [], {}
     for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
@@ -2471,7 +2505,7 @@ def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
         ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
         groups = []
         for f in page.frames:
-            name, ops = PPTX_GROUPS.get(type(f).__name__, "Оформление"), apply_edits(f.ops(ctx), sh, seen, items=False)
+            name, ops = PPTX_GROUPS.get(type(f).__name__, "Оформление"), typo_ops(apply_edits(f.ops(ctx), sh, seen, items=False))
             if name == "Карта":
                 ops = pptx_thin(pptx_clip_tiles(ops))
             groups.append((name, ops))

@@ -55,10 +55,25 @@ class OverLayerOrder(unittest.TestCase):
 class MapNoteCorners(unittest.TestCase):
     RECT = (0, 44, 420, 253)
 
+    def test_callout_line_keeps_clear_of_map_labels(self):
+        # #62: линия выноски листа 2 шла вплотную к концу «Соколиная Гора»: запас вокруг подписи — 1,5 мм
+        from print_io import _seg_box
+
+        class M:
+            last_ops = [{"op": "text", "x": 60, "y": 50, "size": 3, "text": "Соколиная Гора", "anchor": "middle", "font_family": "sans-bold"}]
+        tb = album_io._text_boxes(M.last_ops, pad=0)[0]
+        f = album_io.CalloutFrame((0, 70, 20, 10), [("разрабатываемая территория", False)], [(tb[2] + 1.0, 30)], maps=[M()])
+        route = next(o["rings"][0] for o in f.ops(None) if o["op"] == "path" and not o["closed"])
+        near = (tb[0] - 1.4, tb[1] - 1.4, tb[2] + 1.4, tb[3] + 1.4)
+        self.assertFalse(any(_seg_box(p, q, near) for p, q in zip(route, route[1:])), route)
+
     def test_ortho_legend_h_grows_with_items(self):
-        h0 = album_io.ortho_legend_h({})
+        # строки плашки: заголовки групп и знаки (#61); первая строка — в шапке плашки
+        h1 = album_io.ortho_legend_h({"cLegend": [{"items": [1]}]})
         h3 = album_io.ortho_legend_h({"cLegend": [{"items": [1, 2]}, {"items": [3]}]})
-        self.assertAlmostEqual(h3 - h0, 5.8 * 3)
+        h5 = album_io.ortho_legend_h({"cLegend": [{"title": "Границы", "items": [1, 2]}, {"title": "Транспорт", "items": [3]}, {"title": "Пусто", "items": []}]})
+        self.assertAlmostEqual(h3 - h1, 5.8 * 2)
+        self.assertAlmostEqual(h5 - h1, 5.8 * 4)                         # пустая группа не печатается
 
     def test_br_corner_sits_above_ortho_legend(self):
         sh = {"cLegend": [{"items": [1, 2, 3, 4]}], "bleed": True}

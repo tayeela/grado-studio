@@ -111,6 +111,10 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-10-08 (#53 fixes, v0.99.46; checked in headless Chrome on a copy of «КРТ 3229 Гольяново», console clean). An address taken
+  from the registry marks the title row «не готов: адрес из реестра — сверьте с письмом ДГП»; the reason was only in the icon tip, so
+  «Штамп…» now shows a grey note under «Адрес» that goes away once the owner edits the field (fixed). Not yet: the note does not say
+  where the letter's address comes from — the owner types it by hand; a «Письмо ДГП» field could keep it with the project.
 - 2026-10-07 (#45, #47, album ППТ КРТ by the owner's remarks; checked on the real build of «КРТ 3229 Гольяново» in headless Chrome, console:
   only the old `voronoi` warning of sheet «сущпол»). Not yet: the scheme outline (`ALBUM.meta.area`) has no button — it is set in the
   project data; needs «Контур схем» in «Листы и альбом» (draw or load GeoJSON). Panorama links are stored with photos (`photo.link`) but
