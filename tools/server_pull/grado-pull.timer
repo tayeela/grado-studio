@@ -1,0 +1,11 @@
+# Таймер выкладки ГРАДО 2: запускает grado-pull.service раз в 5 минут (ставит install-on-msk.sh).
+[Unit]
+Description=GRADO 2: check main on GitHub every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

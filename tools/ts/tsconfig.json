@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "target": "es2022",
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "strict": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["vendor-globals.d.ts", "../../apps/grado2/web/*.js"]
+}

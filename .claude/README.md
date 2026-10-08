@@ -33,7 +33,7 @@ CLAUDE.md просит запускать сессии из `~/grado-studio`: р
 
 | Файл | Событие | Что делает | Останавливает ход |
 |---|---|---|---|
-| `session-start.sh` | SessionStart | только в облачных сессиях (`CLAUDE_CODE_REMOTE=true`): создаёт `~/.grado2/venv`, если его нет, ставит `apps/grado2/requirements.txt`, записывает `CHROME`, если найден браузер в `/opt/pw-browsers`; задаёт `core.hooksPath` = `tools/git-hooks` и `GRADO_NO_DEPLOY=1` (выкладка на сайт из облака невозможна) | нет |
+| `session-start.sh` | SessionStart | только в облачных сессиях (`CLAUDE_CODE_REMOTE=true`): создаёт `~/.grado2/venv`, если его нет, ставит `apps/grado2/requirements.txt`, записывает `CHROME`, если найден браузер в `/opt/pw-browsers`; задаёт `core.hooksPath` = `tools/git-hooks` | нет |
 | `grado2_remark_hint.py` | UserPromptSubmit | если сообщение похоже на замечание по альбому (слова про листы, легенду, подписи, цвета, линии и просьба поправить), добавляет подсказку: сначала `docs/wiki/album-rules.md`, затем навыки `owner-remark` и `album-verify` | нет |
 | `grado2_check.py` | PostToolUse (Edit, Write, MultiEdit) | для `.js` и `.py` в `apps/grado2` проверяет разбор (`node --check`, `py_compile`); ошибка уходит Claude | нет |
 | `grado2_test_gate.py` | Stop, первый | если в копии есть незакоммиченные правки в `apps/grado2` или `core`, запускает `tools/gate.sh` без E2E; провал не даёт закрыть ход | да, при провале |

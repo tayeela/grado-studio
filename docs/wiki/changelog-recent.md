@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).
 - 2026-10-07, tests only: T27 wheel measurement (#40).
 - 2026-10-07, album design audit and rules against repeats (no program change).
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).
 - 2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).
 - 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
-- 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
