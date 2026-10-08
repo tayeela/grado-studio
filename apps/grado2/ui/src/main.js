@@ -20,6 +20,7 @@ import "@awesome.me/webawesome/dist/components/slider/slider.js";
 import "@awesome.me/webawesome/dist/components/switch/switch.js";
 import "@awesome.me/webawesome/dist/components/input/input.js";
 import "@awesome.me/webawesome/dist/components/badge/badge.js";
+import "@awesome.me/webawesome/dist/components/dialog/dialog.js";
 
 import { createApp } from "vue";
 import App from "./App.vue";

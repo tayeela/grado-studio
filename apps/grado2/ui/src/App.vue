@@ -4,16 +4,18 @@
   <div class="shell">
     <header class="top">
       <span class="brand">ГРАДО 2</span>
-      <span class="project">Гольяново · КРТ <wa-badge variant="neutral" appearance="filled-outlined">образец</wa-badge></span>
+      <span class="project">{{ project.name || "Проект не открыт" }}
+        <wa-badge v-if="project.source === 'autosave'" variant="neutral" appearance="filled-outlined">как в рабочей программе</wa-badge>
+        <wa-badge variant="neutral" appearance="filled-outlined">только просмотр</wa-badge></span>
 
       <wa-dropdown @wa-select="onProject">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Проект</wa-button>
         <wa-dropdown-item value="open">Открыть…</wa-dropdown-item>
-        <wa-dropdown-item value="new">Новый проект</wa-dropdown-item>
-        <wa-dropdown-item value="copy">Сохранить копию</wa-dropdown-item>
+        <wa-dropdown-item value="new" disabled>Новый проект</wa-dropdown-item>
+        <wa-dropdown-item value="copy" disabled>Сохранить копию</wa-dropdown-item>
         <wa-divider></wa-divider>
-        <wa-dropdown-item value="history">История версий</wa-dropdown-item>
-        <wa-dropdown-item value="share">Совместная работа</wa-dropdown-item>
+        <wa-dropdown-item value="history" disabled>История версий</wa-dropdown-item>
+        <wa-dropdown-item value="share" disabled>Совместная работа</wa-dropdown-item>
       </wa-dropdown>
 
       <wa-dropdown @wa-select="onWindow">
@@ -56,12 +58,19 @@
 
     <DockviewVue class="grado-dock dock" :theme="dockTheme" @ready="onReady" />
 
+    <wa-dialog label="Открыть проект" :open="openDlg" @wa-after-hide="openDlg = false" class="open-dlg">
+      <p v-if="!projects.length" class="hint">В папке проектов нет файлов.</p>
+      <div v-for="p in projects" :key="p.name" class="prow" :class="{ cur: p.name === project.name }" @click="choose(p.name)">
+        <span>{{ p.name }}</span><span class="when">{{ when(p.modified) }}</span>
+      </div>
+    </wa-dialog>
+
     <footer class="status">
       <span>{{ toolTitle }}</span>
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
-      <span>Образец нового интерфейса · рабочая программа не меняется</span>
+      <span>Новый интерфейс · только просмотр, проект не меняется</span>
     </footer>
   </div>
 </template>
@@ -73,7 +82,8 @@ import {
   Slash, Spline, Square, Circle, Type, Ruler, Move, Copy, RotateCw, Scissors, ArrowRightToLine,
   CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage,
 } from "@lucide/vue";
-import { current, scale, theme, toggleTheme } from "./store.js";
+import { current, project, scale, theme, toggleTheme } from "./store.js";
+import { listProjects, openProject, openStartup, projects } from "./project.js";
 
 const dockTheme = { ...themeLight, className: "dockview-theme-grado" };
 
@@ -160,7 +170,17 @@ function onWindow(e) {
   syncOpen();
 }
 
-function onProject() { /* образец: команды проекта появятся при переносе окна «Проекты» */ }
+/* Проект: пока только открыть (чтение); остальные команды появятся при переносе окна «Проекты». */
+const openDlg = ref(false);
+async function onProject(e) {
+  if (e.detail.item.value !== "open") return;
+  try { await listProjects(); } catch { /* список останется прежним */ }
+  openDlg.value = true;
+}
+async function choose(name) { openDlg.value = false; await openProject(name); }
+const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+openStartup();
 </script>
 
 <style>
@@ -183,6 +203,10 @@ function onProject() { /* образец: команды проекта появ
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }
 .tlabel { font-size: var(--wa-font-size-2xs); color: var(--g-muted); padding-bottom: 2px; }
 .dock { min-height: 0; }
+.open-dlg .prow { display: flex; justify-content: space-between; gap: var(--wa-space-m); padding: 5px 8px; border-radius: var(--wa-border-radius-s); cursor: pointer; }
+.open-dlg .prow:hover { background: var(--wa-color-neutral-fill-quiet); }
+.open-dlg .prow.cur { background: var(--wa-color-brand-fill-quiet); }
+.open-dlg .when { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .status {
   display: flex; gap: var(--wa-space-l); align-items: center; padding: 0 var(--wa-space-s);
   height: 22px; font-size: var(--wa-font-size-xs); color: var(--g-muted); background: var(--g-bar); border-top: 1px solid var(--g-line);
