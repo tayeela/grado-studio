@@ -3,8 +3,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pageSize, frameRect, stampRect, newSheet, newBlock, groundSize, fitScale, scalebarStep, problems, reformat,
-  clampToFrame, snapTargets, fmtScale, fmtM } from "./model.js";
+  clampToFrame, snapTargets, fmtScale, fmtM, linkedScale, snapBox, align, distribute, sameSize, reorder, duplicate, refPos, fromRef,
+  rulerStep, bounds } from "./model.js";
 import { stampOps } from "./stamp.js";
+import "../../../web/snap.js";
+const Snap = globalThis.Snap;
 
 test("лист А3 и А1: размеры, рамка по ГОСТ и штамп как в печати", () => {
   const a3 = newSheet({ format: "A3" });
@@ -58,7 +61,9 @@ test("новый блок встаёт в середину рамки и не м
   assert.equal(b.kind, "text"); assert.equal(b.text, "Надпись");
   const f = frameRect(s);
   assert.ok(b.x >= f.x && b.x + b.w <= f.x + f.w);
-  assert.equal(newBlock("scalebar", s).scale, 2000);
+  const sb = newBlock("scalebar", s);
+  assert.equal(sb.map, s.blocks[0].id);                         // линейка привязана к первой карте листа
+  assert.equal(linkedScale(sb, s), 2000);
   // цели привязки: лист, рамка, штамп и все блоки, кроме самого
   assert.equal(snapTargets(s, s.blocks[0].id).length, 3 + s.blocks.length - 1);
 });
@@ -83,4 +88,59 @@ test("штамп: линии и надписи формы 3 на месте, п�
   assert.deepEqual([code.x, code.y, code.size], [230 + 65 + 60, 237 + 9.5, 4]);
   // все линии штампа внутри его прямоугольника 185×55 в правом нижнем углу рамки
   assert.ok(st.lines.every(l => l.pts.every((v, i) => i % 2 ? v >= 237 && v <= 292 : v >= 230 && v <= 415)));
+});
+
+const B = (id, x, y, w, h) => ({ id, kind: "rect", x, y, w, h });
+
+test("выравнивание как в QGIS: несколько — по общей рамке, один — по рамке листа", () => {
+  const bs = [B("a", 30, 20, 10, 10), B("b", 60, 50, 20, 6)];
+  assert.deepEqual(align(bs, "left"), { a: { x: 30 }, b: { x: 30 } });
+  assert.deepEqual(align(bs, "right"), { a: { x: 70 }, b: { x: 60 } });
+  assert.deepEqual(align(bs, "vcenter"), { a: { y: 33 }, b: { y: 35 } });
+  assert.deepEqual(align([bs[0]], "hcenter", { x: 20, y: 5, w: 395, h: 287 }), { a: { x: 212.5 } });
+  assert.deepEqual(bounds(bs), { x: 30, y: 20, w: 50, h: 36 });
+});
+
+test("распределение, одинаковый размер, порядок рисования, копии", () => {
+  const bs = [B("a", 0, 0, 10, 10), B("c", 100, 0, 10, 10), B("b", 20, 0, 20, 10)];
+  assert.deepEqual(distribute(bs, "x"), { a: { x: 0 }, b: { x: 45 }, c: { x: 100 } });
+  assert.deepEqual(distribute(bs.slice(0, 2), "x"), {});
+  assert.deepEqual(sameSize(bs, "w"), { c: { w: 10 }, b: { w: 10 } });
+  const ids = l => l.map(b => b.id).join("");
+  assert.equal(ids(reorder(bs, ["a"], "up")), "cab");
+  assert.equal(ids(reorder(bs, ["a"], "top")), "cba");
+  assert.equal(ids(reorder(bs, ["b"], "bottom")), "bac");
+  assert.equal(ids(reorder(bs, ["c"], "down")), "cab");
+  assert.equal(ids(reorder(bs, ["b"], "up")), "acb");                 // верхний остаётся верхним
+  const [d] = duplicate([{ ...bs[0], locked: true }]);
+  assert.notEqual(d.id, "a"); assert.deepEqual([d.x, d.y, d.locked, d.name], [5, 5, false, "Прямоугольник (копия)"]);
+});
+
+test("опорная точка: X и Y центра или угла и обратно", () => {
+  const b = B("a", 10, 20, 40, 30);
+  assert.deepEqual(refPos(b, "mc"), [30, 35]);
+  assert.deepEqual(refPos(b, "br"), [50, 50]);
+  assert.deepEqual(fromRef(b, "mc", 100, 100), { x: 80, y: 85 });
+});
+
+test("привязка: к направляющей, к элементу, к сетке там, где больше не к чему", () => {
+  const s = newSheet({ format: "A3" });
+  s.blocks = [B("m", 25, 10, 100, 100)];
+  s.guides = { x: [200], y: [] };
+  s.grid = { step: 10, snap: true };
+  const opt = { snapFn: Snap.snap, tol: 1.5 };
+  // левый край у направляющей 200
+  assert.equal(snapBox({ x0: 200.8, y0: 150.3, x1: 230.8, y1: 160.3 }, s, opt).dx.toFixed(2), "-0.80");
+  // по y ничего нет рядом, кроме сетки 150
+  assert.equal(snapBox({ x0: 200.8, y0: 150.3, x1: 230.8, y1: 160.3 }, s, opt).dy.toFixed(2), "-0.30");
+  // правый край у левого края карты? нет: верх у верха карты (10)
+  assert.equal(snapBox({ x0: 140, y0: 11, x1: 160, y1: 21 }, s, opt).dy.toFixed(2), "-1.00");
+  s.snap = { guides: false, items: false }; s.grid.snap = false;
+  assert.deepEqual(snapBox({ x0: 200.8, y0: 150.3, x1: 230.8, y1: 160.3 }, s, opt), { dx: 0, dy: 0, guides: [] });
+});
+
+test("деления линейки не гуще 50 пикселей", () => {
+  assert.equal(rulerStep(3.78), 20);      // 100 %: 20 мм ≈ 76 px
+  assert.equal(rulerStep(1.5), 50);
+  assert.equal(rulerStep(30), 2);
 });
