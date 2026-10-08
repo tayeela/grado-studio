@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.53: window «Свойства» moved to the new interface in full (#69).
 - 2026-10-08, ГРАДО 2 v0.99.52: the new interface saves the project (#69, step 3 of the engines plan).
 - 2026-10-08, ГРАДО 2 v0.99.49: the new interface shows the real project; window «Слои» moved over (#69).
 - 2026-10-08, ГРАДО 2 v0.99.48: sample page of the new interface on ready-made engines (#69).
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).
 - 2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).
 - 2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).
-- 2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).

@@ -48,6 +48,16 @@ class NextUi(unittest.TestCase):
         self.assertIn("...raw,", src)
         self.assertIn("data: raw.data", src)
 
+    def test_symbology_matches_working_page(self):
+        # оформление нового интерфейса рисует файл проекта теми же цветами: палитры категорий и шкал как в web/layers.js
+        old = (NEXT.parent / "layers.js").read_text(encoding="utf-8")
+        new = (NEXT.parents[1] / "ui" / "src" / "symbology.js").read_text(encoding="utf-8")
+        for name in ("CAT", "RAMPS"):
+            m = re.search(r"const " + name + r" = (\[[^\]]+\]|\{[^;]+\})", old)
+            self.assertTrue(m, name)
+            flat = lambda t: re.findall(r"#[0-9a-f]{6}", t)
+            self.assertEqual(flat(m.group(1)), flat(re.search(r"export const " + name + r" = (\[[^\]]+\]|\{[^;]+\})", new).group(1)), name)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

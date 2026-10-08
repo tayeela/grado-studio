@@ -1,6 +1,6 @@
 <!-- ГРАДО 2 · окно «Карта» нового интерфейса: OpenLayers, подложка по теме, слои открытого проекта из store.project.
      Порядок слоёв — как в окне «Слои» (верхний рисуется поверх), видимость — слой и его группа.
-     Оформление пока «единое» (заливка, контур, толщина, прозрачность); категории, диапазоны и знаки ЛГР — следующие шаги переноса.
+     Оформление — все способы рабочей страницы (symbology.js): единое, категории, диапазоны, правила, знаки ЛГР, подписи, масштаб.
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта). -->
 <template><div ref="el" class="map"></div></template>
 
@@ -15,34 +15,29 @@ import OSM from "ol/source/OSM.js";
 import XYZ from "ol/source/XYZ.js";
 import GeoJSON from "ol/format/GeoJSON.js";
 import { createEmpty, extend, isEmpty } from "ol/extent.js";
-import { fromLonLat, getPointResolution, toLonLat } from "ol/proj.js";
-import { Circle, Fill, Stroke, Style } from "ol/style.js";
-import { project, scale, shown, styleOf, theme, viewNow } from "../store.js";
+import { fromLonLat, toLonLat } from "ol/proj.js";
+import { project, scale, shown, theme, viewNow } from "../store.js";
+import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
 
 const el = ref(null);
 let map, ro;
 const vec = {};                       // key слоя → VectorLayer
 const fmt = new GeoJSON({ featureProjection: "EPSG:3857" });   // в файле проекта данные в долготе и широте
 
-const rgba = (hex, a) => {
-  let h = hex.slice(1); if (h.length <= 4) h = [...h].map(c => c + c).join("");
-  const n = parseInt(h.slice(0, 6), 16);
-  return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
-};
+const lat = () => toLonLat(map.getView().getCenter())[1];
 
-/* Как рисует рабочая страница (web/layers.js styleFor, режим «единое»): линия — цветом заливки,
-   полигон — полупрозрачной заливкой и контуром, точка — кружком; толщина в пикселях экрана. */
-function style(l) {
-  const s = styleOf(l);
-  const point = new Circle({ radius: 2 + s.width * 2, fill: new Fill({ color: s.fill }), stroke: new Stroke({ color: s.stroke, width: 1 }) });
-  if (l.geom === "line") return new Style({ stroke: new Stroke({ color: s.fill, width: s.width, lineCap: "round", lineJoin: "round" }), image: point });
-  if (l.geom === "point") return new Style({ image: point });
-  return new Style({
-    fill: new Fill({ color: rgba(s.fill, s.opacity) }),
-    stroke: s.width > 0 ? new Stroke({ color: s.stroke, width: s.width }) : undefined,
-    image: point,
+/* Слой OpenLayers по описанию слоя из файла: оформление, видимость по масштабу (как в QGIS), прозрачность слоя.
+   Подписи разводятся (declutter), если у слоя есть подпись. Источник с объектами переиспользуется. */
+function olLayer(l, i, n, src) {
+  const st = fullStyle(l.style), la = lat();
+  return new VectorLayer({
+    source: src, style: styleFunction(l, project.data[l.key]?.fc, lat), declutter: !!st.label,
+    visible: shown(l), zIndex: n - i, opacity: okn(l.layerOpacity, 1),
+    maxResolution: st.maxDen ? denToRes(st.maxDen, la) : Infinity, minResolution: st.minDen ? denToRes(st.minDen, la) : 0,
+    properties: { key: l.key },
   });
 }
+const sig = l => JSON.stringify([l.style, l.layerOpacity, l.geom]);
 
 function basemap(t) {
   return t === "dark"
@@ -60,7 +55,7 @@ function rebuild() {
     try { feats = fc ? fmt.readFeatures(fc) : []; } catch { feats = []; }   // битый слой не должен ронять остальные
     const src = new VectorSource({ features: feats });
     if (feats.length) extend(ext, src.getExtent());
-    vec[l.key] = new VectorLayer({ source: src, style: style(l), visible: shown(l), zIndex: n - i, properties: { key: l.key } });
+    vec[l.key] = olLayer(l, i, n, src); vec[l.key].set("sig", sig(l));
     map.addLayer(vec[l.key]);
   });
   const v = project.view, view = map.getView();
@@ -68,22 +63,30 @@ function rebuild() {
   else if (!isEmpty(ext)) view.fit(ext, { padding: [30, 30, 30, 30], maxZoom: 18 });
 }
 
-/* Видимость, порядок и оформление — без перечитывания данных. */
+/* Видимость и порядок — на месте; изменённое оформление — новый слой на том же источнике (без перечитывания данных). */
 function refresh() {
   const n = project.layers.length;
-  project.layers.forEach((l, i) => { const v = vec[l.key]; if (!v) return; v.setVisible(shown(l)); v.setZIndex(n - i); v.setStyle(style(l)); });
+  project.layers.forEach((l, i) => {
+    let v = vec[l.key]; if (!v) return;
+    if (v.get("sig") !== sig(l)) {
+      const nv = olLayer(l, i, n, v.getSource()); nv.set("sig", sig(l));
+      map.getLayers().setAt(map.getLayers().getArray().indexOf(v), nv); vec[l.key] = v = nv;
+    }
+    v.setVisible(shown(l)); v.setZIndex(n - i);
+  });
 }
 
 onMounted(() => {
   map = new Map({ target: el.value, layers: [basemap(theme.value)], view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }) });
   const upd = () => {
-    const v = map.getView(), res = getPointResolution(v.getProjection(), v.getResolution(), v.getCenter());
-    scale.value = Math.round(res / 0.00028 / 10) * 10;   // 0,28 мм на пиксель экрана
+    const v = map.getView();
+    scale.value = scaleDen(v.getResolution(), lat());     // как в рабочей странице: 0,2646 мм на пиксель, поправка на широту
     viewNow.center = toLonLat(v.getCenter()); viewNow.zoom = v.getZoom();   // вид уходит в файл при записи, сдвиг карты — не правка
   };
   map.on("moveend", upd); upd();
   ro = new ResizeObserver(() => map.updateSize()); ro.observe(el.value);
   rebuild();
+  loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
   watch(theme, t => map.getLayers().setAt(0, basemap(t)));
   watch(() => project.data, rebuild);
   watch([() => project.layers, () => project.groups], refresh, { deep: true });

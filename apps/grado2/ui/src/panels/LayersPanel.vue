@@ -64,6 +64,7 @@ const blocks = computed(() => {
 .layers .sw { width: 16px; height: 10px; flex: none; box-sizing: border-box; }
 .layers .sw.line { border-bottom: 2.5px solid var(--c); height: 6px; }
 .layers .sw.poly { background: color-mix(in srgb, var(--c) 45%, transparent); border: 1px solid var(--e); }
+.layers .sw.poly.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 1px, transparent 1px 4px); }
 .layers .sw.point { width: 10px; margin: 0 3px; border-radius: 50%; background: var(--c); border: 1px solid var(--e); }
 .layers .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layers .name.off { color: var(--g-muted); }

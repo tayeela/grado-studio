@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.53: window «Свойства» moved to the new interface in full (#69).**
+  - All style modes of the working page: «Единое», «Категории» (field, «Классифицировать», colour and show/hide per
+    value), «Диапазоны» (field, 3–6 classes, quantiles or equal intervals, four colour ramps), «Правила» (field,
+    condition, value, colour, hatch, count; «Остальные» colour or hide), «ЛГР» (REDLN97 line types by line code).
+  - Outline colour and width, fill and layer opacity, «Виден крупнее 1:…», role in calculations, hatch pattern and
+    step, label field and size, floor labels by scale.
+  - The map draws every mode the way the working page does (`ui/src/symbology.js`, a port of `web/layers.js` and
+    `web/app.js`; REDLN97 signs through the same `web/linetype.js`). Large layers are drawn on canvas only for now
+    (the working page switches to WebGL above ~15 000 objects in view).
+
 - **2026-10-08, ГРАДО 2 v0.99.52: the new interface saves the project (#69, step 3 of the engines plan).**
   - «Проект» menu in `/next/`: «Сохранить» (Ctrl+S), «Сохранить как…» (asks before replacing a project with the same
     name), «Новый проект», «Открыть файл .grado2 с диска…», «Скачать файл проекта». Opening another project or a new
