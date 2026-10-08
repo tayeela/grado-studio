@@ -1,0 +1,10 @@
+# Служба выкладки ГРАДО 2 самим сервером msk: один запуск tools/server_pull/grado-pull.sh (ставит install-on-msk.sh).
+[Unit]
+Description=GRADO 2: pull main from GitHub and deploy grado.tailink.tech
+After=network-online.target grado.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/grado/bin/grado-pull.sh
+TimeoutStartSec=15min

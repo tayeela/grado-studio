@@ -12,7 +12,7 @@
 | `apps/studio/`, `apps/wizard/`, `apps/calc-web/` | закрытые 23.09.2026 старая студия, мастер, калькулятор ТЭП ([apps/README.md](apps/README.md)); не править | нет |
 | [core/](core/README.md) | ядро: `compute` (ТЭП), `model` (проект .grado), `reactive` (правки), `geom`, `connectors` (порталы), `render` (PDF/SVG/PPTX/DXF), `layout` (вёрстка) | да |
 | [docs/](docs/INDEX.md) | документы: `wiki/`, `standards/`, `specs/`, `product/`, `ux/`, `guides/`, `team/`, `archive/` | да |
-| [tools/](tools/README.md) | скрипты разработки: `gate.sh`, `wiki.py`, `docs_check.py`, `deploy-server.sh`, `album_check.py`, генераторы стилей, хуки git | да |
+| [tools/](tools/README.md) | скрипты разработки: `gate.sh`, `wiki.py`, `docs_check.py`, `server_pull/` (выкладка сервером), `album_check.py`, генераторы стилей, хуки git | да |
 | [packaging/](packaging/README.md) | сборка установщиков Windows и macOS (ГРАДО 2) и прежней студии | частично |
 | [.claude/](.claude/README.md) | роли, навыки и хуки ИИ-агентов, настройки Claude Code | да |
 | [.github/](.github/workflows/README.md) | проверки и автоматика GitHub (`workflows/`), шаблоны задач и PR | да |

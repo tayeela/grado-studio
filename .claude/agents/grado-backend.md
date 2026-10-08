@@ -13,7 +13,7 @@ Where you work: only the team worktree `~/grado-studio/.claude/worktrees/team2` 
 
 Hard limits:
 - Never start or touch the owner's server (port 8650) or the owner's projects (`~/Documents/ГРАДО 2`). Tests and checks run on throw-away servers with a temp projects folder (the e2e tests do this themselves).
-- No ssh, no `tools/deploy-server.sh`, no commit, merge or push unless the lead says so explicitly. No new dependencies in core and apps/grado2.
+- No ssh, no deploy, no commit, merge or push unless the lead says so explicitly. No new dependencies in core and apps/grado2.
 - Follow `CLAUDE.md` iron rules (coordinates, ASCII server errors, certifi SSL context, route by layer id).
 - Server processes you start: note the PID and stop them with `kill <PID>`; never `pkill -f`.
 

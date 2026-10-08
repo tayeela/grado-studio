@@ -13,7 +13,7 @@
   requirements. Album changes: `tools/album_check.py` report pasted into the PR, crops uploaded to the issue's
   release or the PR comment.
 - **Landing («выкладывай»)** → the open PR `team/t60 → main` («Выкладка ГРАДО 2 vX») is merged on GitHub
-  (`gh pr merge --merge`), then in the main checkout `git pull --ff-only` — the post-merge hook deploys the site.
+  (`gh pr merge --merge`), the server `msk` pulls `main` and deploys the site within 5 minutes (`tools/server_pull/README.md`); then in the main checkout `git pull --ff-only`.
 - **Deliverables** (album PDF/PPTX) → a GitHub release `album-<project>-<date>` (pre-release), plus the owner's
   delivery folder and the chat. **Baselines** for album_check → release `album-baseline` (`gol.zip`, `bez.zip`).
 - **Wiki** → private repo `tayeela/grado-wiki`: the hook `post-commit` on the Mac for a commit in `main` or `team/t60` that changes `docs/wiki`, and the workflow `wiki.yml` after a push to `team/t60` (needs the secret `WIKI_TOKEN`).
@@ -40,12 +40,12 @@ is `README.md` in this folder.
 - Cloud session (claude.ai/code): a fresh clone of `tayeela/grado-studio`, no Mac paths. Work on a branch `task/<issue>-<slug>`
   from `team/t60`, push it, open a PR into `team/t60`; deploying and the Mac are not reachable from there.
 - Main checkout `~/grado-studio` (branch `main`): the owner's program runs from here. The team changes only
-  `docs/team/*` here, committed path-limited: `GRADO_NO_DEPLOY=1 git commit -m "team: …" -- docs/team`.
+  `docs/team/*` here, committed path-limited: `git commit -m "team: …" -- docs/team`.
   Never stage or commit other files of the main checkout: the owner may have work in progress there.
 - Team worktree `~/grado-studio/.claude/worktrees/team2` (branch `team/t60`; a task may get its own worktree from the lead, e.g. `.claude/worktrees/t86`, branch `team/t86`): all program changes. Commits on
-  this branch never deploy (the deploy hook acts only on `main`).
+  this branch never deploy (the server deploys only `main`).
 - Scratch for screenshots and temp projects: `/tmp/grado-team/<date>/` (create it).
-- Never: port 8650, `~/Documents/ГРАДО 2`, ssh, `tools/deploy-server.sh`, the owner's QGIS folder.
+- Never: port 8650, `~/Documents/ГРАДО 2`, ssh, deploying from the Mac, the owner's QGIS folder.
 
 ## Budget
 
@@ -124,9 +124,10 @@ Only on the owner's explicit word in chat. The procedure is the skill `land` (`.
 1. In the main checkout on the Mac: `git status --porcelain -- apps/grado2 core docs` must be empty; if not, stop and tell the
    owner that there is unsaved work in the program folder. (In a cloud session this step is skipped.)
 2. Bring `team/t60` up to date with `main` (step 0.2) and run the full test gate (`E2E=1 tools/gate.sh`); CI of the PR must be green.
-3. Merge the PR `team/t60 → main` on GitHub. On the Mac `git pull --ff-only` in the main checkout runs the post-merge hook that
-   updates grado.tailink.tech (msk); read its output. «Сервер занят выгрузкой… отложено» or a failure means the server still runs
-   the old version: say so and rerun `tools/deploy-server.sh` later.
+3. Merge the PR `team/t60 → main` on GitHub. Within 5 minutes the server `msk` pulls `main` and updates grado.tailink.tech
+   (`tools/server_pull/README.md`); check that the site reports the new version. A busy server retries every 5 minutes by itself;
+   a version that did not start is rolled back and not retried — say so, the fix lands as a new PR. Then `git pull --ff-only` in the
+   main checkout on the Mac (it only updates the owner's program, not the site).
 4. Close the landed issues (`Closes #N` works only for the default branch, so check them), remove the label `готово к выкладке`,
    note the landing in `PROGRESS.md`, report to the owner: version, what changed on screen, server result,
    «перезапустите программу, чтобы увидеть».

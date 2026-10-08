@@ -28,8 +28,8 @@
   В `main` — только по слову владельца «выкладывай» (навык `land`).
 - Команда на Mac — ветка `team/t60`, рабочая копия `.claude/worktrees/team2`. Начало цикла: `git merge main`, `tools/gate.sh`,
   прочитать `docs/wiki/INDEX.md` и `docs/wiki/team.md`.
-- `main` — программа владельца и сайт: слияние программы в `main` и `git pull` на Mac сами выкладывают сайт (хук `deploy-if-main.sh`).
-  Только документы команды — `GRADO_NO_DEPLOY=1 git commit -- docs/team`.
+- `main` — программа владельца и сайт: слияние в `main` на GitHub само выкладывает сайт — сервер msk забирает `main` раз в 5 минут
+  (`tools/server_pull/README.md`). Только документы команды — `git commit -- docs/team`.
 
 ## Тестовая копия программы (не 8650!)
 `~/.claude/launch.json` → `grado2-team2` (порт 8661, ветка команды, проекты `/tmp/grado-team/2026-10-05/proj-t2`) и
@@ -44,8 +44,8 @@
 
 ## Выкладка (только по слову владельца «выкладывай»)
 Навык `land` (`.claude/skills/land/SKILL.md`): `git -C ~/grado-studio status --porcelain -- apps/grado2 core docs` пусто → в ветке команды
-`git merge main` → `E2E=1 tools/gate.sh`, CI зелёный → PR `team/t60 → main` слить на GitHub → на Mac в основной копии `git pull --ff-only`
-(хук выложит сайт; при обрыве сети — повторить `tools/deploy-server.sh`, путь Mac → msk; ГРАДО на msk с 07.10.2026) →
+`git merge main` → `E2E=1 tools/gate.sh`, CI зелёный → PR `team/t60 → main` слить на GitHub → сервер msk сам выложит сайт в течение 5 минут
+(`tools/server_pull/README.md`; проверить версию сайта) → на Mac в основной копии `git pull --ff-only` →
 закрыть задачи, убрать метку «готово к выкладке» → запись в ЛОГ taiLink (`~/.claude/guard/log_append.py`).
 
 ## Срочное исправление на сайте

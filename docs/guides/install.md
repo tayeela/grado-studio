@@ -34,8 +34,8 @@ python3 apps/grado2/server.py --hub      # совместный режим (ак
 ## Сайт
 
 Рабочая копия для совместной работы — <https://grado.tailink.tech> (сервер `msk`; доступ выдаёт владелец).
-Сайт обновляется выкладкой с Mac владельца: `tools/deploy-server.sh` (сам запускается хуками после слияния в `main`, рецепт —
-[../wiki/recipes.md](../wiki/recipes.md)).
+Сайт обновляет сам сервер: раз в 5 минут он забирает ветку `main` с GitHub ([../../tools/server_pull/README.md](../../tools/server_pull/README.md),
+рецепт — [../wiki/recipes.md](../wiki/recipes.md)).
 
 ## Данные порталов
 

@@ -50,7 +50,7 @@
 | порядок работы команды, роли, шаблоны заданий | `docs/team/CYCLE.md`, `.claude/agents/grado-*.md`, `docs/team/prompts/` |
 | уроки команды (обязательные) | строки `RULE:` в `docs/team/PROGRESS.md` |
 | решения совета команды | `docs/team/DECISIONS.md` |
-| выкладка на сайт grado.tailink.tech | `tools/deploy-server.sh`, хуки `tools/git-hooks/`; рецепт — `docs/wiki/recipes.md` |
+| выкладка на сайт grado.tailink.tech | `tools/server_pull/` (таймер на msk забирает `main`); рецепт — `docs/wiki/recipes.md` |
 | снимки панорам Яндекса для фотофиксации | `tools/panorama_shot.mjs` |
 | проверка альбома «до / после» (картинки и текст страниц) | `tools/album_check.py`; эталоны — релиз GitHub `album-baseline` (копия в `~/.grado2/album-baseline/`), отчёт — `/tmp/grado-album-check/<имя>/` |
 | проверка оформления готового альбома (наложения, края, переносы, «ё», неразрывные пробелы в PPTX) | `tools/album_lint.py` (его же запускает `album_check.py`); чек-лист — `docs/standards/albums/layout-qa.md` |
@@ -67,7 +67,7 @@
 |---|---|---|
 | рабочие проекты владельца | `~/Documents/ГРАДО 2/` (Mac) | **нет**, только читать по просьбе |
 | программа владельца (сервер) | порт 8650 на Mac | **нет**, тесты — только на 8651+ |
-| сайт grado.tailink.tech | сервер `msk` (`ssh msk`): программа `/opt/grado/app`, проекты `/var/lib/grado/projects`, службы `grado` и `grado-guest` | только выкладкой `tools/deploy-server.sh` с Mac |
+| сайт grado.tailink.tech | сервер `msk` (`ssh msk`): программа `/opt/grado/app`, проекты `/var/lib/grado/projects`, службы `grado` и `grado-guest` | только выкладкой самого сервера (`tools/server_pull/`) |
 | выдача альбома владельцу | `~/Documents/ГРАДО 2 — ППТ КРТ <№> <район> (<дата>)/`, прежние версии — `прежняя версия/` | да, с копией прежнего |
 | тестовые серверы | `~/.claude/launch.json`: `grado2-test` (8651), `grado2-team2` (8661), `grado2-t86` (8671) | да |
 | копии проектов для проверок | `/tmp/grado-team/<дата>/proj-*` (на Mac); в облаке — релиз `album-work-*` | да |
