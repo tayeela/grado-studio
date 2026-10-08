@@ -13,7 +13,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     before «га» and «г.», in «тыс. кв. м», after «ул.», «вл.», «ст.», «ж/д». A spaced «—» becomes «–» before wrapping.
     «ё» is untouched (#54) (#60).
   - Sheet 2 callout line keeps 1.5 mm off map labels (#62).
-  - An address auto-filled from the registry marks the title sheet «адрес из реестра — сверьте с письмом ДГП»
+  - An address auto-filled from the registry marks the title sheet «адрес из реестра — сверьте с письмом ДГП» and shows a note under «Адрес» in «Штамп…»
     (`AlbumMeta.addrWhy`) (#56).
   - Not changed, see the PR:
     - the ВАО enclave Восточный (0.2 km from the main part, 2 % of its area — not «далёкий» by lr 18; owner question);
