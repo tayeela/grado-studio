@@ -3,7 +3,7 @@
 Карта пакетов — [README.md](README.md). Ядро общее для программы, тестов и печати.
 
 - Готовые библиотеки лучше самописного кода (владелец 08.10.2026, #69). Внешние пакеты — из `apps/grado2/requirements.txt`: `certifi`, Pillow,
-  shapely 2 (геометрия `core/geom`), httpx и tenacity (сеть, `netutil.py`). Новая зависимость: колёса для macOS arm64 и x86_64 и Windows, разрешительная лицензия, строка в requirements, тот же gate.
+  shapely 2 (геометрия `core/geom`), httpx и tenacity (сеть, `netutil.py`), ReportLab (PDF, `render/grado_render/backend_pdf.py`). Новая зависимость: колёса для macOS arm64 и x86_64 и Windows, разрешительная лицензия, строка в requirements, тот же gate.
 - Пакеты стоят слоями (`compute`, `model`, `reactive`, `geom`, `connectors`, `render`, `layout`); `PYTHONPATH` для тестов — как в `tools/gate.sh`.
 - Стили ЛГР `render/grado_render/styles/*.json` **генерируются** скриптами `tools/gen_*.py`: правьте генератор и пересоберите. Исключение — `default.json`: его ведут руками.
 - Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы между запросами, без параллельных выгрузок. Сеть — только через

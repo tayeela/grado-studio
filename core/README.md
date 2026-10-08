@@ -3,7 +3,7 @@
 Здесь семь пакетов Python, на которых стоит программа `apps/grado2`: расчёт ТЭП, проектная база, журнал правок,
 данные из порталов, геометрия, рендер листов и альбом. Каждый пакет лежит в папке `core/<имя>/`: код в `grado_<имя>/`,
 тесты в `tests/`. Код опирается на стандартную библиотеку и пакеты из `apps/grado2/requirements.txt`: `certifi`, Pillow, shapely 2
-(наложение, покрытие и привязки в `core/geom`), httpx и tenacity (запросы к порталам, `grado_connectors/netutil.py`).
+(наложение, покрытие и привязки в `core/geom`), httpx и tenacity (запросы к порталам, `grado_connectors/netutil.py`), ReportLab (запись PDF, `grado_render/backend_pdf.py`).
 
 Что где лежит во всём проекте: [docs/wiki/files.md](../docs/wiki/files.md).
 
@@ -58,7 +58,7 @@ GeoPackage на `sqlite3`), `classifier.py` (виды объектов; базо
 
 ### `core/render` — рендер листов и карты
 Одна стилевая машина: `scene.py` превращает проект в список операций рисования (`build_ops`). Два вывода
-выполняют этот список: `backend_svg.py` (экран) и `backend_pdf.py` (PDF, кириллица через TrueType из `ttf.py`).
+выполняют этот список: `backend_svg.py` (экран) и `backend_pdf.py` (PDF на ReportLab; кириллица — подмножество TrueType с /ToUnicode, ширины строк — `ttf.py`).
 `backend_pptx.py` пишет PowerPoint; из `__init__.py` он не экспортируется, его берёт `apps/grado2/print_io.py`.
 `style.py` читает стили из JSON-библиотек в `styles/`, `acad_lin.py` читает типы линий AutoCAD (.SHX, .LIN).
 
@@ -84,7 +84,7 @@ env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom
 
 ## Правила
 
-- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely, httpx, tenacity.
+- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely, httpx, tenacity, ReportLab.
 - ЛГР-стили `core/render/grado_render/styles/*.json` генерируются, кроме `default.json`. Правьте генератор и
   запускайте его: `moscow_lgr.json` ← `tools/gen_moscow_lgr.py`, `moscow_genplan.json` ← `tools/gen_moscow_genplan.py`,
   `osm_highway.json` ← `tools/gen_osm_highway.py`, `redln97.json` ← `tools/gen_redln97.py`. Генератора для

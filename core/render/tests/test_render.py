@@ -4,14 +4,17 @@
 Тест с pdftotext пропускается, если утилиты pdftotext нет.
 """
 
+import io
 import re
 import sys
 import tempfile
 import unittest
-import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[2] / "model"))
+sys.path.insert(0, str(Path(__file__).parent))
+
+import _pdfread  # noqa: E402
 
 from grado_render import (Font, MapTransform, PdfBackend, StyleSet,  # noqa: E402
                           build_ops, find_font, render_svg)
@@ -110,10 +113,11 @@ class TestPdfBackend(unittest.TestCase):
         self.pdf = self.backend.render([(297, 210, OPS)])
 
     def test_structure(self):
-        self.assertTrue(self.pdf.startswith(b"%PDF-1.6"))
+        self.assertTrue(self.pdf.startswith(b"%PDF-1."))
         self.assertTrue(self.pdf.rstrip().endswith(b"%%EOF"))
-        self.assertIn(b"/Identity-H", self.pdf)
-        self.assertIn(b"/FontFile2", self.pdf)
+        self.assertIn(b"/FontFile2", self.pdf, "шрифт встроен")
+        self.assertIn(b"/ToUnicode", self.pdf, "текст ищется и копируется")
+        self.assertNotIn(b"Helvetica", self.pdf, "только свои шрифты, без невстроенных стандартных")
 
     def test_xref_offsets_valid(self):
         m = re.search(rb"xref\n0 (\d+)\n", self.pdf)
@@ -127,25 +131,17 @@ class TestPdfBackend(unittest.TestCase):
                 f"смещение объекта {num} в xref неверно")
 
     def test_content_stream_draws(self):
-        streams = re.findall(rb"stream\n(.*?)\nendstream", self.pdf, re.S)
-        page = None
-        for s in streams:
-            try:
-                data = zlib.decompress(s)
-            except zlib.error:
-                continue
-            if b"Tj" in data:
-                page = data
-        self.assertIsNotNone(page)
-        self.assertIn(b" W n", page, "клип рамки карты")
+        page = _pdfread.page_streams(self.pdf)[0]
+        self.assertIn(b" re W* n", page, "клип рамки карты")
         self.assertIn(b"\nB\n", page, "заливка с обводкой")
-        gid = self.backend.font.gid_for("М")
-        self.assertIn(f"{gid:04X}".encode(), page, "глиф «М» в тексте")
+        self.assertIn(b"[5.669291 2.834646] 0 d", page, "штрих 2;1 мм")
+        self.assertEqual(_pdfread.texts(self.pdf), ["Москва"])
 
     def test_multipage(self):
         pdf = PdfBackend().render([(297, 210, OPS), (210, 297, OPS)])
-        self.assertEqual(pdf.count(b"/Type /Page "), 2)
+        self.assertEqual(len(_pdfread.page_streams(pdf)), 2)
         self.assertIn(b"/Count 2", pdf)
+        self.assertIn(b"/MediaBox [ 0 0 595.2756 841.8898 ]", pdf, "второй лист — книжный")
 
     def test_embeds_and_selects_three_font_families(self):
         ops = [
@@ -158,18 +154,8 @@ class TestPdfBackend(unittest.TestCase):
         ]
         pdf = PdfBackend().render([(160, 100, ops)])
         self.assertEqual(pdf.count(b"/FontFile2"), 3)
-        streams = re.findall(rb"stream\n(.*?)\nendstream", pdf, re.S)
-        page = b""
-        for stream in streams:
-            try:
-                data = zlib.decompress(stream)
-            except zlib.error:
-                continue
-            if b" Tj" in data:
-                page = data
-        self.assertIn(b"/F1 ", page)
-        self.assertIn(b"/F2 ", page)
-        self.assertIn(b"/F3 ", page)
+        self.assertEqual(len(set(re.findall(rb"/(\S+) [\d.]+ Tf", _pdfread.page_streams(pdf)[0]))), 3)
+        self.assertEqual(_pdfread.texts(pdf), ["Системный", "С засечками", "Моноширинный"])
 
 
 class TestWysiwyg(unittest.TestCase):
@@ -218,6 +204,13 @@ FAKE_JPEG = bytes([0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x0B, 0x08,
                    0x00, 0x01, 0x00, 0x02, 0x03])
 
 
+def real_jpeg(w=2, h=1):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (w, h), (200, 10, 10)).save(buf, "JPEG")
+    return buf.getvalue()
+
+
 class TestImages(unittest.TestCase):
     def test_jpeg_info(self):
         from grado_render import jpeg_info
@@ -227,22 +220,22 @@ class TestImages(unittest.TestCase):
 
     def _ops(self):
         return [
-            {"op": "image", "data": FAKE_JPEG, "x": 10, "y": 10,
+            {"op": "image", "data": real_jpeg(), "x": 10, "y": 10,
              "w": 100, "h": 50},
-            {"op": "image", "data": FAKE_JPEG,
+            {"op": "image", "data": real_jpeg(),
              "quad": ((120, 10), (170, 12), (118, 60))},
         ] + list(OPS)
 
     def test_pdf_xobject(self):
         pdf = PdfBackend().render([(297, 210, self._ops())])
-        self.assertIn(b"/Subtype /Image", pdf)
-        self.assertIn(b"/Filter /DCTDecode", pdf)
-        self.assertIn(b"/Width 2 /Height 1", pdf)
-        self.assertIn(b"/XObject << /Im1", pdf)
+        img = [h for h, _ in _pdfread.objects(pdf).values() if b"/Subtype /Image" in h]
         # два op с одинаковыми данными → один встроенный XObject
-        self.assertEqual(pdf.count(b"/Subtype /Image"), 1)
+        self.assertEqual(len(img), 1)
+        self.assertIn(b"/DCTDecode", img[0])
+        self.assertIn(b"/Width 2", img[0])
+        self.assertIn(b"/Height 1", img[0])
         # сам JPEG лежит в потоке без перекодирования
-        self.assertIn(FAKE_JPEG, pdf)
+        self.assertIn(real_jpeg(), pdf)
 
     def test_pdf_xref_still_valid_with_images(self):
         pdf = PdfBackend().render([(297, 210, self._ops())])
@@ -256,21 +249,13 @@ class TestImages(unittest.TestCase):
                 f"смещение объекта {num} в xref неверно")
 
     def test_pdf_stream_has_do(self):
-        backend = PdfBackend()
-        pdf = backend.render([(297, 210, self._ops())])
-        streams = re.findall(rb"stream\n(.*?)\nendstream", pdf, re.S)
-        page = None
-        for s in streams:
-            try:
-                data = zlib.decompress(s)
-            except zlib.error:
-                continue
-            if b"Do" in data:
-                page = data
-        self.assertIsNotNone(page)
-        self.assertEqual(page.count(b"/Im1 Do"), 2)
+        pdf = PdfBackend().render([(297, 210, self._ops())])
+        page = _pdfread.page_streams(pdf)[0]
+        self.assertEqual(len(re.findall(rb" Do\n", page)), 2)
         # осевой случай: матрица [w 0 0 h x y]
-        self.assertIn(b"283.465 0 0 141.732", page)
+        self.assertIn(b"283.4646 0 0 141.7323 28.34646 425.1969 cm", page)
+        # параллелограмм по трём углам: наклон 2 мм на 50 мм
+        self.assertIn(b"141.7323 -5.669291 5.669291 141.7323 334.4882 425.1969 cm", page)
 
     def test_svg_image_data_uri(self):
         svg = render_svg(297, 210, self._ops())
@@ -741,9 +726,8 @@ class TestPrintHolesAndGroundUnits(unittest.TestCase):
             p.close()
         paths = [o for o in ops if o["op"] == "path" and len(o["rings"]) > 1]
         self.assertTrue(paths, "внутреннее кольцо обязано дойти до печати")
-        pdf = PdfBackend()
-        body = pdf._path_ops(paths[0], 200)
-        self.assertIn("B*", body.split(),
+        body = _pdfread.page_streams(PdfBackend().render([(267, 200, [paths[0]])]))[0]
+        self.assertIn(b"B*", body.split(),
                       "путь с дырой закрашивается по even-odd (иначе дыра "
                       "исчезнет при 'неправильной' намотке кольца)")
 
@@ -751,9 +735,9 @@ class TestPrintHolesAndGroundUnits(unittest.TestCase):
         op = {"op": "path", "rings": [[(0, 0), (10, 0), (10, 10), (0, 10)]],
               "closed": True, "fill": (0.2, 0.4, 0.8), "stroke": (0, 0, 0),
               "width": 0.5, "dash": None}
-        body = PdfBackend()._path_ops(op, 100)
-        self.assertIn("B", body.split())
-        self.assertNotIn("B*", body.split(), "без дыр — прежнее поведение")
+        body = _pdfread.page_streams(PdfBackend().render([(100, 100, [op])]))[0]
+        self.assertIn(b"B", body.split())
+        self.assertNotIn(b"B*", body.split(), "без дыр — прежнее поведение")
 
     def test_lgr_dash_and_marker_follow_print_scale(self):
         # штрих 6;4 м и шаг галки 20 м (QML MapUnit) обязаны держаться на ЛЮБОМ
@@ -802,23 +786,9 @@ class TestSearchableText(unittest.TestCase):
                     "halo": 0.3})
         self.pdf = PdfBackend().render([(160, 100, ops)])
 
-    def _streams(self):
-        out = []
-        for s in re.findall(rb"stream\n(.*?)\nendstream", self.pdf, re.S):
-            try:
-                out.append(zlib.decompress(s))
-            except zlib.error:
-                pass
-        return out
-
     def test_to_unicode_cmap_decodes_page_text(self):
         self.assertIn(b"/ToUnicode", self.pdf)
-        cmap = next(s for s in self._streams() if b"beginbfchar" in s).decode()
-        table = {int(g, 16): chr(int(u, 16))
-                 for g, u in re.findall(r"<([0-9A-F]{4})> <([0-9A-F]{4})>", cmap)}
-        page = next(s for s in self._streams() if b" Tj" in s).decode("latin1")
-        runs = ["".join(table.get(int(h[i:i + 4], 16), "?") for i in range(0, len(h), 4))
-                for h in re.findall(r"<([0-9A-F]+)> Tj", page)]
+        runs = _pdfread.texts(self.pdf)
         for w in self.WORDS:
             self.assertIn(w, runs)
 

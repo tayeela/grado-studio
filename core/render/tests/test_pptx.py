@@ -74,12 +74,14 @@ if __name__ == "__main__":
 
 class PdfHalo(unittest.TestCase):
     def test_halo_is_solid_after_a_dashed_line(self):
-        import zlib
+        import os
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        import _pdfread
         from grado_render import PdfBackend
         ops = [{"op": "path", "rings": [[(10, 10), (90, 10)]], "closed": False, "fill": None, "stroke": (1, 0, 1), "width": 1.1, "dash": [1.1, 1.1]},
                {"op": "text", "x": 20, "y": 40, "size": 4, "text": "СНТ «Космос»", "halo": .55}]
         pdf = PdfBackend().render([(100, 60, ops)])
-        streams = [zlib.decompress(m.group(1)) for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", pdf, re.S) if m.group(1)[:2] == b"x\x9c"]
-        page = next(s for s in streams if b"Tr" in s)
-        halo = page[page.index(b"q\n"):page.index(b"1 Tr")]
+        page = _pdfread.page_streams(pdf)[0]
+        halo = page[page.rindex(b"q\n", 0, page.index(b"1 Tr")):page.index(b"1 Tr")]
         self.assertIn(b"[] 0 d", halo)                      # ореол подписи — сплошной, не пунктир границы

@@ -512,11 +512,11 @@ AutoCAD complex linetypes: reading .SHX (compiled shapes) and .LIN (linetypes).
 
 Функции: `_s8`, `read_shx`, `_read_shx`, `_draw`, `_bulge`, `read_lin`, `_complex`, `lgr_index`, `linetype_for`, `_get`, `linetypes_for_codes`, `missing_codes`, `parse_line_codes`
 
-### `core/render/grado_render/backend_pdf.py` — 364 стр.
+### `core/render/grado_render/backend_pdf.py` — 227 стр.
 
-Печатный бэкенд: собственный PDF-писатель.
+Печатный бэкенд PDF на ReportLab (BSD): векторный вывод того же списка операций, что у экранного бэкенда (scene.py).
 
-Функции: `jpeg_info`, `_jpeg_info`, `_f`, `_to_unicode_cmap`, `PdfBackend`
+Функции: `jpeg_info`, `_jpeg_info`, `_rl_font`, `PdfBackend`
 
 ### `core/render/grado_render/backend_pptx.py` — 603 стр.
 

@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.53: album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
+  - `core/render/grado_render/backend_pdf.py`: the same list of drawing operations goes to a ReportLab canvas (paths with holes by
+    even-odd, clips, dashes, translucent plates, label halo, underlined legend headers, JPEG tiles as is). Fonts are embedded as
+    subsets with /ToUnicode, so text is still found and copied; line widths for labels are still measured by `ttf.py`.
+  - Checked on copies of Гольяново and Безобразово (9 sheets each, PDF): the text of every page is the same, pixels differ only
+    in letter edges (at most 0.004 % of a page differs strongly); the file is smaller (Гольяново 827 KB → 310 KB, Безобразово
+    4.8 MB → 4.6 MB). PPTX is unchanged.
+  - New dependency `reportlab>=4.2` (BSD), wheels for every platform; in both requirements files and `packaging/grado2.spec`.
+  - Tests read the PDF through `core/render/tests/_pdfread.py` (objects, page streams, text via /ToUnicode) instead of byte patterns.
 - **2026-10-08, agent instructions (no program change): owner's glossary, new task template, contradictions removed (step 4 of the plan, #69).**
   - `docs/wiki/glossary.md`: the owner's terms and abbreviations (АГК, АГР, сущпол, СПРИТ, ЛГР, ЗОУИТ, СПП, K1/K2…) with where they appear and what
     not to confuse them with; four traps first (sheet numbers, «эталон», «подзона», «ПП»). Linked from `CLAUDE.md`, `AGENTS.md`, wiki index.

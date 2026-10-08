@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.53: album PDF is written by ReportLab instead of our own PDF writer (part of #69).
 - 2026-10-08, agent instructions (no program change): owner's glossary, new task template, contradictions removed (step 4 of the plan, #69).
 - 2026-10-08, ГРАДО 2 v0.99.52: requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.48: geometry core on shapely 2 instead of hand-written code (#71, part of #69).
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).
 - 2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).
 - 2026-10-07, ГРАДО 2 v0.99.38: ready-made source sets in «Исходные данные» (audit #27).
-- 2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).

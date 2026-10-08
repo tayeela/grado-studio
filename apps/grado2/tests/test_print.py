@@ -622,7 +622,7 @@ class LabelsInFrame(unittest.TestCase):
         from grado_render import PdfBackend
         pdf = PdfBackend().render([(100, 60, [{"op": "path", "rings": [[(0, 0), (50, 0), (50, 20), (0, 20)]], "closed": True,
                                                 "fill": (1, 1, 1), "alpha": .72, "stroke": None, "width": 0, "dash": None}])])
-        self.assertIn(b"/ExtGState << /GA1 << /ca 0.72 >>", pdf)
+        self.assertRegex(pdf, rb"/ExtGState <<\s*/\w+ <<\s*/ca \.72\s*>>")
 
     def test_street_label_runs_stop_at_junctions_and_bends(self):
         pts = [(0, 0), (10, 0), (20, 0.2), (30, 0), (30, 20)]           # прямо 30 мм, затем поворот
