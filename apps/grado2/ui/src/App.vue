@@ -110,6 +110,7 @@ import {
   CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2, CircleHelp,
 } from "@lucide/vue";
 import { exportDxf, exportGeojson } from "./exports.js";
+import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, project, scale, setBasemap, theme, toggleTheme } from "./store.js";
@@ -126,6 +127,7 @@ const PANELS = [
   { id: "object", title: "Объект" },
   { id: "tep", title: "Показатели (ТЭП)" },
   { id: "table", title: "Таблица атрибутов" },
+  { id: "data", title: "Данные" },
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
 ];
@@ -173,6 +175,7 @@ function defaultLayout() {
   api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: 260 });
   api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: 280 });
   api.addPanel({ id: "object", component: "object", title: "Объект", position: { referencePanel: "props", direction: "within" } });
+  api.addPanel({ id: "data", component: "data", title: "Данные", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "views", component: "views", title: "Виды", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
@@ -184,7 +187,7 @@ function defaultLayout() {
 
 /* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
    дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
-const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"] };
+const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"] };
 function addNewWindows() {
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }
@@ -282,7 +285,8 @@ addEventListener("keydown", e => {
     if (typing(e) || e.altKey) return;
     if ((e.key === "Delete" || e.key === "Backspace") && sel.length) {
       e.preventDefault(); const n = sel.length; deleteFeatures([...sel]); notice.value = `Удалено объектов: ${n}. Ctrl+Z — вернуть`;
-    } else if (e.key === "Escape" && sel.length) setSel([]);
+    } else if (e.key === "Escape" && terrTool.value) terrTool.value = "";
+    else if (e.key === "Escape" && sel.length) setSel([]);
     return;
   }
   if (e.code === "KeyA" && !typing(e) && current.value) {

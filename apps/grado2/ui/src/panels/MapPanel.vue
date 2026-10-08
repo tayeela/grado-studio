@@ -15,7 +15,7 @@ import VectorSource from "ol/source/Vector.js";
 import OSM from "ol/source/OSM.js";
 import XYZ from "ol/source/XYZ.js";
 import GeoJSON from "ol/format/GeoJSON.js";
-import { createEmpty, extend, isEmpty } from "ol/extent.js";
+import { containsExtent, createEmpty, extend, isEmpty } from "ol/extent.js";
 import { defaults as defaultInteractions } from "ol/interaction/defaults.js";
 import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
@@ -25,6 +25,13 @@ import { basemapId, project, scale, shown, theme, viewNow } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
 import { indexOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
+import Draw from "ol/interaction/Draw.js";
+import Modify from "ol/interaction/Modify.js";
+import Text from "ol/style/Text.js";
+import { fromExtent } from "ol/geom/Polygon.js";
+import Feature from "ol/Feature.js";
+import { coverBox, coverOn, importFiles, setTerritory, terrTool } from "../data.js";
+import { notice } from "../project.js";
 
 const el = ref(null);
 let map, ro;
@@ -55,14 +62,44 @@ function basemap(id, t) {
     : new TileLayer({ source: new OSM(), className: "basemap", opacity: 0.55 });
 }
 
-/* Граница территории (поле territory файла): штрихпунктир, как у рабочей страницы; правка границы — с окном «Данные». */
+/* Граница территории (project.territory): штрихпунктир, как у рабочей страницы; при правке — с голубым ореолом и ручками.
+   Нарисовать — многоугольник (двойной щелчок завершает, Esc отменяет), править — ручки на вершинах (Alt+щелчок удаляет вершину). */
 const terrSrc = new VectorSource();
 const terrStyle = new Style({ stroke: new Stroke({ color: "#b3261e", width: 2, lineDash: [12, 4, 2, 4] }) });
+const terrHalo = new Style({ stroke: new Stroke({ color: "rgba(30,111,217,.45)", width: 7 }) });
 function drawTerr() {
   terrSrc.clear(true);
-  const t = project.raw?.territory; if (!t?.geometry) return;
+  const t = project.territory; if (!t?.geometry) return;
   try { terrSrc.addFeature(fmt.readFeature(t)); } catch { /* граница повреждена — карта без неё */ }
 }
+let draw = null, modify = null;
+function setTerrTool(t) {
+  if (draw) { map.removeInteraction(draw); draw = null; }
+  if (modify) { map.removeInteraction(modify); modify = null; }
+  if (t === "draw") {
+    draw = new Draw({ type: "Polygon", style: [terrHalo, terrStyle] });
+    draw.on("drawend", e => { const gj = fmt.writeFeatureObject(e.feature); terrTool.value = ""; setTerritory(gj, { keep: true }); notice.value = "Граница нарисована. Править вершины — «Изменить границу»"; });
+    map.addInteraction(draw); notice.value = "Обведите территорию щелчками, двойной щелчок завершает, Esc — отмена";
+  } else if (t === "edit") {
+    if (!terrSrc.getFeatures().length) { terrTool.value = ""; return; }
+    modify = new Modify({ source: terrSrc, deleteCondition: e => e.originalEvent.altKey && e.type === "singleclick" });
+    modify.on("modifyend", () => setTerritory(fmt.writeFeatureObject(terrSrc.getFeatures()[0]), { keep: true }));
+    map.addInteraction(modify); notice.value = "Тяните вершину, щелчок по стороне — новая вершина, Alt+щелчок — удалить вершину; Esc — готово";
+  }
+  terrLayer?.changed();
+}
+
+/* Область загрузки данных: синий пунктир, пока окно «Данные» на виду. */
+const coverSrc = new VectorSource();
+const coverStyle = new Style({ stroke: new Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
+  text: new Text({ text: "область загрузки данных", font: "12px system-ui, sans-serif", placement: "line", fill: new Fill({ color: "#1a5fb4" }),
+    stroke: new Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
+function drawCover() {
+  coverSrc.clear(true);
+  const b = coverOn.value && coverBox(); if (!b) return;
+  coverSrc.addFeature(new Feature(fromExtent(b).transform("EPSG:4326", "EPSG:3857")));
+}
+let terrLayer = null;
 
 /* Слои карты по слоям проекта: новый слой или заменённые данные — новый источник, изменённое оформление — новый слой
    на том же источнике, видимость и порядок — на месте; слои, которых в проекте нет, убираются. */
@@ -122,6 +159,7 @@ function hitAt(pixel) {
   return hit;
 }
 function onClick(e) {
+  if (terrTool.value) return;                       // рисуем или правим границу — щелчок не выбирает объекты
   const hit = hitAt(e.pixel), add = e.originalEvent.shiftKey || e.originalEvent.metaKey || e.originalEvent.ctrlKey;
   if (add) { if (hit) toggleSel(hit); }
   else setSel(hit ? [hit] : []);
@@ -141,7 +179,7 @@ let viewPending = true;
 function opened() {
   for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
   sync();
-  drawTerr();
+  drawTerr(); drawCover();
   viewPending = true; applyView();
 }
 function applyView() {
@@ -154,6 +192,7 @@ function applyView() {
   else zoomTo(Object.keys(vec), 0);
 }
 /* Вид карты из окна «Виды»: центр (долгота, широта) и уровень. */
+mapApi.fitExtent = (bb, duration = 200) => map.getView().fit(fromExtent(bb).transform("EPSG:4326", "EPSG:3857").getExtent(), { padding: [40, 40, 40, 40], maxZoom: 17, duration });
 mapApi.setView = (center, zoom) => { const v = map.getView(); v.setCenter(fromLonLat(center)); v.setZoom(zoom); };
 
 mapApi.fitFeature = gj => { const f = readOne(gj); if (f) map.getView().fit(f.getGeometry().getExtent(), { padding: [80, 80, 80, 80], maxZoom: 19, duration: 150 }); };
@@ -165,7 +204,8 @@ function zoomTo(keys, duration = 200) {
 
 onMounted(() => {
   map = new Map({
-    target: el.value, layers: [basemap(basemapId.value, theme.value), new VectorLayer({ source: terrSrc, zIndex: 9999, style: terrStyle }), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
+    target: el.value, layers: [basemap(basemapId.value, theme.value), terrLayer = new VectorLayer({ source: terrSrc, zIndex: 9999, style: () => terrTool.value === "edit" ? [terrHalo, terrStyle] : terrStyle }),
+      new VectorLayer({ source: coverSrc, zIndex: 9998, style: coverStyle }), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
     view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
@@ -187,6 +227,22 @@ onMounted(() => {
   watch(() => project.raw, opened);
   watch([() => project.layers, () => project.groups, dataRev], sync, { deep: true });
   watch(sel, drawSel);
+  watch(() => project.territory, () => { drawTerr(); drawCover(); });
+  watch(coverOn, on => {
+    drawCover(); if (!on || !coverSrc.getFeatures().length) return;
+    const ex = coverSrc.getExtent(), v = map.getView();      // область за краем экрана — карта отдаляется, чтобы пунктир было видно весь
+    if (!containsExtent(v.calculateExtent(map.getSize()), ex)) v.fit(ex, { padding: [40, 40, 40, 40], duration: 250 });
+  });
+  watch(terrTool, setTerrTool);
+  /* файл, брошенный на карту, — импорт слоя (файл проекта открывается меню «Проект») */
+  el.value.addEventListener("dragover", e => { if ([...e.dataTransfer.types].includes("Files")) { e.preventDefault(); el.value.classList.add("dropfile"); } });
+  el.value.addEventListener("dragleave", e => { if (!el.value.contains(e.relatedTarget)) el.value.classList.remove("dropfile"); });
+  el.value.addEventListener("drop", e => {
+    el.value.classList.remove("dropfile"); if (!e.dataTransfer.files.length) return; e.preventDefault();
+    const fs = [...e.dataTransfer.files];
+    if (fs.some(f => /\.grado2$/i.test(f.name))) { notice.value = "Файл проекта открывается меню «Проект» → «Открыть файл .grado2 с диска»"; return; }
+    importFiles(fs);
+  });
 });
 
 onBeforeUnmount(() => { ro?.disconnect(); map?.setTarget(undefined); });
@@ -194,4 +250,5 @@ onBeforeUnmount(() => { ro?.disconnect(); map?.setTarget(undefined); });
 
 <style>
 .map { width: 100%; height: 100%; background: var(--g-canvas); }
+.map.dropfile { outline: 3px dashed var(--wa-color-brand-border-loud); outline-offset: -6px; }
 </style>

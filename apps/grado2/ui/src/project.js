@@ -33,7 +33,7 @@ export function markDirty() {
   if (tick === autoTick) pendingSince = Date.now();
   tick++; lastEdit = Date.now(); dirty.value = true;
 }
-watch([() => project.layers, () => project.groups, () => project.views, basemapId, dataRev], markDirty, { deep: true });
+watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, basemapId, dataRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
@@ -107,7 +107,8 @@ export function collect(extra = {}) {
     groups: project.groups.map(g => ({ ...(rawGroup[g.id] || {}), ...toRaw(g) })),
     layers: project.layers.map(l => ({ ...toRaw(l), style: toRaw(l.style) })),
     views: JSON.parse(JSON.stringify(project.views)),
-    data: raw.data || {},
+    data: project.data || {},
+    territory: project.territory || null,
     ...extra,
   };
 }

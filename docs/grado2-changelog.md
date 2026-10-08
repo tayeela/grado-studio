@@ -2,6 +2,23 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.57: окно «Данные» в новом интерфейсе — граница, область загрузки, выгрузка источников, импорт файлов (#69).**
+  - Boundary: draw on the map (double click finishes, Esc cancels), edit vertices (drag, click on a side adds,
+    Alt+click removes), from a file (largest closed contour), by cadastral numbers (loaded parcels or НСПД search),
+    from the objects selected on the map (new), example (second click confirms). Boundary edits go into Ctrl+Z.
+  - The data loading area (sheet frames and the boundary + 60 m) is shown as a blue dashed frame while the window is
+    visible; size and area in the window.
+  - «Выбрать и загрузить…»: the source tree like «Исходные данные» (ЕГРН, ГИС ОГД selections and all portal layers,
+    ЕГКО, OSM, Yandex, relief), ready sets, search, object counts of portal layers in the area. Loading goes through
+    the same `/api/fetch` with progress; a repeat download merges with manual edits the same way as the working page
+    (your edits win, deleted stays deleted, drawn stays; new and changed objects are selected). Portal layers get the
+    portal look.
+  - «Файл…» and a file dropped on the map: a new layer (DXF, DWG, GeoJSON, KML/KMZ, Shapefile), МСК or ГИС ОГД metres.
+  - Loaded layers by source with count, date, error and re-download history; summary of the existing situation inside
+    the boundary (buildings, СПП, density, coverage, parcels; areas in МСК).
+  - New dependency `@turf/turf` 7.1.0 (MIT, same version as `web/vendor`), in the Vite build only.
+  - Not yet here: ФГИС ТП documents and the address and cadastral search over the map.
+
 - **2026-10-08, ГРАДО 2 v0.99.56: «Виды», подложка, граница территории, «Справка» и выгрузка DXF и GeoJSON в новом интерфейсе (#69).**
   - Window «Виды» (like QGIS map themes and the working page): save visible layers, styles, opacity, groups, basemap
     and, if ticked, the scale under a name; a click on the name brings the map back; refresh and delete (second click

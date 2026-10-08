@@ -101,9 +101,9 @@ const UNDO = [], REDO = [];
 let last = null, timer = null, applying = false;
 const snap = () => ({
   layers: JSON.stringify(project.layers), groups: JSON.stringify(project.groups), views: JSON.stringify(project.views),
-  data: { ...project.data }, current: currentId.value,
+  data: { ...project.data }, current: currentId.value, territory: project.territory,
 });
-const same = (a, b) => a.layers === b.layers && a.groups === b.groups && a.views === b.views
+const same = (a, b) => a.layers === b.layers && a.groups === b.groups && a.views === b.views && a.territory === b.territory
   && Object.keys(a.data).length === Object.keys(b.data).length && Object.keys(a.data).every(k => a.data[k] === b.data[k]);
 function sync() { history.undo = UNDO.length; history.redo = REDO.length; }
 
@@ -115,7 +115,7 @@ function commit() {
   UNDO.push(last); if (UNDO.length > 80) UNDO.shift();
   REDO.length = 0; last = now; sync();
 }
-watch([() => project.layers, () => project.groups, () => project.views, dataRev], () => {
+watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, dataRev], () => {
   if (applying) return;
   clearTimeout(timer); timer = setTimeout(commit, 400);
 }, { deep: true });
@@ -129,6 +129,7 @@ function apply(s) {
   project.views.splice(0, project.views.length, ...JSON.parse(s.views));
   for (const k of Object.keys(project.data)) if (!(k in s.data)) delete project.data[k];
   Object.assign(project.data, s.data);
+  project.territory = s.territory;
   if (project.layers.some(l => l.key === s.current)) currentId.value = s.current;
   touchData();
   setTimeout(() => { applying = false; last = snap(); }, 0);   // наблюдатели отработали на возврате — это не новая правка

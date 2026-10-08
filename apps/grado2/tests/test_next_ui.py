@@ -46,7 +46,8 @@ class NextUi(unittest.TestCase):
         # запись идёт из полного файла (project.raw): граф, альбом и виды, которых новый интерфейс не знает, не теряются
         src = (NEXT.parents[1] / "ui" / "src" / "project.js").read_text(encoding="utf-8")
         self.assertIn("...raw,", src)
-        self.assertIn("data: raw.data", src)
+        self.assertIn("data: project.data", src)          # данные слоёв — тот же объект, что прочитан из файла (store.setProject)
+        self.assertIn("territory: project.territory", src)
 
     def test_symbology_matches_working_page(self):
         # оформление нового интерфейса рисует файл проекта теми же цветами: палитры категорий и шкал как в web/layers.js
@@ -69,6 +70,19 @@ class NextUi(unittest.TestCase):
         for path in ("/api/export/dxf", "/api/export/geojson"):
             self.assertIn(path, old)
             self.assertIn(path, exp)
+
+    def test_data_window_matches_working_page(self):
+        # окно «Данные»: тот же опорный порядок слоёв (web/layers.js PREFERRED), те же адреса сервера и те же правила
+        # перевыгрузки (ваши правки сильнее источника, удалённое не возвращается), что у рабочей страницы
+        web = NEXT.parent
+        new = (NEXT.parents[1] / "ui" / "src" / "data.js").read_text(encoding="utf-8")
+        pref = lambda t: re.search(r"const PREFERRED = (\[[^\]]+\])", t).group(1)
+        self.assertEqual(re.findall(r'"([^"]+)"', pref((web / "layers.js").read_text(encoding="utf-8"))), re.findall(r'"([^"]+)"', pref(new)))
+        old = (web / "app.js").read_text(encoding="utf-8")
+        for s in ("/api/fetch", "/api/progress", "/api/import/files", "/api/search/cadastral" if "/api/search/cadastral" in new else "/api/search",
+                  "ваши правки (", "удалённые вами (", "Нет в источнике"):
+            self.assertIn(s.split("/cadastral")[0], old, s)
+            self.assertIn(s, new, s)
 
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
