@@ -1,0 +1,21 @@
+{
+  "name": "grado2-ui",
+  "private": true,
+  "version": "0.0.0",
+  "description": "ГРАДО 2: new interface on Vue 3 + Konva, built with Vite. Step 2 of the engines plan: sheet layout editor.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/sheet/model.test.js"
+  },
+  "dependencies": {
+    "konva": "10.7.1",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "vite": "8.3.4"
+  }
+}

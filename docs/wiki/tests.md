@@ -31,6 +31,7 @@
 | `test_sat.py` | FakeTiles, SatExport | 7 |
 | `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 152 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
+| `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
 | `test_t78_labels.py` | StationNotOnRail, StationNotOnDiagonalRail, StationBestSpot, DistrictBoundaryObstacle, Quotes, LeadersAndCaptions, NestedQuotes | 11 |
 | `test_t80_albums_print.py` | OverLayerOrder, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 11 |

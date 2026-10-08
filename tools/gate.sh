@@ -22,6 +22,9 @@ step core       bash -c "set -e; for m in compute geom layout model reactive ren
 if [ -x tools/node_modules/.bin/tsc ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
   step types    tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json
 else echo "skip types — no tools/node_modules (cd tools && npm ci)"; fi
+if [ -d apps/grado2/ui/node_modules ]; then  # новый интерфейс на Vue 3 + Konva собирается Vite; install: (cd apps/grado2/ui && npm ci)
+  step ui       npm --prefix apps/grado2/ui run build
+else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   step e2e      env PYTHONPATH="$PP" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
 fi

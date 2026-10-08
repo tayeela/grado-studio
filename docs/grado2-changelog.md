@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.48: каркас нового редактора раскладки листа на Konva (шаг 2 плана замен, #21, #24, #69).**
+  - Новая папка `apps/grado2/ui/`: Vue 3 + Konva, сборка Vite (решения владельца «1а 2б 3а 4а»). Нынешняя страница `web/`
+    не меняется и новый редактор пока не открывает; пробная страница — `npm run dev`.
+  - Модель листа `ui/src/sheet/model.js`: А4–А0, альбомная и книжная, рамка по ГОСТ (20/5 мм) или поля 2 %, штамп 185×55;
+    карта и колонка легенды нового листа стоят там же, где их ставит `print_io.layout()`. Масштаб карты, охват на местности,
+    подбор стандартного масштаба, замечания «за рамкой», «на штампе», «нет масштаба», смена формата с сохранением раскладки.
+  - Штамп `ui/src/sheet/stamp.js` повторяет `StampFrame` печати. Редактор `SheetEditor.vue`: выбор, перетаскивание
+    с привязкой из `web/snap.js`, ручки размера, стрелки, Delete, отмена и возврат, увеличение колесом.
+  - Проверки: `ui/src/sheet/model.test.js` (через `tests/test_sheetmodel_js.py`); `tools/gate.sh` шаг `ui` — сборка Vite,
+    пропускается без `apps/grado2/ui/node_modules`.
+
 - **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
   - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped
     in the program or the installers. Files stay `.js` and opt in with `// @ts-check`.
