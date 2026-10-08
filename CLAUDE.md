@@ -47,7 +47,8 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
   «Команда, за работу» = one cycle; team work on `team/t60`, reaches `main` only on the owner's «выкладывай» (skill `land`).
 - `main` updates grado.tailink.tech (host `msk`) by itself on the owner's Mac (hooks `post-commit`/`post-merge` → `tools/deploy-server.sh`);
   read its output and tell the owner; «отложено» or a failure = old version still runs, rerun later. `GRADO_NO_DEPLOY=1` skips.
-- No new dependencies in core and apps/grado2. Do not touch the owner's QGIS DB or plugin. Ask before deleting
+- Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69): a new dependency needs wheels for
+  macOS arm64 and x86_64 and Windows, a permissive license, a line in requirements and the same gate. Do not touch the owner's QGIS DB or plugin. Ask before deleting
   `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.
 - Token budget: no Workflow fan-outs; outside the team cycle at most one Sonnet subagent at a time, read-only. Owner 07.10.2026: many
   parallel Haiku 5.5 agents are allowed for mechanical work (audits, headers, moving files); each on its own files, the lead reviews the result.
