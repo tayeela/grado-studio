@@ -12,6 +12,8 @@ import threading
 import time
 import urllib.parse
 
+import shapely
+
 from . import netutil
 from .contract import Connector, ConnectorError, make_result
 
@@ -65,14 +67,6 @@ _SOCIAL = {"school", "kindergarten", "clinic", "hospital", "doctors", "pharmacy"
 # Замкнутые наборы становятся полигонами; дороги остаются линиями. Границы —
 # кольца (контур адм. единицы), но на холсте рисуются без заливки.
 _RING_SETS = {"buildings", "landuse", "water", "boundaries"}
-
-
-def _in_ring(pt, ring):
-    x, y, inside = pt[0], pt[1], False
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
-        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
-            inside = not inside
-    return inside
 
 
 def _assemble_rings(segments):
@@ -354,7 +348,7 @@ class OsmOverpass(Connector):
                 polys = [[r] for r in rings]
                 for hole in _assemble_rings(inners):
                     for poly in polys:        # дыра — в тот внешний контур, что её содержит
-                        if _in_ring(hole[0], poly[0]):
+                        if shapely.contains_xy(shapely.Polygon(poly[0]), *hole[0][:2]):
                             poly.append(hole)
                             break
                 geometry = {"type": "MultiPolygon", "coordinates": polys}

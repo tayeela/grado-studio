@@ -861,18 +861,12 @@ esri_tile.ysat = yandex_sat_tile        # снимок листов альбом
 
 
 def _point_in(g, x, y):
-    """Точка внутри Polygon / MultiPolygon GeoJSON (чётно-нечётное правило по всем кольцам)."""
-    if not g:
+    """Точка внутри Polygon / MultiPolygon GeoJSON (shapely)."""
+    if not g or g.get("type") not in ("Polygon", "MultiPolygon"):
         return False
-    polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"] if g["type"] == "MultiPolygon" else []
-    inside = False
-    for poly in polys:
-        for ring in poly:
-            for i in range(len(ring)):
-                (x1, y1), (x2, y2) = ring[i - 1][:2], ring[i][:2]
-                if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
-                    inside = not inside
-    return inside
+    import shapely
+    from shapely.geometry import shape
+    return bool(shapely.contains_xy(shape(g), x, y))
 
 
 def ogd_label_angles(code, feats, bbox, api=None):
@@ -1303,15 +1297,6 @@ def _norm_name(t):
     return " ".join(sorted(t.replace("-", " ").split()))
 
 
-def _in_ring(x, y, ring):
-    c = False
-    for i in range(len(ring)):
-        (x1, y1), (x2, y2) = ring[i], ring[i - 1]
-        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
-            c = not c
-    return c
-
-
 _PLACE_MEMO = {}
 MAX_PLACE_MEMO = 256                 # последних ответов /api/place в памяти
 _PLACE_LOCK = threading.Lock()
@@ -1530,7 +1515,7 @@ def place_info(lon, lat, polygon=None):
             tinao = int(top["okrug"] in ("ТАО", "НАО"))
     table = {_norm_name(k): k for k in DISTRICTS["k2"]}
     district = table.get(_norm_name(dname))
-    inside_ttk = _in_ring(lon, lat, DISTRICTS["ttk_hull"])
+    inside_ttk = _point_in({"type": "Polygon", "coordinates": [DISTRICTS["ttk_hull"]]}, lon, lat)
     notes = []
     zone_note = ""
     if district:

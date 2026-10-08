@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.54: clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
+  - `core/connectors/grado_connectors/clip.py` (layers of ГИС ОГД cut to the area or the sheet) is GEOS `clip_by_rect`: a concave outline
+    now splits into real parts instead of zero-width bridges along the frame, holes stay holes; whole-inside and whole-outside fast paths kept.
+  - Hand-written point-in-polygon loops replaced by `shapely.contains_xy`: district of the area (`server.py`), «inside the TTK» for K2,
+    side of a natural-complex border (`ogd_all.orient_lines`, now with an STRtree), OSM holes to their outer ring, dot pattern fill of
+    zones (`scene.dots_ops`, one vectorised call per polygon). Label placement in `print_io` keeps its own loop (thousands of calls per sheet).
+  - Checked on copies of Гольяново and Безобразово: all 18 album pages are pixel-identical to v0.99.53.
 - **2026-10-08, ГРАДО 2 v0.99.53: album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
   - `core/render/grado_render/backend_pdf.py`: the same list of drawing operations goes to a ReportLab canvas (paths with holes by
     even-odd, clips, dashes, translucent plates, label halo, underlined legend headers, JPEG tiles as is). Fonts are embedded as
