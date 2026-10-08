@@ -73,12 +73,15 @@ body {
 /* плавающее окно: рамка и тень, чтобы отделялось от карты */
 .grado-dock .dv-resize-container { border: 1px solid var(--g-line); box-shadow: var(--wa-shadow-l, 0 6px 20px rgba(0,0,0,.2)); }
 
-/* схема расчёта: заголовки блоков по виду и цвета связей по типу данных — как GTH рабочей страницы (web/app.js) */
+/* схема расчёта: заголовки блоков по виду и цвета связей по типу данных — как GTH рабочей страницы (web/app.js);
+   резервные участки ДОО, школы, поликлиники на карте — --res-* (как web/index.html) */
 :root {
   --gk-src: #cfe3d4; --gk-op: #d6dade; --gk-gen: #cfdcf0; --gk-tep: #e3d6ec; --gk-num: #f0e3c8;
   --gl-geom: #3f8f5a; --gl-num: #b07a00; --gl-sketch: #2f6fc4; --gl-tep: #8a4ab0; --gl-cap: #c0392b;
+  --res-doo: #f6dccb; --res-doo-ln: #9c5a33; --res-school: #dcd3ec; --res-school-ln: #7f66a8; --res-clinic: #ecd9a8; --res-clinic-ln: #7d6420;
 }
 html.wa-dark {
   --gk-src: #2f4a38; --gk-op: #3c4148; --gk-gen: #2d4666; --gk-tep: #4a3860; --gk-num: #5a4721;
   --gl-geom: #5cc08c; --gl-num: #e0a13a; --gl-sketch: #5b9bec; --gl-tep: #b98ae0; --gl-cap: #e57063;
+  --res-doo: #7c5646; --res-doo-ln: #e0b39a; --res-school: #645a82; --res-school-ln: #c4b6e6; --res-clinic: #7a6a3e; --res-clinic-ln: #dcc486;
 }

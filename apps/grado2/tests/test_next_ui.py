@@ -107,6 +107,24 @@ class NextUi(unittest.TestCase):
         for t in new:
             self.assertIn(f'"{t}":', exec_src, t)
 
+    def test_sketch_controls_and_windows(self):
+        # окно «Эскиз» правит поля блоков схемы по имени: каждое имя есть в описании типов (graphfile.js);
+        # каждое окно из меню «Окна» зарегистрировано компонентом в main.js
+        src = NEXT.parents[1] / "ui" / "src"
+        gf = (src / "graphfile.js").read_text(encoding="utf-8")
+        names = set(re.findall(r'\["(?:combo|slider|text|toggle)", "([^"]+)"', gf))
+        sk = (src / "sketch.js").read_text(encoding="utf-8")
+        used = set(re.findall(r'\bC\(\w+, "([^"]+)"', sk)) | set(re.findall(r'\bwv\(\w+(?:\.\w+)*, "([^"]+)"', sk))
+        self.assertTrue(used)
+        self.assertLessEqual(used, names)
+        app = (src / "App.vue").read_text(encoding="utf-8")
+        ids = set(re.findall(r'^  \{ id: "(\w+)", title: "', app, re.M))
+        main = (src / "main.js").read_text(encoding="utf-8")
+        regs = set(re.findall(r'\.component\("(\w+)"', main))
+        self.assertIn("sketch", ids)
+        self.assertIn("norms", ids)
+        self.assertLessEqual(ids, regs)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

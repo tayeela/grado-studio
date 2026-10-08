@@ -6,7 +6,7 @@
 import * as turf from "@turf/turf";
 import "../../web/roles.js";
 import { project } from "./store.js";
-import { buf, diff, fmt, floorsOf, inter, m2, polyLL, polys, rect, ringsXY, rot, safe, splitParts, toLL, toXY, unionAll, centroid } from "./geom.js";
+import { buf, diff, diffAll, fmt, floorsOf, inter, m2, polyLL, polys, rect, ringsXY, rot, safe, splitParts, toLL, toXY, unionAll, centroid } from "./geom.js";
 import { partFrame } from "./sketchgen.js";
 
 export const CAO = ok => /Центральн/i.test(ok || ""), TAO = ok => /Троицк/i.test(ok || "");
@@ -129,12 +129,14 @@ const hitsBox = (x0, y0, x1, y1, ring, solid = true) => {
   for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) if ((ring[i][1] > cy) !== (ring[k][1] > cy) && cx < (ring[k][0] - ring[i][0]) * (cy - ring[i][1]) / (ring[k][1] - ring[i][1]) + ring[i][0]) inside = !inside;
   return inside;
 };
+/* зона «в радиусе R от домов»: буфер в два шага (30 м — дома сливаются в кварталы, упрощение на 1 м, затем R − 30) — та же зона
+   с точностью до метра, но сотни домов ИЖС считаются за секунды, а не за полминуты */
+const reachOf = (bu, rad) => { const s = buf(bu, 30); return buf(s ? safe(() => turf.simplify(s, { tolerance: 1e-5, highQuality: false })) || s : bu, s ? rad - 30 : rad); };
 export function reserveSocial(site, sketch, social, radii) {
   const out = { plots: [], notes: [], warns: [] };
   if (!site || !social?.length) return out;
   const blds = sketch.map(b => b.f), bu = blds.length ? unionAll(blds) : null, ground = [...(sketch.streets || []), ...(sketch.plots || [])].map(s => s.f);
-  let free = site;
-  for (const g of [bu && buf(bu, RES_GAP), ...ground]) { if (g && free) free = diff(free, g); }
+  let free = diffAll(site, [bu && buf(bu, RES_GAP), ...ground]);
   const obst = [...blds.map(f => buf(f, RES_GAP) || f), ...ground], houses = blds.map(f => centroid(ringsXY(f)[0]));
   const reach = {};
   const order = { school: 0, doo: 1, clinic: 2 }, list = social.map((s, i) => ({ ...s, i })).sort((a, b) => order[a.kind] - order[b.kind] || a.i - b.i);
@@ -143,7 +145,7 @@ export function reserveSocial(site, sketch, social, radii) {
   for (const s of list) {
     const n = seen[s.kind] = (seen[s.kind] || 0) + 1, many = list.filter(x => x.kind === s.kind).length > 1, nm = RES_NAMES[s.kind], name = `${nm === "ДОО" ? "ДОО" : nm[0].toUpperCase() + nm.slice(1)}${many ? " №" + n : ""}`;
     const A = s.m2, rad = radii?.[s.kind], st = { cands: 0, checks: 0, tests: 0 }; let best = null, cut = false;
-    if (rad && bu) reach[s.kind] ||= buf(bu, rad);
+    if (rad && bu) reach[s.kind] ||= reachOf(bu, rad);
     const rch = rad && bu ? reach[s.kind] : null;
     for (const part of free ? splitParts(free) : []) {
       if (m2(part) < A * .997) continue;

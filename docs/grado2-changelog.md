@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.60: окна «Эскиз», «Показатели (ТЭП)» и «Нормативы расчёта» в новом интерфейсе (#69).**
+  - «Эскиз»: typology buttons, floors by a number or by the density goal, the sliders the chosen typology uses,
+    «Построить эскиз» / «Остановить», «Сохранить слоем» (buildings, plots and streets as layers of the group
+    «Эскиз: …»), «Проверить нормы» (insolation of new and neighbouring houses, buildings on no-build zones, gaps
+    between buildings; layer «Проверка норм», re-checked 1,5 s after an edit of a saved sketch layer). Every control
+    is a field of a scheme block: an edit here changes the scheme and back.
+  - «Показатели (ТЭП)»: the real calculation instead of the sample table. District, zone, K1, K2, ТиНАО, type of
+    territory and percentages are edited right there; «по району», reset, the ПЗЗ density goal; the sketch summary
+    and the «Калькулятор 2.0» metrics by groups; «Эскиз не построен» until there is a sketch.
+  - «Нормативы расчёта»: project conditions (education zone, free places nearby) and the preset norms with their
+    sources; a changed norm is marked, can be reverted one by one or all at once, wrong numbers are not accepted.
+  - The map shows reserve plots for kindergartens, schools and clinics while the sketch or scheme window is open.
+  - Speed: the reserve plot search no longer freezes the page for minutes on ИЖС (hundreds of houses): obstacles are
+    subtracted in one pass and the «within R of houses» zone is buffered in two steps. Same fix in the working page.
+  - Not yet here: saved sketch variants, «Сравнение», «Объём» (next steps).
+
 - **2026-10-08, ГРАДО 2 v0.99.59: окно «Схема расчёта» в новом интерфейсе на Rete.js (#69).**
   - The calculation scheme is drawn by Rete.js 2 (engine map: a maintained library instead of the frozen litegraph).
     Blocks keep the same look by kind (data, operations, sketch, ТЭП, numbers) and links are coloured by data type.

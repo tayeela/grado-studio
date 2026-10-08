@@ -43,6 +43,12 @@ export function unionAll(fs) {
   return fs.reduce((a, b) => robust((x, y) => turf.union(turf.featureCollection([x, y])), a, b) || a);
 }
 export const diff = (a, b) => !a ? null : !b ? a : robust((x, y) => turf.difference(turf.featureCollection([x, y])), a, b);
+/* a минус все bs одним проходом (turf.difference принимает список): сотни участков ИЖС вычитаются за доли секунды, а не по одному */
+export function diffAll(a, bs) {
+  bs = bs.filter(f => f && polys(f).length); if (!a || !bs.length) return a;
+  const r = quiet(() => turf.difference(turf.featureCollection([a, ...bs])));
+  return r.ok ? r.v : bs.reduce((x, b) => x && diff(x, b), a);
+}
 export const inter = (a, b) => (a && b) ? robust((x, y) => turf.intersect(turf.featureCollection([x, y])), a, b) : null;
 export const buf = (a, d) => { if (!a) return null; if (!d) return a; const r = safe(() => turf.buffer(a, d, { units: "meters" })); return r?.geometry ? r : null; };
 export const asArea = f => f && /Line/.test(f.geometry.type) ? buf(f, 0.5) : f;   // линии дорог объединяются через буфер 0,5 м

@@ -8,6 +8,7 @@ import { fullStyle, swatchColor } from "./symbology.js";
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
 export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], views: [], data: markRaw({}), territory: null, view: null, raw: markRaw({}) });
+export const winApi = { open: () => {} };   // App.vue подставляет: открыть окно по id или вывести его вперёд
 export const viewCur = ref(null);      // вид карты, показанный последним (окно «Виды»)
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));

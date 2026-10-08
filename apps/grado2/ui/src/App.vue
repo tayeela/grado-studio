@@ -97,7 +97,7 @@
         <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
       </wa-dropdown>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
-      <span>{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
+      <span class="note" :title="notice">{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
     </footer>
   </div>
 </template>
@@ -113,7 +113,7 @@ import { exportDxf, exportGeojson } from "./exports.js";
 import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
-import { BASEMAPS, basemapId, current, project, scale, setBasemap, theme, toggleTheme } from "./store.js";
+import { BASEMAPS, basemapId, current, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
 } from "./project.js";
@@ -130,6 +130,8 @@ const PANELS = [
   { id: "data", title: "Данные" },
   { id: "cons", title: "Ограничения" },
   { id: "graph", title: "Схема расчёта" },
+  { id: "sketch", title: "Эскиз" },
+  { id: "norms", title: "Нормативы расчёта" },
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
 ];
@@ -183,6 +185,7 @@ function defaultLayout() {
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
   api.addPanel({ id: "graph", component: "graph", title: "Схема расчёта", position: { referencePanel: "tep", direction: "within" }, inactive: true });
+  api.addPanel({ id: "sketch", component: "sketch", title: "Эскиз", position: { referencePanel: "props", direction: "within" }, inactive: true });
   api.getPanel("layers")?.api.setActive();
   api.getPanel("props")?.api.setActive();
   api.getPanel("map")?.api.setActive();
@@ -191,7 +194,7 @@ function defaultLayout() {
 
 /* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
    дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
-const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"] };
+const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"], sketch: ["props", "within"] };
 function addNewWindows() {
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }
@@ -205,7 +208,8 @@ function addNewWindows() {
 
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
-  api.addPanel({ id, component: id, title: p.title, floating: { x: 300, y: 80, width: 440, height: 280 } });
+  const big = id === "norms" || id === "sketch";      // длинные окна — выше и шире
+  api.addPanel({ id, component: id, title: p.title, floating: { x: 300, y: 80, width: big ? 560 : 440, height: big ? 600 : 280 } });
 }
 
 function showHelp() {
@@ -216,6 +220,7 @@ function showHelp() {
 
 function onExport(e) { const v = e.detail.item.value; if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); }
 
+winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }
 
 function onReady(event) {
@@ -338,4 +343,8 @@ openStartup();
   display: flex; gap: var(--wa-space-l); align-items: center; padding: 0 var(--wa-space-s);
   height: 22px; font-size: var(--wa-font-size-xs); color: var(--g-muted); background: var(--g-bar); border-top: 1px solid var(--g-line);
 }
+.status > * { flex: none; white-space: nowrap; }
+.status > .grow { flex: 1; }
+/* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке */
+.status > .note { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
 </style>

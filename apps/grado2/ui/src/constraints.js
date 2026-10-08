@@ -5,15 +5,15 @@
    Слои берутся по роли (web/roles.js), инсоляция — тот же модуль web/insol.js (ГОСТ Р 57795-2017, предпроектная
    оценка, не сертифицированный расчёт). Настройки — те же, что у рабочей страницы (localStorage «grado2.cons»).
    Узел «Ограничения» схемы расчёта и проверка норм эскиза переедут вместе со схемой и эскизом. */
-import { reactive } from "vue";
+import { reactive, watch } from "vue";
 import * as turf from "@turf/turf";
 import * as insolModule from "../../web/insol.js";
 import "../../web/roles.js";
-import { project } from "./store.js";
+import { project, shown } from "./store.js";
 import { lyr, newGroup, normGroups, touchData } from "./edit.js";
 import { busy, markDirty, notice } from "./project.js";
 import { ensureLayer } from "./data.js";
-import { fullStyle } from "./symbology.js";
+import { catValues, fullStyle, symbolOf } from "./symbology.js";
 import { bboxOf, buf, floorsOf, inter, m2, plural, polys, ringsXY, safe, setFrame, toLL, toXY, unionAll } from "./geom.js";
 
 const INSOL = globalThis.INSOL || insolModule.default || insolModule;
@@ -195,4 +195,93 @@ export async function computeConstraints() {
     CONS.log = log; notice.value = "Ограничения рассчитаны. Выключенный слой группы «Ограничения» генерация не учитывает";
   } catch (e) { console.error(e); notice.value = "Ограничения не рассчитаны: " + e.message; }
   finally { busy.value = false; CONS.running = ""; }
+}
+
+/* ---------- проверка норм эскиза (web/constraints.js checkNorms): после «Построить эскиз» или правки принятого слоя ----------
+   Собственная инсоляция новых домов; соседи, выполнявшие норму до застройки и потерявшие её; корпус на включённом
+   запрете; разрыв между новыми корпусами меньше 6 м (СП 4.13130). Итог — слой точек «Проверка норм» с причиной. */
+const openRing = r => r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r;
+const prismsOf = (f, h) => polys(f).map(p => { const ring = openRing(p[0].map(toXY)), g = groundAt(...ringMid(ring));
+  return { ring, holes: p.slice(1).map(q => openRing(q.map(toXY))), g, h: g + h, f }; });
+const keptForCheck = TERR => { const ek = R().existingBuildingsKey(), zone = buf(TERR, protectR(TERR)); return ek ? project.data[ek].fc.features.filter(f => /Polygon/.test(f.geometry?.type) && decisionOf(f) !== "сносим" && safe(() => turf.booleanIntersects(f, zone))) : []; };
+const EXCLUDE = [CK.zouit, CK.water, CK.red, CK.fire, CK.pzz, CK.gp];
+const visibleIn = (l, f) => l.style.mode !== "cat" && l.style.mode !== "rules" ? true : !symbolOf(l.style, k => f.properties?.[k], []).hide;
+export const CHECK = reactive({ last: null, key: null });    // последняя проверка: {n, own, lost, text}; key — принятый слой, который перепроверяется после правки
+let checkGen = 0, nbBase = null;
+const yieldUI = () => new Promise(r => setTimeout(r, 0));
+async function evalChunked(pts, ob, paths, opt, gen) {
+  for (let i = 0; i < pts.length; i += 300) {
+    INSOL.evalFront(pts.slice(i, i + 300), ob, paths, opt); await yieldUI();
+    if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой");
+  }
+}
+const bboxHit = (a, b) => a[0] <= b[2] && a[2] >= b[0] && a[1] <= b[3] && a[3] >= b[1];
+async function checkNorms(sk, title) {
+  const TERR = project.territory; if (!TERR) return null;
+  setFrame(turf.centroid(TERR).geometry.coordinates);
+  const gen = ++checkGen;
+  const fh = CONS.floorH, kept = keptForCheck(TERR), norm = CONS.norm * 60, lat = turf.centroid(TERR).geometry.coordinates[1];
+  const paths = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 10));
+  const keptP = kept.flatMap(f => prismsOf(f, floorsOf(f) * fh)), newP = sk.flatMap((b, i) => prismsOf(b.f, b.floors * fh).map(p => ({ ...p, i })));
+  const out = [], add = (ll, why, normTxt, obj) => out.push(turf.point(ll, { "Нарушение": why, "Норма": normTxt, "Объект": obj }));
+  // 1. собственная инсоляция новых домов: корпус, где норму получают меньше половины фасадов, — нарушение
+  const own = INSOL.frontPoints(newP, 6, CONS.z), obAll = INSOL.obstacleIndex(keptP.concat(newP));
+  await evalChunked(own, obAll, paths, { norm, reveal: CONS.reveal }, gen);
+  const ownN = own.filter(p => !p.orient), ownBad = ownN.filter(p => !p.worst.ok);
+  const byB = new Map(); ownN.forEach(p => { const b = newP[p.b].i; (byB.get(b) || byB.set(b, []).get(b)).push(p); });
+  byB.forEach((ps, i) => { const okShare = ps.filter(p => p.worst.ok).length / ps.length; if (okShare < .5) add(turf.centroid(sk[i].f).geometry.coordinates, `инсоляция: норму получают ${Math.round(okShare * 100)} % фасадов корпуса`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, `корпус ${i + 1}, ${sk[i].floors} эт.`); });
+  // 2. соседи, потерявшие норму (те же точки и шаг солнца 5 мин, что у солнечного потолка)
+  const resid = kept.filter(isResidential).flatMap(f => prismsOf(f, floorsOf(f) * fh)), nb = INSOL.frontPoints(resid, CONS.step, CONS.z);
+  const paths5 = INSOL.DATES.map(d => INSOL.sunPath(lat, d.day, 5)), ek = R().existingBuildingsKey();
+  const oidOf = o => o ? (OIDS.get(o) || (OIDS.set(o, ++oidN), oidN)) : 0;
+  const sig = [oidOf(TERR), fh, norm, CONS.reveal, CONS.z, CONS.step, ek, oidOf(project.data[ek]?.fc), oidOf(project.data["relief.contours"]?.fc), kept.length].join("|");
+  if (nbBase?.sig !== sig || nbBase.nb0.length !== nb.length) {
+    const nb0 = nb.map(p => ({ ...p })); await evalChunked(nb0, INSOL.obstacleIndex(keptP), paths5, { norm, reveal: CONS.reveal }, gen);
+    nbBase = { sig, nb0 };
+  }
+  const nb0 = nbBase.nb0;
+  await evalChunked(nb, obAll, paths5, { norm, reveal: CONS.reveal }, gen);
+  const lost = nb.filter((p, n) => !p.orient && nb0[n].worst.ok && !p.worst.ok);
+  lost.forEach(p => add(toLL([p.x, p.y]), `инсоляция соседа: было ${Math.round(nb0[nb.indexOf(p)].worst.cont / 6) / 10} ч, стало ${Math.round(p.worst.cont / 6) / 10} ч`, `СанПиН 1.2.3685-21, ${CONS.norm} ч`, String(resid[p.b].f.properties["Адрес"] || "существующий дом")));
+  // 3. корпус на запрете — только включённые слои-запреты
+  EXCLUDE.map(lyr).filter(l => l && shown(l)).forEach(l => (project.data[l.key]?.fc.features || []).filter(z => visibleIn(l, z)).forEach(zf => {
+    sk.forEach((b, i) => { const x = inter(b.f, zf); if (x && m2(x) > 5) add(turf.pointOnFeature(x).geometry.coordinates, `корпус на запрете: ${zf.properties?.["Причина"] || l.title}`, zf.properties?.["Норма"] || "", `корпус ${i + 1}`); }); }));
+  // 4. противопожарный разрыв между новыми корпусами
+  const bbs = sk.map(b => safe(() => turf.bbox(b.f))), bba = bbs.map(bb => bb && [bb[0] - 1e-4, bb[1] - 1e-4, bb[2] + 1e-4, bb[3] + 1e-4]), bufs = [];
+  for (let i = 0; i < sk.length; i++) { if (!bba[i]) continue; if (i % 20 === 19) { await yieldUI(); if (gen !== checkGen) throw new Error("перепроверка прервана новой правкой"); } for (let j = i + 1; j < sk.length; j++) {
+    if (sk[i].grp && sk[i].grp === sk[j].grp) continue;          // секции одного урбан-блока стоят вплотную — это одно здание
+    if (!bbs[j] || !bboxHit(bba[i], bbs[j])) continue;
+    const a = bufs[i] ||= buf(sk[i].f, 6), b = sk[j].f; if (!safe(() => turf.booleanIntersects(a, b))) continue;
+    const x = inter(a, b); if (x && m2(x) > 1) add(turf.pointOnFeature(x).geometry.coordinates, "разрыв между корпусами меньше 6 м", "СП 4.13130.2013, табл. 1", `корпуса ${i + 1} и ${j + 1}`);
+  } }
+  const key = "cons:check", fc = turf.featureCollection(out);
+  const l = consLayer(key, `Проверка норм: ${title}`, fc, "point", { mode: "cat", width: 2.5, cat: { field: "Нарушение", colors: {}, off: [] } });
+  l.style.cat.colors = Object.fromEntries(catValues(fc, "Нарушение").map(([v]) => [v, /инсоляция/.test(v) ? "#eda100" : "#b3261e"]));
+  touchData();
+  return { n: out.length, own: ownN.length ? Math.round((ownN.length - ownBad.length) / ownN.length * 100) : 100, lost: lost.length, text: out.length ? `нарушений: ${out.length}` : "нарушений нет" };
+}
+const OIDS = new WeakMap(); let oidN = 0;
+const sketchFromLayer = key => (project.data[key]?.fc.features || []).map(f => ({ f, floors: +f.properties?.["Этажность"] || 1, grp: f.properties?.["Блок"] || null })).filter(b => /Polygon/.test(b.f.geometry?.type));
+/* «Проверить нормы»: sk — корпуса эскиза схемы; key — принятый слой эскиза (его правка перепроверяется через 1,5 с) */
+export async function runCheck(sk, key) {
+  if (key) sk = sketchFromLayer(key);
+  if (!sk?.length) { notice.value = "Проверять нечего: постройте эскиз или выберите сохранённый слой эскиза"; return; }
+  busy.value = true; CONS.running = "Проверка норм…";
+  try {
+    const r = await checkNorms(sk, key ? lyr(key)?.title : "эскиз"); if (!r) return;
+    CHECK.key = key || null; CHECK.last = r; markDirty();
+    notice.value = `Проверка норм: ${r.text}. Новые дома: норму инсоляции получают ${r.own} % фасадов (без северных); соседи, потерявшие норму: ${r.lost}.${key ? " Слой перепроверяется после каждой правки." : ""}`;
+  } catch (e) { if (!/прервана/.test(e.message)) { console.error(e); notice.value = "Проверка не выполнена: " + e.message; } }
+  finally { busy.value = false; CONS.running = ""; }
+}
+let checkT = null;
+watch(() => CHECK.key && project.data[CHECK.key]?.fc, (fc, was) => { if (!fc || !was || fc === was) return; clearTimeout(checkT); checkT = setTimeout(() => runCheck(null, CHECK.key), 1500); });
+
+/* собственная инсоляция для перебора вариантов: доля фасадов новых домов с нормой (без северных), грубый шаг */
+export function ownInsolation(sk) {
+  const TERR = project.territory; if (!TERR || !sk.length) return null;
+  const fh = CONS.floorH, lat = turf.centroid(TERR).geometry.coordinates[1], paths = [INSOL.sunPath(lat, 112, 15)];
+  const newP = sk.flatMap(b => prismsOf(b.f, b.floors * fh)), keptP = keptForCheck(TERR).flatMap(f => prismsOf(f, floorsOf(f) * fh));
+  const pts = INSOL.frontPoints(newP, 12, CONS.z); INSOL.evalFront(pts, INSOL.obstacleIndex(keptP.concat(newP)), paths, { norm: CONS.norm * 60, reveal: CONS.reveal });
+  const n = pts.filter(p => !p.orient); return n.length ? Math.round(n.filter(p => p.worst.ok).length / n.length * 100) : 100;
 }
