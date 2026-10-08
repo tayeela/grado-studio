@@ -3,6 +3,7 @@
    GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс. */
 import { nextTick, ref, toRaw, watch } from "vue";
 import { currentId, project, setProject, viewNow } from "./store.js";
+import { dataRev, resetHistory } from "./edit.js";
 
 export const projects = ref([]);      // [{name, modified, size, album_n}], новые сверху
 export const projDir = ref("");
@@ -31,13 +32,14 @@ export function markDirty() {
   if (tick === autoTick) pendingSince = Date.now();
   tick++; lastEdit = Date.now(); dirty.value = true;
 }
-watch([() => project.layers, () => project.groups], markDirty, { deep: true });
+watch([() => project.layers, () => project.groups, dataRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
   if ((p.version || 1) > VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${p.version}) — обновите программу`);
   quiet = true;
   setProject(p, name, source);
+  resetHistory();
   dirty.value = !!p.dirty; autoTick = tick;
   await nextTick();                   // наблюдатели за слоями отработали на открытии — дальше всё правки
   quiet = false;

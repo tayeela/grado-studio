@@ -17,6 +17,7 @@ import GeoJSON from "ol/format/GeoJSON.js";
 import { createEmpty, extend, isEmpty } from "ol/extent.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
 import { project, scale, shown, theme, viewNow } from "../store.js";
+import { dataRev, mapApi } from "../edit.js";
 import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
 
 const el = ref(null);
@@ -45,35 +46,41 @@ function basemap(t) {
     : new TileLayer({ source: new OSM(), className: "basemap", opacity: 0.55 });
 }
 
-/* Слои проекта заново: при открытии другого проекта. */
-function rebuild() {
-  for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
-  const n = project.layers.length, ext = createEmpty();
+/* Слои карты по слоям проекта: новый слой или заменённые данные — новый источник, изменённое оформление — новый слой
+   на том же источнике, видимость и порядок — на месте; слои, которых в проекте нет, убираются. */
+function sync() {
+  const n = project.layers.length, keys = new Set(project.layers.map(l => l.key));
+  for (const k in vec) if (!keys.has(k)) { map.removeLayer(vec[k]); delete vec[k]; }
   project.layers.forEach((l, i) => {
     const fc = project.data[l.key]?.fc;
-    let feats = [];
-    try { feats = fc ? fmt.readFeatures(fc) : []; } catch { feats = []; }   // битый слой не должен ронять остальные
-    const src = new VectorSource({ features: feats });
-    if (feats.length) extend(ext, src.getExtent());
-    vec[l.key] = olLayer(l, i, n, src); vec[l.key].set("sig", sig(l));
-    map.addLayer(vec[l.key]);
-  });
-  const v = project.view, view = map.getView();
-  if (v?.center?.length === 2 && Number.isFinite(+v.zoom)) { view.setCenter(fromLonLat(v.center)); view.setZoom(+v.zoom); }
-  else if (!isEmpty(ext)) view.fit(ext, { padding: [30, 30, 30, 30], maxZoom: 18 });
-}
-
-/* Видимость и порядок — на месте; изменённое оформление — новый слой на том же источнике (без перечитывания данных). */
-function refresh() {
-  const n = project.layers.length;
-  project.layers.forEach((l, i) => {
-    let v = vec[l.key]; if (!v) return;
-    if (v.get("sig") !== sig(l)) {
-      const nv = olLayer(l, i, n, v.getSource()); nv.set("sig", sig(l));
+    let v = vec[l.key];
+    if (!v || v.get("fc") !== fc) {
+      let feats = [];
+      try { feats = fc ? fmt.readFeatures(fc) : []; } catch { feats = []; }   // битый слой не должен ронять остальные
+      if (v) map.removeLayer(v);
+      v = vec[l.key] = olLayer(l, i, n, new VectorSource({ features: feats }));
+      v.set("fc", fc); v.set("sig", sig(l)); map.addLayer(v);
+    } else if (v.get("sig") !== sig(l)) {
+      const nv = olLayer(l, i, n, v.getSource()); nv.set("fc", fc); nv.set("sig", sig(l));
       map.getLayers().setAt(map.getLayers().getArray().indexOf(v), nv); vec[l.key] = v = nv;
     }
     v.setVisible(shown(l)); v.setZIndex(n - i);
   });
+}
+
+/* Другой проект: слои заново и его вид карты (или все объекты в кадре). */
+function opened() {
+  for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
+  sync();
+  const v = project.view, view = map.getView();
+  if (v?.center?.length === 2 && Number.isFinite(+v.zoom)) { view.setCenter(fromLonLat(v.center)); view.setZoom(+v.zoom); }
+  else zoomTo(Object.keys(vec));
+}
+
+function zoomTo(keys) {
+  const ext = createEmpty();
+  keys.forEach(k => { const s = vec[k]?.getSource(); if (s?.getFeatures().length) extend(ext, s.getExtent()); });
+  if (!isEmpty(ext)) map.getView().fit(ext, { padding: [40, 40, 40, 40], maxZoom: 18, duration: 200 });
 }
 
 onMounted(() => {
@@ -85,11 +92,12 @@ onMounted(() => {
   };
   map.on("moveend", upd); upd();
   ro = new ResizeObserver(() => map.updateSize()); ro.observe(el.value);
-  rebuild();
+  opened();
+  mapApi.zoomTo = zoomTo;
   loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
   watch(theme, t => map.getLayers().setAt(0, basemap(t)));
-  watch(() => project.data, rebuild);
-  watch([() => project.layers, () => project.groups], refresh, { deep: true });
+  watch(() => project.raw, opened);
+  watch([() => project.layers, () => project.groups, dataRev], sync, { deep: true });
 });
 
 onBeforeUnmount(() => { ro?.disconnect(); map?.setTarget(undefined); });

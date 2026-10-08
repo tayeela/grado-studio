@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.54: window «Слои» in full and one common undo in the new interface (#69).**
+  - «Слои»: «+» new layer (name; polygons, lines or points), new group from the current layer, drag layers and groups
+    to reorder or move a layer into a group (SortableJS), double click renames a layer or group, layer menu (button
+    «⋯» or right click): zoom to layer, copy and paste style, rename, up, down, out of group, into a group, into a new
+    group, return the original download, delete; group menu: zoom, rename, ungroup, delete with layers.
+  - One undo for the whole project (`ui/src/edit.js`): Ctrl+Z / Ctrl+Shift+Z and header buttons undo layer and group
+    changes, styles and data replacements; edits in a row without a pause (slider, typing) are one step.
+  - New dependency `sortablejs` 1.15.7 (MIT), in the Vite build only.
+
 - **2026-10-08, ГРАДО 2 v0.99.53: window «Свойства» moved to the new interface in full (#69).**
   - All style modes of the working page: «Единое», «Категории» (field, «Классифицировать», colour and show/hide per
     value), «Диапазоны» (field, 3–6 classes, quantiles or equal intervals, four colour ramps), «Правила» (field,

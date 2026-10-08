@@ -43,6 +43,8 @@
       </wa-dropdown>
 
       <span class="grow"></span>
+      <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.redo" title="Вернуть (Ctrl+Shift+Z)" @click="redo"><Redo2 :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" @click="toggleTheme" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
         <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" />
       </wa-button>
@@ -101,8 +103,9 @@ import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
 import {
   Slash, Spline, Square, Circle, Type, Ruler, Move, Copy, RotateCw, Scissors, ArrowRightToLine,
-  CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage,
+  CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2,
 } from "@lucide/vue";
+import { history, redo, undo } from "./edit.js";
 import { current, project, scale, theme, toggleTheme } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
@@ -233,8 +236,13 @@ function choose(name) { openDlg.value = false; guard(`Открыть «${name}»
 function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
 const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
+const typing = e => e.composedPath().some(n => n instanceof HTMLElement && (n.matches("input, textarea, select, [contenteditable]")));
 addEventListener("keydown", e => {
-  if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); if (!shared.value) save(); }
+  if (!(e.metaKey || e.ctrlKey)) return;
+  if (e.code === "KeyS") { e.preventDefault(); if (!shared.value) save(); }
+  else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
+  else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
+  else if ((e.code === "KeyZ" && e.shiftKey) || e.code === "KeyY") { e.preventDefault(); redo(); }
 });
 watch(() => [project.name, dirty.value], () => { document.title = (project.name || "Без названия") + (dirty.value ? " •" : "") + " — ГРАДО 2"; });
 
