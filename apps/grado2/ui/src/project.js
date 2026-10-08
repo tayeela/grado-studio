@@ -4,6 +4,7 @@
 import { nextTick, ref, toRaw, watch } from "vue";
 import { currentId, project, setProject, viewNow } from "./store.js";
 import { dataRev, resetHistory } from "./edit.js";
+import { setSel } from "./features.js";
 
 export const projects = ref([]);      // [{name, modified, size, album_n}], новые сверху
 export const projDir = ref("");
@@ -39,7 +40,7 @@ async function load(p, name, source) {
   if ((p.version || 1) > VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${p.version}) — обновите программу`);
   quiet = true;
   setProject(p, name, source);
-  resetHistory();
+  setSel([]); resetHistory();
   dirty.value = !!p.dirty; autoTick = tick;
   await nextTick();                   // наблюдатели за слоями отработали на открытии — дальше всё правки
   quiet = false;
@@ -114,6 +115,7 @@ export function projectJSON(extra) {
   const p = collect(extra), big = [];
   p.data = Object.fromEntries(Object.entries(p.data).map(([k, d]) => {
     const o = { ...d };
+    if (o.original === o.fc && o.fc) o.original = "=fc";        // не правились — в файл один раз, как у рабочей страницы
     for (const f of ["fc", "original"]) if (o[f] && typeof o[f] === "object") { big.push(o[f]); o[f] = `@@GRADO_BIG_${big.length - 1}@@`; }
     return [k, o];
   }));

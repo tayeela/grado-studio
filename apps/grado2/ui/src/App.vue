@@ -106,6 +106,7 @@ import {
   CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2,
 } from "@lucide/vue";
 import { history, redo, undo } from "./edit.js";
+import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { current, project, scale, theme, toggleTheme } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
@@ -117,7 +118,9 @@ const PANELS = [
   { id: "map", title: "Карта" },
   { id: "layers", title: "Слои" },
   { id: "props", title: "Свойства" },
+  { id: "object", title: "Объект" },
   { id: "tep", title: "Показатели (ТЭП)" },
+  { id: "table", title: "Таблица атрибутов" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, true])));
 
@@ -162,7 +165,10 @@ function defaultLayout() {
   api.addPanel({ id: "map", component: "map", title: "Карта" });
   api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: 260 });
   api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: 280 });
+  api.addPanel({ id: "object", component: "object", title: "Объект", position: { referencePanel: "props", direction: "within" } });
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
+  api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
+  api.getPanel("props")?.api.setActive();
   api.getPanel("map")?.api.setActive();
 }
 
@@ -238,7 +244,16 @@ const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit
 
 const typing = e => e.composedPath().some(n => n instanceof HTMLElement && (n.matches("input, textarea, select, [contenteditable]")));
 addEventListener("keydown", e => {
-  if (!(e.metaKey || e.ctrlKey)) return;
+  if (!(e.metaKey || e.ctrlKey)) {
+    if (typing(e) || e.altKey) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && sel.length) {
+      e.preventDefault(); const n = sel.length; deleteFeatures([...sel]); notice.value = `Удалено объектов: ${n}. Ctrl+Z — вернуть`;
+    } else if (e.key === "Escape" && sel.length) setSel([]);
+    return;
+  }
+  if (e.code === "KeyA" && !typing(e) && current.value) {
+    e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
+  }
   if (e.code === "KeyS") { e.preventDefault(); if (!shared.value) save(); }
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
   else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }

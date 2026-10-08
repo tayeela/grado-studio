@@ -31,10 +31,13 @@ import MapPanel from "./panels/MapPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
 import PropsPanel from "./panels/PropsPanel.vue";
 import TepPanel from "./panels/TepPanel.vue";
+import ObjectPanel from "./panels/ObjectPanel.vue";
+import TablePanel from "./panels/TablePanel.vue";
 import { applyTheme, theme } from "./store.js";
 
 applyTheme(theme.value);
 /* окна dockview находят содержимое по имени компонента (component: "map" в App.vue) — регистрируем глобально */
 const app = createApp(App);
-app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel);
+app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel)
+  .component("object", ObjectPanel).component("table", TablePanel);
 app.mount("#app");

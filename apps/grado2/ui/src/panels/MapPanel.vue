@@ -15,9 +15,14 @@ import OSM from "ol/source/OSM.js";
 import XYZ from "ol/source/XYZ.js";
 import GeoJSON from "ol/format/GeoJSON.js";
 import { createEmpty, extend, isEmpty } from "ol/extent.js";
+import { defaults as defaultInteractions } from "ol/interaction/defaults.js";
+import DragBox from "ol/interaction/DragBox.js";
+import { shiftKeyOnly } from "ol/events/condition.js";
+import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
 import { project, scale, shown, theme, viewNow } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
+import { indexOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
 
 const el = ref(null);
@@ -54,50 +59,117 @@ function sync() {
   project.layers.forEach((l, i) => {
     const fc = project.data[l.key]?.fc;
     let v = vec[l.key];
-    if (!v || v.get("fc") !== fc) {
-      let feats = [];
-      try { feats = fc ? fmt.readFeatures(fc) : []; } catch { feats = []; }   // битый слой не должен ронять остальные
-      if (v) map.removeLayer(v);
-      v = vec[l.key] = olLayer(l, i, n, new VectorSource({ features: feats }));
+    if (!v) {
+      v = vec[l.key] = olLayer(l, i, n, new VectorSource({ features: readAll(fc) }));
       v.set("fc", fc); v.set("sig", sig(l)); map.addLayer(v);
-    } else if (v.get("sig") !== sig(l)) {
-      const nv = olLayer(l, i, n, v.getSource()); nv.set("fc", fc); nv.set("sig", sig(l));
+    } else if (v.get("fc") !== fc || v.get("sig") !== sig(l)) {
+      if (v.get("fc") !== fc) patch(v.getSource(), v.get("fc"), fc);
+      const nv = olLayer(l, i, n, v.getSource()); nv.set("fc", fc); nv.set("sig", sig(l));   // стиль заново: категории и диапазоны зависят от данных
       map.getLayers().setAt(map.getLayers().getArray().indexOf(v), nv); vec[l.key] = v = nv;
     }
     v.setVisible(shown(l)); v.setZIndex(n - i);
   });
+  drawSel();
 }
 
-/* Другой проект: слои заново и его вид карты (или все объекты в кадре). */
+/* Объекты GeoJSON слоя → объекты карты; у каждого ссылка gj на свою запись в файле (по ней выбор и правка). */
+function readAll(fc) {
+  indexOf(fc);                                      // номера _uid у всех объектов
+  return (fc?.features || []).map(readOne).filter(Boolean);
+}
+function readOne(gj) {
+  try { const f = fmt.readFeature(gj); f.gj = gj; return f; } catch { return null; }   // битый объект не должен ронять слой
+}
+/* Правка данных: только изменённые записи (новые объекты в fc) меняются на карте; тысячи прочих не перечитываются. */
+function patch(src, oldFc, fc) {
+  indexOf(fc);
+  const now = new Set(fc?.features || []), was = new Set(oldFc?.features || []);
+  const gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !was.has(gj));
+  if (gone.length + add.length > 2000) { src.clear(true); src.addFeatures(readAll(fc)); return; }
+  gone.forEach(f => src.removeFeature(f));
+  src.addFeatures(add.map(readOne).filter(Boolean));
+}
+
+/* ---------- выбор: щелчок, Shift+щелчок, рамка с Shift; подсветка поверх слоёв ---------- */
+const selSrc = new VectorSource();
+const SELSTYLE = {
+  poly: new Style({ fill: new Fill({ color: "rgba(47,111,196,.15)" }), stroke: new Stroke({ color: "#2f6fc4", width: 3 }) }),
+  line: new Style({ stroke: new Stroke({ color: "#2f6fc4", width: 4 }) }),
+  point: new Style({ image: new CircleStyle({ radius: 8, stroke: new Stroke({ color: "#2f6fc4", width: 3 }) }) }),
+};
+const gkind = f => { const t = f.getGeometry()?.getType() || ""; return /Point/.test(t) ? "point" : /Line/.test(t) ? "line" : "poly"; };
+function drawSel() {
+  selSrc.clear(true);
+  selSrc.addFeatures(selected().slice(0, 5000).map(s => readOne(s.f)).filter(Boolean));
+}
+function hitAt(pixel) {
+  let hit = null;
+  map.forEachFeatureAtPixel(pixel, (f, layer) => { const key = layer?.get("key"); if (!key || !f.gj) return; hit = { key, uid: f.gj.properties._uid }; return true; },
+    { hitTolerance: 4, layerFilter: la => !!la.get("key") && la.getVisible() });
+  return hit;
+}
+function onClick(e) {
+  const hit = hitAt(e.pixel), add = e.originalEvent.shiftKey || e.originalEvent.metaKey || e.originalEvent.ctrlKey;
+  if (add) { if (hit) toggleSel(hit); }
+  else setSel(hit ? [hit] : []);
+}
+function onBox(box) {
+  const ext = box.getGeometry().getExtent(), out = [];
+  project.layers.forEach(l => {
+    const v = vec[l.key]; if (!v?.getVisible()) return;
+    v.getSource().forEachFeatureIntersectingExtent(ext, f => { if (f.gj) out.push({ key: l.key, uid: f.gj.properties._uid }); });
+  });
+  setSel([...sel, ...out]);
+}
+
+/* Другой проект: слои заново и его вид карты (или все объекты в кадре). Пока окно карты не получило размер
+   (dockview ещё раскладывает окна), вид ставится позже — иначе «всё в кадре» на нулевом окне даёт обзор всей Земли. */
+let viewPending = true;
 function opened() {
   for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
   sync();
+  viewPending = true; applyView();
+}
+function applyView() {
+  const size = map.getSize();
+  if (!viewPending || !size || !size[0] || !size[1]) return;
+  viewPending = false;
   const v = project.view, view = map.getView();
   if (v?.center?.length === 2 && Number.isFinite(+v.zoom)) { view.setCenter(fromLonLat(v.center)); view.setZoom(+v.zoom); }
-  else zoomTo(Object.keys(vec));
+  else zoomTo(Object.keys(vec), 0);
 }
 
-function zoomTo(keys) {
+mapApi.fitFeature = gj => { const f = readOne(gj); if (f) map.getView().fit(f.getGeometry().getExtent(), { padding: [80, 80, 80, 80], maxZoom: 19, duration: 150 }); };
+function zoomTo(keys, duration = 200) {
   const ext = createEmpty();
   keys.forEach(k => { const s = vec[k]?.getSource(); if (s?.getFeatures().length) extend(ext, s.getExtent()); });
-  if (!isEmpty(ext)) map.getView().fit(ext, { padding: [40, 40, 40, 40], maxZoom: 18, duration: 200 });
+  if (!isEmpty(ext)) map.getView().fit(ext, { padding: [40, 40, 40, 40], maxZoom: 18, duration });
 }
 
 onMounted(() => {
-  map = new Map({ target: el.value, layers: [basemap(theme.value)], view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }) });
+  map = new Map({
+    target: el.value, layers: [basemap(theme.value), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
+    view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
+    interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
+  });
+  const box = new DragBox({ condition: shiftKeyOnly });
+  box.on("boxend", () => onBox(box)); map.addInteraction(box);
+  map.on("singleclick", onClick);
   const upd = () => {
+    if (viewPending) return;                        // вид проекта ещё не поставлен: в файл не должен уйти случайный
     const v = map.getView();
     scale.value = scaleDen(v.getResolution(), lat());     // как в рабочей странице: 0,2646 мм на пиксель, поправка на широту
     viewNow.center = toLonLat(v.getCenter()); viewNow.zoom = v.getZoom();   // вид уходит в файл при записи, сдвиг карты — не правка
   };
   map.on("moveend", upd); upd();
-  ro = new ResizeObserver(() => map.updateSize()); ro.observe(el.value);
+  ro = new ResizeObserver(() => { map.updateSize(); if (viewPending) { applyView(); upd(); } }); ro.observe(el.value);
   opened();
   mapApi.zoomTo = zoomTo;
   loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
   watch(theme, t => map.getLayers().setAt(0, basemap(t)));
   watch(() => project.raw, opened);
   watch([() => project.layers, () => project.groups, dataRev], sync, { deep: true });
+  watch(sel, drawSel);
 });
 
 onBeforeUnmount(() => { ro?.disconnect(); map?.setTarget(undefined); });

@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.55: objects on the map, window «Объект» and «Таблица атрибутов» in the new interface (#69).**
+  - Selection like the working page: click an object, Shift+click adds or removes, Shift+frame selects many, Ctrl+A
+    selects the whole current layer, Esc clears, Del deletes the selected objects (Ctrl+Z returns them).
+  - Window «Объект»: layer, area or length in МСК, attributes with editing, a new field; for many objects the total
+    area and length, common editing for one layer («разные» stays as is until filled), «Только он» per layer,
+    «Решение» buttons for buildings and floors ± for own buildings.
+  - Window «Таблица атрибутов» on Tabulator: sort by header, search, «только выбранные», edit a cell by double click,
+    a row click selects the object and zooms to it. New dependency `tabulator-tables` 6.6.1 (MIT), in the Vite build only.
+  - The map redraws only changed objects after an edit; the saved map view no longer jumps to the whole Earth when
+    the project opens in a hidden window.
+
 - **2026-10-08, ГРАДО 2 v0.99.54: window «Слои» in full and one common undo in the new interface (#69).**
   - «Слои»: «+» new layer (name; polygons, lines or points), new group from the current layer, drag layers and groups
     to reorder or move a layer into a group (SortableJS), double click renames a layer or group, layer menu (button

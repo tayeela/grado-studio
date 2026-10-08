@@ -13,6 +13,7 @@
     "dockview-vue": "8.3.1",
     "ol": "10.10.0",
     "sortablejs": "1.15.7",
+    "tabulator-tables": "6.6.1",
     "vue": "3.5.43"
   },
   "devDependencies": {

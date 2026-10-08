@@ -74,7 +74,7 @@ export function reorder(list) {
 }
 
 /* Исходная выгрузка: в файле «=fc» значит, что данные не правились. */
-export const canRevert = key => { const d = project.data[key]; return !!d && d.original && typeof d.original === "object" && d.original !== d.fc; };
+export const canRevert = key => { const d = project.data[key]; return !!d && !!d.original && typeof d.original === "object" && d.original !== d.fc; };
 export function revertLayer(key) {
   const d = project.data[key]; if (!canRevert(key)) return;
   project.data[key] = { ...d, fc: d.original, original: d.original }; touchData();
