@@ -20,12 +20,12 @@
 
 | Файл | Что делает | Когда запускать | Команда |
 |---|---|---|---|
-| `deploy-server.sh` | Выкладывает последний коммит (не рабочие правки) на сервер grado.tailink.tech и перезапускает службу. Если новая версия не отвечает на `/api/health`, возвращает прежнюю и завершается с ошибкой. | Сам, хуком `git-hooks/deploy-if-main.sh` после коммита или слияния в `main`. Вручную — для повторной выкладки. | `tools/deploy-server.sh` |
+| `server_pull/` | Выкладка сайта самим сервером msk: таймер `grado-pull` раз в 5 минут забирает `main` с GitHub, ставит новую программу, проверяет версию по `/api/health`, при сбое возвращает прежнюю. Файлы: `grado-pull.sh`, службы systemd, `install-on-msk.sh`. | Сам на сервере. С Mac не запускается. | установка и откат — `tools/server_pull/README.md` |
 | `wiki.py` | Пересобирает вики `docs/wiki/` из кода: страницы с пометкой «генерируется». Страницы, которые пишут руками (например, `files.md`, `recipes.md`), не трогает. С `--check` — код 1, если вики устарела. | После любой правки кода или документов. Pre-commit-хук пересобирает вики перед коммитом; CI проверяет её (`.github/workflows/docs.yml`) и пересобирает (`.github/workflows/wiki.yml`). | `python3 tools/wiki.py`; `python3 tools/wiki.py --check` |
 | `wiki_albums.mjs` | Выдаёт состав альбома ППТ КРТ (листы и порядок выдачи) как JSON: выполняет `apps/grado2/web/albums.js` в Node. Нужен `wiki.py` для страницы `sheets.md`. | Запускает `wiki.py` сам. Вручную — редко. | `node tools/wiki_albums.mjs` (нужен только Node) |
 | `wiki_publish.sh` | Выкладывает `docs/wiki` в приватный репозиторий `tayeela/grado-wiki` и добавляет README, llms.txt и AGENTS.md. Без изменений ничего не отправляет. | Сам: хук `post-commit` (ветки `main` и `team/t60`, если менялась `docs/wiki`) и GitHub Actions (`wiki.yml`). Вручную — по необходимости. | `tools/wiki_publish.sh`. Доступ: `WIKI_TOKEN`, либо `gh auth`, либо обычный git |
 | `prune-merged-branches.sh` | Показывает (и с `--yes` удаляет на GitHub) ветки, целиком влитые в `main` или `team/t60`: коммиты остаются в истории; ветки открытых PR не трогает. | Изредка, для порядка в ветках; лучше включить в настройках GitHub автоудаление веток после слияния. | `tools/prune-merged-branches.sh` (список); `tools/prune-merged-branches.sh --yes` (удалить) |
-| `git-hooks/` | `pre-commit` пересобирает вики и кладёт её в коммит. `post-commit` публикует вики (если менялась `docs/wiki`, ветки `main` и `team/t60`) и вызывает `deploy-if-main.sh`. `post-merge` вызывает `deploy-if-main.sh`. `deploy-if-main.sh` выкладывает программу, если на `main` с прошлой выкладки поменялись `apps/grado2`, `core` или `docs/standards`; `GRADO_NO_DEPLOY=1` отключает выкладку. Подробно — в `tools/git-hooks/README.md`. | Запускает git, когда хуки подключены. Подключение один раз в каждой рабочей копии. | `git config core.hooksPath tools/git-hooks` |
+| `git-hooks/` | `pre-commit` пересобирает вики и кладёт её в коммит. `post-commit` публикует вики (если менялась `docs/wiki`, ветки `main` и `team/t60`). `post-commit` и `post-merge` на `main` вызывают `deploy-if-main.sh` — он только напоминает, что сайт обновит сервер. Подробно — в `tools/git-hooks/README.md`. | Запускает git, когда хуки подключены. Подключение один раз в каждой рабочей копии. | `git config core.hooksPath tools/git-hooks` |
 
 ## Генераторы стилей и прочее
 
@@ -53,4 +53,5 @@
 - Скрипты, которые запускают git-хуки, сбрасывают `GIT_DIR` и `GIT_INDEX_FILE` до вызова git (см. `wiki_publish.sh`;
   CLAUDE.md).
 - Порт 8650 — программа владельца. Не тестировать на нём (CLAUDE.md).
-- Если выкладка не прошла, на сервере осталась прежняя версия. Повторить: `tools/deploy-server.sh`.
+- Сайт выкладывает сам сервер msk после слияния в `main` (`server_pull/README.md`); с Mac не выкладывать. Если новая версия не поднялась,
+  на сервере остаётся прежняя.

@@ -624,12 +624,6 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
-### `tools/deploy-server.sh` — 52 стр.
-
-Обновить ГРАДО 2 на сервере grado.tailink.tech одной командой:  tools/deploy-server.sh Отправляет последний коммит (не рабочие правки) на msk (ONEDASH-RU, 93.88.203.245), ставит его рядом с работающей версией, переключает каталог и перезапускает службу grado. Если после перезапуска /api/health не отвечает новой версией — сам возвращает прежнюю и завершается с ошибкой. С 07.10.2026 ГРАДО работает на самом msk (перенос с AEZA-GRADO, который перестал отвечать), поэтому выкладка идёт Mac → msk без перехода на другой хост. Перенос и откат — в ЛОГе taiLink за 07.10.2026; установка прежнего сервера —…
-
-Функции: `health`
-
 ### `tools/gate.sh` — 25 стр.
 
 Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
@@ -658,7 +652,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `stub`, `get`
 
-### `tools/git-hooks/deploy-if-main.sh` — 22 стр.
+### `tools/git-hooks/deploy-if-main.sh` — 7 стр.
 
-Автообновление сервера grado.tailink.tech: git-хуки post-commit и post-merge вызывают этот файл. Обновляет, только если мы на ветке main и с прошлой выкладки менялась программа (apps/grado2, core, docs/standards). Последний выложенный коммит — в .git/grado-deployed (общий для всех рабочих копий). Выкладку делает tools/deploy-server.sh (проверка версии и автооткат). Отключить разово: GRADO_NO_DEPLOY=1. Коммит хук не отменяет никогда: неудача выкладки — только предупреждение.
+Напоминание после коммита или слияния в main: сайт grado.tailink.tech с Mac больше не выкладывается (с 08.10.2026, задача #73). Его обновляет сам сервер msk: таймер grado-pull раз в 5 минут забирает main с GitHub (tools/server_pull/README.md). Вызывают хуки post-commit и post-merge. Ничего не отправляет и коммит не отменяет.
 
