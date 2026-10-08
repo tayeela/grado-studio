@@ -1,10 +1,17 @@
 """Движок привязок: конец / пересечение / середина / ближайшая точка.
 
 Приоритет как в CAD: точная характеристическая точка бьёт «ближайшую».
-Кандидаты в допуске сортируются по (приоритет, дистанция).
+Кандидаты в допуске сортируются по (приоритет, дистанция). Поиск отрезков рядом
+с курсором — пространственный индекс shapely 2 (STRtree, GEOS); пересечения и
+ближайшая точка — тоже shapely. Пересечение в допуске лежит на двух отрезках,
+каждый из которых сам в допуске, поэтому пары перебираются только среди найденных рядом.
+Вызывают: закрытая студия; тесты — core/geom/tests/test_snap_coverage.py.
 """
 
 import math
+
+import shapely
+from shapely.geometry import LineString, Point
 
 PRIORITY = {"endpoint": 0, "intersection": 1, "midpoint": 2, "nearest": 3}
 
@@ -17,104 +24,53 @@ class SnapResult:
         return f"SnapResult({self.kind}, {self.point})"
 
 
-def _seg_intersect(a0, a1, b0, b1):
-    d0 = (a1[0] - a0[0], a1[1] - a0[1])
-    d1 = (b1[0] - b0[0], b1[1] - b0[1])
-    det = d0[0] * d1[1] - d0[1] * d1[0]
-    if abs(det) < 1e-12:
-        return None
-    t = ((b0[0] - a0[0]) * d1[1] - (b0[1] - a0[1]) * d1[0]) / det
-    u = ((b0[0] - a0[0]) * d0[1] - (b0[1] - a0[1]) * d0[0]) / det
-    if -1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9:
-        return (a0[0] + d0[0] * t, a0[1] + d0[1] * t)
-    return None
-
-
-def _nearest_on_seg(p, a, b):
-    dx, dy = b[0] - a[0], b[1] - a[1]
-    l2 = dx * dx + dy * dy
-    if l2 == 0:
-        return a
-    t = max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2))
-    return (a[0] + dx * t, a[1] + dy * t)
-
-
 class Snapper:
     def __init__(self, tolerance=0.5, cell=None):
+        # cell — шаг прежней сетки-индекса; оставлен для совместимости вызовов, индекс теперь STRtree
         self.tolerance = tolerance
-        self.cell = cell if cell and cell > 0 else max(float(tolerance) * 10.0, 1.0)
+        self.cell = cell
         self.segments = []
-        self._grid = {}
-        self._intersections = None
+        self._lines = []
+        self._tree = None
 
     def add_segment(self, a, b):
         a, b = (tuple(a), tuple(b))
-        idx = len(self.segments)
         self.segments.append((a, b))
-        for key in self._segment_cells(a, b):
-            self._grid.setdefault(key, []).append(idx)
-        self._intersections = None
+        self._lines.append(LineString([a, b]) if a != b else Point(a))
+        self._tree = None
 
     def add_polyline(self, pts):
         for a, b in zip(pts, pts[1:]):
             self.add_segment(a, b)
 
-    def _segment_cells(self, a, b):
-        c = self.cell
-        minx, maxx = (a[0], b[0]) if a[0] <= b[0] else (b[0], a[0])
-        miny, maxy = (a[1], b[1]) if a[1] <= b[1] else (b[1], a[1])
-        ix0, ix1 = math.floor(minx / c), math.floor(maxx / c)
-        iy0, iy1 = math.floor(miny / c), math.floor(maxy / c)
-        for ix in range(ix0, ix1 + 1):
-            for iy in range(iy0, iy1 + 1):
-                yield (ix, iy)
-
-    def _near(self, x, y):
-        c = self.cell
-        pad = self.tolerance
-        ix0, ix1 = math.floor((x - pad) / c), math.floor((x + pad) / c)
-        iy0, iy1 = math.floor((y - pad) / c), math.floor((y + pad) / c)
-        seen = set()
-        for ix in range(ix0, ix1 + 1):
-            for iy in range(iy0, iy1 + 1):
-                for idx in self._grid.get((ix, iy), ()):
-                    if idx not in seen:
-                        seen.add(idx)
-                        yield idx
-
-    def _all_intersections(self):
-        if self._intersections is None:
-            self._intersections = []
-            pairs = set()
-            for bucket in self._grid.values():
-                for i in range(len(bucket)):
-                    for j in range(i + 1, len(bucket)):
-                        a, b = bucket[i], bucket[j]
-                        if a > b:
-                            a, b = b, a
-                        if a == b or (a, b) in pairs:
-                            continue
-                        pairs.add((a, b))
-                        hit = _seg_intersect(*self.segments[a], *self.segments[b])
-                        if hit:
-                            self._intersections.append(hit)
-        return self._intersections
+    def _near(self, p):
+        if not self._lines:
+            return []
+        if self._tree is None:
+            self._tree = shapely.STRtree(self._lines)
+        return sorted(int(i) for i in self._tree.query(p, predicate="dwithin", distance=self.tolerance))
 
     def snap(self, x, y):
-        p = (x, y)
+        p = Point(x, y)
+        near = self._near(p)
         candidates = []
-        for idx in self._near(x, y):
+        for idx in near:
             a, b = self.segments[idx]
+            line = self._lines[idx]
             for pt in (a, b):
                 candidates.append((pt, "endpoint"))
             candidates.append((((a[0] + b[0]) / 2, (a[1] + b[1]) / 2), "midpoint"))
-            candidates.append((_nearest_on_seg(p, a, b), "nearest"))
-        for pt in self._all_intersections():
-            candidates.append((pt, "intersection"))
+            q = line.interpolate(line.project(p)) if a != b else line
+            candidates.append(((q.x, q.y), "nearest"))
+        for i, ia in enumerate(near):
+            for ib in near[i + 1:]:
+                hit = shapely.intersection(self._lines[ia], self._lines[ib])
+                if hit.geom_type == "Point":   # совпадающие (коллинеарные) отрезки точки пересечения не дают
+                    candidates.append(((hit.x, hit.y), "intersection"))
 
         best = None
         for pt, kind in candidates:
-            dist = math.dist(p, pt)
+            dist = math.dist((x, y), pt)
             if dist > self.tolerance:
                 continue
             key = (PRIORITY[kind], dist)

@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.48: geometry core on shapely 2 instead of hand-written code (#71, part of #69).**
+  - `core/geom`: `overlay.union_intersection_area` (union of each group, intersection, area), the area and integrity check of
+    `Coverage` (`shapely.coverage_is_valid`) and the spatial index of `Snapper` (STRtree) now run on shapely 2 (GEOS). Function
+    names, arguments and results stay the same; the shared-edge model of `Coverage` stays ours (shapely has none).
+  - Fixed on the way: the shares of districts under the boundary (`server.district_shares`, they choose the district, okrug, K2
+    and the education zone of ТЭП) were computed by scan lines with a 0.05 step in degrees — about 5 km, so a small boundary on
+    the edge of two districts got one or two lines and errors up to 300 %. Now exact. Golyanovo is unchanged (one district, 100 %).
+  - New dependency `shapely>=2.1` (BSD-3, GEOS LGPL-2.1 as a shared library; brings numpy): wheels for macOS arm64 and x86_64
+    and Windows; in `apps/grado2/requirements.txt`, `requirements-cloud.txt`, `packaging/grado2.spec`.
+  - Installers: `packaging/grado2.spec` now ships `docs/standards/admin` (districts) and the album slide header; without them the
+    packaged program answered «внутренняя ошибка» on the district lookup and could not print the PPTX header.
 - **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
   - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped
     in the program or the installers. Files stay `.js` and opt in with `// @ts-check`.

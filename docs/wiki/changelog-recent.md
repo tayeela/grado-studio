@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.48: geometry core on shapely 2 instead of hand-written code (#71, part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).
 - 2026-10-07, tests only: T27 wheel measurement (#40).
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.37: room for the map and the whole «Схема расчёта» (audit #26).
 - 2026-10-07, ГРАДО 2 v0.99.36: keyboard (audit #30).
 - 2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).
-- 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
