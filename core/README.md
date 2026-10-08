@@ -2,8 +2,8 @@
 
 Здесь семь пакетов Python, на которых стоит программа `apps/grado2`: расчёт ТЭП, проектная база, журнал правок,
 данные из порталов, геометрия, рендер листов и альбом. Каждый пакет лежит в папке `core/<имя>/`: код в `grado_<имя>/`,
-тесты в `tests/`. Код опирается на стандартную библиотеку и пакеты из `apps/grado2/requirements.txt`: `certifi`, Pillow и shapely 2
-(наложение, покрытие и привязки в `core/geom`).
+тесты в `tests/`. Код опирается на стандартную библиотеку и пакеты из `apps/grado2/requirements.txt`: `certifi`, Pillow, shapely 2
+(наложение, покрытие и привязки в `core/geom`), httpx и tenacity (запросы к порталам, `grado_connectors/netutil.py`).
 
 Что где лежит во всём проекте: [docs/wiki/files.md](../docs/wiki/files.md).
 
@@ -84,13 +84,13 @@ env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom
 
 ## Правила
 
-- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely.
+- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely, httpx, tenacity.
 - ЛГР-стили `core/render/grado_render/styles/*.json` генерируются, кроме `default.json`. Правьте генератор и
   запускайте его: `moscow_lgr.json` ← `tools/gen_moscow_lgr.py`, `moscow_genplan.json` ← `tools/gen_moscow_genplan.py`,
   `osm_highway.json` ← `tools/gen_osm_highway.py`, `redln97.json` ← `tools/gen_redln97.py`. Генератора для
   `default.json` в `tools/` нет.
-- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы, без параллельных загрузок, не больше 3 повторов
-  (CLAUDE.md). Коннекторы порталов лежат в `core/connectors`, но паузы есть и в `apps/grado2`
+- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы, без параллельных загрузок; запросы и повторы — только
+  `grado_connectors/netutil.py` (httpx + tenacity, не больше трёх попыток). Коннекторы порталов лежат в `core/connectors`, но паузы есть и в `apps/grado2`
   (`server.py`, `sat_io.py`, `ogd_all.py`, `ogd_warm.py`), поэтому при новом обращении к порталу проверяйте оба места.
 - Координаты: всё, что программа показывает, принимает и выгружает, — МСК (как в QGIS). Преобразование между МСК
   и системой ГИС ОГД — в `core/connectors/grado_connectors/crs.py`. Схему не обсуждать и не калибровать

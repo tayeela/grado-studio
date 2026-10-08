@@ -791,32 +791,23 @@ def esri_tile(z, x, y, kind="sat"):
     «округ и районы» шаблона ППТ КРТ). С диска (~/.grado2/cache/tiles/<вид>, 90 дней), иначе скачать по одному,
     с паузой 0,1 с — портал не долбим; неудача — пустое место, лист всё равно собирается."""
     folder, service = ESRI_SERVICES.get(kind, ESRI_SERVICES["sat"])
-    import ssl
     import time
-    import urllib.request
+    from grado_connectors import netutil
+    from grado_connectors.contract import ConnectorError
     path = CACHE / "tiles" / folder / f"{z}_{x}_{y}.jpg"
     if path.exists() and time.time() - path.stat().st_mtime < 90 * 86400:
         return path.read_bytes()
     url = f"https://server.arcgisonline.com/ArcGIS/rest/services/{service}/MapServer/tile/{z}/{y}/{x}"
-    try:
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        ctx = ssl.create_default_context()
     with _TILE_LOCK:
-        for attempt in range(3):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "grado2/1.0 (planning sheets)"})
-                with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
-                    data = r.read()
-                if data[:2] != b"\xff\xd8":                 # не JPEG (заглушка или ошибка) — на лист не идёт и в кэш не пишется
-                    return None
-                atomic_write(path, data)
-                time.sleep(.1)
-                return data
-            except OSError:
-                time.sleep(1 + attempt)
-    return None
+        try:                                            # повторы — общее правило порталов (netutil)
+            data = netutil.request(url, headers={"User-Agent": "grado2/1.0 (planning sheets)"}, timeout=20).content
+        except ConnectorError:
+            return None
+        if data[:2] != b"\xff\xd8":                     # не JPEG (заглушка или ошибка) — на лист не идёт и в кэш не пишется
+            return None
+        atomic_write(path, data)
+        time.sleep(.1)
+        return data
 
 
 def yandex_sat_tile(z, x, y):

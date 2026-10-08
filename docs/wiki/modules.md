@@ -69,13 +69,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `flatten`, `icon_id`, `icon_width`, `icon_ops`
 
-### `apps/grado2/sat_io.py` — 258 стр.
+### `apps/grado2/sat_io.py` — 242 стр.
 
 Спутник Яндекса для AutoCAD: снимок рамки листа, пересчитанный в МСК (как в QGIS владельца).
 
-Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
+Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2638 стр.
+### `apps/grado2/server.py` — 2629 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -314,13 +314,13 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_sig`, `diff`, `has_changes`
 
-### `core/connectors/grado_connectors/fgistp.py` — 176 стр.
+### `core/connectors/grado_connectors/fgistp.py` — 164 стр.
 
 Коннектор ФГИС ТП (Минэк, mnp.economy.gov.ru) — протокол v2 (JSP).
 
-Функции: `check_base_url`, `_ssl_context`, `FgistpConnector`
+Функции: `check_base_url`, `FgistpConnector`
 
-### `core/connectors/grado_connectors/geocode.py` — 174 стр.
+### `core/connectors/grado_connectors/geocode.py` — 166 стр.
 
 Поиск адреса через OpenStreetMap Nominatim (решение владельца 01.10.2026).
 
@@ -332,11 +332,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_windows_ogr2ogr_candidates`, `find_ogr2ogr`, `clean_msg`, `_safe_extract`, `_extract_recursive`, `GisogdZip`
 
-### `core/connectors/grado_connectors/gisogd_api.py` — 866 стр.
+### `core/connectors/grado_connectors/gisogd_api.py` — 835 стр.
 
 Коннектор ГИС ОГД Москвы — прямая выгрузка слоёв по открытому REST API.
 
-Функции: `_check_code`, `_inflate`, `_ssl_context`, `_tmp_beside`, `_nowhere`, `_expected_size`, `_http_get`, `_http_stream`, `_layer_lock`, `catalog`, `_full_names`, `_shp_features`, `_zip_of`, `_geom_bbox`, `_overlaps`, `norm_id`, `GisogdApi`
+Функции: `_check_code`, `_inflate`, `_tmp_beside`, `_nowhere`, `_expected_size`, `_net_error`, `_http_get`, `_http_stream`, `_layer_lock`, `catalog`, `_full_names`, `_shp_features`, `_zip_of`, `_geom_bbox`, `_overlaps`, `norm_id`, `GisogdApi`
 
 ### `core/connectors/grado_connectors/importer.py` — 65 стр.
 
@@ -344,23 +344,23 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_coerce`, `import_snapshot`
 
-### `core/connectors/grado_connectors/netutil.py` — 28 стр.
+### `core/connectors/grado_connectors/netutil.py` — 191 стр.
 
-Общие сетевые помощники коннекторов: потолок размера ответа и редиректы только на https.
+Запросы к порталам одним правилом: httpx (клиент) и tenacity (повторы), потолок размера, редиректы только на https.
 
-Функции: `_HttpsOnlyRedirect`, `open_url`, `read_capped`
+Функции: `HttpError`, `NetError`, `BadBody`, `is_cert_error`, `ssl_context`, `_https_only`, `_client`, `_retryable`, `_wait`, `_retrying`, `_check`, `Response`, `request`, `stream`
 
-### `core/connectors/grado_connectors/nspd.py` — 433 стр.
+### `core/connectors/grado_connectors/nspd.py` — 394 стр.
 
 Коннектор НСПД (Росреестр): захват моста + прямая выгрузка по экстенту.
 
-Функции: `_flatten_options`, `_geom_sig`, `NspdCapture`, `_base_url`, `_relay_headers`, `_intersects_url`, `_extra_ca_files`, `_ssl_context`, `_ssl_context_unverified`, `_warn_insecure`, `_short`, `NspdDirect`, `_Retryable`, `_http_get`, `normalize_cadastral`, `_search_features`, `search_cadastral`
+Функции: `_flatten_options`, `_geom_sig`, `NspdCapture`, `_base_url`, `_relay_headers`, `_intersects_url`, `_extra_ca_files`, `_extra_ca_pem`, `_ssl_context`, `_ssl_context_unverified`, `_warn_insecure`, `_short`, `NspdDirect`, `_request`, `_http_get`, `normalize_cadastral`, `_search_features`, `search_cadastral`
 
-### `core/connectors/grado_connectors/osm.py` — 438 стр.
+### `core/connectors/grado_connectors/osm.py` — 396 стр.
 
 Коннектор OSM (Overpass API) — прямая выгрузка векторов по экстенту.
 
-Функции: `_in_ring`, `_assemble_rings`, `_which_set`, `_point_of`, `_bbox_hits`, `_OverpassCache`, `retry_wait`, `_is_timeout`, `post_with_retry`, `OsmOverpass`
+Функции: `_in_ring`, `_assemble_rings`, `_which_set`, `_point_of`, `_bbox_hits`, `_OverpassCache`, `post_with_retry`, `OsmOverpass`
 
 ### `core/connectors/grado_connectors/shp_reader.py` — 229 стр.
 
@@ -374,19 +374,19 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `StoreError`, `SnapshotStore`, `Subscriptions`
 
-### `core/connectors/grado_connectors/terrain.py` — 316 стр.
+### `core/connectors/grado_connectors/terrain.py` — 297 стр.
 
 Коннектор рельефа: горизонтали (изолинии высот) по видимому экстенту.
 
 Функции: `_lon2tilex`, `_lat2tiley`, `_gpix2lonlat`, `_pick_zoom`, `_nice_interval`, `_fetch_grid`, `_http_get`, `_cell_segments`, `_stitch`, `_contours`, `TerrainContours`
 
-### `core/connectors/grado_connectors/yandex_vmap.py` — 584 стр.
+### `core/connectors/grado_connectors/yandex_vmap.py` — 562 стр.
 
 Яндекс Карты: векторные тайлы vmap3 (обратная разработка, сверено 23.09.2026) — только стандартная библиотека.
 
 Разделы по порядку: protobuf без схемы · EPSG:3395 ↔ WGS84 · площадь и длина на местности · склейка кусков по стыкам тайлов (без shapely)
 
-Функции: `_varint`, `_parse`, `_varints`, `_zz`, `_value`, `decode`, `lonlat_to_3395`, `lat_from_3395`, `to_lonlat`, `scale_3395`, `tile_range`, `tile_to_3395`, `_ring_area`, `_poly_area_m2`, `_line_len_m`, `_closed`, `_ll`, `_to_grid`, `_grid_to_3395`, `_sarea`, `_seam`, `_clean`, `_inside`, `_dissolve`, `_join`, `features_from_tiles`, `_ssl_context`, `YandexVmap`
+Функции: `_varint`, `_parse`, `_varints`, `_zz`, `_value`, `decode`, `lonlat_to_3395`, `lat_from_3395`, `to_lonlat`, `scale_3395`, `tile_range`, `tile_to_3395`, `_ring_area`, `_poly_area_m2`, `_line_len_m`, `_closed`, `_ll`, `_to_grid`, `_grid_to_3395`, `_sarea`, `_seam`, `_clean`, `_inside`, `_dissolve`, `_join`, `features_from_tiles`, `YandexVmap`
 
 ## Ядро: compute (core/compute/grado_compute)
 

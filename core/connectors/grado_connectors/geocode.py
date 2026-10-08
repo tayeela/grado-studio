@@ -5,14 +5,12 @@ User-Agent, поиск только по явному запросу (без а�
 """
 import json
 import re
-import ssl
 import threading
 import time
 import urllib.parse
-import urllib.request
 
 from .contract import ConnectorError
-from .netutil import open_url, read_capped
+from . import netutil
 
 URL = "https://nominatim.openstreetmap.org/search"
 USER_AGENT = "GRADO2/0.88 (urban planning workspace; contact: owner)"
@@ -44,19 +42,13 @@ def clean_query(q):
 
 
 def _default_transport(url, headers, timeout=20):
-    """(url, headers) -> (код, тело). Сетевой сбой -> ConnectorError."""
-    import certifi
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.load_verify_locations(cafile=certifi.where())
-    ctx.check_hostname = True
-    ctx.verify_mode = ssl.CERT_REQUIRED
-    req = urllib.request.Request(url, headers=headers)
+    """(url, headers) -> (код, тело). Одна попытка: повторы при 429/5xx ведёт Geocoder._fetch под общим замком
+    (политика Nominatim — не чаще 1 запроса в секунду). Сетевой сбой -> ConnectorError."""
     try:
-        with open_url(req, timeout, ctx) as r:
-            return r.status, read_capped(r, 4 * 2**20)
-    except urllib.error.HTTPError as e:
+        return 200, netutil.request(url, headers=headers, timeout=timeout, limit=4 * 2**20, attempts=1).content
+    except netutil.HttpError as e:
         return e.code, b""
-    except (OSError, ConnectorError) as e:
+    except ConnectorError as e:
         raise ConnectorError(f"Nominatim: сбой сети ({e})") from e
 
 

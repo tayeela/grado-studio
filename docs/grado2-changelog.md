@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.52: requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
+  - `core/connectors/grado_connectors/netutil.py` is now the only network code: `request` (whole body, size cap) and `stream`
+    (large layers, gzip unpacked by the caller with the bomb guard). Redirects only to https, certifi roots, certificate check
+    never switched off (НСПД adds the Минцифры roots, the explicit `GRADO_NSPD_INSECURE=1` stays as it was).
+  - One retry rule instead of eleven hand-written loops (НСПД ×2, Overpass, Yandex vmap, ГИС ОГД ×2, terrain, Yandex sat, Esri):
+    at most three attempts, retry on 429, 500, 502, 503, 504, a dropped connection or a timeout, pause 1 s then 2 s or what
+    Retry-After asks (at most 30 s); a certificate error and other 4xx are not retried. Yandex vmap: a captcha instead of a tile
+    is retried, not cached. Overpass mirrors race as before; the losing mirror stops retrying.
+  - Changed on the way: Yandex vmap did up to four attempts and Nominatim keeps its own loop under the 1 request per second lock;
+    ГИС ОГД, terrain and НСПД extent now also retry 5xx (they failed at once); Esri no longer retries a 404.
+  - New dependencies `httpx>=0.28` (BSD-3) and `tenacity>=9.0` (Apache-2.0), pure Python, wheels for every platform; in
+    `apps/grado2/requirements.txt`, `requirements-cloud.txt`, `packaging/grado2.spec`.
+  - Tests: `test_netutil.py` (policy, Retry-After, redirect, size cap, stream), connector tests use `_fakenet.FakeNet`
+    (httpx.MockTransport) instead of patching urllib.
 - **2026-10-08, ГРАДО 2 v0.99.48: geometry core on shapely 2 instead of hand-written code (#71, part of #69).**
   - `core/geom`: `overlay.union_intersection_area` (union of each group, intersection, area), the area and integrity check of
     `Coverage` (`shapely.coverage_is_valid`) and the spatial index of `Snapper` (STRtree) now run on shapely 2 (GEOS). Function

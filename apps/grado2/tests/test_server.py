@@ -341,12 +341,11 @@ class YandexSatBreaker(unittest.TestCase):
 
     def _run(self, exc, n):
         import tempfile
-        import urllib.error
         import sat_io
         real = sat_io.YandexSat
 
         def transport(url):
-            raise exc(url) if exc is urllib.error.HTTPError else exc("x")
+            raise exc(url)
         saved = dict(S._YSAT)
         S._YSAT.update({"fails": 0, "off_until": 0.0, "bad": {}})
         try:
@@ -361,8 +360,8 @@ class YandexSatBreaker(unittest.TestCase):
             S._YSAT.update(saved)
 
     def test_404_does_not_trip_breaker(self):
-        import urllib.error
-        st = self._run(lambda url: urllib.error.HTTPError(url, 404, "nf", None, None), 8)
+        from grado_connectors import netutil
+        st = self._run(lambda url: netutil.HttpError(404), 8)
         self.assertEqual(st["fails"], 0)
         self.assertEqual(st["off_until"], 0.0)
         self.assertEqual(len(st["bad"]), 8)                                      # но «нет снимка» запомнено

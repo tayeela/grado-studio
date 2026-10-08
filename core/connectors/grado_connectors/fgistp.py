@@ -24,9 +24,7 @@
 """
 
 import json
-import ssl
 import urllib.parse
-import urllib.request
 
 from .contract import Connector, ConnectorError, make_result
 from . import crs, netutil
@@ -57,14 +55,6 @@ def check_base_url(url):
         "(http:// допустим только для 127.0.0.1/localhost)")
 
 
-def _ssl_context():
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()   # проверяющий контекст, не отключённая проверка
-
-
 class FgistpConnector(Connector):
     name = "fgistp"
     source = "fgistp"
@@ -74,11 +64,9 @@ class FgistpConnector(Connector):
         self.transport = transport or self._http_get
 
     def _http_get(self, url):
-        req = urllib.request.Request(url, headers={"User-Agent": BROWSER_UA})
         try:
-            with netutil.open_url(req, 120, _ssl_context()) as resp:
-                return netutil.read_capped(resp)
-        except Exception as e:
+            return netutil.request(url, headers={"User-Agent": BROWSER_UA}, timeout=120).content
+        except ConnectorError as e:
             raise ConnectorError(f"ФГИС ТП недоступен: {e}") from None
 
     # ---------- URL-строители (отделены для тестов) ----------

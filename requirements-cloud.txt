@@ -2,3 +2,5 @@
 certifi>=2024.2.2
 pillow>=11.3
 shapely>=2.1
+httpx>=0.28
+tenacity>=9.0

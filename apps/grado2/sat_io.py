@@ -21,15 +21,13 @@
 import io
 import math
 import os
-import ssl
 import tempfile
 import time
-import urllib.error
-import urllib.request
 import zipfile
 from pathlib import Path
 
-from grado_connectors import crs
+from grado_connectors import crs, netutil
+from grado_connectors.contract import ConnectorError
 from grado_connectors.yandex_vmap import HALF, HEADERS, lonlat_to_3395
 
 FAIL_TTL = 3600                                           # неудачный тайл не запрашивается час
@@ -50,26 +48,18 @@ class SatError(ValueError):
     pass
 
 
-def _ctx():
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
-
-
 class YandexSat:
     """Тайлы спутника Яндекса: с диска (90 дней), иначе скачать с паузой; нет тайла — серое место."""
 
     def __init__(self, cache_dir, pause=0.1, transport=None):
         self.cache_dir, self.pause = Path(cache_dir), pause
-        self._ctx = None if transport else _ctx()
         self.transport = transport or self._get
         self.last_status = None          # итог последнего ensure: "cached", "ok", "none" (404: снимка нет), "fail" (сбой), "skip" (метка)
 
     def _get(self, url):
-        with urllib.request.urlopen(urllib.request.Request(url, headers=HEADERS), timeout=30, context=self._ctx) as r:
-            return r.read(MAX_TILE_BYTES + 1)              # не больше мегабайта + 1 байт: длиннее отсекает ensure
+        """Тайл по сети, повторы — общее правило netutil; netutil.HttpError(404) — снимка нет."""
+        # больше мегабайта — не тайл (заглушка, чужой ответ): netutil обрывает чтение, ensure считает это сбоем
+        return netutil.request(url, headers=HEADERS, timeout=30, limit=MAX_TILE_BYTES).content
 
     def path(self, z, x, y):
         return self.cache_dir / f"{z}_{x}_{y}.jpg"
@@ -88,18 +78,12 @@ class YandexSat:
         except OSError:
             pass
         data, nf = None, False
-        for attempt in range(3):
-            if attempt:
-                time.sleep(1 + attempt)
-            try:
-                data = self.transport(URL.format(x=x, y=y, z=z))
-                break
-            except urllib.error.HTTPError as e:
-                if e.code == 404:
-                    nf = True
-                    break
-            except OSError:
-                pass
+        try:
+            data = self.transport(URL.format(x=x, y=y, z=z))
+        except netutil.HttpError as e:
+            nf = e.code == 404
+        except (ConnectorError, OSError):
+            pass
         if data and len(data) <= MAX_TILE_BYTES and data[:2] == b"\xff\xd8":   # только JPEG и не больше 1 МБ: заглушка или капча в кэш не идёт
             p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=p.parent, suffix=".part")

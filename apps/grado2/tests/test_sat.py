@@ -97,24 +97,24 @@ class SatExport(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d, mock.patch.object(sat_io.time, "sleep"):
             ys = sat_io.YandexSat(d, pause=0, transport=down)
             ys.ensure(15, 1, 1)
-            self.assertEqual(len(calls), 3)                              # три попытки с паузами
+            self.assertEqual(len(calls), 1)                              # повторы с паузами — внутри netutil (_get)
             ys.ensure(15, 1, 1)
-            self.assertEqual(len(calls), 3)                              # час — без сети
+            self.assertEqual(len(calls), 1)                              # час — без сети
             mark = ys.path(15, 1, 1).with_suffix(".fail")
             old = time.time() - 3601
             os.utime(mark, (old, old))
             ys.transport = lambda url: (calls.append(url), b"\xff\xd8ok")[1]
             ys.ensure(15, 1, 1)
-            self.assertEqual(len(calls), 4)
+            self.assertEqual(len(calls), 2)
             self.assertFalse(mark.exists())
             self.assertTrue(ys.path(15, 1, 1).exists())
 
     def test_404_is_no_imagery_not_failure(self):
-        import urllib.error
         from unittest import mock
+        from grado_connectors import netutil
 
         def nf(url):
-            raise urllib.error.HTTPError(url, 404, "nf", None, None)
+            raise netutil.HttpError(404)
         with tempfile.TemporaryDirectory() as d, mock.patch.object(sat_io.time, "sleep"):
             ys = sat_io.YandexSat(d, pause=0, transport=nf)
             ys.ensure(15, 1, 1)
@@ -123,6 +123,26 @@ class SatExport(unittest.TestCase):
             ys.transport = lambda url: (_ for _ in ()).throw(OSError("offline"))
             ys.ensure(15, 2, 2)
             self.assertEqual(ys.last_status, "fail")
+
+    def test_default_transport_retries_and_maps_404(self):
+        """Сеть по общему правилу netutil: сбой повторяется, 404 — «снимка нет», заглушка больше 1 МБ — сбой."""
+        import httpx
+        from grado_connectors import netutil
+        answers = [httpx.Response(503), httpx.Response(200, content=b"\xff\xd8jpeg"),
+                   httpx.Response(404), httpx.Response(200, content=b"x" * (sat_io.MAX_TILE_BYTES + 1))]
+        saved = netutil.TRANSPORT, netutil.sleep
+        netutil.TRANSPORT, netutil.sleep = httpx.MockTransport(lambda r: answers.pop(0)), lambda s: None
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                ys = sat_io.YandexSat(d, pause=0)
+                ys.ensure(15, 1, 1)
+                self.assertEqual(ys.last_status, "ok")
+                ys.ensure(15, 2, 2)
+                self.assertEqual(ys.last_status, "none")
+                ys.ensure(15, 3, 3)
+                self.assertEqual(ys.last_status, "fail")
+        finally:
+            netutil.TRANSPORT, netutil.sleep = saved
 
     def test_base_control_chars_stripped(self):
         with tempfile.TemporaryDirectory() as d:

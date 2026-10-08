@@ -10,10 +10,7 @@
 import json
 import threading
 import time
-import ssl
-import urllib.error
 import urllib.parse
-import urllib.request
 
 from . import netutil
 from .contract import Connector, ConnectorError, make_result
@@ -229,48 +226,16 @@ class _OverpassCache:
             pass
 
 
-# Правила порталов (CLAUDE.md): пауза, не больше 3 попыток, ожидание растёт вдвое (2 с, 4 с). Повторяются перегрузка зеркала
-# (429/502/503/504) и обрыв по времени/сети; прочие коды и «runtime error» (нехватка памяти — область слишком большая) — сразу отказ.
-RETRY_CODES = (429, 502, 503, 504)
-ATTEMPTS = 3
-
-
-def retry_wait(attempt):
-    """Пауза после неудачной попытки с номером attempt (с нуля): 2 с, 4 с, 8 с…"""
-    return 2 * 2 ** attempt
-
-
-def _is_timeout(e):
-    return isinstance(e, TimeoutError) or (isinstance(e, urllib.error.URLError) and isinstance(e.reason, TimeoutError))
-
-
-def post_with_retry(url, data, ctx, sleep=time.sleep, cancel=None):
-    """cancel — threading.Event: зеркало, проигравшее гонку, больше не повторяет запросы."""
-    for attempt in range(ATTEMPTS):
-        if cancel is not None and cancel.is_set():
-            raise ConnectorError("Overpass: запрос отменён")
-        req = urllib.request.Request(url, data=data, headers={"User-Agent": _UA})
-        try:
-            with netutil.open_url(req, 60, ctx) as r:
-                d = json.loads(netutil.read_capped(r).decode("utf-8"))
-            # таймаут или нехватка памяти Overpass приходят как 200 с неполным ответом — это отказ, не данные
-            if "runtime error" in (d.get("remark") or ""):
-                raise ConnectorError("Overpass: " + d["remark"][:200])
-            return d
-        except urllib.error.HTTPError as e:
-            if e.code not in RETRY_CODES:
-                raise
-            failure = e
-        except (urllib.error.URLError, TimeoutError) as e:
-            if not _is_timeout(e):             # SSL, сертификат, отказ соединения — повтор не поможет
-                raise
-            failure = e
-        if attempt < ATTEMPTS - 1:
-            if cancel is not None:
-                cancel.wait(retry_wait(attempt))
-            else:
-                sleep(retry_wait(attempt))
-    raise failure
+def post_with_retry(url, data, cancel=None):
+    """POST к одному зеркалу; повторы (перегрузка 429/5xx, обрыв сети) — общее правило netutil.
+    «runtime error» в ответе (нехватка памяти — область слишком большая) — сразу отказ.
+    cancel — threading.Event: зеркало, проигравшее гонку, больше не повторяет запросы."""
+    d = netutil.request(url, method="POST", content=data, timeout=60, cancel=cancel,
+                        headers={"User-Agent": _UA, "Content-Type": "application/x-www-form-urlencoded"}).json()
+    # таймаут или нехватка памяти Overpass приходят как 200 с неполным ответом — это отказ, не данные
+    if "runtime error" in (d.get("remark") or ""):
+        raise ConnectorError("Overpass: " + d["remark"][:200])
+    return d
 
 
 class OsmOverpass(Connector):
@@ -299,14 +264,9 @@ class OsmOverpass(Connector):
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
         data = urllib.parse.urlencode({"data": query}).encode("utf-8")
-        try:
-            import certifi
-            ctx = ssl.create_default_context(cafile=certifi.where())
-        except ImportError:
-            ctx = ssl.create_default_context()
 
         def one(url):
-            return post_with_retry(url, data, ctx, cancel=stop)
+            return post_with_retry(url, data, cancel=stop)
 
         errors = []
         stop = threading.Event()
@@ -316,8 +276,6 @@ class OsmOverpass(Connector):
             for future in as_completed(futures):
                 try:
                     return future.result()
-                except urllib.error.HTTPError as e:
-                    errors.append(f"HTTP {e.code}")
                 except Exception as e:
                     errors.append(str(e))
         finally:

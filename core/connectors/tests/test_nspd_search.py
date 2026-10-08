@@ -10,7 +10,7 @@ import urllib.parse
 import _paths  # noqa: F401
 from grado_connectors import ConnectorError, crs
 from grado_connectors import nspd
-from grado_connectors.nspd import _Retryable, normalize_cadastral, search_cadastral
+from grado_connectors.nspd import normalize_cadastral, search_cadastral
 
 LON, LAT = 37.6, 55.7
 
@@ -63,24 +63,26 @@ class Search(unittest.TestCase):
         self.assertEqual(r, [])                                          # чужой номер в ответе не принимается
 
     def test_retry_once_then_ok(self):
-        calls = []
-
-        def tr(url):
-            calls.append(1)
-            if len(calls) == 1:
-                raise _Retryable("HTTP 502")
-            return _answer("50:27:0000000:126")
-        r = search_cadastral(["50:27:0000000:126"], transport=tr, sleep=lambda s: None)
-        self.assertEqual((len(calls), len(r)), (2, 1))
+        import json
+        from _fakenet import FakeNet
+        with FakeNet(502, json.dumps(_answer("50:27:0000000:126")).encode()) as net:
+            r = search_cadastral(["50:27:0000000:126"], sleep=lambda s: None)
+        self.assertEqual((len(net.requests), len(r)), (2, 1))
 
     def test_three_attempts_then_error_recorded(self):
-        calls, errs = [], []
+        from _fakenet import FakeNet
+        errs = []
+        with FakeNet(503, repeat_last=True) as net:
+            r = search_cadastral(["50:27:0000000:126"], sleep=lambda s: None, errors=errs)
+        self.assertEqual((r, len(net.requests), len(errs)), ([], 3, 1))
+
+    def test_other_error_is_not_retried(self):
+        errs = []
 
         def tr(url):
-            calls.append(1)
-            raise _Retryable("HTTP 597")
-        r = search_cadastral(["50:27:0000000:126"], transport=tr, sleep=lambda s: None, errors=errs)
-        self.assertEqual((r, len(calls), len(errs)), ([], 3, 1))
+            raise ConnectorError("НСПД ответил HTTP 400")
+        self.assertEqual(search_cadastral(["50:27:0000000:126"], transport=tr, sleep=lambda s: None, errors=errs), [])
+        self.assertEqual(len(errs), 1)
 
     def test_cap_20(self):
         calls = []
