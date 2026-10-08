@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, agent instructions (no program change): owner's glossary, new task template, contradictions removed (step 4 of the plan, #69).**
+  - `docs/wiki/glossary.md`: the owner's terms and abbreviations (АГК, АГР, сущпол, СПРИТ, ЛГР, ЗОУИТ, СПП, K1/K2…) with where they appear and what
+    not to confuse them with; four traps first (sheet numbers, «эталон», «подзона», «ПП»). Linked from `CLAUDE.md`, `AGENTS.md`, wiki index.
+  - Issue template «Задача»: «что сейчас / что должно быть / образец / что владелец увидит на экране».
+  - Contradictions fixed: role reports in Russian (were English); `docs/team/README.md` no longer says the site is deployed from the Mac;
+    `recipes.md` urgent fix goes through a PR and «выкладывай» (was a direct commit to main); RULE in PROGRESS.md names `team/t60`, not
+    `team/grado2`; `DECISIONS.md` — a decision is cancelled by an issue, not `OWNER.md`; agents' test servers — port 8660 and up everywhere
+    (8651 is `grado2-test`); BANS and the architect role no longer forbid new dependencies (owner 08.10, #69); progress notes go to issue
+    comments, not `/tmp`; stale album lines (yellow calculated СЗЗ, «Территория рассмотрения», district map «в конец альбома»,
+    district border 1,2 mm on the district map) marked by the later owner words.
 - **2026-10-08, ГРАДО 2 v0.99.52: requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
   - `core/connectors/grado_connectors/netutil.py` is now the only network code: `request` (whole body, size cap) and `stream`
     (large layers, gzip unpacked by the caller with the bomb guard). Redirects only to https, certifi roots, certificate check

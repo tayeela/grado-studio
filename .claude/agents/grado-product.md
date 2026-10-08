@@ -19,4 +19,4 @@ What you do:
 
 Never touch port 8650 or `~/Documents/ГРАДО 2`. No ssh.
 
-Report in English, short: proposals or position, `ASK <role>: <question>` lines.
+Report in Russian, short: proposals or position, `ASK <role>: <question>` lines.

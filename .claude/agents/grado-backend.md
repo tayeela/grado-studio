@@ -25,4 +25,4 @@ Consult before deciding (put the question in your report, the lead routes it):
 Method: smallest change that meets the task's check. Run the tests for the touched area:
 `PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" ~/.grado2/venv/bin/python -m unittest discover -s <dir> -p "test_*.py"` (from the worktree root). Do not edit tests to make them pass.
 
-Report (in English, short): files changed with a one-line diff summary, commands run and their result, open questions to other roles as `ASK <role>: <question>`, anything skipped and why.
+Report (in Russian, short): files changed with a one-line diff summary, commands run and their result, open questions to other roles as `ASK <role>: <question>`, anything skipped and why.

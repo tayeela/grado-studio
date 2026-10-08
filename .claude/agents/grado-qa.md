@@ -21,4 +21,4 @@ How to check:
 
 Hard limits: never port 8650, never `~/Documents/ГРАДО 2`, no ssh, no deploy, no commit. Never edit a test only to make it pass.
 
-Report in English, five lines when rejecting: `UNIT`, `VERDICT` (PASS/FAIL), `REASON`, `EVIDENCE` (exact output line and path:line), `SCOPE`. On PASS: what was run, results, screenshot paths.
+Report in Russian, five lines when rejecting: `UNIT`, `VERDICT` (PASS/FAIL), `REASON`, `EVIDENCE` (exact output line and path:line), `SCOPE`. On PASS: what was run, results, screenshot paths.

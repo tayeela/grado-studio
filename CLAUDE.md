@@ -6,6 +6,7 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
   `docs/wiki/INDEX.md`. Every top-level folder and every `docs/` shelf has a `README.md` (`docs/` has `INDEX.md`); nested `CLAUDE.md` files (`docs/`, `apps/grado2/`, `core/`) load when you work there.
   Read wiki pages, not big files whole. The wiki is generated from the code (`tools/wiki.py`: pre-commit hook and CI `wiki.yml` on `team/t60`
   and `main`) and mirrored to the private GitHub repo `tayeela/grado-wiki` (`tools/wiki_publish.sh`).
+- **The owner's words and abbreviations (АГК, сущпол, СПРИТ, «лист 5»…): `docs/wiki/glossary.md`** — look a term up, never guess it.
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules
   from all remarks. A new owner remark goes there and to `docs/standards/albums/label-rules.md` before code.
 - Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit. It also runs

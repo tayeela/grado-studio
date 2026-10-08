@@ -25,4 +25,4 @@ Consult before deciding (put the question in your report, the lead routes it):
 Method: smallest change that meets the task's check. Run the browser scenarios before reporting:
 `GRADO2_E2E=1 PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" ~/.grado2/venv/bin/python -m unittest apps.grado2.tests.test_e2e` or the discover form from `CLAUDE.md`, from the worktree root. Add a scenario to `apps/grado2/tests/e2e/scenarios.mjs` for new behaviour.
 
-Report (in English, short): files changed, what appears on screen now, commands run and result, `ASK <role>: <question>` lines, anything skipped.
+Report (in Russian, short): files changed, what appears on screen now, commands run and result, `ASK <role>: <question>` lines, anything skipped.

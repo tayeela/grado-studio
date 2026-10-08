@@ -3,20 +3,44 @@ description: Работа команды: доработка программы,
 title: ""
 labels: ["задача"]
 body:
-  - type: textarea
-    id: what
+  - type: markdown
     attributes:
-      label: Что нужно сделать
-      description: Простыми словами, как это будет видно на экране или в файле.
+      value: |
+        Пишите словами владельца. Незнакомое сокращение (АГК, сущпол, СПРИТ, «лист 5») — сначала `docs/wiki/glossary.md`,
+        работа с альбомом — сначала `docs/wiki/album-rules.md`. Лист называйте по названию («сущпол», «ортофотоплан»), номер — только «в выдаче».
+  - type: textarea
+    id: now
+    attributes:
+      label: Что сейчас
+      description: Что видно на экране, на листе или в файле сейчас (снимок или страница PDF, если есть).
+    validations:
+      required: true
+  - type: textarea
+    id: want
+    attributes:
+      label: Что должно быть
+      description: Как должно стать. Слова владельца — дословно, в кавычках, с датой.
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Образец
+      description: Картинка, страница альбома-образца, файл в `docs/team/samples/`, ссылка на лист. «Нет образца» — тоже ответ.
+  - type: textarea
+    id: see
+    attributes:
+      label: Что владелец увидит на экране, когда готово
+      description: Одной-двумя фразами, без программистских слов. По этому принимают работу.
     validations:
       required: true
   - type: textarea
     id: check
     attributes:
       label: Как проверить
-      description: Команда (`tools/gate.sh`, `E2E=1 tools/gate.sh`), сценарий на экране или сравнение листов альбома.
+      description: Команда (`tools/gate.sh`, `E2E=1 tools/gate.sh`), сценарий на экране или сравнение листов альбома (`tools/album_check.py`).
   - type: textarea
     id: context
     attributes:
       label: Контекст
-      description: Связанные задачи и PR, файлы (`docs/wiki/files.md` подскажет, где что лежит).
+      description: Связанные задачи и PR, файлы (`docs/wiki/files.md` подскажет, где что лежит), чего не трогать.
