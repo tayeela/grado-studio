@@ -16,11 +16,13 @@ datas = [(str(APP / "web"), "web"),
          (str(ROOT / "core/render/grado_render/styles"), "core/render/grado_render/styles"),
          (str(ROOT / "core/compute/grado_compute/presets"), "core/compute/grado_compute/presets"),
          (str(ROOT / "core/compute/grado_compute/regulations"), "core/compute/grado_compute/regulations"),
-         (str(ROOT / "docs/standards/redln97"), "docs/standards/redln97")]
+         (str(ROOT / "docs/standards/redln97"), "docs/standards/redln97"),
+         (str(ROOT / "docs/standards/admin"), "docs/standards/admin"),           # районы для долей площади (server.district_shares)
+         (str(ROOT / "docs/standards/albums/pptkrt-header.jpg"), "docs/standards/albums")]   # шапка слайдов альбома (album_io)
 datas += collect_data_files("certifi") + collect_data_files("ezdxf") + collect_data_files("grado_compute") + collect_data_files("grado_render")
 
 hiddenimports = ["server", "dxf_io", "file_io", "print_io", "export_io"]
-for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL"):
+for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL", "shapely"):
     hiddenimports += collect_submodules(package)
 
 a = Analysis([str(ROOT / "packaging/grado2_entry.py")], pathex=PATHEX, binaries=[], datas=datas, hiddenimports=hiddenimports,

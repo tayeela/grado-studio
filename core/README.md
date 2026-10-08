@@ -2,8 +2,8 @@
 
 Здесь семь пакетов Python, на которых стоит программа `apps/grado2`: расчёт ТЭП, проектная база, журнал правок,
 данные из порталов, геометрия, рендер листов и альбом. Каждый пакет лежит в папке `core/<имя>/`: код в `grado_<имя>/`,
-тесты в `tests/`. Код опирается на стандартную библиотеку; внешних пакетов два, `certifi` и Pillow, оба есть в
-`apps/grado2/requirements.txt`.
+тесты в `tests/`. Код опирается на стандартную библиотеку и пакеты из `apps/grado2/requirements.txt`: `certifi`, Pillow и shapely 2
+(наложение, покрытие и привязки в `core/geom`).
 
 Что где лежит во всём проекте: [docs/wiki/files.md](../docs/wiki/files.md).
 
@@ -84,7 +84,7 @@ env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom
 
 ## Правила
 
-- Новые зависимости в core не добавлять (CLAUDE.md). Уже есть `certifi` и Pillow.
+- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely.
 - ЛГР-стили `core/render/grado_render/styles/*.json` генерируются, кроме `default.json`. Правьте генератор и
   запускайте его: `moscow_lgr.json` ← `tools/gen_moscow_lgr.py`, `moscow_genplan.json` ← `tools/gen_moscow_genplan.py`,
   `osm_highway.json` ← `tools/gen_osm_highway.py`, `redln97.json` ← `tools/gen_redln97.py`. Генератора для

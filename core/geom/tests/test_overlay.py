@@ -36,6 +36,19 @@ class UnionIntersectionAreaTests(unittest.TestCase):
         self.assertAlmostEqual(5000, union_intersection_area([tri], [square(0, 0, 100)]), delta=0.5)
         self.assertEqual(0.0, union_intersection_area([square(500, 500, 10)], [square(0, 0, 100)]))
 
+    def test_small_coordinates_are_exact(self):
+        # граница в градусах (как у district_shares), треугольник 0,01° на стыке двух районов: точно 3/4 на западе;
+        # прежний шаг 0,05 давал одну строку сканирования и 100 % западу
+        terr = [[(37.70, 55.80), (37.71, 55.80), (37.70, 55.81)]]
+        west = [[(37.60, 55.70), (37.705, 55.70), (37.705, 55.90), (37.60, 55.90)]]
+        east = [[(37.705, 55.70), (37.80, 55.70), (37.80, 55.90), (37.705, 55.90)]]
+        a, b = union_intersection_area([terr], [west]), union_intersection_area([terr], [east])
+        self.assertAlmostEqual(0.75, a / (a + b), places=9)
+
+    def test_self_intersecting_ring_is_repaired(self):
+        bow = [[(0, 0), (100, 100), (100, 0), (0, 100)]]          # «бабочка»: два треугольника по 2500
+        self.assertAlmostEqual(5000, union_intersection_area([bow], [square(0, 0, 100)]), delta=0.5)
+
 
 if __name__ == "__main__":
     unittest.main()

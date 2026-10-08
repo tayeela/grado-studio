@@ -474,11 +474,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `_pairs`, `rotate`, `scale`, `mirror`
 
-### `core/geom/grado_geom/coverage.py` — 183 стр.
+### `core/geom/grado_geom/coverage.py` — 186 стр.
 
 Топологическое покрытие (coverage): зоны с общими границами.
 
-Функции: `CoverageError`, `_norm`, `_ring_area`, `_ccw`, `Coverage`
+Функции: `CoverageError`, `_norm`, `_ccw`, `Coverage`
 
 ### `core/geom/grado_geom/curves.py` — 153 стр.
 
@@ -486,11 +486,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `CurveError`, `Arc`, `_finite`, `curve_spec`, `tessellate_curve`
 
-### `core/geom/grado_geom/overlay.py` — 119 стр.
+### `core/geom/grado_geom/overlay.py` — 46 стр.
 
 Площадь объединения полигонов внутри объединения других полигонов.
 
-Функции: `_edges`, `_bbox`, `_merge`, `_intersect_len`, `union_intersection_area`
+Функции: `_union`, `union_intersection_area`
 
 ### `core/geom/grado_geom/path.py` — 194 стр.
 
@@ -498,11 +498,11 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 
 Функции: `PathError`, `_line_intersect`, `Path`
 
-### `core/geom/grado_geom/snap.py` — 123 стр.
+### `core/geom/grado_geom/snap.py` — 79 стр.
 
 Движок привязок: конец / пересечение / середина / ближайшая точка.
 
-Функции: `SnapResult`, `_seg_intersect`, `_nearest_on_seg`, `Snapper`
+Функции: `SnapResult`, `Snapper`
 
 ## Ядро: render (core/render/grado_render)
 

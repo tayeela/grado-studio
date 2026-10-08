@@ -3,11 +3,17 @@
 Смежные функциональные зоны и участки межевания хранят общее ребро один
 раз: правка ребра двигает обе зоны, дырки и нахлёсты невозможны
 конструктивно. Сборка — из полигонов с точно совпадающими общими цепочками
-вершин (так рисуют с привязками); нодинг произвольных пересечений — задача
-C++ ядра.
+вершин (так рисуют с привязками). Хранение рёбер — своё (у shapely такой
+модели нет); площади и проверка целостности — shapely 2 (GEOS):
+`coverage_is_valid` ловит нахлёсты и щели между зонами.
+Вызывают: core/layout (пример раскладки), закрытая студия; тесты —
+core/geom/tests/test_snap_coverage.py.
 """
 
 import math
+
+import shapely
+from shapely.geometry import LinearRing, Polygon
 
 
 class CoverageError(ValueError):
@@ -18,15 +24,8 @@ def _norm(pt):
     return (round(pt[0], 9), round(pt[1], 9))
 
 
-def _ring_area(ring):
-    s = 0.0
-    for (x1, y1), (x2, y2) in zip(ring, ring[1:] + ring[:1]):
-        s += x1 * y2 - x2 * y1
-    return s / 2
-
-
 def _ccw(ring):
-    return ring if _ring_area(ring) > 0 else ring[::-1]
+    return ring if shapely.is_ccw(LinearRing(ring)) else ring[::-1]
 
 
 class Coverage:
@@ -126,7 +125,7 @@ class Coverage:
         return ring
 
     def area(self, fid):
-        return abs(_ring_area(self.polygon(fid)))
+        return Polygon(self.polygon(fid)).area
 
     def areas(self):
         return {fid: self.area(fid) for fid in self.faces}
@@ -174,9 +173,13 @@ class Coverage:
         return ring[:-1]
 
     def validate(self, tol=1e-6):
-        """Сумма площадей зон == площадь внешней границы (нет дырок/нахлёстов)."""
-        total = sum(self.areas().values())
-        outer = abs(_ring_area(self.outer_ring()))
+        """Зоны образуют правильное покрытие (shapely.coverage_is_valid) и сумма их площадей ==
+        площадь внешней границы (нет дырок/нахлёстов)."""
+        faces = [Polygon(self.polygon(fid)) for fid in self.faces]
+        if not shapely.coverage_is_valid(faces):
+            raise CoverageError("зоны перекрываются или между ними щель")
+        total = sum(f.area for f in faces)
+        outer = Polygon(self.outer_ring()).area
         if not math.isclose(total, outer, rel_tol=tol):
             raise CoverageError(
                 f"баланс не сходится: зоны {total:.6f} ≠ контур {outer:.6f}")
