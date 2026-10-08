@@ -29,6 +29,8 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: python -m pip install -r apps/grado2/requirements.txt
+      - name: New interface build is fresh (apps/grado2/ui -> apps/grado2/web/next)
+        run: tools/ui_check.sh
       - name: Unit tests (server, import, print, insolation under node)
         run: |
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
