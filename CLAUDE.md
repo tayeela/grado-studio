@@ -16,7 +16,7 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
 
 ## GitHub is the source of truth (since 06.10.2026)
 Tasks and the owner's words — GitHub Issues (`gh issue list`); work — branches and PRs into `team/t60`; landing —
-merging the PR `team/t60 → main`, then `git pull` in the main checkout deploys; album deliveries — releases
+merging the PR `team/t60 → main` on GitHub deploys (the server pulls `main` itself); album deliveries — releases
 `album-*`; album_check baselines — release `album-baseline`; wiki — repo `tayeela/grado-wiki`. Details:
 `docs/team/CYCLE.md`. The old board and the owner's notes before 06.10 are archives (`docs/archive/team/`).
 
@@ -45,8 +45,9 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
   `docs/grado2-changelog.md`. Stop hook: after grado2 changes, a short UX note to the owner in 2–3 lines.
 - Team (since 02.10.2026): roles `.claude/agents/grado-*.md`, procedure `docs/team/CYCLE.md`, briefs `docs/team/prompts/`.
   «Команда, за работу» = one cycle; team work on `team/t60`, reaches `main` only on the owner's «выкладывай» (skill `land`).
-- `main` updates grado.tailink.tech (host `msk`) by itself on the owner's Mac (hooks `post-commit`/`post-merge` → `tools/deploy-server.sh`);
-  read its output and tell the owner; «отложено» or a failure = old version still runs, rerun later. `GRADO_NO_DEPLOY=1` skips.
+- `main` on GitHub updates grado.tailink.tech (host `msk`) by itself: the server timer `grado-pull` pulls `main` every 5 minutes,
+  checks the version and rolls back on failure (`tools/server_pull/README.md`). Never deploy from the Mac (since 08.10.2026, #73).
+  Result: `/api/health` on the site, or the owner's taiLink session reads `journalctl -u grado-pull`.
 - Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69): a new dependency needs wheels for
   macOS arm64 and x86_64 and Windows, a permissive license, a line in requirements and the same gate. Do not touch the owner's QGIS DB or plugin. Ask before deleting
   `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.

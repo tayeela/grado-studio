@@ -39,7 +39,7 @@
 ## Сайт и автоматика
 
 - Сайт grado.tailink.tech — та же программа в совместном режиме (`server.py --hub`) на сервере `msk` (службы `grado` и `grado-guest`);
-  выкладывает его только Mac владельца: `tools/deploy-server.sh` (запускают хуки git после слияния в `main`).
+  выкладывает его сам сервер: таймер `grado-pull` раз в 5 минут забирает `main` с GitHub (`tools/server_pull/README.md`).
 - GitHub Actions (`.github/workflows/README.md`): `grado2-release.yml` — модульные и браузерные тесты на PR, которые меняют `apps/grado2`, `core` или `packaging/grado2*`, и сборка установщиков по тегу и вручную;
   `docs.yml` — навигация документов и свежесть вики; `wiki.yml` — пересборка вики и копия в `tayeela/grado-wiki`.
 - Где что читать дальше: карта папок — `INDEX.md`, карта документов — `docs/INDEX.md`, соглашения по коду — `conventions.md`.
