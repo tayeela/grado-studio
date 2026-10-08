@@ -5,3 +5,4 @@ shapely>=2.1
 httpx>=0.28
 tenacity>=9.0
 reportlab>=4.2
+python-pptx>=1.0.2

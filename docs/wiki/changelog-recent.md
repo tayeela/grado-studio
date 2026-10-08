@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.55: the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.54: clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.53: album PDF is written by ReportLab instead of our own PDF writer (part of #69).
 - 2026-10-08, agent instructions (no program change): owner's glossary, new task template, contradictions removed (step 4 of the plan, #69).
@@ -21,4 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).
 - 2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).
 - 2026-10-07, ГРАДО 2 v0.99.40: frame «по границам выгрузки» (#37).
-- 2026-10-07, ГРАДО 2 v0.99.39: «Масштаб схем 5–9» is a project setting (#31).

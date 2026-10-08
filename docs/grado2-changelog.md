@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.55: the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
+  - `core/render/grado_render/backend_pptx.py`: slides, pictures, slide notes, the one blank layout, theme and embedded fonts go through
+    python-pptx; shapes are still written as DrawingML (custom outlines, dashes, glow of labels) and placed into each slide.
+    `print_io.pptx_notes` (re-zipping the file to add notes) is gone: the note «карта вставлена картинкой» is set on the slide directly.
+  - Checked on copies of Гольяново and Безобразово: both presentations converted by LibreOffice are pixel-identical to v0.99.54,
+    slide by slide; the file is 4 KB larger (standard notes and print settings parts).
+  - New dependency `python-pptx>=1.0.2` (MIT; brings lxml, BSD, wheels for every platform) in both requirements files and the spec.
 - **2026-10-08, ГРАДО 2 v0.99.54: clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
   - `core/connectors/grado_connectors/clip.py` (layers of ГИС ОГД cut to the area or the sheet) is GEOS `clip_by_rect`: a concave outline
     now splits into real parts instead of zero-width bridges along the frame, holes stay holes; whole-inside and whole-outside fast paths kept.
