@@ -34,12 +34,19 @@ class NextUi(unittest.TestCase):
         self.assertIn("data:", connect)
         self.assertNotIn("unsafe-eval", S.CSP)
 
-    def test_reads_projects_never_writes(self):
-        # новый интерфейс пока только просматривает проект: читает список и файл, ничего не отправляет на сервер
+    def test_saves_like_working_page(self):
+        # новый интерфейс пишет проект теми же адресами, что рабочая страница: под именем и автосохранение
         js = (NEXT / "assets" / "index.js").read_text(encoding="utf-8")
         self.assertIn("/api/projects", js)
         self.assertIn("/api/project?autosave=1", js)
-        self.assertNotRegex(js, r"method:\s*[\"']POST")
+        self.assertIn("/api/project?name=", js)
+        self.assertRegex(js, r"method:\s*[\"'`]POST")
+
+    def test_save_keeps_unknown_fields(self):
+        # запись идёт из полного файла (project.raw): граф, альбом и виды, которых новый интерфейс не знает, не теряются
+        src = (NEXT.parents[1] / "ui" / "src" / "project.js").read_text(encoding="utf-8")
+        self.assertIn("...raw,", src)
+        self.assertIn("data: raw.data", src)
 
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа

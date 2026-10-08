@@ -4,19 +4,23 @@
   <div class="shell">
     <header class="top">
       <span class="brand">ГРАДО 2</span>
-      <span class="project">{{ project.name || "Проект не открыт" }}
-        <wa-badge v-if="project.source === 'autosave'" variant="neutral" appearance="filled-outlined">как в рабочей программе</wa-badge>
-        <wa-badge variant="neutral" appearance="filled-outlined">только просмотр</wa-badge></span>
+      <span class="project" :title="projTitle">{{ project.name || "Без названия" }}{{ dirty ? " •" : "" }}
+        <wa-badge v-if="shared" variant="neutral" appearance="filled-outlined">общий сервер</wa-badge></span>
 
       <wa-dropdown @wa-select="onProject">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Проект</wa-button>
         <wa-dropdown-item value="open">Открыть…</wa-dropdown-item>
-        <wa-dropdown-item value="new" disabled>Новый проект</wa-dropdown-item>
-        <wa-dropdown-item value="copy" disabled>Сохранить копию</wa-dropdown-item>
+        <wa-dropdown-item value="save" :disabled="shared">Сохранить<span slot="details">Ctrl+S</span></wa-dropdown-item>
+        <wa-dropdown-item value="saveas" :disabled="shared">Сохранить как…</wa-dropdown-item>
+        <wa-dropdown-item value="new" :disabled="shared">Новый проект</wa-dropdown-item>
+        <wa-divider></wa-divider>
+        <wa-dropdown-item value="file">Открыть файл .grado2 с диска…</wa-dropdown-item>
+        <wa-dropdown-item value="download">Скачать файл проекта</wa-dropdown-item>
         <wa-divider></wa-divider>
         <wa-dropdown-item value="history" disabled>История версий</wa-dropdown-item>
         <wa-dropdown-item value="share" disabled>Совместная работа</wa-dropdown-item>
       </wa-dropdown>
+      <input ref="fileInput" type="file" accept=".grado2,application/json" hidden @change="onFile">
 
       <wa-dropdown @wa-select="onWindow">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Окна</wa-button>
@@ -59,10 +63,27 @@
     <DockviewVue class="grado-dock dock" :theme="dockTheme" @ready="onReady" />
 
     <wa-dialog label="Открыть проект" :open="openDlg" @wa-after-hide="openDlg = false" class="open-dlg">
-      <p v-if="!projects.length" class="hint">В папке проектов нет файлов.</p>
-      <div v-for="p in projects" :key="p.name" class="prow" :class="{ cur: p.name === project.name }" @click="choose(p.name)">
-        <span>{{ p.name }}</span><span class="when">{{ when(p.modified) }}</span>
+      <p class="hint" :title="projDir">Папка проектов: {{ projDir }}</p>
+      <p v-if="!projects.length" class="hint">В папке проектов нет файлов. Открытая работа сохраняется сама; «Сохранить» — под именем.</p>
+      <div v-for="p in projects" :key="p.name" class="prow" :class="{ cur: p.name === project.file }" @click="choose(p.name)">
+        <span>{{ p.name }}<span v-if="p.album_n" class="when"> · альбом: {{ p.album_n }} л.</span></span><span class="when">{{ when(p.modified) }}</span>
       </div>
+    </wa-dialog>
+
+    <wa-dialog label="Сохранить проект" :open="saveDlg" @wa-after-hide="saveDlg = false" class="save-dlg">
+      <wa-input ref="nameInput" label="Название проекта" size="s" :value="saveName" @input="e => { saveName = e.target.value; clash = null; }"
+                @keydown.enter="doSaveAs"></wa-input>
+      <p v-if="clash" class="warn">В папке уже есть проект «{{ clash.name }}» (изменён {{ when(clash.modified) }}). Нажмите «Заменить», чтобы записать поверх него.</p>
+      <p class="hint">Файл ляжет в папку проектов: {{ projDir }}</p>
+      <wa-button slot="footer" size="s" appearance="plain" @click="saveDlg = false">Отмена</wa-button>
+      <wa-button slot="footer" size="s" :variant="clash ? 'danger' : 'brand'" :disabled="!saveName.trim() || busy" @click="doSaveAs">{{ clash ? "Заменить" : "Сохранить" }}</wa-button>
+    </wa-dialog>
+
+    <wa-dialog label="Несохранённые изменения" :open="!!ask" @wa-after-hide="ask = null">
+      <p>{{ ask?.text }} Изменения после последнего сохранения останутся только в автосохранении и пропадут при следующей правке.</p>
+      <wa-button slot="footer" size="s" appearance="plain" @click="ask = null">Отмена</wa-button>
+      <wa-button slot="footer" size="s" appearance="outlined" @click="saveThen">Сначала сохранить</wa-button>
+      <wa-button slot="footer" size="s" variant="danger" @click="goAnyway">Не сохранять</wa-button>
     </wa-dialog>
 
     <footer class="status">
@@ -70,20 +91,22 @@
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
-      <span>Новый интерфейс · только просмотр, проект не меняется</span>
+      <span>{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
     </footer>
   </div>
 </template>
 
 <script setup>
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
 import {
   Slash, Spline, Square, Circle, Type, Ruler, Move, Copy, RotateCw, Scissors, ArrowRightToLine,
   CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage,
 } from "@lucide/vue";
 import { current, project, scale, theme, toggleTheme } from "./store.js";
-import { listProjects, openProject, openStartup, projects } from "./project.js";
+import {
+  busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
+} from "./project.js";
 
 const dockTheme = { ...themeLight, className: "dockview-theme-grado" };
 
@@ -170,15 +193,50 @@ function onWindow(e) {
   syncOpen();
 }
 
-/* Проект: пока только открыть (чтение); остальные команды появятся при переносе окна «Проекты». */
-const openDlg = ref(false);
-async function onProject(e) {
-  if (e.detail.item.value !== "open") return;
-  try { await listProjects(); } catch { /* список останется прежним */ }
-  openDlg.value = true;
+/* Проект: открыть, сохранить, сохранить как, новый, файл с диска и на диск (project.js). */
+const openDlg = ref(false), saveDlg = ref(false), saveName = ref(""), clash = ref(null), ask = ref(null);
+const fileInput = ref(null), nameInput = ref(null);
+const projTitle = computed(() => (project.file ? `Проект «${project.file}» в папке проектов` : "Проект ещё не сохранён под именем")
+  + (dirty.value ? " · есть несохранённые изменения (автосохранение держит их до сохранения)" : ""));
+
+/* Действие, после которого открытая работа сменится: при несохранённых правках сначала спросить. */
+function guard(text, go) { if (dirty.value && !shared.value) ask.value = { text, go }; else go(); }
+async function saveThen() {
+  const a = ask.value; ask.value = null;
+  if (project.file) { if (await saveProject()) a.go(); } else { pending = a.go; askName(); }
 }
-async function choose(name) { openDlg.value = false; await openProject(name); }
+function goAnyway() { const a = ask.value; ask.value = null; a.go(); }
+let pending = null;
+
+async function askName() {
+  saveName.value = project.name || ""; clash.value = null; saveDlg.value = true;
+  try { await listProjects(); } catch { /* список для подсказки папки */ }
+  await nextTick(); nameInput.value?.focus();
+}
+async function doSaveAs() {
+  const name = saveName.value.trim(); if (!name) return;
+  if (!clash.value) { const c = await clashOf(name); if (c) { clash.value = c; return; } }
+  if (await saveProject(name)) { saveDlg.value = false; const p = pending; pending = null; p?.(); }
+}
+async function save() { if (project.file && project.name === project.file) await saveProject(); else await askName(); }
+
+async function onProject(e) {
+  const v = e.detail.item.value;
+  if (v === "open") { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
+  else if (v === "save") save();
+  else if (v === "saveas") askName();
+  else if (v === "new") guard("Начать новый проект?", newProject);
+  else if (v === "file") fileInput.value.click();
+  else if (v === "download") downloadProject();
+}
+function choose(name) { openDlg.value = false; guard(`Открыть «${name}»?`, () => openProject(name)); }
+function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
 const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+
+addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && (e.code === "KeyS" || e.key === "s")) { e.preventDefault(); if (!shared.value) save(); }
+});
+watch(() => [project.name, dirty.value], () => { document.title = (project.name || "Без названия") + (dirty.value ? " •" : "") + " — ГРАДО 2"; });
 
 openStartup();
 </script>
@@ -206,6 +264,7 @@ openStartup();
 .open-dlg .prow { display: flex; justify-content: space-between; gap: var(--wa-space-m); padding: 5px 8px; border-radius: var(--wa-border-radius-s); cursor: pointer; }
 .open-dlg .prow:hover { background: var(--wa-color-neutral-fill-quiet); }
 .open-dlg .prow.cur { background: var(--wa-color-brand-fill-quiet); }
+.save-dlg .warn { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-s); }
 .open-dlg .when { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .status {
   display: flex; gap: var(--wa-space-l); align-items: center; padding: 0 var(--wa-space-s);

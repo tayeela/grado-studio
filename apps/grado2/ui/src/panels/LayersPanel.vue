@@ -1,5 +1,5 @@
 <!-- ГРАДО 2 · окно «Слои» нового интерфейса: слои проекта по группам в порядке файла (сверху вниз — как на карте),
-     глаз слоя и группы, свёртка группы, выбор текущего слоя. Читает и меняет store.project / store.currentId; в файл не пишет. -->
+     глаз слоя и группы, свёртка группы, выбор текущего слоя. Читает и меняет store.project / store.currentId; в файл пишет project.js. -->
 <template>
   <div class="pane layers">
     <wa-input size="s" placeholder="Найти слой" with-clear v-model="q"></wa-input>

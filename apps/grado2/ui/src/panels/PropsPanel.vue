@@ -1,5 +1,5 @@
 <!-- ГРАДО 2 · окно «Свойства» нового интерфейса: оформление текущего слоя проекта на формах Web Awesome.
-     Правка меняет стиль слоя в store.project — карта перерисовывается сама; в файл проекта пока не пишется. -->
+     Правка меняет стиль слоя в store.project — карта перерисовывается сама, project.js записывает её в проект (автосохранение, Ctrl+S). -->
 <template>
   <div class="pane props" v-if="current">
     <h3>Оформление слоя</h3>
@@ -19,7 +19,7 @@
     <wa-slider v-if="current.geom === 'poly'" label="Непрозрачность заливки, %" size="s" min="0" max="100" :value="Math.round(s.opacity * 100)" with-tooltip
                @change="e => set('opacity', Number(e.target.value) / 100)"></wa-slider>
     <wa-switch size="s" :checked="current.visible" @change="e => (current.visible = e.target.checked)">Показывать на карте</wa-switch>
-    <p class="hint">Правка видна только здесь и пока не сохраняется в проект. Другие способы оформления появятся при переносе этого окна.</p>
+    <p class="hint">Правка сразу попадает в автосохранение, «Проект → Сохранить» (Ctrl+S) записывает её в файл. Другие способы оформления появятся при переносе этого окна.</p>
   </div>
 </template>
 

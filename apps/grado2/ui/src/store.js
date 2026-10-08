@@ -1,13 +1,16 @@
-/* ГРАДО 2 · общее состояние нового интерфейса: проект (группы и слои), текущий слой, тема, масштаб карты.
-   Одно место вместо общих переменных старой страницы; заполняет project.js, читают App.vue и панели в src/panels. */
+/* ГРАДО 2 · общее состояние нового интерфейса: проект (группы и слои), текущий слой, тема, масштаб и вид карты.
+   Одно место вместо общих переменных старой страницы; заполняет project.js, читают App.vue и панели в src/panels.
+   Весь файл проекта как есть лежит в project.raw: при записи меняются только поля, которые правит новый интерфейс,
+   остальное (граф, альбом, граница, источники) уходит в файл без изменений. */
 import { ref, reactive, computed, markRaw } from "vue";
 
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
-export const project = reactive({ name: "", source: "", groups: [], layers: [], data: markRaw({}), view: null });
+export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], data: markRaw({}), view: null, raw: markRaw({}) });
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));
 export const scale = ref(0);
+export const viewNow = { center: null, zoom: null };   // вид карты сейчас (MapPanel): долгота и широта, уровень; уходит в файл при записи
 
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const num = (v, d) => { const n = Number(v); return v !== null && v !== "" && Number.isFinite(n) ? n : d; };
@@ -37,7 +40,9 @@ export function shown(l) {
 }
 
 export function setProject(p, name, source) {
+  project.raw = markRaw(p);
   project.name = name || p.name || "";
+  project.file = p.file !== undefined ? p.file : (p.name || null);
   project.source = source;
   project.groups = (p.groups || []).map(g => ({ id: g.id, title: g.title || g.id, visible: g.visible !== false, open: g.open !== false }));
   project.layers = (p.layers || []).filter(l => l && l.key).map(l => ({ ...l, visible: l.visible !== false }));

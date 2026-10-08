@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.52: the new interface saves the project (#69, step 3 of the engines plan).**
+  - «Проект» menu in `/next/`: «Сохранить» (Ctrl+S), «Сохранить как…» (asks before replacing a project with the same
+    name), «Новый проект», «Открыть файл .grado2 с диска…», «Скачать файл проекта». Opening another project or a new
+    one with unsaved changes asks «Сначала сохранить / Не сохранять / Отмена».
+  - Autosave like the working page: edits quiet for 1,5 s or every 15 s, `POST /api/project?autosave=1`; the header
+    shows «•» while there are changes not saved under the name.
+  - The whole file is kept as read (`project.raw`): only layers, groups, current layer and map view change; graph,
+    album, territory, sources and views go back unchanged, so the working page opens the file as before.
+  - On the shared server (hub) saving is off in `/next/` until the shared-work window moves over.
+
 - **2026-10-08, ГРАДО 2 v0.99.49: the new interface shows the real project; window «Слои» moved over (#69).**
   - `/next/` opens the last autosave (what the working page had open), else the newest project; «Проект → Открыть…»
     lists the projects folder. View only: the new page sends nothing to the server, the project file is unchanged.
