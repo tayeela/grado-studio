@@ -7,7 +7,7 @@ import { ref, computed } from "vue";
 import NumField from "./NumField.vue";
 import { FORMATS, FORMAT_T, KINDS, SCALES, FONTS, REFS, refPos, fromRef, fmtScale, fmtM, groundSize, label, linkedScale } from "./model.js";
 
-const props = defineProps({ sheet: Object, sel: Array });
+const props = defineProps({ sheet: Object, sel: Array, hasMaps: Boolean });
 const emit = defineEmits(["patch", "format", "set", "act"]);
 const ref0 = ref("tl");
 const b = computed(() => props.sel.length === 1 ? props.sel[0] : null);
@@ -91,6 +91,10 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
           <option v-for="s in SCALES" :key="s" :value="s">{{ fmtScale(s) }}</option></select></label>
         <label class="pp-f">Свой масштаб, 1:<NumField :model-value="b.scale" :min="1" :step="100" :digits="0" label="Масштаб" @update:model-value="p({ scale: $event })" /></label>
         <div v-if="b.scale > 0" class="pp-note">На местности: {{ groundSize(b).map(fmtM).join(' × ') }}. Размер рамки меняет охват, масштаб остаётся.</div>
+        <label class="pp-f">Подложка<select :value="b.basemap || 'none'" @change="p({ basemap: $event.target.value })">
+          <option value="none">без подложки</option><option value="light">светлая карта</option><option value="sat">снимок</option></select></label>
+        <button class="pp-btn" :disabled="!hasMaps" title="Середина и масштаб — как сейчас в окне «Карта»" @click="emit('act', 'map:here')">Как на карте</button>
+        <div class="pp-note">{{ b.center ? 'Сдвинуть карту в рамке — инструмент «Сдвиг карты» на ленте (C), колесо над картой меняет масштаб.' : 'Место карты не задано: нажмите «Как на карте».' }}</div>
       </template>
 
       <template v-if="b.kind === 'text'">
@@ -113,7 +117,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
         <div class="pp-h">Легенда</div>
         <label class="pp-f">Заголовок<input :value="b.title" @change="p({ title: $event.target.value })"></label>
         <label class="pp-f">Строки (по одной в строке)<textarea rows="5" :value="legendRows" @change="legendText($event.target.value)"></textarea></label>
-        <div class="pp-note">Сейчас строки условные. Когда редактор войдёт в программу, легенда будет собираться из слоёв листа.</div>
+        <button class="pp-btn" :disabled="!hasMaps" title="Строки — видимые слои проекта, сверху вниз, с их цветами" @click="emit('act', 'legend:layers')">Из слоёв карты</button>
       </template>
 
       <template v-if="b.kind === 'table'">
@@ -127,7 +131,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
 
       <template v-if="b.kind === 'picture'">
         <div class="pp-h">Картинка</div>
-        <label class="pp-btn file">Выбрать файл…<input type="file" accept="image/png,image/jpeg,image/svg+xml" @change="file"></label>
+        <label class="pp-btn file">Выбрать файл…<input type="file" accept="image/png,image/jpeg" @change="file"></label>
         <div v-if="b.file" class="pp-note">{{ b.file }}</div>
       </template>
 
@@ -184,8 +188,9 @@ input[type=range] { accent-color: var(--g-accent); width: 100%; }
 .pp-g { display: grid; grid-template-columns: 1fr 96px 22px; gap: 6px; align-items: center; font-size: 12px; }
 .pp-x { border: 0; background: none; color: var(--g-mute); font-size: 16px; cursor: pointer; padding: 0; }
 .pp-x:hover { color: var(--g-warn); }
-.pp-btn { align-self: flex-start; font: inherit; padding: 4px 10px; border: 1px solid var(--g-line-strong); border-radius: 5px; background: var(--g-panel); cursor: pointer; margin-top: 4px; }
-.pp-btn:hover { border-color: var(--g-accent); color: var(--g-accent); }
+.pp-btn { align-self: flex-start; font: inherit; color: inherit; padding: 4px 10px; border: 1px solid var(--g-line-strong); border-radius: 5px; background: var(--g-panel); cursor: pointer; margin-top: 4px; }
+.pp-btn:hover:not(:disabled) { border-color: var(--g-accent); color: var(--g-accent); }
+.pp-btn:disabled { opacity: .45; cursor: default; }
 .pp-btn.danger { color: var(--g-warn); }
 .pp-btn.file { position: relative; overflow: hidden; }
 .pp-btn.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

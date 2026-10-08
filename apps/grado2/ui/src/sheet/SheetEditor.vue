@@ -5,13 +5,15 @@
      мышью; выбор — щелчком, Shift — добавить, рамкой по пустому месту — несколько; тянуть, ручки размера и поворота;
      привязка к направляющим, элементам, рамке и сетке (web/snap.js); направляющие — тянуть от линейки.
      Клавиши: стрелки 0,5 мм (Shift — 5 мм), Delete, Ctrl+Z/Shift+Z, Ctrl+C/V/D/A, Ctrl+[ ], Ctrl+L, Ctrl+0, пробел — сдвиг листа.
+     Карта блока — картинка печати (проп maps, panels/sheetmaps.js): «Как на карте» берёт место окна «Карта», инструмент
+     «Сдвиг карты в рамке» двигает её мышью, колесо меняет масштаб; «PDF» печатает лист тем же рендером, что альбом.
      Лист — через v-model (model.js), рисование элементов — draw.js, штамп — stamp.js. -->
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed, watch } from "vue";
 import Konva from "konva";
 import "../../../web/snap.js";                      // общая привязка с нынешним макетом листа: кладёт Snap в globalThis
 import { FORMAT_T, KINDS, pageSize, frameRect, newBlock, snapBox, problems, reformat, align, distribute, sameSize, reorder,
-  duplicate, bounds, rulerStep, label } from "./model.js";
+  duplicate, bounds, rulerStep, label, moveCenter, nextScale } from "./model.js";
 import { stampOps } from "./stamp.js";
 import { blockNode, INK } from "./draw.js";
 import Ribbon from "./Ribbon.vue";
@@ -22,8 +24,11 @@ const props = defineProps({
   modelValue: { type: Object, required: true },     // лист: { format, orient, stamp, title, blocks, guides, grid, snap }
   meta: { type: Object, default: () => ({}) },       // поля штампа альбома: object, code, stage, org
   page: { type: Object, default: () => ({}) },       // page_no, page_total
+  // карта проекта и печать (panels/sheetmaps.js): image(b, redraw), here(), legend(), pdf(sheet, meta); нет — карта-заглушка
+  maps: { type: Object, default: null },
 });
 const emit = defineEmits(["update:modelValue"]);
+const busy = ref("");                                 // строка состояния: идёт печать PDF или она не удалась
 
 const clone = x => JSON.parse(JSON.stringify(x));
 // старые листы без направляющих, сетки и настроек привязки получают их по умолчанию
@@ -163,7 +168,7 @@ function draw() {
   if (!stage) return;
   tr.nodes([]); tr.remove();                          // ручки живут дольше элементов: снять до очистки слоя, иначе их уничтожит destroyChildren
   drawPaper(); blocks.destroyChildren(); drawGuides();
-  sheet.value.blocks.forEach(b => blocks.add(bind(blockNode(b, sheet.value, draw), b)));
+  sheet.value.blocks.forEach(b => blocks.add(bind(blockNode(b, sheet.value, draw, props.maps), b)));
   blocks.add(tr); attach();
   stage.batchDraw(); drawRulers();
 }
@@ -212,6 +217,12 @@ function onDown(e) {
   const ev = e.evt; host.value.focus({ preventScroll: true });
   if (ev.button === 1 || space || tool.value === "pan") { ev.preventDefault(); drag = { kind: "pan", cx: ev.clientX, cy: ev.clientY, o: stage.position() }; host.value.style.cursor = "grabbing"; return; }
   if (ev.button !== 0) return;
+  if (tool.value === "content") {                     // сдвиг карты внутри рамки (QGIS «Сдвинуть содержимое элемента»)
+    const b = mapAt(pt()); if (!b) return;
+    select([b.id]); drag = { kind: "content", id: b.id, p0: pt(), node: blocks.findOne("#" + b.id)?.findOne(".mapimg-pic") };
+    if (drag.node) drag.o = drag.node.position();
+    host.value.style.cursor = "grabbing"; return;
+  }
   if (KINDS[tool.value]) { const p = snapPt(pt()); drag = { kind: "add", p0: p, p1: p }; return; }
   if (e.target.getParent?.() === tr || e.target === tr) return;      // ручки
   const g = e.target.findAncestor?.(".block", true);
@@ -225,6 +236,8 @@ function onDown(e) {
   drag = { kind: "marquee", p0: pt(), p1: pt(), add: ev.shiftKey || ev.ctrlKey || ev.metaKey, base: [...sel.value] };
   if (!drag.add) select([]);
 }
+// верхняя незакреплённая видимая карта под точкой листа (поворот карты не учитывается — как в печати)
+const mapAt = p => [...sheet.value.blocks].reverse().find(b => b.kind === "map" && !b.locked && !b.hidden && p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h);
 function snapPt(p) {
   const s = snapBox({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }, sheet.value, { snapFn: Snap?.snap, tol: Snap.ZONE_PX * 1.5 / k });
   return { x: p.x + s.dx, y: p.y + s.dy };
@@ -236,6 +249,11 @@ function onMove(ev) {
   if (!drag) return;
   if (drag.kind === "pan") { setView(k, drag.o.x + ev.clientX - drag.cx, drag.o.y + ev.clientY - drag.cy); return; }
   const p = toMM(ev.clientX, ev.clientY);
+  if (drag.kind === "content") {
+    drag.p1 = p;
+    if (drag.node) { drag.node.position({ x: drag.o.x + p.x - drag.p0.x, y: drag.o.y + p.y - drag.p0.y }); blocks.batchDraw(); }
+    return;
+  }
   drag.p1 = drag.kind === "add" ? snapPt(p) : p;
   const r = rectOf(drag.p0, drag.p1); over.destroyChildren();
   over.add(new Konva.Rect({ x: r.x, y: r.y, width: r.w, height: r.h, stroke: ACCENT, strokeWidth: px(1), dash: drag.kind === "add" ? undefined : [px(4), px(3)], fill: "rgba(31,111,235,.07)", listening: false }));
@@ -243,7 +261,12 @@ function onMove(ev) {
 }
 function onUp() {
   if (!drag) return;
-  const d = drag; drag = null; over.destroyChildren(); over.batchDraw(); host.value.style.cursor = "";
+  const d = drag; drag = null; over.destroyChildren(); over.batchDraw(); host.value.style.cursor = tool.value === "content" ? "move" : "";
+  if (d.kind === "content") {
+    const b = blk(sheet.value, d.id), dx = (d.p1?.x ?? d.p0.x) - d.p0.x, dy = (d.p1?.y ?? d.p0.y) - d.p0.y;
+    if (b?.center && Math.hypot(dx, dy) > .05) patch(b.id, { center: moveCenter(b.center, b.scale, -dx, -dy) });
+    return;
+  }
   if (d.kind === "marquee") {
     const r = rectOf(d.p0, d.p1); if (r.w < .5 && r.h < .5) return;
     const hit = sheet.value.blocks.filter(b => !b.locked && !b.hidden && b.x < r.x + r.w && r.x < b.x + b.w && b.y < r.y + r.h && r.y < b.y + b.h).map(b => b.id);
@@ -288,8 +311,22 @@ function exportPng() {
   if (gridOn) sheet.value.grid.show = true; guideL.show(); over.show(); draw(); select(keep);
   const a = document.createElement("a"); a.href = url; a.download = `${(sheet.value.title || "лист").replace(/[\\/:*?"<>|]/g, "_")}.png`; a.click();
 }
+async function printPdf() {
+  if (!props.maps?.pdf || busy.value === "PDF собирается…") return;
+  busy.value = "PDF собирается…";
+  try { await props.maps.pdf(clone(sheet.value), props.meta); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
+}
 function act(id) {
   const [a, b] = id.split(":"), bs = selBlocks.value;
+  if (id === "map:here") {                            // «Как на карте»: место и масштаб окна «Карта»
+    const h = props.maps?.here?.(), ms = bs.filter(x => x.kind === "map"); if (!h || !ms.length) return;
+    const m = {}; ms.forEach(x => { m[x.id] = h.scale > 0 ? { center: h.center, scale: h.scale } : { center: h.center }; }); return patchMany(m);
+  }
+  if (id === "legend:layers") {                       // строки легенды — из видимых слоёв проекта
+    const items = props.maps?.legend?.(); if (!items?.length) return;
+    const m = {}; bs.filter(x => x.kind === "legend").forEach(x => { m[x.id] = { items }; }); return patchMany(m);
+  }
+  if (id === "export:pdf") return printPdf();
   if (a === "tool") { tool.value = b; return; }
   if (a === "add") { tool.value = tool.value === b ? "select" : b; host.value?.focus(); return; }
   if (id === "undo") return step(-1);
@@ -337,6 +374,7 @@ function onKey(e) {
   if (mod) return;
   if (e.key === "Escape") { e.preventDefault(); tool.value = "select"; return select([]); }
   if (e.key === "v" || e.key === "м") { tool.value = "select"; return; }
+  if (e.key === "c" || e.key === "с") { tool.value = "content"; return; }
   if (e.key === "Delete" || e.key === "Backspace") return run("del");
   const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
   if (d && selBlocks.value.length) {
@@ -358,7 +396,12 @@ onMounted(() => {
     anchorSize: 8, anchorCornerRadius: 2, borderStroke: ACCENT, anchorStroke: ACCENT, anchorFill: "#fff", rotateAnchorOffset: 22,
     ignoreStroke: true, anchorDragBoundFunc: anchorSnap, boundBoxFunc: (o, n) => (Math.abs(n.width) < 4 || Math.abs(n.height) < 4 ? o : n) });
   stage.on("mousedown touchstart", onDown);
-  stage.on("wheel", e => { e.evt.preventDefault(); const d = e.evt.deltaY; zoomAt(Math.exp(-Math.max(-60, Math.min(60, d)) * .004), stage.getPointerPosition()); });
+  stage.on("wheel", e => {
+    e.evt.preventDefault(); const d = e.evt.deltaY;
+    const mb = tool.value === "content" && !e.evt.ctrlKey && !e.evt.metaKey ? mapAt(pt()) : null;   // колесо над картой — масштаб карты
+    if (mb) { if (Math.abs(d) > 2) patch(mb.id, { scale: nextScale(mb.scale, d > 0 ? 1 : -1) }); return; }
+    zoomAt(Math.exp(-Math.max(-60, Math.min(60, d)) * .004), stage.getPointerPosition());
+  });
   window.addEventListener("pointermove", onMove); window.addEventListener("pointerup", onUp);
   window.addEventListener("keydown", onKey); window.addEventListener("keyup", onKeyUp);
   ro = new ResizeObserver(() => { stage.size({ width: el.clientWidth, height: el.clientHeight }); fit(); }); ro.observe(el);
@@ -371,13 +414,13 @@ onBeforeUnmount(() => {
 });
 // в режиме добавления и сдвига листа элементы и направляющие не ловят мышь: иначе рамка нового элемента утащила бы их
 function listen(on) { blocks?.listening(on); guideL?.listening(on); }
-watch(tool, t => { if (host.value) host.value.style.cursor = KINDS[t] ? "crosshair" : t === "pan" ? "grab" : ""; listen(t === "select"); });
+watch(tool, t => { if (host.value) host.value.style.cursor = KINDS[t] ? "crosshair" : t === "pan" ? "grab" : t === "content" ? "move" : ""; listen(t === "select"); });
 defineExpose({ fit, act });
 </script>
 
 <template>
   <div ref="root" class="sed" @mouseenter="hovered = true" @mouseleave="hovered = false">
-    <Ribbon :tool="tool" :can-undo="canUndo" :can-redo="canRedo" :n-sel="sel.length" :can-paste="canPaste" :grid="sheet.grid" :any-locked="anyLocked" @act="act" />
+    <Ribbon :tool="tool" :has-maps="!!maps" :can-undo="canUndo" :can-redo="canRedo" :n-sel="sel.length" :can-paste="canPaste" :grid="sheet.grid" :any-locked="anyLocked" @act="act" />
     <div class="sed-main">
       <aside class="sed-side left">
         <div class="sed-tab"><span>Элементы</span></div>
@@ -401,13 +444,14 @@ defineExpose({ fit, act });
       <aside class="sed-side right">
         <div class="sed-tab"><span>Свойства</span></div>
         <div class="sed-scroll">
-          <PropsPanel :sheet="sheet" :sel="selBlocks" @patch="patch" @format="setFormat" @set="setSheet" @act="act" />
+          <PropsPanel :sheet="sheet" :sel="selBlocks" :has-maps="!!maps" @patch="patch" @format="setFormat" @set="setSheet" @act="act" />
         </div>
       </aside>
     </div>
     <footer class="sed-status">
-      <span>{{ KINDS[tool] ? `${KINDS[tool]}: растяните рамку на листе или щёлкните; Esc — отмена` : tool === 'pan' ? 'Сдвиг листа: тяните мышью' : 'Щелчок — выбрать, Shift — добавить, рамка по пустому месту — несколько' }}</span>
+      <span>{{ KINDS[tool] ? `${KINDS[tool]}: растяните рамку на листе или щёлкните; Esc — отмена` : tool === 'pan' ? 'Сдвиг листа: тяните мышью' : tool === 'content' ? 'Сдвиг карты в рамке: тяните мышью; колесо — масштаб карты' : 'Щелчок — выбрать, Shift — добавить, рамка по пустому месту — несколько' }}</span>
       <span class="sp"></span>
+      <span v-if="busy" class="sed-busy">{{ busy }}</span>
       <span v-if="statusSel">{{ statusSel }}</span>
       <span class="mono">{{ cursor ? `X ${fmt1(cursor.x)}  Y ${fmt1(cursor.y)} мм` : 'X —  Y —' }}</span>
       <span>{{ FORMAT_T[sheet.format] }} {{ sheet.orient === 'P' ? 'книжный' : 'альбомный' }}</span>
@@ -441,6 +485,7 @@ defineExpose({ fit, act });
 .sed-stage { position: absolute; left: 22px; top: 22px; right: 0; bottom: 0; outline: none; overflow: hidden; }
 .sed-status { height: 24px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 10px; border-top: 1px solid var(--g-line); color: var(--g-mute); font-size: 12px; white-space: nowrap; overflow: hidden; }
 .sed-status .sp { flex: 1; }
+.sed-busy { color: var(--g-accent); }
 .sed-status .mono { font-variant-numeric: tabular-nums; min-width: 150px; }
 .sed-zoom { font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: 4px; padding: 0 6px; cursor: pointer; font-variant-numeric: tabular-nums; }
 .sed-zoom:hover { border-color: var(--g-line-strong); color: var(--g-ink); }

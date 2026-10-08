@@ -2372,6 +2372,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)
+            if self.path in ("/api/print/layout", "/api/print/layout_svg", "/api/print/map_svg"):
+                # «Макет листа» нового интерфейса (/next/): лист редактора в PDF или SVG, карта блока отдельной картинкой
+                import layout_io
+                try:
+                    if self.path == "/api/print/layout":
+                        body, ctype = layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile), "application/pdf"
+                    elif self.path == "/api/print/layout_svg":
+                        body, ctype = layout_io.render_page_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
+                    else:
+                        body, ctype = layout_io.map_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
+                except (KeyError, TypeError, ValueError) as e:
+                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                if ctype == "application/pdf":
+                    self.send_header("Content-Disposition", 'attachment; filename="grado2-sheet.pdf"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
             if self.path == "/api/ogd_all/start":
                 import ogd_all
                 sheet = req.get("sheet")                  # лист, нарисованный на карте (МСК), или прежний bbox WGS84

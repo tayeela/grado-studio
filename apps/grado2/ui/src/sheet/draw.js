@@ -1,8 +1,8 @@
 /* ГРАДО 2 · рисование элементов листа на Konva для редактора раскладки: по элементу модели (model.js) — группа Konva
-   в мм листа. Карта пока заглушка с масштабом и охватом; легенда, таблица, надпись, картинка, стрелка севера,
+   в мм листа. Карта — картинка печати (panels/sheetmaps.js), без проекта — заглушка с масштабом и охватом; легенда, таблица, надпись, картинка, стрелка севера,
    масштабная линейка, фигуры и линия рисуются как на листе. Зовёт SheetEditor.vue; проверяется глазами (снимки). */
 import Konva from "konva";
-import { PT, groundSize, fmtM, fmtScale, scalebarStep, linkedScale } from "./model.js";
+import { PT, groundSize, fmtM, fmtScale, scalebarStep, linkedScale, centerOffset } from "./model.js";
 
 export const INK = "#1a1a1a";
 const SANS = "PT Sans, Inter, system-ui, sans-serif";
@@ -14,9 +14,9 @@ const frameRect = b => b.frame?.on ? new Konva.Rect({ width: b.w, height: b.h, s
 // прозрачная подложка: щелчок в любом месте элемента выбирает его
 const hit = b => new Konva.Rect({ width: b.w, height: b.h, fill: "rgba(0,0,0,0.001)" });
 
-function mapContent(g, b) {
+function mapPlaceholder(g, b, t) {
   g.add(new Konva.Rect({ width: b.w, height: b.h, fill: "#eef2ec", listening: false }));
-  // сетка «как на карте»: даёт видеть размер и поворот видового окна, пока карта не подключена
+  // сетка «как на карте»: даёт видеть размер и поворот видового окна, пока карты нет
   const step = 1000 / b.scale * (b.scale <= 2000 ? 100 : b.scale <= 10000 ? 500 : 1000), lines = [];
   if (step > 3) {
     for (let x = step; x < b.w; x += step) lines.push([x, 0, x, b.h]);
@@ -24,9 +24,31 @@ function mapContent(g, b) {
   }
   lines.slice(0, 400).forEach(p => g.add(new Konva.Line({ points: p, stroke: "#d6ded2", strokeWidth: .2, listening: false })));
   const size = Math.max(2, Math.min(5, b.w / 30, b.h / 8));
-  const t = b.scale > 0 ? `Карта · ${fmtScale(b.scale)}\n${groundSize(b).map(fmtM).join(" × ")} на местности` : "Карта · масштаб не задан";
   g.add(new Konva.Text({ width: b.w, height: b.h, align: "center", verticalAlign: "middle", text: t, fontSize: size, lineHeight: 1.35,
     fontFamily: SANS, fill: "#5b6b57", listening: false }));
+}
+/* карта: картинка, которую нарисовал сервер тем же рендером, что и печать (maps.image — panels/sheetmaps.js);
+   пока новая грузится — прежняя на своём месте (охват и масштаб пересчитаны), в углу — «обновляется» */
+function mapContent(g, b, opts) {
+  const about = b.scale > 0 ? `${fmtScale(b.scale)} · ${groundSize(b).map(fmtM).join(" × ")} на местности` : "масштаб не задан";
+  const m = opts?.maps?.image?.(b, opts.redraw);
+  if (!m?.img) {
+    const t = !opts?.maps ? `Карта · ${about}` : !b.center ? `Карта · ${about}\nМесто не задано: «Как на карте» в свойствах`
+      : m?.state === "error" ? `Карта · ${about}\nКарта не загрузилась` : `Карта · ${about}\nКарта загружается…`;
+    return mapPlaceholder(g, b, t);
+  }
+  const inner = new Konva.Group({ name: "mapimg", clip: { x: 0, y: 0, width: b.w, height: b.h }, listening: false });
+  // Konva считает охват группы без обрезки: ручки выбора облегали бы и сдвинутую за рамку картинку — охват = рамка
+  inner.getClientRect = function (c = {}) { const r = { x: 0, y: 0, width: b.w, height: b.h }; return c.skipTransform ? r : this._transformedRect(r, c.relativeTo); };
+  inner.add(new Konva.Rect({ width: b.w, height: b.h, fill: "#fff", listening: false }));
+  const f = m.from, k = f.scale / b.scale, [ox, oy] = centerOffset(f.center, b.center, b.scale);
+  inner.add(new Konva.Image({ name: "mapimg-pic", image: m.img, x: b.w / 2 + ox - f.w * k / 2, y: b.h / 2 + oy - f.h * k / 2, width: f.w * k, height: f.h * k, listening: false }));
+  g.add(inner);
+  if (m.state === "loading" || m.state === "error") {
+    const t = m.state === "error" ? "карта не обновилась" : "обновляется…", fs = Math.max(1.8, Math.min(3, b.w / 60));
+    g.add(new Konva.Label({ x: 1.5, y: b.h - fs * 1.8 - 1.5, listening: false }).add(new Konva.Tag({ fill: "rgba(255,255,255,.85)", cornerRadius: .6 }),
+      new Konva.Text({ text: t, fontSize: fs, padding: fs * .35, fontFamily: SANS, fill: "#5b6b57" })));
+  }
 }
 function legendContent(g, b) {
   const pad = 3, row = 6.5, fs = 2.8;
@@ -77,8 +99,8 @@ function scalebarContent(g, b, sheet) {
   g.add(new Konva.Text({ x: 0, y: Math.max(0, b.h - bh - 7), text: fmtScale(sc), fontSize: 2.4, fontFamily: SANS, fill: INK, listening: false }));
 }
 
-/* элемент → группа Konva; redraw — перерисовать лист, когда догрузится картинка */
-export function blockNode(b, sheet, redraw) {
+/* элемент → группа Konva; redraw — перерисовать лист, когда догрузится картинка; maps — карта блоков (image) */
+export function blockNode(b, sheet, redraw, maps) {
   const g = new Konva.Group({ id: b.id, x: b.x, y: b.y, rotation: b.rotation || 0, opacity: b.opacity ?? 1, name: "block",
     draggable: !b.locked, listening: !b.locked, visible: !b.hidden });
   g.add(hit(b));
@@ -95,7 +117,7 @@ export function blockNode(b, sheet, redraw) {
   }
   const bg = bgRect(b); if (bg) g.add(bg);
   ({ map: mapContent, legend: legendContent, table: tableContent, text: textContent, picture: pictureContent, north: northContent, scalebar: scalebarContent }[b.kind]
-    || (() => {}))(g, b, b.kind === "scalebar" ? sheet : redraw);
+    || (() => {}))(g, b, b.kind === "scalebar" ? sheet : b.kind === "map" ? { maps, redraw } : redraw);
   const fr = frameRect(b); if (fr) g.add(fr);
   return g;
 }

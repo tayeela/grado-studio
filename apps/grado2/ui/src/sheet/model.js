@@ -45,16 +45,16 @@ export function stampRect(sheet) {
 }
 
 // новый лист: карта и колонка легенды стоят там же, где их ставит print_io.layout()
-export function newSheet({ format = "A3", orient = "L", stamp = true, title = "Лист" } = {}) {
+export function newSheet({ format = "A3", orient = "L", stamp = true, title = "Лист", center = null } = {}) {
   const sheet = { format, orient, stamp, title, blocks: [], guides: { x: [], y: [] }, grid: { step: 5, show: false, snap: true }, snap: { guides: true, items: true } };
   const [w, h] = pageSize(sheet), f = frameRect(sheet);
   if (!stamp) {
-    sheet.blocks.push({ ...newBlock("map", sheet), ...f });
+    sheet.blocks.push({ ...newBlock("map", sheet), ...f, center });
     return sheet;
   }
   const col = orient === "P" ? 0 : COLUMN[format] || 110, bottom = h - MARGIN - STAMP_H - 3;
   const mapW = col ? w - MARGIN - col - (MARGIN_LEFT + MARGIN) - MARGIN : w - MARGIN - (MARGIN_LEFT + MARGIN);
-  const map = { ...newBlock("map", sheet), x: MARGIN_LEFT + MARGIN, y: 10, w: mapW, h: bottom - 10 };
+  const map = { ...newBlock("map", sheet), center, x: MARGIN_LEFT + MARGIN, y: 10, w: mapW, h: bottom - 10 };
   sheet.blocks.push(map);
   if (col) sheet.blocks.push({ ...newBlock("legend", sheet), x: w - MARGIN - col, y: 10, w: col - MARGIN, h: bottom - 10 });
   sheet.blocks.push({ ...newBlock("north", sheet), x: MARGIN_LEFT + MARGIN + 4, y: 14, w: 10, h: 16 });
@@ -76,7 +76,8 @@ export function newBlock(kind, sheet, at) {
   const f = frameRect(sheet), [bw, bh] = (SIZE[kind] || [40, 20]).map((v, i) => Math.min(v, i ? f.h : f.w));
   const b = at ? { id: newId(kind), kind, x: r2(at.x), y: r2(at.y), w: r2(Math.max(at.w, 2)), h: r2(Math.max(at.h, 2)) }
     : { id: newId(kind), kind, x: r2(f.x + (f.w - bw) / 2), y: r2(f.y + (f.h - bh) / 2), w: bw, h: bh };
-  if (kind === "map") Object.assign(b, { scale: 2000, frame: { on: true, color: "#1a1a1a", width: .35 } });
+  if (kind === "map") Object.assign(b, { scale: 2000, center: sheet.blocks.find(x => x.kind === "map" && x.center)?.center || null, basemap: "none",
+    frame: { on: true, color: "#1a1a1a", width: .35 } });
   if (kind === "legend") Object.assign(b, { title: "Условные обозначения", items: JSON.parse(JSON.stringify(LEGEND_SAMPLE)), frame: { on: false, color: "#1a1a1a", width: .25 } });
   if (kind === "text") Object.assign(b, { text: "Надпись", size: 14, font: "PT Sans", color: "#1a1a1a", align: "left", valign: "top" });
   if (kind === "scalebar") b.map = sheet.blocks.find(x => x.kind === "map")?.id || "";
@@ -107,6 +108,30 @@ export function scalebarStep(b) {
 }
 export const fmtM = m => m >= 1000 ? `${String(r2(m / 1000)).replace(".", ",")} км` : `${Math.round(m)} м`;
 export const fmtScale = s => "1:" + String(s).replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+
+// место карты: center — [долгота, широта] середины рамки; перевод миллиметров листа в градусы — по шару (для охвата
+// выборки и сдвига содержимого мышью этого хватает; точную проекцию в МСК строит печать, print_io.MapTransform)
+const M_LAT = 110574, M_LON = 111320;
+const cosLat = lat => Math.max(.05, Math.cos(lat * Math.PI / 180));
+// центр, сдвинутый на dx, dy мм листа (x — на восток, y — на юг) при масштабе scale
+export function moveCenter(center, scale, dx, dy) {
+  const mx = dx * scale / 1000, my = dy * scale / 1000;
+  return [+(center[0] + mx / (M_LON * cosLat(center[1]))).toFixed(7), +(center[1] - my / M_LAT).toFixed(7)];
+}
+// где на листе (мм от середины рамки) окажется точка from, если середина рамки — to
+export function centerOffset(from, to, scale) {
+  return [(from[0] - to[0]) * M_LON * cosLat(to[1]) * 1000 / scale, -(from[1] - to[1]) * M_LAT * 1000 / scale];
+}
+// охват карты в градусах [запад, юг, восток, север] с запасом pad (подписи и линии у края не обрываются)
+export function blockBounds(b, pad = 1.15) {
+  const [lon, lat] = b.center, hx = b.w * b.scale / 2000 * pad, hy = b.h * b.scale / 2000 * pad;
+  return [lon - hx / (M_LON * cosLat(lat)), lat - hy / M_LAT, lon + hx / (M_LON * cosLat(lat)), lat + hy / M_LAT];
+}
+// следующий стандартный масштаб: dir > 0 — мельче (1:2 000 → 1:2 500), dir < 0 — крупнее
+export function nextScale(s, dir) {
+  if (dir > 0) return SCALES.find(v => v > s) || SCALES[SCALES.length - 1];
+  return [...SCALES].reverse().find(v => v < s) || SCALES[0];
+}
 
 export const toBox = r => ({ x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
 // цели привязки для элемента: лист, рамка, штамп и остальные видимые элементы (except — id или список id)
@@ -155,6 +180,7 @@ export function problems(sheet) {
     if (b.x < f.x - .01 || b.y < f.y - .01 || b.x + b.w > f.x + f.w + .01 || b.y + b.h > f.y + f.h + .01) out.push({ id: b.id, text: `${name(b)} выходит за рамку листа` });
     if (s && overlap(b, s)) out.push({ id: b.id, text: `${name(b)} заходит на штамп` });
     if (b.kind === "map" && !(b.scale > 0)) out.push({ id: b.id, text: "У карты не задан масштаб" });
+    if (b.kind === "map" && !b.center) out.push({ id: b.id, text: "У карты не задано место: «Как на карте» в свойствах" });
   });
   return out;
 }

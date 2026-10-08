@@ -8,6 +8,8 @@ export const project = reactive({ name: "", source: "", groups: [], layers: [], 
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));
 export const scale = ref(0);
+// что сейчас видно в окне «Карта»: середина (долгота, широта) и масштаб — «Как на карте» в «Макете листа»
+export const mapView = reactive({ center: null, scale: 0 });
 
 const HEX = /^#[0-9a-f]{3,8}$/i;
 const num = (v, d) => { const n = Number(v); return v !== null && v !== "" && Number.isFinite(n) ? n : d; };

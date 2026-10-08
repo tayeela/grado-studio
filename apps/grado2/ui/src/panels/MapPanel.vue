@@ -1,7 +1,8 @@
 <!-- ГРАДО 2 · окно «Карта» нового интерфейса: OpenLayers, подложка по теме, слои открытого проекта из store.project.
      Порядок слоёв — как в окне «Слои» (верхний рисуется поверх), видимость — слой и его группа.
      Оформление пока «единое» (заливка, контур, толщина, прозрачность); категории, диапазоны и знаки ЛГР — следующие шаги переноса.
-     Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale для строки состояния. -->
+     Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale для строки состояния,
+     середину и масштаб — в store.mapView для «Как на карте» в «Макете листа». -->
 <template><div ref="el" class="map"></div></template>
 
 <script setup>
@@ -15,9 +16,9 @@ import OSM from "ol/source/OSM.js";
 import XYZ from "ol/source/XYZ.js";
 import GeoJSON from "ol/format/GeoJSON.js";
 import { createEmpty, extend, isEmpty } from "ol/extent.js";
-import { fromLonLat, getPointResolution } from "ol/proj.js";
+import { fromLonLat, getPointResolution, toLonLat } from "ol/proj.js";
 import { Circle, Fill, Stroke, Style } from "ol/style.js";
-import { project, scale, shown, styleOf, theme } from "../store.js";
+import { mapView, project, scale, shown, styleOf, theme } from "../store.js";
 
 const el = ref(null);
 let map, ro;
@@ -79,6 +80,7 @@ onMounted(() => {
   const upd = () => {
     const v = map.getView(), res = getPointResolution(v.getProjection(), v.getResolution(), v.getCenter());
     scale.value = Math.round(res / 0.00028 / 10) * 10;   // 0,28 мм на пиксель экрана
+    mapView.center = toLonLat(v.getCenter()).map(x => +x.toFixed(7)); mapView.scale = scale.value;
   };
   map.on("moveend", upd); upd();
   ro = new ResizeObserver(() => map.updateSize()); ro.observe(el.value);

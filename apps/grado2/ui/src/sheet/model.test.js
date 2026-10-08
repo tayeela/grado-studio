@@ -4,13 +4,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pageSize, frameRect, stampRect, newSheet, newBlock, groundSize, fitScale, scalebarStep, problems, reformat,
   clampToFrame, snapTargets, fmtScale, fmtM, linkedScale, snapBox, align, distribute, sameSize, reorder, duplicate, refPos, fromRef,
-  rulerStep, bounds } from "./model.js";
+  rulerStep, bounds, moveCenter, centerOffset, blockBounds, nextScale } from "./model.js";
 import { stampOps } from "./stamp.js";
 import "../../../web/snap.js";
 const Snap = globalThis.Snap;
 
 test("лист А3 и А1: размеры, рамка по ГОСТ и штамп как в печати", () => {
-  const a3 = newSheet({ format: "A3" });
+  const a3 = newSheet({ format: "A3", center: [37.8, 55.8] });
   assert.deepEqual(pageSize(a3), [420, 297]);
   assert.deepEqual(pageSize({ format: "A3", orient: "P" }), [297, 420]);
   assert.deepEqual(frameRect(a3), { x: 20, y: 5, w: 395, h: 287 });
@@ -19,7 +19,7 @@ test("лист А3 и А1: размеры, рамка по ГОСТ и штам�
   const map = a3.blocks.find(b => b.kind === "map"), leg = a3.blocks.find(b => b.kind === "legend");
   assert.deepEqual([map.x, map.y, map.w, map.h], [25, 10, 275, 224]);
   assert.deepEqual([leg.x, leg.y, leg.w, leg.h], [305, 10, 105, 224]);
-  const a1 = newSheet({ format: "A1" }), m1 = a1.blocks.find(b => b.kind === "map");
+  const a1 = newSheet({ format: "A1", center: [37.8, 55.8] }), m1 = a1.blocks.find(b => b.kind === "map");
   assert.deepEqual([m1.x, m1.y, m1.w, m1.h], [25, 10, 636, 521]);              // FRAME_MM.A1 в sheets.js
   assert.deepEqual(problems(a3), []);
   assert.deepEqual(problems(a1), []);
@@ -51,7 +51,8 @@ test("замечания: блок за рамкой и на штампе", () =
   s.blocks.push({ id: "t", kind: "text", x: 300, y: 250, w: 60, h: 10 });
   s.blocks.push({ id: "m", kind: "map", x: 10, y: 10, w: 50, h: 50, scale: 0 });
   const texts = problems(s).map(p => `${p.id}: ${p.text}`);
-  assert.deepEqual(texts, ["t: Надпись заходит на штамп", "m: Карта выходит за рамку листа", "m: У карты не задан масштаб"]);
+  assert.deepEqual(texts.filter(t => !/место/.test(t)), ["t: Надпись заходит на штамп", "m: Карта выходит за рамку листа", "m: У карты не задан масштаб"]);
+  assert.ok(texts.includes("m: У карты не задано место: «Как на карте» в свойствах"));
   const c = clampToFrame(s.blocks[s.blocks.length - 1], s);
   assert.deepEqual([c.x, c.y], [20, 10]);
 });
@@ -143,4 +144,22 @@ test("деления линейки не гуще 50 пикселей", () => {
   assert.equal(rulerStep(3.78), 20);      // 100 %: 20 мм ≈ 76 px
   assert.equal(rulerStep(1.5), 50);
   assert.equal(rulerStep(30), 2);
+});
+
+test("место карты: сдвиг на миллиметры листа, обратный пересчёт и охват", () => {
+  const c = [37.8, 55.8];
+  // 10 мм на восток в 1:2 000 — 20 м; 20 мм на юг — 40 м
+  const m = moveCenter(c, 2000, 10, 20);
+  assert.ok(m[0] > c[0] && m[1] < c[1]);
+  const [dx, dy] = centerOffset(m, c, 2000);
+  assert.ok(Math.abs(dx - 10) < .05 && Math.abs(dy - 20) < .05);
+  // охват блока 100 × 50 мм в 1:2 000 — 200 × 100 м: по широте ≈ 0,0009°, без запаса
+  const [w, s, e, n] = blockBounds({ center: c, w: 100, h: 50, scale: 2000 }, 1);
+  assert.ok(Math.abs((n - s) * 110574 - 100) < .5 && Math.abs((e - w) * 111320 * Math.cos(55.8 * Math.PI / 180) - 200) < .5);
+  assert.equal(nextScale(2000, 1), 2500);
+  assert.equal(nextScale(2000, -1), 1000);
+  assert.equal(nextScale(500, -1), 500);
+  // новая карта берёт место у карты, что уже есть на листе
+  const sh = newSheet({ format: "A3", center: c });
+  assert.deepEqual(newBlock("map", sh).center, c);
 });

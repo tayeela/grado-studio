@@ -41,6 +41,12 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_now`, `HubError`, `Conflict`, `_norm_album`, `_layer_key_ok`, `_norm_meta`, `album_summary`, `split_project`, `join_sections`, `_check_sections`, `_clean_name`, `_clean_login`, `_check_password`, `_clean_client`, `_check_pid`, `_is_num`, `_clean_text`, `_clean_anchor`, `_hash_password`, `_color`, `Subscription`, `Hub`, `default_root`, `_read_password`, `main`
 
+### `apps/grado2/layout_io.py` — 364 стр.
+
+Лист из нового редактора раскладки («Макет листа» в /next/, apps/grado2/ui/src/sheet) — в PDF и SVG.
+
+Функции: `_num`, `page_size`, `frame_rect`, `_rgb`, `_fade`, `_rect`, `_path`, `_baseline`, `_text`, `_fit`, `_wrap`, `fmt_m`, `fmt_scale`, `linked_scale`, `scalebar_step`, `_legend`, `_table`, `_textblock`, `_picture`, `_north`, `_scalebar`, `_ellipse`, `_line`, `_placeholder`, `map_sheet`, `_map`, `_local`, `_frame_ops`, `_place`, `_block`, `_Blocks`, `_PaperBorder`, `build_page`, `render_pdf`, `render_page_svg`, `map_svg`
+
 ### `apps/grado2/ogd_all.py` — 891 стр.
 
 «Всё из ГИС ОГД в DWG»: все слои портала ИСОГД по области — одним чертежом, слой портала = слой чертежа.
@@ -75,7 +81,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2639 стр.
+### `apps/grado2/server.py` — 2658 стр.
 
 ГРАДО 2: локальный сервер.
 

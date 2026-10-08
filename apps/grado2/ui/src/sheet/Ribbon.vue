@@ -6,16 +6,17 @@ import { MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Squ
   ClipboardPaste, CopyPlus, Trash2, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal,
   AlignCenterHorizontal, AlignEndHorizontal, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, StretchHorizontal,
   StretchVertical, BringToFront, SendToBack, ArrowUp, ArrowDown, Lock, LockOpen, Grid3x3, Magnet, ZoomIn, ZoomOut, Maximize, Scan,
-  FileImage } from "@lucide/vue";
+  FileImage, FileDown, Move } from "@lucide/vue";
 
-const props = defineProps({ tool: String, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean });
+const props = defineProps({ tool: String, hasMaps: Boolean, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean });
 const emit = defineEmits(["act"]);
 const S = 18;                                          // размер значка, px
 
 const groups = () => [
   { t: "Выбор", items: [
     { id: "tool:select", i: MousePointer2, t: "Выбор и перемещение элементов (V)", on: props.tool === "select" },
-    { id: "tool:pan", i: Hand, t: "Сдвиг листа (пробел или средняя кнопка мыши)", on: props.tool === "pan" }] },
+    { id: "tool:pan", i: Hand, t: "Сдвиг листа (пробел или средняя кнопка мыши)", on: props.tool === "pan" },
+    { id: "tool:content", i: Move, t: "Сдвиг карты внутри рамки; колесо — масштаб карты (C)", on: props.tool === "content" }] },
   { t: "Добавить", items: [
     { id: "add:map", i: Map, t: "Карта: растяните рамку на листе", on: props.tool === "map" },
     { id: "add:legend", i: List, t: "Легенда", on: props.tool === "legend" },
@@ -59,6 +60,7 @@ const groups = () => [
     { id: "zoom:fit", i: Maximize, t: "Весь лист (Ctrl+0)" },
     { id: "zoom:sel", i: Scan, t: "Показать выбранное", off: !props.nSel }] },
   { t: "Выгрузка", items: [
+    { id: "export:pdf", i: FileDown, t: "Лист в PDF — тем же рендером, что альбом", off: !props.hasMaps },
     { id: "export:png", i: FileImage, t: "Лист картинкой PNG, 300 точек на дюйм" }] },
 ];
 </script>

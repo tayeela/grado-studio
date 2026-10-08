@@ -13,9 +13,9 @@ Vue 3, dockview (окна и панели), Web Awesome (кнопки, меню,
 | `src/store.js` | общее состояние: группы и слои проекта, текущий слой, тема, масштаб |
 | `src/project.js` | загрузка проекта через API (только чтение): автосохранение или самый свежий, «Проект → Открыть…» |
 | `src/theme.css` | плотная тема, светлая и тёмная, цвета окон dockview |
-| `src/panels/*.vue` | окна: «Карта», «Слои», «Свойства», «Показатели (ТЭП)», «Макет листа» (`SheetPanel.vue`) |
+| `src/panels/*.vue`, `sheetmaps.js` | окна: «Карта», «Слои», «Свойства», «Показатели (ТЭП)», «Макет листа» (`SheetPanel.vue`; карта блоков и PDF — `sheetmaps.js`) |
 | `src/sheet/model.js`, `stamp.js` | модель листа для «Макета листа»: формат А4–А0, рамка и штамп по ГОСТ (как в печати), направляющие, сетка, элементы в мм; выравнивание, распределение, порядок, привязка; проверки — `src/sheet/model.test.js` (`npm test`) |
-| `src/sheet/SheetEditor.vue`, `draw.js`, `Ribbon.vue`, `ItemsPanel.vue`, `PropsPanel.vue`, `NumField.vue` | редактор раскладки листа на Konva, как «Макет» QGIS: лента, «Элементы», «Свойства», линейки, направляющие, привязка (`../web/snap.js`), выгрузка PNG |
+| `src/sheet/SheetEditor.vue`, `draw.js`, `Ribbon.vue`, `ItemsPanel.vue`, `PropsPanel.vue`, `NumField.vue` | редактор раскладки листа на Konva, как «Макет» QGIS: лента, «Элементы», «Свойства», линейки, направляющие, привязка (`../web/snap.js`), карта блока картинкой печати, сдвиг карты в рамке, выгрузка PNG и PDF |
 
 Сборка после правки: `cd apps/grado2/ui && npm ci && npm run build`, затем закоммитить и исходники, и `web/next/`.
 Свежесть сборки проверяют `tools/ui_check.sh` (шаг `ui` в `tools/gate.sh`) и CI.
