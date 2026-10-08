@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.58: окно «Ограничения» в новом интерфейсе (#69).**
+  - Same calculation as the working page: no-build zones from ЗОУИТ, СЗЗ, water protection and ОКН zones, the red line
+    setback, kept buildings with fire gaps (СП 4.13130), ПЗЗ subzones without new construction, natural zones of the
+    Генплан; insolation points on the facades of kept residential houses and the height ceiling grid by the sun.
+  - What to use and the parameters (setback, norm, window height, point step, reveal angle, floor height, grid step)
+    are kept between sessions; the log says which layers each result came from. Results are layers of the group
+    «Ограничения» in «Слои» and are saved in the project file.
+  - Not yet here: the «Ограничения» node of the calculation scheme and the norms check (they move with the scheme).
+
 - **2026-10-08, ГРАДО 2 v0.99.57: окно «Данные» в новом интерфейсе — граница, область загрузки, выгрузка источников, импорт файлов (#69).**
   - Boundary: draw on the map (double click finishes, Esc cancels), edit vertices (drag, click on a side adds,
     Alt+click removes), from a file (largest closed contour), by cadastral numbers (loaded parcels or НСПД search),
