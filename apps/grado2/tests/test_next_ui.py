@@ -58,6 +58,18 @@ class NextUi(unittest.TestCase):
             flat = lambda t: re.findall(r"#[0-9a-f]{6}", t)
             self.assertEqual(flat(m.group(1)), flat(re.search(r"export const " + name + r" = (\[[^\]]+\]|\{[^;]+\})", new).group(1)), name)
 
+    def test_basemaps_and_exports_match_working_page(self):
+        # подложки — те же адреса плиток, выгрузка — те же адреса сервера, что у рабочей страницы (web/app.js)
+        old = (NEXT.parent / "app.js").read_text(encoding="utf-8")
+        src = NEXT.parents[1] / "ui" / "src"
+        new = (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8")
+        tiles = lambda t: sorted(set(re.findall(r'url: "(https://[^"]+)"', t)))
+        self.assertEqual(tiles(old), tiles(new))
+        exp = (src / "exports.js").read_text(encoding="utf-8")
+        for path in ("/api/export/dxf", "/api/export/geojson"):
+            self.assertIn(path, old)
+            self.assertIn(path, exp)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

@@ -1,4 +1,5 @@
-<!-- ГРАДО 2 · окно «Карта» нового интерфейса: OpenLayers, подложка по теме, слои открытого проекта из store.project.
+<!-- ГРАДО 2 · окно «Карта» нового интерфейса: OpenLayers, подложка (схема по теме, спутник, Sentinel-2), граница
+     территории и слои открытого проекта из store.project.
      Порядок слоёв — как в окне «Слои» (верхний рисуется поверх), видимость — слой и его группа.
      Оформление — все способы рабочей страницы (symbology.js): единое, категории, диапазоны, правила, знаки ЛГР, подписи, масштаб.
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта). -->
@@ -20,7 +21,7 @@ import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
-import { project, scale, shown, theme, viewNow } from "../store.js";
+import { basemapId, project, scale, shown, theme, viewNow } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
 import { indexOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
@@ -45,10 +46,22 @@ function olLayer(l, i, n, src) {
 }
 const sig = l => JSON.stringify([l.style, l.layerOpacity, l.geom]);
 
-function basemap(t) {
+/* Подложки — как web/app.js BASEMAPS: «Схема OSM» в тёмной теме — тёмная схема Esri. */
+function basemap(id, t) {
+  if (id === "esri") return new TileLayer({ className: "basemap-sat", opacity: 0.9, source: new XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maxZoom: 19, attributions: "Снимки © Esri, Maxar, Earthstar Geographics" }) });
+  if (id === "s2") return new TileLayer({ className: "basemap-sat", opacity: 0.9, source: new XYZ({ url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg", maxZoom: 15, attributions: "Sentinel-2 cloudless 2021 © EOX IT Services GmbH (содержит изменённые данные Copernicus Sentinel)" }) });
   return t === "dark"
     ? new TileLayer({ source: new XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxZoom: 16, crossOrigin: "anonymous", attributions: "Подложка © Esri, HERE, Garmin, © OpenStreetMap contributors" }) })
     : new TileLayer({ source: new OSM(), className: "basemap", opacity: 0.55 });
+}
+
+/* Граница территории (поле territory файла): штрихпунктир, как у рабочей страницы; правка границы — с окном «Данные». */
+const terrSrc = new VectorSource();
+const terrStyle = new Style({ stroke: new Stroke({ color: "#b3261e", width: 2, lineDash: [12, 4, 2, 4] }) });
+function drawTerr() {
+  terrSrc.clear(true);
+  const t = project.raw?.territory; if (!t?.geometry) return;
+  try { terrSrc.addFeature(fmt.readFeature(t)); } catch { /* граница повреждена — карта без неё */ }
 }
 
 /* Слои карты по слоям проекта: новый слой или заменённые данные — новый источник, изменённое оформление — новый слой
@@ -128,6 +141,7 @@ let viewPending = true;
 function opened() {
   for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
   sync();
+  drawTerr();
   viewPending = true; applyView();
 }
 function applyView() {
@@ -136,8 +150,11 @@ function applyView() {
   viewPending = false;
   const v = project.view, view = map.getView();
   if (v?.center?.length === 2 && Number.isFinite(+v.zoom)) { view.setCenter(fromLonLat(v.center)); view.setZoom(+v.zoom); }
+  else if (terrSrc.getFeatures().length) view.fit(terrSrc.getExtent(), { padding: [40, 40, 40, 40], maxZoom: 18 });
   else zoomTo(Object.keys(vec), 0);
 }
+/* Вид карты из окна «Виды»: центр (долгота, широта) и уровень. */
+mapApi.setView = (center, zoom) => { const v = map.getView(); v.setCenter(fromLonLat(center)); v.setZoom(zoom); };
 
 mapApi.fitFeature = gj => { const f = readOne(gj); if (f) map.getView().fit(f.getGeometry().getExtent(), { padding: [80, 80, 80, 80], maxZoom: 19, duration: 150 }); };
 function zoomTo(keys, duration = 200) {
@@ -148,7 +165,7 @@ function zoomTo(keys, duration = 200) {
 
 onMounted(() => {
   map = new Map({
-    target: el.value, layers: [basemap(theme.value), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
+    target: el.value, layers: [basemap(basemapId.value, theme.value), new VectorLayer({ source: terrSrc, zIndex: 9999, style: terrStyle }), new VectorLayer({ source: selSrc, zIndex: 10000, style: f => SELSTYLE[gkind(f)] })],
     view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
@@ -166,7 +183,7 @@ onMounted(() => {
   opened();
   mapApi.zoomTo = zoomTo;
   loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
-  watch(theme, t => map.getLayers().setAt(0, basemap(t)));
+  watch([basemapId, theme], ([id, t]) => map.getLayers().setAt(0, basemap(id, t)));
   watch(() => project.raw, opened);
   watch([() => project.layers, () => project.groups, dataRev], sync, { deep: true });
   watch(sel, drawSel);

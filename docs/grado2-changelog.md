@@ -2,6 +2,20 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.56: «Виды», подложка, граница территории, «Справка» и выгрузка DXF и GeoJSON в новом интерфейсе (#69).**
+  - Window «Виды» (like QGIS map themes and the working page): save visible layers, styles, opacity, groups, basemap
+    and, if ticked, the scale under a name; a click on the name brings the map back; refresh and delete (second click
+    confirms; sheets on a deleted view switch to the current map, as before); legend of the shown view. Views go into
+    the same `views` field of the project file and into Ctrl+Z.
+  - Basemap in the status bar: OSM scheme, Esri satellite, Sentinel-2; remembered in the browser and in the project.
+  - The territory boundary from the project file is drawn on the map (red dash-dot); a project without a saved view
+    opens framed on it.
+  - Window «Справка» (F1 or «?» in the header): what already works in the new interface, keys, search by words.
+  - Menu «Выгрузка»: «Чертёж DXF» and «GeoJSON для QGIS» work (same server routes, МСК, with the boundary); PDF, PPTX,
+    ГИС ОГД and Excel are marked as still in the working page.
+  - Fix: the autosave right after opening a project no longer writes the default map view of Moscow into the file.
+  - Windows added since the browser saved its layout («Объект», «Таблица атрибутов», «Виды») appear on their own once.
+
 - **2026-10-08, ГРАДО 2 v0.99.55: objects on the map, window «Объект» and «Таблица атрибутов» in the new interface (#69).**
   - Selection like the working page: click an object, Shift+click adds or removes, Shift+frame selects many, Ctrl+A
     selects the whole current layer, Esc clears, Del deletes the selected objects (Ctrl+Z returns them).

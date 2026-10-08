@@ -7,7 +7,8 @@ import { fullStyle, swatchColor } from "./symbology.js";
 
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
-export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], data: markRaw({}), view: null, raw: markRaw({}) });
+export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], views: [], data: markRaw({}), view: null, raw: markRaw({}) });
+export const viewCur = ref(null);      // вид карты, показанный последним (окно «Виды»)
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));
 export const scale = ref(0);
@@ -33,8 +34,23 @@ export function setProject(p, name, source) {
   project.groups = (p.groups || []).map(g => ({ id: g.id, title: g.title || g.id, visible: g.visible !== false, open: g.open !== false }));
   project.layers = (p.layers || []).filter(l => l && l.key).map(l => ({ ...l, visible: l.visible !== false, style: fullStyle(l.style) }));   // стиль со всеми полями, как web/layers.js ST
   project.data = markRaw(p.data || {});
+  project.views = (p.views || []).filter(v => v && v.id).map(v => JSON.parse(JSON.stringify(v)));
+  viewCur.value = null;
   project.view = p.view || null;
+  viewNow.center = viewNow.zoom = null;   // пока карта не поставила вид нового проекта, в файл идёт его прежний вид
+  if (BASEMAPS[p.view?.basemap]) setBasemap(p.view.basemap);
   currentId.value = project.layers.some(l => l.key === p.current) ? p.current : (project.layers[0]?.key || "");
+}
+
+/* Подложка карты, как у рабочей страницы (web/app.js BASEMAPS): выбор помнит браузер (тот же ключ «grado2.base»)
+   и файл проекта (view.basemap). Слои подложки создаёт MapPanel. */
+export const BASEMAPS = { osm: "Схема OSM", esri: "Спутник (Esri)", s2: "Sentinel-2 (EOX)" };
+const savedBase = (() => { try { return localStorage.getItem("grado2.base"); } catch { return null; } })();
+export const basemapId = ref(BASEMAPS[savedBase] ? savedBase : "osm");
+export function setBasemap(id) {
+  if (!BASEMAPS[id]) return;
+  basemapId.value = id;
+  try { localStorage.setItem("grado2.base", id); } catch { /* частный режим браузера */ }
 }
 
 const saved = (() => { try { return localStorage.getItem("grado-next-theme"); } catch { return null; } })();

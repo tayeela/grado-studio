@@ -29,22 +29,22 @@
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
       </wa-dropdown>
 
-      <wa-dropdown>
-        <wa-button slot="trigger" size="s" appearance="plain" with-caret>Выгрузка</wa-button>
-        <h4 class="menu-h">Альбом</h4>
-        <wa-dropdown-item value="pdf">PDF — все листы одним файлом</wa-dropdown-item>
-        <wa-dropdown-item value="pptx">PPTX — редактируемая презентация</wa-dropdown-item>
-        <wa-divider></wa-divider>
+      <wa-dropdown @wa-select="onExport">
+        <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="busy">Выгрузка</wa-button>
         <h4 class="menu-h">Данные</h4>
-        <wa-dropdown-item value="dxf">DXF — слои проекта в МГГТ</wa-dropdown-item>
-        <wa-dropdown-item value="ogd">DXF — ГИС ОГД по рамке листа</wa-dropdown-item>
-        <wa-dropdown-item value="geojson">GeoJSON для QGIS (МСК)</wa-dropdown-item>
-        <wa-dropdown-item value="xlsx">Excel — ТЭП и список листов</wa-dropdown-item>
+        <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
+        <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
+        <wa-divider></wa-divider>
+        <h4 class="menu-h">Пока в рабочей странице</h4>
+        <wa-dropdown-item value="pdf" disabled>PDF и PPTX альбома — с окном «Листы»</wa-dropdown-item>
+        <wa-dropdown-item value="ogd" disabled>ГИС ОГД в DXF — с рамкой листа</wa-dropdown-item>
+        <wa-dropdown-item value="xlsx" disabled>Excel: ТЭП и листы — с окном «Показатели»</wa-dropdown-item>
       </wa-dropdown>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" :disabled="!history.redo" title="Вернуть (Ctrl+Shift+Z)" @click="redo"><Redo2 :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" title="Справка и клавиши (F1)" @click="showHelp"><CircleHelp :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" @click="toggleTheme" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
         <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" />
       </wa-button>
@@ -92,6 +92,10 @@
       <span>{{ toolTitle }}</span>
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
+      <wa-dropdown placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
+        <button slot="trigger" class="basebtn" title="Подложка карты">Подложка: {{ BASEMAPS[basemapId] }}</button>
+        <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
+      </wa-dropdown>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
       <span>{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
     </footer>
@@ -103,11 +107,12 @@ import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
 import {
   Slash, Spline, Square, Circle, Type, Ruler, Move, Copy, RotateCw, Scissors, ArrowRightToLine,
-  CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2,
+  CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2, CircleHelp,
 } from "@lucide/vue";
+import { exportDxf, exportGeojson } from "./exports.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
-import { current, project, scale, theme, toggleTheme } from "./store.js";
+import { BASEMAPS, basemapId, current, project, scale, setBasemap, theme, toggleTheme } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
 } from "./project.js";
@@ -121,8 +126,10 @@ const PANELS = [
   { id: "object", title: "Объект" },
   { id: "tep", title: "Показатели (ТЭП)" },
   { id: "table", title: "Таблица атрибутов" },
+  { id: "views", title: "Виды" },
+  { id: "help", title: "Справка" },
 ];
-const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, true])));
+const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
 const TOOLS = [
   { title: "Рисование", items: [
@@ -166,16 +173,41 @@ function defaultLayout() {
   api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: 260 });
   api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: 280 });
   api.addPanel({ id: "object", component: "object", title: "Объект", position: { referencePanel: "props", direction: "within" } });
+  api.addPanel({ id: "views", component: "views", title: "Виды", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
+  api.getPanel("layers")?.api.setActive();
   api.getPanel("props")?.api.setActive();
   api.getPanel("map")?.api.setActive();
+  try { localStorage.setItem("grado-next-seen", JSON.stringify(Object.keys(NEW_WINDOWS))); } catch { /* частный режим браузера */ }
+}
+
+/* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
+   дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
+const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"] };
+function addNewWindows() {
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }
+  for (const [id, [ref, direction]] of Object.entries(NEW_WINDOWS)) {
+    if (seen.includes(id) || api.getPanel(id)) continue;
+    const title = PANELS.find(x => x.id === id).title;
+    api.addPanel({ id, component: id, title, ...(api.getPanel(ref) ? { position: { referencePanel: ref, direction } } : { floating: { x: 300, y: 80, width: 440, height: 280 } }), inactive: true });
+  }
+  try { localStorage.setItem("grado-next-seen", JSON.stringify(Object.keys(NEW_WINDOWS))); } catch { /* частный режим браузера */ }
 }
 
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
   api.addPanel({ id, component: id, title: p.title, floating: { x: 300, y: 80, width: 440, height: 280 } });
 }
+
+function showHelp() {
+  const p = api?.getPanel("help");
+  if (p) p.api.setActive(); else api?.addPanel({ id: "help", component: "help", title: "Справка", floating: { x: 360, y: 90, width: 520, height: 460 } });
+  syncOpen();
+}
+
+function onExport(e) { const v = e.detail.item.value; if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); }
 
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }
 
@@ -187,6 +219,7 @@ function onReady(event) {
     if (s) { api.fromJSON(JSON.parse(s)); restored = true; }
   } catch { restored = false; }
   if (!restored) defaultLayout();
+  else addNewWindows();
   syncOpen();
   api.onDidLayoutChange(() => {
     syncOpen();
@@ -244,6 +277,7 @@ const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit
 
 const typing = e => e.composedPath().some(n => n instanceof HTMLElement && (n.matches("input, textarea, select, [contenteditable]")));
 addEventListener("keydown", e => {
+  if (e.key === "F1") { e.preventDefault(); showHelp(); return; }
   if (!(e.metaKey || e.ctrlKey)) {
     if (typing(e) || e.altKey) return;
     if ((e.key === "Delete" || e.key === "Backspace") && sel.length) {
@@ -289,6 +323,9 @@ openStartup();
 .open-dlg .prow.cur { background: var(--wa-color-brand-fill-quiet); }
 .save-dlg .warn { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-s); }
 .open-dlg .when { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
+.status wa-dropdown { display: inline-flex; }
+.status .basebtn { font: inherit; font-size: var(--wa-font-size-xs); color: inherit; background: none; border: 0; padding: 0 2px; cursor: pointer; }
+.status .basebtn:hover { color: var(--wa-color-text-normal); text-decoration: underline; }
 .status {
   display: flex; gap: var(--wa-space-l); align-items: center; padding: 0 var(--wa-space-s);
   height: 22px; font-size: var(--wa-font-size-xs); color: var(--g-muted); background: var(--g-bar); border-top: 1px solid var(--g-line);

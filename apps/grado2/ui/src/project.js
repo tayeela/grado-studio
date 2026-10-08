@@ -2,7 +2,7 @@
    файл .grado2 с диска и на диск. Те же адреса и тот же формат файла, что у рабочей страницы (web/project.js):
    GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс. */
 import { nextTick, ref, toRaw, watch } from "vue";
-import { currentId, project, setProject, viewNow } from "./store.js";
+import { basemapId, currentId, project, setProject, viewNow } from "./store.js";
 import { dataRev, resetHistory } from "./edit.js";
 import { setSel } from "./features.js";
 
@@ -33,7 +33,7 @@ export function markDirty() {
   if (tick === autoTick) pendingSince = Date.now();
   tick++; lastEdit = Date.now(); dirty.value = true;
 }
-watch([() => project.layers, () => project.groups, dataRev], markDirty, { deep: true });
+watch([() => project.layers, () => project.groups, () => project.views, basemapId, dataRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
@@ -97,15 +97,16 @@ const jsonOf = o => { let t = JCACHE.get(o); if (t === undefined) { t = JSON.str
 export function collect(extra = {}) {
   const raw = project.raw;
   const rawGroup = Object.fromEntries((raw.groups || []).map(g => [g.id, g]));
-  const v = viewNow.center ? { ...(raw.view || {}), center: viewNow.center, zoom: viewNow.zoom } : raw.view;
+  const v = { ...(raw.view || {}), ...(viewNow.center ? { center: viewNow.center, zoom: viewNow.zoom } : {}), basemap: basemapId.value };
   return {
     ...raw,
     format: FORMAT, version: raw.version || VERSION, app: "ГРАДО 2 " + appVersion.value,
     name: project.name || null, file: project.file ?? null, saved_at: new Date().toISOString(), dirty: dirty.value,
-    ...(v ? { view: v } : {}),
+    view: v,
     current: currentId.value || raw.current || null,
     groups: project.groups.map(g => ({ ...(rawGroup[g.id] || {}), ...toRaw(g) })),
     layers: project.layers.map(l => ({ ...toRaw(l), style: toRaw(l.style) })),
+    views: JSON.parse(JSON.stringify(project.views)),
     data: raw.data || {},
     ...extra,
   };

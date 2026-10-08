@@ -100,10 +100,10 @@ export const groupKeys = id => project.layers.filter(l => l.group === id).map(l 
 const UNDO = [], REDO = [];
 let last = null, timer = null, applying = false;
 const snap = () => ({
-  layers: JSON.stringify(project.layers), groups: JSON.stringify(project.groups),
+  layers: JSON.stringify(project.layers), groups: JSON.stringify(project.groups), views: JSON.stringify(project.views),
   data: { ...project.data }, current: currentId.value,
 });
-const same = (a, b) => a.layers === b.layers && a.groups === b.groups
+const same = (a, b) => a.layers === b.layers && a.groups === b.groups && a.views === b.views
   && Object.keys(a.data).length === Object.keys(b.data).length && Object.keys(a.data).every(k => a.data[k] === b.data[k]);
 function sync() { history.undo = UNDO.length; history.redo = REDO.length; }
 
@@ -115,7 +115,7 @@ function commit() {
   UNDO.push(last); if (UNDO.length > 80) UNDO.shift();
   REDO.length = 0; last = now; sync();
 }
-watch([() => project.layers, () => project.groups, dataRev], () => {
+watch([() => project.layers, () => project.groups, () => project.views, dataRev], () => {
   if (applying) return;
   clearTimeout(timer); timer = setTimeout(commit, 400);
 }, { deep: true });
@@ -126,6 +126,7 @@ function apply(s) {
   applying = true;
   project.layers.splice(0, project.layers.length, ...JSON.parse(s.layers));
   project.groups.splice(0, project.groups.length, ...JSON.parse(s.groups));
+  project.views.splice(0, project.views.length, ...JSON.parse(s.views));
   for (const k of Object.keys(project.data)) if (!(k in s.data)) delete project.data[k];
   Object.assign(project.data, s.data);
   if (project.layers.some(l => l.key === s.current)) currentId.value = s.current;
