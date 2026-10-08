@@ -3,7 +3,8 @@
    GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс. */
 import { nextTick, ref, toRaw, watch } from "vue";
 import { basemapId, currentId, project, setProject, viewNow } from "./store.js";
-import { dataRev, resetHistory } from "./edit.js";
+import { dataRev, graphRev, resetHistory } from "./edit.js";
+import { normGraph } from "./graphfile.js";
 import { setSel } from "./features.js";
 
 export const projects = ref([]);      // [{name, modified, size, album_n}], новые сверху
@@ -33,12 +34,13 @@ export function markDirty() {
   if (tick === autoTick) pendingSince = Date.now();
   tick++; lastEdit = Date.now(); dirty.value = true;
 }
-watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, basemapId, dataRev], markDirty, { deep: true });
+watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, basemapId, dataRev, graphRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
   if ((p.version || 1) > VERSION) throw new Error(`файл сохранён более новой версией ГРАДО 2 (формат ${p.version}) — обновите программу`);
   quiet = true;
+  normGraph(p);                       // схема расчёта: по умолчанию, если её нет; новые поля узлов старой версии
   setProject(p, name, source);
   setSel([]); resetHistory();
   dirty.value = !!p.dirty; autoTick = tick;

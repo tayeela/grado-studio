@@ -2,6 +2,24 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.59: окно «Схема расчёта» в новом интерфейсе на Rete.js (#69).**
+  - The calculation scheme is drawn by Rete.js 2 (engine map: a maintained library instead of the frozen litegraph).
+    Blocks keep the same look by kind (data, operations, sketch, ТЭП, numbers) and links are coloured by data type.
+  - The scheme is the same object as in the project file and the working page (litegraph format): a project edited
+    in one program opens in the other; a project without a scheme gets the default one of the working page.
+  - All blocks of the working page are calculated the same way: territory, layer with a condition, «Ограничения»,
+    number, buffer, subtract, union, intersect, «Посадка застройки» (the generator moved unchanged), ТЭП (district
+    lookup, server ТЭП, manual norms) and four analysis blocks. Each block recalculates only when its inputs, fields
+    or data change.
+  - Editing: library on the left, link from socket to socket (one link per input, only matching types), drag,
+    rename by double click on the title, Del removes a block, fields of blocks right on the block; all of it goes
+    into Ctrl+Z. «Вся схема», «Пересчитать», «В слой» (the output of the selected block as a project layer).
+  - The map shows the building area, the sketch and the output of the selected block while the window is open.
+    After «Рассчитать ограничения» the «Ограничения» block is added to the scheme, as in the working page.
+  - New dependencies (MIT, exact versions, in the Vite build only): rete 2.0.6, rete-area-plugin 2.3.2,
+    rete-connection-plugin 2.0.5, rete-vue-plugin 2.1.3, rete-render-utils 2.0.3.
+  - Not yet here: the «Эскиз», «Показатели» and «Нормативы» windows (next step).
+
 - **2026-10-08, ГРАДО 2 v0.99.58: окно «Ограничения» в новом интерфейсе (#69).**
   - Same calculation as the working page: no-build zones from ЗОУИТ, СЗЗ, water protection and ОКН zones, the red line
     setback, kept buildings with fire gaps (СП 4.13130), ПЗЗ subzones without new construction, natural zones of the

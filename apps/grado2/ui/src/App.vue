@@ -129,6 +129,7 @@ const PANELS = [
   { id: "table", title: "Таблица атрибутов" },
   { id: "data", title: "Данные" },
   { id: "cons", title: "Ограничения" },
+  { id: "graph", title: "Схема расчёта" },
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
 ];
@@ -181,6 +182,7 @@ function defaultLayout() {
   api.addPanel({ id: "cons", component: "cons", title: "Ограничения", position: { referencePanel: "props", direction: "within" } });
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
+  api.addPanel({ id: "graph", component: "graph", title: "Схема расчёта", position: { referencePanel: "tep", direction: "within" }, inactive: true });
   api.getPanel("layers")?.api.setActive();
   api.getPanel("props")?.api.setActive();
   api.getPanel("map")?.api.setActive();
@@ -189,7 +191,7 @@ function defaultLayout() {
 
 /* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
    дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
-const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"] };
+const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"] };
 function addNewWindows() {
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }

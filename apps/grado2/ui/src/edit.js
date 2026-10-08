@@ -99,11 +99,14 @@ export const groupKeys = id => project.layers.filter(l => l.group === id).map(l 
 /* ---------- отмена ---------- */
 const UNDO = [], REDO = [];
 let last = null, timer = null, applying = false;
+/* схема расчёта лежит в project.raw.graph (вид litegraph, graph.js правит её на месте): в отмену — её текст */
+export const graphRev = ref(0);         // правка схемы расчёта (узлы, связи, поля узлов)
+export const graphHooks = { restored: () => {} };   // graph.js: схема вернулась отменой
 const snap = () => ({
   layers: JSON.stringify(project.layers), groups: JSON.stringify(project.groups), views: JSON.stringify(project.views),
-  data: { ...project.data }, current: currentId.value, territory: project.territory,
+  data: { ...project.data }, current: currentId.value, territory: project.territory, graph: JSON.stringify(project.raw?.graph ?? null),
 });
-const same = (a, b) => a.layers === b.layers && a.groups === b.groups && a.views === b.views && a.territory === b.territory
+const same = (a, b) => a.layers === b.layers && a.groups === b.groups && a.views === b.views && a.territory === b.territory && a.graph === b.graph
   && Object.keys(a.data).length === Object.keys(b.data).length && Object.keys(a.data).every(k => a.data[k] === b.data[k]);
 function sync() { history.undo = UNDO.length; history.redo = REDO.length; }
 
@@ -115,7 +118,7 @@ function commit() {
   UNDO.push(last); if (UNDO.length > 80) UNDO.shift();
   REDO.length = 0; last = now; sync();
 }
-watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, dataRev], () => {
+watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, dataRev, graphRev], () => {
   if (applying) return;
   clearTimeout(timer); timer = setTimeout(commit, 400);
 }, { deep: true });
@@ -130,6 +133,7 @@ function apply(s) {
   for (const k of Object.keys(project.data)) if (!(k in s.data)) delete project.data[k];
   Object.assign(project.data, s.data);
   project.territory = s.territory;
+  if (project.raw && s.graph !== JSON.stringify(project.raw.graph ?? null)) { project.raw.graph = JSON.parse(s.graph); graphHooks.restored(); }
   if (project.layers.some(l => l.key === s.current)) currentId.value = s.current;
   touchData();
   setTimeout(() => { applying = false; last = snap(); }, 0);   // наблюдатели отработали на возврате — это не новая правка

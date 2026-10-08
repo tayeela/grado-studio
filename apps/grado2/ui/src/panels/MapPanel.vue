@@ -32,6 +32,7 @@ import { fromExtent } from "ol/geom/Polygon.js";
 import Feature from "ol/Feature.js";
 import { coverBox, coverOn, importFiles, setTerritory, terrTool } from "../data.js";
 import { notice } from "../project.js";
+import { attachGraphLayers } from "../graphmap.js";
 
 const el = ref(null);
 let map, ro;
@@ -212,6 +213,7 @@ onMounted(() => {
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
+  attachGraphLayers(map);                          // результат схемы расчёта: пятно, эскиз, выход выбранного блока
   const upd = () => {
     if (viewPending) return;                        // вид проекта ещё не поставлен: в файл не должен уйти случайный
     const v = map.getView();

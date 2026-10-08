@@ -84,6 +84,29 @@ class NextUi(unittest.TestCase):
             self.assertIn(s.split("/cadastral")[0], old, s)
             self.assertIn(s, new, s)
 
+    def test_graph_nodes_match_working_page(self):
+        # схема расчёта: новый интерфейс знает все блоки рабочей страницы (litegraph registerNodeType), схема по умолчанию —
+        # та же, что DEFAULT_GRAPH рабочей страницы, и у каждого её блока столько же полей, сколько в описании типа
+        web = NEXT.parent
+        src = NEXT.parents[1] / "ui" / "src"
+        old = set()
+        for f in web.glob("*.js"):
+            old |= set(re.findall(r'registerNodeType\("([^"]+)"', f.read_text(encoding="utf-8")))
+        gf = (src / "graphfile.js").read_text(encoding="utf-8")
+        new = set(re.findall(r'^  "([^"/]+/[^"]+)": \{ title', gf, re.M))
+        self.assertEqual(old, new)
+        g = json.loads((src / "graph_default.json").read_text(encoding="utf-8"))
+        self.assertTrue(g["nodes"])
+        for n in g["nodes"]:
+            self.assertIn(n["type"], new)
+        node_ids = {n["id"] for n in g["nodes"]}
+        for l in g["links"]:
+            self.assertIn(l[1], node_ids)
+            self.assertIn(l[3], node_ids)
+        exec_src = (src / "graph.js").read_text(encoding="utf-8")
+        for t in new:
+            self.assertIn(f'"{t}":', exec_src, t)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

@@ -17,6 +17,7 @@ import { fullStyle } from "./symbology.js";
 import { bboxOf, buf, floorsOf, inter, m2, plural, polys, ringsXY, safe, setFrame, toLL, toXY, unionAll } from "./geom.js";
 
 const INSOL = globalThis.INSOL || insolModule.default || insolModule;
+globalThis.INSOL ||= INSOL;     // web/blocks.js (урбан-блоки) читает инсоляцию из глобального INSOL
 
 export const CONS = reactive({ waterLine: 5, norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150,
   use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true }, log: null, running: "" });
@@ -190,7 +191,7 @@ export async function computeConstraints() {
       const north = pts.filter(p => p.orient).length, bad = pts.filter(p => !p.orient && !p.worst.ok).length;
       log.push(`инсоляция: ${pts.length} расчётных точек на ${resid.length} жилых домах в ${Rp} м от границы (дома дальше полосы выгрузки 60 м не загружены и не защищены); ${north} на северных фасадах (не нормируются), ${bad} не выполняют норму уже сейчас — для них «не ухудшать»; ${Math.round(performance.now() - t0)} мс`);
     }
-    touchData(); markDirty();
+    touchData(); markDirty(); import("./graph.js").then(m => m.ensureConsNode());   // блок «Ограничения» в схеме расчёта, как web/constraints.js
     CONS.log = log; notice.value = "Ограничения рассчитаны. Выключенный слой группы «Ограничения» генерация не учитывает";
   } catch (e) { console.error(e); notice.value = "Ограничения не рассчитаны: " + e.message; }
   finally { busy.value = false; CONS.running = ""; }
