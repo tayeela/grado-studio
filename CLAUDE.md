@@ -48,7 +48,8 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
 - `main` on GitHub updates grado.tailink.tech (host `msk`) by itself: the server timer `grado-pull` pulls `main` every 5 minutes,
   checks the version and rolls back on failure (`tools/server_pull/README.md`). Never deploy from the Mac (since 08.10.2026, #73).
   Result: `/api/health` on the site, or the owner's taiLink session reads `journalctl -u grado-pull`.
-- Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69): a new dependency needs wheels for
+- Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69); which engine replaces which part — `docs/product/engine-map.md`
+  (UI: Vue 3 + dockview + Web Awesome with a Vite build; sheet editor: own on Konva; check it before writing a mechanism): a new dependency needs wheels for
   macOS arm64 and x86_64 and Windows, a permissive license, a line in requirements and the same gate. Do not touch the owner's QGIS DB or plugin. Ask before deleting
   `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.
 - Token budget: no Workflow fan-outs; outside the team cycle at most one Sonnet subagent at a time, read-only. Owner 07.10.2026: many
