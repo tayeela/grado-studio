@@ -73,7 +73,7 @@ GeoPackage на `sqlite3`), `classifier.py` (виды объектов; базо
 
 ```bash
 PP="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2"
-env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom/tests -p "test_*.py"
+env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m pytest -q core/geom/tests
 ```
 
 - Из тестов core `tools/gate.sh` запускает только `core/connectors/tests`. Тесты остальных пакетов после правки

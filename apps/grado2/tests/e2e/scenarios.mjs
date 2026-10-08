@@ -877,7 +877,8 @@ export default async p => {
       try {
         window.albumFile("pdf", null, true); await new Promise(r => setTimeout(r, 100)); $("bExpMore").click();
         const during = $("bExpPdf").disabled && $("bExpPptx").disabled && /Идёт сборка…/.test($("bExpPdf").innerText) && /Идёт сборка…/.test($("bExpPptx").innerText) && window.albumBuilding === true;
-        await new Promise(r => setTimeout(r, 900)); const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
+        for (let i = 0; i < 50 && window.albumBuilding; i++) await new Promise(r => setTimeout(r, 100));   // ответ сервера (600 мс) и автосохранение — не по часам
+        const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
         return during && after;
       } finally { window.fetch = f; if (!$("expMenu").hidden) $("bExpMore").click(); }`), "T36: сборка PDF — PDF и PPTX в меню серые, «Идёт сборка…»; после неё снова доступны");
     // peak пишется при сохранении проекта с листами; пустой альбом после этого говорит «раньше было N»

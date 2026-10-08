@@ -16,7 +16,8 @@
 | `ogd_all.py` | «Всё из ГИС ОГД в DWG»: все слои портала по области одним чертежом, с кэшем на диске | `server.py`, `ogd_warm.py`, `tests/test_ogd_all.py` |
 | `ogd_warm.py` | прогрев кэша ГИС ОГД; по docstring запускается таймером `grado-warm` ночью или вручную | `ogd_all.py`; файла таймера в репозитории нет |
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
-| `requirements.txt` | зависимости Python: ezdxf, certifi, pillow | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
+| `requirements.txt` | зависимости Python: ezdxf, certifi, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
+| `requirements-dev.txt` | только для проверок: pytest | `tools/gate.sh`, `.claude/hooks/session-start.sh`, CI |
 | `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
 | `tests/` | тесты: `test_*.py` (unittest), `*_test.js`, `e2e/` (браузерные сценарии), `fixtures/` (данные) | `tools/gate.sh`, `.github/workflows/grado2-release.yml` |
 ## web/: файлы по ролям

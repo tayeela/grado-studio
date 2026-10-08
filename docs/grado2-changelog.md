@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.56: checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
+  - `tools/gate.sh` and CI run the same unit tests with pytest (`apps/grado2/requirements-dev.txt`, not part of the program); without
+    pytest the gate falls back to unittest and says how to install it.
+  - Browser scenarios: `apps/grado2/tests/e2e/browser.mjs` starts the local Chrome with Playwright (`playwright-core`, Apache-2.0, in
+    `tools/package.json`; `(cd tools && npm ci)`); `driver.mjs` and `collab_scenarios.mjs` no longer spawn Chrome and talk to its socket
+    themselves. Mouse and keyboard still go over the DevTools protocol, so the scenarios are unchanged.
+  - T36 «during PDF build the menu is grey» waited a fixed 0.9 s for the build to end; it now waits for the end of the build
+    (at most 5 s): under Playwright the autosave of the project in the same second made the fixed wait too short.
 - **2026-10-08, ГРАДО 2 v0.99.55: the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
   - `core/render/grado_render/backend_pptx.py`: slides, pictures, slide notes, the one blank layout, theme and embedded fonts go through
     python-pptx; shapes are still written as DrawingML (custom outlines, dashes, glow of labels) and placed into each slide.
