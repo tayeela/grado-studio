@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
 
 ROOT = Path(SPEC).resolve().parents[1]
 APP = ROOT / "apps/grado2"
@@ -25,7 +25,7 @@ hiddenimports = ["server", "dxf_io", "file_io", "print_io", "export_io"]
 for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL", "shapely"):
     hiddenimports += collect_submodules(package)
 
-a = Analysis([str(ROOT / "packaging/grado2_entry.py")], pathex=PATHEX, binaries=[], datas=datas, hiddenimports=hiddenimports,
+a = Analysis([str(ROOT / "packaging/grado2_entry.py")], pathex=PATHEX, binaries=collect_dynamic_libs("shapely"), datas=datas, hiddenimports=hiddenimports,
              hookspath=[], runtime_hooks=[], excludes=["tkinter", "PyQt5", "wx", "IPython", "pytest", "notebook", "matplotlib"],
              noarchive=False, optimize=1)
 pyz = PYZ(a.pure)

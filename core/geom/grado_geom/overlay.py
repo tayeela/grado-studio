@@ -12,6 +12,8 @@
 core/geom/tests/test_overlay.py.
 """
 
+import math
+
 import shapely
 from shapely.geometry import Polygon
 
@@ -19,7 +21,9 @@ from shapely.geometry import Polygon
 def _union(polygons):
     parts = []
     for poly in polygons:
-        rings = [[(p[0], p[1]) for p in ring] for ring in poly if len(ring) >= 3]
+        # кольцо с NaN/∞ пропускается (GEOS на нём падает; прежний метод давал ему нулевую площадь)
+        rings = [[(p[0], p[1]) for p in ring] for ring in poly
+                 if len(ring) >= 3 and all(math.isfinite(p[0]) and math.isfinite(p[1]) for p in ring)]
         if not rings:
             continue
         # дыра — разность с внешним кольцом (правило чётности, как у прежнего метода сканирующих строк)

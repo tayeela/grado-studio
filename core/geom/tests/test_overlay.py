@@ -45,6 +45,10 @@ class UnionIntersectionAreaTests(unittest.TestCase):
         a, b = union_intersection_area([terr], [west]), union_intersection_area([terr], [east])
         self.assertAlmostEqual(0.75, a / (a + b), places=9)
 
+    def test_degenerate_rings_give_zero(self):
+        for ring in ([(1, 1), (1, 1), (1, 1)], [(0, 0), (1, 1), (2, 2)], [(0, 0), (float("nan"), 1), (2, 2)]):
+            self.assertEqual(0.0, union_intersection_area([[ring]], [square(0, 0, 10)]))
+
     def test_self_intersecting_ring_is_repaired(self):
         bow = [[(0, 0), (100, 100), (100, 0), (0, 100)]]          # «бабочка»: два треугольника по 2500
         self.assertAlmostEqual(5000, union_intersection_area([bow], [square(0, 0, 100)]), delta=0.5)
