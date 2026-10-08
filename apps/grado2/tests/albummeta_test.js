@@ -24,6 +24,16 @@ M.typed(m, "place"); m.place = "Мой район";
 eq(M.fillMeta(m, { place: "ВАО, район Гольяново" }), [], "after user edit — kept");
 eq(m.place, "Мой район", "user text intact");
 eq(M.fillMeta(m, { address: "" }), [], "empty found value changes nothing");
+// #56: адрес из реестра — «сверьте с письмом ДГП», введённый руками — готов
+let a = {};
+eq(M.addrWhy(a), "нет адреса", "no address");
+M.fillMeta(a, { address: "г. Москва, 1-й Иртышский проезд, д. 8" });
+eq(M.addrWhy(a), "адрес из реестра — сверьте с письмом ДГП", "auto address flagged");
+M.typed(a, "address"); a.address = "г. Москва, 1-й Иртышский проезд, вл. 8";
+eq(M.addrWhy(a), "", "typed address ready");
+eq(M.fillMeta(a, { address: "г. Москва, 1-й Иртышский проезд, д. 8" }), [], "typed address not overwritten by registry");
+eq(a.address, "г. Москва, 1-й Иртышский проезд, вл. 8", "letter address kept");
+eq(M.addrWhy({ object: "Объект" }), "", "object instead of address");
 
 // T74: что не готово до выгрузки
 const S = (i, o = {}) => ({ i, title: "Лист" + i, why: "", photos: null, empty: [], ...o });

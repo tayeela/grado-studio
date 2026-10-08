@@ -19,7 +19,8 @@ function homeAdm() {
 }
 const okrAbbr = f => f ? LABEL_FN.adm({ get: k => f.properties[k] }) : "";
 // округ без далёких отдельных частей (владелец 05.10.2026: «северный анклав можно убрать», карта округа крупнее):
-// остаются самая большая часть и части не дальше km от неё (у ВАО — пос. Восточный, ~1,5 км)
+// остаются самая большая часть и части не дальше km от неё (у ВАО — район Восточный: ~0,2 км от основной части и 2 %
+// её площади, не «далёкий»; убрать ли и его — вопрос владельцу, #54/#62)
 function okrugMainCalc(f, km) {
   if (f?.geometry?.type !== "MultiPolygon") return f;
   const parts = f.geometry.coordinates.map(c => turf.polygon(c)), big = parts.reduce((a, b) => m2(b) > m2(a) ? b : a);
@@ -891,9 +892,12 @@ function conceptSheet(out, sheet, bb) {
       const W = { motorway: 2.2, trunk: 1.8, primary: 1.4, secondary: 1, tertiary: .7, motorway_link: .9, trunk_link: .9, primary_link: .8 }, NAMED = new Set(["motorway", "trunk", "primary", "secondary"]);   // и улицы городского значения (#47)
       (L("osm.roads")?.features || []).forEach(ft => { const t = ft.props?.["Тип дороги"]; ft.w = MM(W[t] || .5); if (!NAMED.has(t)) ft.label = null; });
     }
-    out.cLegend = [{ items: [terr, ...(dist ? [{ kind: "line", stroke: "#e30613", width: 1.2, label: "района" }] : []),
-      ...(k === "district" ? (dRoads.length ? [{ kind: "line", stroke: ROAD_YELLOW, width: 1.2, label: "автомобильные дороги" }] : [])
-        : hasRoads ? [{ kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: ROADS_WORD }] : [])] }];   // правило 7: только то, что видно
+    // группы — как в колонке легенды других листов (#61): «Границы» — территория и район, «Транспорт» — дороги (и ж/д ниже);
+    // знак района — тот же цвет и толщина, что у линии на карте (стиль слоя листа; на карте района 0,6 мм, #45)
+    const ast = sheet.styles?.["gisogd.admin"] || {}, distSw = { kind: "line", stroke: ast.stroke || "#e30613", width: +((ast.width ?? MM(1.2)) / MM(1)).toFixed(2), label: "района" };
+    out.cLegend = LegendRules.pruneGroups([{ title: "Границы", items: [terr, ...(dist ? [distSw] : [])] },
+      { title: "Транспорт", items: k === "district" ? (dRoads.length ? [{ kind: "line", stroke: ROAD_YELLOW, width: 1.2, label: "автомобильные дороги" }] : [])
+        : hasRoads ? [{ kind: "fill", fill: "#f3d98c", stroke: "#f3d98c", label: ROADS_WORD }] : [] }]);   // правило 7: только то, что видно
   }
   if (k === "photos") {
     out.casing = ["yandex.hd_roads"];               // дороги контуром — один общий контур на все куски
@@ -1193,10 +1197,13 @@ function conceptSheet(out, sheet, bb) {
       l.features.forEach(ft => { if (ft.label && !STREET.test(String(ft.label))) ft.label = null; }); });
     out._stations = [];
     const krt = own("gisogd.krt").length > 0;
+    // «0» в регламенте ПЗЗ — новое строительство не допускается: пояснение в легенде, если такое значение подписано (#61)
+    const zero = k === "pzzsub" && own("gisogd.pzz_sub").some(ft => ft.label && String(ft.label).split("\n").includes("0"));
     out.cLegend = k === "pzzsub" ? [{ title: "Предельные параметры разрешенного строительства, реконструкции объектов капитального строительства", items: [
-        { kind: "text", sample: "15", family: "sans-bold", label: "максимальная плотность застройки земельных участков (тыс. м²/га)" },
+        { kind: "text", sample: "15", family: "sans-bold", label: "максимальная плотность застройки земельных участков (тыс. кв. м/га)" },   // единицы — как на Генплане (#60)
         { kind: "text", sample: "75", family: "sans-bold", label: "максимальная высота застройки (м)" },
         { kind: "text", sample: "60", family: "sans-bold", label: "максимальная застроенность земельных участков (%)" },
+        ...(zero ? [{ kind: "text", sample: "0", family: "sans-bold", label: "новое строительство не допускается (значение параметра 0)" }] : []),   // «0» в подзонах (#61)
         { kind: "text", sample: "–", family: "sans-bold", label: "параметр не установлен" }] }]
       : [{ title: "Границы", items: [terr, { kind: "line", stroke: "#000000", width: .25, label: "территориальных зон и подзон территориальных зон" },
           ...(krt ? [{ kind: "fill", hatch: true, fill: "#1f3fbf", stroke: "#1f3fbf", angle: 45, label: "комплексного развития территории" }] : [])] },
@@ -1296,7 +1303,8 @@ function conceptRail(out, box, k) {
   if (!rail.features.length) return;
   rail.over = true;                                               // знак виден и за территорией, поверх белой маски
   out.layers.push({ key: "yandex.rail.dash", title: "Железная дорога: штрихи", over: true, features: rail.features.map(f => ({ ...f, fill: "#ffffff", stroke: "#ffffff", lc: "#ffffff", w: 1.6, dash: [7.7, 7.7], label: null })) });
-  if (k !== "photos" && out.cLegend && !out.noRailLegend) out.cLegend.push({ title: "Транспорт", items: [{ kind: "rail", label: "железнодорожные пути" }] });
+  if (k !== "photos" && out.cLegend && !out.noRailLegend) { const rail = { kind: "rail", label: "железнодорожные пути" }, g = out.cLegend.find(x => x.title === "Транспорт");
+    if (g) g.items.push(rail); else out.cLegend.push({ title: "Транспорт", items: [rail] }); }   // одна группа «Транспорт» (#61)
 }
 // соседние районы (владелец 05.10.2026: «на севере и юге другой район, а подписано только Гольяново»): если в рамку
 // попадает другой район, на листах 3–9 видна граница района (красная, как на ортофотоплане) и каждый чужой район

@@ -35,6 +35,10 @@
     return done;
   }
   const typed = (meta, k) => { if (meta.auto) delete meta.auto[k]; };   // владелец правит поле — оно больше не «автоматическое»
+  // почему титул не готов: адреса нет; адрес взят из реестра ЕГКО сам — его сверяют с письмом ДГП (#56: в альбом ушло
+  // «д. 8» из реестра вместо «вл. 8» по письму). Адрес, введённый или исправленный руками, — готов
+  const addrWhy = meta => !String(meta?.address || meta?.object || "").trim() ? "нет адреса"
+    : meta.address && meta.auto?.address ? "адрес из реестра — сверьте с письмом ДГП" : "";
   // Что не готово до выгрузки альбома (T74): строки для окна «Выгрузить всё равно / Отмена». st: { terr, meta, sheets: [{ i, title, why, photos (число снимков у листа «фотофиксация», иначе null), empty: [названия слоёв пустых в рамке] }], title (проверять шапку) }
   // Строка: { text, sheet? (номер листа с 0), stamp? }. «Нет адреса» у титула здесь не повторяется: его закрывает строка про шапку.
   function exportIssues(st) {
@@ -49,7 +53,7 @@
     });
     return out;
   }
-  const api = { FIELDS, parseAddr, addressText, krtText, placeJoin, fillMeta, typed, exportIssues };
+  const api = { FIELDS, parseAddr, addressText, krtText, placeJoin, fillMeta, typed, addrWhy, exportIssues };
   if (typeof module === "object" && module.exports) module.exports = api;
   root.AlbumMeta = api;
 })(typeof window !== "undefined" ? window : globalThis);

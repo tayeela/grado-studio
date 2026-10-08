@@ -179,7 +179,7 @@ function metaVals() {
 }
 const autoMeta = () => { const d = AlbumMeta.fillMeta(ALBUM.meta, metaVals()); syncAddrWhy(); return d; };
 // титульный лист без адреса печатал бы «АДРЕС»: строка листа в окне говорит «не готов: нет адреса» (на бумаге ничего не добавляется)
-const noAddrWhy = () => ALBUM.meta.address || ALBUM.meta.object ? "" : "нет адреса";
+const noAddrWhy = () => AlbumMeta.addrWhy(ALBUM.meta);   // нет адреса или адрес из реестра, не сверенный с письмом ДГП (#56)
 function syncAddrWhy() { ALBUM.sheets.forEach(s => { if (s.kind !== "title") return; const w = noAddrWhy(); if (w) NOTREADY.set(s.id, w); else NOTREADY.delete(s.id); }); }
 // подписи листов, собранные из нескольких полей: подзона ПЗЗ — «плотность / высота / застроенность», Ф — по факту
 const codes = t => [...new Set(String(t || "").match(/\d{1,2}(\.\d{1,2}){1,3}/g) || [])];
