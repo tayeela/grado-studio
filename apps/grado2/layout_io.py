@@ -330,24 +330,47 @@ class _PaperBorder:
         return [_path([_rect(*self.rect)], stroke=INK, width=.35)]
 
 
-def build_page(spec, lib, lgr_dash, tiles=None):
-    """spec = {sheet, meta, maps: {id карты: {layers}}} → (w, h, ops) листа."""
-    sheet = spec.get("sheet") if isinstance(spec.get("sheet"), dict) else {}
+def _doc(spec):
     meta = spec.get("meta") if isinstance(spec.get("meta"), dict) else {}
-    maps = spec.get("maps") if isinstance(spec.get("maps"), dict) else {}
     m = {k: str(meta.get(k) or "") for k in ("object", "code", "stage", "org")}
-    doc = Document(m["object"] or "Лист", meta=m)
+    return Document(m["object"] or "Лист", meta=m)
+
+
+def _page(doc, item, lib, lgr_dash, tiles, no, total):
+    """Один лист: {sheet, maps: {id карты: {layers}}} → (w, h, ops); no и total — «Лист» и «Листов» штампа."""
+    sheet = item.get("sheet") if isinstance(item.get("sheet"), dict) else {}
+    maps = item.get("maps") if isinstance(item.get("maps"), dict) else {}
     page = Page(page_size(sheet))
     blocks = _Blocks(sheet, maps, lib, lgr_dash, tiles)
     page.frames = ([PageBorder(page), StampFrame(page), blocks] if sheet.get("stamp") is not False
                    else [_PaperBorder(frame_rect(sheet)), blocks])
-    doc.pages.append(page)
+    ctx = _ctx(doc, None, None, None, no, str(sheet.get("title") or ""))
+    ctx["page_total"] = str(total)
     w, h = page.size
-    return w, h, page.ops(_ctx(doc, None, None, None, 1, str(sheet.get("title") or "")))
+    return w, h, page.ops(ctx)
+
+
+def build_pages(spec, lib, lgr_dash, tiles=None):
+    """spec = {meta, sheets: [{sheet, maps}]} — все листы макета одним документом, либо {meta, sheet, maps, page:
+    {page_no, page_total}} — один лист с его номером в списке листов."""
+    doc = _doc(spec)
+    if isinstance(spec.get("sheets"), list):
+        items = [x for x in spec["sheets"] if isinstance(x, dict)]
+        return [_page(doc, x, lib, lgr_dash, tiles, i, len(items)) for i, x in enumerate(items, start=1)]
+    pg = spec.get("page") if isinstance(spec.get("page"), dict) else {}
+    no, total = int(_num(pg.get("page_no"), 1, 1, 9999)), int(_num(pg.get("page_total"), 1, 1, 9999))
+    return [_page(doc, spec, lib, lgr_dash, tiles, no, max(no, total))]
+
+
+def build_page(spec, lib, lgr_dash, tiles=None):
+    return build_pages(spec, lib, lgr_dash, tiles)[0]
 
 
 def render_pdf(spec, lib, lgr_dash, tiles=None):
-    return PdfBackend(None).render([build_page(spec, lib, lgr_dash, tiles)])
+    pages = build_pages(spec, lib, lgr_dash, tiles)
+    if not pages:
+        raise ValueError("no sheets")
+    return PdfBackend(None).render(pages)
 
 
 def render_page_svg(spec, lib, lgr_dash, tiles=None):

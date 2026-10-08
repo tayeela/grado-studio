@@ -8,6 +8,7 @@
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
+  POST /api/project/layouts?name=… {layouts} → листы «Макета листа» нового интерфейса в файл проекта (только этот ключ)
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
@@ -623,7 +624,7 @@ HUB_TID_RE = re.compile(r"[0-9a-f]{16}")     # id команды в адресе
 def body_limit(path):
     """Предел тела POST по пути запроса (байты)."""
     p = path.split("?")[0]
-    if p == "/api/project":
+    if p in ("/api/project", "/api/project/layouts"):
         return MAX_PROJECT_BODY
     if p == "/api/hub/projects" or HUB_PUSH_RE.fullmatch(p):      # создание с готовым файлом и запись проекта — как проект
         return MAX_PROJECT_BODY
@@ -1635,17 +1636,64 @@ def projects_size():
     return sum(p.stat().st_size for p in PROJECTS.rglob("*") if p.is_file()) if PROJECTS.exists() else 0
 
 
+# листы «Макета листа» нового интерфейса (/next/): ключ layouts — всегда последний в файле проекта (его дописывает
+# сервер), чтобы рабочая страница, которая о нём не знает, не стирала листы своей записью и не читала их заново
+LAYOUTS_KEY = b',"layouts":'
+
+
+def split_layouts(body):
+    """Текст проекта → (текст без листов макета, JSON листов или None). Листы ищутся только последним ключом."""
+    t = body.rstrip()
+    i = t.rfind(LAYOUTS_KEY)
+    if i < 0 or not t.endswith(b"}"):
+        return body, None
+    tail = t[i + len(LAYOUTS_KEY):-1]
+    try:
+        if not isinstance(json.loads(tail), list):
+            return body, None
+    except ValueError:
+        return body, None
+    return t[:i] + b"}", tail
+
+
+def with_layouts(body, tail):
+    """Дописать листы макета последним ключом (tail — JSON списка; None — без листов)."""
+    if tail is None:
+        return body
+    head = body.rstrip()[:-1].rstrip()
+    return head + (LAYOUTS_KEY if not head.endswith(b"{") else LAYOUTS_KEY[1:]) + tail + b"}"
+
+
+def _write_project(path, name, body):
+    if projects_size() + len(body) > PROJECTS_CAP:
+        raise QuotaExceeded
+    try:
+        keep_version(path, name == AUTOSAVE)
+    except OSError:
+        pass                                          # версия не записалась — сохранение важнее
+    atomic_write(path, body)
+
+
 def save_project(name, body):
-    json.loads(body)                                  # в файл идёт только целый JSON
+    obj = json.loads(body)                            # в файл идёт только целый JSON
     path = project_path(name)
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
-        if projects_size() + len(body) > PROJECTS_CAP:
-            raise QuotaExceeded
-        try:
-            keep_version(path, name == AUTOSAVE)
-        except OSError:
-            pass                                      # версия не записалась — сохранение важнее
-        atomic_write(path, body)
+        if isinstance(obj, dict) and "layouts" not in obj and path.exists():
+            body = with_layouts(body, split_layouts(path.read_bytes())[1])   # листы макета, о которых страница не знает, остаются
+        _write_project(path, name, body)
+    return path
+
+
+def save_layouts(name, layouts):
+    """Листы «Макета листа» в существующий файл проекта; остальное содержимое файла не трогается."""
+    if not isinstance(layouts, list):
+        raise ValueError("layouts: list expected")
+    path = project_path(name)
+    tail = json.dumps(layouts, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with _SAVE_LOCK:
+        if not path.exists():
+            raise FileNotFoundError(name)
+        _write_project(path, name, with_layouts(split_layouts(path.read_bytes())[0], tail))
     return path
 
 
@@ -2272,7 +2320,7 @@ class Handler(SimpleHTTPRequestHandler):
                 route = self.path.split("?")[0]
                 if route.startswith("/api/hub/"):
                     return self._hub("POST", route, n)
-                if route == "/api/project":
+                if route in ("/api/project", "/api/project/layouts"):
                     return self._json(403, {"error": LOCAL_PROJECTS_OFF})
                 # остальная запись тоже только JSON (кроме сырого DXF): форма с другого сайта так тело не отправит
                 if route != "/api/import/dxf" and self.headers.get_content_type() != "application/json":
@@ -2291,6 +2339,17 @@ class Handler(SimpleHTTPRequestHandler):
                 import dxf_io
                 fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN, "ogd" if "local=ogd" in self.path else "msk")
                 return self._json(200, {"features": fc, "notes": notes})
+            if self.path.startswith("/api/project/layouts?"):
+                # листы «Макета листа» нового интерфейса: только этот ключ, остальной проект не меняется
+                try:
+                    path = save_layouts(self._project_name(), self._read_obj(n).get("layouts"))
+                except FileNotFoundError:
+                    return self._json(404, {"error": "project not found"})
+                except (ValueError, AttributeError) as e:
+                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
+                except QuotaExceeded:
+                    return self._json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
+                return self._json(200, {"saved": path.stem, "modified": path.stat().st_mtime})
             if self.path.startswith("/api/project?"):
                 try:
                     path = save_project(self._project_name(), self.rfile.read(n))

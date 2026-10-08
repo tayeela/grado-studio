@@ -24,7 +24,7 @@ const props = defineProps({
   modelValue: { type: Object, required: true },     // лист: { format, orient, stamp, title, blocks, guides, grid, snap }
   meta: { type: Object, default: () => ({}) },       // поля штампа альбома: object, code, stage, org
   page: { type: Object, default: () => ({}) },       // page_no, page_total
-  // карта проекта и печать (panels/sheetmaps.js): image(b, redraw), here(), legend(), pdf(sheet, meta); нет — карта-заглушка
+  // карта проекта и печать (panels/sheetmaps.js): image(b, redraw), here(), legend(), pdf(sheet, meta, page); нет — карта-заглушка
   maps: { type: Object, default: null },
 });
 const emit = defineEmits(["update:modelValue"]);
@@ -314,7 +314,7 @@ function exportPng() {
 async function printPdf() {
   if (!props.maps?.pdf || busy.value === "PDF собирается…") return;
   busy.value = "PDF собирается…";
-  try { await props.maps.pdf(clone(sheet.value), props.meta); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
+  try { await props.maps.pdf(clone(sheet.value), props.meta, props.page); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
 }
 function act(id) {
   const [a, b] = id.split(":"), bs = selBlocks.value;

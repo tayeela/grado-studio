@@ -6,7 +6,7 @@
       <span class="brand">ГРАДО 2</span>
       <span class="project">{{ project.name || "Проект не открыт" }}
         <wa-badge v-if="project.source === 'autosave'" variant="neutral" appearance="filled-outlined">как в рабочей программе</wa-badge>
-        <wa-badge variant="neutral" appearance="filled-outlined">только просмотр</wa-badge></span>
+        <wa-badge variant="neutral" appearance="filled-outlined" title="Слои и карта не меняются; в проект пишутся только листы «Макета листа»">только просмотр</wa-badge></span>
 
       <wa-dropdown @wa-select="onProject">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Проект</wa-button>
@@ -70,7 +70,7 @@
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
-      <span>Новый интерфейс · только просмотр, проект не меняется</span>
+      <span>Новый интерфейс · только просмотр; в проект пишутся только листы макета</span>
     </footer>
   </div>
 </template>

@@ -4,7 +4,7 @@ import { ref, reactive, computed, markRaw } from "vue";
 
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
-export const project = reactive({ name: "", source: "", groups: [], layers: [], data: markRaw({}), view: null, album: null });
+export const project = reactive({ name: "", source: "", groups: [], layers: [], data: markRaw({}), view: null, album: null, layouts: [] });
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));
 export const scale = ref(0);
@@ -46,6 +46,7 @@ export function setProject(p, name, source) {
   project.data = markRaw(p.data || {});
   project.view = p.view || null;
   project.album = p.album ? { meta: { ...(p.album.meta || {}) }, sheets: p.album.sheets || [] } : null;   // штамп в «Макете листа»
+  project.layouts = Array.isArray(p.layouts) ? p.layouts.filter(x => x && typeof x === "object" && Array.isArray(x.blocks)) : [];   // листы «Макета листа»
   currentId.value = project.layers.some(l => l.key === p.current) ? p.current : (project.layers[0]?.key || "");
 }
 

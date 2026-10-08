@@ -3,8 +3,10 @@
 
 import base64
 import io
+import json
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -85,6 +87,26 @@ class LayoutPrint(unittest.TestCase):
         yellow = next(o for o in ops if o["op"] == "path" and o.get("fill") and o["fill"][2] < .6 and o["fill"][0] > .9)
         self.assertAlmostEqual(yellow["fill"][2], .5, delta=.02)       # жёлтый на 50 % — бледнее
 
+    def test_all_sheets_print_as_one_pdf_with_sheet_numbers_in_the_stamp(self):
+        one = spec()
+        two = spec(title="Второй лист")
+        both = {"meta": one["meta"], "sheets": [{"sheet": one["sheet"], "maps": one["maps"]}, {"sheet": two["sheet"], "maps": {}}]}
+        pages = layout_io.build_pages(both, S.REDLN, S.LGR_DASH)
+        self.assertEqual(len(pages), 2)
+        texts = lambda ops: [o["text"] for o in ops if o["op"] == "text"]
+        self.assertIn("Второй лист", texts(pages[1][2]))
+        self.assertIn("2", texts(pages[1][2]))                          # «Лист 2» в штампе
+        pdf = layout_io.render_pdf(both, S.REDLN, S.LGR_DASH)
+        self.assertEqual(pdf.count(b"/Type /Page") - pdf.count(b"/Type /Pages"), 2)
+        with self.assertRaises(ValueError):
+            layout_io.render_pdf({"sheets": []}, S.REDLN, S.LGR_DASH)
+
+    def test_single_sheet_keeps_its_number(self):
+        s = {**spec(), "page": {"page_no": 3, "page_total": 4}}
+        texts = [o["text"] for o in layout_io.build_page(s, S.REDLN, S.LGR_DASH)[2] if o["op"] == "text"]
+        self.assertIn("3", texts)
+        self.assertIn("4", texts)
+
     def test_sheet_without_stamp_has_thin_border_and_no_stamp(self):
         svg = layout_io.render_page_svg(spec(stamp=False, format="A4", orient="P"), S.REDLN, S.LGR_DASH)
         self.assertIn('width="210mm" height="297mm"', svg)
@@ -109,6 +131,51 @@ class LayoutPrint(unittest.TestCase):
         s["sheet"]["blocks"].append("not a block")
         s["sheet"]["blocks"].append({"id": "p", "kind": "picture", "src": "data:image/png;base64,!!!"})
         self.assertTrue(layout_io.render_pdf(s, S.REDLN, S.LGR_DASH).startswith(b"%PDF"))
+
+
+class LayoutsInProject(unittest.TestCase):
+    """Листы макета живут в файле проекта последним ключом layouts; запись рабочей страницы (без этого ключа) их не стирает."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old, S.PROJECTS = S.PROJECTS, Path(self.tmp.name) / "p"
+
+    def tearDown(self):
+        S.PROJECTS = self.old
+        self.tmp.cleanup()
+
+    def read(self, name="Проект"):
+        return json.loads(S.project_path(name).read_bytes())
+
+    def test_page_save_keeps_layouts_and_layouts_save_keeps_the_rest(self):
+        page = {"format": "grado2", "name": "Проект", "layers": [{"key": "a"}], "data": {"a": {"fc": {"features": []}}}}
+        S.save_project("Проект", json.dumps(page).encode())
+        sheets = [{"id": "s1", "format": "A3", "title": "Лист 1", "blocks": [{"id": "m", "kind": "map"}]}]
+        S.save_layouts("Проект", sheets)
+        self.assertEqual(self.read()["layouts"], sheets)
+        self.assertEqual(self.read()["layers"], [{"key": "a"}])
+        page["layers"].append({"key": "b"})                            # рабочая страница сохраняет — о листах не знает
+        S.save_project("Проект", json.dumps(page, ensure_ascii=False, indent=1).encode())
+        self.assertEqual(self.read()["layouts"], sheets)
+        self.assertEqual(len(self.read()["layers"]), 2)
+        S.save_layouts("Проект", [])                                   # листы удалены — ключ пустой, проект цел
+        self.assertEqual(self.read()["layouts"], [])
+        self.assertEqual(len(self.read()["layers"]), 2)
+
+    def test_layouts_save_needs_an_existing_project_and_a_list(self):
+        with self.assertRaises(FileNotFoundError):
+            S.save_layouts("Нет такого", [])
+        S.save_project("Проект", b'{"format": "grado2"}')
+        with self.assertRaises(ValueError):
+            S.save_layouts("Проект", {"not": "a list"})
+
+    def test_split_and_join_are_inverse_and_ignore_lookalikes(self):
+        body = b'{"a": 1, "note": ",\\"layouts\\": in a string"}'
+        self.assertEqual(S.split_layouts(body), (body, None))
+        joined = S.with_layouts(b'{"a": 1}', b'[{"id": "x"}]')
+        self.assertEqual(json.loads(joined), {"a": 1, "layouts": [{"id": "x"}]})
+        self.assertEqual(S.split_layouts(joined), (b'{"a": 1}', b'[{"id": "x"}]'))
+        self.assertEqual(json.loads(S.with_layouts(b"{}", b"[]")), {"layouts": []})
 
 
 if __name__ == "__main__":

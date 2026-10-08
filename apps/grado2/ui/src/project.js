@@ -1,7 +1,8 @@
 /* ГРАДО 2 · загрузка проекта в новый интерфейс: список проектов и чтение файла через API рабочей программы.
-   Только чтение: новый интерфейс пока ничего не сохраняет, рабочая страница и её файлы не меняются. */
+   Запись — только листы «Макета листа» (saveLayouts, ключ layouts файла): слои, данные и альбом рабочей страницы
+   новый интерфейс не меняет, а её сохранение листы не стирает (server.py save_project). */
 import { ref } from "vue";
-import { setProject } from "./store.js";
+import { project, setProject } from "./store.js";
 
 export const projects = ref([]);      // [{name, modified}], новые сверху
 export const loadError = ref("");
@@ -38,4 +39,12 @@ export async function openStartup() {
   } catch (e) {
     loadError.value = "Проект не загрузился: " + e.message;
   }
+}
+
+/* Листы «Макета листа» — в файл открытого проекта (или в автосохранение, если открыто оно). */
+export async function saveLayouts(layouts) {
+  const q = project.source === "autosave" ? "autosave=1" : "name=" + encodeURIComponent(project.name);
+  const r = await fetch("/api/project/layouts?" + q, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layouts }) });
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || String(r.status));
+  return r.json();
 }
