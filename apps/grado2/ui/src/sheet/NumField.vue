@@ -1,7 +1,7 @@
 <!-- ГРАДО 2 · числовое поле со степпером «− 0,35 +», как в образце интерфейса: принимает запятую и точку, правка
      уходит по Enter, уходу из поля или кнопкам. Используется в панели свойств редактора раскладки (PropsPanel.vue). -->
 <script setup>
-import { Minus, Plus } from "lucide-vue-next";
+import { Minus, Plus } from "@lucide/vue";
 const props = defineProps({ modelValue: Number, step: { type: Number, default: 1 }, min: { type: Number, default: -1e9 }, max: { type: Number, default: 1e9 }, digits: { type: Number, default: 2 }, label: String });
 const emit = defineEmits(["update:modelValue"]);
 const show = v => v == null || !Number.isFinite(v) ? "" : String(+v.toFixed(props.digits)).replace(".", ",");
@@ -18,9 +18,9 @@ const typed = e => { const v = parseFloat(String(e.target.value).replace(",", ".
 </template>
 
 <style scoped>
-.nf { display: flex; align-items: center; border: 1px solid var(--g-line-strong); border-radius: 5px; background: #fff; height: 26px; }
+.nf { display: flex; align-items: center; border: 1px solid var(--g-line-strong); border-radius: 5px; background: var(--g-panel); height: 26px; }
 .nf:focus-within { border-color: var(--g-accent); box-shadow: 0 0 0 2px var(--g-ring); }
-.nf input { flex: 1; min-width: 0; width: 100%; border: 0; text-align: center; font: inherit; background: none; outline: none; padding: 0; }
+.nf input { flex: 1; min-width: 0; width: 100%; border: 0; text-align: center; font: inherit; color: inherit; background: none; outline: none; padding: 0; }
 .nf button { width: 22px; height: 24px; display: grid; place-items: center; border: 0; background: none; color: var(--g-mute); cursor: pointer; padding: 0; }
 .nf button:hover { color: var(--g-ink); }
 </style>

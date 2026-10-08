@@ -93,13 +93,14 @@ function drawRulers() {
     const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
     if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
     const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, H);
-    c.fillStyle = "#f7f8fa"; c.fillRect(0, 0, W, H);
+    const css = getComputedStyle(root.value), bg = css.getPropertyValue("--g-panel").trim() || "#f7f8fa", ink = css.getPropertyValue("--g-mute").trim() || "#5f6b7a";
+    c.fillStyle = bg; c.fillRect(0, 0, W, H);
     const len = ax === "x" ? W : H, off = ax === "x" ? o.x : o.y, at = mm => off + mm * k;
     if (selB) {                                       // выбранное — полоса на линейке, как в QGIS
       const a = at(ax === "x" ? selB.x : selB.y), b = at(ax === "x" ? selB.x + selB.w : selB.y + selB.h);
       c.fillStyle = "rgba(31,111,235,.14)"; ax === "x" ? c.fillRect(a, 0, b - a, H) : c.fillRect(0, a, W, b - a);
     }
-    c.strokeStyle = "#9aa3ae"; c.fillStyle = "#5f6b7a"; c.lineWidth = 1; c.font = "10px Inter, system-ui, sans-serif";
+    c.strokeStyle = ink; c.fillStyle = ink; c.lineWidth = 1; c.font = "10px Inter, system-ui, sans-serif";
     const from = Math.floor(-off / k / minor) * minor, to = (len - off) / k;
     c.beginPath();
     for (let mm = from; mm <= to; mm += minor) {
@@ -416,9 +417,12 @@ defineExpose({ fit, act });
 </template>
 
 <style scoped>
-.sed { --g-ink: #1f2328; --g-mute: #66707c; --g-line: #e3e6ea; --g-line-strong: #cfd4da; --g-panel: #fff; --g-bg: #eef0f3;
-  --g-hover: #f0f2f5; --g-sel: #e8f0fe; --g-sel-line: #b9d0f7; --g-accent: #1f6feb; --g-ring: rgba(31,111,235,.18); --g-warn: #b4441b;
-  display: flex; flex-direction: column; height: 100%; font: 13px/1.3 Inter, "PT Sans", system-ui, -apple-system, sans-serif; color: var(--g-ink); background: var(--g-panel); }
+/* цвета — из темы Web Awesome каркаса (светлая и тёмная), запасные — для отдельной страницы */
+.sed { --g-ink: var(--wa-color-text-normal, #1f2328); --g-mute: var(--wa-color-text-quiet, #66707c); --g-line: var(--wa-color-surface-border, #e3e6ea);
+  --g-line-strong: var(--wa-color-neutral-border-normal, #cfd4da); --g-panel: var(--wa-color-surface-default, #fff); --g-bg: var(--wa-color-surface-lowered, #eef0f3);
+  --g-hover: var(--wa-color-neutral-fill-quiet, #f0f2f5); --g-sel: var(--wa-color-brand-fill-quiet, #e8f0fe); --g-sel-line: var(--wa-color-brand-border-quiet, #b9d0f7);
+  --g-accent: var(--wa-color-brand-fill-loud, #1f6feb); --g-ring: rgba(31,111,235,.18); --g-warn: var(--wa-color-danger-on-quiet, #b4441b);
+  display: flex; flex-direction: column; height: 100%; font: 13px/1.3 var(--wa-font-family-body, system-ui), sans-serif; color: var(--g-ink); background: var(--g-panel); }
 .sed-main { flex: 1; display: flex; min-height: 0; }
 .sed-side { flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--g-panel); }
 .sed-side.left { width: 236px; border-right: 1px solid var(--g-line); }
@@ -431,7 +435,7 @@ defineExpose({ fit, act });
 .sed-issue:hover { background: #fdf1ec; }
 .sed-center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .sed-canvas { flex: 1; position: relative; min-height: 0; background: var(--g-bg); }
-.sed-corner { position: absolute; left: 0; top: 0; width: 22px; height: 22px; background: #f7f8fa; border-right: 1px solid var(--g-line); border-bottom: 1px solid var(--g-line); }
+.sed-corner { position: absolute; left: 0; top: 0; width: 22px; height: 22px; background: var(--g-panel); border-right: 1px solid var(--g-line); border-bottom: 1px solid var(--g-line); }
 .sed-rx { position: absolute; left: 22px; top: 0; right: 0; height: 22px; width: calc(100% - 22px); cursor: s-resize; }
 .sed-ry { position: absolute; left: 0; top: 22px; bottom: 0; width: 22px; height: calc(100% - 22px); cursor: e-resize; }
 .sed-stage { position: absolute; left: 22px; top: 22px; right: 0; bottom: 0; outline: none; overflow: hidden; }

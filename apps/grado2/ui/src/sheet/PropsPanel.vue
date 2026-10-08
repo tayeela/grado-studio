@@ -167,7 +167,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
 .pp-cap { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--g-mute); }
 .pp-name { font: inherit; font-weight: 600; font-size: 14px; border: 1px solid transparent; border-radius: 4px; padding: 2px 4px; margin: 0 -5px; background: none; }
 .pp-name:hover { border-color: var(--g-line-strong); }
-.pp-name:focus { border-color: var(--g-accent); outline: none; background: #fff; }
+.pp-name:focus { border-color: var(--g-accent); outline: none; background: var(--g-panel); }
 .pp-f { display: flex; flex-direction: column; gap: 3px; font-weight: 500; }
 .pp-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
 .pp-2.grow { flex: 1; }
@@ -176,31 +176,31 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
 .pp-sp { flex: 1; }
 .pp-note { color: var(--g-mute); font-size: 12px; line-height: 1.4; }
 .pp-list { line-height: 1.5; }
-select, input:not([type]), textarea { font: inherit; border: 1px solid var(--g-line-strong); border-radius: 5px; padding: 3px 8px; background: #fff; min-width: 0; width: 100%; box-sizing: border-box; height: 26px; }
+select, input:not([type]), textarea { font: inherit; border: 1px solid var(--g-line-strong); border-radius: 5px; padding: 3px 8px; background: var(--g-panel); color: inherit; min-width: 0; width: 100%; box-sizing: border-box; height: 26px; }
 textarea { height: auto; resize: vertical; padding: 4px 8px; }
 select:focus, input:not([type]):focus, textarea:focus { border-color: var(--g-accent); outline: none; box-shadow: 0 0 0 2px var(--g-ring); }
-input[type=color] { width: 30px; height: 24px; padding: 1px; border: 1px solid var(--g-line-strong); border-radius: 4px; background: #fff; }
+input[type=color] { width: 30px; height: 24px; padding: 1px; border: 1px solid var(--g-line-strong); border-radius: 4px; background: var(--g-panel); }
 input[type=range] { accent-color: var(--g-accent); width: 100%; }
 .pp-g { display: grid; grid-template-columns: 1fr 96px 22px; gap: 6px; align-items: center; font-size: 12px; }
 .pp-x { border: 0; background: none; color: var(--g-mute); font-size: 16px; cursor: pointer; padding: 0; }
 .pp-x:hover { color: var(--g-warn); }
-.pp-btn { align-self: flex-start; font: inherit; padding: 4px 10px; border: 1px solid var(--g-line-strong); border-radius: 5px; background: #fff; cursor: pointer; margin-top: 4px; }
+.pp-btn { align-self: flex-start; font: inherit; padding: 4px 10px; border: 1px solid var(--g-line-strong); border-radius: 5px; background: var(--g-panel); cursor: pointer; margin-top: 4px; }
 .pp-btn:hover { border-color: var(--g-accent); color: var(--g-accent); }
 .pp-btn.danger { color: var(--g-warn); }
 .pp-btn.file { position: relative; overflow: hidden; }
 .pp-btn.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.pp-seg { font: inherit; font-size: 12px; min-width: 26px; height: 24px; padding: 0 6px; border: 1px solid var(--g-line-strong); border-radius: 4px; background: #fff; cursor: pointer; }
+.pp-seg { font: inherit; font-size: 12px; min-width: 26px; height: 24px; padding: 0 6px; border: 1px solid var(--g-line-strong); border-radius: 4px; background: var(--g-panel); cursor: pointer; }
 .pp-seg.on { background: var(--g-sel); border-color: var(--g-sel-line); color: var(--g-accent); }
 /* переключатель как в образце: синяя «таблетка» */
 .tg { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
 .tg input { position: absolute; opacity: 0; pointer-events: none; }
 .tg i { width: 26px; height: 15px; border-radius: 8px; background: #c9ced6; position: relative; flex: none; transition: background .15s; }
-.tg i::after { content: ""; position: absolute; left: 2px; top: 2px; width: 11px; height: 11px; border-radius: 50%; background: #fff; transition: left .15s; }
+.tg i::after { content: ""; position: absolute; left: 2px; top: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--g-panel); transition: left .15s; }
 .tg input:checked + i { background: var(--g-accent); }
 .tg input:checked + i::after { left: 13px; }
 .tg input:focus-visible + i { box-shadow: 0 0 0 2px var(--g-ring); }
 /* опорная точка: 3 × 3 */
 .rp { display: grid; grid-template-columns: repeat(3, 12px); gap: 3px; padding: 4px; border: 1px solid var(--g-line-strong); border-radius: 5px; margin-bottom: 1px; }
-.rp button { width: 12px; height: 12px; border: 1px solid #9aa3ae; border-radius: 2px; background: #fff; padding: 0; cursor: pointer; }
+.rp button { width: 12px; height: 12px; border: 1px solid #9aa3ae; border-radius: 2px; background: var(--g-panel); padding: 0; cursor: pointer; }
 .rp button.on { background: var(--g-accent); border-color: var(--g-accent); }
 </style>

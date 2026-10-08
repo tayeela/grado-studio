@@ -2,21 +2,40 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-08, ГРАДО 2 v0.99.48: новый редактор раскладки листа на Konva, как «Макет» QGIS (шаг 2 плана замен, #21, #24, #69).**
-  - Новая папка `apps/grado2/ui/`: Vue 3 + Konva, сборка Vite (решения владельца «1а 2б 3а 4а»). Нынешняя страница `web/`
-    не меняется и новый редактор пока не открывает; пробная страница — `npm run dev`.
-  - Окно как в QGIS и образце интерфейса: лента (выбор, добавить, правка, упорядочить, вид, выгрузка), «Элементы» (глаз,
+- **2026-10-08, ГРАДО 2 v0.99.50: редактор раскладки листа на Konva, как «Макет» QGIS (шаг 2 плана замен, #21, #24, #69).**
+  - Окно «Макет листа» нового интерфейса (`/next/`, «Окна → Макет листа»): открывается вкладкой рядом с картой во всё
+    окно. Код — `apps/grado2/ui/src/sheet/`, окно — `ui/src/panels/SheetPanel.vue`; Konva 10.7.1 (MIT). Рабочая страница
+    `web/` не меняется; лист живёт только в окне и в проект не пишется (новый интерфейс — только просмотр).
+  - Как в QGIS и образце интерфейса: лента (выбор, добавить, правка, упорядочить, вид, выгрузка), «Элементы» (глаз,
     замок, имя), «Свойства» (лист, сетка, привязки, направляющие; у элемента — положение с опорной точкой, размер, поворот,
-    рамка, фон, непрозрачность, свои настройки), линейки в мм, строка состояния с координатами курсора.
+    рамка, фон, непрозрачность, свои настройки), линейки в мм, строка состояния с координатами курсора; светлая и тёмная тема.
   - Элементы: карта (масштаб, охват на местности; содержимое пока заглушка), легенда, надпись, картинка, стрелка севера,
     масштабная линейка по карте, таблица, прямоугольник, эллипс, линия со стрелкой. Добавление рамкой мышью или щелчком.
   - Направляющие тянутся от линеек; привязка к направляющим, сетке, рамке, штампу и другим элементам (общий `web/snap.js`),
     в том числе для ручек размера. Выбор рамкой и с Shift, выравнивание, распределение, одинаковый размер, порядок,
-    закрепление, копирование, вставка, дубль, отмена. Лист картинкой PNG 300 dpi.
+    закрепление, копирование, вставка, дубль, отмена. Лист картинкой PNG 300 dpi. Штамп берёт поля альбома проекта.
   - Модель листа `ui/src/sheet/model.js`: А4–А0, рамка по ГОСТ или поля 2 %, штамп 185×55 как `StampFrame`; карта и колонка
     легенды нового листа стоят там же, где их ставит `print_io.layout()`. Замечания «за рамкой», «на штампе», «нет масштаба».
-  - Проверки: `ui/src/sheet/model.test.js` (через `tests/test_sheetmodel_js.py`); `tools/gate.sh` шаг `ui` — сборка Vite,
-    пропускается без `apps/grado2/ui/node_modules`.
+    Проверки — `ui/src/sheet/model.test.js` через `tests/test_sheetmodel_js.py`.
+
+- **2026-10-08, ГРАДО 2 v0.99.49: the new interface shows the real project; window «Слои» moved over (#69).**
+  - `/next/` opens the last autosave (what the working page had open), else the newest project; «Проект → Открыть…»
+    lists the projects folder. View only: the new page sends nothing to the server, the project file is unchanged.
+  - «Слои»: project groups and layers in file order, eye on a layer and on a group, folding a group, current layer from
+    the file, search. «Карта» draws the project layers in that order with the working page's «единое» style
+    (other style modes come with the «Свойства» move). «Свойства» shows the current layer's colours, width and opacity.
+  - Test project `apps/grado2/tests/fixtures/next_ui_project.grado2`; tests in `tests/test_next_ui.py`.
+
+- **2026-10-08, ГРАДО 2 v0.99.48: sample page of the new interface on ready-made engines (#69).**
+  - Owner's decision «1А 2Б 3А 4А» (`docs/product/engine-map.md`): Vue 3 + dockview + Web Awesome, built with Vite.
+    Sources `apps/grado2/ui/`, the build lives in the repo at `apps/grado2/web/next/` (no Node on the Mac, the server or
+    the installer). The working page `web/index.html` is unchanged.
+  - `/next/index.html`: header menus «Проект», «Окна», «Выгрузка»; tool ribbon; dockable windows «Карта», «Слои»,
+    «Свойства», «Показатели (ТЭП)» that float, dock and tab; the layout is remembered; light and dark theme.
+    Layers and numbers are a sample, not project data.
+  - CSP: `connect-src 'self' data:` (Web Awesome reads its icons from data: URLs). Test `tests/test_next_ui.py`.
+  - `tools/ui_check.sh`: the build matches the sources; step `ui` in `tools/gate.sh` (skipped without
+    `apps/grado2/ui/node_modules`) and a step in CI.
 
 - **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
   - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped

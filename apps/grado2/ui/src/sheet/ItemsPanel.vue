@@ -3,7 +3,7 @@
      (Shift или Ctrl — добавить к выбору), двойной щелчок — переименовать. Действия выполняет SheetEditor.vue. -->
 <script setup>
 import { ref, nextTick } from "vue";
-import { Eye, EyeOff, Lock, LockOpen, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight } from "lucide-vue-next";
+import { Eye, EyeOff, Lock, LockOpen, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight } from "@lucide/vue";
 import { label } from "./model.js";
 
 const props = defineProps({ blocks: Array, sel: Array });

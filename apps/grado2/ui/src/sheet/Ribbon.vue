@@ -6,7 +6,7 @@ import { MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Squ
   ClipboardPaste, CopyPlus, Trash2, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal,
   AlignCenterHorizontal, AlignEndHorizontal, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, StretchHorizontal,
   StretchVertical, BringToFront, SendToBack, ArrowUp, ArrowDown, Lock, LockOpen, Grid3x3, Magnet, ZoomIn, ZoomOut, Maximize, Scan,
-  FileImage } from "lucide-vue-next";
+  FileImage } from "@lucide/vue";
 
 const props = defineProps({ tool: String, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean });
 const emit = defineEmits(["act"]);

@@ -1,5 +1,5 @@
 /* Проверяет модель листа нового редактора (model.js, stamp.js): размеры совпадают с печатью, масштаб и охват,
-   замечания к раскладке, смена формата. Запуск: cd apps/grado2/ui && npm test (или node --test src/sheet/model.test.js). */
+   замечания к раскладке, смена формата. Запуск: cd apps/grado2/ui && npm test. */
 import test from "node:test";
 import assert from "node:assert/strict";
 import { pageSize, frameRect, stampRect, newSheet, newBlock, groundSize, fitScale, scalebarStep, problems, reformat,

@@ -1,16 +1,38 @@
-/* ГРАДО 2 · пробная страница нового редактора раскладки листа: шапка как в образце интерфейса и лист А3 с картой,
-   легендой, стрелкой севера и штампом. Запуск: cd apps/grado2/ui && npm run dev. В программу редактор войдёт вместе
-   с каркасом интерфейса на Vue 3 (шаг 3 плана). */
-import { createApp, h, ref } from "vue";
-import SheetEditor from "./sheet/SheetEditor.vue";
-import { newSheet } from "./sheet/model.js";
+/* ГРАДО 2 · вход нового интерфейса: подключает Web Awesome, dockview, OpenLayers и монтирует App.vue.
+   Собирается Vite (vite.config.js); страница — /next/index.html на сервере ГРАДО 2. */
+import "@awesome.me/webawesome/dist/styles/themes/default.css";
+import "@awesome.me/webawesome/dist/styles/utilities.css";
+import "dockview-vue/dist/styles/dockview.css";
+import "ol/ol.css";
+import "./theme.css";
 
-const sheet = ref(newSheet({ format: "A3", title: "Схема существующего использования территории" }));
-const meta = { object: "Комплексное развитие территории (пример)", code: "КРТ-00-ПП", stage: "ПП", org: "ГРАДО" };
-window.SHEET = sheet.value;
-createApp({
-  setup: () => () => h("div", { class: "app" }, [
-    h("header", { class: "app-h" }, [h("b", "ГРАДО 2"), h("span", "Макет листа"), h("em", "образец")]),
-    h(SheetEditor, { modelValue: sheet.value, "onUpdate:modelValue": v => { sheet.value = v; window.SHEET = v; }, meta, page: { page_no: 6, page_total: 11 } }),
-  ]),
-}).mount("#app");
+import "@awesome.me/webawesome/dist/components/button/button.js";
+import "@awesome.me/webawesome/dist/components/button-group/button-group.js";
+import "@awesome.me/webawesome/dist/components/dropdown/dropdown.js";
+import "@awesome.me/webawesome/dist/components/dropdown-item/dropdown-item.js";
+import "@awesome.me/webawesome/dist/components/divider/divider.js";
+import "@awesome.me/webawesome/dist/components/tooltip/tooltip.js";
+import "@awesome.me/webawesome/dist/components/select/select.js";
+import "@awesome.me/webawesome/dist/components/option/option.js";
+import "@awesome.me/webawesome/dist/components/color-picker/color-picker.js";
+import "@awesome.me/webawesome/dist/components/number-input/number-input.js";
+import "@awesome.me/webawesome/dist/components/slider/slider.js";
+import "@awesome.me/webawesome/dist/components/switch/switch.js";
+import "@awesome.me/webawesome/dist/components/input/input.js";
+import "@awesome.me/webawesome/dist/components/badge/badge.js";
+import "@awesome.me/webawesome/dist/components/dialog/dialog.js";
+
+import { createApp } from "vue";
+import App from "./App.vue";
+import MapPanel from "./panels/MapPanel.vue";
+import LayersPanel from "./panels/LayersPanel.vue";
+import PropsPanel from "./panels/PropsPanel.vue";
+import TepPanel from "./panels/TepPanel.vue";
+import SheetPanel from "./panels/SheetPanel.vue";
+import { applyTheme, theme } from "./store.js";
+
+applyTheme(theme.value);
+/* окна dockview находят содержимое по имени компонента (component: "map" в App.vue) — регистрируем глобально */
+const app = createApp(App);
+app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel).component("sheet", SheetPanel);
+app.mount("#app");
