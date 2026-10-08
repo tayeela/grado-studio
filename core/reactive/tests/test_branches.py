@@ -1,3 +1,8 @@
+"""Проверяет ветки вариантов журнала (grado_reactive.Session): переключение, база, undo в ветке.
+
+Запуск: python -m unittest discover -s core/reactive/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import tempfile
 import unittest
 from pathlib import Path

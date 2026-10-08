@@ -1,3 +1,9 @@
+"""Проверяет коннектор OSM (Overpass): дыры в контурах, соцобъекты, дисковый кэш, повторы.
+
+Без сети: Overpass подменён функцией; кэш пишется во временную папку; паузы повторов подменены.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 
 import _paths  # noqa: F401

@@ -3,10 +3,13 @@
 # Команда: доска на GitHub, правила команды
 
 С 06.10.2026 доска задач — GitHub Issues репозитория tayeela/grado-studio (метки «задача», «замечание владельца», «ждёт владельца», «в работе», «готово к выкладке»), работа — ветки и Pull Request, выкладка — слияние PR в main. Смотреть: `gh issue list`, `gh pr list`; порядок — docs/team/CYCLE.md.
-Прежняя доска docs/team/BOARD.md — архив до 06.10.2026.
+Прежняя доска и указания владельца — архив до 06.10.2026: docs/archive/team/BOARD.md, docs/archive/team/OWNER.md.
 
 ## Правила команды (RULE из PROGRESS.md)
 
+- An owner remark that names concrete wording («вл. 8», «выноска такая») gets a line in `tools/album_expect/` in the same commit as the rule in `album-rules.md`; `tools/album_check.py` runs the lint and those lines on every comparison (exit 3 on errors); a sheet without a baseline gets a full tile audit before delivery; a rule that supersedes an older one edits the older line in place (07.10.2026, audit #53: the title address, the ortho callout and a label under the legend passed unseen on the new sheets, and two lines of the rule base gave two colours for the calculated СЗЗ).
+- Navigation is checked by `python3 tools/docs_check.py` (in `tools/gate.sh` and CI `docs.yml`): a document is moved with `git mv` and the checker runs at once; a new `.md` under `docs/` is named in the README of its shelf (`docs/CLAUDE.md`); every code file starts with a «what it is» header; a new top-level file or folder is named in `INDEX.md` (07.10.2026, issue #50).
+- Every package with tests is in `tools/gate.sh` and in `.github/workflows/grado2-release.yml`: the tests of `core/compute`, `geom`, `layout`, `model`, `reactive`, `render` (232) were run by nobody until 07.10.2026; a new tests folder gets a line in both files the same day.
 - A browser step waits for the element or text it checks (`until`), never reads it right after a window becomes visible: the collab step «A: список проектов пуст» read `hubProjList` before `loadProjects()` drew it and failed on the slow GitHub runner; T27 and T61 failed the same way on other runs of one PR (07.10.2026, issue #40).
 - Album changes are verified with `tools/album_check.py` against `~/.grado2/album-baseline/{gol,bez}` (pixels and page text, crops in summary.png) — skill `album-verify`; owner remarks follow skill `owner-remark`; landing — skill `land`.
 - A script started from a git hook inherits GIT_DIR/GIT_INDEX_FILE: before running git in another repository, unset them and check `git rev-parse --show-toplevel` (06.10.2026 the wiki publisher committed wiki pages over the program on team/t60; caught by `git show --stat`, branch restored to the previous commit, main untouched).
@@ -50,26 +53,10 @@
 
 ## Последние циклы
 
-- 07.10.2026, выкладка по слову владельца («выкладывай») — v0.99.43: три листа «в границах сит. плана» (#37, PR #38 и #39,
-  v0.99.40–0.99.43): рамка «по границам выгрузки» и третье значение настройки «Масштаб схем 5–9»; новые листы 10–13 в конце
-  альбома ППТ КРТ — карта района, схема документации (ППТ, ПМТ, ГПЗУ, АГР, КРТ), Генплан и ПЗЗ в рамке сит. плана. Настройка
-  «Масштаб схем» (#31) ушла в main раньше, PR #35 (v0.99.39). Проверка: wiki, unit, connectors; браузерные сценарии на GitHub
-  зелёные (451 ok; у PR три красных запуска на посторонних шагах T27, T61, collab — гонки по времени в тестах, задача #40,
-  упавшее перезапущено один раз); локально сбой только T68 (шрифты облачной среды, то же на чистой team/t60). Листы нарисованы
-  сервером и выгружены в PDF (4 страницы А3) и PPTX (4 слайда) на синтетических данных, страницы просмотрены.
-  НЕ сделано: пересборка альбома и сравнение страниц на Гольяново и Безобразово (`album-verify`, `tools/album_check.py
-  --name gol|bez`) — в облаке нет проектов, ГИС ОГД, ЕГКО, НСПД и Overpass не отвечают; владелец знает и выложить велел.
-  После выкладки на Mac: листы 1–9 не должны измениться, листы 10–13 сравнить с образцами `docs/team/samples/2026-10-07`;
-  первая загрузка слоёв для листа 10 (район около 40 км²) заметно дольше прежней. Сайт: из облака выкладка недоступна.
-  07.10 около 12:00 UTC прежний сервер AEZA-GRADO перестал отвечать (сайт давал 503 и таймауты); соседняя сессия на Mac
-  перенесла ГРАДО на msk (службы grado и grado-guest, Caddy с прежним паролем, grado.tailink.tech → 93.88.203.245; у клиента кэш
-  адресов мог держать старый — переподключить VPN, «Clear host cache» в браузере), там стояла 0.99.39. Скрипт выкладки под msk
-  (Mac → msk без перехода на другой хост, перезапуск обеих копий, при сбое возврат прежней версии) — PR #41, выложен в main
-  второй короткой выкладкой по тому же слову владельца. Версия 0.99.43 попадает на сайт командой `git pull` в `~/grado-studio` на
-  Mac: хук запускает `tools/deploy-server.sh`; «Сервер занят выгрузкой… отложено» или ошибка — на сайте прежняя версия, повторить.
-- 06.10.2026, цикл 27 — полная проверка альбома Гольяново (нормы, оформление, данные: AUD-*.md в /tmp/grado-team/2026-10-06),
-  сводный список F1–F12 + PPTX. Сделано v0.99.21–0.99.22: СЗЗ установленные, дорога-пробел ЕГКО, легенда генплана,
-  таблица участков, ЖК, выноски листа 2, номер зоны, PPTX 20 мин → 20 с и встроенный Montserrat. Данные владельца:
-  аренда :85/:86 из выписок ЕГРН, адрес «вл. 8» по письму ДГП. Новые PDF/PPTX/проект — в папке выдачи, прежние в
-  «прежняя версия/выдача 05.10». Осталось: строка «лист N из 9» при выгрузке (сервер готов, UI нет), подпись улицы у
-  границы (F8 не сработал: подпись ставится другим путём), лист 4 без снимков (ждём владельца).
+- 07.10.2026, аудит оформления презентации по Гольяново и правила против повтора (задача #53; по просьбе владельца): 13 аудиторов Haiku дали 103 находки, руководитель свёл их в 26 причин (P0 — 3: адрес титула «д. 8» вместо «вл. 8», нет выноски на ортофотоплане, подпись «ул. Амурская» под легендой; P1 — 12; P2 — 11) и отбросил 6 после проверки глазами. Исправления — отдельные задачи #55–#63, вопросы владельцу — #54 (ответ буквой). Против повтора: `tools/album_lint.py` проверяет рамку карты, переносы, «ё», тире, неразрывные пробелы в PPTX и контрольные строки `tools/album_expect/`; `tools/album_check.py` запускает всё это при каждом сравнении «до / после» (код выхода 3 при ошибках); чек-лист `docs/standards/albums/layout-qa.md` перестроен (порядок, 30 проверок, коды линта, известные не-огрехи, предложения до слова владельца); строки свода про цвет расчётных СЗЗ и про маску исправлены (код рисует по позднему слову владельца). Не сделано: исправление самих огрехов в альбоме; эталон `gol` в `~/.grado2/album-baseline` и релизе `album-baseline` остаётся прежним (9 страниц), его обновляют `--update` после приёмки нового альбома на Mac.
+- 07.10.2026, наведение порядка в репозитории (задача #50, PR #52; по просьбе владельца): влиты в `team/t60` PR #46 (альбом по замечаниям 07.10, #45 #47 #48 #44), #36 (релей НСПД)
+  и #49 (версия 0.99.45, устойчивые T27 и T61, #40). `docs/` разложен по полкам (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`, карта `docs/INDEX.md`), 65 файлов
+  перенесены `git mv`; новые `README.md`, `INDEX.md`, `AGENTS.md`, `CLAUDE.md` и README в каждой папке верхнего уровня и на каждой полке docs; `tools/docs_check.py` в gate и CI; вики сама пересобирается (`wiki.yml`) и
+  берёт состав листов из `albums.js`; тесты остального ядра в gate и CI. Проверка: `tools/gate.sh` зелёный, CI. Не сделано без вашего действия: секрет `WIKI_TOKEN` (вики в `tayeela/grado-wiki`
+  всё ещё версии 0.99.27 до первой выкладки), удаление 21 влитой ветки (облачной сессии запрещено; команда `tools/prune-merged-branches.sh --yes` на Mac), решение по PR #34. Аудит оформления
+  презентации по Гольяново (огрехи и правила) — отдельной задачей GitHub, итог в `docs/standards/albums/layout-qa.md`.

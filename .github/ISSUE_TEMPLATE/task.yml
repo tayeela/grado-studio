@@ -1,0 +1,22 @@
+name: Задача
+description: Работа команды: доработка программы, исправление, порядок в репозитории
+title: ""
+labels: ["задача"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что нужно сделать
+      description: Простыми словами, как это будет видно на экране или в файле.
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: Как проверить
+      description: Команда (`tools/gate.sh`, `E2E=1 tools/gate.sh`), сценарий на экране или сравнение листов альбома.
+  - type: textarea
+    id: context
+    attributes:
+      label: Контекст
+      description: Связанные задачи и PR, файлы (`docs/wiki/files.md` подскажет, где что лежит).

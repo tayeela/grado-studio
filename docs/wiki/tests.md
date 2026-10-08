@@ -6,6 +6,7 @@
 
 | файл | классы | проверок |
 |---|---|---|
+| `test_album_lint.py` | AlbumLintTest, WrapTest, TextTest, ExpectTest, PptxTest, FormatLinesTest | 28 |
 | `test_albumgeo_js.py` | AlbumGeoJs | 1 |
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |
@@ -23,7 +24,7 @@
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
-| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 51 |
+| `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
@@ -32,12 +33,12 @@
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
 | `test_t78_labels.py` | StationNotOnRail, StationNotOnDiagonalRail, StationBestSpot, DistrictBoundaryObstacle, Quotes, LeadersAndCaptions, NestedQuotes | 11 |
-| `test_t80_albums_print.py` | OverLayerOrder, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 10 |
+| `test_t80_albums_print.py` | OverLayerOrder, MapNoteCorners, ConceptSwatchRail, LinetypeMarksThin, YandexSatPath | 11 |
 | `test_t82_rail_icons.py` | RailIcons | 9 |
 | `test_t86_pptx_speed.py` | FakeEgko, EgkoCache, RasterFill, FontsEmbedded, Progress | 7 |
 | `test_t89_labels.py` | StreetGapFromDash, StreetAvoidsViewArrow | 3 |
 | `albumgeo_test.js` | JS | 12 |
-| `albummeta_test.js` | JS | 24 |
+| `albummeta_test.js` | JS | 30 |
 | `blocks_test.js` | JS | 9 |
 | `cadcore_test.js` | JS | 60 |
 | `collab_test.js` | JS | 83 |

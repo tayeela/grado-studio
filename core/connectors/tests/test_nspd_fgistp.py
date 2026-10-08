@@ -1,3 +1,9 @@
+"""Проверяет коннекторы НСПД (захват, сертификаты) и ФГИС ТП (каталог, слои, объекты).
+
+Без сети: ответы порталов — фикстуры по образцу вьюера geomnpn; запросы подменены.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import json
 import os
 import ssl

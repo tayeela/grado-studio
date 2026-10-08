@@ -278,6 +278,31 @@ class SlideLabels(unittest.TestCase):
         self.assertIn("проектируемая территория", texts)
         self.assertIn("район Алексеевский", texts)
 
+    def test_territory_callout_kept_when_a_street_label_wants_its_place(self):
+        # #57: на ортофотоплане выноску «Проектируемая территория – N га» вытесняла подпись улицы (ставится раньше):
+        # место выноски занято заранее, подпись улицы его обходит, выноска есть всегда
+        terr = {"type": "Polygon", "coordinates": [[[37.649, 55.799], [37.651, 55.799], [37.651, 55.8], [37.649, 55.8], [37.649, 55.799]]]}
+        call = {"g": {"type": "Point", "coordinates": [37.65, 55.8]}, "nodot": True, "lead": [37.65, 55.7995], "label": "Проектируемая территория – 1,66 га",
+                "ls": 3.4, "lf": "sans-bold", "lbox": "#ff00ff", "lboxW": .7, "leadSolid": True, "ldy": -12}
+        y = 55.8 + 12 * 5 / 110540 * 1.0   # уровень плашки (ldy −12 мм при 1:5000) — улица идёт прямо через неё
+        road = {"g": {"type": "LineString", "coordinates": [[37.62, y], [37.68, y]]}, "stroke": "#f5d58a", "w": 1, "label": "ул. Тестовая"}
+        ops = self._ops(layers=[{"title": "Улицы", "features": [road]}, {"title": "Выноска территории", "features": [call]}], territory=terr)
+        texts = [o.get("text") for o in ops if o["op"] == "text"]
+        self.assertIn("Проектируемая территория – 1,66 га", texts)
+        box = print_io._callout_box(*next((o["x"], o["y"]) for o in ops if o["op"] == "text" and o.get("text") == "Проектируемая территория – 1,66 га"), {**call, "ldy": 0})
+        for o in ops:                                                   # подпись улицы не заходит на плашку
+            if o["op"] == "text" and o.get("text") == "ул. Тестовая":
+                self.assertFalse(box[0] < o["x"] < box[2] and box[1] < o["y"] < box[3], o)
+
+    def test_callout_steps_and_box(self):
+        st = print_io._callout_steps(-22)
+        self.assertEqual(st[0], (0.0, 0.0))
+        self.assertIn((0.0, -6.0), st)                                  # над территорией — сначала выше, дальше от неё
+        self.assertEqual(len(st), len(set(st)))
+        b = print_io._callout_box(100, 100, {"label": "Проектируемая территория – 1 га", "ls": 3.4, "lf": "sans-bold", "ldy": -22})
+        self.assertLess(b[3], 100 - 22 + 3)                             # плашка — на высоте ldy
+        self.assertGreater(b[2] - b[0], 40)                             # текст длинный: плашка шире 40 мм
+
     def test_long_legend_line_wraps(self):
         long = "Граница зоны регулирования застройки и хозяйственной деятельности объекта культурного наследия"
         ops = self._ops(layers=[], legend=[{"title": "ОКН", "kind": "poly", "items": [{"label": long, "fill": "#cc0000"}, {"label": "б", "fill": "#00cc00"}]}])
@@ -439,6 +464,25 @@ class ConceptSheets(unittest.TestCase):
         self.assertTrue(all(o.get("font_family", "") == "sans-bold" for o in ops if o["op"] == "text" and o["text"] == "Условные обозначения"))
         self.assertIn("ConceptColumnFrame", [type(f).__name__ for f in doc.pages[0].frames])
 
+    def test_ortho_legend_groups_and_labels_keep_off_the_plate(self):
+        # #58: подпись улицы не заходит под плашку легенды на снимке; #61: заголовки групп — как в колонке (подчёркнуты, без «:»)
+        import album_io
+        leg = [{"title": "Границы", "items": [{"kind": "line", "stroke": "#ff00ff", "width": 1, "label": "разрабатываемой территории (1,66 га)"}]},
+               {"title": "Транспорт", "items": [{"kind": "line", "stroke": "#000000", "width": .5, "label": "железнодорожные пути"}]}]
+        sh = {"title": "Ортофотоплан", "bleed": True, "rect": [0, 44, 420, 253], "cLegend": leg}
+        lb = album_io.ortho_legend_box(sh, 420, 297)
+        lat = 55.4 - ((lb[1] + lb[3]) / 2 - 170.5) * 7.5 / 111320 * 1.0   # середина плашки по высоте
+        road = {"g": {"type": "LineString", "coordinates": [[37.205, lat], [37.30, lat]]}, "stroke": "#f5d58a", "w": 1, "label": "ул. Амурская"}
+        doc, ops = self._ops({**sh, "layers": [{"title": "Улицы", "features": [road]}]})
+        texts = [o for o in ops if o["op"] == "text"]
+        self.assertNotIn("Границы:", [o["text"] for o in texts])
+        self.assertTrue(all(o.get("underline") for o in texts if o["text"] in ("Границы", "Транспорт")))
+        self.assertEqual(sum(o["text"] in ("Границы", "Транспорт") for o in texts), 2)
+        for o in texts:
+            if o["text"] == "ул. Амурская":
+                self.assertFalse(lb[0] - 1 < o["x"] < lb[2] and lb[1] - 1 < o["y"] < lb[3], (o["x"], o["y"], lb))
+        self.assertAlmostEqual(album_io.ortho_legend_h(sh), lb[3] - lb[1])
+
     def test_overflow_marks_sheet_not_ready_instead_of_silent_cut(self):
         items = [{"kind": "fill", "fill": "#cccccc", "label": f"пункт легенды {i}"} for i in range(60)]
         spec = {"sheets": [{"size": "PA3", "style": "pptkrt", "look": "concept", "scale": 7500, "center": [37.2, 55.4], "layers": [], "legend": [],
@@ -516,9 +560,9 @@ class ConceptSheets(unittest.TestCase):
 
     def test_ortho_bleeds_with_legend_box(self):
         doc, ops = self._ops({"title": "Ортофотоплан", "bleed": True, "rect": [0, 44, 420, 253],
-                              "cLegend": [{"items": [{"kind": "line", "stroke": "#e30613", "label": "района"}]}]})
+                              "cLegend": [{"title": "Границы", "items": [{"kind": "line", "stroke": "#e30613", "label": "района"}]}]})
         self.assertIn("OrthoLegendFrame", [type(f).__name__ for f in doc.pages[0].frames])
-        self.assertIn("Границы:", [o["text"] for o in ops if o["op"] == "text"])
+        self.assertIn("Границы", [o["text"] for o in ops if o["op"] == "text"])   # заголовок группы, как на других листах (#61)
 
     def test_view_mark_and_label_plate(self):
         _, ops = self._ops({"title": "Карта", "layers": [{"title": "Точки", "features": [
@@ -534,6 +578,31 @@ class ConceptSheets(unittest.TestCase):
         note = [o for o in ops if o["op"] == "text" and o["text"] in ("Троицкий", "административный округ", "район Вороново")]
         self.assertEqual([o["text"] for o in note], ["Троицкий", "административный округ", "район Вороново"])
         self.assertTrue(all(o["color"][0] > .5 and o["color"][1] < .2 and o.get("font_family") == "sans-bold" for o in note))
+
+
+class Typography(unittest.TestCase):
+    """#60: неразрывные пробелы и одно тире на выходе всего текста альбома (PDF и PPTX)."""
+
+    def test_typo_glues_numbers_units_and_abbreviations(self):
+        import album_io
+        nb = "\xa0"
+        self.assertIn("№" + nb + "2682-ПП", album_io.typo("№ 2682-ПП от 26.12.2023 г."))
+        self.assertTrue(album_io.typo("от 26.12.2023 г.").endswith("2023" + nb + "г."))
+        self.assertIn("1,66" + nb + "га", album_io.typo("разрабатываемой территории (1,66 га)"))
+        self.assertEqual(album_io.typo("тыс. кв. м"), "тыс." + nb + "кв." + nb + "м")
+        self.assertEqual(album_io.typo("ул. Амурская"), "ул." + nb + "Амурская")
+        self.assertTrue(album_io.typo("1-й Иртышский проезд, вл. 8").endswith("вл." + nb + "8"))
+        self.assertEqual(album_io.typo("ТЭЦ-23 — Электрозаводская").replace(nb, " "), "ТЭЦ-23 – Электрозаводская")
+        self.assertEqual(album_io.typo("Щёлковское ш."), "Щёлковское ш.")    # «ё» не трогается (#54)
+        self.assertEqual(album_io.typo("46,8"), "46,8")
+
+    def test_typo_ops_reaches_pdf_and_pptx_text(self):
+        sh = {"size": "PA3", "style": "pptkrt", "look": "concept", "scale": 7500, "center": [37.2, 55.4], "layers": [], "legend": [],
+              "title": "Схема", "cLegend": [{"title": "Границы", "items": [{"kind": "line", "stroke": "#ff00ff", "width": 1, "label": "разрабатываемой территории (1,66 га)"}]}]}
+        pages = print_io._pages({"meta": {"short": "№ 3229"}, "sheets": [sh]}, {}, {}, None)
+        texts = [o["text"] for o in pages[0][2] if o["op"] == "text"]
+        self.assertIn("разрабатываемой территории (1,66\xa0га)", texts)
+        self.assertIn("ППТ КРТ №\xa03229", texts)
 
 
 class LabelsInFrame(unittest.TestCase):

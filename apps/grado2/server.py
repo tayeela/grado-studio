@@ -32,6 +32,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+# ---------- Пути, папка проектов, настройки запуска ----------
 # в собранной программе (PyInstaller) всё лежит в папке распаковки sys._MEIPASS: web/, core/…, docs/standards/
 FROZEN = getattr(sys, "frozen", False)
 ROOT = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
@@ -62,6 +63,7 @@ STYLE_FILES = {"redln97.json", "moscow_lgr.json", "moscow_genplan.json"}   # о�
 PROJECTS = Path(os.environ.get("GRADO2_PROJECTS") or Path.home() / "Documents" / "ГРАДО 2")
 AUTOSAVE = ".autosave"
 
+# ---------- Источники данных: ключ слоя → (вид, параметр, название) ----------
 # ключ → (коннектор, параметр, название слоя)
 SOURCES = {
     "nspd.parcels": ("nspd", [36368], "Земельные участки (ЕГРН)"),
@@ -72,6 +74,7 @@ SOURCES = {
     "osm.water": ("osm", "water", "Водные объекты (OSM)"),
     "osm.landuse": ("osm", "landuse", "Землепользование (OSM)"),
     "osm.social": ("osm", "social", "Школы, детсады, поликлиники (OSM)"),
+    "osm.nature": ("osm", "nature", "Природные территории (OSM)"),
 }
 # все линии Сводного плана (СПРИТ, раздел 11 портала): красные линии УДС (1.1), общего пользования (1.2), линейных
 # объектов (1.3), ОДМС (1.4), зон транспортных сооружений (1.4.1), водоохранных зон (2.6), ПЗП (2.7), ООПТ и режимов
@@ -166,10 +169,27 @@ SOURCES["yandex.rail"] = ("yandex", ["transport_way"], "Железная дор�
 # по одной на каждую линию: network moscow_metro (line moscow_metro-14 — МЦК, остальные — метро) или moscow_mcd (line
 # moscow_mcd-D1…D5); закрытые (closed = 1) не берутся. Разбор видов — web/railstations.js. Тайлы те же, что у yandex.rail
 SOURCES["yandex.stations"] = ("yandex", ["transport_p"], "Станции метро, МЦК и МЦД (Яндекс)")
-SIT_FILTER = {"sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
+# станции на карте района (#47): та же точка transport_p, но крупным тайлом z16, как ситплан, — рамка района (≈ 10 × 6 км) в предел
+# тайлов z18 не входит
+SOURCES["sit.stations"] = ("yandex_sit", ["transport_p"], "Ситплан: станции метро, МЦК и МЦД (Яндекс)")
+# топонимы Яндекса (владелец 07.10.2026, #47: «попробуй взять топонимы из яндекса»): подписи улиц — линии road_label прямо по дорогам
+# Яндекса (те же, что на снимке и в полигонах проезжей части), станции железной дороги — точки на путях, названия природных и
+# городских территорий — place_label и крупные poi. Подробный уровень (z18) — листы-схемы, крупный (z16) — карта района
+SOURCES["yandex.road_labels"] = ("yandex", ["road_label"], "Подписи улиц (Яндекс)")
+SOURCES["yandex.rail_stations"] = ("yandex", ["transport_p"], "Станции железной дороги (Яндекс)")
+SOURCES["sit.road_labels"] = ("yandex_sit", ["road_label"], "Ситплан: подписи улиц (Яндекс)")
+SOURCES["sit.places"] = ("yandex_sit", ["place_label", "poi"], "Ситплан: названия территорий (Яндекс)")
+_YA_RAIL = lambda p: p.get("ft_type_name") in ("transport-railway-station", "transport-railway-halt", "transport-railway-platform") and str(p.get("closed")) != "1"
+# poi природных территорий: «vegetation-natpark» (национальный парк), заповедники, леса, парки; парковки («parking») — нет
+_YA_AREA = lambda p: (p.get("grado_layer") == "place_label" and p.get("type") in ("named_area", "district", "park", "forest", "nature")) or \
+    (p.get("grado_layer") == "poi" and bool(re.search(r"natpark|nature|reserve|forest|-park$", str(p.get("ft_type_name") or ""))))
+SIT_FILTER = {"yandex.rail_stations": _YA_RAIL, "sit.places": _YA_AREA,
+              "sit.stations": lambda p: p.get("ft_type_name") == "transport-metro-station" and str(p.get("closed")) != "1",
+              "sit.rail": lambda p: p.get("ft_type_name") == "transport-railway",   # без подъездных путей и веток
               "yandex.rail": lambda p: p.get("ft_type_name") == "transport-railway",
               "yandex.stations": lambda p: p.get("ft_type_name") == "transport-metro-station" and str(p.get("closed")) != "1"}
 
+# ---------- Пределы области выгрузки, разбиение на части, подписи полей ----------
 # Предел области выгрузки. НСПД и Overpass за один запрос берут не больше TILE_KM2: область больше делится на равные
 # части, они запрашиваются по очереди, объекты склеиваются (общие для двух частей — по ключу объекта, один раз).
 # ОГД и ЕГКО режутся из кэша слоя на диске; Яндекс сам склеивает тайлы, предел у него — время первой выгрузки
@@ -587,6 +607,7 @@ def search_any(q):
     return code, ({**obj, "type": kind} if code == 200 else obj)
 
 
+# ---------- Пределы тела запроса, ход выгрузки, понятные ошибки порталов ----------
 # Тело запроса читается в память целиком, поэтому предел свой у каждого пути: проект со 100 000 объектов ~100 МБ,
 # импорт — несколько файлов в base64, печать и экспорт несут слои проекта и фото листов; остальное — короткий JSON.
 MAX_PROJECT_BODY = 400 * 2**20
@@ -754,6 +775,7 @@ EGKO_TTL = 30 * 24 * 3600   # картооснова: газоны — 1,3 ГБ,
 _TILE_LOCK = threading.Lock()
 
 
+# ---------- Подложки: тайлы Esri ----------
 ESRI_SERVICES = {"sat": ("esri", "World_Imagery"), "light": ("esri-light", "Canvas/World_Light_Gray_Base")}
 
 
@@ -877,6 +899,7 @@ def ogd_label_angles(code, feats, bbox, api=None):
     return ogd_all.set_label_angles(feats, sib)
 
 
+# ---------- OSM (Overpass): выгрузка и кэш по областям ----------
 class _OsmCacheMiss(Exception):
     pass
 
@@ -1274,6 +1297,7 @@ def tep(terr_ha, restrict_ha, spp_new_m2, share, spp_kept_m2=0.0, spp_low_m2=0.0
     return out
 
 
+# ---------- ТЭП-нормы, район по территории, пешеходный маршрут до станции ----------
 def tep_norms():
     """Нормы пресета для полей ввода: текущие значения и описание (название, единица, группа, источник, редакция, пределы)."""
     p = json.loads(PRESET.read_text("utf-8"))
@@ -1560,6 +1584,7 @@ def project_path(name):
 _SAVE_LOCK = threading.Lock()
 
 
+# ---------- Проекты на диске: запись, версии, размер папки ----------
 def atomic_write(path, body):
     """Запись файла целиком или никак: свой временный файл рядом + os.replace. Общий «.tmp» на всех писателей
     давал при двух одновременных сохранениях (две вкладки, автосейв) склейку чужих хвостов — битый JSON."""
@@ -1649,6 +1674,7 @@ def list_projects():
     return {"dir": str(PROJECTS), "projects": [info(p) for p in files if p.stem != AUTOSAVE], "autosave": auto[0] if auto else None}
 
 
+# ---------- HTTP: заголовки безопасности, вход по ключу, совместный режим ----------
 # Скрипты — только свои (без inline и eval); карта берёт плитки Esri и EOX по https (img-src), воркеры OpenLayers — из blob:.
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
        "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
@@ -1692,6 +1718,7 @@ def same_token(a, b):
     return hmac.compare_digest(str(a).encode("utf-8", "replace"), str(b).encode("utf-8", "replace"))
 
 
+# ---------- Handler: маршруты GET и POST ----------
 class Handler(SimpleHTTPRequestHandler):
     timeout = 120       # простой сокета (чтение/запись), а не время работы запроса: долгая выгрузка считается без обмена
 
@@ -2502,6 +2529,7 @@ def code_stamp():
     return max(p.stat().st_mtime for p in files)
 
 
+# ---------- Запуск: версия кода, повторный запуск, сервер ----------
 STAMP = code_stamp()          # версия кода, с которой этот процесс запущен
 VERSION = json.loads((WEB / "version.json").read_text("utf-8"))["version"]
 

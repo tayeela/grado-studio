@@ -20,6 +20,7 @@ from grado_layout.model import Frame
 from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
 
+# ---------- Размеры листов, поля, перевод миллиметров (MapTransform) ----------
 # слайды презентации: P — 16:9 (13,33 × 7,5 дюйма), PA4/PA3/PA2 — альбомные листы А4, А3, А2 с тем же оформлением
 SLIDES = {"P": (338.67, 190.5), "PA4": (297, 210), "PA3": (420, 297), "PA2": (594, 420)}
 # листы без штампа (инструмент «Лист» на карте): карта на весь лист, поля по 2 % — пропорции бумаги сохраняются;
@@ -147,6 +148,7 @@ def _simplify(pts, tol):
     return [pts[k] for k in sorted(keep)]
 
 
+# ---------- Основа ЕГКО: операции рисования и их кэш на диске ----------
 # Картооснова ЕГКО внутри округа (правая схема «Месторасположения» шаблона ППТ КРТ): цвета — как в шаблоне
 EGKO_BASE = (("forest", "#c5dcb0", None), ("gazons", "#c5dcb0", None), ("hidrograf", "#a9cfe5", None),
              ("dorogi_pol", "#ffffff", "#d7d7d7"), ("virtual6", "#cdcdcd", None))
@@ -260,6 +262,7 @@ def _egko_ops(tr, rect, mask, egko, failed=None):
 _TW_FONTS = {}
 
 
+# ---------- Текст: кавычки, ширина, подбор кегля ----------
 def _guillemets(text):
     """Кавычки в подписях листа по русской типографике (правило 17): внешние «ёлочки», вложенные „лапки“. «, „ всегда
     открывают, » закрывает; прямые и “ ” — по месту: в начале, после пробела, скобки, тире или открывающей — открывающая.
@@ -321,6 +324,7 @@ def _straight_runs(pts, junction, tol=0.6):
     return out
 
 
+# ---------- Знаки на линиях и заливки (подтопление, ЛГР) ----------
 # Знаки подтопления из примера владельца «Хатминки» (30.09.2026), мм листа: (штрих, пробел) и места засечек в периоде
 FLOOD = {64: (None, 0.9, (0.45,)), 65: ((3.0, 1.0), 4.0, (1.2, 2.0)), 66: ((2.0, 1.2), 3.2, ())}
 
@@ -352,6 +356,28 @@ def flood_ops(pts, code, color, width=0.35, tick=0.6, side=1):
         k += 1
     if rings:
         out.append({"op": "path", "closed": False, "fill": None, "stroke": color, "width": width * .8, "dash": None, "rings": rings})
+    return out
+
+
+# ---------- Геометрия подписей: пересечения, оси, выноски, препятствия ----------
+def _callout_box(x, y, f):
+    """Коробка плашки выноски территории (мм листа) на её исходном месте: точка подписи (x, y) смещена на ldy, как при
+    размещении; поля плашки — ls·0,45 (как рисуется lbox). Подписи улиц обходят её до того, как ставится сама выноска (#57)."""
+    ls = float(f.get("ls") or 2.2)
+    yc = y + float(f.get("ldy") or 0)
+    hw = _text_w(str(f.get("label") or ""), f.get("lf"), ls) / 2 + ls * .45
+    return (x - hw, yc - ls - ls * .27, x + hw, yc + ls * .35 + ls * .27)
+
+
+def _callout_steps(ldy):
+    """Запасные места выноски территории (сдвиги, мм), если исходное занято: дальше от территории по линии выноски, затем
+    вбок на 12 и 24 мм, затем ближе к территории. Первое — само исходное место (#57)."""
+    away = -6.0 if ldy < 0 else 6.0
+    out = [(0.0, 0.0)]
+    for dy in (0.0, away, 2 * away, -away):
+        for dx in (0.0, -12.0, 12.0, -24.0, 24.0):
+            if (dx, dy) != (0.0, 0.0):
+                out.append((dx, dy))
     return out
 
 
@@ -647,6 +673,7 @@ def linetype_ops(pts, name, k, color, width, lib, shape_k=None):
     return out
 
 
+# ---------- Подложка: плитки и защита от неполной выгрузки (TileGuard) ----------
 TILE_FAIL_DIR = Path.home() / ".grado2" / "cache" / "tiles" / "_fail"     # метки неудачных тайлов: живут и после перезапуска сервера
 TILE_FAIL_TTL = 3600                                                       # час: тайл, который не скачался, до истечения не запрашивается
 TILE_FAIL_NOTE = "часть плиток подложки не загрузилась ({n}) — повторите через час"
@@ -758,6 +785,7 @@ def tile_ops(tr, rect, scale, tiles, lat, proj="3857", zmax=19, missing=None, wa
     return out
 
 
+# ---------- Карта листа — SketchMapFrame: слои, подписи без наложений, знаки ЛГР ----------
 class SketchMapFrame(Frame):
     """Карта листа из уже оформленных объектов клиента."""
 
@@ -807,6 +835,12 @@ class SketchMapFrame(Frame):
                 out.extend(ys)
             else:
                 out.extend(tile_ops(tr, rect, sh["scale"], get, sh["center"][1], info=tinfo))
+            dm = sh.get("distMask")
+            if dm and dm.get("geometry"):                                 # маска района: всё за его границей — под белой дымкой (владелец 07.10.2026, #45)
+                fx, fy, fw, fh = rect
+                holes = [[tr.mm(*p[:2]) for p in poly[0]] for poly in _parts(dm["geometry"])[1]]
+                out.append({"op": "path", "rings": [[(fx, fy), (fx + fw, fy), (fx + fw, fy + fh), (fx, fy + fh)]] + holes, "closed": True,
+                            "fill": (1, 1, 1), "alpha": float(dm.get("alpha") or .45), "stroke": None, "width": 0, "dash": None, "evenodd": True})
             if sh.get("veil"):                                            # белая дымка на снимке: границы участков не сливаются
                 fx, fy, fw, fh = rect
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": float(sh["veil"]), "stroke": None, "width": 0,
@@ -951,6 +985,8 @@ class SketchMapFrame(Frame):
                         if f.get("nodot"):                               # подпись-плашка без значка (кадастровый номер)
                             if f.get("label"):
                                 labels.append((x, y, f["label"], f.get("ls"), f))
+                                if f.get("lead"):                        # выноска территории: её место заранее занято — подписи улиц
+                                    numboxes.append(_callout_box(x, y, f))   # обходят плашку (#57: на ортофото выноску вытесняли)
                             continue
                         if f.get("mk") == "view":                        # точка съёмки: стрелка по направлению снимка
                             # поверх маски и границы территории: стрелка у границы не бледнеет и не прячется под пунктиром
@@ -1099,6 +1135,11 @@ class SketchMapFrame(Frame):
             lift = ortho_legend_h(sh) + 2 if sh.get("bleed") else 0
             caps.append((rx + rw - 102, ry + rh - lift - 7 - 5.4 * n, rx + rw, ry + rh - lift))
             take(caps[-1])
+        if sh.get("bleed") and sh.get("kind") != "photos" and sh.get("cLegend"):   # плашка легенды на снимке — без подписей карты (#58)
+            from album_io import ortho_legend_box
+            lb = ortho_legend_box(sh, rx + rw, ry + rh)
+            caps.append((lb[0] - 1, lb[1] - 1, lb[2], lb[3]))
+            take(caps[-1])
         ink = (1, 1, 1) if sh.get("basemap") == "sat" else (0.12, 0.12, 0.12)   # на снимке тёмная подпись не читается
         out.append({"op": "layer", "name": "Подписи"})
         # порядок при нехватке места (правила подписей, docs/standards/albums/label-rules.md): надписи на своих местах —
@@ -1113,9 +1154,11 @@ class SketchMapFrame(Frame):
                 continue
             ang = -math.radians(float(deg or 0))              # на листе ось Y вниз: против часовой на карте — «минус»
             text = text[:60]
-            tw = _text_w(text, pf.get("lf"), ls)
+            plines = text.split("\n")[:3]                    # подпись в две-три строки (районы, природные территории, #47)
+            tw = max(_text_w(t_, pf.get("lf"), ls) for t_ in plines)
             ca, sa = abs(math.cos(ang)), abs(math.sin(ang))
-            ex, ey = ca * tw / 2 + sa * ls * .6, sa * tw / 2 + ca * ls * .6
+            th_ = ls * .6 + (len(plines) - 1) * ls * .6
+            ex, ey = ca * tw / 2 + sa * th_, sa * tw / 2 + ca * th_
             # номер документа можно сдвинуть с занятого места; надписи ГИС ОГД остаются на своём; подпись — целиком в рамке
             # сдвигаемые подписи (номера, деревни) обходят границу территории; последняя попытка — без этого условия
             # сдвигаемые подписи (деревни, СНТ, улицы по адресам): сначала места без пересечения проездов, потом любые;
@@ -1140,8 +1183,12 @@ class SketchMapFrame(Frame):
                 continue
             mem.setdefault(("p", text), (x, y))
             extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh"))) if v}
-            out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
-                        "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
+            if pf.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+                extra["halo_color"] = hex_to_rgb(pf["lhc"])
+            for i_, t_ in enumerate(plines):
+                o_ = ls * .35 + (i_ - (len(plines) - 1) / 2) * ls * 1.15        # строки — друг под другом, по центру точки
+                out.append({"op": "text", "x": x - math.sin(ang) * o_, "y": y + math.cos(ang) * o_, "size": ls, "text": t_,
+                            "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": ang, **extra})
         for t_, rr in runs.items():                                     # обязательная улица с участками только у края рамки
             if t_ not in along and rr[0][4].get("must"):
                 b = max(rr, key=lambda r: r[0])
@@ -1273,11 +1320,14 @@ class SketchMapFrame(Frame):
             x, y, ang = res
             mem.setdefault(("s", text), (x, y, ang))
             extra = {k: v for k, v in (("font_family", af.get("lf")), ("halo", af.get("lh"))) if v}
+            if af.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+                extra["halo_color"] = hex_to_rgb(af["lhc"])
             out.append({"op": "text", "x": x - math.sin(ang) * ls * .35, "y": y + math.cos(ang) * ls * .35, "size": ls, "text": text,
                         "color": hex_to_rgb(af["lcol"]) if af.get("lcol") else ink, "anchor": "middle", "angle": ang, **extra})
         # подписи площадей и точек: крупные контуры — первыми; подпись целиком в рамке; если место занято — ищется
         # рядом внутри своего контура (названия СНТ не пропадают из-за подписи улицы)
-        labels.sort(key=lambda t: -(t[6] if len(t) > 6 else 0))
+        # выноска территории — первой из точечных подписей: она обязательна (#57)
+        labels.sort(key=lambda t: -(float("inf") if t[4].get("lead") else t[6] if len(t) > 6 else 0))
         def free(f, cx, cy, cr, ax, ay, lvl):
             others = [m for k_, m in marks.items() if k_ != id(f)]
             if any(math.hypot(o[0] - cx, o[1] - cy) < cr + 1.5 for o in others):
@@ -1393,8 +1443,10 @@ class SketchMapFrame(Frame):
             stn = str(text).startswith(STATION_MARK)                          # станция: узкая полоса земли вдоль путей — подпись рядом с ней
             steps = [(0, 0)] + ([(0, -5), (0, 5), (-9, 0), (9, 0), (-9, -5), (9, -5), (-9, 5), (9, 5), (0, -10), (0, 10), (-16, 0), (16, 0)]
                                 + ([(r * math.cos(k * math.pi / 6), r * math.sin(k * math.pi / 6)) for r in (3, 5, 7.5, 10, 13, 16, 20, 24) for k in range(12)] if stn else [])
-                                if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.5, 4.5, 6.5, 8.5) for k in range(8)]
-                                if f.get("mk") == "view" else [])   # номер точки съёмки — рядом со стрелкой, как в «ГК Царицыно»
+                                if ring else [(r * math.cos(k * math.pi / 4), r * math.sin(k * math.pi / 4)) for r in (2.0, 3.0, 4.0) for k in range(8)]
+                                if f.get("mk") == "view" else [])   # номер точки съёмки — у самой стрелки, не дальше 4 мм (владелец 07.10.2026, #47: «цифра 2 должна быть рядом со стрелкой»)
+            if f.get("lead"):                                               # выноска территории: место занято — дальше вдоль линии или вбок
+                steps = _callout_steps(float(f.get("ldy") or 0))
             ax, ay = x, y + offs[-1] / 2 - float(f.get("ldy") or 0)   # точка объекта (для выноски)
             if f.get("circle"):
                 ax, ay = mk[0], mk[1]
@@ -1421,7 +1473,8 @@ class SketchMapFrame(Frame):
                 # названия территорий: сначала места без проездов под текстом (правило 11), потом любые в контуре
                 tries = ([(was[0] - x, was[1] - y, 1)] if was else []) + ([(dx, dy, 2) for dx, dy in steps] if ring else []) \
                     + [(dx, dy, 1) for dx, dy in steps] + ([(0, 0, 0)] if ring or f.get("leader") or f.get("mk") == "view" else []) \
-                    + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else [])   # номер снимка есть всегда
+                    + ([(dx, dy, 0) for dx, dy in steps[1:]] + [(0, 0, -1)] if f.get("mk") == "view" else []) \
+                    + ([(0, 0, -1)] if f.get("lead") else [])   # номер снимка и выноска территории есть всегда (#57)
             spot = None
             if stn and not f.get("circle"):
                 s_ = station_spot(x, y, bw, up, down, id(f))
@@ -1484,12 +1537,12 @@ class SketchMapFrame(Frame):
                 if f.get("lead"):                                       # выноска: белый пунктир от плашки к точке территории
                     tx, ty = tr.mm(*f["lead"][:2])
                     bottom = y + ls * .35 + (len(lines) - 1) * lh + pad * .6
-                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": [1.4, 0.9],
+                    out.append({"op": "path", "closed": False, "fill": None, "stroke": (1, 1, 1), "width": 0.35, "dash": None if f.get("leadSolid") else [1.4, 0.9],
                                 "rings": [[(x, top if ty < top else bottom), (tx, ty)]]})
                     out.append({"op": "circle", "x": tx, "y": ty, "r": 0.7, "fill": (1, 1, 1), "stroke": None, "width": 0})
                 out.append({"op": "path", "closed": True, "fill": (1, 1, 1), "alpha": f.get("lboxAlpha"),
                             "stroke": hex_to_rgb(f["lbox"]) if isinstance(f["lbox"], str) else None,
-                            "width": 0.2, "dash": None, "rings": [[(x - bw / 2 - pad, top), (x + bw / 2 + pad, top),
+                            "width": float(f.get("lboxW") or 0.2), "dash": None, "rings": [[(x - bw / 2 - pad, top), (x + bw / 2 + pad, top),
                                                                     (x + bw / 2 + pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6),
                                                                     (x - bw / 2 - pad, y + ls * .35 + (len(lines) - 1) * lh + pad * .6)]]})
             for i, line in enumerate(lines):
@@ -1553,6 +1606,8 @@ class SketchMapFrame(Frame):
         side, up = W / 2 + 1.0 + tw / 2, -(H / 2 + ey + .3)
         cands = [(side, 0), (-side, 0), (W / 2 + tw / 2, up), (W / 2 + tw / 2, -up), (-(W / 2 + tw / 2), up), (-(W / 2 + tw / 2), -up), (0, up), (0, -up)]
         extra = {k: v for k, v in (("font_family", pf.get("lf")), ("halo", pf.get("lh") or .55)) if v}
+        if pf.get("lhc"):                                         # цвет обводки (карта района — чёрная, #47)
+            extra["halo_color"] = hex_to_rgb(pf["lhc"])
         put = lambda cx_, cy_: out.append({"op": "text", "x": cx_, "y": cy_ + ls * .35, "size": ls, "text": text,
                                           "color": hex_to_rgb(col) if col else ink, "anchor": "middle", "angle": 0.0, **extra})
         inside = lambda cx_, cy_: cx_ - tw / 2 >= rx + M and cx_ + tw / 2 <= rx + rw - M and cy_ - ey >= ry + M and cy_ + ey <= ry + rh - M
@@ -1726,6 +1781,7 @@ class ColumnFrame(Frame):
         return out
 
 
+# ---------- Прочие рамки листа: ТЭП, слайд, фотосетка ----------
 class TepSheetFrame(Frame):
     """Лист «Таблица ТЭП»: все показатели над штампом, при нехватке высоты — во вторую и третью колонку."""
 
@@ -1934,6 +1990,7 @@ def build_document(spec, lib, lgr_dash, tiles=None):
     return doc
 
 
+# ---------- Вывод в PDF: шрифты, тексты листа, render_pdf ----------
 # шрифты редактора макета — те, что есть у ядра (PDF встраивает их файлы, поэтому лист и PDF совпадают)
 FONTS = ("ui", "ui-bold", "sans", "sans-bold", "serif", "serif-bold")
 
@@ -2017,7 +2074,8 @@ def _pages(spec, lib, lgr_dash, tiles, progress=None):
         pages.append((page.size[0], page.size[1], page.ops(_ctx(doc, None, None, None, i, titles[i - 1]))))
     if progress:
         progress(n, n)
-    return [(w, h, apply_edits(ops, sh)) for (w, h, ops), sh in zip(pages, spec["sheets"])]
+    from album_io import typo_ops
+    return [(w, h, typo_ops(apply_edits(ops, sh))) for (w, h, ops), sh in zip(pages, spec["sheets"])]   # типографика — #60
 
 
 def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
@@ -2438,6 +2496,7 @@ def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
     200 dpi) — подписи, легенда и рамка остаются векторными, в заметках слайда сказано, что карта растровая."""
     from grado_layout.compose import _ctx, sheet_titles
     from grado_render.backend_pptx import PptxBackend
+    from album_io import typo_ops
     doc = build_document(spec, lib, lgr_dash, tiles)
     titles, pages, notes = sheet_titles(doc), [], {}
     for i, (page, sh) in enumerate(zip(doc.pages, spec["sheets"]), start=1):
@@ -2446,7 +2505,7 @@ def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
         ctx, seen = _ctx(doc, None, None, None, i, titles[i - 1]), {}
         groups = []
         for f in page.frames:
-            name, ops = PPTX_GROUPS.get(type(f).__name__, "Оформление"), apply_edits(f.ops(ctx), sh, seen, items=False)
+            name, ops = PPTX_GROUPS.get(type(f).__name__, "Оформление"), typo_ops(apply_edits(f.ops(ctx), sh, seen, items=False))
             if name == "Карта":
                 ops = pptx_thin(pptx_clip_tiles(ops))
             groups.append((name, ops))

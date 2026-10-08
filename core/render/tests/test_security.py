@@ -1,3 +1,8 @@
+"""Проверяет защиту рендера: разметка в текстовых и числовых полях, битые SHX, JPEG и TTF.
+
+Запуск: python -m unittest discover -s core/render/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import struct
 import sys
 import unittest

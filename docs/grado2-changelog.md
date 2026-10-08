@@ -2,6 +2,84 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).**
+  - Ortho territory callout «Проектируемая территория – N га» is never dropped: its box is reserved before street labels,
+    it is placed first among point labels and moves aside if taken (`print_io._callout_box`, `_callout_steps`) (#57).
+  - The legend plate on the ortho and district sheets is an obstacle for map labels (`album_io.ortho_legend_box`) (#58).
+  - That legend has the same groups as the column legend: underlined «Границы», «Транспорт», no colon. One «Транспорт»
+    group holds the railway too. The district swatch takes the colour and width of the sheet's own line style (#61).
+  - PZZ sub-zones: «0» explained in the legend; density unit «тыс. кв. м/га» (#60, #61).
+  - Typography on output of all album text, PDF and PPTX (`album_io.typo`, `typo_ops`): non-breaking spaces after «№»,
+    before «га» and «г.», in «тыс. кв. м», after «ул.», «вл.», «ст.», «ж/д». A spaced «—» becomes «–» before wrapping.
+    «ё» is untouched (#54) (#60).
+  - Sheet 2 callout line keeps 1.5 mm off map labels (#62).
+  - An address auto-filled from the registry marks the title sheet «адрес из реестра — сверьте с письмом ДГП» and shows a note under «Адрес» in «Штамп…»
+    (`AlbumMeta.addrWhy`) (#56).
+  - Not changed, see the PR:
+    - the ВАО enclave Восточный (0.2 km from the main part, 2 % of its area — not «далёкий» by lr 18; owner question);
+    - number «2» inside its ГПЗУ (owner rule 30.09);
+    - ГПЗУ numbers (they match ГИС ОГД).
+  - Tests: test_print (callout, ortho legend, typography), test_t80 (legend height, callout clearance), albummeta_test (addrWhy).
+- **2026-10-07, tests only: T27 wheel measurement (#40).** The step «десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте» failed once more on a slow GitHub runner (run 47 of PR #52, a docs-only commit; the same code passed in runs 44, 45, 46, 48): the ratio was fine (1.735), so the drift of the point under the cursor was ≥ 1.5 px. The point is now read after `renderSync()` together with the map frame box; if the box changed between the two reads the measurement is repeated once, and a real failure prints the ratio, the drift in px and both boxes. 48 local runs under CPU contention: drift 0.00 px, box stable. The cause of the CI failure is not proven — issue #40 stays open until the numbers of the next failure or ten green runs.
+- **2026-10-07, album design audit and rules against repeats (no program change).** Audit of the Golyanovo album (11 sheets, issue #53): 13 Haiku auditors, 103 raw findings → 26 causes (P0 3, P1 12, P2 11), 6 findings dropped after a visual check; fixes are separate issues #55–#63, questions to the owner — #54. `tools/album_lint.py` now also checks the map frame (`frame`), line breaks (`hang`, `widow`), «ё» and dashes across the album (`yo`, `dash`), non-breaking spaces in the PPTX (`nbsp`) and control strings (`expect`); overlaps are counted on the middle of a word box (dense document lists no longer give false errors). New `tools/album_expect/` (`all.json`, `gol.json`: required and forbidden text with a reason — the address `вл. 8` on the title, the callout «Проектируемая территория – 1,66 га» on sheets 3 and 4, 11 pages); `tools/album_check.py` prints the PPTX, runs the lint and the strings on every comparison and exits with code 3 on errors. `docs/standards/albums/layout-qa.md` is rebuilt (order, 30 checks, codes, known non-defects, proposals waiting for the owner); audit template, skill `owner-remark` and `album-rules.md` updated (the calculated СЗЗ colour and the mask lines were stale: the code draws the later words of the owner). Section banners in `ogd_all.py`. Tests: `test_album_lint.py` (28).
+- **2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.** `docs/` now has
+  shelves (`wiki`, `standards`, `specs`, `product`, `ux`, `guides`, `team`, `archive`; map — `docs/INDEX.md`), 65 files moved with `git mv`
+  (closed studio, executed plans, old audits, the old board and owner notes → `docs/archive/`), all references fixed. Root: new `README.md`
+  (ГРАДО 2, no longer the closed studio), `INDEX.md` (map of the repository), `AGENTS.md`, updated `CLAUDE.md`; every top-level folder and every docs shelf has a `README.md`,
+  nested `CLAUDE.md` in `docs/`, `apps/grado2/`, `core/`. `tools/docs_check.py` (in `tools/gate.sh` and the new CI `docs.yml`) checks links, paths,
+  shelves, the map of the root and a header comment in every code file (32 test files and `packaging/build_icon.sh` got one). Wiki: `sheets.md` is built from
+  `albums.js` run in Node (`tools/wiki_albums.mjs`; it was stale: 11 sheets of the album in the real order), `modules.md` covers all core packages and tools,
+  new hand-written `conventions.md`; `.github/workflows/wiki.yml` rebuilds the wiki on every push to `team/t60` and `main` and mirrors it to
+  `tayeela/grado-wiki` (needs the secret `WIKI_TOKEN`, steps in `.github/workflows/README.md`); `tools/wiki_publish.sh` works from CI and cloud sessions.
+  New: issue and PR templates, `tools/album_lint.py` (PDF checks: overlaps, edges, tiny text, fonts, low-ppi rasters; test `test_album_lint.py`),
+  `docs/standards/albums/layout-qa.md` (checklist before «готово»), prompt template of the design audit, `tools/prune-merged-branches.sh`.
+  Found on the way and fixed: the tests of `core/compute`, `geom`, `layout`, `model`, `reactive`, `render` (232 tests) were run by nobody — `tools/gate.sh` has a `core` step
+  now and CI runs them; `album-rules.md` described a Genplan sheet of the sit.-plan series that is not in the album; `sources.md` listed the wrong keys under SIT_FILTER.
+  The five biggest files (`server.py`, `print_io.py`, `album_io.py`, `sheets.js`, `albums.js`) got section banners `# ---------- Название ----------` (comments only);
+  `modules.md` lists the sections of every file in order.
+  New hand-written wiki pages `conventions.md` (how to read and write code and docs) and `howto.md` (step-by-step: add a data source, a route, an album sheet, a label rule, a page module, a test).
+- **2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.**
+  Облако не достаёт `nspd.gov.ru` (портал рвёт соединение с иностранных адресов), поэтому коннектор умеет ходить
+  через релей на российском сервере: `GRADO_NSPD_BASE` (вместо `https://nspd.gov.ru`) и `GRADO_NSPD_RELAY_TOKEN`
+  (заголовок `X-Grado-Relay-Token`; токен уходит только на релей, на сам НСПД не отправляется). Без переменных
+  поведение прежнее. Релей — Caddy на msk, конфиг и установка в `tools/nspd_relay/`; он пропускает только GET/POST на
+  `/api/geoportal/*` с токеном, проверка сертификата НСПД по корням Минцифры включена. Заодно исправлена подсказка
+  `_CERT_HELP` (актуальные имена `russian_trusted_root_ca.cer` / `russian_trusted_sub_ca.cer`), а `~/.grado2/ca/`
+  принимает `.cer` и в DER, и в PEM. Тесты: `core/connectors/tests/test_nspd_relay.py`.
+- **2026-10-07, tests (#40): two browser steps no longer depend on timing.** T27 (wheel zoom keeps the point under the cursor) reads
+  the resolution and the point after the map has stopped (the resolution stays unchanged for 300 ms) instead of after a fixed 0.9 s; T61 (no
+  answer from `/api/place`) waits for the real district lookup of the opened window to finish, cancels the deferred repeat, counts the
+  30 s timers of its own lookup only and waits for the substituted lookup to end. The third step of the issue (collab «A: список проектов
+  пуст») was already fixed in v0.99.44. Open until ten CI runs in a row stay green.
+- **2026-10-07, ГРАДО 2 v0.99.44 (#48): documentation sheet split in two.** Sheet «Схема … документацией по планировке
+  территории» now shows only ППТ and ПМТ; ГПЗУ moved to a new template sheet 14 «Схема с отображением границ территорий с
+  выданными градостроительными планами земельных участков» (same light base, numbers and list), placed right after it
+  (`PPTKRT_ORDER` = 0, 1, 9, 2, 3, 4, 8, 10, 13, 12, 5). Lists, legend and «не готов» follow the sheet's own layers. Tests T91, T92.
+- **2026-10-07, ГРАДО 2 v0.99.44 (#47, evening remarks): toponyms from Yandex and sheet fixes.** Street labels — Yandex `road_label`
+  lines (`yandex.road_labels`, z18; `sit.road_labels`, z16 on the district map; `road_label`/`place_label` no longer skipped by
+  yandex_vmap), «МКАД», «МСД» (СВХ not labelled), Yandex «Наримановская ул.» → «ул. Наримановская»; OSM labels only as fallback
+  (district map: OSM city streets whose name Yandex lacks). District map: one label per street on the middle of its longest straight
+  run (turn ≤ 10° from the run start, along the road), no small water labels, «Национальный парк «Лосиный остров»» from the Yandex
+  poi `vegetation-natpark` (`sit.places`), district names in one or two lines and mostly inside their district or dropped. Railway
+  station labels snapped to the nearest railway line (≤ 500 m); Yandex station points used where they exist. Ortho: railway line.
+  Photo numbers within 4 mm of their arrow. Land use: SZZ thinner, calculated SZZ black dash-dot, non-residential zones «… вида».
+  Documentation: hatch step 3 mm, at least two numbered documents of each kind (ПМТ list too), 7 in all. ПЗЗ: square schemes, black
+  thin zone and subzone lines, labels wherever they fit, subzone parameters in three lines, КРТ blue hatch on both, only street
+  names, common legend under the left scheme and parameters under the right. Genplan: forecast fund for the developed territory
+  (zone fund × territory share of the zone area), legend only zones visible ≥ 25 mm² and not white. «разрабатываемая территория»
+  instead of «территория рассмотрения». Print: label halo colour (`lhc`) passed on in all label paths.
+- **2026-10-07, ГРАДО 2 v0.99.44 (#45, #47): album ППТ КРТ by the owner's remarks of 07.10.** Sheet order and set by the owner
+  (`PPTKRT_ORDER` in `TPL_SETS.pptkrt_.order`, ids and `tpl.i` stay by template so photos and edits of old projects keep their
+  sheets): title, location, district map, ortho, photos, land use, land users, documentation, ПЗЗ, Генплан; no «ППТ и ПМТ», «ГПЗУ и
+  АГР», second Генплан. Scheme frame by the owner's outline (`ALBUM.meta.area`): every template map sheet except location and district
+  map covers it (centre — outline centre, scale from the series). Ortho and district map look like the owner's samples: white veil outside
+  the territory's district (`distMask`), district names in capitals, callout «Проектируемая территория – N га» in a magenta box; district
+  map — names without «район» with a thin black outline, exact scale (district whole, fills the sheet), thin district border. Land use:
+  OSM `residential` in old Moscow → apartment housing (not individual), legend «производственного вида». Documentation sheet: no АГР and
+  КРТ, Сводный план lines (СПРИТ) under the hatches with their legend. ПЗЗ — two schemes on one sheet (`twin`; album_io
+  `TwinCaptionFrame`): zones with ВРИ codes and subzones (`gisogd.pzz_sub`) with density / height / coverage in three lines.
+  Photo sheet: 8 Yandex panorama frames from the owner's links, the link is stored with each photo (`photo.link`);
+  `tools/panorama_shot.mjs` takes `CHROME` (cloud). Rules: album-rules § 5, § 9; label-rules.
 - **2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).**
   New concept `docs` in `PPTKRT_D` (between the district map and the Genplan, `sit: true`, `fit: "cover"`): ППТ, ПМТ, ГПЗУ (with АГР
   as the second line of its item) and КРТ on one light base by the analogue ДПТ «Профсоюзная» — buildings light grey without outline,

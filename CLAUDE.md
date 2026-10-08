@@ -2,32 +2,34 @@
 
 Loaded into every turn and every subagent: keep it short, details live in the wiki.
 
-- **Start with `docs/wiki/files.md`** (question → file, places on the owner's Mac, branches) and `docs/wiki/INDEX.md`.
-  The wiki is generated from the code on every commit (`tools/wiki.py`) and published to the private GitHub repo
-  `tayeela/grado-wiki` (`tools/wiki_publish.sh`, post-commit). Read wiki pages, not big files whole.
+- **Orientation:** `INDEX.md` (map of the repository) → `docs/wiki/files.md` (question → file, places on the owner's Mac, branches) →
+  `docs/wiki/INDEX.md`. Every top-level folder and every `docs/` shelf has a `README.md` (`docs/` has `INDEX.md`); nested `CLAUDE.md` files (`docs/`, `apps/grado2/`, `core/`) load when you work there.
+  Read wiki pages, not big files whole. The wiki is generated from the code (`tools/wiki.py`: pre-commit hook and CI `wiki.yml` on `team/t60`
+  and `main`) and mirrored to the private GitHub repo `tayeela/grado-wiki` (`tools/wiki_publish.sh`).
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules
   from all remarks. A new owner remark goes there and to `docs/standards/albums/label-rules.md` before code.
-- Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit.
+- Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit. It also runs
+  `tools/wiki.py --check` and `tools/docs_check.py` (links, paths, shelves, file headers).
   Cloud sessions: `.claude/hooks/session-start.sh` builds `~/.grado2/venv` and sets `$CHROME`, so gate and E2E run as on the Mac.
 - History: `docs/grado2-changelog.md` (newest on top), `git log`; old studio and the former CLAUDE.md —
-  `docs/session-log-archive.md`.
+  `docs/archive/studio/session-log-archive.md`.
 
 ## GitHub is the source of truth (since 06.10.2026)
 Tasks and the owner's words — GitHub Issues (`gh issue list`); work — branches and PRs into `team/t60`; landing —
 merging the PR `team/t60 → main`, then `git pull` in the main checkout deploys; album deliveries — releases
 `album-*`; album_check baselines — release `album-baseline`; wiki — repo `tayeela/grado-wiki`. Details:
-`docs/team/CYCLE.md`. `BOARD.md` and `OWNER.md` are archives.
+`docs/team/CYCLE.md`. The old board and the owner's notes before 06.10 are archives (`docs/archive/team/`).
 
 ## Context hygiene (Anthropic best practices)
-- One task per session: after a task is accepted and committed — new session or `/clear`; state is in
-  `docs/team/BOARD.md`, `PROGRESS.md` and `/tmp/grado-team/<date>/*-notes.md`. Two failed fixes of the same thing —
-  `/clear` and a sharper prompt. Run ГРАДО sessions from `~/grado-studio` (project roles, skills and hooks load there).
+- One task per session: after a task is accepted and committed — new session or `/clear`; state is in GitHub issues and PRs,
+  `docs/team/PROGRESS.md` and the wiki. Two failed fixes of the same thing — `/clear` and a sharper prompt.
+  Run ГРАДО sessions from `~/grado-studio` (project roles, skills and hooks load there).
 - Compact instructions: keep the list of changed files, current version, gate/album_check commands and results,
   open owner questions (А/Б/В), the owner's latest words verbatim.
 
 ## What it is
 Urban-planning workspace: existing situation → АГК → ППТ, album ППТ КРТ to PDF/PPTX. The working program is
-**ГРАДО 2 (`apps/grado2`)**; old studio, wizard and calc-web are closed (code kept for core tests). The owner is an urban
+**ГРАДО 2 (`apps/grado2`)**; old studio, wizard and calc-web are closed (code kept for core tests, do not edit). The owner is an urban
 planner, not a programmer (QGIS, AutoCAD, macOS): Russian, plain words, no emoji, results described as what is on screen.
 Asking the owner to do something on the Mac — always give the exact Terminal command, ready to paste (owner 06.10.2026).
 
@@ -41,15 +43,16 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
 ## Workflow
 - Commit each step as `grado2 vX.Y.Z: …` (version in `apps/grado2/web/version.json`), one entry on top of
   `docs/grado2-changelog.md`. Stop hook: after grado2 changes, a short UX note to the owner in 2–3 lines.
-- Team (since 02.10.2026): roles `.claude/agents/grado-*.md`, procedure `docs/team/CYCLE.md`, owner notes
-  `docs/team/OWNER.md`, briefs `docs/team/prompts/`. «Команда, за работу» = one cycle; team work on `team/t60`
-  (worktree `.claude/worktrees/team2`), reaches `main` only on the owner's «выкладывай» (Landing in CYCLE.md).
-- `main` updates grado.tailink.tech by itself (hooks `post-commit`/`post-merge` → `tools/deploy-server.sh`); read its
-  output and tell the owner; «отложено» or a failure = old version still runs, rerun later. `GRADO_NO_DEPLOY=1` skips.
+- Team (since 02.10.2026): roles `.claude/agents/grado-*.md`, procedure `docs/team/CYCLE.md`, briefs `docs/team/prompts/`.
+  «Команда, за работу» = one cycle; team work on `team/t60`, reaches `main` only on the owner's «выкладывай» (skill `land`).
+- `main` updates grado.tailink.tech (host `msk`) by itself on the owner's Mac (hooks `post-commit`/`post-merge` → `tools/deploy-server.sh`);
+  read its output and tell the owner; «отложено» or a failure = old version still runs, rerun later. `GRADO_NO_DEPLOY=1` skips.
 - No new dependencies in core and apps/grado2. Do not touch the owner's QGIS DB or plugin. Ask before deleting
   `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.
-- Token budget: no Workflow fan-outs; outside the team cycle at most one subagent at a time (Sonnet, read-only).
+- Token budget: no Workflow fan-outs; outside the team cycle at most one Sonnet subagent at a time, read-only. Owner 07.10.2026: many
+  parallel Haiku 5.5 agents are allowed for mechanical work (audits, headers, moving files); each on its own files, the lead reviews the result.
 - Scripts started from git hooks must unset `GIT_DIR`/`GIT_INDEX_FILE` before running git elsewhere (RULE, 06.10.2026).
+- Docs and code conventions (shelves, file headers, link checks): `docs/CLAUDE.md`, `docs/wiki/conventions.md`.
 
 ## Iron rules
 1. The owner's open project is irreplaceable data — never experiment on it.

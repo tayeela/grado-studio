@@ -5,8 +5,8 @@
 import { spawn } from "node:child_process";
 const [,, url, out] = process.argv;
 const port = 9300 + Math.floor(Math.random() * 500);
-const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-  ["--headless=new", `--remote-debugging-port=${port}`, "--window-size=1600,1100", "--hide-scrollbars", `--user-data-dir=/tmp/grado-pano-prof-${port}`, "about:blank"], { stdio: "ignore" });
+const chrome = spawn(process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",   // CHROME — облако (Linux)
+  [...(process.platform === "linux" ? ["--no-sandbox"] : []), "--headless=new", `--remote-debugging-port=${port}`, "--window-size=1600,1100", "--hide-scrollbars", `--user-data-dir=/tmp/grado-pano-prof-${port}`, "about:blank"], { stdio: "ignore" });
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let ws; for (let i = 0; i < 40; i++) { try { const l = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); const p = l.find(x => x.type === "page"); if (p) { ws = p.webSocketDebuggerUrl; break; } } catch {} await sleep(250); }
 const sock = new WebSocket(ws); await new Promise(r => sock.onopen = r);

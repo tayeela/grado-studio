@@ -2,6 +2,15 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-08, ГРАДО 2 v0.99.46: album design audit fixes (#53: #56, #57, #58, #60, #61, #62).
+- 2026-10-07, tests only: T27 wheel measurement (#40).
+- 2026-10-07, album design audit and rules against repeats (no program change).
+- 2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.
+- 2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.
+- 2026-10-07, tests (#40): two browser steps no longer depend on timing.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#48): documentation sheet split in two.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#47, evening remarks): toponyms from Yandex and sheet fixes.
+- 2026-10-07, ГРАДО 2 v0.99.44 (#45, #47): album ППТ КРТ by the owner's remarks of 07.10.
 - 2026-10-07, ГРАДО 2 v0.99.43: sheet 11 «Схема с отображением границ территорий … документацией по планировке территории и ГПЗУ» (#37, п. 2).
 - 2026-10-07, ГРАДО 2 v0.99.42: sheets 12 «Генеральный план» and 13 «ПЗЗ» in the sit-plan bounds (#37, п. 3).
 - 2026-10-07, ГРАДО 2 v0.99.41: sheet 10 «Фрагмент карты административно-планировочной структуры города Москвы» (#37, п. 1).
@@ -13,12 +22,3 @@
 - 2026-10-07, ГРАДО 2 v0.99.35: short sheet labels on the map (audit #29).
 - 2026-10-07, ГРАДО 2 v0.99.34: «Показатели» before a sketch say «ещё не рассчитано» instead of zeros (audit #28).
 - 2026-10-06, ГРАДО 2 v0.99.33: guest entry to the shared site without a password.
-- 2026-10-06, ГРАДО 2 v0.99.32: «Нормативы расчёта» no longer say «район определяется…» forever.
-- 2026-10-06, ГРАДО 2 v0.99.31: sheet layout editor snaps like InDesign (ported from DesignCraft).
-- 2026-10-06, ГРАДО 2 v0.99.27: title as one text block, photo arrows, export progress.
-- 2026-10-06, ГРАДО 2 v0.99.26: ВРИ first, no agriculture in old Moscow.
-- 2026-10-06, ГРАДО 2 v0.99.25: owner remarks on the Гольяново album, round 3.
-- 2026-10-06, ГРАДО 2 v0.99.24: existing-use legend by the owner's sample, bolder lines.
-- 2026-10-06, ГРАДО 2 v0.99.23: owner remarks on the Гольяново album.
-- 2026-10-06, ГРАДО 2 v0.99.22: Гольяново album check, last fixes (F7, F9).
-- 2026-10-06, ГРАДО 2 v0.99.21: full check of the Гольяново album, sheet fixes (F1–F6, F10–F12).

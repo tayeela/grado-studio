@@ -20,6 +20,6 @@ FIX = (r"не так|неправ|неверн|ошиб|долж|исправ|п
 if re.search(WORDS, text) and re.search(FIX, text):
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
         "ГРАДО: похоже на замечание по альбому. До правки — docs/wiki/album-rules.md (свод правил владельца); "
-        "порядок — навык owner-remark (дословно в OWNER.md → правило в album-rules и label-rules → причина в коде → "
+        "порядок — навык owner-remark (дословно в задачу GitHub с меткой «замечание владельца» → правило в album-rules и label-rules → причина в коде → "
         "навык album-verify «до / после» на копии → gate → коммит); на сайт — только по «выкладывай»."}}, ensure_ascii=False))
 sys.exit(0)

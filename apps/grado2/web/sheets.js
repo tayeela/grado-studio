@@ -2,6 +2,8 @@
    таблицей ТЭП, стрелкой севера, масштабной линейкой и основной надписью по ГОСТ Р 21.101. Оформление объектов
    считает тот же код, что рисует слои на экране (symbolOf), поэтому лист не расходится с картой; в PDF его
    собирает рендер ядра (print_io.py): МСК, типы линий REDLN97, штриховки. Состав альбома хранится в проекте. */
+
+/* ---------- альбом и листы: состояние, размеры, рамка листа ---------- */
 const ALBUM = { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] };
 const SCALES = [500, 1000, 2000, 2500, 3000, 4000, 5000, 7500, 10000, 15000, 20000, 25000, 50000, 100000, 200000, 500000, 1000000];
 const FRAME_MM = { A3: [275, 224], A1: [636, 521] };   // размер карты на листе по ГОСТ (как layout() в print_io.py)
@@ -47,7 +49,11 @@ function viewLayers(sheet) {
     const g = l.group ? (gv?.has(l.group) ? gv.get(l.group) : grp(l.group)?.visible !== false) : true;
     return { key: l.key, title: l.title, geom: l.geom, style: st, visible: vis && g, a: x ? okn(x.layerOpacity, 1) : l.layerOpacity, _br: null, cache: new Map() }; }).filter(p => p.visible);
 }
-const sheetCenter = sheet => sheet.center || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
+// контур схем альбома (ALBUM.meta.area, GeoJSON; владелец 07.10.2026, #47: «схемы со всех страниц кроме расположения должны полностью
+// покрывать эту территорию, можно чуть расширить по бокам»): листы-схемы шаблона берут центр и масштаб по контуру
+const AREA_CONCEPTS = new Set(["ortho", "photos", "use", "gp", "ppt", "gpzu", "parcels", "docs", "pzz", "pzzsub"]);
+const areaBox = sheet => AREA_CONCEPTS.has(sheet.concept) && /Polygon/.test(ALBUM.meta?.area?.type || "") ? safe(() => turf.bbox(ALBUM.meta.area)) : null;
+const sheetCenter = sheet => sheet.center || (areaBox(sheet) ? [(areaBox(sheet)[0] + areaBox(sheet)[2]) / 2, (areaBox(sheet)[1] + areaBox(sheet)[3]) / 2] : null) || (sheet.fit && fitBox(sheet) ? [(fitBox(sheet)[0] + fitBox(sheet)[2]) / 2, (fitBox(sheet)[1] + fitBox(sheet)[3]) / 2]
   : TERR ? turf.centroid(TERR).geometry.coordinates : ol.proj.toLonLat(sharedView.getCenter()));
 // схемы альбома ППТ КРТ (листы 5–9 шаблона) — один масштаб на проект: ALBUM.meta.schemeScale (окно «Листы и альбом», строка «Масштаб схем 5–9»):
 // 0 — авто по территории, число из ряда — этот масштаб, "cover" — по границам выгрузки (рамка coverFrameBox, владелец 07.10.2026, #37).
@@ -57,7 +63,8 @@ const schemeSetting = () => { const v = ALBUM.meta?.schemeScale; return v === "c
 const isScheme = sheet => SCHEME_CONCEPTS.has(sheet.concept) && !sheet.sit;      // листы «в границах сит. плана» (sit, #37) свою рамку берут сами и настройку схем не берут
 const schemeScale = sheet => isScheme(sheet) && schemeSetting() !== "cover" ? schemeSetting() : 0;
 const schemeCover = sheet => isScheme(sheet) && schemeSetting() === "cover";
-const sheetScale = sheet => sheet.scale || Math.max(schemeScale(sheet), autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm));
+// карта района — точным масштабом: район целиком и занимает большую часть листа (владелец 07.10.2026, #47)
+const sheetScale = sheet => sheet.scale || (areaBox(sheet) ? autoScale(frameMM(sheet), areaBox(sheet)) : 0) || Math.max(schemeScale(sheet), autoScale(frameMM(sheet), sheet.fit ? fitBox(sheet) : null, !!sheet.adm || sheet.fit === "district"));
 // показатели ТЭП строками таблицы; на листе с картой — первые 30, на листе «Таблица ТЭП» — все
 function tepRows(all) {
   const t = RESULT.tepNode?._tep; if (!t) return [];
@@ -66,12 +73,20 @@ function tepRows(all) {
     .concat(t.constantsChanged?.length ? [["Нормативы изменены вручную", String(t.constantsChanged.length)]] : [])      // правки в окне «Нормативы расчёта» видны и на листе
     .concat((all ? ms : ms.slice(0, 30)).map(m => [m.title, fmt(m.value, m.precision ?? 3) + " " + m.unit]));
 }
+
+/* ---------- описание листа для печати: sheetSpec и шапка альбома ---------- */
 function sheetSpec(sheet) {
   if (sheet.frozen) { const { id, frozen, view, ...ready } = sheet; return ready; }   // готовая вёрстка из файла: слои уже внутри листа (импорт «Из файла…»)
   if (sheet.adm) return admPanelSpec(sheet);                               // схемы административного деления альбомов (albums.js)
   if (sheet.kind === "tep") return { title: sheet.title, size: sheet.size, kind: "tep", tep: tepRows(true) };
   if (sheet.kind === "title") return { title: sheet.title, size: sheet.size, kind: "title", ...albumExtra(sheet) };
   // две карты на слайде: у каждой свои слои, рамка и масштаб; легенда общая
+  // две схемы на одном листе шаблона (ПЗЗ: зоны и подзоны, владелец 07.10.2026, #47): у каждой своя рамка, подпись над ней и легенда под ней
+  if (sheet.twin) {
+    // на малых схемах угловых надписей округа и района нет (как в образце); подписи кодов ВРИ мельче — их много
+    const subs = sheet.twin.map((p, j) => ({ ...sheetSpec({ ...sheet, ...p, twin: undefined, labelMM: { ...(sheet.labelMM || {}), "gisogd.pzz_zones": 2.6 } }), caption: p.caption || "", legendRect: p.legendRect, legendNoHead: j > 0, mapNote: undefined, mapNoteBR: undefined }));
+    return { ...subs[0], title: sheet.title, twin: subs };
+  }
   if (sheet.panels) {
     const subs = sheet.panels.map(p => sheetSpec({ ...p, size: sheet.size, part: "half", legend: sheet.legend })), legend = [];
     subs.forEach(x => x.legend.forEach(g => { if (!legend.some(y => y.title === g.title)) legend.push(g); }));
@@ -138,7 +153,7 @@ function sheetSpec(sheet) {
   if (sheet.callout && tc) { const d = (DATA["gisogd.admin"]?.fc.features || []).find(x => x.properties["Уровень"] === "район" && safe(() => turf.booleanPointInPolygon(tc, x)));
     out.callout = sheet.style === "pptkrt" ? ["Рассматриваемая территория", `S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га`]   // как в шаблоне ППТ КРТ
       : ["проектируемая территория"].concat(d ? ["район " + LABEL_FN.adm({ get: k => d.properties[k] })] : []); }
-  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница территории рассмотрения" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
+  if (isSlide(size) && sheet.legend) out.legend.unshift({ title: "Границы", kind: "line", items: [{ label: `${sheet.style === "pptkrt" ? "Граница разрабатываемой территории" : "Граница разработки проекта планировки"} (S\u00a0=\u00a0${fmt(m2(TERR) / 1e4, 2)}\u00a0га)`, fill: "#e0158c" }] });   // площадь — до сотых гектара
   if (sheet.look === "concept") conceptSheet(out, sheet, frameLL);           // шапка ППТ КРТ, остальное — как в «ГК Царицыно» (albums.js)
   // свои слои владельца: легенда листа по шаблону (cLegend) о них не знает — они дописываются в неё (T86d)
   if (out.cLegend) [["own", "Свои слои"]].forEach(([role, title]) => {      // «Прочее» (служебные слои вроде УДС) в легенду не идёт: их знак шаблон уже даёт сам
@@ -164,7 +179,7 @@ function metaVals() {
 }
 const autoMeta = () => { const d = AlbumMeta.fillMeta(ALBUM.meta, metaVals()); syncAddrWhy(); return d; };
 // титульный лист без адреса печатал бы «АДРЕС»: строка листа в окне говорит «не готов: нет адреса» (на бумаге ничего не добавляется)
-const noAddrWhy = () => ALBUM.meta.address || ALBUM.meta.object ? "" : "нет адреса";
+const noAddrWhy = () => AlbumMeta.addrWhy(ALBUM.meta);   // нет адреса или адрес из реестра, не сверенный с письмом ДГП (#56)
 function syncAddrWhy() { ALBUM.sheets.forEach(s => { if (s.kind !== "title") return; const w = noAddrWhy(); if (w) NOTREADY.set(s.id, w); else NOTREADY.delete(s.id); }); }
 // подписи листов, собранные из нескольких полей: подзона ПЗЗ — «плотность / высота / застроенность», Ф — по факту
 const codes = t => [...new Set(String(t || "").match(/\d{1,2}(\.\d{1,2}){1,3}/g) || [])];
@@ -174,6 +189,8 @@ const wrapLab = (parts, n) => parts.reduce((ls, p) => { const l = ls[ls.length -
 const gpNum = p => p.n != null && p.n !== "" ? String(+p.n || p.n) : p.number_fz ? String(+String(p.number_fz).slice(-3) || p.number_fz) : "";
 const gpIdx = p => p.fztip || (p.fz_type != null && p.fz_type !== "" ? String(p.fz_type) : "");
 const gpFund = p => p.summfondpersp ? String(p.summfondpersp).replace(".", ",") : p.interval_fo && p.interval_fo !== "*" ? String(p.interval_fo).replace(/\s*-\s*/, "–") : "—";
+
+/* ---------- подписи: функции форматирования по видам слоёв ---------- */
 const LABEL_FN = {
   // ПЗЗ, территориальные зоны: коды ВРИ, как на схеме 120-ПП (полные названия — в карточке объекта)
   vri: f => { const c = codes(f.get("ВРИ (коды)") || f.get("ВРИ")); return c.length ? wrapLab(c.length > 24 ? c.slice(0, 23).concat("…") : c, 26) : null; },
@@ -223,12 +240,15 @@ function parcelsSheet(layers) {
     rows: pl.map((f, i) => [String(i + 1), String(f.properties["Кадастровый номер"] || "—"), fmt(+f.properties["Площадь уточнённая, м²"] || +f.properties["Площадь участка, м²"] || Math.round(m2(f))), shortRight(f.properties["Вид права"] || f.properties["Форма собственности"] || "—")]) } };   // длинное печать ещё и ужмёт
 }
 const cut = (t, n) => { t = String(t); return t.length > n ? t.slice(0, n - 1) + "…" : t; };
+
+/* ---------- таблицы и особые листы: Генплан, документы, радиусы, ситуационный план ---------- */
 // Генплан: функциональные зоны на территории — номер, индекс, наименование, суммарный поэтажный фонд
 function genplanTable(out) {
   const z = ["gisogd.func_zones", "gisogd.func_zones_tinao"].flatMap(k => DATA[k]?.fc.features || []).filter(f => /Polygon/.test(f.geometry?.type) && safe(() => { const x = inter(f, TERR); return x && m2(x) > 20; }));
   if (!z.length) return;
   out.table = { title: "Функциональные зоны на территории", cols: [["№", .1, "left"], ["Индекс", .17, "left"], ["Наименование", .5, "left"], ["тыс. м²", .23, "right"]],
-    rows: z.map(f => { const p = f.properties; return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p)]; }) };
+    // пятое поле — доля территории в площади зоны: фонд зоны на разрабатываемую территорию (владелец 07.10.2026, #47)
+    rows: z.map(f => { const p = f.properties, x = safe(() => inter(f, TERR)); return [gpNum(p) || "—", gpIdx(p) || "—", p.naimfunkzony || p["Вид зоны"] || p.name || "—", gpFund(p), x ? m2(x) / Math.max(m2(f), 1) : null]; }) };
 }
 // документы на листе (ППТ и ПМТ, ГПЗУ и АГР — как в «ГК Царицыно»): номер у документа на карте и нумерованный список
 // «Название №… от … г.» в колонке листа; ближние к территории — первыми, нумерация сквозная по группам
@@ -360,6 +380,8 @@ function situationExtras(sheet, out, frameLL) {
   out.kind = "situation"; out.legend = [];
 }
 const buildSituation = () => track(() => buildSituation0());
+
+/* ---------- ситуационный план (раздел «Существующее положение») ---------- */
 async function buildSituation0(mode) {
   if (!TERR) { toast("Выберите файл границы (DXF, DWG, GeoJSON, KML, Shapefile) — лист строится вокруг неё."); return window.pickBoundary(buildSituation0); }
   if (typeof mode !== "string" && ALBUM.sheets.some(s => !String(s.id).startsWith("sit_"))) return askBuild("Ситуационный план A4", 1, m => track(() => buildSituation0(m)));
@@ -405,6 +427,8 @@ async function buildSituation0(mode) {
    «шаблонная» часть листа (слои, оформление, рамки в мм, состав) — её и пересобирает tplRefresh тем же кодом, что
    «Собрать» (makeTplSheet), а рукой правленное (название, рамка и масштаб, снимки, надписи «Макета», свои тексты)
    переносит carryHand. Листы «готовая вёрстка» (frozen, импорт из файла) не трогаются никогда. */
+
+/* ---------- шаблоны листов: сборка по шаблону, обновление, ручная правка ---------- */
 const TPL_SETS = { sec1_: { list: () => SEC1, size: () => ALBUM.meta.slide || "P" } };   // albums.js добавляет pptkrt_
 const TPL_COND = ["title", "legend", "tep", "size", "keys", "scale", "center", "note", "orient", "view", "kind"];
 const TPL_LEGACY = ["title", "scale", "center", "note", "orient", "size"];      // у листа без sheet.tpl рукой правленным считается то, что отличается от шаблона
@@ -564,13 +588,18 @@ window.albumFetchPlan = (cover, list = ALBUM.sheets) => SheetLayout.fetchPlan(pl
 /* Собрать набор листов по образцу (tpl): раздел 1 на слайдах 16:9 (SEC1) или альбомы по образцам владельца
    (albums.js): листы получают префикс id (prefix), старые листы того же набора заменяются. */
 const buildSection = (...a) => track(() => buildSection0(...a));
+
+/* ---------- сборка раздела: загрузка слоёв и создание листов ---------- */
 async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.slide || "P", name = "Раздел «Существующее положение»", mode) {
   if (!TERR) return toast("Сначала задайте границу территории — от неё строятся рамки листов.");
   // в альбоме есть листы не этого набора (из файла, другой набор, свои): набор не вставляется молча рядом — выбор в строке, как при импорте
-  if (!mode && ALBUM.sheets.some(s => !String(s.id).startsWith(prefix))) return askBuild(name, tpl.length, m => track(() => buildSection0(tpl, prefix, size, name, m)));
+  if (!mode && ALBUM.sheets.some(s => !String(s.id).startsWith(prefix))) return askBuild(name, TPL_SETS[prefix]?.order?.length || tpl.length, m => track(() => buildSection0(tpl, prefix, size, name, m)));
   if (mode === "replace") { window.hideSheetFrame?.(); ALBUM.sheets = ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)); SHI = 0; }   // листы этого набора остаются: из них переносятся снимки и надписи
   const before = new Set(LYR.map(l => l.key));
-  const sheets = tpl.map((t, i) => makeTplSheet(t, prefix + i, prefix, i, size));       // та же сборка листа, что у «Обновить листы» (tplRefresh ниже)
+  // порядок и состав листов набора (TPL_SETS[prefix].order — номера в шаблоне): id и tpl.i остаются по шаблону, снимки и правки
+  // старых проектов переносятся на свои листы (альбом ППТ КРТ — владелец 07.10.2026, #47)
+  const ord = TPL_SETS[prefix]?.order, all = tpl.map((t, i) => makeTplSheet(t, prefix + i, prefix, i, size));       // та же сборка листа, что у «Обновить листы» (tplRefresh ниже)
+  const sheets = ord ? ord.map(i => all[i]).filter(Boolean) : all;
   // административное деление — для рамок «округ» и «район» его нужно получить первым; выгрузка до v0.65 знала районы
   // только своего округа — берётся заново: схема Москвы рисует все районы (их в Москве 132). Область выгрузки — вся
   // Москва: слой всегда городской, а перевыгрузка по малой рамке обновила бы только ближние районы
@@ -580,6 +609,11 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   // Прежние правки владельца (состав, глаз) переносятся до выгрузки: что выключено в прежней сборке, не качается и теперь
   const old = new Map(ALBUM.sheets.filter(s => String(s.id).startsWith(prefix)).flatMap(s => [[s.id, s], [(s.kind || "") + s.title, s]]));
   sheets.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o && !o.frozen) { if (!SheetLayout.carryManual(s, o)) SheetLayout.carryLayout(s, o); if (s.layout && SheetLayout.matches(s)) SheetLayout.carryOn(s, o); } });
+  // карта района: станции — тайлом z16 (sit.stations, #47); прежний состав листа, перенесённый из старой сборки, нёс yandex.stations — рамка района
+  // в предел тайлов z18 не входит, и слой не загружался ни на один лист
+  sheets.forEach(s => { if (s.concept !== "district") return; const sw = k => k === "yandex.stations" ? "sit.stations" : k;
+    if (s.keys) s.keys = [...new Set(s.keys.map(sw))]; if (s.styles?.["yandex.stations"]) { s.styles["sit.stations"] = s.styles["yandex.stations"]; delete s.styles["yandex.stations"]; }
+    (s.layout?.groups || []).forEach(g => (g.items || []).forEach(it => { it.key = sw(it.key); if (Array.isArray(it.src)) it.src = it.src.map(sw); })); });
   const units = planUnits(sheets);
   const PLAN = PLAN_OPT, plan = SheetLayout.fetchPlan(units, null, PLAN);
   // Яндекс — не больше 40 км² (первая выгрузка около минуты на 1 км²): рамку сжимаем к территории. НСПД большую область сервер берёт по частям и склеивает
@@ -631,6 +665,11 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
       if (/област.* больш|слишком больш|портал/i.test(why)) continue;       // сервер уже повторял с паузами (3 попытки): сразу ещё раз — против правил порталов
       step([k], "Повтор. "); await loadKeys([k], bb); if (!ERRORS[k]) failed.delete(k); else failed.get(k).why = ERRORS[k]; }
   } finally { bpEnd(); }
+  // карта района: названия природных территорий (Яндекс) — с запасом 1,5 км вокруг рамки (предел источника 150 км²): точка «национального парка Лосиный остров»
+  // стоит в середине парка, за рамкой листа, а подпись нужна (владелец 07.10.2026, #47)
+  if (!BP.stop) for (const s of sheets.filter(x => x.concept === "district" && (x.keys || []).includes("sit.places"))) {
+    const fb = safe(() => frameBox(s)); if (!fb) continue; const dx = 1.5 / (111.32 * Math.cos((fb[1] + fb[3]) / 2 * Math.PI / 180)), dy = 1.5 / 110.54;
+    step(["sit.places"]); CHECKED.add("sit.places"); await loadKeys(["sit.places"], [fb[0] - dx, fb[1] - dy, fb[2] + dx, fb[3] + dy]); }
   const nDone = frontier();                      // собранные листы — первые, чьи слои все загружены (или запрошены: сбой — в заметке листа)
   const stopped = nDone < sheets.length, built = sheets.slice(0, nDone);
   const lost = [...failed.keys()].filter(k => sheetNeeds.slice(0, nDone).some(ks => ks.has(k))).map(k => lostPhrase(k, failed.get(k).why));
@@ -640,7 +679,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
   // — по id листа (он задан шаблоном), а не по названию: переименованный лист не теряет снимки и надписи
   built.forEach(s => { const o = old.get(s.id) || old.get((s.kind || "") + s.title); if (o) carryHand(s, o, false); });
   // остановка: листы раздела, до которых сборка не дошла, остаются прежними (прежняя сборка не пропадает молча)
-  const rest = stopped ? ALBUM.sheets.filter(s => String(s.id).startsWith(prefix) && !(parseInt(String(s.id).slice(prefix.length), 10) < nDone)) : [];
+  const rest = stopped ? ALBUM.sheets.filter(s => String(s.id).startsWith(prefix) && !built.some(b => b.id === s.id)) : [];
   ALBUM.sheets = ALBUM.sheets.filter(s => !String(s.id).startsWith(prefix)).concat(built, rest);
   // холст — опорный план: тематические слои раздела (зоны, ПЗЗ, Генплан, документация, соцобъекты) выключены — они
   // нужны листам, а не холсту; включить любой можно в дереве. Застройка одна, порядок как на плане
@@ -655,6 +694,7 @@ async function buildSection0(tpl = SEC1, prefix = "sec1_", size = ALBUM.meta.sli
 // прямоугольник рамки листа в градусах (как frameGeom)
 function frameBox(sh) { const g = frameGeom(sh).clone(); g.transform("EPSG:3857", "EPSG:4326"); return g.getExtent(); }
 
+/* ---------- просмотр и выгрузка альбома (PDF, PPTX, файл) ---------- */
 async function previewSheet(i) {
   if (ALBUM.sheets.length && i !== selIdx()) { SHI = i; renderSheets(); }
   busy(true);
@@ -764,6 +804,8 @@ const IMPORT_WARN = 25 * 2**20, PROJECT_CAP = 400 * 2**20;   // предел т�
 const isViewer = () => document.body.classList.contains("hub-viewer") || window.Collab?.role === "viewer";
 const mb = n => Math.max(1, Math.round(n / 2**20));
 const isReadySheet = s => Array.isArray(s?.layers) && s.layers.every(l => Array.isArray(l?.features)) || !!s?.panels?.some?.(p => Array.isArray(p?.layers));
+
+/* ---------- импорт и экспорт альбома файлом ---------- */
 function albumOfJson(j) {
   if (!j || typeof j !== "object") throw new Error("это не альбом и не проект ГРАДО 2");
   if (j.format === "grado2") { const p = window.migrateProject ? window.migrateProject(j) : j; if (!p.album) throw new Error("в проекте нет альбома"); return p.album; }   // формат проекта — по миграциям project.js
@@ -904,6 +946,8 @@ const scaleText = s => ["tep", "title", "photos"].includes(s.kind) ? "" : s.pane
 // строка штампа — обычный заголовок раздела «Штамп» и мелким серым то, что заполнено (не «Штамп: ПП», похожее на сообщение об ошибке)
 const stampSum = () => { const m = ALBUM.meta, p = [m.object, m.code, m.stage].filter(Boolean); return `<b>Штамп</b><em>${p.length ? esc(p.join(" · ")) : "не заполнен"}</em>`; };
 const mi = (id, ic, t, h, title) => `<button role="menuitem" id="${id}" title="${esc(title || h)}"><i data-lucide="${ic}"></i><span class="mi"><b>${t}</b><small>${h}</small></span></button>`;
+
+/* ---------- окно «Листы и альбом»: строки, меню, фотографии, рамки на карте ---------- */
 function rowInner(s, i, on) {
   const ic = (cond, name, tip) => cond ? `<span title="${tip}"><i data-lucide="${name}"></i></span>` : "";
   const sc = scaleText(s);
@@ -966,7 +1010,7 @@ function renderSheets() {
     + `<button class="btn primary" id="shPdf" ${n ? "" : "disabled"} title="Все листы одним PDF: рамка, штамп, масштаб, легенда"><i data-lucide="file-down"></i>PDF</button>`
     + `<button class="btn" id="shPptx" ${n ? "" : "disabled"} title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям"><i data-lucide="presentation"></i>PPTX</button></div></div>`
     + `<div class="shstamp"><button id="shStampBtn" aria-expanded="${STAMP_OPEN}" aria-controls="shStampBox" title="Основная надпись листов: объект, шифр, стадия, организация"><i data-lucide="chevron-right"></i><span id="shStampSum">${stampSum()}</span></button>`
-    + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}${inp("short", "№ КРТ")}${inp("place", "Округ, район")}${inp("address", "Адрес")}`
+    + `<div class="shstbox" id="shStampBox" ${STAMP_OPEN ? "" : "hidden"}>${inp("object", "Объект")}${inp("code", "Шифр")}${inp("stage", "Стадия: ПП, П, Р")}${inp("org", "Организация")}${inp("short", "№ КРТ")}${inp("place", "Округ, район")}${inp("address", "Адрес")}${m.address && m.auto?.address ? `<div class="snote" id="shAddrNote">Адрес взят из реестра — сверьте с письмом ДГП и поправьте при необходимости</div>` : ""}`
     + `<div class="row" style="grid-column:1/-1"><button class="btn" id="shMetaFill" title="Заполнить пустые поля «№ КРТ», «Округ, район» и «Адрес» по загруженным слоям; то, что вы ввели сами, не меняется"><i data-lucide="wand-sparkles"></i>Заполнить по данным</button></div>`
     + `<label>Формат слайдов раздела<select id="shSlide" title="Формат слайдов раздела: меняет и уже собранные слайды">${Object.keys(SLIDE).map(v => `<option value="${esc(v)}" ${v === (m.slide || "P") ? "selected" : ""}>${esc(SIZE_T[v])}</option>`).join("")}</select></label></div></div>`
     + `<div class="shscale"><label for="shSchemeScale">Масштаб схем 5–9</label><select id="shSchemeScale" title="Один масштаб для схем альбома ППТ КРТ — листов 5–9 — в этом проекте. «Авто» — по размеру территории; «по границам выгрузки» — рамка не меньше области загрузки данных (синий пунктир в окне «Данные») и сит. плана; не помещается — крупнее. Масштаб, выбранный в свойствах листа, главнее. Данные за прежней рамкой докачивает «Собрать»"><option value="0">авто по территории</option><option value="cover" ${schemeSetting() === "cover" ? "selected" : ""}>по границам выгрузки</option>${SCALES.filter(v => v <= 10000).map(v => `<option value="${v}" ${v === schemeSetting() ? "selected" : ""}>1:${fmt(v)}</option>`).join("")}</select></div>`

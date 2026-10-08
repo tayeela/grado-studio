@@ -111,6 +111,16 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
 
 ## Queue
 
+- 2026-10-08 (#53 fixes, v0.99.46; checked in headless Chrome on a copy of «КРТ 3229 Гольяново», console clean). An address taken
+  from the registry marks the title row «не готов: адрес из реестра — сверьте с письмом ДГП»; the reason was only in the icon tip, so
+  «Штамп…» now shows a grey note under «Адрес» that goes away once the owner edits the field (fixed). Not yet: the note does not say
+  where the letter's address comes from — the owner types it by hand; a «Письмо ДГП» field could keep it with the project.
+- 2026-10-07 (#45, #47, album ППТ КРТ by the owner's remarks; checked on the real build of «КРТ 3229 Гольяново» in headless Chrome, console:
+  only the old `voronoi` warning of sheet «сущпол»). Not yet: the scheme outline (`ALBUM.meta.area`) has no button — it is set in the
+  project data; needs «Контур схем» in «Листы и альбом» (draw or load GeoJSON). Panorama links are stored with photos (`photo.link`) but
+  not shown and cannot be added from the photo button — needs «Добавить снимок по ссылке Яндекс Панорам» and the link in the photo tip.
+  Sheet order of the album is fixed by `PPTKRT_ORDER`; reordering by hand in the sheet list is kept until the next «Собрать».
+
 - 2026-10-07 (v0.99.34–0.99.38, external audit #25): done and checked on screenshots — «ещё не рассчитано» in «Показатели»,
   short sheet labels, Enter on buttons + skip links + focusable map, whole graph on second «Вся схема» + «Широкая карта»,
   source sets. Not yet: the right panel «Стиль / Объект» keeps its width while empty («Выберите слой в дереве») — could
@@ -244,7 +254,7 @@ Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/gr
   `GRADO2_HUB_DIR` is outside the guard. (5) After a 429 the page retries the stored link on each reload until the tab is
   closed. (6) People without the owner role see only «Включать и выключать ссылку может только владелец проекта», not
   whether a link is on.
-- 2026-10-01 (v0.87.0, UI audit, `docs/ux/audit-2026-10-01.md`): left for later — dark graph canvas (litegraph reads
+- 2026-10-01 (v0.87.0, UI audit, `docs/archive/audits/ux-2026-10-01.md`): left for later — dark graph canvas (litegraph reads
   colours once), cursor coordinates in the status bar, AutoCAD-style staged ribbon collapse, layer search, undo entries
   of a deleted layer's earlier edits are dropped, focus after re-render in «По листам» mode returns to the first row.
 - 2026-10-01 (v0.88.1): closed — socket names and fields «Потолок, м», «Потолок, эт.» renamed with a project

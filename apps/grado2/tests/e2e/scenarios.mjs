@@ -32,10 +32,21 @@ export default async p => {
     return r.every(Boolean) || JSON.stringify({r, md, tc})`);
   check(t27 === true, `T27: тема меняет холст «Схемы расчёта» (фон, узлы) на лету; JSON графа одинаков в обеих темах, правок и отправки в общий проект нет${t27 === true ? "" : " " + t27}`);
   {
-    const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`), at = () => p.ev(`return mMain.getCoordinateFromPixel([${mx}-$("mMain").getBoundingClientRect().left, ${my}-$("mMain").getBoundingClientRect().top])`);
-    const r0 = await res(), c0 = await at(); await p.wheel(mx, my, -100, { wait: 700 }); const r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900); const r10 = await res(), c1 = await at();
-    p.log("wheel: 1 notch", (r0 / r1).toFixed(3), "10 notches", (r0 / r10).toFixed(3));
-    check(r0 / r10 > 1.5 && r0 / r10 <= 2.3 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) / r10 < 1.5, "T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте");
+    const [mx, my] = await p.ev(`const r=$("mMain").getBoundingClientRect(); return [Math.round(r.left+r.width*.3), Math.round(r.top+r.height*.4)]`), res = () => p.ev(`return sharedView.getResolution()`);
+    // Точка под курсором читается вместе с рамкой карты и после renderSync: getCoordinateFromPixel берёт кадр прошлой отрисовки, а рамка карты на медленном раннере
+    // CI ещё могла измениться (тема, подсказки) между чтениями. Рамка изменилась — измерение недействительно, повторяем один раз; настоящий сбой печатает все числа (#40)
+    const probe = () => p.ev(`mMain.updateSize(); mMain.renderSync(); const b=$("mMain").getBoundingClientRect(); return {res: sharedView.getResolution(), box: [b.left, b.top, b.width, b.height].map(Math.round), at: mMain.getCoordinateFromPixel([${mx}-b.left, ${my}-b.top])}`);
+    let a0, a1, r1, tries = 0;
+    do {
+      tries++;
+      a0 = await probe(); await p.wheel(mx, my, -100, { wait: 700 }); r1 = await res(); for (let i = 0; i < 9; i++) await p.wheel(mx, my, -100, { wait: 30 }); await p.sleep(900);
+      // читаем после остановки карты: разрешение не меняется 300 мс (на медленном раннере плавный зум идёт дольше 0,9 с; гонка в CI, #40)
+      let r10 = await res(); for (let k = 0, same = 0; k < 50 && same < 3; k++) { await p.sleep(100); const r = await res(); same = r === r10 ? same + 1 : 0; r10 = r; }
+      a1 = await probe();
+    } while (a0.box.join() !== a1.box.join() && tries < 2);
+    const ratio = a0.res / a1.res, drift = Math.hypot(a1.at[0] - a0.at[0], a1.at[1] - a0.at[1]) / a1.res, ok27 = ratio > 1.5 && ratio <= 2.3 && drift < 1.5;
+    p.log("wheel: 1 notch", (a0.res / r1).toFixed(3), "10 notches", ratio.toFixed(3), "drift px", drift.toFixed(2), "box", a0.box.join(), "->", a1.box.join(), "tries", tries);
+    check(ok27, `T27: десять щёлок колеса меняют масштаб не более чем вдвое, точка под курсором на месте${ok27 ? "" : ` (масштаб ×${ratio.toFixed(3)}, сдвиг ${drift.toFixed(2)} пикс., рамка карты ${a0.box.join()} -> ${a1.box.join()}, попыток ${tries})`}`);
     const q0 = await res(); for (let i = 0; i < 30; i++) await p.wheel(mx, my, -6, { ctrl: true, wait: 16 }); await p.sleep(500); const q1 = await res();
     p.log("pinch: 30 events dy=-6 ctrl", (q0 / q1).toFixed(3)); check(q0 / q1 > 1.3, "T27: щипок (Ctrl, мелкие шаги) остаётся быстрым");
   }
@@ -982,13 +993,20 @@ export default async p => {
       const r = await p.ev(`
         setTerritory(turf.polygon([[[37.5195, 55.7895], [37.5305, 55.7895], [37.5305, 55.7955], [37.5195, 55.7955], [37.5195, 55.7895]]]));
         winOpen("wTep", true); await new Promise(r => setTimeout(r, 400));
-        const n = RESULT.tepNode, tp = tepParams(n); window.__st61 = window.setTimeout; window.__calls61 = [];
+        const n = RESULT.tepNode, tp = tepParams(n);
+        // настоящий запрос района от открытия окна и отложенный повтор (app.js, placeLookup) заканчиваем до подмены: иначе внутри неё
+        // стартует второй запрос, таймеров на 30 с выходит два, а _placeBusy остаётся занятым (гонка в CI, #40)
+        for (let k = 0; k < 200 && n._placeBusy; k++) await new Promise(r => setTimeout(r, 100));
+        clearTimeout(n._placeT);
+        window.__st61 = window.setTimeout; window.__calls61 = [];
         window.fetch = (u, o) => String(u) === "/api/place" ? new Promise((_, rej) => o.signal.addEventListener("abort", () => rej(new DOMException("aborted", "AbortError")))) : window.__f61(u, o);
         window.setTimeout = (fn, ms, ...a) => { if (ms === 30000) { window.__calls61.push(ms); ms = 20; } return window.__st61(fn, ms, ...a); };
-        tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); await new Promise(r => window.__st61(r, 60));
+        tp.rev = -1; tp.district = ""; n._placeBusy = false; placeLookup(n); const timers = window.__calls61.length;   // таймеры считаем у этого запроса
+        await new Promise(r => window.__st61(r, 60));
         const busyText = $("tep").innerText.includes("определяется…"); await new Promise(r => window.__st61(r, 300));
+        for (let k = 0; k < 30 && n._placeBusy; k++) await new Promise(r => window.__st61(r, 50));   // подмена ещё действует: запрос оборвётся за 20 мс
         window.setTimeout = window.__st61; const t = $("tep").innerText;
-        return [window.__calls61.length, busyText, t.includes("определяется…"), /район не определён: портал OSM не ответил — задайте зону вручную/.test(t), n._placeBusy]`);
+        return [timers, busyText, t.includes("определяется…"), /район не определён: портал OSM не ответил — задайте зону вручную/.test(t), n._placeBusy]`);
       check(r[0] === 1 && !r[2] && r[3] && r[4] === false, `T61: нет ответа /api/place — запрос обрывается по таймеру 30 с, строка «район не определён… задайте зону вручную», «определяется…» нет (${JSON.stringify(r)})`);
       // сбой с текстом сервера: чистая русская фраза, сырого Overpass в окне нет
       const t2 = await p.ev(`
@@ -1015,19 +1033,19 @@ export default async p => {
     // выгрузка слоёв из сети в тесте не нужна: листы строятся по шаблону и тому, что уже есть в проекте
     await p.ev(`window.__t55 = { keep: ALBUM.sheets.splice(0), lk: window.loadKeys, ea: window.ensureAdmin, c: new Set(CHECKED) }; window.loadKeys = async () => {}; window.ensureAdmin = async () => { CHECKED.add("gisogd.admin"); }; TPL_SIG = null; NOTREADY.clear();
       ALBUM.meta.builtAt = undefined; ALBUM.meta.editedAt = undefined; await buildAlbum("pptkrt"); winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); return 1`);
-    const b = await p.ev(`const n = ALBUM.sheets.length; return [n, ALBUM.sheets.every((s, i) => s.tpl?.set === "pptkrt_" && s.tpl.i === i && s.id === "pptkrt_" + i), JSON.stringify(ALBUM.sheets).includes("Плотность"), ALBUM.sheets[3].title]`);
+    const b = await p.ev(`window.I3 = ALBUM.sheets.findIndex(s => s.id === "pptkrt_3"); window.I4 = ALBUM.sheets.findIndex(s => s.id === "pptkrt_4"); const n = ALBUM.sheets.length; return [n, ALBUM.sheets.every((s, i) => s.tpl?.set === "pptkrt_" && s.tpl.i === PPTKRT_ORDER[i] && s.id === "pptkrt_" + PPTKRT_ORDER[i]), JSON.stringify(ALBUM.sheets).includes("Плотность"), ALBUM.sheets[I3].title]`);
     check(b[0] >= 5 && b[1] && !b[2], `T55: «Альбом ППТ КРТ» — ${b[0]} листов, у каждого sheet.tpl (набор и номер в шаблоне); строк ТЭП в листах не хранится`);
     // таблица ТЭП — лист «Таблица ТЭП» из списка листов, и лист шаблона с включённой таблицей ТЭП
     await p.ev(`$("shAddA3").click(); await new Promise(r=>setTimeout(r,500)); const sel = document.querySelector("[data-sh='${b[0]}'] [data-sk='view']"); sel.value = "__tep"; sel.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
-    const T = b[0];
-    await p.ev(`pickSheet(3); await new Promise(r=>setTimeout(r,200)); const c = document.querySelector('#sheetsBody [data-sk="tep"]'); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
-    check(await p.ev(`return ALBUM.sheets[${T}].kind === "tep" && ALBUM.sheets[${T}].tpl?.set === "tep" && ALBUM.sheets[3].tep === true`), "T55: лист «Таблица ТЭП» помечен как лист по шаблону, на листе шаблона включена таблица ТЭП");
+    const T = b[0], I3 = await p.ev(`return window.I3`);   // лист шаблона № 3 (фотофиксация): порядок показа — PPTKRT_ORDER (#47)
+    await p.ev(`pickSheet(I3); await new Promise(r=>setTimeout(r,200)); const c = document.querySelector('#sheetsBody [data-sk="tep"]'); c.checked = true; c.dispatchEvent(new Event("change", { bubbles: true })); await new Promise(r=>setTimeout(r,200)); return 1`);
+    check(await p.ev(`return ALBUM.sheets[${T}].kind === "tep" && ALBUM.sheets[${T}].tpl?.set === "tep" && ALBUM.sheets[I3].tep === true`), "T55: лист «Таблица ТЭП» помечен как лист по шаблону, на листе шаблона включена таблица ТЭП");
     // рукой: название, рамка (центр и масштаб), подпись, надпись «Макета» и свой текст
-    const hand = await p.ev(`const s = ALBUM.sheets[3]; s.title = "Моя схема"; s.center = [37.5, 55.7]; s.scale = 7500; s.note = "Моя подпись"; s.edits = { t1: { text: "правка" } }; s.items = [{ text: "свой текст", x: 10, y: 10 }];
+    const hand = await p.ev(`const s = ALBUM.sheets[I3]; s.title = "Моя схема"; s.center = [37.5, 55.7]; s.scale = 7500; s.note = "Моя подпись"; s.edits = { t1: { text: "правка" } }; s.items = [{ text: "свой текст", x: 10, y: 10 }];
       const fz = { id: "imp_t55_0", frozen: true, title: "Готовый лист", size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [["Плотность", "1,0 тыс. м²/га"]] }; ALBUM.sheets.push(fz);
-      window.__fz = JSON.stringify(fz); window.__k3 = JSON.stringify(ALBUM.sheets[3].keys); return ALBUM.sheets.indexOf(fz)`);
+      window.__fz = JSON.stringify(fz); window.__k3 = JSON.stringify(ALBUM.sheets[I3].keys); return ALBUM.sheets.indexOf(fz)`);
     const F = hand;
-    const before = [await tepRowsOf(T), await tepRowsOf(3)];
+    const before = [await tepRowsOf(T), await tepRowsOf(I3)];
     check(!/Нормативы изменены/.test(before[0]) && /Плотность/.test(before[0]) && /Плотность/.test(before[1]), "T55: до правки норматива строки «Нормативы изменены вручную» на листах нет");
     await p.ev(`pickSheet(${T}); await new Promise(r=>setTimeout(r,200)); previewSheet(${T}); await new Promise(r=>setTimeout(r,2500)); return 1`);
     await shot("t55-tep-before");
@@ -1037,19 +1055,19 @@ export default async p => {
     for (let k = 0; k < 20 && !/Листы обновлены по новым показателям/.test(st); k++) { await p.sleep(400); st = await p.ev(`return $("stHint").textContent`); }
     // «· не готово: N» после неё — листы без адреса (T73) и т. п.; здесь важен сам факт обновления
     check(/^Листы обновлены по новым показателям( · не готово: \d+)?$/.test(st), `T55: строка состояния после смены норматива: «${st}»`);
-    const after = [await tepRowsOf(T), await tepRowsOf(3)];
+    const after = [await tepRowsOf(T), await tepRowsOf(I3)];
     check(after[0] !== before[0] && /Нормативы изменены вручную","1"/.test(after[0]), "T55: на листе «Таблица ТЭП» строки показателей изменились, появилась строка «Нормативы изменены вручную: 1»");
     check(after[1] !== before[1] && /Нормативы изменены вручную","1"/.test(after[1]), "T55: на листе шаблона с таблицей ТЭП — то же");
     await p.sleep(2500); await shot("t55-tep-after");
-    check(await p.ev(`const s = ALBUM.sheets[3]; return s.title === "Моя схема" && JSON.stringify(s.center) === "[37.5,55.7]" && s.scale === 7500 && s.note === "Моя подпись" && s.edits.t1.text === "правка" && s.items[0].text === "свой текст" && s.tep === true && JSON.stringify(s.keys) === window.__k3 && s.tpl.set === "pptkrt_" && s.tpl.i === 3`), "T55: название, рамка, масштаб, подпись, надписи «Макета» и свои тексты после обновления на месте; слои — по шаблону");
+    check(await p.ev(`const s = ALBUM.sheets[I3]; return s.title === "Моя схема" && JSON.stringify(s.center) === "[37.5,55.7]" && s.scale === 7500 && s.note === "Моя подпись" && s.edits.t1.text === "правка" && s.items[0].text === "свой текст" && s.tep === true && JSON.stringify(s.keys) === window.__k3 && s.tpl.set === "pptkrt_" && s.tpl.i === 3`), "T55: название, рамка, масштаб, подпись, надписи «Макета» и свои тексты после обновления на месте; слои — по шаблону");
     check(await p.ev(`return JSON.stringify(ALBUM.sheets[${F}]) === window.__fz && !NOTREADY.has("imp_t55_0")`), "T55: лист «готовая вёрстка» из файла не изменился");
     // «Обновить листы» в «Собрать ▾»: шаблонная часть возвращается к шаблону, правленное остаётся; клавишей Enter
-    check(await p.ev(`ALBUM.sheets[4].styles = {}; ALBUM.sheets[4].rect = [0, 0, 1, 1]; TPL_SIG = null; NOTREADY.clear(); $("toast").textContent = ""; winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); $("shBuild").click(); await new Promise(r=>setTimeout(r,300)); $("shRefresh").focus();
-      return document.activeElement === $("shRefresh") && JSON.stringify(ALBUM.sheets[4].styles) !== JSON.stringify(PPTKRT[4].styles)`), "T55: перед «Обновить листы» шаблонная часть листа 5 устарела, пункт меню в фокусе");
+    check(await p.ev(`ALBUM.sheets[I4].styles = {}; ALBUM.sheets[I4].rect = [0, 0, 1, 1]; TPL_SIG = null; NOTREADY.clear(); $("toast").textContent = ""; winOpen("wSheets", true); renderSheets(); await new Promise(r=>setTimeout(r,300)); $("shBuild").click(); await new Promise(r=>setTimeout(r,300)); $("shRefresh").focus();
+      return document.activeElement === $("shRefresh") && JSON.stringify(ALBUM.sheets[I4].styles) !== JSON.stringify(PPTKRT[4].styles)`), "T55: перед «Обновить листы» шаблонная часть листа 5 устарела, пункт меню в фокусе");
     await p.key("Enter", "Enter", { vk: 13, text: "\r", wait: 600 });
-    check(await p.ev(`const s = ALBUM.sheets[4], t = PPTKRT[4]; return JSON.stringify(s.styles) === JSON.stringify(t.styles) && JSON.stringify(s.rect) === JSON.stringify(t.rect) && ALBUM.sheets[3].title === "Моя схема" && /Листы обновлены по новым показателям/.test($("toast").textContent) && JSON.stringify(ALBUM.sheets[${F}]) === window.__fz`), "T55: «Обновить листы» (клавиша Enter на пункте) возвращает слои и оформление листа к шаблону, название и рамка остаются, лист из файла цел");
+    check(await p.ev(`const s = ALBUM.sheets[I4], t = PPTKRT[4]; return JSON.stringify(s.styles) === JSON.stringify(t.styles) && JSON.stringify(s.rect) === JSON.stringify(t.rect) && ALBUM.sheets[I3].title === "Моя схема" && /Листы обновлены по новым показателям/.test($("toast").textContent) && JSON.stringify(ALBUM.sheets[${F}]) === window.__fz`), "T55: «Обновить листы» (клавиша Enter на пункте) возвращает слои и оформление листа к шаблону, название и рамка остаются, лист из файла цел");
     // не готов: слои листа не загружены
-    await p.ev(`CHECKED.delete("egko.buildings"); await tplManual(); await new Promise(r=>setTimeout(r,500)); pickSheet(3); await new Promise(r=>setTimeout(r,300)); return 1`);
+    await p.ev(`CHECKED.delete("egko.buildings"); await tplManual(); await new Promise(r=>setTimeout(r,500)); pickSheet(I3); await new Promise(r=>setTimeout(r,300)); return 1`);
     check(await p.ev(`return /слой «Здания \\(ЕГКО\\)» не загружен/.test(NOTREADY.get("pptkrt_3") || "") && /Не готов:/.test(document.querySelector("#sheetsBody .snote")?.textContent || "") && /не готово: \\d+/.test($("shStat").textContent) && !NOTREADY.has("imp_t55_0")`), "T55: лист без нужных слоёв помечен «Не готов» с причиной, в строке альбома — число таких листов");
     // проект старого формата (листы без sheet.tpl), лист 6 правлен рукой: при открытии ничего не меняется; пересборка — только после второго нажатия
     const lg = await p.ev(`const s = ALBUM.sheets[5]; s.keys = s.keys.slice(1); s.legend = !s.legend; s.title = "Старое название"; const k5 = JSON.stringify(s.keys), l5 = s.legend;
@@ -1059,7 +1077,7 @@ export default async p => {
       const t = ALBUM.sheets[5]; window.__lg = [k5, l5]; return [got === want, t.tpl?.legacy === true, JSON.stringify(t.keys) === k5, t.legend === l5, t.title === "Старое название"]`);
     check(lg.every(Boolean), `T55: проект старого формата с правленным листом открывается без изменений, лист помечен legacy (${lg})`);
     const lg2 = await p.ev(`tplManual(); const a = JSON.stringify(ALBUM.sheets[5].keys), q = $("toast").textContent; tplManual(); const t = ALBUM.sheets[5];
-      return [a === window.__lg[0], /Обновить [0-9]+ (старый лист|старых листов) по шаблону[?] Ваши названия, рамки и фото сохранятся, набор слоёв и легенда — по шаблону/.test(q), JSON.stringify(t.keys) === JSON.stringify(PPTKRT[5].keys.concat([])) || t.keys.length === PPTKRT[5].keys.length, t.legend === PPTKRT[5].legend !== false || t.legend === (PPTKRT[5].legend ?? true), t.title === "Старое название", t.tpl.legacy === undefined]`);
+      return [a === window.__lg[0], /Обновить [0-9]+ (старый лист|старых листов) по шаблону[?] Ваши названия, рамки и фото сохранятся, набор слоёв и легенда — по шаблону/.test(q), JSON.stringify(t.keys) === JSON.stringify(PPTKRT[PPTKRT_ORDER[5]].keys.concat([])) || t.keys.length === PPTKRT[PPTKRT_ORDER[5]].keys.length, t.legend === PPTKRT[PPTKRT_ORDER[5]].legend !== false || t.legend === (PPTKRT[PPTKRT_ORDER[5]].legend ?? true), t.title === "Старое название", t.tpl.legacy === undefined]`);
     check(lg2.every(Boolean), `T55: «Обновить листы» спрашивает про старые листы; после подтверждения слои и легенда — по шаблону, название осталось (${lg2})`);
     await p.ev(`for (let k = 0; k < 30 && !RESULT.tepNode?._tep; k++) await new Promise(r=>setTimeout(r,500)); return 1`);
     // порядок: возвращаем проект теста в исходный вид
@@ -1078,7 +1096,7 @@ export default async p => {
     // синтетический альбом из файла: 3 листа готовой вёрстки
     await p.ev(`const fz = i => ({ id: "x" + i, frozen: true, title: "Готовый " + i, size: "PA3", scale: 5000, center: [37, 55], layers: [{ key: "a", title: "A", features: [] }], legend: [], tep: [] });
       readAlbumFile(new File([JSON.stringify({ sheets: [fz(0), fz(1), fz(2)] })], "t66.json")); for (let k = 0; k < 40 && ALBUM.sheets.length < 3; k++) await new Promise(r=>setTimeout(r,150)); return 1`);
-    const N = await p.ev(`return ALBUM.sheets.length`), M = await p.ev(`return PPTKRT.length`);
+    const N = await p.ev(`return ALBUM.sheets.length`), M = await p.ev(`return PPTKRT_ORDER.length`);   // листов в альбоме — по порядку показа (#47)
     check(N === 3 && await p.ev(`return ALBUM.sheets.every(s => s.frozen)`), `T66: импортирован альбом из файла, ${N} листа готовой вёрстки`);
     const ask = () => p.ev(`buildAlbum("pptkrt"); await new Promise(r=>setTimeout(r,500)); const b = $("shImpBar"); return [ALBUM.sheets.length, !!b, b ? [...b.querySelectorAll("button")].map(x => x.textContent.trim()).join("|") : "", b?.textContent.includes("в альбоме") ?? false]`);
     let a = await ask();
@@ -1230,7 +1248,7 @@ export default async p => {
     try {
       // 1. полная сборка: Overpass отвечает 504 — раздел собран, у листов с улицами OSM заметка без сырого кода, сообщение понятное
       await p.ev(`await buildSection0(PPTKRT, "pptkrt_", "PA3", "План реализации ППТ КРТ", "replace"); await new Promise(r => setTimeout(r, 300)); return 1`);
-      const NP = await p.ev(`return PPTKRT.length`);                  // листов в шаблоне альбома (титул, месторасположение, листы 3–9, листы «в границах сит. плана»)
+      const NP = await p.ev(`return PPTKRT_ORDER.length`);                  // листов в шаблоне альбома (титул, месторасположение, листы 3–9, листы «в границах сит. плана»)
       const a = await p.ev(`const note = ALBUM.sheets.map(s => LOSTNOTE.get(s.id)).filter(Boolean), tip = [...document.querySelectorAll("#sheetsBody .shrow .ic span[title]")].map(e => e.title).join("|");
         return [ALBUM.sheets.filter(s => s.id.startsWith("pptkrt_")).length, note, tip, $("toast").textContent, $("shStat").textContent, !!$("shStop").hidden]`);
       check(a[0] === NP && a[1].length >= 1 && a[1].every(t => t === "улицы OSM не загрузились (портал ответил 504) — повторите сборку позже" || /не загрузил/.test(t)), `T62: сбой OSM — листы собраны (${a[0]} из ${NP}), у ${a[1].length} заметка «${a[1][0]}»`);
@@ -1589,6 +1607,7 @@ export default async p => {
         const rd = L("osm.roads")?.features || [], byT = t => rd.find(f => (f.lc || f.fill) && f.label === t);
         out.scale = Math.round(sheetScale(dsh)); out.inFrame = fb[0] <= db[0] && fb[1] <= db[1] && fb[2] >= db[2] && fb[3] >= db[3];
         out.roads = { n: rd.length, ws: rd.map(f => +f.w.toFixed(1)), labels: rd.map(f => f.label), color: rd[0]?.fill };
+        out.streets = (sh.layers.find(l => l.title === "Подписи улиц")?.features || []).map(f => f.label);
         out.adm = (L("gisogd.admin")?.features || []).length;
         out.admW = L("gisogd.admin")?.features[0]?.w;
         out.names = sh.layers.filter(l => /подписи/.test(l.title)).flatMap(l => l.features.map(f => f.label));
@@ -1607,11 +1626,12 @@ export default async p => {
     check(r.look[0] === "concept" && r.look[1] === true && r.look[2] === "sat" && JSON.stringify(r.look[3]) === "[0,44,420,253]", `T90: снимок на весь лист под шапкой, как лист 3 (${JSON.stringify(r.look)})`);
     check(r.roads.n === 4 && !r.roads.labels.includes("Тестовая улица"), `T90: на карте магистрали и улицы районного значения, жилая улица не рисуется (${r.roads.n} линии)`);
     check(r.roads.ws[0] > r.roads.ws[2] && r.roads.ws[2] > r.roads.ws[3] && r.roads.color === "#f3d98c", `T90: линии жёлтые, ширина по классу: магистраль толще второстепенной (${r.roads.ws.join(", ")}; ${r.roads.color})`);
-    check(r.roads.labels[0] === "МКАД" && r.roads.labels[1] === "Щёлковское ш." && r.roads.labels[2] == null && r.roads.labels[3] == null, `T90: подписаны только магистраль и главная улица (${JSON.stringify(r.roads.labels)})`);
-    check(r.adm === 3 && Math.abs(r.admW - 4.6) < 0.2, `T90: границы трёх районов красные жирные 1,2 мм (${r.adm} шт., ширина ${r.admW})`);
-    check(r.names.some(n => /Гольяново/.test(n)), `T90: свой район подписан (${JSON.stringify(r.names)})`);
+    check(["МКАД", "Щёлковское ш.", "ул. Байкальская"].every(t => r.streets.includes(t)) && r.streets.length === 3 && r.roads.labels.every(t => t == null),
+      `T90: подписаны магистрали и улицы городского значения — отдельным слоем, одна подпись на улицу; местная — нет (#47) (${JSON.stringify(r.streets)})`);
+    check(r.adm === 3 && Math.abs(r.admW - 2.3) < 0.2, `T90: границы трёх районов тонкие 0,6 мм (владелец 07.10.2026, #45) (${r.adm} шт., ширина ${r.admW})`);
+    check(r.names.some(n => /Гольяново/i.test(n)), `T90: свой район подписан, заглавными (${JSON.stringify(r.names)})`);
     check(r.callout, "T90: выноска «Территория рассмотрения» на месте");
-    check(r.legend.includes("автомобильные дороги") && r.legend.includes("района") && r.legend.some(t => /территории рассмотрения/.test(t)), `T90: легенда — граница территории, района, автомобильные дороги (${JSON.stringify(r.legend)})`);
+    check(r.legend.includes("автомобильные дороги") && r.legend.includes("района") && r.legend.some(t => /разрабатываемой территории/.test(t)), `T90: легенда — граница территории, района, автомобильные дороги (${JSON.stringify(r.legend)})`);
     check(r.svg[0] === 200 && r.svg[2] && !r.svg[3], `T90: сервер рисует лист (код ${r.svg[0]}, ${r.svg[1]} знаков, заголовок есть: ${r.svg[2]}, «не готов»: «${r.svg[3]}»)`);
     if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t90svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t90img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
       await p.shot(`${shots}/t90-district.png`); await p.ev(`document.getElementById("t90img")?.remove(); return 1`); }
@@ -1633,7 +1653,7 @@ export default async p => {
         put("gisogd.func_zones", "Функциональные зоны (ГП)", [ft({ n: 6, fztip: "130", naimfunkzony: "коммунальные зоны" }, box(-.02, -.012, .02, .012))]);
         put("gisogd.pzz_zones", "ПЗЗ: территориальные зоны", [ft({ "Номер зоны": "6", "ВРИ (коды)": "4.9; 6.9; 3.1", "Индекс": "" }, box(-.012, -.006, .003, .006)), ft({ "Номер зоны": "7", "ВРИ (коды)": "2.6", "Индекс": "" }, box(.003, -.006, .008, .006))]);
         const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t91" + id, size: "PA3" });
-        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = PPTKRT.slice(-2), g12 = { ...cloneJ(tail[0]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[1]), id: "t91pzz", size: "PA3" };
+        const ortho = mk("ortho", "ortho"), use = mk("use", "use"), gp = mk("gp", "gp0"), tail = [PPTKRT.find(x => x.concept === "gp" && x.sit), PPTKRT.find(x => x.concept === "pzz")], g12 = { ...cloneJ(tail[0]), id: "t91gp12", size: "PA3" }, z13 = { ...cloneJ(tail[1]), id: "t91pzz", size: "PA3" };
         out.tpl = [tail.map(x => x.concept).join("|"), tail.every(x => x.sit === true), PPTKRT_D.length, g12.fit, z13.fit, g12.title.length, z13.title.length];
         ALBUM.sheets.push(ortho, use, gp, g12, z13);
         delete ALBUM.meta.schemeScale; out.auto = [Math.round(sheetScale(use)), Math.round(sheetScale(g12)), Math.round(sheetScale(z13))];
@@ -1650,13 +1670,13 @@ export default async p => {
         window.__t91 = { prevT, keep, saved, keys, svg2: t2, svg1: t1 }; out.shot = 1;
         return JSON.stringify(out);
       } catch (e) { window.__t91 = { prevT, keep, saved, keys }; throw e; }`));
-    check(r.tpl[0] === "gp|pzz" && r.tpl[1] && r.tpl[2] === 4 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в конце шаблона альбома листы gp и pzz с флагом sit (PPTKRT_D — четыре листа); fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
+    check(r.tpl[0] === "gp|pzz" && r.tpl[1] && r.tpl[2] === 5 && r.tpl[3] === "cover" && r.tpl[4] === "cover" && r.tpl[5] < 110 && r.tpl[6] < 110, `T91: в шаблоне альбома листы gp и pzz с флагом sit (PPTKRT_D — пять листов, #48); fit «cover» у листов 12 и 13; названия короче 110 знаков (${JSON.stringify(r.tpl)})`);
     check(r.auto[1] === 4000 && r.auto[2] === 4000, `T91: рамка листов 12 и 13 — по границам выгрузки без всякой настройки: 1:4000 (${r.auto.join(" / ")})`);
     check(r.num[0] === 5000 && r.num[1] === 5000 && r.num[2] === 4000 && r.num[3] === 4000, `T91: настройка «Масштаб схем» числом (1:5000) двигает схемы 5–9, а листы 12 и 13 — нет (${r.num.join(" / ")})`);
     check(r.cover.every(v => v === 4000), `T91: «по границам выгрузки» — у схем 5–9 и листов 12–13 одна рамка (${r.cover.join(" / ")})`);
     check(r.gp.edges >= 1 && r.gp.legend.some(t => /коммунальные зоны/.test(t)) && r.gp.legend.some(t => /номер функциональной зоны/.test(t)), `T91: лист 12 — как лист 6: границы зон, легенда зон (${JSON.stringify(r.gp.legend)})`);
-    check(r.pzz.n === 2 && r.pzz.labels[0] === "4.9, 6.9, 3.1" && r.pzz.labels[1] === "2.6" && Math.abs(r.pzz.w - 1.9) < .2 && r.pzz.stroke === "#6a3d9a", `T91: лист 13 — две территориальные зоны с кодами ВРИ, линия 0,5 мм фиолетовая (${JSON.stringify(r.pzz.labels)}, w ${r.pzz.w}, ${r.pzz.stroke})`);
-    check(r.pzz.legend.includes("территориальных зон") && r.pzz.legend.some(t => /коды видов разрешённого использования/.test(t)) && r.pzz.look[0] === "concept" && r.pzz.look[1] === false, `T91: лист 13 — легенда: граница территории, зон, подпись кодов (${JSON.stringify(r.pzz.legend)})`);
+    check(r.pzz.n === 2 && r.pzz.labels[0] === "4.9, 6.9, 3.1" && Math.abs(r.pzz.w - .96) < .2 && r.pzz.stroke === "#000000", `T91: лист 13 — две территориальные зоны, коды ВРИ у зон, где помещаются, линия чёрная нежирная (#47), линия 0,5 мм фиолетовая (${JSON.stringify(r.pzz.labels)}, w ${r.pzz.w}, ${r.pzz.stroke})`);
+    check(r.pzz.legend.some(t => /^территориальных зон/.test(t)) && r.pzz.legend.some(t => /коды видов разрешённого использования/.test(t)) && r.pzz.look[0] === "concept" && r.pzz.look[1] === false, `T91: лист 13 — легенда: граница территории, зон, подпись кодов (${JSON.stringify(r.pzz.legend)})`);
     check(r.svg[0] === 200 && !r.svg[1] && r.svg[2] && r.svg[3] === 200 && !r.svg[4] && r.svg[5], `T91: сервер рисует оба листа (коды ${r.svg[0]} / ${r.svg[3]}; «не готов»: «${r.svg[1]}» / «${r.svg[4]}»; названия в рисунке: ${r.svg[2]} / ${r.svg[5]})`);
     if (shots) for (const [n, k] of [["gp12", "svg1"], ["pzz13", "svg2"]]) {
       await p.ev(`const u = URL.createObjectURL(new Blob([window.__t91.${k}], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t91img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);
@@ -1687,9 +1707,15 @@ export default async p => {
         put("egko.buildings", "Здания", [[-.002, .0018], [.0025, .001], [-.0045, -.001], [.0035, -.002], [.001, .003]].map(c => ({ type: "Feature", properties: {}, geometry: at(c[0], c[1], .0008, .0005) })));
         const mk = (c, id) => ({ ...cloneJ(PPTKRT.find(x => x.concept === c)), id: "t92" + id, size: "PA3" });
         const ortho = mk("ortho", "ortho"), dsh = { ...cloneJ(PPTKRT.find(x => x.concept === "docs")), id: "t92docs", size: "PA3" };
-        ALBUM.sheets.push(ortho, dsh);
+        const gsh = { ...cloneJ(PPTKRT.filter(x => x.concept === "docs")[1]), id: "t92gpzu", size: "PA3" };
+        ALBUM.sheets.push(ortho, dsh, gsh);
+        const spg = albumSpec([gsh]).sheets[0], Lg = k => spg.layers.find(l => l.key === k || l.title === k);
+        out.gpzu = { drawn: ["gisogd.ppt", "gisogd.pmt", "gisogd.gpzu"].map(k => (Lg(k)?.features || []).length), num: (Lg("Номера документов")?.features || []).map(f => f.label),
+          lists: (spg.cLists || []).map(l => [l.title, l.items.length]), legend: (spg.cLegend || []).flatMap(g => (g.items || []).map(i => i.label)), title: gsh.title,
+          at: PPTKRT_ORDER.indexOf(PPTKRT.indexOf(PPTKRT.filter(x => x.concept === "docs")[1])) - PPTKRT_ORDER.indexOf(PPTKRT.indexOf(PPTKRT.find(x => x.concept === "docs"))),
+          why: [conceptWhy({ ...gsh, keys: gsh.keys }), conceptWhy(dsh)] };
         const sp = albumSpec([dsh]), sh = sp.sheets[0], L = k => sh.layers.find(l => l.key === k || l.title === k);
-        out.tpl = [dsh.sit, dsh.fit, dsh.title.length, PPTKRT.map(x => x.concept).slice(-4).join("|")];
+        out.tpl = [dsh.sit, dsh.fit, dsh.title.length, PPTKRT.map(x => x.concept).slice(-5).join("|")];
         out.scale = Math.round(sheetScale(dsh));
         out.drawn = ["gisogd.ppt", "gisogd.pmt", "gisogd.gpzu", "gisogd.agr", "nspd.parcels"].map(k => (L(k)?.features || []).length);
         out.num = (L("Номера документов")?.features || []).map(f => f.label);
@@ -1703,13 +1729,17 @@ export default async p => {
         window.__t92 = { prevT, keep, saved, keys, svg: txt }; out.shot = 1;
         return JSON.stringify(out);
       } catch (e) { window.__t92 = { prevT, keep, saved, keys }; throw e; }`));
-    check(r.tpl[0] === true && r.tpl[1] === "cover" && r.tpl[3] === "district|docs|gp|pzz", `T92: лист «docs» — флаг sit, рамка cover, порядок листов 10–13 district, docs, gp, pzz (${JSON.stringify(r.tpl)})`);
+    check(r.tpl[0] === true && r.tpl[1] === "cover" && r.tpl[3] === "district|docs|gp|pzz|docs", `T92: лист «docs» — флаг sit, рамка cover, в шаблоне листы 10–14 district, docs, gp, pzz, docs (ГПЗУ, #48) (${JSON.stringify(r.tpl)})`);
     check(r.scale === 4000, `T92: рамка по границам выгрузки — 1:4000 (${r.scale})`);
-    check(JSON.stringify(r.drawn) === "[6,3,3,1,6]", `T92: нарисованы все документы, а не только пронумерованные: ППТ 6, ПМТ 3, ГПЗУ 3, АГР 1, участков 6 (${r.drawn})`);
-    check(r.num.length === 8 && r.num.join(",") === "1,2,3,4,5,6,7,8", `T92: номера — только у ближайших восьми из двенадцати, сквозные (${r.num.join(",")})`);
-    check(r.lists.reduce((a, l) => a + l[1], 0) === 8 && r.lists.length === 3 && /Проекты планировки/.test(r.lists[0][0]) && /Проекты межевания/.test(r.lists[1][0]) && /ГПЗУ/.test(r.lists[2][0]), `T92: списки справа — ППТ, ПМТ, ГПЗУ, всего 8 пунктов (${JSON.stringify(r.lists.map(l => [l[0].slice(0, 12), l[1]]))})`);
-    check(r.krt === 1, `T92: КРТ самой территории не штрихуется, чужое — штрихуется (${r.krt})`);
-    check(["территории рассмотрения", "земельных участков, поставленных на кадастровый учёт", "проекты планировки территории", "проекты межевания территории", "градостроительный план земельного участка", "архитектурно-градостроительное решение", "комплексное развитие территории"].every(t => r.legend.some(x => x.includes(t))), `T92: легенда — граница, участки, ППТ, ПМТ, ГПЗУ, АГР, КРТ (${r.legend.length} знаков)`);
+    check(JSON.stringify(r.drawn) === "[6,3,0,0,6]", `T92: на листе ППТ и ПМТ нарисованы все документы, а не только пронумерованные: ППТ 6, ПМТ 3, участков 6; ГПЗУ — на своём листе (#48), АГР нет (#47) (${r.drawn})`);
+    check(r.num.length === 7 && r.num.join(",") === "1,2,3,4,5,6,7", `T92: номера — только у ближайших семи из девяти, у каждого вида не меньше двух, сквозные (#47) (${r.num.join(",")})`);
+    check(r.lists.reduce((a, l) => a + l[1], 0) === 7 && r.lists.length === 2 && r.lists.every(l => l[1] >= 2) && /Проекты планировки/.test(r.lists[0][0]) && /Проекты межевания/.test(r.lists[1][0]), `T92: списки справа — ППТ и ПМТ, всего 7 пунктов, у каждого не меньше двух (${JSON.stringify(r.lists.map(l => [l[0].slice(0, 12), l[1]]))})`);
+    check(r.krt === 0, `T92: КРТ на листе нет (владелец 07.10.2026, #47) (${r.krt})`);
+    check(["разрабатываемой территории", "земельных участков, поставленных на кадастровый учёт", "проекты планировки территории", "проекты межевания территории"].every(t => r.legend.some(x => x.includes(t))) && !r.legend.some(x => /градостроительный план|архитектурно-градостроительное|комплексное развитие/.test(x)), `T92: легенда — граница, участки, ППТ, ПМТ; без ГПЗУ, АГР и КРТ (${r.legend.length} знаков)`);
+    const g = r.gpzu;
+    check(JSON.stringify(g.drawn) === "[0,0,3]" && g.num.join(",") === "1,2,3" && g.lists.length === 1 && /ГПЗУ/.test(g.lists[0][0]) && g.lists[0][1] === 3 && g.at === 1 && /градостроительными планами/.test(g.title),
+      `T92: ГПЗУ — на отдельном листе сразу за ППТ и ПМТ (владелец 07.10.2026, #48): ГПЗУ 3 с номерами 1–3, один список, ППТ и ПМТ нет (${JSON.stringify(g.drawn)}, ${JSON.stringify(g.lists)}, место ${g.at})`);
+    check(g.legend.some(x => /градостроительный план земельного участка/.test(x)) && !g.legend.some(x => /проекты планировки|проекты межевания/.test(x)) && g.why.join("|") === "|", `T92: легенда листа ГПЗУ — без ППТ и ПМТ; оба листа готовы (${JSON.stringify(g.legend)}, «${g.why.join("» / «")}»)`);
     check(r.styles[0] === "#e1e1e1" && Math.abs(r.styles[2] - .58) < .1, `T92: светлая подложка: здания светло-серые, границы участков тонкие синие (${r.styles[0]}, ширина ${r.styles[2]})`);
     check(r.svg[0] === 200 && !r.svg[1] && r.svg[2], `T92: сервер рисует лист, название и списки помещаются (код ${r.svg[0]}; «не готов»: «${r.svg[1]}»; название в рисунке: ${r.svg[2]})`);
     if (shots) { await p.ev(`const u = URL.createObjectURL(new Blob([window.__t92.svg], { type: "image/svg+xml" })); const im = document.createElement("img"); im.id = "t92img"; im.src = u; im.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;object-fit:contain;background:#fff;z-index:99999"; document.body.appendChild(im); await new Promise(r => im.onload = r); return 1`);

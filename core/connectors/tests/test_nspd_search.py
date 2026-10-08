@@ -1,3 +1,9 @@
+"""Проверяет поиск НСПД по кадастровым номерам (search_cadastral): разбор, повторы, лимит 20.
+
+Без сети: транспорт подменён функцией, паузы отключены.
+Запуск: python -m unittest discover -s core/connectors/tests (PYTHONPATH — как в tools/gate.sh); весь набор — tools/gate.sh.
+"""
+
 import unittest
 import urllib.parse
 
