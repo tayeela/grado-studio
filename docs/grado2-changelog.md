@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.61: окна «Варианты», «Сравнение» и «Объём» в новом интерфейсе (#69).**
+  - «Варианты»: «Подобрать варианты» tries typologies × building width × direction inside the constraints, floors fit
+    the density goal; six best as cards with a plan picture, all in a table (density, floors, insolation of new
+    houses, population, kindergarten places); «Стоп» keeps what is counted; a click moves the variant into the scheme;
+    «Сохранить слоем». The numbers are recounted when norms or territory parameters change.
+  - Saved variants (same format as the working page): «Сохранить как вариант…» in «Эскиз» and «Варианты»; open
+    (becomes the sketch layer «Вариант: …»), rename, delete (second click confirms).
+  - «Сравнение»: two maps side by side with the main map's view — existing situation and the sketch or a saved variant.
+  - «Объём»: buildings of the sketch and saved sketch layers with kept buildings, shadows for the chosen date and time.
+  - Floating windows open in a cascade, not on top of each other.
+
 - **2026-10-08, ГРАДО 2 v0.99.60: окна «Эскиз», «Показатели (ТЭП)» и «Нормативы расчёта» в новом интерфейсе (#69).**
   - «Эскиз»: typology buttons, floors by a number or by the density goal, the sliders the chosen typology uses,
     «Построить эскиз» / «Остановить», «Сохранить слоем» (buildings, plots and streets as layers of the group

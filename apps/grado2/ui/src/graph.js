@@ -21,7 +21,7 @@ import { CAO, TAO, bakedSketch, existKey, keptBuildings, placeLookup, tepParams,
 export const tick = ref(0);                  // пересчёт прошёл: окна перечитывают RESULT и пояснения узлов
 export const selNode = ref(null);            // выбранный узел (id) — его выход виден на карте, пока открыто окно схемы
 export const RESULT = shallowReactive({ site: null, sketch: [], tep: null, placeNode: null, tepNode: null });
-export const preview = reactive({ graph: false, sketch: false });   // окна схемы и эскиза на виду: результат схемы — на карте
+export const preview = reactive({ graph: false, sketch: false, vars: false, vol: false, cmp: false });   // окна схемы, эскиза, вариантов, объёма, сравнения на виду: результат схемы — на карте
 
 const RT = new Map();                        // id узла → несохраняемое состояние: выходы, кэш, пояснение
 export const rt = n => { let r = RT.get(n.id); if (!r) RT.set(n.id, r = { out: [], info: "" }); return r; };
@@ -121,7 +121,7 @@ export function placeParams(n, x) {
     cap: n.inputs?.[2] ? x?.in(2) || null : null, goal: mode === FLOOR_MODES[1] ? densityGoal() : null,
     plot: Math.round(w[6] ?? 10), block: Math.round(w[7] ?? 110), relax: !!w[8] };
 }
-function densityGoal() {
+export function densityGoal() {
   const t = graph()?.nodes.find(n => n.type === "Показатели/ТЭП КРТ"), T = terr(); if (!t || !T) return null;
   const kept = keptBuildings(inputOf(t, 1)), sppKept = kept.reduce((s, f) => s + m2(f) * floorsOf(f), 0), target = t.widgets_values[1];
   return { target, need: Math.max(0, target * 1000 * m2(T) / 1e4 - sppKept) };
@@ -264,7 +264,7 @@ const EXEC = {
 
 /* ---------- расчёт ---------- */
 let LINKS = new Map();
-function inputOf(n, i) {
+export function inputOf(n, i) {
   const id = n.inputs?.[i]?.link; if (id == null) return undefined;
   const l = LINKS.get(id); if (!l) return undefined;
   return RT.get(l[1])?.out[l[2]];

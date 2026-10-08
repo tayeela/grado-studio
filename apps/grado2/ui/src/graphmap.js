@@ -1,7 +1,7 @@
 /* ГРАДО 2 · результат схемы расчёта на карте нового интерфейса (как предпросмотр web/app.js RES): пятно застройки
    штриховкой, сохраняемые здания серым, участки и улицы эскиза, резерв участков ДОО, школы и поликлиники (цвета --res-*,
    подпись вида с 1:5 000), корпуса эскиза цветом этажности (подпись «12 эт.» с
-   1:2 000) и выход выбранного блока оранжевым с пояснениями. Видно, пока открыты окна схемы или эскиза; выход блока —
+   1:2 000) и выход выбранного блока оранжевым с пояснениями. Видно, пока на виду окна схемы, эскиза, вариантов, объёма или сравнения; выход блока —
    только при открытом окне схемы. Слои над данными проекта, в список слоёв не попадают. MapPanel зовёт attachGraphLayers. */
 import { watch } from "vue";
 import VectorLayer from "ol/layer/Vector.js";
@@ -17,7 +17,7 @@ import { reserveShown } from "./sketch.js";
 const GJ = new GeoJSON({ featureProjection: "EPSG:3857" });
 const toOl = f => GJ.readFeature(f);
 const S = (fill, stroke, w) => new Style({ fill: new Fill({ color: fill }), stroke: new Stroke({ color: stroke, width: w }) });
-const shade = n => ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94"][Math.min(4, Math.floor(n / 6))];
+export const shade = n => ["#dcebfa", "#a8cbf1", "#6fa6e6", "#2a78d6", "#1a4f94"][Math.min(4, Math.floor(n / 6))];
 const FLOOR_LABEL_DEN = 2000, RES_CAP_DEN = 5000;
 const RES_TOKEN = { "участок ДОО": "doo", "участок школы": "school", "участок поликлиники": "clinic" }, RES_CAP = { "участок ДОО": "ДОО", "участок школы": "школа", "участок поликлиники": "поликлиника" };
 const resTok = (k, ln) => getComputedStyle(document.documentElement).getPropertyValue(`--res-${RES_TOKEN[k]}${ln ? "-ln" : ""}`).trim() || (ln ? "#999999" : "#eeeeee");
@@ -46,7 +46,7 @@ export function attachGraphLayers(map) {
   Object.values(L).forEach(l => map.addLayer(l));
   const put = (s, list) => { s.clear(true); s.addFeatures(list.filter(Boolean).map(toOl)); };
   function draw() {
-    const any = preview.graph || preview.sketch;
+    const any = preview.graph || preview.sketch || preview.vars || preview.vol || preview.cmp;
     Object.entries(L).forEach(([k, l]) => l.setVisible(k === "prev" ? preview.graph : any));
     if (!any) return;
     put(src.site, [RESULT.site]);
@@ -63,7 +63,7 @@ export function attachGraphLayers(map) {
       else if (n.outputs?.[0]?.type === "geom" && out) src.prev.addFeature(toOl(out));
     }
   }
-  watch([tick, selNode, () => preview.graph, () => preview.sketch], draw);
+  watch([tick, selNode, () => ({ ...preview })], draw);
   watch(theme, () => { L.site.changed(); L.res.changed(); });
   draw();
 }

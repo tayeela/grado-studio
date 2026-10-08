@@ -132,6 +132,9 @@ const PANELS = [
   { id: "graph", title: "Схема расчёта" },
   { id: "sketch", title: "Эскиз" },
   { id: "norms", title: "Нормативы расчёта" },
+  { id: "vars", title: "Варианты" },
+  { id: "cmp", title: "Сравнение" },
+  { id: "vol", title: "Объём" },
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
 ];
@@ -185,6 +188,7 @@ function defaultLayout() {
   api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
   api.addPanel({ id: "graph", component: "graph", title: "Схема расчёта", position: { referencePanel: "tep", direction: "within" }, inactive: true });
+  api.addPanel({ id: "vars", component: "vars", title: "Варианты", position: { referencePanel: "tep", direction: "within" }, inactive: true });
   api.addPanel({ id: "sketch", component: "sketch", title: "Эскиз", position: { referencePanel: "props", direction: "within" }, inactive: true });
   api.getPanel("layers")?.api.setActive();
   api.getPanel("props")?.api.setActive();
@@ -194,7 +198,7 @@ function defaultLayout() {
 
 /* Раскладка из браузера сохранена до появления новых окон: перенесённое окно встаёт на своё место по умолчанию один раз,
    дальше пользователь закрывает и двигает его сам (список показанных — «grado-next-seen»). */
-const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"], sketch: ["props", "within"] };
+const NEW_WINDOWS = { object: ["props", "within"], table: ["tep", "within"], views: ["layers", "within"], data: ["layers", "within"], cons: ["props", "within"], graph: ["tep", "within"], sketch: ["props", "within"], vars: ["tep", "within"] };
 function addNewWindows() {
   let seen = [];
   try { seen = JSON.parse(localStorage.getItem("grado-next-seen") || "[]"); } catch { /* нет — все новые */ }
@@ -208,8 +212,9 @@ function addNewWindows() {
 
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
-  const big = id === "norms" || id === "sketch";      // длинные окна — выше и шире
-  api.addPanel({ id, component: id, title: p.title, floating: { x: 300, y: 80, width: big ? 560 : 440, height: big ? 600 : 280 } });
+  const [w, h] = { norms: [560, 600], sketch: [440, 600], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
+  const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом
+  api.addPanel({ id, component: id, title: p.title, floating: { x: 300 + k * 28, y: 80 + k * 28, width: w, height: h } });
 }
 
 function showHelp() {

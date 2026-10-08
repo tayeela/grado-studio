@@ -41,6 +41,9 @@ import ConsPanel from "./panels/ConsPanel.vue";
 import GraphPanel from "./panels/GraphPanel.vue";
 import SketchPanel from "./panels/SketchPanel.vue";
 import NormsPanel from "./panels/NormsPanel.vue";
+import VarsPanel from "./panels/VarsPanel.vue";
+import ComparePanel from "./panels/ComparePanel.vue";
+import VolumePanel from "./panels/VolumePanel.vue";
 import { applyTheme, theme } from "./store.js";
 
 applyTheme(theme.value);
@@ -48,5 +51,6 @@ applyTheme(theme.value);
 const app = createApp(App);
 app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel)
   .component("object", ObjectPanel).component("table", TablePanel).component("views", ViewsPanel).component("help", HelpPanel).component("data", DataPanel).component("cons", ConsPanel).component("graph", GraphPanel)
-  .component("sketch", SketchPanel).component("norms", NormsPanel);
+  .component("sketch", SketchPanel).component("norms", NormsPanel)
+  .component("vars", VarsPanel).component("cmp", ComparePanel).component("vol", VolumePanel);
 app.mount("#app");

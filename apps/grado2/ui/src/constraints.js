@@ -18,6 +18,7 @@ import { bboxOf, buf, floorsOf, inter, m2, plural, polys, ringsXY, safe, setFram
 
 const INSOL = globalThis.INSOL || insolModule.default || insolModule;
 globalThis.INSOL ||= INSOL;     // web/blocks.js (урбан-блоки) читает инсоляцию из глобального INSOL
+export { INSOL };
 
 export const CONS = reactive({ waterLine: 5, norm: 2, z: 2, step: 4, reveal: 0, cell: 8, floorH: 3, redline: 5, cap: 150,
   use: { zouit: true, red: true, fire: true, pzz: true, gp: true, insol: true }, log: null, running: "" });

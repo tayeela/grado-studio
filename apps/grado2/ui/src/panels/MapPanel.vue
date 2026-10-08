@@ -9,22 +9,18 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Map from "ol/Map.js";
 import View from "ol/View.js";
-import TileLayer from "ol/layer/Tile.js";
 import VectorLayer from "ol/layer/Vector.js";
 import VectorSource from "ol/source/Vector.js";
-import OSM from "ol/source/OSM.js";
-import XYZ from "ol/source/XYZ.js";
-import GeoJSON from "ol/format/GeoJSON.js";
 import { containsExtent, createEmpty, extend, isEmpty } from "ol/extent.js";
 import { defaults as defaultInteractions } from "ol/interaction/defaults.js";
 import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
-import { basemapId, project, scale, shown, theme, viewNow } from "../store.js";
+import { basemapId, project, scale, theme, viewNow } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
-import { indexOf, sel, selected, setSel, toggleSel } from "../features.js";
-import { denToRes, fullStyle, loadLibs, okn, scaleDen, styleFunction } from "../symbology.js";
+import { sel, selected, setSel, toggleSel } from "../features.js";
+import { loadLibs, scaleDen } from "../symbology.js";
 import Draw from "ol/interaction/Draw.js";
 import Modify from "ol/interaction/Modify.js";
 import Text from "ol/style/Text.js";
@@ -33,35 +29,13 @@ import Feature from "ol/Feature.js";
 import { coverBox, coverOn, importFiles, setTerritory, terrTool } from "../data.js";
 import { notice } from "../project.js";
 import { attachGraphLayers } from "../graphmap.js";
+import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
 
 const el = ref(null);
 let map, ro;
-const vec = {};                       // key слоя → VectorLayer
-const fmt = new GeoJSON({ featureProjection: "EPSG:3857" });   // в файле проекта данные в долготе и широте
+const fmt = gjFormat;
 
 const lat = () => toLonLat(map.getView().getCenter())[1];
-
-/* Слой OpenLayers по описанию слоя из файла: оформление, видимость по масштабу (как в QGIS), прозрачность слоя.
-   Подписи разводятся (declutter), если у слоя есть подпись. Источник с объектами переиспользуется. */
-function olLayer(l, i, n, src) {
-  const st = fullStyle(l.style), la = lat();
-  return new VectorLayer({
-    source: src, style: styleFunction(l, project.data[l.key]?.fc, lat), declutter: !!st.label,
-    visible: shown(l), zIndex: n - i, opacity: okn(l.layerOpacity, 1),
-    maxResolution: st.maxDen ? denToRes(st.maxDen, la) : Infinity, minResolution: st.minDen ? denToRes(st.minDen, la) : 0,
-    properties: { key: l.key },
-  });
-}
-const sig = l => JSON.stringify([l.style, l.layerOpacity, l.geom]);
-
-/* Подложки — как web/app.js BASEMAPS: «Схема OSM» в тёмной теме — тёмная схема Esri. */
-function basemap(id, t) {
-  if (id === "esri") return new TileLayer({ className: "basemap-sat", opacity: 0.9, source: new XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", maxZoom: 19, attributions: "Снимки © Esri, Maxar, Earthstar Geographics" }) });
-  if (id === "s2") return new TileLayer({ className: "basemap-sat", opacity: 0.9, source: new XYZ({ url: "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2021_3857/default/g/{z}/{y}/{x}.jpg", maxZoom: 15, attributions: "Sentinel-2 cloudless 2021 © EOX IT Services GmbH (содержит изменённые данные Copernicus Sentinel)" }) });
-  return t === "dark"
-    ? new TileLayer({ source: new XYZ({ url: "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", maxZoom: 16, crossOrigin: "anonymous", attributions: "Подложка © Esri, HERE, Garmin, © OpenStreetMap contributors" }) })
-    : new TileLayer({ source: new OSM(), className: "basemap", opacity: 0.55 });
-}
 
 /* Граница территории (project.territory): штрихпунктир, как у рабочей страницы; при правке — с голубым ореолом и ручками.
    Нарисовать — многоугольник (двойной щелчок завершает, Esc отменяет), править — ручки на вершинах (Alt+щелчок удаляет вершину). */
@@ -102,44 +76,9 @@ function drawCover() {
 }
 let terrLayer = null;
 
-/* Слои карты по слоям проекта: новый слой или заменённые данные — новый источник, изменённое оформление — новый слой
-   на том же источнике, видимость и порядок — на месте; слои, которых в проекте нет, убираются. */
-function sync() {
-  const n = project.layers.length, keys = new Set(project.layers.map(l => l.key));
-  for (const k in vec) if (!keys.has(k)) { map.removeLayer(vec[k]); delete vec[k]; }
-  project.layers.forEach((l, i) => {
-    const fc = project.data[l.key]?.fc;
-    let v = vec[l.key];
-    if (!v) {
-      v = vec[l.key] = olLayer(l, i, n, new VectorSource({ features: readAll(fc) }));
-      v.set("fc", fc); v.set("sig", sig(l)); map.addLayer(v);
-    } else if (v.get("fc") !== fc || v.get("sig") !== sig(l)) {
-      if (v.get("fc") !== fc) patch(v.getSource(), v.get("fc"), fc);
-      const nv = olLayer(l, i, n, v.getSource()); nv.set("fc", fc); nv.set("sig", sig(l));   // стиль заново: категории и диапазоны зависят от данных
-      map.getLayers().setAt(map.getLayers().getArray().indexOf(v), nv); vec[l.key] = v = nv;
-    }
-    v.setVisible(shown(l)); v.setZIndex(n - i);
-  });
-  drawSel();
-}
-
-/* Объекты GeoJSON слоя → объекты карты; у каждого ссылка gj на свою запись в файле (по ней выбор и правка). */
-function readAll(fc) {
-  indexOf(fc);                                      // номера _uid у всех объектов
-  return (fc?.features || []).map(readOne).filter(Boolean);
-}
-function readOne(gj) {
-  try { const f = fmt.readFeature(gj); f.gj = gj; return f; } catch { return null; }   // битый объект не должен ронять слой
-}
-/* Правка данных: только изменённые записи (новые объекты в fc) меняются на карте; тысячи прочих не перечитываются. */
-function patch(src, oldFc, fc) {
-  indexOf(fc);
-  const now = new Set(fc?.features || []), was = new Set(oldFc?.features || []);
-  const gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !was.has(gj));
-  if (gone.length + add.length > 2000) { src.clear(true); src.addFeatures(readAll(fc)); return; }
-  gone.forEach(f => src.removeFeature(f));
-  src.addFeatures(add.map(readOne).filter(Boolean));
-}
+/* слои проекта на карте — maplayers.js (то же для карт окна «Сравнение»); здесь — ещё подсветка выбора */
+let LS = null, vec = {};               // vec: key слоя → VectorLayer
+function sync() { LS.sync(); drawSel(); }
 
 /* ---------- выбор: щелчок, Shift+щелчок, рамка с Shift; подсветка поверх слоёв ---------- */
 const selSrc = new VectorSource();
@@ -178,7 +117,7 @@ function onBox(box) {
    (dockview ещё раскладывает окна), вид ставится позже — иначе «всё в кадре» на нулевом окне даёт обзор всей Земли. */
 let viewPending = true;
 function opened() {
-  for (const k in vec) { map.removeLayer(vec[k]); delete vec[k]; }
+  LS.clear();
   sync();
   drawTerr(); drawCover();
   viewPending = true; applyView();
@@ -210,6 +149,7 @@ onMounted(() => {
     view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
+  LS = layerSync(map); vec = LS.vec;
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
@@ -223,7 +163,7 @@ onMounted(() => {
   map.on("moveend", upd); upd();
   ro = new ResizeObserver(() => { map.updateSize(); if (viewPending) { applyView(); upd(); } }); ro.observe(el.value);
   opened();
-  mapApi.zoomTo = zoomTo;
+  mapApi.zoomTo = zoomTo; mapApi.view = map.getView();
   loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
   watch([basemapId, theme], ([id, t]) => map.getLayers().setAt(0, basemap(id, t)));
   watch(() => project.raw, opened);

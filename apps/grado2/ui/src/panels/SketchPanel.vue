@@ -8,11 +8,19 @@
       <div class="row">
         <wa-button v-if="on" size="s" appearance="outlined" title="Остановить пересчёт посадки: правка параметров перестанет перестраивать эскиз" @click="setRun(false)"><Pause :size="14" /> Остановить</wa-button>
         <wa-button v-else size="s" variant="brand" title="Разместить корпуса на пятне застройки по заданной типологии" @click="setRun(true)"><Play :size="14" /> Построить эскиз</wa-button>
-        <wa-button size="s" appearance="outlined" :disabled="!n" title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать" @click="bakeSketch"><Stamp :size="14" /> Сохранить слоем</wa-button>
+        <wa-button size="s" appearance="outlined" :disabled="!n" title="Сделать эскиз обычным слоем проекта: править, стилизовать, выгружать" @click="bakeSketch()"><Stamp :size="14" /> Сохранить слоем</wa-button>
       </div>
       <p v-if="on" class="hint">Эскиз перестраивается при каждой правке ниже. {{ low ? "Домов" : "Корпусов" }}: {{ n }}.<template v-if="dropped"> Цель набрана и без {{ plural(dropped, ["корпуса", "корпусов", "корпусов"]) }} под низкой предельной высотой — на их месте пятна «свет соседям» (жёлтые): там нужен свет соседям.</template><template v-if="goalNote"> {{ goalNote }}.</template> Пока эскиз не сохранён, он виден только при открытых окнах схемы расчёта и эскиза.</p>
       <p v-else-if="project.territory" class="hint">Выберите типологию и параметры, затем «Построить эскиз»: корпуса сами не появляются. Пока окно открыто, на карте виден предварительный просмотр — пятно застройки и сохраняемые здания; «Сохранить слоем» сохраняет построенный эскиз слоем.</p>
       <p v-else class="hint"><b class="warnt">Нет границы территории.</b> Эскиз строится только внутри неё: задайте границу в окне «Данные».</p>
+      <div class="row">
+        <template v-if="SV.ask === 'sk'">
+          <input v-model="SV.val" v-focus type="text" maxlength="60" aria-label="Название варианта" placeholder="Название варианта" @keydown.enter.prevent="svCommit" @keydown.esc.prevent="SV.ask = ''">
+          <wa-button size="s" variant="brand" @click="svCommit">Сохранить</wa-button><wa-button size="s" appearance="outlined" @click="SV.ask = ''">Отмена</wa-button>
+        </template>
+        <wa-button v-else size="s" appearance="outlined" :disabled="!svN" title="Запомнить текущий эскиз с показателями под своим названием: он появится в окне «Варианты», группа «Сохранённые»" @click="svAsk('sk')"><BookmarkPlus :size="14" /> Сохранить как вариант…</wa-button>
+      </div>
+      <p v-if="savedN" class="hint">Сохранённых вариантов: {{ savedN }} (окно «Варианты»)</p>
       <p v-for="(x, i) in resNotes" :key="'r' + i" class="warn">{{ x }}</p>
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="!n || !!CONS.running" :loading="CONS.running === 'Проверка норм…'"
@@ -44,13 +52,14 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted } from "vue";
-import { Pause, Play, ShieldCheck, Stamp } from "@lucide/vue";
+import { BookmarkPlus, Pause, Play, ShieldCheck, Stamp } from "@lucide/vue";
 import { project } from "../store.js";
 import { CHECK, CONS, runCheck } from "../constraints.js";
 import { LOWRISE } from "../graphfile.js";
 import { RESULT, nodeById, preview, tick } from "../graph.js";
 import { bakeSketch, publishedControls, reserveState, setControl, setRun, wv } from "../sketch.js";
 import { fmt, plural } from "../geom.js";
+import { SV, savedList, svAsk, svCommit, svCurrent } from "../variants.js";
 
 const props = defineProps(["params"]);
 const pn = computed(() => { void tick.value; return RESULT.placeNode; });
@@ -62,6 +71,9 @@ const goalNote = computed(() => { void tick.value; const g = RESULT.sketch?.goal
 const resNotes = computed(() => { void tick.value; return reserveState().notes; });
 const controls = computed(() => { void tick.value; return publishedControls(); });
 const val = c => { void tick.value; return wv(nodeById(c.id), c.name); };
+const svN = computed(() => svCurrent().sk.length);
+const savedN = computed(() => { void tick.value; return savedList().length; });
+const vFocus = { mounted: el => { el.focus(); el.select(); } };
 const check = () => runCheck(RESULT.sketch.map(b => ({ f: b.f, floors: b.floors, grp: b.grp || null })));
 
 let off = null;
@@ -76,6 +88,7 @@ onBeforeUnmount(() => { off?.dispose?.(); preview.sketch = false; });
 <style>
 .sketchp .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 4px; }
 .sketchp .row wa-button::part(base) { gap: 4px; }
+.sketchp .row input[type=text] { flex: 1; min-width: 120px; font: inherit; font-size: var(--wa-font-size-s); padding: 2px 6px; border: 1px solid var(--g-line); border-radius: 4px; background: var(--wa-color-surface-default); color: inherit; }
 .sketchp .warn { color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-xs); margin: 2px 0; }
 .sketchp .warnt { color: var(--wa-color-warning-on-quiet); }
 .sketchp .ctl { margin: var(--wa-space-s) 0; font-size: var(--wa-font-size-s); }

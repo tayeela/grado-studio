@@ -63,7 +63,7 @@ class NextUi(unittest.TestCase):
         # подложки — те же адреса плиток, выгрузка — те же адреса сервера, что у рабочей страницы (web/app.js)
         old = (NEXT.parent / "app.js").read_text(encoding="utf-8")
         src = NEXT.parents[1] / "ui" / "src"
-        new = (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8")
+        new = (src / "maplayers.js").read_text(encoding="utf-8")
         tiles = lambda t: sorted(set(re.findall(r'url: "(https://[^"]+)"', t)))
         self.assertEqual(tiles(old), tiles(new))
         exp = (src / "exports.js").read_text(encoding="utf-8")

@@ -85,10 +85,11 @@ function addLayer(title, fc, style) {
   project.data[key] = { title, source: "эскиз из схемы расчёта, сохранён " + day.toLocaleDateString("ru-RU"), fetched_at: day.toISOString().slice(0, 10), fc };
   const l = ensureLayer(key, title); l.style = fullStyle(style); return key;
 }
-export function bakeSketch() {
-  const sk = RESULT.sketch || []; if (!sk.length) { notice.value = "Эскиз пуст: сначала «Построить эскиз»"; return null; }
-  const typ = wv(RESULT.placeNode, "типология") || "", t = typ.toLowerCase(), fl = [...new Set(sk.map(b => b.floors))];
-  const resP = reserveState().plots, plots = [...(sk.plots || []), ...resP], keys = [];
+/* skIn — сохранённый вариант (T59): корпуса без участков и улиц схемы, typIn и titleIn — его типология и название слоя */
+export function bakeSketch(skIn, typIn, titleIn) {
+  const own = Array.isArray(skIn), sk = own ? skIn : RESULT.sketch || []; if (!sk.length) { notice.value = "Эскиз пуст: сначала «Построить эскиз»"; return null; }
+  const typ = (own && typIn) || wv(RESULT.placeNode, "типология") || "", t = typ.toLowerCase(), fl = [...new Set(sk.map(b => b.floors))];
+  const resP = own ? [] : reserveState().plots, plots = [...(sk.plots || []), ...resP], keys = [];
   // новые слои встают наверх: сначала улицы, затем участки, корпуса — сверху
   if (sk.streets?.length) keys.unshift(addLayer(`Эскиз: улицы и проезды (${t})`, turf.featureCollection(sk.streets.map((g, i) => turf.feature(g.f.geometry, { "№": i + 1, "Вид": g.kind, "Площадь, м²": Math.round(g.m2),
     ...(g["Мест"] ? { "Мест": g["Мест"], "Норма": "945-ПП п. 6.2.3.2: 10 % от 1,6 места на дом" } : {}) }))),
@@ -98,7 +99,7 @@ export function bakeSketch() {
     ...(g["Участок"] ? { "Участок": g["Участок"], "Места": g["Места"], "Дефицит": g["Дефицит"] } : {}), ...(g["Площадь, сот."] ? { "Площадь, сот.": g["Площадь, сот."] } : {}),
     ...(g["Блок"] ? { "Блок": g["Блок"] } : {}), ...(g["Причина"] ? { "Причина": g["Причина"] } : {}) }))),
     { mode: "cat", width: .8, stroke: "#7a9a5a", opacity: .6, cat: { field: "Вид", colors: { "участок ИЖС": "#dfeccd", "участок блока": "#dfeccd", "двор": "#f3eac6", "свет соседям": "#fbe39a", "хозпостройка": "#d9cdb8", "участок ДОО": "#f6dccb", "участок школы": "#dcd3ec", "участок поликлиники": "#cfe8e3" }, off: [] } }));
-  const title = `Эскиз: ${t}, ${fl.join("/")} эт.`;
+  const title = (own && titleIn) || `Эскиз: ${t}, ${fl.join("/")} эт.`;
   const key = addLayer(title, turf.featureCollection(sk.map((b, i) => turf.feature(b.f.geometry, { "№": i + 1, "Типология": typ, "Корпус": b.kind || "", "Этажность": b.floors, "Площадь застройки, м²": Math.round(b.m2), "СПП, м²": Math.round(b.m2 * b.floors),
     ...(b.grp ? { "Блок": b.grp } : {}), ...(b["Блоков"] ? { "Блоков": b["Блоков"] } : {}), ...(b["1 этаж"] ? { "1 этаж": b["1 этаж"] } : {}) }))),
     { mode: fl.length > 1 ? "grad" : "single", fill: "#6fa6e6", stroke: "#1a4f94", width: .8, opacity: .9, label: "Этажность", grad: { field: "Этажность", n: 4, ramp: "blue", method: "equal" } });   // разная этажность — диапазоны, одна — единый цвет
