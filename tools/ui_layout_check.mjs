@@ -35,7 +35,7 @@ export function startServer() {
   copyFileSync(join(ROOT, "apps/grado2/tests/fixtures/next_ui_project.grado2"), join(dir, ".autosave.grado2"));
   const port = String(8700 + Math.floor(Math.random() * 250));     // свой порт: другой запуск проверки или тестовый сервер того же кода не мешают
   const proc = spawn(PY, [join(ROOT, "apps/grado2/server.py"), port], {
-    env: { ...process.env, GRADO2_PROJECTS: dir, GRADO2_NO_BROWSER: "1", PYTHONPATH: "" }, stdio: ["ignore", "pipe", "pipe"],
+    env: { ...process.env, GRADO2_PROJECTS: dir, GRADO2_NO_BROWSER: "1", PYTHONPATH: "", PYTHONUNBUFFERED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   return new Promise((ok, bad) => {
     let log = "";
