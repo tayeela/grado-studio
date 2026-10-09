@@ -4,7 +4,8 @@
      Оформление — все способы рабочей страницы (symbology.js): единое, категории, диапазоны, правила, знаки ЛГР, подписи, масштаб.
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
-     поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue. -->
+     поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
+     совместной работы — hubmap.js. -->
 <template><div class="mapbox"><div ref="el" class="map"></div><MapSearch v-if="mref" :map="mref" /></div></template>
 
 <script setup>
@@ -34,9 +35,10 @@ import { notice } from "../project.js";
 import { attachGraphLayers } from "../graphmap.js";
 import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
 import { attachCad, cadApi } from "../cad.js";
+import { attachHub, hubClick } from "../hubmap.js";
 
 const el = ref(null);
-let map, ro, offCad = null;
+let map, ro, offCad = null, offHub = null;
 const mref = shallowRef(null);           // карта для поиска над ней (MapSearch.vue)
 const fmt = gjFormat;
 
@@ -106,6 +108,7 @@ function hitAt(pixel) {
 function onClick(e) {
   if (terrTool.value) return;                       // рисуем или правим границу — щелчок не выбирает объекты
   if (cadApi.active?.() || performance.now() - (cadApi.lastEnd || 0) < 400) return;   // щелчок — ввод для команды черчения
+  if (hubClick(e)) return;                          // метка комментария или комментарий на карте (совместная работа)
   const hit = hitAt(e.pixel), add = e.originalEvent.shiftKey || e.originalEvent.metaKey || e.originalEvent.ctrlKey;
   if (add) { if (hit) toggleSel(hit); }
   else setSel(hit ? [hit] : []);
@@ -157,6 +160,7 @@ onMounted(() => {
   });
   LS = layerSync(map); vec = LS.vec; mref.value = map;
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
+  offHub = attachHub(map);                         // совместная работа: метки комментариев, указатели других участников
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
@@ -194,11 +198,12 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { offCad?.(); ro?.disconnect(); map?.setTarget(undefined); });
+onBeforeUnmount(() => { offCad?.(); offHub?.(); ro?.disconnect(); map?.setTarget(undefined); });
 </script>
 
 <style>
 .mapbox { position: relative; width: 100%; height: 100%; }
 .map { position: relative; width: 100%; height: 100%; background: var(--g-canvas); }
+.map.cmode { cursor: crosshair; }
 .map.dropfile { outline: 3px dashed var(--wa-color-brand-border-loud); outline-offset: -6px; }
 </style>

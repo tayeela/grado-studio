@@ -32,10 +32,18 @@ export function readOne(gj) {
   try { const f = gjFormat.readFeature(gj); f.gj = gj; f.gjRev = f.getRevision(); return f; } catch { return null; }   // битый объект не должен ронять слой; gjRev — для записи правок черчения (cad.js)
 }
 /* Правка данных: только изменённые записи (новые объекты в fc) меняются на карте; тысячи прочих не перечитываются. */
+const canon = v => v === null || typeof v !== "object" ? JSON.stringify(v) : Array.isArray(v) ? "[" + v.map(canon).join(",") + "]"
+  : "{" + Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}";
 function patch(src, fc) {
   indexOf(fc);
   const now = new Set(fc?.features || []), have = new Set(src.getFeatures().map(f => f.gj));   // черчение само кладёт объекты в источник (cad.js)
-  const gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !have.has(gj));
+  let gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !have.has(gj));
+  /* тот же объект новой записью (чужая правка в совместной работе: пришёл весь слой): объект карты остаётся, меняется ссылка */
+  if (gone.length && add.length) {
+    const by = new Map(gone.map(f => [f.gj?.properties?._uid, f])), kept = new Set();
+    add = add.filter(gj => { const f = by.get(gj.properties?._uid); if (!f || kept.has(f) || canon(f.gj) !== canon(gj)) return true; f.gj = gj; kept.add(f); return false; });
+    if (kept.size) gone = gone.filter(f => !kept.has(f));
+  }
   if (gone.length + add.length > 2000) { src.clear(true); src.addFeatures(readAll(fc)); return; }
   gone.forEach(f => src.removeFeature(f));
   src.addFeatures(add.map(readOne).filter(Boolean));

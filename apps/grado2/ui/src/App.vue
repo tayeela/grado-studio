@@ -1,14 +1,25 @@
-<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню, лента инструментов, окна dockview, строка состояния.
+<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню, лента инструментов, окна dockview, строка состояния;
+     на общем сервере — вход, шапка и окна совместной работы (HubLogin, HubBar, HubWindows, окно «Комментарии»).
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
   <div class="shell">
     <header class="top">
       <span class="brand">ГРАДО 2</span>
-      <span class="project" :title="projTitle">{{ project.name || "Без названия" }}{{ dirty ? " •" : "" }}
+      <span v-if="!shared" class="project" :title="projTitle">{{ project.name || "Без названия" }}{{ dirty ? " •" : "" }}
         <wa-badge v-if="shared" variant="neutral" appearance="filled-outlined">общий сервер</wa-badge></span>
 
+      <HubBar v-if="shared" />
       <wa-dropdown @wa-select="onProject">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Проект</wa-button>
+        <template v-if="shared">
+          <wa-dropdown-item value="hubprojects">Совместные проекты…</wa-dropdown-item>
+          <wa-dropdown-item value="hubsave" :disabled="!hub.pid">Сохранить на сервере сейчас<span slot="details">Ctrl+S</span></wa-dropdown-item>
+          <wa-dropdown-item value="hubshare" :disabled="!hub.pid">Доступ…</wa-dropdown-item>
+          <wa-dropdown-item value="hubhistory" :disabled="!hub.pid">История версий…</wa-dropdown-item>
+          <wa-divider></wa-divider>
+          <wa-dropdown-item value="download">Скачать файл проекта</wa-dropdown-item>
+        </template>
+        <template v-else>
         <wa-dropdown-item value="open">Открыть…</wa-dropdown-item>
         <wa-dropdown-item value="save" :disabled="shared">Сохранить<span slot="details">Ctrl+S</span></wa-dropdown-item>
         <wa-dropdown-item value="saveas" :disabled="shared">Сохранить как…</wa-dropdown-item>
@@ -16,15 +27,13 @@
         <wa-divider></wa-divider>
         <wa-dropdown-item value="file">Открыть файл .grado2 с диска…</wa-dropdown-item>
         <wa-dropdown-item value="download">Скачать файл проекта</wa-dropdown-item>
-        <wa-divider></wa-divider>
-        <wa-dropdown-item value="history" disabled>История версий</wa-dropdown-item>
-        <wa-dropdown-item value="share" disabled>Совместная работа</wa-dropdown-item>
+        </template>
       </wa-dropdown>
       <input ref="fileInput" type="file" accept=".grado2,application/json" hidden @change="onFile">
 
       <wa-dropdown @wa-select="onWindow">
         <wa-button slot="trigger" size="s" appearance="plain" with-caret>Окна</wa-button>
-        <wa-dropdown-item v-for="p in PANELS" :key="p.id" type="checkbox" :value="p.id" :checked="open[p.id]">{{ p.title }}</wa-dropdown-item>
+        <wa-dropdown-item v-for="p in PANELS.filter(x => x.id !== 'comments' || shared)" :key="p.id" type="checkbox" :value="p.id" :checked="open[p.id]">{{ p.title }}</wa-dropdown-item>
         <wa-divider></wa-divider>
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
       </wa-dropdown>
@@ -99,6 +108,9 @@
       <wa-button slot="footer" size="s" variant="danger" @click="goAnyway">Не сохранять</wa-button>
     </wa-dialog>
 
+    <HubWindows v-if="shared" />
+    <HubLogin />
+
     <footer class="status">
       <CadModes />
       <span class="cmdnow">{{ toolTitle }}</span>
@@ -119,6 +131,10 @@ import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
 import { Undo2, Redo2, CircleHelp } from "@lucide/vue";
 import CadModes from "./panels/CadModes.vue";
+import HubBar from "./panels/HubBar.vue";
+import HubLogin from "./panels/HubLogin.vue";
+import HubWindows from "./panels/HubWindows.vue";
+import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
 import { terrTool } from "./data.js";
@@ -148,6 +164,7 @@ const PANELS = [
   { id: "vol", title: "Объём" },
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
+  { id: "comments", title: "Комментарии" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
@@ -205,7 +222,7 @@ function addNewWindows() {
 
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
-  const [w, h] = { norms: [560, 600], sketch: [440, 600], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
+  const [w, h] = { norms: [560, 600], sketch: [440, 600], comments: [380, 560], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
   const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом
   api.addPanel({ id, component: id, title: p.title, floating: { x: 300 + k * 28, y: 80 + k * 28, width: w, height: h } });
 }
@@ -274,7 +291,11 @@ async function save() { if (project.file && project.name === project.file) await
 
 async function onProject(e) {
   const v = e.detail.item.value;
-  if (v === "open") { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
+  if (v === "hubprojects") openWin("projects");
+  else if (v === "hubsave") hubFlush();
+  else if (v === "hubshare") openWin("share");
+  else if (v === "hubhistory") openWin("history");
+  else if (v === "open") { try { await listProjects(); } catch { /* список останется прежним */ } openDlg.value = true; }
   else if (v === "save") save();
   else if (v === "saveas") askName();
   else if (v === "new") guard("Начать новый проект?", newProject);
@@ -299,7 +320,7 @@ addEventListener("keydown", e => {
   if (e.code === "KeyA" && !typing(e) && current.value) {
     e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
-  if (e.code === "KeyS") { e.preventDefault(); if (!shared.value) save(); }
+  if (e.code === "KeyS") { e.preventDefault(); if (shared.value) hubFlush(); else save(); }
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
   else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
   else if ((e.code === "KeyZ" && e.shiftKey) || e.code === "KeyY") { e.preventDefault(); redo(); }
@@ -310,10 +331,10 @@ openStartup();
 </script>
 
 <style>
-.shell { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; }
+.shell { display: grid; grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr); height: 100%; }
 .top {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
-  padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px;
+  padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0; overflow: hidden;
 }
 .brand { font-weight: 700; letter-spacing: .02em; margin-right: var(--wa-space-s); }
 .project { color: var(--g-muted); margin-right: var(--wa-space-m); display: inline-flex; gap: 6px; align-items: center; }

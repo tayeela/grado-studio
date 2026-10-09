@@ -155,6 +155,19 @@ class NextUi(unittest.TestCase):
             self.assertIn(s, old)
             self.assertIn(s, new)
 
+    def test_collab_matches_working_page(self):
+        # совместная работа: та же чистая часть (web/collab.js), те же поля данных слоя и те же адреса общего сервера,
+        # иначе новая и рабочая страницы перебрасывались бы одним проектом
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        new, old = (src / "collab.js").read_text(encoding="utf-8"), (web / "collab.js").read_text(encoding="utf-8")
+        self.assertIn('from "../../web/collab.js"', new)
+        fields = lambda t, rx: re.findall(r'"([a-z_]+)"', re.search(rx, t).group(1))
+        self.assertLessEqual(set(fields(old, r'for \(const f of (\[[^\]]+\])\) if \(!same\(d\[f\]')), set(fields(new, r"const DATA_F = (\[[^\]]+\])")))
+        for k in ('P("/push")', 'P("/sections?names=', 'P("/presence")', 'P("/events")', "canonGraph("):
+            self.assertIn(k, new, k)
+        ends = lambda t: sorted(set(re.findall(r"\}/([a-z_]+)", t)))
+        self.assertEqual(ends((web / "hub.js").read_text(encoding="utf-8")), ends((src / "hub.js").read_text(encoding="utf-8")))
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

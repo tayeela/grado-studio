@@ -123,6 +123,13 @@ watch([() => project.layers, () => project.groups, () => project.views, () => pr
   clearTimeout(timer); timer = setTimeout(commit, 400);
 }, { deep: true });
 
+/* Чужая правка (совместная работа, collab.js): применяется вне отмены, а прежние записи отмены сбрасываются — иначе
+   Ctrl+Z вернул бы вместе со своей правкой и чужую. */
+export function external(fn) {
+  if (timer) commit();
+  applying = true;
+  try { fn(); } finally { touchData(); setTimeout(() => { applying = false; resetHistory(); }, 0); }
+}
 export function resetHistory() { clearTimeout(timer); UNDO.length = 0; REDO.length = 0; last = snap(); sync(); }
 
 function apply(s) {

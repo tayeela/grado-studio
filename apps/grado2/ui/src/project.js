@@ -33,7 +33,13 @@ export function markDirty() {
   if (quiet) return;
   if (tick === autoTick) pendingSince = Date.now();
   tick++; lastEdit = Date.now(); dirty.value = true;
+  hooks.touched();
 }
+/* совместная работа (collab.js, hub.js): правка уходит на сервер; общий сервер при запуске — вход и окно проектов */
+export const hooks = { touched: () => {}, shared: () => {} };
+/* проект с сервера совместной работы: открыт, своих несохранённых правок нет */
+export async function loadShared(p, name) { await load(p, name || "", "hub"); project.file = null; dirty.value = false; loadError.value = ""; }
+export function markClean() { dirty.value = false; autoTick = tick; }
 watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, basemapId, dataRev, graphRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
@@ -75,7 +81,7 @@ export async function openStartup() {
     const h = await getJSON("/api/health");
     shared.value = !!h.hub; appVersion.value = h.version || "";
   } catch { /* старый сервер без версии — работаем как с локальным */ }
-  if (shared.value) { loadError.value = "Общий сервер: проекты открываются через совместную работу (перенос этого окна — следующий шаг)"; return; }
+  if (shared.value) { loadError.value = "Общий сервер: войдите и откройте проект в окне «Совместные проекты»"; hooks.shared(); return; }
   try {
     const j = await listProjects();
     if (j.autosave) {
@@ -94,7 +100,7 @@ export async function openStartup() {
 
 /* Данные слоя, не менявшиеся с прошлой записи, не сериализуются заново (как web/project.js jsonOf). */
 const JCACHE = new WeakMap();
-const jsonOf = o => { let t = JCACHE.get(o); if (t === undefined) { t = JSON.stringify(o); JCACHE.set(o, t); } return t; };
+export const jsonOf = o => { let t = JCACHE.get(o); if (t === undefined) { t = JSON.stringify(o); JCACHE.set(o, t); } return t; };
 
 export function collect(extra = {}) {
   const raw = project.raw;
@@ -138,7 +144,7 @@ export async function clashOf(name) {
 
 /* «Сохранить»: под своим названием; новое название — после проверки clashOf в окне. Возвращает true, если записано. */
 export async function saveProject(name) {
-  if (shared.value) { say("Общий сервер: запись идёт через совместную работу, её перенос — следующий шаг"); return false; }
+  if (shared.value) { say("Общий сервер: правки уходят на сервер сами"); return false; }
   name = (name ?? project.name ?? "").trim();
   if (!name) return false;
   if (BAD_NAME.test(name)) { say("В названии не должно быть знаков / \\ : * ? \" < > | и точки в начале"); return false; }

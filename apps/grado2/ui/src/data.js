@@ -432,7 +432,7 @@ export async function fgLoad() {
     let n = 0; const reps = [], vals = Object.entries(r.layers || {}), empty = vals.filter(([, v]) => !v.features.features.length).map(([, v]) => v.title.replace("ФГИС ТП: ", ""));
     for (const [k, v] of vals) {
       if (!v.features.features.length) continue;                 // пустой в этой области слой не засоряет список
-      SOURCES[k] = { title: v.title, kind: "fgistp" };
+      SOURCES[k] = (project.raw.imports ||= {})[k] = { title: v.title, kind: "fgistp" };   // в файл — как у рабочей страницы (imports)
       const prev = project.data[k], m = prev?.fc ? mergeDownload(k, prev, v.features) : null;
       if (m) reps.push(`«${prev.title}»: ${m.text}`);
       const { features, ...meta } = v;

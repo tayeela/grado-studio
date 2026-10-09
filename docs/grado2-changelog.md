@@ -2,6 +2,17 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.67: совместная работа в новом интерфейсе (#69).**
+  - On the shared server the new interface now has the login screen, the project button in the header (open, create,
+    upload, copy, star, rename, delete), the role and «сохранено / отправляю» next to it, faces of who is in the project,
+    «Доступ» (members, roles, link, team), «История» (versions and actions, restore), teams, users and invites for the
+    administrator, password change and logout.
+  - Edits go to the server by themselves and others' edits appear without reloading; the new interface and the working page
+    can edit one project together. Others' cursors and selection are shown in their colour.
+  - Comments: a button in the header, then a click on the map or «К выбранному объекту»; numbered pins on the map, the
+    «Комментарии» window with replies, «Решено» and delete.
+  - Someone else's edit resets undo: Ctrl+Z then undoes only your next edits.
+
 - **2026-10-09, ГРАДО 2 v0.99.66: «Упорядочить слои» в новом интерфейсе (#69).**
   - A button in the «Слои» window puts downloaded layers in the reference-plan order (your own layers and imports stay on
     top as they were) and leaves one buildings layer visible out of several. Nothing is deleted; Ctrl+Z undoes it.
