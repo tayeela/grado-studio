@@ -199,6 +199,17 @@ const geomOf = fc => { const g = fc?.features?.find(f => f.geometry)?.geometry?.
 const defaultStyle = (key, fc) => fullStyle(OWN[key] || (fc.features.some(f => f.properties?._lt) ? { mode: "lgr" } : { fill: CAT[project.layers.length % CAT.length], stroke: "#3d3d3d" }));
 const rank = k => { const i = PREFERRED.indexOf(k); return i < 0 ? -1 : i; };
 
+/* «Упорядочить слои» (web/layers.js tidyLayers): выгрузки встают по опорному порядку (свои слои и импорт — сверху, как
+   были), из нескольких слоёв застройки остаётся видимым один. Ничего не удаляется. */
+const BUILDINGS = ["egko.buildings", "nspd.buildings", "yandex.buildings", "osm.buildings"];
+export function tidyLayers() {
+  const L = project.layers, order = L.map((l, i) => [l, i]).sort((a, b) => (rank(a[0].key) - rank(b[0].key)) || (a[1] - b[1])).map(x => x[0]);
+  L.splice(0, L.length, ...order);
+  const on = BUILDINGS.map(k => lyr(k)).filter(l => l?.visible), hidden = on.slice(1).map(l => { l.visible = false; return l.title; });
+  normGroups(); markDirty();
+  notice.value = `Слои упорядочены как на опорном плане.${hidden.length ? ` Застройка — «${on[0].title}»; выключены повторы: ${hidden.map(t => `«${t}»`).join(", ")}.` : ""}`;
+}
+
 /* Слой для данных: есть — тот же; нет — новый на своём месте: импорт и свои — наверх, выгрузки — по опорному порядку. */
 export function ensureLayer(key, title) {
   let l = lyr(key); if (l) return l;

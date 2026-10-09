@@ -1,5 +1,5 @@
 <!-- ГРАДО 2 · окно «Слои» нового интерфейса: слои проекта по группам в порядке файла (сверху вниз — как на карте),
-     глаз слоя и группы, свёртка группы, текущий слой, поиск; новый слой и новая группа, перетаскивание слоёв и групп
+     глаз слоя и группы, свёртка группы, текущий слой, поиск; новый слой и новая группа, «Упорядочить слои» (data.js), перетаскивание слоёв и групп
      (SortableJS), переименование двойным щелчком, меню слоя и группы (кнопка «⋯» или правая кнопка мыши), как в
      рабочей странице (web/layers.js layerMenu, groupMenu). Правки — функциями edit.js, в файл пишет project.js. -->
 <template>
@@ -8,6 +8,8 @@
       <wa-input size="s" placeholder="Найти слой" with-clear :value="q" @input="e => (q = e.target.value)" class="grow"></wa-input>
       <wa-button size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои: выгрузки — в порядке опорного плана (линии, застройка, дороги, зоны ограничений, участки, покрытия, зоны планирования), из повторяющихся слоёв застройки виден один. Ничего не удаляется"
+                 @click="tidyLayers"><ListOrdered :size="16" /></wa-button>
     </div>
     <p v-if="!project.layers.length" class="hint">{{ loadError || "В проекте пока нет слоёв: «+» — новый слой" }}</p>
 
@@ -84,7 +86,8 @@
 <script setup>
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Sortable from "sortablejs";
-import { ChevronDown, ChevronRight, Ellipsis, Eye, EyeOff, FolderPlus, Plus } from "@lucide/vue";
+import { ChevronDown, ChevronRight, Ellipsis, Eye, EyeOff, FolderPlus, ListOrdered, Plus } from "@lucide/vue";
+import { tidyLayers } from "../data.js";
 import { currentId, project, shown, swatchOf } from "../store.js";
 import { loadError, notice } from "../project.js";
 import {

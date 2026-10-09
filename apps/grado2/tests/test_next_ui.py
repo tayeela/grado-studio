@@ -77,6 +77,8 @@ class NextUi(unittest.TestCase):
         web = NEXT.parent
         new = (NEXT.parents[1] / "ui" / "src" / "data.js").read_text(encoding="utf-8")
         pref = lambda t: re.search(r"const PREFERRED = (\[[^\]]+\])", t).group(1)
+        blds = lambda t: re.search(r"const BUILDINGS = (\[[^\]]+\])", t).group(1)
+        self.assertEqual(blds((web / "layers.js").read_text(encoding="utf-8")), blds(new))   # «Упорядочить слои»: те же слои застройки
         self.assertEqual(re.findall(r'"([^"]+)"', pref((web / "layers.js").read_text(encoding="utf-8"))), re.findall(r'"([^"]+)"', pref(new)))
         old = (web / "app.js").read_text(encoding="utf-8")
         for s in ("/api/fetch", "/api/progress", "/api/import/files", "/api/search/cadastral" if "/api/search/cadastral" in new else "/api/search",

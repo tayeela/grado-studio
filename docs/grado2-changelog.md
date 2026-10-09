@@ -2,6 +2,10 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.66: «Упорядочить слои» в новом интерфейсе (#69).**
+  - A button in the «Слои» window puts downloaded layers in the reference-plan order (your own layers and imports stay on
+    top as they were) and leaves one buildings layer visible out of several. Nothing is deleted; Ctrl+Z undoes it.
+
 - **2026-10-09, ГРАДО 2 v0.99.65: ФГИС ТП в окне «Данные» нового интерфейса (#69).**
   - Section «ФГИС ТП — документы территориального планирования» in «Данные»: «Найти по территории» lists the documents
     whose coverage includes the territory (most local first), or search the whole catalogue by name; pick a document,
