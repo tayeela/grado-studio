@@ -87,7 +87,24 @@ export function newBlock(kind, sheet, at) {
   if (kind === "line") Object.assign(b, { frame: { on: true, color: "#1a1a1a", width: .5 }, arrow: true });
   return b;
 }
-export const label = b => b.name || KINDS[b.kind] || b.kind;
+/* имя элемента; blocks — все элементы листа: безымянные одного вида нумеруются по порядку добавления,
+   как в «Элементах» QGIS — «Прямоугольник», «Прямоугольник 2», «Прямоугольник 3» */
+export function label(b, blocks) {
+  if (b.name) return b.name;
+  const base = KINDS[b.kind] || b.kind;
+  if (!blocks) return base;
+  const same = blocks.filter(x => x.kind === b.kind && !x.name), n = same.findIndex(x => x.id === b.id) + 1;
+  return n > 1 ? `${base} ${n}` : base;
+}
+/* легенда: сколько строк помещается по высоте (шаги — как draw.js и печать layout_io.py: отступ 3, заголовок 7, строка 6,5 мм) */
+export const LEGEND_ROW = 6.5;
+const plural = (n, one, few, many) => { const m = n % 100, d = n % 10; return m > 10 && m < 20 ? many : d === 1 ? one : d >= 2 && d <= 4 ? few : many; };
+// «3 строки не помещаются», «1 строка не помещается»
+export const legendHidden = n => `${n} ${plural(n, "строка", "строки", "строк")} не ${plural(n, "помещается", "помещаются", "помещаются")}`;
+export function legendFit(b) {
+  const n = (b.items || []).length, fit = Math.floor((b.h - 3 - 7) / LEGEND_ROW + 1e-6);
+  return Math.max(0, Math.min(n, fit));
+}
 // масштаб первой карты листа — по нему рисуется масштабная линейка, если у неё нет своего
 export const mainScale = sheet => sheet.blocks.find(b => b.kind === "map")?.scale;
 // масштаб, по которому рисуется линейка: своя карта (b.map), иначе первая карта листа
@@ -181,6 +198,7 @@ export function problems(sheet) {
     if (s && overlap(b, s)) out.push({ id: b.id, text: `${name(b)} заходит на штамп` });
     if (b.kind === "map" && !(b.scale > 0)) out.push({ id: b.id, text: "У карты не задан масштаб" });
     if (b.kind === "map" && !b.center) out.push({ id: b.id, text: "У карты не задано место: «Как на карте» в свойствах" });
+    if (b.kind === "legend") { const hid = (b.items || []).length - legendFit(b); if (hid > 0) out.push({ id: b.id, text: `Легенда: ${legendHidden(hid)} — увеличьте высоту` }); }
   });
   return out;
 }

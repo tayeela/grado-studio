@@ -1,0 +1,9 @@
+/* ГРАДО 2 · шрифты содержимого листа в редакторе раскладки — те же файлы, которыми сервер печатает лист в PDF
+   (docs/standards/fonts, core/render/grado_render/ttf.py: PT Sans — «ui», PT Serif — «serif», Montserrat — «sans»):
+   лист на экране выглядит как в PDF. Грузятся по требованию (draw.js sheetFonts); подключает draw.js. */
+@font-face { font-family: "PT Sans"; font-weight: 400; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/PTSans-Regular.ttf") format("truetype"); }
+@font-face { font-family: "PT Sans"; font-weight: 700; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/PTSans-Bold.ttf") format("truetype"); }
+@font-face { font-family: "PT Serif"; font-weight: 400; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/PTSerif-Regular.ttf") format("truetype"); }
+@font-face { font-family: "PT Serif"; font-weight: 700; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/PTSerif-Bold.ttf") format("truetype"); }
+@font-face { font-family: "Montserrat"; font-weight: 400; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/Montserrat-Regular.ttf") format("truetype"); }
+@font-face { font-family: "Montserrat"; font-weight: 700; font-style: normal; font-display: swap; src: url("../../../../../docs/standards/fonts/Montserrat-Bold.ttf") format("truetype"); }

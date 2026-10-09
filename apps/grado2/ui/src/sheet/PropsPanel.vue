@@ -66,7 +66,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
     <!-- один элемент -->
     <template v-else>
       <div class="pp-cap">{{ KINDS[b.kind] }}</div>
-      <input class="pp-name" :value="label(b)" aria-label="Имя элемента" @change="p({ name: $event.target.value.trim() || undefined })">
+      <input class="pp-name" :value="label(b, sheet.blocks)" aria-label="Имя элемента" @change="p({ name: $event.target.value.trim() || undefined })">
 
       <div class="pp-h">Положение и размер</div>
       <div class="pp-ref">
@@ -138,7 +138,7 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
       <template v-if="b.kind === 'scalebar' || b.kind === 'north'">
         <div class="pp-h">{{ KINDS[b.kind] }}</div>
         <label class="pp-f">По карте<select :value="b.map || ''" @change="p({ map: $event.target.value })">
-          <option value="">первая карта листа</option><option v-for="m in maps" :key="m.id" :value="m.id">{{ label(m) }}</option></select></label>
+          <option value="">первая карта листа</option><option v-for="m in maps" :key="m.id" :value="m.id">{{ label(m, sheet.blocks) }}</option></select></label>
         <div v-if="b.kind === 'scalebar'" class="pp-note">Масштаб {{ fmtScale(linkedScale(b, sheet)) }} — берётся у карты.</div>
       </template>
 

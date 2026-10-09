@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { pageSize, frameRect, stampRect, newSheet, newBlock, groundSize, fitScale, scalebarStep, problems, reformat,
   clampToFrame, snapTargets, fmtScale, fmtM, linkedScale, snapBox, align, distribute, sameSize, reorder, duplicate, refPos, fromRef,
-  rulerStep, bounds, moveCenter, centerOffset, blockBounds, nextScale } from "./model.js";
+  rulerStep, bounds, moveCenter, centerOffset, blockBounds, nextScale, label, legendFit } from "./model.js";
 import { stampOps } from "./stamp.js";
 import "../../../web/snap.js";
 const Snap = globalThis.Snap;
@@ -162,4 +162,15 @@ test("место карты: сдвиг на миллиметры листа, о
   // новая карта берёт место у карты, что уже есть на листе
   const sh = newSheet({ format: "A3", center: c });
   assert.deepEqual(newBlock("map", sh).center, c);
+});
+
+test("имена элементов: безымянные одного вида нумеруются, легенда считает строки, что помещаются", () => {
+  const bs = [{ id: "a", kind: "rect" }, { id: "m", kind: "map" }, { id: "b", kind: "rect" }, { id: "n", kind: "rect", name: "Врезка" }, { id: "c", kind: "rect" }];
+  assert.deepEqual(bs.map(b => label(b, bs)), ["Прямоугольник", "Карта", "Прямоугольник 2", "Врезка", "Прямоугольник 3"]);
+  assert.equal(label(bs[2]), "Прямоугольник");
+  // как печать (layout_io._legend): отступ 3 + заголовок 7, строка 6,5 мм — в 40 мм помещаются 4 строки
+  const leg = { kind: "legend", h: 40, items: Array.from({ length: 7 }, (_, i) => ({ t: String(i) })) };
+  assert.equal(legendFit(leg), 4);
+  assert.equal(legendFit({ ...leg, h: 300 }), 7);
+  assert.ok(problems({ format: "A3", blocks: [{ id: "l", x: 30, y: 30, w: 50, ...leg }] }).some(p => p.text === "Легенда: 3 строки не помещаются — увеличьте высоту"));
 });
