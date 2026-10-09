@@ -15,13 +15,13 @@
       <wa-button size="s" appearance="outlined" title="DXF, DWG, GeoJSON, KML, Shapefile: самый большой замкнутый контур файла" @click="pick('terr')"><FileInput :size="14" /> Из файла</wa-button>
       <wa-button size="s" appearance="outlined" title="Объединение земельных участков по кадастровым номерам" @click="numsDlg = true"><Grid2x2 :size="14" /> По участкам</wa-button>
       <wa-button size="s" appearance="outlined" :disabled="!sel.length" title="Граница — объединение выбранных на карте площадных объектов" @click="territoryFromSelection(selected())"><SquareDashed :size="14" /> Из выбранного</wa-button>
-      <wa-button size="s" :appearance="askExample ? 'filled' : 'outlined'" :variant="askExample ? 'danger' : 'neutral'" @click="example">{{ askExample ? "Заменить вашу границу примером?" : "Пример" }}</wa-button>
+      <wa-button size="s" :class="{ wide: askExample }" :appearance="askExample ? 'filled' : 'outlined'" :variant="askExample ? 'danger' : 'neutral'" @click="example">{{ askExample ? "Заменить вашу границу примером?" : "Пример" }}</wa-button>
     </div>
     <p class="hint">{{ coverInfo }}</p>
 
     <div class="sect">Данные проекта</div>
-    <div class="btns">
-      <wa-button size="s" variant="brand" :disabled="!cover || !!loading" :title="cover ? 'Окно всех источников: ЕГРН, ГИС ОГД, ЕГКО, OpenStreetMap, Яндекс, рельеф' : 'Сначала нарисуйте границу территории'"
+    <div class="btns two">
+      <wa-button size="s" class="wide" variant="brand" :disabled="!cover || !!loading" :title="cover ? 'Окно всех источников: ЕГРН, ГИС ОГД, ЕГКО, OpenStreetMap, Яндекс, рельеф' : 'Сначала нарисуйте границу территории'"
                  @click="openPicker"><Download :size="14" /> Выбрать и загрузить…</wa-button>
       <wa-button size="s" appearance="outlined" title="DXF, DWG, GeoJSON, KML/KMZ, Shapefile — новым слоем; можно перетащить файл на карту" @click="pick('layer')"><FileUp :size="14" /> Файл…</wa-button>
       <wa-select size="s" :value="localSys" title="В какой системе координат файлы в метрах" @change="e => (localSys = e.target.value)">
@@ -43,7 +43,7 @@
 
     <div class="sect">ФГИС ТП — документы территориального планирования</div>
     <div class="btns">
-      <wa-button size="s" appearance="outlined" :disabled="!project.territory || !!loading" title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)"
+      <wa-button size="s" class="wide" appearance="outlined" :disabled="!project.territory || !!loading" title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)"
                  @click="fgFind"><Landmark :size="14" /> Найти по территории</wa-button>
     </div>
     <wa-input v-if="project.territory" size="s" type="search" with-clear placeholder="Найти документ по названию"
@@ -244,10 +244,13 @@ onBeforeUnmount(() => { off?.dispose?.(); coverOn.value = false; terrTool.value 
 </script>
 
 <style>
-.data .sect { margin: var(--wa-space-s) 0 4px; font-weight: 600; font-size: var(--wa-font-size-s); }
-.data .btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.data .btns wa-select { width: 160px; }
-.data .btns wa-button::part(label) { display: inline-flex; gap: 4px; align-items: center; }
+/* кнопки — сеткой равных колонок, а не россыпью разной ширины (аудит 09.10.2026) */
+.data .btns { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 6px; }
+.data .btns > * { margin: 0; min-width: 0; }
+.data .btns > .wide { grid-column: 1 / -1; }
+.data .btns.two { grid-template-columns: auto minmax(0, 1fr); }   /* «Файл…» по подписи, список систем координат — остальное */
+.data .btns wa-button::part(label) { display: inline-flex; gap: 4px; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data .btns wa-button::part(base) { width: 100%; }
 .data .busy { color: var(--wa-color-brand-on-quiet); font-size: var(--wa-font-size-xs); }
 .data .src { margin-top: var(--wa-space-s); }
 .data .srch { display: flex; gap: 5px; align-items: center; font-size: var(--wa-font-size-xs); color: var(--g-muted); margin-bottom: 2px; }

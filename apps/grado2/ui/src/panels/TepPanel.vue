@@ -107,7 +107,6 @@ function resetTp() { Object.assign(tepParams(tn.value), { mode: 1, nonres: 6, un
 </script>
 
 <style>
-.tep .sect { margin: var(--wa-space-s) 0 3px; font-weight: 600; font-size: var(--wa-font-size-s); }
 .tep table { border-collapse: collapse; width: 100%; font-size: var(--wa-font-size-s); }
 .tep td { padding: 2px 6px; border-bottom: 1px solid var(--g-line); text-align: left; }
 .tep td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
