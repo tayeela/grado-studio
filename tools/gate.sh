@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой):
-#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py)
+#   tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py),
+#                            свежесть сборки нового интерфейса (tools/ui_check.sh)
 #   E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы
 # Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
 # Тесты идут под pytest (apps/grado2/requirements-dev.txt); без него — тем же набором через unittest.
@@ -25,6 +26,9 @@ step core       bash -c "set -e; for m in compute geom layout model reactive ren
 if [ -x tools/node_modules/.bin/tsc ]; then  # files with // @ts-check in apps/grado2/web; install: (cd tools && npm ci)
   step types    tools/node_modules/.bin/tsc -p tools/ts/tsconfig.json
 else echo "skip types — no tools/node_modules (cd tools && npm ci)"; fi
+if [ -d apps/grado2/ui/node_modules ]; then  # новый интерфейс: собранное совпадает с исходниками; install: (cd apps/grado2/ui && npm ci)
+  step ui       tools/ui_check.sh
+else echo "skip ui — no apps/grado2/ui/node_modules (cd apps/grado2/ui && npm ci)"; fi
 if [ "${E2E:-}" = 1 ] || [ -n "${E2E_ONLY:-}" ]; then
   step e2e      env PYTHONPATH="$PP" GRADO2_E2E=1 "$PY" -m unittest apps/grado2/tests/test_e2e.py
 fi

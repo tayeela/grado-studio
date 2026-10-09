@@ -2,7 +2,8 @@
 
 Читайте [README.md](README.md) (карта файлов), для функций — [../../docs/wiki/modules.md](../../docs/wiki/modules.md), для маршрутов — [../../docs/wiki/api.md](../../docs/wiki/api.md).
 
-- Сервер — Python (стандартная библиотека + `requirements.txt`), страница — без сборки (OpenLayers, turf, litegraph лежат в `web/vendor/`).
+- Сервер — Python (Starlette и uvicorn, `requirements.txt`), рабочая страница — без сборки (OpenLayers, turf, litegraph лежат в `web/vendor/`).
+  Новый интерфейс — `ui/` (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/`; правят `ui/`, затем `npm run build` и коммит обоих.
 - Правка сервера требует перезапуска, правка страницы — перезагрузки; тестовый сервер агента — порт 8660 и выше (8651 — `grado2-test` из основной копии),
   проекты — только копии.
   Порт 8650 и «Документы/ГРАДО 2» — рабочие данные владельца: никогда не использовать в тестах.

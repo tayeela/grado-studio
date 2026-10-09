@@ -2,7 +2,7 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-09, ГРАДО 2 v0.99.57: the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
+- **2026-10-09, ГРАДО 2 v0.99.70 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
   - `apps/grado2/server.py`: the hand-written `http.server` handler (one long chain of `if self.path == …` for GET and for POST) is gone.
     Each address is now one small function in `GET_ROUTES` / `POST_ROUTES`; access checks, foreign-site refusal and the security headers
     live in one wrapper (`Guard`) in front of every answer; files from `web/` come from Starlette `StaticFiles`.
@@ -14,7 +14,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     except pydantic-core, which has wheels for macOS arm64, x86_64 and Windows. The launchers and the server timer install them by themselves.
   - Browser scenario «свободные места снова 0 / 0 / 0» waited a fixed 1.2 s after each field; it now waits until the number reaches the
     project (at most 3 s) and prints what it got when it fails (it failed once in CI, never in five local runs).
-- **2026-10-08, ГРАДО 2 v0.99.56: checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.56): checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
   - `tools/gate.sh` and CI run the same unit tests with pytest (`apps/grado2/requirements-dev.txt`, not part of the program); without
     pytest the gate falls back to unittest and says how to install it.
   - Browser scenarios: `apps/grado2/tests/e2e/browser.mjs` starts the local Chrome with Playwright (`playwright-core`, Apache-2.0, in
@@ -22,21 +22,21 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     themselves. Mouse and keyboard still go over the DevTools protocol, so the scenarios are unchanged.
   - T36 «during PDF build the menu is grey» waited a fixed 0.9 s for the build to end; it now waits for the end of the build
     (at most 5 s): under Playwright the autosave of the project in the same second made the fixed wait too short.
-- **2026-10-08, ГРАДО 2 v0.99.55: the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.55): the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
   - `core/render/grado_render/backend_pptx.py`: slides, pictures, slide notes, the one blank layout, theme and embedded fonts go through
     python-pptx; shapes are still written as DrawingML (custom outlines, dashes, glow of labels) and placed into each slide.
     `print_io.pptx_notes` (re-zipping the file to add notes) is gone: the note «карта вставлена картинкой» is set on the slide directly.
   - Checked on copies of Гольяново and Безобразово: both presentations converted by LibreOffice are pixel-identical to v0.99.54,
     slide by slide; the file is 4 KB larger (standard notes and print settings parts).
   - New dependency `python-pptx>=1.0.2` (MIT; brings lxml, BSD, wheels for every platform) in both requirements files and the spec.
-- **2026-10-08, ГРАДО 2 v0.99.54: clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.54): clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
   - `core/connectors/grado_connectors/clip.py` (layers of ГИС ОГД cut to the area or the sheet) is GEOS `clip_by_rect`: a concave outline
     now splits into real parts instead of zero-width bridges along the frame, holes stay holes; whole-inside and whole-outside fast paths kept.
   - Hand-written point-in-polygon loops replaced by `shapely.contains_xy`: district of the area (`server.py`), «inside the TTK» for K2,
     side of a natural-complex border (`ogd_all.orient_lines`, now with an STRtree), OSM holes to their outer ring, dot pattern fill of
     zones (`scene.dots_ops`, one vectorised call per polygon). Label placement in `print_io` keeps its own loop (thousands of calls per sheet).
   - Checked on copies of Гольяново and Безобразово: all 18 album pages are pixel-identical to v0.99.53.
-- **2026-10-08, ГРАДО 2 v0.99.53: album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.53): album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
   - `core/render/grado_render/backend_pdf.py`: the same list of drawing operations goes to a ReportLab canvas (paths with holes by
     even-odd, clips, dashes, translucent plates, label halo, underlined legend headers, JPEG tiles as is). Fonts are embedded as
     subsets with /ToUnicode, so text is still found and copied; line widths for labels are still measured by `ttf.py`.
@@ -55,7 +55,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     (8651 is `grado2-test`); BANS and the architect role no longer forbid new dependencies (owner 08.10, #69); progress notes go to issue
     comments, not `/tmp`; stale album lines (yellow calculated СЗЗ, «Территория рассмотрения», district map «в конец альбома»,
     district border 1,2 mm on the district map) marked by the later owner words.
-- **2026-10-08, ГРАДО 2 v0.99.52: requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.52): requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
   - `core/connectors/grado_connectors/netutil.py` is now the only network code: `request` (whole body, size cap) and `stream`
     (large layers, gzip unpacked by the caller with the bomb guard). Redirects only to https, certifi roots, certificate check
     never switched off (НСПД adds the Минцифры roots, the explicit `GRADO_NSPD_INSECURE=1` stays as it was).
@@ -80,6 +80,259 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     and Windows; in `apps/grado2/requirements.txt`, `requirements-cloud.txt`, `packaging/grado2.spec`.
   - Installers: `packaging/grado2.spec` now ships `docs/standards/admin` (districts) and the album slide header; without them the
     packaged program answered «внутренняя ошибка» on the district lookup and could not print the PPTX header.
+- **2026-10-09, ГРАДО 2 v0.99.69: графический язык «Синька» в новом интерфейсе.**
+  - Owner's choices of 09.10.2026 (1Б 2А 3Б 4А): one toolbar without workflow stages, the command line always visible,
+    ТЭП stays a table at the bottom, the font is Onest (shipped in the build, `@fontsource/onest`, OFL); no monospace font anywhere.
+  - Windows are cards with rounded corners on a grey desk with 8 px gaps; one blue accent for the current tool, selection,
+    focus and the main button; green, amber and red only for norms; light and dark themes.
+  - The command line under the map is shown without a command too («Команда — наберите L, PL, C, TR…»); a click on it opens
+    command input. The status bar shows the cursor coordinates in МСК (X east, Y north). Map zoom buttons moved to the top right.
+  - Drawing tools (AutoCAD-style ribbon) are unchanged.
+
+- **2026-10-09, ГРАДО 2 v0.99.68: «Макет листа» в новом интерфейсе вместе с перенесёнными окнами; листы сохраняются вместе с проектом (шаг 2 плана замен, #21, #24, #69).**
+  - Редактор листов (v0.99.50–0.99.52 ветки редактора) соединён с перенесёнными окнами: «Окна → Макет листа» открывает его
+    вкладкой рядом с картой во всё окно.
+  - Листы теперь — часть проекта, как слои: правка листа ставит «•» у названия проекта, автосохранение держит её,
+    «Проект → Сохранить» пишет в файл (ключ `layouts`, всегда последним). Отдельная запись листов
+    `POST /api/project/layouts` убрана. Рабочая страница о листах по-прежнему не знает, и её сохранение их не стирает
+    (`server.py` `save_project`).
+  - «Как на карте» берёт середину и масштаб окна «Карта» из общего вида карты (`store.js` `viewNow`, `scale`), штамп —
+    поля альбома из файла проекта.
+  - Проверки: `tests/test_layout_io.py` (листы из записи нового интерфейса, сохранение рабочей страницы их не стирает).
+
+- **2026-10-09, ГРАДО 2 v0.99.67: совместная работа в новом интерфейсе (#69).**
+  - On the shared server the new interface now has the login screen, the project button in the header (open, create,
+    upload, copy, star, rename, delete), the role and «сохранено / отправляю» next to it, faces of who is in the project,
+    «Доступ» (members, roles, link, team), «История» (versions and actions, restore), teams, users and invites for the
+    administrator, password change and logout.
+  - Edits go to the server by themselves and others' edits appear without reloading; the new interface and the working page
+    can edit one project together. Others' cursors and selection are shown in their colour.
+  - Comments: a button in the header, then a click on the map or «К выбранному объекту»; numbered pins on the map, the
+    «Комментарии» window with replies, «Решено» and delete.
+  - Someone else's edit resets undo: Ctrl+Z then undoes only your next edits.
+
+- **2026-10-09, ГРАДО 2 v0.99.66: «Упорядочить слои» в новом интерфейсе (#69).**
+  - A button in the «Слои» window puts downloaded layers in the reference-plan order (your own layers and imports stay on
+    top as they were) and leaves one buildings layer visible out of several. Nothing is deleted; Ctrl+Z undoes it.
+
+- **2026-10-09, ГРАДО 2 v0.99.65: ФГИС ТП в окне «Данные» нового интерфейса (#69).**
+  - Section «ФГИС ТП — документы территориального планирования» in «Данные»: «Найти по территории» lists the documents
+    whose coverage includes the territory (most local first), or search the whole catalogue by name; pick a document,
+    tick its layers, «Загрузить выбранные». Layers empty in the area are not added; loading a layer again keeps your edits
+    and its name, as for the other sources.
+
+- **2026-10-09, ГРАДО 2 v0.99.64: поиск над картой в новом интерфейсе (#69).**
+  - A search field on top of the map, as in the working page: an address (OpenStreetMap), a cadastral number (several
+    separated by commas) or a КРТ number, then Enter. An address puts a marker and frames it; parcels can be shown on the
+    map (into «Земельные участки (ЕГРН)» without duplicates) or made the territory boundary; a КРТ becomes the boundary
+    and its number goes to the album header. Replacing an existing boundary asks again on the button for 5 seconds.
+  - Ctrl+F jumps to the field, arrows move through the results, Esc closes them.
+
+- **2026-10-09, ГРАДО 2 v0.99.63: выгрузка в Excel в новом интерфейсе (#69).**
+  - Menu «Выгрузка» → «Excel: показатели ТЭП и листы»: the same workbook as the working page (sheet «ТЭП» with the
+    territory, sketch and «Калькулятор 2.0» metrics, sheet «Листы» with the album sheets). A sheet scale picked
+    automatically by the working page is left empty here; a scale set on the sheet is filled in.
+  - PDF, PPTX and ГИС ОГД in DXF stay in the working page until the sheets move (they need sheet frames).
+
+- **2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).**
+  - The ribbon now runs the real commands of the working page instead of sample buttons: drawing (line, polyline,
+    circle, arc, ellipse, rectangle, polygon, point), «Оформление» (hatch, dimension, text), editing (move, copy,
+    rotate, mirror, scale, offset, trim, extend, fillet, array, stretch), «Ещё» (chamfer, break, join, explode,
+    lengthen, array edit, erase, and the polygon and attribute commands: split, merge, subtract, buffer, simplify,
+    reverse, align, match properties, divide, measure, select similar, select by condition, to current layer,
+    line ↔ polygon, boundary by click), measure distance and area, territory boundary.
+  - Same keyboard as the working page: aliases (L, PL, C, M, TR…) and Enter, the input box at the cursor (length,
+    length<angle, @dx;dy, X;Y in МСК), the command line over the map with clickable options, Enter/space/right
+    button, Backspace, Esc, F2 command history; grips on selected objects (drag a vertex, add one on a side).
+  - Status bar: ПРИВЯЗКА with the set of snaps, ОТСЛЕЖ, ПОЛЯР with the angle step, ОРТО, ДИН, ТОПО (F3, F8, F10, F11, F12).
+  - Every command edit is one step of the common undo (Ctrl+Z). The window «Свойства» now updates the object count
+    after edits.
+  - The commands are a port of web/cad.js (same file of geometry web/cadcore.js); a test keeps the command list and
+    aliases equal to the working page.
+
+- **2026-10-08, ГРАДО 2 v0.99.61: окна «Варианты», «Сравнение» и «Объём» в новом интерфейсе (#69).**
+  - «Варианты»: «Подобрать варианты» tries typologies × building width × direction inside the constraints, floors fit
+    the density goal; six best as cards with a plan picture, all in a table (density, floors, insolation of new
+    houses, population, kindergarten places); «Стоп» keeps what is counted; a click moves the variant into the scheme;
+    «Сохранить слоем». The numbers are recounted when norms or territory parameters change.
+  - Saved variants (same format as the working page): «Сохранить как вариант…» in «Эскиз» and «Варианты»; open
+    (becomes the sketch layer «Вариант: …»), rename, delete (second click confirms).
+  - «Сравнение»: two maps side by side with the main map's view — existing situation and the sketch or a saved variant.
+  - «Объём»: buildings of the sketch and saved sketch layers with kept buildings, shadows for the chosen date and time.
+  - Floating windows open in a cascade, not on top of each other.
+
+- **2026-10-08, ГРАДО 2 v0.99.60: окна «Эскиз», «Показатели (ТЭП)» и «Нормативы расчёта» в новом интерфейсе (#69).**
+  - «Эскиз»: typology buttons, floors by a number or by the density goal, the sliders the chosen typology uses,
+    «Построить эскиз» / «Остановить», «Сохранить слоем» (buildings, plots and streets as layers of the group
+    «Эскиз: …»), «Проверить нормы» (insolation of new and neighbouring houses, buildings on no-build zones, gaps
+    between buildings; layer «Проверка норм», re-checked 1,5 s after an edit of a saved sketch layer). Every control
+    is a field of a scheme block: an edit here changes the scheme and back.
+  - «Показатели (ТЭП)»: the real calculation instead of the sample table. District, zone, K1, K2, ТиНАО, type of
+    territory and percentages are edited right there; «по району», reset, the ПЗЗ density goal; the sketch summary
+    and the «Калькулятор 2.0» metrics by groups; «Эскиз не построен» until there is a sketch.
+  - «Нормативы расчёта»: project conditions (education zone, free places nearby) and the preset norms with their
+    sources; a changed norm is marked, can be reverted one by one or all at once, wrong numbers are not accepted.
+  - The map shows reserve plots for kindergartens, schools and clinics while the sketch or scheme window is open.
+  - Speed: the reserve plot search no longer freezes the page for minutes on ИЖС (hundreds of houses): obstacles are
+    subtracted in one pass and the «within R of houses» zone is buffered in two steps. Same fix in the working page.
+  - Not yet here: saved sketch variants, «Сравнение», «Объём» (next steps).
+
+- **2026-10-08, ГРАДО 2 v0.99.59: окно «Схема расчёта» в новом интерфейсе на Rete.js (#69).**
+  - The calculation scheme is drawn by Rete.js 2 (engine map: a maintained library instead of the frozen litegraph).
+    Blocks keep the same look by kind (data, operations, sketch, ТЭП, numbers) and links are coloured by data type.
+  - The scheme is the same object as in the project file and the working page (litegraph format): a project edited
+    in one program opens in the other; a project without a scheme gets the default one of the working page.
+  - All blocks of the working page are calculated the same way: territory, layer with a condition, «Ограничения»,
+    number, buffer, subtract, union, intersect, «Посадка застройки» (the generator moved unchanged), ТЭП (district
+    lookup, server ТЭП, manual norms) and four analysis blocks. Each block recalculates only when its inputs, fields
+    or data change.
+  - Editing: library on the left, link from socket to socket (one link per input, only matching types), drag,
+    rename by double click on the title, Del removes a block, fields of blocks right on the block; all of it goes
+    into Ctrl+Z. «Вся схема», «Пересчитать», «В слой» (the output of the selected block as a project layer).
+  - The map shows the building area, the sketch and the output of the selected block while the window is open.
+    After «Рассчитать ограничения» the «Ограничения» block is added to the scheme, as in the working page.
+  - New dependencies (MIT, exact versions, in the Vite build only): rete 2.0.6, rete-area-plugin 2.3.2,
+    rete-connection-plugin 2.0.5, rete-vue-plugin 2.1.3, rete-render-utils 2.0.3.
+  - Not yet here: the «Эскиз», «Показатели» and «Нормативы» windows (next step).
+
+- **2026-10-08, ГРАДО 2 v0.99.58: окно «Ограничения» в новом интерфейсе (#69).**
+  - Same calculation as the working page: no-build zones from ЗОУИТ, СЗЗ, water protection and ОКН zones, the red line
+    setback, kept buildings with fire gaps (СП 4.13130), ПЗЗ subzones without new construction, natural zones of the
+    Генплан; insolation points on the facades of kept residential houses and the height ceiling grid by the sun.
+  - What to use and the parameters (setback, norm, window height, point step, reveal angle, floor height, grid step)
+    are kept between sessions; the log says which layers each result came from. Results are layers of the group
+    «Ограничения» in «Слои» and are saved in the project file.
+  - Not yet here: the «Ограничения» node of the calculation scheme and the norms check (they move with the scheme).
+
+- **2026-10-08, ГРАДО 2 v0.99.57: окно «Данные» в новом интерфейсе — граница, область загрузки, выгрузка источников, импорт файлов (#69).**
+  - Boundary: draw on the map (double click finishes, Esc cancels), edit vertices (drag, click on a side adds,
+    Alt+click removes), from a file (largest closed contour), by cadastral numbers (loaded parcels or НСПД search),
+    from the objects selected on the map (new), example (second click confirms). Boundary edits go into Ctrl+Z.
+  - The data loading area (sheet frames and the boundary + 60 m) is shown as a blue dashed frame while the window is
+    visible; size and area in the window.
+  - «Выбрать и загрузить…»: the source tree like «Исходные данные» (ЕГРН, ГИС ОГД selections and all portal layers,
+    ЕГКО, OSM, Yandex, relief), ready sets, search, object counts of portal layers in the area. Loading goes through
+    the same `/api/fetch` with progress; a repeat download merges with manual edits the same way as the working page
+    (your edits win, deleted stays deleted, drawn stays; new and changed objects are selected). Portal layers get the
+    portal look.
+  - «Файл…» and a file dropped on the map: a new layer (DXF, DWG, GeoJSON, KML/KMZ, Shapefile), МСК or ГИС ОГД metres.
+  - Loaded layers by source with count, date, error and re-download history; summary of the existing situation inside
+    the boundary (buildings, СПП, density, coverage, parcels; areas in МСК).
+  - New dependency `@turf/turf` 7.1.0 (MIT, same version as `web/vendor`), in the Vite build only.
+  - Not yet here: ФГИС ТП documents and the address and cadastral search over the map.
+
+- **2026-10-08, ГРАДО 2 v0.99.56: «Виды», подложка, граница территории, «Справка» и выгрузка DXF и GeoJSON в новом интерфейсе (#69).**
+  - Window «Виды» (like QGIS map themes and the working page): save visible layers, styles, opacity, groups, basemap
+    and, if ticked, the scale under a name; a click on the name brings the map back; refresh and delete (second click
+    confirms; sheets on a deleted view switch to the current map, as before); legend of the shown view. Views go into
+    the same `views` field of the project file and into Ctrl+Z.
+  - Basemap in the status bar: OSM scheme, Esri satellite, Sentinel-2; remembered in the browser and in the project.
+  - The territory boundary from the project file is drawn on the map (red dash-dot); a project without a saved view
+    opens framed on it.
+  - Window «Справка» (F1 or «?» in the header): what already works in the new interface, keys, search by words.
+  - Menu «Выгрузка»: «Чертёж DXF» and «GeoJSON для QGIS» work (same server routes, МСК, with the boundary); PDF, PPTX,
+    ГИС ОГД and Excel are marked as still in the working page.
+  - Fix: the autosave right after opening a project no longer writes the default map view of Moscow into the file.
+  - Windows added since the browser saved its layout («Объект», «Таблица атрибутов», «Виды») appear on their own once.
+
+- **2026-10-08, ГРАДО 2 v0.99.55: objects on the map, window «Объект» and «Таблица атрибутов» in the new interface (#69).**
+  - Selection like the working page: click an object, Shift+click adds or removes, Shift+frame selects many, Ctrl+A
+    selects the whole current layer, Esc clears, Del deletes the selected objects (Ctrl+Z returns them).
+  - Window «Объект»: layer, area or length in МСК, attributes with editing, a new field; for many objects the total
+    area and length, common editing for one layer («разные» stays as is until filled), «Только он» per layer,
+    «Решение» buttons for buildings and floors ± for own buildings.
+  - Window «Таблица атрибутов» on Tabulator: sort by header, search, «только выбранные», edit a cell by double click,
+    a row click selects the object and zooms to it. New dependency `tabulator-tables` 6.6.1 (MIT), in the Vite build only.
+  - The map redraws only changed objects after an edit; the saved map view no longer jumps to the whole Earth when
+    the project opens in a hidden window.
+
+- **2026-10-08, ГРАДО 2 v0.99.54: window «Слои» in full and one common undo in the new interface (#69).**
+  - «Слои»: «+» new layer (name; polygons, lines or points), new group from the current layer, drag layers and groups
+    to reorder or move a layer into a group (SortableJS), double click renames a layer or group, layer menu (button
+    «⋯» or right click): zoom to layer, copy and paste style, rename, up, down, out of group, into a group, into a new
+    group, return the original download, delete; group menu: zoom, rename, ungroup, delete with layers.
+  - One undo for the whole project (`ui/src/edit.js`): Ctrl+Z / Ctrl+Shift+Z and header buttons undo layer and group
+    changes, styles and data replacements; edits in a row without a pause (slider, typing) are one step.
+  - New dependency `sortablejs` 1.15.7 (MIT), in the Vite build only.
+
+- **2026-10-08, ГРАДО 2 v0.99.53: window «Свойства» moved to the new interface in full (#69).**
+  - All style modes of the working page: «Единое», «Категории» (field, «Классифицировать», colour and show/hide per
+    value), «Диапазоны» (field, 3–6 classes, quantiles or equal intervals, four colour ramps), «Правила» (field,
+    condition, value, colour, hatch, count; «Остальные» colour or hide), «ЛГР» (REDLN97 line types by line code).
+  - Outline colour and width, fill and layer opacity, «Виден крупнее 1:…», role in calculations, hatch pattern and
+    step, label field and size, floor labels by scale.
+  - The map draws every mode the way the working page does (`ui/src/symbology.js`, a port of `web/layers.js` and
+    `web/app.js`; REDLN97 signs through the same `web/linetype.js`). Large layers are drawn on canvas only for now
+    (the working page switches to WebGL above ~15 000 objects in view).
+
+- **2026-10-08, ГРАДО 2 v0.99.52: the new interface saves the project (#69, step 3 of the engines plan).**
+  - «Проект» menu in `/next/`: «Сохранить» (Ctrl+S), «Сохранить как…» (asks before replacing a project with the same
+    name), «Новый проект», «Открыть файл .grado2 с диска…», «Скачать файл проекта». Opening another project or a new
+    one with unsaved changes asks «Сначала сохранить / Не сохранять / Отмена».
+  - Autosave like the working page: edits quiet for 1,5 s or every 15 s, `POST /api/project?autosave=1`; the header
+    shows «•» while there are changes not saved under the name.
+  - The whole file is kept as read (`project.raw`): only layers, groups, current layer and map view change; graph,
+    album, territory, sources and views go back unchanged, so the working page opens the file as before.
+  - On the shared server (hub) saving is off in `/next/` until the shared-work window moves over.
+
+- **2026-10-08, ГРАДО 2 v0.99.52: листы «Макета листа» сохраняются в проект; все листы одним PDF (шаг 2 плана замен, #21, #24).**
+  - Над редактором — список листов проекта (как «Менеджер макетов» QGIS): выбрать, «Новый», «Копия», «Удалить».
+    Любая правка через секунду пишется в файл открытого проекта, справа видно «Сохранено в проект». Открыть проект
+    заново — листы на месте.
+  - Листы лежат в файле проекта ключом `layouts`, всегда последним; пишет их только `POST /api/project/layouts`.
+    Слои, данные и альбом новый интерфейс по-прежнему не меняет. Рабочая страница о листах не знает, но её сохранение
+    их не стирает: сервер переносит листы из прежнего файла (`server.py` `save_project`). В совместном режиме запись
+    закрыта, как и для проектов.
+  - «Все листы в PDF» — листы по порядку одним файлом; в штампе «Лист» и «Листов» — номер листа в списке (и у PDF
+    одного листа тоже).
+  - Проверки: `tests/test_layout_io.py` (листы в файле проекта, сохранение страницы их не стирает, PDF из нескольких листов).
+
+- **2026-10-08, ГРАДО 2 v0.99.51: «Макет листа» — настоящая карта в масштабе и печать листа в PDF (шаг 2 плана замен, #21, #24).**
+  - Блок карты показывает карту открытого проекта в своём масштабе и охвате: её рисует сервер тем же кодом, что печатает
+    альбом (`/api/print/map_svg`, `apps/grado2/layout_io.py`), поэтому на экране и в PDF одно и то же. Слои — видимые,
+    в порядке окна «Слои», с их оформлением; подложка — без неё, светлая карта или снимок.
+  - Место карты: «Как на карте» в свойствах берёт середину и масштаб окна «Карта»; инструмент «Сдвиг карты в рамке» (C)
+    двигает карту мышью, колесо над картой меняет масштаб по стандартному ряду. Новый лист сразу встаёт туда, где открыт
+    проект, легенда собирается из его слоёв («Из слоёв карты» — пересобрать).
+  - «Лист в PDF» на ленте: весь лист (рамка и штамп по ГОСТ, карты, легенда, надписи, картинки, стрелка, линейка, таблица,
+    фигуры, с поворотом и непрозрачностью) через `/api/print/layout`. Сверено картинкой: PNG редактора и PDF совпадают.
+  - Проверки: `tests/test_layout_io.py`, новые случаи в `ui/src/sheet/model.test.js`.
+
+- **2026-10-08, ГРАДО 2 v0.99.50: редактор раскладки листа на Konva, как «Макет» QGIS (шаг 2 плана замен, #21, #24, #69).**
+  - Окно «Макет листа» нового интерфейса (`/next/`, «Окна → Макет листа»): открывается вкладкой рядом с картой во всё
+    окно. Код — `apps/grado2/ui/src/sheet/`, окно — `ui/src/panels/SheetPanel.vue`; Konva 10.7.1 (MIT). Рабочая страница
+    `web/` не меняется; лист живёт только в окне и в проект не пишется (новый интерфейс — только просмотр).
+  - Как в QGIS и образце интерфейса: лента (выбор, добавить, правка, упорядочить, вид, выгрузка), «Элементы» (глаз,
+    замок, имя), «Свойства» (лист, сетка, привязки, направляющие; у элемента — положение с опорной точкой, размер, поворот,
+    рамка, фон, непрозрачность, свои настройки), линейки в мм, строка состояния с координатами курсора; светлая и тёмная тема.
+  - Элементы: карта (масштаб, охват на местности; содержимое пока заглушка), легенда, надпись, картинка, стрелка севера,
+    масштабная линейка по карте, таблица, прямоугольник, эллипс, линия со стрелкой. Добавление рамкой мышью или щелчком.
+  - Направляющие тянутся от линеек; привязка к направляющим, сетке, рамке, штампу и другим элементам (общий `web/snap.js`),
+    в том числе для ручек размера. Выбор рамкой и с Shift, выравнивание, распределение, одинаковый размер, порядок,
+    закрепление, копирование, вставка, дубль, отмена. Лист картинкой PNG 300 dpi. Штамп берёт поля альбома проекта.
+  - Модель листа `ui/src/sheet/model.js`: А4–А0, рамка по ГОСТ или поля 2 %, штамп 185×55 как `StampFrame`; карта и колонка
+    легенды нового листа стоят там же, где их ставит `print_io.layout()`. Замечания «за рамкой», «на штампе», «нет масштаба».
+    Проверки — `ui/src/sheet/model.test.js` через `tests/test_sheetmodel_js.py`.
+
+- **2026-10-08, ГРАДО 2 v0.99.49: the new interface shows the real project; window «Слои» moved over (#69).**
+  - `/next/` opens the last autosave (what the working page had open), else the newest project; «Проект → Открыть…»
+    lists the projects folder. View only: the new page sends nothing to the server, the project file is unchanged.
+  - «Слои»: project groups and layers in file order, eye on a layer and on a group, folding a group, current layer from
+    the file, search. «Карта» draws the project layers in that order with the working page's «единое» style
+    (other style modes come with the «Свойства» move). «Свойства» shows the current layer's colours, width and opacity.
+  - Test project `apps/grado2/tests/fixtures/next_ui_project.grado2`; tests in `tests/test_next_ui.py`.
+
+- **2026-10-08, ГРАДО 2 v0.99.48: sample page of the new interface on ready-made engines (#69).**
+  - Owner's decision «1А 2Б 3А 4А» (`docs/product/engine-map.md`): Vue 3 + dockview + Web Awesome, built with Vite.
+    Sources `apps/grado2/ui/`, the build lives in the repo at `apps/grado2/web/next/` (no Node on the Mac, the server or
+    the installer). The working page `web/index.html` is unchanged.
+  - `/next/index.html`: header menus «Проект», «Окна», «Выгрузка»; tool ribbon; dockable windows «Карта», «Слои»,
+    «Свойства», «Показатели (ТЭП)» that float, dock and tab; the layout is remembered; light and dark theme.
+    Layers and numbers are a sample, not project data.
+  - CSP: `connect-src 'self' data:` (Web Awesome reads its icons from data: URLs). Test `tests/test_next_ui.py`.
+  - `tools/ui_check.sh`: the build matches the sources; step `ui` in `tools/gate.sh` (skipped without
+    `apps/grado2/ui/node_modules`) and a step in CI.
+
 - **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
   - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped
     in the program or the installers. Files stay `.js` and opt in with `// @ts-check`.
