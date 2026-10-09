@@ -6,3 +6,6 @@ httpx>=0.28
 tenacity>=9.0
 reportlab>=4.2
 python-pptx>=1.0.2
+starlette>=0.47
+uvicorn>=0.35
+pydantic>=2.11

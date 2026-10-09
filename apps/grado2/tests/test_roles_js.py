@@ -47,7 +47,7 @@ class LayerRolesApi(unittest.TestCase):
     def test_over_http(self):
         import threading
         import urllib.request
-        srv = S.Server(("127.0.0.1", 0), S.Handler)
+        srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{srv.server_address[1]}/api/layer_roles", timeout=5) as r:

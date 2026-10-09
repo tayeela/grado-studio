@@ -2,6 +2,16 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.57: the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
+  - `apps/grado2/server.py`: the hand-written `http.server` handler (one long chain of `if self.path == …` for GET and for POST) is gone.
+    Each address is now one small function in `GET_ROUTES` / `POST_ROUTES`; access checks, foreign-site refusal and the security headers
+    live in one wrapper (`Guard`) in front of every answer; files from `web/` come from Starlette `StaticFiles`.
+  - Bodies of `/api/fetch`, `/api/tep`, `/api/rail_route` and the sheet area of «Всё из ГИС ОГД» are described as pydantic models: a wrong
+    field is refused with 400 and the field name, as before. A body sent in pieces without a length is now cut at the same size limit.
+  - The hub event stream is a Starlette streaming answer; a closed tab ends it as before. Stopping the server (Ctrl+C, or a newer version
+    replacing it) now lets running requests finish for up to 5 s.
+  - New dependencies in `apps/grado2/requirements.txt` and the spec: `starlette` (BSD), `uvicorn` (BSD), `pydantic` (MIT); all pure Python
+    except pydantic-core, which has wheels for macOS arm64, x86_64 and Windows. The launchers and the server timer install them by themselves.
 - **2026-10-08, ГРАДО 2 v0.99.56: checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
   - `tools/gate.sh` and CI run the same unit tests with pytest (`apps/grado2/requirements-dev.txt`, not part of the program); without
     pytest the gate falls back to unittest and says how to install it.
