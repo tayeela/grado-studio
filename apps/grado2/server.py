@@ -1783,6 +1783,15 @@ class Handler(SimpleHTTPRequestHandler):
             return self._deny()
         if self._gate("GET"):
             return
+        page, _, query = self.path.partition("?")
+        if page == "/":                     # адрес сайта открывает новый интерфейс; прежняя рабочая страница — /old
+            self.send_response(302)
+            self.send_header("Location", "/next/" + ("?" + query if query else ""))
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if page == "/old":                  # без косой черты в конце: её скрипты и стили по-прежнему берутся из корня
+            self.path = "/index.html" + ("?" + query if query else "")
         if HUB:
             route = self.path.split("?")[0]
             if route.startswith("/api/hub/"):
@@ -1928,7 +1937,7 @@ class Handler(SimpleHTTPRequestHandler):
             return False
         if self._authed():
             return False
-        if method != "POST" and (path == "/" or path.endswith(".html")):
+        if method != "POST" and (path.endswith("/") or path.endswith(".html") or path == "/old"):   # страницы: /, /next/, /old
             self.send_response(302)
             self.send_header("Location", "/login.html")
             self.send_header("Content-Length", "0")

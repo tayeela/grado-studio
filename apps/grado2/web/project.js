@@ -146,6 +146,7 @@ async function hubSave() {
   toast(await Collab.flush() ? "Сохранено на сервере" : "Нет связи с сервером: правки сохранятся, когда связь вернётся.");
 }
 async function saveProject(name) {
+  if (window.EMBED) return window.EMBED_HOST?.gradoEmbed?.save();      // окно «Листы и альбом»: записывает новый интерфейс
   if (window.HUB_MODE) return hubSave();
   name = (name ?? PROJ.name ?? "").trim();
   if (!name) return openProjects(true);
@@ -175,6 +176,7 @@ async function saveProject(name) {
 }
 
 async function openProject(name) {
+  if (window.EMBED) return window.EMBED_HOST?.gradoEmbed?.open(name);  // «Альбомы лежат в других проектах» — открывает новый интерфейс
   if (!confirmLoss(`Открыть «${name}»?`)) return;
   busy(true);
   try {
@@ -209,7 +211,7 @@ function confirmLoss(what) {
    но не реже раза в 15 с при непрерывной работе; одно сохранение за раз */
 let autoBusy = false, autoAgain = false;
 async function autosave() {
-  if (window.HUB_MODE) return;                     // совместный режим: локального автосохранения нет, правки уходят через Collab
+  if (window.HUB_MODE || window.EMBED) return;     // совместный режим и окно «Листы и альбом»: локального автосохранения нет, правки уходят через Collab
   if (autoBusy) { autoAgain = true; return; }      // идёт запись — следующая пойдёт сразу за ней (новый проект не должен потеряться)
   autoBusy = true; const tick = PROJ.tick;
   try { const r = await fetch("/api/project?autosave=1", { method: "POST", headers: { "Content-Type": "application/json" }, body: projectJSON() }); if (r.ok) PROJ.autoTick = tick; } catch { }
@@ -260,11 +262,12 @@ addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && (e.code === "
 addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.code === "KeyP") { e.preventDefault(); winOpen("wSheets", true); } });   // saveProject сам уходит в hubSave в совместном режиме
 
 /* ---------- старт: восстановить последнюю работу ---------- */
-{ const markDirty0 = markDirty; window.markDirty = () => { markDirty0(); window.scheduleTplRefresh?.(); }; }      // правка проекта → листы по шаблону сверяют показатели (sheets.js, tplAuto: с паузой, только если что-то изменилось)
+{ const markDirty0 = markDirty; window.markDirty = () => { markDirty0(); window.scheduleTplRefresh?.(); if (window.EMBED && !PROJ.loading) window.EMBED_HOST?.gradoEmbed?.changed(); }; }   // правка проекта → листы по шаблону сверяют показатели (sheets.js, tplAuto: с паузой, только если что-то изменилось); вложенная страница — правка уходит в новый интерфейс
 // Режим (обычный или совместный) узнаётся первым делом: на общем сервере без входа отвечают только /api/health и страницы,
 // поэтому startApp (app.js) ждёт hubGate — после входа идут остальные запросы; вход и открытие проекта ведёт hub.js
 let modeP = null;
 window.hubGate = () => modeP ||= (async () => {
+  if (window.EMBED) { window.HUB_MODE = false; window.dispatchEvent(new Event("grado:mode")); window.HUB_IN = true; return; }   // вход уже выполнил новый интерфейс
   try { window.HUB_MODE = !!(await (await fetch("/api/health")).json()).hub; } catch { window.HUB_MODE = false; }
   window.dispatchEvent(new Event("grado:mode"));       // hub.js ждёт режим (вход, окна, движок Collab); один раз за страницу
   if (window.HUB_MODE) await window.HubUI?.requireSession();
@@ -272,6 +275,9 @@ window.hubGate = () => modeP ||= (async () => {
 })();
 window.projectStart = async () => {
   await window.hubGate();
+  if (window.EMBED) { PROJ.loading = false; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; window.EMBED_HOST?.gradoEmbed?.ready(window);
+    addEventListener("focus", () => window.EMBED_HOST?.gradoEmbed?.focus(window));                   // вернулись в окно: правки, сделанные тем временем в новом интерфейсе
+    addEventListener("pagehide", () => window.EMBED_HOST?.gradoEmbed?.closed(window)); return; }      // окно закрывают: последние правки — в новый интерфейс сразу   // проект пришлёт новый интерфейс
   if (window.HUB_MODE) { PROJ.loading = false; PROJ.dirty = false; PROJ.savedTick = PROJ.autoTick = PROJ.tick; syncProjTitle(); window.HubUI?.enter?.(); return; }
   try {
     const list = await (await fetch("/api/projects")).json();       // без автосохранения — без лишнего запроса и 404

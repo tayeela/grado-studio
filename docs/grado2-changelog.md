@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.70: адрес сайта открывает новый интерфейс; «Листы и альбом» — отдельным окном на движке рабочей страницы (шаг 3 плана замен, #69).**
+  - The site address (`/`) now opens the new interface (`/next/`); the former working page stays at `/old`. Login, the token
+    gate and share links (`#join=`, `#p=`) lead to the new interface; `/next/` and `/old` count as pages for the token gate.
+  - «Листы и альбом» (header button or Ctrl+P): the album ППТ КРТ opens as a separate browser window, like the print layout
+    in QGIS. It is the working page's own album engine (`web/sheets.js`, `albums.js`, `frames.js`, `layout.js`, `ogdpick.js`)
+    unchanged, at `/old?embed=album` (`web/embed.js`): sheet frames on the map, the «Лист» tool, stamp, album build,
+    «Слои и листы», label layout, PDF and PPTX, ГИС ОГД in DXF. The header, ribbon and side panels of the old page are hidden there.
+  - The window gets the project from the new interface (`applyProject`) whenever the new interface has an edit it has not seen;
+    edits made in the window (sheets, downloaded layers, views, groups) come back by sections (`ui/src/albumhost.js`,
+    `collab.js adopt`) and are saved, autosaved and sent to the shared server as usual. Ctrl+S in the window saves the project.
+  - «Выгрузка» in the new interface: PDF and PPTX of the album and «ГИС ОГД в DXF» are enabled and run in that window.
+  - Check on a project copy: `albumSpec` of all sheets in the window equals the one of the standalone old page character for
+    character, and the album PDF from both is byte-identical (2 pages compared).
+  - Tests: `tests/test_server.py` (redirect, `/old`, token gate), `tests/test_next_ui.py` (`gradoEmbed` calls on both sides);
+    E2E scenarios of the old page now open `/old`.
 - **2026-10-09, ГРАДО 2 v0.99.69: графический язык «Синька» в новом интерфейсе.**
   - Owner's choices of 09.10.2026 (1Б 2А 3Б 4А): one toolbar without workflow stages, the command line always visible,
     ТЭП stays a table at the bottom, the font is Onest (shipped in the build, `@fontsource/onest`, OFL); no monospace font anywhere.
