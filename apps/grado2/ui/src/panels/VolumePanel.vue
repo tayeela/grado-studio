@@ -102,7 +102,7 @@ onBeforeUnmount(() => { off?.dispose?.(); ro?.disconnect(); cancelAnimationFrame
 .volp .vbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--g-line); font-size: var(--wa-font-size-s); }
 .volp .vbar select { font: inherit; padding: 1px 4px; border: 1px solid var(--g-line); border-radius: 4px; background: var(--wa-color-surface-default); color: inherit; }
 .volp .vbar input[type=range] { width: 130px; accent-color: var(--wa-color-brand-fill-loud); }
-.volp .vbar small { color: var(--g-muted); font-variant-numeric: tabular-nums; }
+.volp .vbar small { color: var(--g-muted); font-size: var(--wa-font-size-xs); font-variant-numeric: tabular-nums; }
 .volp .cwrap { flex: 1; position: relative; min-height: 0; color: var(--g-muted); }
 .volp canvas { position: absolute; inset: 0; }
 .volp .empty { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; text-align: center; padding: 20px; font-size: var(--wa-font-size-s); }

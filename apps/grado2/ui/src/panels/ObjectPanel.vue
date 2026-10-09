@@ -4,20 +4,37 @@
      заполнить), «Только он» при нескольких слоях; решение по зданиям и этажность ± своих корпусов. Правка — features.js. -->
 <template>
   <div class="pane obj">
-    <p v-if="!items.length" class="hint">Щёлкните объект на карте или строку таблицы. Несколько объектов — Shift+щелчок
-      или рамка с Shift. Все объекты текущего слоя — Ctrl+A. Del — удалить выбранные, Esc — снять выбор.</p>
+    <!-- пусто — не голое окно, а подсказка, как выбрать (владелец 09.10.2026: «вкладка объект выглядит пустой») -->
+    <div v-if="!items.length" class="empty">
+      <MousePointerClick :size="28" />
+      <b>Объект не выбран</b>
+      <p>Щёлкните объект на карте или строку таблицы атрибутов — здесь появятся его поля и значения.</p>
+      <table class="keys">
+        <tr><td>Shift + щелчок</td><td>добавить к выбору</td></tr>
+        <tr><td>Shift + рамка</td><td>выбрать рамкой</td></tr>
+        <tr><td>Ctrl + A</td><td>все объекты текущего слоя</td></tr>
+        <tr><td>Del</td><td>удалить выбранные</td></tr>
+        <tr><td>Esc</td><td>снять выбор</td></tr>
+      </table>
+    </div>
 
     <template v-else-if="items.length === 1">
       <div class="ph"><b>{{ lyr(items[0].key)?.title }}</b>
         <wa-button size="s" appearance="plain" title="Приблизить к объекту" @click="mapApi.fitFeature(items[0].f)"><Focus :size="15" /></wa-button></div>
       <div class="sub">{{ sizeText(items) }}{{ items[0].f.properties._edited ? " · изменён вручную" : "" }}</div>
       <DecisionBar :items="items" />
-      <div class="grid">
-        <template v-for="k in fields" :key="k">
-          <label :title="k">{{ k }}</label>
-          <wa-input size="s" :value="String(items[0].f.properties[k] ?? '')" @change="e => setAttr(items, k, e.target.value)"></wa-input>
-        </template>
-      </div>
+      <!-- поля — таблицей «поле | значение», как «Определить объекты» в QGIS; значение правится прямо в ячейке -->
+      <table class="attrs">
+        <thead><tr><th>Поле</th><th>Значение</th></tr></thead>
+        <tbody>
+          <tr v-for="k in fields" :key="k">
+            <th :title="k">{{ k }}</th>
+            <td><input :value="String(items[0].f.properties[k] ?? '')" :aria-label="k" :title="'Значение поля «' + k + '»: правка — ввести и Enter'"
+                       @change="e => setAttr(items, k, e.target.value)" @keydown.enter="e => e.target.blur()"></td>
+          </tr>
+          <tr v-if="!fields.length"><td colspan="2" class="none">У объекта нет полей — добавьте ниже.</td></tr>
+        </tbody>
+      </table>
     </template>
 
     <template v-else>
@@ -34,13 +51,16 @@
       <template v-else>
         <p class="hint">Слой «{{ lyr(byLayer[0][0])?.title }}». Значение, введённое в поле, получат все выбранные объекты ({{ items.length }});
           «разные значения» — поле не меняется, пока его не заполнить.</p>
-        <div class="grid">
-          <template v-for="k in fields" :key="k">
-            <label :title="k">{{ k }}</label>
-            <wa-input size="s" :value="common(k).same ? common(k).v : ''" :placeholder="common(k).same ? '' : `разные значения: ${common(k).n}`"
-                      @change="e => setAttr(items, k, e.target.value)"></wa-input>
-          </template>
-        </div>
+        <table class="attrs">
+          <thead><tr><th>Поле</th><th>Значение у всех</th></tr></thead>
+          <tbody>
+            <tr v-for="k in fields" :key="k">
+              <th :title="k">{{ k }}</th>
+              <td><input :value="common(k).same ? common(k).v : ''" :placeholder="common(k).same ? '' : `разные: ${common(k).n}`" :aria-label="k"
+                         @change="e => setAttr(items, k, e.target.value)" @keydown.enter="e => e.target.blur()"></td>
+            </tr>
+          </tbody>
+        </table>
       </template>
     </template>
 
@@ -54,7 +74,7 @@
 
 <script setup>
 import { computed, defineComponent, h, ref } from "vue";
-import { Focus } from "@lucide/vue";
+import { Focus, MousePointerClick } from "@lucide/vue";
 import { lyr, mapApi } from "../edit.js";
 import { addField, editFeatures, fieldsOfFeatures, selected, sel, setAttr, setSel, sizeOf } from "../features.js";
 import { dataRev } from "../edit.js";
@@ -114,9 +134,30 @@ const DecisionBar = defineComponent({
 <style>
 .obj .ph { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
 .obj .sub { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin: 2px 0 var(--wa-space-s); }
-.obj .grid { display: grid; grid-template-columns: minmax(70px, 40%) minmax(0, 1fr); gap: 3px 6px; align-items: center; margin-bottom: var(--wa-space-s); }
-.obj .grid label { font-size: var(--wa-font-size-s); color: var(--g-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.obj .grid wa-input { margin: 0 !important; }
+.obj .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 24px 8px; color: var(--g-muted); }
+.obj .empty b { color: var(--wa-color-text-normal); font-size: var(--wa-font-size-m); }
+.obj .empty p { margin: 0 0 8px; max-width: 280px; font-size: var(--wa-font-size-s); line-height: 1.4; }
+.obj .empty .keys { border-collapse: collapse; font-size: var(--wa-font-size-xs); text-align: left; }
+.obj .empty .keys td { padding: 2px 6px; }
+.obj .empty .keys td:first-child { color: var(--wa-color-text-normal); font-weight: 500; white-space: nowrap; text-align: right; }
+/* таблица полей: колонка имён одной ширины, строки через одну, значение — ячейка-поле без рамки, рамка при наведении и вводе */
+.obj table.attrs { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: var(--wa-font-size-s);
+  border: 1px solid var(--g-line); border-radius: 8px; overflow: hidden; margin-bottom: var(--wa-space-s); }
+.obj table.attrs thead th { background: var(--wa-color-surface-lowered); color: var(--g-muted); font-size: var(--wa-font-size-xs); font-weight: 500; text-align: left;
+  padding: 5px 8px; border-bottom: 1px solid var(--g-line); }
+.obj table.attrs thead th:first-child { width: 42%; }
+.obj table.attrs tbody th { font-weight: 400; color: var(--g-muted); text-align: left; padding: 0 8px; border-right: 1px solid var(--g-line);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.obj table.attrs tbody tr + tr > * { border-top: 1px solid var(--g-line); }
+.obj table.attrs tbody tr:nth-child(even) > * { background: color-mix(in srgb, var(--wa-color-surface-lowered) 60%, transparent); }
+.obj table.attrs tbody tr:hover > * { background: var(--wa-color-brand-fill-quiet); }
+.obj table.attrs td { padding: 0; }
+.obj table.attrs td input { box-sizing: border-box; width: 100%; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 0; background: transparent;
+  font: inherit; color: var(--wa-color-text-normal); font-variant-numeric: tabular-nums; }
+.obj table.attrs td input:hover { border-color: var(--g-line); }
+.obj table.attrs td input:focus { outline: none; border-color: var(--wa-color-focus); background: var(--wa-color-surface-default); }
+.obj table.attrs td input::placeholder { color: var(--g-muted); font-style: italic; }
+.obj table.attrs .none { padding: 6px 8px; color: var(--g-muted); }
 .obj .row { display: flex; gap: 6px; align-items: center; }
 .obj .row wa-input { flex: 1; min-width: 0; margin: 0 !important; }
 .obj table.cl { width: 100%; border-collapse: collapse; font-size: var(--wa-font-size-s); margin-bottom: var(--wa-space-s); }

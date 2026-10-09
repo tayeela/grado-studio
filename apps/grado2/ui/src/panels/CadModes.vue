@@ -51,11 +51,11 @@ function onPolar(e) {
 .status .modes { display: inline-flex; gap: 2px; align-items: center; }
 .status .modes .mg { display: inline-flex; }
 .status .modes button {
-  height: 18px; padding: 0 6px; border: 1px solid var(--g-line); border-radius: 4px; background: none; color: var(--g-muted);
+  height: 20px; padding: 0 6px; border: 1px solid var(--g-line); border-radius: 4px; background: none; color: var(--g-muted);
   font: 600 var(--wa-font-size-2xs)/1 var(--wa-font-family-body); letter-spacing: .03em; cursor: pointer; white-space: nowrap;
 }
 .status .modes .mg > button { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.status .modes .mg .dd { border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 0 4px; }
+.status .modes .mg .dd { border-left: 0; border-top-left-radius: 0; border-bottom-left-radius: 0; padding: 0 4px; min-width: 20px; }
 /* включённый режим — акцентом «Синьки» (заливка и белый текст), выключенный — серый контур: видно с одного взгляда */
 .status .modes button[aria-pressed=true] {
   background: var(--wa-color-brand-fill-loud); border-color: var(--wa-color-brand-fill-loud); color: var(--wa-color-brand-on-loud);

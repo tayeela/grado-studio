@@ -1,0 +1,222 @@
+diff --git a/node_modules/dockview-core/dist/package/main.esm.mjs b/node_modules/dockview-core/dist/package/main.esm.mjs
+--- a/node_modules/dockview-core/dist/package/main.esm.mjs
++++ b/node_modules/dockview-core/dist/package/main.esm.mjs
+@@ -12721,9 +12721,16 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 		this._dragMove.value = Disposable.NONE;
+ 	}
+ 	setupDrag(dragTarget, options) {
+-		const track = (captureTarget, pointerId) => {
++		const track = (captureTarget, pointerId, startEvent) => {
+ 			var _this$options$getSibl, _this$options$getSibl2, _this$options;
+ 			let offset = null;
++			if (startEvent) {
++				const r0 = this._element.getBoundingClientRect();
++				offset = {
++					x: startEvent.clientX - r0.left,
++					y: startEvent.clientY - r0.top
++				};
++			}
+ 			let hasMoved = false;
+ 			this._dragCancelled = false;
+ 			const siblingBoxes = this.options.transformDragPosition ? (_this$options$getSibl = (_this$options$getSibl2 = (_this$options = this.options).getSiblingBoxes) === null || _this$options$getSibl2 === void 0 ? void 0 : _this$options$getSibl2.call(_this$options)) !== null && _this$options$getSibl !== void 0 ? _this$options$getSibl : [] : [];
+@@ -12806,11 +12813,11 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				return;
+ 			}
+ 			if (quasiDefaultPrevented(event)) return;
+-			track(dragTarget, event.pointerId);
++			track(dragTarget, event.pointerId, event);
+ 		}), addDisposableListener(this.options.content, "pointerdown", (event) => {
+ 			if (event.defaultPrevented) return;
+ 			if (quasiDefaultPrevented(event)) return;
+-			if (event.shiftKey) track(this.options.content, event.pointerId);
++			if (event.shiftKey) track(this.options.content, event.pointerId, event);
+ 		}), addDisposableListener(this.options.content, "pointerdown", () => {
+ 			arialLevelTracker.push(this._element);
+ 		}, true));
+@@ -12823,7 +12830,16 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 		const move = new MutableDisposable();
+ 		this.addDisposables(move, addDisposableListener(resizeHandleElement, "pointerdown", (e) => {
+ 			e.preventDefault();
+-			let startPosition = null;
++			const c0 = this.options.container.getBoundingClientRect();
++			const o0 = this._element.getBoundingClientRect();
++			const sp = {
++				originalY: e.clientY - c0.top,
++				originalHeight: o0.height,
++				originalX: e.clientX - c0.left,
++				originalWidth: o0.width,
++				originalTop: o0.top - c0.top,
++				originalLeft: o0.left - c0.left
++			};
+ 			const iframes = disableIframePointEvents();
+ 			const pointerId = e.pointerId;
+ 			if (typeof resizeHandleElement.setPointerCapture === "function") try {
+@@ -12834,17 +12850,10 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				this._onDidChangeEnd.fire();
+ 			};
+ 			move.value = new CompositeDisposable(addDisposableListener(globalThis.window, "pointermove", (e) => {
+-				var _startPosition;
+ 				const containerRect = this.options.container.getBoundingClientRect();
+ 				const overlayRect = this._element.getBoundingClientRect();
+ 				const y = e.clientY - containerRect.top;
+ 				const x = e.clientX - containerRect.left;
+-				(_startPosition = startPosition) !== null && _startPosition !== void 0 || (startPosition = {
+-					originalY: y,
+-					originalHeight: overlayRect.height,
+-					originalX: x,
+-					originalWidth: overlayRect.width
+-				});
+ 				let top = void 0;
+ 				let bottom = void 0;
+ 				let height = void 0;
+@@ -12852,29 +12861,29 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				let right = void 0;
+ 				let width = void 0;
+ 				const moveTop = () => {
+-					const maxTop = startPosition.originalY + startPosition.originalHeight > containerRect.height ? Math.max(0, containerRect.height - Overlay.MINIMUM_HEIGHT) : Math.max(0, startPosition.originalY + startPosition.originalHeight - Overlay.MINIMUM_HEIGHT);
+-					top = clamp(y, 0, maxTop);
+-					height = startPosition.originalY + startPosition.originalHeight - top;
++					const maxTop = Math.max(0, sp.originalTop + sp.originalHeight - Overlay.MINIMUM_HEIGHT);
++					top = clamp(sp.originalTop + y - sp.originalY, 0, maxTop);
++					height = sp.originalTop + sp.originalHeight - top;
+ 					bottom = containerRect.height - top - height;
+ 				};
+ 				const moveBottom = () => {
+-					top = startPosition.originalY - startPosition.originalHeight;
++					top = sp.originalTop;
+ 					const minHeight = top < 0 && typeof this.options.minimumInViewportHeight === "number" ? -top + this.options.minimumInViewportHeight : Overlay.MINIMUM_HEIGHT;
+ 					const maxHeight = containerRect.height - Math.max(0, top);
+-					height = clamp(y - top, minHeight, maxHeight);
++					height = clamp(sp.originalHeight + y - sp.originalY, minHeight, maxHeight);
+ 					bottom = containerRect.height - top - height;
+ 				};
+ 				const moveLeft = () => {
+-					const maxLeft = startPosition.originalX + startPosition.originalWidth > containerRect.width ? Math.max(0, containerRect.width - Overlay.MINIMUM_WIDTH) : Math.max(0, startPosition.originalX + startPosition.originalWidth - Overlay.MINIMUM_WIDTH);
+-					left = clamp(x, 0, maxLeft);
+-					width = startPosition.originalX + startPosition.originalWidth - left;
++					const maxLeft = Math.max(0, sp.originalLeft + sp.originalWidth - Overlay.MINIMUM_WIDTH);
++					left = clamp(sp.originalLeft + x - sp.originalX, 0, maxLeft);
++					width = sp.originalLeft + sp.originalWidth - left;
+ 					right = containerRect.width - left - width;
+ 				};
+ 				const moveRight = () => {
+-					left = startPosition.originalX - startPosition.originalWidth;
++					left = sp.originalLeft;
+ 					const minWidth = left < 0 && typeof this.options.minimumInViewportWidth === "number" ? -left + this.options.minimumInViewportWidth : Overlay.MINIMUM_WIDTH;
+ 					const maxWidth = containerRect.width - Math.max(0, left);
+-					width = clamp(x - left, minWidth, maxWidth);
++					width = clamp(sp.originalWidth + x - sp.originalX, minWidth, maxWidth);
+ 					right = containerRect.width - left - width;
+ 				};
+ 				switch (direction) {
+diff --git a/node_modules/dockview-core/dist/package/main.cjs.js b/node_modules/dockview-core/dist/package/main.cjs.js
+--- a/node_modules/dockview-core/dist/package/main.cjs.js
++++ b/node_modules/dockview-core/dist/package/main.cjs.js
+@@ -12723,9 +12723,16 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 		this._dragMove.value = Disposable.NONE;
+ 	}
+ 	setupDrag(dragTarget, options) {
+-		const track = (captureTarget, pointerId) => {
++		const track = (captureTarget, pointerId, startEvent) => {
+ 			var _this$options$getSibl, _this$options$getSibl2, _this$options;
+ 			let offset = null;
++			if (startEvent) {
++				const r0 = this._element.getBoundingClientRect();
++				offset = {
++					x: startEvent.clientX - r0.left,
++					y: startEvent.clientY - r0.top
++				};
++			}
+ 			let hasMoved = false;
+ 			this._dragCancelled = false;
+ 			const siblingBoxes = this.options.transformDragPosition ? (_this$options$getSibl = (_this$options$getSibl2 = (_this$options = this.options).getSiblingBoxes) === null || _this$options$getSibl2 === void 0 ? void 0 : _this$options$getSibl2.call(_this$options)) !== null && _this$options$getSibl !== void 0 ? _this$options$getSibl : [] : [];
+@@ -12808,11 +12815,11 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				return;
+ 			}
+ 			if (quasiDefaultPrevented(event)) return;
+-			track(dragTarget, event.pointerId);
++			track(dragTarget, event.pointerId, event);
+ 		}), addDisposableListener(this.options.content, "pointerdown", (event) => {
+ 			if (event.defaultPrevented) return;
+ 			if (quasiDefaultPrevented(event)) return;
+-			if (event.shiftKey) track(this.options.content, event.pointerId);
++			if (event.shiftKey) track(this.options.content, event.pointerId, event);
+ 		}), addDisposableListener(this.options.content, "pointerdown", () => {
+ 			arialLevelTracker.push(this._element);
+ 		}, true));
+@@ -12825,7 +12832,16 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 		const move = new MutableDisposable();
+ 		this.addDisposables(move, addDisposableListener(resizeHandleElement, "pointerdown", (e) => {
+ 			e.preventDefault();
+-			let startPosition = null;
++			const c0 = this.options.container.getBoundingClientRect();
++			const o0 = this._element.getBoundingClientRect();
++			const sp = {
++				originalY: e.clientY - c0.top,
++				originalHeight: o0.height,
++				originalX: e.clientX - c0.left,
++				originalWidth: o0.width,
++				originalTop: o0.top - c0.top,
++				originalLeft: o0.left - c0.left
++			};
+ 			const iframes = disableIframePointEvents();
+ 			const pointerId = e.pointerId;
+ 			if (typeof resizeHandleElement.setPointerCapture === "function") try {
+@@ -12836,17 +12852,10 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				this._onDidChangeEnd.fire();
+ 			};
+ 			move.value = new CompositeDisposable(addDisposableListener(globalThis.window, "pointermove", (e) => {
+-				var _startPosition;
+ 				const containerRect = this.options.container.getBoundingClientRect();
+ 				const overlayRect = this._element.getBoundingClientRect();
+ 				const y = e.clientY - containerRect.top;
+ 				const x = e.clientX - containerRect.left;
+-				(_startPosition = startPosition) !== null && _startPosition !== void 0 || (startPosition = {
+-					originalY: y,
+-					originalHeight: overlayRect.height,
+-					originalX: x,
+-					originalWidth: overlayRect.width
+-				});
+ 				let top = void 0;
+ 				let bottom = void 0;
+ 				let height = void 0;
+@@ -12854,29 +12863,29 @@ var Overlay = class Overlay extends CompositeDisposable {
+ 				let right = void 0;
+ 				let width = void 0;
+ 				const moveTop = () => {
+-					const maxTop = startPosition.originalY + startPosition.originalHeight > containerRect.height ? Math.max(0, containerRect.height - Overlay.MINIMUM_HEIGHT) : Math.max(0, startPosition.originalY + startPosition.originalHeight - Overlay.MINIMUM_HEIGHT);
+-					top = clamp(y, 0, maxTop);
+-					height = startPosition.originalY + startPosition.originalHeight - top;
++					const maxTop = Math.max(0, sp.originalTop + sp.originalHeight - Overlay.MINIMUM_HEIGHT);
++					top = clamp(sp.originalTop + y - sp.originalY, 0, maxTop);
++					height = sp.originalTop + sp.originalHeight - top;
+ 					bottom = containerRect.height - top - height;
+ 				};
+ 				const moveBottom = () => {
+-					top = startPosition.originalY - startPosition.originalHeight;
++					top = sp.originalTop;
+ 					const minHeight = top < 0 && typeof this.options.minimumInViewportHeight === "number" ? -top + this.options.minimumInViewportHeight : Overlay.MINIMUM_HEIGHT;
+ 					const maxHeight = containerRect.height - Math.max(0, top);
+-					height = clamp(y - top, minHeight, maxHeight);
++					height = clamp(sp.originalHeight + y - sp.originalY, minHeight, maxHeight);
+ 					bottom = containerRect.height - top - height;
+ 				};
+ 				const moveLeft = () => {
+-					const maxLeft = startPosition.originalX + startPosition.originalWidth > containerRect.width ? Math.max(0, containerRect.width - Overlay.MINIMUM_WIDTH) : Math.max(0, startPosition.originalX + startPosition.originalWidth - Overlay.MINIMUM_WIDTH);
+-					left = clamp(x, 0, maxLeft);
+-					width = startPosition.originalX + startPosition.originalWidth - left;
++					const maxLeft = Math.max(0, sp.originalLeft + sp.originalWidth - Overlay.MINIMUM_WIDTH);
++					left = clamp(sp.originalLeft + x - sp.originalX, 0, maxLeft);
++					width = sp.originalLeft + sp.originalWidth - left;
+ 					right = containerRect.width - left - width;
+ 				};
+ 				const moveRight = () => {
+-					left = startPosition.originalX - startPosition.originalWidth;
++					left = sp.originalLeft;
+ 					const minWidth = left < 0 && typeof this.options.minimumInViewportWidth === "number" ? -left + this.options.minimumInViewportWidth : Overlay.MINIMUM_WIDTH;
+ 					const maxWidth = containerRect.width - Math.max(0, left);
+-					width = clamp(x - left, minWidth, maxWidth);
++					width = clamp(sp.originalWidth + x - sp.originalX, minWidth, maxWidth);
+ 					right = containerRect.width - left - width;
+ 				};
+ 				switch (direction) {
