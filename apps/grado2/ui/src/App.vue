@@ -120,6 +120,7 @@
         <button slot="trigger" class="basebtn" title="Подложка карты">Подложка: {{ BASEMAPS[basemapId] }}</button>
         <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
       </wa-dropdown>
+      <span class="xy" title="Курсор над картой, МСК (как в QGIS)">{{ cursor ? `X ${fmtM(cursor[0])}  Y ${fmtM(cursor[1])}` : "X —  Y —" }}</span>
       <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
       <span class="note" :title="notice">{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
     </footer>
@@ -140,12 +141,13 @@ import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
 import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
-import { BASEMAPS, basemapId, current, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
+import { BASEMAPS, basemapId, current, cursor, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
 } from "./project.js";
 
-const dockTheme = { ...themeLight, className: "dockview-theme-grado" };
+const dockTheme = { ...themeLight, className: "dockview-theme-grado", gap: 8 };   // окна — карточки на сером столе с зазором 8 px («Синька»)
+const fmtM = v => v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const PANELS = [
   { id: "map", title: "Карта" },
@@ -356,6 +358,7 @@ openStartup();
 .tbtns { display: flex; align-items: center; }
 .ribbon .ci { width: 18px; height: 18px; display: block; }
 wa-dropdown-item .ci { width: 16px; height: 16px; }
+.status > .xy { white-space: pre; min-width: 22ch; }
 .status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tbtns wa-button::part(base) { padding-inline: 6px; }
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }

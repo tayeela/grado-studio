@@ -21,9 +21,9 @@ import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
-import { basemapId, project, scale, theme, viewNow } from "../store.js";
+import { basemapId, cursor, project, scale, theme, viewNow } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
-import { sel, selected, setSel, toggleSel } from "../features.js";
+import { mskOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { loadLibs, scaleDen } from "../symbology.js";
 import Draw from "ol/interaction/Draw.js";
 import Modify from "ol/interaction/Modify.js";
@@ -164,6 +164,8 @@ onMounted(() => {
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
+  map.on("pointermove", e => { if (!e.dragging) cursor.value = mskOf(toLonLat(e.coordinate)); });   // координаты курсора в строке состояния
+  map.getViewport().addEventListener("mouseleave", () => { cursor.value = null; });
   attachGraphLayers(map);                          // результат схемы расчёта: пятно, эскиз, выход выбранного блока
   const upd = () => {
     if (viewPending) return;                        // вид проекта ещё не поставлен: в файл не должен уйти случайный
