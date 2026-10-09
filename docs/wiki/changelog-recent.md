@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-09, docs: шаблон задания агенту и форма задачи GitHub — в устройстве подробного ТЗ.
 - 2026-10-09, ГРАДО 2 v0.99.74: new interface (/next/) — floating windows follow the mouse, larger targets, readable «Схема расчёта», automatic layout check (step 1 of plans/plan-dalshe-2026-10-09.md).
 - 2026-10-09, ГРАДО 2 v0.99.73: new interface (/next/) tidied after the owner's screenshot («элементы не по уровню, скачут, не влезают, ползунки, перемещение окон криво»).
 - 2026-10-09, ГРАДО 2 v0.99.72: new interface (/next/) audit fixes — six Haiku 5.5 auditors by area, fixes by four Opus 5.5 agents.
@@ -21,4 +22,3 @@
 - 2026-10-09, ГРАДО 2 v0.99.65: ФГИС ТП в окне «Данные» нового интерфейса (#69).
 - 2026-10-09, ГРАДО 2 v0.99.64: поиск над картой в новом интерфейсе (#69).
 - 2026-10-09, ГРАДО 2 v0.99.63: выгрузка в Excel в новом интерфейсе (#69).
-- 2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).
