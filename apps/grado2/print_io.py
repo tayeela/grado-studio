@@ -2441,55 +2441,6 @@ def pptx_rasterize(ops, dpi=PPTX_DPI):
 RASTER_NOTE = "Карта этого слайда вставлена картинкой (PNG, 200 dpi): векторных фигур было слишком много для PowerPoint. Подписи, легенда и рамка остались текстом и фигурами."
 
 
-def pptx_notes(data, notes):
-    """Заметки слайдов к готовому PPTX: notes — {номер слайда: текст}. Добавляет образец заметок, страницы заметок и связи."""
-    import io
-    import zipfile
-    if not notes:
-        return data
-    src = zipfile.ZipFile(io.BytesIO(data))
-    files = {n: src.read(n) for n in src.namelist()}
-    ns = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
-          'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
-    head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
-    grp = ('<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
-           '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>')
-    rel = lambda rid, typ, target: (f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{typ}" Target="{target}"/>')
-    rels = lambda body: head + f'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>'
-    files["ppt/theme/theme2.xml"] = files["ppt/theme/theme1.xml"]
-    files["ppt/notesMasters/notesMaster1.xml"] = (head + f'<p:notesMaster {ns}><p:cSld><p:spTree>{grp}<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes"/>'
-        '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="685800" y="4400550"/>'
-        '<a:ext cx="5486400" cy="3600450"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/>'
-        '<a:p><a:endParaRPr lang="ru-RU"/></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" '
-        'accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/></p:notesMaster>').encode("utf-8")
-    files["ppt/notesMasters/_rels/notesMaster1.xml.rels"] = rels(rel("rId1", "theme", "../theme/theme2.xml")).encode("utf-8")
-    types = files["[Content_Types].xml"].decode("utf-8")
-    add = ('<Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>'
-           '<Override PartName="/ppt/theme/theme2.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>')
-    for n, text in sorted(notes.items()):
-        files[f"ppt/notesSlides/notesSlide{n}.xml"] = (head + f'<p:notes {ns}><p:cSld><p:spTree>{grp}<p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes"/>'
-            '<p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>'
-            f'<a:p><a:r><a:rPr lang="ru-RU"/><a:t>{text.replace("&", "&amp;").replace("<", "&lt;")}</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld>'
-            '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:notes>').encode("utf-8")
-        files[f"ppt/notesSlides/_rels/notesSlide{n}.xml.rels"] = rels(
-            rel("rId1", "notesMaster", "../notesMasters/notesMaster1.xml") + rel("rId2", "slide", f"../slides/slide{n}.xml")).encode("utf-8")
-        srel = files[f"ppt/slides/_rels/slide{n}.xml.rels"].decode("utf-8")
-        files[f"ppt/slides/_rels/slide{n}.xml.rels"] = srel.replace("</Relationships>", rel("rId900", "notesSlide", f"../notesSlides/notesSlide{n}.xml") + "</Relationships>").encode("utf-8")
-        add += f'<Override PartName="/ppt/notesSlides/notesSlide{n}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>'
-    files["[Content_Types].xml"] = types.replace("</Types>", add + "</Types>").encode("utf-8")
-    pres = files["ppt/presentation.xml"].decode("utf-8")
-    files["ppt/presentation.xml"] = pres.replace("</p:sldMasterIdLst>", '</p:sldMasterIdLst><p:notesMasterIdLst><p:notesMasterId r:id="rId900"/></p:notesMasterIdLst>', 1).encode("utf-8")
-    prel = files["ppt/_rels/presentation.xml.rels"].decode("utf-8")
-    files["ppt/_rels/presentation.xml.rels"] = prel.replace("</Relationships>", rel("rId900", "notesMaster", "notesMasters/notesMaster1.xml") + "</Relationships>").encode("utf-8")
-    buf = io.BytesIO()
-    z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
-    z.writestr("[Content_Types].xml", files.pop("[Content_Types].xml"))
-    for name, blob in files.items():
-        z.writestr(name, blob)
-    z.close()
-    return buf.getvalue()
-
-
 def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
     """Альбом в редактируемый PPTX: те же листы, что в PDF; каждая рамка листа — группа фигур, подписи — текстом.
     Тайлы подложки режутся по рамке карты; слайд, где фигур больше PPTX_MAX_SHAPES, получает карту картинкой (PNG
@@ -2524,7 +2475,7 @@ def render_pptx(spec, lib, lgr_dash, tiles=None, progress=None):
         pages.append((page.size[0], page.size[1], groups + ([("Свои надписи", own)] if own else [])))
     if progress:
         progress(len(doc.pages), len(doc.pages))
-    return pptx_notes(PptxBackend(doc.title).render(pages), notes)
+    return PptxBackend(doc.title).render(pages, notes)
 
 
 def render_preview_svg(spec, lib, lgr_dash, index=0, tiles=None):

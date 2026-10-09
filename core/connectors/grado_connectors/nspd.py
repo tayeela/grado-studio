@@ -28,9 +28,7 @@ import re
 import ssl
 import sys
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from pathlib import Path
 
 from . import crs, netutil
@@ -175,26 +173,24 @@ def _extra_ca_files():
     return files
 
 
-def _ssl_context():
-    # Сборки Python.org на macOS не видят системные CA — без certifi HTTPS
-    # падает CERTIFICATE_VERIFY_FAILED (правило 6 CLAUDE.md проекта).
-    try:
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        ctx = ssl.create_default_context()
-    # nspd.gov.ru подписан НУЦ Минцифры, которого нет в certifi: подгружаем
-    # его корни из файлов (битые и нечитаемые пропускаем молча).
+def _extra_ca_pem():
+    """Корни из _extra_ca_files() в PEM; битые и нечитаемые файлы пропускаются молча."""
+    out = []
     for f in _extra_ca_files():
         try:
             raw = f.read_bytes()
-            if b"-----BEGIN" in raw[:4096]:
-                ctx.load_verify_locations(cadata=raw.decode("ascii", "ignore"))
-            else:                                  # .cer от Минцифры — обычно DER
-                ctx.load_verify_locations(cadata=ssl.DER_cert_to_PEM_cert(raw))
+            pem = raw.decode("ascii", "ignore") if b"-----BEGIN" in raw[:4096] \
+                else ssl.DER_cert_to_PEM_cert(raw)          # .cer от Минцифры — обычно DER
+            ssl.create_default_context().load_verify_locations(cadata=pem)   # проверка: файл читается как сертификат
+            out.append(pem)
         except (ssl.SSLError, OSError, ValueError):
             pass
-    return ctx
+    return out
+
+
+def _ssl_context():
+    # nspd.gov.ru подписан НУЦ Минцифры, которого нет в certifi: к корням certifi добавляются его корни из файлов.
+    return netutil.ssl_context(_extra_ca_pem())
 
 
 def _ssl_context_unverified():
@@ -228,42 +224,20 @@ class NspdDirect(Connector):
         self.transport = transport or self._http_post
 
     def _http_post(self, url, body):
-        data = json.dumps(body).encode("utf-8")
         headers = {"User-Agent": _UA, "Content-Type": "application/json",
                    "Referer": "https://nspd.gov.ru/map"}
         headers.update(_relay_headers(_base_url()))
-        req = urllib.request.Request(url, data=data, headers=headers)
-        ctx = _ssl_context()
-        last = None
-        for attempt in range(3):
+        try:
+            return _request(url, method="POST", content=json.dumps(body).encode("utf-8"),
+                            headers=headers, timeout=45).json()
+        except netutil.HttpError as e:
             try:
-                with netutil.open_url(req, 45, ctx) as r:
-                    return json.loads(netutil.read_capped(r).decode("utf-8"))
-            except urllib.error.HTTPError as e:
-                if e.code == 429 and attempt < 2:   # лимит частоты геопортала
-                    time.sleep(1.5 * (attempt + 1))
-                    last = e
-                    continue
-                try:
-                    detail = _short(json.loads(
-                        netutil.read_capped(e).decode("utf-8")).get("message", ""))
-                except Exception:
-                    detail = ""
-                raise ConnectorError(
-                    f"НСПД ответил HTTP {e.code}"
-                    + (f": {detail}" if detail else "")) from None
-            except Exception as e:
-                # urllib заворачивает SSLCertVerificationError в URLError
-                is_cert = isinstance(e, ssl.SSLCertVerificationError) or \
-                    "CERTIFICATE_VERIFY_FAILED" in str(e)
-                if is_cert and ctx.verify_mode != ssl.CERT_NONE:
-                    if os.environ.get("GRADO_NSPD_INSECURE") == "1":
-                        _warn_insecure()
-                        ctx = _ssl_context_unverified()
-                        continue
-                    raise ConnectorError(_CERT_HELP) from None
-                raise ConnectorError(f"НСПД недоступен: {_short(e)}") from None
-        raise ConnectorError(f"НСПД: слишком много запросов ({last})")
+                detail = _short(json.loads(e.body.decode("utf-8")).get("message", ""))
+            except Exception:
+                detail = ""
+            raise ConnectorError(f"НСПД ответил HTTP {e.code}" + (f": {detail}" if detail else "")) from None
+        except netutil.NetError as e:
+            raise ConnectorError(f"НСПД недоступен: {_short(e)}") from None
 
     @staticmethod
     def _bbox_fc(bbox):
@@ -317,8 +291,18 @@ CAD_RE = re.compile(r"^[0-9]{2}:[0-9]{2}:[0-9]{6,7}:[0-9]+$")
 SEARCH_MAX = 20
 
 
-class _Retryable(ConnectorError):
-    """Сбой, который стоит повторить: лимит частоты, 5xx, сеть."""
+def _request(url, **kw):
+    """Запрос к НСПД по общему правилу netutil (повторы на 429, 5xx и обрыв сети). Сертификат не прошёл проверку —
+    понятная подсказка про корни Минцифры; без проверки — только по явному GRADO_NSPD_INSECURE=1."""
+    try:
+        return netutil.request(url, context=_ssl_context(), **kw)
+    except netutil.NetError as e:
+        if not e.cert:
+            raise
+        if os.environ.get("GRADO_NSPD_INSECURE") != "1":
+            raise ConnectorError(_CERT_HELP) from None
+    _warn_insecure()
+    return netutil.request(url, context=_ssl_context_unverified(), **kw)
 
 
 def _http_get(url):
@@ -326,26 +310,12 @@ def _http_get(url):
                "Referer": "https://nspd.gov.ru/map?thematic=PKK",
                "Origin": "https://nspd.gov.ru"}
     headers.update(_relay_headers(_base_url()))
-    req = urllib.request.Request(url, headers=headers)
-    ctx = _ssl_context()
-    for _ in range(2):                       # второй заход — только для явного GRADO_NSPD_INSECURE=1
-        try:
-            with netutil.open_url(req, 30, ctx) as r:
-                return json.loads(netutil.read_capped(r).decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            cls = _Retryable if e.code == 429 or e.code >= 500 else ConnectorError
-            raise cls(f"НСПД ответил HTTP {e.code}") from None
-        except Exception as e:
-            is_cert = isinstance(e, ssl.SSLCertVerificationError) or \
-                "CERTIFICATE_VERIFY_FAILED" in str(e)
-            if is_cert and ctx.verify_mode != ssl.CERT_NONE:
-                if os.environ.get("GRADO_NSPD_INSECURE") == "1":
-                    _warn_insecure()
-                    ctx = _ssl_context_unverified()
-                    continue
-                raise ConnectorError(_CERT_HELP) from None
-            raise _Retryable(f"НСПД недоступен: {_short(e)}") from None
-    raise ConnectorError("НСПД недоступен")
+    try:
+        return _request(url, headers=headers, timeout=30).json()
+    except netutil.HttpError as e:
+        raise ConnectorError(f"НСПД ответил HTTP {e.code}") from None
+    except netutil.NetError as e:
+        raise ConnectorError(f"НСПД недоступен: {_short(e)}") from None
 
 
 def normalize_cadastral(text_or_list):
@@ -379,7 +349,7 @@ def _search_features(data):
 def search_cadastral(numbers, transport=None, pause=0.5, sleep=time.sleep, errors=None, nogeom=None):
     """Участки по кадастровым номерам → нормализованные объекты (WGS84, свойства как у выгрузки по области).
 
-    Один запрос на номер, строго по очереди, до 3 попыток на номер. Не найденные номера просто
+    Один запрос на номер, строго по очереди, до 3 попыток на номер (netutil). Не найденные номера просто
     отсутствуют в результате; найденные без контура — в nogeom (номера), не молча; сбои порталa (после 3 попыток) складываются в errors как (номер, текст).
     """
     nums, _ = normalize_cadastral(numbers)
@@ -393,20 +363,11 @@ def search_cadastral(numbers, transport=None, pause=0.5, sleep=time.sleep, error
             sleep(pause)
         url = _base_url() + SEARCH_PATH + "?" + urllib.parse.urlencode({"query": num, "thematicSearchId": 1})
         data = None
-        for attempt in range(3):
-            try:
-                data = get(url)
-                break
-            except _Retryable as e:
-                if attempt == 2:
-                    if errors is not None:
-                        errors.append((num, str(e)))
-                else:
-                    sleep(1.5 * (attempt + 1))
-            except ConnectorError as e:
-                if errors is not None:
-                    errors.append((num, str(e)))
-                break
+        try:                                  # повторы — в netutil (общее правило порталов)
+            data = get(url)
+        except ConnectorError as e:
+            if errors is not None:
+                errors.append((num, str(e)))
         if data is None:
             continue
         raw = _search_features(data)

@@ -28,18 +28,20 @@ jobs:
         with:
           node-version: "22"
       - name: Install dependencies
-        run: python -m pip install -r apps/grado2/requirements.txt
+        run: |
+          python -m pip install -r apps/grado2/requirements.txt -r apps/grado2/requirements-dev.txt
+          cd tools && npm ci                  # Playwright (playwright-core) для браузерных сценариев; браузер — Chrome раннера
       - name: New interface build is fresh (apps/grado2/ui -> apps/grado2/web/next)
         run: tools/ui_check.sh
       - name: Unit tests (server, import, print, insolation under node)
         run: |
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
-          python -m unittest discover -s apps/grado2/tests -p "test_*.py"
-          python -m unittest discover -s core/connectors/tests -p "test_*.py"
+          python -m pytest -q -p no:cacheprovider apps/grado2/tests
+          python -m pytest -q -p no:cacheprovider core/connectors/tests
       - name: Unit tests of the other core packages (compute, geom, layout, model, reactive, render)
         run: |
           export PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2"
-          for m in compute geom layout model reactive render; do python -m unittest discover -s core/$m/tests -p "test_*.py"; done
+          for m in compute geom layout model reactive render; do python -m pytest -q -p no:cacheprovider core/$m/tests; done
       - name: Fonts for the interface (as on the owner's Mac)
         # интерфейс: system-ui, Segoe UI, Roboto, Helvetica Neue, Arial. На ubuntu system-ui и sans-serif дают DejaVu Sans — он шире,
         # и шапка на 1440 px переполняется (T63). Ставим Roboto и делаем его первым в fontconfig для sans-serif и самого DejaVu Sans.

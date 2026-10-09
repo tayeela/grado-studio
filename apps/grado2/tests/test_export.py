@@ -26,7 +26,7 @@ def area(ring):
 
 class Http(unittest.TestCase):
     def setUp(self):
-        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        self.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
 

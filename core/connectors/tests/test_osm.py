@@ -114,81 +114,64 @@ class OsmCacheIndexPath(unittest.TestCase):
 
 
 class OverpassRetry(unittest.TestCase):
-    """T62: 504 и обрыв по времени повторяются (портальные правила: пауза, не больше 3 попыток, ожидание растёт вдвое)."""
+    """T62: перегрузка зеркала и обрыв повторяются по общему правилу порталов (netutil: не больше 3 попыток, паузы 1 и 2 с)."""
 
-    @staticmethod
-    def _err(code):
-        import urllib.error
-        return urllib.error.HTTPError("https://x", code, "gateway", {}, None)
-
-    def _answer(self, body=b'{"elements": []}'):
-        import io
-        from unittest import mock
-        r = mock.MagicMock()
-        r.__enter__.return_value = io.BytesIO(body)
-        return r
-
-    def test_504_twice_then_answer_waits_2_then_4_seconds(self):
-        from unittest import mock
+    def test_504_twice_then_answer(self):
+        from _fakenet import FakeNet
         from grado_connectors import osm
-        sleeps = []
-        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(504), self._err(504), self._answer()]) as op:
-            res = osm.post_with_retry("https://x", b"data=1", None, sleep=sleeps.append)
+        with FakeNet(504, 504, b'{"elements": []}') as net:
+            res = osm.post_with_retry("https://x", b"data=1")
         self.assertEqual(res, {"elements": []})
-        self.assertEqual(op.call_count, 3)
-        self.assertEqual(sleeps, [2, 4])
+        self.assertEqual(len(net.requests), 3)
+        self.assertEqual(net.requests[0].method, "POST")
+        self.assertEqual(net.sleeps, [1.0, 2.0])
 
     def test_three_failures_raise_the_last_and_stop(self):
-        import urllib.error
-        from unittest import mock
-        from grado_connectors import osm
-        sleeps = []
-        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(504)] * 5) as op:
-            with self.assertRaises(urllib.error.HTTPError) as c:
-                osm.post_with_retry("https://x", b"d", None, sleep=sleeps.append)
+        from _fakenet import FakeNet
+        from grado_connectors import netutil, osm
+        with FakeNet(504, repeat_last=True) as net:
+            with self.assertRaises(netutil.HttpError) as c:
+                osm.post_with_retry("https://x", b"d")
         self.assertEqual(c.exception.code, 504)
-        self.assertEqual(op.call_count, 3)                     # не больше трёх попыток
-        self.assertEqual(sleeps, [2, 4])                       # после последней паузы нет
+        self.assertEqual(len(net.requests), 3)                 # не больше трёх попыток
 
     def test_timeout_is_retried_but_404_is_not(self):
-        import socket
-        import urllib.error
-        from unittest import mock
-        from grado_connectors import osm
-        with mock.patch.object(osm.netutil, "open_url", side_effect=[socket.timeout("timed out"), self._answer()]) as op:
-            self.assertEqual(osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None), {"elements": []})
-        self.assertEqual(op.call_count, 2)
-        with mock.patch.object(osm.netutil, "open_url", side_effect=[self._err(404)]) as op:
-            with self.assertRaises(urllib.error.HTTPError):
-                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
-        self.assertEqual(op.call_count, 1)
+        import httpx
+        from _fakenet import FakeNet
+        from grado_connectors import netutil, osm
+        with FakeNet(httpx.ReadTimeout("timed out"), b'{"elements": []}') as net:
+            self.assertEqual(osm.post_with_retry("https://x", b"d"), {"elements": []})
+        self.assertEqual(len(net.requests), 2)
+        with FakeNet(404) as net:
+            with self.assertRaises(netutil.HttpError):
+                osm.post_with_retry("https://x", b"d")
+        self.assertEqual(len(net.requests), 1)
 
     def test_runtime_error_remark_is_a_refusal_without_retry(self):
-        from unittest import mock
+        from _fakenet import FakeNet
         from grado_connectors import osm
         from grado_connectors.contract import ConnectorError
-        with mock.patch.object(osm.netutil, "open_url", return_value=self._answer(b'{"remark": "runtime error: out of memory"}')) as op:
+        with FakeNet(b'{"remark": "runtime error: out of memory"}') as net:
             with self.assertRaises(ConnectorError):
-                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
-        self.assertEqual(op.call_count, 1)
+                osm.post_with_retry("https://x", b"d")
+        self.assertEqual(len(net.requests), 1)
 
-    def test_ssl_error_is_not_retried_and_cancelled_mirror_stops(self):
-        import ssl
+    def test_cert_error_is_not_retried_and_cancelled_mirror_stops(self):
         import threading
-        import urllib.error
-        from unittest import mock
-        from grado_connectors import osm
+        import httpx
+        from _fakenet import FakeNet
+        from grado_connectors import netutil, osm
         from grado_connectors.contract import ConnectorError
-        with mock.patch.object(osm.netutil, "open_url", side_effect=urllib.error.URLError(ssl.SSLError("bad cert"))) as op:
-            with self.assertRaises(urllib.error.URLError):
-                osm.post_with_retry("https://x", b"d", None, sleep=lambda s: None)
-        self.assertEqual(op.call_count, 1)
+        with FakeNet(httpx.ConnectError("CERTIFICATE_VERIFY_FAILED")) as net:
+            with self.assertRaises(netutil.NetError):
+                osm.post_with_retry("https://x", b"d")
+        self.assertEqual(len(net.requests), 1)
         stop = threading.Event()
         stop.set()
-        with mock.patch.object(osm.netutil, "open_url") as op:
+        with FakeNet(b"{}") as net:
             with self.assertRaises(ConnectorError):
-                osm.post_with_retry("https://x", b"d", None, cancel=stop)
-        self.assertEqual(op.call_count, 0)
+                osm.post_with_retry("https://x", b"d", cancel=stop)
+        self.assertEqual(net.requests, [])
 
 
 if __name__ == "__main__":

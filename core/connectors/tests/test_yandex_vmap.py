@@ -246,11 +246,20 @@ class TestFetch(unittest.TestCase):
             self.assertEqual(len(t3.calls), 1)
 
     def test_retries_then_error(self):
+        import httpx
+        from _fakenet import FakeNet
         box = tile_bbox(*TILES[0])
-        ok = yv.YandexVmap(transport=FakeTransport(fail=2), pause=0).fetch(box, ["building"])
+        tile = (FIX / f"18_{TILES[0][0]}_{TILES[0][1]}.pbf").read_bytes()
+        with FakeNet(httpx.ConnectError("сеть"), b"<html>captcha</html>", tile) as net:    # капча — повтор, не кэш
+            ok = yv.YandexVmap(pause=0).fetch(box, ["building"])
         self.assertTrue(ok["features"])
-        with self.assertRaises(ConnectorError):
-            yv.YandexVmap(transport=FakeTransport(fail=9), pause=0).fetch(box, ["building"])
+        self.assertEqual(len(net.requests), 3)
+        with FakeNet(503, repeat_last=True):
+            with self.assertRaises(ConnectorError):
+                yv.YandexVmap(pause=0).fetch(box, ["building"])
+        with FakeNet(404) as net:                                                       # тайла нет — пусто, без повтора
+            self.assertEqual(yv.YandexVmap(pause=0).fetch(box, ["building"])["features"], [])
+        self.assertEqual(len(net.requests), 1)
 
     def test_progress_counts_tiles(self):
         seen = []

@@ -5,7 +5,7 @@
 ## Файлы и папки верхнего уровня
 | файл или папка | что это | кто использует |
 |---|---|---|
-| `server.py` | HTTP-сервер и API `/api/...`: отдаёт `web/`, расчёты, импорт, экспорт, печать, проекты | `ГРАДО 2.command`, `ГРАДО 2.bat`, `packaging/grado2_entry.py` (сборка), тесты (`import server`) |
+| `server.py` | HTTP-сервер (Starlette под uvicorn, тела запросов проверяет pydantic) и API `/api/...`: отдаёт `web/`, расчёты, импорт, экспорт, печать, проекты | `ГРАДО 2.command`, `ГРАДО 2.bat`, `packaging/grado2_entry.py` (сборка), тесты (`import server`) |
 | `hub.py` | совместный режим: аккаунты, проекты с ролями, ревизии разделов, история версий | `server.py` при `--hub` или `GRADO2_HUB=1`; `tests/test_hub.py`; консоль: adduser, passwd, invite, list |
 | `print_io.py` | листы и альбом в PDF, SVG и PPTX через рендер и вёрстку ядра | `server.py` (печать), `album_io.py`, `rail_icons.py`, `tests/test_t86_pptx_speed.py` |
 | `layout_io.py` | лист из «Макета листа» нового интерфейса в PDF и SVG, карта блока картинкой: карта — печать альбома, остальное — как рисует редактор | `server.py` (`/api/print/layout`, `/api/print/map_svg`; листы в проекте — ключ `layouts`, `save_project` его сохраняет), `ui/src/panels/sheetmaps.js`, `tests/test_layout_io.py` |
@@ -17,7 +17,8 @@
 | `ogd_all.py` | «Всё из ГИС ОГД в DWG»: все слои портала по области одним чертежом, с кэшем на диске | `server.py`, `ogd_warm.py`, `tests/test_ogd_all.py` |
 | `ogd_warm.py` | прогрев кэша ГИС ОГД; по docstring запускается таймером `grado-warm` ночью или вручную | `ogd_all.py`; файла таймера в репозитории нет |
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
-| `requirements.txt` | зависимости Python: ezdxf, certifi, pillow | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
+| `requirements.txt` | зависимости Python: ezdxf, certifi, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx, Starlette, uvicorn, pydantic | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
+| `requirements-dev.txt` | только для проверок: pytest | `tools/gate.sh`, `.claude/hooks/session-start.sh`, CI |
 | `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки; `web/next/` — собранный новый интерфейс (не править руками) | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
 | `ui/` | исходники нового интерфейса (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/`; там же редактор раскладки листа на Konva ([ui/README.md](ui/README.md)) | `tools/ui_check.sh`, `.github/workflows/grado2-release.yml` |
 | `tests/` | тесты: `test_*.py` (unittest), `*_test.js`, `e2e/` (браузерные сценарии), `fixtures/` (данные) | `tools/gate.sh`, `.github/workflows/grado2-release.yml` |
@@ -71,7 +72,7 @@
 - Вручную: `python3 apps/grado2/server.py [порт] [--hub]`. По умолчанию порт 8650; `--hub` включает совместный режим.
 - Проверка перед коммитом: `tools/gate.sh` (вики, документы, unit с PYTHONPATH и без, коннекторы). `E2E=1 tools/gate.sh` добавляет браузерные сценарии, около 6 минут.
 - JS-тесты (`test_*_js.py`) запускают `*_test.js` через node и пропускаются, если node нет. Браузерные сценарии (`tests/test_e2e.py`, по `docs/ux/grado2-ux.md`) идут при `GRADO2_E2E=1`; нужны node 22+ и Chrome (переменная `CHROME`).
-- Тестовые серверы: порт 8651 и выше, проекты только копии. Порт 8650 и папка «Документы/ГРАДО 2» — рабочие данные владельца, в тестах не использовать (железное правило 1 в `../../CLAUDE.md`).
+- Тестовые серверы агентов: порт 8660 и выше (8651 — `grado2-test` из основной копии), проекты только копии. Порт 8650 и папка «Документы/ГРАДО 2» — рабочие данные владельца, в тестах не использовать (железное правило 1 в `../../CLAUDE.md`).
 ## Переменные окружения
 - `GRADO2_PORT` — порт сервера, если он не задан аргументом командной строки; по умолчанию 8650.
 - `GRADO2_PROJECTS` — папка проектов; по умолчанию «Документы/ГРАДО 2» в домашней папке.

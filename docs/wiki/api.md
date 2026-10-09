@@ -16,11 +16,12 @@
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
+HTTP — Starlette под uvicorn, тела запросов проверяет pydantic (раздел «HTTP» ниже).
 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (57):
+Все упомянутые в коде пути (56):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -28,7 +29,6 @@
 - `/api/export/sat`
 - `/api/export/xlsx`
 - `/api/fetch`
-- `/api/fgistp/`
 - `/api/fgistp/docs`
 - `/api/fgistp/fetch`
 - `/api/fgistp/layers`

@@ -11,10 +11,12 @@
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
+HTTP — Starlette под uvicorn, тела запросов проверяет pydantic (раздел «HTTP» ниже).
 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 """
 
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -28,9 +30,18 @@ import time
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from typing import Annotated
+from urllib.parse import parse_qs, quote, unquote
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, ValidationError, field_validator
+from starlette.applications import Starlette
+from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import MutableHeaders
+from starlette.requests import Request
+from starlette.responses import Response, StreamingResponse
+from starlette.routing import Route
+from starlette.staticfiles import StaticFiles
 
 # ---------- Пути, папка проектов, настройки запуска ----------
 # в собранной программе (PyInstaller) всё лежит в папке распаковки sys._MEIPASS: web/, core/…, docs/standards/
@@ -791,32 +802,23 @@ def esri_tile(z, x, y, kind="sat"):
     «округ и районы» шаблона ППТ КРТ). С диска (~/.grado2/cache/tiles/<вид>, 90 дней), иначе скачать по одному,
     с паузой 0,1 с — портал не долбим; неудача — пустое место, лист всё равно собирается."""
     folder, service = ESRI_SERVICES.get(kind, ESRI_SERVICES["sat"])
-    import ssl
     import time
-    import urllib.request
+    from grado_connectors import netutil
+    from grado_connectors.contract import ConnectorError
     path = CACHE / "tiles" / folder / f"{z}_{x}_{y}.jpg"
     if path.exists() and time.time() - path.stat().st_mtime < 90 * 86400:
         return path.read_bytes()
     url = f"https://server.arcgisonline.com/ArcGIS/rest/services/{service}/MapServer/tile/{z}/{y}/{x}"
-    try:
-        import certifi
-        ctx = ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        ctx = ssl.create_default_context()
     with _TILE_LOCK:
-        for attempt in range(3):
-            try:
-                req = urllib.request.Request(url, headers={"User-Agent": "grado2/1.0 (planning sheets)"})
-                with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
-                    data = r.read()
-                if data[:2] != b"\xff\xd8":                 # не JPEG (заглушка или ошибка) — на лист не идёт и в кэш не пишется
-                    return None
-                atomic_write(path, data)
-                time.sleep(.1)
-                return data
-            except OSError:
-                time.sleep(1 + attempt)
-    return None
+        try:                                            # повторы — общее правило порталов (netutil)
+            data = netutil.request(url, headers={"User-Agent": "grado2/1.0 (planning sheets)"}, timeout=20).content
+        except ConnectorError:
+            return None
+        if data[:2] != b"\xff\xd8":                     # не JPEG (заглушка или ошибка) — на лист не идёт и в кэш не пишется
+            return None
+        atomic_write(path, data)
+        time.sleep(.1)
+        return data
 
 
 def yandex_sat_tile(z, x, y):
@@ -870,18 +872,12 @@ esri_tile.ysat = yandex_sat_tile        # снимок листов альбом
 
 
 def _point_in(g, x, y):
-    """Точка внутри Polygon / MultiPolygon GeoJSON (чётно-нечётное правило по всем кольцам)."""
-    if not g:
+    """Точка внутри Polygon / MultiPolygon GeoJSON (shapely)."""
+    if not g or g.get("type") not in ("Polygon", "MultiPolygon"):
         return False
-    polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"] if g["type"] == "MultiPolygon" else []
-    inside = False
-    for poly in polys:
-        for ring in poly:
-            for i in range(len(ring)):
-                (x1, y1), (x2, y2) = ring[i - 1][:2], ring[i][:2]
-                if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
-                    inside = not inside
-    return inside
+    import shapely
+    from shapely.geometry import shape
+    return bool(shapely.contains_xy(shape(g), x, y))
 
 
 def ogd_label_angles(code, feats, bbox, api=None):
@@ -1312,15 +1308,6 @@ def _norm_name(t):
     return " ".join(sorted(t.replace("-", " ").split()))
 
 
-def _in_ring(x, y, ring):
-    c = False
-    for i in range(len(ring)):
-        (x1, y1), (x2, y2) = ring[i], ring[i - 1]
-        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
-            c = not c
-    return c
-
-
 _PLACE_MEMO = {}
 MAX_PLACE_MEMO = 256                 # последних ответов /api/place в памяти
 _PLACE_LOCK = threading.Lock()
@@ -1539,7 +1526,7 @@ def place_info(lon, lat, polygon=None):
             tinao = int(top["okrug"] in ("ТАО", "НАО"))
     table = {_norm_name(k): k for k in DISTRICTS["k2"]}
     district = table.get(_norm_name(dname))
-    inside_ttk = _in_ring(lon, lat, DISTRICTS["ttk_hull"])
+    inside_ttk = _point_in({"type": "Polygon", "coordinates": [DISTRICTS["ttk_hull"]]}, lon, lat)
     notes = []
     zone_note = ""
     if district:
@@ -1732,7 +1719,6 @@ GUEST = os.environ.get("GRADO2_GUEST") == "1"
 NOGUEST_COOKIE = "grado_noguest"
 BIG_BODY = threading.BoundedSemaphore(3)    # одновременных запросов крупнее MAX_BODY в совместном режиме
 EVENTS_RECHECK = 10               # как часто открытый поток событий заново проверяет сессию и доступ (секунды)
-EVENTS_WRITE_TIMEOUT = 60         # сколько одна запись в поток может ждать читателя
 LOCAL_PROJECTS_OFF = "в совместном режиме проекты хранятся на сервере: окно «Совместные проекты»"
 OGD_OWNER = {"login": None}        # кто запустил выгрузку «Всё из ГИС ОГД»: остановить и забрать файл может он или администратор
 
@@ -1753,145 +1739,135 @@ def same_token(a, b):
     return hmac.compare_digest(str(a).encode("utf-8", "replace"), str(b).encode("utf-8", "replace"))
 
 
-# ---------- Handler: маршруты GET и POST ----------
-class Handler(SimpleHTTPRequestHandler):
-    timeout = 120       # простой сокета (чтение/запись), а не время работы запроса: долгая выгрузка считается без обмена
+# ---------- HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) ----------
+# Порядок для каждого запроса: Guard (чужой Host или Origin → 403, ключ доступа или сессия хаба, заголовки защиты на любом
+# ответе) → маршрут из ROUTES → функция маршрута в пуле нитей (диск, порталы и печать — блокирующие). Чего нет в ROUTES,
+# отдаёт StaticFiles из web/. Тесты: tests/test_server.py, tests/test_hub_server.py.
 
-    def __init__(self, *a, **kw):
-        super().__init__(*a, directory=str(WEB), **kw)
+THREADS = 200        # нитей для запросов: печать и выгрузки идут минутами, поток событий хаба держит нить на время ожидания
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-cache")   # после обновления браузер не держит старые app.js
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("X-Frame-Options", "DENY")
-        self.send_header("Content-Security-Policy", CSP)
-        super().end_headers()
 
-    def _json(self, code, obj, headers=None):
-        body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        for k, v in (headers or {}).items():
-            for one in (v if isinstance(v, list) else [v]):      # список — несколько заголовков (две куки)
-                self.send_header(k, one)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+def _bbox_check(v):
+    if len(v) != 4 or not (-180 <= v[0] < v[2] <= 180 and -90 <= v[1] < v[3] <= 90):
+        raise ValueError("ожидается [запад, юг, восток, север] в градусах")
+    return v
 
-    def do_GET(self):
-        if self._foreign():
-            return self._deny()
-        if self._gate("GET"):
-            return
-        page, _, query = self.path.partition("?")
-        if page == "/":                     # адрес сайта открывает новый интерфейс; прежняя рабочая страница — /old
-            self.send_response(302)
-            self.send_header("Location", "/next/" + ("?" + query if query else ""))
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-            return
-        if page == "/old":                  # без косой черты в конце: её скрипты и стили по-прежнему берутся из корня
-            self.path = "/index.html" + ("?" + query if query else "")
-        if HUB:
-            route = self.path.split("?")[0]
-            if route.startswith("/api/hub/"):
-                return self._hub("GET", route)
-            if route in ("/api/projects", "/api/project"):
-                return self._json(403, {"error": LOCAL_PROJECTS_OFF})
-        name = self.path.split("?")[0].removeprefix("/styles/")
-        if self.path.startswith("/styles/") and name in STYLE_FILES:
-            body = (STYLES / name).read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            return self.wfile.write(body)
-        if self.path.split("?")[0] == "/api/search/cadastral":
-            q = parse_qs(urlparse(self.path).query).get("q", [""])[0][:2000]
-            try:
-                code, obj = search_cad(q)
-            except ConnectorError:
-                code, obj = 502, {"error": "NSPD did not answer, try again later"}
-            return self._json(code, obj)
-        route = self.path.split("?")[0]
-        if route in ("/api/search/address", "/api/search"):
-            q = parse_qs(urlparse(self.path).query).get("q", [""])[0]
-            code, obj = (search_addr if route.endswith("address") else search_any)(q[:2000])
-            return self._json(code, obj)
-        if self.path == "/api/sources":
-            return self._json(200, {k: {"title": v[2], "kind": v[0], **({"code": c} if (c := source_ogd_code(k)) else {})} for k, v in SOURCES.items()})
-        if self.path == "/api/layer_roles":
-            return self._json(200, layer_roles())
-        if self.path.split("?")[0] == "/api/tep/norms":
-            return self._json(200, tep_norms())
-        if self.path == "/api/health":
-            return self._json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
-        if self.path == "/api/progress":
-            return self._json(200, dict(PROGRESS))
-        if self.path == "/api/print/progress":
-            return self._json(200, dict(PRINT_PROGRESS))
-        if self.path == "/api/ogd_all/tree":
-            import ogd_all
-            try:
-                return self._json(200, {"tree": ogd_all.catalog_tree(ogd_catalog())})
-            except ConnectorError as e:
-                return self._json(502, {"error": str(e)})
-        if self.path == "/api/ogd_all/status":
-            return self._json(200, OGD_JOB[0].state if OGD_JOB else {"running": False})
-        if self.path == "/api/ogd_all/file":
-            if not self._ogd_may():
-                return self._json(403, {"error": "выгрузку запустил другой пользователь"})
-            job = OGD_JOB[0] if OGD_JOB else None
-            if not job or not job.file or not job.file.exists():
-                return self._json(404, {"error": "no file"})
-            body = job.file.read_bytes()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
-            from urllib.parse import quote       # имя с названием листа — по-русски; заголовок HTTP — только латиница
-            self.send_header("Content-Disposition", f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(job.file.name)}")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            return self.wfile.write(body)
-        if self.path.startswith("/api/fgistp/"):
-            q = parse_qs(urlparse(self.path).query)
-            try:
-                if self.path.startswith("/api/fgistp/docs"):
-                    if q.get("q", [""])[0].strip():
-                        return self._json(200, {"docs": fgistp_search(q["q"][0], fgistp_catalog())})
-                    bbox = [float(v) for v in q["bbox"][0].split(",")]
-                    return self._json(200, {"docs": fgistp_docs(bbox, fgistp_catalog())})
-                if self.path.startswith("/api/fgistp/layers"):
-                    return self._json(200, {"layers": FgistpConnector().discover(q["uin"][0])})
-            except ConnectorError as e:
-                return self._json(502, {"error": str(e)})
-            except (KeyError, ValueError) as e:
-                return self._json(400, {"error": _bad(e)})
-            except OSError as e:
-                self._log_fail(e)
-                return self._json(502, {"error": "ФГИС ТП недоступна"})
-            except Exception as e:      # любой сбой — ответ без подробностей, причина в журнале сервера
-                self._log_fail(e)
-                return self._json(500, {"error": INTERNAL_ERROR})
-        if self.path == "/api/projects":
-            return self._json(200, list_projects())
-        if self.path.startswith("/api/project?"):
-            try:
-                path = project_path(self._project_name())
-                body = path.read_bytes()
-            except (ValueError, OSError):
-                return self._json(404, {"error": "no such project"})
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            return self.wfile.write(body)
-        return super().do_GET()
 
-    def _foreign(self):
+Bbox = Annotated[list[float], AfterValidator(_bbox_check)]
+
+
+class _Body(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+
+class FetchBody(_Body):
+    """POST /api/fetch: область данных, территория (OSM и ЕГКО берут «территория + margin_m», не рамку листа), источники."""
+    bbox: Bbox
+    territory: Bbox | None = None
+    margin_m: float = DATA_MARGIN_M
+    sources: list | None = None
+
+    @field_validator("margin_m")
+    @classmethod
+    def _margin(cls, v):
+        return min(max(v, 0.0), 2000.0)
+
+
+class TepBody(_Body):
+    """POST /api/tep: исходные числа ТЭП; поле без значения не передаётся в tep() (там своё значение по умолчанию)."""
+    terr_ha: float | None = None
+    restrict_ha: float | None = None
+    spp_new_m2: float | None = None
+    share: float | None = None
+    spp_kept_m2: float | None = None
+    spp_low_m2: float | None = None
+    nonres_part: float | None = None
+    education_zone: float | None = None
+    k1: float | None = None
+    k2: float | None = None
+    tinao: float | None = None
+    territory_mode: float | None = None
+    unbuilt_share: float | None = None
+    free_doo: float | None = None
+    free_school: float | None = None
+    free_clinic: float | None = None
+    park_share_underground: float | None = None
+    park_share_multi: float | None = None
+    constants: dict | None = None
+
+
+class PointBody(_Body):
+    lon: float
+    lat: float
+
+
+def _invalid(e):
+    """Первая ошибка pydantic словами для 400: «bbox: ожидается …»."""
+    err = e.errors()[0]
+    where = ".".join(str(x) for x in err.get("loc", ()) if not isinstance(x, int)) or "запрос"
+    return f"{where}: {str(err.get('msg', '')).removeprefix('Value error, ')}"
+
+
+def _json(code, obj, headers=None):
+    """Ответ JSON; headers — {имя: значение или список значений} (две куки — два заголовка Set-Cookie)."""
+    r = Response(json.dumps(obj, ensure_ascii=False).encode("utf-8"), code, media_type="application/json; charset=utf-8")
+    for k, v in (headers or {}).items():
+        for one in (v if isinstance(v, list) else [v]):
+            r.headers.append(k, one)
+    return r
+
+
+def _file(body, ctype, name=None, extra=()):
+    """Ответ файлом: name — имя для «Сохранить как» (латиница), extra — пары дополнительных заголовков."""
+    r = Response(body, 200, media_type=ctype)
+    for h, v in extra:
+        r.headers.append(h, v)
+    if name:
+        r.headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    return r
+
+
+class Ctx:
+    """Запрос глазами маршрутов: адрес с запросом, заголовки, адрес клиента, тело и пользователь хаба (считается раз)."""
+
+    def __init__(self, request, body=b""):
+        self.request, self.body = request, body
+        self.method = request.method
+        q = request.url.query
+        self.path = request.url.path + ("?" + q if q else "")
+        self.route = request.url.path
+        self.headers = request.headers
+        self.query = parse_qs(q)
+        self.peer = request.client.host if request.client else ""
+        self.port = (request.scope.get("server") or ("", 0))[1]
+
+    def q(self, name, default=""):
+        return (self.query.get(name) or [default])[0]
+
+    def obj(self):
+        """Тело POST — JSON-объект; список, число или строка вместо него — отказ 400 (ValueError → ответ с причиной)."""
+        try:
+            req = json.loads(self.body or b"{}")
+        except RecursionError:                           # вложенность в тысячи уровней: обычный отказ, а не 500
+            raise ValueError("слишком глубокая вложенность JSON") from None
+        if not isinstance(req, dict):
+            raise ValueError("тело запроса должно быть JSON-объектом")
+        return req
+
+    def model(self, cls):
+        """Тело по модели pydantic; ошибка — ValueError с причиной по-русски («bbox: ожидается …»)."""
+        try:
+            return cls.model_validate(self.obj())
+        except ValidationError as e:
+            raise ValueError(_invalid(e)) from None
+
+    def content_type(self):
+        return (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+
+    def foreign(self):
         """Запрос не от самой программы: чужой адрес в Host (подмена DNS на 127.0.0.1) или страница другого сайта
         (Origin). Такой сайт мог бы молча перезаписать проект обычной формой — сервер ему не отвечает."""
-        port = self.server.server_address[1]
-        ok = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
+        ok = {f"127.0.0.1:{self.port}", f"localhost:{self.port}", f"[::1]:{self.port}"}
         origins = {"http://" + h for h in ok}
         # сервер за обратным прокси (grado.tailink.tech): имя сайта задаёт GRADO2_PUBLIC_HOST, вход — пароль прокси
         public = os.environ.get("GRADO2_PUBLIC_HOST")
@@ -1905,9 +1881,16 @@ class Handler(SimpleHTTPRequestHandler):
             return True
         # запись по запросу, который браузер сам пометил «чужой сайт» или «соседний поддомен», — не от программы
         # (Origin у POST есть всегда, это вторая защита; GET-переходы по ссылкам извне остаются открытыми)
-        return self.command == "POST" and (self.headers.get("Sec-Fetch-Site") or "").lower() in ("cross-site", "same-site")
+        return self.method == "POST" and (self.headers.get("Sec-Fetch-Site") or "").lower() in ("cross-site", "same-site")
 
-    def _authed(self):
+    def cookie_value(self, name):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return ""
+
+    def authed(self):
         """Есть ключ доступа: кука grado_token или заголовок X-Grado-Token (для скриптов)."""
         if same_token(self.headers.get(TOKEN_HEADER) or "", TOKEN):
             return True
@@ -1917,662 +1900,831 @@ class Handler(SimpleHTTPRequestHandler):
                 return True
         return False
 
-    def _local_probe(self, method, path):
+    def local_probe(self):
         """Службы самого сервера (tools/deploy-server.sh спрашивает ход выгрузки перед перезапуском) ходят по loopback
         с Host 127.0.0.1:порт и без заголовков прокси — им ключ не нужен, но только на трёх чтениях без данных проектов."""
-        return (method == "GET" and path in ("/api/health", "/api/progress", "/api/ogd_all/status")
-                and self.client_address[0] in ("127.0.0.1", "::1")
+        return (self.method == "GET" and self.route in ("/api/health", "/api/progress", "/api/ogd_all/status")
+                and self.peer in ("127.0.0.1", "::1")
                 and not any(self.headers.get(h) for h in ("X-Forwarded-For", "Forwarded", "X-Real-IP")))
 
-    def _gate(self, method):
-        """Ключ доступа включён → True, если запрос отвечен здесь (отказ или вход), и дальше идти не надо."""
+    def gate(self):
+        """Ключ доступа или сессия хаба: ответ-отказ (или переход на вход), если дальше идти нельзя, иначе None."""
         if HUB:
-            return self._hub_gate(method)
+            return self.hub_gate()
         if not TOKEN:
-            return False
-        path = self.path.split("?")[0]
-        if method != "POST" and (path in LOGIN_OPEN or path == "/api/health") or self._local_probe(method, path):
-            return False
+            return None
+        path, method = self.route, self.method
+        if method != "POST" and (path in LOGIN_OPEN or path == "/api/health") or self.local_probe():
+            return None
         if method == "POST" and path in ("/api/login", "/api/logout"):
-            return False
-        if self._authed():
-            return False
+            return None
+        if self.authed():
+            return None
         if method != "POST" and (path.endswith("/") or path.endswith(".html") or path == "/old"):   # страницы: /, /next/, /old
-            self.send_response(302)
-            self.send_header("Location", "/login.html")
-            self.send_header("Content-Length", "0")
-            self.end_headers()
-        else:
-            self._json(401, {"error": "нужен вход"})
-        return True
+            return Response(b"", 302, headers={"Location": "/login.html"})
+        return _json(401, {"error": "нужен вход"})
 
-    def _cookie(self, value, max_age):
-        """Set-Cookie с ключом; Secure — когда прокси сообщил, что снаружи https."""
-        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
-        return (f"{TOKEN_COOKIE}={quote(value, safe='')}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
-                + ("; Secure" if tls else ""))
-
-    def _client_ip(self):
-        """Адрес клиента для счёта промахов. X-Forwarded-For верим, только когда запрос пришёл с самого сервера
-        (127.0.0.1/::1, то есть от нашего Caddy) и берём последний адрес: его дописал прокси, первый клиент подделывает.
-        Запрос с чужого адреса считается по адресу сокета. IPv6 сводится к сети /64: иначе адрес меняют на лету."""
-        peer = self.client_address[0]
-        ip = peer
-        if peer in ("127.0.0.1", "::1"):
-            fwd = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
-            if fwd:
-                ip = fwd
-        try:
-            a = ipaddress.ip_address(ip)
-        except ValueError:
-            a = ipaddress.ip_address(peer)
-        if a.version == 6:
-            a = a.ipv4_mapped or ipaddress.ip_network(f"{a}/64", strict=False).network_address
-        return str(a)
-
-    def _login(self, n):
-        """POST /api/login {"token": …}: верный ключ → кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
-        if n > 4096:
-            return self._json(413, {"error": "запрос слишком велик"})
-        token = self._read_obj(n).get("token")
-        ip, now = self._client_ip(), time.time()
-        with _LOGIN_LOCK:
-            for k in [k for k, v in _LOGIN_FAILS.items() if not v or now - v[-1] > LOGIN_WINDOW]:
-                del _LOGIN_FAILS[k]                     # старые записи уходят, словарь не растёт
-            fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t <= LOGIN_WINDOW]
-            if len(fails) >= LOGIN_TRIES:
-                return self._json(429, {"error": "слишком много попыток, подождите минуту"})
-            if not isinstance(token, str) or not same_token(token, TOKEN):
-                _LOGIN_FAILS[ip] = fails + [now]
-                return self._json(401, {"error": "неверный ключ"})
-            _LOGIN_FAILS.pop(ip, None)
-        body = b'{"ok": true}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Set-Cookie", self._cookie(token, 2592000))
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _logout(self):
-        body = b'{"ok": true}'
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Set-Cookie", self._cookie("", 0))
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    # ---------- совместный режим (hub.py): вход по сессии, маршруты /api/hub/* ----------
-    def _session_token(self):
-        return self._cookie_value(SESSION_COOKIE)
-
-    def _cookie_value(self, name):
-        for part in (self.headers.get("Cookie") or "").split(";"):
-            k, _, v = part.strip().partition("=")
-            if k == name:
-                return v
-        return ""
-
-    def _noguest_cookie(self, on):
-        """После «Выйти» на гостевом сайте — экран входа до закрытия браузера (кука без срока); вход любым способом её снимает."""
-        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
-        return f"{NOGUEST_COOKIE}={'1' if on else ''}; Path=/; HttpOnly; SameSite=Lax" + ("" if on else "; Max-Age=0") + ("; Secure" if tls else "")
-
-    def _who(self):
-        """Пользователь по куке grado_session ({login, name, admin}) или None; на запрос считается один раз."""
-        if not hasattr(self, "_who_cache"):
-            token = self._session_token()
-            self._who_cache = HUB.session_user(token) if token else None
-        return self._who_cache
-
-    def _hub_gate(self, method):
+    def hub_gate(self):
         """Совместный режим: открыты здоровье сервера, статика (в ней нет данных), вход, регистрация и «кто я»;
-        остальное — только с сессией. True — запрос уже отвечен (401)."""
-        path = self.path.split("?")[0]
+        остальное — только с сессией."""
+        path, method = self.route, self.method
         if method in ("GET", "HEAD") and (not path.startswith("/api/") or path == "/api/health"):
-            return False
-        if self._local_probe(method, path):
-            return False
+            return None
+        if self.local_probe():
+            return None
         if method == "POST" and path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
-            return False
+            return None
         if method == "GET" and path == "/api/hub/me":
-            return False
-        if self._who():
-            return False
-        self._json(401, {"error": "нужен вход"})
-        return True
+            return None
+        if self.who():
+            return None
+        return _json(401, {"error": "нужен вход"})
 
-    def _ogd_may(self):
+    def tls(self):
+        return "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
+
+    def cookie(self, value, max_age):
+        """Set-Cookie с ключом; Secure — когда прокси сообщил, что снаружи https."""
+        return (f"{TOKEN_COOKIE}={quote(value, safe='')}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
+                + ("; Secure" if self.tls() else ""))
+
+    def client_ip(self):
+        return client_ip(self.peer, self.headers)
+
+    def session_token(self):
+        return self.cookie_value(SESSION_COOKIE)
+
+    def session_cookie(self, value, max_age):
+        return f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}" + ("; Secure" if self.tls() else "")
+
+    def noguest_cookie(self, on):
+        """После «Выйти» на гостевом сайте — экран входа до закрытия браузера (кука без срока); вход любым способом её снимает."""
+        return f"{NOGUEST_COOKIE}={'1' if on else ''}; Path=/; HttpOnly; SameSite=Lax" + ("" if on else "; Max-Age=0") + ("; Secure" if self.tls() else "")
+
+    def who(self):
+        """Пользователь по куке grado_session ({login, name, admin}) или None; на запрос считается один раз."""
+        if not hasattr(self, "_who"):
+            token = self.session_token()
+            self._who = HUB.session_user(token) if token else None
+        return self._who
+
+    def ogd_may(self):
         """Выгрузку «Всё из ГИС ОГД» останавливает и забирает тот, кто её начал, или администратор."""
         if not HUB:
             return True
-        u = self._who() or {}
+        u = self.who() or {}
         return bool(u.get("admin")) or (u.get("login") is not None and u.get("login") == OGD_OWNER["login"])
 
-    def _session_cookie(self, value, max_age):
-        tls = "https" in (self.headers.get("X-Forwarded-Proto") or "").lower()
-        return f"{SESSION_COOKIE}={value}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}" + ("; Secure" if tls else "")
+    def project_name(self):
+        return AUTOSAVE if self.query.get("autosave") else self.q("name")
 
-    def _hub(self, method, path, n=0):
-        """Маршруты /api/hub/*: HubError → его код и {"error": текст}; Conflict → 409 с телом конфликта; неожиданный сбой —
-        500 без подробностей (причина в журнале сервера)."""
+    def log_fail(self, e):
+        """Причина сбоя — в журнал сервера (stderr), клиенту она не уходит."""
+        _log_line(f"{self.method} {self.route}: {type(e).__name__}: {e}")
+
+
+def _log_line(text):
+    if sys.stderr:
+        sys.stderr.write(f"[{time.strftime('%d/%b/%Y %H:%M:%S')}] {text}\n")
+
+
+def client_ip(peer, headers):
+    """Адрес клиента для счёта промахов. X-Forwarded-For верим, только когда запрос пришёл с самого сервера
+    (127.0.0.1/::1, то есть от нашего Caddy) и берём последний адрес: его дописал прокси, первый клиент подделывает.
+    Запрос с чужого адреса считается по адресу сокета. IPv6 сводится к сети /64: иначе адрес меняют на лету."""
+    ip = peer
+    if peer in ("127.0.0.1", "::1"):
+        fwd = (headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        if fwd:
+            ip = fwd
+    try:
+        a = ipaddress.ip_address(ip)
+    except ValueError:
+        a = ipaddress.ip_address(peer)
+    if a.version == 6:
+        a = a.ipv4_mapped or ipaddress.ip_network(f"{a}/64", strict=False).network_address
+    return str(a)
+
+
+# ----- GET -----
+
+def get_styles(c):
+    name = c.route.removeprefix("/styles/")
+    if name not in STYLE_FILES:
+        return None                                      # не наш файл стиля — дальше статика (404)
+    return Response((STYLES / name).read_bytes(), media_type="application/json; charset=utf-8")
+
+
+def get_search_cadastral(c):
+    try:
+        code, obj = search_cad(c.q("q")[:2000])
+    except ConnectorError:
+        code, obj = 502, {"error": "NSPD did not answer, try again later"}
+    return _json(code, obj)
+
+
+def get_search(c):
+    code, obj = (search_addr if c.route.endswith("address") else search_any)(c.q("q")[:2000])
+    return _json(code, obj)
+
+
+def get_sources(c):
+    return _json(200, {k: {"title": v[2], "kind": v[0], **({"code": cd} if (cd := source_ogd_code(k)) else {})} for k, v in SOURCES.items()})
+
+
+def get_health(c):
+    return _json(200, {"pid": os.getpid(), "stamp": STAMP, "version": VERSION, "hub": HUB is not None})
+
+
+def get_ogd_tree(c):
+    import ogd_all
+    try:
+        return _json(200, {"tree": ogd_all.catalog_tree(ogd_catalog())})
+    except ConnectorError as e:
+        return _json(502, {"error": str(e)})
+
+
+def get_ogd_file(c):
+    if not c.ogd_may():
+        return _json(403, {"error": "выгрузку запустил другой пользователь"})
+    job = OGD_JOB[0] if OGD_JOB else None
+    if not job or not job.file or not job.file.exists():
+        return _json(404, {"error": "no file"})
+    r = _file(job.file.read_bytes(), "application/zip")
+    # имя с названием листа — по-русски; заголовок HTTP — только латиница
+    r.headers["Content-Disposition"] = f"attachment; filename=\"gisogd.zip\"; filename*=UTF-8''{quote(job.file.name)}"
+    return r
+
+
+def get_fgistp(c):
+    try:
+        if c.route == "/api/fgistp/docs":
+            if c.q("q").strip():
+                return _json(200, {"docs": fgistp_search(c.q("q"), fgistp_catalog())})
+            bbox = [float(v) for v in c.query["bbox"][0].split(",")]
+            return _json(200, {"docs": fgistp_docs(bbox, fgistp_catalog())})
+        return _json(200, {"layers": FgistpConnector().discover(c.query["uin"][0])})
+    except ConnectorError as e:
+        return _json(502, {"error": str(e)})
+    except OSError as e:
+        c.log_fail(e)
+        return _json(502, {"error": "ФГИС ТП недоступна"})
+
+
+def get_project(c):
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    try:
+        body = project_path(c.project_name()).read_bytes()
+    except (ValueError, OSError):
+        return _json(404, {"error": "no such project"})
+    return Response(body, media_type="application/json; charset=utf-8")
+
+
+def get_projects(c):
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    return _json(200, list_projects())
+
+
+GET_ROUTES = {
+    "/api/search/cadastral": get_search_cadastral,
+    "/api/search/address": get_search,
+    "/api/search": get_search,
+    "/api/sources": get_sources,
+    "/api/layer_roles": lambda c: _json(200, layer_roles()),
+    "/api/tep/norms": lambda c: _json(200, tep_norms()),
+    "/api/health": get_health,
+    "/api/progress": lambda c: _json(200, dict(PROGRESS)),
+    "/api/print/progress": lambda c: _json(200, dict(PRINT_PROGRESS)),
+    "/api/ogd_all/tree": get_ogd_tree,
+    "/api/ogd_all/status": lambda c: _json(200, OGD_JOB[0].state if OGD_JOB else {"running": False}),
+    "/api/ogd_all/file": get_ogd_file,
+    "/api/fgistp/docs": get_fgistp,
+    "/api/fgistp/layers": get_fgistp,
+    "/api/projects": get_projects,
+    "/api/project": get_project,
+}
+
+
+# ----- POST -----
+
+def post_login(c):
+    """POST /api/login {"token": …}: верный ключ → кука на 30 дней; неверный → 401, 10 промахов за минуту → 429."""
+    if len(c.body) > 4096:
+        return _json(413, {"error": "запрос слишком велик"})
+    token = c.obj().get("token")
+    ip, now = c.client_ip(), time.time()
+    with _LOGIN_LOCK:
+        for k in [k for k, v in _LOGIN_FAILS.items() if not v or now - v[-1] > LOGIN_WINDOW]:
+            del _LOGIN_FAILS[k]                         # старые записи уходят, словарь не растёт
+        fails = [t for t in _LOGIN_FAILS.get(ip, []) if now - t <= LOGIN_WINDOW]
+        if len(fails) >= LOGIN_TRIES:
+            return _json(429, {"error": "слишком много попыток, подождите минуту"})
+        if not isinstance(token, str) or not same_token(token, TOKEN):
+            _LOGIN_FAILS[ip] = fails + [now]
+            return _json(401, {"error": "неверный ключ"})
+        _LOGIN_FAILS.pop(ip, None)
+    return _json(200, {"ok": True}, {"Set-Cookie": c.cookie(token, 2592000)})
+
+
+def post_logout(c):
+    return _json(200, {"ok": True}, {"Set-Cookie": c.cookie("", 0)})
+
+
+def post_import_files(c):
+    import base64
+    import file_io
+    req = c.obj()
+    files = {f["name"]: base64.b64decode(f["b64"]) for f in req.get("files") or []}
+    return _json(200, {"layers": file_io.import_files(files, REDLN, req.get("local") or "msk")})
+
+
+def post_import_dxf(c):
+    import dxf_io
+    fc, notes = dxf_io.import_dxf(c.body, REDLN, "ogd" if c.q("local") == "ogd" else "msk")
+    return _json(200, {"features": fc, "notes": notes})
+
+
+def post_project(c):
+    if HUB:
+        return _json(403, {"error": LOCAL_PROJECTS_OFF})
+    try:
+        path = save_project(c.project_name(), c.body)
+    except QuotaExceeded:
+        return _json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
+    return _json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
+
+
+def post_fetch(c):
+    b = c.model(FetchBody)
+    layers, errors = fetch(b.bbox, list(b.sources or []), b.territory, b.margin_m)
+    return _json(200, {"layers": layers, "errors": errors})
+
+
+def _album(kind, render, ctype):
+    def post(c):
+        import print_io
+        req = c.obj()
+        prog = lambda got, total: PRINT_PROGRESS.update(kind=kind, got=got, total=total)
         try:
-            if method == "POST":
-                if self.headers.get_content_type() != "application/json":
-                    return self._json(415, {"error": "ожидается Content-Type: application/json"})
-                return self._hub_post(path, self._read_obj(n))
-            return self._hub_get(path)
-        except hubmod.Conflict as e:
-            return self._json(409, {**e.payload, "error": e.message})
-        except hubmod.HubError as e:
-            if e.status >= 500 and e.status != 507:         # 507 — «хранилище заполнено»: текст написан для человека
-                self._log_fail(e)
-                return self._json(e.status, {"error": INTERNAL_ERROR})
-            return self._json(e.status, {"error": e.message})
-        except (BrokenPipeError, ConnectionResetError):
-            self.close_connection = True
-        except (KeyError, ValueError, TypeError) as e:
-            self._log_fail(e)
-            return self._json(400, {"error": "некорректный запрос"})
-        except Exception as e:
-            self._log_fail(e)
-            return self._json(500, {"error": INTERNAL_ERROR})
+            body = getattr(print_io, render)(req, REDLN, LGR_DASH, esri_tile, prog)
+        finally:
+            PRINT_PROGRESS.clear()
+        return _file(body, ctype, f"grado2-album.{kind}", not_ready_headers(req))   # листы «не готов»: номера и причины (ASCII)
+    return post
 
-    def _hub_get(self, path):
-        q = parse_qs(urlparse(self.path).query)
-        u = self._who()
-        if path == "/api/hub/me":
-            if u:
-                return self._json(200, {"user": u})
-            if GUEST and not self._cookie_value(NOGUEST_COOKIE):     # гостевой сайт: сразу внутрь, без экрана входа
-                token, user = HUB.guest_session(self.headers.get("User-Agent") or "")
-                return self._json(200, {"user": user}, {"Set-Cookie": self._session_cookie(token, 2592000)})
-            return self._json(401, {"error": "нужен вход", **({"guest": True} if GUEST else {})})
-        if path == "/api/hub/users":
-            return self._json(200, {"users": HUB.list_users(u)})
-        if path == "/api/hub/invites":
-            return self._json(200, {"invites": HUB.list_invites(u)})
-        if path == "/api/hub/projects":
-            return self._json(200, {"projects": HUB.list_projects(u)})
-        if path == "/api/hub/teams":
-            return self._json(200, {"teams": HUB.list_teams(u)})
-        m = HUB_PROJECT_RE.fullmatch(path)
-        if not m:
-            return self._json(404, {"error": "no such method"})
-        pid, rest = unquote(m.group(1)), m.group(2) or ""
-        if rest == "":
-            return self._json(200, HUB.get_project(u, pid))
-        if rest == "sections":
-            names = [x for v in q.get("names", []) for x in v.split(",") if x]
-            return self._json(200, HUB.get_sections(u, pid, names))
-        if rest == "download":
-            name, data = HUB.project_file(u, pid)
-            stem = re.sub(r"[^A-Za-z0-9._-]", "_", name.removesuffix(".grado2"))
-            ascii_name = (stem if re.search("[A-Za-z0-9]", stem) else "project") + ".grado2"
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Disposition", f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            return self.wfile.write(data)
-        if rest == "events":
-            return self._hub_events(u, pid)
-        if rest == "comments":
-            return self._json(200, {"comments": HUB.comments(u, pid)})
-        if rest == "history":
-            return self._json(200, {"history": HUB.history(u, pid)})
-        if rest == "activity":
-            return self._json(200, {"activity": HUB.activity(u, pid)})
-        if rest == "link":
-            return self._json(200, HUB.get_link(u, pid))
-        return self._json(404, {"error": "no such method"})
 
-    def _hub_events(self, user, pid):
-        """Поток событий проекта (SSE): одна вкладка — одна подписка. Поток держится, пока клиент читает; каждые 15 с — строка
-        «: ping», её сбой и есть признак, что вкладку закрыли. Подписка закрывается всегда."""
-        hub = HUB                                  # поток живёт дольше запроса: держим свой хаб, глобальный могут подменить
-        sub = hub.subscribe(user, pid)             # отказ (нет проекта, нет доступа, слишком много потоков) — обычным ответом
-        token = self._session_token()
+def post_export_sat(c):
+    # спутник Яндекса по рамке листа — в МСК для AutoCAD (снимок, файл привязки, DXF с растром на месте)
+    import sat_io
+    req = c.obj()
+    try:
+        frame = (sat_io.frame_msk(req["center"], req["rect"], float(req["scale"])) if req.get("rect")
+                 else sat_io.bbox_msk(req["bbox"]))
+        prog = lambda got, total: PROGRESS.__setitem__("sat", {"title": "Спутник Яндекса", "got": got, "total": total, "stage": "tiles"})
+        base = str(req.get("base") or "")[:400]      # полный путь папки распаковки на компьютере владельца
+        body = sat_io.export_sat(frame, CACHE / "tiles" / "yandex-sat", base, prog)
+    except (KeyError, TypeError, ValueError) as e:
+        return _json(400, {"error": str(e).encode("ascii", "replace").decode()})
+    finally:
+        PROGRESS.pop("sat", None)
+    return _file(body, "application/zip", "sputnik_yandex_msk.zip")
+
+
+def post_print_svg(c):
+    import print_io
+    req = c.obj()
+    body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0)), esri_tile).encode("utf-8")
+    return _file(body, "image/svg+xml; charset=utf-8", None, not_ready_headers(req))
+
+
+def _sheet_bbox(req):
+    """Лист, нарисованный на карте (МСК), или прежний bbox WGS84 — в проверенный bbox."""
+    import ogd_all
+    sheet = req.get("sheet")
+    raw = ogd_all.sheet_bbox_wgs(sheet) if sheet else req["bbox"]
+    try:
+        return BboxBody.model_validate({"bbox": raw}).bbox
+    except ValidationError as e:
+        raise ValueError(_invalid(e)) from None
+
+
+class BboxBody(_Body):
+    bbox: Bbox
+
+
+def post_ogd_start(c):
+    import ogd_all
+    req = c.obj()
+    bbox = _sheet_bbox(req)
+    if bbox_km2(bbox) > LIMIT_KM2["gisogd"]:
+        return _json(400, {"error": f"область больше {LIMIT_KM2['gisogd']:g} км²"})
+    with OGD_LOCK:
+        if OGD_JOB and OGD_JOB[0].state["running"]:
+            return _json(409, {"error": "выгрузка уже идёт"})
+        OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
+                                   str(req.get("name") or "gisogd"), sheet=req.get("sheet"),
+                                   styles=ogd_all.portal_styles(CACHE / "gisogd"),
+                                   codes=req.get("codes"), where=req.get("where"),
+                                   redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
+        OGD_OWNER["login"] = (c.who() or {}).get("login")
+    return _json(200, OGD_JOB[0].state)
+
+
+def post_layout(c):
+    # «Макет листа» нового интерфейса (/next/): лист редактора в PDF или SVG, карта блока отдельной картинкой
+    import layout_io
+    req = c.obj()
+    try:
+        if c.route == "/api/print/layout":
+            return _file(layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile), "application/pdf", "grado2-sheet.pdf")
+        render = layout_io.render_page_svg if c.route == "/api/print/layout_svg" else layout_io.map_svg
+        return _file(render(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8")
+    except (KeyError, TypeError, ValueError) as e:
+        return _json(400, {"error": str(e).encode("ascii", "replace").decode()})
+
+
+def post_ogd_label_angles(c):
+    # подписи слоя, загруженного до v0.63, — угол вдоль границы своей папки
+    req = c.obj()
+    pts = [p[:2] for p in req.get("points") or []][:20000]
+    if not pts:
+        return _json(200, {"angles": []})
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    feats = [{"geometry": {"type": "Point", "coordinates": p}, "properties": {"text": "x"}} for p in pts]
+    ogd_label_angles(str(req.get("code") or ""), feats, (min(xs), min(ys), max(xs), max(ys)))
+    return _json(200, {"angles": [f["properties"].get("_angle") for f in feats]})
+
+
+def post_ogd_styles(c):
+    # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
+    import ogd_all
+    # слои ЛГР (зоны, границы, надписи СПРИТ и ЗОУИТ) — по Эталону ЛГР (moscow_lgr.json), код — из атрибута слоя
+    # (field) или по названию слоя и папки; своё оформление владельца (OWN_STYLE) — сильнее всего
+    req = c.obj()
+    styles, out, rev = ogd_all.portal_styles(CACHE / "gisogd"), {}, {}
+    try:
+        cat = {x["code"]: x for x in ogd_catalog()}
+    except ConnectorError:
+        cat = {}
+    for code, spec in list((req.get("layers") or {}).items())[:800]:
+        geom, field = (spec, None) if isinstance(spec, str) else (list(spec) + [None, None])[:2]
+        if geom not in ("poly", "line", "point"):
+            continue
+        it = cat.get(code) or {}
+        parent = str(it.get("path", "")).rsplit(" / ", 2)[-2] if " / " in str(it.get("path", "")) else ""
+        lgr = LGR_BY_CODE.get(ogd_all.etalon_code(it.get("name", ""), parent, field))
         try:
-            # читать из сокета поток не будет, так что таймаут действует только на запись: читатель, который встал и не
-            # принимает данные, не держит нить вечно (пинги идут каждые 15 с, для живого клиента запись не ждёт и секунды)
-            self.connection.settimeout(EVENTS_WRITE_TIMEOUT)
-            self.close_connection = True
-            self.send_response(200)
-            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-            self.send_header("X-Accel-Buffering", "no")     # Cache-Control: no-cache добавляет end_headers
-            self.end_headers()
-            self.wfile.flush()
+            if code in ogd_all.OWN_STYLE and geom == "poly":
+                out[code], rev[code] = ogd_all.layer_style(code, "", geom), ogd_all.OWN_STYLE[code]["rev"]
+            elif lgr:
+                out[code], rev[code] = ogd_all.etalon_style(lgr, geom), ogd_all.ETALON_REV
+            else:
+                out[code], rev[code] = ogd_all.portal_style(styles(str(code)), geom), 1
+        except (OSError, ValueError, ConnectorError):
+            pass                                        # портал не ответил — слой остаётся в своём оформлении
+    return _json(200, {"styles": out, "rev": rev})
+
+
+def post_ogd_scan(c):
+    import ogd_all
+    return _json(200, {"counts": ogd_all.scan(_sheet_bbox(c.obj()), CACHE / "gisogd", ogd_catalog())})
+
+
+def post_ogd_cancel(c):
+    if not c.ogd_may():
+        return _json(403, {"error": "выгрузку запустил другой пользователь"})
+    if OGD_JOB:
+        OGD_JOB[0].cancel.set()
+    return _json(200, {"ok": True})
+
+
+def post_export_dxf(c):
+    import dxf_io
+    return _file(dxf_io.export_dxf(c.obj()["layers"], REDLN, LGR_COLORS), "application/zip", "grado2-dxf.zip")
+
+
+def post_export_geojson(c):
+    import export_io
+    return _file(export_io.export_geojson(c.obj().get("layers")), "application/zip", "grado2-geojson-msk.zip")
+
+
+def post_export_xlsx(c):
+    import export_io
+    req = c.obj()
+    body = export_io.export_xlsx(req.get("tep") or [], req.get("sheets") or [], req.get("note"), req.get("project"))
+    return _file(body, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "grado2-tep.xlsx")
+
+
+def post_fgistp_fetch(c):
+    req = c.obj()
+    bbox = [float(v) for v in req["bbox"]]
+    try:
+        return _json(200, {"layers": fgistp_fetch(str(req["uin"]), set(req["classids"]), bbox)})
+    except ConnectorError as e:
+        return _json(502, {"error": str(e)})
+
+
+def post_tep(c):
+    return _json(200, tep(**c.model(TepBody).model_dump(exclude_none=True)))
+
+
+def post_place(c):
+    import export_io
+    req = c.obj()
+    lon, lat = export_io._num(req["lon"], "lon", 180), export_io._num(req["lat"], "lat", 90)
+    try:
+        return _json(200, place_info(float(lon), float(lat), req.get("polygon")))
+    except ConnectorError as e:
+        _log_portal("place", str(e))
+        return _json(502, {"error": plain_portal_error(str(e))})
+
+
+def post_rail_route(c):
+    p = c.model(PointBody)
+    try:
+        return _json(200, rail_route(p.lon, p.lat) or {})
+    except ConnectorError as e:
+        return _json(502, {"error": str(e)})
+
+
+POST_ROUTES = {
+    "/api/import/files": post_import_files,
+    "/api/import/dxf": post_import_dxf,
+    "/api/project": post_project,
+    "/api/fetch": post_fetch,
+    "/api/print/pdf": _album("pdf", "render_pdf", "application/pdf"),
+    "/api/print/pptx": _album("pptx", "render_pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    "/api/export/sat": post_export_sat,
+    "/api/print/svg": post_print_svg,
+    "/api/print/layout": post_layout,
+    "/api/print/layout_svg": post_layout,
+    "/api/print/map_svg": post_layout,
+    "/api/ogd_all/start": post_ogd_start,
+    "/api/ogd_all/label_angles": post_ogd_label_angles,
+    "/api/ogd_all/styles": post_ogd_styles,
+    "/api/ogd_all/scan": post_ogd_scan,
+    "/api/ogd_all/cancel": post_ogd_cancel,
+    "/api/export/dxf": post_export_dxf,
+    "/api/export/geojson": post_export_geojson,
+    "/api/export/xlsx": post_export_xlsx,
+    "/api/fgistp/fetch": post_fgistp_fetch,
+    "/api/tep": post_tep,
+    "/api/place": post_place,
+    "/api/rail_route": post_rail_route,
+}
+
+
+# ----- совместный режим (hub.py): маршруты /api/hub/* -----
+
+def hub_get(c):
+    q, path, u = c.query, c.route, c.who()
+    if path == "/api/hub/me":
+        if u:
+            return _json(200, {"user": u})
+        if GUEST and not c.cookie_value(NOGUEST_COOKIE):     # гостевой сайт: сразу внутрь, без экрана входа
+            token, user = HUB.guest_session(c.headers.get("User-Agent") or "")
+            return _json(200, {"user": user}, {"Set-Cookie": c.session_cookie(token, 2592000)})
+        return _json(401, {"error": "нужен вход", **({"guest": True} if GUEST else {})})
+    if path == "/api/hub/users":
+        return _json(200, {"users": HUB.list_users(u)})
+    if path == "/api/hub/invites":
+        return _json(200, {"invites": HUB.list_invites(u)})
+    if path == "/api/hub/projects":
+        return _json(200, {"projects": HUB.list_projects(u)})
+    if path == "/api/hub/teams":
+        return _json(200, {"teams": HUB.list_teams(u)})
+    m = HUB_PROJECT_RE.fullmatch(path)
+    if not m:
+        return _json(404, {"error": "no such method"})
+    pid, rest = unquote(m.group(1)), m.group(2) or ""
+    if rest == "":
+        return _json(200, HUB.get_project(u, pid))
+    if rest == "sections":
+        names = [x for v in q.get("names", []) for x in v.split(",") if x]
+        return _json(200, HUB.get_sections(u, pid, names))
+    if rest == "download":
+        name, data = HUB.project_file(u, pid)
+        stem = re.sub(r"[^A-Za-z0-9._-]", "_", name.removesuffix(".grado2"))
+        ascii_name = (stem if re.search("[A-Za-z0-9]", stem) else "project") + ".grado2"
+        r = _file(data, "application/octet-stream")
+        r.headers["Content-Disposition"] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"
+        return r
+    if rest == "events":
+        return hub_events(c, u, pid)
+    if rest == "comments":
+        return _json(200, {"comments": HUB.comments(u, pid)})
+    if rest == "history":
+        return _json(200, {"history": HUB.history(u, pid)})
+    if rest == "activity":
+        return _json(200, {"activity": HUB.activity(u, pid)})
+    if rest == "link":
+        return _json(200, HUB.get_link(u, pid))
+    return _json(404, {"error": "no such method"})
+
+
+def hub_events(c, user, pid):
+    """Поток событий проекта (SSE): одна вкладка — одна подписка. Каждые 15 с — строка «: ping»; клиент ушёл — Starlette
+    прерывает поток, подписка закрывается всегда. Сессия и доступ перепроверяются раз в EVENTS_RECHECK секунд."""
+    hub = HUB                                  # поток живёт дольше запроса: держим свой хаб, глобальный могут подменить
+    sub = hub.subscribe(user, pid)             # отказ (нет проекта, нет доступа, слишком много потоков) — обычным ответом
+    token = c.session_token()
+
+    async def stream():
+        try:
             checked = time.monotonic()
             while True:
-                ev = sub.get(min(15, EVENTS_RECHECK))      # не дольше срока проверки сессии; пинг — при каждом пустом круге
+                ev = await run_in_threadpool(sub.get, min(15, EVENTS_RECHECK))   # не дольше срока проверки сессии
                 if time.monotonic() - checked >= EVENTS_RECHECK:     # вышел, сессия истекла, отключили, убрали из проекта
                     checked = time.monotonic()
-                    who = hub.session_user(token)
+                    who = await run_in_threadpool(hub.session_user, token)
                     if not who or hub.role_of(who, pid) is None:
                         break
                 if ev is None:
                     if sub.closed:                 # проект удалён или доступ закрыт, очередь выбрана
                         break
-                    chunk = b": ping\n\n"
+                    yield b": ping\n\n"
                 else:
-                    chunk = b"data: " + json.dumps(ev).encode("ascii") + b"\n\n"
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except OSError:                            # BrokenPipe, ConnectionReset, таймаут записи: клиент ушёл
-            pass
+                    yield b"data: " + json.dumps(ev).encode("ascii") + b"\n\n"
         finally:
             sub.close()
+    return StreamingResponse(stream(), media_type="text/event-stream; charset=utf-8", headers={"X-Accel-Buffering": "no"})
 
-    def _hub_post(self, path, req):
-        u = self._who()
-        ip, ua = self._client_ip(), self.headers.get("User-Agent") or ""
-        if path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
-            if path == "/api/hub/login":
-                token, user = HUB.login(req.get("login"), req.get("password"), ip, ua)
-            elif path == "/api/hub/guest":
-                if not GUEST:
-                    return self._json(403, {"error": "гостевой вход выключен"})
-                token, user = HUB.guest_session(ua)
-            else:
-                token, user = HUB.register(req.get("invite"), req.get("login"), req.get("name"), req.get("password"), ip, ua)
-            return self._json(200, {"user": user}, {"Set-Cookie": [self._session_cookie(token, 2592000)] + ([self._noguest_cookie(False)] if GUEST else [])})
-        if path == "/api/hub/logout":
-            HUB.logout(self._session_token())
-            cookies = [self._session_cookie("", 0)] + ([self._noguest_cookie(True)] if GUEST else [])
-            return self._json(200, {"ok": True}, {"Set-Cookie": cookies})
-        if path == "/api/hub/password":
-            HUB.change_password(u, req.get("old"), req.get("new"), keep_token=self._session_token())   # остальные входы гасятся
-            return self._json(200, {"ok": True})
-        if path == "/api/hub/invites":
-            return self._json(200, {"code": HUB.create_invite(u)})
-        if path.startswith("/api/hub/users/"):
-            bad = set(req) - {"disabled", "admin", "name"}
-            if bad:
-                raise hubmod.HubError(400, "нельзя менять поля: " + ", ".join(sorted(map(str, bad))))
-            return self._json(200, {"user": HUB.update_user(u, unquote(path[len("/api/hub/users/"):]), **req)})
-        if path == "/api/hub/projects":
-            return self._json(200, HUB.create_project(u, req.get("name"), req.get("project"), req.get("team"), req.get("team_access")))
-        if path == "/api/hub/teams":
-            return self._json(200, HUB.create_team(u, req.get("name")))
-        if path == "/api/hub/join":            # токен ссылки — только в теле запроса, не в адресе (адрес попадает в журнал)
-            return self._json(200, HUB.join(u, req.get("token"), ip))
-        tm = HUB_TEAM_RE.fullmatch(path)
-        if tm:
-            tid, act = unquote(tm.group(1)), tm.group(2) or ""
-            if not HUB_TID_RE.fullmatch(tid):
-                return self._json(404, {"error": "команда не найдена"})
-            if act == "":
-                return self._json(200, {"name": HUB.rename_team(u, tid, req.get("name"))})
-            if act == "delete":
-                HUB.delete_team(u, tid)
-                return self._json(200, {"ok": True})
-            if "role" not in req:                  # как у проекта: пропуск поля не должен убирать человека из команды
-                raise hubmod.HubError(400, "укажите role: owner, member или null")
-            return self._json(200, {"members": HUB.set_team_member(u, tid, req.get("login"), req["role"])})
-        m = HUB_PROJECT_RE.fullmatch(path)
-        if not m:
-            return self._json(404, {"error": "no such method"})
-        pid, rest = unquote(m.group(1)), m.group(2) or ""
-        if rest == "":
-            return self._json(200, {"name": HUB.rename_project(u, pid, req.get("name"))})
-        if rest == "delete":
-            HUB.delete_project(u, pid)
-            return self._json(200, {"ok": True})
-        if rest == "push":
-            return self._json(200, HUB.push(u, pid, req.get("base_rev"), req.get("sections"), req.get("client")))
-        if rest == "members":
-            if "role" not in req:                  # без роли «убрать» не выводим: пропуск поля не должен удалять человека
-                raise hubmod.HubError(400, "укажите role: owner, editor, viewer или null")
-            return self._json(200, {"members": HUB.set_member(u, pid, req.get("login"), req["role"])})
-        if rest == "team":
-            if "team" not in req:                  # null = «Личные»; пропуск поля не должен переносить проект
-                raise hubmod.HubError(400, "укажите team: id команды или null")
-            return self._json(200, HUB.set_project_team(u, pid, req["team"], req.get("team_access")))
-        if rest == "star":
-            if not isinstance(req.get("on"), bool):
-                raise hubmod.HubError(400, "укажите on: true или false")
-            return self._json(200, HUB.set_star(u, pid, req["on"]))
-        if rest == "copy":                     # тело короткое (имя, команда): предел 1 МБ, сам проект копируется на сервере
-            return self._json(200, HUB.copy_project(u, pid, req.get("name"), req.get("team"), req.get("team_access")))
-        if rest == "link":
-            if "role" not in req:                  # null = «выключить»; пропуск поля не должен гасить ссылку
-                raise hubmod.HubError(400, "укажите role: viewer, editor или null")
-            return self._json(200, HUB.set_link(u, pid, req["role"], req.get("rotate", False)))
-        if rest == "presence":
-            HUB.presence(u, pid, req.get("client"), req.get("cursor"), req.get("layer"), req.get("sel"))
-            return self._json(200, {"ok": True})
-        if rest == "comments":
-            return self._json(200, {"comment": HUB.add_comment(u, pid, req.get("text"), req.get("anchor"))})
-        cm = re.fullmatch(r"comments/([^/]+)(?:/(reply|delete))?", rest)
-        if cm:
-            cid, act = unquote(cm.group(1)), cm.group(2)
-            if act == "reply":
-                return self._json(200, {"comment": HUB.reply(u, pid, cid, req.get("text"))})
-            if act == "delete":
-                HUB.delete_comment(u, pid, cid)
-                return self._json(200, {"ok": True})
-            return self._json(200, {"comment": HUB.update_comment(u, pid, cid, req.get("text"), req.get("resolved"))})
-        hm = re.fullmatch(r"history/([^/]+)/restore", rest)
-        if hm:
-            rev = unquote(hm.group(1))
-            if not (rev.isascii() and rev.isdecimal()):
-                raise hubmod.HubError(400, "некорректный номер версии")
-            return self._json(200, HUB.restore(u, pid, int(rev)))
-        return self._json(404, {"error": "no such method"})
 
-    def _log_fail(self, e):
-        """Причина сбоя — в журнал сервера (stderr), клиенту она не уходит."""
-        if sys.stderr:
-            sys.stderr.write(f"[{self.log_date_time_string()}] {self.command} {self.path.split('?')[0]}: {type(e).__name__}: {e}\n")
+def hub_post(c):
+    path, req, u = c.route, c.obj(), c.who()
+    ip, ua = c.client_ip(), c.headers.get("User-Agent") or ""
+    if path in ("/api/hub/login", "/api/hub/register", "/api/hub/guest"):
+        if path == "/api/hub/login":
+            token, user = HUB.login(req.get("login"), req.get("password"), ip, ua)
+        elif path == "/api/hub/guest":
+            if not GUEST:
+                return _json(403, {"error": "гостевой вход выключен"})
+            token, user = HUB.guest_session(ua)
+        else:
+            token, user = HUB.register(req.get("invite"), req.get("login"), req.get("name"), req.get("password"), ip, ua)
+        return _json(200, {"user": user}, {"Set-Cookie": [c.session_cookie(token, 2592000)] + ([c.noguest_cookie(False)] if GUEST else [])})
+    if path == "/api/hub/logout":
+        HUB.logout(c.session_token())
+        cookies = [c.session_cookie("", 0)] + ([c.noguest_cookie(True)] if GUEST else [])
+        return _json(200, {"ok": True}, {"Set-Cookie": cookies})
+    if path == "/api/hub/password":
+        HUB.change_password(u, req.get("old"), req.get("new"), keep_token=c.session_token())   # остальные входы гасятся
+        return _json(200, {"ok": True})
+    if path == "/api/hub/invites":
+        return _json(200, {"code": HUB.create_invite(u)})
+    if path.startswith("/api/hub/users/"):
+        bad = set(req) - {"disabled", "admin", "name"}
+        if bad:
+            raise hubmod.HubError(400, "нельзя менять поля: " + ", ".join(sorted(map(str, bad))))
+        return _json(200, {"user": HUB.update_user(u, unquote(path[len("/api/hub/users/"):]), **req)})
+    if path == "/api/hub/projects":
+        return _json(200, HUB.create_project(u, req.get("name"), req.get("project"), req.get("team"), req.get("team_access")))
+    if path == "/api/hub/teams":
+        return _json(200, HUB.create_team(u, req.get("name")))
+    if path == "/api/hub/join":            # токен ссылки — только в теле запроса, не в адресе (адрес попадает в журнал)
+        return _json(200, HUB.join(u, req.get("token"), ip))
+    tm = HUB_TEAM_RE.fullmatch(path)
+    if tm:
+        tid, act = unquote(tm.group(1)), tm.group(2) or ""
+        if not HUB_TID_RE.fullmatch(tid):
+            return _json(404, {"error": "команда не найдена"})
+        if act == "":
+            return _json(200, {"name": HUB.rename_team(u, tid, req.get("name"))})
+        if act == "delete":
+            HUB.delete_team(u, tid)
+            return _json(200, {"ok": True})
+        if "role" not in req:                  # как у проекта: пропуск поля не должен убирать человека из команды
+            raise hubmod.HubError(400, "укажите role: owner, member или null")
+        return _json(200, {"members": HUB.set_team_member(u, tid, req.get("login"), req["role"])})
+    m = HUB_PROJECT_RE.fullmatch(path)
+    if not m:
+        return _json(404, {"error": "no such method"})
+    pid, rest = unquote(m.group(1)), m.group(2) or ""
+    if rest == "":
+        return _json(200, {"name": HUB.rename_project(u, pid, req.get("name"))})
+    if rest == "delete":
+        HUB.delete_project(u, pid)
+        return _json(200, {"ok": True})
+    if rest == "push":
+        return _json(200, HUB.push(u, pid, req.get("base_rev"), req.get("sections"), req.get("client")))
+    if rest == "members":
+        if "role" not in req:                  # без роли «убрать» не выводим: пропуск поля не должен удалять человека
+            raise hubmod.HubError(400, "укажите role: owner, editor, viewer или null")
+        return _json(200, {"members": HUB.set_member(u, pid, req.get("login"), req["role"])})
+    if rest == "team":
+        if "team" not in req:                  # null = «Личные»; пропуск поля не должен переносить проект
+            raise hubmod.HubError(400, "укажите team: id команды или null")
+        return _json(200, HUB.set_project_team(u, pid, req["team"], req.get("team_access")))
+    if rest == "star":
+        if not isinstance(req.get("on"), bool):
+            raise hubmod.HubError(400, "укажите on: true или false")
+        return _json(200, HUB.set_star(u, pid, req["on"]))
+    if rest == "copy":                     # тело короткое (имя, команда): предел 1 МБ, сам проект копируется на сервере
+        return _json(200, HUB.copy_project(u, pid, req.get("name"), req.get("team"), req.get("team_access")))
+    if rest == "link":
+        if "role" not in req:                  # null = «выключить»; пропуск поля не должен гасить ссылку
+            raise hubmod.HubError(400, "укажите role: viewer, editor или null")
+        return _json(200, HUB.set_link(u, pid, req["role"], req.get("rotate", False)))
+    if rest == "presence":
+        HUB.presence(u, pid, req.get("client"), req.get("cursor"), req.get("layer"), req.get("sel"))
+        return _json(200, {"ok": True})
+    if rest == "comments":
+        return _json(200, {"comment": HUB.add_comment(u, pid, req.get("text"), req.get("anchor"))})
+    cm = re.fullmatch(r"comments/([^/]+)(?:/(reply|delete))?", rest)
+    if cm:
+        cid, act = unquote(cm.group(1)), cm.group(2)
+        if act == "reply":
+            return _json(200, {"comment": HUB.reply(u, pid, cid, req.get("text"))})
+        if act == "delete":
+            HUB.delete_comment(u, pid, cid)
+            return _json(200, {"ok": True})
+        return _json(200, {"comment": HUB.update_comment(u, pid, cid, req.get("text"), req.get("resolved"))})
+    hm = re.fullmatch(r"history/([^/]+)/restore", rest)
+    if hm:
+        rev = unquote(hm.group(1))
+        if not (rev.isascii() and rev.isdecimal()):
+            raise hubmod.HubError(400, "некорректный номер версии")
+        return _json(200, HUB.restore(u, pid, int(rev)))
+    return _json(404, {"error": "no such method"})
 
-    def _deny(self):
-        self.send_response(403)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.send_header("Content-Length", "9")
-        self.end_headers()
-        self.wfile.write(b"forbidden")
 
-    def _project_name(self):
-        q = parse_qs(urlparse(self.path).query)
-        return AUTOSAVE if q.get("autosave") else (q.get("name") or [""])[0]
+def hub_call(c):
+    """Маршруты /api/hub/*: HubError → его код и {"error": текст}; Conflict → 409 с телом конфликта; неожиданный сбой —
+    500 без подробностей (причина в журнале сервера)."""
+    try:
+        if c.method == "POST":
+            if c.content_type() != "application/json":
+                return _json(415, {"error": "ожидается Content-Type: application/json"})
+            return hub_post(c)
+        return hub_get(c)
+    except hubmod.Conflict as e:
+        return _json(409, {**e.payload, "error": e.message})
+    except hubmod.HubError as e:
+        if e.status >= 500 and e.status != 507:         # 507 — «хранилище заполнено»: текст написан для человека
+            c.log_fail(e)
+            return _json(e.status, {"error": INTERNAL_ERROR})
+        return _json(e.status, {"error": e.message})
+    except (KeyError, ValueError, TypeError) as e:
+        c.log_fail(e)
+        return _json(400, {"error": "некорректный запрос"})
+    except Exception as e:
+        c.log_fail(e)
+        return _json(500, {"error": INTERNAL_ERROR})
 
-    def do_HEAD(self):
-        if self._foreign():
-            return self._deny()
-        if self._gate("HEAD"):
-            return
-        return super().do_HEAD()
 
-    def do_POST(self):
-        if self._foreign():
-            return self._deny()
-        if self._gate("POST"):
-            return
-        big = False
+# ----- приём запроса -----
+
+def _answer(c, fn):
+    """Вызов маршрута с общими ответами на сбой: неверные данные → 400 с причиной, остальное → 500 (или 422 у импорта)
+    без подробностей, причина в журнале сервера."""
+    try:
+        return fn(c)
+    except (KeyError, ValueError, TypeError) as e:
+        return _json(400, {"error": _bad(e)})
+    except Exception as e:      # битый DXF и т.п.
+        c.log_fail(e)
+        if c.route.startswith("/api/import/"):
+            return _json(422, {"error": "файл не удалось прочитать, подробности в журнале сервера"})
+        return _json(500, {"error": INTERNAL_ERROR})
+
+
+async def api_get(request):
+    c = Ctx(request)
+    q = request.url.query
+    if c.route == "/":                  # адрес сайта открывает новый интерфейс; прежняя рабочая страница — /old
+        return Response(b"", 302, headers={"Location": "/next/" + ("?" + q if q else "")})
+    if c.route == "/old":               # без косой черты в конце: её скрипты и стили по-прежнему берутся из корня
+        return await STATIC.get_response("index.html", request.scope)
+    if HUB and c.route.startswith("/api/hub/"):
+        return await run_in_threadpool(hub_call, c)
+    fn = GET_ROUTES.get(c.route)
+    if fn is None and c.route.startswith("/styles/"):
+        fn = get_styles
+    r = await run_in_threadpool(_answer, c, fn) if fn else None
+    return r if r is not None else await STATIC.get_response(c.route.lstrip("/") or ".", request.scope)
+
+
+async def _read_body(request, limit):
+    """Тело запроса не больше limit байт; длиннее (тело кусками без Content-Length) — None, чтение прерывается."""
+    parts, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        parts.append(chunk)
+    return b"".join(parts)
+
+
+async def api_post(request):
+    c = Ctx(request)
+    try:
+        n = int(request.headers.get("Content-Length") or 0)
+    except ValueError:
+        return _json(400, {"error": "bad request: Content-Length"})
+    limit = body_limit(c.route)
+    if not 0 <= n <= limit:
+        return _json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
+    big = bool(HUB) and n > MAX_BODY
+    if big and not BIG_BODY.acquire(blocking=False):     # тело до 400 МБ читается в память: одновременно их принимается немного
+        return _json(503, {"error": "сервер занят другой большой записью: повторите через минуту"})
+    try:
+        c.body = await _read_body(request, limit)
+        if c.body is None:
+            return _json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
+        if HUB:
+            if c.route.startswith("/api/hub/"):
+                return await run_in_threadpool(hub_call, c)
+            # остальная запись тоже только JSON (кроме сырого DXF): форма с другого сайта так тело не отправит
+            if c.route not in ("/api/import/dxf", "/api/project") and c.content_type() != "application/json":
+                return _json(415, {"error": "ожидается Content-Type: application/json"})
+        if TOKEN and not HUB and c.route in ("/api/login", "/api/logout"):
+            return await run_in_threadpool(_answer, c, post_login if c.route == "/api/login" else post_logout)
+        fn = POST_ROUTES.get(c.route)
+        if fn is None:
+            return _json(404, {"error": "no such method"})
+        return await run_in_threadpool(_answer, c, fn)
+    finally:
+        if big:
+            BIG_BODY.release()
+
+
+def _deny():
+    return Response(b"forbidden", 403, media_type="text/plain; charset=utf-8")
+
+
+class Guard:
+    """ASGI-обёртка всего приложения: чужие запросы и вход (ключ или сессия хаба) — до маршрутов; заголовки защиты и
+    «no-cache» — на каждом ответе, в журнал — только ответы 4xx и 5xx (тише, как прежде)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        c = Ctx(Request(scope))
+
+        async def send_safe(msg):
+            if msg["type"] == "http.response.start":
+                h = MutableHeaders(scope=msg)
+                h["Cache-Control"] = "no-cache"       # после обновления браузер не держит старые app.js
+                h["X-Content-Type-Options"] = "nosniff"
+                h["X-Frame-Options"] = "DENY"
+                h["Content-Security-Policy"] = CSP
+                if msg["status"] >= 400:
+                    _log_line(f'{c.peer} "{c.method} {c.route}" {msg["status"]}')
+            await send(msg)
+        if c.foreign():
+            return await _deny()(scope, receive, send_safe)
+        early = await run_in_threadpool(c.gate)       # сессия хаба читается с диска
+        if early is not None:
+            return await early(scope, receive, send_safe)
+        await self.app(scope, receive, send_safe)
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(app):
+    import anyio.to_thread
+    anyio.to_thread.current_default_thread_limiter().total_tokens = THREADS
+    yield
+
+
+STATIC = StaticFiles(directory=str(WEB), html=True, check_dir=False)
+APP = Guard(Starlette(routes=[
+    Route("/{path:path}", api_get, methods=["GET", "HEAD"]),
+    Route("/{path:path}", api_post, methods=["POST"]),
+], lifespan=_lifespan))
+
+
+class Server:
+    """uvicorn на своём сокете. Сокет занимается сразу: занятый порт — OSError в конструкторе (main перебирает порты).
+    Очередь подключений 128: браузер при старте открывает около пятнадцати запросов сразу, очередь 5 часть из них роняла.
+    Для тестов: Server(("127.0.0.1", 0)) → server_address, serve_forever() в нити, shutdown(), server_close()."""
+
+    def __init__(self, addr, app=None):
+        import socket
+        import uvicorn
+        self.socket = socket.create_server(addr, backlog=128)
+        self.server_address = self.socket.getsockname()[:2]
+        self._uv = uvicorn.Server(uvicorn.Config(app or APP, log_level="warning", access_log=False, proxy_headers=False,
+                                                 server_header=False, lifespan="on", timeout_graceful_shutdown=5))
+        self._done = threading.Event()
+
+    def serve_forever(self):
         try:
-            n = int(self.headers.get("Content-Length") or 0)
-            big = bool(HUB) and n > MAX_BODY
-        except ValueError:
-            pass
-        if big:                                          # тело до 400 МБ читается в память: одновременно их принимается немного
-            if not BIG_BODY.acquire(blocking=False):
-                return self._json(503, {"error": "сервер занят другой большой записью: повторите через минуту"})
-        try:
-            return self._post()
+            self._uv.run(sockets=[self.socket])           # SIGINT и SIGTERM uvicorn ловит сам (только в главной нити)
         finally:
-            if big:
-                BIG_BODY.release()
+            self._done.set()
 
-    def _post(self):
-        try:
-            n = int(self.headers.get("Content-Length") or 0)
-            limit = body_limit(self.path)
-            if not 0 <= n <= limit:
-                return self._json(413, {"error": f"запрос больше {limit // 2**20} МБ"})
-            if HUB:
-                route = self.path.split("?")[0]
-                if route.startswith("/api/hub/"):
-                    return self._hub("POST", route, n)
-                if route == "/api/project":
-                    return self._json(403, {"error": LOCAL_PROJECTS_OFF})
-                # остальная запись тоже только JSON (кроме сырого DXF): форма с другого сайта так тело не отправит
-                if route != "/api/import/dxf" and self.headers.get_content_type() != "application/json":
-                    return self._json(415, {"error": "ожидается Content-Type: application/json"})
-            if TOKEN and not HUB and self.path == "/api/login":
-                return self._login(n)
-            if TOKEN and not HUB and self.path == "/api/logout":
-                return self._logout()
-            if self.path == "/api/import/files":
-                import base64
-                import file_io
-                req = self._read_obj(n)
-                files = {f["name"]: base64.b64decode(f["b64"]) for f in req.get("files") or []}
-                return self._json(200, {"layers": file_io.import_files(files, REDLN, req.get("local") or "msk")})
-            if self.path.split("?")[0] == "/api/import/dxf":
-                import dxf_io
-                fc, notes = dxf_io.import_dxf(self.rfile.read(n), REDLN, "ogd" if "local=ogd" in self.path else "msk")
-                return self._json(200, {"features": fc, "notes": notes})
-            if self.path.startswith("/api/project?"):
-                try:
-                    path = save_project(self._project_name(), self.rfile.read(n))
-                except QuotaExceeded:
-                    return self._json(507, {"error": f"папка проектов больше {PROJECTS_CAP // 2**30} ГБ: удалите старые проекты и версии"})
-                return self._json(200, {"saved": path.stem, "modified": path.stat().st_mtime})   # имя, не путь на диске
-            req = self._read_obj(n)
-            if self.path == "/api/fetch":
-                bbox = [float(v) for v in req["bbox"]]
-                if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
-                    return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
-                terr = req.get("territory")             # [w, s, e, n] территории: OSM и ЕГКО берут «территория + margin_m», не рамку листа
-                if terr is not None:
-                    terr = [float(v) for v in terr]
-                    if len(terr) != 4 or not (-180 <= terr[0] < terr[2] <= 180 and -90 <= terr[1] < terr[3] <= 90):
-                        return self._json(400, {"error": "territory: ожидается [запад, юг, восток, север] в градусах"})
-                try:
-                    margin = min(max(float(req.get("margin_m", DATA_MARGIN_M)), 0.0), 2000.0)
-                except (TypeError, ValueError):
-                    return self._json(400, {"error": "margin_m: number expected"})
-                layers, errors = fetch(bbox, list(req.get("sources") or []), terr, margin)
-                return self._json(200, {"layers": layers, "errors": errors})
-            if self.path == "/api/print/pdf":
-                import print_io
-                prog = lambda got, total: PRINT_PROGRESS.update(kind="pdf", got=got, total=total)
-                try:
-                    body = print_io.render_pdf(req, REDLN, LGR_DASH, esri_tile, prog)
-                finally:
-                    PRINT_PROGRESS.clear()
-                self.send_response(200)
-                for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
-                    self.send_header(h, v)
-                self.send_header("Content-Type", "application/pdf")
-                self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pdf"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/print/pptx":
-                import print_io
-                prog = lambda got, total: PRINT_PROGRESS.update(kind="pptx", got=got, total=total)
-                try:
-                    body = print_io.render_pptx(req, REDLN, LGR_DASH, esri_tile, prog)
-                finally:
-                    PRINT_PROGRESS.clear()
-                self.send_response(200)
-                for h, v in not_ready_headers(req):          # листы «не готов»: номера и причины (ASCII, причины в %XX)
-                    self.send_header(h, v)
-                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-                self.send_header("Content-Disposition", 'attachment; filename="grado2-album.pptx"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/export/sat":
-                # спутник Яндекса по рамке листа — в МСК для AutoCAD (снимок, файл привязки, DXF с растром на месте)
-                import sat_io
-                try:
-                    frame = (sat_io.frame_msk(req["center"], req["rect"], float(req["scale"])) if req.get("rect")
-                             else sat_io.bbox_msk(req["bbox"]))
-                    prog = lambda got, total: PROGRESS.__setitem__("sat", {"title": "Спутник Яндекса", "got": got, "total": total, "stage": "tiles"})
-                    base = str(req.get("base") or "")[:400]      # полный путь папки распаковки на компьютере владельца
-                    body = sat_io.export_sat(frame, CACHE / "tiles" / "yandex-sat", base, prog)
-                except (KeyError, TypeError, ValueError) as e:
-                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
-                finally:
-                    PROGRESS.pop("sat", None)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition", 'attachment; filename="sputnik_yandex_msk.zip"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/print/svg":
-                import print_io
-                body = print_io.render_preview_svg(req, REDLN, LGR_DASH, int(req.get("index", 0)), esri_tile).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
-                for h, v in not_ready_headers(req):
-                    self.send_header(h, v)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path in ("/api/print/layout", "/api/print/layout_svg", "/api/print/map_svg"):
-                # «Макет листа» нового интерфейса (/next/): лист редактора в PDF или SVG, карта блока отдельной картинкой
-                import layout_io
-                try:
-                    if self.path == "/api/print/layout":
-                        body, ctype = layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile), "application/pdf"
-                    elif self.path == "/api/print/layout_svg":
-                        body, ctype = layout_io.render_page_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
-                    else:
-                        body, ctype = layout_io.map_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
-                except (KeyError, TypeError, ValueError) as e:
-                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
-                self.send_response(200)
-                self.send_header("Content-Type", ctype)
-                if ctype == "application/pdf":
-                    self.send_header("Content-Disposition", 'attachment; filename="grado2-sheet.pdf"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/ogd_all/start":
-                import ogd_all
-                sheet = req.get("sheet")                  # лист, нарисованный на карте (МСК), или прежний bbox WGS84
-                bbox = ogd_all.sheet_bbox_wgs(sheet) if sheet else [float(v) for v in req["bbox"]]
-                if len(bbox) != 4 or not (-180 <= bbox[0] < bbox[2] <= 180 and -90 <= bbox[1] < bbox[3] <= 90):
-                    return self._json(400, {"error": "bbox: ожидается [запад, юг, восток, север] в градусах"})
-                if bbox_km2(bbox) > LIMIT_KM2["gisogd"]:
-                    return self._json(400, {"error": f"область больше {LIMIT_KM2['gisogd']:g} км²"})
-                with OGD_LOCK:
-                    if OGD_JOB and OGD_JOB[0].state["running"]:
-                        return self._json(409, {"error": "выгрузка уже идёт"})
-                    OGD_JOB[:] = [ogd_all.Job(bbox, req.get("boundary"), CACHE / "gisogd", CACHE / "ogd_all",
-                                               str(req.get("name") or "gisogd"), sheet=sheet,
-                                               styles=ogd_all.portal_styles(CACHE / "gisogd"),
-                                               codes=req.get("codes"), where=req.get("where"),
-                                               redln={"lib": REDLN, "idx": REDLN_IDX, "colors": LGR_COLORS, "dash": LGR_DASH})]
-                    OGD_OWNER["login"] = (self._who() or {}).get("login")
-                return self._json(200, OGD_JOB[0].state)
-            if self.path == "/api/ogd_all/label_angles":
-                # подписи слоя, загруженного до v0.63, — угол вдоль границы своей папки
-                pts = [p[:2] for p in req.get("points") or []][:20000]
-                if not pts:
-                    return self._json(200, {"angles": []})
-                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
-                feats = [{"geometry": {"type": "Point", "coordinates": p}, "properties": {"text": "x"}} for p in pts]
-                ogd_label_angles(str(req.get("code") or ""), feats, (min(xs), min(ys), max(xs), max(ys)))
-                return self._json(200, {"angles": [f["properties"].get("_angle") for f in feats]})
-            if self.path == "/api/ogd_all/styles":
-                # оформление слоёв портала ГИС ОГД в проекте — как на карте портала (CartoCSS слоя, кэш 30 дней)
-                import ogd_all
-                # слои ЛГР (зоны, границы, надписи СПРИТ и ЗОУИТ) — по Эталону ЛГР (moscow_lgr.json), код — из атрибута слоя
-                # (field) или по названию слоя и папки; своё оформление владельца (OWN_STYLE) — сильнее всего
-                styles, out, rev = ogd_all.portal_styles(CACHE / "gisogd"), {}, {}
-                try:
-                    cat = {x["code"]: x for x in ogd_catalog()}
-                except ConnectorError:
-                    cat = {}
-                for code, spec in list((req.get("layers") or {}).items())[:800]:
-                    geom, field = (spec, None) if isinstance(spec, str) else (list(spec) + [None, None])[:2]
-                    if geom not in ("poly", "line", "point"):
-                        continue
-                    it = cat.get(code) or {}
-                    parent = str(it.get("path", "")).rsplit(" / ", 2)[-2] if " / " in str(it.get("path", "")) else ""
-                    lgr = LGR_BY_CODE.get(ogd_all.etalon_code(it.get("name", ""), parent, field))
-                    try:
-                        if code in ogd_all.OWN_STYLE and geom == "poly":
-                            out[code], rev[code] = ogd_all.layer_style(code, "", geom), ogd_all.OWN_STYLE[code]["rev"]
-                        elif lgr:
-                            out[code], rev[code] = ogd_all.etalon_style(lgr, geom), ogd_all.ETALON_REV
-                        else:
-                            out[code], rev[code] = ogd_all.portal_style(styles(str(code)), geom), 1
-                    except (OSError, ValueError, ConnectorError):
-                        pass                            # портал не ответил — слой остаётся в своём оформлении
-                return self._json(200, {"styles": out, "rev": rev})
-            if self.path == "/api/ogd_all/scan":
-                import ogd_all
-                sheet = req.get("sheet")
-                bbox = ogd_all.sheet_bbox_wgs(sheet) if sheet else [float(v) for v in req["bbox"]]
-                return self._json(200, {"counts": ogd_all.scan(bbox, CACHE / "gisogd", ogd_catalog())})
-            if self.path == "/api/ogd_all/cancel":
-                if not self._ogd_may():
-                    return self._json(403, {"error": "выгрузку запустил другой пользователь"})
-                if OGD_JOB:
-                    OGD_JOB[0].cancel.set()
-                return self._json(200, {"ok": True})
-            if self.path == "/api/export/dxf":
-                import dxf_io
-                body = dxf_io.export_dxf(req["layers"], REDLN, LGR_COLORS)
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition", 'attachment; filename="grado2-dxf.zip"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/export/geojson":
-                import export_io
-                body = export_io.export_geojson(req.get("layers"))
-                self.send_response(200)
-                self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition", 'attachment; filename="grado2-geojson-msk.zip"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/export/xlsx":
-                import export_io
-                body = export_io.export_xlsx(req.get("tep") or [], req.get("sheets") or [], req.get("note"), req.get("project"))
-                self.send_response(200)
-                self.send_header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                self.send_header("Content-Disposition", 'attachment; filename="grado2-tep.xlsx"')
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                return self.wfile.write(body)
-            if self.path == "/api/fgistp/fetch":
-                bbox = [float(v) for v in req["bbox"]]
-                try:
-                    return self._json(200, {"layers": fgistp_fetch(str(req["uin"]), set(req["classids"]), bbox)})
-                except ConnectorError as e:
-                    return self._json(502, {"error": str(e)})
-            if self.path == "/api/tep":
-                f = {k: float(req[k]) for k in ("terr_ha", "restrict_ha", "spp_new_m2", "share", "spp_kept_m2", "spp_low_m2", "nonres_part",
-                                                "education_zone", "k1", "k2", "tinao", "territory_mode", "unbuilt_share", "free_doo", "free_school", "free_clinic", "park_share_underground", "park_share_multi") if req.get(k) is not None}
-                if req.get("constants") is not None:
-                    f["constants"] = req["constants"]
-                return self._json(200, tep(**f))
-            if self.path == "/api/place":
-                import export_io
-                lon, lat = export_io._num(req["lon"], "lon", 180), export_io._num(req["lat"], "lat", 90)
-                try:
-                    return self._json(200, place_info(float(lon), float(lat), req.get("polygon")))
-                except ConnectorError as e:
-                    _log_portal("place", str(e))
-                    return self._json(502, {"error": plain_portal_error(str(e))})
-            if self.path == "/api/rail_route":
-                try:
-                    return self._json(200, rail_route(float(req["lon"]), float(req["lat"])) or {})
-                except ConnectorError as e:
-                    return self._json(502, {"error": str(e)})
-            return self._json(404, {"error": "no such method"})
-        except (KeyError, ValueError, TypeError) as e:
-            return self._json(400, {"error": _bad(e)})
-        except Exception as e:      # битый DXF и т.п.: ответ без подробностей, причина в журнале сервера
-            self._log_fail(e)
-            if self.path.startswith("/api/import/"):
-                return self._json(422, {"error": "файл не удалось прочитать, подробности в журнале сервера"})
-            return self._json(500, {"error": INTERNAL_ERROR})
+    def shutdown(self):
+        self._uv.should_exit = True
+        self._done.wait(10)
 
-    def _read_obj(self, n):
-        """Тело POST — JSON-объект; список, число или строка вместо него — отказ 400 (ValueError → ответ с причиной)."""
-        try:
-            req = json.loads(self.rfile.read(n) or b"{}")
-        except RecursionError:                           # вложенность в тысячи уровней: обычный отказ, а не 500
-            raise ValueError("слишком глубокая вложенность JSON") from None
-        if not isinstance(req, dict):
-            raise ValueError("тело запроса должно быть JSON-объектом")
-        return req
+    def server_close(self):
+        self.socket.close()
 
-    def log_message(self, fmt, *args):     # тише: только ошибки
-        if len(args) > 1 and str(args[1])[:1] in "45":
-            super().log_message(fmt, *args)
 
 
 def _bad(e):
@@ -2641,11 +2793,6 @@ def _is_our_process(pid):
     return any(m in cmd for m in marks)
 
 
-class Server(ThreadingHTTPServer):
-    # The browser opens about fifteen script and data requests at once on start. The default listen queue of 5
-    # dropped some of them (connection refused), and the page came up without app.js or layers.js now and then.
-    request_queue_size = 128
-    daemon_threads = True
 
 def main(argv=None):
     """Запуск: свободный порт от 8650, прежняя версия на порту заменяется, окно браузера открывается само."""
@@ -2661,7 +2808,7 @@ def main(argv=None):
     import time
     for p in range(port, port + 20):
         try:
-            server = Server(("127.0.0.1", p), Handler)
+            server = Server(("127.0.0.1", p))
             break
         except OSError:
             info = _running(p)
@@ -2682,7 +2829,7 @@ def main(argv=None):
             for _ in range(30):                           # ждём, пока порт освободится
                 time.sleep(0.1)
                 try:
-                    server = Server(("127.0.0.1", p), Handler)
+                    server = Server(("127.0.0.1", p))
                     break
                 except OSError:
                     pass

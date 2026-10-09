@@ -2,8 +2,8 @@
 
 Здесь семь пакетов Python, на которых стоит программа `apps/grado2`: расчёт ТЭП, проектная база, журнал правок,
 данные из порталов, геометрия, рендер листов и альбом. Каждый пакет лежит в папке `core/<имя>/`: код в `grado_<имя>/`,
-тесты в `tests/`. Код опирается на стандартную библиотеку; внешних пакетов два, `certifi` и Pillow, оба есть в
-`apps/grado2/requirements.txt`.
+тесты в `tests/`. Код опирается на стандартную библиотеку и пакеты из `apps/grado2/requirements.txt`: `certifi`, Pillow, shapely 2
+(наложение, покрытие и привязки в `core/geom`), httpx и tenacity (запросы к порталам, `grado_connectors/netutil.py`), ReportLab (запись PDF, `grado_render/backend_pdf.py`), python-pptx (пакет PPTX, `grado_render/backend_pptx.py`).
 
 Что где лежит во всём проекте: [docs/wiki/files.md](../docs/wiki/files.md).
 
@@ -58,7 +58,7 @@ GeoPackage на `sqlite3`), `classifier.py` (виды объектов; базо
 
 ### `core/render` — рендер листов и карты
 Одна стилевая машина: `scene.py` превращает проект в список операций рисования (`build_ops`). Два вывода
-выполняют этот список: `backend_svg.py` (экран) и `backend_pdf.py` (PDF, кириллица через TrueType из `ttf.py`).
+выполняют этот список: `backend_svg.py` (экран) и `backend_pdf.py` (PDF на ReportLab; кириллица — подмножество TrueType с /ToUnicode, ширины строк — `ttf.py`).
 `backend_pptx.py` пишет PowerPoint; из `__init__.py` он не экспортируется, его берёт `apps/grado2/print_io.py`.
 `style.py` читает стили из JSON-библиотек в `styles/`, `acad_lin.py` читает типы линий AutoCAD (.SHX, .LIN).
 
@@ -73,7 +73,7 @@ GeoPackage на `sqlite3`), `classifier.py` (виды объектов; базо
 
 ```bash
 PP="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2"
-env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom/tests -p "test_*.py"
+env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m pytest -q core/geom/tests
 ```
 
 - Из тестов core `tools/gate.sh` запускает только `core/connectors/tests`. Тесты остальных пакетов после правки
@@ -84,13 +84,13 @@ env PYTHONPATH="$PP" ~/.grado2/venv/bin/python -m unittest discover -s core/geom
 
 ## Правила
 
-- Новые зависимости в core не добавлять (CLAUDE.md). Уже есть `certifi` и Pillow.
+- Готовые библиотеки лучше самописного кода; условия для новой зависимости — в `core/CLAUDE.md`. Уже есть `certifi`, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx.
 - ЛГР-стили `core/render/grado_render/styles/*.json` генерируются, кроме `default.json`. Правьте генератор и
   запускайте его: `moscow_lgr.json` ← `tools/gen_moscow_lgr.py`, `moscow_genplan.json` ← `tools/gen_moscow_genplan.py`,
   `osm_highway.json` ← `tools/gen_osm_highway.py`, `redln97.json` ← `tools/gen_redln97.py`. Генератора для
   `default.json` в `tools/` нет.
-- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы, без параллельных загрузок, не больше 3 повторов
-  (CLAUDE.md). Коннекторы порталов лежат в `core/connectors`, но паузы есть и в `apps/grado2`
+- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы, без параллельных загрузок; запросы и повторы — только
+  `grado_connectors/netutil.py` (httpx + tenacity, не больше трёх попыток). Коннекторы порталов лежат в `core/connectors`, но паузы есть и в `apps/grado2`
   (`server.py`, `sat_io.py`, `ogd_all.py`, `ogd_warm.py`), поэтому при новом обращении к порталу проверяйте оба места.
 - Координаты: всё, что программа показывает, принимает и выгружает, — МСК (как в QGIS). Преобразование между МСК
   и системой ГИС ОГД — в `core/connectors/grado_connectors/crs.py`. Схему не обсуждать и не калибровать

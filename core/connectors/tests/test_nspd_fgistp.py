@@ -8,7 +8,6 @@ import json
 import os
 import ssl
 import unittest
-import urllib.error
 import urllib.parse
 from unittest import mock
 
@@ -168,7 +167,8 @@ class _Resp:
 
 
 def _cert_error():
-    return urllib.error.URLError(ssl.SSLCertVerificationError("CERTIFICATE_VERIFY_FAILED"))
+    import httpx
+    return httpx.ConnectError("[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed")
 
 
 class TestNspdCert(unittest.TestCase):
@@ -180,22 +180,25 @@ class TestNspdCert(unittest.TestCase):
         self.addCleanup(p.stop)
 
     def test_cert_failure_raises_without_fallback(self):
-        with mock.patch.object(nspd.netutil, "open_url", side_effect=_cert_error()) as m:
+        from _fakenet import FakeNet
+        with FakeNet(_cert_error()) as net:
             with self.assertRaises(ConnectorError) as cm:
                 NspdDirect()._http_post("https://nspd.gov.ru/x", {})
-        self.assertEqual(m.call_count, 1, "повтора без проверки быть не должно")
+        self.assertEqual(len(net.requests), 1, "повтора без проверки быть не должно")
         self.assertIn(".grado2/ca", str(cm.exception))
 
     def test_insecure_env_uses_unverified_fallback(self):
         ctxs = []
 
-        def fake(req, timeout, ctx):
-            ctxs.append(ctx)
+        from grado_connectors import netutil
+
+        def fake(url, context=None, **kw):
+            ctxs.append(context)
             if len(ctxs) == 1:
-                raise _cert_error()
-            return _Resp(b'{"features": []}')
+                raise netutil.NetError(_cert_error())
+            return netutil.Response(200, {}, b'{"features": []}', url)
         with mock.patch.dict(os.environ, {"GRADO_NSPD_INSECURE": "1"}), \
-                mock.patch.object(nspd.netutil, "open_url", side_effect=fake), \
+                mock.patch.object(nspd.netutil, "request", side_effect=fake), \
                 mock.patch("sys.stderr") as err:
             data = NspdDirect()._http_post("https://nspd.gov.ru/x", {})
         self.assertEqual(data, {"features": []})
@@ -213,8 +216,9 @@ class TestNspdCert(unittest.TestCase):
         self.assertEqual(ctx.verify_mode, ssl.CERT_REQUIRED)
 
     def test_error_text_truncated(self):
-        err = urllib.error.URLError("a\nb" + "x" * 500)
-        with mock.patch.object(nspd.netutil, "open_url", side_effect=err):
+        import httpx
+        from _fakenet import FakeNet
+        with FakeNet(httpx.ConnectError("a\nb" + "x" * 500), repeat_last=True):
             with self.assertRaises(ConnectorError) as cm:
                 NspdDirect()._http_post("https://nspd.gov.ru/x", {})
         self.assertNotIn("\n", str(cm.exception))

@@ -27,6 +27,7 @@ from pathlib import Path
 from datetime import datetime
 
 import ezdxf
+import shapely
 from ezdxf.enums import TextEntityAlignment
 
 from grado_connectors import crs
@@ -149,16 +150,6 @@ def _polys(features):
     return out
 
 
-def _inside(x, y, rings):
-    """Точка внутри полигона с дырами (чёт-нечет по всем кольцам)."""
-    hit = False
-    for ring in rings:
-        for (x1, y1, *_), (x2, y2, *_) in zip(ring, ring[1:] + ring[:1]):
-            if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
-                hit = not hit
-    return hit
-
-
 def orient_lines(lines, areas, code):
     """Развернуть линии границ так, чтобы сторона кода линии code смотрела на свои полигоны.
 
@@ -169,19 +160,13 @@ def orient_lines(lines, areas, code):
     вместе с ней меняют сторону и остальные коды линии, их взаимное положение сохраняется. Линия с кодом на обе
     стороны (18,−18) или без явного ответа остаётся как есть. Возвращает число развёрнутых линий."""
     polys = _polys(areas)
-    grid = {}
-    cell = 0.005
-    for i, (b, _) in enumerate(polys):
-        for gx in range(int(b[0] // cell), int(b[2] // cell) + 1):
-            for gy in range(int(b[1] // cell), int(b[3] // cell) + 1):
-                grid.setdefault((gx, gy), []).append(i)
+    # полигоны с дырами в дерево shapely: точка ищется только среди тех, чей габарит её накрывает
+    shapes = [shapely.Polygon([p[:2] for p in rings[0]], [[p[:2] for p in h] for h in rings[1:]]) for _, rings in polys]
+    tree = shapely.STRtree(shapes)
 
     def covered(x, y):
-        for i in grid.get((int(x // cell), int(y // cell)), ()):
-            b, rings = polys[i]
-            if b[0] <= x <= b[2] and b[1] <= y <= b[3] and _inside(x, y, rings):
-                return True
-        return False
+        near = tree.query(shapely.Point(x, y))
+        return bool(len(near)) and bool(shapely.contains_xy(tree.geometries.take(near), x, y).any())
 
     flipped = 0
     for f in lines:

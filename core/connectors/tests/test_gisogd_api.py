@@ -18,6 +18,7 @@ from pathlib import Path
 from unittest import mock
 
 import _paths  # noqa: F401
+from _fakenet import FakeNet
 from _shpfix import shp_zip
 from grado_connectors import ConnectorError, GisogdApi
 from grado_connectors import gisogd_api
@@ -180,24 +181,10 @@ class GisogdProgress(unittest.TestCase):
             GisogdApi(transport=lambda url: body, cache_dir=d, progress=lambda *a: seen.append(a)).fetch((0, 0, 1, 1), "x1")
         self.assertEqual(seen, [("x1", len(body), len(body), "parse")])
 
-class _FakeResp:
-    """Ответ портала: отдаёт байты кусками; headers как у http.client."""
-
-    def __init__(self, body, gz=False):
-        self.body, self.pos = body, 0
-        self.headers = {"Content-Encoding": "gzip"} if gz else {}
-
-    def read(self, n=-1):
-        n = len(self.body) - self.pos if n is None or n < 0 else n
-        chunk = self.body[self.pos:self.pos + n]
-        self.pos += len(chunk)
-        return chunk
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
+def _resp(body, gz=False):
+    """Ответ портала потоком (httpx), как его отдаёт сеть: gzip не снят."""
+    import httpx
+    return httpx.Response(200, headers={"Content-Encoding": "gzip"} if gz else {}, stream=httpx.ByteStream(body))
 
 
 class TestLayerCode(unittest.TestCase):
@@ -238,27 +225,24 @@ class TestSizeCaps(unittest.TestCase):
         self.assertEqual(len(ok), 5_000_000)
 
     def test_http_get_gzip_bomb_rejected_without_retries(self):
-        resp = _FakeResp(gzip.compress(b"\0" * 5_000_000), gz=True)
-        with mock.patch.object(gisogd_api, "open_url", return_value=resp) as m, \
+        with FakeNet(_resp(gzip.compress(b"\0" * 5_000_000), gz=True)) as net, \
                 mock.patch.object(gisogd_api, "_MAX_LAYER", 100_000):
             with self.assertRaises(ConnectorError):
                 gisogd_api._http_get("https://gisogd.mos.ru/x")
-        self.assertEqual(m.call_count, 1, "превышение потолка не повторяется")
+        self.assertEqual(len(net.requests), 1, "превышение потолка не повторяется")
 
     def test_http_get_plain_over_cap_rejected(self):
-        with mock.patch.object(gisogd_api, "open_url", return_value=_FakeResp(b"x" * 500_000)), \
-                mock.patch.object(gisogd_api, "_MAX_LAYER", 100_000):
+        with FakeNet(_resp(b"x" * 500_000)), mock.patch.object(gisogd_api, "_MAX_LAYER", 100_000):
             with self.assertRaises(ConnectorError):
                 gisogd_api._http_get("https://gisogd.mos.ru/x")
 
     def test_http_get_gzip_roundtrip(self):
         payload = b"hello " * 50_000
-        with mock.patch.object(gisogd_api, "open_url", return_value=_FakeResp(gzip.compress(payload), gz=True)):
+        with FakeNet(_resp(gzip.compress(payload), gz=True)):
             self.assertEqual(gisogd_api._http_get("https://gisogd.mos.ru/x"), payload)
 
     def test_http_stream_gzip_bomb_rejected(self):
-        resp = _FakeResp(gzip.compress(b"\0" * 5_000_000), gz=True)
-        with mock.patch.object(gisogd_api, "open_url", return_value=resp), \
+        with FakeNet(_resp(gzip.compress(b"\0" * 5_000_000), gz=True)), \
                 mock.patch.object(gisogd_api, "_MAX_STREAM", 100_000):
             _total, it = gisogd_api._http_stream("https://gisogd.mos.ru/x")
             with self.assertRaises(ConnectorError):
@@ -311,8 +295,9 @@ class TestCorruptArchive(unittest.TestCase):
 
 class TestNetworkErrorText(unittest.TestCase):
     def test_paths_and_newlines_stripped(self):
-        err = OSError("fail\n/Users/tayeela/secret/dir/file.tmp\nsecond")
-        with mock.patch.object(gisogd_api, "open_url", side_effect=err), mock.patch.object(gisogd_api.time, "sleep"):
+        import httpx
+        err = httpx.ConnectError("fail\n/Users/tayeela/secret/dir/file.tmp\nsecond")
+        with FakeNet(err, repeat_last=True):
             with self.assertRaises(ConnectorError) as cm:
                 gisogd_api._http_get("https://gisogd.mos.ru/x")
         msg = str(cm.exception)

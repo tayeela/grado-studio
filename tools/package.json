@@ -1,8 +1,9 @@
 {
   "name": "grado-tools",
   "private": true,
-  "description": "Developer tools only (type check of apps/grado2/web). Not shipped in the program or the installers.",
+  "description": "Developer tools only (type check of apps/grado2/web, Playwright for the browser scenarios). Not shipped in the program or the installers.",
   "devDependencies": {
+    "playwright-core": "1.56.1",
     "typescript": "7.0.2"
   }
 }

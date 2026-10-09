@@ -19,4 +19,4 @@ What you do:
 
 Hard limits: read-only; no ssh; never touch port 8650 or `~/Documents/ГРАДО 2`.
 
-Report in English, short: position, spec or verdict, `ASK <role>: <question>` lines.
+Report in Russian, short: position, spec or verdict, `ASK <role>: <question>` lines.

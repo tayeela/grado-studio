@@ -466,8 +466,16 @@ export default async p => {
   check(await p.ev(`document.querySelector("[data-nzone-auto]").click(); await new Promise(r=>setTimeout(r,1500)); const tp=tepParams(RESULT.tepNode); const txt=$("normZoneSrc").textContent;
     return !tp.zoneSet && tp.zone===tp.zoneDist && /по району|район не в списках/.test(txt) && !/выбрана вручную/.test(txt)`), "кнопка «по району» возвращает зону района и источник «по району …» или «район не в списках 2151-ПП»");
   check(await p.ev(`const tp=tepParams(RESULT.tepNode), z=tp.zoneNote; tp.zoneNote="x"; window.Norms.refresh(); const t=$("normZoneSrc").textContent; tp.zoneNote=z; window.Norms.refresh(); return t==="зона 2 принята: район не в списках 2151-ПП"`), "район не в списках: источник зоны «зона 2 принята: район не в списках 2151-ПП»");
-  for (const k of ["doo", "school", "clinic"]) { await p.ev(`const i=document.querySelector('[data-fid="${k}"]'); i.focus(); i.select(); return 1`); await p.type("0"); await p.key("Enter", "Enter", { vk: 13, wait: 1200 }); }
-  check(await p.ev(`return JSON.stringify(tepParams(RESULT.tepNode).free)==='{"doo":0,"school":0,"clinic":0}'`), "свободные места снова 0 / 0 / 0");
+  // каждое поле: фокус, «0», Enter — и ждём, пока число дойдёт до проекта (до 3 с), а не фиксированную паузу; в подписи — что вышло
+  const freeLog = [];
+  for (const k of ["doo", "school", "clinic"]) {
+    freeLog.push(await p.ev(`const i=document.querySelector('[data-fid="${k}"]'); i.focus(); i.select(); return document.activeElement===i ? "" : "${k}: фокус не в поле"`));
+    await p.type("0"); await p.key("Enter", "Enter", { vk: 13, wait: 200 });
+    await p.ev(`for (let n=0; n<30 && tepParams(RESULT.tepNode).free?.${k}!==0; n++) await new Promise(r=>setTimeout(r,100)); return 1`);
+  }
+  await p.sleep(800);                                                  // пересчёт после последнего поля — до смены проекта ниже
+  const free0 = await p.ev(`return JSON.stringify(tepParams(RESULT.tepNode).free)`);
+  check(free0 === '{"doo":0,"school":0,"clinic":0}', `свободные места снова 0 / 0 / 0 (${free0}${freeLog.filter(Boolean).map(x => "; " + x).join("")})`);
   await p.ev(`winOpen("wNorms", false); winOpen("wTep", false); return 1`);
   check(await p.ev(`const v1={format:"grado2",version:1,layers:[{key:"user:a",title:"A",geom:"poly",visible:true,style:{}}],data:{"user:a":{title:"A",fc:{type:"FeatureCollection",features:[]}}},graph:null};
     applyProject(v1); return LYR.length===1 && GROUPS.length===0 && ALBUM.sheets.length===0`), "проект формата 1 открывается миграцией");
@@ -877,7 +885,8 @@ export default async p => {
       try {
         window.albumFile("pdf", null, true); await new Promise(r => setTimeout(r, 100)); $("bExpMore").click();
         const during = $("bExpPdf").disabled && $("bExpPptx").disabled && /Идёт сборка…/.test($("bExpPdf").innerText) && /Идёт сборка…/.test($("bExpPptx").innerText) && window.albumBuilding === true;
-        await new Promise(r => setTimeout(r, 900)); const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
+        for (let i = 0; i < 50 && window.albumBuilding; i++) await new Promise(r => setTimeout(r, 100));   // ответ сервера (600 мс) и автосохранение — не по часам
+        const after = !$("bExpPdf").disabled && /Все листы одним файлом/.test($("bExpPdf").innerText) && window.albumBuilding === false;
         return during && after;
       } finally { window.fetch = f; if (!$("expMenu").hidden) $("bExpMore").click(); }`), "T36: сборка PDF — PDF и PPTX в меню серые, «Идёт сборка…»; после неё снова доступны");
     // peak пишется при сохранении проекта с листами; пустой альбом после этого говорит «раньше было N»
