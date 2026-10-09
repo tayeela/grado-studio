@@ -12,6 +12,8 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     replacing it) now lets running requests finish for up to 5 s.
   - New dependencies in `apps/grado2/requirements.txt` and the spec: `starlette` (BSD), `uvicorn` (BSD), `pydantic` (MIT); all pure Python
     except pydantic-core, which has wheels for macOS arm64, x86_64 and Windows. The launchers and the server timer install them by themselves.
+  - Browser scenario «свободные места снова 0 / 0 / 0» waited a fixed 1.2 s after each field; it now waits until the number reaches the
+    project (at most 3 s) and prints what it got when it fails (it failed once in CI, never in five local runs).
 - **2026-10-08, ГРАДО 2 v0.99.56: checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
   - `tools/gate.sh` and CI run the same unit tests with pytest (`apps/grado2/requirements-dev.txt`, not part of the program); without
     pytest the gate falls back to unittest and says how to install it.
