@@ -50,13 +50,24 @@
       </wa-button>
     </header>
 
-    <nav class="ribbon" aria-label="Инструменты">
+    <nav class="ribbon" aria-label="Команды черчения">
       <div v-for="g in TOOLS" :key="g.title" class="tgroup">
         <div class="tbtns">
-          <wa-button v-for="t in g.items" :key="t.id" size="s" appearance="plain"
-                     :class="{ on: tool === t.id }" :title="t.title + (t.key ? ' (' + t.key + ')' : '')" @click="tool = tool === t.id ? '' : t.id">
-            <component :is="t.icon" :size="18" :stroke-width="1.6" />
+          <wa-button v-for="id in g.items" :key="id" size="s" appearance="plain" :disabled="!cad.ready"
+                     :class="{ on: cad.cmd === id }" :title="cmdTip(id)" :aria-label="cmdTitle(id)" @click="runCmd(id)">
+            <svg class="ci" aria-hidden="true"><use :href="'#ci-' + id" /></svg>
           </wa-button>
+          <wa-dropdown v-for="m in g.menus || []" :key="m.title" @wa-select="e => runCmd(e.detail.item.value)">
+            <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="!cad.ready" :title="m.title + ': ' + m.items.map(cmdTitle).join(', ').toLowerCase()">
+              <svg v-if="m.icon" class="ci" aria-hidden="true"><use :href="'#ci-' + m.icon" /></svg><template v-else>Ещё</template>
+            </wa-button>
+            <template v-for="sec in m.sections || [{ items: m.items }]" :key="sec.title || 'main'">
+              <h4 v-if="sec.title" class="menu-h">{{ sec.title }}</h4>
+              <wa-dropdown-item v-for="id in sec.items" :key="id" :value="id" :title="cmdHelp(id)">
+                <svg slot="icon" class="ci" aria-hidden="true"><use :href="'#ci-' + id" /></svg>{{ cmdTitle(id) }}<span slot="details">{{ cmdKey(id) }}</span>
+              </wa-dropdown-item>
+            </template>
+          </wa-dropdown>
         </div>
         <div class="tlabel">{{ g.title }}</div>
       </div>
@@ -89,7 +100,8 @@
     </wa-dialog>
 
     <footer class="status">
-      <span>{{ toolTitle }}</span>
+      <CadModes />
+      <span class="cmdnow">{{ toolTitle }}</span>
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <wa-dropdown placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
@@ -105,10 +117,9 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import {
-  Slash, Spline, Square, Circle, Type, Ruler, Move, Copy, RotateCw, Scissors, ArrowRightToLine,
-  CopyPlus, Waypoints, Minus, Combine, SquareDashed, FileImage, Undo2, Redo2, CircleHelp,
-} from "@lucide/vue";
+import { Undo2, Redo2, CircleHelp } from "@lucide/vue";
+import CadModes from "./panels/CadModes.vue";
+import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson } from "./exports.js";
 import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
@@ -140,38 +151,20 @@ const PANELS = [
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
+/* Лента — команды черчения как в рабочей странице (cad.js RIBBON): кнопка запускает команду, повторный щелчок прерывает. */
 const TOOLS = [
-  { title: "Рисование", items: [
-    { id: "line", title: "Отрезок", key: "L", icon: Slash },
-    { id: "pline", title: "Полилиния", key: "PL", icon: Spline },
-    { id: "rect", title: "Прямоугольник", key: "REC", icon: Square },
-    { id: "circle", title: "Круг", key: "C", icon: Circle },
-    { id: "text", title: "Текст", key: "T", icon: Type },
-  ] },
-  { title: "Правка", items: [
-    { id: "move", title: "Переместить", key: "M", icon: Move },
-    { id: "copy", title: "Копировать", key: "CO", icon: Copy },
-    { id: "rotate", title: "Повернуть", key: "RO", icon: RotateCw },
-    { id: "trim", title: "Обрезать", key: "TR", icon: Scissors },
-    { id: "extend", title: "Удлинить", key: "EX", icon: ArrowRightToLine },
-    { id: "offset", title: "Смещение", key: "O", icon: CopyPlus },
-  ] },
-  { title: "Геометрия", items: [
-    { id: "buffer", title: "Буфер", icon: SquareDashed },
-    { id: "subtract", title: "Вычесть", icon: Minus },
-    { id: "union", title: "Объединить", icon: Combine },
-    { id: "split", title: "Разрезать", icon: Waypoints },
-  ] },
-  { title: "Измерить и лист", items: [
-    { id: "measure", title: "Измерить", icon: Ruler },
-    { id: "sheet", title: "Рамка листа", icon: FileImage },
-  ] },
+  { title: "Рисование", items: RIBBON.draw, menus: [{ title: "Оформление", icon: "dim", items: RIBBON.anno }] },
+  { title: "Правка", items: RIBBON.modify, menus: [{ title: "Ещё команды", items: [...RIBBON.more, ...RIBBON.gis], sections: [{ items: RIBBON.more }, { title: "Полигоны и атрибуты", items: RIBBON.gis }] }] },
+  { title: "Измерить", items: RIBBON.measure },
+  { title: "Территория", items: RIBBON.terr },
 ];
-const tool = ref("");
-const toolTitle = computed(() => {
-  const t = TOOLS.flatMap(g => g.items).find(i => i.id === tool.value);
-  return t ? `Инструмент: ${t.title} (образец, команда не выполняется)` : "Выберите инструмент на ленте";
-});
+cadIcons();
+const cmdTitle = id => (cad.ready && cadApi.CMDS[id]?.title) || id;
+const cmdKey = id => (cad.ready && cadApi.CMDS[id]?.alias[0]) || "";
+const cmdHelp = id => (cad.ready && cadApi.HELP[id]) || "";
+const cmdTip = id => cad.ready ? `${cmdTitle(id)} — ${cadApi.CMDS[id].alias.join(", ")} и Enter: ${cmdHelp(id)}` : "Откройте окно «Карта»: команды работают на ней";
+function runCmd(id) { if (cad.cmd === id) cadApi.cancel(); else cadApi.start(id); }
+const toolTitle = computed(() => cad.cmd ? `Команда: ${cmdTitle(cad.cmd)}` : cad.ready ? "Наберите команду (L, PL, C, M, TR…) и Enter или выберите на ленте" : "");
 
 const LAYOUT_KEY = "grado-next-layout";
 let api = null;
@@ -331,7 +324,10 @@ openStartup();
 }
 .tgroup { display: flex; flex-direction: column; align-items: center; padding: 0 var(--wa-space-s); border-right: 1px solid var(--g-line); }
 .tgroup:last-child { border-right: 0; }
-.tbtns { display: flex; }
+.tbtns { display: flex; align-items: center; }
+.ribbon .ci { width: 18px; height: 18px; display: block; }
+wa-dropdown-item .ci { width: 16px; height: 16px; }
+.status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tbtns wa-button::part(base) { padding-inline: 6px; }
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }
 .tlabel { font-size: var(--wa-font-size-2xs); color: var(--g-muted); padding-bottom: 2px; }

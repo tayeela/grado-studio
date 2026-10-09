@@ -139,6 +139,7 @@ import { computed } from "vue";
 import { Plus, X } from "@lucide/vue";
 import "../../../web/roles.js";
 import { current, project } from "../store.js";
+import { dataRev } from "../edit.js";
 import {
   CAT, DENS, HATCHES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, fieldsOf, floorsDenOf, legendItems, numFields, okn, ruleCount, swatchColor,
 } from "../symbology.js";
@@ -147,7 +148,7 @@ window.Roles.load();                                // таблица кодов
 const GEOM = { point: "Точки", line: "Линии", poly: "Полигоны" };
 const l = current;
 const st = computed(() => l.value.style);           // полный стиль: store.setProject дополняет его значениями по умолчанию
-const fc = computed(() => project.data[l.value?.key]?.fc);
+const fc = computed(() => (dataRev.value, project.data[l.value?.key]?.fc));   // данные слоя не реактивны (markRaw): правка — через dataRev
 const count = computed(() => fc.value?.features?.length || 0);
 const fields = computed(() => fieldsOf(fc.value));
 const nf = computed(() => numFields(fc.value));

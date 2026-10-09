@@ -125,6 +125,22 @@ class NextUi(unittest.TestCase):
         self.assertIn("norms", ids)
         self.assertLessEqual(ids, regs)
 
+    def test_cad_commands_match_work_page(self):
+        # черчение нового интерфейса — перенос web/cad.js: те же команды с теми же псевдонимами; на ленте (RIBBON)
+        # только существующие команды, у каждой — значок в cadicons.svg
+        src = NEXT.parents[1] / "ui" / "src"
+        pat = re.compile(r'^def\("(\w+)", "([^"]+)", \[([^\]]*)\]', re.M)
+        old = {m[0]: (m[1], m[2]) for m in pat.findall((NEXT.parent / "cad.js").read_text(encoding="utf-8"))}
+        cad = (src / "cad.js").read_text(encoding="utf-8")
+        new = {m[0]: (m[1], m[2]) for m in pat.findall(cad)}
+        self.assertGreater(len(old), 40)
+        self.assertEqual(new, old)
+        ribbon = re.search(r"export const RIBBON = \{(.*?)\n\};", cad, re.S).group(1)
+        ids = set(re.findall(r'"(\w+)"', ribbon))
+        self.assertLessEqual(ids, set(new))
+        icons = set(re.findall(r'id="ci-(\w+)"', (src / "cadicons.svg").read_text(encoding="utf-8")))
+        self.assertLessEqual(ids, icons)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

@@ -2,7 +2,8 @@
      территории и слои открытого проекта из store.project.
      Порядок слоёв — как в окне «Слои» (верхний рисуется поверх), видимость — слой и его группа.
      Оформление — все способы рабочей страницы (symbology.js): единое, категории, диапазоны, правила, знаки ЛГР, подписи, масштаб.
-     Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта). -->
+     Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
+     Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте. -->
 <template><div ref="el" class="map"></div></template>
 
 <script setup>
@@ -30,9 +31,10 @@ import { coverBox, coverOn, importFiles, setTerritory, terrTool } from "../data.
 import { notice } from "../project.js";
 import { attachGraphLayers } from "../graphmap.js";
 import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
+import { attachCad, cadApi } from "../cad.js";
 
 const el = ref(null);
-let map, ro;
+let map, ro, offCad = null;
 const fmt = gjFormat;
 
 const lat = () => toLonLat(map.getView().getCenter())[1];
@@ -100,6 +102,7 @@ function hitAt(pixel) {
 }
 function onClick(e) {
   if (terrTool.value) return;                       // рисуем или правим границу — щелчок не выбирает объекты
+  if (cadApi.active?.() || performance.now() - (cadApi.lastEnd || 0) < 400) return;   // щелчок — ввод для команды черчения
   const hit = hitAt(e.pixel), add = e.originalEvent.shiftKey || e.originalEvent.metaKey || e.originalEvent.ctrlKey;
   if (add) { if (hit) toggleSel(hit); }
   else setSel(hit ? [hit] : []);
@@ -150,6 +153,7 @@ onMounted(() => {
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
   LS = layerSync(map); vec = LS.vec;
+  offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
   map.on("singleclick", onClick);
@@ -187,10 +191,10 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { ro?.disconnect(); map?.setTarget(undefined); });
+onBeforeUnmount(() => { offCad?.(); ro?.disconnect(); map?.setTarget(undefined); });
 </script>
 
 <style>
-.map { width: 100%; height: 100%; background: var(--g-canvas); }
+.map { position: relative; width: 100%; height: 100%; background: var(--g-canvas); }
 .map.dropfile { outline: 3px dashed var(--wa-color-brand-border-loud); outline-offset: -6px; }
 </style>

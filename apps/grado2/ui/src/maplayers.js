@@ -29,13 +29,13 @@ export function readAll(fc) {
   return (fc?.features || []).map(readOne).filter(Boolean);
 }
 export function readOne(gj) {
-  try { const f = gjFormat.readFeature(gj); f.gj = gj; return f; } catch { return null; }   // битый объект не должен ронять слой
+  try { const f = gjFormat.readFeature(gj); f.gj = gj; f.gjRev = f.getRevision(); return f; } catch { return null; }   // битый объект не должен ронять слой; gjRev — для записи правок черчения (cad.js)
 }
 /* Правка данных: только изменённые записи (новые объекты в fc) меняются на карте; тысячи прочих не перечитываются. */
-function patch(src, oldFc, fc) {
+function patch(src, fc) {
   indexOf(fc);
-  const now = new Set(fc?.features || []), was = new Set(oldFc?.features || []);
-  const gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !was.has(gj));
+  const now = new Set(fc?.features || []), have = new Set(src.getFeatures().map(f => f.gj));   // черчение само кладёт объекты в источник (cad.js)
+  const gone = src.getFeatures().filter(f => !now.has(f.gj)), add = (fc?.features || []).filter(gj => !have.has(gj));
   if (gone.length + add.length > 2000) { src.clear(true); src.addFeatures(readAll(fc)); return; }
   gone.forEach(f => src.removeFeature(f));
   src.addFeatures(add.map(readOne).filter(Boolean));
@@ -68,7 +68,7 @@ export function layerSync(map) {
         v = vec[l.key] = olLayer(l, i, n, new VectorSource({ features: readAll(fc) }));
         v.set("fc", fc); v.set("sig", sig(l)); map.addLayer(v);
       } else if (v.get("fc") !== fc || v.get("sig") !== sig(l)) {
-        if (v.get("fc") !== fc) patch(v.getSource(), v.get("fc"), fc);
+        if (v.get("fc") !== fc) patch(v.getSource(), fc);
         const nv = olLayer(l, i, n, v.getSource()); nv.set("fc", fc); nv.set("sig", sig(l));   // стиль заново: категории и диапазоны зависят от данных
         map.getLayers().setAt(map.getLayers().getArray().indexOf(v), nv); vec[l.key] = v = nv;
       }

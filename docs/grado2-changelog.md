@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).**
+  - The ribbon now runs the real commands of the working page instead of sample buttons: drawing (line, polyline,
+    circle, arc, ellipse, rectangle, polygon, point), «Оформление» (hatch, dimension, text), editing (move, copy,
+    rotate, mirror, scale, offset, trim, extend, fillet, array, stretch), «Ещё» (chamfer, break, join, explode,
+    lengthen, array edit, erase, and the polygon and attribute commands: split, merge, subtract, buffer, simplify,
+    reverse, align, match properties, divide, measure, select similar, select by condition, to current layer,
+    line ↔ polygon, boundary by click), measure distance and area, territory boundary.
+  - Same keyboard as the working page: aliases (L, PL, C, M, TR…) and Enter, the input box at the cursor (length,
+    length<angle, @dx;dy, X;Y in МСК), the command line over the map with clickable options, Enter/space/right
+    button, Backspace, Esc, F2 command history; grips on selected objects (drag a vertex, add one on a side).
+  - Status bar: ПРИВЯЗКА with the set of snaps, ОТСЛЕЖ, ПОЛЯР with the angle step, ОРТО, ДИН, ТОПО (F3, F8, F10, F11, F12).
+  - Every command edit is one step of the common undo (Ctrl+Z). The window «Свойства» now updates the object count
+    after edits.
+  - The commands are a port of web/cad.js (same file of geometry web/cadcore.js); a test keeps the command list and
+    aliases equal to the working page.
+
 - **2026-10-08, ГРАДО 2 v0.99.61: окна «Варианты», «Сравнение» и «Объём» в новом интерфейсе (#69).**
   - «Варианты»: «Подобрать варианты» tries typologies × building width × direction inside the constraints, floors fit
     the density goal; six best as cards with a plan picture, all in a table (density, floors, insolation of new
