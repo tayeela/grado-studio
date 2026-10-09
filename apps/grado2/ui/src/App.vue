@@ -34,11 +34,11 @@
         <h4 class="menu-h">Данные</h4>
         <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
         <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
+        <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
         <h4 class="menu-h">Пока в рабочей странице</h4>
         <wa-dropdown-item value="pdf" disabled>PDF и PPTX альбома — с окном «Листы»</wa-dropdown-item>
         <wa-dropdown-item value="ogd" disabled>ГИС ОГД в DXF — с рамкой листа</wa-dropdown-item>
-        <wa-dropdown-item value="xlsx" disabled>Excel: ТЭП и листы — с окном «Показатели»</wa-dropdown-item>
       </wa-dropdown>
 
       <span class="grow"></span>
@@ -120,7 +120,7 @@ import { DockviewVue, themeLight } from "dockview-vue";
 import { Undo2, Redo2, CircleHelp } from "@lucide/vue";
 import CadModes from "./panels/CadModes.vue";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
-import { exportDxf, exportGeojson } from "./exports.js";
+import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
 import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
@@ -216,7 +216,7 @@ function showHelp() {
   syncOpen();
 }
 
-function onExport(e) { const v = e.detail.item.value; if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); }
+function onExport(e) { const v = e.detail.item.value; if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "xlsx") exportXlsx(); }
 
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }

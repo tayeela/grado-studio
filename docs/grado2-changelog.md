@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.63: выгрузка в Excel в новом интерфейсе (#69).**
+  - Menu «Выгрузка» → «Excel: показатели ТЭП и листы»: the same workbook as the working page (sheet «ТЭП» with the
+    territory, sketch and «Калькулятор 2.0» metrics, sheet «Листы» with the album sheets). A sheet scale picked
+    automatically by the working page is left empty here; a scale set on the sheet is filled in.
+  - PDF, PPTX and ГИС ОГД in DXF stay in the working page until the sheets move (they need sheet frames).
+
 - **2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).**
   - The ribbon now runs the real commands of the working page instead of sample buttons: drawing (line, polyline,
     circle, arc, ellipse, rectangle, polygon, point), «Оформление» (hatch, dimension, text), editing (move, copy,
