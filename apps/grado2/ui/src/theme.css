@@ -171,8 +171,17 @@ html.wa-dark {
   border-radius: 8px; box-shadow: var(--g-shadow-1); font-family: var(--wa-font-family-body);
 }
 .cmdline[hidden], .cmdhist[hidden], .cadtip[hidden], .cadin[hidden], .cadac[hidden] { display: none; }
-.cmdline { position: absolute; left: 10px; bottom: 10px; z-index: 5; max-width: calc(100% - 20px); display: flex; flex-wrap: wrap; align-items: center;
-  gap: 4px 8px; padding: 5px 10px 5px 5px; border-radius: 10px; box-shadow: var(--g-shadow-2); font-size: var(--wa-font-size-m); line-height: 1.45; }
+/* командная строка — по ширине содержимого, каждая строка одна (длинное — многоточием); во время команды щелчок по её тексту
+   проходит на карту (ставит точку), ловят его только название команды и кнопки параметров (аудит 09.10.2026) */
+.cmdline { position: absolute; left: 10px; bottom: 10px; z-index: 5; max-width: calc(100% - 20px); box-sizing: border-box; display: flex; flex-direction: column;
+  align-items: flex-start; gap: 2px; padding: 5px 10px 5px 5px; border-radius: 10px; box-shadow: var(--g-shadow-2); font-size: var(--wa-font-size-m); line-height: 1.45; }
+.cmdline .cl { display: flex; align-items: center; gap: 8px; max-width: 100%; min-width: 0; white-space: nowrap; }
+.cmdline .cl > * { flex: none; }
+.cmdline .cl { overflow: hidden; }
+.cmdline .cl > .tx { flex: 0 1 auto; min-width: 2em; overflow: hidden; text-overflow: ellipsis; }
+.cmdline .cl > .k { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* на узкой карте подсказка клавиши уступает место первой */
+.cmdline:not(.idle) { pointer-events: none; }
+.cmdline:not(.idle) b, .cmdline:not(.idle) .op { pointer-events: auto; }
 .cmdline b { font-weight: 600; padding: 1px 8px; border-radius: 6px; background: var(--wa-color-brand-fill-loud); color: var(--wa-color-brand-on-loud); }
 .cmdline.idle { cursor: text; }
 .cmdline.idle b { background: var(--wa-color-neutral-fill-quiet); color: var(--wa-color-text-normal); }
@@ -181,8 +190,9 @@ html.wa-dark {
   color: var(--wa-color-brand-on-quiet); border-radius: 6px; padding: 0 7px; font: inherit; line-height: 1.5; cursor: pointer; }
 .cmdline .op:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .cmdline .k { color: var(--g-muted); }
-.cmdline .nt { flex-basis: 100%; color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-s); }
-.cmdhist { position: absolute; left: 10px; bottom: 52px; z-index: 5; width: min(560px, calc(100% - 20px)); max-height: 42%; overflow: auto; padding: 6px 10px;
+.cmdline .nt { max-width: 100%; padding-left: 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-s); }
+.cmdhist { position: absolute; left: 10px; bottom: 52px;   /* bottom — над командной строкой, ставит cad.js placeHist */
+  z-index: 5; width: min(560px, calc(100% - 20px)); max-height: 42%; overflow: auto; padding: 6px 10px;
   font-size: var(--wa-font-size-s); line-height: 1.5; }
 .cmdhist .hh { display: flex; justify-content: space-between; position: sticky; top: -6px; background: inherit; padding: 2px 0 4px; color: var(--g-muted); }
 .cmdhist .hh b { color: var(--wa-color-text-normal); }

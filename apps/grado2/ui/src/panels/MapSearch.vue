@@ -16,7 +16,7 @@
       <template v-else>
         <div v-for="(x, i) in R.list" :key="i" class="sri" :class="{ act: i === act }" role="option" :aria-selected="i === act" @click="pick(i)">
           <template v-if="R.type === 'krt'"><b>{{ R.cards[i] || "" }}</b></template>
-          <template v-else-if="R.type === 'address'"><b>{{ x.name || x.display }}</b><span v-if="x.name && x.display">{{ x.display }}</span></template>
+          <template v-else-if="R.type === 'address'"><b>{{ addrOf(x)[0] }}</b><span v-if="addrOf(x)[1]">{{ addrOf(x)[1] }}</span></template>
           <template v-else><b>{{ x.properties?.["Кадастровый номер"] || x.properties?._key || "" }}</b><span>{{ haOf(x) }}{{ x.properties?.["ВРИ"] ? " · " + x.properties["ВРИ"] : "" }}</span></template>
         </div>
         <div v-if="R.missing?.length" class="srm bad">Не найдено: {{ R.missing.join(", ") }}</div>
@@ -49,6 +49,15 @@ import { markDirty, notice } from "../project.js";
 const props = defineProps({ map: { type: Object, required: true } });
 const fmt = (v, d = 0) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
 const plural = (n, [one, few, many]) => { const a = n % 10, b = n % 100; return `${n} ${a === 1 && b !== 11 ? one : a >= 2 && a <= 4 && (b < 12 || b > 14) ? few : many}`; };
+/* адрес: заголовок и строка под ним не повторяют друг друга (аудит 09.10.2026). Имя — номер дома («1») — заголовком
+   «улица, дом», имя в начале полного адреса — из строки убирается */
+function addrOf(x) {
+  const name = (x.name || "").trim(), full = (x.display || "").trim(), parts = full.split(/,\s*/);
+  if (!name) return [parts.slice(0, 2).join(", "), parts.slice(2).join(", ")];
+  if (/^\d/.test(name) && parts[0] === name && parts.length > 1) return [`${parts[1]}, ${name}`, parts.slice(2).join(", ")];
+  if (parts[0] === name) return [name, parts.slice(1).filter(p => p !== name).join(", ")];
+  return [name, full === name ? "" : full];
+}
 const haOf = f => { const a = (sizeOf(f)[1] || 0) / 1e4; return fmt(a, a < 1 ? 4 : 2) + " га"; };
 const srchErr = e => { const m = String(e?.message || e);
   return /busy/i.test(m) ? "Поиск занят другим запросом — повторите через минуту"
@@ -165,7 +174,7 @@ onBeforeUnmount(() => { close(); props.map.removeLayer(mkLayer); removeEventList
 </script>
 
 <style>
-.msearch { position: absolute; left: 8px; top: 8px; z-index: 5; width: min(340px, calc(100% - 120px)); min-width: 190px; font: var(--wa-font-size-s)/1.35 system-ui, sans-serif; }
+.msearch { position: absolute; left: 8px; top: 8px; z-index: 5; width: min(340px, calc(100% - 120px)); min-width: 190px; font: var(--wa-font-size-s)/1.35 var(--wa-font-family-body); }
 .msearch .msf { display: flex; background: var(--wa-color-surface-raised); border: 1px solid var(--g-line); border-radius: 6px; box-shadow: var(--wa-shadow-s); }
 .msearch .msf:focus-within { border-color: var(--wa-color-brand-border-loud); }
 .msearch input { flex: 1; min-width: 0; border: 0; background: none; padding: 6px 9px; font: inherit; color: var(--wa-color-text-normal); outline: none; }

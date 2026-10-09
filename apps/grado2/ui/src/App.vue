@@ -63,6 +63,17 @@
     </header>
 
     <nav class="ribbon" aria-label="Команды черчения">
+      <!-- «Выбор» — как в рабочей странице: прервать команду и вернуться к выбору объектов (то же, что Esc) -->
+      <div class="tgroup">
+        <div class="tbtns">
+          <wa-button size="s" appearance="plain" :disabled="!cad.ready" :class="{ on: cad.ready && !cad.cmd }" aria-label="Выбор"
+                     :title="cad.ready ? 'Выбор объектов: щелчок, Shift+щелчок, Shift+рамка. Esc — прервать команду и вернуться к выбору' : 'Откройте окно «Карта»: команды работают на ней'"
+                     @click="cadApi.cancel()">
+            <svg class="ci" aria-hidden="true"><use href="#ci-select" /></svg>
+          </wa-button>
+        </div>
+        <div class="tlabel">Выбор</div>
+      </div>
       <div v-for="g in TOOLS" :key="g.title" class="tgroup">
         <div class="tbtns">
           <wa-button v-for="id in g.items" :key="id" size="s" appearance="plain" :disabled="!cad.ready"
@@ -71,7 +82,7 @@
           </wa-button>
           <wa-dropdown v-for="m in g.menus || []" :key="m.title" @wa-select="e => runCmd(e.detail.item.value)">
             <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="!cad.ready" :title="m.title + ': ' + m.items.map(cmdTitle).join(', ').toLowerCase()">
-              <svg v-if="m.icon" class="ci" aria-hidden="true"><use :href="'#ci-' + m.icon" /></svg><template v-else>Ещё</template>
+              <template v-if="m.icon"><svg class="ci" aria-hidden="true"><use :href="'#ci-' + m.icon" /></svg><span class="mlabel">{{ m.label }}</span></template><template v-else>Ещё</template>
             </wa-button>
             <template v-for="sec in m.sections || [{ items: m.items }]" :key="sec.title || 'main'">
               <h4 v-if="sec.title" class="menu-h">{{ sec.title }}</h4>
@@ -177,7 +188,7 @@ const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
 /* Лента — команды черчения как в рабочей странице (cad.js RIBBON): кнопка запускает команду, повторный щелчок прерывает. */
 const TOOLS = [
-  { title: "Рисование", items: RIBBON.draw, menus: [{ title: "Оформление", icon: "dim", items: RIBBON.anno }] },
+  { title: "Рисование", items: RIBBON.draw, menus: [{ title: "Оформление", label: "Оформление", icon: "hatch", items: RIBBON.anno }] },
   { title: "Правка", items: RIBBON.modify, menus: [{ title: "Ещё команды", items: [...RIBBON.more, ...RIBBON.gis], sections: [{ items: RIBBON.more }, { title: "Полигоны и атрибуты", items: RIBBON.gis }] }] },
   { title: "Измерить", items: RIBBON.measure },
   { title: "Территория", items: RIBBON.terr },
@@ -188,7 +199,8 @@ const cmdKey = id => (cad.ready && cadApi.CMDS[id]?.alias[0]) || "";
 const cmdHelp = id => (cad.ready && cadApi.HELP[id]) || "";
 const cmdTip = id => cad.ready ? `${cmdTitle(id)} — ${cadApi.CMDS[id].alias.join(", ")} и Enter: ${cmdHelp(id)}` : "Откройте окно «Карта»: команды работают на ней";
 function runCmd(id) { if (cad.cmd === id) cadApi.cancel(); else cadApi.start(id); }
-const toolTitle = computed(() => cad.cmd ? `Команда: ${cmdTitle(cad.cmd)}` : cad.ready ? "Наберите команду (L, PL, C, M, TR…) и Enter или выберите на ленте" : "");
+// идущая команда, её подсказка и сообщения — в командной строке над картой; здесь не повторяются (аудит 09.10.2026)
+const toolTitle = computed(() => cad.ready ? "" : "Черчение работает в окне «Карта»");
 
 const LAYOUT_KEY = "grado-next-layout";
 let api = null;
@@ -369,6 +381,8 @@ openStartup();
 .tgroup:last-child { border-right: 0; }
 .tbtns { display: flex; align-items: center; }
 .ribbon .ci { width: 18px; height: 18px; display: block; }
+.ribbon .mlabel { margin-left: 4px; }
+.ribbon wa-button:has(.mlabel) .ci { display: inline-block; vertical-align: middle; }
 wa-dropdown-item .ci { width: 16px; height: 16px; }
 .status > .xy { white-space: pre; min-width: 22ch; }
 .status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
