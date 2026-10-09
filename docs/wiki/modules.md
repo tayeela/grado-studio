@@ -81,7 +81,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2848 стр.
+### `apps/grado2/server.py` — 2850 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -90,6 +90,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `_bbox_check`, `_Body`, `FetchBody`, `TepBody` и ещё 56
 
 ## Страница (apps/grado2/web/*.js)
+
+### `apps/grado2/web/albumapi.js` — 80 стр.
+
+ГРАДО 2 · движок альбома для окна «Листы и альбом» нового интерфейса (ui/src/albumhost.js, panels/AlbumPanel.vue). Новый интерфейс держит эту страницу скрытой (/old?embed=album в невидимом iframe) и зовёт её код сборки и печати: альбом собирается тем же buildSection / albumSpec / albumFile, что и прежде, поэтому PDF и PPTX выходят лист в лист. Здесь только мост: состояние (ход сборки, «не готов», строка альбома), вопросы «заменить или добавить» и «не всё готово» отдаются окну нового интерфейса, а не строкам этой страницы, которых владелец не видит. Проверка — tests/test_next_ui.py.
+
 
 ### `apps/grado2/web/albumgeo.js` — 29 стр.
 
@@ -155,9 +160,9 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `fireGap`, `isResidential`, `isChildren`, `groundAt`, `ringMid`, `decisionOf`, `consLayer`, `clip`, `protectR`, `polyFeats`, `cleanTitle`, `roleFeats`, `nameOf`, `usedLine`, `computeConstraints`, `consExclude`, `consCeiling`, `NCons`, `ensureConsNode`, `renderCons`, `openRing`, `prismsOf`, `keptForCheck`, `sketchFromLayer`, `yieldUI`, `evalChunked`, `checkNorms`, `runCheck`, `ownInsolation`
 
-### `apps/grado2/web/embed.js` — 18 стр.
+### `apps/grado2/web/embed.js` — 20 стр.
 
-Рабочая страница как окно «Листы и альбом» нового интерфейса (/next/, ui/src/albumhost.js): отдельное окно браузера по адресу /old?embed=album, открытое новым интерфейсом (как макет в QGIS открывается своим окном). Ставится до отрисовки: класс embed на <html> прячет шапку, ленту и панели (стили в index.html), тема — как у нового интерфейса. Проект приходит из нового интерфейса (applyProject), правки уходят туда же (project.js markDirty → EMBED_HOST.gradoEmbed); своего автосохранения, входа и совместной работы у этого окна нет. Новый интерфейс закрыт — страница обычная.
+Рабочая страница как движок окна «Листы и альбом» нового интерфейса (/next/, ui/src/albumhost.js) по адресу /old?embed=album: скрытая рамка iframe внутри нового интерфейса (сборка и печать альбома, albumapi.js) или, по кнопке «Подробно», отдельное окно браузера (рамки листов на карте, «Слои и листы», макет надписей). Ставится до отрисовки: класс embed на <html> прячет шапку, ленту и панели (стили в index.html), тема — как у нового интерфейса. Проект приходит из нового интерфейса (applyProject), правки уходят туда же (project.js markDirty → EMBED_HOST.gradoEmbed); своего автосохранения, входа и…
 
 
 ### `apps/grado2/web/frames.js` — 193 стр.

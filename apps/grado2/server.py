@@ -1698,8 +1698,10 @@ def list_projects():
 # ---------- HTTP: заголовки безопасности, вход по ключу, совместный режим ----------
 # Скрипты — только свои (без inline и eval); карта берёт плитки Esri и EOX по https (img-src), воркеры OpenLayers — из blob:.
 # connect-src data: — значки Web Awesome нового интерфейса (/next/) читаются fetch из data:-адресов внутри самого скрипта.
+# frame-ancestors 'self' — страницу встраивает в рамку только сам ГРАДО: движок альбома в новом интерфейсе (ui/src/albumhost.js);
+# чужой сайт её в рамку не возьмёт (защита от подмены щелчков остаётся).
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-       "font-src 'self' data:; connect-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+       "font-src 'self' data:; connect-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'self'")
 
 # Ключ доступа (необязательный второй слой за паролем обратного прокси): задан GRADO2_TOKEN — без куки grado_token или
 # заголовка X-Grado-Token сервер отвечает только на вход. Не задан или пуст — всё как прежде (локальная работа).
@@ -2671,7 +2673,7 @@ class Guard:
                 h = MutableHeaders(scope=msg)
                 h["Cache-Control"] = "no-cache"       # после обновления браузер не держит старые app.js
                 h["X-Content-Type-Options"] = "nosniff"
-                h["X-Frame-Options"] = "DENY"
+                h["X-Frame-Options"] = "SAMEORIGIN"
                 h["Content-Security-Policy"] = CSP
                 if msg["status"] >= 400:
                     _log_line(f'{c.peer} "{c.method} {c.route}" {msg["status"]}')

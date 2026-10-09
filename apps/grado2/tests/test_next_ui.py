@@ -169,21 +169,28 @@ class NextUi(unittest.TestCase):
         self.assertEqual(ends((web / "hub.js").read_text(encoding="utf-8")), ends((src / "hub.js").read_text(encoding="utf-8")))
 
     def test_album_window_is_the_working_page_engine(self):
-        # окно «Листы и альбом» — рабочая страница /old?embed=album: альбом собирается её кодом; связь — gradoEmbed с обеих сторон
+        # «Листы и альбом» — вкладка нового интерфейса (AlbumPanel.vue); собирает и печатает альбом рабочая страница
+        # /old?embed=album — скрытой рамкой iframe или окном «Подробно»; связь — gradoEmbed с обеих сторон и albumApi движка
         web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
         host, page = (src / "albumhost.js").read_text(encoding="utf-8"), (web / "project.js").read_text(encoding="utf-8")
+        bridge, panel = (web / "albumapi.js").read_text(encoding="utf-8"), (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
         self.assertIn("/old?embed=album", host)
-        called = set(re.findall(r"gradoEmbed\?\.(\w+)\(", page))
+        self.assertIn('createElement("iframe")', host)                      # обычно движок скрыт внутри страницы, без окна браузера
+        called = set(re.findall(r"gradoEmbed\?\.(\w+)\(", page)) | {"toast", "download"}   # albumapi.js: сообщения и файлы
         block = re.search(r"window\.gradoEmbed = \{(.*?)\n\};", host, re.S).group(1)
         given = set(re.findall(r"^  (?:async )?(\w+)\(", block, re.M))
-        self.assertEqual(called, {"ready", "changed", "focus", "closed", "save", "open"})
+        self.assertEqual(set(re.findall(r"gradoEmbed\?\.(\w+)\(", page)), {"ready", "changed", "focus", "closed", "save", "open"})
         self.assertLessEqual(called, given)
-        for fn in ("applyProject", "collectProject", "albumFile", "setTheme", "toast"):   # что окно альбома зовёт у рабочей страницы
-            self.assertIn(f"win.{fn}" if fn != "albumFile" else "w.albumFile(", host)
+        for fn in ("applyProject", "collectProject", "setTheme"):   # что новый интерфейс зовёт у рабочей страницы
+            self.assertIn(f"win.{fn}", host)
+        api = set(re.findall(r"^    (?:async )?(\w+)\(", bridge, re.M))
+        used = set(re.findall(r"a => a\.(\w+)\(", panel))
+        self.assertTrue(used and used <= api, used - api)                   # вкладка зовёт только то, что движок отдаёт
         html = (web / "index.html").read_text(encoding="utf-8")
         self.assertLess(html.index('src="embed.js"'), html.index('src="app.js"'))      # класс embed и EMBED — до скриптов страницы
+        self.assertLess(html.index('src="albums.js"'), html.index('src="albumapi.js"'))
         app = (src / "App.vue").read_text(encoding="utf-8")
-        for k in ("albumFile(v)", "ogdDxf()", "openAlbum()"):
+        for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы и альбом" }'):
             self.assertIn(k, app)
 
     def test_floating_windows_follow_the_mouse(self):
