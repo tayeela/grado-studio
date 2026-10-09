@@ -49,6 +49,7 @@ export function selectAll(key) {
 /* web/msk.js — общий файл с рабочей страницей: в сборке Vite он модуль CommonJS (module.exports), в странице — глобальный MSK */
 const MSK = globalThis.MSK || mskModule.default || mskModule;
 const toM = c => MSK.fromWgs(c);
+export const mskOf = toM;   // [долгота, широта] → МСК [восток, север], м
 const ringArea = r => { const m = r.map(toM); let a = 0; for (let i = 0; i + 1 < m.length; i++) a += m[i][0] * m[i + 1][1] - m[i + 1][0] * m[i][1]; return Math.abs(a / 2); };
 const lineLen = r => { const m = r.map(toM); let d = 0; for (let i = 0; i + 1 < m.length; i++) d += Math.hypot(m[i + 1][0] - m[i][0], m[i + 1][1] - m[i][1]); return d; };
 /* ["area", м²] | ["len", м] | ["pt", 0] */

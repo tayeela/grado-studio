@@ -4,6 +4,7 @@ import "@awesome.me/webawesome/dist/styles/themes/default.css";
 import "@awesome.me/webawesome/dist/styles/utilities.css";
 import "dockview-vue/dist/styles/dockview.css";
 import "ol/ol.css";
+import "./fonts.css";
 import "./theme.css";
 
 import "@awesome.me/webawesome/dist/components/button/button.js";

@@ -2,6 +2,15 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.68: графический язык «Синька» в новом интерфейсе.**
+  - Owner's choices of 09.10.2026 (1Б 2А 3Б 4А): one toolbar without workflow stages, the command line always visible,
+    ТЭП stays a table at the bottom, the font is Onest (shipped in the build, `@fontsource/onest`, OFL); no monospace font anywhere.
+  - Windows are cards with rounded corners on a grey desk with 8 px gaps; one blue accent for the current tool, selection,
+    focus and the main button; green, amber and red only for norms; light and dark themes.
+  - The command line under the map is shown without a command too («Команда — наберите L, PL, C, TR…»); a click on it opens
+    command input. The status bar shows the cursor coordinates in МСК (X east, Y north). Map zoom buttons moved to the top right.
+  - Drawing tools (AutoCAD-style ribbon) are unchanged.
+
 - **2026-10-09, ГРАДО 2 v0.99.67: совместная работа в новом интерфейсе (#69).**
   - On the shared server the new interface now has the login screen, the project button in the header (open, create,
     upload, copy, star, rename, delete), the role and «сохранено / отправляю» next to it, faces of who is in the project,
