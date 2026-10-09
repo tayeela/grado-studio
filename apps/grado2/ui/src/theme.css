@@ -12,6 +12,7 @@
   --wa-font-family-heading: var(--wa-font-family-body);
   --wa-font-family-code: var(--wa-font-family-body);
   --wa-form-control-padding-block: 0.3em;
+  --wa-form-control-height: 26px;     /* все поля, списки и кнопки одной высоты */
 
   /* поверхности и текст */
   --g-desk: #e8ebf0;                 /* стол под окнами */
@@ -41,6 +42,7 @@
   --g-bar: var(--g-desk);
   --g-line: var(--wa-color-surface-border);
   --g-muted: var(--wa-color-text-quiet);
+  --g-scroll: rgba(20, 24, 32, .22);   /* бегунок полосы прокрутки */
   --g-canvas: var(--g-desk);
   --g-shadow-1: 0 1px 2px rgba(20, 24, 32, .06);
   --g-shadow-2: 0 1px 2px rgba(20, 24, 32, .06), 0 8px 24px rgba(20, 24, 32, .10);
@@ -54,6 +56,7 @@ html.wa-dark {
   --wa-color-text-normal: #e9ecf1;
   --wa-color-text-quiet: #a4acb9;
   --wa-color-text-link: #7390ff;
+  --g-scroll: rgba(233, 236, 241, .22);
   --wa-color-brand-fill-loud: #5b7cff;
   --wa-color-brand-fill-normal: #2a3a72;
   --wa-color-brand-fill-quiet: #1b2546;
@@ -81,6 +84,11 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
+/* полосы прокрутки тонкие и появляются только когда есть что прокручивать (на Mac с «Показывать всегда» — тоже тонкие) */
+* { scrollbar-width: thin; scrollbar-color: var(--g-scroll) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--g-scroll); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
 /* значки Lucide: одна толщина линии во всей программе */
 svg.lucide { stroke-width: 1.75; }
 
@@ -109,8 +117,10 @@ svg.lucide { stroke-width: 1.75; }
   --dv-paneview-header-border-color: var(--g-line);
   --dv-sash-color: transparent;
   --dv-active-sash-color: var(--wa-color-brand-fill-loud);
-  --dv-drag-over-background-color: color-mix(in srgb, var(--wa-color-brand-fill-loud) 18%, transparent);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--wa-color-brand-fill-loud) 12%, transparent);
   --dv-drag-over-border-color: var(--wa-color-brand-fill-loud);
+  --dv-drag-over-border: 2px solid var(--wa-color-brand-fill-loud);   /* куда ляжет окно — синей рамкой, а не бледной заливкой */
+  --dv-active-sash-transition-delay: 0s;                              /* граница между окнами подсвечивается сразу при наведении */
   --dv-floating-box-shadow: var(--g-shadow-2);
   --dv-floating-titlebar-background-color: var(--wa-color-surface-default);
   --dv-icon-hover-background-color: var(--wa-color-surface-lowered);
@@ -119,34 +129,69 @@ svg.lucide { stroke-width: 1.75; }
   --dv-context-menu-color: var(--wa-color-text-normal);
   --dv-border-radius: 12px;
 }
-.grado-dock .dv-groupview { border: 1px solid var(--g-line); border-radius: 12px; overflow: hidden; box-shadow: var(--g-shadow-1); }
+/* рамка карточки — обводкой внутрь, а не border: dockview задаёт содержимому размер группы без учёта рамки,
+   и border в 1 px давал переполнение на 2 px и полосы прокрутки в каждом окне */
+.grado-dock .dv-groupview { border: 0; outline: 1px solid var(--g-line); outline-offset: -1px; border-radius: 12px; overflow: hidden; box-shadow: var(--g-shadow-1); }
+/* место, куда ляжет перетаскиваемое окно: скруглённая рамка внутри карточки */
+.grado-dock .dv-drop-target-selection, .grado-dock .dv-drop-target-anchor { border-radius: 10px; }
+/* граница между окнами: при наведении — тонкая синяя черта по центру зазора (сама полоса шире, чтобы легко попасть) */
+.grado-dock .dv-sash:not(.dv-disabled):hover, .grado-dock .dv-sash:not(.dv-disabled):active {
+  background: linear-gradient(var(--wa-color-brand-fill-loud), var(--wa-color-brand-fill-loud)) center / 2px 100% no-repeat !important;
+}
+.grado-dock .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:not(.dv-disabled):hover,
+.grado-dock .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash:not(.dv-disabled):active { background-size: 100% 2px !important; }
+/* прокручивает само окно (.pane), а не обёртка dockview */
+.grado-dock .dv-view { overflow: hidden; }
 .grado-dock .dv-tabs-and-actions-container { border-bottom: 1px solid var(--g-line); padding-inline: 4px; }
 /* вкладка окна: выбранная — тёмный текст и синяя черта снизу, остальные — серые */
 .grado-dock .dv-tab { padding-inline: 8px; font-weight: 500; }
 .grado-dock .dv-tab.dv-active-tab { box-shadow: inset 0 -2px 0 var(--wa-color-brand-fill-loud); }
 .grado-dock .dv-inactive-group .dv-tab.dv-active-tab { box-shadow: inset 0 -2px 0 var(--wa-color-surface-border); }
-/* крестик у вкладки — только при наведении; место под него держит лишь выбранная вкладка,
-   у остальных он ложится поверх конца подписи — так в узкой группе помещается больше вкладок */
+/* крестик — только у выбранной вкладки (место под него оставлено, подпись не сдвигается). У невыбранных его нет:
+   раньше он ложился поверх конца подписи, и щелчок по короткой вкладке («Виды») закрывал окно вместо того, чтобы открыть его */
 .grado-dock .dv-tab .dv-default-tab-action { opacity: 0; transition: opacity 120ms; }
-.grado-dock .dv-tab:hover .dv-default-tab-action, .grado-dock .dv-tab.dv-active-tab:hover .dv-default-tab-action { opacity: 1; }
-.grado-dock .dv-tab.dv-inactive-tab .dv-default-tab-content { margin-right: 0; }
-.grado-dock .dv-tab.dv-inactive-tab .dv-default-tab-action {
-  position: absolute; right: -6px; top: 50%; transform: translateY(-50%); height: 22px; padding: 4px 4px 4px 12px;
-  background: linear-gradient(to right, transparent, var(--wa-color-surface-default) 10px);
-}
+.grado-dock .dv-tab.dv-active-tab:hover .dv-default-tab-action, .grado-dock .dv-tab.dv-active-tab .dv-default-tab-action:focus-visible { opacity: 1; }
+.grado-dock .dv-tab.dv-inactive-tab .dv-default-tab-action { display: none; }
+.grado-dock .dv-tab.dv-active-tab .dv-default-tab-content { margin-right: 2px; }
+.grado-dock .dv-tab .dv-default-tab-action { padding: 2px; border-radius: 4px; }
 
 /* кнопки Web Awesome: главная залита синькой, тихие получают фон при наведении */
 wa-button[variant="brand"][appearance~="filled"]::part(base) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), var(--g-shadow-1); }
 wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-surface-lowered); }
 
 /* панели: общий вид заголовков и строк */
-.pane { height: 100%; overflow: auto; box-sizing: border-box; padding: var(--wa-space-s); }
-.pane h3 {
+.pane { height: 100%; overflow: hidden auto; box-sizing: border-box; padding: var(--wa-space-s); }   /* по ширине окно не прокручивается: содержимое ужимается */
+/* заголовок раздела во всех окнах один: мелкие прописные серые, 12 px над и 4 px под */
+.pane h3, .pane .sect {
   margin: var(--wa-space-m) 0 var(--wa-space-xs);
   font-size: var(--wa-font-size-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--g-muted);
 }
+.pane > h3:first-child, .pane > .sect:first-child { margin-top: 0; }
 .pane .hint { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin: var(--wa-space-xs) 0; }
 .pane wa-select, .pane wa-number-input, .pane wa-input, .pane wa-color-picker, .pane wa-slider, .pane wa-switch { display: block; margin-bottom: var(--wa-space-m); }
+
+/* строка свойства: подпись слева в колонке одной ширины, поле справа — все строки на одной сетке и одной высоты
+   (как инспекторы Figma и Blender: 26 px строка, 6 px между строками, подпись 12 px) */
+.pane .f {
+  display: grid; grid-template-columns: var(--g-lw, 104px) minmax(0, 1fr); align-items: center; column-gap: 8px;
+  min-height: 26px; margin-bottom: 6px;
+}
+.pane .f.top { align-items: start; }
+.pane .f.top > span:first-child { padding-top: 5px; }
+.pane .f > span:first-child {
+  font-size: var(--wa-font-size-xs); color: var(--wa-color-text-quiet);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pane .f > :not(span:first-child), .pane .fc > * { margin-bottom: 0; min-width: 0; }
+.pane .fc { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pane .fc > wa-slider, .pane .fc > wa-select, .pane .fc > wa-input { flex: 1; }
+.pane .num { width: 96px; flex: none; }
+/* кнопки «−» и «+» у числового поля узкие, чтобы само число было видно и в коротком поле */
+wa-number-input::part(stepper) { width: 18px; min-width: 0; padding: 0; }
+wa-number-input::part(input) { padding: 0 4px; }
+wa-number-input::part(start), wa-number-input::part(end) { flex: 0 0 auto; margin: 0; }   /* пустые слоты делят ширину с числом */
+.pane .u { color: var(--g-muted); font-size: var(--wa-font-size-xs); white-space: nowrap; }
+.pane .u.v { width: 40px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
 
 /* подложка карты: в светлой теме OSM приглушена, чтобы читались знаки */
 .basemap { filter: grayscale(1) contrast(.9) brightness(1.05); }
@@ -163,7 +208,17 @@ wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-sur
 .ol-attribution a { color: var(--wa-color-text-link); }
 
 /* плавающее окно: рамка и тень, чтобы отделялось от карты */
-.grado-dock .dv-resize-container { border: 1px solid var(--g-line); border-radius: 12px; box-shadow: var(--g-shadow-2); }
+.grado-dock .dv-resize-container { border: 1px solid var(--g-line); border-radius: 12px; box-shadow: var(--g-shadow-2); background: var(--wa-color-surface-default); }
+/* окно двигают за узкую полосу с «ручкой» над вкладками (как палитры Figma и QGIS): вкладки тянут только вкладки,
+   а Shift + перетаскивание полосы встраивает окно обратно в раскладку */
+.grado-dock .dv-floating-titlebar { position: relative; height: 14px; border-bottom: 0; cursor: grab; background: var(--wa-color-surface-lowered); border-radius: 11px 11px 0 0; }
+.grado-dock .dv-floating-titlebar::before {
+  content: ""; position: absolute; left: 50%; top: 5px; width: 32px; height: 4px; transform: translateX(-50%);
+  background: radial-gradient(circle, var(--g-muted) 1px, transparent 1.5px) 0 0 / 6px 4px repeat-x; opacity: .7;
+}
+.grado-dock .dv-floating-titlebar:hover { background: color-mix(in srgb, var(--wa-color-brand-fill-loud) 8%, var(--wa-color-surface-lowered)); }
+.grado-dock .dv-floating-titlebar:active { cursor: grabbing; }
+.grado-dock .dv-resize-container .dv-groupview { border-radius: 0 0 12px 12px; box-shadow: none; outline: 0; }
 
 /* схема расчёта: заголовки блоков по виду и цвета связей по типу данных — как GTH рабочей страницы (web/app.js);
    резервные участки ДОО, школы, поликлиники на карте — --res-* (как web/index.html) */

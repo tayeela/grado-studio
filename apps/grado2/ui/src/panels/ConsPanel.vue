@@ -59,7 +59,6 @@ function setNum(n, el) {
 </script>
 
 <style>
-.cons .sect { margin: var(--wa-space-s) 0 4px; font-weight: 600; font-size: var(--wa-font-size-s); }
 .cons wa-checkbox { display: block; margin: 2px 0 !important; font-size: var(--wa-font-size-s); }
 .cons .grid { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 3px 8px; align-items: center; margin-bottom: var(--wa-space-s); font-size: var(--wa-font-size-s); }
 .cons .grid wa-number-input { margin: 0 !important; }

@@ -87,7 +87,8 @@ onBeforeUnmount(() => { off?.dispose?.(); preview.sketch = false; });
 
 <style>
 .sketchp .row { display: flex; gap: 6px; flex-wrap: wrap; margin: 2px 0 4px; }
-.sketchp .row wa-button::part(base) { gap: 4px; }
+.sketchp .row wa-button::part(base) { gap: 4px; width: 100%; }
+.sketchp .row > wa-button { flex: 1 1 140px; min-width: 0; }   /* кнопки действий — ровными колонками на всю ширину окна */
 .sketchp .row input[type=text] { flex: 1; min-width: 120px; font: inherit; font-size: var(--wa-font-size-s); padding: 2px 6px; border: 1px solid var(--g-line); border-radius: 4px; background: var(--wa-color-surface-default); color: inherit; }
 .sketchp .warn { color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-xs); margin: 2px 0; }
 .sketchp .warnt { color: var(--wa-color-warning-on-quiet); }

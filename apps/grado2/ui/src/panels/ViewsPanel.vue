@@ -126,7 +126,6 @@ const legend = computed(() => {
 .views td.act { width: 56px; white-space: nowrap; text-align: right; }
 .views td.act wa-button::part(base) { padding-inline: 3px; }
 .views td.act wa-button { --wa-form-control-height: 24px; }
-.views .sect { margin: var(--wa-space-m) 0 4px; font-weight: 600; font-size: var(--wa-font-size-s); }
 .views .lg { margin-bottom: 6px; font-size: var(--wa-font-size-s); }
 .views .lgh { display: flex; gap: 6px; align-items: center; }
 .views .lgi { display: flex; gap: 6px; align-items: center; padding-left: 22px; color: var(--g-muted); font-size: var(--wa-font-size-xs); }
