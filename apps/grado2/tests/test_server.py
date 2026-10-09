@@ -794,8 +794,19 @@ class AccessToken(unittest.TestCase):
     def test_off_by_default_nothing_changes(self):
         self.assertEqual(S.TOKEN, "")                                  # тесты не зависят от окружения владельца
         self.assertEqual(self.call("/api/sources")[0], 200)
-        self.assertEqual(self.call("/")[0], 200)
+        s, r, _ = self.call("/")
+        self.assertEqual((s, r.getheader("Location")), (302, "/next/"))   # адрес сайта — новый интерфейс
+        self.assertEqual(self.call("/next/")[0], 200)
         self.assertEqual(self.call("/api/login", {"token": "x"})[0], 404)   # без ключа такого метода нет
+
+    def test_old_page_lives_at_old(self):
+        """Прежняя рабочая страница — /old (и /old?embed=album — окно «Листы и альбом» нового интерфейса), со скриптами из корня."""
+        s, r, body = self.call("/old?embed=album")
+        self.assertEqual((s, r.getheader("Content-Type").split(";")[0]), (200, "text/html"))
+        for src in ("embed.js", "sheets.js", "albums.js", "project.js"):
+            self.assertIn(f'<script src="{src}"></script>', body.decode("utf-8"))
+        self.assertEqual(self.call("/embed.js")[0], 200)
+        self.assertEqual(self.call("/?x=1")[1].getheader("Location"), "/next/?x=1")
 
     def test_empty_token_means_off(self):
         with mock.patch.object(S, "TOKEN", ""):
@@ -818,7 +829,7 @@ class AccessToken(unittest.TestCase):
 
     def test_unauthenticated_page_redirects_and_api_is_401(self):
         with self.on():
-            for path in ("/", "/index.html"):
+            for path in ("/", "/index.html", "/next/", "/old"):
                 s, r, _ = self.call(path)
                 self.assertEqual((s, r.getheader("Location")), (302, "/login.html"), path)
             s, _, body = self.call("/api/sources")
@@ -846,7 +857,8 @@ class AccessToken(unittest.TestCase):
             self.assertNotIn("Secure", cookie)                          # прямое http без прокси
             sent = {"Cookie": cookie.split(";")[0]}
             self.assertEqual(self.call("/api/sources", headers=sent)[0], 200)
-            self.assertEqual(self.call("/", headers=sent)[0], 200)
+            self.assertEqual(self.call("/next/", headers=sent)[0], 200)
+            self.assertEqual(self.call("/", headers=sent)[1].getheader("Location"), "/next/")
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "a=b; grado_token=wrong"})[0], 401)
 
     def test_secure_flag_behind_tls_proxy(self):
@@ -1012,7 +1024,8 @@ class HubHttp(unittest.TestCase):
                            ("/api/hub/logout", {}), ("/api/ogd_all/cancel", {}), ("/api/import/files", {})):
             self.assertEqual(self.call(path, body)[0], 401, path)
         self.assertEqual(self.call("/api/hub/me")[0], 401)
-        self.assertEqual(self.call("/")[0], 200)                    # статика открыта: из неё строится экран входа
+        self.assertEqual(self.call("/next/")[0], 200)               # статика открыта: из неё строится экран входа
+        self.assertEqual(self.call("/old")[0], 200)
         self.assertEqual(self.call("/api/health")[0], 200)
         self.assertEqual(self.call("/api/progress")[0], 200)        # проба выкладки с loopback, как и при ключе доступа
         self.assertEqual(self.call("/api/progress", headers={"X-Forwarded-For": "203.0.113.5"})[0], 401)
@@ -1069,7 +1082,7 @@ class HubHttp(unittest.TestCase):
     def test_token_gate_env_is_ignored_in_hub_mode(self):
         with mock.patch.object(S, "TOKEN", "secret-key-xyz"):
             s, r, _ = self.call("/")
-            self.assertEqual(s, 200)                                    # не 302 на login.html
+            self.assertEqual((s, r.getheader("Location")), (302, "/next/"))   # не на login.html
             self.assertEqual(self.call("/api/sources", headers={"X-Grado-Token": "secret-key-xyz"})[0], 401)
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "grado_token=secret-key-xyz"})[0], 401)
             self.assertEqual(self.call("/api/login", {"token": "secret-key-xyz"}, cookie=self.login("ann"))[0], 404)
@@ -1393,7 +1406,7 @@ class HubHttp(unittest.TestCase):
         for site in ("same-origin", "none"):
             self.assertEqual(self.call("/api/hub/projects", {"name": "x"}, cookie, headers={"Sec-Fetch-Site": site})[0], 200)
         # переход по ссылке со стороннего сайта — GET, главная страница открывается (данных в ней нет)
-        self.assertEqual(self.call("/", headers={"Sec-Fetch-Site": "cross-site"})[0], 200)
+        self.assertEqual(self.call("/next/", headers={"Sec-Fetch-Site": "cross-site"})[0], 200)
 
     def test_every_state_changing_hub_route_checks_origin_and_json(self):
         ann = self.login("ann")

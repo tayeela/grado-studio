@@ -2040,7 +2040,7 @@ $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-va
 
 /* ================= плавающие окна и панели ================= */
 // окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
-const WINKEY = "grado2.win";
+const WINKEY = window.EMBED ? "grado2.win.embed" : "grado2.win";   // окно «Листы и альбом» нового интерфейса (embed.js) помнит свои окна отдельно
 let WST = {}; try { WST = JSON.parse(localStorage.getItem(WINKEY)) || {}; } catch { }
 delete WST.zoneToast;       // «Третье окно открыто плавающим…» — раз за сеанс: флаг живёт только в памяти, в localStorage не пишется
 const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST, (k, v) => k === "zoneToast" ? undefined : v)); } catch { } };
@@ -2395,9 +2395,11 @@ addEventListener("resize", () => {
 });
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
+const themeRedraw = () => { applyGraphTheme(); themeBasemap(); siteSrc.changed(); Object.values(resSrcs).forEach(r => r.changed()); };
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); siteSrc.changed(); Object.values(resSrcs).forEach(r => r.changed()); };
-try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } themeRedraw(); };
+window.setTheme = t => { document.documentElement.dataset.theme = t; themeRedraw(); };     // окно «Листы и альбом»: тему переключает новый интерфейс
+try { const t = localStorage.getItem("grado2.theme"); if (t && !window.EMBED) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS
@@ -2412,6 +2414,11 @@ const startApp = async () => {
   // узкое окно: панели поверх карты, при запуске закрыты — открываются из меню «Окна»
   if (innerWidth <= 1000) { $("work").classList.add("noL", "noR"); syncWinButtons(); }          // без записи: на широком окне панели вернутся
   ZONE_FORCE = "restore"; try { Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); }); } finally { ZONE_FORCE = false; }   // первый запуск: вместо окон — «С чего начать» на карте
+  if (window.EMBED) {                             // окно «Листы и альбом» нового интерфейса: без панели слоёв, листы — справа у карты
+    if (!$("work").classList.contains("noL")) toggleDock("L", false);
+    if (!WST.wSheets?.open) { winOpen("wSheets", true); dockWin($("wSheets"), "r"); }
+    if ($("work").classList.contains("noR")) toggleDock("R", true);
+  }
   requestAnimationFrame(() => { WIN_ANIM = true; });                                // окна, открытые дальше, появляются мягко
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();

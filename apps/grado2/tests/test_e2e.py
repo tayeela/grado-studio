@@ -58,7 +58,7 @@ class BrowserScenarios(unittest.TestCase):
                         break
                     except Exception:
                         time.sleep(0.1)
-                r = subprocess.run(["node", str(HERE / "e2e/driver.mjs"), f"http://127.0.0.1:{port}/", str(HERE / "e2e/scenarios.mjs")],
+                r = subprocess.run(["node", str(HERE / "e2e/driver.mjs"), f"http://127.0.0.1:{port}/old", str(HERE / "e2e/scenarios.mjs")],
                                    capture_output=True, text=True, timeout=600, env={**os.environ, "CHROME": CHROME})
                 print(r.stdout[-4000:])
                 print(_summary(r))
@@ -86,7 +86,7 @@ class BrowserScenarios(unittest.TestCase):
                         break
                     except Exception:
                         time.sleep(0.1)
-                r = subprocess.run(["node", str(HERE / "e2e/collab_scenarios.mjs"), f"http://127.0.0.1:{port}/"],
+                r = subprocess.run(["node", str(HERE / "e2e/collab_scenarios.mjs"), f"http://127.0.0.1:{port}/old"],
                                    capture_output=True, text=True, timeout=600,
                                    env={**os.environ, "CHROME": CHROME, "E2E_ADMIN_PW": admin_pw, "E2E_INVITE": invite})
                 print(r.stdout[-4000:])

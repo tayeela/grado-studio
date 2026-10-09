@@ -1920,7 +1920,7 @@ class Ctx:
             return None
         if self.authed():
             return None
-        if method != "POST" and (path == "/" or path.endswith(".html")):
+        if method != "POST" and (path.endswith("/") or path.endswith(".html") or path == "/old"):   # страницы: /, /next/, /old
             return Response(b"", 302, headers={"Location": "/login.html"})
         return _json(401, {"error": "нужен вход"})
 
@@ -2592,6 +2592,11 @@ def _answer(c, fn):
 
 async def api_get(request):
     c = Ctx(request)
+    q = request.url.query
+    if c.route == "/":                  # адрес сайта открывает новый интерфейс; прежняя рабочая страница — /old
+        return Response(b"", 302, headers={"Location": "/next/" + ("?" + q if q else "")})
+    if c.route == "/old":               # без косой черты в конце: её скрипты и стили по-прежнему берутся из корня
+        return await STATIC.get_response("index.html", request.scope)
     if HUB and c.route.startswith("/api/hub/"):
         return await run_in_threadpool(hub_call, c)
     fn = GET_ROUTES.get(c.route)

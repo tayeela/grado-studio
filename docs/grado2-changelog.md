@@ -2,7 +2,7 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-09, ГРАДО 2 v0.99.70 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
+- **2026-10-09, ГРАДО 2 v0.99.71 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
   - `apps/grado2/server.py`: the hand-written `http.server` handler (one long chain of `if self.path == …` for GET and for POST) is gone.
     Each address is now one small function in `GET_ROUTES` / `POST_ROUTES`; access checks, foreign-site refusal and the security headers
     live in one wrapper (`Guard`) in front of every answer; files from `web/` come from Starlette `StaticFiles`.
@@ -14,7 +14,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     except pydantic-core, which has wheels for macOS arm64, x86_64 and Windows. The launchers and the server timer install them by themselves.
   - Browser scenario «свободные места снова 0 / 0 / 0» waited a fixed 1.2 s after each field; it now waits until the number reaches the
     project (at most 3 s) and prints what it got when it fails (it failed once in CI, never in five local runs).
-- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.56): checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.56): checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).**
   - `tools/gate.sh` and CI run the same unit tests with pytest (`apps/grado2/requirements-dev.txt`, not part of the program); without
     pytest the gate falls back to unittest and says how to install it.
   - Browser scenarios: `apps/grado2/tests/e2e/browser.mjs` starts the local Chrome with Playwright (`playwright-core`, Apache-2.0, in
@@ -22,21 +22,21 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     themselves. Mouse and keyboard still go over the DevTools protocol, so the scenarios are unchanged.
   - T36 «during PDF build the menu is grey» waited a fixed 0.9 s for the build to end; it now waits for the end of the build
     (at most 5 s): under Playwright the autosave of the project in the same second made the fixed wait too short.
-- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.55): the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.55): the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).**
   - `core/render/grado_render/backend_pptx.py`: slides, pictures, slide notes, the one blank layout, theme and embedded fonts go through
     python-pptx; shapes are still written as DrawingML (custom outlines, dashes, glow of labels) and placed into each slide.
     `print_io.pptx_notes` (re-zipping the file to add notes) is gone: the note «карта вставлена картинкой» is set on the slide directly.
   - Checked on copies of Гольяново and Безобразово: both presentations converted by LibreOffice are pixel-identical to v0.99.54,
     slide by slide; the file is 4 KB larger (standard notes and print settings parts).
   - New dependency `python-pptx>=1.0.2` (MIT; brings lxml, BSD, wheels for every platform) in both requirements files and the spec.
-- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.54): clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.54): clipping and «point inside an outline» on shapely instead of hand-written copies (#71, part of #69).**
   - `core/connectors/grado_connectors/clip.py` (layers of ГИС ОГД cut to the area or the sheet) is GEOS `clip_by_rect`: a concave outline
     now splits into real parts instead of zero-width bridges along the frame, holes stay holes; whole-inside and whole-outside fast paths kept.
   - Hand-written point-in-polygon loops replaced by `shapely.contains_xy`: district of the area (`server.py`), «inside the TTK» for K2,
     side of a natural-complex border (`ogd_all.orient_lines`, now with an STRtree), OSM holes to their outer ring, dot pattern fill of
     zones (`scene.dots_ops`, one vectorised call per polygon). Label placement in `print_io` keeps its own loop (thousands of calls per sheet).
   - Checked on copies of Гольяново and Безобразово: all 18 album pages are pixel-identical to v0.99.53.
-- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.53): album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.53): album PDF is written by ReportLab instead of our own PDF writer (part of #69).**
   - `core/render/grado_render/backend_pdf.py`: the same list of drawing operations goes to a ReportLab canvas (paths with holes by
     even-odd, clips, dashes, translucent plates, label halo, underlined legend headers, JPEG tiles as is). Fonts are embedded as
     subsets with /ToUnicode, so text is still found and copied; line widths for labels are still measured by `ttf.py`.
@@ -55,7 +55,7 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     (8651 is `grado2-test`); BANS and the architect role no longer forbid new dependencies (owner 08.10, #69); progress notes go to issue
     comments, not `/tmp`; stale album lines (yellow calculated СЗЗ, «Территория рассмотрения», district map «в конец альбома»,
     district border 1,2 mm on the district map) marked by the later owner words.
-- **2026-10-08, ГРАДО 2 v0.99.70 (on its branch v0.99.52): requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
+- **2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.52): requests to the portals on httpx and tenacity, one retry rule for all of them (part of #69).**
   - `core/connectors/grado_connectors/netutil.py` is now the only network code: `request` (whole body, size cap) and `stream`
     (large layers, gzip unpacked by the caller with the bomb guard). Redirects only to https, certifi roots, certificate check
     never switched off (НСПД adds the Минцифры roots, the explicit `GRADO_NSPD_INSECURE=1` stays as it was).
@@ -80,6 +80,21 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     and Windows; in `apps/grado2/requirements.txt`, `requirements-cloud.txt`, `packaging/grado2.spec`.
   - Installers: `packaging/grado2.spec` now ships `docs/standards/admin` (districts) and the album slide header; without them the
     packaged program answered «внутренняя ошибка» on the district lookup and could not print the PPTX header.
+- **2026-10-09, ГРАДО 2 v0.99.70: адрес сайта открывает новый интерфейс; «Листы и альбом» — отдельным окном на движке рабочей страницы (шаг 3 плана замен, #69).**
+  - The site address (`/`) now opens the new interface (`/next/`); the former working page stays at `/old`. Login, the token
+    gate and share links (`#join=`, `#p=`) lead to the new interface; `/next/` and `/old` count as pages for the token gate.
+  - «Листы и альбом» (header button or Ctrl+P): the album ППТ КРТ opens as a separate browser window, like the print layout
+    in QGIS. It is the working page's own album engine (`web/sheets.js`, `albums.js`, `frames.js`, `layout.js`, `ogdpick.js`)
+    unchanged, at `/old?embed=album` (`web/embed.js`): sheet frames on the map, the «Лист» tool, stamp, album build,
+    «Слои и листы», label layout, PDF and PPTX, ГИС ОГД in DXF. The header, ribbon and side panels of the old page are hidden there.
+  - The window gets the project from the new interface (`applyProject`) whenever the new interface has an edit it has not seen;
+    edits made in the window (sheets, downloaded layers, views, groups) come back by sections (`ui/src/albumhost.js`,
+    `collab.js adopt`) and are saved, autosaved and sent to the shared server as usual. Ctrl+S in the window saves the project.
+  - «Выгрузка» in the new interface: PDF and PPTX of the album and «ГИС ОГД в DXF» are enabled and run in that window.
+  - Check on a project copy: `albumSpec` of all sheets in the window equals the one of the standalone old page character for
+    character, and the album PDF from both is byte-identical (2 pages compared).
+  - Tests: `tests/test_server.py` (redirect, `/old`, token gate), `tests/test_next_ui.py` (`gradoEmbed` calls on both sides);
+    E2E scenarios of the old page now open `/old`.
 - **2026-10-09, ГРАДО 2 v0.99.69: графический язык «Синька» в новом интерфейсе.**
   - Owner's choices of 09.10.2026 (1Б 2А 3Б 4А): one toolbar without workflow stages, the command line always visible,
     ТЭП stays a table at the bottom, the font is Onest (shipped in the build, `@fontsource/onest`, OFL); no monospace font anywhere.
