@@ -35,6 +35,10 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 09.10.2026, выкладка по слову владельца («Выкладывай») — v0.99.71 (PR #83 `team/t60 → main`, слияние ae2a603): адрес сайта открывает новый интерфейс
+  (Vue 3 + dockview + Web Awesome), прежняя страница — `/old`, «Листы и альбом» — отдельным окном (#77, #79, #82); «Макет листа» на Konva (#78); «Синька» (#81);
+  готовые библиотеки: Starlette + uvicorn, shapely 2, httpx + tenacity, reportlab, python-pptx (#76, #80). Новые зависимости ставит `grado-pull` на msk.
+  Сайт из облачной сессии не проверялся (сеть закрыта): версию смотрят `curl -s https://grado.tailink.tech/api/health`.
 - 08.10.2026, выкладка по слову владельца («выкладывай») — v0.99.46 (PR #68 `team/t60 → main`, слияние 5ab9127): альбом по замечаниям 07.10
   (#45, #47, #48), НСПД через релей (v0.99.45), исправления по аудиту #53 (PR #67: #56, #57, #58, #60, #61, #62). Сайт обновляется на Mac
   владельца командой `git pull --ff-only` в основной копии; из облачной сессии не проверялся. Открыто: вопросы владельцу #54, #59, анклав Восточный (#62).
