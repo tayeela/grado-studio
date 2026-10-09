@@ -2,6 +2,25 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-08, ГРАДО 2 v0.99.49: the new interface shows the real project; window «Слои» moved over (#69).**
+  - `/next/` opens the last autosave (what the working page had open), else the newest project; «Проект → Открыть…»
+    lists the projects folder. View only: the new page sends nothing to the server, the project file is unchanged.
+  - «Слои»: project groups and layers in file order, eye on a layer and on a group, folding a group, current layer from
+    the file, search. «Карта» draws the project layers in that order with the working page's «единое» style
+    (other style modes come with the «Свойства» move). «Свойства» shows the current layer's colours, width and opacity.
+  - Test project `apps/grado2/tests/fixtures/next_ui_project.grado2`; tests in `tests/test_next_ui.py`.
+
+- **2026-10-08, ГРАДО 2 v0.99.48: sample page of the new interface on ready-made engines (#69).**
+  - Owner's decision «1А 2Б 3А 4А» (`docs/product/engine-map.md`): Vue 3 + dockview + Web Awesome, built with Vite.
+    Sources `apps/grado2/ui/`, the build lives in the repo at `apps/grado2/web/next/` (no Node on the Mac, the server or
+    the installer). The working page `web/index.html` is unchanged.
+  - `/next/index.html`: header menus «Проект», «Окна», «Выгрузка»; tool ribbon; dockable windows «Карта», «Слои»,
+    «Свойства», «Показатели (ТЭП)» that float, dock and tab; the layout is remembered; light and dark theme.
+    Layers and numbers are a sample, not project data.
+  - CSP: `connect-src 'self' data:` (Web Awesome reads its icons from data: URLs). Test `tests/test_next_ui.py`.
+  - `tools/ui_check.sh`: the build matches the sources; step `ui` in `tools/gate.sh` (skipped without
+    `apps/grado2/ui/node_modules`) and a step in CI.
+
 - **2026-10-08, ГРАДО 2 v0.99.47: TypeScript type check of the interface without a build step (#70, part of #69).**
   - TypeScript 7.0.2 is a developer tool in `tools/` (`tools/package.json`, `tools/ts/tsconfig.json`); it is not shipped
     in the program or the installers. Files stay `.js` and opt in with `// @ts-check`.

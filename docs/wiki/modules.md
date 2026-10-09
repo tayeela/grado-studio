@@ -75,7 +75,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2638 стр.
+### `apps/grado2/server.py` — 2639 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -584,7 +584,7 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 Функции: `run`, `_unescape`, `parse_pages`, `pages_words`, `pptx_pages`, `tile`, `box_mm`, `inter_area`, `area`, `core`, `norm`, `finding`, `check_words`, `check_frame`, `check_wrap`, `check_text`, `check_expect`, `load_expect`, `check_pptx`, `check_fonts`, `check_images`, `lint`, `format_lines`, `frames_from_spec`, `main`
 
-### `tools/docs_check.py` — 214 стр.
+### `tools/docs_check.py` — 215 стр.
 
 Проверка навигации репозитория: ссылки, пути, оглавления, заголовки файлов (шаг `docs` в tools/gate.sh и в CI).
 
@@ -624,15 +624,20 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
-### `tools/gate.sh` — 28 стр.
+### `tools/gate.sh` — 32 стр.
 
-Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
+Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py), свежесть сборки нового интерфейса (tools/ui_check.sh) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое.
 
 Функции: `step`
 
 ### `tools/prune-merged-branches.sh` — 23 стр.
 
 Показывает (и по флагу --yes удаляет на GitHub) ветки, целиком влитые в main или в team/t60: их коммиты остаются в истории, ничего не теряется. Не трогает main, team/t60 и ветки открытых PR. По умолчанию — только список (SHA рядом: ветку можно вернуть командой `git push origin <sha>:refs/heads/<имя>`). tools/prune-merged-branches.sh          — список tools/prune-merged-branches.sh --yes    — удалить перечисленные ветки Лучше включить и встроенную очистку GitHub: Settings → General → Pull Requests → «Automatically delete head branches».
+
+
+### `tools/ui_check.sh` — 14 стр.
+
+Проверка, что собранный новый интерфейс (apps/grado2/web/next) совпадает с исходниками apps/grado2/ui. Вызывают tools/gate.sh (шаг ui, если есть apps/grado2/ui/node_modules) и CI grado2-release.yml. Пересобирает и сравнивает с git.
 
 
 ### `tools/wiki_publish.sh` — 79 стр.

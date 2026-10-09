@@ -17,7 +17,8 @@
 | `ogd_warm.py` | прогрев кэша ГИС ОГД; по docstring запускается таймером `grado-warm` ночью или вручную | `ogd_all.py`; файла таймера в репозитории нет |
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
 | `requirements.txt` | зависимости Python: ezdxf, certifi, pillow | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
-| `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
+| `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки; `web/next/` — собранный новый интерфейс (не править руками) | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
+| `ui/` | исходники нового интерфейса (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/` ([ui/README.md](ui/README.md)) | `tools/ui_check.sh`, `.github/workflows/grado2-release.yml` |
 | `tests/` | тесты: `test_*.py` (unittest), `*_test.js`, `e2e/` (браузерные сценарии), `fixtures/` (данные) | `tools/gate.sh`, `.github/workflows/grado2-release.yml` |
 ## web/: файлы по ролям
 | группа | файл | что это |

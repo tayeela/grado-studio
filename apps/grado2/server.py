@@ -1676,8 +1676,9 @@ def list_projects():
 
 # ---------- HTTP: заголовки безопасности, вход по ключу, совместный режим ----------
 # Скрипты — только свои (без inline и eval); карта берёт плитки Esri и EOX по https (img-src), воркеры OpenLayers — из blob:.
+# connect-src data: — значки Web Awesome нового интерфейса (/next/) читаются fetch из data:-адресов внутри самого скрипта.
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; "
-       "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+       "font-src 'self' data:; connect-src 'self' data:; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 
 # Ключ доступа (необязательный второй слой за паролем обратного прокси): задан GRADO2_TOKEN — без куки grado_token или
 # заголовка X-Grado-Token сервер отвечает только на вход. Не задан или пуст — всё как прежде (локальная работа).
