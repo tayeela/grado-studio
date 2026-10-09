@@ -35,6 +35,11 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 09.10.2026, выкладка по слову владельца («Выкладывай») — v0.99.74 (PR #91 `team/t60 → main`, слияние 76cf063): шаг 1 плана (PR #90) —
+  плавающие окна идут за мышью (заплатка dockview-core через patch-package), «Данные» по шагам с ходом выгрузки по слоям, «Объект» таблицей
+  «Поле | Значение», окно масштаба «1 : N» со списком; проверка раскладки окон `tools/ui_layout_check.mjs` в gate (E2E) и CI. Проверено:
+  `E2E=1 tools/gate.sh` зелёный, CI PR #90 и #91 зелёные. Сайт из облачной сессии не проверялся (`/api/health` отвечает 401 без входа).
+
 - 09.10.2026, выкладка по слову владельца («Выкладывай») — v0.99.71 (PR #83 `team/t60 → main`, слияние ae2a603): адрес сайта открывает новый интерфейс
   (Vue 3 + dockview + Web Awesome), прежняя страница — `/old`, «Листы и альбом» — отдельным окном (#77, #79, #82); «Макет листа» на Konva (#78); «Синька» (#81);
   готовые библиотеки: Starlette + uvicorn, shapely 2, httpx + tenacity, reportlab, python-pptx (#76, #80). Новые зависимости ставит `grado-pull` на msk.
