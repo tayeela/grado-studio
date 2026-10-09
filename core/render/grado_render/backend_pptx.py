@@ -6,7 +6,9 @@
 режутся по прямоугольнику рамки, рисунки кадрируются, подписи и значки вне рамки пропускаются, а обрезка по
 контуру (округ на схеме шаблона ППТ КРТ) — белой маской поверх: прямоугольник с вырезом по контуру.
 
-Без сторонних библиотек: пакет OOXML собирается zipfile.
+Пакет PPTX (шаблон, части, связи, заметки) собирает python-pptx (MIT); фигуры пишутся разметкой DrawingML и
+вставляются в дерево слайда, шрифты встраиваются частями его же пакета. Зовёт apps/grado2/print_io.py (render_pptx);
+тесты — core/render/tests/test_pptx.py, apps/grado2/tests/test_t86_pptx_speed.py.
 """
 
 import hashlib
@@ -14,7 +16,6 @@ import struct
 import io
 import math
 import re
-import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -29,6 +30,7 @@ NS = ('xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
       'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
       'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"')
 XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+_P = "{http://schemas.openxmlformats.org/presentationml/2006/main}"
 
 
 def _hex(c):
@@ -352,7 +354,8 @@ class _Slide:
 
     # --- рисунок ---
     def image(self, o):
-        rid = self.rels.setdefault(self.pres.media(o["data"]), f"rId{len(self.rels) + 2}")
+        key = self.pres.media(o["data"])
+        rid = self.rels.setdefault(key, f"@img{len(self.rels) + 1}@")    # настоящий rId даст python-pptx при сборке
         box, crop, rot = self.box(), "", ""
         if "quad" in o:                                            # тайл параллелограммом: поворот и растяжение
             (tlx, tly), (trx, try_), (blx, bly) = o["quad"]
@@ -418,12 +421,10 @@ class _Slide:
         self._shape(orient([frame] + [list(r) for r in c["rings"]]), True, (1, 1, 1), None, 0, None, None, "Маска")
         self.clips = outer
 
-    def xml(self):
+    def body(self):
+        """Фигуры слайда — разметка детей p:spTree."""
         self.flush()
-        body = "".join(x for x, _ in self.stack[0])
-        return (f'{XML}<p:sld {NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
-                f'<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm>'
-                f'</p:grpSpPr>{body}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>')
+        return "".join(x for x, _ in self.stack[0])
 
 
 class PptxBackend:
@@ -442,10 +443,8 @@ class PptxBackend:
 
     def media(self, data):
         key = hashlib.sha1(data).hexdigest()
-        if key not in self._media:
-            ext = "png" if data[:8] == b"\x89PNG\r\n\x1a\n" else "jpeg"
-            self._media[key] = (f"image{len(self._media) + 1}.{ext}", data)
-        return self._media[key][0]
+        self._media.setdefault(key, data)
+        return key
 
     def _page(self, w, h, groups, W, H):
         s = _Slide(self, min(W / w, H / h))
@@ -479,107 +478,77 @@ class PptxBackend:
             s.close()
         return s
 
-    def _embed_fonts(self):
+    def _embed_fonts(self, prs):
         """Шрифты, использованные в тексте, встраиваются в файл (p:embeddedFontLst, части ppt/fonts/fontN.fntdata): без этого
         PowerPoint и Keynote на компьютере без Montserrat/PT подставляют другой шрифт и вид ломается. Как у Google Slides,
-        часть — сам TrueType-файл без сжатия и шифрования (GUID-обфускация — схема Word, odttf; в PPTX её нет).
-        Возвращает (части {путь: байты}, связи presentation.xml.rels, блок для presentation.xml); rId — от 100."""
-        faces = {}                                                  # гарнитура → {"regular"|"bold": (путь файла)}
+        часть — сам TrueType-файл в обёртке EOT без сжатия и шифрования (GUID-обфускация — схема Word, odttf; в PPTX её нет).
+        python-pptx встраивание шрифтов не умеет: части и список добавляются через его пакет."""
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.opc.package import Part
+        from pptx.opc.packuri import PackURI
+        from pptx.oxml import parse_xml
+        faces = {}                                                  # гарнитура → {"regular"|"bold": путь файла}
         for fam in sorted(self._used):
             if fam in FONTS and FONTS[fam][0] != "Courier New":
                 face, bold = FONTS[fam]
                 faces.setdefault(face, {})["bold" if bold else "regular"] = find_font(fam)
-        parts, rels, lst, n = {}, "", "", 0
+        if not faces:
+            return
+        lst, n = "", 0
         for face, kinds in faces.items():
-            lst += f'<p:embeddedFont><p:font typeface="{face}"/>'
+            lst += f'<p:embeddedFont><p:font typeface="{_t(face)}"/>'
             for kind in ("regular", "bold"):
                 if kind in kinds:
                     n += 1
-                    parts[f"ppt/fonts/font{n}.fntdata"] = _eot(Path(kinds[kind]).read_bytes())
-                    rels += (f'<Relationship Id="rId{99 + n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/font" '
-                             f'Target="fonts/font{n}.fntdata"/>')
-                    lst += f'<p:{kind} r:id="rId{99 + n}"/>'
+                    part = Part(PackURI(f"/ppt/fonts/font{n}.fntdata"), "application/x-fontdata", prs.part.package,
+                                _eot(Path(kinds[kind]).read_bytes()))
+                    lst += f'<p:{kind} r:id="{prs.part.relate_to(part, RT.FONT)}"/>'
             lst += "</p:embeddedFont>"
-        return parts, rels, (f"<p:embeddedFontLst>{lst}</p:embeddedFontLst>" if lst else "")
+        pres = prs.part._element
+        pres.set("embedTrueTypeFonts", "1")
+        pres.find(_P + "notesSz").addnext(parse_xml(f"<p:embeddedFontLst {NS}>{lst}</p:embeddedFontLst>"))
 
-    def render(self, pages):
+    def render(self, pages, notes=None):
+        """notes — {номер слайда: текст заметки} (растровая карта на слайде)."""
+        from pptx import Presentation
+        from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+        from pptx.opc.packuri import PackURI
+        from pptx.oxml import parse_xml
+        from pptx.util import Emu
         W, H = pages[0][0], pages[0][1]
-        slides = [self._page(w, h, groups, W, H) for w, h, groups in pages]
-        n = len(slides)
+        prs = Presentation()                                        # стандартный пустой шаблон python-pptx
+        prs.slide_width, prs.slide_height = Emu(int(round(W * EMU))), Emu(int(round(H * EMU)))
+        prs.part._element.sldSz.attrib.pop("type", None)           # размер свой, не «экран 4:3»
+        prs.slide_master.part.part_related_by(RT.THEME)._blob = (XML + THEME).encode("utf-8")   # цвета и шрифты ГРАДО
+        props = prs.core_properties
+        props.title, props.author, props.last_modified_by, props.comments = self.title, "ГРАДО 2", "ГРАДО 2", ""
+        blank = next(lay for lay in prs.slide_layouts if lay.name == "Blank")
+        for lay in [lay for lay in prs.slide_layouts if lay is not blank]:   # один макет «Пустой слайд», как прежде
+            prs.slide_layouts.remove(lay)
+        blank.name = "Пустой слайд"
+        blank.part.partname = PackURI("/ppt/slideLayouts/slideLayout1.xml")
+        pkg = prs.part.package                                      # без эскиза пустого слайда Office (его показал бы Finder)
+        for rid, rel in list(pkg._rels.items()):
+            if rel.reltype == RT.THUMBNAIL:
+                pkg._rels.pop(rid)
+        for i, (w, h, groups) in enumerate(pages, start=1):
+            s = self._page(w, h, groups, W, H)
+            slide = prs.slides.add_slide(blank)
+            body = s.body()
+            for key, ph in s.rels.items():
+                body = body.replace(f'r:embed="{ph}"', f'r:embed="{slide.part.get_or_add_image_part(io.BytesIO(self._media[key]))[1]}"')
+            tree = slide.shapes._spTree
+            for el in parse_xml(f"<p:spTree {NS}>{body}</p:spTree>"):
+                tree.append(el)
+            if notes and notes.get(i):
+                slide.notes_slide.notes_text_frame.text = notes[i]
+        master = [rid for rid, rel in prs.part.rels.items() if rel.reltype == RT.NOTES_MASTER]
+        if master:                                                  # python-pptx связывает образец заметок, но не вносит в список
+            prs.part._element.find(_P + "sldMasterIdLst").addnext(
+                parse_xml(f'<p:notesMasterIdLst {NS}><p:notesMasterId r:id="{master[0]}"/></p:notesMasterIdLst>'))
+        self._embed_fonts(prs)
         buf = io.BytesIO()
-        z = zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED)
-        exts = {name.rsplit(".", 1)[1] for name, _ in self._media.values()}
-        embedded = self._embed_fonts()                              # [(гарнитура, {начертание: путь части})], байты шрифтов
-        z.writestr("[Content_Types].xml", XML + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-                   '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-                   '<Default Extension="xml" ContentType="application/xml"/>'
-                   + "".join(f'<Default Extension="{e}" ContentType="image/{e}"/>' for e in sorted(exts))
-                   + ('<Default Extension="fntdata" ContentType="application/x-fontdata"/>' if embedded[0] else "")
-                   + '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
-                   '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'
-                   '<Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>'
-                   '<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
-                   '<Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>'
-                   '<Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>'
-                   '<Override PartName="/ppt/tableStyles.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.tableStyles+xml"/>'
-                   '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>'
-                   '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>'
-                   + "".join(f'<Override PartName="/ppt/slides/slide{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
-                             for i in range(1, n + 1)) + "</Types>")
-        rel = lambda rid, typ, target: f'<Relationship Id="{rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{typ}" Target="{target}"/>'
-        rels = lambda body: XML + f'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>'
-        z.writestr("_rels/.rels", rels(rel("rId1", "officeDocument", "ppt/presentation.xml")
-                                       + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
-                                       + rel("rId3", "extended-properties", "docProps/app.xml")))
-        z.writestr("docProps/core.xml", XML + '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
-                   'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
-                   f'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>{_t(self.title)}</dc:title><dc:creator>ГРАДО 2</dc:creator>'
-                   '</cp:coreProperties>')
-        z.writestr("docProps/app.xml", XML + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties">'
-                   f'<Application>ГРАДО 2</Application><Slides>{n}</Slides></Properties>')
-        z.writestr("ppt/presentation.xml", XML + f'<p:presentation {NS} embedTrueTypeFonts="1">'
-                   '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst><p:sldIdLst>'
-                   + "".join(f'<p:sldId id="{255 + i}" r:id="rId{i + 1}"/>' for i in range(1, n + 1))
-                   + f'</p:sldIdLst><p:sldSz cx="{int(round(W * EMU))}" cy="{int(round(H * EMU))}"/><p:notesSz cx="6858000" cy="9144000"/>'
-                   + embedded[2] + '</p:presentation>')
-        z.writestr("ppt/_rels/presentation.xml.rels", rels(
-            rel("rId1", "slideMaster", "slideMasters/slideMaster1.xml")
-            + "".join(rel(f"rId{i + 1}", "slide", f"slides/slide{i}.xml") for i in range(1, n + 1))
-            + rel(f"rId{n + 2}", "presProps", "presProps.xml") + rel(f"rId{n + 3}", "viewProps", "viewProps.xml")
-            + rel(f"rId{n + 4}", "theme", "theme/theme1.xml") + rel(f"rId{n + 5}", "tableStyles", "tableStyles.xml")
-            + embedded[1]))
-        z.writestr("ppt/presProps.xml", XML + f'<p:presentationPr {NS}/>')
-        z.writestr("ppt/viewProps.xml", XML + f'<p:viewPr {NS}><p:normalViewPr><p:restoredLeft sz="15620"/><p:restoredTop sz="94660"/>'
-                   '</p:normalViewPr><p:gridSpacing cx="72008" cy="72008"/></p:viewPr>')
-        z.writestr("ppt/tableStyles.xml", XML + '<a:tblStyleLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
-                   'def="{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}"/>')
-        z.writestr("ppt/theme/theme1.xml", XML + THEME)
-        tree = ('<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm>'
-                '<a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr></p:spTree></p:cSld>')
-        z.writestr("ppt/slideMasters/slideMaster1.xml", XML + f'<p:sldMaster {NS}>'
-                   + tree.replace("<p:cSld>", '<p:cSld><p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr></p:bg>')
-                   + '<p:clrMap bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2" accent1="accent1" accent2="accent2" accent3="accent3" '
-                   'accent4="accent4" accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
-                   '<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>'
-                   '<p:txStyles><p:titleStyle><a:lvl1pPr><a:defRPr sz="3200"/></a:lvl1pPr></p:titleStyle><p:bodyStyle><a:lvl1pPr>'
-                   '<a:defRPr sz="1800"/></a:lvl1pPr></p:bodyStyle><p:otherStyle><a:lvl1pPr><a:defRPr sz="1800"/></a:lvl1pPr>'
-                   '</p:otherStyle></p:txStyles></p:sldMaster>')
-        z.writestr("ppt/slideMasters/_rels/slideMaster1.xml.rels", rels(
-            rel("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml") + rel("rId2", "theme", "../theme/theme1.xml")))
-        z.writestr("ppt/slideLayouts/slideLayout1.xml", XML + f'<p:sldLayout {NS} type="blank" preserve="1">'
-                   + tree.replace("<p:cSld>", '<p:cSld name="Пустой слайд">') + '<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>')
-        z.writestr("ppt/slideLayouts/_rels/slideLayout1.xml.rels", rels(rel("rId1", "slideMaster", "../slideMasters/slideMaster1.xml")))
-        names = {name: data for name, data in self._media.values()}
-        for i, s in enumerate(slides, start=1):
-            z.writestr(f"ppt/slides/slide{i}.xml", s.xml())
-            z.writestr(f"ppt/slides/_rels/slide{i}.xml.rels", rels(
-                rel("rId1", "slideLayout", "../slideLayouts/slideLayout1.xml")
-                + "".join(rel(rid, "image", f"../media/{name}") for name, rid in s.rels.items())))
-        for name, data in names.items():
-            z.writestr(f"ppt/media/{name}", data)
-        for name, data in embedded[0].items():
-            z.writestr(name, data)
-        z.close()
+        prs.save(buf)
         return buf.getvalue()
 
 

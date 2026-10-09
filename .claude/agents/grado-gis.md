@@ -21,4 +21,4 @@ Consult: grado-norms for which layer is a legal constraint and what it means; gr
 
 Method: verify data claims on real downloads into a temp folder, cite the source URL and date. Run `core/connectors/tests` and the grado2 tests you touch.
 
-Report (in English, short): what changed, which source was checked and how, test results, `ASK <role>: <question>` lines.
+Report (in Russian, short): what changed, which source was checked and how, test results, `ASK <role>: <question>` lines.

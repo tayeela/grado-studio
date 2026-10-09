@@ -6,6 +6,7 @@ Loaded into every turn and every subagent: keep it short, details live in the wi
   `docs/wiki/INDEX.md`. Every top-level folder and every `docs/` shelf has a `README.md` (`docs/` has `INDEX.md`); nested `CLAUDE.md` files (`docs/`, `apps/grado2/`, `core/`) load when you work there.
   Read wiki pages, not big files whole. The wiki is generated from the code (`tools/wiki.py`: pre-commit hook and CI `wiki.yml` on `team/t60`
   and `main`) and mirrored to the private GitHub repo `tayeela/grado-wiki` (`tools/wiki_publish.sh`).
+- **The owner's words and abbreviations (АГК, сущпол, СПРИТ, «лист 5»…): `docs/wiki/glossary.md`** — look a term up, never guess it.
 - **Album work (any sheet, legend, label, line, data, export): first `docs/wiki/album-rules.md`** — the owner's rules
   from all remarks. A new owner remark goes there and to `docs/standards/albums/label-rules.md` before code.
 - Tests: `tools/gate.sh` (`E2E=1` adds browser scenarios) — green on the exact tree before every commit. It also runs
@@ -48,7 +49,8 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
 - `main` on GitHub updates grado.tailink.tech (host `msk`) by itself: the server timer `grado-pull` pulls `main` every 5 minutes,
   checks the version and rolls back on failure (`tools/server_pull/README.md`). Never deploy from the Mac (since 08.10.2026, #73).
   Result: `/api/health` on the site, or the owner's taiLink session reads `journalctl -u grado-pull`.
-- Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69): a new dependency needs wheels for
+- Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69); which engine replaces which part — `docs/product/engine-map.md`
+  (UI: Vue 3 + dockview + Web Awesome with a Vite build; sheet editor: own on Konva; check it before writing a mechanism): a new dependency needs wheels for
   macOS arm64 and x86_64 and Windows, a permissive license, a line in requirements and the same gate. Do not touch the owner's QGIS DB or plugin. Ask before deleting
   `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.
 - Token budget: no Workflow fan-outs; outside the team cycle at most one Sonnet subagent at a time, read-only. Owner 07.10.2026: many

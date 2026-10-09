@@ -15,10 +15,6 @@ marching squares на адаптивном интервале сечения; о
 
 import io
 import math
-import ssl
-import time
-import urllib.error
-import urllib.request
 from collections import defaultdict, deque
 
 from . import netutil
@@ -37,13 +33,6 @@ _MAX_CHAINS = 2500    # предел изолиний в одной выгруз
 
 # «Красивые» шаги сечения рельефа, м — выбираем ближайший, дающий ~15–25 линий.
 _NICE_STEPS = [0.5, 1, 2, 2.5, 5, 10, 20, 25, 50, 100, 200, 250, 500]
-
-try:
-    import certifi
-    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
-except ImportError:
-    _SSL_CTX = ssl.create_default_context()
-
 
 # ---- тайловая математика (Web Mercator, EPSG:3857) -------------------------
 
@@ -124,18 +113,10 @@ def _fetch_grid(z, x0, y0, x1, y1, http):
 
 def _http_get(z, x, y):
     url = TERRARIUM_URL.format(z=z, x=x, y=y)
-    req = urllib.request.Request(url, headers={"User-Agent": _UA})
-    last = None
-    for attempt in range(3):                 # S3 изредка не отвечает на рукопожатие TLS — повторить, а не терять слой
-        try:
-            with netutil.open_url(req, 20, _SSL_CTX) as resp:
-                return netutil.read_capped(resp)
-        except urllib.error.HTTPError as e:
-            raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: HTTP {e.code}") from None
-        except Exception as e:
-            last = e
-            time.sleep(0.5 * (attempt + 1))
-    raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: {last}")
+    try:                                     # S3 изредка не отвечает на рукопожатие TLS — повторы в netutil
+        return netutil.request(url, headers={"User-Agent": _UA}, timeout=20).content
+    except ConnectorError as e:
+        raise ConnectorError(f"DEM-тайл {z}/{x}/{y}: {e}") from None
 
 
 # ---- marching squares ------------------------------------------------------

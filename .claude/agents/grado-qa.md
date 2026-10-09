@@ -13,7 +13,7 @@ Where you work: the team worktree `~/grado-studio/.claude/worktrees/team2` (bran
 
 How to check:
 1. Unit tests for the touched area, from the worktree root:
-   `PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" ~/.grado2/venv/bin/python -m unittest discover -s <core/connectors/tests | core/compute/tests | apps/grado2/tests> -p "test_*.py"`
+   `PYTHONPATH="core/render:core/geom:core/layout:core/compute:core/model:core/reactive:core/connectors:apps/grado2" ~/.grado2/venv/bin/python -m pytest -q <core/connectors/tests | core/compute/tests | apps/grado2/tests>`
 2. Browser scenarios: the same command with `GRADO2_E2E=1` for `apps/grado2/tests` (they start their own throw-away server).
 3. Visible changes: start a throw-away server from the worktree —
    `GRADO2_NO_BROWSER=1 GRADO2_PROJECTS=$(mktemp -d) ~/.grado2/venv/bin/python apps/grado2/server.py <free port> &` — note the PID, take screenshots with headless Chrome (`"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --screenshot=<file> --window-size=1600,1000 <url>` or the e2e driver in `apps/grado2/tests/e2e/`), save them under the scratch folder the lead gives you, then `kill <PID>`. Never `pkill -f`.
@@ -21,4 +21,4 @@ How to check:
 
 Hard limits: never port 8650, never `~/Documents/ГРАДО 2`, no ssh, no deploy, no commit. Never edit a test only to make it pass.
 
-Report in English, five lines when rejecting: `UNIT`, `VERDICT` (PASS/FAIL), `REASON`, `EVIDENCE` (exact output line and path:line), `SCOPE`. On PASS: what was run, results, screenshot paths.
+Report in Russian, five lines when rejecting: `UNIT`, `VERDICT` (PASS/FAIL), `REASON`, `EVIDENCE` (exact output line and path:line), `SCOPE`. On PASS: what was run, results, screenshot paths.

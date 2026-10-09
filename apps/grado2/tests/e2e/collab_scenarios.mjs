@@ -3,33 +3,21 @@
 // Вручную: E2E_ADMIN_PW=… E2E_INVITE=… [E2E_SHOTS=папка] node collab_scenarios.mjs http://127.0.0.1:порт/
 // Всё, где в интерфейсе есть кнопка или поле, делается мышью и клавиатурой (CDP), а не вызовами функций страницы;
 // страница опрашивается только для проверок. Код возврата 1 — шаг не выполнен или в консоли любой страницы есть ошибка.
-import { spawn } from "node:child_process";
-import { writeFileSync, readFileSync, mkdtempSync, mkdirSync, rmSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { launch as startBrowser } from "./browser.mjs";
 
 const URL0 = process.argv[2], ADMIN_PW = process.env.E2E_ADMIN_PW, INVITE = process.env.E2E_INVITE, SHOTS = process.env.E2E_SHOTS || "";
-const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const check = (cond, msg) => { if (!cond) throw new Error("не выполнено: " + msg); console.log("ok -", msg); };
 if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 
 const procs = [];
 async function launch(name) {
-  const profile = mkdtempSync(join(tmpdir(), "cdp-collab-" + name + "-"));
-  const chrome = spawn(CHROME, ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--window-size=1440,900",
-    "--no-first-run", "--no-default-browser-check", "--no-sandbox", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
-  procs.push({ chrome, profile });
-  let port = 0;
-  for (let i = 0; i < 300 && !port; i++) { if (existsSync(join(profile, "DevToolsActivePort"))) port = +readFileSync(join(profile, "DevToolsActivePort"), "utf8").split("\n")[0]; else await sleep(100); }
-  // ждём, пока Chrome отдаст страницу (на медленном раннере /json отвечает не сразу или пустым списком); 30 с, не 5
-  let page; for (let i = 0; i < 300 && !page; i++) { try { page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find(t => t.type === "page"); } catch { } if (!page) await sleep(100); }
-  if (!page) throw new Error(`${name}: Chrome не отдал страницу для управления (порт ${port})`);
-  const ws = new WebSocket(page.webSocketDebuggerUrl);
-  await new Promise(r => ws.onopen = r);
-  let id = 0; const pending = new Map(), logs = [];
-  const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
-  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
+  const b = await startBrowser({ events: false });
+  procs.push(b);
+  const { send, cdp } = b, logs = [];
+  const on = m => {
     if (m.method === "Runtime.consoleAPICalled" && ["error", "warning"].includes(m.params.type)) logs.push(name + " " + m.params.type + ": " + m.params.args.map(a => a.value ?? a.description).join(" "));
     // «Failed to load resource» и прочее, что браузер пишет в консоль сам; 401 на /api/hub/me до входа — ожидаемый ответ «вы не вошли» (спека)
     if (m.method === "Log.entryAdded" && m.params.entry.level === "error" && !(p.allow401 && /\b40[13]\b/.test(m.params.entry.text)) && !(/\/api\/hub\/me$/.test(m.params.entry.url || "") && /401/.test(m.params.entry.text))
@@ -40,8 +28,8 @@ async function launch(name) {
       // 404 на вход по старой (заменённой) ссылке — ожидаемый отказ сервера (этап 2, шаг 5)
       && !(/\/api\/hub\/join$/.test(m.params.entry.url || "") && /\b404\b/.test(m.params.entry.text))) logs.push(name + " log: " + m.params.entry.text + " " + (m.params.entry.url || ""));
     if (m.method === "Runtime.exceptionThrown") logs.push(name + " EXCEPTION: " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text)); };
-  await send("Runtime.enable"); await send("Page.enable"); await send("Log.enable");
-  await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  for (const method of ["Runtime.consoleAPICalled", "Log.entryAdded", "Runtime.exceptionThrown"]) cdp.on(method, params => on({ method, params }));
+  await send("Log.enable");
   const mods = o => (o?.alt ? 1 : 0) | (o?.ctrl ? 2 : 0) | (o?.meta ? 4 : 0) | (o?.shift ? 8 : 0);
   const p = {
     name, logs, sleep, allow401: false,
@@ -487,8 +475,6 @@ try {
   try { await A?.shot("fail-A.png"); await B?.shot("fail-B.png"); } catch { }
   const all = [...(A?.logs || []), ...(B?.logs || [])]; if (all.length) console.log("CONSOLE:\n" + all.slice(0, 40).join("\n"));
 } finally {
-  for (const { chrome } of procs) chrome.kill();
-  await sleep(800);
-  for (const { profile } of procs) rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  for (const b of procs) await b.close();
   process.exit(failed ? 1 : 0);
 }

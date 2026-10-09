@@ -23,7 +23,7 @@
 2. **Ссылки и пути проверяются**: ссылки Markdown с относительным адресом и пути в обратных кавычках, начинающиеся с `apps/`, `core/`, `docs/`, `tools/` …,
    должны существовать. Журналы и архив не проверяются (они о прошлом). Перенос файла — `git mv`, затем `python3 tools/docs_check.py`: он покажет все битые места.
 3. **Страницы `docs/wiki/*.md` с пометкой «генерируется» руками не правят**: `python3 tools/wiki.py` (его же запускают pre-commit и CI).
-   Руками пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `howto.md`, `album-rules.md`.
+   Руками пишутся `architecture.md`, `recipes.md`, `files.md`, `conventions.md`, `howto.md`, `album-rules.md`, `glossary.md`.
 4. **Журналы только дописываются сверху** (`grado2-changelog.md`, `team/PROGRESS.md`, `team/DECISIONS.md`); задачи и слова владельца живут в
    GitHub Issues, а не в файлах.
 5. **Слова владельца** по альбому: сначала правило в [standards/albums/label-rules.md](standards/albums/label-rules.md) и

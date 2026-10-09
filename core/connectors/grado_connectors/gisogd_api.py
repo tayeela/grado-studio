@@ -34,13 +34,10 @@ import math
 import os
 import re
 import shutil
-import ssl
 import struct
 import threading
 import time
-import urllib.error
 import zipfile
-import urllib.request
 import zlib
 from pathlib import Path
 
@@ -48,7 +45,7 @@ from .clip import clip_geometry
 from .contract import Connector, ConnectorError, make_result
 from .crs import msk50_to_wgs84, transform_geom
 from .gisogd import clean_msg
-from .netutil import open_url
+from . import netutil
 from .shp_reader import iter_zip
 
 BASE = "https://gisogd.mos.ru/gis/api/2.8/gisogd/isogd"
@@ -156,15 +153,6 @@ def _inflate(dec, chunk, room):
             return b"".join(out)
 
 
-def _ssl_context():
-    # Сборки Python.org на macOS не видят системные CA (правило 6 CLAUDE.md).
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
-
-
 class _tmp_beside:
     """Временный файл с уникальным именем рядом с целевым; при выходе без ошибки — атомарная подмена."""
 
@@ -206,97 +194,78 @@ def _expected_size(headers):
     return int(m.group(1)) if m else None
 
 
+def _net_error(e):
+    """Ошибка netutil → понятный текст про ГИС ОГД (повторы уже сделаны в netutil)."""
+    if isinstance(e, netutil.HttpError):
+        return ConnectorError(f"ГИС ОГД ответил HTTP {e.code}")
+    if isinstance(e, netutil.NetError):
+        return ConnectorError(f"ГИС ОГД недоступен: {clean_msg(e)}")
+    return e                                         # потолок размера, редирект не на https
+
+
 def _http_get(url, timeout=300, progress=None):
     """GET → распакованные байты. gzip обязателен: слой 44 МБ ужимается до 14.
 
     progress(получено, всего или None) — по распакованным байтам, раз в ~0,5 МБ: слой ПЗЗ весит 221 МБ,
-    и без процента первая выгрузка выглядит зависанием.
+    и без процента первая выгрузка выглядит зависанием. Повторы открытия — общее правило netutil;
+    gzip распаковывается здесь, кусками и с потолком (защита от gzip-бомбы).
     """
-    req = urllib.request.Request(url, headers={
-        "User-Agent": _UA, "Accept-Encoding": "gzip"})
-    ctx = _ssl_context()
-    last = None
-    for attempt in range(3):
-        try:
-            with open_url(req, timeout=timeout, context=ctx) as r:
-                gz = r.headers.get("Content-Encoding") == "gzip"
-                total, parts, got, told, wire = _expected_size(r.headers), [], 0, 0, 0
-                dec = zlib.decompressobj(wbits=31) if gz else None
-                while True:
-                    chunk = r.read(1 << 18)
-                    if not chunk:
-                        break
-                    wire += len(chunk)
-                    if wire > _MAX_LAYER:
-                        raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
-                    chunk = _inflate(dec, chunk, _MAX_LAYER - got) if dec else chunk
-                    parts.append(chunk)
-                    got += len(chunk)
-                    if got > _MAX_LAYER:
-                        raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
-                    if progress and got - told >= 1 << 19:
-                        progress(got, total)
-                        told = got
-                if dec:
-                    parts.append(_inflate(dec, b"", _MAX_LAYER - got))
-                raw = b"".join(parts)
-                if progress:
-                    progress(len(raw), total)
-                return raw
-        except urllib.error.HTTPError as e:
-            raise ConnectorError(f"ГИС ОГД ответил HTTP {e.code}") from None
-        except ConnectorError:                       # потолок размера, редирект не на https — повтор не поможет
-            raise
-        except Exception as e:                       # сеть/таймаут — пробуем ещё
-            last = e
-            if attempt < 2:
-                time.sleep(1.0 * (attempt + 1))
-                continue
-    raise ConnectorError(f"ГИС ОГД недоступен: {clean_msg(last)}")
+    try:
+        with netutil.stream(url, headers={"User-Agent": _UA, "Accept-Encoding": "gzip"}, timeout=timeout) as r:
+            gz = r.headers.get("Content-Encoding") == "gzip"
+            total, parts, got, told, wire = _expected_size(r.headers), [], 0, 0, 0
+            dec = zlib.decompressobj(wbits=31) if gz else None
+            for chunk in r.iter_raw(1 << 18):
+                wire += len(chunk)
+                if wire > _MAX_LAYER:
+                    raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
+                chunk = _inflate(dec, chunk, _MAX_LAYER - got) if dec else chunk
+                parts.append(chunk)
+                got += len(chunk)
+                if got > _MAX_LAYER:
+                    raise ConnectorError(f"ГИС ОГД: ответ больше {_MAX_LAYER // 2**20} МБ")
+                if progress and got - told >= 1 << 19:
+                    progress(got, total)
+                    told = got
+            if dec:
+                parts.append(_inflate(dec, b"", _MAX_LAYER - got))
+            raw = b"".join(parts)
+            if progress:
+                progress(len(raw), total)
+            return raw
+    except ConnectorError as e:
+        raise _net_error(e) from None
 
 
 def _http_stream(url, timeout=900):
     """Открыть выгрузку и отдавать её распакованными кусками, не собирая целиком: газоны ЕГКО — 1,3 ГБ.
     Ожидание 15 минут: крупный слой портал сначала собирает у себя — газоны начали отдаваться через ~4 минуты (23.09.2026).
-    Повтор (до трёх попыток) — только на открытии соединения; обрыв посреди слоя — ошибка, без молчаливой докачки."""
-    req = urllib.request.Request(url, headers={"User-Agent": _UA, "Accept-Encoding": "gzip"})
-    ctx, last = _ssl_context(), None
-    for attempt in range(3):
-        try:
-            r = open_url(req, timeout=timeout, context=ctx)
-            break
-        except urllib.error.HTTPError as e:
-            raise ConnectorError(f"ГИС ОГД ответил HTTP {e.code}") from None
-        except ConnectorError:                       # редирект не на https — повтор не поможет
-            raise
-        except Exception as e:
-            last = e
-            if attempt < 2:
-                time.sleep(1.0 * (attempt + 1))
-    else:
-        raise ConnectorError(f"ГИС ОГД недоступен: {clean_msg(last)}")
+    Повтор (общее правило netutil) — только на открытии соединения; обрыв посреди слоя — ошибка, без молчаливой докачки."""
+    cm = netutil.stream(url, headers={"User-Agent": _UA, "Accept-Encoding": "gzip"}, timeout=timeout)
+    try:
+        r = cm.__enter__()
+    except ConnectorError as e:
+        raise _net_error(e) from None
 
     def chunks():
-        with r:
+        try:
             dec = zlib.decompressobj(wbits=31) if r.headers.get("Content-Encoding") == "gzip" else None
             got = 0
-            try:
-                while True:
-                    c = r.read(1 << 20)
-                    if not c:
-                        break
-                    c = _inflate(dec, c, _MAX_STREAM - got) if dec else c
-                    got += len(c)
-                    if got > _MAX_STREAM:
-                        raise ConnectorError(f"ГИС ОГД: выгрузка больше {_MAX_STREAM // 2**30} ГБ")
-                    if c:
-                        yield c
-                if dec:
-                    tail = _inflate(dec, b"", _MAX_STREAM - got)
-                    if tail:
-                        yield tail
-            except (OSError, zlib.error) as e:
-                raise ConnectorError(f"ГИС ОГД: выгрузка прервалась: {clean_msg(e)}") from None
+            for c in r.iter_raw(1 << 20):
+                c = _inflate(dec, c, _MAX_STREAM - got) if dec else c
+                got += len(c)
+                if got > _MAX_STREAM:
+                    raise ConnectorError(f"ГИС ОГД: выгрузка больше {_MAX_STREAM // 2**30} ГБ")
+                if c:
+                    yield c
+            if dec:
+                tail = _inflate(dec, b"", _MAX_STREAM - got)
+                if tail:
+                    yield tail
+        except (OSError, zlib.error, netutil.httpx.HTTPError) as e:
+            raise ConnectorError(f"ГИС ОГД: выгрузка прервалась: {clean_msg(e)}") from None
+        finally:
+            cm.__exit__(None, None, None)
     return _expected_size(r.headers), chunks()
 
 

@@ -1,112 +1,14 @@
-"""Обрезка геометрии GeoJSON по прямоугольнику (w, s, e, n) — только стандартная библиотека.
+"""Обрезка геометрии GeoJSON по прямоугольнику (w, s, e, n) — shapely 2 (GEOS clip_by_rect).
 
-Полигоны режутся по кольцам (Сазерленд — Ходжмен: внешнее кольцо и дыры по отдельности; вогнутый контур даёт
-вдоль края рамки нулевые перемычки — для показа и площади это безвредно), линии — отрезками (Лян — Барски) с разбиением
-на части, точки — фильтром. Возвращает новую геометрию или None, если от объекта в рамке ничего не осталось.
+Вызывают gisogd_api (кэш слоёв ГИС ОГД по области) и apps/grado2/ogd_all.py (данные листа). Полигоны режутся честно:
+вогнутый контур распадается на части, дыры остаются дырами; линии — на части по выходам из рамки; точки — фильтром.
+Целиком внутри — та же геометрия, целиком снаружи или ничего не осталось — None. Тесты: core/connectors/tests/test_egko.py.
 """
+import shapely
+from shapely.geometry import mapping, shape
 
-
-def _inside(p, box):
-    return box[0] <= p[0] <= box[2] and box[1] <= p[1] <= box[3]
-
-
-def _clip_ring(ring, box):
-    """Кольцо (замкнутое или нет) → замкнутое кольцо в рамке или None."""
-    pts = ring[:-1] if len(ring) > 1 and ring[0] == ring[-1] else ring
-    w, s, e, n = box
-    edges = (
-        (lambda p: p[0] >= w, lambda a, b: (w, a[1] + (b[1] - a[1]) * (w - a[0]) / (b[0] - a[0]))),
-        (lambda p: p[0] <= e, lambda a, b: (e, a[1] + (b[1] - a[1]) * (e - a[0]) / (b[0] - a[0]))),
-        (lambda p: p[1] >= s, lambda a, b: (a[0] + (b[0] - a[0]) * (s - a[1]) / (b[1] - a[1]), s)),
-        (lambda p: p[1] <= n, lambda a, b: (a[0] + (b[0] - a[0]) * (n - a[1]) / (b[1] - a[1]), n)),
-    )
-    for ins, cut in edges:
-        if not pts:
-            return None
-        out, prev = [], pts[-1]
-        for cur in pts:
-            if ins(cur):
-                if not ins(prev):
-                    out.append(cut(prev, cur))
-                out.append(cur)
-            elif ins(prev):
-                out.append(cut(prev, cur))
-            prev = cur
-        pts = out
-    uniq = []
-    for p in pts:
-        p = [p[0], p[1]]
-        if not uniq or uniq[-1] != p:
-            uniq.append(p)
-    if len(uniq) > 1 and uniq[0] == uniq[-1]:
-        uniq.pop()
-    if len(uniq) < 3:
-        return None
-    area = sum(uniq[i][0] * uniq[i - 1][1] - uniq[i - 1][0] * uniq[i][1] for i in range(len(uniq)))
-    if abs(area) < 1e-18:                      # вырожденное кольцо вдоль края рамки
-        return None
-    return uniq + [uniq[0]]
-
-
-def _ring_in_box(ring, box):
-    """Кольцо целиком в рамке → оно само, целиком вне → None, иначе — обрезанное. Проверка по габариту сначала:
-    у полигона дорог ЕГКО на весь город тысячи дыр-кварталов, и резать каждую незачем."""
-    b = _bbox_of(ring, [float("inf"), float("inf"), float("-inf"), float("-inf")])
-    if b[2] < box[0] or b[0] > box[2] or b[3] < box[1] or b[1] > box[3]:
-        return None
-    if b[0] >= box[0] and b[2] <= box[2] and b[1] >= box[1] and b[3] <= box[3]:
-        return ring
-    return _clip_ring(ring, box)
-
-
-def _clip_polygon(rings, box):
-    if not rings:
-        return None
-    outer = _ring_in_box(rings[0], box)
-    if not outer:
-        return None
-    return [outer] + [h for h in (_ring_in_box(r, box) for r in rings[1:]) if h]
-
-
-def _clip_segment(a, b, box):
-    """Лян — Барски: отрезок a→b внутри рамки или None."""
-    x0, y0, x1, y1 = a[0], a[1], b[0], b[1]
-    dx, dy = x1 - x0, y1 - y0
-    t0, t1 = 0.0, 1.0
-    for p, q in ((-dx, x0 - box[0]), (dx, box[2] - x0), (-dy, y0 - box[1]), (dy, box[3] - y0)):
-        if p == 0:
-            if q < 0:
-                return None
-            continue
-        r = q / p
-        if p < 0:
-            if r > t1:
-                return None
-            t0 = max(t0, r)
-        else:
-            if r < t0:
-                return None
-            t1 = min(t1, r)
-    return [x0 + t0 * dx, y0 + t0 * dy], [x0 + t1 * dx, y0 + t1 * dy]
-
-
-def _clip_line(line, box):
-    """Линия → список частей в рамке (разрывы там, где линия выходит из рамки)."""
-    parts, cur = [], None
-    for a, b in zip(line, line[1:]):
-        seg = _clip_segment(a, b, box)
-        if not seg:
-            cur = None
-            continue
-        p, q = seg
-        if cur and cur[-1] == p:
-            cur.append(q)
-        else:
-            cur = [p, q]
-            parts.append(cur)
-        if q != [b[0], b[1]]:                 # отрезок вышел из рамки — следующая часть начнётся заново
-            cur = None
-    return [pt for pt in parts if len(pt) > 1 and pt[0] != pt[-1] or len(pt) > 2]
+_DIM = {"Point": 0, "MultiPoint": 0, "LineString": 1, "MultiLineString": 1, "Polygon": 2, "MultiPolygon": 2}
+_MULTI = {0: "MultiPoint", 1: "MultiLineString", 2: "MultiPolygon"}
 
 
 def _bbox_of(coords, acc):
@@ -119,29 +21,43 @@ def _bbox_of(coords, acc):
     return acc
 
 
+def _lists(c):
+    return [_lists(x) for x in c] if isinstance(c[0], (list, tuple)) else [c[0], c[1]]
+
+
+def _parts(g, dim):
+    """Части результата нужной размерности (у полигона по краю рамки GEOS может вернуть и отрезки)."""
+    if g.is_empty:
+        return []
+    if g.geom_type.startswith("Multi") or g.geom_type == "GeometryCollection":
+        return [p for sub in g.geoms for p in _parts(sub, dim)]
+    return [g] if _DIM.get(g.geom_type) == dim and not (dim == 2 and g.area <= 0) else []
+
+
 def clip_geometry(geom, box):
     """GeoJSON-геометрия → обрезанная по рамке box = (w, s, e, n) либо None. Целиком внутри — возвращается как есть."""
     if not geom or not geom.get("coordinates"):
         return None
-    t, c = geom.get("type"), geom["coordinates"]
-    b = _bbox_of(c, [float("inf"), float("inf"), float("-inf"), float("-inf")])
+    t = geom.get("type")
+    b = _bbox_of(geom["coordinates"], [float("inf"), float("inf"), float("-inf"), float("-inf")])
     if b[0] >= box[0] and b[2] <= box[2] and b[1] >= box[1] and b[3] <= box[3]:
         return geom
     if b[2] < box[0] or b[0] > box[2] or b[3] < box[1] or b[1] > box[3]:
         return None
-    if t == "Point":
-        return geom if _inside(c, box) else None
-    if t == "MultiPoint":
-        pts = [p for p in c if _inside(p, box)]
-        return {"type": "MultiPoint", "coordinates": pts} if pts else None
-    if t in ("LineString", "MultiLineString"):
-        parts = [p for line in ([c] if t == "LineString" else c) for p in _clip_line(line, box)]
-        if not parts:
-            return None
-        return {"type": "LineString", "coordinates": parts[0]} if len(parts) == 1 else {"type": "MultiLineString", "coordinates": parts}
-    if t in ("Polygon", "MultiPolygon"):
-        polys = [p for p in (_clip_polygon(rings, box) for rings in ([c] if t == "Polygon" else c)) if p]
-        if not polys:
-            return None
-        return {"type": "Polygon", "coordinates": polys[0]} if len(polys) == 1 else {"type": "MultiPolygon", "coordinates": polys}
-    return geom                                 # GeometryCollection и прочее — как есть (в ЕГКО не встречается)
+    if t not in _DIM:
+        return geom                                 # GeometryCollection и прочее — как есть (в ЕГКО не встречается)
+    dim = _DIM[t]
+    g = shapely.force_2d(shape(geom))
+    if dim == 0:
+        out = shapely.intersection(g, shapely.box(*box))     # точки на самой рамке остаются, как прежде
+    else:
+        try:
+            out = shapely.clip_by_rect(g, *box)
+        except shapely.errors.GEOSException:        # кривой контур портала: сначала починить
+            out = shapely.clip_by_rect(shapely.make_valid(g), *box)
+    parts = _parts(out, dim)
+    if not parts:
+        return None
+    if len(parts) == 1 and not (t == "MultiPoint"):
+        return {"type": parts[0].geom_type, "coordinates": _lists(mapping(parts[0])["coordinates"])}
+    return {"type": _MULTI[dim], "coordinates": [_lists(mapping(p)["coordinates"]) for p in parts]}

@@ -622,7 +622,7 @@ class LabelsInFrame(unittest.TestCase):
         from grado_render import PdfBackend
         pdf = PdfBackend().render([(100, 60, [{"op": "path", "rings": [[(0, 0), (50, 0), (50, 20), (0, 20)]], "closed": True,
                                                 "fill": (1, 1, 1), "alpha": .72, "stroke": None, "width": 0, "dash": None}])])
-        self.assertIn(b"/ExtGState << /GA1 << /ca 0.72 >>", pdf)
+        self.assertRegex(pdf, rb"/ExtGState <<\s*/\w+ <<\s*/ca \.72\s*>>")
 
     def test_street_label_runs_stop_at_junctions_and_bends(self):
         pts = [(0, 0), (10, 0), (20, 0.2), (30, 0), (30, 20)]           # прямо 30 мм, затем поворот
@@ -701,8 +701,10 @@ class PptxBasemapAndHeavyMaps(unittest.TestCase):
         self.assertRegex(xml, r'<p:pic><p:nvPicPr><p:cNvPr id="\d+" name="Карта"')             # карта — одна картинка
         self.assertIn("Тяжёлая схема", xml)                                                              # заголовок остался текстом
         self.assertTrue(any(n.startswith("ppt/media/") and n.endswith(".png") for n in z.namelist()))
-        self.assertIn("картинкой", z.read("ppt/notesSlides/notesSlide2.xml").decode("utf-8"))
-        self.assertNotIn("notesSlide1.xml", " ".join(z.namelist()))                                      # заметки только у растрового слайда
+        notes = [n for n in z.namelist() if n.startswith("ppt/notesSlides/notesSlide")]
+        self.assertEqual(len(notes), 1)                                                                  # заметки только у растрового слайда
+        self.assertIn("картинкой", z.read(notes[0]).decode("utf-8"))
+        self.assertIn(notes[0].rsplit("/", 1)[1], z.read("ppt/slides/_rels/slide2.xml.rels").decode("utf-8"))
 
     def test_normal_map_stays_vector_without_notes(self):
         import io

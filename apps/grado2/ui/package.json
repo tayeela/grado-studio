@@ -1,0 +1,32 @@
+{
+  "name": "grado2-ui",
+  "private": true,
+  "description": "ГРАДО 2: исходники нового интерфейса (Vue 3 + dockview + Web Awesome). Собирается Vite в apps/grado2/web/next/, собранное лежит в репозитории.",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "test": "node --test src/sheet/model.test.js"
+  },
+  "dependencies": {
+    "@awesome.me/webawesome": "3.13.0",
+    "@fontsource/onest": "5.1.0",
+    "@lucide/vue": "1.47.0",
+    "@turf/turf": "7.1.0",
+    "dockview-vue": "8.3.1",
+    "konva": "10.7.1",
+    "ol": "10.10.0",
+    "rete": "2.0.6",
+    "rete-area-plugin": "2.3.2",
+    "rete-connection-plugin": "2.0.5",
+    "rete-render-utils": "2.0.3",
+    "rete-vue-plugin": "2.1.3",
+    "sortablejs": "1.15.7",
+    "tabulator-tables": "6.6.1",
+    "vue": "3.5.43"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.9",
+    "vite": "8.3.0"
+  }
+}

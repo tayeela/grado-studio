@@ -18,15 +18,11 @@
 пользовательская карта Яндекса, в сдаваемые материалы её не включать.
 """
 
-import http.client
 import math
 import os
-import ssl
 import struct
 import tempfile
 import time
-import urllib.error
-import urllib.request
 import zlib
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -503,55 +499,37 @@ def features_from_tiles(blobs, layers, zoom=ZOOM, bbox=None):
     return feats
 
 
-def _ssl_context():
-    # Сборки Python.org на macOS не видят системные CA (правило 6 CLAUDE.md).
-    try:
-        import certifi
-        return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
-
-
 class YandexVmap(Connector):
     """fetch(bbox, layers) → объекты слоёв Яндекса, пересекающие область; свойство grado_layer — слой тайла."""
     name = "yandex"
     source = "yandex"
 
     def __init__(self, transport=None, cache_dir=None, ttl=TTL, zoom=ZOOM, workers=3, pause=0.3, progress=None):
-        self._ctx = None if transport else _ssl_context()
         self.transport = transport or self._http_get
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.ttl, self.zoom, self.workers, self.pause, self.progress = ttl, zoom, workers, pause, progress
 
     def _http_get(self, url, timeout=30):
-        req = urllib.request.Request(url, headers=HEADERS)
-        with netutil.open_url(req, timeout, self._ctx) as r:
-            return netutil.read_capped(r)
+        """Тайл по сети → байты; b"" — тайла нет (404). Капча или обрезанный ответ (decode не прочёл) — повтор
+        по общему правилу netutil, а не кэш на 30 дней."""
+        try:
+            return netutil.request(url, headers=HEADERS, timeout=timeout,
+                                   check=lambda data: data and decode(data)).content
+        except netutil.HttpError as e:
+            if e.code == 404:              # нет данных в тайле
+                return b""
+            raise
 
     def _tile(self, x, y):
-        """(данные, скачан ли из сети). Повторы с нарастающей паузой; после каждого скачанного тайла — пауза."""
+        """(данные, скачан ли из сети). Повторы — в netutil (_http_get); после каждого скачанного тайла — пауза."""
         z = self.zoom
         path = self.cache_dir / f"{z}_{x}_{y}.pbf" if self.cache_dir else None
         if path and path.exists() and time.time() - path.stat().st_mtime < self.ttl:
             return path.read_bytes(), False
-        last = None
-        for attempt in range(4):
-            if attempt:
-                time.sleep(2 ** (attempt - 1))
-            try:
-                data = self.transport(URL.format(x=x, y=y, z=z), timeout=30)
-                if data:
-                    decode(data)           # капча или обрезанный ответ — повтор, а не кэш на 30 дней
-                break
-            except urllib.error.HTTPError as e:
-                if e.code == 404:          # нет данных в тайле
-                    data = b""
-                    break
-                last = e
-            except (OSError, ValueError, IndexError, http.client.HTTPException) as e:
-                last = e
-        else:
-            raise ConnectorError(f"тайл Яндекса {z}/{x}/{y} не скачан: {last}")
+        try:
+            data = self.transport(URL.format(x=x, y=y, z=z), timeout=30)
+        except ConnectorError as e:
+            raise ConnectorError(f"тайл Яндекса {z}/{x}/{y} не скачан: {e}") from None
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".part")

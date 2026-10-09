@@ -35,7 +35,7 @@ PR в `team/t60`.
 9. **Само обновится:** [sources.md](sources.md), [sheets.md](sheets.md), [tests.md](tests.md).
 10. Проверка, что ключ нигде не забыт: `grep -n "<ключ>" apps/grado2/server.py apps/grado2/web/*.js`.
 
-**Новый вид** (не ключ): коннектор — класс от `Connector` (`contract.py`), результат через `make_result`, сеть через `netutil.open_url`/`read_capped`, HTTPS с `certifi`, не больше трёх повторов; в `server.py` — функция `run_<вид>`,
+**Новый вид** (не ключ): коннектор — класс от `Connector` (`contract.py`), результат через `make_result`, сеть через `netutil.request` (или `netutil.stream` для больших выгрузок): повторы, потолок размера, HTTPS с `certifi` уже там, свой цикл повторов не нужен; в `server.py` — функция `run_<вид>`,
 строка в списке заданий внутри `fetch()` и запись в `LIMIT_KM2` (без неё запрос отвечает 400); `GROUP`/`GROUPS` на странице; тест `core/connectors/tests/test_<имя>.py`. Новых зависимостей нельзя.
 
 Подводные камни: `fetch()` молча пропускает ключи, которых нет в `SOURCES`, и виды без задания — ошибки не будет; маршрут по **id слоя**, не по «первому слою вида» (железное правило 5).

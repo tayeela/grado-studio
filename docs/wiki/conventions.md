@@ -34,7 +34,7 @@
 
 | что | где | как запустить |
 |---|---|---|
-| Python | `apps/grado2/tests/test_*.py`, `core/*/tests/test_*.py` | `tools/gate.sh` (все) или `python -m unittest discover -s <папка>` с `PYTHONPATH` из `tools/gate.sh` |
+| Python | `apps/grado2/tests/test_*.py`, `core/*/tests/test_*.py` | `tools/gate.sh` (все) или `python -m pytest -q <папка>` с `PYTHONPATH` из `tools/gate.sh` (pytest — `apps/grado2/requirements-dev.txt`; браузер — Playwright, `(cd tools && npm ci)`) |
 | JS без браузера (под Node) | `apps/grado2/tests/*_test.js`, запускаются обёртками `test_*_js.py` | то же; пропускаются, если нет Node |
 | браузерные сценарии | `apps/grado2/tests/e2e/scenarios.mjs` (группы `p.group("tNN", …)`), `collab_scenarios.mjs` | `E2E=1 tools/gate.sh`; только группы — `E2E_ONLY=t71,t82` |
 | навигация и вики | `tools/docs_check.py`, `tools/wiki.py --check` | входят в `tools/gate.sh` и в CI |

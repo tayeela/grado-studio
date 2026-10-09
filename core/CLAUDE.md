@@ -2,10 +2,13 @@
 
 Карта пакетов — [README.md](README.md). Ядро общее для программы, тестов и печати.
 
-- Опора — стандартная библиотека Python; внешних пакетов два (`certifi`, Pillow — из `apps/grado2/requirements.txt`); новые зависимости в `core` и `apps/grado2` нельзя.
+- Готовые библиотеки лучше самописного кода (владелец 08.10.2026, #69). Внешние пакеты — из `apps/grado2/requirements.txt`: `certifi`, Pillow,
+  shapely 2 (геометрия `core/geom`), httpx и tenacity (сеть, `netutil.py`), ReportLab (PDF, `render/grado_render/backend_pdf.py`), python-pptx (PPTX, `backend_pptx.py`). Новая зависимость: колёса для macOS arm64 и x86_64 и Windows, разрешительная лицензия, строка в requirements, тот же gate.
 - Пакеты стоят слоями (`compute`, `model`, `reactive`, `geom`, `connectors`, `render`, `layout`); `PYTHONPATH` для тестов — как в `tools/gate.sh`.
 - Стили ЛГР `render/grado_render/styles/*.json` **генерируются** скриптами `tools/gen_*.py`: правьте генератор и пересоберите. Исключение — `default.json`: его ведут руками.
-- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы между запросами, без параллельных выгрузок, не больше трёх повторов; повторы и паузы живут в `connectors` и в выгрузках сервера (`apps/grado2/server.py`, `sat_io.py`, `ogd_all.py`).
+- Порталы (ГИС ОГД, ЕГКО, НСПД, Яндекс, Overpass): паузы между запросами, без параллельных выгрузок. Сеть — только через
+  `connectors/grado_connectors/netutil.py` (httpx и tenacity): одно правило повторов на все порталы — не больше трёх попыток, повтор на 429, 5xx
+  и обрыв сети, пауза 1 и 2 с или по Retry-After. Свои циклы повторов не пишут; паузы между запросами — в коннекторе.
   Проверку сертификатов не отключают; НСПД из облака — через релей ([../tools/nspd_relay/README.md](../tools/nspd_relay/README.md)).
 - Координаты: «МСК (как в QGIS)» и «система ГИС ОГД» — один датум, показ и экспорт всегда в МСК; схему не обсуждать и не «калибровать».
 - Файл кода и тест начинаются с заголовка «что это» ([../docs/CLAUDE.md](../docs/CLAUDE.md)).

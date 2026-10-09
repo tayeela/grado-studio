@@ -44,7 +44,8 @@ JOURNALS = ("docs/grado2-changelog.md", "docs/session-log-archive.md", "docs/tea
 NOT_INDEXED = ("docs/wiki/", "docs/standards/", "docs/team/prompts/", "docs/team/samples/", "docs/team/mockups/", "docs/archive/")
 # Закрытые программы (23.09.2026): не развиваются, заголовки им не нужны. Сторонний код и данные — тоже.
 CLOSED = ("apps/studio/", "apps/wizard/", "apps/calc-web/")
-HEADER_SKIP = CLOSED + ("apps/grado2/web/vendor/", "apps/grado2/tests/fixtures/", "docs/", "core/render/grado_render/styles/")
+# web/next — собранный Vite новый интерфейс (исходники с заголовками — apps/grado2/ui).
+HEADER_SKIP = CLOSED + ("apps/grado2/web/vendor/", "apps/grado2/web/next/", "apps/grado2/tests/fixtures/", "docs/", "core/render/grado_render/styles/")
 CODE_SUFFIXES = (".py", ".js", ".mjs", ".sh")
 
 

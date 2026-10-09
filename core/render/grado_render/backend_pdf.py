@@ -1,16 +1,24 @@
-"""Печатный бэкенд: собственный PDF-писатель.
+"""Печатный бэкенд PDF на ReportLab (BSD): векторный вывод того же списка операций, что у экранного бэкенда (scene.py).
 
-Векторный вывод, кириллица через встраиваемый TrueType (Type0/CIDFontType2,
-Identity-H), потоки сжаты Flate. Исполняет тот же список операций, что и
-экранный бэкенд, — см. scene.py.
+Кириллица — TrueType из docs/standards/fonts, ReportLab встраивает только использованные глифы (подмножество) и пишет
+/ToUnicode: текст листа ищется и копируется. JPEG кладётся как есть (DCTDecode). Ширины строк считает ttf.Font —
+те же, по которым print_io раскладывает подписи. Вызывают print_io (альбом), grado_layout.compose, layout_io;
+тесты — core/render/tests/test_render.py.
 """
 
-import zlib
+import io
+import math
+
+from reportlab import rl_config
+from reportlab.lib.utils import ImageReader
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen.canvas import FILL_EVEN_ODD, FILL_NON_ZERO, Canvas
 
 from .ttf import Font, find_font
 
 MM2PT = 72.0 / 25.4
-KAPPA = 0.5522847498
+FAMILIES = ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold")
 
 
 def jpeg_info(data):
@@ -41,324 +49,179 @@ def _jpeg_info(data):
     raise ValueError("SOF-маркер не найден")
 
 
-def _f(x):
-    return f"{x:.3f}".rstrip("0").rstrip(".")
-
-
-def _to_unicode_cmap(gid_char):
-    """CMap /ToUnicode: код глифа (Identity-H, 2 байта) → Юникод, чтобы текст листа искался и копировался."""
-    items = sorted(gid_char.items())
-    out = ["/CIDInit /ProcSet findresource begin", "12 dict begin", "begincmap",
-           "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def",
-           "/CMapName /Adobe-Identity-UCS def", "/CMapType 2 def",
-           "1 begincodespacerange", "<0000> <FFFF>", "endcodespacerange"]
-    for i in range(0, len(items), 100):
-        chunk = items[i:i + 100]
-        out.append(f"{len(chunk)} beginbfchar")
-        out += [f"<{g:04X}> <{ch.encode('utf-16-be').hex().upper()}>" for g, ch in chunk]      # UTF-16BE: символы вне BMP — суррогатной парой
-        out.append("endbfchar")
-    out += ["endcmap", "CMapName currentdict /CMap defineresource pop", "end", "end"]
-    return "\n".join(out).encode("ascii")
+def _rl_font(path):
+    """Имя шрифта ReportLab для файла TTF (регистрируется один раз на процесс)."""
+    name = "Grado-" + "".join(ch if ch.isalnum() else "-" for ch in path.rsplit("/", 1)[-1].rsplit(".", 1)[0])
+    if name not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(name, path))
+    return name
 
 
 class PdfBackend:
     def __init__(self, font_path=None):
         self._font_paths = {"ui": font_path} if font_path else {}
         self._fonts = {"ui": Font(font_path or find_font("ui"))}
-        self._font_order = ["ui"]
-        # Совместимость с прежним публичным атрибутом: основной шрифт — ui.
-        self.font = self._fonts["ui"]
-        self._used_gids = {"ui": {0}}
-        self._gid_char = {"ui": {}}                         # глиф → символ Юникода (для /ToUnicode: поиск и копирование текста)
-        self.used_gids = self._used_gids["ui"]
-        self._used_families = set()
-        self._img_names = {}
-        self._alphas = {}                                   # прозрачность заливки → имя ExtGState (/GA1 …)
+        self.font = self._fonts["ui"]                       # основной шрифт — ui (прежний публичный атрибут)
 
     def _font_for(self, family):
-        family = family if family in ("ui", "serif", "mono", "ui-bold", "serif-bold", "sans", "sans-bold") else "ui"
+        family = family if family in FAMILIES else "ui"
         if family not in self._fonts:
-            self._fonts[family] = Font(
-                self._font_paths.get(family) or find_font(family))
-            self._font_order.append(family)
-        self._used_gids.setdefault(family, {0})
-        self._gid_char.setdefault(family, {})
-        self._used_families.add(family)
-        return family, self._fonts[family]
+            self._fonts[family] = Font(self._font_paths.get(family) or find_font(family))
+        f = self._fonts[family]
+        return _rl_font(f.path), f
 
-    def _font_name(self, family):
-        return f"F{self._font_order.index(family) + 1}"
+    # --- операции → холст ReportLab ---------------------------------------
 
-    # --- операции → поток содержимого страницы ---------------------------
-
-    def _color(self, c, stroke):
-        r, g, b = c
-        return f"{_f(r)} {_f(g)} {_f(b)} {'RG' if stroke else 'rg'}\n"
-
-    def _paint(self, fill, stroke, evenodd=False):
-        """Операторы закраски. evenodd → f*/B*: путь с ДЫРАМИ (несколько колец)
-        закрашивается по чётности пересечений, и выколотая часть остаётся
-        пустой при ЛЮБОМ направлении обхода кольца. На nonzero (f/B) дыра
-        появлялась бы только при противоположной намотке, а в данных портала
-        она не гарантирована — холст по этой же причине рисует fill("evenodd").
-        """
-        star = "*" if evenodd else ""
-        if fill is not None and stroke is not None:
-            return f"B{star}\n"
-        if fill is not None:
-            return f"f{star}\n"
-        return "S\n"
-
-    def _path_ops(self, o, h):
-        out = ""
+    @staticmethod
+    def _pen(c, o, h, reset_dash=True):
+        """Цвета, толщина, излом и штрих пути; путь в пунктах страницы (y вверх)."""
         if o.get("fill") is not None:
-            out += self._color(o["fill"], stroke=False)
+            c.setFillColorRGB(*o["fill"])
         if o.get("stroke") is not None:
-            out += self._color(o["stroke"], stroke=True)
-            out += f"{_f(o.get('width', 0.3) * MM2PT)} w\n"
-            out += "1 j\n" if o.get("join") == "round" else "0 j\n"   # скруглённые изломы — без острых «шипов» на контурах карты
+            c.setStrokeColorRGB(*o["stroke"])
+            c.setLineWidth(o.get("width", 0.3) * MM2PT)
+            c.setLineJoin(1 if o.get("join") == "round" else 0)   # скруглённые изломы — без острых «шипов» на контурах карты
             dash = o.get("dash")
-            out += (f"[{' '.join(_f(d * MM2PT) for d in dash)}] 0 d\n"
-                    if dash else "[] 0 d\n")
-        for ring in o["rings"]:
-            pts = [(x * MM2PT, (h - y) * MM2PT) for x, y in ring]
-            out += f"{_f(pts[0][0])} {_f(pts[0][1])} m\n"
-            for x, y in pts[1:]:
-                out += f"{_f(x)} {_f(y)} l\n"
-            if o.get("closed"):
-                out += "h\n"
-        return out + self._paint(o.get("fill"), o.get("stroke"),
-                                 o.get("evenodd") or len(o["rings"]) > 1)
+            if dash:
+                c.setDash([d * MM2PT for d in dash], 0)
+            elif reset_dash:
+                c.setDash([], 0)
 
-    def _circle_ops(self, o, h):
-        cx, cy = o["x"] * MM2PT, (h - o["y"]) * MM2PT
-        r = o["r"] * MM2PT
-        k = KAPPA * r
-        out = ""
-        if o.get("fill") is not None:
-            out += self._color(o["fill"], stroke=False)
-        if o.get("stroke") is not None:
-            out += self._color(o["stroke"], stroke=True)
-            out += f"{_f(o.get('width', 0.3) * MM2PT)} w\n[] 0 d\n"
-        out += f"{_f(cx + r)} {_f(cy)} m\n"
-        for dx1, dy1, dx2, dy2, dx3, dy3 in [
-                (r, k, k, r, 0, r), (-k, r, -r, k, -r, 0),
-                (-r, -k, -k, -r, 0, -r), (k, -r, r, -k, r, 0)]:
-            out += (f"{_f(cx + dx1)} {_f(cy + dy1)} "
-                    f"{_f(cx + dx2)} {_f(cy + dy2)} "
-                    f"{_f(cx + dx3)} {_f(cy + dy3)} c\n")
-        return out + self._paint(o.get("fill"), o.get("stroke"))
+    @staticmethod
+    def _rings(c, rings, h, closed=True):
+        p = c.beginPath()
+        for ring in rings:
+            if not ring:
+                continue
+            p.moveTo(ring[0][0] * MM2PT, (h - ring[0][1]) * MM2PT)
+            for x, y in ring[1:]:
+                p.lineTo(x * MM2PT, (h - y) * MM2PT)
+            if closed:
+                p.close()
+        return p
 
-    def _text_ops(self, o, h):
-        import math
-        family, font = self._font_for(o.get("font_family", "ui"))
-        size = o["size"] * MM2PT  # кегль задаём в мм высоты
-        x = o["x"] * MM2PT
-        y = (h - o["y"]) * MM2PT
+    def _path(self, c, o, h):
+        """Путь с ДЫРАМИ (несколько колец) закрашивается по чётности: выколотая часть остаётся пустой при любом
+        направлении обхода — в данных портала намотка не гарантирована (холст рисует так же, fill("evenodd"))."""
+        self._pen(c, o, h)
+        fill, stroke = o.get("fill") is not None, o.get("stroke") is not None
+        evenodd = o.get("evenodd") or len(o["rings"]) > 1
+        c.drawPath(self._rings(c, o["rings"], h, o.get("closed")), fill=1 if fill else 0,
+                   stroke=1 if stroke or not fill else 0, fillMode=FILL_EVEN_ODD if evenodd else FILL_NON_ZERO)
+
+    def _circle(self, c, o, h):
+        fill, stroke = o.get("fill") is not None, o.get("stroke") is not None
+        self._pen(c, {k: o.get(k) for k in ("fill", "stroke", "width")}, h)
+        c.circle(o["x"] * MM2PT, (h - o["y"]) * MM2PT, o["r"] * MM2PT,
+                 stroke=1 if stroke or not fill else 0, fill=1 if fill else 0)
+
+    def _text(self, c, o, h):
+        name, font = self._font_for(o.get("font_family", "ui"))
+        size = o["size"] * MM2PT                            # кегль задаём в мм высоты
+        x, y = o["x"] * MM2PT, (h - o["y"]) * MM2PT
         w = font.text_width(o["text"], size)
-        off = -w / 2 if o.get("anchor") == "middle" else (
-              -w if o.get("anchor") == "end" else 0.0)
-        gids = [font.gid_for(ch) for ch in o["text"]]
-        self._used_gids[family].update(gids)
-        for g, ch in zip(gids, o["text"]):
-            if g:
-                self._gid_char[family].setdefault(g, ch)
-        hexstr = "".join(f"{g:04X}" for g in gids)
-        color = self._color(o.get("color", (0, 0, 0)), stroke=False)
+        off = -w / 2 if o.get("anchor") == "middle" else (-w if o.get("anchor") == "end" else 0.0)
         angle = o.get("angle", 0.0)
-        if angle:
-            # подпись вдоль линии: сцена y-вниз → страница y-вверх, угол
-            # инвертируется; центрирование — вдоль повёрнутой оси текста
-            ca, sa = math.cos(-angle), math.sin(-angle)
-            tm = (f"{_f(ca)} {_f(sa)} {_f(-sa)} {_f(ca)} "
-                  f"{_f(x + off * ca)} {_f(y + off * sa)}")
-        else:
-            tm = f"1 0 0 1 {_f(x + off)} {_f(y)}"  # горизонталь — прежний путь
-        halo = ""
+        # подпись вдоль линии: сцена y-вниз → страница y-вверх, угол инвертируется; центрирование — вдоль оси текста
+        ca, sa = (math.cos(-angle), math.sin(-angle)) if angle else (1.0, 0.0)
+        tm = (ca, sa, -sa, ca, x + off * ca, y + off * sa)
+
+        def run(mode):
+            t = c.beginText()
+            t.setFont(name, size)
+            t.setTextTransform(*tm)
+            t.setTextRenderMode(mode)
+            t.textOut(o["text"])
+            c.drawText(t)
         if o.get("halo"):
-            # ореол подписи (как «свечение» в PowerPoint): сначала обводка букв цветом фона, поверх — сами буквы
-            hc = self._color(o.get("halo_color", (1, 1, 1)), stroke=True)
-            # сплошная: штрих ([] 0 d) сбрасывается — иначе обводка букв брала пунктир предыдущей линии (граница территории)
-            halo = (f"q\n{hc}{_f(o['halo'] * MM2PT * 2)} w 1 j [] 0 d\nBT\n/{self._font_name(family)} {_f(size)} Tf\n1 Tr\n"
-                    f"{tm} Tm\n<{hexstr}> Tj\nET\nQ\n")
-        under = ""
+            # ореол подписи (как «свечение» в PowerPoint): сначала обводка букв цветом фона, поверх — сами буквы;
+            # обводка сплошная — штрих предыдущей линии (граница территории) сброшен
+            c.saveState()
+            c.setStrokeColorRGB(*o.get("halo_color", (1, 1, 1)))
+            c.setLineWidth(o["halo"] * MM2PT * 2)
+            c.setLineJoin(1)
+            c.setDash([], 0)
+            run(1)
+            c.restoreState()
+        c.setFillColorRGB(*o.get("color", (0, 0, 0)))
+        run(0)
         if o.get("underline") and not angle:
             # подчёркнутая строка (заголовки групп легенды «ГК Царицыно»): черта по ширине текста этим же шрифтом
+            c.saveState()
+            c.setStrokeColorRGB(*o.get("color", (0, 0, 0)))
+            c.setLineWidth(size * 0.05)
+            c.setDash([], 0)
             uy = y - size * 0.14
-            under = (f"q\n{self._color(o.get('color', (0, 0, 0)), stroke=True)}{_f(size * 0.05)} w\n[] 0 d\n"
-                     f"{_f(x + off)} {_f(uy)} m\n{_f(x + off + w)} {_f(uy)} l\nS\nQ\n")
-        return (halo + f"{color}BT\n/{self._font_name(family)} {_f(size)} Tf\n"
-                f"{tm} Tm\n<{hexstr}> Tj\nET\n" + under)
+            c.line(x + off, uy, x + off + w, uy)
+            c.restoreState()
 
-    def _page_stream(self, w, h, ops):
-        out = ""
-        clip_depth = 0
+    def _image(self, c, o, h, cache):
+        img = cache.get(o["data"])
+        if img is None:
+            jpeg_info(o["data"])                            # не JPEG — ValueError, как прежде
+            img = cache[o["data"]] = ImageReader(io.BytesIO(o["data"]))
+        c.saveState()
+        if "quad" in o:
+            # параллелограмм по трём углам (tl, tr, bl в мм листа): единичный квадрат картинки → аффинная матрица
+            (tlx, tly), (trx, tr_y), (blx, bly) = o["quad"]
+            c.transform((trx - tlx) * MM2PT, (tly - tr_y) * MM2PT, (tlx - blx) * MM2PT, (bly - tly) * MM2PT,
+                        blx * MM2PT, (h - bly) * MM2PT)
+        else:
+            # осевой случай: x,y — верхний левый угол в мм; PDF рисует от нижнего
+            c.transform(o["w"] * MM2PT, 0, 0, o["h"] * MM2PT, o["x"] * MM2PT, (h - o["y"] - o["h"]) * MM2PT)
+        c.drawImage(img, 0, 0, 1, 1)
+        c.restoreState()
+
+    def _page(self, c, w, h, ops, images):
+        depth = 0
         for o in ops:
-            if o["op"] == "image":
-                name = self._img_names[o["data"]][0]
-                if "quad" in o:
-                    # параллелограмм по трём углам (tl, tr, bl в мм листа):
-                    # единичный квадрат картинки → аффинная матрица cm
-                    (tlx, tly), (trx, tr_y), (blx, bly) = o["quad"]
-                    m = ((trx - tlx) * MM2PT, (tly - tr_y) * MM2PT,
-                         (tlx - blx) * MM2PT, (bly - tly) * MM2PT,
-                         blx * MM2PT, (h - bly) * MM2PT)
-                else:
-                    # осевой случай: x,y — верхний левый угол в мм;
-                    # PDF рисует от нижнего
-                    m = (o["w"] * MM2PT, 0, 0, o["h"] * MM2PT,
-                         o["x"] * MM2PT, (h - o["y"] - o["h"]) * MM2PT)
-                out += (f"q\n{' '.join(_f(v) for v in m)} cm\n"
-                        f"/{name} Do\nQ\n")
-            elif o["op"] == "clip" and o.get("rings"):
+            op = o["op"]
+            if op == "image":
+                self._image(c, o, h, images)
+            elif op == "clip" and o.get("rings"):
                 # обрезка по контуру (округ на схеме шаблона ППТ КРТ): кольца, правило чётности — дыры остаются вне
-                path = ""
-                for ring in o["rings"]:
-                    for i, (x, y) in enumerate(ring):
-                        path += f"{_f(x * MM2PT)} {_f((h - y) * MM2PT)} {'m' if i == 0 else 'l'}\n"
-                    path += "h\n"
-                out += f"q\n{path}W* n\n"
-                clip_depth += 1
-            elif o["op"] == "clip":
+                c.saveState()
+                c.clipPath(self._rings(c, o["rings"], h), stroke=0, fill=0, fillMode=FILL_EVEN_ODD)
+                depth += 1
+            elif op == "clip":
                 x, y, cw, ch = o["rect"]
-                out += (f"q\n{_f(x * MM2PT)} {_f((h - y - ch) * MM2PT)} "
-                        f"{_f(cw * MM2PT)} {_f(ch * MM2PT)} re W n\n")
-                clip_depth += 1
-            elif o["op"] == "unclip":
-                out += "Q\n"
-                clip_depth -= 1
-            elif o["op"] == "path":
+                c.saveState()
+                p = c.beginPath()
+                p.rect(x * MM2PT, (h - y - ch) * MM2PT, cw * MM2PT, ch * MM2PT)
+                c.clipPath(p, stroke=0, fill=0)
+                depth += 1
+            elif op == "unclip":
+                if depth:
+                    c.restoreState()
+                    depth -= 1
+            elif op == "path":
                 a = o.get("alpha")
-                if a is not None and a < 1:                        # полупрозрачная заливка (подложка легенды на снимке)
-                    name = self._alphas.setdefault(round(float(a), 3), f"GA{len(self._alphas) + 1}")
-                    out += f"q\n/{name} gs\n" + self._path_ops(o, h) + "Q\n"
+                if a is not None and a < 1:                 # полупрозрачная заливка (подложка легенды на снимке)
+                    c.saveState()
+                    c.setFillAlpha(round(float(a), 3))
+                    self._path(c, o, h)
+                    c.restoreState()
                 else:
-                    out += self._path_ops(o, h)
-            elif o["op"] == "circle":
-                out += self._circle_ops(o, h)
-            elif o["op"] == "text":
-                out += self._text_ops(o, h)
-        out += "Q\n" * clip_depth
-        return out.encode("latin1")
-
-    # --- сборка PDF -------------------------------------------------------
+                    self._path(c, o, h)
+            elif op == "circle":
+                self._circle(c, o, h)
+            elif op == "text":
+                self._text(c, o, h)
+        for _ in range(depth):
+            c.restoreState()
 
     def render(self, pages):
         """pages: [(w_mm, h_mm, ops)] → bytes PDF."""
-        objs = {}  # num -> bytes тела объекта
-        self._used_gids = {family: {0} for family in self._fonts}
-        self._gid_char = {family: {} for family in self._fonts}
-        self.used_gids = self._used_gids["ui"]
-        self._used_families = set()
-
-        def stream_obj(data, extra=""):
-            comp = zlib.compress(data)
-            return (f"<< /Length {len(comp)} /Filter /FlateDecode {extra}>>\n"
-                    f"stream\n").encode("latin1") + comp + b"\nendstream"
-
-        # растровые вставки: JPEG кладётся в PDF как есть (DCTDecode,
-        # без перекодирования); одинаковые данные встраиваются один раз
-        self._img_names = {}  # bytes → (имя /ImN, номер объекта)
-        for _, _, ops in pages:
-            for o in ops:
-                if o["op"] == "image" and o["data"] not in self._img_names:
-                    self._img_names[o["data"]] = (
-                        f"Im{len(self._img_names) + 1}", None)
-
-        # Сначала строим потоки: именно здесь обнаруживаются реально
-        # использованные семейства, глифы и степени прозрачности.
-        self._alphas = {}
-        page_streams = [self._page_stream(w, h, ops) for w, h, ops in pages]
-
-        # 1 — каталог, 2 — дерево страниц; по четыре объекта на каждый TTF:
-        # Type0, CIDFont, дескриптор, файл шрифта. В PDF попадают только
-        # семейства, которые действительно используются на листах.
-        font_refs = {}
-        next_num = 3
-        for family in (f for f in self._font_order if f in self._used_families):
-            f = self._fonts[family]
-            type0, cid, descriptor, font_file, to_uni = range(next_num, next_num + 5)
-            next_num += 5
-            font_refs[family] = type0
-            scale = 1000.0 / f.units_per_em
-            widths = sorted(self._used_gids[family])
-            w_array = " ".join(
-                f"{g} [{_f(f.advance(g) * scale)}]" for g in widths)
-            bbox = " ".join(str(int(v * scale)) for v in f.bbox)
-            base = f"GradoEmbedded{self._font_name(family)}"
-            flags = 33 if family == "mono" else (34 if family.startswith("serif") else 32)
-            objs[type0] = (
-                f"<< /Type /Font /Subtype /Type0 /BaseFont /{base} "
-                f"/Encoding /Identity-H /DescendantFonts [{cid} 0 R] "
-                f"/ToUnicode {to_uni} 0 R >>"
-            ).encode()
-            objs[cid] = (
-                f"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{base} "
-                f"/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) "
-                f"/Supplement 0 >> /FontDescriptor {descriptor} 0 R /DW 500 "
-                f"/W [ {w_array} ] /CIDToGIDMap /Identity >>"
-            ).encode()
-            objs[descriptor] = (
-                f"<< /Type /FontDescriptor /FontName /{base} /Flags {flags} "
-                f"/FontBBox [ {bbox} ] /ItalicAngle 0 "
-                f"/Ascent {int(f.ascent * scale)} /Descent {int(f.descent * scale)} "
-                f"/CapHeight {int(f.ascent * scale)} /StemV 80 "
-                f"/FontFile2 {font_file} 0 R >>"
-            ).encode()
-            objs[to_uni] = stream_obj(_to_unicode_cmap(self._gid_char[family]))
-            objs[font_file] = stream_obj(
-                f.data, extra=f"/Length1 {len(f.data)} ")
-
-        # Растровые вставки идут после динамического набора шрифтов.
-        for data, (name, _) in list(self._img_names.items()):
-            num = next_num
-            next_num += 1
-            self._img_names[data] = (name, num)
-            iw, ih, comps = jpeg_info(data)
-            cs = "/DeviceGray" if comps == 1 else "/DeviceRGB"
-            objs[num] = ((f"<< /Type /XObject /Subtype /Image "
-                          f"/Width {iw} /Height {ih} /ColorSpace {cs} "
-                          f"/BitsPerComponent 8 /Filter /DCTDecode "
-                          f"/Length {len(data)} >>\nstream\n").encode("latin1")
-                         + data + b"\nendstream")
-
-        page_nums, kids = [], []
-        for (w, h, ops), stream in zip(pages, page_streams):
-            pnum, snum = next_num, next_num + 1
-            next_num += 2
-            used = sorted({self._img_names[o["data"]]
-                           for o in ops if o["op"] == "image"},
-                          key=lambda e: e[1])
-            xobj = ("/XObject << " + " ".join(f"/{nm} {num} 0 R"
-                                              for nm, num in used) + " >> "
-                    if used else "")
-            fonts = " ".join(
-                f"/{self._font_name(family)} {font_refs[family]} 0 R"
-                for family in self._font_order if family in font_refs)
-            gs = ("/ExtGState << " + " ".join(f"/{nm} << /ca {_f(a)} >>" for a, nm in self._alphas.items()) + " >> "
-                  if self._alphas else "")
-            objs[pnum] = (f"<< /Type /Page /Parent 2 0 R "
-                          f"/MediaBox [0 0 {_f(w * MM2PT)} {_f(h * MM2PT)}] "
-                          f"/Resources << /Font << {fonts} >> {xobj}{gs}>> "
-                          f"/Contents {snum} 0 R >>").encode()
-            objs[snum] = stream_obj(stream)
-            page_nums.append(pnum)
-            kids.append(f"{pnum} 0 R")
-        objs[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
-        objs[2] = (f"<< /Type /Pages /Kids [ {' '.join(kids)} ] "
-                   f"/Count {len(kids)} >>").encode()
-
-        out = bytearray(b"%PDF-1.6\n%\xd0\x93\xd0\xa0\n")
-        offsets = {}
-        for num in sorted(objs):
-            offsets[num] = len(out)
-            out += f"{num} 0 obj\n".encode() + objs[num] + b"\nendobj\n"
-        xref_at = len(out)
-        n = max(objs) + 1
-        out += f"xref\n0 {n}\n".encode()
-        out += b"0000000000 65535 f \n"
-        for num in range(1, n):
-            out += f"{offsets[num]:010d} 00000 n \n".encode()
-        out += (f"trailer\n<< /Size {n} /Root 1 0 R >>\n"
-                f"startxref\n{xref_at}\n%%EOF\n").encode()
-        return bytes(out)
+        rl_config.useA85 = 0                                # потоки — только Flate, без ASCII85 (меньше и читается тестами)
+        buf = io.BytesIO()
+        c = Canvas(buf, pageCompression=1, invariant=1, initialFontName=self._font_for("ui")[0])  # без лишней Helvetica
+        c.setCreator("ГРАДО 2")
+        c.setAuthor("")
+        c.setTitle("")
+        images = {}                                         # одинаковые JPEG встраиваются один раз
+        for w, h, ops in pages:
+            c.setPageSize((w * MM2PT, h * MM2PT))
+            self._page(c, w, h, ops, images)
+            c.showPage()
+        c.save()
+        return buf.getvalue()

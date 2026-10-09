@@ -102,7 +102,8 @@ export on purpose pass `force` — T74's export gate broke t62/t66 until then.
   оборвалась по сети (msk), повтор `tools/deploy-server.sh` — «Готово: на сервере версия 0.99.8».
 RULE: An E2E check must not assume where the territory lies: earlier steps move it (T71 expected ≥ 5 okrug districts,
 the run had the territory in a 4-district okrug). Compare with the data of the current territory instead.
-RULE: Direct owner-requested changes land on main between cycles; the cycle starts by merging main into the team branch
+RULE: Owner-requested changes between cycles land on main only through a PR and the owner's «выкладывай» (no direct commits, 08.10.2026);
+the cycle starts by merging main into the team branch
 and resolving conflicts in albums.js / print_io.py by hand (cycle 21: Yandex satellite vs TileGuard, okrugMain vs
 simplifyAdm). Never assume the team branch is ahead of main.
 
@@ -117,7 +118,7 @@ simplifyAdm). Never assume the team branch is ahead of main.
   переписана, один раз — медленный старт страницы под нагрузкой). Итог v0.99.7 на team/t60, готово к выкладке.
   Дальше: T74 (проверка перед PDF), T75 (снимок Яндекса: 404 и Esri под пропусками), T76 (дороги без полигонов Яндекса).
 RULE: The owner's program and the site change only after the owner's word «выкладывай»; all program work happens in
-the team worktree `.claude/worktrees/team` on branch `team/grado2`.
+the team worktree `.claude/worktrees/team2` on branch `team/t60` (cloud: branch `task/<issue>-<slug>`, PR into `team/t60`).
 
 RULE: Before taking a status claim from a role, check the changelog entry it cites: the changelog keeps old «not done»
 lines under entries that were done later (Э11 was «not done» at line 1513 and done in v0.36.0).

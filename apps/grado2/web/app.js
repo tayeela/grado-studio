@@ -1446,12 +1446,17 @@ const hitsBox = (x0, y0, x1, y1, ring, solid = true) => {       // многоу�
   for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) if ((ring[i][1] > cy) !== (ring[k][1] > cy) && cx < (ring[k][0] - ring[i][0]) * (cy - ring[i][1]) / (ring[k][1] - ring[i][1]) + ring[i][0]) inside = !inside;
   return inside;
 };
+/* зона «в радиусе R от домов»: буфер в два шага (30 м — дома сливаются в кварталы, упрощение на 1 м, затем R − 30) — та же зона
+   с точностью до метра, но сотни домов ИЖС считаются за доли секунды, а не за полминуты */
+const reachOf = (bu, rad) => { const s = buf(bu, 30); return buf(s ? safe(() => turf.simplify(s, { tolerance: 1e-5, highQuality: false })) || s : bu, s ? rad - 30 : rad); };
 function reserveSocial(site, sketch, social, radii) {
   const out = { plots: [], notes: [], warns: [] };
   if (!site || !social?.length) return out;
   const blds = sketch.map(b => b.f), bu = blds.length ? unionAll(blds) : null, ground = [...(sketch.streets || []), ...(sketch.plots || [])].map(s => s.f);
+  // все препятствия вычитаются одним проходом (turf.difference принимает список): сотни участков ИЖС — доли секунды, а не минуты
+  const cut = [bu && buf(bu, RES_GAP), ...ground].filter(Boolean);
   let free = site;
-  for (const g of [bu && buf(bu, RES_GAP), ...ground]) { if (g && free) free = diff(free, g); }
+  if (cut.length) try { free = turf.difference(turf.featureCollection([site, ...cut])); } catch { free = cut.reduce((x, g) => x && diff(x, g), site); }
   // препятствия для быстрого отсева кандидатов: корпус с отступом, улицы, участки эскиза и уже поставленные участки резерва (само пятно проверяет fits)
   const obst = [...blds.map(f => buf(f, RES_GAP) || f), ...ground], houses = blds.map(f => centroid(ringsXY(f)[0]));
   const reach = {};
@@ -1461,7 +1466,7 @@ function reserveSocial(site, sketch, social, radii) {
   for (const s of list) {
     const n = seen[s.kind] = (seen[s.kind] || 0) + 1, many = list.filter(x => x.kind === s.kind).length > 1, nm = RES_NAMES[s.kind], name = `${nm === "ДОО" ? "ДОО" : nm[0].toUpperCase() + nm.slice(1)}${many ? " №" + n : ""}`;
     const A = s.m2, rad = radii?.[s.kind], st = { cands: 0, checks: 0, tests: 0 }; let best = null, cut = false;
-    if (rad && bu) reach[s.kind] ||= buf(bu, rad);
+    if (rad && bu) reach[s.kind] ||= reachOf(bu, rad);
     const rch = rad && bu ? reach[s.kind] : null;
     for (const part of free ? splitParts(free) : []) {
       if (m2(part) < A * .997) continue;
@@ -2035,7 +2040,7 @@ $("vlist").addEventListener("click", e => { const b = e.target.closest("[data-va
 
 /* ================= плавающие окна и панели ================= */
 // окно = section.win: перетаскивание за шапку, размер — за угол, положение запоминается
-const WINKEY = "grado2.win";
+const WINKEY = window.EMBED ? "grado2.win.embed" : "grado2.win";   // окно «Листы и альбом» нового интерфейса (embed.js) помнит свои окна отдельно
 let WST = {}; try { WST = JSON.parse(localStorage.getItem(WINKEY)) || {}; } catch { }
 delete WST.zoneToast;       // «Третье окно открыто плавающим…» — раз за сеанс: флаг живёт только в памяти, в localStorage не пишется
 const saveWins = () => { try { localStorage.setItem(WINKEY, JSON.stringify(WST, (k, v) => k === "zoneToast" ? undefined : v)); } catch { } };
@@ -2390,9 +2395,11 @@ addEventListener("resize", () => {
 });
 $("baseSel").innerHTML = Object.entries(BASEMAPS).map(([k, b]) => `<option value="${k}">${b.title}</option>`).join(""); $("baseSel").value = BASE;
 $("baseSel").onchange = e => setBasemap(e.target.value);
+const themeRedraw = () => { applyGraphTheme(); themeBasemap(); siteSrc.changed(); Object.values(resSrcs).forEach(r => r.changed()); };
 $("bTheme").onclick = () => { const d = matchMedia("(prefers-color-scheme: dark)").matches, c = document.documentElement.dataset.theme || (d ? "dark" : "light"); document.documentElement.dataset.theme = c === "dark" ? "light" : "dark";
-  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } applyGraphTheme(); themeBasemap(); siteSrc.changed(); Object.values(resSrcs).forEach(r => r.changed()); };
-try { const t = localStorage.getItem("grado2.theme"); if (t) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
+  try { localStorage.setItem("grado2.theme", document.documentElement.dataset.theme); } catch { } themeRedraw(); };
+window.setTheme = t => { document.documentElement.dataset.theme = t; themeRedraw(); };     // окно «Листы и альбом»: тему переключает новый интерфейс
+try { const t = localStorage.getItem("grado2.theme"); if (t && !window.EMBED) document.documentElement.dataset.theme = t; } catch { } applyGraphTheme(); themeBasemap();
 
 // старт — после того как выполнены все скрипты страницы: ответ сервера мог прийти раньше, чем браузер дочитал
 // layers.js … project.js, и восстановление автосохранения падало на ещё не объявленных ALBUM, VIEWS
@@ -2407,6 +2414,11 @@ const startApp = async () => {
   // узкое окно: панели поверх карты, при запуске закрыты — открываются из меню «Окна»
   if (innerWidth <= 1000) { $("work").classList.add("noL", "noR"); syncWinButtons(); }          // без записи: на широком окне панели вернутся
   ZONE_FORCE = "restore"; try { Object.keys(W0()).forEach(id => { if (WST[id]?.open) winOpen(id, true); }); } finally { ZONE_FORCE = false; }   // первый запуск: вместо окон — «С чего начать» на карте
+  if (window.EMBED) {                             // окно «Листы и альбом» нового интерфейса: без панели слоёв, листы — справа у карты
+    if (!$("work").classList.contains("noL")) toggleDock("L", false);
+    if (!WST.wSheets?.open) { winOpen("wSheets", true); dockWin($("wSheets"), "r"); }
+    if ($("work").classList.contains("noR")) toggleDock("R", true);
+  }
   requestAnimationFrame(() => { WIN_ANIM = true; });                                // окна, открытые дальше, появляются мягко
   syncWinButtons(); recompute(true);
   await window.projectStart?.(); syncPreview();

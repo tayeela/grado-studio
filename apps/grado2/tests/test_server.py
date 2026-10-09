@@ -341,12 +341,11 @@ class YandexSatBreaker(unittest.TestCase):
 
     def _run(self, exc, n):
         import tempfile
-        import urllib.error
         import sat_io
         real = sat_io.YandexSat
 
         def transport(url):
-            raise exc(url) if exc is urllib.error.HTTPError else exc("x")
+            raise exc(url)
         saved = dict(S._YSAT)
         S._YSAT.update({"fails": 0, "off_until": 0.0, "bad": {}})
         try:
@@ -361,8 +360,8 @@ class YandexSatBreaker(unittest.TestCase):
             S._YSAT.update(saved)
 
     def test_404_does_not_trip_breaker(self):
-        import urllib.error
-        st = self._run(lambda url: urllib.error.HTTPError(url, 404, "nf", None, None), 8)
+        from grado_connectors import netutil
+        st = self._run(lambda url: netutil.HttpError(404), 8)
         self.assertEqual(st["fails"], 0)
         self.assertEqual(st["off_until"], 0.0)
         self.assertEqual(len(st["bad"]), 8)                                      # но «нет снимка» запомнено
@@ -488,7 +487,7 @@ class PublicHost(unittest.TestCase):
         import os
         import threading
         import urllib.request
-        srv = S.Server(("127.0.0.1", 0), S.Handler)
+        srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
             req = urllib.request.Request(f"http://127.0.0.1:{srv.server_address[1]}/api/health", headers={"Host": host, **({"Origin": origin} if origin else {})})
@@ -610,7 +609,7 @@ class HttpHardening(unittest.TestCase):
         import threading
         self.tmp = tempfile.TemporaryDirectory()                          # тест POST /api/project не должен писать в настоящую папку проектов
         self.old, S.PROJECTS = S.PROJECTS, Path(self.tmp.name) / "p"
-        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        self.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
 
@@ -703,6 +702,21 @@ class HttpHardening(unittest.TestCase):
             self.assertEqual(self.call("/api/tep", b'{"terr_ha":1,"restrict_ha":0,"spp_new_m2":1,"share":1}')[0], 200)      # в пределе — проходит
             self.assertNotEqual(self.call("/api/place", b"{" + b" " * 200 + b"}")[0], 200)
             self.assertNotEqual(self.call("/api/project?name=zzz", b"{" + b" " * 200 + b"}")[0], 413)   # проект — свой предел
+            # тело кусками без Content-Length: предел тот же, чтение прерывается на нём
+            import http.client
+            c = http.client.HTTPConnection("127.0.0.1", self.srv.server_address[1], timeout=10)
+            c.request("POST", "/api/tep", body=iter([b'{"terr_ha":1,', b" " * 200, b"}"]),
+                      headers={"Content-Type": "application/json", "Transfer-Encoding": "chunked"}, encode_chunked=True)
+            self.assertEqual(c.getresponse().status, 413)
+            c.close()
+
+    def test_bad_fields_are_400_with_the_field_name(self):
+        for path, body, field in (("/api/fetch", {"bbox": [1, 2, 3]}, "bbox"), ("/api/fetch", {"bbox": [37, 55, 38, 56], "territory": [5, 5, 1, 1]}, "territory"),
+                                  ("/api/fetch", {"bbox": [37, 55, 38, 56], "margin_m": "x"}, "margin_m"), ("/api/tep", {"terr_ha": "много"}, "terr_ha"),
+                                  ("/api/rail_route", {"lon": 37}, "lat")):
+            code, _, _, j = self.call(path, json.dumps(body).encode())
+            self.assertEqual(code, 400, (path, body))
+            self.assertIn(field + ":", j["error"])
 
     def test_non_object_json_is_400(self):
         for path in ("/api/print/pdf", "/api/print/svg", "/api/export/dxf", "/api/fgistp/fetch", "/api/tep", "/api/import/files"):
@@ -731,8 +745,10 @@ class HttpHardening(unittest.TestCase):
                 self.assertEqual(code, 507)
                 self.assertFalse((Path(d) / "proba2.grado2").exists())
 
-    def test_handler_has_socket_timeout(self):
-        self.assertEqual(S.Handler.timeout, 120)
+    def test_busy_port_is_refused_at_once(self):
+        # main() перебирает порты по OSError из конструктора: занятый порт должен отказывать сразу, а не при запуске
+        with self.assertRaises(OSError):
+            S.Server(("127.0.0.1", self.srv.server_address[1]))
 
     def test_kill_only_our_server(self):
         self.assertFalse(S._is_our_process(os.getpid()))            # процесс тестов — не server.py
@@ -751,7 +767,7 @@ class AccessToken(unittest.TestCase):
 
     def setUp(self):
         import threading
-        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        self.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.port = self.srv.server_address[1]
         S._LOGIN_FAILS.clear()
@@ -778,8 +794,19 @@ class AccessToken(unittest.TestCase):
     def test_off_by_default_nothing_changes(self):
         self.assertEqual(S.TOKEN, "")                                  # тесты не зависят от окружения владельца
         self.assertEqual(self.call("/api/sources")[0], 200)
-        self.assertEqual(self.call("/")[0], 200)
+        s, r, _ = self.call("/")
+        self.assertEqual((s, r.getheader("Location")), (302, "/next/"))   # адрес сайта — новый интерфейс
+        self.assertEqual(self.call("/next/")[0], 200)
         self.assertEqual(self.call("/api/login", {"token": "x"})[0], 404)   # без ключа такого метода нет
+
+    def test_old_page_lives_at_old(self):
+        """Прежняя рабочая страница — /old (и /old?embed=album — окно «Листы и альбом» нового интерфейса), со скриптами из корня."""
+        s, r, body = self.call("/old?embed=album")
+        self.assertEqual((s, r.getheader("Content-Type").split(";")[0]), (200, "text/html"))
+        for src in ("embed.js", "sheets.js", "albums.js", "project.js"):
+            self.assertIn(f'<script src="{src}"></script>', body.decode("utf-8"))
+        self.assertEqual(self.call("/embed.js")[0], 200)
+        self.assertEqual(self.call("/?x=1")[1].getheader("Location"), "/next/?x=1")
 
     def test_empty_token_means_off(self):
         with mock.patch.object(S, "TOKEN", ""):
@@ -802,7 +829,7 @@ class AccessToken(unittest.TestCase):
 
     def test_unauthenticated_page_redirects_and_api_is_401(self):
         with self.on():
-            for path in ("/", "/index.html"):
+            for path in ("/", "/index.html", "/next/", "/old"):
                 s, r, _ = self.call(path)
                 self.assertEqual((s, r.getheader("Location")), (302, "/login.html"), path)
             s, _, body = self.call("/api/sources")
@@ -830,7 +857,8 @@ class AccessToken(unittest.TestCase):
             self.assertNotIn("Secure", cookie)                          # прямое http без прокси
             sent = {"Cookie": cookie.split(";")[0]}
             self.assertEqual(self.call("/api/sources", headers=sent)[0], 200)
-            self.assertEqual(self.call("/", headers=sent)[0], 200)
+            self.assertEqual(self.call("/next/", headers=sent)[0], 200)
+            self.assertEqual(self.call("/", headers=sent)[1].getheader("Location"), "/next/")
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "a=b; grado_token=wrong"})[0], 401)
 
     def test_secure_flag_behind_tls_proxy(self):
@@ -882,7 +910,7 @@ class HubHttp(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import threading
-        cls.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        cls.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.port = cls.srv.server_address[1]
 
@@ -996,7 +1024,8 @@ class HubHttp(unittest.TestCase):
                            ("/api/hub/logout", {}), ("/api/ogd_all/cancel", {}), ("/api/import/files", {})):
             self.assertEqual(self.call(path, body)[0], 401, path)
         self.assertEqual(self.call("/api/hub/me")[0], 401)
-        self.assertEqual(self.call("/")[0], 200)                    # статика открыта: из неё строится экран входа
+        self.assertEqual(self.call("/next/")[0], 200)               # статика открыта: из неё строится экран входа
+        self.assertEqual(self.call("/old")[0], 200)
         self.assertEqual(self.call("/api/health")[0], 200)
         self.assertEqual(self.call("/api/progress")[0], 200)        # проба выкладки с loopback, как и при ключе доступа
         self.assertEqual(self.call("/api/progress", headers={"X-Forwarded-For": "203.0.113.5"})[0], 401)
@@ -1053,7 +1082,7 @@ class HubHttp(unittest.TestCase):
     def test_token_gate_env_is_ignored_in_hub_mode(self):
         with mock.patch.object(S, "TOKEN", "secret-key-xyz"):
             s, r, _ = self.call("/")
-            self.assertEqual(s, 200)                                    # не 302 на login.html
+            self.assertEqual((s, r.getheader("Location")), (302, "/next/"))   # не на login.html
             self.assertEqual(self.call("/api/sources", headers={"X-Grado-Token": "secret-key-xyz"})[0], 401)
             self.assertEqual(self.call("/api/sources", headers={"Cookie": "grado_token=secret-key-xyz"})[0], 401)
             self.assertEqual(self.call("/api/login", {"token": "secret-key-xyz"}, cookie=self.login("ann"))[0], 404)
@@ -1248,7 +1277,7 @@ class HubHttp(unittest.TestCase):
                         q.put(json.loads(line[6:]))
                     elif line.startswith(b": ping"):
                         q.put({"type": "ping"})
-            except (OSError, ValueError):
+            except (OSError, ValueError, AttributeError):    # AttributeError: тест закрыл ответ, пока нить читала поток
                 q.put(None)
         threading.Thread(target=pump, daemon=True).start()
         return c, r, q
@@ -1330,10 +1359,7 @@ class HubHttp(unittest.TestCase):
 
     def test_client_ip_trusts_forwarded_for_only_from_the_proxy_on_this_host(self):
         def ip(peer, xff=None):
-            h = S.Handler.__new__(S.Handler)
-            h.client_address = (peer, 5000)
-            h.headers = {"X-Forwarded-For": xff} if xff is not None else {}
-            return h._client_ip()
+            return S.client_ip(peer, {"X-Forwarded-For": xff} if xff is not None else {})
         self.assertEqual(ip("127.0.0.1", "6.6.6.6, 203.0.113.9"), "203.0.113.9")     # последний: его дописал наш Caddy
         self.assertEqual(ip("::1", "203.0.113.9"), "203.0.113.9")
         self.assertEqual(ip("198.51.100.7", "1.2.3.4"), "198.51.100.7")              # с чужого адреса заголовку не верим
@@ -1380,7 +1406,7 @@ class HubHttp(unittest.TestCase):
         for site in ("same-origin", "none"):
             self.assertEqual(self.call("/api/hub/projects", {"name": "x"}, cookie, headers={"Sec-Fetch-Site": site})[0], 200)
         # переход по ссылке со стороннего сайта — GET, главная страница открывается (данных в ней нет)
-        self.assertEqual(self.call("/", headers={"Sec-Fetch-Site": "cross-site"})[0], 200)
+        self.assertEqual(self.call("/next/", headers={"Sec-Fetch-Site": "cross-site"})[0], 200)
 
     def test_every_state_changing_hub_route_checks_origin_and_json(self):
         ann = self.login("ann")
@@ -1821,7 +1847,7 @@ class NonHubUnchanged(unittest.TestCase):
 
     def setUp(self):
         import threading
-        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        self.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.port = self.srv.server_address[1]
 
@@ -1865,7 +1891,7 @@ class SearchCadastral(unittest.TestCase):
         S.CAD_FAIL.clear()
         self.pause = mock.patch.object(S, "CAD_PAUSE", 0)
         self.pause.start()
-        self.srv = S.Server(("127.0.0.1", 0), S.Handler)
+        self.srv = S.Server(("127.0.0.1", 0))
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.port = self.srv.server_address[1]
 

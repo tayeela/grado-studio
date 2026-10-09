@@ -20,20 +20,6 @@ TOKEN = "t0ken-for-tests-0123456789abcdef"
 RELAY = "https://relay.example.test"
 
 
-class _Resp:
-    def __init__(self, payload):
-        self._data = json.dumps(payload).encode("utf-8")
-
-    def read(self, n=-1):
-        return self._data
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-
 def _env(**kw):
     base = {k: v for k, v in os.environ.items()
             if k not in ("GRADO_NSPD_BASE", "GRADO_NSPD_RELAY_TOKEN")}
@@ -70,31 +56,27 @@ class Relay(unittest.TestCase):
                              {"X-Grado-Relay-Token": TOKEN})
 
     def _capture(self, call):
-        seen = []
-
-        def fake_open(req, timeout, ctx=None):
-            seen.append(req)
-            return _Resp({"features": []})
-        with mock.patch.object(netutil, "open_url", fake_open):
+        from _fakenet import FakeNet
+        with FakeNet(json.dumps({"features": []}).encode()) as net:
             call()
-        return seen[0]
+        return net.requests[0]
 
     def test_post_and_get_carry_token_and_keep_portal_headers(self):
         with _env(GRADO_NSPD_BASE=RELAY, GRADO_NSPD_RELAY_TOKEN=TOKEN):
             req = self._capture(lambda: nspd.NspdDirect()._http_post(
                 nspd._intersects_url(), {"geom": {}}))
-            self.assertTrue(req.full_url.startswith(RELAY + "/api/geoportal/"))
-            self.assertEqual(req.get_header("X-grado-relay-token"), TOKEN)
-            self.assertEqual(req.get_header("Referer"), "https://nspd.gov.ru/map")
+            self.assertTrue(str(req.url).startswith(RELAY + "/api/geoportal/"))
+            self.assertEqual(req.headers.get("X-Grado-Relay-Token"), TOKEN)
+            self.assertEqual(req.headers.get("Referer"), "https://nspd.gov.ru/map")
             req = self._capture(lambda: nspd._http_get(RELAY + nspd.SEARCH_PATH + "?query=1"))
-            self.assertEqual(req.get_header("X-grado-relay-token"), TOKEN)
-            self.assertEqual(req.get_header("Origin"), "https://nspd.gov.ru")
+            self.assertEqual(req.headers.get("X-Grado-Relay-Token"), TOKEN)
+            self.assertEqual(req.headers.get("Origin"), "https://nspd.gov.ru")
 
     def test_without_variables_nothing_changes(self):
         with _env(GRADO_NSPD_RELAY_TOKEN=TOKEN):
             req = self._capture(lambda: nspd._http_get(nspd.SEARCH_URL + "?query=1"))
-            self.assertTrue(req.full_url.startswith("https://nspd.gov.ru/"))
-            self.assertFalse(req.has_header("X-grado-relay-token"))
+            self.assertTrue(str(req.url).startswith("https://nspd.gov.ru/"))
+            self.assertNotIn("X-Grado-Relay-Token", req.headers)
 
     def test_search_uses_base(self):
         urls = []
@@ -107,10 +89,10 @@ class Relay(unittest.TestCase):
         self.assertTrue(urls[0].startswith(RELAY + "/api/geoportal/v2/search/geoportal?"))
 
     def test_token_not_in_error_message(self):
-        import urllib.error
+        import httpx
+        from _fakenet import FakeNet
         with _env(GRADO_NSPD_BASE=RELAY, GRADO_NSPD_RELAY_TOKEN=TOKEN):
-            with mock.patch.object(netutil, "open_url",
-                                   side_effect=urllib.error.URLError("boom")):
+            with FakeNet(httpx.ConnectError("boom"), repeat_last=True):
                 with self.assertRaises(Exception) as cm:
                     nspd._http_get(RELAY + nspd.SEARCH_PATH + "?query=1")
         self.assertNotIn(TOKEN, str(cm.exception))

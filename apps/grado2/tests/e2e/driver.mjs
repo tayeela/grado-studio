@@ -1,5 +1,5 @@
-// ГРАДО 2 browser scenarios: headless Chrome over the DevTools protocol, no dependencies (node 22 has fetch and WebSocket).
-// node driver.mjs <url> <steps.mjs>; Chrome path from env CHROME (default: macOS Google Chrome).
+// ГРАДО 2 browser scenarios: headless Chrome started by Playwright (browser.mjs, playwright-core from tools: (cd tools && npm ci)).
+// node driver.mjs <url> <steps.mjs>; Chrome path from env CHROME (default: macOS Google Chrome). Input goes over the DevTools protocol.
 // steps.mjs: export default async (p) => { ... }  p.wheel(x,y,deltaY,{ctrl}) · p.ev(js) · p.click(x,y,{shift,meta,dbl}) · p.drag(x0,y0,x1,y1,{shift}) · p.key(key,code,mods) · p.shot(file) · p.sleep(ms) · p.log(...)
 //
 // Failures (T51). By default a failed check() does NOT stop the run: it prints "STEP FAILED: <message>" and goes on; a page
@@ -14,26 +14,17 @@
 //   E2E_ONLY=tep,album runs only groups with one of these tags; code outside any group always runs (keep shared set-up there).
 //   Steps of a group depend on the state left by earlier ones: skipping a group that sets up state for another gives failures there.
 //   An exception that escapes a group aborts that group; the run continues with the next group.
-// Env: CHROME, W/H (viewport), E2E_STOP, E2E_ONLY. Debug port: a free TCP port picked by the OS. Start-up waits (cap 20 s) for
+// Env: CHROME, W/H (viewport), E2E_STOP, E2E_ONLY. Start-up waits (cap 20 s) for
 //   document.readyState=="complete" and the app globals (LYR, mMain) or window.ready===true instead of a fixed sleep.
-import { spawn } from "node:child_process";
-import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import net from "node:net";
+import { writeFileSync } from "node:fs";
 import * as nodeModule from "node:module";
 import { pathToFileURL } from "node:url";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
+import { launch } from "./browser.mjs";
 
 const [url, stepsPath] = process.argv.slice(2);
 const STOP = process.env.E2E_STOP === "1";
 const ONLY = (process.env.E2E_ONLY || "").split(",").map(x => x.trim()).filter(Boolean);
-const freePort = () => new Promise((res, rej) => { const s = net.createServer(); s.once("error", rej); s.listen(0, "127.0.0.1", () => { const { port } = s.address(); s.close(() => res(port)); }); });
-const port = await freePort();
-const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-const profile = mkdtempSync(join(tmpdir(), "cdp-"));
-const chrome = spawn(CHROME, [
-  "--headless=new", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
-  "--window-size=1440,900", "--no-first-run", "--no-default-browser-check", "--no-sandbox", "--enable-unsafe-swiftshader", "about:blank"], { stdio: "ignore" });
 let failed = false, curGroup = "", nOk = 0;
 const failures = [];
 const fail = name => { failures.push({ group: curGroup, name }); console.log("STEP FAILED:", (curGroup ? `[${curGroup}] ` : "") + name); };
@@ -47,8 +38,8 @@ async function group(tags, fn) {
 }
 globalThis.group = group; globalThis.__e2e = { check, group };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-let ws, id = 0; const pending = new Map(), logs = [];
-const send = (method, params = {}) => new Promise(r => { const i = ++id; pending.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+const browser = await launch({ width: +(process.env.W || 1440), height: +(process.env.H || 900) });
+const { send, logs } = browser;
 const mods = o => (o?.alt ? 1 : 0) | (o?.ctrl ? 2 : 0) | (o?.meta ? 4 : 0) | (o?.shift ? 8 : 0);
 const p = {
   sleep, logs, check, group, raw: (m, a) => send(m, a),
@@ -83,15 +74,6 @@ const p = {
   async shot(file) { const s = await send("Page.captureScreenshot", { format: "png" }); writeFileSync(file, Buffer.from(s.result.data, "base64")); },
 };
 try {
-  let targets;
-  for (let i = 0; i < 50; i++) { try { targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json(); break; } catch { await sleep(100); } }
-  ws = new WebSocket(targets.find(t => t.type === "page").webSocketDebuggerUrl);
-  await new Promise(r => ws.onopen = r);
-  ws.onmessage = e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); }
-    if (m.method === "Runtime.consoleAPICalled" && ["error", "warning"].includes(m.params.type)) logs.push(m.params.type + ": " + m.params.args.map(a => a.value ?? a.description).join(" "));
-    if (m.method === "Runtime.exceptionThrown") logs.push("EXCEPTION: " + (m.params.exceptionDetails.exception?.description || m.params.exceptionDetails.text)); };
-  await send("Runtime.enable"); await send("Page.enable");
-  await send("Emulation.setDeviceMetricsOverride", { width: +(process.env.W||1440), height: +(process.env.H||900), deviceScaleFactor: 1, mobile: false });
   await send("Page.navigate", { url });
   let ready = false;
   for (let t0 = Date.now(); Date.now() - t0 < 20000 && !ready; ) {
@@ -116,9 +98,5 @@ try {
   console.log(`SUMMARY: ${nOk} ok, ${failures.length} failed`);
   failures.forEach((f, i) => console.log(`  FAILED #${i + 1}${f.group ? ` [${f.group}]` : ""} ${f.name}`));
 } finally {
-  ws?.close(); chrome.kill(); process.exitCode = failed ? 1 : 0;
-  // The temp profile is ~140 MB per run; remove it once Chrome has exited (5 s cap if it never reports exit).
-  if (chrome.exitCode === null && chrome.signalCode === null)
-    await new Promise(r => { const t = setTimeout(r, 5000); chrome.once("exit", () => { clearTimeout(t); r(); }); });
-  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  await browser.close(); process.exitCode = failed ? 1 : 0;
 }
