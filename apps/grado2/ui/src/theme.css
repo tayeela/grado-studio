@@ -86,7 +86,7 @@ svg.lucide { stroke-width: 1.75; }
 
 /* шапка, лента и строка состояния лежат на столе без рамок; окна — карточки */
 .shell > .top, .shell > .ribbon, .shell > .status { background: var(--g-desk); border-color: transparent; }
-.shell > .dock { padding: 0 8px 6px; }
+.shell > .dock { padding: 8px; }   /* зазор 8 px со всех сторон, как между окнами */
 
 /* dockview: группы окон — карточки со скруглением 12 и зазором 8 (gap в теме App.vue) */
 .grado-dock {
@@ -122,12 +122,18 @@ svg.lucide { stroke-width: 1.75; }
 .grado-dock .dv-groupview { border: 1px solid var(--g-line); border-radius: 12px; overflow: hidden; box-shadow: var(--g-shadow-1); }
 .grado-dock .dv-tabs-and-actions-container { border-bottom: 1px solid var(--g-line); padding-inline: 4px; }
 /* вкладка окна: выбранная — тёмный текст и синяя черта снизу, остальные — серые */
-.grado-dock .dv-tab { padding-inline: 10px; font-weight: 500; }
+.grado-dock .dv-tab { padding-inline: 8px; font-weight: 500; }
 .grado-dock .dv-tab.dv-active-tab { box-shadow: inset 0 -2px 0 var(--wa-color-brand-fill-loud); }
 .grado-dock .dv-inactive-group .dv-tab.dv-active-tab { box-shadow: inset 0 -2px 0 var(--wa-color-surface-border); }
-/* крестик у вкладки — только при наведении */
+/* крестик у вкладки — только при наведении; место под него держит лишь выбранная вкладка,
+   у остальных он ложится поверх конца подписи — так в узкой группе помещается больше вкладок */
 .grado-dock .dv-tab .dv-default-tab-action { opacity: 0; transition: opacity 120ms; }
 .grado-dock .dv-tab:hover .dv-default-tab-action, .grado-dock .dv-tab.dv-active-tab:hover .dv-default-tab-action { opacity: 1; }
+.grado-dock .dv-tab.dv-inactive-tab .dv-default-tab-content { margin-right: 0; }
+.grado-dock .dv-tab.dv-inactive-tab .dv-default-tab-action {
+  position: absolute; right: -6px; top: 50%; transform: translateY(-50%); height: 22px; padding: 4px 4px 4px 12px;
+  background: linear-gradient(to right, transparent, var(--wa-color-surface-default) 10px);
+}
 
 /* кнопки Web Awesome: главная залита синькой, тихие получают фон при наведении */
 wa-button[variant="brand"][appearance~="filled"]::part(base) { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), var(--g-shadow-1); }
@@ -145,7 +151,16 @@ wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-sur
 /* подложка карты: в светлой теме OSM приглушена, чтобы читались знаки */
 .basemap { filter: grayscale(1) contrast(.9) brightness(1.05); }
 .ol-zoom { top: .5em; right: .5em; left: auto; bottom: auto; }   /* справа сверху: низ карты занят командной строкой */
-.ol-attribution { font-size: 10px; }
+.ol-attribution { font-size: var(--wa-font-size-2xs); }
+/* кнопки карты OpenLayers («+», «−», компас, «i»): цвета и шрифт темы, в тёмной — не белые */
+.ol-control { background: transparent; }
+.ol-control button {
+  background: var(--wa-color-surface-raised); color: var(--wa-color-text-normal); border: 1px solid var(--g-line);
+  font-family: var(--wa-font-family-body); font-weight: 500; border-radius: 6px; margin: 2px;
+}
+.ol-control button:hover, .ol-control button:focus { background: var(--wa-color-surface-lowered); outline: none; }
+.ol-attribution:not(.ol-collapsed) { background: color-mix(in srgb, var(--wa-color-surface-default) 85%, transparent); color: var(--wa-color-text-quiet); }
+.ol-attribution a { color: var(--wa-color-text-link); }
 
 /* плавающее окно: рамка и тень, чтобы отделялось от карты */
 .grado-dock .dv-resize-container { border: 1px solid var(--g-line); border-radius: 12px; box-shadow: var(--g-shadow-2); }
