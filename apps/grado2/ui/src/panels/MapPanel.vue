@@ -74,7 +74,7 @@ function setTerrTool(t) {
 /* Область загрузки данных: синий пунктир, пока окно «Данные» на виду. */
 const coverSrc = new VectorSource();
 const coverStyle = new Style({ stroke: new Stroke({ color: "#1a5fb4", width: 1.5, lineDash: [6, 5] }),
-  text: new Text({ text: "область загрузки данных", font: "12px system-ui, sans-serif", placement: "line", fill: new Fill({ color: "#1a5fb4" }),
+  text: new Text({ text: "область загрузки данных", font: "12px Onest, system-ui, sans-serif", placement: "line", fill: new Fill({ color: "#1a5fb4" }),
     stroke: new Stroke({ color: "#fff", width: 3 }), textBaseline: "bottom", offsetY: -3 }) });
 function drawCover() {
   coverSrc.clear(true);
