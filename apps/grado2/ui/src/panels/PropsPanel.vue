@@ -5,11 +5,15 @@
 <template>
   <div class="pane props" v-if="l">
     <div class="ph"><span class="sw" :class="l.geom" :style="{ '--c': swatchColor(st) }"></span><b>{{ l.title || l.key }}</b></div>
-    <div class="sub">{{ GEOM[l.geom] || l.geom }} · {{ count.toLocaleString("ru-RU") }} объектов</div>
+    <div class="sub">{{ GEOM[l.geom] || l.geom }} · {{ plural(count, ["объект", "объекта", "объектов"]) }}</div>
 
-    <wa-radio-group size="s" orientation="horizontal" :value="st.mode" @change="e => setMode(e.target.value)" class="modes">
-      <wa-radio v-for="[m, t] in modes" :key="m" appearance="button" :value="m">{{ t }}</wa-radio>
-    </wa-radio-group>
+    <!-- способ оформления — выпадающим списком: четыре-пять кнопок в ряд не помещаются в узкое окно -->
+    <div class="modes">
+      <span class="lbl">Оформление</span>
+      <wa-select size="s" :value="st.mode" aria-label="Способ оформления" @change="e => setMode(e.target.value)">
+        <wa-option v-for="[m, t] in modes" :key="m" :value="m">{{ t }}</wa-option>
+      </wa-select>
+    </div>
 
     <template v-if="st.mode === 'lgr'">
       <p class="hint">Знаки красных линий и ЛГР по стандарту REDLN97: тип линии выбирается по коду линии объекта.
@@ -82,7 +86,7 @@
         <div class="row">
           <wa-color-picker size="s" :value="r.fill" @change="e => (r.fill = e.target.value)"></wa-color-picker>
           <wa-checkbox v-if="l.geom === 'poly'" size="s" :checked="!!r.hatch" @change="e => (r.hatch = e.target.checked)">штриховка</wa-checkbox>
-          <span class="grow"></span><span class="n">{{ ruleCount(r, fc) }} об.</span>
+          <span class="grow"></span><span class="n" title="Объектов, подходящих под правило">{{ plural(ruleCount(r, fc), ["объект", "объекта", "объектов"]) }}</span>
           <wa-button size="s" appearance="plain" title="Удалить правило" @click="st.rules.list.splice(i, 1)"><X :size="14" /></wa-button>
         </div>
       </div>
@@ -140,6 +144,7 @@ import { Plus, X } from "@lucide/vue";
 import "../../../web/roles.js";
 import { current, project } from "../store.js";
 import { dataRev } from "../edit.js";
+import { plural } from "../geom.js";
 import {
   CAT, DENS, HATCHES, OPS, OTHER, RAMPS, RAMP_TITLES, assignCats, breaks, catValues, fieldsOf, floorsDenOf, legendItems, numFields, okn, ruleCount, swatchColor,
 } from "../symbology.js";
@@ -154,7 +159,7 @@ const fields = computed(() => fieldsOf(fc.value));
 const nf = computed(() => numFields(fc.value));
 const txtFields = computed(() => fields.value.filter(k => !nf.value.includes(k)));
 const hasLgr = computed(() => st.value.mode === "lgr" || (fc.value?.features || []).some(f => f.properties?._lt));
-const modes = computed(() => [["single", "Единое"], ["cat", "Категории"], ["grad", "Диапазоны"], ["rules", "Правила"]].concat(hasLgr.value ? [["lgr", "ЛГР"]] : []));
+const modes = computed(() => [["single", "Единый цвет"], ["cat", "Категории по полю"], ["grad", "Диапазоны чисел"], ["rules", "Правила"]].concat(hasLgr.value ? [["lgr", "Знаки ЛГР"]] : []));
 const allCats = computed(() => catValues(fc.value, st.value.cat.field));
 const cats = computed(() => allCats.value.slice(0, 80));
 const catsAll = computed(() => allCats.value.length);
@@ -184,7 +189,9 @@ function setRole(v) { if (v === "auto") delete l.value.role; else l.value.role =
 .props .sw { width: 16px; height: 10px; flex: none; background: color-mix(in srgb, var(--c) 45%, transparent); border: 1px solid var(--c); }
 .props .sw.line { background: none; border: 0; border-bottom: 2.5px solid var(--c); height: 6px; }
 .props .sw.point { width: 10px; border-radius: 50%; background: var(--c); }
-.props .modes { margin-bottom: var(--wa-space-m); }
+.props .modes { display: flex; align-items: center; gap: var(--wa-space-s); margin-bottom: var(--wa-space-m); }
+.props .modes .lbl { margin: 0; flex: none; }
+.props .modes wa-select { flex: 1; min-width: 0; }
 .props .row { display: flex; gap: var(--wa-space-s); align-items: flex-end; flex-wrap: wrap; margin-bottom: var(--wa-space-s); }
 .props .row > * { margin-bottom: 0 !important; }
 .props .row wa-select, .props .row wa-input { flex: 1; min-width: 90px; }

@@ -5,7 +5,7 @@
 <template>
   <div class="pane views">
     <div class="bar">
-      <wa-input size="s" placeholder="Название вида, например «Ограничения»" :value="name" @input="e => (name = e.target.value)" @keydown.enter="add"></wa-input>
+      <wa-input size="s" placeholder="Название вида" title="Название нового вида, например «Ограничения»" :value="name" @input="e => (name = e.target.value)" @keydown.enter="add"></wa-input>
       <wa-checkbox size="s" :checked="withExt" title="Вид запомнит и масштаб карты" @change="e => (withExt = e.target.checked)">с масштабом</wa-checkbox>
       <wa-button size="s" variant="brand" title="Запомнить видимые слои, их оформление и подложку" @click="add"><BookmarkPlus :size="15" /> Сохранить вид</wa-button>
     </div>
@@ -14,17 +14,19 @@
       например «Существующее положение», «Ограничения», «Эскиз». Переключение вида меняет карту одним щелчком.</p>
     <table v-else class="vl">
       <tr v-for="v in project.views" :key="v.id" :class="{ cur: v.id === viewCur }">
-        <td class="nm" :title="`Показать вид «${v.name}»: ${v.layers.filter(x => x.visible).length} видимых слоёв${v.extent ? ', с масштабом' : ''}`" @click="show(v)">
-          <Eye :size="14" /> {{ v.name }}<span class="n"> · {{ v.layers.filter(x => x.visible).length }} сл.{{ v.extent ? " · масштаб" : "" }}</span></td>
+        <td class="nm" :title="`Показать вид «${v.name}»: ${plural(nOn(v), ['видимый слой', 'видимых слоя', 'видимых слоёв'])}${v.extent ? ', с масштабом' : ''}`" @click="show(v)">
+          <div class="t"><Eye :size="14" /><span>{{ v.name }}</span></div>
+          <div class="n">{{ plural(nOn(v), ["слой", "слоя", "слоёв"]) }}{{ v.extent ? " · с масштабом" : "" }}</div></td>
         <td class="act">
           <wa-button size="s" appearance="plain" title="Заменить вид текущим состоянием карты" @click="update(v)"><RefreshCw :size="14" /></wa-button>
           <wa-button size="s" :appearance="confirmId === v.id ? 'filled' : 'plain'" :variant="confirmId === v.id ? 'danger' : 'neutral'"
                      :title="confirmId === v.id ? 'Нажмите ещё раз, чтобы удалить' : 'Удалить вид'" @click="remove(v)">
-            <template v-if="confirmId === v.id">Удалить?</template><Trash2 v-else :size="14" /></wa-button>
+            <Trash2 :size="14" /></wa-button>
         </td>
       </tr>
     </table>
-    <p v-if="confirmId && usedBy(confirmId).length" class="hint">Листов с этим видом: {{ usedBy(confirmId).length }} — они перейдут на текущую карту.</p>
+    <p v-if="confirmId" class="hint">Нажмите красную корзину ещё раз, чтобы удалить вид.<template v-if="usedBy(confirmId).length">
+      Листов с этим видом: {{ usedBy(confirmId).length }} — они перейдут на текущую карту.</template></p>
 
     <template v-if="cur">
       <div class="sect">Легенда вида «{{ cur.name }}»</div>
@@ -45,9 +47,11 @@ import { basemapId, project, setBasemap, swatchOf, viewCur, viewNow } from "../s
 import { dataRev, grp, mapApi } from "../edit.js";
 import { notice } from "../project.js";
 import { fullStyle, legendItems, okn } from "../symbology.js";
+import { plural } from "../geom.js";
 
 const name = ref(""), withExt = ref(false), confirmId = ref("");
 const clone = o => JSON.parse(JSON.stringify(o));
+const nOn = v => v.layers.filter(x => x.visible).length;
 
 function capture(title, ext) {
   return { id: "v" + Date.now().toString(36), name: title, basemap: basemapId.value,
@@ -110,14 +114,18 @@ const legend = computed(() => {
 .views .bar wa-input { flex: 1 1 180px; min-width: 0; margin: 0 !important; }
 .views .bar wa-checkbox { margin: 0 !important; }
 .views table.vl { width: 100%; border-collapse: collapse; font-size: var(--wa-font-size-s); table-layout: fixed; }
-.views table.vl td { padding: 2px 4px; border-bottom: 1px solid var(--g-line); }
+.views table.vl td { padding: 3px 4px; border-bottom: 1px solid var(--g-line); vertical-align: top; }
 .views table.vl tr.cur td { background: var(--wa-color-brand-fill-quiet); }
-.views td.nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+/* строка вида: название во всю ширину (длинное переносится), число слоёв второй строкой, кнопки узкие справа */
+.views td.nm { cursor: pointer; overflow-wrap: anywhere; }
+.views td.nm .t { display: flex; gap: 5px; align-items: flex-start; line-height: 1.3; }
+.views td.nm .t svg { flex: none; margin-top: 2px; color: var(--g-muted); }
 .views td.nm:hover { color: var(--wa-color-brand-on-quiet); }
-.views td.nm svg { vertical-align: -2px; color: var(--g-muted); }
+.views td.nm .n { padding-left: 19px; }
 .views .n { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
-.views td.act { width: 96px; white-space: nowrap; text-align: right; }
-.views td.act wa-button::part(base) { padding-inline: 5px; }
+.views td.act { width: 56px; white-space: nowrap; text-align: right; }
+.views td.act wa-button::part(base) { padding-inline: 3px; }
+.views td.act wa-button { --wa-form-control-height: 24px; }
 .views .sect { margin: var(--wa-space-m) 0 4px; font-weight: 600; font-size: var(--wa-font-size-s); }
 .views .lg { margin-bottom: 6px; font-size: var(--wa-font-size-s); }
 .views .lgh { display: flex; gap: 6px; align-items: center; }

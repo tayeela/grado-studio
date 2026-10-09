@@ -12,7 +12,7 @@ const ICON = { map: Map, legend: List, text: Type, picture: Image, north: Compas
 const editing = ref(null);
 const rows = () => [...props.blocks].reverse();
 function rename(b) { editing.value = b.id; nextTick(() => document.getElementById("ip-" + b.id)?.select()); }
-function done(b, e) { const v = e.target.value.trim(); editing.value = null; if (v !== label(b)) emit("patch", b.id, { name: v || undefined }); }
+function done(b, e) { const v = e.target.value.trim(); editing.value = null; if (v !== label(b, props.blocks)) emit("patch", b.id, { name: v || undefined }); }
 </script>
 
 <template>
@@ -25,8 +25,8 @@ function done(b, e) { const v = e.target.value.trim(); editing.value = null; if 
       <button class="ip-i" :class="{ lit: b.locked }" :title="b.locked ? 'Открепить' : 'Закрепить'" :aria-label="b.locked ? 'Открепить' : 'Закрепить'" @click.stop="emit('patch', b.id, { locked: !b.locked })">
         <component :is="b.locked ? Lock : LockOpen" :size="14" :stroke-width="1.6" /></button>
       <component :is="ICON[b.kind]" :size="15" :stroke-width="1.6" class="ip-k" />
-      <input v-if="editing === b.id" :id="'ip-' + b.id" class="ip-n" :value="label(b)" @blur="done(b, $event)" @keydown.enter="$event.target.blur()" @keydown.esc="editing = null" @click.stop>
-      <span v-else class="ip-t">{{ label(b) }}</span>
+      <input v-if="editing === b.id" :id="'ip-' + b.id" class="ip-n" :value="label(b, blocks)" @blur="done(b, $event)" @keydown.enter="$event.target.blur()" @keydown.esc="editing = null" @click.stop>
+      <span v-else class="ip-t">{{ label(b, blocks) }}</span>
     </div>
   </div>
 </template>

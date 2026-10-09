@@ -217,7 +217,7 @@ export function styleFunction(l, fc, lat) {
         if (!fd || scaleDen(res, lat()) <= fd) {
           const ang = st.labelAngle ? -upright(labelDeg(f)) * Math.PI / 180 : 0, bare = st.marker === false;
           out.push(new Style({ text: new Text({
-            text: String(t), font: `${st.labelSize}px system-ui, sans-serif`, fill: new Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new Stroke({ color: "#fff", width: 3 }),
+            text: String(t), font: `${st.labelSize}px Onest, system-ui, sans-serif`, fill: new Fill({ color: st.labelColor || "#1d1d1f" }), stroke: new Stroke({ color: "#fff", width: 3 }),
             placement: l.geom === "line" ? "line" : "point", rotation: ang, rotateWithView: !!st.labelAngle,
             offsetY: l.geom === "point" && !bare ? -(2 + st.width * 2 + 1 + st.labelSize * 0.6 + 5) : 0, overflow: false,
           }) }));

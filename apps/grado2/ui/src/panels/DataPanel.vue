@@ -35,7 +35,7 @@
     <div v-for="g in groups" :key="g.kind" class="src">
       <div class="srch"><Database :size="13" /> <b>{{ g.title }}</b></div>
       <div v-for="k in g.keys" :key="k" class="lr">
-        <div class="row"><span class="nm" :title="project.data[k]?.source || ''">{{ SOURCES[k]?.title || project.data[k]?.title || k }}</span><span class="c">{{ count(k) }}</span></div>
+        <div class="row"><span class="nm" :title="srcTitle(k) + (project.data[k]?.source ? ' · ' + project.data[k].source : '')">{{ srcTitle(k) }}</span><span class="c" :title="count(k) ? 'Объектов в слое' : ''">{{ count(k) }}</span></div>
         <div v-if="ERRORS[k]" class="err">{{ ERRORS[k] }}</div>
         <div v-if="project.data[k]?.fetched_at" class="meta">выгрузка {{ project.data[k].fetched_at }}{{ hist(project.data[k]) }}{{ project.data[k].notes?.length ? " · " + project.data[k].notes[0] : "" }}</div>
       </div>
@@ -46,7 +46,8 @@
       <wa-button size="s" appearance="outlined" :disabled="!project.territory || !!loading" title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)"
                  @click="fgFind"><Landmark :size="14" /> Найти по территории</wa-button>
     </div>
-    <wa-input v-if="project.territory" size="s" type="search" with-clear placeholder="Поиск по названию во всём каталоге, например «генеральный план москвы»"
+    <wa-input v-if="project.territory" size="s" type="search" with-clear placeholder="Найти документ по названию"
+              title="Поиск по названию во всём каталоге ФГИС ТП, например «генеральный план Троицка»"
               aria-label="Поиск документа ФГИС ТП по названию" :value="FG.q" @input="fgTyped"></wa-input>
     <p v-if="FG.msg" class="hint">{{ FG.msg }}</p>
     <p v-if="inMoscow" class="hint">Генеральный план Москвы в ФГИС ТП не размещён (проверено по всему каталогу): его функциональные зоны — в источниках ГИС ОГД. Здесь для Москвы есть схемы РФ и генплан Троицка.</p>
@@ -78,7 +79,8 @@
       <div class="pbar">
         <wa-input size="s" type="search" placeholder="Поиск слоя или папки" with-clear :value="pk.q" @input="e => (pk.q = e.target.value)"></wa-input>
         <wa-checkbox size="s" :checked="pk.only" title="Скрыть слои ГИС ОГД, у которых в области нет объектов" @change="e => (pk.only = e.target.checked)">ГИС ОГД — только с объектами</wa-checkbox>
-        <wa-button size="s" appearance="outlined" :disabled="!pk.counts" @click="ogdWithObjects">ГИС ОГД с объектами{{ nObj != null ? ` (${nObj})` : "" }}</wa-button>
+        <wa-button size="s" appearance="outlined" :disabled="!pk.counts || !nObj" title="Отметить все слои ГИС ОГД, у которых в области есть объекты"
+                   @click="ogdWithObjects">Отметить ГИС ОГД с объектами{{ nObj ? ` · ${plural(nObj, ["слой", "слоя", "слоёв"])}` : "" }}</wa-button>
         <wa-button size="s" appearance="outlined" @click="pk.sel = new Set()">Снять все</wa-button>
       </div>
       <div class="presets">Готовые наборы:
@@ -98,8 +100,9 @@ import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref
 import { Database, Download, FileInput, FileUp, Grid2x2, Landmark, PenLine, Spline, SquareDashed } from "@lucide/vue";
 import * as turf from "@turf/turf";
 import { project } from "../store.js";
-import { dataRev } from "../edit.js";
+import { dataRev, lyr } from "../edit.js";
 import { sel, selected } from "../features.js";
+import { plural } from "../geom.js";
 import {
   ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverText, existingSummary, exampleTerritory, importBoundary, importFiles,
   keepChecked, loadKeys, loadSources, loading, localSys, terrTool, territoryByNumbers, territoryFromSelection,
@@ -119,10 +122,12 @@ const groups = computed(() => {
   dataRev.value;
   const by = {};
   const keys = new Set([...Object.keys(project.data), ...Object.keys(ERRORS)]);
-  keys.forEach(k => { const kind = SOURCES[k]?.kind || (k.startsWith("import:") ? "import" : k.startsWith("user:") ? "" : k.split(".")[0]); if (kind) (by[kind] ||= []).push(k); });
+  keys.forEach(k => { const kind = SOURCES[k]?.kind || (k.startsWith("import:") ? "import" : k.startsWith("user:") || k.startsWith("sketch.") ? "" : k.split(".")[0]); if (kind) (by[kind] ||= []).push(k); });
   const known = Object.entries(by).filter(([kind]) => GROUP[kind]), other = Object.entries(by).filter(([kind]) => !GROUP[kind]).flatMap(([, ks]) => ks);
   return known.map(([kind, keys]) => ({ kind, title: GROUP[kind], keys })).concat(other.length ? [{ kind: "other", title: "Прочие слои", keys: other }] : []);
 });
+/* Подпись источника — как имя его слоя в окне «Слои» (слой могли переименовать), иначе название источника */
+const srcTitle = k => lyr(k)?.title || SOURCES[k]?.title || project.data[k]?.title || k;
 const count = k => { const n = project.data[k]?.fc?.features?.length; return n == null ? "" : fmt(n); };
 const hist = d => { const hh = d.history || [], x = hh[hh.length - 1]; return hh.length > 1 && x.added != null ? ` · выгрузок ${hh.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
 
@@ -179,9 +184,11 @@ const nObj = computed(() => pk.counts ? tree.value.flatMap(leaves).filter(l => i
 function ogdWithObjects() { const s = new Set(pk.sel); Object.keys(pk.counts || {}).filter(c => pk.counts[c]).forEach(c => s.add("ogd." + c)); pk.sel = s; }
 
 const badge = k => {
-  if (!isOgd(k)) return project.data[k] ? h("span", { class: "n has", title: "Уже в проекте: объектов" }, fmt(project.data[k].fc?.features?.length || 0)) : null;
+  if (!isOgd(k)) return project.data[k] ? h("span", { class: "n has", title: "Слой уже загружен в проект" }, "в проекте: " + plural(project.data[k].fc?.features?.length || 0, ["объект", "объекта", "объектов"])) : null;
   const v = cnt(k);
-  return v === undefined ? h("span", { class: "n" }, "…") : v === null ? h("span", { class: "n", title: "Слоя нет в кэше на диске — число объектов станет известно при выгрузке" }, "?") : h("span", { class: "n" + (v ? " has" : "") }, fmt(v));
+  return v === undefined ? h("span", { class: "n", title: "Считаю объекты в области" }, "…")
+    : v === null ? h("span", { class: "n", title: "Слоя нет в кэше на диске — число объектов станет известно при выгрузке" }, "не подсчитано")
+    : h("span", { class: "n" + (v ? " has" : ""), title: "Объектов в области загрузки" }, fmt(v));
 };
 /* Узел дерева: слой — флажок; папка — раскрывается, флажок отмечает все показанные слои папки. */
 const TreeNode = defineComponent({

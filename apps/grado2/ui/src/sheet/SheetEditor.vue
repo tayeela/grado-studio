@@ -15,7 +15,7 @@ import "../../../web/snap.js";                      // общая привязк
 import { FORMAT_T, KINDS, pageSize, frameRect, newBlock, snapBox, problems, reformat, align, distribute, sameSize, reorder,
   duplicate, bounds, rulerStep, label, moveCenter, nextScale } from "./model.js";
 import { stampOps } from "./stamp.js";
-import { blockNode, INK } from "./draw.js";
+import { blockNode, INK, SCREEN_ONLY, sheetFonts } from "./draw.js";
 import Ribbon from "./Ribbon.vue";
 import ItemsPanel from "./ItemsPanel.vue";
 import PropsPanel from "./PropsPanel.vue";
@@ -46,13 +46,14 @@ let clip = null, lastOut = null;
 
 const Snap = globalThis.Snap;
 const ACCENT = "#1f6feb", GUIDE = "#e5368f", SMART = "#e0108a", PX_MM = 96 / 25.4;
+const GRID = "#d3dae3", GRID5 = "#aeb8c5";        // сетка: тонкие линии и каждая пятая — заметно на белом листе, но светлее рамки
 const RULER = 22;
 let stage, paper, blocks, guideL, over, tr, k = 1, hovered = false, space = false;
 
 const selBlocks = computed(() => sel.value.map(id => sheet.value.blocks.find(b => b.id === id)).filter(Boolean));
 const issues = computed(() => problems(sheet.value));
 const anyLocked = computed(() => sheet.value.blocks.some(b => b.locked));
-const statusSel = computed(() => !sel.value.length ? "" : sel.value.length === 1 ? `Выбрано: ${label(selBlocks.value[0] || {})}` : `Выбрано элементов: ${sel.value.length}`);
+const statusSel = computed(() => !sel.value.length ? "" : sel.value.length === 1 ? `Выбрано: ${label(selBlocks.value[0] || {}, sheet.value.blocks)}` : `Выбрано элементов: ${sel.value.length}`);
 const fmt1 = v => String(+v.toFixed(1)).replace(".", ",");
 
 /* ---------- правка листа: история и выдача наружу ---------- */
@@ -105,7 +106,7 @@ function drawRulers() {
       const a = at(ax === "x" ? selB.x : selB.y), b = at(ax === "x" ? selB.x + selB.w : selB.y + selB.h);
       c.fillStyle = "rgba(31,111,235,.14)"; ax === "x" ? c.fillRect(a, 0, b - a, H) : c.fillRect(0, a, W, b - a);
     }
-    c.strokeStyle = ink; c.fillStyle = ink; c.lineWidth = 1; c.font = "10px Inter, system-ui, sans-serif";
+    c.strokeStyle = ink; c.fillStyle = ink; c.lineWidth = 1; c.font = "10px Onest, system-ui, sans-serif";      // линейка — часть окна, шрифт интерфейса
     const from = Math.floor(-off / k / minor) * minor, to = (len - off) / k;
     c.beginPath();
     for (let mm = from; mm <= to; mm += minor) {
@@ -135,8 +136,8 @@ function drawPaper() {
   paper.add(new Konva.Rect({ x: 0, y: 0, width: w, height: h, fill: "#fff", shadowColor: "#0b1f33", shadowBlur: 18, shadowOpacity: .16, shadowOffset: { x: 0, y: 3 }, shadowForStrokeEnabled: false }));
   if (s.grid?.show && s.grid.step > 0) {             // сетка — тонкие линии, каждая пятая темнее (только на экране)
     const g = s.grid.step;
-    for (let i = 1; i * g < w; i++) paper.add(new Konva.Line({ points: [i * g, 0, i * g, h], stroke: i % 5 ? "#edf0f4" : "#dde2e9", strokeWidth: px(1) }));
-    for (let i = 1; i * g < h; i++) paper.add(new Konva.Line({ points: [0, i * g, w, i * g], stroke: i % 5 ? "#edf0f4" : "#dde2e9", strokeWidth: px(1) }));
+    for (let i = 1; i * g < w; i++) paper.add(new Konva.Line({ points: [i * g, 0, i * g, h], stroke: i % 5 ? GRID : GRID5, strokeWidth: px(1) }));
+    for (let i = 1; i * g < h; i++) paper.add(new Konva.Line({ points: [0, i * g, w, i * g], stroke: i % 5 ? GRID : GRID5, strokeWidth: px(1) }));
   }
   paper.add(new Konva.Rect({ x: f.x, y: f.y, width: f.w, height: f.h, stroke: INK, strokeWidth: s.stamp === false ? .35 : .7 }));
   const st = stampOps(s, props.meta, props.page);
@@ -144,7 +145,7 @@ function drawPaper() {
     st.lines.forEach(l => paper.add(new Konva.Line({ points: l.pts, stroke: INK, strokeWidth: Math.max(l.w, .1) })));
     // в печати y — линия шрифта; у Konva — верх строки: поднимаем на высоту прописной
     st.texts.forEach(t => t.text && paper.add(new Konva.Text({ x: t.x - 60, y: t.y - t.size * .8, width: 120, align: "center", text: t.text,
-      fontSize: t.size, fontFamily: "PT Sans, Inter, system-ui, sans-serif", fill: INK, wrap: "none", ellipsis: true })));
+      fontSize: t.size, fontFamily: "'PT Sans', sans-serif", fill: INK, wrap: "none", ellipsis: true })));
   }
 }
 function drawGuides() {
@@ -167,6 +168,7 @@ function drawGuides() {
 function draw() {
   if (!stage) return;
   tr.nodes([]); tr.remove();                          // ручки живут дольше элементов: снять до очистки слоя, иначе их уничтожит destroyChildren
+  sheetFonts(sheet.value, draw);                    // шрифты печати догрузятся — лист перерисуется
   drawPaper(); blocks.destroyChildren(); drawGuides();
   sheet.value.blocks.forEach(b => blocks.add(bind(blockNode(b, sheet.value, draw, props.maps), b)));
   blocks.add(tr); attach();
@@ -307,6 +309,7 @@ function exportPng() {
   const [pw, ph] = pageSize(sheet.value), o = stage.position(), keep = sel.value, gridOn = sheet.value.grid?.show;
   select([]); guideL.hide(); over.hide(); if (gridOn) { sheet.value.grid.show = false; drawPaper(); }
   paper.findOne("Rect")?.shadowEnabled(false);
+  blocks.find("." + SCREEN_ONLY).forEach(n => n.hide());   // подсказки только для экрана в картинку не идут
   const url = stage.toDataURL({ x: o.x, y: o.y, width: pw * k, height: ph * k, pixelRatio: 300 / 25.4 / k, mimeType: "image/png" });
   if (gridOn) sheet.value.grid.show = true; guideL.show(); over.show(); draw(); select(keep);
   const a = document.createElement("a"); a.href = url; a.download = `${(sheet.value.title || "лист").replace(/[\\/:*?"<>|]/g, "_")}.png`; a.click();

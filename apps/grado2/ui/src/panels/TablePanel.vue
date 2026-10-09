@@ -18,6 +18,7 @@ import { TabulatorFull as Tabulator } from "tabulator-tables";
 import "tabulator-tables/dist/css/tabulator_simple.min.css";
 import { current, project } from "../store.js";
 import { dataRev, mapApi } from "../edit.js";
+import { plural } from "../geom.js";
 import { featureOf, fieldsOfFeatures, indexOf, sel, setAttr, setSel, toggleSel } from "../features.js";
 
 const el = ref(null), q = ref(""), selOnly = ref(false);
@@ -28,16 +29,18 @@ const nSel = computed(() => sel.filter(s => s.key === current.value?.key).length
 const title = computed(() => {
   const l = current.value; if (!l) return "Выберите слой в окне «Слои»";
   const n = fc.value?.features?.length || 0;
-  return `${l.title} · ${n.toLocaleString("ru-RU")} об.${nSel.value ? ` · выбрано ${nSel.value}` : ""}`;
+  return `${l.title} · ${plural(n, ["объект", "объекта", "объектов"])}${nSel.value ? ` · выбрано ${nSel.value}` : ""}`;
 });
 
 function rows() {
   const f = fc.value; indexOf(f);
-  return (f?.features || []).map((x, i) => ({ ...x.properties, _uid: x.properties._uid, _n: i + 1 + (x.properties._edited ? "*" : "") }));
+  return (f?.features || []).map((x, i) => ({ ...x.properties, _uid: x.properties._uid, _n: i + 1 }));
 }
 function columns(fields) {
-  return [{ title: "№", field: "_n", width: 54, headerSort: false, frozen: true, cssClass: "rn" },
-    ...fields.map(k => ({ title: k, field: k, editor: "input", sorter: "alphanum", headerTooltip: k }))];
+  /* №: звёздочка у объекта, изменённого в проекте, с подсказкой; последний столбец без предела ширины — тянется до края окна */
+  const rn = c => c.getRow().getData()._edited ? `${c.getValue()}<span class="ed" title="Объект изменён в проекте">*</span>` : c.getValue();
+  return [{ title: "№", field: "_n", width: 54, headerSort: false, frozen: true, cssClass: "rn", formatter: rn },
+    ...fields.map((k, i) => ({ title: k, field: k, editor: "input", sorter: "alphanum", headerTooltip: k, ...(i === fields.length - 1 ? { maxWidth: false } : {}) }))];
 }
 
 /* Данные слоя заново, когда сменился слой или его fc; выбранные строки — подсветкой без перестройки. */
@@ -99,5 +102,11 @@ watch([q, selOnly], () => ready && applyFilter());
 .tbl .tabulator-row.sel { background: var(--wa-color-brand-fill-quiet) !important; }
 .tbl .tabulator-row .tabulator-cell { border-color: var(--g-line); }
 .tbl .tabulator-cell.rn { color: var(--g-muted); font-variant-numeric: tabular-nums; }
+.tbl .tabulator-cell.rn .ed { color: var(--wa-color-brand-on-quiet); margin-left: 2px; cursor: help; }
+/* замороженный «№»: черта своего цвета (у tabulator_simple — светлая #ddd, белая в тёмной теме) */
+.tbl .tabulator .tabulator-frozen.tabulator-frozen-left { border-right: 1px solid var(--g-line) !important; }
+/* стрелка сортировки — только у столбца, по которому отсортировано, и при наведении */
+.tbl .tabulator .tabulator-col[aria-sort="none"] .tabulator-col-sorter { visibility: hidden; }
+.tbl .tabulator .tabulator-col[aria-sort="none"]:hover .tabulator-col-sorter { visibility: visible; }
 .tbl .tabulator .tabulator-placeholder span { color: var(--g-muted); font-size: var(--wa-font-size-s); }
 </style>

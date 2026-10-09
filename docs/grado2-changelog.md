@@ -2,6 +2,21 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.72: new interface (/next/) audit fixes — six Haiku 5.5 auditors by area, fixes by four Opus 5.5 agents.**
+  - Shell (`App.vue`, `theme.css`): theme button shows its icon; OpenLayers map buttons follow the dark theme; window gaps are 8 px on
+    every side; default widths of «Слои» and the right group fit all tabs on 1280; floating windows stay inside the screen and lose the
+    empty title strip; a window reopened from «Окна» goes back to its group; scale in the status bar is an input (1:2000, list of scales);
+    status messages open in full on click; «Восстановлена последняя работа» goes away; with the map closed the ribbon says how to open it.
+  - Drawing (`cad.js`, `CadModes.vue`, `MapSearch.vue`): «X,Y» after the first point is an absolute МСК point; command messages only in the
+    command line (no duplicate in the status bar); command line is one line wide as its text and lets clicks through to the map; F2 history
+    sits above it; polygon takes a map click as the centre; «Выбор» and «Оформление» on the ribbon; mode buttons in Onest and clearly on.
+  - Panels: a layer dropped onto a row of another group joins that group; full names in tooltips; hidden group dims its layers; table fills
+    the window, sort arrow only on the sorted column, no white line in the dark theme; «Оформление» is a list instead of wrapping buttons;
+    «Виды» rows readable; no abbreviations («24 объекта», «6 слоёв»); source names in «Данные» match layer names.
+  - Sheet layout: the ribbon fits 1280 (arrange buttons fold into three lists); legend marks rows that do not fit; same-kind items are
+    numbered; grid visible; sheet delete asks in a dialog; sheet fonts are the server's PT Sans files (as in PDF). Album window: «Масштаб
+    схем» label and the «В шапке не заполнено» line are no longer cut.
+
 - **2026-10-09, ГРАДО 2 v0.99.71 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).**
   - `apps/grado2/server.py`: the hand-written `http.server` handler (one long chain of `if self.path == …` for GET and for POST) is gone.
     Each address is now one small function in `GET_ROUTES` / `POST_ROUTES`; access checks, foreign-site refusal and the security headers
