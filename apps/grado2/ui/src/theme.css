@@ -72,3 +72,46 @@ body {
 
 /* плавающее окно: рамка и тень, чтобы отделялось от карты */
 .grado-dock .dv-resize-container { border: 1px solid var(--g-line); box-shadow: var(--wa-shadow-l, 0 6px 20px rgba(0,0,0,.2)); }
+
+/* схема расчёта: заголовки блоков по виду и цвета связей по типу данных — как GTH рабочей страницы (web/app.js);
+   резервные участки ДОО, школы, поликлиники на карте — --res-* (как web/index.html) */
+:root {
+  --gk-src: #cfe3d4; --gk-op: #d6dade; --gk-gen: #cfdcf0; --gk-tep: #e3d6ec; --gk-num: #f0e3c8;
+  --gl-geom: #3f8f5a; --gl-num: #b07a00; --gl-sketch: #2f6fc4; --gl-tep: #8a4ab0; --gl-cap: #c0392b;
+  --res-doo: #f6dccb; --res-doo-ln: #9c5a33; --res-school: #dcd3ec; --res-school-ln: #7f66a8; --res-clinic: #ecd9a8; --res-clinic-ln: #7d6420;
+}
+html.wa-dark {
+  --gk-src: #2f4a38; --gk-op: #3c4148; --gk-gen: #2d4666; --gk-tep: #4a3860; --gk-num: #5a4721;
+  --gl-geom: #5cc08c; --gl-num: #e0a13a; --gl-sketch: #5b9bec; --gl-tep: #b98ae0; --gl-cap: #e57063;
+  --res-doo: #7c5646; --res-doo-ln: #e0b39a; --res-school: #645a82; --res-school-ln: #c4b6e6; --res-clinic: #7a6a3e; --res-clinic-ln: #dcc486;
+}
+
+/* черчение (cad.js): командная строка и история команд над картой, подсказка и поле ввода у курсора, подсказка псевдонимов;
+   --accent — цвет второго штриха у значков команд (cadicons.svg) */
+:root { --accent: var(--wa-color-brand-fill-loud); }
+.cmdline, .cmdhist, .cadtip, .cadin, .cadac {
+  background: var(--wa-color-surface-default); color: var(--wa-color-text-normal); border: 1px solid var(--g-line);
+  border-radius: 4px; box-shadow: var(--wa-shadow-s, 0 1px 4px rgba(0,0,0,.15)); font-family: var(--wa-font-family-body);
+}
+.cmdline[hidden], .cmdhist[hidden], .cadtip[hidden], .cadin[hidden], .cadac[hidden] { display: none; }
+.cmdline { position: absolute; left: 10px; bottom: 30px; z-index: 5; max-width: calc(100% - 20px); display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 4px 6px; padding: 5px 9px; font-size: var(--wa-font-size-m); line-height: 1.45; }
+.cmdline b { font-weight: 650; letter-spacing: .02em; }
+.cmdline .op { border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--wa-color-brand-on-quiet); border-radius: 3px; padding: 0 6px; font: inherit; line-height: 1.5; cursor: pointer; }
+.cmdline .op:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.cmdline .k { color: var(--g-muted); }
+.cmdline .nt { flex-basis: 100%; color: var(--wa-color-warning-on-quiet); font-size: var(--wa-font-size-s); }
+.cmdhist { position: absolute; left: 10px; bottom: 64px; z-index: 5; width: min(560px, calc(100% - 20px)); max-height: 42%; overflow: auto; padding: 6px 10px;
+  font-size: var(--wa-font-size-s); line-height: 1.5; }
+.cmdhist .hh { display: flex; justify-content: space-between; position: sticky; top: -6px; background: inherit; padding: 2px 0 4px; color: var(--g-muted); }
+.cmdhist .hh b { color: var(--wa-color-text-normal); }
+.cmdhist time { color: var(--g-muted); font-variant-numeric: tabular-nums; }
+.cmdhist .hc { font-weight: 600; margin-top: 3px; }
+.cadtip { padding: 3px 6px; font-size: var(--wa-font-size-s); line-height: 1.35; font-variant-numeric: tabular-nums; white-space: nowrap; pointer-events: none; }
+.cadin { position: absolute; z-index: 6; width: 170px; height: 24px; box-sizing: border-box; padding: 0 6px; font-size: var(--wa-font-size-m);
+  font-variant-numeric: tabular-nums; border-color: var(--accent); }
+.cadin.bad { border-color: var(--wa-color-danger-fill-loud); outline: 1px solid var(--wa-color-danger-fill-loud); }
+.cadac { position: absolute; z-index: 6; font-size: var(--wa-font-size-s); line-height: 1.5; padding: 3px 0; min-width: 170px; }
+.cadac div { padding: 0 8px; }
+.cadac b { display: inline-block; min-width: 34px; font-family: ui-monospace, Menlo, Consolas, monospace; }

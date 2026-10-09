@@ -147,27 +147,18 @@ class LayoutsInProject(unittest.TestCase):
     def read(self, name="Проект"):
         return json.loads(S.project_path(name).read_bytes())
 
-    def test_page_save_keeps_layouts_and_layouts_save_keeps_the_rest(self):
+    def test_page_save_keeps_layouts_and_new_interface_save_replaces_them(self):
         page = {"format": "grado2", "name": "Проект", "layers": [{"key": "a"}], "data": {"a": {"fc": {"features": []}}}}
-        S.save_project("Проект", json.dumps(page).encode())
         sheets = [{"id": "s1", "format": "A3", "title": "Лист 1", "blocks": [{"id": "m", "kind": "map"}]}]
-        S.save_layouts("Проект", sheets)
+        S.save_project("Проект", json.dumps({**page, "layouts": sheets}, ensure_ascii=False, separators=(",", ":")).encode())   # новый интерфейс (JSON.stringify): листы последним ключом
         self.assertEqual(self.read()["layouts"], sheets)
-        self.assertEqual(self.read()["layers"], [{"key": "a"}])
         page["layers"].append({"key": "b"})                            # рабочая страница сохраняет — о листах не знает
         S.save_project("Проект", json.dumps(page, ensure_ascii=False, indent=1).encode())
         self.assertEqual(self.read()["layouts"], sheets)
         self.assertEqual(len(self.read()["layers"]), 2)
-        S.save_layouts("Проект", [])                                   # листы удалены — ключ пустой, проект цел
+        S.save_project("Проект", json.dumps({**page, "layouts": []}, separators=(",", ":")).encode())   # листы удалены в новом интерфейсе
         self.assertEqual(self.read()["layouts"], [])
         self.assertEqual(len(self.read()["layers"]), 2)
-
-    def test_layouts_save_needs_an_existing_project_and_a_list(self):
-        with self.assertRaises(FileNotFoundError):
-            S.save_layouts("Нет такого", [])
-        S.save_project("Проект", b'{"format": "grado2"}')
-        with self.assertRaises(ValueError):
-            S.save_layouts("Проект", {"not": "a list"})
 
     def test_split_and_join_are_inverse_and_ignore_lookalikes(self):
         body = b'{"a": 1, "note": ",\\"layouts\\": in a string"}'

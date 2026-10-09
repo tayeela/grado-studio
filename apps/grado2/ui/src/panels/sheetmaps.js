@@ -1,8 +1,10 @@
 /* ГРАДО 2 · карта и печать для «Макета листа» (SheetPanel.vue → SheetEditor.vue, проп maps): берёт слои открытого
-   проекта (store.js) в охвате блока карты, оформляет их так же, как окно «Карта» (styleOf), и просит сервер
+   проекта (store.js) в охвате блока карты, оформляет их так же, как окно «Карта» (symbology.js), и просит сервер
    нарисовать карту блока (/api/print/map_svg — тот же рендер, что печатает альбом) или весь лист в PDF
-   (/api/print/layout, apps/grado2/layout_io.py). Картинки карт кэшируются по месту, масштабу, размеру и слоям. */
-import { project, styleOf, shown, mapView } from "../store.js";
+   (/api/print/layout, apps/grado2/layout_io.py). Цвет объекта — как у карты (symbology.js symbolOf: единое, категории,
+   диапазоны, правила; ЛГР — красной линией). Картинки карт кэшируются по месту, масштабу, размеру и слоям. */
+import { project, shown, scale, viewNow } from "../store.js";
+import { breaks, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
 
 const PX_PT = 0.26 / 0.35;                  // радиус точки на экране (пикс.) → толщина w печати (print_io: r = w × 0,35 мм)
@@ -29,25 +31,33 @@ export function mapLayers(b) {
   [...project.layers].reverse().forEach(l => {
     const fc = project.data[l.key]?.fc;
     if (!fc || !shown(l)) return;
-    const s = styleOf(l), feats = [];
-    indexed(fc).forEach(({ g, b: fb }) => {
+    const s = fullStyle(l.style), feats = [], br = s.mode === "grad" ? breaks(s, fc) : null;
+    indexed(fc).forEach(({ g, b: fb, p }) => {
       if (!meets(fb, box)) return;
-      if (l.geom === "line") feats.push({ g, stroke: s.fill, w: s.width, a: 1 });          // у линии цвет — fill, как на карте
-      else if (l.geom === "point") feats.push({ g, fill: s.fill, stroke: s.stroke, w: (2 + s.width * 2) * PX_PT });
-      else feats.push({ g, fill: s.fill, stroke: s.width > 0 ? s.stroke : null, w: s.width, a: s.opacity });
+      if (s.mode === "lgr") { feats.push({ g, stroke: "#d7191c", w: Math.max(s.width, 1), a: 1 }); return; }
+      const k = symbolOf(s, f => p[f], br);
+      if (k.hide) return;
+      if (l.geom === "line") feats.push({ g, stroke: k.fill, w: s.width, a: 1 });          // у линии цвет — fill, как на карте
+      else if (l.geom === "point") feats.push({ g, fill: k.fill, stroke: s.stroke, w: (2 + s.width * 2) * PX_PT });
+      else feats.push({ g, fill: k.fill, stroke: s.width > 0 ? s.stroke : null, w: s.width, a: s.opacity });
     });
     if (feats.length) out.push({ title: l.title || l.key, features: feats });
   });
   return out;
 }
 
-/* Строки легенды из видимых слоёв проекта, сверху вниз, как в окне «Слои». */
+/* Строки легенды из видимых слоёв проекта, сверху вниз, как в окне «Слои»; у слоя с категориями, диапазонами или
+   правилами — строка на каждый класс. */
 export function legendItems() {
-  return project.layers.filter(l => shown(l) && project.data[l.key]).map(l => {
-    const s = styleOf(l), t = l.title || l.key;
-    if (l.geom === "line") return { t, s: "line", c: s.fill };
-    return { t, s: "fill", c: s.stroke, f: s.fill };
+  const out = [];
+  project.layers.filter(l => shown(l) && project.data[l.key]).forEach(l => {
+    const s = fullStyle(l.style), t = l.title || l.key, line = l.geom === "line" || s.mode === "lgr";
+    const row = (title, c) => out.push(line ? { t: title, s: "line", c } : { t: title, s: "fill", c: s.stroke, f: c });
+    const cls = s.mode === "single" || s.mode === "lgr" ? [] : classesOf(s, project.data[l.key].fc).filter(x => !x.off);
+    if (cls.length) cls.forEach(x => row(`${t}: ${x.v === "" ? "без значения" : x.v}`, x.c));
+    else row(t, swatchColor(s));
   });
+  return out;
 }
 
 /* ---------- картинки карт блоков ---------- */
@@ -90,7 +100,7 @@ export function mapImage(b, redraw) {
 
 /* «Как на карте»: середина и масштаб окна «Карта»; окно ещё не открывалось — место проекта. */
 export function here() {
-  if (mapView.center) return { center: mapView.center, scale: mapView.scale };
+  if (viewNow.center) return { center: viewNow.center.map(x => +x.toFixed(7)), scale: scale.value };
   const c = project.view?.center;
   return Array.isArray(c) && c.length === 2 ? { center: c.map(Number), scale: 0 } : null;
 }

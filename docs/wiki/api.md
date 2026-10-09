@@ -13,7 +13,6 @@
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
-  POST /api/project/layouts?name=… {layouts} → листы «Макета листа» нового интерфейса в файл проекта (только этот ключ)
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
 Геометрия на выходе всегда WGS84 (GeoJSON), без пересчёта в СК холста.
@@ -21,7 +20,7 @@
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (58):
+Все упомянутые в коде пути (57):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -72,7 +71,6 @@
 - `/api/print/svg`
 - `/api/progress`
 - `/api/project`
-- `/api/project/layouts`
 - `/api/projects`
 - `/api/rail_route`
 - `/api/search`

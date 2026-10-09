@@ -20,11 +20,11 @@
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
-| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 14 |
+| `test_layout_io.py` | LayoutPrint, LayoutsInProject | 13 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_next_ui.py` | NextUi | 5 |
+| `test_next_ui.py` | NextUi | 14 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
