@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@awesome.me/webawesome": "3.13.0",
+    "@fontsource/onest": "5.1.0",
     "@lucide/vue": "1.47.0",
     "@turf/turf": "7.1.0",
     "dockview-vue": "8.3.1",

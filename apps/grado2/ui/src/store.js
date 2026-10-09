@@ -13,6 +13,7 @@ export const viewCur = ref(null);      // вид карты, показанны�
 export const currentId = ref("");
 export const current = computed(() => project.layers.find(l => l.key === currentId.value));
 export const scale = ref(0);
+export const cursor = ref(null);       // курсор над картой в МСК [восток, север], м (MapPanel); строка состояния
 export const viewNow = { center: null, zoom: null };   // вид карты сейчас (MapPanel): долгота и широта, уровень; уходит в файл при записи
 
 /* Образец слоя в списке: у линии и точки — цвет знака, у полигона — заливка и контур (штриховка — косой полосой). */

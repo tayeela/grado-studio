@@ -521,9 +521,16 @@ function showHist() {
 function toggleHist() { histEl.hidden = !histEl.hidden; if (!histEl.hidden) showHist(); }
 const cmdEl = document.createElement("div"); cmdEl.className = "cmdline"; cmdEl.hidden = true; cmdEl.setAttribute("role", "status");
 mMain.getTargetElement().append(cmdEl, histEl);
+cmdEl.addEventListener("click", e => { if (!CMD && !e.target.closest("button")) openInput("cmd"); });
 function showCmd() {
   document.body.classList.toggle("cmdon", !!CMD);
-  if (!CMD) { cmdEl.hidden = true; return; }
+  // командная строка видна всегда (владелец 09.10.2026, ответ 2А): без команды — приглашение, щелчок по ней открывает ввод команды
+  if (!CMD) {
+    cmdEl.classList.add("idle");
+    cmdEl.innerHTML = (lastNote ? `<div class="nt">${esc(lastNote)}</div>` : "") + `<b>Команда</b><span>наберите L, PL, C, TR… и Enter или выберите на ленте</span><span class="k">F2 — история</span>`;
+    cmdEl.hidden = false; return;
+  }
+  cmdEl.classList.remove("idle");
   const text = CMD.prompt().replace(/\s*\[[^\]]*\]/g, ""), ops = CMD.opts?.() || [];
   cmdEl.innerHTML = (lastNote ? `<div class="nt">${esc(lastNote)}</div>` : "") + `<b>${esc(title())}</b><span>${esc(text)}</span>` + ops.map((o, i) => `<button class="op" data-op="${i}" title="Или наберите букву в скобках и Enter">${esc(o.label)}</button>`).join("") + `<span class="k">Esc — прервать</span>`;
   cmdEl.querySelectorAll("[data-op]").forEach(b => b.onclick = () => { const o = (CMD?.opts?.() || [])[+b.dataset.op]; if (o) { o.fn(); after(); } });
@@ -1652,6 +1659,7 @@ Object.assign(cadApi, { MODES, start, cancel: silent => cancel(silent), toggle, 
   setOpt: (k, v) => { ST[k] = v; saveST(); syncModes(); }, setMode: (k, v) => { ST.modes[k] = v; saveST(); syncModes(); },
   ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())),
   gripList: () => gripSrc.getFeatures().map(g => ({ w: toM(g.getGeometry().getCoordinates()), mid: !!g.get("mid") })) });
+showCmd();
 cad.ready = true;
 const stopW = watch([sel, dataRev], () => setTimeout(syncGrips, 0));
 return () => { stopW(); removeEventListener("keydown", onKey, true); cancel(true); cad.ready = false; cad.cmd = null; mMain.removeInteraction(cadI); };
