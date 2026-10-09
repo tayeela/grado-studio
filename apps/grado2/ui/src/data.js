@@ -386,3 +386,51 @@ export function existingSummary() {
 /* выбор источников проекта (поле checked файла): окно «Исходные данные» помнит отмеченное */
 export const checked = () => new Set(project.raw?.checked || ["nspd.parcels", "nspd.buildings", "osm.roads", "osm.buildings", "osm.water", "osm.landuse", "gisogd.szz", "gisogd.vodookhr"]);
 export function keepChecked(sel) { project.raw.checked = [...sel]; markDirty(); }
+
+/* ---------- ФГИС ТП: документы территориального планирования, чей охват накрывает территорию → их слои (web/app.js fgFind,
+   fgSearch, fgPick, fgLoad). Портал отдаёт документ целиком; пустой в области слой не заводится; повторная загрузка — как
+   перевыгрузка (ваши правки, нарисованное и имя слоя сохраняются). ---------- */
+export const FG = reactive({ docs: null, uin: "", layers: null, sel: new Set(), msg: "", q: "" });
+export async function fgFind() {
+  if (!project.territory) return;
+  FG.q = ""; const [w, s, e, n] = turf.bbox(project.territory); FG.msg = "Каталог ФГИС ТП: первый раз около 10 МБ…"; busy.value = true;
+  try { FG.docs = (await api(`/api/fgistp/docs?bbox=${[w, s, e, n].join(",")}`)).docs; FG.uin = ""; FG.layers = null; FG.sel = new Set();
+    FG.msg = FG.docs.length ? "Самые местные документы — сверху. Выберите документ, затем слои." : "Документов с охватом этой территории нет."; }
+  catch (err) { FG.msg = "ФГИС ТП не ответила: " + err.message; } finally { busy.value = false; }
+}
+export async function fgSearch(q) {
+  FG.q = q.trim(); if (!FG.q) return project.territory ? fgFind() : undefined;
+  if (FG.q.length < 3) return;
+  FG.msg = "Поиск в каталоге ФГИС ТП…"; busy.value = true;
+  try { FG.docs = (await api(`/api/fgistp/docs?q=${encodeURIComponent(FG.q)}`)).docs; FG.uin = ""; FG.layers = null; FG.sel = new Set();
+    FG.msg = FG.docs.length ? `Найдено документов: ${FG.docs.length}${FG.docs.length === 100 ? " (первые 100 — уточните запрос)" : ""}. Самые местные — сверху.` : "По такому названию документов нет."; }
+  catch (err) { FG.msg = "ФГИС ТП не ответила: " + err.message; } finally { busy.value = false; }
+}
+export async function fgPick(uin) {
+  FG.uin = uin; FG.layers = null; FG.sel = new Set(); if (!uin) return;
+  FG.msg = "Состав документа…"; busy.value = true;
+  try { FG.layers = (await api(`/api/fgistp/layers?uin=${encodeURIComponent(uin)}`)).layers; FG.msg = `Слоёв в документе: ${FG.layers.length}. Отметьте нужные.`; }
+  catch (err) { FG.msg = "Состав документа не получен: " + err.message; } finally { busy.value = false; }
+}
+export async function fgLoad() {
+  const bb = coverBox(); if (!bb || !FG.uin || !FG.sel.size) return;
+  FG.msg = "Загрузка слоёв документа: портал отдаёт документ целиком, может занять минуту…"; loading.value = "ФГИС ТП: загрузка слоёв документа"; const my = project.raw;
+  try {
+    const r = await api("/api/fgistp/fetch", { uin: FG.uin, classids: [...FG.sel], bbox: bb });
+    if (my !== project.raw) { FG.msg = "Выгрузка для прежнего проекта отброшена."; return; }
+    let n = 0; const reps = [], vals = Object.entries(r.layers || {}), empty = vals.filter(([, v]) => !v.features.features.length).map(([, v]) => v.title.replace("ФГИС ТП: ", ""));
+    for (const [k, v] of vals) {
+      if (!v.features.features.length) continue;                 // пустой в этой области слой не засоряет список
+      SOURCES[k] = { title: v.title, kind: "fgistp" };
+      const prev = project.data[k], m = prev?.fc ? mergeDownload(k, prev, v.features) : null;
+      if (m) reps.push(`«${prev.title}»: ${m.text}`);
+      const { features, ...meta } = v;
+      project.data[k] = { ...meta, title: prev?.title || v.title, fc: m ? m.fc : features, original: m?.original || features, history: prev?.history || [] };
+      const l = ensureLayer(k, v.title);
+      if (l.style.mode === "cat") { const st = JSON.parse(JSON.stringify(l.style)); assignCats(st, project.data[k].fc, true); l.style = fullStyle(st); }
+      n += project.data[k].fc.features.length;
+    }
+    touchData(); markDirty();
+    FG.msg = `Загружено слоёв: ${vals.length - empty.length}, объектов в области: ${fmt(n)}.${empty.length ? ` Нет объектов в области: ${empty.join(", ")}.` : ""}${reps.length ? " " + reps.join("; ") + "." : ""}`;
+  } catch (err) { FG.msg = "Слои не загружены: " + err.message; } finally { loading.value = ""; }
+}

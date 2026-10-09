@@ -2,6 +2,12 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.65: ФГИС ТП в окне «Данные» нового интерфейса (#69).**
+  - Section «ФГИС ТП — документы территориального планирования» in «Данные»: «Найти по территории» lists the documents
+    whose coverage includes the territory (most local first), or search the whole catalogue by name; pick a document,
+    tick its layers, «Загрузить выбранные». Layers empty in the area are not added; loading a layer again keeps your edits
+    and its name, as for the other sources.
+
 - **2026-10-09, ГРАДО 2 v0.99.64: поиск над картой в новом интерфейсе (#69).**
   - A search field on top of the map, as in the working page: an address (OpenStreetMap), a cadastral number (several
     separated by commas) or a КРТ number, then Enter. An address puts a marker and frames it; parcels can be shown on the

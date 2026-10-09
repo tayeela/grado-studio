@@ -80,7 +80,7 @@ class NextUi(unittest.TestCase):
         self.assertEqual(re.findall(r'"([^"]+)"', pref((web / "layers.js").read_text(encoding="utf-8"))), re.findall(r'"([^"]+)"', pref(new)))
         old = (web / "app.js").read_text(encoding="utf-8")
         for s in ("/api/fetch", "/api/progress", "/api/import/files", "/api/search/cadastral" if "/api/search/cadastral" in new else "/api/search",
-                  "ваши правки (", "удалённые вами (", "Нет в источнике"):
+                  "ваши правки (", "удалённые вами (", "Нет в источнике", "/api/fgistp/docs", "/api/fgistp/layers", "/api/fgistp/fetch"):
             self.assertIn(s.split("/cadastral")[0], old, s)
             self.assertIn(s, new, s)
 

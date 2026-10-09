@@ -1,7 +1,7 @@
 <!-- ГРАДО 2 · окно «Данные» нового интерфейса (как окно «Данные» и «Исходные данные» рабочей страницы, web/app.js и
      web/ogdpick.js): граница территории (нарисовать, изменить, из файла, по участкам, из выбранного, пример), область
      загрузки синим пунктиром на карте, что уже в проекте по источникам (число объектов, дата, ошибка, история
-     перевыгрузок), сводка существующего положения в границе, импорт файлов и окно выбора источников: дерево ЕГРН,
+     перевыгрузок), документы ФГИС ТП и их слои, сводка существующего положения в границе, импорт файлов и окно выбора источников: дерево ЕГРН,
      подборок и всех слоёв ГИС ОГД, ЕГКО, OSM, Яндекса и рельефа с готовыми наборами и числом объектов в области.
      Логика — data.js. -->
 <template>
@@ -41,6 +41,25 @@
       </div>
     </div>
 
+    <div class="sect">ФГИС ТП — документы территориального планирования</div>
+    <div class="btns">
+      <wa-button size="s" appearance="outlined" :disabled="!project.territory || !!loading" title="Генпланы, схемы и их изменения, охват которых накрывает территорию (каталог Минэкономразвития)"
+                 @click="fgFind"><Landmark :size="14" /> Найти по территории</wa-button>
+    </div>
+    <wa-input v-if="project.territory" size="s" type="search" with-clear placeholder="Поиск по названию во всём каталоге, например «генеральный план москвы»"
+              aria-label="Поиск документа ФГИС ТП по названию" :value="FG.q" @input="fgTyped"></wa-input>
+    <p v-if="FG.msg" class="hint">{{ FG.msg }}</p>
+    <p v-if="inMoscow" class="hint">Генеральный план Москвы в ФГИС ТП не размещён (проверено по всему каталогу): его функциональные зоны — в источниках ГИС ОГД. Здесь для Москвы есть схемы РФ и генплан Троицка.</p>
+    <wa-select v-if="FG.docs" size="s" :value="FG.uin" :placeholder="`Документ (${FG.docs.length}${FG.q ? ', найдено по названию' : ', по охвату территории'})`"
+               @change="e => fgPick(e.target.value)">
+      <wa-option v-for="d in FG.docs" :key="d.uin" :value="d.uin">{{ d.name.slice(0, 140) }}{{ d.km ? ` · ${fmt(d.km)} км` : "" }}</wa-option>
+    </wa-select>
+    <template v-if="FG.layers">
+      <wa-checkbox v-for="l in FG.layers" :key="l.classid" size="s" class="fgl" :checked="FG.sel.has(l.classid)" :title="l.class_name || ''"
+                   @change="e => fgCheck(l.classid, e.target.checked)">{{ l.class_title || l.class_name || l.classid }} <span class="c">{{ GEOMW[l.geom_type] || "" }}</span></wa-checkbox>
+      <div class="btns"><wa-button size="s" variant="brand" :disabled="!FG.sel.size || !cover || !!loading" @click="fgLoad"><Download :size="14" /> Загрузить выбранные</wa-button></div>
+    </template>
+
     <template v-if="summary.length">
       <div class="sect">Существующее положение</div>
       <div class="kv"><template v-for="r in summary" :key="r[0]"><div>{{ r[0] }}</div><div>{{ r[1] }}</div></template></div>
@@ -76,12 +95,13 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref } from "vue";
-import { Database, Download, FileInput, FileUp, Grid2x2, PenLine, Spline, SquareDashed } from "@lucide/vue";
+import { Database, Download, FileInput, FileUp, Grid2x2, Landmark, PenLine, Spline, SquareDashed } from "@lucide/vue";
+import * as turf from "@turf/turf";
 import { project } from "../store.js";
 import { dataRev } from "../edit.js";
 import { sel, selected } from "../features.js";
 import {
-  ERRORS, FILE_ACCEPT, SOURCES, checked, coverBox, coverOn, coverText, existingSummary, exampleTerritory, importBoundary, importFiles,
+  ERRORS, FG, FILE_ACCEPT, SOURCES, fgFind, fgLoad, fgPick, fgSearch, checked, coverBox, coverOn, coverText, existingSummary, exampleTerritory, importBoundary, importFiles,
   keepChecked, loadKeys, loadSources, loading, localSys, terrTool, territoryByNumbers, territoryFromSelection,
 } from "../data.js";
 
@@ -105,6 +125,13 @@ const groups = computed(() => {
 });
 const count = k => { const n = project.data[k]?.fc?.features?.length; return n == null ? "" : fmt(n); };
 const hist = d => { const hh = d.history || [], x = hh[hh.length - 1]; return hh.length > 1 && x.added != null ? ` · выгрузок ${hh.length}, в последней +${x.added} −${x.removed} ~${x.changed}` : ""; };
+
+/* ФГИС ТП: поиск по названию — через 450 мс после ввода, как в рабочей странице */
+const GEOMW = { "100": "полигоны", "010": "линии", "001": "точки" };
+const inMoscow = computed(() => { const t = project.territory; if (!t) return false; const [x, y] = turf.centroid(t).geometry.coordinates; return x > 36.8 && x < 37.97 && y > 55.1 && y < 56.02; });
+let fgT = null;
+function fgTyped(e) { clearTimeout(fgT); const v = e.target.value; fgT = setTimeout(() => fgSearch(v), 450); }
+function fgCheck(id, on) { const s = new Set(FG.sel); if (on) s.add(id); else s.delete(id); FG.sel = s; }
 
 function toggle(t) { terrTool.value = terrTool.value === t ? "" : t; }
 let askT = null; const askExample = ref(false);
@@ -223,6 +250,9 @@ onBeforeUnmount(() => { off?.dispose?.(); coverOn.value = false; terrTool.value 
 .data .lr .c { font-variant-numeric: tabular-nums; color: var(--g-muted); }
 .data .err { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-xs); }
 .data .meta { color: var(--g-muted); font-size: var(--wa-font-size-2xs); }
+.data > wa-input, .data > wa-select { margin-top: 4px; }
+.data .fgl { display: block; padding: 2px 0; font-size: var(--wa-font-size-s); }
+.data .fgl .c { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .data .kv { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: var(--wa-font-size-s); }
 .data .kv > div:nth-child(even) { text-align: right; font-variant-numeric: tabular-nums; }
 .picker::part(dialog) { width: min(860px, 94vw); }
