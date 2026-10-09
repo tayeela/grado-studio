@@ -66,8 +66,11 @@ const outOfScale = l => { const s = l.style || {}, den = scale.value; return !!d
 // скрытые категорией или правилом стиля объекты не выбираются (как web/layers.js visibleIn)
 const visibleIn = (l, f) => !["cat", "rules"].includes(l.style?.mode) || !symbolOf(fullStyle(l.style), k => f.get(k), []).hide;
 const setCurrentQuiet = key => { currentId.value = key; };
-// «Esc — прервать» в строке состояния — только пока идёт команда (как web/app.js syncStatus)
-const toast = msg => { notice.value = msg; }, setHint = toast, syncStatus = () => { if (notice.value === "Esc — прервать") notice.value = ""; }, restyle = () => {};
+/* сообщения черчения — только в командной строке над картой (аудит 09.10.2026: строка состояния их не повторяет);
+   пока черчение не подключено к карте — в строку состояния. cadSay заменяет attachCad. */
+let cadSay = msg => { notice.value = msg; };
+const toast = msg => cadSay(msg), syncStatus = () => { if (notice.value === "Esc — прервать") notice.value = ""; }, restyle = () => {};
+let layerSwitch = null;                // слой рисования сменился сам (текущий другого вида): итог команды говорит об этом
 const terrLocked = () => false;
 const ANNO_TITLES = [["Надписи", "point"], ["Размеры", "line"], ["Штриховка", "poly"]];
 const isAnno = l => ANNO_TITLES.some(([t, g]) => l.title === t && l.geom === g);
@@ -76,8 +79,9 @@ function createLayerQuiet(name, geom) { const key = newLayer(name, geom); return
 function targetLayer(geom) {
   const cur = lyr(currentId.value); if (cur?.geom === geom) return cur;
   const own = project.layers.find(l => l.geom === geom && l.key.startsWith("user:") && !isAnno(l));
-  if (own) { setCurrentQuiet(own.key); return own; }
+  if (own) { layerSwitch = { from: cur, to: own.title }; setCurrentQuiet(own.key); return own; }
   const l = createLayerQuiet({ point: "Точки", line: "Линии", poly: "Полигоны" }[geom], geom);
+  layerSwitch = { from: cur, to: l.title, made: true };
   toast(`Создан слой «${l.title}»: новые объекты попадут в него. Переименовать — двойной щелчок в списке слоёв.`); return l;
 }
 const DRAWS = new Set(["line", "pline", "circle", "arc", "ellipse", "rect", "polygon", "point"]);
@@ -132,7 +136,7 @@ function hitAt(pixel) {
 const mapReady = () => !!mMain.getSize()?.[0];
 const measureSrc = new ol.source.Vector();
 mMain.addLayer(new ol.layer.Vector({ source: measureSrc, zIndex: 120, style: f => [new Style({ fill: new Fill({ color: "rgba(224,138,0,.15)" }), stroke: new Stroke({ color: "#c46f00", width: 2 }) }),
-  new Style({ text: new Text({ text: f.get("label") || "", font: "600 12px system-ui, sans-serif", fill: new Fill({ color: "#7a4200" }), stroke: new Stroke({ color: "#fff", width: 3 }), overflow: true, placement: "point" }) })] }));
+  new Style({ text: new Text({ text: f.get("label") || "", font: "600 12px Onest, system-ui, sans-serif", fill: new Fill({ color: "#7a4200" }), stroke: new Stroke({ color: "#fff", width: 3 }), overflow: true, placement: "point" }) })] }));
 const DEG = Math.PI / 180;
 
 /* ---------- режимы ---------- */
@@ -387,7 +391,7 @@ function openInput(mode, ch) {
   inMode = mode; const px = CUR ? mMain.getPixelFromCoordinate(CUR.c) : [sz[0] / 2 - 18, sz[1] / 2 - 16];
   const below = tipEl.hidden ? 16 : 16 + tipEl.offsetHeight + 4;
   inEl.style.left = `${Math.round(px[0] + 18)}px`; inEl.style.top = `${Math.round(px[1] + below)}px`;
-  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · @dx;dy · X;Y · 0,0" : CMD?.need === "text" ? (CMD.placeholder?.() || "текст надписи, Enter") : "значение";
+  inEl.placeholder = mode === "cmd" ? "команда: L, PL, C, TR…" : CMD?.need === "point" ? "25 · 25<90 · X,Y · @dx,dy" : CMD?.need === "text" ? (CMD.placeholder?.() || "текст надписи, Enter") : "значение";
   inEl.hidden = false; inEl.value = ch || ""; inEl.classList.remove("bad"); inEl.focus(); autoc();
 }
 function closeInput() { inEl.hidden = true; inEl.value = ""; acEl.hidden = true; inMode = null; }
@@ -406,7 +410,8 @@ inEl.addEventListener("keydown", e => {
 });
 inEl.addEventListener("input", () => { inEl.classList.remove("bad"); autoc(); if (CMD?.still) refresh(); });
 // число, которое сейчас набирается в поле ввода команды (для живого предпросмотра), иначе null
-function typedNum() { if (inMode !== "val" || inEl.hidden) return null; const s = normNum(inEl.value.trim()); return new RegExp(`^${NUM}$`).test(s) ? num(s) : null; }
+// для точки «25,5» — координаты X,Y, а не длина 25,5 (как в parsePoint)
+function typedNum() { if (inMode !== "val" || inEl.hidden) return null; const s = normNum(inEl.value.trim()); return new RegExp(`^${NUM}$`).test(s) && !(CMD?.need === "point" && s.includes(",")) ? num(s) : null; }
 function bad(msg) { inEl.classList.add("bad"); inEl.select(); note(msg); }   // текст выделен целиком: следующий ввод заменяет его, а не клеится к нему
 const PN = "(-?\\d+(?:\\.\\d+)?)", NUM = "(-?\\d+(?:[.,]\\d+)?)", num = s => +s.replace(",", ".");
 function submit() {
@@ -437,26 +442,27 @@ function parsePoint(s) {
   const base = CMD.base?.(); let m;
   if ((m = s.match(new RegExp(`^@${NUM};${NUM}$`)))) return base ? G.add(base, [num(m[1]), num(m[2])]) : "Смещение @ считается от последней точки: сначала укажите первую.";
   if ((m = s.match(new RegExp(`^${NUM};${NUM}$`)))) return [num(m[1]), num(m[2])];
-  // X,Y как в AutoCAD: запятая между двумя целыми или между числами с десятичной точкой; @X,Y — от последней точки
+  // X,Y как в AutoCAD: «X,Y» — точка в МСК всегда (и после первой точки), «@dX,dY» — смещение от последней точки;
+  // дробная часть — через точку (аудит 09.10.2026: в рабочей странице «x,y» после первой точки уходило в длину)
   if ((m = s.match(new RegExp(`^(@?)${PN},${PN}$`)))) {
-    const dot = /\./.test(m[2] + m[3]), xy = [+m[2], +m[3]];
+    const xy = [+m[2], +m[3]];
     if (m[1]) return base ? G.add(base, xy) : "Смещение @ считается от последней точки: сначала укажите первую.";
-    if (dot || !base) return xy;                       // после первой точки «25,5» без точки — по-прежнему длина
+    return xy;
   }
   if ((m = s.match(new RegExp(`^@?${NUM}\\s*<\\s*${NUM}$`)))) return base ? G.polar(base, num(m[2]) * DEG, num(m[1])) : "Длина и угол считаются от последней точки: сначала укажите первую.";
   if ((m = s.match(new RegExp(`^${NUM}$`)))) {
-    if (!base) return "Одно число — длина от последней точки. Первую точку укажите щелчком или координатами X;Y.";
+    if (!base) return "Одно число — длина от последней точки. Первую точку укажите щелчком или координатами X,Y.";
     if (!CUR?.dir) return "Покажите направление курсором и повторите ввод длины.";
     return G.add(base, G.mul(CUR.dir, num(m[1])));
   }
-  return "Не понял ввод. Примеры: 25 · 25<90 · @10;-5 · 0,0 или 0;0 (точка X,Y в МСК) · 12345,6;6789,1.";
+  return "Не понял ввод. Примеры: 25 (длина) · 25<90 (длина и угол) · 12345.6,6789.1 (точка X,Y в МСК) · @10,-5 (смещение).";
 }
 
 /* ---------- запуск команд ---------- */
 let CMD = null, LAST = null;
 const title = () => CMD ? CMDS[CMD.id].title.toUpperCase() : "";
 function start(name, opts = {}) {
-  cancel(true); closeInput(); lastNote = null;
+  cancel(true); closeInput(); lastNote = null; layerSwitch = null;
   // правка ручкой — не команда: Enter/Пробел после неё не повторяет её (у неё нет объекта) и её нет в истории F2
   if (name === "grip" && !opts?.g) return;
   terrTool.value = ""; UIS.tool = "cmd"; ACQ.length = 0; gripSrc.clear(true);
@@ -473,11 +479,10 @@ function cancel(silent) {
   if (!silent) { UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); }
 }
 // итог команды («Соединено: 12 → 2», «Расстояние 25 м») остаётся в строке состояния после её завершения
-function finish() { cadApi.lastEnd = performance.now(); setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), cur = notice.value || "", msg = doneMsg || (cur === ESC_HINT ? "" : cur); CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
+function finish() { cadApi.lastEnd = performance.now(); setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), msg = doneMsg || lastNote || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
 let lastNote = null;
 /* итог действия в строке состояния (принцип 3: «каждый инструмент говорит, что делать дальше»); пока команда идёт, в строке состояния
    только короткая часть, полная подсказка — в командной строке над картой */
-const ESC_HINT = "Esc — прервать";
 let doneMsg = null;
 const MODK = () => MOD, UNDO_TAIL = () => ` ${MODK()}+Z — отменить.`;
 const plural = (n, a, b, c) => { const m = n % 100, k = n % 10; return m > 10 && m < 20 ? c : k === 1 ? a : k > 1 && k < 5 ? b : c; };
@@ -488,11 +493,14 @@ function drawSummary(items, label) {
   const d = DRAW_DONE[label]; if (!d || items.length !== 1) return;
   const { key, f } = items[0], g = f.getGeometry(), poly = g.getType() === "Polygon", ch = g.getType() === "Point" ? null : chainsOf(g)[0]?.map(toM), parts = [];
   if (ch) {
-    const nv = poly ? ch.length - 1 : ch.length;
+    const nv = ch.length > 2 && G.same(ch[0], ch[ch.length - 1], 1e-9) ? ch.length - 1 : ch.length;   // замкнутая линия — без повтора первой вершины
     if (d[1] === "v") parts.push(`${nv} ${plural(nv, "вершина", "вершины", "вершин")}`);
     if (poly && d[1] !== "len") parts.push(`${fmt(Math.abs(G.area(ch)), 1)} м²`); else if (!poly && d[1] !== "area") parts.push(`${f2(G.chainLen(ch))} м`);
   }
-  result(`${poly && label === "полилиния" ? "Создан полигон" : d[0]} в слое «${lyr(key)?.title || "—"}»${parts.map(x => ", " + x).join("")}.${UNDO_TAIL()}`);
+  // слой сменился сам: текущий слой другого вида — так и говорим, иначе объект «пропадает» в чужом слое (аудит 09.10.2026)
+  const fr = layerSwitch?.from, sw = !layerSwitch ? "" : `${fr ? ` Слой «${fr.title}» — для ${{ poly: "полигонов", line: "линий", point: "точек" }[fr.geom] || "другой геометрии"}, поэтому` : ""} ${layerSwitch.made ? "создан новый" : "выбран"} слой «${layerSwitch.to}», теперь текущий — он.`;
+  layerSwitch = null;
+  result(`${poly && label === "полилиния" ? "Создан полигон" : d[0]} в слое «${lyr(key)?.title || "—"}»${parts.map(x => ", " + x).join("")}.${sw}${UNDO_TAIL()}`);
 }
 const EDIT_DONE = { "перенос": "Перемещено объектов", "копия": "Скопировано объектов", "поворот": "Повёрнуто объектов", "масштаб": "Масштабировано объектов", "зеркало": "Отражено объектов",
   "обрезка": "Обрезано объектов", "удлинение": "Удлинено объектов", "сопряжение": "Сопряжено объектов" };
@@ -507,7 +515,7 @@ function downloadWarn(name) {
   const l = DRAW_GEOM[name] && lyr(currentId.value), src = l && /^([a-z]+)\./.exec(l.key)?.[1];
   if (l && DL_SRC[src] && DRAW_GEOM[name].includes(l.geom)) note(`Слой — выгрузка ${DL_SRC[src]}: ваши объекты будут помечены как правка выгрузки.`);
 }
-function note(msg) { doneMsg = null; setHint(msg); lastNote = msg; hist(msg); if (CMD) showCmd(); }
+function note(msg) { doneMsg = null; lastNote = msg; hist(msg); showCmd(); }
 /* история команд, как текстовое окно AutoCAD (F2): запущенные команды и их сообщения за сеанс */
 const HIST = [], histEl = document.createElement("div"); histEl.className = "cmdhist"; histEl.hidden = true; histEl.setAttribute("role", "log");
 function hist(text, cmd) {
@@ -518,27 +526,32 @@ function showHist() {
   histEl.innerHTML = `<div class="hh"><b>История команд</b><span>F2 — скрыть</span></div>` + (HIST.length ? HIST.slice(-60).map(h => `<div class="${h.cmd ? "hc" : ""}"><time>${h.t.toLocaleTimeString("ru-RU")}</time> ${esc(h.text)}</div>`).join("") : `<div class="empty">Команд в этом сеансе ещё не было.</div>`);
   histEl.scrollTop = histEl.scrollHeight;
 }
-function toggleHist() { histEl.hidden = !histEl.hidden; if (!histEl.hidden) showHist(); }
+function toggleHist() { histEl.hidden = !histEl.hidden; if (!histEl.hidden) { showHist(); placeHist(); } }
+// история — над командной строкой, какой бы высоты та ни была (с сообщением она в две строки)
+function placeHist() { if (!histEl.hidden) histEl.style.bottom = `${10 + cmdEl.offsetHeight + 6}px`; }
 const cmdEl = document.createElement("div"); cmdEl.className = "cmdline"; cmdEl.hidden = true; cmdEl.setAttribute("role", "status");
 mMain.getTargetElement().append(cmdEl, histEl);
 cmdEl.addEventListener("click", e => { if (!CMD && !e.target.closest("button")) openInput("cmd"); });
 function showCmd() {
   document.body.classList.toggle("cmdon", !!CMD);
   // командная строка видна всегда (владелец 09.10.2026, ответ 2А): без команды — приглашение, щелчок по ней открывает ввод команды
+  // каждая строка — одна, длинный текст обрезается многоточием, целиком — в подсказке (title) и в истории F2 (аудит 09.10.2026)
+  const nt = lastNote ? `<div class="nt" title="${esc(lastNote)}">${esc(lastNote)}</div>` : "";
   if (!CMD) {
     cmdEl.classList.add("idle");
-    cmdEl.innerHTML = (lastNote ? `<div class="nt">${esc(lastNote)}</div>` : "") + `<b>Команда</b><span>наберите L, PL, C, TR… и Enter или выберите на ленте</span><span class="k">F2 — история</span>`;
-    cmdEl.hidden = false; return;
+    const tip = "Наберите команду (L — отрезок, PL — полилиния, C — круг, TR — обрезать…) и Enter или выберите её на ленте";
+    cmdEl.innerHTML = nt + `<div class="cl" title="${esc(tip)}"><b>Команда</b><span class="tx">L, PL, C, TR… и Enter</span><span class="k">F2 — история</span></div>`;
+    cmdEl.hidden = false; placeHist(); return;
   }
   cmdEl.classList.remove("idle");
   const text = CMD.prompt().replace(/\s*\[[^\]]*\]/g, ""), ops = CMD.opts?.() || [];
-  cmdEl.innerHTML = (lastNote ? `<div class="nt">${esc(lastNote)}</div>` : "") + `<b>${esc(title())}</b><span>${esc(text)}</span>` + ops.map((o, i) => `<button class="op" data-op="${i}" title="Или наберите букву в скобках и Enter">${esc(o.label)}</button>`).join("") + `<span class="k">Esc — прервать</span>`;
+  cmdEl.innerHTML = nt + `<div class="cl"><b title="${esc(title() + ": " + text)}">${esc(title())}</b><span class="tx">${esc(text)}</span>` + ops.map((o, i) => `<button class="op" data-op="${i}" title="Или наберите букву в скобках и Enter">${esc(o.label)}</button>`).join("") + `<span class="k">Esc — прервать</span></div>`;
   cmdEl.querySelectorAll("[data-op]").forEach(b => b.onclick = () => { const o = (CMD?.opts?.() || [])[+b.dataset.op]; if (o) { o.fn(); after(); } });
-  cmdEl.hidden = false;
+  cmdEl.hidden = false; placeHist();
 }
 function after() {
   if (!CMD) { showCmd(); return; } if (CMD.done) return finish();
-  setHint(ESC_HINT); showCmd(); lastNote = null;
+  showCmd(); lastNote = null;
   if (CMD.need === "text" && inEl.hidden) openInput("val");            // текст надписи набирается сразу, без первой буквы-команды
   if (CUR) CUR = resolve(CUR.c); refresh(); syncButtons();
 }
@@ -565,6 +578,7 @@ const cadI = new ol.interaction.Interaction({ handleEvent: e => {
     closeInput(); CUR = resolve(e.coordinate);
     if (dbl && CMD.need === "point" && CMD.dbl) CMD.dbl();
     else if (CMD.need === "point") CMD.point(CUR.w, { click: true });
+    else if (CMD.need === "value" && CMD.clickPoint) { CMD.need = "point"; CMD.point(CUR.w, { click: true }); }   // щелчок вместо числа: число по умолчанию, щелчок — точка
     else if (CMD.need === "sel") { const h = hitAt(e.pixel); if (h) setSel(e.originalEvent.shiftKey ? selNow().filter(s => s.f !== h.f) : [...selNow(), h]); }
     else if (CMD.need === "obj") { const h = hitAt(e.pixel); if (!h) note(`${title()} · Под курсором нет объекта: щёлкните по линии или контуру.`); else CMD.pick(h, CUR); }
     after(); return false;
@@ -604,7 +618,7 @@ function toggle(k) {
   ST[k] = !ST[k]; if (k === "ortho" && ST.ortho) ST.polar = false; if (k === "polar" && ST.polar) ST.ortho = false;
   if (k === "otrack" && !ST.otrack) ACQ.length = 0;
   saveST(); syncModes();
-  setHint(`${({ osnap: "Объектная привязка", topo: "Топологическое редактирование", ortho: "Орто", polar: "Полярное отслеживание", otrack: "Объектное отслеживание", dyn: "Динамический ввод" })[k]} ${ST[k] ? "включено" : "выключено"} (${({ osnap: "F3", ortho: "F8", polar: "F10", otrack: "F11", dyn: "F12" })[k]}).`);
+  note(`${({ osnap: "Объектная привязка", topo: "Топологическое редактирование", ortho: "Орто", polar: "Полярное отслеживание", otrack: "Объектное отслеживание", dyn: "Динамический ввод" })[k]} ${ST[k] ? "включено" : "выключено"} (${({ osnap: "F3", ortho: "F8", polar: "F10", otrack: "F11", dyn: "F12" })[k]}).`);
   if (CUR && CMD) { CUR = resolve(CUR.c); refresh(); }
 }
 
@@ -816,9 +830,9 @@ def("polygon", "Многоугольник", ["POL"], o => {                    
   let n = lastSides, c = null, insc = true;
   const ring = w => G.regPoly(c, n, G.dist(c, w), G.ang(c, w), insc);
   const st = { need: "value", base: () => c,
-    prompt: () => st.need === "value" ? `Число сторон <${n}>` : !c ? "Центр многоугольника" : `Радиус: ${insc ? "вершина" : "середина стороны"} — точка или число${optStr(st.opts())}`,
+    prompt: () => st.need === "value" ? `Число сторон <${n}> или щелчок — центр` : !c ? "Центр многоугольника" : `Радиус: ${insc ? "вершина" : "середина стороны"} — точка или число${optStr(st.opts())}`,
     value: v => { if (!c && st.need === "value") { if (v < 3 || v > 1024 || !Number.isInteger(v)) return note("Число сторон — целое от 3 до 1024."); n = lastSides = v; st.need = "point"; return; } if (v > 0) { addNew([newFeature("closed", G.regPoly(c, n, v, 0, insc), o.prefer)], "многоугольник"); st.done = true; } },
-    valueFirst: () => !!c,
+    valueFirst: () => !!c, clickPoint: true,
     enter: () => { if (st.need === "value") { st.need = "point"; return; } st.done = true; },
     opts: () => c ? [opt(insc ? "Описанный (О)" : "Вписанный (В)", insc ? ["о", "описанный", "c"] : ["в", "вписанный", "i"], () => { insc = !insc; })] : [],
     point: w => { if (!c) { c = w; return; } if (G.dist(c, w) < 1e-6) return; addNew([newFeature("closed", ring(w), o.prefer)], "многоугольник"); st.done = true; },
@@ -1660,7 +1674,8 @@ Object.assign(cadApi, { MODES, start, cancel: silent => cancel(silent), toggle, 
   ghosts: () => prevSrc.getFeatures().filter(f => f.get("k") === "ghost").map(f => toM(f.getGeometry().getFirstCoordinate())),
   gripList: () => gripSrc.getFeatures().map(g => ({ w: toM(g.getGeometry().getCoordinates()), mid: !!g.get("mid") })) });
 showCmd();
+cadSay = note;
 cad.ready = true;
 const stopW = watch([sel, dataRev], () => setTimeout(syncGrips, 0));
-return () => { stopW(); removeEventListener("keydown", onKey, true); cancel(true); cad.ready = false; cad.cmd = null; mMain.removeInteraction(cadI); };
+return () => { stopW(); removeEventListener("keydown", onKey, true); cancel(true); cadSay = msg => { notice.value = msg; }; cad.ready = false; cad.cmd = null; mMain.removeInteraction(cadI); };
 }

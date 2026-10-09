@@ -1,8 +1,11 @@
 <!-- ГРАДО 2 · лента инструментов редактора раскладки листа (как панели инструментов «Макета» QGIS): выбор и сдвиг листа,
      добавление элементов, правка, упорядочивание (выравнивание, распределение, порядок, закрепление), вид (сетка,
-     привязки, увеличение) и выгрузка. Только кнопки: действия выполняет SheetEditor.vue по событию act. -->
+     привязки, увеличение) и выгрузка. Только кнопки: действия выполняет SheetEditor.vue по событию act.
+     Узкое окно (меньше полной ширины ленты, например 1280): «Упорядочить» сворачивается в выпадающие кнопки «Выровнять»,
+     «Распределить и размер», «Порядок» — как кнопки-списки на панели «Действия» макета QGIS; всё остаётся под рукой. -->
 <script setup>
-import { MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight, Undo2, Redo2, Copy,
+import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
+import { ChevronDown, MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight, Undo2, Redo2, Copy,
   ClipboardPaste, CopyPlus, Trash2, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal,
   AlignCenterHorizontal, AlignEndHorizontal, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, StretchHorizontal,
   StretchVertical, BringToFront, SendToBack, ArrowUp, ArrowDown, Lock, LockOpen, Grid3x3, Magnet, ZoomIn, ZoomOut, Maximize, Scan,
@@ -11,6 +14,35 @@ import { MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Squ
 const props = defineProps({ tool: String, hasMaps: Boolean, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean });
 const emit = defineEmits(["act"]);
 const S = 18;                                          // размер значка, px
+/* свёрнутая «Упорядочить»: кнопка-список вместо ряда кнопок (id — элементы группы по порядку) */
+const FOLD = [
+  { id: "m:align", i: AlignStartVertical, t: "Выровнять", ids: ["align:left", "align:hcenter", "align:right", "align:top", "align:vcenter", "align:bottom"] },
+  { id: "m:dist", i: AlignHorizontalDistributeCenter, t: "Распределить и размер", ids: ["dist:x", "dist:y", "same:w", "same:h"] },
+  { id: "m:order", i: BringToFront, t: "Порядок", ids: ["order:top", "order:up", "order:down", "order:bottom"] }];
+const rb = ref(null), compact = ref(false);
+let fullW = 0, ro = null;
+// полная ширина ленты — сумма групп в развёрнутом виде (меряется, пока лента развёрнута; окно могло быть скрыто — тогда 0)
+function fit() {
+  const el = rb.value; if (!el) return;
+  if (!compact.value) { const w = [...el.children].reduce((s, c) => s + c.offsetWidth, 0); if (w) fullW = w + 12; }
+  compact.value = !!fullW && el.clientWidth < fullW;
+}
+onMounted(() => nextTick(() => { fit(); ro = new ResizeObserver(fit); ro.observe(rb.value); }));
+onBeforeUnmount(() => ro?.disconnect());
+/* ряд группы: в узком окне элементы из FOLD заменяются своей кнопкой-списком (на месте первого из них) */
+function row(g) {
+  if (!compact.value || g.t !== "Упорядочить") return g.items;
+  const out = [];
+  for (const it of g.items) {
+    const f = FOLD.find(m => m.ids.includes(it.id));
+    if (!f) { out.push(it); continue; }
+    if (f.ids[0] !== it.id) continue;
+    const sub = f.ids.map(id => g.items.find(x => x.id === id));
+    out.push({ ...f, menu: sub, off: sub.every(x => x.off) });
+  }
+  return out;
+}
+const pick = e => emit("act", e.detail.item.value);
 
 const groups = () => [
   { t: "Выбор", items: [
@@ -66,13 +98,22 @@ const groups = () => [
 </script>
 
 <template>
-  <div class="rb" role="toolbar" aria-label="Инструменты макета">
+  <div ref="rb" class="rb" :class="{ compact }" role="toolbar" aria-label="Инструменты макета">
     <div v-for="g in groups()" :key="g.t" class="rb-g">
       <div class="rb-row">
-        <button v-for="it in g.items" :key="it.id" class="rb-b" :class="{ on: it.on }" :disabled="it.off" :title="it.t" :aria-label="it.t"
+        <template v-for="it in row(g)" :key="it.id">
+        <wa-dropdown v-if="it.menu" placement="bottom-start" @wa-select="pick">
+          <button slot="trigger" class="rb-b rb-m" :disabled="it.off" :title="it.t" :aria-label="it.t">
+            <component :is="it.i" :size="S" :stroke-width="1.6" /><ChevronDown :size="11" :stroke-width="2" class="rb-c" />
+          </button>
+          <wa-dropdown-item v-for="x in it.menu" :key="x.id" :value="x.id" :disabled="x.off">
+            <component :is="x.i" slot="icon" :size="16" :stroke-width="1.6" />{{ x.t }}</wa-dropdown-item>
+        </wa-dropdown>
+        <button v-else class="rb-b" :class="{ on: it.on }" :disabled="it.off" :title="it.t" :aria-label="it.t"
           :aria-pressed="it.on === undefined ? undefined : !!it.on" @click="emit('act', it.id)">
           <component :is="it.i" :size="S" :stroke-width="1.6" />
         </button>
+        </template>
       </div>
       <div class="rb-t">{{ g.t }}</div>
     </div>
@@ -89,5 +130,7 @@ const groups = () => [
 .rb-b:hover:not(:disabled) { background: var(--g-hover); }
 .rb-b.on { background: var(--g-sel); color: var(--g-accent); border-color: var(--g-sel-line); }
 .rb-b:disabled { opacity: .32; cursor: default; }
+.rb-m { width: 40px; grid-template-columns: auto auto; gap: 1px; }
+.rb-c { color: var(--g-mute); }
 .rb-b:focus-visible { outline: 2px solid var(--g-accent); outline-offset: -1px; }
 </style>

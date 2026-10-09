@@ -8,7 +8,7 @@
       <wa-input size="s" placeholder="Найти слой" with-clear :value="q" @input="e => (q = e.target.value)" class="grow"></wa-input>
       <wa-button size="s" appearance="plain" title="Новый слой" @click="openNew"><Plus :size="16" /></wa-button>
       <wa-button size="s" appearance="plain" title="Новая группа из текущего слоя" :disabled="!currentId" @click="groupCurrent"><FolderPlus :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои: выгрузки — в порядке опорного плана (линии, застройка, дороги, зоны ограничений, участки, покрытия, зоны планирования), из повторяющихся слоёв застройки виден один. Ничего не удаляется"
+      <wa-button size="s" appearance="plain" :disabled="!project.layers.length" title="Упорядочить слои как в опорном плане (ничего не удаляется)"
                  @click="tidyLayers"><ListOrdered :size="16" /></wa-button>
     </div>
     <p v-if="!project.layers.length" class="hint">{{ loadError || "В проекте пока нет слоёв: «+» — новый слой" }}</p>
@@ -25,12 +25,12 @@
             </button>
             <input v-if="editing === 'g:' + b.group.id" class="ren" :value="b.group.title" @keydown.enter="e => e.target.blur()"
                    @keydown.esc="editing = ''" @blur="e => finishRename('g', b.group.id, e.target.value)" v-focus>
-            <span v-else class="gname" @dblclick="editing = 'g:' + b.group.id">{{ b.group.title }}</span>
-            <span class="cnt">{{ b.layers.length }}</span>
+            <span v-else class="gname" :title="b.group.title" @dblclick="editing = 'g:' + b.group.id">{{ b.group.title }}</span>
+            <span class="cnt" :title="'Слоёв в группе: ' + b.layers.length">{{ b.layers.length }}</span>
             <button class="more" title="Действия с группой" @click="e => menuAt(e, 'g', b.group.id)"><Ellipsis :size="15" /></button>
           </div>
           <div class="inner" :data-g="b.group.id">
-            <div v-for="l in b.layers" v-show="b.group.open || q" :key="l.key" class="row nested" :class="{ cur: l.key === currentId }" :data-key="l.key"
+            <div v-for="l in b.layers" v-show="b.group.open || q" :key="l.key" class="row nested" :class="{ cur: l.key === currentId, hid: !b.group.visible }" :data-key="l.key"
                  @click="currentId = l.key" @contextmenu.prevent="e => menuAt(e, 'l', l.key)">
               <LayerRow :l="l" />
             </div>
@@ -105,14 +105,15 @@ const LayerRow = defineComponent({
   setup(props) {
     return () => {
       const l = props.l, sw = swatchOf(l), ed = editing.value === "l:" + l.key;
+      const byGroup = l.visible && !shown(l);       // слой включён, но скрыт вместе с группой
       return [
-        h("button", { class: "eye", title: l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
+        h("button", { class: "eye", title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
           [h(l.visible ? Eye : EyeOff, { size: 15 })]),
         h("span", { class: "sw " + sw.kind, style: { "--c": sw.c, "--e": sw.e } }),
         ed ? h("input", { class: "ren", value: l.title, onVnodeMounted: v => { v.el.focus(); v.el.select(); }, onClick: e => e.stopPropagation(),
           onKeydown: e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") editing.value = ""; },
           onBlur: e => finishRename("l", l.key, e.target.value) })
-          : h("span", { class: "name" + (shown(l) ? "" : " off"), onDblclick: () => { editing.value = "l:" + l.key; } }, l.title || l.key),
+          : h("span", { class: "name" + (shown(l) ? "" : " off"), title: l.title || l.key, onDblclick: () => { editing.value = "l:" + l.key; } }, l.title || l.key),
         h("button", { class: "more", title: "Действия со слоем", onClick: e => { e.stopPropagation(); menuAt(e, "l", l.key); } }, [h(Ellipsis, { size: 15 })]),
       ];
     };
@@ -151,8 +152,22 @@ function readOrder() {
   return out;
 }
 let home = null;                                   // где строка стояла до перетаскивания (вместе с узлами-метками Vue)
-function onStart(e) { home = [e.from, e.item.nextSibling]; }
+let pt = null;                                     // последняя точка указателя во время перетаскивания
+const track = e => { pt = [e.clientX, e.clientY]; };
+function onStart(e) { home = [e.from, e.item.nextSibling]; pt = null; document.addEventListener("dragover", track, true); }
+/* Строку слоя бросили на строку другой группы (или на слой без группы), а SortableJS оставил её в прежнем списке
+   (середина чужой строки у него «мёртвая», а по пути строку сносит в корень над заголовком группы) — ставим её
+   выше или ниже той строки, на которую бросили: слой попадает в группу этой строки. */
+function dropOnRow(item) {
+  if (!pt || !item.classList.contains("row")) return;
+  const at = document.elementFromPoint(pt[0], pt[1])?.closest(".layers .row");
+  if (!at || at === item || at.parentNode === item.parentNode || !list.value.contains(at)) return;
+  const r = at.getBoundingClientRect();
+  at.parentNode.insertBefore(item, pt[1] > r.top + r.height / 2 ? at.nextSibling : at);
+}
 function onEnd(e) {
+  document.removeEventListener("dragover", track, true);
+  dropOnRow(e.item);
   const order = readOrder();
   home[0].insertBefore(e.item, home[1]);           // вернуть DOM как было: порядок строк рисует Vue из данных
   reorder(order);
@@ -221,10 +236,12 @@ function groupCurrent() { if (currentId.value) editing.value = "g:" + newGroup([
 .layers .grp .cnt { margin-left: auto; color: var(--g-muted); font-weight: 400; font-size: var(--wa-font-size-xs); }
 .layers .grp.off .gname { color: var(--g-muted); }
 .layers .eye, .layers .tw, .layers .more { all: unset; display: inline-flex; color: var(--g-muted); cursor: pointer; padding: 1px; border-radius: 3px; }
-.layers .more { visibility: hidden; margin-left: auto; }
+/* «⋯» прозрачна, а не скрыта: так до неё доходит Tab, и при фокусе она видна */
+.layers .more { opacity: 0; margin-left: auto; }
 .layers .grp .more { margin-left: 0; }
-.layers .row:hover .more, .layers .grp:hover .more, .layers .row.cur .more { visibility: visible; }
-.layers .eye:focus-visible, .layers .tw:focus-visible, .layers .more:focus-visible { outline: 2px solid var(--wa-color-focus); visibility: visible; }
+.layers .row:hover .more, .layers .grp:hover .more, .layers .row.cur .more, .layers .row:focus-within .more, .layers .grp:focus-within .more { opacity: 1; }
+.layers .eye:focus-visible, .layers .tw:focus-visible, .layers .more:focus-visible { outline: 2px solid var(--wa-color-focus); opacity: 1; }
+.layers .row.hid .eye, .layers .row.hid .sw { opacity: .4; }   /* группа скрыта — слои в ней приглушены */
 .layers .sw { width: 16px; height: 10px; flex: none; box-sizing: border-box; }
 .layers .sw.line { border-bottom: 2.5px solid var(--c); height: 6px; }
 .layers .sw.poly { background: color-mix(in srgb, var(--c) 45%, transparent); border: 1px solid var(--e); }
