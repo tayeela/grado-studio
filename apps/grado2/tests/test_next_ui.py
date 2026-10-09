@@ -168,6 +168,24 @@ class NextUi(unittest.TestCase):
         ends = lambda t: sorted(set(re.findall(r"\}/([a-z_]+)", t)))
         self.assertEqual(ends((web / "hub.js").read_text(encoding="utf-8")), ends((src / "hub.js").read_text(encoding="utf-8")))
 
+    def test_album_window_is_the_working_page_engine(self):
+        # окно «Листы и альбом» — рабочая страница /old?embed=album: альбом собирается её кодом; связь — gradoEmbed с обеих сторон
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        host, page = (src / "albumhost.js").read_text(encoding="utf-8"), (web / "project.js").read_text(encoding="utf-8")
+        self.assertIn("/old?embed=album", host)
+        called = set(re.findall(r"gradoEmbed\?\.(\w+)\(", page))
+        block = re.search(r"window\.gradoEmbed = \{(.*?)\n\};", host, re.S).group(1)
+        given = set(re.findall(r"^  (?:async )?(\w+)\(", block, re.M))
+        self.assertEqual(called, {"ready", "changed", "focus", "closed", "save", "open"})
+        self.assertLessEqual(called, given)
+        for fn in ("applyProject", "collectProject", "albumFile", "setTheme", "toast"):   # что окно альбома зовёт у рабочей страницы
+            self.assertIn(f"win.{fn}" if fn != "albumFile" else "w.albumFile(", host)
+        html = (web / "index.html").read_text(encoding="utf-8")
+        self.assertLess(html.index('src="embed.js"'), html.index('src="app.js"'))      # класс embed и EMBED — до скриптов страницы
+        app = (src / "App.vue").read_text(encoding="utf-8")
+        for k in ("albumFile(v)", "ogdDxf()", "openAlbum()"):
+            self.assertIn(k, app)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

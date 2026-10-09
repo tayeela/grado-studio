@@ -287,8 +287,8 @@ function applyMeta(meta, mine) {
   if (ch("views")) project.views.splice(0, project.views.length, ...(meta.views || []).filter(v => v && v.id).map(v => JSON.parse(JSON.stringify(v))));
   if (ch("graph") && meta.graph) { project.raw.graph = JSON.parse(JSON.stringify(meta.graph)); graphHooks.restored(); }
 }
-function applyResults(res, local) {
-  applying = true;
+function applyResults(res, local, mine) {
+  if (!mine) applying = true;
   try {
     external(() => {
       const layerNames = Object.keys(res).filter(isLayerName);
@@ -305,7 +305,16 @@ function applyResults(res, local) {
       normGroups();
       if (!lyr(currentId.value)) currentId.value = project.layers[0]?.key || "";
     });
-  } finally { setTimeout(() => { applying = false; }, 0); }    // наблюдатели за слоями отработали — это не моя правка
+  } finally { if (!mine) setTimeout(() => { applying = false; }, 0); }    // наблюдатели за слоями отработали — это не моя правка
+}
+
+/* Правки из окна «Листы и альбом» (albumhost.js): изменённые там разделы ложатся в открытый проект как свои правки —
+   в совместном режиме уходят на сервер. В meta берутся только изменённые поля (metaKeys), остальное — как здесь. */
+export function adopt(changed, metaKeys) {
+  const local = split(collectProject()), res = { ...changed };
+  if (changed.meta) res.meta = { ...local.meta, ...Object.fromEntries(metaKeys.map(k => [k, changed.meta[k]])) };
+  for (const n of Object.keys(res)) res[n] = normSection(n, res[n]);
+  applyResults(res, local, true);
 }
 
 /* ---- проект: загрузка, открытие, закрытие; вид карты и текущий слой — личные, помнит браузер ---- */

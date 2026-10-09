@@ -7,6 +7,7 @@
 <script src="vendor/litegraph.min.js"></script>
 <script src="vendor/lucide.min.js"></script>
 <script src="uisize.js"></script>
+<script src="embed.js"></script>
 <style>
 :root{
   --bg:#ececec; --panel:#f7f7f7; --field:#ffffff; --line:#d4d4d4; --line-2:#bdbdbd;
@@ -683,6 +684,11 @@ body.shl-dragging,body.shl-dragging *{cursor:grabbing!important;user-select:none
 #wKeys:not(.docked){max-height:calc(100vh - 90px)}#wKeys .wb{overflow:auto}
 /* узкий экран: лента и так в две строки — выбору слоя хватает места на имя и вид («· линии») */
 @media (max-width:1100px){.ribbon .tgt select{width:260px;min-width:0}}
+/* окно «Листы и альбом» нового интерфейса (embed.js): карта с рамками листов, справа окно листов;
+   шапка оставляет «Листы и альбом», «Выгрузку», «Слои и листы» и «Виды», лента — кнопку «Лист» */
+html.embed .skip,html.embed .top>.brand,html.embed #bProj,html.embed #hubBar,html.embed #bKeys,html.embed #bTheme,html.embed nav.wins>:not([data-win=wSheetLayers]):not([data-win=wViews]),
+html.embed .ribbon>:not(:has(#bFrame)),html.embed .side.r>.dtabs,html.embed #rightPane,html.embed #start,html.embed #msearch,html.embed #bWide{display:none!important}
+html.embed .ribbon{justify-content:flex-start}
 </style>
 <link rel="stylesheet" href="hub.css">
 <link rel="stylesheet" href="norms.css">

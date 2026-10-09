@@ -24,14 +24,14 @@
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_next_ui.py` | NextUi | 14 |
+| `test_next_ui.py` | NextUi | 15 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
 | `test_sat.py` | FakeTiles, SatExport | 7 |
-| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 152 |
+| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 153 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |

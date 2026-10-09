@@ -1,4 +1,4 @@
-<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню, лента инструментов, окна dockview, строка состояния;
+<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню и кнопкой «Листы и альбом» (отдельное окно, albumhost.js), лента инструментов, окна dockview, строка состояния;
      на общем сервере — вход, шапка и окна совместной работы (HubLogin, HubBar, HubWindows, окно «Комментарии»).
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
@@ -45,10 +45,13 @@
         <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
-        <h4 class="menu-h">Пока в рабочей странице</h4>
-        <wa-dropdown-item value="pdf" disabled>PDF и PPTX альбома — с окном «Листы»</wa-dropdown-item>
-        <wa-dropdown-item value="ogd" disabled>ГИС ОГД в DXF — с рамкой листа</wa-dropdown-item>
+        <h4 class="menu-h">Альбом — в окне «Листы и альбом»</h4>
+        <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "нет листов" }}</span></wa-dropdown-item>
+        <wa-dropdown-item value="pptx" :disabled="!album.sheets">PPTX альбома<span slot="details">PowerPoint</span></wa-dropdown-item>
+        <wa-dropdown-item value="ogd">ГИС ОГД в DXF — по рамке листа<span slot="details">МСК</span></wa-dropdown-item>
       </wa-dropdown>
+      <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): рамки листов на карте, штамп, сборка альбома ППТ КРТ, PDF и PPTX — отдельным окном, как макет в QGIS"
+                 @click="openAlbum()"><Printer :size="16" /> Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
@@ -129,7 +132,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import { Undo2, Redo2, CircleHelp } from "@lucide/vue";
+import { Undo2, Redo2, CircleHelp, Printer } from "@lucide/vue";
 import CadModes from "./panels/CadModes.vue";
 import HubBar from "./panels/HubBar.vue";
 import HubLogin from "./panels/HubLogin.vue";
@@ -137,6 +140,7 @@ import HubWindows from "./panels/HubWindows.vue";
 import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
+import { album, albumFile, albumHooks, ogdDxf, openAlbum } from "./albumhost.js";
 import { terrTool } from "./data.js";
 import { history, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
@@ -241,7 +245,11 @@ function showHelp() {
   syncOpen();
 }
 
-function onExport(e) { const v = e.detail.item.value; if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "xlsx") exportXlsx(); }
+function onExport(e) {
+  const v = e.detail.item.value;
+  if (v === "dxf") exportDxf(); else if (v === "geojson") exportGeojson(); else if (v === "xlsx") exportXlsx();
+  else if (v === "pdf" || v === "pptx") albumFile(v); else if (v === "ogd") ogdDxf();
+}
 
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }
@@ -311,6 +319,8 @@ async function onProject(e) {
   else if (v === "download") downloadProject();
 }
 function choose(name) { openDlg.value = false; guard(`Открыть «${name}»?`, () => openProject(name)); }
+albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы и альбом»
+albumHooks.open = choose;
 function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
 const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
@@ -329,6 +339,7 @@ addEventListener("keydown", e => {
     e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
   if (e.code === "KeyS") { e.preventDefault(); if (shared.value) hubFlush(); else save(); }
+  else if (e.code === "KeyP" && !e.shiftKey && !e.altKey) { e.preventDefault(); openAlbum(); }   // как в рабочей странице: листы вместо печати страницы
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
   else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
   else if ((e.code === "KeyZ" && e.shiftKey) || e.code === "KeyY") { e.preventDefault(); redo(); }
@@ -344,6 +355,7 @@ openStartup();
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0; overflow: hidden;
 }
+.top .cnt { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: var(--wa-font-size-2xs); line-height: 16px; background: var(--wa-color-neutral-fill-normal); }
 .brand { font-weight: 700; letter-spacing: .02em; margin-right: var(--wa-space-s); }
 .project { color: var(--g-muted); margin-right: var(--wa-space-m); display: inline-flex; gap: 6px; align-items: center; }
 .grow { flex: 1; }

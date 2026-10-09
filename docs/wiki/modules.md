@@ -81,7 +81,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `_ctx`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2692 стр.
+### `apps/grado2/server.py` — 2701 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -115,13 +115,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2419 стр.
+### `apps/grado2/web/app.js` — 2426 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
 Разделы по порядку: геометрия · карта (EPSG:3857, подложка OSM) · знаки: ЛГР (коды, цвета, штрих) и Генплан — из библиотек ядра · состояние проекта · данные территории · поиск над картой: адрес (OpenStreetMap) и кадастровый номер (НСПД); сервер — /api/search · ФГИС ТП: документы терпланирования, чей охват накрывает территорию → их слои · импорт файлов: DXF, GeoJSON, KML/KMZ, Shapefile — кнопкой или перетаскиванием на карту, ка · граф анализа (litegraph.js) · генератор посадки (локальная рамка, метры) · граф по умолчанию · T6: резерв участков ДОО, школы и поликлиники · результат графа на основной карте · эскиз · варианты · сохранённые варианты (T59) · плавающие окна и панели
 
-Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 140
+Функции: `fmt`, `esc`, `icons`, `api`, `setFrame`, `toLL`, `polyLL`, `rect`, `bboxOf`, `centroid`, `polys`, `ringsXY`, `splitParts`, `planarArea`, `m2`, `safe`, `quiet`, `snap6`, `robust`, `unionAll`, `diff`, `inter`, `buf`, `asArea`, `rot`, `toOl`, `calmWheel`, `interactions`, `basemap`, `setBasemap`, `ruScaleLine`, `newMap`, `hatch`, `S`, `loadStyleLibs`, `ltCode`, `redLineStyle`, `dataBBox`, `terrLayer`, `setTerritory`, `coverSheets`, `coverBox`, `updateCover`, `pickBoundary`, `importBoundary`, `parcelsWord`, `haOf`, `srchErr`, `searchApi`, `cadOf`, `parcelKey`, `addParcels`, `parcelsToTerritory`, `boundaryByNumbers`, `histText`, `renderSources`, `fgHTML`, `fgRender`, `fgFind`, `fgSearch`, `fgPick`, `fgLoad`, `sameLayerKey`, `dlStatus`, `loadKeys`, `mergeDownload`, `EXIST_KEY`, `floorsOf`, `insideTerr`, `existingSummary`, `kv`, `b64`, `importFiles`, `exportLayers`, `saveBlob`, `exportTo`, `expItems`, `expSync`, `expMenu`, `ogdSheet` и ещё 141
 
 ### `apps/grado2/web/blocks.js` — 63 стр.
 
@@ -154,6 +154,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 Разделы по порядку: расчёт · узел графа «Ограничения»: читает включённые слои группы · окно · проверка норм эскиза (этап Э5): после «Построить эскиз» или правки принятого слоя
 
 Функции: `fireGap`, `isResidential`, `isChildren`, `groundAt`, `ringMid`, `decisionOf`, `consLayer`, `clip`, `protectR`, `polyFeats`, `cleanTitle`, `roleFeats`, `nameOf`, `usedLine`, `computeConstraints`, `consExclude`, `consCeiling`, `NCons`, `ensureConsNode`, `renderCons`, `openRing`, `prismsOf`, `keptForCheck`, `sketchFromLayer`, `yieldUI`, `evalChunked`, `checkNorms`, `runCheck`, `ownInsolation`
+
+### `apps/grado2/web/embed.js` — 18 стр.
+
+Рабочая страница как окно «Листы и альбом» нового интерфейса (/next/, ui/src/albumhost.js): отдельное окно браузера по адресу /old?embed=album, открытое новым интерфейсом (как макет в QGIS открывается своим окном). Ставится до отрисовки: класс embed на <html> прячет шапку, ленту и панели (стили в index.html), тема — как у нового интерфейса. Проект приходит из нового интерфейса (applyProject), правки уходят туда же (project.js markDirty → EMBED_HOST.gradoEmbed); своего автосохранения, входа и совместной работы у этого окна нет. Новый интерфейс закрыт — страница обычная.
+
 
 ### `apps/grado2/web/frames.js` — 193 стр.
 
@@ -232,7 +237,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · окно «Исходные данные»: одно дерево всех источников — ЕГРН, подборки ГИС ОГД, все слои ГИС ОГД ровно в порядке портала, ЕГКО, OpenStreetMap, Яндекс, рельеф. Флажки на папках и слоях, поиск, число объектов каждого слоя ГИС ОГД в области (по кэшу на диске, портал не трогается). Отмеченное — выбор проекта (CHECKED; слои портала — ключами «ogd.<код>»). Две кнопки: «Загрузить в проект» — по листу или по покрытию всех листов, «ГИС ОГД в DXF» — чертёж отмеченных слоёв портала по листу (runOgd в app.js).
 
 
-### `apps/grado2/web/project.js` — 286 стр.
+### `apps/grado2/web/project.js` — 292 стр.
 
 ГРАДО 2 · проект: сохранение в «Документы/ГРАДО 2» (файл .grado2 = JSON), открытие, новый проект, автосохранение с восстановлением после перезагрузки страницы. В файле: граница, слои (порядок, стиль, видимость), их данные с исходной выгрузкой, граф, вид карты.
 
