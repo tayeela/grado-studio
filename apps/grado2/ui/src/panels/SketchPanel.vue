@@ -38,7 +38,7 @@
         </template>
         <wa-checkbox v-else-if="c.type === 'toggle'" size="s" :checked="!!val(c)" @change="e => setControl(c, e.target.checked)">{{ c.label }}</wa-checkbox>
         <template v-else>
-          <div class="t"><span>{{ c.label }}</span><b>{{ fmt(val(c), c.step < 1 ? 2 : 0) }}</b></div>
+          <div class="t"><span>{{ c.label.replace(/ (?=\S+$)/, "\u00a0") }}</span><b>{{ fmt(val(c), c.step < 1 ? 2 : 0) }}</b></div>
           <input type="range" :min="c.min" :max="c.max" :step="c.step" :value="Number(val(c))" :aria-label="c.label"
                  :title="`${c.label}: от ${fmt(c.min, c.step < 1 ? 2 : 0)} до ${fmt(c.max, c.step < 1 ? 2 : 0)}; эскиз перестраивается сразу`"
                  @input="e => setControl(c, +e.target.value)">
@@ -94,7 +94,7 @@ onBeforeUnmount(() => { off?.dispose?.(); preview.sketch = false; });
 .sketchp .warnt { color: var(--wa-color-warning-on-quiet); }
 .sketchp .ctl { margin: var(--wa-space-s) 0; font-size: var(--wa-font-size-s); }
 .sketchp .ctl .t { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 3px; }
-.sketchp .ctl .t b { font-variant-numeric: tabular-nums; }
+.sketchp .ctl .t b { flex: none; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .sketchp .ctl input[type=range] { width: 100%; margin: 0; cursor: pointer; accent-color: var(--wa-color-brand-fill-loud); }
 .sketchp .ctl small { display: block; color: var(--g-muted); font-size: var(--wa-font-size-xs); line-height: 1.3; margin-top: 2px; }
 .sketchp .seg { display: flex; flex-wrap: wrap; gap: 3px; }

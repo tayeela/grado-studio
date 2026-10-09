@@ -141,13 +141,20 @@
         <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
       </wa-dropdown>
       <span class="xy" title="Курсор над картой, МСК (как в QGIS)">{{ cursor ? `X ${fmtM(cursor[0])}  Y ${fmtM(cursor[1])}` : "X —  Y —" }}</span>
-      <!-- масштаб вводится, как в QGIS: «1:2000» или «2000» и Enter, или выбор из стандартных -->
-      <label class="scl" title="Масштаб карты: введите «1:2000» или «2000» и нажмите Enter, или выберите из списка">Масштаб
-        <input class="sclin" list="grado-scales" :value="scaleText" :disabled="!scale || !cad.ready" @focus="sclFresh = true" @mouseup="e => { if (sclFresh) e.target.select(); sclFresh = false; }"
-               @keydown.enter.prevent="setScale" @keydown.esc="e => { e.target.value = fmtScale(scale); e.target.blur(); }"
-               @input="e => { if (!e.inputType || e.inputType === 'insertReplacementText') setScale(e); }" @blur="e => e.target.value = fmtScale(scale)">
-      </label>
-      <datalist id="grado-scales"><option v-for="d in SCALES" :key="d" :value="fmtScale(d)"></option></datalist>
+      <!-- масштаб, как в QGIS: «1 :» и число — вводится («2000» и Enter), стрелка — список стандартных (владелец 09.10.2026: поле было пустым и широким) -->
+      <span class="scl" title="Масштаб карты: введите знаменатель, например 2000, и нажмите Enter, или выберите из списка">
+        <span class="lbl">Масштаб</span>
+        <span class="sbox" :class="{ off: !scale || !cad.ready }">
+          <span class="pre">1&#8239;:</span>
+          <input class="sclin" :value="scaleText" :disabled="!scale || !cad.ready" aria-label="Знаменатель масштаба" inputmode="numeric"
+                 @focus="sclFresh = true" @mouseup="e => { if (sclFresh) e.target.select(); sclFresh = false; }"
+                 @keydown.enter.prevent="setScale" @keydown.esc="e => { e.target.value = scaleText; e.target.blur(); }" @blur="e => e.target.value = scaleText">
+          <wa-dropdown placement="top-end" @wa-select="e => setScaleTo(+e.detail.item.value)">
+            <button slot="trigger" class="sdd" type="button" :disabled="!scale || !cad.ready" aria-label="Стандартные масштабы"><ChevronDown :size="12" /></button>
+            <wa-dropdown-item v-for="d in SCALES" :key="d" :value="String(d)" :class="{ cur: Math.round(scale) === d }">1 : {{ d.toLocaleString("ru-RU") }}</wa-dropdown-item>
+          </wa-dropdown>
+        </span>
+      </span>
       <div v-if="noteOpen && noteText" class="notefull" @click="noteOpen = false">{{ noteText }}</div>
     </footer>
   </div>
@@ -156,7 +163,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import { Undo2, Redo2, CircleHelp, Printer, Sun, Moon } from "@lucide/vue";
+import { ChevronDown, Undo2, Redo2, CircleHelp, Printer, Sun, Moon } from "@lucide/vue";
 import CadModes from "./panels/CadModes.vue";
 import HubBar from "./panels/HubBar.vue";
 import HubLogin from "./panels/HubLogin.vue";
@@ -217,17 +224,17 @@ const toolTitle = computed(() => cad.ready ? "" : "Черчение работа
 /* Масштаб в строке состояния вводится: «1:2000», «2000», «1 : 2 000» и Enter (как в QGIS); карта меняет разрешение
    в той же пропорции — пересчёт масштаба с поправкой на широту остаётся в MapPanel (scaleDen). */
 const SCALES = [500, 1000, 2000, 5000, 10000, 25000, 50000];
-const fmtScale = d => d ? "1:" + Math.round(d).toLocaleString("ru-RU") : "";
-const scaleText = computed(() => fmtScale(scale.value));
+const scaleText = computed(() => scale.value ? Math.round(scale.value).toLocaleString("ru-RU") : "");
 let sclFresh = false;   // первый щелчок в поле выделяет весь масштаб — набранное число заменит его
 function setScale(e) {
   const el = e.target, t = el.value.replace(/\s|\u00a0/g, "").replace(",", ".");
   const d = Number(t.includes(":") ? t.split(":").pop() : t);
   const v = mapApi.view;
-  if (!v || !scale.value || !(d >= 50 && d <= 5e6)) { el.value = fmtScale(scale.value); if (t) notice.value = "Масштаб — число, например 1:2000 или 2000"; return; }
-  v.setResolution(v.getResolution() * d / scale.value);
+  if (!v || !scale.value || !(d >= 50 && d <= 5e6)) { el.value = scaleText.value; if (t) notice.value = "Масштаб — число, например 1:2000 или 2000"; return; }
+  setScaleTo(d);
   el.blur();
 }
+function setScaleTo(d) { const v = mapApi.view; if (v && scale.value && d) v.setResolution(v.getResolution() * d / scale.value); }
 
 /* Сообщение строки состояния: длинное обрезается многоточием, щелчок показывает его целиком над строкой.
    «Восстановлена последняя работа» — только несколько секунд после открытия или до первого действия. */
@@ -317,8 +324,8 @@ function addOne(id) {
     return;
   }
   const [w, h] = { norms: [560, 600], sketch: [440, 600], comments: [380, 560], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
-  const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом
-  api.addPanel({ id, component: id, title: p.title, floating: fit(300 + k * 28, 80 + k * 28, w, h) });
+  const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом:
+  api.addPanel({ id, component: id, title: p.title, floating: fit(300 + k * 32, 80 + k * 46, w, h) });         // шаг 46 px — вкладки нижнего окна видны
 }
 
 /* Плавающее окно вписывается в область окон: на узком экране — уже и ниже, левее, но целиком видно. */
@@ -471,32 +478,38 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 .save-dlg .warn { color: var(--wa-color-danger-on-quiet); font-size: var(--wa-font-size-s); }
 .open-dlg .when { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 .status wa-dropdown { display: inline-flex; }
-.status .basebtn { font: inherit; font-size: var(--wa-font-size-xs); color: inherit; background: none; border: 0; padding: 0 2px; cursor: pointer; }
+.status .basebtn { font: inherit; font-size: var(--wa-font-size-xs); line-height: 20px; color: inherit; background: none; border: 0; padding: 0 2px; cursor: pointer; }
 .status .basebtn:hover { color: var(--wa-color-text-normal); text-decoration: underline; }
 .status {
   display: flex; gap: var(--wa-space-l); align-items: center; padding: 0 var(--wa-space-s);
-  height: 22px; font-size: var(--wa-font-size-xs); color: var(--g-muted); background: var(--g-bar); border-top: 1px solid var(--g-line);
+  height: 26px; font-size: var(--wa-font-size-xs); color: var(--g-muted); background: var(--g-bar); border-top: 1px solid var(--g-line);
 }
 .status > * { flex: none; white-space: nowrap; }
 .status > .grow { flex: 1; }
 /* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке и по щелчку */
 .status { position: relative; }
-.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; line-height: 20px; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .status > .note:empty { display: none; }
 .status > .notefull {
   position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 4px); z-index: 20; max-width: min(560px, calc(100% - 32px)); padding: 6px 10px;
   white-space: normal; color: var(--wa-color-text-normal); background: var(--wa-color-surface-raised); border: 1px solid var(--g-line);
   border-radius: 8px; box-shadow: var(--g-shadow-2); cursor: pointer;
 }
-.status > .scl { display: inline-flex; align-items: center; gap: 4px; }
-.status .sclin {
-  width: 11ch; height: 18px; box-sizing: border-box; padding: 0 4px; font: inherit; font-size: var(--wa-font-size-xs); color: var(--wa-color-text-normal);
-  background: transparent; border: 1px solid var(--g-line); border-radius: 4px; font-variant-numeric: tabular-nums;
-}
-.status .sclin:hover { border-color: var(--g-line); background: var(--wa-color-surface-default); }
-.status .sclin:focus { outline: none; border-color: var(--wa-color-focus); background: var(--wa-color-surface-default); }
-.status .sclin::-webkit-calendar-picker-indicator { display: none; }   /* стрелка списка — только при наведении, не поверх цифр */
-.status .sclin:hover::-webkit-calendar-picker-indicator, .status .sclin:focus::-webkit-calendar-picker-indicator { display: block; opacity: .6; }
+.status > .scl { display: inline-flex; align-items: center; gap: 6px; }
+.status > .scl { margin-right: 2px; }
+.status wa-dropdown-item.cur { font-weight: 600; color: var(--wa-color-brand-on-quiet); }
+/* поле масштаба: «1 :» + число по ширине цифр + стрелка списка — одна рамка 20 px, как поле масштаба QGIS */
+.status .sbox { display: inline-flex; align-items: center; height: 22px; box-sizing: border-box; border: 1px solid var(--g-line); border-radius: 5px;
+  background: var(--wa-color-surface-default); color: var(--wa-color-text-normal); }
+.status .sbox:focus-within { border-color: var(--wa-color-focus); }
+.status .sbox.off { opacity: .55; }
+.status .sbox .pre { padding-left: 6px; color: var(--g-muted); font-variant-numeric: tabular-nums; }
+.status .sclin { width: 7.5ch; height: 20px; box-sizing: border-box; padding: 0 2px 0 3px; border: 0; background: transparent; font: inherit; font-size: var(--wa-font-size-xs);
+  color: inherit; font-variant-numeric: tabular-nums; text-align: left; }
+.status .sclin:focus { outline: none; }
+.status .sdd { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-left: 1px solid var(--g-line); background: none;
+  color: var(--g-muted); cursor: pointer; border-radius: 0 4px 4px 0; }
+.status .sdd:hover:not(:disabled) { background: var(--wa-color-neutral-fill-quiet); color: var(--wa-color-text-normal); }
 /* лента без карты: пояснение вместо безмолвно серых кнопок */
 .ribbon .nomap { display: flex; white-space: nowrap; align-items: center; gap: 8px; padding: 0 var(--wa-space-m); color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 </style>

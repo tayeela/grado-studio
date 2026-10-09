@@ -2,6 +2,29 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.74: new interface (/next/) — floating windows follow the mouse, larger targets, readable «Схема расчёта», automatic layout check (step 1 of plans/plan-dalshe-2026-10-09.md).**
+  - Floating windows: in dockview 8.4.1 a window lagged the cursor by the first mouse move (a quick grab left it 10–20 px behind), and
+    the corner handle moved the opposite edge by 4–5 px. Fixed by a patch of dockview-core (`apps/grado2/ui/patches/`, applied by
+    patch-package on `npm ci`): the grab point stays under the cursor, the corner stretches the window only.
+  - Targets and text (WCAG 2.2, `docs/ux/ui-grid.md`): checkboxes and switches are 24 px rows, layer-tree icons have a 22 px target,
+    map zoom buttons 24 px, the status bar is 26 px with 20 px buttons; no text below 11 px (ribbon group names, section titles, drawing
+    modes, the time in «Объём»).
+  - «Схема расчёта» opens fitted but not smaller than 60 % (block labels were unreadable at 15 %); «Вся схема» still fits everything.
+    «Эскиз»: a unit no longer wraps alone onto the next line. New floating windows step 46 px down so the tabs of the one below stay visible.
+  - «Данные» (owner: «вкладка данные вообще непонятна и невозможно отследить процесс выгрузки»): three numbered steps — boundary,
+    download, what is in the project. A download shows a card: overall bar, elapsed time and a row per layer (spinner and the
+    portal step with its own bar, then a check with the object count, «пусто» or the error in red); after the end only errors and
+    empty layers stay in view, the loaded ones open on a click. «В проекте» is a table: layer, objects, download date. ФГИС ТП folds.
+  - «Объект» (owner: «выглядит пустой и непонятно какое значение к какому полю относится»): fields are a table «Поле | Значение»
+    with editable value cells (as «Определить объекты» in QGIS); with nothing selected the window says how to select, with keys.
+  - Scale in the status bar (owner: «не оптимизировано окно для масштаба»): «1 :» and the number in one compact box, an arrow opens
+    the standard scales (1:500 … 1:50 000), the current one is marked.
+  - `tools/ui_layout_check.mjs` (gate with `E2E=1`, CI): every window at 1280 and 1920 in both themes with visible scrollbars; drags a
+    floating window by its strip and corner, a splitter, hovers every button and row; fails on horizontal or nested scrollbars, controls
+    outside a window, jumps of the header, ribbon or status bar, windows not following the mouse, hover shifts, monospace.
+  - Rules: journal `docs/team` reaches `main` only through landing (owner «1 а»); water colour on white schemes and the map label font
+    become album settings (owner «настраиваемый»; rules in album-rules.md and label-rules.md, code in a separate issue).
+
 - **2026-10-09, ГРАДО 2 v0.99.73: new interface (/next/) tidied after the owner's screenshot («элементы не по уровню, скачут, не влезают, ползунки, перемещение окон криво»).**
   - Scrollbars: every window had a 2 px overflow (the window frame was a border inside dockview's size) and showed scrollbars at all
     edges; the frame is now an outline, only content that really scrolls (layer list, table, help) has a bar, and bars are thin and

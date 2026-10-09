@@ -235,7 +235,7 @@ function groupCurrent() { if (currentId.value) editing.value = "g:" + newGroup([
 .layers .grp { margin-top: var(--wa-space-xs); font-weight: 600; }
 .layers .grp .cnt { margin-left: auto; color: var(--g-muted); font-weight: 400; font-size: var(--wa-font-size-xs); }
 .layers .grp.off .gname { color: var(--g-muted); }
-.layers .eye, .layers .tw, .layers .more { all: unset; display: inline-flex; color: var(--g-muted); cursor: pointer; padding: 1px; border-radius: 3px; }
+.layers .eye, .layers .tw, .layers .more { all: unset; display: inline-flex; color: var(--g-muted); cursor: pointer; padding: 3px; margin: -2px; border-radius: 4px; }   /* значок 16 px, цель для мыши 22 px */
 /* «⋯» прозрачна, а не скрыта: так до неё доходит Tab, и при фокусе она видна */
 .layers .more { opacity: 0; margin-left: auto; }
 .layers .grp .more { margin-left: 0; }

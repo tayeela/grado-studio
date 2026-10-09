@@ -65,6 +65,11 @@ jobs:
         run: |
           export PYTHONPATH="apps/grado2:core/render:core/connectors:core/compute:core/layout"
           GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py
+      - name: New interface layout (windows, scrollbars, mouse drags; docs/ux/ui-grid.md)
+        env:
+          CHROME: /usr/bin/google-chrome
+          PY: python
+        run: node tools/ui_layout_check.mjs --out /tmp/grado-ui-check
 
   build:
     # сборка Windows и macOS дорога (минуты macOS в приватном репозитории считаются с множителем): только по тегу и вручную, не на каждом PR

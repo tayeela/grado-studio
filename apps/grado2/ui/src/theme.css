@@ -5,6 +5,7 @@
 
 :root {
   --wa-font-size-scale: 0.8125;      /* 13 px вместо 16: плотность настольной программы */
+  --wa-font-size-2xs: 11px;          /* мельче 11 px текста нет (docs/ux/ui-grid.md): подписи ленты, заголовки разделов, режимы черчения */
   --wa-space-scale: 0.75;
   --wa-border-radius-scale: 1.333;   /* кнопки и поля 8 px, мелкие 4 px */
   --wa-border-radius-l: 12px;        /* окна */
@@ -167,6 +168,9 @@ wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-sur
   font-size: var(--wa-font-size-2xs); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--g-muted);
 }
 .pane > h3:first-child, .pane > .sect:first-child { margin-top: 0; }
+/* цель для мыши — не меньше 20 px, флажок и переключатель — строкой 24 px (WCAG 2.2, 2.5.8; docs/ux/ui-grid.md) */
+.pane wa-checkbox, .pane wa-switch { min-height: 24px; display: flex; align-items: center; }
+.pane input[type=range] { height: 20px; }
 .pane .hint { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin: var(--wa-space-xs) 0; }
 .pane wa-select, .pane wa-number-input, .pane wa-input, .pane wa-color-picker, .pane wa-slider, .pane wa-switch { display: block; margin-bottom: var(--wa-space-m); }
 
@@ -195,7 +199,8 @@ wa-number-input::part(start), wa-number-input::part(end) { flex: 0 0 auto; margi
 
 /* подложка карты: в светлой теме OSM приглушена, чтобы читались знаки */
 .basemap { filter: grayscale(1) contrast(.9) brightness(1.05); }
-.ol-zoom { top: .5em; right: .5em; left: auto; bottom: auto; }   /* справа сверху: низ карты занят командной строкой */
+.ol-zoom { top: .5em; right: .5em; left: auto; bottom: auto; }
+.ol-zoom button { width: 24px; height: 24px; }   /* справа сверху: низ карты занят командной строкой */
 .ol-attribution { font-size: var(--wa-font-size-2xs); }
 /* кнопки карты OpenLayers («+», «−», компас, «i»): цвета и шрифт темы, в тёмной — не белые */
 .ol-control { background: transparent; }

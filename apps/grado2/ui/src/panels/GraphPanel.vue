@@ -84,6 +84,17 @@ const requestSync = () => (chain = chain.then(sync).catch(e => console.warn("[с
 let fitSig = "";
 const viewSig = () => { const { x, y, k } = area.area.transform; return [x, y, k].map(v => v.toFixed(2)).join(); };
 async function fit() { if (!editor?.getNodes().length) return; await AreaExtensions.zoomAt(area, editor.getNodes()); fitSig = viewSig(); }
+/* Само окно вписывает схему целиком, но не мельче 60 %: мельче подписи и поля блоков не читаются (модельер QGIS открывает схему
+   в натуральную величину). Тогда видно начало схемы — блоки слева вверху, остальное — перетаскиванием и колесом; «Вся схема» вписывает всегда. */
+const READABLE = 0.6;
+async function autoFit() {
+  await fit();
+  if (!editor?.getNodes().length || area.area.transform.k >= READABLE) return;
+  const ps = editor.getNodes().map(n => area.nodeViews.get(n.id)?.position).filter(Boolean);
+  await area.area.zoom(READABLE, 0, 0);
+  await area.area.translate(16 - Math.min(...ps.map(p => p.x)) * READABLE, 16 - Math.min(...ps.map(p => p.y)) * READABLE);
+  fitSig = viewSig();
+}
 let ro = null;
 function add(type) {
   const r = box.value.getBoundingClientRect(), { x, y, k } = area.area.transform;
@@ -140,14 +151,14 @@ onMounted(async () => {
     return ctx;
   });
   await requestSync();
-  ro = new ResizeObserver(() => { if (fitSig && fitSig === viewSig()) fit(); }); ro.observe(box.value);
+  ro = new ResizeObserver(() => { if (fitSig && fitSig === viewSig()) autoFit(); }); ro.observe(box.value);
   const api = props.params?.api;
   preview.graph = api ? api.isVisible : true;
-  if (preview.graph) requestAnimationFrame(() => { fit(); fitted = true; });
-  off = api?.onDidVisibilityChange?.(e => { preview.graph = e.isVisible; if (e.isVisible && !fitted) requestAnimationFrame(() => { fit(); fitted = true; }); });
+  if (preview.graph) requestAnimationFrame(() => { autoFit(); fitted = true; });
+  off = api?.onDidVisibilityChange?.(e => { preview.graph = e.isVisible; if (e.isVisible && !fitted) requestAnimationFrame(() => { autoFit(); fitted = true; }); });
 });
 watch(structRev, requestSync);
-watch(() => project.raw, () => { fitted = false; requestSync().then(() => { if (preview.graph) { fit(); fitted = true; } }); });
+watch(() => project.raw, () => { fitted = false; requestSync().then(() => { if (preview.graph) { autoFit(); fitted = true; } }); });
 onBeforeUnmount(() => { off?.dispose?.(); ro?.disconnect(); preview.graph = false; area?.destroy(); editor = null; });
 </script>
 
