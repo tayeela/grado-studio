@@ -1446,12 +1446,17 @@ const hitsBox = (x0, y0, x1, y1, ring, solid = true) => {       // многоу�
   for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) if ((ring[i][1] > cy) !== (ring[k][1] > cy) && cx < (ring[k][0] - ring[i][0]) * (cy - ring[i][1]) / (ring[k][1] - ring[i][1]) + ring[i][0]) inside = !inside;
   return inside;
 };
+/* зона «в радиусе R от домов»: буфер в два шага (30 м — дома сливаются в кварталы, упрощение на 1 м, затем R − 30) — та же зона
+   с точностью до метра, но сотни домов ИЖС считаются за доли секунды, а не за полминуты */
+const reachOf = (bu, rad) => { const s = buf(bu, 30); return buf(s ? safe(() => turf.simplify(s, { tolerance: 1e-5, highQuality: false })) || s : bu, s ? rad - 30 : rad); };
 function reserveSocial(site, sketch, social, radii) {
   const out = { plots: [], notes: [], warns: [] };
   if (!site || !social?.length) return out;
   const blds = sketch.map(b => b.f), bu = blds.length ? unionAll(blds) : null, ground = [...(sketch.streets || []), ...(sketch.plots || [])].map(s => s.f);
+  // все препятствия вычитаются одним проходом (turf.difference принимает список): сотни участков ИЖС — доли секунды, а не минуты
+  const cut = [bu && buf(bu, RES_GAP), ...ground].filter(Boolean);
   let free = site;
-  for (const g of [bu && buf(bu, RES_GAP), ...ground]) { if (g && free) free = diff(free, g); }
+  if (cut.length) try { free = turf.difference(turf.featureCollection([site, ...cut])); } catch { free = cut.reduce((x, g) => x && diff(x, g), site); }
   // препятствия для быстрого отсева кандидатов: корпус с отступом, улицы, участки эскиза и уже поставленные участки резерва (само пятно проверяет fits)
   const obst = [...blds.map(f => buf(f, RES_GAP) || f), ...ground], houses = blds.map(f => centroid(ringsXY(f)[0]));
   const reach = {};
@@ -1461,7 +1466,7 @@ function reserveSocial(site, sketch, social, radii) {
   for (const s of list) {
     const n = seen[s.kind] = (seen[s.kind] || 0) + 1, many = list.filter(x => x.kind === s.kind).length > 1, nm = RES_NAMES[s.kind], name = `${nm === "ДОО" ? "ДОО" : nm[0].toUpperCase() + nm.slice(1)}${many ? " №" + n : ""}`;
     const A = s.m2, rad = radii?.[s.kind], st = { cands: 0, checks: 0, tests: 0 }; let best = null, cut = false;
-    if (rad && bu) reach[s.kind] ||= buf(bu, rad);
+    if (rad && bu) reach[s.kind] ||= reachOf(bu, rad);
     const rch = rad && bu ? reach[s.kind] : null;
     for (const part of free ? splitParts(free) : []) {
       if (m2(part) < A * .997) continue;
