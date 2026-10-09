@@ -165,6 +165,7 @@ const PANELS = [
   { id: "views", title: "Виды" },
   { id: "help", title: "Справка" },
   { id: "comments", title: "Комментарии" },
+  { id: "sheet", title: "Макет листа" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
@@ -222,6 +223,13 @@ function addNewWindows() {
 
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
+  // макет листа — большое окно: вкладкой рядом с картой, как макет в QGIS открывается отдельным окном во всю ширину
+  // и сразу во всё окно (остальные окна прячутся, вернуть — двойной щелчок по вкладке или кнопка группы)
+  if (id === "sheet") {
+    const panel = api.addPanel({ id, component: id, title: p.title, position: api.getPanel("map") ? { referencePanel: "map", direction: "within" } : undefined });
+    panel.api.maximize();
+    return;
+  }
   const [w, h] = { norms: [560, 600], sketch: [440, 600], comments: [380, 560], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
   const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом
   api.addPanel({ id, component: id, title: p.title, floating: { x: 300 + k * 28, y: 80 + k * 28, width: w, height: h } });

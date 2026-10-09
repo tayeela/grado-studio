@@ -32,6 +32,7 @@ import MapPanel from "./panels/MapPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
 import PropsPanel from "./panels/PropsPanel.vue";
 import TepPanel from "./panels/TepPanel.vue";
+import SheetPanel from "./panels/SheetPanel.vue";
 import ObjectPanel from "./panels/ObjectPanel.vue";
 import TablePanel from "./panels/TablePanel.vue";
 import ViewsPanel from "./panels/ViewsPanel.vue";
@@ -53,5 +54,5 @@ const app = createApp(App);
 app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel)
   .component("object", ObjectPanel).component("table", TablePanel).component("views", ViewsPanel).component("help", HelpPanel).component("data", DataPanel).component("cons", ConsPanel).component("graph", GraphPanel)
   .component("sketch", SketchPanel).component("norms", NormsPanel)
-  .component("vars", VarsPanel).component("cmp", ComparePanel).component("vol", VolumePanel).component("comments", CommentsPanel);
+  .component("vars", VarsPanel).component("cmp", ComparePanel).component("vol", VolumePanel).component("comments", CommentsPanel).component("sheet", SheetPanel);
 app.mount("#app");

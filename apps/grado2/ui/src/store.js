@@ -7,7 +7,7 @@ import { fullStyle, swatchColor } from "./symbology.js";
 
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
-export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], views: [], data: markRaw({}), territory: null, view: null, raw: markRaw({}) });
+export const project = reactive({ name: "", file: null, source: "", groups: [], layers: [], views: [], data: markRaw({}), territory: null, view: null, raw: markRaw({}), layouts: [] });
 export const winApi = { open: () => {} };   // App.vue подставляет: открыть окно по id или вывести его вперёд
 export const viewCur = ref(null);      // вид карты, показанный последним (окно «Виды»)
 export const currentId = ref("");
@@ -39,6 +39,7 @@ export function setProject(p, name, source) {
   project.views = (p.views || []).filter(v => v && v.id).map(v => JSON.parse(JSON.stringify(v)));
   viewCur.value = null;
   project.view = p.view || null;
+  project.layouts = Array.isArray(p.layouts) ? p.layouts.filter(x => x && typeof x === "object" && Array.isArray(x.blocks)) : [];   // листы «Макета листа»
   viewNow.center = viewNow.zoom = null;   // пока карта не поставила вид нового проекта, в файл идёт его прежний вид
   if (BASEMAPS[p.view?.basemap]) setBasemap(p.view.basemap);
   currentId.value = project.layers.some(l => l.key === p.current) ? p.current : (project.layers[0]?.key || "");

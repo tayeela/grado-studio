@@ -5,6 +5,7 @@ import vue from "@vitejs/plugin-vue";
 
 export default defineConfig({
   base: "./",
+  server: { fs: { allow: [".."] } },   // редактор листа берёт ../web/snap.js (общая привязка с рабочей страницей)
   plugins: [vue({ template: { compilerOptions: { isCustomElement: tag => tag.startsWith("wa-") } } })],
   build: {
     outDir: "../web/next",
