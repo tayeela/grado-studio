@@ -32,12 +32,12 @@
         <p class="hint">Атрибуты правятся у объектов одного слоя: оставьте в выборе один слой.</p>
       </template>
       <template v-else>
-        <p class="hint">Слой «{{ lyr(byLayer[0][0])?.title }}». Значение, введённое в поле, получат все {{ items.length }} объектов;
-          «разные» — у объектов разные значения, поле не меняется, пока его не заполнить.</p>
+        <p class="hint">Слой «{{ lyr(byLayer[0][0])?.title }}». Значение, введённое в поле, получат все выбранные объекты ({{ items.length }});
+          «разные значения» — поле не меняется, пока его не заполнить.</p>
         <div class="grid">
           <template v-for="k in fields" :key="k">
             <label :title="k">{{ k }}</label>
-            <wa-input size="s" :value="common(k).same ? common(k).v : ''" :placeholder="common(k).same ? '' : `разные (${common(k).n})`"
+            <wa-input size="s" :value="common(k).same ? common(k).v : ''" :placeholder="common(k).same ? '' : `разные значения: ${common(k).n}`"
                       @change="e => setAttr(items, k, e.target.value)"></wa-input>
           </template>
         </div>
