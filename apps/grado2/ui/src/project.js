@@ -1,6 +1,7 @@
 /* ГРАДО 2 · проект в новом интерфейсе: список, открытие, запись в папку проектов, автосохранение, новый проект,
    файл .grado2 с диска и на диск. Те же адреса и тот же формат файла, что у рабочей страницы (web/project.js):
-   GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс. */
+   GET/POST /api/project?name=… и ?autosave=1. Пишет весь файл из project.raw, меняя только то, что правит новый интерфейс
+   (слои, группы, виды, граница, схема, листы «Макета листа» — ключ layouts в конце файла). */
 import { nextTick, ref, toRaw, watch } from "vue";
 import { basemapId, currentId, project, setProject, viewNow } from "./store.js";
 import { dataRev, graphRev, resetHistory } from "./edit.js";
@@ -40,7 +41,7 @@ export const hooks = { touched: () => {}, shared: () => {} };
 /* проект с сервера совместной работы: открыт, своих несохранённых правок нет */
 export async function loadShared(p, name) { await load(p, name || "", "hub"); project.file = null; dirty.value = false; loadError.value = ""; }
 export function markClean() { dirty.value = false; autoTick = tick; }
-watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, basemapId, dataRev, graphRev], markDirty, { deep: true });
+watch([() => project.layers, () => project.groups, () => project.views, () => project.territory, () => project.layouts, basemapId, dataRev, graphRev], markDirty, { deep: true });
 
 async function load(p, name, source) {
   if (p?.format !== FORMAT) throw new Error("это не файл проекта ГРАДО 2");
@@ -117,12 +118,13 @@ export function collect(extra = {}) {
     views: JSON.parse(JSON.stringify(project.views)),
     data: project.data || {},
     territory: project.territory || null,
+    layouts: JSON.parse(JSON.stringify(project.layouts)),   // листы «Макета листа»: в файле всегда последним ключом (server.py with_layouts)
     ...extra,
   };
 }
 
 export function projectJSON(extra) {
-  const p = collect(extra), big = [];
+  const { layouts, ...rest } = collect(extra), p = { ...rest, layouts }, big = [];   // листы — последним ключом: по нему сервер их находит
   p.data = Object.fromEntries(Object.entries(p.data).map(([k, d]) => {
     const o = { ...d };
     if (o.original === o.fc && o.fc) o.original = "=fc";        // не правились — в файл один раз, как у рабочей страницы

@@ -1635,17 +1635,51 @@ def projects_size():
     return sum(p.stat().st_size for p in PROJECTS.rglob("*") if p.is_file()) if PROJECTS.exists() else 0
 
 
+# листы «Макета листа» нового интерфейса (/next/): ключ layouts — всегда последний в файле проекта (новый интерфейс
+# пишет его последним), чтобы запись рабочей страницы, которая о нём не знает, листы не стирала (save_project)
+LAYOUTS_KEY = b',"layouts":'
+
+
+def split_layouts(body):
+    """Текст проекта → (текст без листов макета, JSON листов или None). Листы ищутся только последним ключом."""
+    t = body.rstrip()
+    i = t.rfind(LAYOUTS_KEY)
+    if i < 0 or not t.endswith(b"}"):
+        return body, None
+    tail = t[i + len(LAYOUTS_KEY):-1]
+    try:
+        if not isinstance(json.loads(tail), list):
+            return body, None
+    except ValueError:
+        return body, None
+    return t[:i] + b"}", tail
+
+
+def with_layouts(body, tail):
+    """Дописать листы макета последним ключом (tail — JSON списка; None — без листов)."""
+    if tail is None:
+        return body
+    head = body.rstrip()[:-1].rstrip()
+    return head + (LAYOUTS_KEY if not head.endswith(b"{") else LAYOUTS_KEY[1:]) + tail + b"}"
+
+
+def _write_project(path, name, body):
+    if projects_size() + len(body) > PROJECTS_CAP:
+        raise QuotaExceeded
+    try:
+        keep_version(path, name == AUTOSAVE)
+    except OSError:
+        pass                                          # версия не записалась — сохранение важнее
+    atomic_write(path, body)
+
+
 def save_project(name, body):
-    json.loads(body)                                  # в файл идёт только целый JSON
+    obj = json.loads(body)                            # в файл идёт только целый JSON
     path = project_path(name)
     with _SAVE_LOCK:                                  # два сохранения подряд — по очереди, последний побеждает целиком
-        if projects_size() + len(body) > PROJECTS_CAP:
-            raise QuotaExceeded
-        try:
-            keep_version(path, name == AUTOSAVE)
-        except OSError:
-            pass                                      # версия не записалась — сохранение важнее
-        atomic_write(path, body)
+        if isinstance(obj, dict) and "layouts" not in obj and path.exists():
+            body = with_layouts(body, split_layouts(path.read_bytes())[1])   # листы макета, о которых страница не знает, остаются
+        _write_project(path, name, body)
     return path
 
 
@@ -2369,6 +2403,25 @@ class Handler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Type", "image/svg+xml; charset=utf-8")
                 for h, v in not_ready_headers(req):
                     self.send_header(h, v)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                return self.wfile.write(body)
+            if self.path in ("/api/print/layout", "/api/print/layout_svg", "/api/print/map_svg"):
+                # «Макет листа» нового интерфейса (/next/): лист редактора в PDF или SVG, карта блока отдельной картинкой
+                import layout_io
+                try:
+                    if self.path == "/api/print/layout":
+                        body, ctype = layout_io.render_pdf(req, REDLN, LGR_DASH, esri_tile), "application/pdf"
+                    elif self.path == "/api/print/layout_svg":
+                        body, ctype = layout_io.render_page_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
+                    else:
+                        body, ctype = layout_io.map_svg(req, REDLN, LGR_DASH, esri_tile).encode("utf-8"), "image/svg+xml; charset=utf-8"
+                except (KeyError, TypeError, ValueError) as e:
+                    return self._json(400, {"error": str(e).encode("ascii", "replace").decode()})
+                self.send_response(200)
+                self.send_header("Content-Type", ctype)
+                if ctype == "application/pdf":
+                    self.send_header("Content-Disposition", 'attachment; filename="grado2-sheet.pdf"')
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 return self.wfile.write(body)

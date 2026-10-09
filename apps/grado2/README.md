@@ -8,6 +8,7 @@
 | `server.py` | HTTP-сервер и API `/api/...`: отдаёт `web/`, расчёты, импорт, экспорт, печать, проекты | `ГРАДО 2.command`, `ГРАДО 2.bat`, `packaging/grado2_entry.py` (сборка), тесты (`import server`) |
 | `hub.py` | совместный режим: аккаунты, проекты с ролями, ревизии разделов, история версий | `server.py` при `--hub` или `GRADO2_HUB=1`; `tests/test_hub.py`; консоль: adduser, passwd, invite, list |
 | `print_io.py` | листы и альбом в PDF, SVG и PPTX через рендер и вёрстку ядра | `server.py` (печать), `album_io.py`, `rail_icons.py`, `tests/test_t86_pptx_speed.py` |
+| `layout_io.py` | лист из «Макета листа» нового интерфейса в PDF и SVG, карта блока картинкой: карта — печать альбома, остальное — как рисует редактор | `server.py` (`/api/print/layout`, `/api/print/map_svg`; листы в проекте — ключ `layouts`, `save_project` его сохраняет), `ui/src/panels/sheetmaps.js`, `tests/test_layout_io.py` |
 | `album_io.py` | альбомы по образцам владельца: «План реализации ППТ КРТ», «Градостроительная концепция» | `print_io.py`, `tests/test_t80_albums_print.py` |
 | `export_io.py` | экспорт GeoJSON для QGIS (в МСК) и таблица ТЭП с перечнем листов в XLSX | `server.py` (экспорт), `tests/test_export.py` |
 | `file_io.py` | импорт GeoJSON, KML/KMZ, Shapefile и DXF в GeoJSON в WGS84 | `server.py` (импорт файлов), `dxf_io.py`, `tests/test_file_io.py` |
@@ -18,7 +19,7 @@
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
 | `requirements.txt` | зависимости Python: ezdxf, certifi, pillow | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
 | `web/` | браузерный код: страницы и скрипты без сборки; `web/vendor/` — сторонние библиотеки; `web/next/` — собранный новый интерфейс (не править руками) | `server.py` отдаёт файлы браузеру; `tests/*_js.py` запускают `*_test.js` через node |
-| `ui/` | исходники нового интерфейса (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/` ([ui/README.md](ui/README.md)) | `tools/ui_check.sh`, `.github/workflows/grado2-release.yml` |
+| `ui/` | исходники нового интерфейса (Vue 3, dockview, Web Awesome), сборка Vite в `web/next/`; там же редактор раскладки листа на Konva ([ui/README.md](ui/README.md)) | `tools/ui_check.sh`, `.github/workflows/grado2-release.yml` |
 | `tests/` | тесты: `test_*.py` (unittest), `*_test.js`, `e2e/` (браузерные сценарии), `fixtures/` (данные) | `tools/gate.sh`, `.github/workflows/grado2-release.yml` |
 ## web/: файлы по ролям
 | группа | файл | что это |
