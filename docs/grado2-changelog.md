@@ -2,6 +2,22 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.73: new interface (/next/) tidied after the owner's screenshot («элементы не по уровню, скачут, не влезают, ползунки, перемещение окон криво»).**
+  - Scrollbars: every window had a 2 px overflow (the window frame was a border inside dockview's size) and showed scrollbars at all
+    edges; the frame is now an outline, only content that really scrolls (layer list, table, help) has a bar, and bars are thin and
+    themed (`theme.css`).
+  - One grid for fields, as inspectors of Figma and Blender: in «Свойства» every row is label on the left (one column width), control on
+    the right, all controls 26 px high, 6 px between rows; units and percentages in a fixed column. Number fields show their number again
+    (empty slots of Web Awesome took the width). Section titles are the same small capitals in every window.
+  - «Данные» and «Эскиз»: action buttons sit in equal columns instead of a ragged row; long buttons take the full width; the coordinate
+    system list is no longer cut.
+  - Windows: clicking a short tab («Виды») closed the window, because the hidden close cross lay over the label; inactive tabs have no
+    cross now, the active tab keeps a small one. Floating windows move by a thin strip with a grip above the tabs (dockview `titlebar`),
+    so dragging a tab moves only the tab; Shift + strip docks the window back. Drop zones and splitters are drawn in the accent colour.
+    The right group is a little wider by default so all four tabs fit at 1280.
+  - Status bar: the message sits on the left, so layer, coordinates and scale on the right no longer jump when it appears or goes;
+    coordinates and scale use same-width digits; the scale field always shows its frame.
+
 - **2026-10-09, ГРАДО 2 v0.99.72: new interface (/next/) audit fixes — six Haiku 5.5 auditors by area, fixes by four Opus 5.5 agents.**
   - Shell (`App.vue`, `theme.css`): theme button shows its icon; OpenLayers map buttons follow the dark theme; window gaps are 8 px on
     every side; default widths of «Слои» and the right group fit all tabs on 1280; floating windows stay inside the screen and lose the

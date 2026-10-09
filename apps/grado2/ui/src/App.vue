@@ -100,7 +100,7 @@
     </nav>
 
     <!-- плавающие окна двигаются за пустое место строки вкладок (без отдельной пустой полосы-шапки) и не уходят за край экрана -->
-    <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="tabbar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
+    <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="titlebar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
 
     <wa-dialog label="Открыть проект" :open="openDlg" @wa-after-hide="openDlg = false" class="open-dlg">
       <p class="hint" :title="projDir">Папка проектов: {{ projDir }}</p>
@@ -132,6 +132,8 @@
     <footer class="status">
       <CadModes />
       <span class="cmdnow">{{ toolTitle }}</span>
+      <!-- сообщение слева, в свободной части строки: появляясь и исчезая, оно не сдвигает слой, координаты и масштаб справа -->
+      <button class="note" type="button" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
       <span class="grow"></span>
       <span>Слой: {{ current?.title }}</span>
       <wa-dropdown placement="top-end" @wa-select="e => setBasemap(e.detail.item.value)">
@@ -146,7 +148,6 @@
                @input="e => { if (!e.inputType || e.inputType === 'insertReplacementText') setScale(e); }" @blur="e => e.target.value = fmtScale(scale)">
       </label>
       <datalist id="grado-scales"><option v-for="d in SCALES" :key="d" :value="fmtScale(d)"></option></datalist>
-      <button class="note" type="button" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
       <div v-if="noteOpen && noteText" class="notefull" @click="noteOpen = false">{{ noteText }}</div>
     </footer>
   </div>
@@ -248,7 +249,7 @@ let api = null;
 /* Ширины по умолчанию от ширины экрана: на 1280 карта остаётся главной, на широком экране боковые окна просторнее,
    чтобы имена слоёв и вкладки «Свойства, Объект, Ограничения, Эскиз» не обрезались. Нижняя группа — две пятых высоты: «Схеме расчёта» и таблице есть где развернуться. */
 const clamp = (v, a, b) => Math.round(Math.min(b, Math.max(a, v)));
-const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .25, 320, 380), bottom: clamp((innerHeight - 140) * .4, 240, 360) });
+const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .26, 336, 390), bottom: clamp((innerHeight - 140) * .4, 240, 360) });
 
 function defaultLayout() {
   api.clear();
@@ -458,7 +459,7 @@ openStartup();
 .ribbon .mlabel { margin-left: 4px; }
 .ribbon wa-button:has(.mlabel) .ci { display: inline-block; vertical-align: middle; }
 wa-dropdown-item .ci { width: 16px; height: 16px; }
-.status > .xy { white-space: pre; min-width: 22ch; }
+.status > .xy { white-space: pre; min-width: 22ch; font-variant-numeric: tabular-nums; }
 .status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tbtns wa-button::part(base) { padding-inline: 6px; }
 .tbtns wa-button.on::part(base) { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); }
@@ -480,17 +481,17 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 .status > .grow { flex: 1; }
 /* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке и по щелчку */
 .status { position: relative; }
-.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: right; }
+.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .status > .note:empty { display: none; }
 .status > .notefull {
-  position: absolute; right: var(--wa-space-s); bottom: calc(100% + 4px); z-index: 20; max-width: min(560px, calc(100% - 32px)); padding: 6px 10px;
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(100% + 4px); z-index: 20; max-width: min(560px, calc(100% - 32px)); padding: 6px 10px;
   white-space: normal; color: var(--wa-color-text-normal); background: var(--wa-color-surface-raised); border: 1px solid var(--g-line);
   border-radius: 8px; box-shadow: var(--g-shadow-2); cursor: pointer;
 }
 .status > .scl { display: inline-flex; align-items: center; gap: 4px; }
 .status .sclin {
   width: 11ch; height: 18px; box-sizing: border-box; padding: 0 4px; font: inherit; font-size: var(--wa-font-size-xs); color: var(--wa-color-text-normal);
-  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  background: transparent; border: 1px solid var(--g-line); border-radius: 4px; font-variant-numeric: tabular-nums;
 }
 .status .sclin:hover { border-color: var(--g-line); background: var(--wa-color-surface-default); }
 .status .sclin:focus { outline: none; border-color: var(--wa-color-focus); background: var(--wa-color-surface-default); }
