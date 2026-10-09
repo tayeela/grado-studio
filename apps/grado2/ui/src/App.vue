@@ -51,7 +51,7 @@
         <wa-dropdown-item value="ogd">ГИС ОГД в DXF — по рамке листа<span slot="details">МСК</span></wa-dropdown-item>
       </wa-dropdown>
       <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): рамки листов на карте, штамп, сборка альбома ППТ КРТ, PDF и PPTX — отдельным окном, как макет в QGIS"
-                 @click="openAlbum()"><Printer :size="16" /> Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
+                 @click="openAlbum()"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
@@ -94,9 +94,13 @@
         </div>
         <div class="tlabel">{{ g.title }}</div>
       </div>
+      <!-- без окна «Карта» команды черчения недоступны: серые кнопки объясняются здесь же -->
+      <div v-if="!cad.ready" class="nomap">Команды черчения работают на карте:
+        <wa-button size="s" appearance="outlined" @click="winApi.open('map')">Открыть окно «Карта»</wa-button></div>
     </nav>
 
-    <DockviewVue class="grado-dock dock" :theme="dockTheme" @ready="onReady" />
+    <!-- плавающие окна двигаются за пустое место строки вкладок (без отдельной пустой полосы-шапки) и не уходят за край экрана -->
+    <DockviewVue class="grado-dock dock" :theme="dockTheme" floating-group-drag-handle="tabbar" floating-group-bounds="boundedWithinViewport" @ready="onReady" />
 
     <wa-dialog label="Открыть проект" :open="openDlg" @wa-after-hide="openDlg = false" class="open-dlg">
       <p class="hint" :title="projDir">Папка проектов: {{ projDir }}</p>
@@ -135,8 +139,15 @@
         <wa-dropdown-item v-for="(t, id) in BASEMAPS" :key="id" type="checkbox" :value="id" :checked="basemapId === id">{{ t }}</wa-dropdown-item>
       </wa-dropdown>
       <span class="xy" title="Курсор над картой, МСК (как в QGIS)">{{ cursor ? `X ${fmtM(cursor[0])}  Y ${fmtM(cursor[1])}` : "X —  Y —" }}</span>
-      <span>Масштаб 1:{{ scale.toLocaleString("ru-RU") }}</span>
-      <span class="note" :title="notice">{{ busy ? "Записываю…" : notice || (project.source === "autosave" ? "Восстановлена последняя работа" : "") }}</span>
+      <!-- масштаб вводится, как в QGIS: «1:2000» или «2000» и Enter, или выбор из стандартных -->
+      <label class="scl" title="Масштаб карты: введите «1:2000» или «2000» и нажмите Enter, или выберите из списка">Масштаб
+        <input class="sclin" list="grado-scales" :value="scaleText" :disabled="!scale || !cad.ready" @focus="sclFresh = true" @mouseup="e => { if (sclFresh) e.target.select(); sclFresh = false; }"
+               @keydown.enter.prevent="setScale" @keydown.esc="e => { e.target.value = fmtScale(scale); e.target.blur(); }"
+               @input="e => { if (!e.inputType || e.inputType === 'insertReplacementText') setScale(e); }" @blur="e => e.target.value = fmtScale(scale)">
+      </label>
+      <datalist id="grado-scales"><option v-for="d in SCALES" :key="d" :value="fmtScale(d)"></option></datalist>
+      <button class="note" type="button" :title="noteText ? noteText + ' — щелчок: показать целиком' : ''" @click="noteOpen = !noteOpen">{{ noteText }}</button>
+      <div v-if="noteOpen && noteText" class="notefull" @click="noteOpen = false">{{ noteText }}</div>
     </footer>
   </div>
 </template>
@@ -144,7 +155,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { DockviewVue, themeLight } from "dockview-vue";
-import { Undo2, Redo2, CircleHelp, Printer } from "@lucide/vue";
+import { Undo2, Redo2, CircleHelp, Printer, Sun, Moon } from "@lucide/vue";
 import CadModes from "./panels/CadModes.vue";
 import HubBar from "./panels/HubBar.vue";
 import HubLogin from "./panels/HubLogin.vue";
@@ -154,7 +165,7 @@ import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
 import { album, albumFile, albumHooks, ogdDxf, openAlbum } from "./albumhost.js";
 import { terrTool } from "./data.js";
-import { history, redo, undo } from "./edit.js";
+import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
 import { BASEMAPS, basemapId, current, cursor, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
@@ -202,19 +213,54 @@ function runCmd(id) { if (cad.cmd === id) cadApi.cancel(); else cadApi.start(id)
 // идущая команда, её подсказка и сообщения — в командной строке над картой; здесь не повторяются (аудит 09.10.2026)
 const toolTitle = computed(() => cad.ready ? "" : "Черчение работает в окне «Карта»");
 
+/* Масштаб в строке состояния вводится: «1:2000», «2000», «1 : 2 000» и Enter (как в QGIS); карта меняет разрешение
+   в той же пропорции — пересчёт масштаба с поправкой на широту остаётся в MapPanel (scaleDen). */
+const SCALES = [500, 1000, 2000, 5000, 10000, 25000, 50000];
+const fmtScale = d => d ? "1:" + Math.round(d).toLocaleString("ru-RU") : "";
+const scaleText = computed(() => fmtScale(scale.value));
+let sclFresh = false;   // первый щелчок в поле выделяет весь масштаб — набранное число заменит его
+function setScale(e) {
+  const el = e.target, t = el.value.replace(/\s|\u00a0/g, "").replace(",", ".");
+  const d = Number(t.includes(":") ? t.split(":").pop() : t);
+  const v = mapApi.view;
+  if (!v || !scale.value || !(d >= 50 && d <= 5e6)) { el.value = fmtScale(scale.value); if (t) notice.value = "Масштаб — число, например 1:2000 или 2000"; return; }
+  v.setResolution(v.getResolution() * d / scale.value);
+  el.blur();
+}
+
+/* Сообщение строки состояния: длинное обрезается многоточием, щелчок показывает его целиком над строкой.
+   «Восстановлена последняя работа» — только несколько секунд после открытия или до первого действия. */
+const restored = ref(false), noteOpen = ref(false);
+let restoredTimer = 0;
+function dropRestored() { restored.value = false; clearTimeout(restoredTimer); removeEventListener("pointerdown", dropRestored, true); removeEventListener("keydown", dropRestored, true); }
+watch(() => project.raw, () => {
+  dropRestored();
+  if (project.source !== "autosave") return;
+  restored.value = true; restoredTimer = setTimeout(dropRestored, 6000);
+  addEventListener("pointerdown", dropRestored, true); addEventListener("keydown", dropRestored, true);
+});
+const noteText = computed(() => busy.value ? "Записываю…" : notice.value || (restored.value ? "Восстановлена последняя работа" : ""));
+watch(noteText, () => { noteOpen.value = false; });
+
 const LAYOUT_KEY = "grado-next-layout";
 let api = null;
 
+/* Ширины по умолчанию от ширины экрана: на 1280 карта остаётся главной, на широком экране боковые окна просторнее,
+   чтобы имена слоёв и вкладки «Свойства, Объект, Ограничения, Эскиз» не обрезались. Нижняя группа — две пятых высоты: «Схеме расчёта» и таблице есть где развернуться. */
+const clamp = (v, a, b) => Math.round(Math.min(b, Math.max(a, v)));
+const sizes = () => ({ left: clamp(innerWidth * .22, 270, 330), right: clamp(innerWidth * .25, 320, 380), bottom: clamp((innerHeight - 140) * .4, 240, 360) });
+
 function defaultLayout() {
   api.clear();
+  const z = sizes();
   api.addPanel({ id: "map", component: "map", title: "Карта" });
-  api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: 260 });
-  api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: 280 });
+  api.addPanel({ id: "layers", component: "layers", title: "Слои", position: { referencePanel: "map", direction: "left" }, initialWidth: z.left });
+  api.addPanel({ id: "props", component: "props", title: "Свойства", position: { referencePanel: "map", direction: "right" }, initialWidth: z.right });
   api.addPanel({ id: "object", component: "object", title: "Объект", position: { referencePanel: "props", direction: "within" } });
   api.addPanel({ id: "data", component: "data", title: "Данные", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "views", component: "views", title: "Виды", position: { referencePanel: "layers", direction: "within" } });
   api.addPanel({ id: "cons", component: "cons", title: "Ограничения", position: { referencePanel: "props", direction: "within" } });
-  api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: 190 });
+  api.addPanel({ id: "tep", component: "tep", title: "Показатели (ТЭП)", position: { referencePanel: "map", direction: "below" }, initialHeight: z.bottom });
   api.addPanel({ id: "table", component: "table", title: "Таблица атрибутов", position: { referencePanel: "tep", direction: "within" } });
   api.addPanel({ id: "graph", component: "graph", title: "Схема расчёта", position: { referencePanel: "tep", direction: "within" }, inactive: true });
   api.addPanel({ id: "vars", component: "vars", title: "Варианты", position: { referencePanel: "tep", direction: "within" }, inactive: true });
@@ -234,13 +280,34 @@ function addNewWindows() {
   for (const [id, [ref, direction]] of Object.entries(NEW_WINDOWS)) {
     if (seen.includes(id) || api.getPanel(id)) continue;
     const title = PANELS.find(x => x.id === id).title;
-    api.addPanel({ id, component: id, title, ...(api.getPanel(ref) ? { position: { referencePanel: ref, direction } } : { floating: { x: 300, y: 80, width: 440, height: 280 } }), inactive: true });
+    api.addPanel({ id, component: id, title, ...(api.getPanel(ref) ? { position: { referencePanel: ref, direction } } : { floating: fit(300, 80, 440, 280) }), inactive: true });
   }
   try { localStorage.setItem("grado-next-seen", JSON.stringify(Object.keys(NEW_WINDOWS))); } catch { /* частный режим браузера */ }
 }
 
+/* Место окна в раскладке по умолчанию: окно, открытое заново из меню «Окна», встаёт вкладкой к соседям по своей группе,
+   если хоть один из них открыт и не плавает; иначе — краем к карте; иначе — плавающим. */
+const LEFT = ["layers", "data", "views"], RIGHT = ["props", "object", "cons", "sketch"], BOTTOM = ["tep", "table", "graph", "vars"];
+function homeOf(id) {
+  const docked = x => { const q = api.getPanel(x); return q && q.group?.api.location?.type === "grid" ? q : null; };
+  const z = sizes();
+  for (const [ids, dir, size] of [[LEFT, "left", { initialWidth: z.left }], [RIGHT, "right", { initialWidth: z.right }], [BOTTOM, "below", { initialHeight: z.bottom }]]) {
+    if (!ids.includes(id)) continue;
+    const mate = ids.find(x => x !== id && docked(x));
+    if (mate) return { position: { referencePanel: mate, direction: "within" } };
+    if (docked("map")) return { position: { referencePanel: "map", direction: dir }, ...size };
+  }
+  if (id === "map") {
+    const near = ["tep", "table", "graph", "vars", "layers", "props"].find(docked);   // над нижней группой, иначе между боковыми
+    if (near) return { position: { referencePanel: near, direction: { layers: "right", props: "left" }[near] || "above" } };
+  }
+  return null;
+}
+
 function addOne(id) {
   const p = PANELS.find(x => x.id === id);
+  const home = homeOf(id);
+  if (home) { api.addPanel({ id, component: id, title: p.title, ...home }); return; }
   // макет листа — большое окно: вкладкой рядом с картой, как макет в QGIS открывается отдельным окном во всю ширину
   // и сразу во всё окно (остальные окна прячутся, вернуть — двойной щелчок по вкладке или кнопка группы)
   if (id === "sheet") {
@@ -250,12 +317,19 @@ function addOne(id) {
   }
   const [w, h] = { norms: [560, 600], sketch: [440, 600], comments: [380, 560], vars: [900, 420], cmp: [1000, 520], vol: [620, 460] }[id] || [440, 280];   // длинные и широкие окна — крупнее
   const k = api.groups.filter(g => g.api.location?.type === "floating").length % 6;   // плавающие окна — лесенкой, не одно на другом
-  api.addPanel({ id, component: id, title: p.title, floating: { x: 300 + k * 28, y: 80 + k * 28, width: w, height: h } });
+  api.addPanel({ id, component: id, title: p.title, floating: fit(300 + k * 28, 80 + k * 28, w, h) });
+}
+
+/* Плавающее окно вписывается в область окон: на узком экране — уже и ниже, левее, но целиком видно. */
+function fit(x, y, w, h) {
+  const W = api.width || innerWidth, H = api.height || innerHeight;
+  w = Math.min(w, W - 32); h = Math.min(h, H - 32);
+  return { x: Math.max(16, Math.min(x, W - w - 16)), y: Math.max(16, Math.min(y, H - h - 16)), width: w, height: h };
 }
 
 function showHelp() {
   const p = api?.getPanel("help");
-  if (p) p.api.setActive(); else api?.addPanel({ id: "help", component: "help", title: "Справка", floating: { x: 360, y: 90, width: 520, height: 460 } });
+  if (p) p.api.setActive(); else api?.addPanel({ id: "help", component: "help", title: "Справка", floating: fit(360, 90, 520, 460) });
   syncOpen();
 }
 
@@ -404,6 +478,24 @@ wa-dropdown-item .ci { width: 16px; height: 16px; }
 }
 .status > * { flex: none; white-space: nowrap; }
 .status > .grow { flex: 1; }
-/* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке */
-.status > .note { flex: 0 1 auto; min-width: 0; max-width: 50%; overflow: hidden; text-overflow: ellipsis; }
+/* длинное сообщение («Эскиз сохранён слоем…») не ломает строку: обрезается многоточием, целиком — в подсказке и по щелчку */
+.status { position: relative; }
+.status > .note { flex: 0 1 auto; min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: right; }
+.status > .note:empty { display: none; }
+.status > .notefull {
+  position: absolute; right: var(--wa-space-s); bottom: calc(100% + 4px); z-index: 20; max-width: min(560px, calc(100% - 32px)); padding: 6px 10px;
+  white-space: normal; color: var(--wa-color-text-normal); background: var(--wa-color-surface-raised); border: 1px solid var(--g-line);
+  border-radius: 8px; box-shadow: var(--g-shadow-2); cursor: pointer;
+}
+.status > .scl { display: inline-flex; align-items: center; gap: 4px; }
+.status .sclin {
+  width: 11ch; height: 18px; box-sizing: border-box; padding: 0 4px; font: inherit; font-size: var(--wa-font-size-xs); color: var(--wa-color-text-normal);
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+}
+.status .sclin:hover { border-color: var(--g-line); background: var(--wa-color-surface-default); }
+.status .sclin:focus { outline: none; border-color: var(--wa-color-focus); background: var(--wa-color-surface-default); }
+.status .sclin::-webkit-calendar-picker-indicator { display: none; }   /* стрелка списка — только при наведении, не поверх цифр */
+.status .sclin:hover::-webkit-calendar-picker-indicator, .status .sclin:focus::-webkit-calendar-picker-indicator { display: block; opacity: .6; }
+/* лента без карты: пояснение вместо безмолвно серых кнопок */
+.ribbon .nomap { display: flex; white-space: nowrap; align-items: center; gap: 8px; padding: 0 var(--wa-space-m); color: var(--g-muted); font-size: var(--wa-font-size-xs); }
 </style>
