@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite",
-    "test": "node --test src/sheet/model.test.js"
+    "test": "node --test src/sheet/model.test.js",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@awesome.me/webawesome": "3.13.0",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.9",
+    "patch-package": "8.0.1",
     "vite": "8.3.0"
   }
 }

@@ -3,7 +3,8 @@
    Те же адреса сервера и те же правила, что у рабочей страницы (web/app.js loadKeys, mergeDownload, importFiles,
    importBoundary; web/layers.js ensureLayer, defaultStyle, portalStyles): повторная выгрузка сливается с ручной правкой,
    ваши правки, удалённое и нарисованное сохраняются; поля файла — title, source, fetched_at, notes, history, shp, bbox,
-   fc, original. Портал: части большой области сервер берёт по очереди с паузами, клиент шлёт по одному запросу на группу. */
+   fc, original. Портал: части большой области сервер берёт по очереди с паузами, клиент шлёт по одному запросу на группу.
+   Ход выгрузки по слоям (job) показывает окно «Данные». */
 import { markRaw, reactive, ref } from "vue";
 import * as turf from "@turf/turf";
 import "../../web/roles.js";
@@ -18,6 +19,9 @@ export const ERRORS = reactive({});    // ключ → текст ошибки �
 export const coverOn = ref(false);     // окно «Данные» на виду: область загрузки — синим пунктиром на карте
 export const terrTool = ref("");       // "draw" — рисуем границу, "edit" — правим её вершины
 export const loading = ref("");        // строка хода выгрузки («Участки: 42 %…»), пусто — не идёт
+/* Ход выгрузки по слоям — для окна «Данные» (владелец 09.10.2026: «невозможно отследить процесс выгрузки»):
+   у каждого слоя состояние wait (в очереди) → run (идёт; detail — что сейчас, pct — доля) → done | empty | error; t0, t1 — начало и конец. */
+export const job = reactive({ items: [], t0: 0, t1: 0 });
 
 const today = () => new Date().toISOString().slice(0, 10);
 const fmt = (v, d = 0) => Number(v).toLocaleString("ru-RU", { minimumFractionDigits: d, maximumFractionDigits: d });
@@ -277,6 +281,16 @@ function sameLayerKey(k) {
   const code = k.startsWith("ogd.") ? k.slice(4) : SOURCES[k]?.code; if (!code) return k;
   return ["ogd." + code, ...Object.keys(SOURCES).filter(x => SOURCES[x].code === code)].find(x => x !== k && project.data[x]) || k;
 }
+function stepText(x) {
+  const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0);
+  if (x.stage === "tiles") return { detail: `тайлы ${fmt(x.got)} из ${fmt(x.total)}`, pct: x.total ? x.got / x.total : null };
+  if (x.stage === "cells") return { detail: `часть ${x.got + 1} из ${x.total}`, pct: x.total ? x.got / x.total : null };
+  if (x.stage === "parse") return { detail: "разбор ответа", pct: null };
+  if (x.stage === "index") return { detail: "раскладка по сетке", pct: null };
+  if (!x.got) return { detail: "запрос к порталу", pct: null };
+  return x.total ? { detail: `${mb(x.got)} из ${mb(x.total)} МБ`, pct: x.got / x.total } : { detail: `${mb(x.got)} МБ`, pct: null };
+}
+const jobItem = k => job.items.find(i => i.key === k);
 function dlStatus(pr, names) {
   const mb = v => fmt(v / 1e6, v < 1e7 ? 1 : 0), ya = pr.filter(x => x.stage === "tiles"), big = pr.filter(x => x.stage !== "tiles");
   const what = x => x.stage === "cells" ? `часть ${x.got + 1} из ${x.total}` : x.stage === "parse" ? "разбор" : x.stage === "index" ? "раскладка по сетке"
@@ -298,8 +312,14 @@ export async function loadKeys(keys, bb) {
   Object.keys(ERRORS).forEach(k => delete ERRORS[k]);
   const names = () => [...pending].flat().map(k => SOURCES[k]?.title || project.data[k]?.title || k);
   loading.value = `Выгрузка: ${names().slice(0, 3).join(", ")}${names().length > 3 ? ` и ещё ${names().length - 3}` : ""}`;
+  job.items = keys.map(k => ({ key: k, title: SOURCES[k]?.title || project.data[k]?.title || k, state: "run", detail: "запрос к порталу", pct: null, n: null }));
+  job.t0 = Date.now(); job.t1 = 0;
   const poll = setInterval(async () => {
-    try { const pr = Object.values(await api("/api/progress")); if (pending.size) loading.value = dlStatus(pr, names()) || loading.value; } catch { /* ход не пришёл — подождём */ }
+    try {
+      const raw = await api("/api/progress"), pr = Object.values(raw);
+      if (pending.size) loading.value = dlStatus(pr, names()) || loading.value;
+      for (const [k, x] of Object.entries(raw)) { const it = jobItem(k); if (it?.state === "run") Object.assign(it, stepText(x)); }
+    } catch { /* ход не пришёл — подождём */ }
   }, 800);
   const terr = project.territory ? turf.bbox(project.territory) : null;
   const ec = project.raw.emptyCover ||= {};
@@ -310,6 +330,7 @@ export async function loadKeys(keys, bb) {
       Object.assign(ERRORS, r.errors || {});
       for (const [k, v] of Object.entries(r.layers || {})) {
         if (!project.data[k] && !v.features.features.length) {           // пустая первая выгрузка слой не заводит
+          Object.assign(jobItem(k) || {}, { state: "empty", detail: "нет объектов в области", pct: null });
           empty.push(v.title); const p0 = ec[k];
           ec[k] = p0 ? [Math.min(p0[0], w), Math.min(p0[1], s), Math.max(p0[2], e), Math.max(p0[3], n)] : [w, s, e, n]; continue;
         }
@@ -322,15 +343,21 @@ export async function loadKeys(keys, bb) {
         const l = ensureLayer(k, v.title);
         if (l.style.mode === "cat") { const st = JSON.parse(JSON.stringify(l.style)); assignCats(st, project.data[k].fc, true); l.style = fullStyle(st); }
         nLayers++;
+        Object.assign(jobItem(k) || {}, { state: "done", n: project.data[k].fc.features.length, pct: null,
+          detail: m ? (m.counts.added || m.counts.removed || m.counts.changed ? `+${m.counts.added} −${m.counts.removed} ~${m.counts.changed}` : "без изменений") : "" });
         if (m) {
           if (m.counts.added || m.counts.removed || m.counts.changed || !/^\+0 новых, −0 исчезло, 0 изменились$/.test(m.text)) reports.push(`«${v.title}»: ${m.text}`); else same.push(v.title);
           project.data[k].fc.features.forEach(f => { if (m.mark.has(f.properties?._key) && f.properties._uid) fresh.push({ key: k, uid: f.properties._uid }); });
         }
       }
     } catch (err) { if (my === project.raw) part.forEach(k => { ERRORS[k] = err.message; }); }
+    part.forEach(k => {           // слой без ответа: ошибка портала или пусто
+      const it = jobItem(k); if (!it || it.state !== "run") return;
+      Object.assign(it, ERRORS[k] ? { state: "error", detail: ERRORS[k], pct: null } : { state: "empty", detail: "нет объектов в области", pct: null });
+    });
     pending.delete(part); touchData();
   }));
-  clearInterval(poll); loading.value = "";
+  clearInterval(poll); loading.value = ""; job.t1 = Date.now();
   if (dropped) { notice.value = "Выгрузка для прежнего проекта отброшена: пока она шла, открыт другой проект"; return; }
   markDirty(); portalStyles();
   if (fresh.length) setSel(fresh);

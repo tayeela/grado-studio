@@ -186,6 +186,17 @@ class NextUi(unittest.TestCase):
         for k in ("albumFile(v)", "ogdDxf()", "openAlbum()"):
             self.assertIn(k, app)
 
+    def test_floating_windows_follow_the_mouse(self):
+        # плавающее окно идёт ровно за мышью, угол не сдвигает край (docs/ux/ui-grid.md): заплатка dockview ставится при npm ci
+        # и попадает в сборку; без неё окно отставало на первое движение мыши (владелец 09.10.2026: «окна перемещаются криво»)
+        ui = NEXT.parents[1] / "ui"
+        pkg = json.loads((ui / "package.json").read_text(encoding="utf-8"))
+        self.assertEqual(pkg["scripts"]["postinstall"], "patch-package")
+        patch = (ui / "patches" / "dockview-core+8.4.1.patch").read_text(encoding="utf-8")
+        self.assertIn("track(dragTarget, event.pointerId, event)", patch)
+        js = "".join(p.read_text(encoding="utf-8") for p in (NEXT / "assets").glob("*.js"))
+        self.assertIn("originalTop", js)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

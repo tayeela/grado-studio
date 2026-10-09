@@ -635,9 +635,9 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `read`, `rel`, `sources`, `_array_block`, `_top_objects`, `_sheet_rows`, `album_sheets`, `sheets`, `api`, `_lead_comment`, `_sections`, `_functions`, `_files`, `modules`, `rules`, `tests`, `team`, `changelog`, `index`, `main`
 
-### `tools/gate.sh` — 35 стр.
+### `tools/gate.sh` — 37 стр.
 
-Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py), свежесть сборки нового интерфейса (tools/ui_check.sh) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое. Тесты идут под pytest (apps/grado2/requirements-dev.txt); без него — тем же набором через unittest. Браузерные сценарии: Playwright из…
+Проверка ГРАДО 2 одной командой (перед каждым коммитом программы и перед выкладкой): tools/gate.sh          — unit с PYTHONPATH и без, коннекторы и остальное ядро, свежесть вики, навигация документов (tools/docs_check.py), свежесть сборки нового интерфейса (tools/ui_check.sh) E2E=1 tools/gate.sh    — плюс браузерные сценарии (≈6 мин) и проверка раскладки нового интерфейса (tools/ui_layout_check.mjs, ≈3 мин); E2E_ONLY=t71,t82 — только эти группы Печатает по строке на шаг и итог «GATE: OK» или «GATE: FAIL (шаги)». Код выхода 1 при сбое. Тесты идут под pytest (apps/grado2/requirements-dev.txt); б…
 
 Функции: `step`
 
@@ -661,6 +661,12 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 Снимок панорамы Яндекса для листа «Фотофиксация» без наложений (владелец 06.10.2026: «должно быть только фото»): Chrome headless + CDP, скрыты метки домов, кнопки, логотип и миникарта. Запуск: node tools/panorama_shot.mjs <ссылка> <out.png> (WAIT=мс — ожидание загрузки, по умолчанию 12000). Кадр для листа: вырезать (550, 0, 2650, 1400) и уменьшить до 1500×1000; точка и направление съёмки — из развёрнутой ссылки (panorama[point], panorama[direction]).
 
 Функции: `sleep`, `cmd`
+
+### `tools/ui_layout_check.mjs` — 293 стр.
+
+ГРАДО 2 · автоматическая проверка раскладки нового интерфейса (/next/) по своду docs/ux/ui-grid.md: запускает тестовый сервер на копии apps/grado2/tests/fixtures/next_ui_project.grado2, открывает каждое окно в Chrome (полосы прокрутки видны, как на Mac с мышью) на 1280 × 800 и 1920 × 1080 в светлой и тёмной теме и ищет то, на что жаловался владелец 09.10.2026: полосы прокрутки по ширине и вложенные, поля и кнопки за краем окна, текст, обрезанный без многоточия, поля не в одну колонку, прыжки шапки, ленты и строки состояния, мелкие цели для мыши, мелкий и моноширинный шрифт. Запуск: CHROME=… no…
+
+Функции: `arg`, `measure`, `interact`, `chrome`, `main`
 
 ### `tools/wiki_albums.mjs` — 42 стр.
 

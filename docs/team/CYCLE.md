@@ -39,9 +39,9 @@ is `README.md` in this folder.
 
 - Cloud session (claude.ai/code): a fresh clone of `tayeela/grado-studio`, no Mac paths. Work on a branch `task/<issue>-<slug>`
   from `team/t60`, push it, open a PR into `team/t60`; deploying and the Mac are not reachable from there.
-- Main checkout `~/grado-studio` (branch `main`): the owner's program runs from here. The team changes only
-  `docs/team/*` here, committed path-limited: `git commit -m "team: …" -- docs/team`.
-  Never stage or commit other files of the main checkout: the owner may have work in progress there.
+- Main checkout `~/grado-studio` (branch `main`): the owner's program runs from here. The team commits nothing here, not even
+  `docs/team` (owner 09.10.2026): the journal goes to `team/t60` and reaches `main` with the landing PR.
+  The owner may have work in progress there.
 - Team worktree `~/grado-studio/.claude/worktrees/team2` (branch `team/t60`; a task may get its own worktree from the lead, e.g. `.claude/worktrees/t86`, branch `team/t86`): all program changes. Commits on
   this branch never deploy (the server deploys only `main`).
 - Scratch for screenshots and temp projects: `/tmp/grado-team/<date>/` (create it).
@@ -109,8 +109,8 @@ For each task taken from the open issues (label `задача`, the owner's rank
 ## 4. Finish
 
 1. Append the cycle to `PROGRESS.md`: date, tasks, what was done, how it was checked, results, what is next.
-2. Commit `docs/team` on main path-limited (see Places) and `git push origin main` only if main has nothing but
-   that commit ahead of origin; otherwise leave the push to the owner's next session and say so.
+2. Commit `docs/team` in the team worktree with the cycle's last commit and push `team/t60`. The journal reaches `main` only with
+   the landing PR, like everything else (owner 09.10.2026, answer «1 а»: no direct commits to `main`, not even the journal).
 3. Report to the owner in Russian, plain words, no jargon, no role or hook names unless asked, 5–8 lines:
    - what the team did (as what appears on screen);
    - how it was checked;
