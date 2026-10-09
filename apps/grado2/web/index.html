@@ -542,9 +542,9 @@ input[type=checkbox],input[type=radio],input[type=range]{accent-color:var(--acce
 .shstamp>button svg{width:12px;height:12px;transition:transform var(--dur-1) ease}
 .shstamp>button b{font-weight:600;color:var(--text)}.shstamp>button em{font-style:normal;margin-left:8px;color:var(--muted)}
 .shstamp>button[aria-expanded="true"] svg{transform:rotate(90deg)}
-.shscale{flex:0 0 auto;display:flex;align-items:center;gap:8px;min-height:28px;padding:2px 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:var(--fs-s)}
-.shscale label{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.shscale select{flex:0 1 190px;min-width:0;color:var(--text)}
+.shscale{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;min-height:28px;padding:2px 8px;border-bottom:1px solid var(--line);color:var(--muted);font-size:var(--fs-s)}
+.shscale label{flex:0 0 auto;white-space:nowrap}
+.shscale select{flex:1 1 150px;max-width:220px;min-width:0;color:var(--text)}
 .shstbox{display:grid;grid-template-columns:minmax(0,1fr);gap:6px 8px;padding:2px 8px 8px;max-height:45cqh;overflow-y:auto}
 .shstbox label,.shdet label.f{display:flex;flex-direction:column;gap:2px;color:var(--muted);font-size:var(--fs-s);min-width:0}
 .shstbox input,.shstbox select,.shdet select,.shdet input[type=text]{width:100%;min-width:0;color:var(--text)}
@@ -689,6 +689,8 @@ body.shl-dragging,body.shl-dragging *{cursor:grabbing!important;user-select:none
 html.embed .skip,html.embed .top>.brand,html.embed #bProj,html.embed #hubBar,html.embed #bKeys,html.embed #bTheme,html.embed nav.wins>:not([data-win=wSheetLayers]):not([data-win=wViews]),
 html.embed .ribbon>:not(:has(#bFrame)),html.embed .side.r>.dtabs,html.embed #rightPane,html.embed #start,html.embed #msearch,html.embed #bWide{display:none!important}
 html.embed .ribbon{justify-content:flex-start}
+/* окно листов занимает всю высоту справа: иначе 300 px и строки «не всё готово» перед выгрузкой обрезаны снизу */
+html.embed #dzR{flex-grow:1}html.embed #dzR>#wSheets.win.docked{flex-grow:1}
 </style>
 <link rel="stylesheet" href="hub.css">
 <link rel="stylesheet" href="norms.css">

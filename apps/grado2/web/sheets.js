@@ -841,7 +841,7 @@ function expAnswer(go) {
 const albumFile0Tracked = (kind, only) => track(() => albumFile0(kind, only, true));
 function expLine(l, k) {
   const t = esc(l.text);
-  return l.sheet != null || l.stamp ? `<button class="btn" style="display:block;text-align:left;border:0;background:none;padding:1px 0;text-decoration:underline dotted" data-shexpl="${k}" title="${l.stamp ? "Открыть «Штамп»" : "Выбрать этот лист"}">${t}</button>` : `<div>${t}</div>`;
+  return l.sheet != null || l.stamp ? `<button class="btn" style="display:block;text-align:left;border:0;background:none;padding:1px 0;text-decoration:underline dotted;white-space:normal;height:auto;max-width:100%;overflow-wrap:anywhere" data-shexpl="${k}" title="${l.stamp ? "Открыть «Штамп»" : "Выбрать этот лист"}">${t}</button>` : `<div>${t}</div>`;
 }
 function expBarHTML() {
   const a = EXPASK, L = a.lines, more = L.length - 6;

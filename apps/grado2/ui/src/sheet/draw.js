@@ -1,12 +1,29 @@
 /* ГРАДО 2 · рисование элементов листа на Konva для редактора раскладки: по элементу модели (model.js) — группа Konva
    в мм листа. Карта — картинка печати (panels/sheetmaps.js), без проекта — заглушка с масштабом и охватом; легенда, таблица, надпись, картинка, стрелка севера,
-   масштабная линейка, фигуры и линия рисуются как на листе. Зовёт SheetEditor.vue; проверяется глазами (снимки). */
+   масштабная линейка, фигуры и линия рисуются как на листе. Шрифты — те же файлы, что у печати PDF (fonts.css).
+   Зовёт SheetEditor.vue; проверяется глазами (снимки). */
 import Konva from "konva";
-import { PT, groundSize, fmtM, fmtScale, scalebarStep, linkedScale, centerOffset } from "./model.js";
+import "./fonts.css";
+import { PT, groundSize, fmtM, fmtScale, scalebarStep, linkedScale, centerOffset, legendFit, legendHidden, LEGEND_ROW } from "./model.js";
 
 export const INK = "#1a1a1a";
-const SANS = "PT Sans, Inter, system-ui, sans-serif";
+const SANS = "'PT Sans', sans-serif";                 // как печать (ttf.py «ui» = PT Sans)
+const WARN = "#b4441b";
 const imgCache = new Map();
+/* только на экране: подсказки, которых нет в печати (PNG-выгрузка их прячет — SheetEditor.vue exportPng) */
+export const SCREEN_ONLY = "screen-only";
+
+/* шрифты листа: холст не грузит шрифт сам — просим браузер загрузить нужные (PT Sans и шрифты надписей)
+   и перерисовываем лист, когда догрузятся */
+const fontAsked = new Set();
+export function sheetFonts(sheet, redraw) {
+  if (typeof document === "undefined" || !document.fonts?.load) return;
+  const fams = new Set(["PT Sans", ...(sheet.blocks || []).filter(b => b.kind === "text" && b.font).map(b => b.font)]);
+  const want = [...fams].flatMap(f => [`400 10px "${f}"`, `700 10px "${f}"`]).filter(f => !fontAsked.has(f));
+  if (!want.length) return;
+  want.forEach(f => fontAsked.add(f));
+  Promise.all(want.map(f => document.fonts.load(f).catch(() => null))).then(() => redraw?.());
+}
 
 // оформление: фон под содержимым, рамка поверх
 const bgRect = b => b.bg?.on ? new Konva.Rect({ width: b.w, height: b.h, fill: b.bg.color || "#fff", listening: false }) : null;
@@ -46,15 +63,23 @@ function mapContent(g, b, opts) {
   g.add(inner);
   if (m.state === "loading" || m.state === "error") {
     const t = m.state === "error" ? "карта не обновилась" : "обновляется…", fs = Math.max(1.8, Math.min(3, b.w / 60));
-    g.add(new Konva.Label({ x: 1.5, y: b.h - fs * 1.8 - 1.5, listening: false }).add(new Konva.Tag({ fill: "rgba(255,255,255,.85)", cornerRadius: .6 }),
+    g.add(new Konva.Label({ x: 1.5, y: b.h - fs * 1.8 - 1.5, listening: false, name: SCREEN_ONLY }).add(new Konva.Tag({ fill: "rgba(255,255,255,.85)", cornerRadius: .6 }),
       new Konva.Text({ text: t, fontSize: fs, padding: fs * .35, fontFamily: SANS, fill: "#5b6b57" })));
   }
 }
 function legendContent(g, b) {
-  const pad = 3, row = 6.5, fs = 2.8;
-  g.add(new Konva.Text({ x: pad, y: pad, width: b.w - pad * 2, text: b.title || "", fontSize: 3.4, fontStyle: "bold", fontFamily: SANS, fill: INK, listening: false }));
-  (b.items || []).forEach((it, i) => {
-    const y = pad + 7 + i * row; if (y + row > b.h) return;
+  const pad = 3, row = LEGEND_ROW, fs = 2.8, items = b.items || [], fit = legendFit(b);
+  g.add(new Konva.Text({ x: pad, y: pad, width: b.w - pad * 2, text: b.title || "", fontSize: 3.4, fontStyle: "bold", fontFamily: SANS, fill: INK,
+    wrap: "none", ellipsis: true, listening: false }));
+  // строки, что не поместились по высоте, печать не выводит (layout_io.py): на экране — пометка «ещё N строк не помещается»
+  if (fit < items.length) {
+    const t = `ещё ${legendHidden(items.length - fit)} — увеличьте высоту`;
+    const fs2 = Math.max(1.8, Math.min(2.6, b.w / 40));
+    g.add(new Konva.Label({ x: .5, y: b.h - fs2 * 1.7 - .5, listening: false, name: SCREEN_ONLY }).add(new Konva.Tag({ fill: "#fff4ec", stroke: WARN, strokeWidth: .2, cornerRadius: .6 }),
+      new Konva.Text({ text: t, fontSize: fs2, padding: fs2 * .35, fontFamily: SANS, fill: WARN, width: b.w - 1, wrap: "none", ellipsis: true })));
+  }
+  items.slice(0, fit).forEach((it, i) => {
+    const y = pad + 7 + i * row;
     const sw = 8, sh = 4;
     if (it.s === "line") g.add(new Konva.Line({ points: [pad, y + sh / 2, pad + sw, y + sh / 2], stroke: it.c, strokeWidth: .6, dash: it.dash, listening: false }));
     else g.add(new Konva.Rect({ x: pad, y, width: sw, height: sh, fill: it.f || "transparent", stroke: it.c, strokeWidth: .3, listening: false }));

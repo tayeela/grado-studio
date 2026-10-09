@@ -3,7 +3,8 @@
      удалить, все листы одним PDF; листы — часть проекта (store.js project.layouts, ключ layouts файла): правка листа — правка
      проекта, её держит автосохранение и пишет «Сохранить», как и правки слоёв (project.js). Карта блока — настоящая карта проекта в масштабе блока, «PDF»
      печатает лист тем же рендером, что альбом (sheetmaps.js). Штамп берёт поля альбома (album.meta файла). Новый
-     лист ставит карту туда, где открыт проект, легенду собирает из его слоёв. -->
+     лист ставит карту туда, где открыт проект, легенду собирает из его слоёв. Это свои листы проекта; альбом ППТ КРТ
+     собирается отдельно — кнопкой «Листы и альбом» в шапке (строка-пояснение справа). Удаление листа — через диалог Web Awesome. -->
 <template>
   <div class="spn">
     <div class="spn-bar" role="toolbar" aria-label="Листы макета">
@@ -13,11 +14,16 @@
       </select>
       <button class="spn-b" title="Новый лист А3 с картой и легендой" @click="add()"><FilePlus2 :size="15" :stroke-width="1.7" />Новый</button>
       <button class="spn-b" title="Копия этого листа" @click="add(sheets[cur])"><Copy :size="15" :stroke-width="1.7" />Копия</button>
-      <button class="spn-b" :disabled="sheets.length < 2" title="Удалить этот лист" @click="drop"><Trash2 :size="15" :stroke-width="1.7" />Удалить</button>
+      <button class="spn-b" :disabled="sheets.length < 2" title="Удалить этот лист" @click="askDrop = true"><Trash2 :size="15" :stroke-width="1.7" />Удалить</button>
       <button class="spn-b" title="Все листы по порядку одним PDF, номера листов — в штампе" @click="all"><FileDown :size="15" :stroke-width="1.7" />Все листы в PDF</button>
-      <span class="spn-sp"></span>
+      <span class="spn-hint" :title="HINT">{{ HINT }}</span>
       <span class="spn-st" :class="state.kind">{{ state.text }}</span>
     </div>
+    <wa-dialog label="Удалить лист" :open="askDrop" @wa-after-hide="askDrop = false">
+      <p class="spn-q">Удалить лист «{{ sheets[cur]?.title || "без названия" }}»? Лист со всеми его элементами пропадёт из проекта, остальные листы останутся.</p>
+      <wa-button slot="footer" size="s" appearance="plain" @click="askDrop = false">Отмена</wa-button>
+      <wa-button slot="footer" size="s" variant="danger" @click="drop">Удалить</wa-button>
+    </wa-dialog>
     <SheetEditor :key="sheets[cur].id" v-model="sheets[cur]" :maps="maps" :meta="meta()"
       :page="{ page_no: cur + 1, page_total: sheets.length }" class="spn-ed" />
   </div>
@@ -34,7 +40,8 @@ import { mapImage, here, legendItems, printPdf, printAll } from "./sheetmaps.js"
 const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf };
 const SAMPLE = JSON.stringify(LEGEND_SAMPLE);
 const clone = x => JSON.parse(JSON.stringify(x));
-const sheets = ref([]), cur = ref(0);
+const sheets = ref([]), cur = ref(0), askDrop = ref(false);
+const HINT = "Здесь — свои листы проекта. Альбом ППТ КРТ собирается в «Листы и альбом» вверху окна.";
 const state = reactive({ kind: "", text: "" });
 const meta = () => project.raw?.album?.meta || {};
 let mine = null, base = "";             // mine — список листов, который панель сама положила в project.layouts
@@ -50,7 +57,8 @@ function add(from) {
   sheets.value.splice(cur.value + 1, 0, s); cur.value += 1;
 }
 function drop() {
-  if (sheets.value.length < 2 || !confirm(`Удалить лист «${sheets.value[cur.value].title || "без названия"}»?`)) return;
+  askDrop.value = false;
+  if (sheets.value.length < 2) return;
   sheets.value.splice(cur.value, 1); cur.value = Math.min(cur.value, sheets.value.length - 1);
 }
 
@@ -89,7 +97,8 @@ watch(sheets, () => {
 .spn-b { display: inline-flex; align-items: center; gap: 4px; font: inherit; color: inherit; background: none; border: 1px solid transparent; border-radius: 5px; height: 26px; padding: 0 8px; cursor: pointer; }
 .spn-b:hover:not(:disabled) { background: var(--wa-color-neutral-fill-quiet, #f0f2f5); }
 .spn-b:disabled { opacity: .4; cursor: default; }
-.spn-sp { flex: 1; }
+.spn-hint { flex: 1; min-width: 0; margin-left: 8px; color: var(--wa-color-text-quiet, #66707c); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spn-q { margin: 0; line-height: 1.45; }
 .spn-st { color: var(--wa-color-text-quiet, #66707c); font-size: 12px; white-space: nowrap; }
 .spn-st.ok { color: var(--wa-color-success-on-quiet, #1a7f37); }
 .spn-st.warn { color: var(--wa-color-danger-on-quiet, #b4441b); }
