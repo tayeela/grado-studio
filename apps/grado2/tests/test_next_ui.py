@@ -141,6 +141,18 @@ class NextUi(unittest.TestCase):
         icons = set(re.findall(r'id="ci-(\w+)"', (src / "cadicons.svg").read_text(encoding="utf-8")))
         self.assertLessEqual(ids, icons)
 
+    def test_map_search_matches_working_page(self):
+        # поиск над картой — перенос web/app.js: тот же адрес сервера, те же тексты ошибок поиска и вопрос перед заменой границы
+        old = (NEXT.parent / "app.js").read_text(encoding="utf-8")
+        new = (NEXT.parents[1] / "ui" / "src" / "panels" / "MapSearch.vue").read_text(encoding="utf-8")
+        self.assertIn("/api/search?q=", new)
+        msgs = lambda t: re.findall(r'\? "([^"]+)"\n', re.search(r"const srchErr = .*?;\s*};", t, re.S).group(0))
+        self.assertTrue(msgs(old))
+        self.assertEqual(msgs(old), msgs(new))
+        for s in ("Заменить вашу границу участками?", "Заменить вашу границу контуром КРТ?", "Сделать границей территории"):
+            self.assertIn(s, old)
+            self.assertIn(s, new)
+
     def test_fixture_project_shape(self):
         # тестовый проект для снимков нового окна «Слои»: у каждого слоя есть данные и известная группа
         p = json.loads(FIXTURE.read_text(encoding="utf-8"))

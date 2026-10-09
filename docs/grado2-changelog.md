@@ -2,6 +2,13 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-09, ГРАДО 2 v0.99.64: поиск над картой в новом интерфейсе (#69).**
+  - A search field on top of the map, as in the working page: an address (OpenStreetMap), a cadastral number (several
+    separated by commas) or a КРТ number, then Enter. An address puts a marker and frames it; parcels can be shown on the
+    map (into «Земельные участки (ЕГРН)» without duplicates) or made the territory boundary; a КРТ becomes the boundary
+    and its number goes to the album header. Replacing an existing boundary asks again on the button for 5 seconds.
+  - Ctrl+F jumps to the field, arrows move through the results, Esc closes them.
+
 - **2026-10-09, ГРАДО 2 v0.99.63: выгрузка в Excel в новом интерфейсе (#69).**
   - Menu «Выгрузка» → «Excel: показатели ТЭП и листы»: the same workbook as the working page (sheet «ТЭП» with the
     territory, sketch and «Калькулятор 2.0» metrics, sheet «Листы» with the album sheets). A sheet scale picked

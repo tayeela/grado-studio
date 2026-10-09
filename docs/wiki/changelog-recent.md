@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-09, ГРАДО 2 v0.99.64: поиск над картой в новом интерфейсе (#69).
 - 2026-10-09, ГРАДО 2 v0.99.63: выгрузка в Excel в новом интерфейсе (#69).
 - 2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).
 - 2026-10-08, ГРАДО 2 v0.99.61: окна «Варианты», «Сравнение» и «Объём» в новом интерфейсе (#69).
@@ -21,4 +22,3 @@
 - 2026-10-07, tests only: T27 wheel measurement (#40).
 - 2026-10-07, album design audit and rules against repeats (no program change).
 - 2026-10-07, repo order (no program change): documents on shelves, navigation for agents, self-updating wiki, album lint.
-- 2026-10-07, ГРАДО 2 v0.99.45: НСПД через релей для облачных сессий; корни Минцифры принимаются в формате .cer.

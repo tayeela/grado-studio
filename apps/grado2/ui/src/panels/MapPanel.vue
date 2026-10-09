@@ -3,11 +3,13 @@
      Порядок слоёв — как в окне «Слои» (верхний рисуется поверх), видимость — слой и его группа.
      Оформление — все способы рабочей страницы (symbology.js): единое, категории, диапазоны, правила, знаки ЛГР, подписи, масштаб.
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
-     Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте. -->
-<template><div ref="el" class="map"></div></template>
+     Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
+     поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue. -->
+<template><div class="mapbox"><div ref="el" class="map"></div><MapSearch v-if="mref" :map="mref" /></div></template>
 
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
+import MapSearch from "./MapSearch.vue";
 import Map from "ol/Map.js";
 import View from "ol/View.js";
 import VectorLayer from "ol/layer/Vector.js";
@@ -35,6 +37,7 @@ import { attachCad, cadApi } from "../cad.js";
 
 const el = ref(null);
 let map, ro, offCad = null;
+const mref = shallowRef(null);           // карта для поиска над ней (MapSearch.vue)
 const fmt = gjFormat;
 
 const lat = () => toLonLat(map.getView().getCenter())[1];
@@ -152,7 +155,7 @@ onMounted(() => {
     view: new View({ center: fromLonLat([37.62, 55.75]), zoom: 11 }),
     interactions: defaultInteractions({ shiftDragZoom: false }),   // Shift+рамка — выбор, как в рабочей странице
   });
-  LS = layerSync(map); vec = LS.vec;
+  LS = layerSync(map); vec = LS.vec; mref.value = map;
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
@@ -195,6 +198,7 @@ onBeforeUnmount(() => { offCad?.(); ro?.disconnect(); map?.setTarget(undefined);
 </script>
 
 <style>
+.mapbox { position: relative; width: 100%; height: 100%; }
 .map { position: relative; width: 100%; height: 100%; background: var(--g-canvas); }
 .map.dropfile { outline: 3px dashed var(--wa-color-brand-border-loud); outline-offset: -6px; }
 </style>

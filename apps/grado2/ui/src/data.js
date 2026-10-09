@@ -54,7 +54,7 @@ export function exampleTerritory() {
 }
 
 const polysOf = f => /Polygon/.test(f?.geometry?.type || "");
-function unionAll(fs) {
+export function unionAll(fs) {
   fs = fs.filter(polysOf); if (!fs.length) return null; if (fs.length === 1) return fs[0];
   return safe(() => turf.union(turf.featureCollection(fs)))
     || safe(() => turf.union(turf.featureCollection(fs.map(f => turf.truncate(f, { precision: 7, coordinates: 2 })))));
@@ -95,7 +95,7 @@ export async function territoryByNumbers(text) {
   return true;
 }
 /* участки, найденные по номерам, ложатся в слой «Земельные участки (ЕГРН)» без повторов (web/app.js addParcels) */
-function addParcels(feats) {
+export function addParcels(feats) {
   const k = "nspd.parcels", prev = project.data[k], have = prev?.fc?.features || [];
   const seen = new Set(have.flatMap(f => [f.properties?._key, cadOf(f)]).filter(Boolean));
   const add = feats.filter(f => { const a = [f.properties?._key, cadOf(f)].filter(Boolean); if (a.some(x => seen.has(x))) return false; a.forEach(x => seen.add(x)); return true; })
