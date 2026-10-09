@@ -223,9 +223,10 @@ try {
   await A.until(`return /Отключить/.test(document.querySelector('#hubAdminBody [data-act="toggle"][data-login="bob"]').textContent)`, "bob снова включён");
   await A.clickEl("#wHubAdmin [data-close]");
   await B.fill("#hubPw", "bob-password-1"); await B.clickEl("#hubGo");
-  await B.until(`return $("hubLogin").hidden`, "B снова вошёл"); B.allow401 = false;
+  await B.until(`return $("hubLogin").hidden`, "B снова вошёл");
   await B.until(`return Collab.pid && $("hubSync").dataset.state==="saved" && document.querySelectorAll ? true : true`, "проект у B открыт");
   await A.until(`return document.querySelectorAll("#hubAv .av").length===1`, "A снова видит аватар B: поток событий восстановлен", 12000);
+  B.allow401 = false;                    // только теперь: запрос, ушедший до входа (пересчёт ТЭП), может вернуть 401 уже после входа (CI 09.10.2026)
   { const [x, y] = await pxOf(B, 1); await B.click(x, y); }
   await B.until(`return SEL.length===1 && !!document.querySelector('[data-attr="Наименование"]')`, "B выбрал второй объект");
   await setAttr(B, "После входа");

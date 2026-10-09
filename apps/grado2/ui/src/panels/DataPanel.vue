@@ -30,8 +30,9 @@
       </div>
       <div class="imp">
         <wa-button size="s" appearance="outlined" title="DXF, DWG, GeoJSON, KML/KMZ, Shapefile — новым слоем; можно перетащить файл на карту" @click="pick('layer')"><FileUp :size="14" /> Свой файл…</wa-button>
+        <span class="lbl">координаты DXF</span>
         <wa-select size="s" :value="localSys" title="В какой системе координат ваши файлы в метрах (DXF, DWG)" aria-label="Система координат файлов" @change="e => (localSys = e.target.value)">
-          <wa-option value="msk">МСК (QGIS)</wa-option><wa-option value="ogd">ГИС ОГД</wa-option>
+          <wa-option value="msk">МСК (как в QGIS)</wa-option><wa-option value="ogd">система ГИС ОГД</wa-option>
         </wa-select>
       </div>
       <input ref="fileInput" type="file" multiple hidden :accept="FILE_ACCEPT" @change="onFile">
@@ -60,9 +61,13 @@
     </section>
 
     <section class="step">
-      <div class="sh"><span class="num">3</span>В проекте<span v-if="groups.length" class="cnt">{{ totals }}</span></div>
+      <!-- список слоёв свёрнут: окно не растёт и не прокручивается (владелец 09.10.2026, снимок); ошибки выгрузки видны и в свёрнутом -->
+      <button class="sh tog" type="button" :aria-expanded="srcOpen" :disabled="!groups.length" @click="srcOpen = !srcOpen">
+        <span class="num">3</span>В проекте<span v-if="groups.length" class="cnt">{{ totals }}</span>
+        <ChevronRight v-if="groups.length" :size="14" class="chev" :class="{ open: srcOpen }" /></button>
       <p v-if="!groups.length" class="hint">Пока ничего не загружено.</p>
-      <table v-else class="srct">
+      <ul v-else-if="!srcOpen && errKeys.length" class="errs"><li v-for="k in errKeys" :key="k"><b>{{ srcTitle(k) }}:</b> {{ ERRORS[k] }}</li></ul>
+      <table v-if="groups.length && srcOpen" class="srct">
         <thead><tr><th>Слой</th><th class="r">Объектов</th><th class="r">Выгрузка</th></tr></thead>
         <tbody v-for="g in groups" :key="g.kind">
           <tr class="g"><td colspan="3"><Database :size="12" /> {{ g.title }}</td></tr>
@@ -74,7 +79,7 @@
           </template>
         </tbody>
       </table>
-      <p class="hint">Слои правятся в окне «Слои»; исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»).
+      <p v-if="srcOpen" class="hint">Слои правятся в окне «Слои»; исходная выгрузка сохраняется (меню слоя → «Вернуть исходную выгрузку»).
         Повторная выгрузка покажет, что изменилось в источнике, и сохранит ваши правки.</p>
     </section>
 
@@ -133,7 +138,7 @@
 
 <script setup>
 import { computed, defineComponent, h, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { Check, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, Spline, SquareDashed, X } from "@lucide/vue";
+import { Check, ChevronRight, CircleAlert, CircleCheck, CircleMinus, Database, Download, FileInput, FileUp, Grid2x2, Info, Landmark, PenLine, Spline, SquareDashed, X } from "@lucide/vue";
 import * as turf from "@turf/turf";
 import { project } from "../store.js";
 import { dataRev, lyr } from "../edit.js";
@@ -152,6 +157,8 @@ const GROUP = { gisogd_admin: "Административное деление �
 const fmt = v => Number(v).toLocaleString("ru-RU");
 
 const cover = computed(() => (project.territory, project.raw, coverBox()));
+const srcOpen = ref(false);
+const errKeys = computed(() => (dataRev.value, Object.keys(ERRORS)));
 const coverInfo = computed(() => (project.territory, project.raw, coverText()));
 const summary = computed(() => (dataRev.value, project.territory, existingSummary()));
 const groups = computed(() => {
@@ -307,6 +314,12 @@ onBeforeUnmount(() => { clearInterval(tick); off?.dispose?.(); coverOn.value = f
 .data .sh .num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; flex: none;
   background: var(--wa-color-neutral-fill-normal); color: var(--wa-color-text-normal); font-size: var(--wa-font-size-2xs); font-weight: 700; }
 .data .sh .num.ok { background: var(--wa-color-success-fill-loud); color: #fff; }
+.data .sh.tog { all: unset; display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; font-weight: 600; font-size: var(--wa-font-size-s); margin-bottom: 6px; cursor: pointer; min-height: 24px; }
+.data .sh.tog:disabled { cursor: default; }
+.data .sh.tog:focus-visible { outline: 2px solid var(--wa-color-focus); outline-offset: 2px; border-radius: 4px; }
+.data .sh .chev { flex: none; color: var(--g-muted); transition: transform .15s; }
+.data .sh .chev.open { transform: rotate(90deg); }
+.data .errs { list-style: none; margin: 0; padding: 0; font-size: var(--wa-font-size-xs); color: var(--wa-color-danger-on-quiet); line-height: 1.4; }
 .data .sh .cnt { margin-left: auto; font-weight: 400; color: var(--g-muted); font-size: var(--wa-font-size-xs); font-variant-numeric: tabular-nums; }
 .data .lead { margin: 0 0 8px; font-size: var(--wa-font-size-s); line-height: 1.4; }
 .data .lead.none { color: var(--g-muted); }
@@ -318,6 +331,8 @@ onBeforeUnmount(() => { clearInterval(tick); off?.dispose?.(); coverOn.value = f
 .data .imp { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; align-items: center; margin-top: 6px; }
 .data .imp .lbl { color: var(--g-muted); font-size: var(--wa-font-size-xs); white-space: nowrap; }
 .data .imp wa-select { margin: 0 !important; min-width: 0; }
+.data .imp > wa-button { grid-column: 1 / -1; }   /* кнопка во всю ширину, ниже подпись и выбор системы — текст выбора не обрезается */
+.data .imp > wa-button::part(base) { width: 100%; }
 .data .imp wa-button::part(label) { display: inline-flex; gap: 4px; align-items: center; }
 /* карточка хода выгрузки */
 .data .job { margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: var(--wa-color-brand-fill-quiet); border: 1px solid var(--wa-color-brand-border-quiet); }

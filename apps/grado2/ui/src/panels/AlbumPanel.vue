@@ -245,16 +245,16 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .stamp .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; margin-bottom: 8px; }
 .alb .empty { color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.4; }
 .alb .list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--g-line); border-radius: 8px; }
-.alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: center; gap: 6px; min-height: 28px; padding: 0 8px;
+.alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: baseline; line-height: 16px; gap: 6px; padding: 6px 8px;
   font-size: var(--wa-font-size-s); cursor: pointer; border-top: 1px solid var(--g-line); }
 .alb .list li:first-child { border-top: 0; }
 .alb .list li:hover { background: var(--wa-color-neutral-fill-quiet); }
 .alb .list li.on { background: var(--wa-color-brand-fill-quiet); }
 .alb .list li:focus-visible { outline: 2px solid var(--wa-color-focus); outline-offset: -2px; }
 .alb .list .n { color: var(--g-muted); font-variant-numeric: tabular-nums; text-align: right; }
-.alb .list .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.alb .list .t { overflow-wrap: anywhere; }   /* название целиком, длинное — в две строки (владелец 09.10.2026) */
 .alb .list .f { color: var(--g-muted); font-size: var(--wa-font-size-xs); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.alb .list .nr { color: var(--wa-color-warning-on-quiet); }
+.alb .list .nr { color: var(--wa-color-warning-on-quiet); align-self: start; margin-top: 1px; }   /* номер, формат и значок — на линии первой строки названия */
 .alb .det { display: grid; gap: 8px; padding-top: 8px; border-top: 1px solid var(--g-line); }
 .alb .det .g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .alb .det .flags { display: flex; gap: 16px; }
