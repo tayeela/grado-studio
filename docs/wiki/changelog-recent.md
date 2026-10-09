@@ -2,6 +2,7 @@
 
 # Последние изменения (docs/grado2-changelog.md, сверху — новые)
 
+- 2026-10-09, ГРАДО 2 v0.99.72: new interface (/next/) audit fixes — six Haiku 5.5 auditors by area, fixes by four Opus 5.5 agents.
 - 2026-10-09, ГРАДО 2 v0.99.71 (on its branch v0.99.57): the server runs on Starlette and uvicorn, request bodies are checked by pydantic (part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.56): checks run under pytest, browser scenarios start Chrome through Playwright (part of #69).
 - 2026-10-08, ГРАДО 2 v0.99.71 (on its branch v0.99.55): the album PPTX package is assembled by python-pptx instead of hand-written zip parts (part of #69).
@@ -21,4 +22,3 @@
 - 2026-10-09, ГРАДО 2 v0.99.62: черчение как в AutoCAD в новом интерфейсе (#69).
 - 2026-10-08, ГРАДО 2 v0.99.61: окна «Варианты», «Сравнение» и «Объём» в новом интерфейсе (#69).
 - 2026-10-08, ГРАДО 2 v0.99.60: окна «Эскиз», «Показатели (ТЭП)» и «Нормативы расчёта» в новом интерфейсе (#69).
-- 2026-10-08, ГРАДО 2 v0.99.59: окно «Схема расчёта» в новом интерфейсе на Rete.js (#69).
