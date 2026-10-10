@@ -635,8 +635,8 @@ class HttpHardening(unittest.TestCase):
         for path, data in (("/api/health", None), ("/", None), ("/api/tep", b"{}"), ("/api/tep", b"[]")):
             _, h, _, _ = self.call(path, data)
             self.assertEqual(h["X-Content-Type-Options"], "nosniff", path)
-            self.assertEqual(h["X-Frame-Options"], "DENY", path)
-            self.assertIn("frame-ancestors 'none'", h["Content-Security-Policy"], path)
+            self.assertEqual(h["X-Frame-Options"], "SAMEORIGIN", path)          # в рамку — только свои страницы (движок альбома)
+            self.assertIn("frame-ancestors 'self'", h["Content-Security-Policy"], path)
         csp = S.CSP
         self.assertIn("script-src 'self';", csp)
         self.assertNotIn("unsafe-eval", csp)

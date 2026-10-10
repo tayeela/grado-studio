@@ -113,7 +113,8 @@ async function guestLogin() {
 }
 function sessionLost() {
   if (!$("hubLogin").hidden) return;
-  askLogin("Вход закончился. Войдите снова — несохранённые правки остаются на экране и уйдут на сервер.").then(u => { enter(u, true); C()?.resume?.(); loadProjects(); });
+  window.HUB_IN = false;                                       // без входа пересчёт ТЭП ждёт, правки остаются на экране
+  askLogin("Вход закончился. Войдите снова — несохранённые правки остаются на экране и уйдут на сервер.").then(u => { window.HUB_IN = true; enter(u, true); C()?.resume?.(); loadProjects(); });
 }
 
 /* ================= вход выполнен: шапка, движок, проект ================= */
@@ -676,6 +677,7 @@ function wireAccount() {
     if (b.dataset.hubact === "out") {
       try { await C()?.flush?.(); } catch { }
       clearJoin();
+      window.HUB_IN = false;                                   // пересчёт ТЭП (app.js, раз в 250 мс) не ходит на сервер после выхода: иначе 401 до перезагрузки
       try { await hub("logout", {}); } catch { }
       try { history.replaceState(null, "", location.pathname + location.search); } catch { }
       location.reload();                                       // с экрана уходят данные проекта: следующий человек начинает с чистой страницы

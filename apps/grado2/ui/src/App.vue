@@ -1,4 +1,4 @@
-<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню и кнопкой «Листы и альбом» (отдельное окно, albumhost.js), лента инструментов, окна dockview, строка состояния;
+<!-- ГРАДО 2 · каркас нового интерфейса: шапка с меню и кнопкой «Листы и альбом» (вкладка AlbumPanel.vue, движок — albumhost.js), лента инструментов, окна dockview, строка состояния;
      на общем сервере — вход, шапка и окна совместной работы (HubLogin, HubBar, HubWindows, окно «Комментарии»).
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
@@ -10,7 +10,7 @@
 
       <HubBar v-if="shared" />
       <wa-dropdown @wa-select="onProject">
-        <wa-button slot="trigger" size="s" appearance="plain" with-caret>Проект</wa-button>
+        <wa-button slot="trigger" size="s" appearance="plain">Проект</wa-button>
         <template v-if="shared">
           <wa-dropdown-item value="hubprojects">Совместные проекты…</wa-dropdown-item>
           <wa-dropdown-item value="hubsave" :disabled="!hub.pid">Сохранить на сервере сейчас<span slot="details">Ctrl+S</span></wa-dropdown-item>
@@ -32,26 +32,26 @@
       <input ref="fileInput" type="file" accept=".grado2,application/json" hidden @change="onFile">
 
       <wa-dropdown @wa-select="onWindow">
-        <wa-button slot="trigger" size="s" appearance="plain" with-caret>Окна</wa-button>
+        <wa-button slot="trigger" size="s" appearance="plain">Окна</wa-button>
         <wa-dropdown-item v-for="p in PANELS.filter(x => x.id !== 'comments' || shared)" :key="p.id" type="checkbox" :value="p.id" :checked="open[p.id]">{{ p.title }}</wa-dropdown-item>
         <wa-divider></wa-divider>
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
       </wa-dropdown>
 
       <wa-dropdown @wa-select="onExport">
-        <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="busy">Выгрузка</wa-button>
+        <wa-button slot="trigger" size="s" appearance="plain" :disabled="busy">Выгрузка</wa-button>
         <h4 class="menu-h">Данные</h4>
         <wa-dropdown-item value="dxf">Чертёж DXF — слои проекта, МСК<span slot="details">МГГТ</span></wa-dropdown-item>
         <wa-dropdown-item value="geojson">GeoJSON для QGIS<span slot="details">МСК</span></wa-dropdown-item>
         <wa-dropdown-item value="xlsx">Excel: показатели ТЭП и листы<span slot="details">XLSX</span></wa-dropdown-item>
         <wa-divider></wa-divider>
-        <h4 class="menu-h">Альбом — в окне «Листы и альбом»</h4>
+        <h4 class="menu-h">Альбом — во вкладке «Листы и альбом»</h4>
         <wa-dropdown-item value="pdf" :disabled="!album.sheets">PDF альбома<span slot="details">{{ album.sheets ? "все листы" : "нет листов" }}</span></wa-dropdown-item>
         <wa-dropdown-item value="pptx" :disabled="!album.sheets">PPTX альбома<span slot="details">PowerPoint</span></wa-dropdown-item>
         <wa-dropdown-item value="ogd">ГИС ОГД в DXF — по рамке листа<span slot="details">МСК</span></wa-dropdown-item>
       </wa-dropdown>
-      <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): рамки листов на карте, штамп, сборка альбома ППТ КРТ, PDF и PPTX — отдельным окном, как макет в QGIS"
-                 @click="openAlbum()"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
+      <wa-button size="s" appearance="plain" title="Листы и альбом (Ctrl+P): сборка альбома ППТ КРТ, штамп, листы, PDF и PPTX — вкладкой справа от карты"
+                 @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
 
       <span class="grow"></span>
       <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
@@ -81,8 +81,8 @@
             <svg class="ci" aria-hidden="true"><use :href="'#ci-' + id" /></svg>
           </wa-button>
           <wa-dropdown v-for="m in g.menus || []" :key="m.title" @wa-select="e => runCmd(e.detail.item.value)">
-            <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="!cad.ready" :title="m.title + ': ' + m.items.map(cmdTitle).join(', ').toLowerCase()">
-              <template v-if="m.icon"><svg class="ci" aria-hidden="true"><use :href="'#ci-' + m.icon" /></svg><span class="mlabel">{{ m.label }}</span></template><template v-else>Ещё</template>
+            <wa-button slot="trigger" size="s" appearance="plain" with-caret :disabled="!cad.ready" :aria-label="m.title" :title="m.title + ': ' + m.items.map(cmdTitle).join(', ').toLowerCase()">
+              <template v-if="m.icon"><svg class="ci" aria-hidden="true"><use :href="'#ci-' + m.icon" /></svg></template><template v-else>Ещё</template>
             </wa-button>
             <template v-for="sec in m.sections || [{ items: m.items }]" :key="sec.title || 'main'">
               <h4 v-if="sec.title" class="menu-h">{{ sec.title }}</h4>
@@ -171,7 +171,7 @@ import HubWindows from "./panels/HubWindows.vue";
 import { flush as hubFlush, hub, openWin } from "./hub.js";
 import { RIBBON, cad, cadApi, cadIcons } from "./cad.js";
 import { exportDxf, exportGeojson, exportXlsx } from "./exports.js";
-import { album, albumFile, albumHooks, ogdDxf, openAlbum } from "./albumhost.js";
+import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { terrTool } from "./data.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
@@ -202,12 +202,13 @@ const PANELS = [
   { id: "help", title: "Справка" },
   { id: "comments", title: "Комментарии" },
   { id: "sheet", title: "Макет листа" },
+  { id: "album", title: "Листы и альбом" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
 /* Лента — команды черчения как в рабочей странице (cad.js RIBBON): кнопка запускает команду, повторный щелчок прерывает. */
 const TOOLS = [
-  { title: "Рисование", items: RIBBON.draw, menus: [{ title: "Оформление", label: "Оформление", icon: "hatch", items: RIBBON.anno }] },
+  { title: "Рисование", items: RIBBON.draw, menus: [{ title: "Оформление", icon: "hatch", items: RIBBON.anno }] },
   { title: "Правка", items: RIBBON.modify, menus: [{ title: "Ещё команды", items: [...RIBBON.more, ...RIBBON.gis], sections: [{ items: RIBBON.more }, { title: "Полигоны и атрибуты", items: RIBBON.gis }] }] },
   { title: "Измерить", items: RIBBON.measure },
   { title: "Территория", items: RIBBON.terr },
@@ -295,7 +296,7 @@ function addNewWindows() {
 
 /* Место окна в раскладке по умолчанию: окно, открытое заново из меню «Окна», встаёт вкладкой к соседям по своей группе,
    если хоть один из них открыт и не плавает; иначе — краем к карте; иначе — плавающим. */
-const LEFT = ["layers", "data", "views"], RIGHT = ["props", "object", "cons", "sketch"], BOTTOM = ["tep", "table", "graph", "vars"];
+const LEFT = ["layers", "data", "views"], RIGHT = ["props", "object", "cons", "sketch", "album"], BOTTOM = ["tep", "table", "graph", "vars"];
 function homeOf(id) {
   const docked = x => { const q = api.getPanel(x); return q && q.group?.api.location?.type === "grid" ? q : null; };
   const z = sizes();
@@ -417,6 +418,7 @@ async function onProject(e) {
 function choose(name) { openDlg.value = false; guard(`Открыть «${name}»?`, () => openProject(name)); }
 albumHooks.save = () => shared.value ? hubFlush() : save();     // Ctrl+S в окне «Листы и альбом»
 albumHooks.open = choose;
+albumHooks.panel = () => winApi.open("album");       // меню «Выгрузка» → PDF или PPTX альбома
 function onFile(e) { const f = e.target.files[0]; e.target.value = ""; if (f) guard(`Открыть «${f.name}»?`, () => openFile(f)); }
 const when = t => t ? new Date(t * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
 
@@ -435,7 +437,7 @@ addEventListener("keydown", e => {
     e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
   if (e.code === "KeyS") { e.preventDefault(); if (shared.value) hubFlush(); else save(); }
-  else if (e.code === "KeyP" && !e.shiftKey && !e.altKey) { e.preventDefault(); openAlbum(); }   // как в рабочей странице: листы вместо печати страницы
+  else if (e.code === "KeyP" && !e.shiftKey && !e.altKey) { e.preventDefault(); winApi.open("album"); }   // как в рабочей странице: листы вместо печати страницы
   else if (typing(e)) return;                       // в поле ввода Ctrl+Z правит текст поля
   else if (e.code === "KeyZ" && !e.shiftKey) { e.preventDefault(); if (!undo()) notice.value = "Отменять нечего"; }
   else if ((e.code === "KeyZ" && e.shiftKey) || e.code === "KeyY") { e.preventDefault(); redo(); }
@@ -452,8 +454,11 @@ openStartup();
   padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0; overflow: hidden;
 }
 .top .cnt { margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: var(--wa-font-size-2xs); line-height: 16px; background: var(--wa-color-neutral-fill-normal); }
-.brand { font-weight: 700; letter-spacing: .02em; margin-right: var(--wa-space-s); }
-.project { color: var(--g-muted); margin-right: var(--wa-space-m); display: inline-flex; gap: 6px; align-items: center; }
+.brand { font-weight: 700; letter-spacing: .02em; margin-right: 12px; }
+.project { color: var(--g-muted); margin-right: 16px; display: inline-flex; gap: 6px; align-items: center; }
+/* строка меню как в QGIS и macOS: пункты без стрелок, ровный шаг, одна высота и одна линия текста (владелец 09.10.2026, снимок) */
+.top > wa-dropdown > wa-button::part(base), .top > wa-button::part(base) { padding-inline: 8px; height: 28px; font-size: var(--wa-font-size-m); }   /* тот же кегль, что у названия: одна линия текста */
+.top > wa-dropdown, .top > wa-button { display: inline-flex; align-items: center; }
 .grow { flex: 1; }
 .menu-h { margin: 6px 12px 2px; font-size: var(--wa-font-size-2xs); color: var(--g-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
 .ribbon {
@@ -463,8 +468,6 @@ openStartup();
 .tgroup:last-child { border-right: 0; }
 .tbtns { display: flex; align-items: center; }
 .ribbon .ci { width: 18px; height: 18px; display: block; }
-.ribbon .mlabel { margin-left: 4px; }
-.ribbon wa-button:has(.mlabel) .ci { display: inline-block; vertical-align: middle; }
 wa-dropdown-item .ci { width: 16px; height: 16px; }
 .status > .xy { white-space: pre; min-width: 22ch; font-variant-numeric: tabular-nums; }
 .status > .cmdnow { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }

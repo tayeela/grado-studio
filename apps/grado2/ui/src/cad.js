@@ -480,7 +480,7 @@ function cancel(silent) {
 }
 // итог команды («Соединено: 12 → 2», «Расстояние 25 м») остаётся в строке состояния после её завершения
 function finish() { cadApi.lastEnd = performance.now(); setTimeout(() => { syncGrips(); showCmd(); }, 0); const t = title(), msg = doneMsg || lastNote || ""; CMD = null; prevSrc.clear(); tipEl.hidden = true; ACQ.length = 0; UIS.tool = "select"; mMain.getTargetElement().style.cursor = ""; syncButtons(); syncStatus(); if (msg && t && !msg.startsWith(t)) note(msg); }
-let lastNote = null;
+let lastNote = null, noteTimer = 0;
 /* итог действия в строке состояния (принцип 3: «каждый инструмент говорит, что делать дальше»); пока команда идёт, в строке состояния
    только короткая часть, полная подсказка — в командной строке над картой */
 let doneMsg = null;
@@ -534,14 +534,16 @@ mMain.getTargetElement().append(cmdEl, histEl);
 cmdEl.addEventListener("click", e => { if (!CMD && !e.target.closest("button")) openInput("cmd"); });
 function showCmd() {
   document.body.classList.toggle("cmdon", !!CMD);
-  // командная строка видна всегда (владелец 09.10.2026, ответ 2А): без команды — приглашение, щелчок по ней открывает ввод команды
+  // без команды строка над картой не видна (владелец 09.10.2026, снимок: приглашение «Команда» на карте зачёркнуто; прежний ответ 2А —
+  // «видна всегда» — заменён): команду набирают прямо на карте (L, PL, C… и Enter) или берут с ленты; сообщение команды — пока не прочитано
   // каждая строка — одна, длинный текст обрезается многоточием, целиком — в подсказке (title) и в истории F2 (аудит 09.10.2026)
   const nt = lastNote ? `<div class="nt" title="${esc(lastNote)}">${esc(lastNote)}</div>` : "";
   if (!CMD) {
     cmdEl.classList.add("idle");
-    const tip = "Наберите команду (L — отрезок, PL — полилиния, C — круг, TR — обрезать…) и Enter или выберите её на ленте";
-    cmdEl.innerHTML = nt + `<div class="cl" title="${esc(tip)}"><b>Команда</b><span class="tx">L, PL, C, TR… и Enter</span><span class="k">F2 — история</span></div>`;
-    cmdEl.hidden = false; placeHist(); return;
+    cmdEl.innerHTML = nt;
+    cmdEl.hidden = !nt; placeHist();
+    clearTimeout(noteTimer); if (nt) noteTimer = setTimeout(() => { if (!CMD) { lastNote = null; showCmd(); } }, 8000);   // итог команды — 8 с, история — F2
+    return;
   }
   cmdEl.classList.remove("idle");
   const text = CMD.prompt().replace(/\s*\[[^\]]*\]/g, ""), ops = CMD.opts?.() || [];
