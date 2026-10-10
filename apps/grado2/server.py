@@ -720,11 +720,33 @@ def not_ready_why(spec):
 def not_ready_headers(spec):
     """Заголовки ответа: номера листов «не готов» и причины (ASCII: текст кодируется %XX, браузер читает decodeURIComponent)."""
     rows = not_ready_why(spec)
+    out = layout_qa_headers(spec)
     if not rows:
-        return []
+        return out
     why = "лист " + "; лист ".join(f"{n}: " + ", ".join(w) for n, w in rows)
     return [("X-Grado-Not-Ready", ",".join(str(n) for n, _ in rows)),
-            ("X-Grado-Not-Ready-Why", quote(why[:300]))]
+            ("X-Grado-Not-Ready-Why", quote(why[:300]))] + out
+
+
+QA_HEADER_MAX = 7000             # байт заголовка с местами самопроверки (%XX): длинный список обрезается, число мест — полное
+
+
+def layout_qa_headers(spec):
+    """Самопроверка оформления (#55, print_io.layout_qa): X-Grado-Layout-QA = «4:5,6:3» (лист:мест), X-Grado-Layout-QA-Why —
+    JSON {"4": ["«…» на линии слоя «…»", …]} в %XX; не влезает в QA_HEADER_MAX — у листов остаются первые места
+    (и по одному не влезает — только счёт)."""
+    qa = {str(i): sh["_labelQA"] for i, sh in enumerate(spec.get("sheets") or [], start=1)
+          if isinstance(sh, dict) and sh.get("_labelQA")}
+    if not qa:
+        return []
+    count = ",".join(f"{n}:{len(v)}" for n, v in qa.items())
+    keep = max(len(v) for v in qa.values())
+    while True:
+        why = quote(json.dumps({n: v[:keep] for n, v in qa.items()}, ensure_ascii=False))
+        if len(why) <= QA_HEADER_MAX or keep <= 1:
+            break
+        keep = max(1, keep * 2 // 3)
+    return [("X-Grado-Layout-QA", count)] + ([("X-Grado-Layout-QA-Why", why)] if len(why) <= QA_HEADER_MAX else [])
 
 
 def _log_portal(where, text):
