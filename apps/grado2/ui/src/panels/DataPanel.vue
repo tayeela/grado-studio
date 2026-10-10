@@ -126,7 +126,7 @@
       </div>
       <div class="presets">Готовые наборы:
         <wa-button v-for="p in PRESETS" :key="p[0]" size="s" :appearance="presetOn(p) ? 'filled' : 'outlined'" :variant="presetOn(p) ? 'brand' : 'neutral'"
-                   :title="p[2] + '. Слоёв: ' + presetKeys(p).length" @click="togglePreset(p)">{{ p[1] }} · {{ presetKeys(p).length }}</wa-button>
+                   :title="p[2] + '.\nСлои (' + presetKeys(p).length + '): ' + presetKeys(p).map(k => SOURCES[k].title).join(', ')" @click="togglePreset(p)">{{ p[1] }} · {{ presetKeys(p).length }}</wa-button>
       </div>
       <div class="tree"><TreeNode v-for="n in tree" :key="n.num" :n="n" :depth="0" /><p v-if="!tree.length" class="hint">Ничего не найдено.</p></div>
       <span slot="footer" class="hint foot">{{ pk.counts ? "" : "Считаю объекты ГИС ОГД в области… " }}Отмечено: <b>{{ pk.sel.size }}</b>. Большая область для НСПД и OpenStreetMap загружается по частям.</span>

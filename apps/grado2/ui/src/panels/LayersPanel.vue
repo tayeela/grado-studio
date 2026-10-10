@@ -13,7 +13,7 @@
     </div>
     <p v-if="!project.layers.length" class="hint">{{ loadError || "В проекте пока нет слоёв: «+» — новый слой" }}</p>
 
-    <div ref="list" class="blocks">
+    <div ref="list" class="blocks" role="listbox" aria-label="Слои проекта" @keydown="onListKey">
       <template v-for="b in blocks" :key="b.id">
         <div v-if="b.group" class="blk" :data-g="b.group.id">
           <div class="grp" :class="{ off: !b.group.visible }" @contextmenu.prevent="e => menuAt(e, 'g', b.group.id)">
@@ -31,13 +31,13 @@
           </div>
           <div class="inner" :data-g="b.group.id">
             <div v-for="l in b.layers" v-show="b.group.open || q" :key="l.key" class="row nested" :class="{ cur: l.key === currentId, hid: !b.group.visible }" :data-key="l.key"
-                 @click="currentId = l.key" @contextmenu.prevent="e => menuAt(e, 'l', l.key)">
+                 role="option" :aria-selected="l.key === currentId" :aria-label="l.title || l.key" :tabindex="l.key === tabKey ? 0 : -1" @click="currentId = l.key" @contextmenu.prevent="e => menuAt(e, 'l', l.key)">
               <LayerRow :l="l" />
             </div>
           </div>
         </div>
         <div v-else class="row" :class="{ cur: b.layers[0].key === currentId }" :data-key="b.layers[0].key"
-             @click="currentId = b.layers[0].key" @contextmenu.prevent="e => menuAt(e, 'l', b.layers[0].key)">
+             role="option" :aria-selected="b.layers[0].key === currentId" :aria-label="b.layers[0].title || b.layers[0].key" :tabindex="b.layers[0].key === tabKey ? 0 : -1" @click="currentId = b.layers[0].key" @contextmenu.prevent="e => menuAt(e, 'l', b.layers[0].key)">
           <LayerRow :l="b.layers[0]" />
         </div>
       </template>
@@ -143,6 +143,25 @@ function finishRename(kind, id, v) {
 
 /* ---------- перетаскивание: верхний уровень — группы и слои без группы, внутри группы — её слои ---------- */
 const list = ref(null);
+
+/* Клавиатура (#30, аудит 07.10.2026): список слоёв — одна остановка Tab на текущем слое; стрелки — соседний слой,
+   Home/End — первый и последний, Пробел — показать или скрыть слой, F2 — переименовать (как дерево слоёв QGIS). */
+const tabKey = computed(() => (project.layers.some(l => l.key === currentId.value) && currentId.value) || blocks.value[0]?.layers[0]?.key || "");
+function onListKey(e) {
+  const row = e.target.closest?.(".row"); if (!row || e.target !== row) return;
+  const rows = [...list.value.querySelectorAll(".row")].filter(r => r.offsetParent), i = rows.indexOf(row);
+  const go = j => { const r = rows[Math.max(0, Math.min(rows.length - 1, j))]; if (!r) return; currentId.value = r.dataset.key; nextTick(() => r.focus()); };
+  const l = project.layers.find(x => x.key === row.dataset.key);
+  if (e.key === "ArrowDown") go(i + 1);
+  else if (e.key === "ArrowUp") go(i - 1);
+  else if (e.key === "Home") go(0);
+  else if (e.key === "End") go(rows.length - 1);
+  else if (e.key === " " && l) l.visible = !l.visible;
+  else if (e.key === "F2" && l) editing.value = "l:" + l.key;
+  else if (e.key === "Enter" && l) currentId.value = l.key;
+  else return;
+  e.preventDefault(); e.stopPropagation();
+}
 let sorts = [];
 function readOrder() {
   const out = [];

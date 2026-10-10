@@ -225,6 +225,9 @@ wa-number-input::part(start), wa-number-input::part(end) { flex: 0 0 auto; margi
   font-family: var(--wa-font-family-body); font-weight: 500; border-radius: 6px; margin: 2px;
 }
 .ol-control button:hover, .ol-control button:focus { background: var(--wa-color-surface-lowered); outline: none; }
+.ol-control button:focus-visible { outline: 2px solid var(--wa-color-focus); outline-offset: 1px; }   /* фокус с клавиатуры виден (#30) */
+/* фокус клавиатуры на самой карте — тонкая рамка внутрь, без сдвига соседей */
+.mapbox .map:focus-visible { outline: 2px solid var(--wa-color-focus); outline-offset: -2px; }
 .ol-attribution:not(.ol-collapsed) { background: color-mix(in srgb, var(--wa-color-surface-default) 85%, transparent); color: var(--wa-color-text-quiet); }
 .ol-attribution a { color: var(--wa-color-text-link); }
 
@@ -296,3 +299,6 @@ html.wa-dark {
 .cadac { position: absolute; z-index: 6; font-size: var(--wa-font-size-s); line-height: 1.5; padding: 3px 0; min-width: 170px; }
 .cadac div { padding: 0 8px; }
 .cadac b { display: inline-block; min-width: 34px; font-weight: 600; color: var(--wa-color-brand-on-quiet); }
+
+/* текст только для экранного диктора: имя кнопки-значка (#30) */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }

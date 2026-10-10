@@ -1404,13 +1404,15 @@ export default async p => {
       const box = (w, s, e, n) => [[[w, s], [e, s], [e, n], [w, n], [w, s]]], F = (coords, props = {}) => ({ type: "Feature", properties: props, geometry: coords.length === 1 ? { type: "Polygon", coordinates: coords[0] } : { type: "MultiPolygon", coordinates: coords } });
       const savedT = TERR, out = {};
       try {
-        // okrugMain: большая часть; мелкая рядом (< 3 км) — остаётся; мелкая далеко — уходит; ≥ 2 % большой далеко — остаётся; мелкая далеко, но с территорией — остаётся
-        const bigP = box(37.0, 55.0, 37.2, 55.12), nearP = box(37.2, 55.05, 37.205, 55.055), farTiny = box(37.8, 55.0, 37.801, 55.001), farBig = box(37.5, 55.0, 37.53, 55.03), farTerr = box(37.9, 55.0, 37.901, 55.001);
-        const okr = F([bigP, nearP, farTiny, farBig, farTerr]), cnt = f => f.geometry.type === "Polygon" ? 1 : f.geometry.coordinates.length;
+        // okrugMain: большая часть; обрезок у края (< 50 м) — остаётся; мелкая далеко — уходит; ≥ 5 % большой далеко — остаётся;
+        // мелкая далеко, но с территорией — остаётся; анклав 2 % в 0,15 км (как «Восточный» у ВАО, #62) — уходит
+        const bigP = box(37.0, 55.0, 37.2, 55.12), nearP = box(37.2, 55.05, 37.205, 55.055), farTiny = box(37.8, 55.0, 37.801, 55.001), farBig = box(37.5, 55.0, 37.56, 55.03), farTerr = box(37.9, 55.0, 37.901, 55.001);
+        const enclP = box(37.2025, 55.0, 37.2244, 55.0219);
+        const okr = F([bigP, nearP, farTiny, farBig, farTerr, enclP]), cnt = f => f.geometry.type === "Polygon" ? 1 : f.geometry.coordinates.length;
         const has = (f, p) => (f.geometry.type === "Polygon" ? [f.geometry.coordinates] : f.geometry.coordinates).some(c => JSON.stringify(c) === JSON.stringify(p));
         TERR = turf.feature({ type: "Polygon", coordinates: box(37.05, 55.05, 37.06, 55.06) });
         const a = okrugMain(okr);
-        out.a = { n: cnt(a), big: has(a, bigP), near: has(a, nearP), tiny: has(a, farTiny), farBig: has(a, farBig), farTerr: has(a, farTerr) };
+        out.a = { n: cnt(a), big: has(a, bigP), near: has(a, nearP), tiny: has(a, farTiny), farBig: has(a, farBig), farTerr: has(a, farTerr), encl: has(a, enclP) };
         TERR = turf.feature({ type: "Polygon", coordinates: box(37.9002, 55.0002, 37.9006, 55.0006) });
         const b = okrugMain(okr);
         out.b = { n: cnt(b), farTerr: has(b, farTerr), tiny: has(b, farTiny) };
@@ -1423,7 +1425,7 @@ export default async p => {
         out.szz = [[63, 5, 62, 6, 4].sort((x, y) => SZZ_ORD(x) - SZZ_ORD(y)), SZZ_ORD(62), SZZ_ORD(63), SZZ_ORD(5), Object.keys(SZZ_OGD).map(Number), SZZ_OGD[63].dash.length > 0 && !SZZ_OGD[5].dash];
         return JSON.stringify(out);
       } finally { TERR = savedT; }`));
-    check(r.a.n === 3 && r.a.big && r.a.near && r.a.farBig && r.a.farTerr === false && r.a.tiny === false, "T80: okrugMain — большая, ближняя и крупная далёкая части остались, мелкая далёкая ушла: " + JSON.stringify(r.a));
+    check(r.a.n === 3 && r.a.big && r.a.near && r.a.farBig && r.a.farTerr === false && r.a.tiny === false && r.a.encl === false, "T80: okrugMain — большая, обрезок у края и крупная далёкая части остались, мелкая далёкая и анклав 2 % ушли: " + JSON.stringify(r.a));
     check(r.b.farTerr && r.b.tiny === false && r.b.n === 4, "T80: okrugMain — далёкая мелкая часть с территорией остаётся, другая мелкая — нет: " + JSON.stringify(r.b));
     check(r.single === "Polygon" && r.nul === null, "T80: okrugMain — один полигон и пусто возвращаются как есть");
     check(r.k[0] === "Polygon" && r.k[1] === 37.01 && r.k[2] === null && r.k[3] === "MultiPolygon" && r.k[4] === 2, "T80: keepParts — часть вне округа уходит, нет частей — geometry null, обе внутри — MultiPolygon: " + JSON.stringify(r.k));

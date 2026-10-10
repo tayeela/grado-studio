@@ -556,7 +556,7 @@ class AnyOgdLayer(unittest.TestCase):
         cat = [{"code": "virtual25", "name": "Надписи технических зон", "type": "layer"}]
         with mock.patch.object(S, "ogd_catalog", return_value=cat), mock.patch.object(S, "GisogdApi", FakeApi):
             layers, errors = S.fetch([37.59, 55.74, 37.61, 55.76], ["ogd.virtual25", "ogd.nope"])
-        self.assertEqual(errors, {})
+        self.assertEqual(errors, {"ogd.nope": "нет такого источника данных"})     # слоя нет в каталоге — сказано, а не тишина (#51)
         self.assertEqual(asked, ["virtual25"])
         self.assertEqual(layers["ogd.virtual25"]["title"], "Надписи технических зон (ОГД)")
         self.assertNotIn("ogd.nope", layers)
@@ -2131,6 +2131,21 @@ class T61Portal(unittest.TestCase):
             self.assertEqual(S.SOURCES["ogd.gpzu"][2], S.SOURCES["gisogd.gpzu"][2])
         finally:
             S.SOURCES.pop("ogd.gpzu", None)
+
+    def test_fetch_unknown_key_and_kind_without_job_are_errors_not_silence(self):
+        # #51, пункт 2: неизвестный ключ и вид без задания выгрузки — ошибка слоя в ответе, а не тишина
+        with mock.patch.object(S, "ogd_catalog", return_value=[]):
+            layers, errors = S.fetch([37.5, 55.7, 37.51, 55.71], ["nope.layer"])
+        self.assertEqual(layers, {})
+        self.assertEqual(errors, {"nope.layer": "нет такого источника данных"})
+        S.SOURCES["zz.test"] = ("zz", [], "Тест")
+        S.LIMIT_KM2["zz"] = 1000
+        try:
+            layers, errors = S.fetch([37.5, 55.7, 37.51, 55.71], ["zz.test"])
+            self.assertEqual(errors, {"zz.test": "для этого вида источника нет выгрузки"})
+        finally:
+            S.SOURCES.pop("zz.test", None)
+            S.LIMIT_KM2.pop("zz", None)
 
     def test_plain_portal_error_hides_raw_text(self):
         raw = "Overpass не ответил (Errno 54; HTTP 504; timed out) — попробуйте позже или уменьшите область"

@@ -13,7 +13,7 @@ body: JSON.stringify(albumSpec(ALBUM.sheets))})` (docs/wiki/recipes.md).
 <name>.zip): нет на диске — скачивается оттуда, `--update` — выкладывается туда (процесс на GitHub, 06.10.2026); отчёт: /tmp/grado-album-check/<name>/ (report.md, summary.png,
 crops/). Заодно альбом проверяет tools/album_lint.py: PDF (наложения слов, края листа и рамки карты, мелкий кегль, переносы, «ё», шрифты, разрешение растров),
 PPTX (неразрывные пробелы; его печатает та же команда, отключается --no-pptx) и контрольные строки tools/album_expect/all.json и <имя>.json. Отчёт — в конце
-report.md. Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати,
+report.md, там же самопроверка печати (#55: подписи на линиях слоёв, под угловыми надписями и легендой, у рамки карты; не меняет код выхода). Код выхода 0 — без отличий (или --update), 1 — есть отличия (смотреть summary.png), 2 — ошибка печати,
 3 — album_lint нашёл ошибки оформления (важнее отличий: их чинят, а не принимают эталоном).
 Ошибки сервера печатаются как есть; порт 8650 (программа владельца) запрещён.
 """
@@ -53,6 +53,8 @@ def render(server, spec, path, kind="pdf"):
     try:
         with urllib.request.urlopen(req, timeout=1800) as r:
             data = r.read()
+            if kind == "pdf":
+                QA[:] = layout_qa(r.headers)
     except OSError as e:
         if kind == "pdf":
             raise
@@ -65,6 +67,26 @@ def render(server, spec, path, kind="pdf"):
         return None
     path.write_bytes(data)
     return path
+
+
+QA = []               # самопроверка оформления из ответа печати PDF (#55): строки отчёта
+
+
+def layout_qa(headers):
+    """Места самопроверки оформления (сервер: X-Grado-Layout-QA «лист:мест», X-Grado-Layout-QA-Why JSON в %XX) — строки отчёта."""
+    from urllib.parse import unquote
+    count = headers.get("X-Grado-Layout-QA") or ""
+    try:
+        why = json.loads(unquote(headers.get("X-Grado-Layout-QA-Why") or "{}"))
+    except ValueError:
+        why = {}
+    out = []
+    for part in filter(None, count.split(",")):
+        n, k = part.split(":")
+        items = why.get(n) or []
+        out.append(f"лист {n}: {k} мест" + ("" if len(items) >= int(k) else f" (в ответе первые {len(items)})"))
+        out += [f"  - {w}" for w in items]
+    return out
 
 
 def pages(pdf, d):
@@ -231,7 +253,9 @@ def main():
     lint_lines, lint_errors = design_lint(out / "album.pdf", a.spec, pptx, a.name)
     (out / "report.md").write_text(f"# Сравнение альбома «{a.name}» с эталоном\n\n" + "\n".join(rows)
                                    + (f"\n\nСвод вырезок: {out / 'summary.png'}\n" if changed else "\n\nОтличий нет.\n")
-                                   + "\n## Оформление страниц (tools/album_lint.py)\n\n```\n" + "\n".join(lint_lines) + "\n```\n")
+                                   + "\n## Оформление страниц (tools/album_lint.py)\n\n```\n" + "\n".join(lint_lines) + "\n```\n"
+                                   + "\n## Подписи на линиях, под надписями, у рамки (печать, #55)\n\n```\n"
+                                   + ("\n".join(QA) or "мест нет") + "\n```\n")
     print((out / "report.md").read_text())
     print(json.dumps({"changed": bool(changed), "summary": str(out / "summary.png") if changed else None,
                       "lint_errors": lint_errors}, ensure_ascii=False))
