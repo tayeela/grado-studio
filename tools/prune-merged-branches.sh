@@ -11,8 +11,9 @@ git fetch -q origin
 keep='^(main|team/t60|HEAD)$'
 open_prs=$(gh api "repos/{owner}/{repo}/pulls?state=open&per_page=100" --paginate -q '.[].head.ref' 2>/dev/null || true)
 count=0
-for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin); do
-  b=${ref#origin/}
+# полное имя ссылки: короткое у refs/remotes/origin/HEAD — просто «origin» (10.10.2026 скрипт пытался удалить ветку «origin»)
+for full in $(git for-each-ref --format='%(refname)' refs/remotes/origin); do
+  b=${full#refs/remotes/origin/}; ref=origin/$b
   [[ $b =~ $keep ]] && continue
   printf '%s\n' "$open_prs" | grep -qx -- "$b" && continue
   git merge-base --is-ancestor "$ref" origin/main || git merge-base --is-ancestor "$ref" origin/team/t60 || continue

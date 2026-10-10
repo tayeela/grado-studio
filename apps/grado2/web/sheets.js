@@ -475,8 +475,20 @@ const FITWHY = new Map();        // id листа → почему не поме
 const OSM_NOUN = { "osm.roads": "улицы OSM", "osm.landuse": "землепользование OSM", "osm.buildings": "здания OSM", "osm.water": "водные объекты OSM", "osm.social": "социальные объекты OSM" };
 // всё, из-за чего лист «не готов»: слои, вёрстка (ответ сервера), загрузка при сборке — одной строкой для подсказки строки листа и заметки
 const whyOf = s => [NOTREADY.get(s.id), FITWHY.get(s.id), LOSTNOTE.get(s.id)].filter(Boolean).join("; ");
+// самопроверка оформления (#55): id листа → места «"…" на линии слоя "…"», «под угловой надписью», «у рамки карты»; ответ сервера,
+// не сохраняется в проект. X-Grado-Layout-QA = «4:5,6:3» (лист запроса:мест), X-Grado-Layout-QA-Why — JSON {"4": [фраза…]} (%XX)
+const LAYOUTQA = new Map();
+function readQA(r, list) {
+  list.forEach(s => LAYOUTQA.delete(s.id));
+  let why = {}; try { why = JSON.parse(decodeURIComponent(r.headers.get("X-Grado-Layout-QA-Why") || "{}")); } catch { }
+  for (const m of (r.headers.get("X-Grado-Layout-QA") || "").matchAll(/(\d+):(\d+)/g)) {
+    const sh = list[+m[1] - 1]; if (sh) LAYOUTQA.set(sh.id, { n: +m[2], items: why[m[1]] || [] });
+  }
+}
+const qaCount = () => ALBUM.sheets.reduce((n, s) => n + (LAYOUTQA.get(s.id)?.n || 0), 0);
 // ответ сервера при просмотре и выгрузке: X-Grado-Not-Ready-Why = «лист 6: причина, причина; лист 10: …» (%XX); list — листы запроса по порядку
 function readFit(r, list) {
+  readQA(r, list);
   list.forEach(s => FITWHY.delete(s.id));
   let txt = ""; try { txt = decodeURIComponent(r.headers.get("X-Grado-Not-Ready-Why") || ""); } catch { }
   for (const m of txt.matchAll(/(?:^|; )лист (\d+): (.*?)(?=; лист \d+: |$)/gs)) { const sh = list[+m[1] - 1]; if (sh) FITWHY.set(sh.id, m[2]); }
@@ -563,7 +575,7 @@ function tplAuto() {
 const tplSchedule = () => { clearTimeout(TPL_TIMER); TPL_TIMER = setTimeout(tplAuto, 600); };
 window.scheduleTplRefresh = tplSchedule;
 // открытие проекта: листы старого формата (без sheet.tpl) не меняются — только помечаются legacy; пересборка таких листов — по «Обновить листы» с подтверждением
-window.tplOpen = () => { NOTREADY.clear(); LOSTNOTE.clear(); FITWHY.clear(); TPL_SIG = null; if (isViewer()) return; tplAdopt(); const r = tplRefresh({}); if (r.n) { TPL_SIG = tplSig(); tplAfter(r, false); } };
+window.tplOpen = () => { NOTREADY.clear(); LOSTNOTE.clear(); FITWHY.clear(); LAYOUTQA.clear(); TPL_SIG = null; if (isViewer()) return; tplAdopt(); const r = tplRefresh({}); if (r.n) { TPL_SIG = tplSig(); tplAfter(r, false); } };
 function tplManual() {
   if (isViewer()) return toast("Только просмотр: листы обновляет тот, кто правит проект.");
   tplAdopt();
@@ -744,7 +756,9 @@ async function albumFile0(kind = "pdf", only = null, force = false) {
     const nr = readFit(r, list);                    // «лист 6: легенда из 23 позиций не помещается — …; лист 10: …»
     toast((only ? `Лист «${only.title}» — PDF.` : kind === "pdf" ? `Альбом PDF: ${ALBUM.sheets.length} л. Координаты — МСК, красные линии — типами REDLN97.`
       : `Презентация PPTX: ${ALBUM.sheets.length} сл. Всё правится в PowerPoint: подписи — текст, карты — фигуры, сгруппированные по слоям.`)
-      + (nr ? ` Не готовы: ${nr}. Причина — и серым внизу листа.` : "") + " Файл сохранён в папку загрузок браузера.");
+      + (nr ? ` Не готовы: ${nr}. Причина — и серым внизу листа.` : "")
+      + (list.some(s => LAYOUTQA.has(s.id)) ? ` Проверка оформления: ${list.reduce((n, s) => n + (LAYOUTQA.get(s.id)?.n || 0), 0)} подписей на линиях, под надписями или у рамки — список в строке альбома.` : "")
+      + " Файл сохранён в папку загрузок браузера.");
   } catch (e) { toast((kind === "pdf" ? "PDF" : "PPTX") + " не собран: " + e.message); } finally { clearInterval(poll); bpEnd(); busy(false); setBuilding(false); }
 }
 // спутник Яндекса по рамке листа — для AutoCAD в МСК (как выгрузка снимка из QGIS). AutoCAD показывает снимок из DXF
@@ -790,6 +804,9 @@ function albumStatText() {
   if (TPL_AT) t += ` · листы обновлены ${stampText(new Date(TPL_AT).toISOString())}`;
   const nr = ALBUM.sheets.filter(x => NOTREADY.has(x.id) || FITWHY.has(x.id) || LOSTNOTE.has(x.id));
   if (nr.length) t += ` · не готово: ${nr.length}` + (FITWHY.size ? ` (${ALBUM.sheets.filter(x => FITWHY.has(x.id)).map(x => `лист ${ALBUM.sheets.indexOf(x) + 1}: ${FITWHY.get(x.id)}`).join("; ")})` : "");
+  const qa = qaCount();                                                       // самопроверка оформления (#55): первые три места
+  if (qa) t += ` · проверка оформления: ${qa} ${qa % 10 === 1 && qa % 100 !== 11 ? "место" : [2, 3, 4].includes(qa % 10) && ![12, 13, 14].includes(qa % 100) ? "места" : "мест"} (`
+    + ALBUM.sheets.flatMap((x, i) => (LAYOUTQA.get(x.id)?.items || []).map(w => `лист ${i + 1}: ${w}`)).slice(0, 3).join("; ") + (qa > 3 ? "; …" : "") + ")";
   const last = [m.editedAt, m.builtAt].filter(Boolean).sort().pop();       // правили листы после последнего файла
   if (last && m.pdfAt && last > m.pdfAt) t += " · изменён после PDF";
   else if (last && !m.pdfAt && m.pptxAt && last > m.pptxAt) t += " · изменён после PPTX";
@@ -915,7 +932,7 @@ function importAlbum(mode) {
    Раскладка по ширине тела окна (container query в index.html), поэтому одинаково внизу, справа и в плавающем окне. */
 let SHI = 0, STAMP_OPEN = false, SHBUILD = 0, SHOTHER = null;
 const SHM = { open: null, btn: null };
-const touch = () => { ALBUM.meta.editedAt = new Date().toISOString(); FITWHY.clear(); window.markDirty?.(); };
+const touch = () => { ALBUM.meta.editedAt = new Date().toISOString(); FITWHY.clear(); LAYOUTQA.clear(); window.markDirty?.(); };
 window.touchAlbum = touch;
 const track = async fn => { SHBUILD++; syncBusy(); try { return await fn(); } finally { SHBUILD--; syncBusy(); } };
 /* Ход сборки (T62): «Лист 3 из 10: Ситуационный план — загрузка улиц OSM… · 42 с» — в строке состояния окна и в сообщении;
