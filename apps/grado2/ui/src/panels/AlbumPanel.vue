@@ -66,7 +66,7 @@
       </div>
     </div>
 
-    <wa-details class="stamp" :open="stampOpen" @wa-show="stampOpen = true" @wa-hide="stampOpen = false">
+    <wa-details class="stamp" :open="stampOpen" @wa-show.self="stampOpen = true" @wa-hide.self="stampOpen = false">
       <span slot="summary"><b>Штамп</b> <span class="sum">{{ stampSum }}</span></span>
       <div class="fields">
         <wa-input v-for="f in META" :key="f[0]" size="s" :label="f[1]" :value="meta[f[0]] || ''" :readonly="viewer" :data-meta="f[0]"
@@ -76,7 +76,7 @@
     </wa-details>
 
     <!-- настройки альбома (#89): цвет воды на белых схемах и шрифт подписей карт; пусто — как печаталось до настройки -->
-    <wa-details class="stamp look" :open="lookOpen" @wa-show="lookOpen = true" @wa-hide="lookOpen = false">
+    <wa-details class="stamp look" :open="lookOpen" @wa-show.self="lookOpen = true" @wa-hide.self="lookOpen = false">
       <span slot="summary"><b>Оформление карт</b> <span class="sum">{{ lookSum }}</span></span>
       <div class="lookrow">
         <wa-color-picker size="s" aria-label="Цвет воды на белых схемах" :value="meta.waterColor || WATER" :disabled="viewer" data-look="water"
@@ -84,9 +84,8 @@
         <span class="lbl">Вода на белых схемах<small>сущпол и Генплан — своим цветом</small></span>
         <wa-button v-if="meta.waterColor && meta.waterColor !== WATER" size="s" appearance="plain" :disabled="viewer" title="Голубой #bfe0f5, как по умолчанию" @click="setLook('waterColor', '')">Как было</wa-button>
       </div>
-      <wa-select size="s" label="Шрифт подписей карт" :value="meta.labelFont || 'base'" :disabled="viewer" data-look="font" @change="e => setLook('labelFont', e.target.value)">
-        <wa-option v-for="f in FONTS" :key="f[0]" :value="f[0]">{{ f[1] }}</wa-option>
-      </wa-select>
+      <FontPicker label="Шрифт подписей карт" :value="meta.labelFont || 'base'" :name="meta.labelFontName" :presets="FONTS" :disabled="viewer" data-look="font"
+                  @change="setFont"></FontPicker>
       <p class="hint">Заголовки и надписи листа — всегда Montserrat. Новые цвет и шрифт попадут в просмотр, PDF и PPTX.</p>
     </wa-details>
 
@@ -128,7 +127,7 @@
         <wa-button size="s" appearance="plain" :disabled="viewer" title="Удалить лист" aria-label="Удалить лист" @click="askDrop = true"><Trash2 :size="14" /></wa-button>
       </div>
       <!-- слои листа (роли сверху вниз): глаз — только на этом листе; перетаскивание и слои проекта — в окне «Подробно» -->
-      <wa-details v-if="roles && roles.kind === 'layout'" class="stamp lay" :open="layOpen" @wa-show="layOpen = true" @wa-hide="layOpen = false">
+      <wa-details v-if="roles && roles.kind === 'layout'" class="stamp lay" :open="layOpen" @wa-show.self="layOpen = true" @wa-hide.self="layOpen = false">
         <span slot="summary"><b>Слои листа</b> <span class="sum">{{ laySum }}</span></span>
         <ul class="roles" aria-label="Слои листа, сверху вниз">
           <li v-for="r in roles.rows" :key="r.id" :class="{ off: !r.on }" :title="'Слои: ' + r.layers.join('; ')">
@@ -166,10 +165,11 @@ import { album, call, engineState, openAlbum, startEngine, sync } from "../album
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
 import { project, winApi } from "../store.js";
+import FontPicker from "./FontPicker.vue";
 
 const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
 /* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */
-const FONTS = [["base", "Как сейчас"], ["pt-sans", "PT Sans"], ["montserrat", "Montserrat"]];
+const FONTS = [["base", "Как сейчас"], ["pt-sans", "PT Sans"], ["pt-serif", "PT Serif"], ["montserrat", "Montserrat"]];   // готовые; любой другой — «Другой шрифт…» (FontPicker)
 const META = [["object", "Объект"], ["code", "Шифр"], ["stage", "Стадия: ПП, П, Р"], ["org", "Организация"], ["short", "№ КРТ"], ["place", "Округ, район"], ["address", "Адрес"]];
 const props = defineProps({ params: Object });
 /* выбранный лист — общий с рамками на карте (albumframes.js) */
@@ -195,7 +195,7 @@ const stampSum = computed(() => { ver.value; album.rev; const p = [meta.value.ob
 const lookSum = computed(() => {
   ver.value; album.rev;   // meta — тот же объект project.raw, правится на месте: перечитать после каждой правки
   const w = meta.value.waterColor && meta.value.waterColor !== WATER ? "вода " + meta.value.waterColor : "";
-  const f = FONTS.find(x => x[0] === meta.value.labelFont)?.[1] || "";
+  const f = FONTS.find(x => x[0] === meta.value.labelFont)?.[1] || (String(meta.value.labelFont || "").startsWith("f:") ? meta.value.labelFontName || "свой шрифт" : "");
   return [w, f].filter(Boolean).join(" · ") || "как сейчас";
 });
 const head = computed(() => st.value?.stat || (sheets.value.length ? `Альбом: ${sheets.value.length} ${word(sheets.value.length, "лист", "листа", "листов")}` : "Альбом: листов нет"));
@@ -236,6 +236,12 @@ function setLook(k, v) {
   const a = ensure();
   if (!v || v === "base" || (k === "waterColor" && v.toLowerCase() === WATER)) delete a.meta[k]; else a.meta[k] = k === "waterColor" ? v.toLowerCase() : v;
   img.id = null; edited();
+}
+/* шрифт подписей карт: готовый или любой «f:<id>»; имя любого хранится рядом (labelFontName) — показать его и там, где шрифта нет */
+function setFont(v, name) {
+  const a = ensure();
+  if (String(v).startsWith("f:") && name) a.meta.labelFontName = name; else delete a.meta.labelFontName;
+  setLook("labelFont", v);
 }
 /* «Надписи» — окно «Макет надписей» (AlbumLayout.vue) для выбранного листа */
 function openLay() { album.lay = cur.value; album.layTick++; winApi.open("albumlay"); }

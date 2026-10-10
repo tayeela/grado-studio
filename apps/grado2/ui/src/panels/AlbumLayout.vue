@@ -38,10 +38,8 @@
         <template v-if="selKeys.length === 1 && cur">
           <p class="al-h">{{ isItem(selKeys[0]) ? "Своя надпись" : "Надпись листа" }}</p>
           <wa-textarea size="s" label="Текст" rows="2" :value="cur.text" :readonly="viewer" @input="e => setProp('text', e.target.value)"></wa-textarea>
-          <wa-select size="s" label="Шрифт" :value="cur.font || 'base'" :disabled="viewer" @change="e => setProp('font', e.target.value === 'base' ? '' : e.target.value)">
-            <wa-option v-if="!isItem(selKeys[0])" value="base">как на листе</wa-option>
-            <wa-option v-for="f in FONTS" :key="f[0]" :value="f[0]">{{ f[1] }}</wa-option>
-          </wa-select>
+          <FontPicker label="Шрифт" :value="cur.font || 'base'" :name="cur.fontName" :presets="isItem(selKeys[0]) ? FONTS : [['base', 'как на листе'], ...FONTS]"
+                      :disabled="viewer" with-bold @change="setFont"></FontPicker>
           <div class="g2">
             <wa-number-input size="s" label="Кегль, пт" :value="cur.pt" min="2" max="170" step="0.5" :disabled="viewer" @change="e => setProp('size', +(e.target.value * PT).toFixed(3))"></wa-number-input>
             <wa-number-input size="s" label="Поворот, °" :value="cur.angle" min="-180" max="180" step="1" :disabled="viewer" @change="e => setProp('angle', e.target.value === '' ? '' : +e.target.value)"></wa-number-input>
@@ -105,6 +103,7 @@ import { C } from "../collab.js";
 import { notice } from "../project.js";
 import { project } from "../store.js";
 import { rulerStep } from "../sheet/model.js";
+import FontPicker from "./FontPicker.vue";
 
 const Snap = globalThis.Snap;
 const PT = 25.4 / 72;                                // 1 пт в мм: кегль — в пунктах, как в QGIS
@@ -239,7 +238,7 @@ const cur = computed(() => {
   const rgb = s => { const m = String(s || "").match(/\d+/g); return m ? "#" + m.slice(0, 3).map(v => (+v).toString(16).padStart(2, "0")).join("") : "#000000"; };
   const rot = (t.getAttribute("transform") || "").match(/rotate\(([-\d.]+)/), e = editOf(key, false) || {};
   const halo = e.halo !== undefined ? e.halo : t.getAttribute("stroke") ? [rgb(t.getAttribute("stroke")), r2(+t.getAttribute("stroke-width") / 2)] : null;
-  return { text: isItem(key) ? e.text : e.text ?? t.textContent, font: e.font || (isItem(key) ? "ui" : ""), pt: r1(+t.getAttribute("font-size") / PT),
+  return { text: isItem(key) ? e.text : e.text ?? t.textContent, font: e.font || (isItem(key) ? "ui" : ""), fontName: e.fontName || "", pt: r1(+t.getAttribute("font-size") / PT),
     color: e.color || rgb(t.getAttribute("fill")), angle: e.angle ?? (rot ? r1(+rot[1]) : 0), halo };
 });
 
@@ -300,6 +299,14 @@ function setProp(name, v) {
   if (name === "text" && isItem(key) && !String(v).trim()) return;   // пустая своя надпись пропала бы — её удаляют кнопкой
   remember(name + ":" + key); const e = editOf(key);
   if (v === "" || v == null) delete e[name]; else e[name] = v;
+  save({ edits: sheet.value.edits, items: sheet.value.items });
+}
+/* шрифт надписи: готовый или любой «f:<id>[-bold]» (FontPicker); имя любого — рядом, для показа там, где шрифта нет */
+function setFont(v, name) {
+  const key = selKeys.value[0]; if (!key || viewer.value) return;
+  remember("font:" + key); const e = editOf(key);
+  if (!v || v === "base") delete e.font; else e.font = v;
+  if (String(v).startsWith("f:") && name) e.fontName = name; else delete e.fontName;
   save({ edits: sheet.value.edits, items: sheet.value.items });
 }
 function setHalo(h) { const key = selKeys.value[0]; if (!key) return; remember("halo:" + key); editOf(key).halo = h; save({ edits: sheet.value.edits, items: sheet.value.items }); }

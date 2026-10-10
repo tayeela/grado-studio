@@ -17,6 +17,7 @@
 | `test_e2e.py` | BrowserScenarios | 2 |
 | `test_export.py` | Http, GeoJsonExport, GeoJsonExportHardening, XlsxExport, PlaceByArea | 20 |
 | `test_file_io.py` | FileImport, PortalFields, Fgistp, SizeCeiling | 21 |
+| `test_fonts.py` | Fonts | 8 |
 | `test_gpzones_js.py` | GpZonesJs | 1 |
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |

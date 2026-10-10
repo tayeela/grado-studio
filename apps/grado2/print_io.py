@@ -10,6 +10,7 @@
 import base64
 import math
 import os
+import re
 import time
 from pathlib import Path
 
@@ -19,6 +20,10 @@ from grado_layout.compose import document_pages_ops
 from grado_layout.model import Frame
 from grado_render import PdfBackend, hex_to_rgb, render_svg
 from grado_render.scene import hatch_ops
+
+import fonts
+
+fonts.install()                                     # любой шрифт в печати: семейство «f:<id>» (fonts.py)
 
 # ---------- Размеры листов, поля, перевод миллиметров (MapTransform) ----------
 # слайды презентации: P — 16:9 (13,33 × 7,5 дюйма), PA4/PA3/PA2 — альбомные листы А4, А3, А2 с тем же оформлением
@@ -1946,6 +1951,22 @@ class PhotoGridFrame(Frame):
 WATER_VIS = "#bfe0f5"                                               # вода белых схем (albums.js C_WATER_VIS)
 LABEL_FONTS = {"pt-sans": {"sans": "ui", "sans-bold": "ui-bold"},   # подписи карт PT Sans
                "montserrat": {None: "sans", "ui": "sans", "ui-bold": "sans-bold"}}   # подписи карт Montserrat
+CUSTOM_FONT = re.compile(r"f:[0-9a-f]{12}")                         # любой шрифт: компьютера или свой файл (fonts.py)
+
+
+def _all_to(reg, bold):
+    """Все подписи карты — одним шрифтом: обычные → reg, жирные → bold."""
+    return {None: reg, "ui": reg, "sans": reg, "serif": reg, "ui-bold": bold, "sans-bold": bold, "serif-bold": bold}
+
+
+LABEL_FONTS["pt-serif"] = _all_to("serif", "serif-bold")
+
+
+def label_fonts(v):
+    """Замена семейств подписей карт для meta.labelFont: готовый шрифт или «f:<id>»; неизвестное — None (как было)."""
+    if v in LABEL_FONTS:
+        return LABEL_FONTS[v]
+    return _all_to(v, v + "-bold") if isinstance(v, str) and CUSTOM_FONT.fullmatch(v) else None
 
 
 def _hex(v):
@@ -1960,7 +1981,7 @@ def album_settings(meta, layers):
     meta = meta if isinstance(meta, dict) else {}
     water = _hex(meta.get("waterColor"))
     water = water if water and water != WATER_VIS else ""
-    fonts = LABEL_FONTS.get(meta.get("labelFont"))
+    fonts = label_fonts(meta.get("labelFont"))
     if not (water or fonts) or not isinstance(layers, list):
         return layers
     out = []
@@ -1991,7 +2012,7 @@ def album_settings(meta, layers):
 def _with_settings(spec):
     """Альбом (spec) с настройками album.meta во всех картах листов, включая панели «двух карт»."""
     meta = spec.get("meta") or {}
-    if not (_hex(meta.get("waterColor")) or meta.get("labelFont") in LABEL_FONTS):
+    if not (_hex(meta.get("waterColor")) or label_fonts(meta.get("labelFont"))):
         return spec
     sheets = []
     for sh in spec.get("sheets") or []:
@@ -2114,7 +2135,7 @@ def _edited(o, e):
         o["size"] = max(.5, min(60.0, _num(e["size"])))
     if e.get("color"):
         o["color"] = rgb(e["color"], o.get("color"))
-    if e.get("font") in FONTS:
+    if e.get("font") in FONTS or (isinstance(e.get("font"), str) and CUSTOM_FONT.fullmatch(e["font"].removesuffix("-bold"))):
         o["font_family"] = e["font"]
     if e.get("angle") not in (None, ""):
         o["angle"] = math.radians(_num(e["angle"]))

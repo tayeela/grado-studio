@@ -59,6 +59,22 @@ class FontError(ValueError):
     pass
 
 
+# Свои шрифты: семейство «f:<id>» и «f:<id>-bold» (любой шрифт компьютера или свой файл). Каталог подключает программа
+# (apps/grado2/fonts.py install): resolve(family) → (имя, путь TTF, жирный ли) или None — тогда печать берёт ui.
+CUSTOM = {"resolve": None}
+
+
+def custom_face(family):
+    """(имя шрифта, путь TTF, жирный ли) для семейства «f:…» или None."""
+    fn = CUSTOM["resolve"]
+    if not fn or not str(family or "").startswith("f:"):
+        return None
+    try:
+        return fn(family)
+    except Exception:
+        return None
+
+
 def find_font(family="ui"):
     """Найти TTF с кириллицей для ui / serif / mono.
 
@@ -66,6 +82,9 @@ def find_font(family="ui"):
     остаётся рабочей, а неизвестное значение из старого/внешнего проекта не
     приводит к падению.
     """
+    custom = custom_face(family)
+    if custom:
+        return custom[1]
     family = family if family in CANDIDATES else "ui"
     for path in CANDIDATES[family]:
         if Path(path).exists():
