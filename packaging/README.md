@@ -11,6 +11,8 @@
 | `grado2.spec` | Спецификация PyInstaller: одна папка для Windows (`.exe`, без окна консоли) и macOS (`.app`). Кладёт в сборку `apps/grado2/web`, стили ЛГР (`core/render/grado_render/styles`), пресеты и регламенты (`core/compute/grado_compute`) и `docs/standards/redln97`. |
 | `grado2_entry.py` | Точка входа программы. Запускает `server.main([])` из `apps/grado2/server.py`. Ошибка при старте пишется в `startup-error.log` в папке данных: на Windows это `%LOCALAPPDATA%\GRADO2`, иначе `~/.grado2`. |
 | `grado2-installer.iss` | Скрипт Inno Setup 6 для Windows. Берёт папку `dist/ГРАДО 2` и выдаёт `dist/installer/GRADO2-Setup-<версия>.exe`. |
+| `windows_install_check.ps1` | Проверка установщика на чистом Windows (в CI после Inno Setup): ставит `.exe` без вопросов для текущего пользователя, проверяет папку, версию и значки, дважды запускает установленную программу (первый раз — с пустым кэшем), удаляет и проверяет, что программы, значков и записи в списке программ нет, а папка данных осталась. Итог с замерами — в сводке запуска на GitHub. |
+| `installed_check.py` | Проверки уже запущенной программы и время каждой: ответ и версия, новый (`/next/`) и прежний (`/old`) интерфейс, ТЭП, выгрузка DXF, GeoJSON, XLSX, лист альбома в PDF (текст выделяется) и PPTX; с `--portals` — выгрузка маленького участка Хорошёво с порталов. Только стандартная библиотека Python. |
 | `AppIcon.svg` | Исходник значка. |
 | `AppIcon.icns` | Значок для macOS. `grado2.spec` берёт его на Mac. |
 | `AppIcon.ico` | Значок для Windows. Его берут `grado2.spec` и `grado2-installer.iss`. В репозитории нет скрипта, который его создаёт. |
@@ -24,6 +26,9 @@
 - Перед ним идёт job `test`: юнит-тесты и браузерные сценарии на Ubuntu. Он запускается и на pull request, если менялись `apps/grado2/**`, `core/**`, `packaging/grado2*` или сам workflow.
 - `build` идёт на `windows-latest` и `macos-latest`. Шаги: Python 3.12, установка `apps/grado2/requirements.txt` и `pyinstaller>=6.14,<7`, сборка по `packaging/grado2.spec`, проверка запуска (программа отвечает на `/api/health`).
 - Затем: установщик на Windows (Inno Setup, ставится через Chocolatey) или образ на macOS (`hdiutil`).
+- На Windows установщик сразу ставится на чистую машину раннера, программа запускается из установленной папки и удаляется (`windows_install_check.ps1`).
+  Замеры (установка, первый запуск с пустым кэшем, второй запуск, выгрузки, удаление) — на странице запуска, раздел Summary.
+- При ручном запуске можно выбрать, что собрать: `windows`, `macos` или `both` (по умолчанию обе; минуты macOS дороже).
 - Шагов подписи кода и нотаризации macOS в workflow нет.
 
 | Результат | Файл | Где появляется |
@@ -51,6 +56,12 @@ pyinstaller --noconfirm --clean packaging/grado2.spec
 ```
 
 Без `/DMyAppVersion` в `.iss` останется значение по умолчанию, которое не совпадает с `apps/grado2/web/version.json`.
+
+Проверка программы, уже запущенной на тестовом порту (не на рабочем 8650):
+
+```
+python packaging/installed_check.py --url http://127.0.0.1:8651 --portals
+```
 
 Образ macOS, после сборки на Mac:
 
