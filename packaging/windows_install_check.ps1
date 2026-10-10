@@ -33,7 +33,7 @@ Say "Установилась за $([math]::Round($t.Elapsed.TotalSeconds, 1)) 
 Say ""
 
 # 2. первый запуск установленной программы (пустой кэш), проверки как у градостроителя, затем второй запуск
-$env:GRADO2_NO_BROWSER = "1"; $env:GRADO2_NO_DIALOG = "1"; $env:GRADO2_PORT = "$Port"
+$env:PYTHONUTF8 = "1"; $env:GRADO2_NO_BROWSER = "1"; $env:GRADO2_NO_DIALOG = "1"; $env:GRADO2_PORT = "$Port"
 $env:GRADO2_PROJECTS = Join-Path $env:RUNNER_TEMP "grado2-projects"
 $url = "http://127.0.0.1:$Port"
 foreach ($run in "Первый запуск (пустой кэш)", "Второй запуск") {

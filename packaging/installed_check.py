@@ -139,6 +139,8 @@ def main(argv=None):
     ap.add_argument("--portals", action="store_true", help="also download a small area from the portals (not required to pass)")
     ap.add_argument("--report", default="")
     a = ap.parse_args(argv)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")     # консоль Windows — cp1252, русский текст таблицы иначе падает
     base = a.url.rstrip("/")
     rows, failed = [], False
     if a.wait:
