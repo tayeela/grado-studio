@@ -1,6 +1,7 @@
 <!-- ГРАДО 2 · окно «Таблица атрибутов» нового интерфейса на Tabulator (карта ядер): объекты текущего слоя, сортировка
      щелчком по заголовку, поиск по всем полям, «только выбранные», правка ячейки двойным щелчком, щелчок по строке —
-     выбор и приближение (Shift — добавить к выбору), как web/layers.js renderTable. Тысячи строк — виртуальной прокруткой. -->
+     выбор и приближение (Shift — добавить к выбору), как web/layers.js renderTable. Тысячи строк — виртуальной прокруткой.
+     С клавиатуры — одна остановка Tab, стрелки, Enter; диктор читает строку (#30). -->
 <template>
   <div class="pane tbl">
     <div class="bar">
@@ -8,7 +9,8 @@
       <wa-input size="s" placeholder="Поиск по полям" with-clear :value="q" @input="e => (q = e.target.value)"></wa-input>
       <wa-checkbox size="s" :checked="selOnly" @change="e => (selOnly = e.target.checked)">только выбранные</wa-checkbox>
     </div>
-    <div ref="el" class="grid"></div>
+    <div ref="el" class="grid" @keydown.capture="onKey"></div>
+    <p class="sr-only" aria-live="polite">{{ said }}</p>
   </div>
 </template>
 
@@ -21,7 +23,7 @@ import { dataRev, mapApi } from "../edit.js";
 import { plural } from "../geom.js";
 import { featureOf, fieldsOfFeatures, indexOf, sel, setAttr, setSel, toggleSel } from "../features.js";
 
-const el = ref(null), q = ref(""), selOnly = ref(false);
+const el = ref(null), q = ref(""), selOnly = ref(false), said = ref("");
 let table = null, ready = false, shownKey = "", shownFc = null, shownCols = "";
 
 const fc = computed(() => (dataRev.value, project.data[current.value?.key]?.fc));
@@ -66,20 +68,53 @@ onMounted(() => {
   table = new Tabulator(el.value, {
     height: "100%", layout: "fitDataStretch", editTriggerEvent: "dblclick", nestedFieldSeparator: false, selectableRows: false, columnDefaults: { maxWidth: 360 },
     placeholder: "Нет объектов", data: [], columns: columns([]),
-    rowFormatter: r => r.getElement().classList.toggle("sel", sel.some(s => s.key === current.value?.key && s.uid === r.getData()._uid)),
+    rowFormatter: r => {
+      r.getElement().classList.toggle("sel", sel.some(s => s.key === current.value?.key && s.uid === r.getData()._uid));
+      r.getElement().classList.toggle("kcur", r.getData()._uid === curUid);
+      for (const c of r.getCells()) c.getElement().tabIndex = -1;      // ячейки — не остановки Tab: таблица — одна остановка (#30)
+    },
   });
   table.on("tableBuilt", () => { ready = true; refresh(); });
-  table.on("rowClick", (e, r) => {
-    const key = current.value?.key, uid = r.getData()._uid; if (!key) return;
-    if (e.shiftKey || e.metaKey || e.ctrlKey) return toggleSel({ key, uid });
-    setSel([{ key, uid }]); mapApi.fitFeature(featureOf(key, uid));
-  });
+  table.on("rowClick", (e, r) => pick(r, e.shiftKey || e.metaKey || e.ctrlKey));
   table.on("cellEdited", c => {
     const key = current.value?.key, k = c.getField(), v = c.getValue();
     if (!key || String(v ?? "") === String(c.getOldValue() ?? "")) return;
     setAttr([{ key, uid: c.getRow().getData()._uid }], k, String(v ?? ""));
   });
 });
+/* щелчок или Enter по строке — выбор объекта и приближение к нему; с Shift (Ctrl, ⌘) — добавить к выбору или убрать */
+function pick(r, add) {
+  const key = current.value?.key, uid = r.getData()._uid; if (!key) return;
+  if (add) return toggleSel({ key, uid });
+  setSel([{ key, uid }]); mapApi.fitFeature(featureOf(key, uid));
+}
+
+/* Клавиатура и экранный диктор (#30, аудит 07.10.2026: объекты карты недоступны без мыши). Таблица — одна остановка Tab;
+   стрелки ↑↓ — строка (Home/End — первая и последняя), Enter — выбрать объект и приблизить карту, Shift+Enter или Пробел —
+   добавить к выбору. Диктор читает номер строки и первые поля объекта. */
+let curUid = null;
+function onKey(e) {
+  if (!ready || e.target.closest?.("input, textarea, select") || e.altKey || e.metaKey || e.ctrlKey) return;
+  const rows = table.getRows("active"); if (!rows.length) return;
+  let i = rows.findIndex(r => r.getData()._uid === curUid);
+  if (e.key === "ArrowDown") i = i < 0 ? 0 : Math.min(rows.length - 1, i + 1);
+  else if (e.key === "ArrowUp") i = i < 0 ? 0 : Math.max(0, i - 1);
+  else if (e.key === "Home") i = 0;
+  else if (e.key === "End") i = rows.length - 1;
+  else if ((e.key === "Enter" || e.key === " ") && i >= 0) { e.preventDefault(); e.stopPropagation(); pick(rows[i], e.shiftKey || e.key === " "); speak(rows[i], i, rows.length, true); return; }
+  else return;
+  e.preventDefault(); e.stopPropagation();
+  const prev = table.getRows().find(r => r.getData()._uid === curUid);
+  curUid = rows[i].getData()._uid;
+  prev?.getElement().classList.remove("kcur");
+  rows[i].getElement().classList.add("kcur");
+  table.scrollToRow(rows[i], "nearest", false);
+  speak(rows[i], i, rows.length);
+}
+function speak(r, i, n, picked) {
+  const d = r.getData(), f = Object.keys(d).filter(k => k[0] !== "_").slice(0, 4).map(k => `${k}: ${d[k] ?? "—"}`).join(", ");
+  said.value = `${picked ? "Выбран объект. " : ""}Строка ${i + 1} из ${n}. ${f}`;
+}
 onBeforeUnmount(() => { ready = false; table?.destroy(); });
 watch([() => current.value?.key, fc], refresh);
 watch(sel, () => { mark(); if (selOnly.value) applyFilter(); });
@@ -100,6 +135,8 @@ watch([q, selOnly], () => ready && applyFilter());
 .tbl .tabulator-row.tabulator-row-even { background: color-mix(in srgb, var(--g-bar) 50%, var(--wa-color-surface-default)); }
 .tbl .tabulator-row:hover { background: var(--wa-color-neutral-fill-quiet) !important; }
 .tbl .tabulator-row.sel { background: var(--wa-color-brand-fill-quiet) !important; }
+.tbl .tabulator-row.kcur { box-shadow: inset 2px 0 0 var(--wa-color-focus), inset 0 0 0 1px var(--wa-color-focus); }   /* строка под курсором клавиатуры */
+.tbl .tabulator-tableholder:focus-visible { outline: 2px solid var(--wa-color-focus); outline-offset: -2px; }
 .tbl .tabulator-row .tabulator-cell { border-color: var(--g-line); }
 .tbl .tabulator-cell.rn { color: var(--g-muted); font-variant-numeric: tabular-nums; }
 .tbl .tabulator-cell.rn .ed { color: var(--wa-color-brand-on-quiet); margin-left: 2px; cursor: help; }
