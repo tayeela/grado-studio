@@ -103,10 +103,12 @@ try {
     }
     await page.locator("wa-dialog.picker wa-button[slot=footer]", { hasText: "Загрузить в проект" }).click();
     await wait(() => document.querySelector(".job.fin"), null, 40 * 60000);
+    const all = page.locator(".job wa-button.all"); if (await all.count()) { await all.click(); await page.waitForTimeout(300); }   // готовые слои список прячет
+    const head = await page.evaluate(() => [document.querySelector(".job .jh b")?.textContent.trim(), document.querySelector(".job .jh .t")?.textContent.trim()].join(", "));
     const items = await page.evaluate(() => [...document.querySelectorAll(".job .jl li")].map(li => [li.className, li.querySelector(".nm")?.textContent.trim(), li.querySelector(".dt")?.textContent.trim(), li.querySelector(".sub")?.textContent.trim() || ""]));
     rows.layers = items;
     const bad = items.filter(i => /error/.test(i[0])).length, empty = items.filter(i => /empty/.test(i[0])).length;
-    return `слоёв ${items.length}: с объектами ${items.length - bad - empty}, пустых ${empty}, ошибок ${bad}`;
+    return `${head}; в списке ${items.length}: с объектами ${items.length - bad - empty}, пустых ${empty}, ошибок ${bad}`;
   });
   await step("Рассчитать ограничения", async () => {
     await showWin("Ограничения"); await winButton("Ограничения", "Рассчитать ограничения").click();
@@ -131,14 +133,32 @@ try {
     await page.locator("header.top wa-button", { hasText: "Листы и альбом" }).click(); await page.waitForTimeout(2500);
     await page.locator("wa-button[slot=trigger]", { hasText: "Собрать" }).first().click();
     await page.locator("wa-dropdown-item[value=pptkrt]").first().click();
-    await wait(() => !/Собираю|Собираю альбом/.test(document.body.innerText) && document.querySelectorAll(".album .sheet, .album li, .sheets li").length > 0, null, 15 * 60000).catch(() => {});
-    await page.waitForTimeout(3000);
-    return (await page.evaluate(() => document.body.innerText.match(/\d+ лист\S*/)?.[0])) || "";
+    // ход сборки — строка «Лист 3 из 11: … загрузка …» с кнопкой «Остановить»; листы сами докачивают данные порталов.
+    // Готово — заголовок «Альбом: 11 листов · собран …»; между этапами «Остановить» пропадает на миг, поэтому «листов нет»
+    // считается провалом только после минуты тишины
+    const albumText = () => winText("Листы и альбом");
+    let idle = 0, seen = false; const t0 = Date.now();
+    for (;;) {
+      const t = await albumText(), head = t.split("\n")[0];
+      if (/Остановить/.test(t)) seen = true;
+      if (/Альбом: \d+ лист/.test(head) && !/Остановить/.test(t) && (seen || Date.now() - t0 > 30000)) return head;
+      idle = /Остановить/.test(t) ? 0 : idle + 1;
+      if (idle > 60 && /листов нет/.test(t)) throw new Error("листы не появились: " + t.split("\n").slice(0, 4).join(" · "));
+      if (Date.now() - t0 > 90 * 60000) throw new Error("сборка дольше 90 мин: " + head);
+      await page.waitForTimeout(1000);
+    }
   });
   await step("Альбом в PDF", async () => {
-    const [dl] = await Promise.all([page.waitForEvent("download", { timeout: 20 * 60000 }), (async () => {
-      await page.locator(".dv-content-container wa-button", { hasText: /^\s*PDF\s*$/ }).first().click(); await page.waitForTimeout(1500);
-      const go = page.locator("wa-button", { hasText: "Выгрузить всё равно" }).first(); if (await go.count()) await go.click(); })()]);
+    const pane = page.locator(".dv-groupview", { has: page.locator(".dv-tab", { hasText: "Листы и альбом" }) }).locator(".dv-content-container");
+    if (!/Альбом: \d+ лист/.test(await pane.innerText())) throw new Error("альбом не собран, PDF не выгружается");
+    const dlp = page.waitForEvent("download", { timeout: 30 * 60000 });
+    await pane.locator("wa-button", { hasText: /^\s*PDF\s*$/ }).first().click();
+    // «не всё готово» появляется после проверки листов — ждём либо его, либо ход выгрузки
+    const go = pane.locator("wa-button", { hasText: "Выгрузить всё равно" });
+    await go.waitFor({ timeout: 30000 }).then(() => go.click()).catch(() => {});
+    // ход печати «PDF: лист 3 из 11 · 12 с» — в журнал раз в минуту, чтобы долгая выгрузка не выглядела зависшей
+    const tick = setInterval(() => winText("Листы и альбом").then(t => console.log("   " + t.split("\n").slice(0, 2).join(" · "))).catch(() => {}), 60000);
+    const dl = await dlp.finally(() => clearInterval(tick));
     await dl.saveAs(join(OUT, "альбом.pdf")); return `альбом.pdf, ${Math.round(readFileSync(join(OUT, "альбом.pdf")).length / 1024)} КБ`;
   });
   await step("Выгрузка DXF", () => save("dxf", "чертёж-dxf.zip"), { shot: false });
