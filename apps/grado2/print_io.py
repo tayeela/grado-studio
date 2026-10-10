@@ -10,6 +10,7 @@
 import base64
 import math
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -893,8 +894,8 @@ class SketchMapFrame(Frame):
                                 "stroke": None, "width": 0, "dash": None})
                 continue
             spans.append((layer, len(out)))
-            out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             lkey = layer.get("key") or ""
+            out.append({"op": "layer", "name": layer.get("title") or "Слой", **({"key": lkey} if lkey else {})})   # ключ — самопроверке (label_qa)
             # флаг «obstacle» у слоя спецификации листа пока никто не ставит: это крючок для подписей, которые не должны
             # пересекать линии других слоёв (задачи #55 и #59); оставлен намеренно (#51, пункт 5)
             obst = lkey == "yandex.rail" or layer.get("title") == "Граница района" or layer.get("obstacle")
@@ -2077,7 +2078,23 @@ def _pages(spec, lib, lgr_dash, tiles, progress=None):
     if progress:
         progress(n, n)
     from album_io import typo_ops
-    return [(w, h, typo_ops(apply_edits(ops, sh))) for (w, h, ops), sh in zip(pages, spec["sheets"])]   # типографика — #60
+    out = [(w, h, typo_ops(apply_edits(ops, sh))) for (w, h, ops), sh in zip(pages, spec["sheets"])]   # типографика — #60
+    layout_qa(spec, out)
+    return out
+
+
+def layout_qa(spec, pages):
+    """Самопроверка оформления (#55): места на листах — в sheet["_labelQA"] (как _notReady; сервер отдаёт их заголовком).
+    Сбой проверки печать не останавливает: лист без отчёта лучше, чем без PDF."""
+    import label_qa
+    for sh, (_w, _h, ops) in zip(spec.get("sheets") or [], pages):
+        if not isinstance(sh, dict):
+            continue
+        try:
+            sh["_labelQA"] = [label_qa.phrase(r) for r in label_qa.page_conflicts(ops)]
+        except Exception as e:                                          # noqa: BLE001 — отчёт, не печать
+            sh["_labelQA"] = []
+            sys.stderr.write(f"[label_qa] {e.__class__.__name__}: {e}\n")
 
 
 def render_pdf(spec, lib, lgr_dash, tiles=None, progress=None):
