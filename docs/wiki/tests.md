@@ -19,7 +19,7 @@
 | `test_gpzones_js.py` | GpZonesJs | 1 |
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
-| `test_label_qa.py` | LabelQA | 7 |
+| `test_label_qa.py` | LabelQA | 6 |
 | `test_labelfmt_js.py` | LabelFmtJs | 1 |
 | `test_layout_io.py` | LayoutPrint, LayoutsInProject | 13 |
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
