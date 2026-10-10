@@ -35,6 +35,11 @@ agent briefs come from `docs/team/prompts/` and cite wiki pages instead of pasti
 RULE: A feature that reads portal data is checked on one live (cached) object before it is accepted: unit tests on
 fake data passed for T82 while the real Yandex points carry the name in «Название», not `name`, and no icon was drawn.
 
+- 10.10.2026, выкладка по слову владельца («сливай и выкладывай все») — v0.99.78 (PR #99 `team/t60 → main`, слияние 63141ca): PR #93 —
+  шаблон задания по образцу ТЗ, «Листы и альбом» вкладкой (#94 фаза 1), правки по снимку, `hub.js` без ТЭП после выхода. Проверено: `E2E=1 tools/gate.sh`
+  зелёный (ui-шаги — в CI), CI PR #99 зелёный. Уборка: закрыт черновик PR #34 (ветка цела), задачи #21 #24 #44 #69 #73; остаток #69 — #98.
+  Сайт из облака не проверялся (401).
+
 - 10.10.2026, выкладка по слову владельца («выкладывай») — v0.99.77 (PR #96 `team/t60 → main`, слияние bf729a4): окно «Свойства» (PR #95) —
   в узком окне подпись над полем (`@container` на `.pane`), разделы «Оформление / Подписи / Слой», глаз в шапке; значок слоя рисуется стилем карты
   (`LayerSwatch.vue`, `symbolStyle`); в `tools/ui_layout_check.mjs` шаг «узкое окно Свойства» 190 px. Проверено: `E2E=1 tools/gate.sh` зелёный,
