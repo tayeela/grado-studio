@@ -52,7 +52,7 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
 - Ready libraries over hand-written code, rare exceptions (owner 08.10.2026, #69); which engine replaces which part — `docs/product/engine-map.md`
   (UI: Vue 3 + dockview + Web Awesome with a Vite build; sheet editor: own on Konva; check it before writing a mechanism): a new dependency needs wheels for
   macOS arm64 and x86_64 and Windows, a permissive license, a line in requirements and the same gate. Do not touch the owner's QGIS DB or plugin. Ask before deleting
-  `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, no parallel downloads, ≤ 3 retries.
+  `~/.grado2/cache`. Portals (ГИС ОГД, ЕГКО, НСПД, Yandex, Overpass): pauses, never one portal from two places at once (parallel layers inside one job are fine), ≤ 3 retries (owner 10.10.2026, #51).
 - Token budget: no Workflow fan-outs; outside the team cycle at most one Sonnet subagent at a time, read-only. Owner 07.10.2026: many
   parallel Haiku 5.5 agents are allowed for mechanical work (audits, headers, moving files); each on its own files, the lead reviews the result.
 - Scripts started from git hooks must unset `GIT_DIR`/`GIT_INDEX_FILE` before running git elsewhere (RULE, 06.10.2026).
@@ -63,7 +63,7 @@ Asking the owner to do something on the Mac — always give the exact Terminal c
 2. ЛГР styles (`core/render/grado_render/styles/*.json`) are generated: edit `tools/gen_*.py` and regenerate.
 3. Coordinates: «МСК (как в QGIS)» and «система ГИС ОГД» on one datum; МСК = ОГД − `OGD_SHIFT`. Everything shown,
    typed or exported is МСК. Do not discuss or «calibrate» this scheme.
-4. Server error messages are ASCII only. Outgoing HTTPS from python.org Python needs `SSLContext(cafile=certifi.where())`;
+4. Server HTTP headers are ASCII only; error text in the JSON body is Russian (owner 10.10.2026, #51). Outgoing HTTPS from python.org Python needs `SSLContext(cafile=certifi.where())`;
    НСПД needs the Минцифры root CA in `~/.grado2/ca/` (or `GRADO_NSPD_CA`); never disable verification.
 5. Route by layer id, never by the first layer of a kind.
 6. Verify visual claims with a screenshot, not DOM numbers; verify signs against the owner's reference picture; album

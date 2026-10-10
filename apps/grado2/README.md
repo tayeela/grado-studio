@@ -17,7 +17,7 @@
 | `dxf_io.py` | DXF: экспорт в МСК с типами линий REDLN97 и импорт обратно; DWG через ODA File Converter | `server.py`, `file_io.py`, `sat_io.py`, `ogd_all.py`, `tests/test_dxf.py` |
 | `sat_io.py` | спутник Яндекса по рамке листа, пересчитанный в МСК для AutoCAD | `server.py`, `tests/test_sat.py` |
 | `ogd_all.py` | «Всё из ГИС ОГД в DWG»: все слои портала по области одним чертежом, с кэшем на диске | `server.py`, `ogd_warm.py`, `tests/test_ogd_all.py` |
-| `ogd_warm.py` | прогрев кэша ГИС ОГД; по docstring запускается таймером `grado-warm` ночью или вручную | `ogd_all.py`; файла таймера в репозитории нет |
+| `ogd_warm.py` | прогрев кэша ГИС ОГД; запускается таймером `grado-warm` на msk ночью в 00:30 UTC или вручную | `ogd_all.py`; службы — `tools/server_pull/grado-warm.*` |
 | `rail_icons.py` | значки метро, МЦК и МЦД для листов альбома: векторные контуры | `album_io.py`, `print_io.py`, `tests/test_t82_rail_icons.py` |
 | `requirements.txt` | зависимости Python: ezdxf, certifi, Pillow, shapely, httpx, tenacity, ReportLab, python-pptx, Starlette, uvicorn, pydantic | `ГРАДО 2.command`, `ГРАДО 2.bat`, `.github/workflows/grado2-release.yml` |
 | `requirements-dev.txt` | только для проверок: pytest | `tools/gate.sh`, `.claude/hooks/session-start.sh`, CI |
