@@ -123,6 +123,7 @@
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="busy" @click="preview"><Eye :size="14" /> Просмотр</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy" title="PDF только этого листа" @click="file('pdf', cur)"><FileDown :size="14" /> PDF листа</wa-button>
+        <wa-button v-if="sel.kind !== 'tep'" size="s" appearance="outlined" data-act="lay" title="Двигать, выравнивать и править надписи листа — окно «Макет надписей»" @click="openLay"><Type :size="14" /> Надписи</wa-button>
         <wa-button size="s" appearance="plain" :disabled="viewer || cur === 0" title="Выше" aria-label="Выше" @click="up"><ArrowUp :size="14" /></wa-button>
         <wa-button size="s" appearance="plain" :disabled="viewer" title="Удалить лист" aria-label="Удалить лист" @click="askDrop = true"><Trash2 :size="14" /></wa-button>
       </div>
@@ -160,11 +161,11 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowUp, CircleAlert, ExternalLink, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, WandSparkles } from "@lucide/vue";
+import { ArrowUp, CircleAlert, ExternalLink, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, Type, WandSparkles } from "@lucide/vue";
 import { album, call, engineState, openAlbum, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
-import { project } from "../store.js";
+import { project, winApi } from "../store.js";
 
 const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
 /* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */
@@ -236,6 +237,9 @@ function setLook(k, v) {
   if (!v || v === "base" || (k === "waterColor" && v.toLowerCase() === WATER)) delete a.meta[k]; else a.meta[k] = k === "waterColor" ? v.toLowerCase() : v;
   img.id = null; edited();
 }
+/* «Надписи» — окно «Макет надписей» (AlbumLayout.vue) для выбранного листа */
+function openLay() { album.lay = cur.value; album.layTick++; winApi.open("albumlay"); }
+
 /* «Слои листа»: роли выбранного листа от движка (окно «Слои и листы»); перечитываются при смене листа и после правок */
 let rolesFor = null;
 async function loadRoles() {

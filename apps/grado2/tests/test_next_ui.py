@@ -224,6 +224,22 @@ class NextUi(unittest.TestCase):
         for k in ("a.roles(i)", "a.role(cur.value, r.id)", "a.resetRole(cur.value, r.id)"):
             self.assertIn(k, panel)
 
+    def test_album_label_layout_window(self):
+        # «Макет надписей» (шаг 2 фаза 2): лист — картинка печати по запросу движка (albumApi.spec), правки — в лист альбома
+        # (edits, items, layGuides) через editSheet; направляющие переживают пересборку листа по шаблону (sheets.js carryHand)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        self.assertIn("spec(i) {", (web / "albumapi.js").read_text(encoding="utf-8"))
+        self.assertIn("if (old.layGuides) fresh.layGuides = old.layGuides;", (web / "sheets.js").read_text(encoding="utf-8"))
+        lay = (src / "panels" / "AlbumLayout.vue").read_text(encoding="utf-8")
+        for k in ("a.spec(idx.value)", "/api/print/svg", "Snap.snap(", "editSheet(idx.value, patch)", "layGuides", "function alignSel"):
+            self.assertIn(k, lay)
+        self.assertIn('.component("albumlay", AlbumLayout)', (src / "main.js").read_text(encoding="utf-8"))
+        self.assertIn('{ id: "albumlay", title: "Макет надписей" }', (src / "App.vue").read_text(encoding="utf-8"))
+        self.assertIn('winApi.open("albumlay")', (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8"))
+        host = (src / "albumhost.js").read_text(encoding="utf-8")
+        # правка листа сначала принимает отложенную правку окна: иначе pull() заменит раздел album и унесёт её
+        self.assertRegex(host, r"export function editSheet\(i, patch\) \{\s*//[^\n]*\n\s*if \(timer\) \{ clearTimeout\(timer\); timer = null; pull\(\); \}")
+
     def test_floating_windows_follow_the_mouse(self):
         # плавающее окно идёт ровно за мышью, угол не сдвигает край (docs/ux/ui-grid.md): заплатка dockview ставится при npm ci
         # и попадает в сборку; без неё окно отставало на первое движение мыши (владелец 09.10.2026: «окна перемещаются криво»)
