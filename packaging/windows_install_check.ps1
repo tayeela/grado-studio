@@ -41,7 +41,8 @@ foreach ($run in "Первый запуск (пустой кэш)", "Второ�
   Say ""
   $app = Start-Process -FilePath $exe -PassThru
   try {
-    $extra = if ($run -like "Первый*") { @("--portals") } else { @() }
+    [string[]]$extra = @()                         # массив, а не строка: иначе @extra раскладывается по буквам
+    if ($run -like "Первый*") { $extra = @("--portals") }
     python packaging/installed_check.py --url $url --wait 90 --expect-version $Version --report $summary @extra
     if ($LASTEXITCODE -ne 0) {
       if (Test-Path (Join-Path $data "startup-error.log")) { Get-Content (Join-Path $data "startup-error.log") }
