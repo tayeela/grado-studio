@@ -88,7 +88,8 @@ import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, ref
 import Sortable from "sortablejs";
 import { ChevronDown, ChevronRight, Ellipsis, Eye, EyeOff, FolderPlus, ListOrdered, Plus } from "@lucide/vue";
 import { tidyLayers } from "../data.js";
-import { currentId, project, shown, swatchOf } from "../store.js";
+import { currentId, project, shown } from "../store.js";
+import LayerSwatch from "./LayerSwatch.vue";
 import { loadError, notice } from "../project.js";
 import {
   canRevert, copyStyle, groupKeys, grp, lyr, mapApi, moveLayer, newGroup, newLayer, pasteStyle, removeGroup, removeLayers,
@@ -104,12 +105,12 @@ const LayerRow = defineComponent({
   props: { l: Object },
   setup(props) {
     return () => {
-      const l = props.l, sw = swatchOf(l), ed = editing.value === "l:" + l.key;
+      const l = props.l, ed = editing.value === "l:" + l.key;
       const byGroup = l.visible && !shown(l);       // слой включён, но скрыт вместе с группой
       return [
         h("button", { class: "eye", title: byGroup ? "Слой не виден на карте: скрыта его группа" : l.visible ? "Скрыть слой" : "Показать слой", onClick: e => { e.stopPropagation(); l.visible = !l.visible; } },
           [h(l.visible ? Eye : EyeOff, { size: 15 })]),
-        h("span", { class: "sw " + sw.kind, style: { "--c": sw.c, "--e": sw.e } }),
+        h(LayerSwatch, { l, class: "sw" }),
         ed ? h("input", { class: "ren", value: l.title, onVnodeMounted: v => { v.el.focus(); v.el.select(); }, onClick: e => e.stopPropagation(),
           onKeydown: e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") editing.value = ""; },
           onBlur: e => finishRename("l", l.key, e.target.value) })
@@ -241,12 +242,8 @@ function groupCurrent() { if (currentId.value) editing.value = "g:" + newGroup([
 .layers .grp .more { margin-left: 0; }
 .layers .row:hover .more, .layers .grp:hover .more, .layers .row.cur .more, .layers .row:focus-within .more, .layers .grp:focus-within .more { opacity: 1; }
 .layers .eye:focus-visible, .layers .tw:focus-visible, .layers .more:focus-visible { outline: 2px solid var(--wa-color-focus); opacity: 1; }
-.layers .row.hid .eye, .layers .row.hid .sw { opacity: .4; }   /* группа скрыта — слои в ней приглушены */
-.layers .sw { width: 16px; height: 10px; flex: none; box-sizing: border-box; }
-.layers .sw.line { border-bottom: 2.5px solid var(--c); height: 6px; }
-.layers .sw.poly { background: color-mix(in srgb, var(--c) 45%, transparent); border: 1px solid var(--e); }
-.layers .sw.poly.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 1px, transparent 1px 4px); }
-.layers .sw.point { width: 10px; margin: 0 3px; border-radius: 50%; background: var(--c); border: 1px solid var(--e); }
+.layers .row.hid .eye { opacity: .4; }
+.layers .row.hid .sw { filter: opacity(.4); }   /* opacity самого образца — прозрачность слоя */   /* группа скрыта — слои в ней приглушены */
 .layers .name, .layers .gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layers .name.off { color: var(--g-muted); }
 .layers .ren { flex: 1; min-width: 0; font: inherit; padding: 1px 4px; border: 1px solid var(--wa-color-brand-fill-loud); border-radius: 3px; background: var(--wa-color-surface-default); color: inherit; }
