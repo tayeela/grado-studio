@@ -646,7 +646,7 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `step`
 
-### `tools/prune-merged-branches.sh` — 23 стр.
+### `tools/prune-merged-branches.sh` — 24 стр.
 
 Показывает (и по флагу --yes удаляет на GitHub) ветки, целиком влитые в main или в team/t60: их коммиты остаются в истории, ничего не теряется. Не трогает main, team/t60 и ветки открытых PR. По умолчанию — только список (SHA рядом: ветку можно вернуть командой `git push origin <sha>:refs/heads/<имя>`). tools/prune-merged-branches.sh          — список tools/prune-merged-branches.sh --yes    — удалить перечисленные ветки Лучше включить и встроенную очистку GitHub: Settings → General → Pull Requests → «Automatically delete head branches».
 
