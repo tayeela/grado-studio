@@ -6,7 +6,15 @@
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
      поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
      совместной работы — hubmap.js. -->
-<template><div class="mapbox"><div ref="el" class="map"></div><MapSearch v-if="mref" :map="mref" /></div></template>
+<template><div class="mapbox">
+  <!-- карта — одна остановка Tab: стрелки двигают, «+» и «−» меняют масштаб (клавиши OpenLayers); объекты слоя доступны
+       списком в «Таблице атрибутов» (#30) -->
+  <div ref="el" class="map" tabindex="0" role="application" aria-roledescription="карта"
+       aria-label="Карта. Стрелки — сдвиг, плюс и минус — масштаб. Объекты текущего слоя списком — в окне «Таблица атрибутов»"></div>
+  <!-- «Только карта» под кнопками масштаба (#26): остальные окна прячутся, повтор — возвращает -->
+  <div class="ol-control maponly"><button type="button" :title="mapOnly ? 'Вернуть окна (Ctrl+\\ или Esc)' : 'Только карта: спрятать остальные окна (Ctrl+\\)'"
+       :aria-pressed="mapOnly" @click="winApi.mapOnly()"><Minimize2 v-if="mapOnly" :size="14" /><Maximize2 v-else :size="14" /></button></div>
+  <MapSearch v-if="mref" :map="mref" /></div></template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue";
@@ -21,7 +29,8 @@ import DragBox from "ol/interaction/DragBox.js";
 import { shiftKeyOnly } from "ol/events/condition.js";
 import { Circle as CircleStyle, Fill, Stroke, Style } from "ol/style.js";
 import { fromLonLat, toLonLat } from "ol/proj.js";
-import { basemapId, cursor, project, scale, theme, viewNow } from "../store.js";
+import { basemapId, cursor, mapOnly, project, scale, theme, viewNow, winApi } from "../store.js";
+import { Maximize2, Minimize2 } from "@lucide/vue";
 import { dataRev, mapApi } from "../edit.js";
 import { mskOf, sel, selected, setSel, toggleSel } from "../features.js";
 import { loadLibs, scaleDen } from "../symbology.js";
@@ -207,5 +216,7 @@ onBeforeUnmount(() => { offCad?.(); offHub?.(); ro?.disconnect(); map?.setTarget
 .mapbox { position: relative; width: 100%; height: 100%; }
 .map { position: relative; width: 100%; height: 100%; background: var(--g-canvas); }
 .map.cmode { cursor: crosshair; }
+.mapbox .maponly { position: absolute; top: calc(.5em + 56px); right: .5em; }
+.mapbox .maponly button { width: 24px; height: 24px; display: grid; place-items: center; }
 .map.dropfile { outline: 3px dashed var(--wa-color-brand-border-loud); outline-offset: -6px; }
 </style>

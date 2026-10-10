@@ -61,7 +61,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2483 стр.
+### `apps/grado2/print_io.py` — 2485 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
@@ -81,7 +81,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2850 стр.
+### `apps/grado2/server.py` — 2856 стр.
 
 ГРАДО 2: локальный сервер.
 
@@ -120,7 +120,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2426 стр.
+### `apps/grado2/web/app.js` — 2429 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
@@ -667,11 +667,11 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 
 Функции: `sleep`, `cmd`
 
-### `tools/ui_layout_check.mjs` — 307 стр.
+### `tools/ui_layout_check.mjs` — 352 стр.
 
 ГРАДО 2 · автоматическая проверка раскладки нового интерфейса (/next/) по своду docs/ux/ui-grid.md: запускает тестовый сервер на копии apps/grado2/tests/fixtures/next_ui_project.grado2, открывает каждое окно в Chrome (полосы прокрутки видны, как на Mac с мышью) на 1280 × 800 и 1920 × 1080 в светлой и тёмной теме и ищет то, на что жаловался владелец 09.10.2026: полосы прокрутки по ширине и вложенные, поля и кнопки за краем окна, текст, обрезанный без многоточия, поля не в одну колонку, прыжки шапки, ленты и строки состояния, мелкие цели для мыши, мелкий и моноширинный шрифт. Запуск: CHROME=… no…
 
-Функции: `arg`, `measure`, `interact`, `chrome`, `main`
+Функции: `arg`, `tag0`, `measure`, `keyboard`, `innerWidthOf`, `interact`, `chrome`, `main`
 
 ### `tools/wiki_albums.mjs` — 42 стр.
 

@@ -944,9 +944,10 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
                 SOURCES[k] = ("gisogd", {it["code"]: None}, f"{it['name']} (ОГД)")
             elif (twin := next((x for x in SOURCES if x != k and source_ogd_code(x) == k[4:]), None)):
                 SOURCES[k] = ("gisogd", {k[4:]: None}, SOURCES[twin][2])      # каталог не ответил — тот же слой по названию подборки
+    # ключ, которого нет ни в SOURCES, ни в каталоге ГИС ОГД, раньше пропадал молча: ни слоя, ни ошибки (#51, пункт 2)
+    layers, errors = {}, {k: "нет такого источника данных" for k in keys if k not in SOURCES}
     keys = [k for k in keys if k in SOURCES]
     area = bbox_km2(bbox)
-    layers, errors = {}, {}
     if territory and area > LIMIT_KM2["osm"]:
         capped = [k for k in keys if SOURCES[k][0] in TILE_CAPPED]
         tb = territory_bbox(territory, margin_m)
@@ -1115,6 +1116,11 @@ def fetch(bbox, keys, territory=None, margin_m=DATA_MARGIN_M):
         ([(by("yandex"), lambda: run_yandex(by("yandex")))] if by("yandex") else []) + \
         ([(by("yandex_sit"), lambda: run_yandex(by("yandex_sit"), SIT_ZOOM, 1))] if by("yandex_sit") else []) + \
         [(ks, lambda ks=ks: run_split(ks)) for ks in ([k for k in split if SOURCES[k][0] == kind] for kind in TILE_KM2) if ks]
+    # вид источника без задания выгрузки (новый вид в SOURCES, не добавленный в jobs) — тоже ошибка слоя, а не тишина
+    planned = {k for ks, _ in jobs for k in ks}
+    for k in keys:
+        if k not in planned and k not in layers:
+            errors.setdefault(k, "для этого вида источника нет выгрузки")
     if not jobs:
         return layers, errors
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:

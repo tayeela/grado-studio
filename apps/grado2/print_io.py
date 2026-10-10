@@ -895,6 +895,8 @@ class SketchMapFrame(Frame):
             spans.append((layer, len(out)))
             out.append({"op": "layer", "name": layer.get("title") or "Слой"})
             lkey = layer.get("key") or ""
+            # флаг «obstacle» у слоя спецификации листа пока никто не ставит: это крючок для подписей, которые не должны
+            # пересекать линии других слоёв (задачи #55 и #59); оставлен намеренно (#51, пункт 5)
             obst = lkey == "yandex.rail" or layer.get("title") == "Граница района" or layer.get("obstacle")
             for f in layer.get("features", []):
                 if isinstance(f.get("label"), str) and ('"' in f["label"] or "\u201c" in f["label"]):
