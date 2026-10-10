@@ -2,7 +2,7 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
-- **2026-10-09, ГРАДО 2 v0.99.76: правки по снимку владельца — шапка, окно «Данные», командная строка, список листов.**
+- **2026-10-10, ГРАДО 2 v0.99.78: правки по снимку владельца — шапка, окно «Данные», командная строка, список листов.**
   - Шапка: «Проект», «Окна», «Выгрузка» и «Листы и альбом» — без стрелок, тем же кеглем, что «ГРАДО 2» и название проекта,
     текст всей строки стоит на одной линии; отступы ровные.
   - Лента: «Оформление» — только значком (подпись в подсказке), группа «Рисование» больше не разъезжается.
@@ -12,10 +12,10 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
   - Карта: подсказка «Команда:» без команды не висит — строка появляется, когда команда идёт, и на 8 секунд после сообщения
     (владелец зачеркнул её на снимке; прежний ответ «всегда видна» отменён).
   - «Листы и альбом»: название листа в списке целиком, длинное — в две строки; номер, формат и масштаб стоят на линии первой строки названия.
-  - Проверка совместной работы в браузере (`tests/e2e/collab_scenarios.mjs`) больше не падает от ответа 401 на пересчёт ТЭП,
-    отправленный до повторного входа: такие ответы допускаются, пока поток событий не восстановился.
+  - Совместный режим: после «Выйти» и пока висит «Вход закончился» страница не шлёт пересчёт ТЭП на сервер (`web/hub.js`):
+    раньше между выходом и перезагрузкой успевал уйти запрос с ответом 401, и проверка совместной работы изредка падала.
 
-- **2026-10-09, ГРАДО 2 v0.99.75: «Листы и альбом» — вкладка нового интерфейса, без отдельного окна браузера (шаг 2 плана, фаза 1, #94).**
+- **2026-10-10, ГРАДО 2 v0.99.78: «Листы и альбом» — вкладка нового интерфейса, без отдельного окна браузера (шаг 2 плана, фаза 1, #94).**
   - Кнопка «Листы и альбом» в шапке (и Ctrl+P) открывает вкладку справа от карты: строка альбома, «Добавить лист», «Собрать»
     (альбом ППТ КРТ, ситуационный план, раздел 1, «Обновить листы»), PDF и PPTX; штамп; список листов с форматом, масштабом и значком
     «не готов»; свойства листа (название, формат, масштаб, легенда, ТЭП), просмотр картинкой, PDF листа, выше, удалить.
@@ -35,6 +35,19 @@ New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into 
     спросить, не угадывать).
   - `.github/ISSUE_TEMPLATE/task.yml`: те же разделы, обязательны цель, проверка и результат; задача переносится в задание как есть.
 
+- **2026-10-10, ГРАДО 2 v0.99.77: new interface (/next/) — «Свойства» panel reworked, layer swatch matches the map (owner's screenshot 10.10.2026).**
+  - «Свойства» no longer breaks in a narrow window: below 280 px the label goes above the field and the field takes the full width
+    (`@container` on `.pane`, theme.css); a slider with its value and a number with its unit stay together; long list values end with «…».
+    Before, at ~180 px the labels overlapped the fields, «штриховка» and «Показывать на карте» were cut, the lists were empty boxes.
+  - Panel structure like the QGIS layer styling panel: header (swatch, name, type and count, eye instead of the switch at the bottom);
+    «Оформление» (method, classes, fill colour and fill opacity in one row, hatch as a list «нет / косая / сетка…» with step,
+    contour colour and width, line type «сплошная / штриховая / пунктир / штрихпунктир»); «Подписи» (field, colour, size);
+    «Слой» (layer opacity, scale visibility, role). Contour colour of a hatched polygon shows what the map draws (hatch colour) and
+    becomes its own colour once changed.
+  - Layer swatch in «Слои», the «Свойства» header and the «Виды» legend is drawn by the map's own OpenLayers style (`LayerSwatch.vue`,
+    `symbolStyle` in symbology.js via `ol/render` toContext): fill opacity, hatch pattern and step, contour width, colour and dash,
+    layer opacity. Categories, ranges and rules show up to three first classes side by side.
+  - `tools/ui_layout_check.mjs` also narrows the right group to 190 px and checks «Свойства» (the old build gives 4 strict «outside» violations).
 - **2026-10-09, ГРАДО 2 v0.99.74: new interface (/next/) — floating windows follow the mouse, larger targets, readable «Схема расчёта», automatic layout check (step 1 of plans/plan-dalshe-2026-10-09.md).**
   - Floating windows: in dockview 8.4.1 a window lagged the cursor by the first mouse move (a quick grab left it 10–20 px behind), and
     the corner handle moved the opposite edge by 4–5 px. Fixed by a patch of dockview-core (`apps/grado2/ui/patches/`, applied by

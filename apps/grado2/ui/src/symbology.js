@@ -14,6 +14,8 @@ export const RAMPS = {
 };
 export const RAMP_TITLES = { blue: "синяя", brick: "кирпичная", green: "зелёная", grey: "серая" };
 export const HATCHES = { "45": "косая ／", "135": "косая ＼", "0": "горизонтальная", "90": "вертикальная", "x45": "косая сетка", "x0": "прямая сетка", "dots": "точки" };
+/* Тип линии контура и линейного слоя: штрих и пробел в пикселях экрана (поле dash стиля, как у web/layers.js). */
+export const DASHES = { solid: "сплошная", "6,4": "штриховая", "1.5,3": "пунктир", "8,3,1.5,3": "штрихпунктир" };
 export const OPS = ["=", "≠", ">", "<", "≥", "≤", "содержит"];
 export const DENS = [0, 1000, 2000, 2500, 5000, 10000, 25000];
 export const ramp = (n, k) => k === 1 ? [RAMPS[n][3]] : Array.from({ length: k }, (_, i) => RAMPS[n][Math.round(i * (RAMPS[n].length - 1) / Math.max(1, k - 1))]);
@@ -185,6 +187,35 @@ export const floorsDenOf = l => l.style?.floorsDen != null ? l.style.floorsDen :
 export const scaleDen = (res, lat) => Math.round(res * Math.cos(lat * Math.PI / 180) / 0.000264583 / 10) * 10;
 export const denToRes = (den, lat) => den * 0.000264583 / Math.cos(lat * Math.PI / 180);
 
+/* Цвет контура: у штриховки без своего цвета контура — цвет штриховки. Общий для карты, образца слоя и окна «Свойства». */
+export const edgeColor = (st, s) => s.hatch && !st.strokeOwn ? s.fill : st.stroke;
+/* Заливка: узор штриховки (своя светлая подложка, прозрачность заливки не действует) или цвет с прозрачностью заливки. */
+export const fillPaint = (st, s) => s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity);
+
+/* Стиль OpenLayers знака s ({ fill, hatch }) для вида геометрии g: point, line, pline (линия в слое полигонов), poly. */
+export function symbolStyle(st, s, g, clip) {
+  const edge = edgeColor(st, s), dash = st.dash?.length ? st.dash : undefined, fill = () => new Fill({ color: fillPaint(st, s) });
+  if (g === "line") return new Style({ stroke: new Stroke({ color: s.fill, width: st.width, lineCap: dash ? "butt" : "round", lineJoin: "round", lineDash: dash }) });
+  if (g === "pline") return new Style({ stroke: new Stroke({ color: edge, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round", lineDash: dash }) });
+  if (g === "point" && st.marker === false) return [];
+  if (g === "point") return new Style({ image: new Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new Fill({ color: s.fill }), stroke: new Stroke({ color: st.stroke, width: 1 }) }) });
+  if (clip) return [new Style({ fill: fill() }), new Style({ geometry: frameless, stroke: new Stroke({ color: edge, width: st.width, lineDash: dash }) })];
+  return new Style({ fill: fill(), stroke: st.width > 0 ? new Stroke({ color: edge, width: st.width, lineDash: dash }) : undefined });   // толщина 0 — без контура
+}
+
+/* Знаки для образца слоя (окно «Слои», шапка «Свойств»): единый — один, категории, диапазоны и правила — до трёх первых
+   показанных классов (диапазоны — низ, середина, верх шкалы). */
+export function swatchSymbols(st, fc) {
+  if (st.mode === "single" || st.mode === "lgr") return [{ fill: st.fill, hatch: !!st.hatch }];
+  if (st.mode === "rules") {
+    const r = st.rules.list.filter(r => r.field).map(r => ({ fill: r.fill, hatch: !!r.hatch }));
+    return (st.rules.elseHide ? r : r.concat({ fill: st.rules.elseFill, hatch: false })).slice(0, 3);
+  }
+  if (st.mode === "grad") { const c = ramp(st.grad.ramp, 3); return c.map(fill => ({ fill, hatch: !!st.hatch })); }
+  const it = legendItems(st, fc).filter(it => !it.off).slice(0, 3).map(it => ({ fill: it.c, hatch: !!st.hatch }));
+  return it.length ? it : [{ fill: OTHER, hatch: !!st.hatch }];
+}
+
 /* Функция стиля OpenLayers для слоя l (поля как в файле: key, title, geom, style); fc — его данные, lat() — широта вида. */
 export function styleFunction(l, fc, lat) {
   const st = fullStyle(l.style), cache = new Map(), br = st.mode === "grad" ? breaks(st, fc) : null;
@@ -196,17 +227,7 @@ export function styleFunction(l, fc, lat) {
       const ft = f.getGeometry()?.getType() || "", g = /Point/.test(ft) ? "point" : /Line/.test(ft) && l.geom !== "line" ? (l.geom === "poly" ? "pline" : "line") : l.geom;
       const clip = g === "poly" && st.width > 0 && !!f.get("_clip");
       const key = `${s.fill}|${s.hatch}|${g}|${clip}`; let base = cache.get(key);
-      const edge = s.hatch && !st.strokeOwn ? s.fill : st.stroke, dash = st.dash?.length ? st.dash : undefined;
-      if (!base) {
-        const fillOf = () => new Fill({ color: s.hatch ? hatch(s.fill, st.hatchPat, st.hatchStep) : rgba(s.fill, st.opacity) });
-        if (g === "line") base = new Style({ stroke: new Stroke({ color: s.fill, width: st.width, lineCap: dash ? "butt" : "round", lineJoin: "round", lineDash: dash }) });
-        else if (g === "pline") base = new Style({ stroke: new Stroke({ color: edge, width: Math.max(st.width, 1), lineCap: "round", lineJoin: "round", lineDash: dash }) });
-        else if (g === "point" && st.marker === false) base = [];
-        else if (g === "point") base = new Style({ image: new Circle({ declutterMode: "obstacle", radius: 2 + st.width * 2, fill: new Fill({ color: s.fill }), stroke: new Stroke({ color: st.stroke, width: 1 }) }) });
-        else if (clip) base = [new Style({ fill: fillOf() }), new Style({ geometry: frameless, stroke: new Stroke({ color: edge, width: st.width, lineDash: dash }) })];
-        else base = new Style({ fill: fillOf(), stroke: st.width > 0 ? new Stroke({ color: edge, width: st.width, lineDash: dash }) : undefined });
-        cache.set(key, base);
-      }
+      if (!base) { base = symbolStyle(st, s, g, clip); cache.set(key, base); }
       Array.isArray(base) ? out.push(...base) : out.push(base);
     }
     if (st.label && res < 4) {

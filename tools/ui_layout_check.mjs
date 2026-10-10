@@ -265,6 +265,20 @@ async function main() {
       await page.reload(); await page.waitForSelector(".dv-tab"); await page.waitForTimeout(1200);
       found.push(...await interact(page, tag));
       if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-99-mouse.png`) });
+      // узкое окно «Свойства» (замечание владельца 10.10.2026): правую группу тянем до 190 px — поля не уходят за край,
+      // подпись встаёт над полем (theme.css, @container)
+      const ptab = page.locator(".dv-tab", { hasText: "Свойства" }).first();
+      if (await ptab.count()) {
+        for (const ev of ["pointerdown", "mousedown", "pointerup", "mouseup", "click"]) await ptab.dispatchEvent(ev, { button: 0 });
+        await page.waitForTimeout(300);
+        const g = await page.evaluate(() => { const r = document.querySelector(".pane.props")?.closest(".dv-groupview")?.getBoundingClientRect(); return r ? [r.left, r.top + r.height / 2, r.right] : null; });
+        if (g) {
+          await page.mouse.move(g[0] - 4.5, g[1]); await page.mouse.down(); await page.mouse.move(g[2] - 190, g[1], { steps: 8 }); await page.mouse.up();
+          await page.waitForTimeout(400);
+          record(await page.evaluate(measure), "узкое окно «Свойства»");
+          if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-98-props-narrow.png`) });
+        }
+      }
       await ctx.close();
     }
   } finally { await browser.close(); srv.stop(); }
