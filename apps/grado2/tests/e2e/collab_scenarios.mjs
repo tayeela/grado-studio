@@ -265,9 +265,12 @@ try {
   await B.shot("12-B-dostup-snyat.png");
 
   // ---------- поток событий не пускает (429): сообщение и без частых переподключений ----------
+  // все сообщения за шаг — в список: на медленной машине CI следом за этим может прийти другое и затереть текст (#40, прогон 38090849367)
+  await A.ev(`window.__toasts=[]; new MutationObserver(()=>window.__toasts.push($("toast").textContent)).observe($("toast"),{childList:true,characterData:true,subtree:true}); return 1`);
   await A.ev(`window.__probes=0; const F=window.fetch.bind(window); window.fetch=(u,o)=>String(u).endsWith("/events")?(window.__probes++,Promise.resolve({status:429})):F(u,o);
     window.EventSource=class{constructor(){setTimeout(()=>this.onerror&&this.onerror(),10)} close(){}}; const pid=Collab.pid; Collab.close(); await HubUI.open(pid); return 1`);
-  await A.until(`return /слишком много вкладок/.test($("toast").textContent)`, "сообщение о лишних вкладках", 5000);
+  await A.until(`return window.__toasts.some(t=>/слишком много вкладок/.test(t))`, "сообщение о лишних вкладках", 5000)
+    .catch(async e => { console.log("toasts:", JSON.stringify(await A.ev(`return window.__toasts`)), "probes:", await A.ev(`return window.__probes`)); throw e; });
   await sleep(4000);
   check(await A.ev(`return window.__probes`) === 1, "A: после отказа 429 поток не переподключается часто (одна проверка за 4 с, следующая — через минуту)");
 
