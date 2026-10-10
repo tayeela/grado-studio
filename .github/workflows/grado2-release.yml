@@ -2,6 +2,12 @@ name: ГРАДО 2 release
 
 on:
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "Что собрать: windows, macos или both"
+        type: choice
+        options: [both, windows, macos]
+        default: both
   pull_request:
     paths:
       - "apps/grado2/**"
@@ -59,6 +65,12 @@ jobs:
           EOF
           fc-cache -f
           fc-match sans-serif; fc-match system-ui; fc-match "DejaVu Sans"
+      - name: Installed-program check runs against the source server (packaging/installed_check.py)
+        run: |
+          export GRADO2_NO_BROWSER=1 GRADO2_PROJECTS="$RUNNER_TEMP/check-projects"
+          python apps/grado2/server.py 8761 & pid=$!
+          python packaging/installed_check.py --url http://127.0.0.1:8761 --wait 60 --expect-version "$(python -c 'import json;print(json.load(open("apps/grado2/web/version.json"))["version"])')"
+          kill $pid
       - name: Browser scenarios (headless Chrome, offline data)
         env:
           CHROME: /usr/bin/google-chrome
@@ -79,7 +91,8 @@ jobs:
       contents: write  # нужен только шагу Release (публикация по тегу)
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        # вручную можно собрать одну систему (минуты macOS дороже); по тегу — обе
+        os: ${{ fromJSON(inputs.targets == 'windows' && '["windows-latest"]' || inputs.targets == 'macos' && '["macos-latest"]' || '["windows-latest", "macos-latest"]') }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -118,6 +131,12 @@ jobs:
           $v = (Get-Content apps/grado2/web/version.json | ConvertFrom-Json).version
           choco install innosetup --no-progress -y
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" packaging\grado2-installer.iss
+      - name: Install on a clean Windows, run, uninstall (packaging/windows_install_check.ps1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = (Get-Content apps/grado2/web/version.json | ConvertFrom-Json).version
+          ./packaging/windows_install_check.ps1 -Installer (Get-Item dist/installer/*.exe).FullName -Version $v
       - name: macOS disk image
         if: runner.os == 'macOS'
         run: hdiutil create -volname "ГРАДО 2" -srcfolder "dist/ГРАДО 2.app" -ov -format UDZO "dist/GRADO2.dmg"
