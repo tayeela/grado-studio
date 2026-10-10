@@ -32,9 +32,9 @@
       <div class="sect">Легенда вида «{{ cur.name }}»</div>
       <p v-if="!legend.length" class="hint">В виде нет видимых слоёв</p>
       <div v-for="g in legend" :key="g.key" class="lg">
-        <div class="lgh"><span class="sw" :class="g.sw.kind" :style="{ '--c': g.sw.c, '--e': g.sw.e }"></span>{{ g.title }}</div>
+        <div class="lgh"><LayerSwatch :l="g.l" :style="g.st" :opacity="g.op" />{{ g.title }}</div>
         <div v-for="(it, i) in g.items" :key="i" class="lgi">
-          <span class="sw" :class="g.sw.kind === 'line' ? 'line' : g.sw.kind === 'point' ? 'point' : 'poly'" :style="{ '--c': it.c, '--e': it.c }"></span>{{ it.v || "—" }}</div>
+          <LayerSwatch :l="g.l" :style="{ ...g.st, mode: 'single', fill: it.c }" :opacity="g.op" />{{ it.v || "—" }}</div>
       </div>
     </template>
   </div>
@@ -43,7 +43,8 @@
 <script setup>
 import { computed, ref } from "vue";
 import { BookmarkPlus, Eye, RefreshCw, Trash2 } from "@lucide/vue";
-import { basemapId, project, setBasemap, swatchOf, viewCur, viewNow } from "../store.js";
+import { basemapId, project, setBasemap, viewCur, viewNow } from "../store.js";
+import LayerSwatch from "./LayerSwatch.vue";
 import { dataRev, grp, mapApi } from "../edit.js";
 import { notice } from "../project.js";
 import { fullStyle, legendItems, okn } from "../symbology.js";
@@ -104,7 +105,7 @@ const legend = computed(() => {
   const on = new Map(v.layers.filter(x => x.visible).map(x => [x.key, x]));
   return project.layers.filter(l => on.has(l.key) && (!l.group || v.groups.find(g => g.id === l.group)?.visible !== false)).map(l => {
     const st = fullStyle(clone(on.get(l.key).style));
-    return { key: l.key, title: l.title, sw: swatchOf({ ...l, style: st }), items: legendItems(st, project.data[l.key]?.fc).filter(it => !it.off).slice(0, 12) };
+    return { key: l.key, title: l.title, l, st, op: okn(on.get(l.key).layerOpacity, okn(l.layerOpacity, 1)), items: legendItems(st, project.data[l.key]?.fc).filter(it => !it.off).slice(0, 12) };
   });
 });
 </script>
@@ -129,9 +130,4 @@ const legend = computed(() => {
 .views .lg { margin-bottom: 6px; font-size: var(--wa-font-size-s); }
 .views .lgh { display: flex; gap: 6px; align-items: center; }
 .views .lgi { display: flex; gap: 6px; align-items: center; padding-left: 22px; color: var(--g-muted); font-size: var(--wa-font-size-xs); }
-.views .sw { width: 16px; height: 10px; flex: none; box-sizing: border-box; }
-.views .sw.line { border-bottom: 2.5px solid var(--c); height: 6px; }
-.views .sw.poly { background: color-mix(in srgb, var(--c) 45%, transparent); border: 1px solid var(--e); }
-.views .sw.poly.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 1px, transparent 1px 4px); }
-.views .sw.point { width: 10px; margin: 0 3px; border-radius: 50%; background: var(--c); border: 1px solid var(--e); }
 </style>
