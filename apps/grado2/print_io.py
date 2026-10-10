@@ -1941,7 +1941,71 @@ class PhotoGridFrame(Frame):
         return out
 
 
+# ---------- Настройки альбома (#89): цвет воды на белых схемах и шрифт подписей карт ----------
+# хранятся в album.meta проекта (waterColor, labelFont); пустое значение — как печатали до настройки, лист не меняется
+WATER_VIS = "#bfe0f5"                                               # вода белых схем (albums.js C_WATER_VIS)
+LABEL_FONTS = {"pt-sans": {"sans": "ui", "sans-bold": "ui-bold"},   # подписи карт PT Sans
+               "montserrat": {None: "sans", "ui": "sans", "ui-bold": "sans-bold"}}   # подписи карт Montserrat
+
+
+def _hex(v):
+    v = str(v or "").strip().lower()
+    return v if len(v) == 7 and v[0] == "#" and all(ch in "0123456789abcdef" for ch in v[1:]) else ""
+
+
+def album_settings(meta, layers):
+    """Слои листа (layers) с настройками альбома из meta. Вода egko.water цвета белых схем (#bfe0f5) → meta.waterColor;
+    #336699 (сущпол) и #00689d (Генплан) не трогаются. Шрифт подписей карт (lf, lfs у объектов с подписью) → meta.labelFont;
+    заголовки и надписи листа рисует не карта, их это не касается. Без настроек возвращает те же слои."""
+    meta = meta if isinstance(meta, dict) else {}
+    water = _hex(meta.get("waterColor"))
+    water = water if water and water != WATER_VIS else ""
+    fonts = LABEL_FONTS.get(meta.get("labelFont"))
+    if not (water or fonts) or not isinstance(layers, list):
+        return layers
+    out = []
+    for L in layers:
+        if not isinstance(L, dict):
+            out.append(L)
+            continue
+        wet = water and L.get("key") == "egko.water"
+        feats = []
+        for f in L.get("features") or []:
+            if isinstance(f, dict):
+                g = None
+                if wet:
+                    g = {k: water for k in ("fill", "stroke") if _hex(f.get(k)) == WATER_VIS}
+                if fonts and (f.get("label") or f.get("lf")):
+                    g = g or {}
+                    if f.get("lf") in fonts or (f.get("lf") is None and None in fonts):
+                        g["lf"] = fonts[f.get("lf")]
+                    if isinstance(f.get("lfs"), list):
+                        g["lfs"] = [fonts.get(x, x) if x else x for x in f["lfs"]]
+                if g:
+                    f = {**f, **g}
+            feats.append(f)
+        out.append({**L, "features": feats})
+    return out
+
+
+def _with_settings(spec):
+    """Альбом (spec) с настройками album.meta во всех картах листов, включая панели «двух карт»."""
+    meta = spec.get("meta") or {}
+    if not (_hex(meta.get("waterColor")) or meta.get("labelFont") in LABEL_FONTS):
+        return spec
+    sheets = []
+    for sh in spec.get("sheets") or []:
+        if isinstance(sh, dict):
+            sh = {**sh, "layers": album_settings(meta, sh.get("layers"))} if "layers" in sh else dict(sh)
+            if isinstance(sh.get("panels"), list):
+                sh["panels"] = [{**p, "layers": album_settings(meta, p.get("layers"))} if isinstance(p, dict) and "layers" in p else p
+                                for p in sh["panels"]]
+        sheets.append(sh)
+    return {**spec, "sheets": sheets}
+
+
 def build_document(spec, lib, lgr_dash, tiles=None):
+    spec = _with_settings(spec)
     meta = {"object": spec.get("meta", {}).get("object", ""), "code": spec.get("meta", {}).get("code", ""),
             "stage": spec.get("meta", {}).get("stage", ""), "org": spec.get("meta", {}).get("org", "")}
     doc = Document(meta["object"] or "Альбом", meta=meta)

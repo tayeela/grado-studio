@@ -73,6 +73,21 @@
       <wa-button size="s" appearance="outlined" :disabled="viewer || busy" title="Заполнить пустые поля «№ КРТ», «Округ, район» и «Адрес» по загруженным слоям; введённое вами не меняется" @click="fill"><WandSparkles :size="14" /> Заполнить по слоям</wa-button>
     </wa-details>
 
+    <!-- настройки альбома (#89): цвет воды на белых схемах и шрифт подписей карт; пусто — как печаталось до настройки -->
+    <wa-details class="stamp look" :open="lookOpen" @wa-show="lookOpen = true" @wa-hide="lookOpen = false">
+      <span slot="summary"><b>Оформление карт</b> <span class="sum">{{ lookSum }}</span></span>
+      <div class="lookrow">
+        <wa-color-picker size="s" aria-label="Цвет воды на белых схемах" :value="meta.waterColor || WATER" :disabled="viewer" data-look="water"
+                         @change="e => setLook('waterColor', e.target.value)"></wa-color-picker>
+        <span class="lbl">Вода на белых схемах<small>сущпол и Генплан — своим цветом</small></span>
+        <wa-button v-if="meta.waterColor && meta.waterColor !== WATER" size="s" appearance="plain" :disabled="viewer" title="Голубой #bfe0f5, как по умолчанию" @click="setLook('waterColor', '')">Как было</wa-button>
+      </div>
+      <wa-select size="s" label="Шрифт подписей карт" :value="meta.labelFont || 'base'" :disabled="viewer" data-look="font" @change="e => setLook('labelFont', e.target.value)">
+        <wa-option v-for="f in FONTS" :key="f[0]" :value="f[0]">{{ f[1] }}</wa-option>
+      </wa-select>
+      <p class="hint">Заголовки и надписи листа — всегда Montserrat. Новые цвет и шрифт попадут в просмотр, PDF и PPTX.</p>
+    </wa-details>
+
     <p v-if="!sheets.length" class="empty">Листов пока нет. «Добавить лист» — один лист по виду карты; «Собрать» → «Альбом ППТ КРТ» соберёт альбом по шаблону: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.</p>
     <ol v-else class="list" role="listbox" aria-label="Листы альбома" @keydown="keys">
       <li v-for="(s, i) in sheets" :key="s.id" role="option" :aria-selected="i === cur" :tabindex="i === cur ? 0 : -1" :class="{ on: i === cur, bad: !!why(s) }"
@@ -128,8 +143,11 @@ import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
 import { project } from "../store.js";
 
+const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
+/* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */
+const FONTS = [["base", "Как сейчас"], ["pt-sans", "PT Sans"], ["montserrat", "Montserrat"]];
 const META = [["object", "Объект"], ["code", "Шифр"], ["stage", "Стадия: ПП, П, Р"], ["org", "Организация"], ["short", "№ КРТ"], ["place", "Округ, район"], ["address", "Адрес"]];
-const st = ref(null), cur = ref(0), stampOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
+const st = ref(null), cur = ref(0), stampOpen = ref(false), lookOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
 const img = reactive({ id: null, url: "", busy: false });
 const viewer = computed(() => C.role === "viewer");
 const engineReady = computed(() => album.ready);
@@ -145,7 +163,13 @@ const busy = computed(() => !!st.value?.busy);
 const row = s => st.value?.rows?.[s.id] || { size: s.size || "", scale: "" };
 const why = s => st.value?.why?.[s.id] || "";
 const word = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? b : c;
-const stampSum = computed(() => { const p = [meta.value.object, meta.value.code, meta.value.stage].filter(Boolean); return p.length ? p.join(" · ") : "не заполнен"; });
+const stampSum = computed(() => { ver.value; album.rev; const p = [meta.value.object, meta.value.code, meta.value.stage].filter(Boolean); return p.length ? p.join(" · ") : "не заполнен"; });
+const lookSum = computed(() => {
+  ver.value; album.rev;   // meta — тот же объект project.raw, правится на месте: перечитать после каждой правки
+  const w = meta.value.waterColor && meta.value.waterColor !== WATER ? "вода " + meta.value.waterColor : "";
+  const f = FONTS.find(x => x[0] === meta.value.labelFont)?.[1] || "";
+  return [w, f].filter(Boolean).join(" · ") || "как сейчас";
+});
 const head = computed(() => st.value?.stat || (sheets.value.length ? `Альбом: ${sheets.value.length} ${word(sheets.value.length, "лист", "листа", "листов")}` : "Альбом: листов нет"));
 
 /* состояние движка (ход сборки, «не готов», строки листов) — раз в полсекунды, пока вкладка открыта */
@@ -167,6 +191,12 @@ function edited() {
 }
 function ensure() { project.raw.album ||= { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] }; return project.raw.album; }
 function setMeta(k, v) { const a = ensure(); a.meta[k] = v; if (a.meta.auto) delete a.meta.auto[k]; edited(); }
+/* настройка оформления: значение по умолчанию не хранится — альбом печатается как до настройки */
+function setLook(k, v) {
+  const a = ensure();
+  if (!v || v === "base" || (k === "waterColor" && v.toLowerCase() === WATER)) delete a.meta[k]; else a.meta[k] = k === "waterColor" ? v.toLowerCase() : v;
+  img.id = null; edited();
+}
 function setSheet(k, v) { if (!sel.value) return; sel.value[k] = v; edited(); }
 function up() { const i = cur.value, l = sheets.value; if (i < 1) return; [l[i - 1], l[i]] = [l[i], l[i - 1]]; cur.value = i - 1; edited(); }
 function drop() { askDrop.value = false; const l = sheets.value; if (!l.length) return; l.splice(cur.value, 1); cur.value = Math.min(cur.value, l.length - 1); edited(); }
@@ -243,6 +273,11 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .stamp::part(header) { font-size: var(--wa-font-size-s); }
 .alb .stamp .sum { color: var(--g-muted); font-weight: 400; margin-left: 6px; }
 .alb .stamp .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.alb .look .lookrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.alb .look .lbl { flex: 1; display: grid; font-size: var(--wa-font-size-s); line-height: 1.3; }
+.alb .look .lbl small { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
+.alb .look wa-select { margin-bottom: 6px; }
+.alb .look .hint { margin: 0; }
 .alb .empty { color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.4; }
 .alb .list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--g-line); border-radius: 8px; }
 .alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: baseline; line-height: 16px; gap: 6px; padding: 6px 8px;
