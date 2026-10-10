@@ -88,6 +88,11 @@
     },
     /* «Заполнить по слоям»: пустые № КРТ, округ и район, адрес — по загруженным слоям; что заполнено */
     fillMeta() { const d = autoMeta(); touch(); return d; },
+    /* «Слои листа»: роли листа i сверху вниз (глаз, источник, покрытие рамки, состояние) — как окно «Слои и листы» */
+    roles(i) { return window.SheetLayers?.rows(i) || null; },
+    /* глаз роли на листе i (только этот лист) и «вернуть к образцу» */
+    role(i, gid) { window.SheetLayers?.toggleRole(i, gid); },
+    resetRole(i, gid) { window.SheetLayers?.resetRoleUI(i, gid); },
     touch() { touch(); },
   };
 })();

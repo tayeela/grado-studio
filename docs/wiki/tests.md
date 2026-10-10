@@ -25,7 +25,7 @@
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_next_ui.py` | NextUi | 17 |
+| `test_next_ui.py` | NextUi | 18 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |

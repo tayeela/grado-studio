@@ -4,7 +4,8 @@
      Сборку и печать делает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому PDF и
      PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
      пишутся прямо в раздел album проекта. Пока вкладка на виду, рамки листов видны на карте (albumframes.js): щелчок выбирает
-     лист здесь, рамку тянут и меняют угол там же. «Подробно» — прежнее окно: «Слои и листы», макет надписей. -->
+     лист здесь, рамку тянут и меняют угол там же. «Слои листа» — роли выбранного листа с глазом (sheetlayers.js rows).
+     «Подробно» — прежнее окно: перетаскивание в «Слоях и листах», макет надписей. -->
 <template>
   <div class="pane alb">
     <div class="ahead">
@@ -125,6 +126,26 @@
         <wa-button size="s" appearance="plain" :disabled="viewer || cur === 0" title="Выше" aria-label="Выше" @click="up"><ArrowUp :size="14" /></wa-button>
         <wa-button size="s" appearance="plain" :disabled="viewer" title="Удалить лист" aria-label="Удалить лист" @click="askDrop = true"><Trash2 :size="14" /></wa-button>
       </div>
+      <!-- слои листа (роли сверху вниз): глаз — только на этом листе; перетаскивание и слои проекта — в окне «Подробно» -->
+      <wa-details v-if="roles && roles.kind === 'layout'" class="stamp lay" :open="layOpen" @wa-show="layOpen = true" @wa-hide="layOpen = false">
+        <span slot="summary"><b>Слои листа</b> <span class="sum">{{ laySum }}</span></span>
+        <ul class="roles" aria-label="Слои листа, сверху вниз">
+          <li v-for="r in roles.rows" :key="r.id" :class="{ off: !r.on }" :title="'Слои: ' + r.layers.join('; ')">
+            <wa-button size="s" appearance="plain" :disabled="!roles.editable" :aria-label="(r.on ? 'Скрыть' : 'Показать') + ' «' + r.title + '» на этом листе'"
+                       :title="roles.editable ? (r.on ? 'Скрыть на этом листе' : 'Показать на этом листе') : roles.why" @click="roleEye(r)">
+              <Eye v-if="r.on" :size="14" /><EyeOff v-else :size="14" /></wa-button>
+            <span class="rt">{{ r.title }} <small>{{ r.count }}</small><small class="src">{{ r.source }}</small></span>
+            <span class="cov" :class="{ w: r.cover != null && r.cover < .9 }">{{ r.cover == null ? "—" : Math.round(r.cover * 100) + " %" }}</span>
+            <span class="chips">
+              <button v-if="r.hand" class="chip hand" type="button" :disabled="!roles.editable" :title="r.hand + (roles.editable ? '. Щелчок — вернуть как по образцу' : '')" @click="roleReset(r)">вручную</button>
+              <span v-if="r.badge" class="chip" :class="r.badge.tone">{{ r.badge.text }}</span>
+            </span>
+          </li>
+        </ul>
+        <p v-if="!roles.editable && roles.why" class="hint">{{ roles.why }}</p>
+        <p class="hint">Порядок источников и перенос слоёв между листами — в окне «Подробно» → «Слои и листы».</p>
+      </wa-details>
+      <p v-else-if="roles && roles.kind === 'map'" class="hint">Лист показывает текущую карту: состава слоёв у него нет.</p>
       <div v-if="img.url && img.id === sel.id" class="prev"><img :src="img.url" :alt="'Лист ' + (cur + 1) + ': ' + (sel.title || '')"></div>
       <p v-else-if="img.busy" class="hint">Собираю картинку листа…</p>
     </section>
@@ -139,7 +160,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowUp, CircleAlert, ExternalLink, Eye, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, WandSparkles } from "@lucide/vue";
+import { ArrowUp, CircleAlert, ExternalLink, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, WandSparkles } from "@lucide/vue";
 import { album, call, engineState, openAlbum, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
@@ -154,6 +175,7 @@ const props = defineProps({ params: Object });
 const cur = computed({ get: () => album.cur, set: v => { album.cur = v; } });
 const st = ref(null), stampOpen = ref(false), lookOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
 const img = reactive({ id: null, url: "", busy: false });
+const roles = ref(null), layOpen = ref(true);
 const viewer = computed(() => C.role === "viewer");
 const engineReady = computed(() => album.ready);
 
@@ -214,6 +236,23 @@ function setLook(k, v) {
   if (!v || v === "base" || (k === "waterColor" && v.toLowerCase() === WATER)) delete a.meta[k]; else a.meta[k] = k === "waterColor" ? v.toLowerCase() : v;
   img.id = null; edited();
 }
+/* «Слои листа»: роли выбранного листа от движка (окно «Слои и листы»); перечитываются при смене листа и после правок */
+let rolesFor = null;
+async function loadRoles() {
+  const i = cur.value, id = sel.value?.id; if (!id) { roles.value = null; return; }
+  if (!album.ready) return;
+  try {
+    const r = await call(a => a.roles(i));
+    if (sel.value?.id === id) { roles.value = r ? JSON.parse(JSON.stringify(r)) : null; rolesFor = id; }
+  } catch { roles.value = null; }
+}
+const laySum = computed(() => {
+  const r = roles.value?.rows || [], off = r.filter(x => !x.on).length, bad = r.filter(x => x.badge && x.badge.tone !== "none").length;
+  return [`${r.length} ${word(r.length, "роль", "роли", "ролей")}`, off ? `скрыто ${off}` : "", bad ? `${bad} с замечанием` : ""].filter(Boolean).join(" · ");
+});
+async function roleEye(r) { await act(a => a.role(cur.value, r.id)); setTimeout(loadRoles, 400); img.id = null; }
+async function roleReset(r) { await act(a => a.resetRole(cur.value, r.id)); setTimeout(loadRoles, 400); img.id = null; }
+watch(() => [sel.value?.id, album.rev, album.ready], ([id], [was] = []) => { if (id !== was) roles.value = rolesFor === id ? roles.value : null; loadRoles(); }, { immediate: true });
 function setSheet(k, v) { if (!sel.value) return; sel.value[k] = v; edited(); }
 function up() { const i = cur.value, l = sheets.value; if (i < 1) return; [l[i - 1], l[i]] = [l[i], l[i - 1]]; cur.value = i - 1; edited(); }
 function drop() { askDrop.value = false; const l = sheets.value; if (!l.length) return; l.splice(cur.value, 1); cur.value = Math.min(cur.value, l.length - 1); edited(); }
@@ -290,6 +329,22 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .stamp::part(header) { font-size: var(--wa-font-size-s); }
 .alb .stamp .sum { color: var(--g-muted); font-weight: 400; margin-left: 6px; }
 .alb .stamp .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.alb .lay .roles { list-style: none; margin: 0 0 6px; padding: 0; }
+.alb .lay .roles li { display: grid; grid-template-columns: 28px minmax(0, 1fr) 44px auto; align-items: center; gap: 6px; padding: 2px 0;
+  font-size: var(--wa-font-size-s); border-top: 1px solid var(--g-line); }
+.alb .lay .roles li:first-child { border-top: 0; }
+.alb .lay .roles li.off .rt { opacity: .55; }
+.alb .lay .rt { min-width: 0; overflow-wrap: anywhere; line-height: 1.3; }
+.alb .lay .rt small { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin-left: 2px; }
+.alb .lay .rt .src { display: block; margin-left: 0; }
+.alb .lay .cov { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--wa-font-size-xs); color: var(--g-muted); }
+.alb .lay .cov.w { color: var(--wa-color-warning-on-quiet); }
+.alb .lay .chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.alb .lay .chip { all: unset; font-size: var(--wa-font-size-xs); padding: 1px 6px; border-radius: 999px; background: var(--wa-color-neutral-fill-quiet); white-space: nowrap; }
+.alb .lay .chip.warn { background: var(--wa-color-warning-fill-quiet); color: var(--wa-color-warning-on-quiet); }
+.alb .lay .chip.bad { background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet); }
+.alb .lay .chip.hand { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); cursor: pointer; }
+.alb .lay .chip.hand:focus-visible { outline: 2px solid var(--wa-color-focus); }
 .alb .look .lookrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .alb .look .lbl { flex: 1; display: grid; font-size: var(--wa-font-size-s); line-height: 1.3; }
 .alb .look .lbl small { color: var(--g-muted); font-size: var(--wa-font-size-xs); }

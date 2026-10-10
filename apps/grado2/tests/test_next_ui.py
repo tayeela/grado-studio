@@ -210,6 +210,20 @@ class NextUi(unittest.TestCase):
         self.assertIn("album.tab = e.isVisible", panel)
         self.assertIn("album.fit++", panel)
 
+    def test_album_sheet_roles(self):
+        # «Слои листа» во вкладке (шаг 2 фаза 2): роли листа считает окно «Слои и листы» движка (SheetLayers.rows — те же
+        # roleRows, queueRows, покрытие рамки), глаз и «вернуть к образцу» — его toggleRole и resetRoleUI (с отменой Cmd+Z)
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        sl = (web / "sheetlayers.js").read_text(encoding="utf-8")
+        self.assertIn("function rows(idx)", sl)
+        self.assertRegex(sl, r"window\.SheetLayers = \{[^}]*\brows\b")
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("SheetLayers?.rows(i)", "SheetLayers?.toggleRole(i, gid)", "SheetLayers?.resetRoleUI(i, gid)"):
+            self.assertIn(k, bridge)
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        for k in ("a.roles(i)", "a.role(cur.value, r.id)", "a.resetRole(cur.value, r.id)"):
+            self.assertIn(k, panel)
+
     def test_floating_windows_follow_the_mouse(self):
         # плавающее окно идёт ровно за мышью, угол не сдвигает край (docs/ux/ui-grid.md): заплатка dockview ставится при npm ci
         # и попадает в сборку; без неё окно отставало на первое движение мыши (владелец 09.10.2026: «окна перемещаются криво»)
