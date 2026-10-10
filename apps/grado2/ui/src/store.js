@@ -3,7 +3,7 @@
    Весь файл проекта как есть лежит в project.raw: при записи меняются только поля, которые правит новый интерфейс,
    остальное (граф, альбом, граница, источники) уходит в файл без изменений. */
 import { ref, reactive, computed, markRaw } from "vue";
-import { fullStyle, swatchColor } from "./symbology.js";
+import { fullStyle } from "./symbology.js";
 
 /* Проект в том виде, как его хранит файл .grado2: группы и слои сверху вниз, данные слоёв отдельно.
    data не реактивна (markRaw): тысячи объектов GeoJSON рисует карта, Vue за ними не следит. */
@@ -15,12 +15,6 @@ export const current = computed(() => project.layers.find(l => l.key === current
 export const scale = ref(0);
 export const cursor = ref(null);       // курсор над картой в МСК [восток, север], м (MapPanel); строка состояния
 export const viewNow = { center: null, zoom: null };   // вид карты сейчас (MapPanel): долгота и широта, уровень; уходит в файл при записи
-
-/* Образец слоя в списке: у линии и точки — цвет знака, у полигона — заливка и контур (штриховка — косой полосой). */
-export function swatchOf(l) {
-  const st = l.style, c = swatchColor(st);
-  return l.geom === "line" ? { kind: "line", c } : l.geom === "point" ? { kind: "point", c, e: st.stroke } : { kind: st.hatch ? "poly hatch" : "poly", c, e: st.hatch ? c : st.stroke };
-}
 
 /* Слой виден на карте, когда включён он сам и его группа. */
 export function shown(l) {

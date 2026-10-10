@@ -161,7 +161,8 @@ wa-button[variant="brand"][appearance~="filled"]::part(base) { box-shadow: inset
 wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-surface-lowered); }
 
 /* панели: общий вид заголовков и строк */
-.pane { height: 100%; overflow: hidden auto; box-sizing: border-box; padding: var(--wa-space-s); }   /* по ширине окно не прокручивается: содержимое ужимается */
+.pane { height: 100%; overflow: hidden auto; box-sizing: border-box; padding: var(--wa-space-s); container-type: inline-size; }   /* по ширине окно не прокручивается: содержимое ужимается */
+/* container-type: строки свойств знают ширину своего окна (@container ниже), а не всего экрана */
 /* заголовок раздела во всех окнах один: мелкие прописные серые, 12 px над и 4 px под */
 .pane h3, .pane .sect {
   margin: var(--wa-space-m) 0 var(--wa-space-xs);
@@ -187,9 +188,24 @@ wa-button[appearance="plain"]::part(base):hover { background: var(--wa-color-sur
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .pane .f > :not(span:first-child), .pane .fc > * { margin-bottom: 0; min-width: 0; }
-.pane .fc { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pane .fc { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; row-gap: 6px; }   /* не влезает — переносится, а не наезжает */
 .pane .fc > wa-slider, .pane .fc > wa-select, .pane .fc > wa-input { flex: 1; }
 .pane .num { width: 96px; flex: none; }
+/* ползунок со значением — одна неразрывная пара; в узкой строке она уходит на свою строку целиком */
+.pane .sl { display: flex; align-items: center; gap: 8px; flex: 1 1 136px; min-width: 0; }
+.pane .sl > wa-slider { flex: 1; min-width: 0; margin-bottom: 0; }
+.pane .fc > wa-color-picker + .sl { margin-left: 4px; }   /* бегунок на нуле не касается образца цвета */
+/* узкое окно: подпись над полем, поле во всю ширину — ничего не обрезается и не наезжает (как инспектор Apple в узкой колонке) */
+@container (max-width: 279px) {
+  .pane .f { grid-template-columns: minmax(0, 1fr); row-gap: 2px; margin-bottom: 8px; }
+  .pane .f > span:first-child { white-space: normal; }
+  .pane .f > span:first-child:empty { display: none; }
+  .pane .f.top > span:first-child { padding-top: 0; }
+  .pane .num { width: 76px; }             /* цвет, число и «пикс.» остаются одной строкой */
+  .pane .sl { flex-basis: 112px; }
+}
+/* длинное значение списка — с многоточием, а не обрезанной буквой */
+wa-select::part(display-input) { text-overflow: ellipsis; }
 /* кнопки «−» и «+» у числового поля узкие, чтобы само число было видно и в коротком поле */
 wa-number-input::part(stepper) { width: 18px; min-width: 0; padding: 0; }
 wa-number-input::part(input) { padding: 0 4px; }
