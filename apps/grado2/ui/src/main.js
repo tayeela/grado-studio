@@ -50,6 +50,7 @@ import VarsPanel from "./panels/VarsPanel.vue";
 import ComparePanel from "./panels/ComparePanel.vue";
 import VolumePanel from "./panels/VolumePanel.vue";
 import CommentsPanel from "./panels/CommentsPanel.vue";
+import AlbumPanel from "./panels/AlbumPanel.vue";
 import { applyTheme, theme } from "./store.js";
 
 applyTheme(theme.value);
@@ -58,5 +59,5 @@ const app = createApp(App);
 app.component("map", MapPanel).component("layers", LayersPanel).component("props", PropsPanel).component("tep", TepPanel)
   .component("object", ObjectPanel).component("table", TablePanel).component("views", ViewsPanel).component("help", HelpPanel).component("data", DataPanel).component("cons", ConsPanel).component("graph", GraphPanel)
   .component("sketch", SketchPanel).component("norms", NormsPanel)
-  .component("vars", VarsPanel).component("cmp", ComparePanel).component("vol", VolumePanel).component("comments", CommentsPanel).component("sheet", SheetPanel);
+  .component("vars", VarsPanel).component("cmp", ComparePanel).component("vol", VolumePanel).component("comments", CommentsPanel).component("sheet", SheetPanel).component("album", AlbumPanel);
 app.mount("#app");
