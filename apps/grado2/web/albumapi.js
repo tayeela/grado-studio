@@ -20,6 +20,19 @@
     };
   }
   const sheetAt = i => i == null ? null : ALBUM.sheets[i] || null;
+  /* рамки листов для карты нового интерфейса (ui/src/albumframes.js), как frames.js: середина (долгота, широта), размер
+     на местности (м), размер карты листа (мм) для правки угла, свой лист или лист раздела (пунктир), подпись рамки */
+  const fmtT = s => (SIZE_T[s.size] || s.size).replace(" без штампа", "") + (isPaper(s.size) && s.orient === "P" ? " книжн." : "");
+  function frames() {
+    return ALBUM.sheets.map((s, i) => {
+      if (!sheetOnMap(s, true)) return null;
+      const c = sheetCenter(s), sc = sheetScale(s), mm = frameMM(s);
+      if (!c || !(sc > 0)) return null;
+      const n = `Лист ${i + 1}`, t = s.title && s.title !== n ? s.title : "";
+      return { id: s.id, i, c, scale: sc, mm, wh: mm.map(v => v * sc / 1000), own: !(s.fit || s.keys),
+        label: `${n}${t ? ` «${t.length > 28 ? t.slice(0, 27).trimEnd() + "…" : t}»` : ""} · ${fmtT(s)} · 1:${fmt(Math.round(sc))}` };
+    }).filter(Boolean);
+  }
   window.albumApi = {
     /* что показать в окне: строка альбома, ход сборки, причины «не готов» по листам, открытый вопрос «заменить или добавить» */
     state() {
@@ -31,7 +44,7 @@
         /* строка листа: формат и масштаб словами, как в прежнем окне; noScale — масштаб не выбирается (ТЭП, титул, фото, две карты, готовая вёрстка) */
         rows: Object.fromEntries(ALBUM.sheets.map(s => [s.id, { size: sizeShort(s), scale: scaleText(s), auto: !s.scale,
           noScale: !!(s.frozen || s.panels || ["tep", "title", "photos"].includes(s.kind)), frozen: !!s.frozen, tpl: !!(s.keys || s.panels) }])),
-        sizes: SIZE_T, scales: SCALES,
+        sizes: SIZE_T, scales: SCALES, frames: frames(),
       };
     },
     /* «Собрать»: альбом ППТ КРТ, ситуационный план, раздел 1. Поверх чужих листов движок спрашивает — ответ answer(mode). */

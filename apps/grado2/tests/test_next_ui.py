@@ -193,6 +193,23 @@ class NextUi(unittest.TestCase):
         for k in ("albumFile(v)", "ogdDxf()", "winApi.open('album')", '{ id: "album", title: "Листы и альбом" }'):
             self.assertIn(k, app)
 
+    def test_album_frames_on_the_new_map(self):
+        # рамки листов альбома на карте нового интерфейса (шаг 2 фаза 2, #94): рамки считает движок (albumapi state().frames —
+        # те же sheetCenter, sheetScale, frameMM, что у frames.js), карта рисует их, пока вкладка на виду; сдвиг и угол пишут
+        # center и scale листа в раздел album проекта
+        web, src = NEXT.parent, NEXT.parents[1] / "ui" / "src"
+        bridge = (web / "albumapi.js").read_text(encoding="utf-8")
+        for k in ("frames: frames()", "sheetOnMap(s, true)", "sheetCenter(s)", "sheetScale(s)", "frameMM(s)"):
+            self.assertIn(k, bridge)
+        frames = (src / "albumframes.js").read_text(encoding="utf-8")
+        self.assertIn("editSheet(", frames)
+        self.assertIn('get("gradoTop")', frames)                           # под перехватом команд черчения, как frames.js
+        self.assertIn("export function editSheet(", (src / "albumhost.js").read_text(encoding="utf-8"))
+        self.assertIn("attachFrames(map)", (src / "panels" / "MapPanel.vue").read_text(encoding="utf-8"))
+        panel = (src / "panels" / "AlbumPanel.vue").read_text(encoding="utf-8")
+        self.assertIn("album.tab = e.isVisible", panel)
+        self.assertIn("album.fit++", panel)
+
     def test_floating_windows_follow_the_mouse(self):
         # плавающее окно идёт ровно за мышью, угол не сдвигает край (docs/ux/ui-grid.md): заплатка dockview ставится при npm ci
         # и попадает в сборку; без неё окно отставало на первое движение мыши (владелец 09.10.2026: «окна перемещаются криво»)

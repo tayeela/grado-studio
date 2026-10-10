@@ -3,7 +3,8 @@
      вопросы «заменить или добавить» и «не всё готово»; ниже штамп, список листов и свойства выбранного листа с просмотром.
      Сборку и печать делает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому PDF и
      PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
-     пишутся прямо в раздел album проекта. «Подробно» — прежнее окно: рамки листов на карте, «Слои и листы», макет надписей. -->
+     пишутся прямо в раздел album проекта. Пока вкладка на виду, рамки листов видны на карте (albumframes.js): щелчок выбирает
+     лист здесь, рамку тянут и меняют угол там же. «Подробно» — прежнее окно: «Слои и листы», макет надписей. -->
 <template>
   <div class="pane alb">
     <div class="ahead">
@@ -25,7 +26,7 @@
         </wa-dropdown>
         <wa-button size="s" variant="brand" :disabled="busy || !sheets.length" title="Все листы одним PDF: рамка, штамп, масштаб, легенда" @click="file('pdf')"><FileDown :size="14" /> PDF</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy || !sheets.length" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям" @click="file('pptx')"><Presentation :size="14" /> PPTX</wa-button>
-        <wa-button size="s" appearance="plain" title="Прежнее окно альбома: рамки листов на карте, «Слои и листы», макет надписей, фотографии" @click="detail"><ExternalLink :size="14" /> Подробно</wa-button>
+        <wa-button size="s" appearance="plain" title="Прежнее окно альбома: «Слои и листы», макет надписей, фотографии" @click="detail"><ExternalLink :size="14" /> Подробно</wa-button>
       </div>
     </div>
 
@@ -107,6 +108,7 @@
         </wa-select>
         <wa-select size="s" label="Масштаб" :value="String(sel.scale || 0)" :disabled="viewer || row(sel).noScale" @change="e => setSheet('scale', +e.target.value)">
           <wa-option value="0">авто{{ row(sel).auto && row(sel).scale ? " (" + row(sel).scale + ")" : "" }}</wa-option>
+          <wa-option v-if="sel.scale && !scales.includes(sel.scale)" :value="String(sel.scale)">1:{{ sel.scale.toLocaleString("ru-RU") }} (рамка на карте)</wa-option>
           <wa-option v-for="v in scales" :key="v" :value="String(v)">1:{{ v.toLocaleString("ru-RU") }}</wa-option>
         </wa-select>
       </div>
@@ -116,7 +118,7 @@
       </div>
       <p v-if="why(sel)" class="nrw"><b>Не готов:</b> {{ why(sel) }}</p>
       <p v-if="row(sel).frozen" class="hint">Готовая вёрстка из файла: слои и оформление записаны в самом листе.</p>
-      <p v-else-if="row(sel).tpl" class="hint">Лист по шаблону: слои, оформление и рамка — из шаблона; рамку на карте двигают в окне «Подробно».</p>
+      <p v-else-if="row(sel).tpl" class="hint">Лист по шаблону: слои и оформление — из шаблона; рамку на карте можно сдвинуть, за угол — сменить масштаб.</p>
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="busy" @click="preview"><Eye :size="14" /> Просмотр</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy" title="PDF только этого листа" @click="file('pdf', cur)"><FileDown :size="14" /> PDF листа</wa-button>
@@ -147,7 +149,10 @@ const WATER = "#bfe0f5";   // вода белых схем по умолчани
 /* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */
 const FONTS = [["base", "Как сейчас"], ["pt-sans", "PT Sans"], ["montserrat", "Montserrat"]];
 const META = [["object", "Объект"], ["code", "Шифр"], ["stage", "Стадия: ПП, П, Р"], ["org", "Организация"], ["short", "№ КРТ"], ["place", "Округ, район"], ["address", "Адрес"]];
-const st = ref(null), cur = ref(0), stampOpen = ref(false), lookOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
+const props = defineProps({ params: Object });
+/* выбранный лист — общий с рамками на карте (albumframes.js) */
+const cur = computed({ get: () => album.cur, set: v => { album.cur = v; } });
+const st = ref(null), stampOpen = ref(false), lookOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
 const img = reactive({ id: null, url: "", busy: false });
 const viewer = computed(() => C.role === "viewer");
 const engineReady = computed(() => album.ready);
@@ -174,9 +179,21 @@ const head = computed(() => st.value?.stat || (sheets.value.length ? `Альбо
 
 /* состояние движка (ход сборки, «не готов», строки листов) — раз в полсекунды, пока вкладка открыта */
 let poll = 0;
-function readState() { const s = engineState(); st.value = s ? JSON.parse(JSON.stringify(s)) : null; }
-onMounted(() => { startEngine(); readState(); poll = setInterval(readState, 500); });
-onBeforeUnmount(() => clearInterval(poll));
+let lastFrames = "";
+function readState() {
+  const s = engineState(); st.value = s ? JSON.parse(JSON.stringify(s)) : null;
+  const f = JSON.stringify(st.value?.frames || []);
+  if (f !== lastFrames) { lastFrames = f; album.frames = st.value?.frames || []; }   // рамки на карте — только когда изменились
+}
+/* рамки листов на карте — пока вкладка на виду */
+let offVis = null;
+onMounted(() => {
+  startEngine(); readState(); poll = setInterval(readState, 500);
+  const api = props.params?.api;
+  album.tab = api ? api.isVisible : true;
+  offVis = api?.onDidVisibilityChange?.(e => { album.tab = e.isVisible; });
+});
+onBeforeUnmount(() => { clearInterval(poll); offVis?.dispose?.(); album.tab = false; });
 watch(() => sheets.value.length, n => { if (cur.value >= n) cur.value = Math.max(0, n - 1); });
 
 /* действие движка: ошибки — в строку состояния */
@@ -200,7 +217,7 @@ function setLook(k, v) {
 function setSheet(k, v) { if (!sel.value) return; sel.value[k] = v; edited(); }
 function up() { const i = cur.value, l = sheets.value; if (i < 1) return; [l[i - 1], l[i]] = [l[i], l[i - 1]]; cur.value = i - 1; edited(); }
 function drop() { askDrop.value = false; const l = sheets.value; if (!l.length) return; l.splice(cur.value, 1); cur.value = Math.min(cur.value, l.length - 1); edited(); }
-function pick(i) { cur.value = i; }
+function pick(i) { cur.value = i; album.fit++; }   // карта приближается к рамке листа
 function keys(e) {
   const n = sheets.value.length; if (!n) return;
   const k = { ArrowDown: cur.value + 1, ArrowUp: cur.value - 1, Home: 0, End: n - 1 }[e.key];
