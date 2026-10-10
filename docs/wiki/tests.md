@@ -32,7 +32,7 @@
 | `test_roadsrc_js.py` | RoadSrcJs | 2 |
 | `test_roles_js.py` | RolesJs, LayerRolesApi | 5 |
 | `test_sat.py` | FakeTiles, SatExport | 8 |
-| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 154 |
+| `test_server.py` | Grado2Server, Egko, DataBboxT70, Yandex, YandexSatBreaker, SituationPlanSources, RailRoute, Projects, PublicHost, SplitArea, AnyOgdLayer, ProjectVersions, AdminReference, HttpHardening, AccessToken, HubHttp, DxfUidNotExported, NonHubUnchanged, SearchCadastral, SearchKrt, SearchAddress, T61Portal | 155 |
 | `test_sheetlayout_js.py` | SheetLayoutJs | 1 |
 | `test_sheetmodel_js.py` | SheetModelJs | 1 |
 | `test_snap_js.py` | SnapJs | 1 |
