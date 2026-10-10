@@ -13,7 +13,7 @@
 | `test_cadcore.py` | CadCore | 1 |
 | `test_collab_js.py` | CollabJs | 1 |
 | `test_dxf.py` | DxfRoundTrip, LinetypeProps, AcadNames | 8 |
-| `test_e2e.py` | BrowserScenarios | 2 |
+| `test_e2e.py` | BrowserScenarios | 3 |
 | `test_export.py` | Http, GeoJsonExport, GeoJsonExportHardening, XlsxExport, PlaceByArea | 20 |
 | `test_file_io.py` | FileImport, PortalFields, Fgistp, SizeCeiling | 21 |
 | `test_gpzones_js.py` | GpZonesJs | 1 |
