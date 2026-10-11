@@ -1,7 +1,7 @@
 /* ГРАДО 2 · рамка вида (#119): вид = что видно (слои, оформление, подложка) + где (рамка на карте). Рамку рисуют на
    карте с пропорциями или размером, блок «Карта» на листе выбирает вид и показывает его рамку — как фрейм InDesign
    или карта макета QGIS. Здесь чистые расчёты в метрах МСК без OpenLayers и Vue: пропорции, рамка по двум углам,
-   середина и масштаб блока по рамке («Вписать» / «Заполнить», круглый масштаб).
+   середина и масштаб блока по рамке («Вписать» / «Заполнить», круглый масштаб), рамка под заданный масштаб.
    Зовут viewframesmap.js (рамки на карте), ViewsPanel.vue, SheetPanel.vue и sheetmaps.js; проверяет viewframes.test.js. */
 import { SCALES } from "./sheet/model.js";
 
@@ -50,6 +50,13 @@ export function blockScale(b, frame, { fit = "fit", round = true } = {}) {
 export function blockFromView(b, view) {
   const f = view?.frame; if (!f?.center || !(f.w > 0)) return null;
   return { center: f.center.map(v => +(+v).toFixed(7)), scale: blockScale(b, f, { fit: b.fit || "fit", round: b.round !== false }) };
+}
+/* рамка вида под заданный масштаб блока (#119, ч.2): стороны = блок (мм) × масштаб, пропорции — как у блока;
+   тогда «Вписать» и «Заполнить» дают ровно этот масштаб. Середина рамки не трогается. */
+export function frameForScale(b, frame, scale) {
+  if (!(b.w > 0 && b.h > 0 && scale > 0)) return frame;
+  const r2 = v => Math.round(v * 100) / 100, m = v => String(Math.round(v * 10) / 10).replace(".", ",");
+  return { ...frame, w: r2(b.w * scale / 1000), h: r2(b.h * scale / 1000), aspect: `${m(b.w)}:${m(b.h)}` };
 }
 /* высота блока под пропорции рамки при той же ширине (кнопка «Блок по рамке») */
 export const blockHeightFor = (b, frame) => frame?.w > 0 ? Math.round(b.w * frame.h / frame.w * 100) / 100 : b.h;

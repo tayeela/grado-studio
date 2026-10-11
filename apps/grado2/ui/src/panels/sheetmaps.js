@@ -4,11 +4,12 @@
    (/api/print/layout, apps/grado2/layout_io.py). Цвет объекта — как у карты (symbology.js symbolOf: единое, категории,
    диапазоны, правила; ЛГР — красной линией). Картинки карт кэшируются по месту, масштабу, размеру и слоям.
    Блок с видом (b.view, #119) берёт слои и оформление вида, а место и масштаб — из рамки вида (viewframes.js blockFromView;
-   sync() правит блоки листа, frameTo() двигает рамку вида при «Сдвиге карты в рамке»). */
+   sync() правит блоки листа, frameTo() двигает рамку вида при «Сдвиге карты в рамке», frameScale() меняет её размер
+   под масштаб, заданный числом, ownView() делает копию вида для одного листа). */
 import { project, shown, scale, viewNow } from "../store.js";
 import { breaks, fullStyle, legendItems as classesOf, swatchColor, symbolOf } from "../symbology.js";
 import { blockBounds } from "../sheet/model.js";
-import { blockFromView } from "../viewframes.js";
+import { blockFromView, frameForScale } from "../viewframes.js";
 
 const PX_PT = 0.26 / 0.35;                  // радиус точки на экране (пикс.) → толщина w печати (print_io: r = w × 0,35 мм)
 const boxes = new WeakMap();                // FeatureCollection → рамки объектов [запад, юг, восток, север]
@@ -137,8 +138,16 @@ export function printAll(sheets, meta, name) {
 }
 
 /* ---------- вид блока (#119) ---------- */
-// виды проекта для списка «Вид» в свойствах блока карты
-export const views = () => project.views.map(v => ({ id: v.id, name: v.name, frame: v.frame || null }));
+// виды проекта для списка «Вид» в свойствах блока карты; on — сколько блоков карты на всех листах стоят на виде, где — листы
+export function views() {
+  const use = {};
+  (project.layouts || []).forEach(s => (s.blocks || []).forEach(b => {
+    if (b.kind !== "map" || !b.view) return;
+    const u = use[b.view] ||= { on: 0, sheets: [] }; u.on++;
+    const t = s.title || "без названия"; if (!u.sheets.includes(t)) u.sheets.push(t);
+  }));
+  return project.views.map(v => ({ id: v.id, name: v.name, frame: v.frame || null, on: use[v.id]?.on || 0, sheets: use[v.id]?.sheets || [] }));
+}
 /* место и масштаб блоков с видом — по рамке вида; меняет лист на месте, → true, если что-то поменялось */
 export function sync(sheet) {
   let changed = false;
@@ -153,4 +162,18 @@ export function sync(sheet) {
 export function frameTo(viewId, center) {
   const v = viewOf(viewId); if (!v?.frame) return false;
   v.frame = { ...v.frame, center: center.map(x => +(+x).toFixed(7)) }; return true;
+}
+// масштаб, заданный числом, на блоке с видом: рамка вида на карте меняет размер под блок (середина та же)
+export function frameScale(viewId, b, scale) {
+  const v = viewOf(viewId); if (!v?.frame) return false;
+  v.frame = frameForScale(b, v.frame, scale); return true;
+}
+/* «Отдельный вид»: копия вида (слои, оформление, рамка) под одну карту листа — её рамку двигают, не трогая другие листы.
+   → id новой копии */
+export function ownView(viewId, sheetTitle) {
+  const v = viewOf(viewId); if (!v) return "";
+  const id = "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), base = `${v.name} · ${sheetTitle || "лист"}`;
+  let name = base; for (let i = 2; project.views.some(x => x.name === name); i++) name = `${base} (${i})`;
+  project.views.push({ ...JSON.parse(JSON.stringify(v)), id, name });
+  return id;
 }

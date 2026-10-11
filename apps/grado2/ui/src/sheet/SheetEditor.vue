@@ -12,14 +12,15 @@
      набрать в командной строке внизу («ВЫРОВНЯТЬ ВЛЕВО», «СДВИГ 10 0», «МАСШТАБ 1:2000»; ↑ — прошлые команды). Оттуда же
      (arrange.js): группы (щелчок выбирает всю группу, Alt+щелчок — один элемент), отражение, «Формат по образцу»;
      Alt на ручке размера — от середины, Shift — с пропорциями.
-     Блок «Карта» с видом (#119, проп maps: views, sync, frameTo): место и масштаб — из рамки вида на карте; «Сдвиг карты
-     в рамке» двигает саму рамку вида, «Как на карте» отвязывает блок от вида. -->
+     Блок «Карта» с видом (#119, проп maps: views, sync, frameTo, frameScale, ownView): место и масштаб — из рамки вида
+     на карте; «Сдвиг карты в рамке» двигает саму рамку вида, масштаб числом или колесом меняет её размер, «Отдельный вид» —
+     копия вида только для этого блока, «Как на карте» отвязывает блок от вида. -->
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed, watch } from "vue";
 import Konva from "konva";
 import "../../../web/snap.js";                      // общая привязка с нынешним макетом листа: кладёт Snap в globalThis
 import { FORMAT_T, KINDS, pageSize, frameRect, newBlock, snapBox, problems, reformat, align, distribute, sameSize, reorder,
-  duplicate, bounds, rulerStep, label, moveCenter, nextScale } from "./model.js";
+  duplicate, bounds, rulerStep, label, moveCenter, nextScale, SCALES } from "./model.js";
 import { stampOps } from "./stamp.js";
 import { withGroups, group, ungroup, regroup, flip, moveBy, moveTo, sizeTo, rotateBy, styleOf, paint } from "./arrange.js";
 import { COMMANDS, parse, hints, titleOf } from "./commands.js";
@@ -358,6 +359,15 @@ async function printPdf() {
   busy.value = "PDF собирается…";
   try { await props.maps.pdf(clone(sheet.value), props.meta, props.page); busy.value = ""; } catch (e) { busy.value = e.message || "PDF не собрался"; }
 }
+/* масштаб блока с видом задаёт рамка: она меняет размер на карте (#119, ч.2); масштаб не из ряда — без «круглого»,
+   иначе его тут же округлило бы. → false, если блок без вида с рамкой */
+function viewScale(b, s) {
+  if (!b.view || !props.maps?.frameScale?.(b.view, b, s)) return false;
+  if (b.round !== false && !SCALES.includes(s)) patch(b.id, { round: false });
+  said.value = `Рамка вида «${viewName(b.view)}» под масштаб ${"1:" + s.toLocaleString("ru")}${shared(b.view) > 1 ? " — меняются все листы с этим видом" : ""}`;
+  return true;
+}
+const shared = id => (props.maps?.views?.() || []).find(v => v.id === id)?.on || 0;
 // подпись действия живёт ровно на время команды: запись истории берёт её, затем она сбрасывается
 function act(id, args = []) { doing = titleOf(id); said.value = ""; try { return exec(id, args); } finally { doing = ""; } }
 function exec(id, args) {
@@ -392,7 +402,12 @@ function exec(id, args) {
   if (id === "scale") {
     const ms = free.filter(x => x.kind === "map"); if (!ms.length) { said.value = "Выберите карту"; return; }
     if (!(args[0] >= 100 && args[0] <= 10000000)) { said.value = "Масштаб — от 1:100 до 1:10 000 000"; return; }
-    const m = {}; ms.forEach(x => { m[x.id] = { scale: Math.round(args[0]) }; }); return patchMany(m);
+    const s = Math.round(args[0]), m = {};
+    ms.forEach(x => { if (!viewScale(x, s)) m[x.id] = { scale: s }; }); return patchMany(m);
+  }
+  if (id === "view:own") {                            // «Отдельный вид»: копия вида только для этого блока
+    const x = bs.find(y => y.kind === "map" && y.view), nid = x && props.maps?.ownView?.(x.view, sheet.value.title); if (!nid) return;
+    patch(x.id, { view: nid }); said.value = `Карта стоит на своём виде «${viewName(nid)}»: его рамку двигают, не трогая другие листы`; return;
   }
   if (a === "tool") { tool.value = b; return; }
   if (a === "add") { tool.value = tool.value === b ? "select" : b; host.value?.focus(); return; }
@@ -481,7 +496,7 @@ onMounted(() => {
   stage.on("wheel", e => {
     e.evt.preventDefault(); const d = e.evt.deltaY;
     const mb = tool.value === "content" && !e.evt.ctrlKey && !e.evt.metaKey ? mapAt(pt()) : null;   // колесо над картой — масштаб карты
-    if (mb?.view) { said.value = `Масштаб задаёт рамка вида «${viewName(mb.view)}»: растяните её на карте`; return; }
+    if (mb?.view && props.maps?.frameScale) { if (Math.abs(d) > 2) viewScale(mb, nextScale(mb.scale, d > 0 ? 1 : -1)); return; }
     if (mb) { if (Math.abs(d) > 2) patch(mb.id, { scale: nextScale(mb.scale, d > 0 ? 1 : -1) }); return; }
     zoomAt(Math.exp(-Math.max(-60, Math.min(60, d)) * .004), stage.getPointerPosition());
   });
@@ -526,6 +541,7 @@ defineExpose({ fit, act });
           <canvas ref="rulerX" class="sed-rx" @pointerdown="rulerDown('x', $event)" title="Тяните вниз — горизонтальная направляющая"></canvas>
           <canvas ref="rulerY" class="sed-ry" @pointerdown="rulerDown('y', $event)" title="Тяните вправо — вертикальная направляющая"></canvas>
           <div ref="host" class="sed-stage" tabindex="0" aria-label="Лист" @mouseleave="cursor = null; drawRulers()"></div>
+          <div v-if="!sheet.blocks.length && tool === 'select'" class="sed-empty">Лист пуст. Нарисуйте на нём карту (кнопка «Карта» на ленте) и выберите ей вид в «Свойствах» — место и масштаб возьмутся из рамки вида на карте. Надписи, легенду и картинки ставят так же.</div>
         </div>
       </section>
       <aside class="sed-side right">
@@ -576,6 +592,7 @@ defineExpose({ fit, act });
 .sed-corner { position: absolute; left: 0; top: 0; width: 22px; height: 22px; background: var(--g-panel); border-right: 1px solid var(--g-line); border-bottom: 1px solid var(--g-line); }
 .sed-rx { position: absolute; left: 22px; top: 0; right: 0; height: 22px; width: calc(100% - 22px); cursor: s-resize; }
 .sed-ry { position: absolute; left: 0; top: 22px; bottom: 0; width: 22px; height: calc(100% - 22px); cursor: e-resize; }
+.sed-empty { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); max-width: 360px; padding: 12px 16px; border-radius: 8px; background: var(--g-panel); color: var(--g-mute); font-size: 13px; line-height: 1.45; text-align: center; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
 .sed-stage { position: absolute; left: 22px; top: 22px; right: 0; bottom: 0; outline: none; overflow: hidden; }
 .sed-cmd { height: 28px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-top: 1px solid var(--g-line); background: var(--g-panel); font-size: 12px; color: var(--g-mute); }
 .sed-cmd input { width: 340px; flex: none; height: 22px; font: 12px/1 var(--wa-font-family-code, ui-monospace, monospace); color: var(--g-ink); background: var(--g-bg); border: 1px solid var(--g-line); border-radius: 4px; padding: 0 6px; }

@@ -174,3 +174,10 @@ test("имена элементов: безымянные одного вида 
   assert.equal(legendFit({ ...leg, h: 300 }), 7);
   assert.ok(problems({ format: "A3", blocks: [{ id: "l", x: 30, y: 30, w: 50, ...leg }] }).some(p => p.text === "Легенда: 3 строки не помещаются — увеличьте высоту"));
 });
+
+test("пустой лист: без элементов, формат, штамп и сетка — как у обычного", () => {
+  const s = newSheet({ format: "A2", orient: "P", title: "Схема", blank: true });
+  assert.deepEqual(s.blocks, []);
+  assert.equal(s.format, "A2"); assert.equal(s.orient, "P"); assert.equal(s.stamp, true); assert.equal(s.title, "Схема");
+  assert.ok(s.grid && s.snap && s.guides);
+});
