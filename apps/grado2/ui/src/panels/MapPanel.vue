@@ -5,7 +5,7 @@
      Размер карты следит за окном dockview (ResizeObserver); масштаб пишет в store.scale, вид — в store.viewNow (для записи проекта).
      Черчение как в AutoCAD (команды, привязки, ручки, командная строка над картой) — cad.js, подключается к этой карте;
      поиск по адресу, кадастровому номеру и № КРТ над картой — MapSearch.vue; метки комментариев и указатели участников
-     совместной работы — hubmap.js; рамки листов альбома — albumframes.js. -->
+     совместной работы — hubmap.js; рамки листов альбома — albumframes.js; рамки видов (#119) — viewframesmap.js. -->
 <template><div class="mapbox">
   <!-- карта — одна остановка Tab: стрелки двигают, «+» и «−» меняют масштаб (клавиши OpenLayers); объекты слоя доступны
        списком в «Таблице атрибутов» (#30) -->
@@ -46,9 +46,10 @@ import { basemap, gjFormat, layerSync, readOne } from "../maplayers.js";
 import { attachCad, cadApi } from "../cad.js";
 import { attachHub, hubClick } from "../hubmap.js";
 import { attachFrames } from "../albumframes.js";
+import { attachViewFrames } from "../viewframesmap.js";
 
 const el = ref(null);
-let map, ro, offCad = null, offHub = null, offFrames = null;
+let map, ro, offCad = null, offHub = null, offFrames = null, offViews = null;
 const mref = shallowRef(null);           // карта для поиска над ней (MapSearch.vue)
 const fmt = gjFormat;
 
@@ -171,6 +172,7 @@ onMounted(() => {
   LS = layerSync(map); vec = LS.vec; mref.value = map;
   offCad = attachCad(map, { vec, sync: () => LS.sync(), terrSrc });     // команды черчения: щелчки, ручки, командная строка
   offHub = attachHub(map);                         // совместная работа: метки комментариев, указатели других участников
+  offViews = attachViewFrames(map);                // рамки видов, пока открыты «Виды» или «Макет листа»
   offFrames = attachFrames(map);                   // рамки листов альбома, пока вкладка «Листы и альбом» на виду
   const box = new DragBox({ condition: shiftKeyOnly });
   box.on("boxend", () => onBox(box)); map.addInteraction(box);
@@ -188,6 +190,7 @@ onMounted(() => {
   ro = new ResizeObserver(() => { map.updateSize(); if (viewPending) { applyView(); upd(); } }); ro.observe(el.value);
   opened();
   mapApi.zoomTo = zoomTo; mapApi.view = map.getView();
+  mapApi.extent = () => map.getView().calculateExtent(map.getSize());   // охват экрана карты (EPSG:3857) — рамка вида «По экрану»
   loadLibs().then(() => map.render());   // знаки ЛГР появляются, когда пришли библиотеки
   watch([basemapId, theme], ([id, t]) => map.getLayers().setAt(0, basemap(id, t)));
   watch(() => project.raw, opened);
@@ -211,7 +214,7 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { offCad?.(); offHub?.(); offFrames?.(); ro?.disconnect(); map?.setTarget(undefined); });
+onBeforeUnmount(() => { offCad?.(); offHub?.(); offFrames?.(); offViews?.(); ro?.disconnect(); map?.setTarget(undefined); });
 </script>
 
 <style>

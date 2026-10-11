@@ -4,7 +4,9 @@
      проекта, её держит автосохранение и пишет «Сохранить», как и правки слоёв (project.js). Карта блока — настоящая карта проекта в масштабе блока, «PDF»
      печатает лист тем же рендером, что альбом (sheetmaps.js). Штамп берёт поля альбома (album.meta файла). Новый
      лист ставит карту туда, где открыт проект, легенду собирает из его слоёв. Это свои листы проекта; альбом ППТ КРТ
-     собирается отдельно — кнопкой «Листы и альбом» в шапке (строка-пояснение справа). Удаление листа — через диалог Web Awesome. -->
+     собирается отдельно — кнопкой «Листы и альбом» в шапке (строка-пояснение справа). Удаление листа — через диалог Web Awesome.
+     Блок карты с видом (#119) следует за рамкой вида: сдвинули или растянули рамку на карте — листы с этим видом
+     меняются сами (sheetmaps.js sync); пока окно открыто, рамки видов видны на карте (viewframesmap.js). -->
 <template>
   <div class="spn">
     <div class="spn-bar" role="toolbar" aria-label="Листы макета">
@@ -30,14 +32,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, toRaw, watch } from "vue";
+import { ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } from "vue";
 import { FilePlus2, Copy, Trash2, FileDown } from "@lucide/vue";
 import SheetEditor from "../sheet/SheetEditor.vue";
 import { newSheet, newId, LEGEND_SAMPLE } from "../sheet/model.js";
 import { project } from "../store.js";
-import { mapImage, here, legendItems, printPdf, printAll } from "./sheetmaps.js";
+import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo } from "./sheetmaps.js";
+import { vframes } from "../viewframesmap.js";
 
-const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf };
+const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, views, sync, frameTo, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
 const SAMPLE = JSON.stringify(LEGEND_SAMPLE);
 const clone = x => JSON.parse(JSON.stringify(x));
 const sheets = ref([]), cur = ref(0), askDrop = ref(false);
@@ -77,6 +80,10 @@ function open() {
   base = JSON.stringify(sheets.value);                // то, что уже в проекте (или нетронутый новый лист): правкой не считать
 }
 watch(() => project.layouts, l => { if (toRaw(l) !== mine) open(); }, { immediate: true });
+// рамку вида сдвинули или растянули на карте — блоки карты с этим видом встают по ней на всех листах
+watch(() => project.views.map(v => [v.id, v.frame]), () => sheets.value.forEach(sync), { deep: true });
+onMounted(() => { vframes.on++; });
+onBeforeUnmount(() => { vframes.on--; });
 
 /* Любая правка листа — правка проекта: автосохранение держит её, «Сохранить» пишет в файл. */
 watch(sheets, () => {

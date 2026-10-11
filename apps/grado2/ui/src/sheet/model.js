@@ -263,9 +263,11 @@ export function reorder(blocks, ids, dir) {
   if (dir === "down") for (const i of idx) if (i > 0 && !set.has(list[i - 1].id)) [list[i], list[i - 1]] = [list[i - 1], list[i]];
   return list;
 }
-// копии элементов со сдвигом (Ctrl+D, вставка): новые id, имя «… (копия)»
+// копии элементов со сдвигом (Ctrl+D, вставка): новые id, имя «… (копия)»; копии группы — своя новая группа
 export function duplicate(bs, d = 5) {
-  return bs.map(b => ({ ...JSON.parse(JSON.stringify(b)), id: newId(b.kind), x: r2(b.x + d), y: r2(b.y + d), name: `${label(b)} (копия)`, locked: false }));
+  const gs = {}, g = id => id && (gs[id] ||= newId("group"));
+  return bs.map(b => ({ ...JSON.parse(JSON.stringify(b)), id: newId(b.kind), x: r2(b.x + d), y: r2(b.y + d), name: `${label(b)} (копия)`, locked: false,
+    group: g(b.group) || undefined, was: undefined }));
 }
 // шаг делений линейки: подписи не чаще, чем через minPx пикселей экрана; k — пикселей в мм
 export function rulerStep(k, minPx = 50) {

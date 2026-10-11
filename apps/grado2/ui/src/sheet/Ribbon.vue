@@ -2,23 +2,27 @@
      добавление элементов, правка, упорядочивание (выравнивание, распределение, порядок, закрепление), вид (сетка,
      привязки, увеличение) и выгрузка. Только кнопки: действия выполняет SheetEditor.vue по событию act.
      Узкое окно (меньше полной ширины ленты, например 1280): «Упорядочить» сворачивается в выпадающие кнопки «Выровнять»,
-     «Распределить и размер», «Порядок» — как кнопки-списки на панели «Действия» макета QGIS; всё остаётся под рукой. -->
+     «Распределить и размер», «Порядок», «Группа и отражение» — как кнопки-списки на панели «Действия» макета QGIS.
+     Каждая кнопка — команда из commands.js (её же можно набрать в командной строке); группы, отражение и «Формат по образцу» —
+     с deckcraft (arrange.js). -->
 <script setup>
 import { ref, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { ChevronDown, MousePointer2, Hand, Map, List, Type, Image, Compass, Ruler, Table, Square, Circle, MoveRight, Undo2, Redo2, Copy,
   ClipboardPaste, CopyPlus, Trash2, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal,
   AlignCenterHorizontal, AlignEndHorizontal, AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter, StretchHorizontal,
   StretchVertical, BringToFront, SendToBack, ArrowUp, ArrowDown, Lock, LockOpen, Grid3x3, Magnet, ZoomIn, ZoomOut, Maximize, Scan,
-  FileImage, FileDown, Move } from "@lucide/vue";
+  FileImage, FileDown, Move, Group, Ungroup, FlipHorizontal2, FlipVertical2, Paintbrush } from "@lucide/vue";
 
-const props = defineProps({ tool: String, hasMaps: Boolean, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean });
+const props = defineProps({ tool: String, hasMaps: Boolean, canUndo: Boolean, canRedo: Boolean, nSel: Number, canPaste: Boolean, grid: Object, anyLocked: Boolean,
+  undoT: String, redoT: String, grouped: Boolean });
 const emit = defineEmits(["act"]);
 const S = 18;                                          // размер значка, px
 /* свёрнутая «Упорядочить»: кнопка-список вместо ряда кнопок (id — элементы группы по порядку) */
 const FOLD = [
   { id: "m:align", i: AlignStartVertical, t: "Выровнять", ids: ["align:left", "align:hcenter", "align:right", "align:top", "align:vcenter", "align:bottom"] },
   { id: "m:dist", i: AlignHorizontalDistributeCenter, t: "Распределить и размер", ids: ["dist:x", "dist:y", "same:w", "same:h"] },
-  { id: "m:order", i: BringToFront, t: "Порядок", ids: ["order:top", "order:up", "order:down", "order:bottom"] }];
+  { id: "m:order", i: BringToFront, t: "Порядок", ids: ["order:top", "order:up", "order:down", "order:bottom"] },
+  { id: "m:group", i: Group, t: "Группа и отражение", ids: ["group", "ungroup", "flip:h", "flip:v"] }];
 const rb = ref(null), compact = ref(false);
 let fullW = 0, ro = null;
 // полная ширина ленты — сумма групп в развёрнутом виде (меряется, пока лента развёрнута; окно могло быть скрыто — тогда 0)
@@ -61,12 +65,13 @@ const groups = () => [
     { id: "add:ellipse", i: Circle, t: "Эллипс", on: props.tool === "ellipse" },
     { id: "add:line", i: MoveRight, t: "Линия со стрелкой", on: props.tool === "line" }] },
   { t: "Правка", items: [
-    { id: "undo", i: Undo2, t: "Отменить (Ctrl+Z)", off: !props.canUndo },
-    { id: "redo", i: Redo2, t: "Вернуть (Ctrl+Shift+Z)", off: !props.canRedo },
+    { id: "undo", i: Undo2, t: props.undoT ? `Отменить: ${props.undoT} (Ctrl+Z)` : "Отменить (Ctrl+Z)", off: !props.canUndo },
+    { id: "redo", i: Redo2, t: props.redoT ? `Вернуть: ${props.redoT} (Ctrl+Shift+Z)` : "Вернуть (Ctrl+Shift+Z)", off: !props.canRedo },
     { id: "copy", i: Copy, t: "Копировать (Ctrl+C)", off: !props.nSel },
     { id: "paste", i: ClipboardPaste, t: "Вставить (Ctrl+V)", off: !props.canPaste },
     { id: "dup", i: CopyPlus, t: "Дублировать (Ctrl+D)", off: !props.nSel },
-    { id: "del", i: Trash2, t: "Удалить (Delete)", off: !props.nSel }] },
+    { id: "del", i: Trash2, t: "Удалить (Delete)", off: !props.nSel },
+    { id: "painter", i: Paintbrush, t: "Формат по образцу: выберите образец, затем щёлкайте по элементам (Esc — закончить)", on: props.tool === "painter", off: !props.nSel && props.tool !== "painter" }] },
   { t: "Упорядочить", items: [
     { id: "align:left", i: AlignStartVertical, t: "По левому краю (один элемент — по рамке листа)", off: !props.nSel },
     { id: "align:hcenter", i: AlignCenterVertical, t: "По центру по горизонтали", off: !props.nSel },
@@ -82,6 +87,10 @@ const groups = () => [
     { id: "order:up", i: ArrowUp, t: "Выше (Ctrl+])", off: !props.nSel },
     { id: "order:down", i: ArrowDown, t: "Ниже (Ctrl+[)", off: !props.nSel },
     { id: "order:bottom", i: SendToBack, t: "На задний план", off: !props.nSel },
+    { id: "group", i: Group, t: "Сгруппировать (Ctrl+G): щелчок выбирает всю группу, Alt+щелчок — один элемент", off: props.nSel < 2 },
+    { id: "ungroup", i: Ungroup, t: "Разгруппировать (Ctrl+Shift+G)", off: !props.grouped },
+    { id: "flip:h", i: FlipHorizontal2, t: "Отразить слева направо (места и углы; картинка не зеркалится)", off: !props.nSel },
+    { id: "flip:v", i: FlipVertical2, t: "Отразить сверху вниз", off: !props.nSel },
     { id: "lock", i: Lock, t: "Закрепить выбранные (Ctrl+L)", off: !props.nSel },
     { id: "unlock", i: LockOpen, t: "Открепить все (Ctrl+Shift+L)", off: !props.anyLocked }] },
   { t: "Вид", items: [

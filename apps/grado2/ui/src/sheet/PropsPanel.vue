@@ -1,18 +1,28 @@
 <!-- ГРАДО 2 · панель «Свойства» редактора раскладки (как «Свойства элемента» и «Макет» в QGIS). Ничего не выбрано —
      свойства листа: формат, ориентация, штамп, сетка, привязки, направляющие. Выбран элемент — положение и размер
      с опорной точкой, поворот, свои настройки вида (масштаб карты, текст надписи, файл картинки…), рамка, фон,
-     непрозрачность, скрыть и закрепить. Выбрано несколько — подсказка про выравнивание. Правки уходят событиями. -->
+     непрозрачность, скрыть и закрепить. Выбрано несколько — подсказка про выравнивание. Правки уходят событиями.
+     У карты — «Вид» (#119): вид проекта с рамкой на карте задаёт слои, место и масштаб блока («Вписать» или «Заполнить»,
+     круглый масштаб), «Блок по рамке» подгоняет высоту блока под пропорции рамки. -->
 <script setup>
 import { ref, computed } from "vue";
 import NumField from "./NumField.vue";
+import { blockFromView, blockHeightFor, frameLabel } from "../viewframes.js";
 import { FORMATS, FORMAT_T, KINDS, SCALES, FONTS, REFS, refPos, fromRef, fmtScale, fmtM, groundSize, label, linkedScale } from "./model.js";
 
-const props = defineProps({ sheet: Object, sel: Array, hasMaps: Boolean });
+const props = defineProps({ sheet: Object, sel: Array, hasMaps: Boolean, views: { type: Array, default: () => [] } });
 const emit = defineEmits(["patch", "format", "set", "act"]);
 const ref0 = ref("tl");
 const b = computed(() => props.sel.length === 1 ? props.sel[0] : null);
 const maps = computed(() => props.sheet.blocks.filter(x => x.kind === "map"));
 const p = (patch) => emit("patch", b.value.id, patch);
+const vw = computed(() => b.value?.view && props.views.find(v => v.id === b.value.view));
+const linked = computed(() => !!vw.value?.frame);       // место и масштаб блока — из рамки вида
+// выбрать вид: блок сразу встаёт по рамке вида; «Текущая карта» — блок отвязан, слои — как на карте
+function setView(id) {
+  const v = props.views.find(x => x.id === id);
+  p(v ? { view: id, ...(blockFromView(b.value, v) || {}) } : { view: undefined });
+}
 const pos = (i, v) => { const [x, y] = refPos(b.value, ref0.value); p(fromRef(b.value, ref0.value, i ? x : v, i ? v : y)); };
 const sub = (key, k, v) => p({ [key]: { ...(b.value[key] || {}), [k]: v } });
 const gridSet = (k, v) => emit("set", { grid: { ...(props.sheet.grid || {}), [k]: v } });
@@ -86,15 +96,32 @@ function legendText(v) { const t = v.split("\n"), old = b.value.items || []; p({
 
       <template v-if="b.kind === 'map'">
         <div class="pp-h">Карта</div>
+        <label class="pp-f">Вид<select :value="b.view || ''" @change="setView($event.target.value)">
+          <option value="">Текущая карта</option>
+          <option v-for="v in views" :key="v.id" :value="v.id">{{ v.name }}{{ v.frame ? '' : ' (без рамки)' }}</option></select></label>
+        <div v-if="!views.length" class="pp-note">Видов пока нет: сохраните вид в окне «Виды» и нарисуйте ему рамку на карте — блок встанет по ней.</div>
+        <template v-if="vw">
+          <div class="pp-note">{{ vw.frame ? `Рамка вида на карте: ${frameLabel('', vw.frame).slice(3)}. Двигайте и растягивайте её на карте — блок следует за ней.` : 'У вида нет рамки: слои — из вида, место — своё. Нарисуйте рамку в окне «Виды».' }}</div>
+          <template v-if="linked">
+            <label class="pp-f">Рамка в блоке<select :value="b.fit || 'fit'" @change="p({ fit: $event.target.value })">
+              <option value="fit">Вписать — рамка видна целиком</option><option value="fill">Заполнить — блок закрыт целиком</option></select></label>
+            <label class="tg"><input type="checkbox" :checked="b.round !== false" @change="p({ round: $event.target.checked })"><i></i>Круглый масштаб (1:2 000, 1:2 500…)</label>
+            <div class="pp-note">Масштаб по рамке: {{ fmtScale(b.scale) }}.</div>
+            <button class="pp-btn" title="Высота блока — под пропорции рамки вида, ширина та же" @click="p({ h: blockHeightFor(b, vw.frame) })">Блок по рамке</button>
+            <button class="pp-btn" :disabled="!hasMaps" title="Показать рамку вида на карте" @click="emit('act', 'view:show')">Рамка на карте</button>
+          </template>
+        </template>
+        <label class="pp-f">Подложка<select :value="b.basemap || 'none'" @change="p({ basemap: $event.target.value })">
+          <option value="none">без подложки</option><option value="light">светлая карта</option><option value="sat">снимок</option></select></label>
+        <template v-if="!linked">
         <label class="pp-f">Масштаб<select :value="SCALES.includes(b.scale) ? b.scale : ''" @change="$event.target.value && p({ scale: +$event.target.value })">
           <option v-if="!SCALES.includes(b.scale)" value="">{{ b.scale ? fmtScale(b.scale) : 'не задан' }}</option>
           <option v-for="s in SCALES" :key="s" :value="s">{{ fmtScale(s) }}</option></select></label>
         <label class="pp-f">Свой масштаб, 1:<NumField :model-value="b.scale" :min="1" :step="100" :digits="0" label="Масштаб" @update:model-value="p({ scale: $event })" /></label>
         <div v-if="b.scale > 0" class="pp-note">На местности: {{ groundSize(b).map(fmtM).join(' × ') }}. Размер рамки меняет охват, масштаб остаётся.</div>
-        <label class="pp-f">Подложка<select :value="b.basemap || 'none'" @change="p({ basemap: $event.target.value })">
-          <option value="none">без подложки</option><option value="light">светлая карта</option><option value="sat">снимок</option></select></label>
         <button class="pp-btn" :disabled="!hasMaps" title="Середина и масштаб — как сейчас в окне «Карта»" @click="emit('act', 'map:here')">Как на карте</button>
-        <div class="pp-note">{{ b.center ? 'Сдвинуть карту в рамке — инструмент «Сдвиг карты» на ленте (C), колесо над картой меняет масштаб.' : 'Место карты не задано: нажмите «Как на карте».' }}</div>
+        <div class="pp-note">{{ b.center ? 'Сдвинуть карту в рамке — инструмент «Сдвиг карты» на ленте (C), колесо над картой меняет масштаб.' : 'Место карты не задано: выберите вид или нажмите «Как на карте».' }}</div>
+        </template>
       </template>
 
       <template v-if="b.kind === 'text'">
