@@ -2,6 +2,14 @@
 
 New entries go on top. Moved out of CLAUDE.md on 2026-09-24 (it was loaded into every agent turn).
 
+- **2026-10-11, ГРАДО 2 v0.99.87: проверка установщика Windows убрана из сборки; учебный участок в Новой Москве (решение владельца)**
+  - Владелец (11.10): проверка установки на чистом Windows не нужна — `packaging/windows_install_check.ps1` и шаг в
+    `.github/workflows/grado2-release.yml` убраны; сам установщик (`packaging/grado2-installer.iss`) не менялся. Короткая проверка
+    запущенной программы (`packaging/installed_check.py`) в задаче `test` осталась.
+  - «ТиНАО» — два округа, одной границы нет (владелец). Учебный участок для прогона `tools/acceptance_run.mjs`:
+    Троицкий округ, поселение Краснопахорское, у Калужского шоссе севернее Красной Пахры, 51 га
+    (`tools/acceptance/troitsky-krasnopahorskoe.geojson`); `docs/ux/acceptance.md` без раздела про Windows.
+
 - **2026-10-11, ГРАДО 2 v0.99.86: подписи поверх линий — не огрех (#59, ответ владельца на #54 вопросы 2–3).**
   - Владелец: «подпись просто поверх линий, не страшно». Подписи ради линий слоёв не двигаются, линии не прерываются, угловые
     надписи без подложки. Правило — `docs/wiki/album-rules.md` §2, `docs/standards/albums/label-rules.md`.

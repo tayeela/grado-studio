@@ -131,17 +131,10 @@ jobs:
           $v = (Get-Content apps/grado2/web/version.json | ConvertFrom-Json).version
           choco install innosetup --no-progress -y
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$v" packaging\grado2-installer.iss
-      - name: Install on a clean Windows, run, uninstall (packaging/windows_install_check.ps1)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $v = (Get-Content apps/grado2/web/version.json | ConvertFrom-Json).version
-          ./packaging/windows_install_check.ps1 -Installer (Get-Item dist/installer/*.exe).FullName -Version $v
       - name: macOS disk image
         if: runner.os == 'macOS'
         run: hdiutil create -volname "ГРАДО 2" -srcfolder "dist/ГРАДО 2.app" -ov -format UDZO "dist/GRADO2.dmg"
       - uses: actions/upload-artifact@v4
-        if: success() || failure()     # установщик нужен и тогда, когда упала проверка установки — посмотреть руками
         with:
           name: grado2-${{ matrix.os }}
           if-no-files-found: warn
