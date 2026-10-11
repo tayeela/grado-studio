@@ -21,8 +21,8 @@ datas = [(str(APP / "web"), "web"),
          (str(ROOT / "docs/standards/albums/pptkrt-header.jpg"), "docs/standards/albums")]   # шапка слайдов альбома (album_io)
 datas += collect_data_files("certifi") + collect_data_files("ezdxf") + collect_data_files("grado_compute") + collect_data_files("grado_render")
 
-hiddenimports = ["server", "dxf_io", "file_io", "print_io", "export_io"]
-for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL", "shapely", "httpx", "httpcore", "h11", "anyio", "tenacity", "reportlab", "pptx", "lxml", "xlsxwriter",
+hiddenimports = ["server", "dxf_io", "file_io", "print_io", "export_io", "fonts"]
+for package in ("grado_connectors", "grado_compute", "grado_render", "grado_layout", "grado_geom", "ezdxf", "PIL", "shapely", "httpx", "httpcore", "h11", "anyio", "tenacity", "reportlab", "pptx", "fontTools", "lxml", "xlsxwriter",
                 "starlette", "uvicorn", "pydantic", "pydantic_core", "annotated_types", "typing_inspection", "click"):
     hiddenimports += collect_submodules(package)
 

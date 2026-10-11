@@ -64,7 +64,7 @@ class PdfBackend:
         self.font = self._fonts["ui"]                       # основной шрифт — ui (прежний публичный атрибут)
 
     def _font_for(self, family):
-        family = family if family in FAMILIES else "ui"
+        family = family if family in FAMILIES or str(family).startswith("f:") else "ui"   # «f:…» — свой шрифт (ttf.custom_face)
         if family not in self._fonts:
             self._fonts[family] = Font(self._font_paths.get(family) or find_font(family))
         f = self._fonts[family]

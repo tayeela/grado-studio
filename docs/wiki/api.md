@@ -12,6 +12,8 @@
   POST /api/export/sat {center, rect, scale | bbox, base} → спутник Яндекса по рамке листа в МСК для AutoCAD (zip: JPG, JGW, DXF)
   POST /api/print/pdf {meta, sheets:[…]} → альбом PDF (листы А3/А1, рамка и штамп ГОСТ), /api/print/pptx → тот же альбом
   редактируемой презентацией PowerPoint, /api/print/svg → лист для просмотра
+  GET  /api/fonts → шрифты для подписей (готовые, компьютера, свои), GET /api/fonts/file?f=… → TTF для просмотра,
+  POST /api/fonts {name, b64} → свой файл шрифта (fonts.py)
   GET  /api/projects, GET|POST /api/project?name=… | ?autosave=1 → проекты в «Документы/ГРАДО 2»
 
 Данные берутся коннекторами ядра (core/connectors), ТЭП — движком ядра (core/compute).
@@ -21,7 +23,7 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 Запуск: python3 apps/grado2/server.py [порт] [--hub]   (по умолчанию 8650; --hub или GRADO2_HUB=1 — совместный режим)
 ```
 
-Все упомянутые в коде пути (56):
+Все упомянутые в коде пути (58):
 
 - `/api/export/`
 - `/api/export/dxf`
@@ -32,6 +34,8 @@ HTTP — Starlette под uvicorn, тела запросов проверяет 
 - `/api/fgistp/docs`
 - `/api/fgistp/fetch`
 - `/api/fgistp/layers`
+- `/api/fonts`
+- `/api/fonts/file`
 - `/api/health`
 - `/api/hub/`
 - `/api/hub/guest`

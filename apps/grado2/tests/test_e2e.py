@@ -67,6 +67,15 @@ class BrowserScenarios(unittest.TestCase):
                 srv.terminate()
                 srv.wait(10)
 
+    def test_next_acceptance(self):
+        """Сценарии приёмки C, D, E, G, H, N в новом интерфейсе /next/ (tests/e2e/next_acceptance.mjs): свой тестовый сервер
+        на копии fixtures/next_ui_project.grado2 с границей территории, без интернета."""
+        r = subprocess.run(["node", str(HERE / "e2e/next_acceptance.mjs")], capture_output=True, text=True, timeout=600,
+                           env={**os.environ, "CHROME": CHROME, "PY": os.environ.get("PY") or sys.executable})
+        print(r.stdout[-4000:])
+        print(_summary(r))
+        self.assertEqual(r.returncode, 0, _failure(r))
+
     def test_collab_scenario(self):
         """Два браузера, один общий проект (tests/e2e/collab_scenarios.mjs): вход, доступ, живая синхронизация, комментарии, история, роли."""
         port = _free_port()

@@ -3,7 +3,9 @@
      вопросы «заменить или добавить» и «не всё готово»; ниже штамп, список листов и свойства выбранного листа с просмотром.
      Сборку и печать делает прежний движок альбома, скрытый в странице (albumhost.js call, web/albumapi.js), поэтому PDF и
      PPTX выходят лист в лист прежние. Простые правки (название, формат, масштаб, легенда, ТЭП, порядок, удаление, штамп)
-     пишутся прямо в раздел album проекта. «Подробно» — прежнее окно: рамки листов на карте, «Слои и листы», макет надписей. -->
+     пишутся прямо в раздел album проекта. Пока вкладка на виду, рамки листов видны на карте (albumframes.js): щелчок выбирает
+     лист здесь, рамку тянут и меняют угол там же. «Слои листа» — роли выбранного листа с глазом (sheetlayers.js rows).
+     «Подробно» — прежнее окно: перетаскивание в «Слоях и листах», макет надписей. -->
 <template>
   <div class="pane alb">
     <div class="ahead">
@@ -25,7 +27,7 @@
         </wa-dropdown>
         <wa-button size="s" variant="brand" :disabled="busy || !sheets.length" title="Все листы одним PDF: рамка, штамп, масштаб, легенда" @click="file('pdf')"><FileDown :size="14" /> PDF</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy || !sheets.length" title="Все листы редактируемой презентацией PowerPoint: подписи — текстом, карты — фигурами по слоям" @click="file('pptx')"><Presentation :size="14" /> PPTX</wa-button>
-        <wa-button size="s" appearance="plain" title="Прежнее окно альбома: рамки листов на карте, «Слои и листы», макет надписей, фотографии" @click="detail"><ExternalLink :size="14" /> Подробно</wa-button>
+        <wa-button size="s" appearance="plain" title="Прежнее окно альбома: «Слои и листы», макет надписей, фотографии" @click="detail"><ExternalLink :size="14" /> Подробно</wa-button>
       </div>
     </div>
 
@@ -64,13 +66,27 @@
       </div>
     </div>
 
-    <wa-details class="stamp" :open="stampOpen" @wa-show="stampOpen = true" @wa-hide="stampOpen = false">
+    <wa-details class="stamp" :open="stampOpen" @wa-show.self="stampOpen = true" @wa-hide.self="stampOpen = false">
       <span slot="summary"><b>Штамп</b> <span class="sum">{{ stampSum }}</span></span>
       <div class="fields">
         <wa-input v-for="f in META" :key="f[0]" size="s" :label="f[1]" :value="meta[f[0]] || ''" :readonly="viewer" :data-meta="f[0]"
                   @change="e => setMeta(f[0], e.target.value)"></wa-input>
       </div>
       <wa-button size="s" appearance="outlined" :disabled="viewer || busy" title="Заполнить пустые поля «№ КРТ», «Округ, район» и «Адрес» по загруженным слоям; введённое вами не меняется" @click="fill"><WandSparkles :size="14" /> Заполнить по слоям</wa-button>
+    </wa-details>
+
+    <!-- настройки альбома (#89): цвет воды на белых схемах и шрифт подписей карт; пусто — как печаталось до настройки -->
+    <wa-details class="stamp look" :open="lookOpen" @wa-show.self="lookOpen = true" @wa-hide.self="lookOpen = false">
+      <span slot="summary"><b>Оформление карт</b> <span class="sum">{{ lookSum }}</span></span>
+      <div class="lookrow">
+        <wa-color-picker size="s" aria-label="Цвет воды на белых схемах" :value="meta.waterColor || WATER" :disabled="viewer" data-look="water"
+                         @change="e => setLook('waterColor', e.target.value)"></wa-color-picker>
+        <span class="lbl">Вода на белых схемах<small>сущпол и Генплан — своим цветом</small></span>
+        <wa-button v-if="meta.waterColor && meta.waterColor !== WATER" size="s" appearance="plain" :disabled="viewer" title="Голубой #bfe0f5, как по умолчанию" @click="setLook('waterColor', '')">Как было</wa-button>
+      </div>
+      <FontPicker label="Шрифт подписей карт" :value="meta.labelFont || 'base'" :name="meta.labelFontName" :presets="FONTS" :disabled="viewer" data-look="font"
+                  @change="setFont"></FontPicker>
+      <p class="hint">Заголовки и надписи листа — всегда Montserrat. Новые цвет и шрифт попадут в просмотр, PDF и PPTX.</p>
     </wa-details>
 
     <p v-if="!sheets.length" class="empty">Листов пока нет. «Добавить лист» — один лист по виду карты; «Собрать» → «Альбом ППТ КРТ» соберёт альбом по шаблону: титул, месторасположение, ортофотоплан, сущпол, документация, ПЗЗ, Генплан.</p>
@@ -92,6 +108,7 @@
         </wa-select>
         <wa-select size="s" label="Масштаб" :value="String(sel.scale || 0)" :disabled="viewer || row(sel).noScale" @change="e => setSheet('scale', +e.target.value)">
           <wa-option value="0">авто{{ row(sel).auto && row(sel).scale ? " (" + row(sel).scale + ")" : "" }}</wa-option>
+          <wa-option v-if="sel.scale && !scales.includes(sel.scale)" :value="String(sel.scale)">1:{{ sel.scale.toLocaleString("ru-RU") }} (рамка на карте)</wa-option>
           <wa-option v-for="v in scales" :key="v" :value="String(v)">1:{{ v.toLocaleString("ru-RU") }}</wa-option>
         </wa-select>
       </div>
@@ -101,13 +118,34 @@
       </div>
       <p v-if="why(sel)" class="nrw"><b>Не готов:</b> {{ why(sel) }}</p>
       <p v-if="row(sel).frozen" class="hint">Готовая вёрстка из файла: слои и оформление записаны в самом листе.</p>
-      <p v-else-if="row(sel).tpl" class="hint">Лист по шаблону: слои, оформление и рамка — из шаблона; рамку на карте двигают в окне «Подробно».</p>
+      <p v-else-if="row(sel).tpl" class="hint">Лист по шаблону: слои и оформление — из шаблона; рамку на карте можно сдвинуть, за угол — сменить масштаб.</p>
       <div class="row">
         <wa-button size="s" appearance="outlined" :disabled="busy" @click="preview"><Eye :size="14" /> Просмотр</wa-button>
         <wa-button size="s" appearance="outlined" :disabled="busy" title="PDF только этого листа" @click="file('pdf', cur)"><FileDown :size="14" /> PDF листа</wa-button>
+        <wa-button v-if="sel.kind !== 'tep'" size="s" appearance="outlined" data-act="lay" title="Двигать, выравнивать и править надписи листа — окно «Макет надписей»" @click="openLay"><Type :size="14" /> Надписи</wa-button>
         <wa-button size="s" appearance="plain" :disabled="viewer || cur === 0" title="Выше" aria-label="Выше" @click="up"><ArrowUp :size="14" /></wa-button>
         <wa-button size="s" appearance="plain" :disabled="viewer" title="Удалить лист" aria-label="Удалить лист" @click="askDrop = true"><Trash2 :size="14" /></wa-button>
       </div>
+      <!-- слои листа (роли сверху вниз): глаз — только на этом листе; перетаскивание и слои проекта — в окне «Подробно» -->
+      <wa-details v-if="roles && roles.kind === 'layout'" class="stamp lay" :open="layOpen" @wa-show.self="layOpen = true" @wa-hide.self="layOpen = false">
+        <span slot="summary"><b>Слои листа</b> <span class="sum">{{ laySum }}</span></span>
+        <ul class="roles" aria-label="Слои листа, сверху вниз">
+          <li v-for="r in roles.rows" :key="r.id" :class="{ off: !r.on }" :title="'Слои: ' + r.layers.join('; ')">
+            <wa-button size="s" appearance="plain" :disabled="!roles.editable" :aria-label="(r.on ? 'Скрыть' : 'Показать') + ' «' + r.title + '» на этом листе'"
+                       :title="roles.editable ? (r.on ? 'Скрыть на этом листе' : 'Показать на этом листе') : roles.why" @click="roleEye(r)">
+              <Eye v-if="r.on" :size="14" /><EyeOff v-else :size="14" /></wa-button>
+            <span class="rt">{{ r.title }} <small>{{ r.count }}</small><small class="src">{{ r.source }}</small></span>
+            <span class="cov" :class="{ w: r.cover != null && r.cover < .9 }">{{ r.cover == null ? "—" : Math.round(r.cover * 100) + " %" }}</span>
+            <span class="chips">
+              <button v-if="r.hand" class="chip hand" type="button" :disabled="!roles.editable" :title="r.hand + (roles.editable ? '. Щелчок — вернуть как по образцу' : '')" @click="roleReset(r)">вручную</button>
+              <span v-if="r.badge" class="chip" :class="r.badge.tone">{{ r.badge.text }}</span>
+            </span>
+          </li>
+        </ul>
+        <p v-if="!roles.editable && roles.why" class="hint">{{ roles.why }}</p>
+        <p class="hint">Порядок источников и перенос слоёв между листами — в окне «Подробно» → «Слои и листы».</p>
+      </wa-details>
+      <p v-else-if="roles && roles.kind === 'map'" class="hint">Лист показывает текущую карту: состава слоёв у него нет.</p>
       <div v-if="img.url && img.id === sel.id" class="prev"><img :src="img.url" :alt="'Лист ' + (cur + 1) + ': ' + (sel.title || '')"></div>
       <p v-else-if="img.busy" class="hint">Собираю картинку листа…</p>
     </section>
@@ -122,15 +160,23 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
-import { ArrowUp, CircleAlert, ExternalLink, Eye, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, WandSparkles } from "@lucide/vue";
+import { ArrowUp, CircleAlert, ExternalLink, Eye, EyeOff, FileDown, FilePlus2, LayoutTemplate, Presentation, Trash2, Type, WandSparkles } from "@lucide/vue";
 import { album, call, engineState, openAlbum, startEngine, sync } from "../albumhost.js";
 import { C } from "../collab.js";
 import { markDirty, notice } from "../project.js";
-import { project } from "../store.js";
+import { project, winApi } from "../store.js";
+import FontPicker from "./FontPicker.vue";
 
+const WATER = "#bfe0f5";   // вода белых схем по умолчанию (albums.js C_WATER_VIS, print_io.WATER_VIS)
+/* шрифт подписей карт: base — как печаталось до настройки (подписи альбома ППТ КРТ Montserrat жирным, у прочих листов PT Sans) */
+const FONTS = [["base", "Как сейчас"], ["pt-sans", "PT Sans"], ["pt-serif", "PT Serif"], ["montserrat", "Montserrat"]];   // готовые; любой другой — «Другой шрифт…» (FontPicker)
 const META = [["object", "Объект"], ["code", "Шифр"], ["stage", "Стадия: ПП, П, Р"], ["org", "Организация"], ["short", "№ КРТ"], ["place", "Округ, район"], ["address", "Адрес"]];
-const st = ref(null), cur = ref(0), stampOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
+const props = defineProps({ params: Object });
+/* выбранный лист — общий с рамками на карте (albumframes.js) */
+const cur = computed({ get: () => album.cur, set: v => { album.cur = v; } });
+const st = ref(null), stampOpen = ref(false), lookOpen = ref(false), askDrop = ref(false), legacy = ref(0), issues = ref(null), ver = ref(0);
 const img = reactive({ id: null, url: "", busy: false });
+const roles = ref(null), layOpen = ref(true);
 const viewer = computed(() => C.role === "viewer");
 const engineReady = computed(() => album.ready);
 
@@ -145,14 +191,32 @@ const busy = computed(() => !!st.value?.busy);
 const row = s => st.value?.rows?.[s.id] || { size: s.size || "", scale: "" };
 const why = s => st.value?.why?.[s.id] || "";
 const word = (n, a, b, c) => n % 10 === 1 && n % 100 !== 11 ? a : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? b : c;
-const stampSum = computed(() => { const p = [meta.value.object, meta.value.code, meta.value.stage].filter(Boolean); return p.length ? p.join(" · ") : "не заполнен"; });
+const stampSum = computed(() => { ver.value; album.rev; const p = [meta.value.object, meta.value.code, meta.value.stage].filter(Boolean); return p.length ? p.join(" · ") : "не заполнен"; });
+const lookSum = computed(() => {
+  ver.value; album.rev;   // meta — тот же объект project.raw, правится на месте: перечитать после каждой правки
+  const w = meta.value.waterColor && meta.value.waterColor !== WATER ? "вода " + meta.value.waterColor : "";
+  const f = FONTS.find(x => x[0] === meta.value.labelFont)?.[1] || (String(meta.value.labelFont || "").startsWith("f:") ? meta.value.labelFontName || "свой шрифт" : "");
+  return [w, f].filter(Boolean).join(" · ") || "как сейчас";
+});
 const head = computed(() => st.value?.stat || (sheets.value.length ? `Альбом: ${sheets.value.length} ${word(sheets.value.length, "лист", "листа", "листов")}` : "Альбом: листов нет"));
 
 /* состояние движка (ход сборки, «не готов», строки листов) — раз в полсекунды, пока вкладка открыта */
 let poll = 0;
-function readState() { const s = engineState(); st.value = s ? JSON.parse(JSON.stringify(s)) : null; }
-onMounted(() => { startEngine(); readState(); poll = setInterval(readState, 500); });
-onBeforeUnmount(() => clearInterval(poll));
+let lastFrames = "";
+function readState() {
+  const s = engineState(); st.value = s ? JSON.parse(JSON.stringify(s)) : null;
+  const f = JSON.stringify(st.value?.frames || []);
+  if (f !== lastFrames) { lastFrames = f; album.frames = st.value?.frames || []; }   // рамки на карте — только когда изменились
+}
+/* рамки листов на карте — пока вкладка на виду */
+let offVis = null;
+onMounted(() => {
+  startEngine(); readState(); poll = setInterval(readState, 500);
+  const api = props.params?.api;
+  album.tab = api ? api.isVisible : true;
+  offVis = api?.onDidVisibilityChange?.(e => { album.tab = e.isVisible; });
+});
+onBeforeUnmount(() => { clearInterval(poll); offVis?.dispose?.(); album.tab = false; });
 watch(() => sheets.value.length, n => { if (cur.value >= n) cur.value = Math.max(0, n - 1); });
 
 /* действие движка: ошибки — в строку состояния */
@@ -167,10 +231,42 @@ function edited() {
 }
 function ensure() { project.raw.album ||= { meta: { object: "", code: "", stage: "ПП", org: "" }, sheets: [] }; return project.raw.album; }
 function setMeta(k, v) { const a = ensure(); a.meta[k] = v; if (a.meta.auto) delete a.meta.auto[k]; edited(); }
+/* настройка оформления: значение по умолчанию не хранится — альбом печатается как до настройки */
+function setLook(k, v) {
+  const a = ensure();
+  if (!v || v === "base" || (k === "waterColor" && v.toLowerCase() === WATER)) delete a.meta[k]; else a.meta[k] = k === "waterColor" ? v.toLowerCase() : v;
+  img.id = null; edited();
+}
+/* шрифт подписей карт: готовый или любой «f:<id>»; имя любого хранится рядом (labelFontName) — показать его и там, где шрифта нет */
+function setFont(v, name) {
+  const a = ensure();
+  if (String(v).startsWith("f:") && name) a.meta.labelFontName = name; else delete a.meta.labelFontName;
+  setLook("labelFont", v);
+}
+/* «Надписи» — окно «Макет надписей» (AlbumLayout.vue) для выбранного листа */
+function openLay() { album.lay = cur.value; album.layTick++; winApi.open("albumlay"); }
+
+/* «Слои листа»: роли выбранного листа от движка (окно «Слои и листы»); перечитываются при смене листа и после правок */
+let rolesFor = null;
+async function loadRoles() {
+  const i = cur.value, id = sel.value?.id; if (!id) { roles.value = null; return; }
+  if (!album.ready) return;
+  try {
+    const r = await call(a => a.roles(i));
+    if (sel.value?.id === id) { roles.value = r ? JSON.parse(JSON.stringify(r)) : null; rolesFor = id; }
+  } catch { roles.value = null; }
+}
+const laySum = computed(() => {
+  const r = roles.value?.rows || [], off = r.filter(x => !x.on).length, bad = r.filter(x => x.badge && x.badge.tone !== "none").length;
+  return [`${r.length} ${word(r.length, "роль", "роли", "ролей")}`, off ? `скрыто ${off}` : "", bad ? `${bad} с замечанием` : ""].filter(Boolean).join(" · ");
+});
+async function roleEye(r) { await act(a => a.role(cur.value, r.id)); setTimeout(loadRoles, 400); img.id = null; }
+async function roleReset(r) { await act(a => a.resetRole(cur.value, r.id)); setTimeout(loadRoles, 400); img.id = null; }
+watch(() => [sel.value?.id, album.rev, album.ready], ([id], [was] = []) => { if (id !== was) roles.value = rolesFor === id ? roles.value : null; loadRoles(); }, { immediate: true });
 function setSheet(k, v) { if (!sel.value) return; sel.value[k] = v; edited(); }
 function up() { const i = cur.value, l = sheets.value; if (i < 1) return; [l[i - 1], l[i]] = [l[i], l[i - 1]]; cur.value = i - 1; edited(); }
 function drop() { askDrop.value = false; const l = sheets.value; if (!l.length) return; l.splice(cur.value, 1); cur.value = Math.min(cur.value, l.length - 1); edited(); }
-function pick(i) { cur.value = i; }
+function pick(i) { cur.value = i; album.fit++; }   // карта приближается к рамке листа
 function keys(e) {
   const n = sheets.value.length; if (!n) return;
   const k = { ArrowDown: cur.value + 1, ArrowUp: cur.value - 1, Home: 0, End: n - 1 }[e.key];
@@ -243,6 +339,27 @@ watch(() => album.want, k => { if (k) { album.want = null; file(k); } }, { immed
 .alb .stamp::part(header) { font-size: var(--wa-font-size-s); }
 .alb .stamp .sum { color: var(--g-muted); font-weight: 400; margin-left: 6px; }
 .alb .stamp .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; margin-bottom: 8px; }
+.alb .lay .roles { list-style: none; margin: 0 0 6px; padding: 0; }
+.alb .lay .roles li { display: grid; grid-template-columns: 28px minmax(0, 1fr) 44px auto; align-items: center; gap: 6px; padding: 2px 0;
+  font-size: var(--wa-font-size-s); border-top: 1px solid var(--g-line); }
+.alb .lay .roles li:first-child { border-top: 0; }
+.alb .lay .roles li.off .rt { opacity: .55; }
+.alb .lay .rt { min-width: 0; overflow-wrap: anywhere; line-height: 1.3; }
+.alb .lay .rt small { color: var(--g-muted); font-size: var(--wa-font-size-xs); margin-left: 2px; }
+.alb .lay .rt .src { display: block; margin-left: 0; }
+.alb .lay .cov { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--wa-font-size-xs); color: var(--g-muted); }
+.alb .lay .cov.w { color: var(--wa-color-warning-on-quiet); }
+.alb .lay .chips { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.alb .lay .chip { all: unset; font-size: var(--wa-font-size-xs); padding: 1px 6px; border-radius: 999px; background: var(--wa-color-neutral-fill-quiet); white-space: nowrap; }
+.alb .lay .chip.warn { background: var(--wa-color-warning-fill-quiet); color: var(--wa-color-warning-on-quiet); }
+.alb .lay .chip.bad { background: var(--wa-color-danger-fill-quiet); color: var(--wa-color-danger-on-quiet); }
+.alb .lay .chip.hand { background: var(--wa-color-brand-fill-quiet); color: var(--wa-color-brand-on-quiet); cursor: pointer; }
+.alb .lay .chip.hand:focus-visible { outline: 2px solid var(--wa-color-focus); }
+.alb .look .lookrow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.alb .look .lbl { flex: 1; display: grid; font-size: var(--wa-font-size-s); line-height: 1.3; }
+.alb .look .lbl small { color: var(--g-muted); font-size: var(--wa-font-size-xs); }
+.alb .look wa-select { margin-bottom: 6px; }
+.alb .look .hint { margin: 0; }
 .alb .empty { color: var(--g-muted); font-size: var(--wa-font-size-s); line-height: 1.4; }
 .alb .list { list-style: none; margin: 0 0 8px; padding: 0; border: 1px solid var(--g-line); border-radius: 8px; }
 .alb .list li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto 16px; align-items: baseline; line-height: 16px; gap: 6px; padding: 6px 8px;

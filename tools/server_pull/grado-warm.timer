@@ -1,0 +1,11 @@
+# Копия с сервера msk (/etc/systemd/system, снята 10.10.2026, задача #51 пункт 6).
+[Unit]
+Description=ГРАДО: прогрев кэша ГИС ОГД каждую ночь в 00:30 UTC (03:30 МСК)
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

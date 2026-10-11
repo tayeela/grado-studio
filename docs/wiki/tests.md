@@ -7,15 +7,17 @@
 | файл | классы | проверок |
 |---|---|---|
 | `test_album_lint.py` | AlbumLintTest, WrapTest, TextTest, ExpectTest, PptxTest, FormatLinesTest | 28 |
+| `test_album_settings.py` | AlbumSettings | 4 |
 | `test_albumgeo_js.py` | AlbumGeoJs | 1 |
 | `test_albummeta_js.py` | AlbumMetaJs | 1 |
 | `test_blocks.py` | UrbanBlocks | 1 |
 | `test_cadcore.py` | CadCore | 1 |
 | `test_collab_js.py` | CollabJs | 1 |
 | `test_dxf.py` | DxfRoundTrip, LinetypeProps, AcadNames | 8 |
-| `test_e2e.py` | BrowserScenarios | 2 |
+| `test_e2e.py` | BrowserScenarios | 3 |
 | `test_export.py` | Http, GeoJsonExport, GeoJsonExportHardening, XlsxExport, PlaceByArea | 20 |
 | `test_file_io.py` | FileImport, PortalFields, Fgistp, SizeCeiling | 21 |
+| `test_fonts.py` | Fonts | 8 |
 | `test_gpzones_js.py` | GpZonesJs | 1 |
 | `test_hub.py` | Base, Accounts, SplitJoin, Projects, Roles, PushConflict, History, Comments, Presence, Events, Teams, Hardening, Stage2, AlbumSection | 152 |
 | `test_insol.py` | Insolation | 1 |
@@ -25,7 +27,7 @@
 | `test_legendrules_js.py` | LegendRulesJs | 1 |
 | `test_migrate_js.py` | MigrateJs | 1 |
 | `test_msk.py` | MskBrowserCopy | 2 |
-| `test_next_ui.py` | NextUi | 16 |
+| `test_next_ui.py` | NextUi | 19 |
 | `test_ogd_all.py` | OgdAll, SheetValidation | 14 |
 | `test_print.py` | Print, SatBasemapRobust, Clip, PresentationSlides, TileNegativeCache, SlidePanelsAndPhotos, SlideLabels, LayoutEdits, Pptx, PptKrtSheets, ConceptSheets, Typography, LabelsInFrame, PptxBasemapAndHeavyMaps, CoarseTileNote | 56 |
 | `test_railstations_js.py` | RailStationsJs | 1 |
