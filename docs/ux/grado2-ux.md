@@ -107,7 +107,11 @@ Every scenario: no console errors, every button has a tooltip, nothing overlaps 
 browser pane: the ribbon wraps into two rows, the layer and properties panels open over the map from «Окна ▾», windows stay
 below the ribbon, the command line with clickable options sits at the bottom of the map).
 Scenarios A, B, F, I, J, K (register), L, M, O are automated offline in `apps/grado2/tests/e2e/scenarios.mjs`
-(`GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py`); C, D, E, G, H, N need real portals or the eye.
+(`GRADO2_E2E=1 python -m unittest apps/grado2/tests/test_e2e.py`). C, D, E, G, H, N run offline in the new interface `/next/`
+(`apps/grado2/tests/e2e/next_acceptance.mjs`, same test file): the fixture project with a boundary instead of «Пример» and the portals,
+then sketch and ТЭП, a sketch parameter changing ТЭП, variants and «Объём», DXF / GeoJSON / Excel downloads, the window layout
+after a reload, the «Радиусы обслуживания» node and «В слой», views switching layer visibility. Real portal downloads stay with the
+owner's run on Хорошёво and ТиНАО.
 
 ## Queue
 

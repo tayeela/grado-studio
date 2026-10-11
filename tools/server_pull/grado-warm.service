@@ -1,0 +1,20 @@
+# Копия с сервера msk (/etc/systemd/system, снята 10.10.2026, задача #51 пункт 6). Ставится вручную, install-on-msk.sh её не трогает.
+[Unit]
+Description=ГРАДО: прогрев кэша ГИС ОГД (слои старше 6 дней — заново с портала)
+After=grado.service
+
+[Service]
+Type=oneshot
+User=grado
+Group=grado
+Environment=HOME=/var/lib/grado
+WorkingDirectory=/opt/grado/app
+ExecStart=/opt/grado/venv/bin/python /opt/grado/app/apps/grado2/ogd_warm.py --cache /var/lib/grado/.grado2/cache/gisogd
+MemoryMax=1G
+CPUQuota=100%
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/grado
+PrivateTmp=yes
+TimeoutStartSec=6h

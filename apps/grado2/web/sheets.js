@@ -455,7 +455,7 @@ function carryHand(fresh, old, full = true) {
   if (fresh.layout && !SheetLayout.matches(fresh)) delete fresh.layout;      // слои правлены рукой — состав по ролям из шаблона им не соответствует; лист живёт по keys
   SheetLayout.carryOn(fresh, old);                                           // глаз на роли (T86b) переживает пересборку по шаблону
   if (old.photos?.length || fresh.kind === "photos") fresh.photos = old.photos || fresh.photos || [];
-  if (old.edits) fresh.edits = old.edits; if (old.items) fresh.items = old.items;
+  if (old.edits) fresh.edits = old.edits; if (old.items) fresh.items = old.items; if (old.layGuides) fresh.layGuides = old.layGuides;   // направляющие «Макета надписей»
 }
 const tplKey = s => JSON.stringify(s, (k, v) => k === "data" && typeof v === "string" && v.length > 500 ? v.length   // снимки — по длине; ключи по алфавиту: порядок полей после переноса правок не считается отличием
   : k === "layout" ? undefined                                                  // состав по ролям (T86a): сам по себе лист «изменённым» не делает, переносится отдельно (tplRefresh)
@@ -475,7 +475,7 @@ const FITWHY = new Map();        // id листа → почему не поме
 const OSM_NOUN = { "osm.roads": "улицы OSM", "osm.landuse": "землепользование OSM", "osm.buildings": "здания OSM", "osm.water": "водные объекты OSM", "osm.social": "социальные объекты OSM" };
 // всё, из-за чего лист «не готов»: слои, вёрстка (ответ сервера), загрузка при сборке — одной строкой для подсказки строки листа и заметки
 const whyOf = s => [NOTREADY.get(s.id), FITWHY.get(s.id), LOSTNOTE.get(s.id)].filter(Boolean).join("; ");
-// самопроверка оформления (#55): id листа → места «"…" на линии слоя "…"», «под угловой надписью», «у рамки карты»; ответ сервера,
+// самопроверка оформления (#55): id листа → места «под угловой надписью», «у рамки карты», «подписан 2 раза»; ответ сервера,
 // не сохраняется в проект. X-Grado-Layout-QA = «4:5,6:3» (лист запроса:мест), X-Grado-Layout-QA-Why — JSON {"4": [фраза…]} (%XX)
 const LAYOUTQA = new Map();
 function readQA(r, list) {

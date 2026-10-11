@@ -3,6 +3,10 @@
      Раскладку окон помнит браузер (localStorage «grado-next-layout»); панели — src/panels/*.vue. -->
 <template>
   <div class="shell">
+    <!-- переходы для клавиатуры и экранного диктора: видны только в фокусе, первый Tab на странице (#30) -->
+    <nav class="skip" aria-label="Быстрый переход">
+      <a v-for="s in SKIPS" :key="s[0]" href="#" @click.prevent="winApi.focus(s[0])">{{ s[1] }}</a>
+    </nav>
     <header class="top">
       <span class="brand">ГРАДО 2</span>
       <span v-if="!shared" class="project" :title="projTitle">{{ project.name || "Без названия" }}{{ dirty ? " •" : "" }}
@@ -35,6 +39,7 @@
         <wa-button slot="trigger" size="s" appearance="plain">Окна</wa-button>
         <wa-dropdown-item v-for="p in PANELS.filter(x => x.id !== 'comments' || shared)" :key="p.id" type="checkbox" :value="p.id" :checked="open[p.id]">{{ p.title }}</wa-dropdown-item>
         <wa-divider></wa-divider>
+        <wa-dropdown-item value="maponly">{{ mapOnly ? "Вернуть окна" : "Только карта" }}<span slot="details">Ctrl+\</span></wa-dropdown-item>
         <wa-dropdown-item value="reset">Раскладка по умолчанию</wa-dropdown-item>
       </wa-dropdown>
 
@@ -54,11 +59,11 @@
                  @click="winApi.open('album')"><Printer slot="start" :size="16" />Листы и альбом<span v-if="album.sheets" class="cnt">{{ album.sheets }}</span></wa-button>
 
       <span class="grow"></span>
-      <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" :disabled="!history.redo" title="Вернуть (Ctrl+Shift+Z)" @click="redo"><Redo2 :size="16" /></wa-button>
-      <wa-button size="s" appearance="plain" title="Справка и клавиши (F1)" @click="showHelp"><CircleHelp :size="16" /></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.undo" title="Отменить (Ctrl+Z)" @click="undo"><Undo2 :size="16" /><span class="sr-only">Отменить</span></wa-button>
+      <wa-button size="s" appearance="plain" :disabled="!history.redo" title="Вернуть (Ctrl+Shift+Z)" @click="redo"><Redo2 :size="16" /><span class="sr-only">Вернуть</span></wa-button>
+      <wa-button size="s" appearance="plain" title="Справка и клавиши (F1)" @click="showHelp"><CircleHelp :size="16" /><span class="sr-only">Справка</span></wa-button>
       <wa-button size="s" appearance="plain" @click="toggleTheme" :title="theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'">
-        <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" />
+        <Sun v-if="theme === 'dark'" :size="16" /><Moon v-else :size="16" /><span class="sr-only">{{ theme === 'dark' ? "Светлая тема" : "Тёмная тема" }}</span>
       </wa-button>
     </header>
 
@@ -175,7 +180,7 @@ import { album, albumFile, albumHooks, ogdDxf } from "./albumhost.js";
 import { terrTool } from "./data.js";
 import { history, mapApi, redo, undo } from "./edit.js";
 import { deleteFeatures, sel, selectAll, setSel } from "./features.js";
-import { BASEMAPS, basemapId, current, cursor, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
+import { BASEMAPS, basemapId, current, cursor, mapOnly, project, scale, setBasemap, theme, toggleTheme, winApi } from "./store.js";
 import {
   busy, clashOf, dirty, downloadProject, listProjects, newProject, notice, openFile, openProject, openStartup, projDir, projects, saveProject, shared,
 } from "./project.js";
@@ -203,6 +208,7 @@ const PANELS = [
   { id: "comments", title: "Комментарии" },
   { id: "sheet", title: "Макет листа" },
   { id: "album", title: "Листы и альбом" },
+  { id: "albumlay", title: "Макет надписей" },
 ];
 const open = reactive(Object.fromEntries(PANELS.map(p => [p.id, false])));
 
@@ -319,7 +325,7 @@ function addOne(id) {
   if (home) { api.addPanel({ id, component: id, title: p.title, ...home }); return; }
   // макет листа — большое окно: вкладкой рядом с картой, как макет в QGIS открывается отдельным окном во всю ширину
   // и сразу во всё окно (остальные окна прячутся, вернуть — двойной щелчок по вкладке или кнопка группы)
-  if (id === "sheet") {
+  if (id === "sheet" || id === "albumlay") {
     const panel = api.addPanel({ id, component: id, title: p.title, position: api.getPanel("map") ? { referencePanel: "map", direction: "within" } : undefined });
     panel.api.maximize();
     return;
@@ -351,6 +357,24 @@ function onExport(e) {
 winApi.open = id => { const p = api?.getPanel(id); if (p) p.api.setActive(); else if (api) addOne(id); syncOpen(); };
 function syncOpen() { for (const p of PANELS) open[p.id] = !!api.getPanel(p.id); }
 
+/* «Только карта» (#26, аудит 07.10.2026: на ноутбуке карта теряется за окнами): группа карты разворачивается во всё рабочее
+   поле, как «Скрыть панели» в QGIS (Ctrl+Tab) и «Show/Hide UI» в Figma (Ctrl+\). Повтор, Ctrl+\ или Esc без выбора — окна на месте. */
+winApi.mapOnly = on => {
+  const g = api?.getPanel("map")?.group; if (!g) return;
+  on ??= !g.api.isMaximized();
+  if (on && !g.api.isMaximized()) g.api.maximize(); else if (!on && api.hasMaximizedGroup()) api.exitMaximizedGroup();
+};
+
+/* Переход клавиатурой в окно (#30): окно выводится вперёд, фокус — в его главную часть: карта (стрелки двигают, +/− масштаб),
+   текущий слой в «Слоях», строки «Таблицы атрибутов». */
+const SKIPS = [["map", "К карте"], ["layers", "К слоям"], ["table", "К таблице объектов"]];
+const FOCUS = { map: ".mapbox .map", layers: ".pane.layers .row[tabindex='0']", table: ".pane.tbl .tabulator-tableholder" };
+winApi.focus = id => {
+  if (mapOnly.value && id !== "map") winApi.mapOnly(false);
+  winApi.open(id);
+  requestAnimationFrame(() => document.querySelector(FOCUS[id])?.focus());
+};
+
 function onReady(event) {
   api = event.api;
   let restored = false;
@@ -361,15 +385,16 @@ function onReady(event) {
   if (!restored) defaultLayout();
   else addNewWindows();
   syncOpen();
-  api.onDidLayoutChange(() => {
-    syncOpen();
-    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(api.toJSON())); } catch { /* частный режим браузера */ }
-  });
+  // «только карта» не запоминается: раскладка пишется без развёрнутой карты, после выхода из режима — заново
+  const keep = () => { if (api.hasMaximizedGroup()) return; try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(api.toJSON())); } catch { /* частный режим браузера */ } };
+  api.onDidMaximizedGroupChange(() => { mapOnly.value = !!api.getPanel("map")?.group?.api.isMaximized(); keep(); });
+  api.onDidLayoutChange(() => { syncOpen(); keep(); });
 }
 
 function onWindow(e) {
   const v = e.detail.item.value;
-  if (v === "reset") { defaultLayout(); return; }
+  if (v === "reset") { winApi.mapOnly(false); defaultLayout(); return; }
+  if (v === "maponly") { winApi.mapOnly(); return; }
   const panel = api.getPanel(v);
   if (panel) panel.api.close(); else addOne(v);
   syncOpen();
@@ -431,8 +456,10 @@ addEventListener("keydown", e => {
       e.preventDefault(); const n = sel.length; deleteFeatures([...sel]); notice.value = `Удалено объектов: ${n}. Ctrl+Z — вернуть`;
     } else if (e.key === "Escape" && terrTool.value) terrTool.value = "";
     else if (e.key === "Escape" && sel.length) setSel([]);
+    else if (e.key === "Escape" && mapOnly.value) winApi.mapOnly(false);
     return;
   }
+  if (e.code === "Backslash" && !e.shiftKey && !e.altKey) { e.preventDefault(); winApi.mapOnly(); return; }
   if (e.code === "KeyA" && !typing(e) && current.value) {
     e.preventDefault(); selectAll(current.value.key); notice.value = `Выбраны все объекты слоя «${current.value.title}»: ${sel.length}`; return;
   }
@@ -449,6 +476,11 @@ openStartup();
 
 <style>
 .shell { display: grid; grid-template-rows: auto auto 1fr auto; grid-template-columns: minmax(0, 1fr); height: 100%; }
+/* переходы клавиатуры (#30): вне потока сетки, появляются поверх шапки только в фокусе */
+.skip { position: fixed; left: 8px; top: 4px; z-index: 1000; display: flex; gap: 8px; }
+.skip a { position: absolute; left: -9999px; padding: 4px 12px; border-radius: 6px; background: var(--wa-color-brand-fill-loud); color: var(--wa-color-brand-on-loud);
+  font-size: var(--wa-font-size-s); text-decoration: none; white-space: nowrap; }
+.skip a:focus { position: static; outline: 2px solid var(--wa-color-focus); outline-offset: 2px; }
 .top {
   display: flex; align-items: center; gap: var(--wa-space-2xs);
   padding: 2px var(--wa-space-s); background: var(--g-bar); border-bottom: 1px solid var(--g-line); min-height: 34px; min-width: 0; overflow: hidden;

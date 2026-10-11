@@ -57,7 +57,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": 
 const MOD = /Mac|iP(hone|ad)/.test(navigator.platform) ? "⌘" : "Ctrl";
 const MEM = {};                        // последние числа команд (подобие, сопряжение, фаска, буфер…) за сеанс
 const UIS = { tool: "select" };
-const typing = e => e.composedPath().some(n => n instanceof HTMLElement && (n.matches("input, textarea, select, [contenteditable], wa-input, wa-select, wa-textarea, wa-dialog, wa-dropdown, [role=menu]") || n.classList.contains("graphp")));
+const typing = e => e.composedPath().some(n => n instanceof HTMLElement && (n.matches("input, textarea, select, [contenteditable], wa-input, wa-select, wa-textarea, wa-dialog, wa-dropdown, [role=menu], [role=listbox], .tabulator") || n.classList.contains("graphp")));   // список слоёв и таблица — свои клавиши (#30)
 const propsOf = f => { const p = { ...f.getProperties() }; delete p[f.getGeometryName()]; return p; };
 const newUid = () => Array.from(crypto.getRandomValues(new Uint8Array(6)), b => b.toString(16).padStart(2, "0")).join("");
 const fieldsAll = key => { const fs = project.data[key]?.fc?.features || []; return [...new Set(fs.slice(0, 500).flatMap(f => Object.keys(f.properties || {})))].filter(k => k !== "geometry"); };

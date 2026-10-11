@@ -33,6 +33,12 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_walk`, `_pts`, `_explode`, `system_of`, `to_wgs84`, `_clean`, `read_geojson`, `_kml_coords`, `_kml_geoms`, `read_kml`, `_prj_hint`, `read_shp_set`, `check_size`, `_check_unpacked`, `import_files`
 
+### `apps/grado2/fonts.py` — 258 стр.
+
+ГРАДО 2 · каталог шрифтов для печати альбома (владелец 10.10.2026: «должна быть возможность использовать любой шрифт, в том числе один из нескольких предустановленных»).
+
+Функции: `_system_dirs`, `font_id`, `_names`, `_faces`, `_scan`, `families`, `listing`, `_to_ttf`, `_has_cmap4`, `_add_cmap4`, `_cff_to_glyf`, `resolve`, `add_file`, `face_file`, `install`
+
 ### `apps/grado2/hub.py` — 1853 стр.
 
 Хаб совместной работы ГРАДО 2 (режим GRADO2_HUB=1): аккаунты, проекты с ролями, ревизии разделов, живые события (presence, комментарии), история версий.
@@ -41,11 +47,11 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `_now`, `HubError`, `Conflict`, `_norm_album`, `_layer_key_ok`, `_norm_meta`, `album_summary`, `split_project`, `join_sections`, `_check_sections`, `_clean_name`, `_clean_login`, `_check_password`, `_clean_client`, `_check_pid`, `_is_num`, `_clean_text`, `_clean_anchor`, `_hash_password`, `_color`, `Subscription`, `Hub`, `default_root`, `_read_password`, `main`
 
-### `apps/grado2/label_qa.py` — 212 стр.
+### `apps/grado2/label_qa.py` — 150 стр.
 
-Самопроверка оформления листа (#55, аудит #53): подписи карты, пересечённые линиями слоёв, закрытые легендой или угловой надписью, стоящие у рамки карты ближе 2,5 мм; угловые надписи, пересечённые линиями.
+Самопроверка оформления листа (#55, аудит #53): подписи карты, закрытые легендой или угловой надписью, стоящие у рамки карты ближе 2,5 мм, подписанные на карте дважды.
 
-Функции: `_is_obstacle`, `_white`, `label_box`, `_corners`, `_aabb`, `_hit`, `_overlap`, `_Segs`, `_paths`, `page_conflicts`, `_dedupe`, `phrase`, `album_conflicts`
+Функции: `_white`, `label_box`, `_corners`, `_aabb`, `_overlap`, `page_conflicts`, `_dedupe`, `phrase`, `_times`, `album_conflicts`
 
 ### `apps/grado2/layout_io.py` — 387 стр.
 
@@ -67,13 +73,13 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `busy`, `main`
 
-### `apps/grado2/print_io.py` — 2500 стр.
+### `apps/grado2/print_io.py` — 2586 стр.
 
 Листы и альбом ГРАДО 2: PDF, SVG и PPTX через рендер и вёрстку ядра (core/render, core/layout).
 
-Разделы по порядку: Размеры листов, поля, перевод миллиметров (MapTransform) · Основа ЕГКО: операции рисования и их кэш на диске · Текст: кавычки, ширина, подбор кегля · Знаки на линиях и заливки (подтопление, ЛГР) · Геометрия подписей: пересечения, оси, выноски, препятствия · Подложка: плитки и защита от неполной выгрузки (TileGuard) · Карта листа — SketchMapFrame: слои, подписи без наложений, знаки ЛГР · Прочие рамки листа: ТЭП, слайд, фотосетка · Вывод в PDF: шрифты, тексты листа, render_pdf · PPTX: тайлы подложки по рамке карты, тяжёлые карты — растром
+Разделы по порядку: Размеры листов, поля, перевод миллиметров (MapTransform) · Основа ЕГКО: операции рисования и их кэш на диске · Текст: кавычки, ширина, подбор кегля · Знаки на линиях и заливки (подтопление, ЛГР) · Геометрия подписей: пересечения, оси, выноски, препятствия · Подложка: плитки и защита от неполной выгрузки (TileGuard) · Карта листа — SketchMapFrame: слои, подписи без наложений, знаки ЛГР · Прочие рамки листа: ТЭП, слайд, фотосетка · Настройки альбома (#89): цвет воды на белых схемах и шрифт подписей карт · Вывод в PDF: шрифты, тексты листа, render_pdf · PPTX: тайлы подложки по рамке карты, тяжёлые карты — растром
 
-Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `ops_cache_get`, `ops_cache_put`, `egko_ops`, `_egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_callout_box`, `_callout_steps`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `layout_qa`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `render_pptx`, `render_preview_svg`
+Функции: `page_size`, `PaperFrame`, `slide_k`, `layout`, `_mix`, `_nice`, `MapTransform`, `_simplify`, `ops_cache_get`, `ops_cache_put`, `egko_ops`, `_egko_ops`, `_guillemets`, `_text_w`, `_straight_runs`, `flood_ops`, `_callout_box`, `_callout_steps`, `_seg_box`, `_in_ring`, `_chains`, `_axis_windows`, `_obox_hit`, `_seg_cross`, `_pole`, `_ring_centroid`, `clip_ring`, `_parts`, `linetype_ops`, `TileGuard`, `tile_ops`, `SketchMapFrame`, `ColumnFrame`, `TepSheetFrame`, `_wrap`, `_view_mark`, `_swatch`, `SlideFrame`, `photo_map_rect`, `panel_rects`, `PanelFrame`, `PhotoGridFrame`, `_all_to`, `label_fonts`, `_hex`, `album_settings`, `_with_settings`, `build_document`, `apply_edits`, `own_texts`, `_num`, `_edited`, `_pages`, `layout_qa`, `render_pdf`, `not_ready`, `_op_box`, `_meet_box`, `_quad_info`, `_inside`, `_tile_patch`, `pptx_clip_tiles`, `pptx_thin`, `pptx_weight`, `_dash_runs`, `pptx_rasterize`, `render_pptx`, `render_preview_svg`
 
 ### `apps/grado2/rail_icons.py` — 123 стр.
 
@@ -87,17 +93,17 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `SatError`, `YandexSat`, `frame_msk`, `bbox_msk`, `export_sat`, `_package`
 
-### `apps/grado2/server.py` — 2872 стр.
+### `apps/grado2/server.py` — 2914 стр.
 
 ГРАДО 2: локальный сервер.
 
 Разделы по порядку: Пути, папка проектов, настройки запуска · Источники данных: ключ слоя → (вид, параметр, название) · Пределы области выгрузки, разбиение на части, подписи полей · ЕГКО: пустые строковые поля портал отдаёт одним пробелом " " — _v считает их пустыми · Яндекс: все атрибуты слоя как есть, ключевые — по-русски; площадь и длина на местности даё · поиск участка по кадастровому номеру (НСПД) · Пределы тела запроса, ход выгрузки, понятные ошибки порталов · Подложки: тайлы Esri · OSM (Overpass): выгрузка и кэш по областям · ФГИС ТП: документы территориального планирования (Минэкономразвития) · ТЭП-нормы, район по территории, пешеходный маршрут до станции · Проекты на диске: запись, версии, размер папки · HTTP: заголовки безопасности, вход по ключу, совместный режим · HTTP: Starlette (BSD) под uvicorn (BSD); тела запросов проверяет pydantic (MIT) · GET · POST · совместный режим (hub.py): маршруты /api/hub · приём запроса · Запуск: версия кода, повторный запуск, сервер
 
-Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `_bbox_check`, `_Body`, `FetchBody` и ещё 57
+Функции: `bbox_km2`, `territory_bbox`, `split_bbox`, `merge_layers`, `clean_props`, `_v`, `_doc`, `_reg`, `pzz_sub_props`, `pzz_zone_props`, `okn_props`, `demolition_props`, `social_props`, `egko_address`, `egko_building_props`, `egko_road_props`, `egko_path_props`, `egko_green_props`, `egko_water_props`, `egko_address_props`, `_renamed`, `linetype_props`, `_layer`, `search_cad`, `search_addr`, `krt_number`, `krt_layer`, `krt_card`, `search_krt`, `search_any`, `body_limit`, `source_ogd_code`, `plain_portal_error`, `not_ready_why`, `not_ready_headers`, `layout_qa_headers`, `_log_portal`, `ogd_catalog`, `layer_roles`, `egko_features`, `esri_tile`, `yandex_sat_tile`, `_point_in`, `ogd_label_angles`, `_OsmCacheMiss`, `_osm_no_live`, `osm_fetch`, `fetch`, `fgistp_catalog`, `fgistp_docs`, `fgistp_search`, `fgistp_fetch`, `_bbox_of`, `tep`, `tep_norms`, `_norm_name`, `_rail_nodes`, `rail_route`, `_fresh`, `_admin_districts`, `place_polygons`, `district_shares`, `place_info`, `project_path`, `atomic_write`, `keep_version`, `QuotaExceeded`, `projects_size`, `split_layouts`, `with_layouts`, `_write_project`, `save_project`, `album_info`, `list_projects`, `hub_enabled`, `open_hub`, `same_token`, `_bbox_check`, `_Body`, `FetchBody` и ещё 60
 
 ## Страница (apps/grado2/web/*.js)
 
-### `apps/grado2/web/albumapi.js` — 80 стр.
+### `apps/grado2/web/albumapi.js` — 101 стр.
 
 ГРАДО 2 · движок альбома для окна «Листы и альбом» нового интерфейса (ui/src/albumhost.js, panels/AlbumPanel.vue). Новый интерфейс держит эту страницу скрытой (/old?embed=album в невидимом iframe) и зовёт её код сборки и печати: альбом собирается тем же buildSection / albumSpec / albumFile, что и прежде, поэтому PDF и PPTX выходят лист в лист. Здесь только мост: состояние (ход сборки, «не готов», строка альбома), вопросы «заменить или добавить» и «не всё готово» отдаются окну нового интерфейса, а не строкам этой страницы, которых владелец не видит. Проверка — tests/test_next_ui.py.
 
@@ -126,7 +132,7 @@ Import of vector files for ГРАДО 2: GeoJSON, KML/KMZ, Shapefile (a set of f
 
 Функции: `CAO`, `socialPoints`, `ha2`, `NRadius`, `walkGraph`, `dijkstra`, `NWalk`, `NBlocks`, `NBalance`, `bakeNode`
 
-### `apps/grado2/web/app.js` — 2426 стр.
+### `apps/grado2/web/app.js` — 2429 стр.
 
 ГРАДО 2: одно рабочее поле — карта со слоями, строка инструментов и плавающие окна (данные, граф, эскиз, варианты, показатели, объём, сравнение, таблица). Порядок работы свободный. Данные — реальные выгрузки сервера (/api/fetch), ТЭП — движок ядра (/api/tep). Геометрия в WGS84 (Turf.js); для посадки и объёма — локальная метрическая рамка вокруг территории.
 
@@ -276,7 +282,7 @@ Draws AutoCAD complex linetypes (LIN + SHX) on a canvas. Data: styles/redln97.js
 ГРАДО 2 · роли слоёв в расчётах. Ограничения, анализ и эскиз ищут данные по РОЛИ слоя, а не по фиксированному ключу: в проектах владельца каталожные слои лежат как `ogd.<код>` и `egko.*`, а не `gisogd.*`/`nspd.*`/`osm.*`. Роль слоя определяется так (по убыванию силы): а) вручную: поле `role` в описании слоя (роль из списка или "none" — слой не участвует в расчётах); нет поля = «авто»; б) по ключу источника (таблица SOURCE_ROLE: `nspd.zouit` → zouit, `egko.buildings` → buildings…); в) по коду каталога для `ogd.<код>` — таблица с сервера (GET /api/layer_roles, строится из SOURCES), грузится лени…
 
 
-### `apps/grado2/web/sheetlayers.js` — 538 стр.
+### `apps/grado2/web/sheetlayers.js` — 551 стр.
 
 ГРАДО 2 · окно «Слои и листы» (T86b, 06.10.2026; слово владельца: «единая логика для всех листов, группировка слоёв по листам и перетаскивание, всё красиво и интуитивно понятно», макет — docs/ux/mockups/2026-10-06-sheet-layers.png, вариант А). Три колонки: листы альбома → роли выбранного листа (глаз, источник, покрытие рамки, состояние) → слои проекта по ролям с номерами листов. Перетаскивание (T86c, 06.10.2026): слой банка → лист или строка роли (включить), роль → другой лист (перенос, Alt — копия), источники дорог — за ручку ⋮⋮ и Alt+↑/↓; цель подсвечивается и пишет, что произойдёт; Esc отме…
 
@@ -540,13 +546,13 @@ AutoCAD complex linetypes: reading .SHX (compiled shapes) and .LIN (linetypes).
 
 Функции: `jpeg_info`, `_jpeg_info`, `_rl_font`, `PdfBackend`
 
-### `core/render/grado_render/backend_pptx.py` — 572 стр.
+### `core/render/grado_render/backend_pptx.py` — 582 стр.
 
 PPTX-бэкенд: тот же список операций, что у PDF и SVG, — в редактируемую презентацию PowerPoint.
 
-Функции: `_hex`, `_t`, `clip_polygon`, `_segment`, `clip_polyline`, `_bbox`, `_inside_box`, `_meet`, `_area2`, `_in_ring`, `orient`, `_eot`, `_Slide`, `PptxBackend`, `_scheme`
+Функции: `_face`, `_hex`, `_t`, `clip_polygon`, `_segment`, `clip_polyline`, `_bbox`, `_inside_box`, `_meet`, `_area2`, `_in_ring`, `orient`, `_eot`, `_Slide`, `PptxBackend`, `_scheme`
 
-### `core/render/grado_render/backend_svg.py` — 134 стр.
+### `core/render/grado_render/backend_svg.py` — 146 стр.
 
 Экранный бэкенд: SVG (в C++ ядре его место занимает GPU-рендер).
 
@@ -564,11 +570,11 @@ PPTX-бэкенд: тот же список операций, что у PDF и S
 
 Функции: `set_style_overrides`, `style_overrides`, `load_library`, `merged_library`, `hex_to_rgb`, `_dots_from_json`, `Style`, `_build_default_styles`, `StyleSet`
 
-### `core/render/grado_render/ttf.py` — 173 стр.
+### `core/render/grado_render/ttf.py` — 192 стр.
 
 Минимальный разбор TrueType для встраивания в PDF.
 
-Функции: `FontError`, `find_font`, `Font`
+Функции: `FontError`, `custom_face`, `find_font`, `Font`
 
 ## Ядро: layout (core/layout/grado_layout)
 
@@ -667,17 +673,23 @@ Generator: Moscow red-line standard (REDLN97.LIN + RED_LNS.SHX) → styles/redln
 Выкладка вики ГРАДО в приватный репозиторий GitHub tayeela/grado-wiki (владелец 06.10.2026: «выложи вики с удобной навигацией для ИИ на гитхаб»). Копирует docs/wiki, добавляет README.md (вход для человека и ИИ), llms.txt (список страниц для ИИ) и AGENTS.md (как работать). Без изменений ничего не пушит; ошибки сети не мешают коммиту. Кто запускает (везде одна и та же вики, последний запуск побеждает): * GitHub Actions — .github/workflows/wiki.yml на каждый пуш в team/t60 (нужен секрет WIKI_TOKEN, см. docs/wiki/recipes.md); * Mac владельца — хук post-commit, если коммит менял docs/wiki (в ветках…
 
 
+### `tools/acceptance_run.mjs` — 177 стр.
+
+ГРАДО 2 · приёмочный прогон на настоящей территории (Хорошёво, ТиНАО) с настоящими порталами и замером времени каждого шага: граница из проекта или GeoJSON → выгрузка наборов «Существующее положение», «Ограничения», «Градостроительная документация» → «Рассчитать ограничения» → эскиз под цель плотности → варианты → альбом ППТ КРТ в PDF → DXF, GeoJSON, Excel. Всё — в новом интерфейсе (/next/), мышью, как у владельца; отдельный сервер на порту 8652 и временная папка проектов, проект владельца только читается (из него берётся граница). По умолчанию кэш пустой (временная домашняя папка, сертификаты…
+
+Функции: `arg`, `flag`, `home`, `boundary`, `step`, `tab`, `showWin`, `winText`, `winButton`, `wait`, `save`
+
 ### `tools/panorama_shot.mjs` — 24 стр.
 
 Снимок панорамы Яндекса для листа «Фотофиксация» без наложений (владелец 06.10.2026: «должно быть только фото»): Chrome headless + CDP, скрыты метки домов, кнопки, логотип и миникарта. Запуск: node tools/panorama_shot.mjs <ссылка> <out.png> (WAIT=мс — ожидание загрузки, по умолчанию 12000). Кадр для листа: вырезать (550, 0, 2650, 1400) и уменьшить до 1500×1000; точка и направление съёмки — из развёрнутой ссылки (panorama[point], panorama[direction]).
 
 Функции: `sleep`, `cmd`
 
-### `tools/ui_layout_check.mjs` — 307 стр.
+### `tools/ui_layout_check.mjs` — 352 стр.
 
 ГРАДО 2 · автоматическая проверка раскладки нового интерфейса (/next/) по своду docs/ux/ui-grid.md: запускает тестовый сервер на копии apps/grado2/tests/fixtures/next_ui_project.grado2, открывает каждое окно в Chrome (полосы прокрутки видны, как на Mac с мышью) на 1280 × 800 и 1920 × 1080 в светлой и тёмной теме и ищет то, на что жаловался владелец 09.10.2026: полосы прокрутки по ширине и вложенные, поля и кнопки за краем окна, текст, обрезанный без многоточия, поля не в одну колонку, прыжки шапки, ленты и строки состояния, мелкие цели для мыши, мелкий и моноширинный шрифт. Запуск: CHROME=… no…
 
-Функции: `arg`, `measure`, `interact`, `chrome`, `main`
+Функции: `arg`, `tag0`, `measure`, `keyboard`, `innerWidthOf`, `interact`, `chrome`, `main`
 
 ### `tools/wiki_albums.mjs` — 42 стр.
 

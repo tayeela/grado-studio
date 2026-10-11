@@ -979,7 +979,8 @@ export default async p => {
       const ex = await p.ev(`window.__reqs61.length = 0; await loadKeys(["gisogd.gpzu"], [37.51, 55.77, 37.53, 55.79]); const a = [window.__reqs61.join("|"), !!DATA["gisogd.gpzu"]];
         delete DATA["gisogd.gpzu"]; LYR.splice(LYR.findIndex(l => l.key === "gisogd.gpzu"), 1); return a`);
       check(ex[0] === "gisogd.gpzu" && ex[1] === true, "T61: загрузка листа без alias остаётся под ключом gisogd.gpzu (слой ищут по точному ключу)");
-      // 2. строка состояния: имя, процент, МБ; очередь «3 из 7»
+      // 2. строка состояния: имя, процент, МБ; очередь «3 из 7». Выгрузка «идёт», пока опрос хода (раз в 800 мс) не показал
+      // все три состояния и ещё одно после них — на медленном раннере фиксированные 3,2 с не успевали до третьего (#40, запуск 63)
       const seq = JSON.stringify([
         [{ title: "ГПЗУ (ОГД)", got: 0, total: null, stage: "wait", nth: 1, of: 1 }],
         [{ title: "ГПЗУ (ОГД)", got: 1800000, total: 4300000, stage: "download", nth: 1, of: 1 }],
@@ -987,7 +988,7 @@ export default async p => {
       await p.ev(`window.__hint61.length = 0; let i = 0; const seq = ${seq};
         window.fetch = async (u, o) => { u = String(u);
           if (u === "/api/progress") { const r = seq[Math.min(i++, seq.length - 1)]; return new Response(JSON.stringify(Object.fromEntries(r.map((x, j) => ["k" + j, x]))), { status: 200 }); }
-          if (u === "/api/fetch") { await new Promise(r => setTimeout(r, 3200)); return new Response(JSON.stringify({ errors: {}, layers: {} }), { status: 200 }); }
+          if (u === "/api/fetch") { const t0 = Date.now(); while (i <= seq.length && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 100)); return new Response(JSON.stringify({ errors: {}, layers: {} }), { status: 200 }); }
           return window.__f61(u, o); };
         await loadKeys(["gisogd.gpzu"], [37.51, 55.77, 37.53, 55.79]); return 1`);
       const hints = await p.ev(`return window.__hint61.join(" || ")`);

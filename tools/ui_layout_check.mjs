@@ -23,12 +23,14 @@ const CHROME = process.env.CHROME || "/Applications/Google Chrome.app/Contents/M
 const PY = process.env.PY || join(homedir(), ".grado2/venv/bin/python");
 
 // строгие правила: их нарушение валит проверку; остальное — в отчёт, правится по мере прохода окон
-export const STRICT = new Set(["scroll-x", "scroll-nested", "outside", "jump", "mono", "drag", "hover"]);
+export const STRICT = new Set(["scroll-x", "scroll-nested", "outside", "jump", "mono", "drag", "hover", "keys"]);
 const TITLE = {
   "scroll-x": "полоса прокрутки по ширине", "scroll-nested": "прокрутка внутри прокрутки", outside: "поле или кнопка за краем окна",
   cut: "текст обрезан без многоточия", align: "поля окна не в одну колонку", jump: "сдвинулась шапка, лента или строка состояния",
-  shift: "раскладка прыгнула (CLS)", drag: "окно или граница не идёт за мышью", hover: "наведение мыши сдвигает соседей", target: "цель для мыши меньше 20 px", small: "шрифт мельче 11 px", mono: "моноширинный шрифт",
+  keys: "без мыши не работает (Tab, стрелки, Enter)", shift: "раскладка прыгнула (CLS)", drag: "окно или граница не идёт за мышью", hover: "наведение мыши сдвигает соседей", target: "цель для мыши меньше 20 px", small: "шрифт мельче 11 px", mono: "моноширинный шрифт",
 };
+
+const tag0 = (w, h, theme) => `${w}×${h} ${theme === "dark" ? "тёмная" : "светлая"}`;
 
 export function startServer() {
   const dir = mkdtempSync(join(tmpdir(), "grado-ui-"));
@@ -38,11 +40,12 @@ export function startServer() {
     env: { ...process.env, GRADO2_PROJECTS: dir, GRADO2_NO_BROWSER: "1", PYTHONPATH: "", PYTHONUNBUFFERED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   return new Promise((ok, bad) => {
-    let log = "";
-    const on = b => { log += b; const m = log.match(/ГРАДО 2: (http:\/\/127\.0\.0\.1:\d+)/); if (m) ok({ url: m[1], stop: () => { proc.kill(); rmSync(dir, { recursive: true, force: true }); } }); };
+    let log = "", timer = null;
+    const on = b => { log += b; const m = log.match(/ГРАДО 2: (http:\/\/127\.0\.0\.1:\d+)/); if (m) { clearTimeout(timer); ok({ url: m[1], stop: () => { proc.kill(); rmSync(dir, { recursive: true, force: true }); } }); } };
     proc.stdout.on("data", on); proc.stderr.on("data", on);
     proc.on("exit", c => bad(new Error("сервер не запустился (" + c + "): " + log.slice(-500))));
-    setTimeout(() => bad(new Error("сервер не ответил за 30 с: " + log.slice(-500))), 30000);
+    // 90 с: в CI проверка идёт сразу за браузерными сценариями, и на занятом раннере старт сервера однажды не уложился в 30 с (#40, запуск 102)
+    timer = setTimeout(() => { proc.kill(); bad(new Error("сервер не ответил за 90 с: " + log.slice(-500))); }, 90000);
   });
 }
 
@@ -83,7 +86,7 @@ function measure() {
     if (/mono/i.test(s.fontFamily) && el.childNodes.length && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) add("mono", el, s.fontFamily);
     const fs = parseFloat(s.fontSize);
     if (fs < 11 && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) add("small", el, fs + " px");
-    if (s.overflowX === "hidden" && s.textOverflow !== "ellipsis" && el.scrollWidth > el.clientWidth + 1 && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !el.matches?.("input,textarea"))
+    if (s.overflowX === "hidden" && s.textOverflow !== "ellipsis" && el.scrollWidth > el.clientWidth + 1 && [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim()) && !el.matches?.("input,textarea,.sr-only"))   // .sr-only — текст только для диктора (#30)
       add("cut", el, `${el.scrollWidth} > ${el.clientWidth}`);
   }
   // за краем окна: элемент управления выходит за видимую часть своего окна dockview
@@ -116,6 +119,44 @@ function measure() {
 
 /* Движения мышью, на которые жаловался владелец: плавающее окно за полосу, его угол, граница между окнами, наведение.
    Окно и граница должны идти ровно за мышью (±3 px), наведение не должно двигать соседние элементы. */
+/* Клавиатура и диктор (#30, аудит 07.10.2026): первые Tab — переходы «К карте / К слоям / К таблице», потом шапка, а не строка
+   состояния; у кнопок-значков есть имя; «Слои» — стрелки и Пробел; «Таблица атрибутов» — одна остановка Tab, стрелки и Enter
+   выбирают объект, диктор получает строку; Ctrl+\ — «только карта» и обратно (#26). Страница — сразу после загрузки. */
+async function keyboard(page, tag) {
+  const out = [];
+  const bad = (what, detail) => out.push({ rule: "keys", where: "страница", what, detail, screen: tag, step: "клавиатура" });
+  const act = () => page.evaluate(() => { let e = document.activeElement; while (e?.shadowRoot?.activeElement) e = e.shadowRoot.activeElement;
+    const h = e?.getRootNode()?.host || e; return { cls: typeof h?.className === "string" ? h.className : "", tag: h?.tagName, text: (h?.getAttribute?.("aria-label") || h?.textContent || "").trim().replace(/\s+/g, " ").slice(0, 40) }; });
+  const order = [];
+  for (let i = 0; i < 4; i++) { await page.keyboard.press("Tab"); order.push((await act()).text); }
+  if (order.slice(0, 3).join("|") !== "К карте|К слоям|К таблице объектов" || order[3] !== "Проект") bad("порядок Tab", order.join(" → "));
+  const noName = await page.evaluate(() => [...document.querySelectorAll("header.top wa-button")].filter(b => b.offsetParent && !b.textContent.trim()).length);
+  if (noName) bad("кнопки шапки без имени для диктора", String(noName));
+  await page.focus("nav.skip a >> nth=1"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const a = await act(); if (!/\brow\b/.test(a.cls)) bad("«К слоям» не ведёт к слою", a.tag + " " + a.text);
+  const k0 = await page.evaluate(() => document.querySelector(".pane.layers .row.cur")?.dataset.key);
+  await page.keyboard.press("ArrowDown"); await page.waitForTimeout(150);
+  const k1 = await page.evaluate(() => document.querySelector(".pane.layers .row.cur")?.dataset.key);
+  if (!k1 || k1 === k0) bad("стрелка вниз в «Слоях» не меняет текущий слой", `${k0} → ${k1}`);
+  await page.focus("nav.skip a >> nth=2"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const t = await act(); if (!/tabulator-tableholder/.test(t.cls)) bad("«К таблице объектов» не ведёт к таблице", t.tag + " " + t.text);
+  const stops = await page.evaluate(() => [...document.querySelectorAll(".pane.tbl .tabulator-cell")].filter(c => c.tabIndex >= 0).length);
+  if (stops) bad("ячейки таблицы — отдельные остановки Tab", String(stops));
+  await page.keyboard.press("ArrowDown"); await page.keyboard.press("Enter"); await page.waitForTimeout(300);
+  const said = await page.evaluate(() => document.querySelector(".pane.tbl [aria-live]")?.textContent || "");
+  if (!/^Выбран объект\. Строка 1 из \d+/.test(said)) bad("Enter в таблице не выбирает объект или диктор молчит", said || "пусто");
+  const groups = () => page.evaluate(() => [...document.querySelectorAll(".dv-groupview")].filter(g => g.getBoundingClientRect().width > 0).length);
+  const g0 = await groups();
+  await page.keyboard.press("Escape");                 // снять выбор, сделанный Enter
+  await page.keyboard.press("Control+Backslash"); await page.waitForTimeout(400);
+  const g1 = await groups(), mapW = await page.evaluate(() => document.querySelector(".mapbox")?.getBoundingClientRect().width || 0);
+  await page.keyboard.press("Control+Backslash"); await page.waitForTimeout(400);
+  const g2 = await groups();
+  if (!(g1 < g0 && mapW > innerWidthOf(page) * 0.9 && g2 === g0)) bad("Ctrl+\\ «только карта» не прячет окна или не возвращает их", `окон ${g0} → ${g1} → ${g2}, ширина карты ${Math.round(mapW)}`);
+  return out;
+}
+const innerWidthOf = page => page.viewportSize().width;
+
 async function interact(page, tag) {
   const out = [];
   const bad = (rule, where, what, detail) => out.push({ rule, where, what, detail, screen: tag, step: "мышь" });
@@ -231,13 +272,17 @@ async function main() {
       await page.waitForSelector(".dv-tab", { timeout: 20000 });
       await page.waitForFunction(() => document.querySelector(".project")?.textContent.includes("Тест"), null, { timeout: 20000 }).catch(() => {});
       await page.waitForTimeout(1500);
+      if (w === SIZES[0][0] && h === SIZES[0][1] && theme === THEMES[0]) {        // клавиатура — один раз; страница потом открывается заново
+        found.push(...await keyboard(page, tag0(w, h, theme)));
+        await page.reload(); await page.waitForSelector(".dv-tab"); await page.waitForTimeout(1500);
+      }
       if (theme === "dark" && !(await page.evaluate(() => document.documentElement.classList.contains("wa-dark")))) {   // тема — кнопкой, как владелец
         await page.click("header.top wa-button[title='Тёмная тема']").catch(() => {});
         await page.waitForTimeout(400);
       }
       const tag = `${w}×${h} ${theme === "dark" ? "тёмная" : "светлая"}`;
       const titles = await page.evaluate(() => [...[...document.querySelectorAll("header.top wa-dropdown")].find(d => d.querySelector("wa-button[slot=trigger]")?.textContent.trim() === "Окна")
-        .querySelectorAll("wa-dropdown-item[type=checkbox]")].map(i => i.textContent.trim()).filter(t => !["Карта", "Комментарии", "Макет листа"].includes(t)));
+        .querySelectorAll("wa-dropdown-item[type=checkbox]")].map(i => i.textContent.trim()).filter(t => !["Карта", "Комментарии", "Макет листа", "Макет надписей"].includes(t)));
       const record = (list, win) => { for (const f of list) found.push({ ...f, screen: tag, step: win }); };
       record(await page.evaluate(measure), "открытие");
       if (SHOTS) await page.screenshot({ path: join(OUT, `${w}x${h}-${theme}-00-start.png`) });

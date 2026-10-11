@@ -26,7 +26,10 @@ let tT; function toast(t) {
 let busyN = 0; function busy(on) { busyN += on ? 1 : -1; $("busy").hidden = busyN <= 0; }
 async function api(path, body, signal) {
   const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), signal } : signal ? { signal } : {});
-  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j;
+  // статус — раньше разбора: ответ 403 «forbidden» или HTML-страница 404 давали ошибку разбора JSON вместо понятного текста (#51, пункт 3)
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(j?.error || `сервер ответил ${r.status}`);
+  if (j === null) throw new Error("сервер прислал ответ, который не удалось прочитать"); return j;
 }
 
 /* ---------- геометрия ---------- */
