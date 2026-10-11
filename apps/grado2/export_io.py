@@ -1,6 +1,6 @@
-"""Экспорт ГРАДО 2 в обменные форматы: GeoJSON для QGIS (МСК) и таблица ТЭП с перечнем листов в XLSX.
+"""Экспорт ГРАДО 2 в обменные форматы: GeoJSON для QGIS (МСК), SHP в раскладке ГИС ОГД (МСК) и таблица ТЭП с перечнем листов в XLSX.
 
-Только стандартная библиотека. Тексты ошибок — ASCII (ValueError → ответ 400 в server.py)."""
+SHP пишет pyshp, остальное — стандартная библиотека. Тексты ошибок — ASCII (ValueError → ответ 400 в server.py)."""
 
 import io
 import json
@@ -100,54 +100,196 @@ README_GEOJSON = (
 )
 
 
-def export_geojson(layers):
-    """layers: [{"name", "features": [GeoJSON Feature в lon/lat] или FeatureCollection}] → zip: .geojson на слой (МСК) + README.txt."""
+def _msk_layers(layers):
+    """Проверка слоёв выгрузки и перевод в МСК: [(имя, [Feature в МСК])], число пропущенных без геометрии и разложенных составных."""
     if not isinstance(layers, list) or not layers or len(layers) > MAX_LAYERS:
         raise ValueError("layers must be a non-empty array")
-    out, used = io.BytesIO(), set()
-    total = made = skipped = split = 0
-    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
-        for i, layer in enumerate(layers):
-            if not isinstance(layer, dict):
-                raise ValueError("layer must be an object")
-            name = _text(layer.get("name"), "layer name", True)
-            fs = layer.get("features")
-            if isinstance(fs, dict):                                 # как слой в /api/export/dxf: FeatureCollection
-                fs = fs.get("features")
-            if not isinstance(fs, list):
-                raise ValueError("features must be an array")
-            total += len(fs)
-            if total > MAX_FEATURES:
+    res, total, made, skipped, split = [], 0, 0, 0, 0
+    for i, layer in enumerate(layers):
+        if not isinstance(layer, dict):
+            raise ValueError("layer must be an object")
+        name = _text(layer.get("name"), "layer name", True)
+        fs = layer.get("features")
+        if isinstance(fs, dict):                                 # как слой в /api/export/dxf: FeatureCollection
+            fs = fs.get("features")
+        if not isinstance(fs, list):
+            raise ValueError("features must be an array")
+        total += len(fs)
+        if total > MAX_FEATURES:
+            raise ValueError(f"too many features: at most {MAX_FEATURES} per export")
+        feats = []
+        for f in fs:
+            if not isinstance(f, dict):
+                raise ValueError("feature must be an object")
+            props = f.get("properties")
+            if props is not None and not isinstance(props, dict):
+                raise ValueError("properties must be an object")
+            geoms = _parts(f.get("geometry"))
+            if f.get("geometry") is None or not geoms:
+                skipped += 1                                     # без геометрии: в QGIS нечего показывать
+                continue
+            if isinstance(f.get("geometry"), dict) and f["geometry"].get("type") == "GeometryCollection":
+                split += 1
+            made += len(geoms)
+            if made > MAX_FEATURES:
                 raise ValueError(f"too many features: at most {MAX_FEATURES} per export")
-            feats = []
-            for f in fs:
-                if not isinstance(f, dict):
-                    raise ValueError("feature must be an object")
-                props = f.get("properties")
-                if props is not None and not isinstance(props, dict):
-                    raise ValueError("properties must be an object")
-                geoms = _parts(f.get("geometry"))
-                if f.get("geometry") is None or not geoms:
-                    skipped += 1                                     # без геометрии: в QGIS нечего показывать
-                    continue
-                if isinstance(f.get("geometry"), dict) and f["geometry"].get("type") == "GeometryCollection":
-                    split += 1
-                made += len(geoms)
-                if made > MAX_FEATURES:
-                    raise ValueError(f"too many features: at most {MAX_FEATURES} per export")
-                for g in geoms:
-                    feats.append({"type": "Feature", "properties": props or {}, "geometry": _to_msk(g, f"layer {i}")})
+            for g in geoms:
+                feats.append({"type": "Feature", "properties": props or {}, "geometry": _to_msk(g, f"layer {i}")})
+        res.append((name, feats))
+    return res, skipped, split
+
+
+def _notes(readme, skipped, split):
+    if skipped or split:
+        readme += "\n"
+        if split:
+            readme += f"Составных геометрий разложено на части: {split}.\n"
+        if skipped:
+            readme += f"Пропущено объектов без геометрии: {skipped}.\n"
+    return readme
+
+
+def export_geojson(layers):
+    """layers: [{"name", "features": [GeoJSON Feature в lon/lat] или FeatureCollection}] → zip: .geojson на слой (МСК) + README.txt."""
+    res, skipped, split = _msk_layers(layers)
+    out, used = io.BytesIO(), set()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, feats in res:
             fc = {"type": "FeatureCollection", "name": name,
                   "crs": {"type": "name", "properties": {"name": crs.MSK_PROJ4}}, "features": feats}
             z.writestr(_file_name(name, used), json.dumps(fc, ensure_ascii=False, allow_nan=False).encode("utf-8"))
-        readme = README_GEOJSON
-        if skipped or split:
-            readme += "\n"
-            if split:
-                readme += f"Составных геометрий разложено на части: {split}.\n"
-            if skipped:
-                readme += f"Пропущено объектов без геометрии: {skipped}.\n"
-        z.writestr("README.txt", readme.encode("utf-8"))
+        z.writestr("README.txt", _notes(README_GEOJSON, skipped, split).encode("utf-8"))
+    return out.getvalue()
+
+
+# ---------- SHP в раскладке ГИС ОГД ----------
+# Как в выгрузках ГИС ОГД (кэш ~/.grado2/cache/gisogd, 11.10.2026): файлы слоя с русским именем, поля — латиница
+# строчными до 10 знаков, кодировка UTF-8 (.cpg), .prj «Moscow_bessel» (тот же текст, что у ОГД). Координаты — МСК
+# (железное правило 3). Полный русский заголовок каждого поля — в fields.csv. Пишет библиотека pyshp (MIT).
+
+PRJ_MSK = ('PROJCS["Moscow_bessel",GEOGCS["GCS_Bessel_1841",DATUM["D_Bessel_1841",SPHEROID["Bessel_1841",6377397.155,299.1528128]],'
+           'PRIMEM["Greenwich",0.0],UNIT["Degree",0.017453292519943295]],PROJECTION["Transverse_Mercator"],'
+           'PARAMETER["False_Easting",0.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",37.5],'
+           'PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",55.66666666666666],UNIT["Meter",1.0]]')
+# поля ГРАДО 2 → короткие имена; остальные — транслитерацией
+OGD_FIELDS = {"№": "num", "Вид": "vid", "Площадь, м²": "area_m2", "Мест": "mest", "Норма": "norma", "Типология": "tipologia",
+              "Корпус": "korpus", "Этажность": "etazh", "Площадь застройки, м²": "s_zastr_m2", "СПП, м²": "spp_m2",
+              "Блок": "blok", "Блоков": "blokov", "1 этаж": "etazh_1", "Ряд": "ryad", "Участок": "uchastok",
+              "Места": "mesta", "Дефицит": "deficit", "Площадь, сот.": "area_sot", "Причина": "prichina",
+              "Назначение": "naznach", "Высота, м": "vysota_m", "Адрес": "adres", "Название": "nazvanie"}
+_TR = dict(zip("абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+               ["a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f",
+                "h", "ts", "ch", "sh", "sch", "", "y", "", "e", "yu", "ya"]))
+_SHP_KIND = {"Point": "pnt", "MultiPoint": "pnt", "LineString": "lin", "MultiLineString": "lin", "Polygon": "pol", "MultiPolygon": "pol"}
+
+
+def _field_name(title, used):
+    s = OGD_FIELDS.get(title)
+    if not s:
+        s = "".join(_TR.get(ch, ch) for ch in title.lower())
+        s = re.sub(r"[^a-z0-9]+", "_", s).strip("_") or "pole"
+        if s[0].isdigit():
+            s = "f" + s
+    s, n, out = s[:10], 1, s[:10]
+    while out in used:
+        n += 1
+        out = s[:10 - len(str(n)) - 1] + "_" + str(n)
+    used.add(out)
+    return out
+
+
+def _ring_area(r):
+    return sum(r[k][0] * r[k + 1][1] - r[k + 1][0] * r[k][1] for k in range(len(r) - 1)) / 2
+
+
+def _shp_rings(g):
+    """Полигон → кольца по правилу SHP: внешнее по часовой стрелке, дыры — против."""
+    polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+    rings = []
+    for p in polys:
+        for k, r in enumerate(p):
+            r = [list(map(float, q[:2])) for q in r]
+            if len(r) < 4:
+                continue
+            if (_ring_area(r) > 0) == (k == 0):              # площадь > 0 — против часовой
+                r = r[::-1]
+            rings.append(r)
+    return rings
+
+
+def _field_spec(vals):
+    """Тип поля DBF по значениям: числа — N (дробные с 3 знаками), остальное — C до 254 байт."""
+    xs = [v for v in vals if v is not None and v != ""]
+    if xs and all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in xs):
+        return ("N", 24, 3) if any(isinstance(v, float) and v != int(v) for v in xs) else ("N", 24, 0)
+    return ("C", 254, 0)
+
+
+def _dbf_value(v, spec):
+    if v is None or v == "":
+        return None
+    if spec[0] == "N":
+        return v
+    s = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+    b = s.encode("utf-8")[:254]
+    return b.decode("utf-8", "ignore")
+
+
+README_SHP = (
+    "Слои ГРАДО 2 в формате ESRI Shapefile, раскладка как в выгрузках ГИС ОГД:\n"
+    "- один слой — набор файлов .shp .shx .dbf .prj .cpg с русским именем; слой с точками, линиями и площадями\n"
+    "  разложен на три набора с приставками «— точки», «— линии», «— площади»;\n"
+    "- имена полей латиницей, до 10 знаков; полное русское название каждого поля — в fields.csv;\n"
+    "- кодировка текста UTF-8 (файл .cpg), координаты МСК (как в QGIS), метры; .prj такой же, как у ГИС ОГД.\n"
+    "Точный перечень полей для сдачи в ГИС ОГД задаёт её регламент: сверяйте fields.csv с ним.\n"
+)
+
+
+def export_shp(layers):
+    """layers как у export_geojson → zip: SHP-набор на слой и вид геометрии (МСК, раскладка ГИС ОГД) + fields.csv + README.txt."""
+    import shapefile                                             # pyshp
+    res, skipped, split = _msk_layers(layers)
+    out, used, rows = io.BytesIO(), set(), [("file", "field", "title")]
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, feats in res:
+            groups = {}
+            for f in feats:
+                groups.setdefault(_SHP_KIND[f["geometry"]["type"]], []).append(f)
+            for kind, fs in groups.items():
+                suffix = "" if len(groups) == 1 else {"pnt": " — точки", "lin": " — линии", "pol": " — площади"}[kind]
+                base = _file_name(name + suffix, used)[:-len(".geojson")]
+                titles = list(dict.fromkeys(k for f in fs for k in f["properties"]))
+                fused, cols = set(), []
+                for t in titles:
+                    spec = _field_spec([f["properties"].get(t) for f in fs])
+                    cols.append((t, _field_name(str(t), fused), spec))
+                    rows.append((base, cols[-1][1], str(t)))
+                shp, shx, dbf = io.BytesIO(), io.BytesIO(), io.BytesIO()
+                w = shapefile.Writer(shp=shp, shx=shx, dbf=dbf, encoding="utf-8",
+                                     shapeType={"pnt": shapefile.MULTIPOINT, "lin": shapefile.POLYLINE, "pol": shapefile.POLYGON}[kind])
+                for _, fn, spec in cols:
+                    w.field(fn, *spec)
+                if not cols:
+                    w.field("id", "N", 10, 0)
+                for k, f in enumerate(fs):
+                    g = f["geometry"]
+                    if kind == "pol":
+                        w.poly(_shp_rings(g))
+                    elif kind == "lin":
+                        w.line([g["coordinates"]] if g["type"] == "LineString" else g["coordinates"])
+                    else:
+                        w.multipoint([g["coordinates"]] if g["type"] == "Point" else g["coordinates"])
+                    w.record(*([_dbf_value(f["properties"].get(t), spec) for t, _, spec in cols] if cols else [k + 1]))
+                w.close()
+                for ext, buf in ((".shp", shp), (".shx", shx), (".dbf", dbf)):
+                    z.writestr(base + ext, buf.getvalue())
+                z.writestr(base + ".prj", PRJ_MSK)
+                z.writestr(base + ".cpg", "UTF-8")
+        csv = io.StringIO()
+        for r in rows:
+            csv.write(";".join('"' + c.replace('"', '""') + '"' for c in r) + "\r\n")
+        z.writestr("fields.csv", csv.getvalue().encode("utf-8-sig"))
+        z.writestr("README.txt", _notes(README_SHP, skipped, split).encode("utf-8"))
     return out.getvalue()
 
 

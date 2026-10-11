@@ -22,7 +22,7 @@ const FLOOR_LABEL_DEN = 2000, RES_CAP_DEN = 5000;
 const RES_TOKEN = { "участок ДОО": "doo", "участок школы": "school", "участок поликлиники": "clinic" }, RES_CAP = { "участок ДОО": "ДОО", "участок школы": "школа", "участок поликлиники": "поликлиника" };
 const resTok = (k, ln) => getComputedStyle(document.documentElement).getPropertyValue(`--res-${RES_TOKEN[k]}${ln ? "-ln" : ""}`).trim() || (ln ? "#999999" : "#eeeeee");
 export const GROUND = { "улица": ["#e4e1da", "#b7b2a8"], "проезд": ["#e4e1da", "#b7b2a8"], "участок ИЖС": ["#eef5e4", "#7a9a5a"], "участок блока": ["#eef5e4", "#7a9a5a"], "двор": ["#f6f1dc", "#c9b77a"],
-  "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "свет соседям": ["#fdf0b8", "#d9a400"] };
+  "хозпостройка": ["#e9e2d6", "#8c7b62"], "гостевая стоянка": ["#c9d8ee", "#5577aa"], "стоянка": ["#d5dbe3", "#6b7a8f"], "свет соседям": ["#fdf0b8", "#d9a400"] };
 
 export function attachGraphLayers(map) {
   const src = { site: new VectorSource(), kept: new VectorSource(), ground: new VectorSource(), res: new VectorSource(), sketch: new VectorSource(), prev: new VectorSource() };

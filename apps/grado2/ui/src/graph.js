@@ -14,7 +14,7 @@ import { SOURCES, ensureLayer } from "./data.js";
 import { CK, CONS } from "./constraints.js";
 import { fullStyle, symbolOf } from "./symbology.js";
 import { asArea, buf, diff, fmt, floorsOf, inter, m2, plural, safe, setFrame, splitParts, toLL, toXY, unionAll } from "./geom.js";
-import { FLOOR_MODES, LOWRISE, TITLE, TYPES, TYPOLOGIES, nodeHeight } from "./graphfile.js";
+import { FLOOR_MODES, LOWRISE, ROWS, TITLE, TYPES, TYPOLOGIES, nodeHeight } from "./graphfile.js";
 import { generate } from "./sketchgen.js";
 import { CAO, TAO, bakedSketch, existKey, keptBuildings, placeLookup, tepParams, tepRequest } from "./tep.js";
 
@@ -119,7 +119,7 @@ export function placeParams(n, x) {
   const w = n.widgets_values, mode = FLOOR_MODES.includes(w[5]) ? w[5] : FLOOR_MODES[0];
   return { typ: TYPOLOGIES.includes(w[0]) ? w[0] : "Секции", width: Math.round(w[1]), floors: x?.in(1) ?? Math.round(w[2]), gap: +w[3], angle: Math.round(w[4]),
     cap: n.inputs?.[2] ? x?.in(2) || null : null, goal: mode === FLOOR_MODES[1] ? densityGoal() : null,
-    plot: Math.round(w[6] ?? 10), block: Math.round(w[7] ?? 110), relax: !!w[8] };
+    plot: Math.round(w[6] ?? 10), block: Math.round(w[7] ?? 110), relax: !!w[8], rows: ROWS.includes(w[9]) ? w[9] : ROWS[0] };
 }
 export function densityGoal() {
   const t = graph()?.nodes.find(n => n.type === "Показатели/ТЭП КРТ"), T = terr(); if (!t || !T) return null;
@@ -170,7 +170,8 @@ const EXEC = {
     const capped = res.filter(b => b.capped).length, avg = res.length ? res.reduce((s, b) => s + b.floors * b.m2, 0) / res.reduce((s, b) => s + b.m2, 0) : 0;
     const np = res.plots?.filter(g => /^участок/.test(g.kind)).length, ny = res.plots?.filter(g => g.kind === "двор" || g.kind === "свет соседям").length;
     const guest = (res.streets || []).filter(g => g.kind === "гостевая стоянка").reduce((s, g) => s + g["Мест"], 0);
-    x.info(`${plural(res.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(res.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${guest ? ` · гостевых мест ${guest} (945-ПП)` : ""}${capped ? ` · ${capped} ниже предельной высоты` : ""}${res.goal ? ` · ${res.goal}` : ""}${res.note ? ` · ${res.note}` : ""}`);
+    const lots = (res.streets || []).filter(g => g.kind === "стоянка").reduce((s, g) => s + g["Мест"], 0);
+    x.info(`${plural(res.length, LOWRISE.has(p.typ) ? ["дом", "дома", "домов"] : ["корпус", "корпуса", "корпусов"])}${np ? ` · ${plural(np, ["участок", "участка", "участков"])}` : ny ? ` · ${plural(ny, ["двор", "двора", "дворов"])}` : ""} · ${fmt(res.reduce((s, b) => s + b.m2 * b.floors, 0) / 1000, 1)} тыс. м² СПП · ср. ${fmt(avg, 1)} эт.${guest ? ` · гостевых мест ${guest} (945-ПП)` : ""}${lots ? ` · на стоянках ${lots} мест` : ""}${capped ? ` · ${capped} ниже предельной высоты` : ""}${res.goal ? ` · ${res.goal}` : ""}${res.note ? ` · ${res.note}` : ""}`);
   },
   "Показатели/ТЭП КРТ": x => {
     const n = x.n, r = x.r; n.properties ||= {};
