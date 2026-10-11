@@ -3,7 +3,7 @@
      удалить, все листы одним PDF; листы — часть проекта (store.js project.layouts, ключ layouts файла): правка листа — правка
      проекта, её держит автосохранение и пишет «Сохранить», как и правки слоёв (project.js). Карта блока — настоящая карта проекта в масштабе блока, «PDF»
      печатает лист тем же рендером, что альбом (sheetmaps.js). Штамп берёт поля альбома (album.meta файла). Новый
-     лист ставит карту туда, где открыт проект, легенду собирает из его слоёв. Это свои листы проекта; альбом ППТ КРТ
+     лист пустой (без заготовки): карту рисуют на листе и выбирают ей вид. Это свои листы проекта; альбом ППТ КРТ
      собирается отдельно — кнопкой «Листы и альбом» в шапке (строка-пояснение справа). Удаление листа — через диалог Web Awesome.
      Блок карты с видом (#119) следует за рамкой вида: сдвинули или растянули рамку на карте — листы с этим видом
      меняются сами (sheetmaps.js sync); пока окно открыто, рамки видов видны на карте (viewframesmap.js). -->
@@ -14,7 +14,7 @@
       <select class="spn-sel" :value="cur" aria-label="Лист макета" @change="cur = +$event.target.value">
         <option v-for="(s, i) in sheets" :key="s.id" :value="i">{{ i + 1 }}. {{ s.title || 'без названия' }}</option>
       </select>
-      <button class="spn-b" title="Новый лист А3 с картой и легендой" @click="add()"><FilePlus2 :size="15" :stroke-width="1.7" />Новый</button>
+      <button class="spn-b" title="Новый пустой лист А3: карту и остальное ставите сами" @click="add()"><FilePlus2 :size="15" :stroke-width="1.7" />Новый</button>
       <button class="spn-b" title="Копия этого листа" @click="add(sheets[cur])"><Copy :size="15" :stroke-width="1.7" />Копия</button>
       <button class="spn-b" :disabled="sheets.length < 2" title="Удалить этот лист" @click="askDrop = true"><Trash2 :size="15" :stroke-width="1.7" />Удалить</button>
       <button class="spn-b" title="Все листы по порядку одним PDF, номера листов — в штампе" @click="all"><FileDown :size="15" :stroke-width="1.7" />Все листы в PDF</button>
@@ -35,13 +35,12 @@
 import { ref, reactive, toRaw, watch, onMounted, onBeforeUnmount } from "vue";
 import { FilePlus2, Copy, Trash2, FileDown } from "@lucide/vue";
 import SheetEditor from "../sheet/SheetEditor.vue";
-import { newSheet, newId, LEGEND_SAMPLE } from "../sheet/model.js";
+import { newSheet, newId } from "../sheet/model.js";
 import { project } from "../store.js";
-import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo } from "./sheetmaps.js";
+import { mapImage, here, legendItems, printPdf, printAll, views, sync, frameTo, frameScale, ownView } from "./sheetmaps.js";
 import { vframes } from "../viewframesmap.js";
 
-const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, views, sync, frameTo, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
-const SAMPLE = JSON.stringify(LEGEND_SAMPLE);
+const maps = { image: mapImage, here, legend: legendItems, pdf: printPdf, views, sync, frameTo, frameScale, ownView, showFrame: id => { vframes.sel = id; vframes.fit = id; } };
 const clone = x => JSON.parse(JSON.stringify(x));
 const sheets = ref([]), cur = ref(0), askDrop = ref(false);
 const HINT = "Здесь — свои листы проекта. Альбом ППТ КРТ собирается в «Листы и альбом» вверху окна.";
@@ -49,12 +48,9 @@ const state = reactive({ kind: "", text: "" });
 const meta = () => project.raw?.album?.meta || {};
 let mine = null, base = "";             // mine — список листов, который панель сама положила в project.layouts
 
-/* Новый лист: карта там, где открыт проект, легенда из его слоёв. */
-function fresh(title) {
-  const s = { id: newId("sheet"), ...newSheet({ format: "A3", title, center: here()?.center || null }) }, items = legendItems();
-  s.blocks.forEach(b => { if (b.kind === "legend" && items.length && JSON.stringify(b.items) === SAMPLE) b.items = items; });
-  return s;
-}
+/* Новый лист — пустой (#119: без заготовок): рамка и штамп, элементы человек ставит сам — карту рисует на листе
+   и выбирает ей вид. */
+const fresh = title => ({ id: newId("sheet"), ...newSheet({ format: "A3", title, blank: true }) });
 function add(from) {
   const s = from ? { ...clone(from), id: newId("sheet"), title: `${from.title || "Лист"} (копия)` } : fresh(`Лист ${sheets.value.length + 1}`);
   sheets.value.splice(cur.value + 1, 0, s); cur.value += 1;

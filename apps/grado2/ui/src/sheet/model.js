@@ -44,9 +44,10 @@ export function stampRect(sheet) {
   return { x: f.x + f.w - STAMP_W, y: f.y + f.h - STAMP_H, w: STAMP_W, h: STAMP_H };
 }
 
-// новый лист: карта и колонка легенды стоят там же, где их ставит print_io.layout()
-export function newSheet({ format = "A3", orient = "L", stamp = true, title = "Лист", center = null } = {}) {
+// новый лист: карта и колонка легенды стоят там же, где их ставит print_io.layout(); blank — пустой лист (только рамка и штамп)
+export function newSheet({ format = "A3", orient = "L", stamp = true, title = "Лист", center = null, blank = false } = {}) {
   const sheet = { format, orient, stamp, title, blocks: [], guides: { x: [], y: [] }, grid: { step: 5, show: false, snap: true }, snap: { guides: true, items: true } };
+  if (blank) return sheet;              // пустой лист без заготовки (#119): элементы ставит сам человек
   const [w, h] = pageSize(sheet), f = frameRect(sheet);
   if (!stamp) {
     sheet.blocks.push({ ...newBlock("map", sheet), ...f, center });
